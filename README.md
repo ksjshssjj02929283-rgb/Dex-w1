@@ -7,9 +7,10 @@ This repository defines the stable ROS 2 Application Programming Interface (API)
 This repository serves as the central contract between low-level hardware drivers and high-level application code. It is structured as a meta-package containing a collection of interface packages, which allows for the independent development of different hardware components and their integration into the DexForce ecosystem.
 
 ## Repository Structure
+
 The repository is organized into several packages, each containing specific interfaces. The structure is as follows:
 
-```
+```text
 dex_embodied_interfaces/
 ├── chassis_interfaces/             # Interfaces for chassis components.
 ├── common_interfaces/              # Interfaces for general robot control like rebooting or diagnostics.
@@ -25,9 +26,10 @@ dex_embodied_interfaces/
 ```
 
 ## Package Structure
+
 Each package in this repository follows a consistent structure:
 
-```
+```text
 <package_name>/
 ├── msg/                             # Contains message definitions (.msg files).
 ├── srv/                             # Contains service definitions (.srv files).
@@ -51,7 +53,6 @@ This repository contains the following interface packages at its root:
 - `sensor_interfaces`: Custom interfaces for non-standard sensors. For standard hardware like cameras and Lidars, we use the official `sensor_msgs` package.
 - `template_interfaces`: A template package that can be copied to create new interface packages.
 
-
 ## Usage
 
 To use these interfaces, clone this repository into your ROS 2 workspace's `src` folder and build the workspace.
@@ -63,11 +64,13 @@ To depend on a package in your own project, add the appropriate dependency to yo
 ```
 
 ## Creating New Interfaces
+
 If you need to create new interfaces, just copy the `template_interfaces` package and rename it to your desired package name.
 
 ```bash
 cp -r template_interfaces new_interface_package
 ```
+
 Make sure to update the `package.xml` and `CMakeLists.txt` files with your new package name and description.
 
 Then, add your `.msg`, `.srv`, or `.action` files in the `msg`, `srv`, or `action` directories respectively. Make sure to follow the naming conventions and structure used in this repository.
