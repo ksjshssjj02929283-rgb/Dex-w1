@@ -15,6 +15,8 @@ set(MSG_FILES
   "msg/JointControl.msg"
   "msg/JointPositionControl.msg"
   "msg/JointVelocityTorqueLimitFeedback.msg"
+  "msg/ChassisWholeControl.msg"
+  "msg/ChassisMotorControl.msg"
 )
 
 # Generate interfaces
