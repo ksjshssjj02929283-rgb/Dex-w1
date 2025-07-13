@@ -1,0 +1,8 @@
+# 设置的属性参数类型
+string property_type
+
+# 设置的属性参数值
+string value
+---
+# 返回本次设置参数请求的request id
+uint64 request_id 
