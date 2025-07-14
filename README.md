@@ -1,4 +1,4 @@
-# dex_embodied_interfaces
+# dexe_interfaces
 
 This repository defines the stable ROS 2 Application Programming Interface (API) for DexForce humanoid robots. It contains **only** interface definitions (`.msg`, `.srv`, `.action`) and does not contain any executable code.
 
@@ -11,7 +11,7 @@ This repository serves as the central contract between low-level hardware driver
 The repository is organized into several packages, each containing specific interfaces. The structure is as follows:
 
 ```text
-dex_embodied_interfaces/
+dexe_interfaces/
 ├── chassis_interfaces/             # Interfaces for chassis components.
 ├── common_interfaces/              # Interfaces for general robot control like rebooting or diagnostics.
 ├── gripper_interfaces/             # Interfaces for grippers.

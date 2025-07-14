@@ -1,6 +1,6 @@
 # template_interfaces
 
-This package serves as a template for creating new interface packages in the `dex_embodied_interfaces` repository. It provides a basic structure and example files that can be copied and modified to create new interfaces.
+This package serves as a template for creating new interface packages in the `dexe_interfaces` repository. It provides a basic structure and example files that can be copied and modified to create new interfaces.
 
 ## Actions (.action)
 
