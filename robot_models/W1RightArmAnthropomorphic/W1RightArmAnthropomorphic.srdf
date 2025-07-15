@@ -1,0 +1,38 @@
+<?xml version="1.0" ?>
+<robot name="DexforceW1RightArmV2_ANTHROPOMORPHIC">
+  <disable_collisions link1="armr1" link2="armr2" reason="Adjacent"/>
+  <disable_collisions link1="armr7" link2="ee_link" reason="Adjacent"/>
+  <disable_collisions link1="armr3" link2="armr4" reason="Adjacent"/>
+  <disable_collisions link1="armr6" link2="armr7" reason="Adjacent"/>
+  <disable_collisions link1="armr5" link2="armr6" reason="Adjacent"/>
+  <disable_collisions link1="base_link" link2="armr1" reason="Adjacent"/>
+  <disable_collisions link1="armr4" link2="armr5" reason="Adjacent"/>
+  <disable_collisions link1="armr2" link2="armr3" reason="Adjacent"/>
+  <disable_collisions link1="base_link" link2="armr2" reason="Default"/>
+  <disable_collisions link1="base_link" link2="armr3" reason="Never"/>
+  <disable_collisions link1="base_link" link2="armr4" reason="Never"/>
+  <disable_collisions link1="base_link" link2="armr5" reason="Never"/>
+  <disable_collisions link1="base_link" link2="armr6" reason="Never"/>
+  <disable_collisions link1="base_link" link2="armr7" reason="Never"/>
+  <disable_collisions link1="base_link" link2="ee_link" reason="Never"/>
+  <disable_collisions link1="armr1" link2="armr3" reason="Never"/>
+  <disable_collisions link1="armr1" link2="armr4" reason="Never"/>
+  <disable_collisions link1="armr1" link2="armr5" reason="Never"/>
+  <disable_collisions link1="armr1" link2="armr6" reason="Never"/>
+  <disable_collisions link1="armr1" link2="armr7" reason="Never"/>
+  <disable_collisions link1="armr1" link2="ee_link" reason="Never"/>
+  <disable_collisions link1="armr2" link2="armr4" reason="Never"/>
+  <disable_collisions link1="armr2" link2="armr5" reason="Never"/>
+  <disable_collisions link1="armr2" link2="armr6" reason="Never"/>
+  <disable_collisions link1="armr2" link2="armr7" reason="Never"/>
+  <disable_collisions link1="armr2" link2="ee_link" reason="Never"/>
+  <disable_collisions link1="armr3" link2="armr5" reason="Never"/>
+  <disable_collisions link1="armr3" link2="armr6" reason="Never"/>
+  <disable_collisions link1="armr3" link2="armr7" reason="Never"/>
+  <disable_collisions link1="armr3" link2="ee_link" reason="Never"/>
+  <disable_collisions link1="armr4" link2="armr6" reason="Never"/>
+  <disable_collisions link1="armr4" link2="armr7" reason="Never"/>
+  <disable_collisions link1="armr4" link2="ee_link" reason="Never"/>
+  <disable_collisions link1="armr5" link2="ee_link" reason="Never"/>
+  <disable_collisions link1="armr6" link2="ee_link" reason="Never"/>
+</robot>

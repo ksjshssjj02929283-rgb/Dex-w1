@@ -1,0 +1,70 @@
+#pragma once
+
+#include "utilities.h"
+#include "pinocchio_include.h"
+#include "torque_controller_include.h"
+
+namespace robot_server_lib {
+
+enum class TorqueControllerState {
+    Init,
+    Idle,
+    Decelerating,
+    Operating
+};
+
+struct ProcessResponse {
+    bool re_run{false};
+};
+
+using namespace robot_server_lib;
+
+class TorqueControllerManager {
+public:
+    TorqueControllerManager(RobotModel robot_model,
+                            PlannerManagerBuffers manager_buffers,
+                            TorqueControlBuffer robot_buffers);
+    ~TorqueControllerManager();
+
+    void LoopOnce();
+    
+private:
+    void Initialize();
+
+    ProcessResponse InitProcess();
+    ProcessResponse IdleProcess();
+    ProcessResponse DeceleratingProcess();
+    ProcessResponse OperatingProcess();
+
+    void ChangeState(TorqueControllerState new_state);
+
+    RobotModel robot_model_;
+    PlannerManagerBuffers manager_buffers_;
+    TorqueControlBuffer robot_buffers_;
+
+    TorqueControllerState controller_state_{TorqueControllerState::Init};
+
+    std::shared_ptr<TorqueControllerBase> current_controller_{nullptr};
+    std::shared_ptr<IdleControllerInvDynamic> idle_torque_controller_{nullptr};
+    std::shared_ptr<DecelerationControllerInvDynamic> deceleration_torque_controller_{nullptr};
+    std::shared_ptr<OperatingControllerInvDynamic> operating_torque_controller_{nullptr};
+
+    // Runtime data
+    Int64 current_episode_index_{-1};
+    Int64 last_cmd_sequence_number_{-1};
+    struct {
+        // Timing maintained by the state machine
+        Int64 loop_counter{-1};
+        TimeMetaInfo time_meta{};
+
+        JointRawMeasurement raw_measurement{};
+        TorqueCtrlCommand output_cmd{};
+        struct {
+            PlannerManagerCommand cmd{};
+            TimePointSystem time_point{TimePointSystem::Invalid()};
+        } input_joint_cmd;
+    } runtime_data_;
+    static constexpr int MaxDelayInNs = 40 * 1000 * 1000;
+};
+
+} // namespace robot_server_lib

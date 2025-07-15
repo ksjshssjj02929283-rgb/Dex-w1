@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot name="DexforceW1LeftArmV2_INDUSTRIAL"> 
+
+  <link name="base_link"> 
+    <inertial> 
+      <origin xyz="0.0217280058262384 -3.63075309817162E-08 0.0245775209915173" rpy="0 0 0"/>  
+      <mass value="0.0617557785424091"/>  
+      <inertia ixx="8.98857425070769E-05" ixy="1.17743542933037E-10" ixz="-1.64240128182097E-05" iyy="7.65203468008035E-05" iyz="4.87474633416017E-12" izz="5.82039098333776E-05"/> 
+    </inertial>  
+    <visual> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Visual/arml1.stl"/> 
+      </geometry>  
+      <material name=""> 
+        <color rgba="0.27843137254902 0.749019607843137 0.588235294117647 1"/> 
+      </material> 
+    </visual>  
+    <collision> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Collision/arml1.stl"/> 
+      </geometry> 
+    </collision>  
+  </link>  
+
+  <link name="arml1"> 
+    <inertial> 
+      <origin xyz="0.0217280058262384 -3.63075309817162E-08 0.0245775209915173" rpy="0 0 0"/>  
+      <mass value="0.0617557785424091"/>  
+      <inertia ixx="8.98857425070769E-05" ixy="1.17743542933037E-10" ixz="-1.64240128182097E-05" iyy="7.65203468008035E-05" iyz="4.87474633416017E-12" izz="5.82039098333776E-05"/> 
+    </inertial>  
+    <visual> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Visual/arml1.stl"/> 
+      </geometry>  
+      <material name=""> 
+        <color rgba="0.27843137254902 0.749019607843137 0.588235294117647 1"/> 
+      </material> 
+    </visual>  
+    <collision> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Collision/arml1.stl"/> 
+      </geometry> 
+    </collision> 
+  </link>  
+  <link name="arml2"> 
+    <inertial> 
+      <origin xyz="-2.444967030657E-05 0.0277120124268351 0.002065951716533" rpy="0 0 0"/>  
+      <mass value="0.59391088809807"/>  
+      <inertia ixx="0.00146067643923269" ixy="1.03156332448455E-07" ixz="-2.83186077993591E-07" iyy="0.00074821846171173" iyz="2.05306188783727E-05" izz="0.00162233746428049"/> 
+    </inertial>  
+    <visual> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Visual/arml2.stl"/> 
+      </geometry>  
+      <material name=""> 
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/> 
+      </material> 
+    </visual>  
+    <collision> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Collision/arml2.stl"/> 
+      </geometry> 
+    </collision>  
+  </link>  
+  <link name="arml3"> 
+    <inertial> 
+      <origin xyz="-0.001449598951343 0.00110765276545413 0.0672524717935882" rpy="0 0 0"/>  
+      <mass value="0.175833450838491"/>  
+      <inertia ixx="0.00050069122150075" ixy="-4.15643136399077E-05" ixz="3.911921157587E-06" iyy="0.000514247576272716" iyz="5.74471072418561E-05" izz="0.000298810400830447"/> 
+    </inertial>  
+    <visual> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Visual/arml3.stl"/> 
+      </geometry>  
+      <material name=""> 
+        <color rgba="0.392156862745098 0.749019607843137 0.619607843137255 1"/> 
+      </material> 
+    </visual>  
+    <collision> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Collision/arml3.stl"/> 
+      </geometry> 
+    </collision> 
+  </link>  
+  <link name="arml4"> 
+    <inertial> 
+      <origin xyz="-9.13705241378793E-06 0.0717122742504187 0.00235774758824361" rpy="0 0 0"/>  
+      <mass value="0.407487529576026"/>  
+      <inertia ixx="0.000649358146626601" ixy="-1.35515127525103E-07" ixz="-2.52399776668769E-07" iyy="0.000401453549771057" iyz="0.000122143583744079" izz="0.000645016279339705"/> 
+    </inertial>  
+    <visual> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Visual/arml4.stl"/> 
+      </geometry>  
+      <material name=""> 
+        <color rgba="0.211764705882353 0.211764705882353 0.211764705882353 1"/> 
+      </material> 
+    </visual>  
+    <collision> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Collision/arml4.stl"/> 
+      </geometry> 
+    </collision> 
+  </link>  
+  <link name="arml5"> 
+    <inertial> 
+      <origin xyz="-0.0179098129215456 -2.82632558166462E-05 0.0542199862775808" rpy="0 0 0"/>  
+      <mass value="0.115743883576587"/>  
+      <inertia ixx="0.000242589492170816" ixy="1.38694554922751E-08" ixz="-1.12396957868845E-05" iyy="0.000192779416372657" iyz="1.54611620670442E-07" izz="0.000123941977027644"/> 
+    </inertial>  
+    <visual> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Visual/arml5.stl"/> 
+      </geometry>  
+      <material name=""> 
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/> 
+      </material> 
+    </visual>  
+    <collision> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Collision/arml5.stl"/> 
+      </geometry> 
+    </collision> 
+  </link>  
+  <link name="arml6"> 
+    <inertial> 
+      <origin xyz="0.00262995272118555 2.00517190074301E-07 0.000876499231786676" rpy="0 0 0"/>  
+      <mass value="0.0613168928170912"/>  
+      <inertia ixx="6.9137861088907E-05" ixy="1.31675827639121E-10" ixz="7.69032334507134E-06" iyy="6.08185510943234E-05" iyz="-1.33584071785073E-08" izz="4.57909126217623E-05"/> 
+    </inertial>  
+    <visual> 
+      <origin xyz="0 0 0" rpy="0 0 -1.5707963267948966"/>  
+      <geometry> 
+        <mesh filename="Visual/arml6.stl"/> 
+      </geometry>  
+      <material name=""> 
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/> 
+      </material> 
+    </visual>  
+    <collision> 
+      <origin xyz="0 0 0" rpy="0 0 -1.5707963267948966"/>  
+      <geometry> 
+        <mesh filename="Collision/arml6.stl"/> 
+      </geometry> 
+    </collision> 
+  </link>  
+  <link name="arml7"> 
+    <inertial> 
+      <origin xyz="0 0 0.048" rpy="0 0 0"/>  
+      <mass value="0.05"/>  
+      <inertia ixx="1E-05" ixy="1E-11" ixz="1E-06" iyy="1E-05" iyz="1E-08" izz="1E-05"/> 
+    </inertial>  
+    <visual> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Visual/arml7.stl"/> 
+      </geometry>  
+      <material name=""> 
+        <color rgba="0.749019607843137 0.4 0.423529411764706 1"/> 
+      </material> 
+    </visual>  
+    <collision> 
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
+      <geometry> 
+        <mesh filename="Collision/arml7.stl"/> 
+      </geometry> 
+    </collision> 
+  </link>  
+  <link name="ee_link"> </link>  
+
+  <joint name="arml1j" type="revolute"> 
+    <origin xyz="0 0 0" rpy="0 0 0"/>  
+    <parent link="base_link"/>  
+    <child link="arml1"/>  
+    <axis xyz="0 0 1"/>  
+    <limit lower="-2.9670597283903604" upper="2.9670597283903604" effort="100" velocity="0.8726646259971648"/> 
+  </joint>  
+  <joint name="arml2j" type="revolute"> 
+    <origin xyz="0 0 0.1025" rpy="1.5707963267948966 0 3.141592653589793"/>  
+    <parent link="arml1"/>  
+    <child link="arml2"/>  
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.0943951023931953" upper="1.5707963267948966" effort="100" velocity="0.8726646259971648"/> 
+  </joint> 
+  <joint name="arml3j" type="revolute"> 
+    <origin xyz="0 0.260 0.0" rpy="1.5707963267948966 -1.5707963267948966 3.141592653589793"/>  
+    <parent link="arml2"/>  
+    <child link="arml3"/>  
+    <axis xyz="0 0 1"/>  
+    <limit lower="-2.9670597283903604" upper="2.9670597283903604" effort="100" velocity="0.8726646259971648"/> 
+  </joint>  
+  <joint name="arml4j" type="revolute"> 
+    <origin xyz="0 0 0" rpy="1.5707963267948966 0 0"/>  
+    <parent link="arml3"/>  
+    <child link="arml4"/>  
+    <axis xyz="0 0 1"/>  
+    <limit lower="-2.356194490192345" upper="1.5707963267948966" effort="50" velocity="0.8726646259971648"/> 
+  </joint>  
+  <joint name="arml5j" type="revolute">     
+    <origin xyz="0 0.166 0.0" rpy="-1.5707963267948966 3.141592653589793 0"/>  
+    <parent link="arml4"/>  
+    <child link="arml5"/>  
+    <axis xyz="0 0 1"/>  
+    <limit lower="-2.9670597283903604" upper="2.9670597283903604" effort="50" velocity="0.8726646259971648"/> 
+  </joint>  
+  <joint name="arml6j" type="revolute"> 
+    <origin xyz="0 0 0.098" rpy="1.5707963267948966 0 0"/>  
+    <parent link="arml5"/>  
+    <child link="arml6"/>  
+    <axis xyz="0 0 -1"/>  
+    <limit lower="-1.5707963267948966" upper="1.5707963267948966" effort="50" velocity="0.8726646259971648"/> 
+  </joint>  
+  <joint name="arml7j" type="revolute"> 
+    <origin xyz="0 0 0" rpy="-1.5707963267948966 0 0"/>  
+    <parent link="arml6"/>  
+    <child link="arml7"/>  
+    <axis xyz="0 0 1"/>  
+    <limit lower="-2.9670597283903604" upper="2.9670597283903604" effort="50" velocity="0.8726646259971648"/> 
+  </joint>  
+  <joint name="jointEE" type="fixed"> 
+    <origin xyz="0 0 0.066" rpy="0 0 0"/>  
+    <parent link="arml7"/>  
+    <child link="ee_link"/>  
+  </joint> 
+
+</robot>
