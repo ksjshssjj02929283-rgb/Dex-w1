@@ -77,7 +77,7 @@ class Logger:
         self.console_handler.setLevel(logging.DEBUG) # 修改终端日志打印等级
         self.console_handler.setFormatter(
             self.MicroSecondColoredFormatter(
-                "[%(asctime)s] [%(name)s] [%(log_color)s%(levelname)s%(light_white)s] [%(filename)s-%(lineno)d行]: %(message)s",
+                "[%(asctime)s] [%(name)s] [%(log_color)s%(levelname)s%(light_white)s] [%(filename)s-%(lineno)d line]: %(message)s",
                 datefmt="%Y-%m-%d %H:%M:%S",
                 log_colors=LEVEL_COLORS))
 
