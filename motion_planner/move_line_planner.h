@@ -102,9 +102,11 @@ class MoveLinePlanner : public MotionPlannerBase {
         // set input parameters with global ratio except for jerk
         for (int idx : {Trans, TransSecondary}) {
             runtime_.input.max_velocity[idx] = cartesian_bounds_.translation.max_velocity * speed_ratio;
+            runtime_.input.max_acceleration[idx] = cartesian_bounds_.translation.max_acceleration * speed_ratio;
         }
         for (int idx : {Rot, RotSecondary}) {
             runtime_.input.max_velocity[idx] = cartesian_bounds_.rotation.max_velocity * speed_ratio;
+            runtime_.input.max_acceleration[idx] = cartesian_bounds_.rotation.max_acceleration * speed_ratio;
         }
 
         switch (move_request.motion_group) {
