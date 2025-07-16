@@ -3,7 +3,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 project(robot_server_lib)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic -Wno-psabi)
+  add_compile_options(-Wall -Wextra -Wpedantic -Wno-psabi -Wno-reorder)
 endif()
 
 # find dependencies
@@ -17,7 +17,6 @@ find_package(Eigen3 REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(ruckig REQUIRED)
 find_package(pinocchio REQUIRED)
-find_package(ament_clang_format REQUIRED)
 
 aux_source_directory(src LIB_SRCS)
 add_library(robot_server_lib ${LIB_SRCS})
@@ -48,7 +47,6 @@ ament_target_dependencies(robot_server_lib
   sensor_msgs
 )
 
-ament_clang_format()
 
 install(
   TARGETS
