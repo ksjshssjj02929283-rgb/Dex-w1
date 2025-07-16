@@ -17,6 +17,7 @@ find_package(Eigen3 REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(ruckig REQUIRED)
 find_package(pinocchio REQUIRED)
+find_package(ament_clang_format REQUIRED)
 
 aux_source_directory(src LIB_SRCS)
 add_library(robot_server_lib ${LIB_SRCS})
@@ -46,6 +47,8 @@ ament_target_dependencies(robot_server_lib
   std_msgs
   sensor_msgs
 )
+
+ament_clang_format()
 
 install(
   TARGETS

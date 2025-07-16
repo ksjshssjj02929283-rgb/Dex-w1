@@ -1,19 +1,32 @@
 ## 依赖库安装
 curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo tee /etc/apt/trusted.gpg.d/ros.asc > /dev/null
+
 sudo apt update
+
 sudo apt install nlohmann-json3-dev
+
 sudo apt install ros-humble-pinocchio
+
 sudo apt install ros-humble-control-msgs
+
 注意如果已经通过源码编译安装了则不用再安装ros版本的, 否则会链接冲突
-### ruckig源码编译
+
+### ruckig源码编译安装
 git clone https://github.com/pantor/ruckig.git
 cd ruckig
+
 cmake .. -DCMAKE_BUILD_TYPE=Release
+
 make -j$(nproc)
+
 sudo make install
 
 > **注意：** 以上安装如果出现找不到包的情况检查
 sudo vim ～/etc/apt/source.list.d/ros2.list, 源修改为deb [arch=arm64 trusted=yes] http://packages.ros.org/ros2/ubuntu jammy main
+
+
+## 代码风格
+开发者提交代码前运行 ./style.sh 进行代码风格修改
 
 ## build
 colcon build
