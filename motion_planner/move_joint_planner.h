@@ -78,6 +78,7 @@ class MoveJointPlanner : public MotionPlannerBase {
         }
         for (int i = 0; i < ndof_robot; ++i) {
             runtime_.input.max_velocity[i] = joint_bounds_.max_velocity * speed_ratio;
+            runtime_.input.max_acceleration[i] = joint_bounds_.max_acceleration * speed_ratio;
         }
 
         std::ostringstream oss;

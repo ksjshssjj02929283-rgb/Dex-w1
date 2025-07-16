@@ -2,58 +2,20 @@
 curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo tee /etc/apt/trusted.gpg.d/ros.asc > /dev/null
 sudo apt update
 sudo apt install nlohmann-json3-dev
-
-### server端需安装
-sudo apt install ros-humble-ruckig
 sudo apt install ros-humble-pinocchio
 sudo apt install ros-humble-control-msgs
 注意如果已经通过源码编译安装了则不用再安装ros版本的, 否则会链接冲突
-
-### 源码安装pinocchio
-git clone --recursive https://github.com/stack-of-tasks/pinocchio
-cd pinocchio
-mkdir build
-cd build
-cmake .. \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX=/usr/local \
-    -DBUILD_PYTHON_INTERFACE=ON \
-    -DBUILD_WITH_URDF_SUPPORT=ON \
-    -DBUILD_WITH_CASADI_SUPPORT=ON \
-    -DBUILD_WITH_AUTODIFF_SUPPORT=ON \
-    -DBUILD_UNIT_TESTS=OFF
-make -j$(nproc)
-sudo make install
-
-源码pinocchio需安装:
-sudo apt install -y \
-    liburdfdom-dev \
-    liburdfdom-headers-dev \
-    liburdfdom-tools \
-    
-### 源码安装hpp-fcl
-git clone https://github.com/humanoid-path-planner/hpp-fcl.git
-cd hpp-fcl && mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
-make -j$(nproc) && sudo make install
-
-### 源码安装eigenpy
-git clone https://github.com/stack-of-tasks/eigenpy.git
-cd eigenpy
-mkdir build && cd build
+### ruckig源码编译
+git clone https://github.com/pantor/ruckig.git
+cd ruckig
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 sudo make install
 
-卸载了ros-humble-pinocchio  ros-humble-hpp-fcl ros-humble-eigenpy
-### client端需安装
-sudo apt install ros-humble-tf-transformations
-pip install meshcat
-
 > **注意：** 以上安装如果出现找不到包的情况检查
 sudo vim ～/etc/apt/source.list.d/ros2.list, 源修改为deb [arch=arm64 trusted=yes] http://packages.ros.org/ros2/ubuntu jammy main
 
-### build
+## build
 colcon build
 
 ## 运行参数设置
