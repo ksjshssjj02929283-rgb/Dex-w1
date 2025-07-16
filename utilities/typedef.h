@@ -1,18 +1,19 @@
 /**
-* @file base_typedef.h
+ * @file base_typedef.h
  * @brief 机器人类型定义和宏定义
  * @copyright Copyright (C) 2025 DexForce Technology Co., Ltd. All Rights Reserved.
  */
 #ifndef BASE_TYPEDEF_H
 #define BASE_TYPEDEF_H
 
-#include <system_error>
-#include <Eigen/Dense> 
-#include <vector>
+#include <Eigen/Dense>
 #include <array>
 #include <cmath>
+#include <system_error>
+#include <vector>
 
-namespace robot_server_lib {
+namespace robot_server_lib
+{
 
 constexpr int ndof_robot = 20;
 constexpr int torque_ctrl_dt_micro = 1000;  // 1kHz
@@ -22,38 +23,41 @@ constexpr double torque_ctrl_dt = double(torque_ctrl_dt_micro) / 1e6;
 constexpr double manager_dt = double(manager_dt_micro) / 1e6;
 constexpr double simulation_dt = double(simulation_dt_micro) / 1e6;
 constexpr double IdleVelocityThreshold = ndof_robot * 1e-2;
-constexpr double PositionThreshold = 1e-4; // 位置误差容忍度
+constexpr double PositionThreshold = 1e-4;  // 位置误差容忍度
 
 using Int64 = std::int64_t;
 using VectorDof = Eigen::Matrix<double, ndof_robot, 1>;
-using JointPositionDof = VectorDof; // 关节位置
+using JointPositionDof = VectorDof;  // 关节位置
 using Matrix3d = Eigen::Matrix<double, 3, 3>;
 using Matrix4d = Eigen::Matrix<double, 4, 4>;
 
-enum class RunMode {
-    Position,      // position controls
-    Impedance,     // impedance control
-    Drag,          // zero-stiff control
-    Teleoperate,   // teleoperate control
+enum class RunMode
+{
+    Position,     // position controls
+    Impedance,    // impedance control
+    Drag,         // zero-stiff control
+    Teleoperate,  // teleoperate control
     Unknown
 };
 
-enum class Status {
+enum class Status
+{
     Init,
     Idle,
     Running,
     Error
 };
 
-enum class RequestType {
-    Empty,              // empty command
-    
-    TcpPrimary,         // tool primary
-    TcpSecondary,       // tool secondary
+enum class RequestType
+{
+    Empty,  // empty command
 
-    SpeedRatio,         // global speed ratio
+    TcpPrimary,    // tool primary
+    TcpSecondary,  // tool secondary
 
-    ClearError,         // clear error
+    SpeedRatio,  // global speed ratio
+
+    ClearError,  // clear error
 
     MoveJoint,
     MoveLine,
@@ -64,8 +68,8 @@ enum class RequestType {
     Unknown
 };
 
-
-enum class MotionGroup {
+enum class MotionGroup
+{
     Primary,
     Secondary,
     BothArm,
@@ -74,84 +78,129 @@ enum class MotionGroup {
     Unknown
 };
 
-enum class ReferenceFrame {
-    ArmBase,       // arm base frame
-    WorldBase,     // world base frame
+enum class ReferenceFrame
+{
+    ArmBase,    // arm base frame
+    WorldBase,  // world base frame
 
     Unknown
 };
 
-enum class RequestStatus {
-  ErrorDrop = 0,
-  Executed = 1,
-  Queued = 2,
+enum class RequestStatus
+{
+    ErrorDrop = 0,
+    Executed = 1,
+    Queued = 2,
 
-  Unknown = 3
+    Unknown = 3
 };
 
-inline const char* ToString(Status s) {
-    switch (s) {
-        case Status::Init:    return "Init";
-        case Status::Idle:    return "Idle";
-        case Status::Running: return "Running";
-        case Status::Error:   return "Error";
-        default:              return "Unknown";
+inline const char *ToString(Status s)
+{
+    switch (s)
+    {
+    case Status::Init:
+        return "Init";
+    case Status::Idle:
+        return "Idle";
+    case Status::Running:
+        return "Running";
+    case Status::Error:
+        return "Error";
+    default:
+        return "Unknown";
     }
 }
 
-inline const char* ToString(MotionGroup s) {
-    switch (s) {
-        case MotionGroup::Primary:     return "Primary";
-        case MotionGroup::Secondary:   return "Secondary";
-        case MotionGroup::BothArm:     return "BothArm";
-        case MotionGroup::WholeBody:   return "WholeBody";
-        default:                       return "Unknown";
+inline const char *ToString(MotionGroup s)
+{
+    switch (s)
+    {
+    case MotionGroup::Primary:
+        return "Primary";
+    case MotionGroup::Secondary:
+        return "Secondary";
+    case MotionGroup::BothArm:
+        return "BothArm";
+    case MotionGroup::WholeBody:
+        return "WholeBody";
+    default:
+        return "Unknown";
     }
 }
 
-
-inline const char* ToString(RequestStatus s) {
-    switch (s) {
-        case RequestStatus::ErrorDrop: return "ErrorDrop";
-        case RequestStatus::Executed:  return "Executed";
-        case RequestStatus::Queued:    return "Queued";
-        default:                       return "Unknown";
+inline const char *ToString(RequestStatus s)
+{
+    switch (s)
+    {
+    case RequestStatus::ErrorDrop:
+        return "ErrorDrop";
+    case RequestStatus::Executed:
+        return "Executed";
+    case RequestStatus::Queued:
+        return "Queued";
+    default:
+        return "Unknown";
     }
 }
 
-inline const char* ToString(RequestType type) {
-    switch (type) {
-        case RequestType::Empty:                 return "Empty";
-        case RequestType::TcpPrimary:            return "TcpPrimary";
-        case RequestType::TcpSecondary:          return "TcpSecondary";
-        case RequestType::SpeedRatio:            return "SpeedRatio";
-        case RequestType::ClearError:            return "ClearError";
-        case RequestType::MoveJoint:             return "MoveJoint";
-        case RequestType::MoveLine:              return "MoveLine";
-        case RequestType::StartJointStreaming:   return "StartJointStreaming";
-        case RequestType::StartEEPoseStreaming:  return "StartEEPoseStreaming";
-        default:                                return "Unknown";
+inline const char *ToString(RequestType type)
+{
+    switch (type)
+    {
+    case RequestType::Empty:
+        return "Empty";
+    case RequestType::TcpPrimary:
+        return "TcpPrimary";
+    case RequestType::TcpSecondary:
+        return "TcpSecondary";
+    case RequestType::SpeedRatio:
+        return "SpeedRatio";
+    case RequestType::ClearError:
+        return "ClearError";
+    case RequestType::MoveJoint:
+        return "MoveJoint";
+    case RequestType::MoveLine:
+        return "MoveLine";
+    case RequestType::StartJointStreaming:
+        return "StartJointStreaming";
+    case RequestType::StartEEPoseStreaming:
+        return "StartEEPoseStreaming";
+    default:
+        return "Unknown";
     }
 }
 
-inline const char* ToString(RunMode mode) {
-    switch (mode) {
-        case RunMode::Position:     return "Position";
-        case RunMode::Impedance:    return "Impedance";
-        case RunMode::Drag:         return "Drag";
-        case RunMode::Teleoperate:  return "Teleoperate";
-        default:                    return "Unknown";
+inline const char *ToString(RunMode mode)
+{
+    switch (mode)
+    {
+    case RunMode::Position:
+        return "Position";
+    case RunMode::Impedance:
+        return "Impedance";
+    case RunMode::Drag:
+        return "Drag";
+    case RunMode::Teleoperate:
+        return "Teleoperate";
+    default:
+        return "Unknown";
     }
 }
 
-inline const char* ToString(ReferenceFrame frame) {
-    switch (frame) {
-        case ReferenceFrame::ArmBase:   return "ArmBase";
-        case ReferenceFrame::WorldBase: return "WorldBase";
-        default:                        return "Unknown";
+inline const char *ToString(ReferenceFrame frame)
+{
+    switch (frame)
+    {
+    case ReferenceFrame::ArmBase:
+        return "ArmBase";
+    case ReferenceFrame::WorldBase:
+        return "WorldBase";
+    default:
+        return "Unknown";
     }
 }
 
-} // namespace robot_server_lib
+}  // namespace robot_server_lib
 
-#endif //BASE_TYPEDEF_H
+#endif  // BASE_TYPEDEF_H

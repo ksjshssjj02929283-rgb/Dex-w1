@@ -1,30 +1,32 @@
 #pragma once
 
-#include "utilities.h"
-#include "pinocchio_include.h"
 #include "motion_planner_include.h"
+#include "pinocchio_include.h"
+#include "utilities.h"
 
-namespace robot_server_lib {
+namespace robot_server_lib
+{
 
-struct RequestResponse {
+struct RequestResponse
+{
     bool re_run{false};
     bool request_consumed{false};
 };
 
-class PlannerManager {
-
-public:
-    PlannerManager(RobotModel robot_model, 
-                   PlannerManagerBuffers buffer,
-                   std::function<void(Int64, RequestType, RequestStatus, Status)> report_request_status);
+class PlannerManager
+{
+   public:
+    PlannerManager(
+        RobotModel robot_model, PlannerManagerBuffers buffer,
+        std::function<void(Int64, RequestType, RequestStatus, Status)> report_request_status);
 
     ~PlannerManager();
 
     void LoopOnce();
-    
-private:
+
+   private:
     RobotModel robot_model_;
-    
+
     std::function<void(Int64, RequestType, RequestStatus, Status)> ReportRequestStatus;
 
     // Property
@@ -47,7 +49,8 @@ private:
     std::shared_ptr<JointStreamingPlanner> joint_streaming_planner_{nullptr};
     std::shared_ptr<EEPoseStreamingPlanner> ee_pose_streaming_planner_{nullptr};
 
-    struct {
+    struct
+    {
         // Timing maintained by the state machine
         Int64 loop_counter{-1};
         TimeMetaInfo time_meta{};
@@ -62,7 +65,7 @@ private:
 
     void Initialize();
     void ChangeState(Status new_state);
-    void SetProperty(const PlannerRequest& request);
+    void SetProperty(const PlannerRequest &request);
 
     RequestResponse OnRequest();
     // Process the request based on the current status
@@ -71,10 +74,11 @@ private:
     RequestResponse OnRequestStateRunning();
     RequestResponse OnRequestStateError();
 
-    void ConsumeRequest() {
-        runtime_data_.planner_request.request_id = -1; // Reset request ID
-        runtime_data_.planner_request.type = RequestType::Empty; // Reset request type
+    void ConsumeRequest()
+    {
+        runtime_data_.planner_request.request_id = -1;            // Reset request ID
+        runtime_data_.planner_request.type = RequestType::Empty;  // Reset request type
     }
 };
 
-} //namespace robot_server_lib
+}  // namespace robot_server_lib
