@@ -1,4 +1,6 @@
-# dexe_robot_server 使用说明
+# dexe_robot_server 介绍
+
+> **项目分为两个部分：通用库部分 `robot_server_lib`，和仿真部署实现 `sim_server`。同时 `sim_server` 也是一个模板，可以参考它的实现快速部署到其他机器人上。**
 
 ## 依赖库安装
 
@@ -31,27 +33,54 @@ sudo make install
 
 ---
 
-## 代码风格检查
+## 快速部署
 
-开发者提交代码前请运行：
+新建workspace文件夹, 把dexe_robot_server放在workspace文件夹中, 同时需要拉取接口库dexe_interfaces也放在与dexe_robot_server同级目录workspace下
 
-```bash
-./style.sh
-```
+dexe_interfaces gitlab: http://69.235.177.182:8081/dexembodied/dexe_interfaces
+
+如有已部署的包如w1_control也放在workspace下
 
 ---
 
 ## 编译项目
 
+在workspace文件夹中:
+
 ```bash
 colcon build
+```
+
+仿真编译默认关闭, 如需开启则
+
+```bash
+colcon build --cmake-args -DENABLE_SIM_SERVER=ON
+```
+
+### 运行项目
+
+运行部署的包, 如已编译仿真则运行以下开启仿真及可视化
+
+```bash
+./dexe_robot_server/run_sim.sh
+```
+
+如运行w1则需运行 w1_control/ 中的运行脚本
+
+
+test默认关闭, 如需运行测试则
+
+```bash
+colcon build --cmake-args -DBUILD_TESTING=ON
+colcon test
+colcon test-result --verbose
 ```
 
 ---
 
 ## 运行参数设置
 
-运行前需在 `/robot_models/robot.cfg` 文件中配置参数。
+运行前需在 `/xxx/robot.cfg` 文件中配置参数。 xxx为具体的implement包, 如w1_control, sim_server中等
 
 ### 配置参数说明
 
@@ -76,3 +105,13 @@ colcon build
 - `joints_secondary`：次要关节（右臂）索引数组（单臂机器人可不填）
 
 > **注意**：关节索引从 0 开始计数，请根据实际机器人 URDF 模型中的关节定义配置正确的索引值。
+
+---
+
+## 代码风格检查
+
+开发者提交代码前需统一代码风格, 请运行：
+
+```bash
+./style.sh
+```

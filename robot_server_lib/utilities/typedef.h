@@ -72,7 +72,7 @@ enum class MotionGroup
 {
     Primary,
     Secondary,
-    BothArm,
+    BothArms,
     WholeBody,
 
     Unknown
@@ -120,7 +120,7 @@ inline const char *ToString(MotionGroup s)
         return "Primary";
     case MotionGroup::Secondary:
         return "Secondary";
-    case MotionGroup::BothArm:
+    case MotionGroup::BothArms:
         return "BothArm";
     case MotionGroup::WholeBody:
         return "WholeBody";
