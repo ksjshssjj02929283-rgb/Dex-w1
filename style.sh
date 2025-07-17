@@ -10,7 +10,7 @@ echo -e "${YELLOW}开始格式化 C++ 代码...${NC}"
 
 if ! command -v clang-format &> /dev/null; then
     echo -e "${RED}错误: clang-format 未安装${NC}"
-    echo "请运行: sudo apt-get install clang-format"
+    echo "请运行: sudo apt install clang-format"
     exit 1
 fi
 
