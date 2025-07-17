@@ -1,0 +1,31 @@
+<?xml version="3.0"?>
+<package format="3">
+  <name>sim_server</name>
+  <version>0.0.1</version>
+  <description>W1 robot control messages</description>
+  <maintainer email="zhangyinan@dexforce.com">Zhang Yinan</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>ament_index_cpp</depend>
+  <depend>eigen</depend>
+  <depend>eigen3_cmake_module</depend>
+  <depend>pinocchio</depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>action_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>robot_server_lib</depend>
+
+  <build_depend>robot_server_interfaces</build_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
+

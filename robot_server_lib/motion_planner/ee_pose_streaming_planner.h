@@ -142,7 +142,7 @@ class EEPoseStreamingPlanner : public MotionPlannerBase
         JointPositionDof joint_cmd_ndof = measurement.q_desired_pre;
         switch (motion_group_)
         {
-        case MotionGroup::BothArm:
+        case MotionGroup::BothArms:
         {
             assert(14 == cmd.command.size());
             auto pose_cmd_primary =
