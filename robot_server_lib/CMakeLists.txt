@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_BUILD_TYPE Release)
+
 project(robot_server_lib)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic -Wno-psabi -Wno-reorder)
@@ -74,6 +76,19 @@ install(
 ament_export_targets(export_robot_server_lib HAS_LIBRARY_TARGET)
 ament_export_libraries(robot_server_lib)
 ament_export_include_directories(include)
+
+option(BUILD_TESTING "Build tests" OFF)
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  enable_testing()
+  file(GLOB TEST_SRCS test/*.cpp)
+  foreach(test_src ${TEST_SRCS})
+    get_filename_component(test_name ${test_src} NAME_WE)
+    ament_add_gtest(${test_name} ${test_src})
+    target_link_libraries(${test_name} robot_server_lib)
+  endforeach()
+endif()
 
 ament_package()
 

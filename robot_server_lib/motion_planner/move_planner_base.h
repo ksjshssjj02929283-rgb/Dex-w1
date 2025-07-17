@@ -98,7 +98,7 @@ class MotionPlannerBase
             joints_map = robot_model_.params_ptr->joints_secondary;
             break;
         }
-        case MotionGroup::BothArm:
+        case MotionGroup::BothArms:
         {
             joints_map.resize(robot_model_.params_ptr->joints_primary.size() +
                               robot_model_.params_ptr->joints_secondary.size());
@@ -150,7 +150,7 @@ class MotionPlannerBase
             joints_map = robot_model_.params_ptr->joints_secondary;
             break;
         }
-        case MotionGroup::BothArm:
+        case MotionGroup::BothArms:
         {
             joints_map.resize(robot_model_.params_ptr->joints_primary.size() +
                               robot_model_.params_ptr->joints_secondary.size());

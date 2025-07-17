@@ -139,7 +139,7 @@ class MoveLinePlanner : public MotionPlannerBase
 
         switch (move_request.motion_group)
         {
-        case MotionGroup::BothArm:
+        case MotionGroup::BothArms:
         {
             assert(14 == move_request.value.size());
             Eigen::VectorXd q_start;

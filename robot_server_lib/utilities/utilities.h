@@ -17,34 +17,10 @@ namespace robot_server_lib
 namespace utilities
 {
 
-inline bool GetRobotParamsFromConfig(const std::string &config_file_name, RobotParams &params)
+inline bool GetRobotParamsFromConfig(json config_json, RobotParams &params)
 {
     const auto package_share_path =
         ament_index_cpp::get_package_share_directory("robot_server_lib");
-    const auto robot_cfg_path =
-        std::filesystem::path(package_share_path) / "robot_models" / config_file_name;
-    if (!std::filesystem::exists(robot_cfg_path))
-    {
-        LOG_CRIT << "Robot configuration file not found: " << robot_cfg_path;
-        return false;
-    }
-    std::ifstream ifs(robot_cfg_path);
-    if (!ifs.is_open())
-    {
-        LOG_CRIT << "Can't open robot.cfg: " << robot_cfg_path;
-        return false;
-    }
-    json config_json;
-    try
-    {
-        ifs >> config_json;
-    }
-    catch (const std::exception &e)
-    {
-        LOG_CRIT << "JSON parse error in robot.cfg: " << e.what();
-        return false;
-    }
-    // 解析 robot_name
     if (!config_json.contains("robot_name"))
     {
         LOG_CRIT << "robot.cfg missing 'robot_name' field";

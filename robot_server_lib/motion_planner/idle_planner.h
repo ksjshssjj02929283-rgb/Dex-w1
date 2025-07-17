@@ -28,7 +28,7 @@ class IdlePlanner : public MotionPlannerBase
         idle_position_ = measurement.q_desired_pre;
 
         Eigen::VectorXd q_idle;
-        GetArmFromWholeBody(idle_position_, q_idle, MotionGroup::BothArm);
+        GetArmFromWholeBody(idle_position_, q_idle, MotionGroup::BothArms);
         // 获取起点
         PoseQuaternion pose_idle =
             kinematics_ptr_->GetFK(q_idle.head(ndof_primary_), robot_property_.tcp_frame);
