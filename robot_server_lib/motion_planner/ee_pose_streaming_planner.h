@@ -128,8 +128,6 @@ class EEPoseStreamingPlanner : public MotionPlannerBase
         runtime_.streaming_finished = false;
         runtime_.latest_cmd = std::nullopt;
         runtime_.previous_cmd = std::nullopt;
-        // Reset buffer
-        streaming_buffer_->AppendNewElement(StreamingCommand{});
 
         return true;
     }
