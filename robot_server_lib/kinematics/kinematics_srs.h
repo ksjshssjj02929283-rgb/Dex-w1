@@ -413,9 +413,9 @@ class SRSKinematics : public KinematicsBase
 
     int ndof_;
     SRSParameters params_;
-    int num_samples_ = 10;
-    double joint_threshold_ = M_PI / 180.0;
-    double small_range_ = M_PI / 18000.0 * num_samples_;  // 每0.01度一个采样点
+    int num_samples_ = 50;
+    double joint_threshold_ = M_PI / 180.0 * 10;
+    double small_range_ = M_PI / 18000.0 * num_samples_ * 2;  // 每0.02度一个采样点
     Eigen::VectorXd ik_weight_;
 };
 
