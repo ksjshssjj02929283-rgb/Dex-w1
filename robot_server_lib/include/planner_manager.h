@@ -16,9 +16,8 @@ struct RequestResponse
 class PlannerManager
 {
    public:
-    PlannerManager(
-        RobotModel robot_model, PlannerManagerBuffers buffer,
-        std::function<void(Int64, RequestType, RequestStatus, Status)> report_request_status);
+    PlannerManager(RobotModel robot_model, PlannerManagerBuffers buffer,
+                   std::function<void(Int64, RequestType, RequestStatus, Status)> report_request_status);
 
     ~PlannerManager();
 

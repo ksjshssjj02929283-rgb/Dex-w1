@@ -44,8 +44,7 @@ struct JointMeasurement
     std::string ToString() const
     {
         std::stringstream ss;
-        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose()
-           << ", Effort: " << effort.transpose()
+        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Effort: " << effort.transpose()
            << ", Previous Q Desired: " << q_desired_pre.transpose();
         return ss.str();
     }
@@ -61,8 +60,7 @@ struct JointRawMeasurement
     std::string ToString() const
     {
         std::stringstream ss;
-        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose()
-           << ", Effort: " << effort.transpose();
+        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Effort: " << effort.transpose();
         return ss.str();
     }
 };
@@ -77,8 +75,7 @@ struct JointCommand
     std::string ToString() const
     {
         std::stringstream ss;
-        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose()
-           << ", Acceleration: " << acceleration.transpose()
+        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Acceleration: " << acceleration.transpose()
            << ", Torque Feedforward: " << torque_feedforward.transpose();
         return ss.str();
     }
@@ -99,9 +96,8 @@ struct PoseQuaternion
     std::string ToString() const
     {
         std::stringstream ss;
-        ss << "Pose: (" << position.x() << ", " << position.y() << ", " << position.z() << ", "
-           << orientation.w() << ", " << orientation.x() << ", " << orientation.y() << ", "
-           << orientation.z() << ")";
+        ss << "Pose: (" << position.x() << ", " << position.y() << ", " << position.z() << ", " << orientation.w() << ", " << orientation.x() << ", "
+           << orientation.y() << ", " << orientation.z() << ")";
         return ss.str();
     }
 
@@ -171,11 +167,9 @@ struct PlannerManagerBuffers
     {
         joint_measurement = std::make_shared<SingleWriterLatestBuffer<JointMeasurement>>();
         ee_pose_measurement = std::make_shared<SingleWriterLatestBuffer<Eigen::VectorXd>>();
-        planner_manager_command =
-            std::make_shared<SingleWriterLatestBuffer<PlannerManagerCommand>>();
+        planner_manager_command = std::make_shared<SingleWriterLatestBuffer<PlannerManagerCommand>>();
         request_queue = std::make_shared<BoundedQueue<PlannerRequest>>(32);
-        streaming_command_latest_buffer =
-            std::make_shared<SingleWriterLatestBuffer<StreamingCommand>>();
+        streaming_command_latest_buffer = std::make_shared<SingleWriterLatestBuffer<StreamingCommand>>();
     }
 };
 

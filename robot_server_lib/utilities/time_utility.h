@@ -37,8 +37,7 @@ class TimePointSystem : public TimePointBase
     static TimePointSystem Now()
     {
         const auto now = std::chrono::system_clock::now();
-        return TimePointSystem{
-            std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count()};
+        return TimePointSystem{std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count()};
     }
     static const TimePointSystem &Invalid()
     {
@@ -69,10 +68,7 @@ class TimePointManual : public TimePointBase
         assert(invalid.is_invalid());
         return invalid;
     }
-    static void IncreaseTimer(std::int64_t increase_time_in_ns)
-    {
-        shared_time_in_ns.fetch_add(increase_time_in_ns, std::memory_order_relaxed);
-    }
+    static void IncreaseTimer(std::int64_t increase_time_in_ns) { shared_time_in_ns.fetch_add(increase_time_in_ns, std::memory_order_relaxed); }
 
    private:
     static std::atomic_int64_t shared_time_in_ns;

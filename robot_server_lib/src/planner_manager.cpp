@@ -3,9 +3,8 @@
 namespace robot_server_lib
 {
 
-PlannerManager::PlannerManager(
-    RobotModel robot_model, PlannerManagerBuffers buffer,
-    std::function<void(Int64, RequestType, RequestStatus, Status)> report_request_status)
+PlannerManager::PlannerManager(RobotModel robot_model, PlannerManagerBuffers buffer,
+                               std::function<void(Int64, RequestType, RequestStatus, Status)> report_request_status)
     : robot_model_(robot_model), manager_buffer_(buffer), ReportRequestStatus(report_request_status)
 {
     Initialize();
@@ -28,10 +27,8 @@ void PlannerManager::Initialize()
     idle_planner_ = std::make_shared<IdlePlanner>(robot_model_);
     move_joint_planner_ = std::make_shared<MoveJointPlanner>(robot_model_, manager_dt, false);
     move_line_planner_ = std::make_shared<MoveLinePlanner>(robot_model_, manager_dt, false);
-    joint_streaming_planner_ = std::make_shared<JointStreamingPlanner>(
-        robot_model_, manager_buffer_.streaming_command_latest_buffer, manager_dt);
-    ee_pose_streaming_planner_ = std::make_shared<EEPoseStreamingPlanner>(
-        robot_model_, manager_buffer_.streaming_command_latest_buffer, manager_dt);
+    joint_streaming_planner_ = std::make_shared<JointStreamingPlanner>(robot_model_, manager_buffer_.streaming_command_latest_buffer, manager_dt);
+    ee_pose_streaming_planner_ = std::make_shared<EEPoseStreamingPlanner>(robot_model_, manager_buffer_.streaming_command_latest_buffer, manager_dt);
 }
 
 void PlannerManager::LoopOnce()
@@ -46,8 +43,8 @@ void PlannerManager::LoopOnce()
     if (Status::Running == manager_state_)
     {
         LOG_DEBUG << "";
-        LOG_DEBUG << "Loop counter: " << runtime_data_.loop_counter << " Episode "
-                  << time_meta.episode_index << " current state: " << ToString(manager_state_);
+        LOG_DEBUG << "Loop counter: " << runtime_data_.loop_counter << " Episode " << time_meta.episode_index
+                  << " current state: " << ToString(manager_state_);
     }
 
     // 尝试获取最新的关节测量值 Try to peek the latest joint measurement
@@ -63,14 +60,10 @@ void PlannerManager::LoopOnce()
 
         Eigen::VectorXd joint_primary, joint_secondary;
         PoseQuaternion ee_pose_primary, ee_pose_secondary;
-        idle_planner_->GetArmFromWholeBody(measurement.position, joint_primary,
-                                           MotionGroup::Primary);
-        idle_planner_->GetArmFromWholeBody(measurement.position, joint_secondary,
-                                           MotionGroup::Secondary);
-        ee_pose_primary =
-            idle_planner_->Kinematics()->GetFK(joint_primary, robot_property_.tcp_frame);
-        ee_pose_secondary = idle_planner_->KinematicsSecondary()->GetFK(
-            joint_secondary, robot_property_.tcp_frame_secondary);
+        idle_planner_->GetArmFromWholeBody(measurement.position, joint_primary, MotionGroup::Primary);
+        idle_planner_->GetArmFromWholeBody(measurement.position, joint_secondary, MotionGroup::Secondary);
+        ee_pose_primary = idle_planner_->Kinematics()->GetFK(joint_primary, robot_property_.tcp_frame);
+        ee_pose_secondary = idle_planner_->KinematicsSecondary()->GetFK(joint_secondary, robot_property_.tcp_frame_secondary);
         Eigen::VectorXd ee_pose(14);
         ee_pose << ee_pose_primary.ToVectorXd(), ee_pose_secondary.ToVectorXd();
         manager_buffer_.ee_pose_measurement->AppendNewElement(ee_pose);
@@ -86,8 +79,7 @@ void PlannerManager::LoopOnce()
         }
         else
         {
-            LOG_INFO << "New request received with request ID: " << request.request_id
-                     << " Type: " << ToString(request.type);
+            LOG_INFO << "New request received with request ID: " << request.request_id << " Type: " << ToString(request.type);
         }
     }
 
@@ -131,16 +123,14 @@ void PlannerManager::LoopOnce()
         temp_planner_command.cmd = joint_cmd;
         manager_buffer_.planner_manager_command->AppendNewElement(temp_planner_command);
         if (Status::Running == manager_state_)
-            LOG_DEBUG << "Current Planner: " << typeid(*current_planner_).name()
-                      << " output: " << joint_cmd.ToString();
+            LOG_DEBUG << "Current Planner: " << typeid(*current_planner_).name() << " output: " << joint_cmd.ToString();
     }
 
     // 根据规划器状态切换状态 Switch state based on the planner status
     switch (status)
     {
     case ComputeCommandStatus::TaskFinished:
-        ReportRequestStatus(runtime_data_.latest_processing_request_id,
-                            runtime_data_.latest_processing_request_type, RequestStatus::Executed,
+        ReportRequestStatus(runtime_data_.latest_processing_request_id, runtime_data_.latest_processing_request_type, RequestStatus::Executed,
                             manager_state_);
         ChangeState(Status::Idle);
         return;
@@ -152,9 +142,8 @@ void PlannerManager::LoopOnce()
         }
         else
         {
-            ReportRequestStatus(runtime_data_.latest_processing_request_id,
-                                runtime_data_.latest_processing_request_type,
-                                RequestStatus::ErrorDrop, manager_state_);
+            ReportRequestStatus(runtime_data_.latest_processing_request_id, runtime_data_.latest_processing_request_type, RequestStatus::ErrorDrop,
+                                manager_state_);
             ChangeState(Status::Error);
         }
         return;
@@ -182,8 +171,7 @@ RequestResponse PlannerManager::OnRequestStateInit()
     {
         if (request.type != RequestType::Empty)
         {
-            ReportRequestStatus(request.request_id, request.type, RequestStatus::ErrorDrop,
-                                manager_state_);
+            ReportRequestStatus(request.request_id, request.type, RequestStatus::ErrorDrop, manager_state_);
             response.request_consumed = true;
         }
 
@@ -234,11 +222,9 @@ RequestResponse PlannerManager::OnRequestStateIdle()
         SetProperty(request);
         response.re_run = true;
         response.request_consumed = true;
-        runtime_data_.latest_processing_request_id =
-            request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
+        runtime_data_.latest_processing_request_id = request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
         runtime_data_.latest_processing_request_type = request.type;
-        ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed,
-                            manager_state_);
+        ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
         return response;
     }
     // 其他为运动命令类型 Other types are motion tcp_frame_secondary_requests
@@ -314,8 +300,7 @@ RequestResponse PlannerManager::OnRequestStateRunning()
     current_planner_->ResetForNewTrajectory(request, measurement, time_meta);
     response.re_run = false;
     response.request_consumed = true;
-    runtime_data_.latest_processing_request_id =
-        request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
+    runtime_data_.latest_processing_request_id = request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
     runtime_data_.latest_processing_request_type = request.type;
     ReportRequestStatus(request.request_id, request.type, RequestStatus::Queued, manager_state_);
 
@@ -337,8 +322,7 @@ RequestResponse PlannerManager::OnRequestStateError()
         //清除错误状态 Clear error state
         response.re_run = true;
         response.request_consumed = true;
-        ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed,
-                            manager_state_);
+        ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
         ChangeState(Status::Idle);
         return response;
     }
@@ -392,19 +376,16 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
     {
     case RequestType::TcpPrimary:
     {
-        assert(request.data.has_value() &&
-               std::holds_alternative<PoseQuaternion>(request.data.value()));
+        assert(request.data.has_value() && std::holds_alternative<PoseQuaternion>(request.data.value()));
         auto tcp_temp = std::get<PoseQuaternion>(request.data.value());
         robot_property_.tcp_frame = pinocchio::SE3(tcp_temp.orientation, tcp_temp.position);
         return;
     }
     case RequestType::TcpSecondary:
     {
-        assert(request.data.has_value() &&
-               std::holds_alternative<PoseQuaternion>(request.data.value()));
+        assert(request.data.has_value() && std::holds_alternative<PoseQuaternion>(request.data.value()));
         auto tcp_temp = std::get<PoseQuaternion>(request.data.value());
-        robot_property_.tcp_frame_secondary =
-            pinocchio::SE3(tcp_temp.orientation, tcp_temp.position);
+        robot_property_.tcp_frame_secondary = pinocchio::SE3(tcp_temp.orientation, tcp_temp.position);
         return;
     }
     case RequestType::SpeedRatio:

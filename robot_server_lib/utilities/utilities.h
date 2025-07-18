@@ -19,8 +19,7 @@ namespace utilities
 
 inline bool GetRobotParamsFromConfig(json config_json, RobotParams &params)
 {
-    const auto package_share_path =
-        ament_index_cpp::get_package_share_directory("robot_server_lib");
+    const auto package_share_path = ament_index_cpp::get_package_share_directory("robot_server_lib");
     if (!config_json.contains("robot_name"))
     {
         LOG_CRIT << "robot.cfg missing 'robot_name' field";
@@ -28,21 +27,20 @@ inline bool GetRobotParamsFromConfig(json config_json, RobotParams &params)
     }
     params.robot_name = config_json["robot_name"].get<std::string>();
     // 设置 urdf_path
-    params.urdf_path = std::filesystem::path(package_share_path) / "robot_models" /
-                       params.robot_name / (params.robot_name + ".urdf");
+    params.urdf_path = std::filesystem::path(package_share_path) / "robot_models" / params.robot_name / (params.robot_name + ".urdf");
 
     // 解析左臂和右臂模型
     if (config_json.contains("left_arm_name"))
     {
         params.left_arm_name = config_json["left_arm_name"].get<std::string>();
-        params.left_arm_urdf_path = std::filesystem::path(package_share_path) / "robot_models" /
-                                    params.left_arm_name / (params.left_arm_name + ".urdf");
+        params.left_arm_urdf_path =
+            std::filesystem::path(package_share_path) / "robot_models" / params.left_arm_name / (params.left_arm_name + ".urdf");
     }
     if (config_json.contains("right_arm_name"))
     {
         params.right_arm_name = config_json["right_arm_name"].get<std::string>();
-        params.right_arm_urdf_path = std::filesystem::path(package_share_path) / "robot_models" /
-                                     params.right_arm_name / (params.right_arm_name + ".urdf");
+        params.right_arm_urdf_path =
+            std::filesystem::path(package_share_path) / "robot_models" / params.right_arm_name / (params.right_arm_name + ".urdf");
     }
 
     // 解析关节映射

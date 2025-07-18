@@ -24,9 +24,7 @@ class MoveJointPlanner : public MotionPlannerBase
 
     ~MoveJointPlanner() override = default;
 
-    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
-                                        const TimeMetaInfo &time_meta,
-                                        JointCommand &joint_cmd) override
+    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) override
     {
         auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
         switch (status)
@@ -63,8 +61,7 @@ class MoveJointPlanner : public MotionPlannerBase
             if (wait_trajectory_upon_finish_)
             {
                 const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
-                return robot_stopped ? ComputeCommandStatus::TaskFinished
-                                     : ComputeCommandStatus::TaskOngoing;
+                return robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
             }
             else
             {
@@ -76,8 +73,7 @@ class MoveJointPlanner : public MotionPlannerBase
         }
     }
 
-    bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement,
-                               const TimeMetaInfo &time_meta) override
+    bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override
     {
         assert(request.data.has_value());
         assert(std::holds_alternative<MoveRequest>(request.data.value()));
@@ -99,8 +95,7 @@ class MoveJointPlanner : public MotionPlannerBase
         std::ostringstream oss;
         oss << target_q.transpose();
         LOG_INFO << "";
-        LOG_INFO << "Move Joint Request: id: " << request.request_id
-                 << " motion_group: " << ToString(move_request.motion_group)
+        LOG_INFO << "Move Joint Request: id: " << request.request_id << " motion_group: " << ToString(move_request.motion_group)
                  << " target_q: " << oss.str();
         // Reset data
 

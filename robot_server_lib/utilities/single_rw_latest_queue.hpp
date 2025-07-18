@@ -4,8 +4,7 @@ namespace robot_server_lib
 {
 
 template <typename T, std::uint64_t BufferCapacity>
-void SingleReadWriteLatestQueue<T, BufferCapacity>::tryWrapLatestAndReader(std::uint32_t &latest,
-                                                                           std::uint32_t &reader)
+void SingleReadWriteLatestQueue<T, BufferCapacity>::tryWrapLatestAndReader(std::uint32_t &latest, std::uint32_t &reader)
 {
     static constexpr std::uint32_t kWrappingRatio = 107;
     static constexpr std::uint32_t kWrappingNumber = kWrappingRatio * BufferCapacity;
@@ -54,9 +53,7 @@ bool SingleReadWriteLatestQueue<T, BufferCapacity>::AppendNewElement(const T &el
 
     // Update the index
     std::uint64_t new_latest_and_reader = encodeTwoUint32AsUint64(wrap_latest, wrap_reader);
-    while (!latest_and_reader_.compare_exchange_weak(latest_and_reader, new_latest_and_reader,
-                                                     std::memory_order_acq_rel,
-                                                     std::memory_order_relaxed))
+    while (!latest_and_reader_.compare_exchange_weak(latest_and_reader, new_latest_and_reader, std::memory_order_acq_rel, std::memory_order_relaxed))
     {
         // Update the reader
         decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
@@ -90,9 +87,8 @@ bool SingleReadWriteLatestQueue<T, BufferCapacity>::PeekLatest(T *element_output
         decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
         assert(reader == kInvalidReader);
         latest_and_reader_reserved = encodeTwoUint32AsUint64(latest, latest);
-    } while (!latest_and_reader_.compare_exchange_weak(
-        latest_and_reader, latest_and_reader_reserved, std::memory_order_acq_rel,
-        std::memory_order_relaxed));
+    } while (!latest_and_reader_.compare_exchange_weak(latest_and_reader, latest_and_reader_reserved, std::memory_order_acq_rel,
+                                                       std::memory_order_relaxed));
 
     // Check the data validity and read it
     const std::uint32_t latest_place = latest % BufferCapacity;
@@ -110,8 +106,7 @@ bool SingleReadWriteLatestQueue<T, BufferCapacity>::PeekLatest(T *element_output
     // Now release the lock via updating the reader to invalid
     // Also no wrapping here
     std::uint64_t latest_and_reader_released = encodeTwoUint32AsUint64(latest, kInvalidReader);
-    while (!latest_and_reader_.compare_exchange_weak(latest_and_reader, latest_and_reader_released,
-                                                     std::memory_order_acq_rel,
+    while (!latest_and_reader_.compare_exchange_weak(latest_and_reader, latest_and_reader_released, std::memory_order_acq_rel,
                                                      std::memory_order_relaxed))
     {
         decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
@@ -135,8 +130,7 @@ bool SingleWriterLatestBuffer<T, ConcurrentReadersHint>::PeekLatest(T *out)
     {
         bool reload_active = false;
         std::int32_t current_placement = current_active % kArrayCapacity;
-        std::uint32_t version_and_ref =
-            version_refcount_[current_placement].load(std::memory_order_acquire);
+        std::uint32_t version_and_ref = version_refcount_[current_placement].load(std::memory_order_acquire);
         while (true)
         {  // Inner loop to increase the reference count
             const std::int64_t version_from_slot = (version_and_ref >> 16) & 0xFFFF;
@@ -149,8 +143,8 @@ bool SingleWriterLatestBuffer<T, ConcurrentReadersHint>::PeekLatest(T *out)
 
             // Try update
             const auto increased_refcount = version_and_ref + 1;
-            const bool reserved = version_refcount_[current_placement].compare_exchange_weak(
-                version_and_ref, increased_refcount, std::memory_order_acq_rel);
+            const bool reserved =
+                version_refcount_[current_placement].compare_exchange_weak(version_and_ref, increased_refcount, std::memory_order_acq_rel);
             if (reserved)
                 break;
         }
@@ -192,8 +186,7 @@ bool SingleWriterLatestBuffer<T, ConcurrentReadersHint>::AppendNewElement(const 
         bool reserved = false;
         if ((current_ver_ref & 0xFFFF) == 0)
         {
-            reserved = version_refcount_[next_placement].compare_exchange_strong(
-                current_ver_ref, kWriter, std::memory_order_acq_rel);
+            reserved = version_refcount_[next_placement].compare_exchange_strong(current_ver_ref, kWriter, std::memory_order_acq_rel);
         }
 
         if (reserved)

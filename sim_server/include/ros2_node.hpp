@@ -21,35 +21,22 @@ class Ros2Node : public rclcpp::Node
     void InitSimulation();
     void InitRobotServer();
     void OnStreamingCommand(const robot_server_interfaces::msg::StreamingCommand::SharedPtr msg);
-    void SetPropertyOnRequest(
-        const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request>,
-        std::shared_ptr<robot_server_interfaces::srv::SetProperty::Response>);
-    void HandleAccepted(
-        const std::shared_ptr<
-            rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>);
-    rclcpp_action::GoalResponse HandleGoal(
-        const rclcpp_action::GoalUUID &,
-        std::shared_ptr<const robot_server_interfaces::action::MoveRobot::Goal>);
-    rclcpp_action::CancelResponse HandleCancel(
-        const std::shared_ptr<
-            rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>);
+    void SetPropertyOnRequest(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request>,
+                              std::shared_ptr<robot_server_interfaces::srv::SetProperty::Response>);
+    void HandleAccepted(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>);
+    rclcpp_action::GoalResponse HandleGoal(const rclcpp_action::GoalUUID &, std::shared_ptr<const robot_server_interfaces::action::MoveRobot::Goal>);
+    rclcpp_action::CancelResponse HandleCancel(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>);
     rclcpp::TimerBase::SharedPtr publish_timer_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_server_state_publisher_;
-    rclcpp::Subscription<robot_server_interfaces::msg::StreamingCommand>::SharedPtr
-        streaming_command_subscriber_;
+    rclcpp::Subscription<robot_server_interfaces::msg::StreamingCommand>::SharedPtr streaming_command_subscriber_;
     rclcpp::Service<robot_server_interfaces::srv::SetProperty>::SharedPtr set_property_srv_;
-    rclcpp_action::Server<robot_server_interfaces::action::MoveRobot>::SharedPtr
-        move_robot_action_server_;
+    rclcpp_action::Server<robot_server_interfaces::action::MoveRobot>::SharedPtr move_robot_action_server_;
 
     robot_server_lib::Int64 MakeNewRequestID(robot_server_lib::RequestType type);
-    robot_server_lib::PlannerRequest ParseSetPropertyRequest(
-        const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request);
+    robot_server_lib::PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request);
     robot_server_lib::PlannerRequest ParseMoveRequest(
-        const std::shared_ptr<
-            rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>
-            action_handle);
-    robot_server_lib::StreamingCommand ParseStreamingCommand(
-        const std::shared_ptr<robot_server_interfaces::msg::StreamingCommand> msg);
+        const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> action_handle);
+    robot_server_lib::StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interfaces::msg::StreamingCommand> msg);
 
     std::thread manager_thread_;
     std::thread simulation_thread_;
@@ -59,8 +46,7 @@ class Ros2Node : public rclcpp::Node
     robot_server_lib::TorqueControlBuffer robot_buffers_;
     robot_server_lib::Status manager_state_{robot_server_lib::Status::Init};
     robot_server_lib::Int64 latest_received_id_{-1};
-    robot_server_lib::BoundedQueue<std::shared_ptr<
-        rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>>
+    robot_server_lib::BoundedQueue<std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>>
         request_handle_queue_{32};
 
     struct

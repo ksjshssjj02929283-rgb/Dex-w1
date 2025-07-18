@@ -26,8 +26,7 @@ TEST(SRSKinematicsTest, Kinematics)
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::micro> duration = end_time - start_time;
     std::cout << "Left: Inverse Kinematics q_out: " << q_in_and_out.transpose() << std::endl;
-    std::cout << "Left: Inverse Kinematics duration: " << duration.count() / 1000.0 << " ms"
-              << std::endl;
+    std::cout << "Left: Inverse Kinematics duration: " << duration.count() / 1000.0 << " ms" << std::endl;
     EXPECT_TRUE(success) << "Inverse Kinematics failed!";
     for (int i = 0; i < q_in_left.size(); ++i)
     {

@@ -8,9 +8,7 @@ class IdleControllerInvDynamic : public TorqueControllerBase
 {
    public:
     using TorqueControllerBase::TorqueControllerBase;
-    bool ComputeCommand(const JointRawMeasurement &raw_measurement,
-                        const PlannerManagerCommand &input_cmd,
-                        TorqueCtrlCommand &output_cmd) override
+    bool ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd, TorqueCtrlCommand &output_cmd) override
     {
         VectorDof q = raw_measurement.position;
         VectorDof dq = raw_measurement.velocity;
@@ -37,9 +35,7 @@ class DecelerationControllerInvDynamic : public TorqueControllerBase
 {
    public:
     using TorqueControllerBase::TorqueControllerBase;
-    bool ComputeCommand(const JointRawMeasurement &raw_measurement,
-                        const PlannerManagerCommand &input_cmd,
-                        TorqueCtrlCommand &output_cmd) override
+    bool ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd, TorqueCtrlCommand &output_cmd) override
     {
         VectorDof q = raw_measurement.position;
         VectorDof dq = raw_measurement.velocity;
@@ -59,9 +55,7 @@ class OperatingControllerInvDynamic : public TorqueControllerBase
 {
    public:
     using TorqueControllerBase::TorqueControllerBase;
-    bool ComputeCommand(const JointRawMeasurement &raw_measurement,
-                        const PlannerManagerCommand &input_cmd,
-                        TorqueCtrlCommand &output_cmd) override
+    bool ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd, TorqueCtrlCommand &output_cmd) override
     {
         VectorDof feedback_q = raw_measurement.position;
         VectorDof feedback_dq = raw_measurement.velocity;
@@ -70,11 +64,9 @@ class OperatingControllerInvDynamic : public TorqueControllerBase
         VectorDof cmd_ddq = input_cmd.cmd.acceleration;
 
         VectorDof ddq_desired{};
-        ddq_desired = cmd_ddq + parameters_.K_p * (cmd_q - feedback_q) +
-                      parameters_.K_v * (cmd_dq - feedback_dq);
+        ddq_desired = cmd_ddq + parameters_.K_p * (cmd_q - feedback_q) + parameters_.K_v * (cmd_dq - feedback_dq);
         // ddq_desired = cmd_ddq;
-        VectorDof tau =
-            pinocchio::rnea(*robot_model_.model_ptr, robot_data_, cmd_q, cmd_dq, ddq_desired);
+        VectorDof tau = pinocchio::rnea(*robot_model_.model_ptr, robot_data_, cmd_q, cmd_dq, ddq_desired);
 
         output_cmd.torque = tau + input_cmd.cmd.torque_feedforward;
         output_cmd.q_desired = cmd_q;

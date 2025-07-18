@@ -11,9 +11,7 @@ class IdlePlanner : public MotionPlannerBase
     IdlePlanner(RobotModel robot_model) : MotionPlannerBase(robot_model) {}
     ~IdlePlanner() override = default;
 
-    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
-                                        const TimeMetaInfo &time_meta,
-                                        JointCommand &joint_cmd) override
+    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) override
     {
         joint_cmd.position = idle_position_;
         joint_cmd.velocity.setZero();
@@ -22,18 +20,15 @@ class IdlePlanner : public MotionPlannerBase
         return ComputeCommandStatus::TaskOngoing;
     }
 
-    bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement,
-                               const TimeMetaInfo &time_meta) override
+    bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override
     {
         idle_position_ = measurement.q_desired_pre;
 
         Eigen::VectorXd q_idle;
         GetArmFromWholeBody(idle_position_, q_idle, MotionGroup::BothArms);
         // 获取起点
-        PoseQuaternion pose_idle =
-            kinematics_ptr_->GetFK(q_idle.head(ndof_primary_), robot_property_.tcp_frame);
-        PoseQuaternion pose_idle_secondary = kinematics_secondary_ptr_->GetFK(
-            q_idle.tail(ndof_secondary_), robot_property_.tcp_frame_secondary);
+        PoseQuaternion pose_idle = kinematics_ptr_->GetFK(q_idle.head(ndof_primary_), robot_property_.tcp_frame);
+        PoseQuaternion pose_idle_secondary = kinematics_secondary_ptr_->GetFK(q_idle.tail(ndof_secondary_), robot_property_.tcp_frame_secondary);
 
         std::stringstream ss;
         LOG_INFO << "";

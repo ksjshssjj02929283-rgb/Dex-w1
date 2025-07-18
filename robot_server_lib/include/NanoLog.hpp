@@ -86,16 +86,14 @@ class NanoLogLine
     }
 
     template <typename Arg>
-    typename std::enable_if<std::is_same<Arg, char const *>::value, NanoLogLine &>::type operator<<(
-        Arg const &arg)
+    typename std::enable_if<std::is_same<Arg, char const *>::value, NanoLogLine &>::type operator<<(Arg const &arg)
     {
         encode(arg);
         return *this;
     }
 
     template <typename Arg>
-    typename std::enable_if<std::is_same<Arg, char *>::value, NanoLogLine &>::type operator<<(
-        Arg const &arg)
+    typename std::enable_if<std::is_same<Arg, char *>::value, NanoLogLine &>::type operator<<(Arg const &arg)
     {
         encode(arg);
         return *this;
@@ -127,8 +125,7 @@ class NanoLogLine
     size_t m_bytes_used;
     size_t m_buffer_size;
     std::unique_ptr<char[]> m_heap_buffer;
-    char m_stack_buffer[256 - 2 * sizeof(size_t) - sizeof(decltype(m_heap_buffer)) -
-                        8 /* Reserved */];
+    char m_stack_buffer[256 - 2 * sizeof(size_t) - sizeof(decltype(m_heap_buffer)) - 8 /* Reserved */];
 };
 
 struct NanoLog
@@ -154,9 +151,7 @@ bool is_logged(LogLevel level);
  */
 struct NonGuaranteedLogger
 {
-    NonGuaranteedLogger(uint32_t ring_buffer_size_mb_) : ring_buffer_size_mb(ring_buffer_size_mb_)
-    {
-    }
+    NonGuaranteedLogger(uint32_t ring_buffer_size_mb_) : ring_buffer_size_mb(ring_buffer_size_mb_) {}
     uint32_t ring_buffer_size_mb;
 };
 
@@ -177,15 +172,12 @@ struct GuaranteedLogger
  * etc.
  * log_file_roll_size_mb - mega bytes after which we roll to next log file.
  */
-void initialize(GuaranteedLogger gl, std::string const &log_directory,
-                std::string const &log_file_name, uint32_t log_file_roll_size_mb);
-void initialize(NonGuaranteedLogger ngl, std::string const &log_directory,
-                std::string const &log_file_name, uint32_t log_file_roll_size_mb);
+void initialize(GuaranteedLogger gl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb);
+void initialize(NonGuaranteedLogger ngl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb);
 
 }  // namespace nanolog
 
-#define NANO_LOG(LEVEL) \
-    nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__)
+#define NANO_LOG(LEVEL) nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__)
 #define LOG_DEBUG nanolog::is_logged(nanolog::LogLevel::DEBUG) && NANO_LOG(nanolog::LogLevel::DEBUG)
 #define LOG_INFO nanolog::is_logged(nanolog::LogLevel::INFO) && NANO_LOG(nanolog::LogLevel::INFO)
 #define LOG_WARN nanolog::is_logged(nanolog::LogLevel::WARN) && NANO_LOG(nanolog::LogLevel::WARN)
