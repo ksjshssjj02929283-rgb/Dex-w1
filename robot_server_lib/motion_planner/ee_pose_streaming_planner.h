@@ -8,14 +8,8 @@ namespace robot_server_lib
 class EEPoseStreamingPlanner : public MotionPlannerBase
 {
    public:
-    EEPoseStreamingPlanner(
-        RobotModel robot_model,
-        std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer,
-        double controller_dt)
-        : MotionPlannerBase(robot_model),
-          streaming_buffer_(streaming_buffer),
-          controller_dt_(controller_dt),
-          ruckig_otg_(controller_dt)
+    EEPoseStreamingPlanner(RobotModel robot_model, std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer, double controller_dt)
+        : MotionPlannerBase(robot_model), streaming_buffer_(streaming_buffer), controller_dt_(controller_dt), ruckig_otg_(controller_dt)
     {
         for (auto i = 0; i < ndof_robot; i++)
         {
@@ -27,9 +21,7 @@ class EEPoseStreamingPlanner : public MotionPlannerBase
 
     ~EEPoseStreamingPlanner() override = default;
 
-    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
-                                        const TimeMetaInfo &time_meta,
-                                        JointCommand &output_joint_cmd) override
+    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &output_joint_cmd) override
     {
         if (!runtime_.streaming_finished)
         {
@@ -97,8 +89,7 @@ class EEPoseStreamingPlanner : public MotionPlannerBase
                 output_joint_cmd.torque_feedforward[i] = 0.0;
             }
 
-            return runtime_.streaming_finished ? ComputeCommandStatus::TaskFinished
-                                               : ComputeCommandStatus::TaskOngoing;
+            return runtime_.streaming_finished ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
         }
         if (status == ruckig::Working)
         {
@@ -116,8 +107,7 @@ class EEPoseStreamingPlanner : public MotionPlannerBase
         return ComputeCommandStatus::TaskOngoing;
     }
 
-    bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement,
-                               const TimeMetaInfo &time_meta) override
+    bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override
     {
         assert(request.data.has_value());
         assert(std::holds_alternative<MoveRequest>(request.data.value()));
@@ -143,18 +133,15 @@ class EEPoseStreamingPlanner : public MotionPlannerBase
         case MotionGroup::BothArms:
         {
             assert(14 == cmd.command.size());
-            auto pose_cmd_primary =
-                utilities::VectorXdToPoseQuaternion(Eigen::VectorXd(cmd.command.head(7)));
-            auto pose_cmd_secondary =
-                utilities::VectorXdToPoseQuaternion(Eigen::VectorXd(cmd.command.tail(7)));
+            auto pose_cmd_primary = utilities::VectorXdToPoseQuaternion(Eigen::VectorXd(cmd.command.head(7)));
+            auto pose_cmd_secondary = utilities::VectorXdToPoseQuaternion(Eigen::VectorXd(cmd.command.tail(7)));
 
             assert(joint_cmd.size() == ndof_primary_ + ndof_secondary_);
             Eigen::VectorXd q_primary = joint_cmd.head(ndof_primary_);
             Eigen::VectorXd q_secondary = joint_cmd.tail(ndof_secondary_);
 
             if (!kinematics_ptr_->GetIK(pose_cmd_primary, q_primary, robot_property_.tcp_frame) ||
-                !kinematics_secondary_ptr_->GetIK(pose_cmd_secondary, q_secondary,
-                                                  robot_property_.tcp_frame_secondary))
+                !kinematics_secondary_ptr_->GetIK(pose_cmd_secondary, q_secondary, robot_property_.tcp_frame_secondary))
             {
                 LOG_CRIT << "Inverse Kinematics failed";
                 return false;
@@ -185,8 +172,7 @@ class EEPoseStreamingPlanner : public MotionPlannerBase
             auto pose_cmd = utilities::VectorXdToPoseQuaternion(cmd.command);
 
             assert(joint_cmd.size() == ndof_secondary_);
-            if (!kinematics_secondary_ptr_->GetIK(pose_cmd, joint_cmd,
-                                                  robot_property_.tcp_frame_secondary))
+            if (!kinematics_secondary_ptr_->GetIK(pose_cmd, joint_cmd, robot_property_.tcp_frame_secondary))
             {
                 LOG_CRIT << "Inverse Kinematics failed";
                 return false;

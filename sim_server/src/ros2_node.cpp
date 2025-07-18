@@ -14,31 +14,23 @@ void Ros2Node::InitRobotServer()
 {
     std::filesystem::create_directories("log/");
     nanolog::initialize(nanolog::GuaranteedLogger(), "log/", "robot_server", 10);
-    nanolog::set_log_level(
-        nanolog::LogLevel::DEBUG);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
+    nanolog::set_log_level(nanolog::LogLevel::DEBUG);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
 
     // 创建 /feedback/robot_server_state 发布器
-    robot_server_state_publisher_ =
-        this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state", 10);
+    robot_server_state_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state", 10);
 
     // 创建 /control/streaming_command 订阅器
-    streaming_command_subscriber_ =
-        this->create_subscription<robot_server_interfaces::msg::StreamingCommand>(
-            "/control/streaming_command", 10,
-            std::bind(&Ros2Node::OnStreamingCommand, this, std::placeholders::_1));
+    streaming_command_subscriber_ = this->create_subscription<robot_server_interfaces::msg::StreamingCommand>(
+        "/control/streaming_command", 10, std::bind(&Ros2Node::OnStreamingCommand, this, std::placeholders::_1));
 
     // 创建 /control/set_property 服务
     set_property_srv_ = this->create_service<robot_server_interfaces::srv::SetProperty>(
-        "/control/set_property", std::bind(&Ros2Node::SetPropertyOnRequest, this,
-                                           std::placeholders::_1, std::placeholders::_2));
+        "/control/set_property", std::bind(&Ros2Node::SetPropertyOnRequest, this, std::placeholders::_1, std::placeholders::_2));
 
     // 创建 /control/move_robot action server
-    move_robot_action_server_ =
-        rclcpp_action::create_server<robot_server_interfaces::action::MoveRobot>(
-            this, "/control/move_robot",
-            std::bind(&Ros2Node::HandleGoal, this, std::placeholders::_1, std::placeholders::_2),
-            std::bind(&Ros2Node::HandleCancel, this, std::placeholders::_1),
-            std::bind(&Ros2Node::HandleAccepted, this, std::placeholders::_1));
+    move_robot_action_server_ = rclcpp_action::create_server<robot_server_interfaces::action::MoveRobot>(
+        this, "/control/move_robot", std::bind(&Ros2Node::HandleGoal, this, std::placeholders::_1, std::placeholders::_2),
+        std::bind(&Ros2Node::HandleCancel, this, std::placeholders::_1), std::bind(&Ros2Node::HandleAccepted, this, std::placeholders::_1));
 
     const auto package_share_path = ament_index_cpp::get_package_share_directory("sim_server");
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot.cfg";
@@ -63,21 +55,6 @@ void Ros2Node::InitRobotServer()
     }
     pinocchio::Model model;
     pinocchio::urdf::buildModel(params.urdf_path, model);
-    std::vector<std::string> joints_to_lock = {
-        "L_indexMCP",  "L_indexPIP", "L_littleMCP", "L_littlePIP", "L_middleMCP",
-        "L_middlePIP", "L_ringMCP",  "L_ringPIP",   "L_thumbMCP1", "L_thumbMCP2",
-        "R_indexMCP",  "R_indexPIP", "R_littleMCP", "R_littlePIP", "R_middleMCP",
-        "R_middlePIP", "R_ringMCP",  "R_ringPIP",   "R_thumbMCP1", "R_thumbMCP2"};
-
-    std::vector<pinocchio::JointIndex> locked_joints;
-    for (const auto& name : joints_to_lock)
-    {
-        locked_joints.push_back(model.getJointId(name));
-    }
-    Eigen::VectorXd reference_configuration = Eigen::VectorXd::Zero(model.nq);
-
-    pinocchio::Model reduced_model =
-        pinocchio::buildReducedModel(model, locked_joints, reference_configuration);
 
     // 建立左臂和右臂模型 Create left and right arm models.
     pinocchio::Model left_arm_model;
@@ -85,7 +62,7 @@ void Ros2Node::InitRobotServer()
     pinocchio::urdf::buildModel(params.left_arm_urdf_path, left_arm_model);
     pinocchio::urdf::buildModel(params.right_arm_urdf_path, right_arm_model);
 
-    robot_model_.model_ptr = std::make_shared<pinocchio::Model>(reduced_model);
+    robot_model_.model_ptr = std::make_shared<pinocchio::Model>(model);
     robot_model_.left_arm_model_ptr = std::make_shared<pinocchio::Model>(left_arm_model);
     robot_model_.right_arm_model_ptr = std::make_shared<pinocchio::Model>(right_arm_model);
     robot_model_.params_ptr = std::make_shared<RobotParams>(params);
@@ -97,23 +74,19 @@ void Ros2Node::InitRobotServer()
     manager_thread_ = std::thread(
         [this]() -> void
         {
-            auto report_request_status = [this](Int64 request_id, RequestType request_type,
-                                                RequestStatus request_status, Status manager_state)
+            auto report_request_status = [this](Int64 request_id, RequestType request_type, RequestStatus request_status, Status manager_state)
             {
                 manager_state_ = manager_state;
 
                 // Log the manager and request status
                 if (request_id < 0)
                 {
-                    RCLCPP_INFO(this->get_logger(), "manager state changed to %s",
-                                ToString(manager_state_));
+                    RCLCPP_INFO(this->get_logger(), "manager state changed to %s", ToString(manager_state_));
                     LOG_INFO << "Manager state changed to: " << ToString(manager_state_);
                     return;
                 }
-                RCLCPP_INFO(this->get_logger(), "Request id = %ld, %s %s", request_id,
-                            ToString(request_type), ToString(request_status));
-                LOG_INFO << "Request id = " << request_id << " " << ToString(request_status)
-                         << ", type = " << ToString(request_type);
+                RCLCPP_INFO(this->get_logger(), "Request id = %ld, %s %s", request_id, ToString(request_type), ToString(request_status));
+                LOG_INFO << "Request id = " << request_id << " " << ToString(request_status) << ", type = " << ToString(request_type);
                 // Update the latest report id based on the request status
                 switch (request_status)
                 {
@@ -124,13 +97,10 @@ void Ros2Node::InitRobotServer()
                     utilities::SetMax(latest_report_id_.finished, request_id);
                     if (request_type >= RequestType::MoveJoint)
                     {
-                        std::shared_ptr<rclcpp_action::ServerGoalHandle<
-                            robot_server_interfaces::action::MoveRobot>>
-                            handle_temp;
+                        std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> handle_temp;
                         if (request_handle_queue_.DeQueue(&handle_temp))
                         {
-                            auto result_msg = std::make_shared<
-                                robot_server_interfaces::action::MoveRobot::Result>();
+                            auto result_msg = std::make_shared<robot_server_interfaces::action::MoveRobot::Result>();
                             result_msg->request_id = request_id;
                             result_msg->success = true;
                             handle_temp->succeed(result_msg);
@@ -141,13 +111,10 @@ void Ros2Node::InitRobotServer()
                     utilities::SetMax(latest_report_id_.error_drop, request_id);
                     if (request_type >= RequestType::MoveJoint)
                     {
-                        std::shared_ptr<rclcpp_action::ServerGoalHandle<
-                            robot_server_interfaces::action::MoveRobot>>
-                            handle_temp;
+                        std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> handle_temp;
                         if (request_handle_queue_.DeQueue(&handle_temp))
                         {
-                            auto result_msg = std::make_shared<
-                                robot_server_interfaces::action::MoveRobot::Result>();
+                            auto result_msg = std::make_shared<robot_server_interfaces::action::MoveRobot::Result>();
                             result_msg->request_id = request_id;
                             result_msg->success = false;
                             handle_temp->succeed(result_msg);
@@ -159,8 +126,7 @@ void Ros2Node::InitRobotServer()
                 }
             };
 
-            PlannerManager planner_manager(this->robot_model_, this->manager_buffers_,
-                                           report_request_status);
+            PlannerManager planner_manager(this->robot_model_, this->manager_buffers_, report_request_status);
 
             while (rclcpp::ok())
             {
@@ -169,58 +135,53 @@ void Ros2Node::InitRobotServer()
                 planner_manager.LoopOnce();
 
                 auto end_time = std::chrono::high_resolution_clock::now();
-                auto elapsed_time =
-                    std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time)
-                        .count();
+                auto elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
 
                 if (elapsed_time < manager_dt_micro)
                 {
-                    std::this_thread::sleep_for(
-                        std::chrono::microseconds(manager_dt_micro - elapsed_time));
+                    std::this_thread::sleep_for(std::chrono::microseconds(manager_dt_micro - elapsed_time));
                 }
             }
         });
 
-    publish_timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(100),  // 10Hz
-        [this]()
-        {
-            std_msgs::msg::String robot_server_state_msg;
-            JointMeasurement measurement;
-            std::ostringstream joint_position_ss;
-            Eigen::VectorXd ee_pose;
-            std::ostringstream ee_pose_ss;
-            if (manager_buffers_.joint_measurement->PeekLatest(&measurement))
-            {
-                joint_position_ss << "[";
-                for (int i = 0; i < measurement.position.size(); ++i)
-                {
-                    joint_position_ss << measurement.position[i];
-                    if (i != measurement.position.size() - 1)
-                        joint_position_ss << ",";
-                }
-                joint_position_ss << "]";
-            }
-            if (manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
-            {
-                ee_pose_ss << "[";
-                for (int i = 0; i < ee_pose.size(); ++i)
-                {
-                    ee_pose_ss << ee_pose[i];
-                    if (i != ee_pose.size() - 1)
-                        ee_pose_ss << ",";
-                }
-                ee_pose_ss << "]";
-            }
-            robot_server_state_msg.data =
-                std::string("{\"status\":\"") + ToString(manager_state_) + "\"" +
-                ",\"latest_queued_id\":" + std::to_string(latest_report_id_.queued) +
-                ",\"latest_finished_id\":" + std::to_string(latest_report_id_.finished) +
-                ",\"latest_errordrop_id\":" + std::to_string(latest_report_id_.error_drop) +
-                ",\"joint_position\":" + joint_position_ss.str() +
-                ",\"ee_pose\":" + ee_pose_ss.str() + "}";
-            robot_server_state_publisher_->publish(robot_server_state_msg);
-        });
+    publish_timer_ = this->create_wall_timer(std::chrono::milliseconds(100),  // 10Hz
+                                             [this]()
+                                             {
+                                                 std_msgs::msg::String robot_server_state_msg;
+                                                 JointMeasurement measurement;
+                                                 std::ostringstream joint_position_ss;
+                                                 Eigen::VectorXd ee_pose;
+                                                 std::ostringstream ee_pose_ss;
+                                                 if (manager_buffers_.joint_measurement->PeekLatest(&measurement))
+                                                 {
+                                                     joint_position_ss << "[";
+                                                     for (int i = 0; i < measurement.position.size(); ++i)
+                                                     {
+                                                         joint_position_ss << measurement.position[i];
+                                                         if (i != measurement.position.size() - 1)
+                                                             joint_position_ss << ",";
+                                                     }
+                                                     joint_position_ss << "]";
+                                                 }
+                                                 if (manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
+                                                 {
+                                                     ee_pose_ss << "[";
+                                                     for (int i = 0; i < ee_pose.size(); ++i)
+                                                     {
+                                                         ee_pose_ss << ee_pose[i];
+                                                         if (i != ee_pose.size() - 1)
+                                                             ee_pose_ss << ",";
+                                                     }
+                                                     ee_pose_ss << "]";
+                                                 }
+                                                 robot_server_state_msg.data =
+                                                     std::string("{\"status\":\"") + ToString(manager_state_) + "\"" +
+                                                     ",\"latest_queued_id\":" + std::to_string(latest_report_id_.queued) +
+                                                     ",\"latest_finished_id\":" + std::to_string(latest_report_id_.finished) +
+                                                     ",\"latest_errordrop_id\":" + std::to_string(latest_report_id_.error_drop) +
+                                                     ",\"joint_position\":" + joint_position_ss.str() + ",\"ee_pose\":" + ee_pose_ss.str() + "}";
+                                                 robot_server_state_publisher_->publish(robot_server_state_msg);
+                                             });
 }
 
 void Ros2Node::InitSimulation()
@@ -246,8 +207,7 @@ void Ros2Node::InitSimulation()
 
             for (int i = 0; i < 25000 && rclcpp::ok(); ++i)
             {
-                if (robot_buffers_.torque_command_vector &&
-                    robot_buffers_.torque_command_vector->PeekLatest(&temp_torque))
+                if (robot_buffers_.torque_command_vector && robot_buffers_.torque_command_vector->PeekLatest(&temp_torque))
                 {
                     torque_cmd = temp_torque;
                 }
@@ -275,8 +235,7 @@ void Ros2Node::InitSimulation()
     torque_control_thread_ = std::thread(
         [this]() -> void
         {
-            TorqueControllerManager torque_controller_manager(
-                this->robot_model_, this->manager_buffers_, this->robot_buffers_);
+            TorqueControllerManager torque_controller_manager(this->robot_model_, this->manager_buffers_, this->robot_buffers_);
             while (rclcpp::ok())
             {
                 torque_controller_manager.LoopOnce();
@@ -293,8 +252,7 @@ void Ros2Node::InitSimulation()
             {
                 if (!manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
                 {
-                    q_cmd.cmd.position << 0.5, -1.0, 0.5, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5,
-                        -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5, 0.0, 0.0;
+                    q_cmd.cmd.position << 0.5, -1.0, 0.5, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5, 0.0, 0.0;
                     q_cmd.cmd.velocity.setZero();
                     cache.q_desired_pre = q_cmd.cmd.position;
                 }
@@ -310,17 +268,13 @@ void Ros2Node::InitSimulation()
 #endif
 }
 
-rclcpp_action::GoalResponse Ros2Node::HandleGoal(
-    const rclcpp_action::GoalUUID&,
-    std::shared_ptr<const robot_server_interfaces::action::MoveRobot::Goal> goal)
+rclcpp_action::GoalResponse Ros2Node::HandleGoal(const rclcpp_action::GoalUUID&,
+                                                 std::shared_ptr<const robot_server_interfaces::action::MoveRobot::Goal> goal)
 {
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
-void Ros2Node::HandleAccepted(
-    const std::shared_ptr<
-        rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>
-        request_handle)
+void Ros2Node::HandleAccepted(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> request_handle)
 {
     PlannerRequest planner_request = ParseMoveRequest(request_handle);
     auto request_id = MakeNewRequestID(planner_request.type);
@@ -332,8 +286,7 @@ void Ros2Node::HandleAccepted(
 
     if (request_id < 0)
     {
-        RCLCPP_WARN(this->get_logger(),
-                    "Still existed previous move request, failed to queue start streaming request");
+        RCLCPP_WARN(this->get_logger(), "Still existed previous move request, failed to queue start streaming request");
         LOG_CRIT << "Still existed previous move request, failed to queue start streaming request";
         return;
     }
@@ -341,19 +294,15 @@ void Ros2Node::HandleAccepted(
     manager_buffers_.request_queue->EnQueue(planner_request);
     request_handle_queue_.EnQueue(request_handle);
 
-    RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, arm = %s",
-                planner_request.request_id, request_handle->get_goal()->type.c_str(),
+    RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, arm = %s", planner_request.request_id, request_handle->get_goal()->type.c_str(),
                 request_handle->get_goal()->motion_group.c_str());
 
-    LOG_INFO << "Request_id = " << planner_request.request_id
-             << ", Received, type = " << request_handle->get_goal()->type
+    LOG_INFO << "Request_id = " << planner_request.request_id << ", Received, type = " << request_handle->get_goal()->type
              << ", arm = " << request_handle->get_goal()->motion_group;
 }
 
 rclcpp_action::CancelResponse Ros2Node::HandleCancel(
-    const std::shared_ptr<
-        rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>
-        goal_handle)
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> goal_handle)
 {
     RCLCPP_INFO(this->get_logger(), "MoveRobot request canceled");
     LOG_INFO << "MoveRobot request canceled";
@@ -372,14 +321,10 @@ Int64 Ros2Node::MakeNewRequestID(RequestType type)
     return ++latest_received_id_;
 }
 
-void Ros2Node::OnStreamingCommand(
-    const robot_server_interfaces::msg::StreamingCommand::SharedPtr streaming_msg)
+void Ros2Node::OnStreamingCommand(const robot_server_interfaces::msg::StreamingCommand::SharedPtr streaming_msg)
 {
-    RCLCPP_INFO(
-        this->get_logger(),
-        "Request_id = %ld, streaming command Received, data size = %zu, streaming_finished = %s",
-        streaming_msg->request_id, streaming_msg->position.size(),
-        streaming_msg->streaming_finished ? "true" : "false");
+    RCLCPP_INFO(this->get_logger(), "Request_id = %ld, streaming command Received, data size = %zu, streaming_finished = %s",
+                streaming_msg->request_id, streaming_msg->position.size(), streaming_msg->streaming_finished ? "true" : "false");
     std::ostringstream ss;
     for (const auto& v : streaming_msg->position)
     {
@@ -387,30 +332,25 @@ void Ros2Node::OnStreamingCommand(
     }
     LOG_INFO << "Request_id = " << streaming_msg->request_id << " Streaming, "
              << "data size = " << streaming_msg->position.size() << ", "
-             << "streaming_finished = "
-             << (streaming_msg->streaming_finished ? "true, " : "false, ") << "data = " << ss.str();
+             << "streaming_finished = " << (streaming_msg->streaming_finished ? "true, " : "false, ") << "data = " << ss.str();
 
-    manager_buffers_.streaming_command_latest_buffer->AppendNewElement(
-        ParseStreamingCommand(streaming_msg));
+    manager_buffers_.streaming_command_latest_buffer->AppendNewElement(ParseStreamingCommand(streaming_msg));
 }
 
-void Ros2Node::SetPropertyOnRequest(
-    const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request,
-    std::shared_ptr<robot_server_interfaces::srv::SetProperty::Response> response)
+void Ros2Node::SetPropertyOnRequest(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request,
+                                    std::shared_ptr<robot_server_interfaces::srv::SetProperty::Response> response)
 {
     PlannerRequest planner_request = ParseSetPropertyRequest(request);
     planner_request.request_id = MakeNewRequestID(planner_request.type);
     manager_buffers_.request_queue->EnQueue(planner_request);
     response->request_id = planner_request.request_id;
 
-    RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, value: %s",
-                planner_request.request_id, request->property_type.c_str(), request->value.c_str());
-    LOG_INFO << "Request_id = " << planner_request.request_id
-             << ", Received, type = " << request->property_type << ", value = " << request->value;
+    RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, value: %s", planner_request.request_id, request->property_type.c_str(),
+                request->value.c_str());
+    LOG_INFO << "Request_id = " << planner_request.request_id << ", Received, type = " << request->property_type << ", value = " << request->value;
 }
 
-PlannerRequest Ros2Node::ParseSetPropertyRequest(
-    const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request)
+PlannerRequest Ros2Node::ParseSetPropertyRequest(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request)
 {
     PlannerRequest planner_request;
 
@@ -433,8 +373,7 @@ PlannerRequest Ros2Node::ParseSetPropertyRequest(
     else if (request->property_type == "ClearError")
     {
         planner_request.type = RequestType::ClearError;
-        planner_request.data =
-            std::nullopt;  // Clear error request does not require additional data
+        planner_request.data = std::nullopt;  // Clear error request does not require additional data
     }
     else
     {
@@ -444,8 +383,7 @@ PlannerRequest Ros2Node::ParseSetPropertyRequest(
     return planner_request;
 }
 
-StreamingCommand Ros2Node::ParseStreamingCommand(
-    const std::shared_ptr<robot_server_interfaces::msg::StreamingCommand> msg)
+StreamingCommand Ros2Node::ParseStreamingCommand(const std::shared_ptr<robot_server_interfaces::msg::StreamingCommand> msg)
 {
     StreamingCommand steaming_command;
 
@@ -464,9 +402,7 @@ StreamingCommand Ros2Node::ParseStreamingCommand(
 
 // 解析MoveRobot动作的命令
 PlannerRequest Ros2Node::ParseMoveRequest(
-    const std::shared_ptr<
-        rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>
-        action_handle)
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> action_handle)
 {
     const auto& input_request = action_handle->get_goal();
 
@@ -555,8 +491,7 @@ PlannerRequest Ros2Node::ParseMoveRequest(
 
         if (input_config_json.contains("blend_tolerance"))
         {
-            move_request.blend_tolerance.emplace(
-                input_config_json["blend_tolerance"].get<double>());
+            move_request.blend_tolerance.emplace(input_config_json["blend_tolerance"].get<double>());
         }
     }
     planner_request.data = move_request;

@@ -20,8 +20,7 @@ class NumericalKinematics : public KinematicsBase
 
     ~NumericalKinematics() override = default;
 
-    PoseQuaternion GetFK(const Eigen::VectorXd &q_in,
-                         const pinocchio::SE3 &tcp_frame = pinocchio::SE3::Identity()) override
+    PoseQuaternion GetFK(const Eigen::VectorXd &q_in, const pinocchio::SE3 &tcp_frame = pinocchio::SE3::Identity()) override
     {
         pinocchio::SE3 pose;
         pinocchio::forwardKinematics(model_, data_, q_in);
@@ -33,8 +32,7 @@ class NumericalKinematics : public KinematicsBase
         return pose_out;
     }
 
-    bool GetIK(const PoseQuaternion &pose_in, Eigen::VectorXd &q_in_and_out,
-               const pinocchio::SE3 &tcp_frame = pinocchio::SE3::Identity()) override
+    bool GetIK(const PoseQuaternion &pose_in, Eigen::VectorXd &q_in_and_out, const pinocchio::SE3 &tcp_frame = pinocchio::SE3::Identity()) override
     {
         assert(q_in_and_out.size() == this->ndof_);
 

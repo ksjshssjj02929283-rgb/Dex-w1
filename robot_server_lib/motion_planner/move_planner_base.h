@@ -44,23 +44,19 @@ class MotionPlannerBase
         // Initialize kinematics for both arms
         if (robot_model_.params_ptr->left_arm_name == "W1LeftArmIndustrial")
         {
-            kinematics_ptr_ =
-                std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmIndustrial());
+            kinematics_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmIndustrial());
         }
         if (robot_model_.params_ptr->left_arm_name == "W1LeftArmAnthropomorphic")
         {
-            kinematics_ptr_ =
-                std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmAnthropomorphic());
+            kinematics_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmAnthropomorphic());
         }
         if (robot_model_.params_ptr->right_arm_name == "W1RightArmIndustrial")
         {
-            kinematics_secondary_ptr_ =
-                std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmIndustrial());
+            kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmIndustrial());
         }
         if (robot_model_.params_ptr->right_arm_name == "W1RightArmAnthropomorphic")
         {
-            kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(
-                kinematics::W1RightArmAnthropomorphic());
+            kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmAnthropomorphic());
         }
         assert(kinematics_ptr_ && kinematics_secondary_ptr_);
     };
@@ -68,22 +64,14 @@ class MotionPlannerBase
     virtual ~MotionPlannerBase() = default;
 
     // Compute the next joint command in current episode
-    virtual ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
-                                                const TimeMetaInfo &time_meta,
-                                                JointCommand &joint_cmd) = 0;
+    virtual ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) = 0;
 
-    virtual bool ResetForNewTrajectory(const PlannerRequest &request,
-                                       const JointMeasurement &measurement,
-                                       const TimeMetaInfo &time_meta) = 0;
+    virtual bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) = 0;
 
     void SetRobotProperty(const RobotProperty &property) { robot_property_ = property; }
 
-    bool MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof) const
-    {
-        return MapArmToWholeBody(q, q_ndof, motion_group_);
-    }
-    bool MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof,
-                           const MotionGroup &motion_group) const
+    bool MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof) const { return MapArmToWholeBody(q, q_ndof, motion_group_); }
+    bool MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group) const
     {
         Eigen::VectorXd joints_map;
         switch (motion_group)
@@ -100,10 +88,8 @@ class MotionPlannerBase
         }
         case MotionGroup::BothArms:
         {
-            joints_map.resize(robot_model_.params_ptr->joints_primary.size() +
-                              robot_model_.params_ptr->joints_secondary.size());
-            joints_map << robot_model_.params_ptr->joints_primary,
-                robot_model_.params_ptr->joints_secondary;
+            joints_map.resize(robot_model_.params_ptr->joints_primary.size() + robot_model_.params_ptr->joints_secondary.size());
+            joints_map << robot_model_.params_ptr->joints_primary, robot_model_.params_ptr->joints_secondary;
             break;
         }
         case MotionGroup::WholeBody:
@@ -129,13 +115,9 @@ class MotionPlannerBase
         return true;
     }
 
-    bool GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q) const
-    {
-        return GetArmFromWholeBody(q_ndof, q, motion_group_);
-    }
+    bool GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q) const { return GetArmFromWholeBody(q_ndof, q, motion_group_); }
 
-    bool GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q,
-                             const MotionGroup &motion_group) const
+    bool GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group) const
     {
         Eigen::VectorXd joints_map;
         switch (motion_group)
@@ -152,10 +134,8 @@ class MotionPlannerBase
         }
         case MotionGroup::BothArms:
         {
-            joints_map.resize(robot_model_.params_ptr->joints_primary.size() +
-                              robot_model_.params_ptr->joints_secondary.size());
-            joints_map << robot_model_.params_ptr->joints_primary,
-                robot_model_.params_ptr->joints_secondary;
+            joints_map.resize(robot_model_.params_ptr->joints_primary.size() + robot_model_.params_ptr->joints_secondary.size());
+            joints_map << robot_model_.params_ptr->joints_primary, robot_model_.params_ptr->joints_secondary;
             break;
         }
         case MotionGroup::WholeBody:
@@ -181,10 +161,7 @@ class MotionPlannerBase
         return true;
     }
     std::shared_ptr<kinematics::KinematicsBase> Kinematics() const { return kinematics_ptr_; }
-    std::shared_ptr<kinematics::KinematicsBase> KinematicsSecondary() const
-    {
-        return kinematics_secondary_ptr_;
-    }
+    std::shared_ptr<kinematics::KinematicsBase> KinematicsSecondary() const { return kinematics_secondary_ptr_; }
 
     Int64 episode_index{-1};  // 记录当前的episode索引
 
@@ -196,15 +173,12 @@ class MotionPlannerBase
     std::shared_ptr<kinematics::KinematicsBase> kinematics_ptr_;
     std::shared_ptr<kinematics::KinematicsBase> kinematics_secondary_ptr_;
 
-    TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI,
-                                   1.0 * M_PI};  // trajectory bounds, unit: rad
+    TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI, 1.0 * M_PI};  // trajectory bounds, unit: rad
 
     struct
     {
-        TrajectoryBounds translation{0.25, 0.25,
-                                     0.25};  // cartesian space translation bounds, unit: m
-        TrajectoryBounds rotation{0.5 * M_PI, 0.5 * M_PI,
-                                  0.5 * M_PI};  // cartesian space rotation bounds, unit: rad
+        TrajectoryBounds translation{0.25, 0.25, 0.25};                 // cartesian space translation bounds, unit: m
+        TrajectoryBounds rotation{0.5 * M_PI, 0.5 * M_PI, 0.5 * M_PI};  // cartesian space rotation bounds, unit: rad
     } cartesian_bounds_;
 
     MotionGroup motion_group_;

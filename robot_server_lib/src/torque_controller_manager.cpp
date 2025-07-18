@@ -3,12 +3,8 @@
 namespace robot_server_lib
 {
 
-TorqueControllerManager::TorqueControllerManager(RobotModel robot_model,
-                                                 PlannerManagerBuffers manager_buffers,
-                                                 TorqueControlBuffer robot_buffers)
-    : robot_model_(std::move(robot_model)),
-      manager_buffers_(std::move(manager_buffers)),
-      robot_buffers_(std::move(robot_buffers))
+TorqueControllerManager::TorqueControllerManager(RobotModel robot_model, PlannerManagerBuffers manager_buffers, TorqueControlBuffer robot_buffers)
+    : robot_model_(std::move(robot_model)), manager_buffers_(std::move(manager_buffers)), robot_buffers_(std::move(robot_buffers))
 {
     Initialize();
 }
@@ -28,8 +24,7 @@ void TorqueControllerManager::Initialize()
 
     // Initialize torque controller todo: 不用inv dynamic时的初始化
     idle_torque_controller_ = std::make_shared<IdleControllerInvDynamic>(robot_model_);
-    deceleration_torque_controller_ =
-        std::make_shared<DecelerationControllerInvDynamic>(robot_model_);
+    deceleration_torque_controller_ = std::make_shared<DecelerationControllerInvDynamic>(robot_model_);
     operating_torque_controller_ = std::make_shared<OperatingControllerInvDynamic>(robot_model_);
 }
 

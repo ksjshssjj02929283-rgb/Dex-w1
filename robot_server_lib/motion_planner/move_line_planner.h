@@ -48,9 +48,7 @@ class MoveLinePlanner : public MotionPlannerBase
 
     ~MoveLinePlanner() override = default;
 
-    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
-                                        const TimeMetaInfo &time_meta,
-                                        JointCommand &joint_cmd) override
+    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) override
     {
         auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
         JointPositionDof q_ndof = measurement.q_desired_pre;
@@ -94,8 +92,7 @@ class MoveLinePlanner : public MotionPlannerBase
             if (wait_trajectory_upon_finish_)
             {
                 const bool robot_stopped = (measurement.velocity.norm() < ndof_robot * 1e-2);
-                return robot_stopped ? ComputeCommandStatus::TaskFinished
-                                     : ComputeCommandStatus::TaskOngoing;
+                return robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
             }
             else
             {
@@ -107,8 +104,7 @@ class MoveLinePlanner : public MotionPlannerBase
         }
     }
 
-    bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement,
-                               const TimeMetaInfo &time_meta) override
+    bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override
     {
         assert(request.data.has_value());
         assert(std::holds_alternative<MoveRequest>(request.data.value()));
@@ -124,17 +120,13 @@ class MoveLinePlanner : public MotionPlannerBase
         // set input parameters with global ratio except for jerk
         for (int idx : {Trans, TransSecondary})
         {
-            runtime_.input.max_velocity[idx] =
-                cartesian_bounds_.translation.max_velocity * speed_ratio;
-            runtime_.input.max_acceleration[idx] =
-                cartesian_bounds_.translation.max_acceleration * speed_ratio;
+            runtime_.input.max_velocity[idx] = cartesian_bounds_.translation.max_velocity * speed_ratio;
+            runtime_.input.max_acceleration[idx] = cartesian_bounds_.translation.max_acceleration * speed_ratio;
         }
         for (int idx : {Rot, RotSecondary})
         {
-            runtime_.input.max_velocity[idx] =
-                cartesian_bounds_.rotation.max_velocity * speed_ratio;
-            runtime_.input.max_acceleration[idx] =
-                cartesian_bounds_.rotation.max_acceleration * speed_ratio;
+            runtime_.input.max_velocity[idx] = cartesian_bounds_.rotation.max_velocity * speed_ratio;
+            runtime_.input.max_acceleration[idx] = cartesian_bounds_.rotation.max_acceleration * speed_ratio;
         }
 
         switch (move_request.motion_group)
@@ -146,20 +138,15 @@ class MoveLinePlanner : public MotionPlannerBase
             GetArmFromWholeBody(measurement.q_desired_pre, q_start);
             assert(q_start.size() == ndof_primary_ + ndof_secondary_);
             // 获取起点
-            PoseQuaternion pose_start =
-                kinematics_ptr_->GetFK(q_start.head(ndof_primary_), robot_property_.tcp_frame);
-            PoseQuaternion pose_start_secondary = kinematics_secondary_ptr_->GetFK(
-                q_start.tail(ndof_secondary_), robot_property_.tcp_frame_secondary);
+            PoseQuaternion pose_start = kinematics_ptr_->GetFK(q_start.head(ndof_primary_), robot_property_.tcp_frame);
+            PoseQuaternion pose_start_secondary =
+                kinematics_secondary_ptr_->GetFK(q_start.tail(ndof_secondary_), robot_property_.tcp_frame_secondary);
             // 获取目标点
-            PoseQuaternion pose_target =
-                utilities::VectorXdToPoseQuaternion(move_request.value.head(ndof_primary_));
-            PoseQuaternion pose_target_secondary =
-                utilities::VectorXdToPoseQuaternion(move_request.value.tail(ndof_secondary_));
+            PoseQuaternion pose_target = utilities::VectorXdToPoseQuaternion(move_request.value.head(7));
+            PoseQuaternion pose_target_secondary = utilities::VectorXdToPoseQuaternion(move_request.value.tail(7));
 
-            LOG_INFO << "Primary arm motion plan: start: " << pose_start.ToString()
-                     << ", target: " << pose_target.ToString();
-            LOG_INFO << "Secondary arm motion plan: start: " << pose_start_secondary.ToString()
-                     << ", target: " << pose_target_secondary.ToString();
+            LOG_INFO << "Primary arm motion plan: start: " << pose_start.ToString() << ", target: " << pose_target.ToString();
+            LOG_INFO << "Secondary arm motion plan: start: " << pose_start_secondary.ToString() << ", target: " << pose_target_secondary.ToString();
 
             line_primary_.emplace(CalcLineGeometry(pose_start, pose_target));
             line_secondary_.emplace(CalcLineGeometry(pose_start_secondary, pose_target_secondary));
@@ -174,8 +161,7 @@ class MoveLinePlanner : public MotionPlannerBase
             PoseQuaternion pose_start = kinematics_ptr_->GetFK(q_start, robot_property_.tcp_frame);
             PoseQuaternion pose_target = utilities::VectorXdToPoseQuaternion(move_request.value);
 
-            LOG_INFO << "Primary arm motion plan: start: " << pose_start.ToString()
-                     << ", target: " << pose_target.ToString();
+            LOG_INFO << "Primary arm motion plan: start: " << pose_start.ToString() << ", target: " << pose_target.ToString();
 
             line_primary_.emplace(CalcLineGeometry(pose_start, pose_target));
             line_secondary_ = std::nullopt;
@@ -187,12 +173,10 @@ class MoveLinePlanner : public MotionPlannerBase
             Eigen::VectorXd q_start;
             GetArmFromWholeBody(measurement.q_desired_pre, q_start);
             assert(q_start.size() == ndof_secondary_);
-            PoseQuaternion pose_start =
-                kinematics_secondary_ptr_->GetFK(q_start, robot_property_.tcp_frame_secondary);
+            PoseQuaternion pose_start = kinematics_secondary_ptr_->GetFK(q_start, robot_property_.tcp_frame_secondary);
             PoseQuaternion pose_target = utilities::VectorXdToPoseQuaternion(move_request.value);
 
-            LOG_INFO << "Secondary arm motion plan: start: " << pose_start.ToString()
-                     << ", target: " << pose_target.ToString();
+            LOG_INFO << "Secondary arm motion plan: start: " << pose_start.ToString() << ", target: " << pose_target.ToString();
 
             line_primary_ = std::nullopt;
             line_secondary_.emplace(CalcLineGeometry(pose_start, pose_target));
@@ -215,7 +199,7 @@ class MoveLinePlanner : public MotionPlannerBase
         line.pose_target = pose_end;
         // translation
         Eigen::Vector3d dir = pose_end.position - pose_start.position;  // 计算r(AB)向量
-        double distance = dir.norm();  // 计算两点之间的距离
+        double distance = dir.norm();                                   // 计算两点之间的距离
         assert(!std::isnan(distance));
         if (distance < 1e-6)
         {
@@ -269,9 +253,7 @@ class MoveLinePlanner : public MotionPlannerBase
     {
         if (line_primary_.has_value())
         {
-            PoseQuaternion pose_cmd =
-                ComputeOutputPose(*line_primary_, runtime_.output.new_position[Trans],
-                                  runtime_.output.new_position[Rot]);
+            PoseQuaternion pose_cmd = ComputeOutputPose(*line_primary_, runtime_.output.new_position[Trans], runtime_.output.new_position[Rot]);
             // 逆解主臂
             Eigen::VectorXd q_primary;
             GetArmFromWholeBody(q_ndof, q_primary, MotionGroup::Primary);
@@ -288,19 +270,16 @@ class MoveLinePlanner : public MotionPlannerBase
         if (line_secondary_.has_value())
         {
             PoseQuaternion pose_cmd_secondary =
-                ComputeOutputPose(*line_secondary_, runtime_.output.new_position[TransSecondary],
-                                  runtime_.output.new_position[RotSecondary]);
+                ComputeOutputPose(*line_secondary_, runtime_.output.new_position[TransSecondary], runtime_.output.new_position[RotSecondary]);
             // 逆解副臂
             Eigen::VectorXd q_secondary;
             GetArmFromWholeBody(q_ndof, q_secondary, MotionGroup::Secondary);
 
             assert(q_secondary.size() == ndof_secondary_);
-            if (!kinematics_secondary_ptr_->GetIK(pose_cmd_secondary, q_secondary,
-                                                  robot_property_.tcp_frame_secondary))
+            if (!kinematics_secondary_ptr_->GetIK(pose_cmd_secondary, q_secondary, robot_property_.tcp_frame_secondary))
             {
                 // 逆运动学失败，返回错误 todo: 需要处理错误
-                LOG_CRIT << "Inverse Kinematics failed for target pose: "
-                         << pose_cmd_secondary.ToString();
+                LOG_CRIT << "Inverse Kinematics failed for target pose: " << pose_cmd_secondary.ToString();
                 return false;
             }
 
@@ -309,8 +288,7 @@ class MoveLinePlanner : public MotionPlannerBase
         return true;
     }
 
-    PoseQuaternion ComputeOutputPose(LineGeometry line, double ruckig_trans_position,
-                                     double ruckig_rot_position)
+    PoseQuaternion ComputeOutputPose(LineGeometry line, double ruckig_trans_position, double ruckig_rot_position)
     {
         PoseQuaternion pose_cmd;
         pose_cmd.position = line.pose_start.position + line.direction * ruckig_trans_position;
@@ -322,8 +300,7 @@ class MoveLinePlanner : public MotionPlannerBase
         {
             double t = ruckig_rot_position / line.slerp_angle;
             t = std::clamp(t, 0.0, 1.0);
-            pose_cmd.orientation =
-                line.pose_start.orientation.slerp(t, line.pose_target.orientation);
+            pose_cmd.orientation = line.pose_start.orientation.slerp(t, line.pose_target.orientation);
             pose_cmd.orientation.normalize();
             assert(fabs(pose_cmd.orientation.norm() - 1.0) < 1e-6);
         }

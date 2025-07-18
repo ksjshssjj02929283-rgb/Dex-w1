@@ -15,7 +15,7 @@ if ! command -v clang-format &> /dev/null; then
 fi
 
 # 定义格式化配置
-STYLE_CONFIG="{BasedOnStyle: Google, IndentWidth: 4, BreakBeforeBraces: Allman, AllowShortIfStatementsOnASingleLine: false, IndentCaseLabels: false, ColumnLimit: 100}"
+STYLE_CONFIG="{BasedOnStyle: Google, IndentWidth: 4, BreakBeforeBraces: Allman, AllowShortIfStatementsOnASingleLine: false, IndentCaseLabels: false, ColumnLimit: 150}"
 
 # 格式化所有 C++ 文件，排除编译目录
 echo -e "${BLUE}正在格式化文件...${NC}"

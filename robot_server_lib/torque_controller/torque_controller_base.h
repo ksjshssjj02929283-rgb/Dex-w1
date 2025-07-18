@@ -14,15 +14,11 @@ struct TorqueCtrlCommand
 class TorqueControllerBase
 {
    public:
-    TorqueControllerBase(RobotModel robot_model)
-        : robot_model_(std::move(robot_model)), robot_data_(*robot_model_.model_ptr)
-    {
-    }
+    TorqueControllerBase(RobotModel robot_model) : robot_model_(std::move(robot_model)), robot_data_(*robot_model_.model_ptr) {}
 
     virtual ~TorqueControllerBase() = default;
 
-    virtual bool ComputeCommand(const JointRawMeasurement &raw_measurement,
-                                const PlannerManagerCommand &input_cmd,
+    virtual bool ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd,
                                 TorqueCtrlCommand &output_cmd) = 0;
 
     virtual bool ResetForNewEpisode(const JointRawMeasurement &raw_measurement) { return true; };

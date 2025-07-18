@@ -8,14 +8,8 @@ namespace robot_server_lib
 class JointStreamingPlanner : public MotionPlannerBase
 {
    public:
-    JointStreamingPlanner(
-        RobotModel robot_model,
-        std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer,
-        double controller_dt)
-        : MotionPlannerBase(robot_model),
-          streaming_buffer_(streaming_buffer),
-          controller_dt_(controller_dt),
-          ruckig_otg_(controller_dt)
+    JointStreamingPlanner(RobotModel robot_model, std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer, double controller_dt)
+        : MotionPlannerBase(robot_model), streaming_buffer_(streaming_buffer), controller_dt_(controller_dt), ruckig_otg_(controller_dt)
     {
         for (auto i = 0; i < ndof_robot; i++)
         {
@@ -27,9 +21,7 @@ class JointStreamingPlanner : public MotionPlannerBase
 
     ~JointStreamingPlanner() override = default;
 
-    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
-                                        const TimeMetaInfo &time_meta,
-                                        JointCommand &output_joint_cmd) override
+    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &output_joint_cmd) override
     {
         // 尝试从缓存中获取最新的StreamingCommand
         if (!runtime_.streaming_finished)
@@ -92,8 +84,7 @@ class JointStreamingPlanner : public MotionPlannerBase
                 output_joint_cmd.acceleration[i] = 0.0;
                 output_joint_cmd.torque_feedforward[i] = 0.0;
             }
-            return runtime_.streaming_finished ? ComputeCommandStatus::TaskFinished
-                                               : ComputeCommandStatus::TaskOngoing;
+            return runtime_.streaming_finished ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
         }
         if (status == ruckig::Working)
         {
@@ -114,8 +105,7 @@ class JointStreamingPlanner : public MotionPlannerBase
         }
     }
 
-    bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement,
-                               const TimeMetaInfo &time_meta) override
+    bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override
     {
         assert(request.data.has_value());
         assert(std::holds_alternative<MoveRequest>(request.data.value()));

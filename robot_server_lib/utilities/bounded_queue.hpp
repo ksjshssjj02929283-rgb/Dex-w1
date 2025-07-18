@@ -40,15 +40,13 @@ bool BoundedQueue<T>::EnQueue(const T &element)
         // assert(current_size_include_reserved <= buffer_capacity);
 
         // If check passed, then ok to write in placement
-        if ((old_reserve_end >= current_begin) &&
-            (current_size_include_reserved == buffer_capacity))
+        if ((old_reserve_end >= current_begin) && (current_size_include_reserved == buffer_capacity))
         {
             return false;
         }
 
         // Try update the end to reserve place
-    } while (!reserve_end_.compare_exchange_weak(
-        old_reserve_end, new_reserve_end, std::memory_order_acq_rel, std::memory_order_relaxed));
+    } while (!reserve_end_.compare_exchange_weak(old_reserve_end, new_reserve_end, std::memory_order_acq_rel, std::memory_order_relaxed));
 
     // Place reserve ok
     ring_buffer_[planned_placement] = element;
@@ -56,8 +54,7 @@ bool BoundedQueue<T>::EnQueue(const T &element)
     // Copy done, try update commit to new end
     // Only perform update when old_commit is old_end
     std::uint64_t expected_old_commit = old_reserve_end;
-    while (!commit_end_.compare_exchange_weak(expected_old_commit, new_reserve_end,
-                                              std::memory_order_acq_rel, std::memory_order_relaxed))
+    while (!commit_end_.compare_exchange_weak(expected_old_commit, new_reserve_end, std::memory_order_acq_rel, std::memory_order_relaxed))
     {
         assert(expected_old_commit <= old_reserve_end);  // This is weak
         expected_old_commit = old_reserve_end;
@@ -102,8 +99,7 @@ bool BoundedQueue<T>::DeQueue(T *element_output)
 
         // Try update the begin
         new_begin = old_begin + 1;
-    } while (!begin_.compare_exchange_weak(old_begin, new_begin, std::memory_order_acq_rel,
-                                           std::memory_order_relaxed));
+    } while (!begin_.compare_exchange_weak(old_begin, new_begin, std::memory_order_acq_rel, std::memory_order_relaxed));
 
     // Done
     return true;

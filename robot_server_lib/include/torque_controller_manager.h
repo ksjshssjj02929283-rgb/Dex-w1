@@ -25,8 +25,7 @@ using namespace robot_server_lib;
 class TorqueControllerManager
 {
    public:
-    TorqueControllerManager(RobotModel robot_model, PlannerManagerBuffers manager_buffers,
-                            TorqueControlBuffer robot_buffers);
+    TorqueControllerManager(RobotModel robot_model, PlannerManagerBuffers manager_buffers, TorqueControlBuffer robot_buffers);
     ~TorqueControllerManager();
 
     void LoopOnce();
