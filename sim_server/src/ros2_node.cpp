@@ -12,6 +12,7 @@ Ros2Node::Ros2Node() : Node("sim_server")
 
 void Ros2Node::InitRobotServer()
 {
+    std::filesystem::create_directories("log/");
     nanolog::initialize(nanolog::GuaranteedLogger(), "log/", "robot_server", 10);
     nanolog::set_log_level(
         nanolog::LogLevel::DEBUG);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
