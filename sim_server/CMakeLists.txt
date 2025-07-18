@@ -61,7 +61,7 @@ if(ENABLE_SIM_SERVER)
 
   target_link_libraries(${PROJECT_NAME}
     pinocchio::pinocchio
-    ruckig
+    ruckig::ruckig
   )
 
   install(TARGETS ${PROJECT_NAME}

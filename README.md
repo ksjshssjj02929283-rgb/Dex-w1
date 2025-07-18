@@ -12,13 +12,16 @@ sudo apt update
 
 # 安装依赖库
 sudo apt install nlohmann-json3-dev
+sudo apt install ros-humble-ruckig
 sudo apt install ros-humble-pinocchio
 sudo apt install clang-format
+
+pip install mechcat
 ```
 
 > **注意**：如已通过源码编译安装，无需再安装 ROS 版本，否则会链接冲突。
 
-### ruckig 源码编译安装
+### 如果需要ruckig 源码编译安装:
 
 ```bash
 git clone https://github.com/pantor/ruckig.git
@@ -35,23 +38,21 @@ sudo make install
 
 ## 快速部署
 
-新建workspace文件夹, 把dexe_robot_server放在workspace文件夹中, 同时需要拉取接口库dexe_interfaces也放在与dexe_robot_server同级目录workspace下
+需要dexe_interfaces接口包, source /dexe_interfaces/install/setup.bash
 
 dexe_interfaces gitlab: http://69.235.177.182:8081/dexembodied/dexe_interfaces
 
-如有已部署的包如w1_control也放在workspace下
+如有已部署的包如w1_control也放在同级目录下
 
 ---
 
 ## 编译项目
 
-在workspace文件夹中:
-
 ```bash
 colcon build
 ```
 
-仿真编译默认关闭, 如需开启则
+仿真可视化编译默认关闭, 如需开启则
 
 ```bash
 colcon build --cmake-args -DENABLE_SIM_SERVER=ON
