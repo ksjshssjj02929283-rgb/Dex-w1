@@ -36,7 +36,7 @@ target_include_directories(robot_server_lib PUBLIC
 target_link_libraries(robot_server_lib
   nlohmann_json::nlohmann_json
   pinocchio::pinocchio
-  ruckig
+  ruckig::ruckig
 )
 
 ament_target_dependencies(robot_server_lib
