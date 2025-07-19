@@ -53,12 +53,9 @@ void Ros2Node::InitRobotServer()
         LOG_CRIT << "Failed to load robot.cfg";
         assert(false);
     }
-    pinocchio::Model model;
+    
+    pinocchio::Model model, left_arm_model, right_arm_model;
     pinocchio::urdf::buildModel(params.urdf_path, model);
-
-    // 建立左臂和右臂模型 Create left and right arm models.
-    pinocchio::Model left_arm_model;
-    pinocchio::Model right_arm_model;
     pinocchio::urdf::buildModel(params.left_arm_urdf_path, left_arm_model);
     pinocchio::urdf::buildModel(params.right_arm_urdf_path, right_arm_model);
 
@@ -179,7 +176,8 @@ void Ros2Node::InitRobotServer()
                                                      ",\"latest_queued_id\":" + std::to_string(latest_report_id_.queued) +
                                                      ",\"latest_finished_id\":" + std::to_string(latest_report_id_.finished) +
                                                      ",\"latest_errordrop_id\":" + std::to_string(latest_report_id_.error_drop) +
-                                                     ",\"joint_position\":" + joint_position_ss.str() + ",\"ee_pose\":" + ee_pose_ss.str() + "}";
+                                                     ",\"joint_position\":" + joint_position_ss.str() + 
+                                                     ",\"ee_pose\":" + ee_pose_ss.str() + "}";
                                                  robot_server_state_publisher_->publish(robot_server_state_msg);
                                              });
 }

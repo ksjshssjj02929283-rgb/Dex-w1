@@ -68,9 +68,9 @@ class EEPoseStreamingPlanner : public MotionPlannerBase
         {
             for (auto i = 0; i < ndof_robot; i++)
             {
-                runtime_.input.current_position[i] = measurement.position[i];
+                runtime_.input.current_position[i] = measurement.q_desired_pre[i];
                 runtime_.input.current_velocity[i] = measurement.velocity[i];
-                runtime_.input.current_acceleration[i] = 0.0;
+                runtime_.input.current_acceleration[i] = runtime_.output.new_acceleration[i];
                 runtime_.input.target_position[i] = latest_cmd.command[i];
                 runtime_.input.target_velocity[i] = 0.0;
                 runtime_.input.target_acceleration[i] = 0.0;

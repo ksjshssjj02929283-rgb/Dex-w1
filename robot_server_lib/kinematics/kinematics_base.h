@@ -4,7 +4,7 @@
 // All rights reserved.
 // ----------------------------------------------------------------------------
 #pragma once
-#include "data_structure.h"
+#include "utilities.h"
 #include "pinocchio_include.h"
 
 namespace robot_server_lib
