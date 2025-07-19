@@ -65,33 +65,42 @@ class SRSKinematics : public KinematicsBase
         double current_arm_angle = _CalculateAnglePhi(q_in, pose_se3);
 
         // 基于当前臂角采样
-        Eigen::VectorXd nsparams;
-        nsparams = Eigen::VectorXd::LinSpaced(this->num_samples_, current_arm_angle - small_range_, current_arm_angle + small_range_);
-
-        const int param_size = nsparams.size();
+        Eigen::VectorXd nsparams = Eigen::VectorXd::LinSpaced(this->num_samples_, current_arm_angle - small_range_, current_arm_angle + small_range_);
         std::vector<Eigen::VectorXd> ik_solutions;
-        for (Int64 index = 0; index < param_size; ++index)
-        {
-            Eigen::Matrix<double, 4, 7> joints_list;
-            if (_ComputeInverseKinematics(pose_se3, q_in, nsparams[index], joints_list))
-            {
-                for (int j = 0; j < 4; ++j)
-                {
-                    ik_solutions.emplace_back(joints_list.row(j));
+
+        auto solve_and_choose_solution = [&](const Eigen::VectorXd& params) {
+            for (Int64 index = 0; index < params.size(); ++index) {
+                Eigen::Matrix<double, 4, 7> joints_list;
+                if (_ComputeInverseKinematics(pose_se3, q_in, params[index], joints_list)) {
+                    for (int j = 0; j < 4; ++j) {
+                        ik_solutions.emplace_back(joints_list.row(j));
+                    }
                 }
             }
-        }
-        if (_ChooseIKSolution(ik_solutions, q_in))
-        {
+            return _ChooseIKSolution(ik_solutions, q_in);
+        };
+
+        if (solve_and_choose_solution(nsparams)) {
             q_in_and_out = ik_solutions[0];
-        }
-        else
-        {
-            // No valid solution found
-            return false;
+            return true;
         }
 
-        return true;
+        // 无解则扩大采样范围再次求解
+        LOG_WARN << "No IK solution found in the initial range, expanding search range.";
+        ik_solutions.clear();
+        Eigen::VectorXd nsparams_wide_left = Eigen::VectorXd::LinSpaced(
+            5 * this->num_samples_, current_arm_angle - 10 * small_range_, current_arm_angle - small_range_);
+        Eigen::VectorXd nsparams_wide_right = Eigen::VectorXd::LinSpaced(
+            5 * this->num_samples_, current_arm_angle + small_range_, current_arm_angle + 10 * small_range_);
+
+        Eigen::VectorXd nsparams_wide(10 * this->num_samples_);
+        nsparams_wide << nsparams_wide_left, nsparams_wide_right;
+
+        if (solve_and_choose_solution(nsparams_wide)) {
+            q_in_and_out = ik_solutions[0];
+            return true;
+        }
+        return false;
     }
 
    private:
@@ -384,8 +393,8 @@ class SRSKinematics : public KinematicsBase
     int ndof_;
     SRSParameters params_;
     int num_samples_ = 50;
-    double joint_threshold_ = M_PI / 180.0 * 10;
-    double small_range_ = M_PI / 18000.0 * num_samples_ * 2;  // 每0.02度一个采样点
+    double joint_threshold_ = M_PI / 180.0 * 30;
+    double small_range_ = M_PI / 18000.0 * num_samples_;  // 每0.01度一个采样点
     Eigen::VectorXd ik_weight_;
 };
 
