@@ -1,0 +1,3 @@
+[submodule "dexe_interfaces"]
+	path = dexe_interfaces
+	url = http://69.235.177.182:8081/dexembodied/dexe_interfaces.git

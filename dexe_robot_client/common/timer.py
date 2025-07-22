@@ -9,6 +9,7 @@ from functools import wraps
 
 from .logger import get_logger
 
+
 def timer(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -18,11 +19,14 @@ def timer(func):
         elapsed = end_time - start_time
         get_logger().info(f"[{func.__name__}] run time: {elapsed:.6f} s")
         return result
+
     return wrapper
 
+
 if __name__ == "__main__":
+
     @timer
     def test_func():
-        time.sleep(1.)
-    
+        time.sleep(1.0)
+
     test_func()
