@@ -3,7 +3,7 @@
 <!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
      Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
      For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
-<robot name="DexforceW1"> 
+<robot name="DexforceW1V02_1_ANTHROPOMORPHIC"> 
 
   <link name="base_link"> 
     <inertial> 
@@ -41,7 +41,7 @@
       <inertia ixx="0.00458785167524735" ixy="2.63111168444812E-11" ixz="-2.02429769062992E-10" iyy="0.00846145621331285" iyz="-7.59817809326904E-11" izz="0.00458785310793277"/> 
     </inertial>  
   </link>  
-  <link name="body1"> 
+  <link name="torso1"> 
     <inertial> 
       <origin xyz="1.355080787864E-05 0.153429046928541 -0.0017362871884248" rpy="0 0 0"/>  
       <mass value="0.794669780447985"/>  
@@ -50,7 +50,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/body1.dae"/> 
+        <mesh filename="Visual/Common/Torso/torso1.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.27843137254902 0.749019607843137 0.588235294117647 1"/> 
@@ -59,11 +59,11 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/body1.obj"/> 
+        <mesh filename="Collision/Common/Torso/torso1.obj"/> 
       </geometry> 
     </collision> 
   </link>  
-  <link name="body2"> 
+  <link name="torso2"> 
     <inertial> 
       <origin xyz="0.000287832033999402 0.169454198765659 -0.000310985963294865" rpy="0 0 0"/>  
       <mass value="0.595275094527341"/>  
@@ -72,7 +72,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/body2.dae"/> 
+        <mesh filename="Visual/Common/Torso/torso2.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.27843137254902 0.749019607843137 0.588235294117647 1"/> 
@@ -81,11 +81,11 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/body2.obj"/> 
+        <mesh filename="Collision/Common/Torso/torso2.obj"/> 
       </geometry> 
     </collision> 
   </link>  
-  <link name="body3"> 
+  <link name="torso3"> 
     <inertial> 
       <origin xyz="0.000175887935964389 0.0380000237252875 -2.92201502693795E-07" rpy="0 0 0"/>  
       <mass value="0.68123144638579"/>  
@@ -94,7 +94,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/body3.dae"/> 
+        <mesh filename="Visual/Common/Torso/torso3.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.27843137254902 0.749019607843137 0.588235294117647 1"/> 
@@ -103,11 +103,11 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/body3.obj"/> 
+        <mesh filename="Collision/Common/Torso/torso3.obj"/> 
       </geometry> 
     </collision> 
   </link>  
-  <link name="body4"> 
+  <link name="torso4"> 
     <inertial> 
       <origin xyz="-2.25431096381179E-05 1.2077873260551E-06 0.195128987694848" rpy="0 0 0"/>  
       <mass value="2.6374427677938"/>  
@@ -116,7 +116,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/body4.dae"/> 
+        <mesh filename="Visual/Common/Torso/torso4.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.27843137254902 0.749019607843137 0.588235294117647 1"/> 
@@ -125,12 +125,12 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/body4.obj"/> 
+        <mesh filename="Collision/Common/Torso/torso4.obj"/> 
       </geometry> 
     </collision> 
   </link>  
 
-  <link name="body_to_armlbase"> </link>
+  <link name="torso_to_armlbase"> </link>
   <link name="armlbase"> </link>
 
   <link name="arml1"> 
@@ -142,7 +142,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/arml1.dae"/> 
+        <mesh filename="Visual/Common/LeftArm/arml1.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.27843137254902 0.749019607843137 0.588235294117647 1"/> 
@@ -151,7 +151,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/arml1.obj"/> 
+        <mesh filename="Collision/Common/LeftArm/arml1.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -164,7 +164,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/arml2.dae"/> 
+        <mesh filename="Visual/Common/LeftArm/arml2.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/> 
@@ -173,7 +173,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/arml2.obj"/> 
+        <mesh filename="Collision/Common/LeftArm/arml2.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -186,7 +186,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/arml3.dae"/> 
+        <mesh filename="Visual/Common/LeftArm/arml3.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.392156862745098 0.749019607843137 0.619607843137255 1"/> 
@@ -195,7 +195,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/arml3.obj"/> 
+        <mesh filename="Collision/Common/LeftArm/arml3.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -208,7 +208,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/arml4.dae"/> 
+        <mesh filename="Visual/Common/LeftArm/arml4.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.211764705882353 0.211764705882353 0.211764705882353 1"/> 
@@ -217,7 +217,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/arml4.obj"/> 
+        <mesh filename="Collision/Common/LeftArm/arml4.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -230,7 +230,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/arml5.dae"/> 
+        <mesh filename="Visual/Common/LeftArm/arml5.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/> 
@@ -239,7 +239,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/arml5.obj"/> 
+        <mesh filename="Collision/Common/LeftArm/arml5.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -250,18 +250,18 @@
       <inertia ixx="6.9137861088907E-05" ixy="1.31675827639121E-10" ixz="7.69032334507134E-06" iyy="6.08185510943234E-05" iyz="-1.33584071785073E-08" izz="4.57909126217623E-05"/> 
     </inertial>  
     <visual> 
-      <origin xyz="0 0 0" rpy="0 0 -1.5707963267948966"/>  
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Anthropomorphic/arml6.dae"/> 
+        <mesh filename="Visual/Anthropomorphic/LeftArm/arml6.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/> 
       </material> 
     </visual>  
     <collision> 
-      <origin xyz="0 0 0" rpy="0 0 -1.5707963267948966"/>  
+      <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Anthropomorphic/arml6.obj"/> 
+        <mesh filename="Collision/Anthropomorphic/LeftArm/arml6.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -274,7 +274,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Anthropomorphic/arml7.dae"/> 
+        <mesh filename="Visual/Anthropomorphic/LeftArm/arml7.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.749019607843137 0.4 0.423529411764706 1"/> 
@@ -283,7 +283,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Anthropomorphic/arml7.obj"/> 
+        <mesh filename="Collision/Anthropomorphic/LeftArm/arml7.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -295,7 +295,7 @@
     </inertial>  
   </link>  
 
-  <link name="body_to_armrbase"> </link>
+  <link name="torso_to_armrbase"> </link>
   <link name="armrbase"> </link>
 
   <link name="armr1"> 
@@ -307,7 +307,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/armr1.dae"/> 
+        <mesh filename="Visual/Common/RightArm/armr1.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.27843137254902 0.749019607843137 0.588235294117647 1"/> 
@@ -316,7 +316,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/armr1.obj"/> 
+        <mesh filename="Collision/Common/RightArm/armr1.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -329,7 +329,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/armr2.dae"/> 
+        <mesh filename="Visual/Common/RightArm/armr2.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.749019607843137 0.647058823529412 0.505882352941176 1"/> 
@@ -338,7 +338,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/armr2.obj"/> 
+        <mesh filename="Collision/Common/RightArm/armr2.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -351,7 +351,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/armr3.dae"/> 
+        <mesh filename="Visual/Common/RightArm/armr3.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.450980392156863 0.749019607843137 0.549019607843137 1"/> 
@@ -360,7 +360,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/armr3.obj"/> 
+        <mesh filename="Collision/Common/RightArm/armr3.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -373,7 +373,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/armr4.dae"/> 
+        <mesh filename="Visual/Common/RightArm/armr4.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.211764705882353 0.211764705882353 0.211764705882353 1"/> 
@@ -382,7 +382,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/armr4.obj"/> 
+        <mesh filename="Collision/Common/RightArm/armr4.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -395,7 +395,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/armr5.dae"/> 
+        <mesh filename="Visual/Common/RightArm/armr5.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/> 
@@ -404,7 +404,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/armr5.obj"/> 
+        <mesh filename="Collision/Common/RightArm/armr5.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -417,7 +417,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Anthropomorphic/armr6.dae"/> 
+        <mesh filename="Visual/Anthropomorphic/RightArm/armr6.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.749019607843137 0.4 0.423529411764706 1"/> 
@@ -426,7 +426,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Anthropomorphic/armr6.obj"/> 
+        <mesh filename="Collision/Anthropomorphic/RightArm/armr6.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -439,7 +439,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Anthropomorphic/armr7.dae"/> 
+        <mesh filename="Visual/Anthropomorphic/RightArm/armr7.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.749019607843137 0.4 0.423529411764706 1"/> 
@@ -448,7 +448,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Anthropomorphic/armr7.obj"/> 
+        <mesh filename="Collision/Anthropomorphic/RightArm/armr7.obj"/> 
       </geometry> 
     </collision> 
   </link>
@@ -460,7 +460,7 @@
     </inertial>  
   </link>
 
-  <link name="body_to_headbase"> </link>
+  <link name="torso_to_headbase"> </link>
   <link name="headbase"> </link>
   <link name="head1"> 
     <inertial> 
@@ -471,7 +471,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/head1.dae"/> 
+        <mesh filename="Visual/Common/Head/head1.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.662745098039216 0.533333333333333 0.749019607843137 1"/> 
@@ -480,7 +480,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/head1.obj"/> 
+        <mesh filename="Collision/Common/Head/head1.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -493,7 +493,7 @@
     <visual> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Visual/Common/head2.dae"/> 
+        <mesh filename="Visual/Common/Head/head2.dae"/> 
       </geometry>  
       <material name=""> 
         <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/> 
@@ -502,7 +502,7 @@
     <collision> 
       <origin xyz="0 0 0" rpy="0 0 0"/>  
       <geometry> 
-        <mesh filename="Collision/Common/head2.obj"/> 
+        <mesh filename="Collision/Common/Head/head2.obj"/> 
       </geometry> 
     </collision> 
   </link>  
@@ -528,45 +528,45 @@
     <child link="wheel_right"/>  
     <axis xyz="0 -1 0"/> 
   </joint>  
-  <joint name="body1j" type="revolute"> 
+  <joint name="torso1j" type="revolute"> 
     <origin xyz="0 0 0.292" rpy="1.5707963267948966 0 0"/>  
     <parent link="base_link"/>  
-    <child link="body1"/>  
+    <child link="torso1"/>  
     <axis xyz="0 0 -1"/>  
     <limit lower="-0.08726" upper="1.65806" effort="100" velocity="0.8726646259971648"/> 
   </joint>  
-  <joint name="body2j" type="revolute"> 
+  <joint name="torso2j" type="revolute"> 
     <origin xyz="0 0.34 0" rpy="0 0 0"/>  
-    <parent link="body1"/>  
-    <child link="body2"/>  
+    <parent link="torso1"/>  
+    <child link="torso2"/>  
     <axis xyz="0 0 -1"/>  
     <limit lower="-3.31612" upper="0.17453" effort="100" velocity="1.3089969389957472"/> 
   </joint>  
-  <joint name="body3j" type="revolute"> 
-    <origin xyz="-0.00017407 0.33999 0" rpy="0 0 0"/>  
-    <parent link="body2"/>  
-    <child link="body3"/>  
+  <joint name="torso3j" type="revolute"> 
+    <origin xyz="0 0.34 0" rpy="0 0 0"/>  
+    <parent link="torso2"/>  
+    <child link="torso3"/>  
     <axis xyz="0 0 -1"/>  
     <limit lower="-0.08726" upper="1.65806" effort="100" velocity="0.8726646259971648"/> 
   </joint>  
-  <joint name="body4j" type="revolute"> 
-    <origin xyz="0.00017407 0.15781 0" rpy="-1.5707963267948966 0 0"/>  
-    <parent link="body3"/>  
-    <child link="body4"/>  
+  <joint name="torso4j" type="revolute"> 
+    <origin xyz="0 0.1578 0" rpy="-1.5707963267948966 0 0"/>  
+    <parent link="torso3"/>  
+    <child link="torso4"/>  
     <axis xyz="0 0 1"/>  
     <limit lower="-3.14" upper="3.14" effort="100" velocity="1.3089969389957472"/> 
   </joint>  
 
-  <joint name="body_to_armlbasej" type="fixed"> 
+  <joint name="torso_to_armlbasej" type="fixed"> 
     <origin xyz="0 0.0985 0.235" rpy="-1.5707963267948966 -1.5707963267948966 0"/>  
-    <parent link="body4"/>  
-    <child link="body_to_armlbase"/>  
+    <parent link="torso4"/>  
+    <child link="torso_to_armlbase"/>  
     <axis xyz="0 0 1"/>  
     <limit lower="-3.14" upper="3.14" effort="100" velocity="0.8726646259971648"/> 
   </joint>  
   <joint name="armlbasej" type="fixed"> 
     <origin xyz="0 0 0" rpy="0 0 0"/>  
-    <parent link="body_to_armlbase"/>  
+    <parent link="torso_to_armlbase"/>  
     <child link="armlbase"/>  
   </joint>  
   <joint name="arml1j" type="revolute"> 
@@ -624,15 +624,15 @@
     <child link="armlee"/>  
   </joint> 
 
-  <joint name="body_to_armrbasej" type="fixed"> 
+  <joint name="torso_to_armrbasej" type="fixed"> 
     <origin xyz="0 -0.0985 0.235" rpy="1.5707963267948966 1.5707963267948966 0"/>  
     <!-- <origin xyz="0 -0.1173 0.2272" rpy="1.5707963267948966 0 0"/>   -->
-    <parent link="body4"/>  
-    <child link="body_to_armrbase"/>  
+    <parent link="torso4"/>  
+    <child link="torso_to_armrbase"/>  
   </joint> 
   <joint name="armrbasej" type="fixed"> 
     <origin xyz="0 0 0" rpy="0 0 0"/> 
-    <parent link="body_to_armrbase"/>  
+    <parent link="torso_to_armrbase"/>  
     <child link="armrbase"/>  
   </joint>  
   <joint name="armr1j" type="revolute"> 
@@ -690,14 +690,14 @@
     <child link="armree"/> 
   </joint>  
 
-  <joint name="body_to_headbasej" type="fixed"> 
+  <joint name="torso_to_headbasej" type="fixed"> 
     <origin xyz="0 0 0.308" rpy="0 0 0"/>  
-    <parent link="body4"/>  
-    <child link="body_to_headbase"/>  
+    <parent link="torso4"/>  
+    <child link="torso_to_headbase"/>  
   </joint> 
   <joint name="headbasej" type="fixed"> 
     <origin xyz="0 0 0" rpy="0 0 0"/>  
-    <parent link="body_to_headbase"/>  
+    <parent link="torso_to_headbase"/>  
     <child link="headbase"/>
   </joint>  
   <joint name="head1j" type="revolute">
