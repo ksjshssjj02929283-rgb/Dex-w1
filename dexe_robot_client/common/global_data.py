@@ -4,12 +4,14 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
-from enum import Enum
+import pathlib
 
-"""
-状态码: 用于接口返回,表示调用结果
+g_software_name = "dexe_robot_client"
 
-- StatusCode > 0 : 表示调用结果正常  
-- StatusCode < 0 : 表示调用结果异常
-- StatusCode 组成: RC_模块_接口/失败原因
-"""
+g_log_dir = pathlib.Path.cwd() / "log"
+g_data_dir = pathlib.Path.cwd() / "data"
+
+if not g_log_dir.exists():
+    g_log_dir.mkdir()
+if not g_data_dir.exists():
+    g_data_dir.mkdir()

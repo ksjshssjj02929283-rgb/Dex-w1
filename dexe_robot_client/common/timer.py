@@ -6,7 +6,6 @@
 
 import time
 from functools import wraps
-
 from .logger import get_logger
 
 
