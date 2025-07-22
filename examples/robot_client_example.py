@@ -4,12 +4,8 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
-import time
-import numpy as np
-from dexe_robot_client.common import get_logger, timer
 from dexe_robot_client.robot_client import RobotClientRos2 as RobotClient
 from dexe_robot_client.robot_client import MotionGroup
-from IPython import embed
 
 joint_industrial_left0 = [-0.45, -0.65, 0.35, -1.5, -1, 1.1, -0.4]
 joint_industrial_right0 = [0.45, 0.65, -0.35, 1.5, 1, -1.1, 0.4]

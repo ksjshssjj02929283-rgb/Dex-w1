@@ -10,9 +10,7 @@ import colorlog
 import pathlib
 import threading
 from datetime import datetime
-
-g_log_dir = g_data_dir = pathlib.Path.cwd() / "log"  # TODO: 放在合适的位置
-g_software_name = "dexe_robot_client"
+from .global_data import g_log_dir, g_software_name
 
 
 def get_logger() -> logging.Logger:
