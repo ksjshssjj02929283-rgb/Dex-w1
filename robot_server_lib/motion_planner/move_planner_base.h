@@ -65,7 +65,6 @@ namespace robot_server_lib
 
             kinematics_ptr_ = std::make_shared<kinematics::YaikKinematics>(0);
             kinematics_secondary_ptr_ = std::make_shared<kinematics::YaikKinematics>(1);
-
             // kinematics_ptr_ = std::make_shared<kinematics::NumericalKinematics>(*robot_model_.left_arm_model_ptr);
             // kinematics_secondary_ptr_ = std::make_shared<kinematics::NumericalKinematics>(*robot_model_.right_arm_model_ptr);
 
