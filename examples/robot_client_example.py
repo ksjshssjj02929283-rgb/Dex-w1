@@ -32,49 +32,50 @@ pose_industrial_right0 = [
 
 
 def main(args=None):
-    client = RobotClient()
-    status = client.get_info().status
-    joint_position = client.get_info().joint_position
-    ee_pose = client.get_info().ee_pose
+    "示例: 仿真client, 如需控制真实机器人则将is_sim设置为False"
+    client_sim = RobotClient(is_sim=True)
+    status = client_sim.get_info().status
+    joint_position = client_sim.get_info().joint_position
+    ee_pose = client_sim.get_info().ee_pose
 
     print(f"\nCurrent robot status: {status}")
     print(f"\nCurrent joint position: {joint_position}")
     print(f"\nCurrent ee_pose: {ee_pose}\n")
 
-    client.set_global_speed(0.5)
+    client_sim.set_global_speed(0.5)
     """move joint/line接口示例"""
-    client.move_joint_sync(
+    client_sim.move_joint_sync(
         joint_industrial_left0 + joint_industrial_right0, MotionGroup.BothArms
     )
-    client.move_line_sync(
+    client_sim.move_line_sync(
         pose_industrial_left0 + pose_industrial_right0, MotionGroup.BothArms
     )
 
     """joint streaming接口示例"""
-    joint_position = client.get_info().joint_position
-    client.start_joint_streaming_request(MotionGroup.WholeBody)
+    joint_position = client_sim.get_info().joint_position
+    client_sim.start_joint_streaming_request(MotionGroup.WholeBody)
     for _ in range(5):
         joint_position[5] -= 0.1
         joint_position[8] += 0.1
-        client.send_streaming_command(joint_position, streaming_finished=False)
-        client.wait_second(0.1)
-    client.send_streaming_command(joint_position, streaming_finished=True)
+        client_sim.send_streaming_command(joint_position, streaming_finished=False)
+        client_sim.wait_second(0.1)
+    client_sim.send_streaming_command(joint_position, streaming_finished=True)
 
     """ee pose streaming示例"""
-    ee_pose = client.get_info().ee_pose
-    client.start_ee_pose_streaming_request(MotionGroup.BothArms)
+    ee_pose = client_sim.get_info().ee_pose
+    client_sim.start_ee_pose_streaming_request(MotionGroup.BothArms)
     for _ in range(20):
         ee_pose[0] += 0.01
         ee_pose[7] -= 0.01
-        client.send_streaming_command(ee_pose, streaming_finished=False)
-        client.wait_second(0.1)
-    client.send_streaming_command(ee_pose, streaming_finished=True)
+        client_sim.send_streaming_command(ee_pose, streaming_finished=False)
+        client_sim.wait_second(0.1)
+    client_sim.send_streaming_command(ee_pose, streaming_finished=True)
 
     """其他接口示例"""
-    client.set_tcp([0, 0, 0.0, 1, 0, 0, 0])
-    client.clear_error()
-    client.wait_request_finish()
-    client.close_client()
+    client_sim.set_tcp([0, 0, 0.0, 1, 0, 0, 0])
+    client_sim.clear_error()
+    client_sim.wait_request_finish()
+    client_sim.close_client()
 
 
 if __name__ == "__main__":

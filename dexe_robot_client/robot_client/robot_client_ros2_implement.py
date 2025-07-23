@@ -22,10 +22,10 @@ from std_msgs.msg import String
 class RobotClientRos2(Node, RobotClient):
     """ros2 client universal interfaces"""
 
-    def __init__(self):
+    def __init__(self, is_sim: bool = False):
         rclpy.init()
         Node.__init__(self, "robot_client")
-        RobotClient.__init__(self)
+        RobotClient.__init__(self, is_sim=is_sim)
         self._init_subscriber()
         self._init_publisher()
         self._init_service_client()
@@ -179,7 +179,10 @@ class RobotClientRos2(Node, RobotClient):
     ----------------------------------------------------------------------------"""
 
     def _init_action_client(self):
-        self._action_move_robot = ActionClient(self, MoveRobot, "/control/move_robot")
+        if self.is_sim:
+            self._action_move_robot = ActionClient(self, MoveRobot, "/control/move_robot_sim")
+        else:
+            self._action_move_robot = ActionClient(self, MoveRobot, "/control/move_robot")
 
     def _feedback_move_robot_callback(self, feedback_msg):
         feedback = feedback_msg.feedback
@@ -206,34 +209,48 @@ class RobotClientRos2(Node, RobotClient):
     ----------------------------------------------------------------------------"""
 
     def _init_subscriber(self):
-        self.create_subscription(
-            String,
-            "/feedback/robot_server_state",
-            self._subscriber_robot_server_state_callback,
-            10,
-        )
+        if self.is_sim:
+            self.create_subscription(
+                String,
+                "/feedback/robot_server_state_sim",
+                self._subscriber_robot_server_state_callback,
+                10,
+            )
+        else:
+            self.create_subscription(
+                String,
+                "/feedback/robot_server_state",
+                self._subscriber_robot_server_state_callback,
+                10,
+            )
 
     """ ---------------------------------------------------------------------------
     init publisher
     ----------------------------------------------------------------------------"""
 
     def _init_publisher(self):
-        self._publisher_streaming_command = self.create_publisher(
-            StreamingCommand, "/control/streaming_command", 10
-        )
+        if self.is_sim:
+            self._publisher_streaming_command = self.create_publisher(
+                StreamingCommand, "/control/streaming_command_sim", 10
+            )
+        else:
+            self._publisher_streaming_command = self.create_publisher(
+                StreamingCommand, "/control/streaming_command", 10
+            )
 
     """ ---------------------------------------------------------------------------
     init service interfaces
     ----------------------------------------------------------------------------"""
 
     def _init_service_client(self):
-        self._srv_set_property = self.create_client(
-            SetProperty, "/control/set_property"
-        )
-
-        self._srv_get_property = self.create_client(
-            GetProperty, "/feedback/get_property"
-        )
+        if self.is_sim:
+            self._srv_set_property = self.create_client(
+                SetProperty, "/control/set_property_sim"
+            )
+        else:
+            self._srv_set_property = self.create_client(
+                SetProperty, "/control/set_property"
+            )
 
     """ ---------------------------------------------------------------------------
     callbacks for subscribers
