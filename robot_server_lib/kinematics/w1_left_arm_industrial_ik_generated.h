@@ -1,4 +1,6 @@
-#include "yaik/yaik_cpp_common.h"
+#pragma once
+
+#include "yaik_cpp_common.h"
 
 namespace yaik_cpp
 {

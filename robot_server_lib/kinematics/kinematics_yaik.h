@@ -1,7 +1,7 @@
 #pragma once
 
 #include "kinematics_base.h"
-#include "yaik/w1_left_indistrial/w1_left_arm_industrial_ik_generated.h"
+#include "w1_left_arm_industrial_ik_generated.h"
 #include <unordered_set>
 
 namespace robot_server_lib
@@ -18,12 +18,23 @@ namespace robot_server_lib
       using JpsArr = std::array<double, ndof_>;
       struct YaikKinematicsParams
       {
-        int dist_type{-1};
+        // trajectory config
+        std::size_t milestones_per_knot{10}; // = n_milestones / n_knots, >= 1
+        std::size_t n_knots{20};             // number of knots
+        int dist_type{-1};                   // norm type of distance, -1 defaults to L∞ Norm
         Jps dist_weight{Jps::Constant(1.0)};
+        double jps_dist_tolerance{0.2}; // tol of jps-distance between milestones
+        // dfs config
+        bool update_nodes{true};      // if a node changes with its previous node
+        int dfs_max_iterations{5000}; // maximum number of dfs iterations
+        // sampling config
         int n_theta{4};
         double d_theta{3.14 / 24.0};
+        // projection config
+        int max_constraint_project_iterations{20};
+        double constraint_satisfied_tolerance{1e-3};
 
-        double GetDistance(const Jps &a, const Jps &b) const 
+        double GetDistance(const Jps &a, const Jps &b) const
         {
           if (dist_type <= 0)
             return ((a - b).cwiseProduct(dist_weight)).array().abs().maxCoeff();
@@ -60,8 +71,13 @@ namespace robot_server_lib
         }
       };
 
-      YaikKinematics(const YaikKinematicsParams &params)
-          : _params(params)
+      YaikKinematics(const YaikKinematicsParams &_params)
+          : params(_params)
+      {
+        ik_solver_ptr = std::make_shared<yaik_cpp::w1_left_arm_industrial_ik>();
+      }
+
+      YaikKinematics() : params()
       {
         ik_solver_ptr = std::make_shared<yaik_cpp::w1_left_arm_industrial_ik>();
       }
@@ -80,9 +96,10 @@ namespace robot_server_lib
       bool GetIK(const PoseQuaternion &pose_in, Eigen::VectorXd &q_in_and_out,
                  const pinocchio::SE3 &tcp_frame = pinocchio::SE3::Identity()) override
       {
-        Matrix4d T_ee = _GetTranformMatrix4d(pose_in, tcp_frame);
+        Matrix4d T_ee = _toMatrix4d(pose_in) * tcp_frame.inverse().toHomogeneousMatrix();
         std::vector<Jps> ik_results;
-        GetRawIK(T_ee, q_in_and_out(aux_input_index), ik_results);
+        // GetRawIK(T_ee, q_in_and_out(aux_input_index), ik_results);
+        GetIKwithProjectionAndSampling(T_ee, q_in_and_out, ik_results);
         Jps closest_ik;
         bool ik_get = GetClosestIK(ik_results, q_in_and_out, closest_ik);
         q_in_and_out = closest_ik;
@@ -123,18 +140,21 @@ namespace robot_server_lib
         return false;
       }
 
-      void ProjectToConstraint(const Jps &q_in, const Matrix4d &T_ee, Jps &q_projected)
+      bool ProjectToConstraint(const Jps &q_in, const Matrix4d &T_ee, Jps &q_projected)
       {
         JpsArr temp;
         _VecToArr(q_in, temp);
-        yaik_cpp::numericalRefinement<ndof_>(ik_solver_ptr->computeFK, ik_solver_ptr->computeTwistJacobian, T_ee, temp);
+        bool project_ok = yaik_cpp::numericalRefinement<ndof_>(ik_solver_ptr->computeFK, ik_solver_ptr->computeTwistJacobian, T_ee, temp, params.max_constraint_project_iterations,
+                                                               params.constraint_satisfied_tolerance);
         _ArrToVec(temp, q_projected);
+        return project_ok;
       }
 
       void GetIKwithProjectionAndSampling(const Matrix4d &T_ee, const Jps &q_in, std::vector<Jps> &results)
       {
         Jps q_ref;
-        ProjectToConstraint(q_in, T_ee, q_ref);
+        bool project_ok = ProjectToConstraint(q_in, T_ee, q_ref);
+        // if(!project_ok) ...
 
         std::vector<double> theta_list;
         SampleTheta(q_ref(aux_input_index), theta_list);
@@ -150,20 +170,143 @@ namespace robot_server_lib
         // SortByDistance(q_in, results);
       }
 
+      bool RunGlobalRedundancyResolutionForJointTrajectory(const Jps &q_start, const PoseTrajectory &ee_trajectory,
+                                                           std::vector<Jps> &output)
+      {
+        struct LayerNodes
+        {
+          std::vector<Jps> &nodes() { return jps_collection; }
+          void initIt() { r_iterator = jps_collection.rbegin(); }
+          bool empty() { return r_iterator == jps_collection.rend(); }
+          const Jps &back() { return *r_iterator; }
+          void pop_back() { ++r_iterator; }
+
+        private:
+          std::vector<Jps> jps_collection;
+          std::vector<Jps>::const_reverse_iterator r_iterator;
+        };
+
+        std::vector<LayerNodes> graph_nodes; // tree of nodes for DFS
+        graph_nodes.resize(params.n_knots + 1);
+        graph_nodes[0].nodes() = {q_start};
+        graph_nodes[0].initIt();
+
+        // DFS initialization
+        const double knots_phase_gap = 1.0 / double(params.n_knots);
+        int current_knot = 0;
+        Matrix4d T_ee = ee_trajectory(0.0 + knots_phase_gap);
+        GetIKwithProjectionAndSampling(T_ee, q_start, graph_nodes[current_knot + 1].nodes());
+        SortByDistance(q_start, graph_nodes[current_knot + 1].nodes());
+        graph_nodes[current_knot + 1].initIt();
+        current_knot++;
+
+        int iter_count = 0;
+        std::vector<Jps> local_trajectory, global_trajectory;
+        // start DFS loop
+        while (iter_count < params.dfs_max_iterations)
+        {
+          // backtrack judgement
+          while (graph_nodes[current_knot].empty())
+          {
+            if (current_knot == 1)
+              return false;
+            current_knot--;
+            graph_nodes[current_knot].pop_back();
+            if (!params.update_nodes && graph_nodes[current_knot].empty())
+              return false;
+          }
+          iter_count++;
+          // connect
+          const Jps &parent_jps = graph_nodes[current_knot - 1].back();
+          const Jps &current_jps = graph_nodes[current_knot].back();
+          const double current_phase = double(current_knot) / double(params.n_knots);
+          bool connected =
+              Connect(ee_trajectory, parent_jps, current_phase - knots_phase_gap,
+                      current_jps, current_phase, local_trajectory);
+          if (connected)
+          {
+            global_trajectory.resize((current_knot - 1) * params.milestones_per_knot);
+            global_trajectory.insert(global_trajectory.end(), local_trajectory.begin(),
+                                     local_trajectory.end());
+            if (current_knot == params.n_knots)
+            {
+              output = std::move(global_trajectory);
+              return true;
+            }
+            // expand
+            if (params.update_nodes || graph_nodes[current_knot + 1].nodes().empty())
+            {
+              T_ee = ee_trajectory(current_phase + knots_phase_gap);
+              GetIKwithProjectionAndSampling(T_ee, current_jps, graph_nodes[current_knot + 1].nodes());
+            }
+            SortByDistance(current_jps, graph_nodes[current_knot + 1].nodes());
+            graph_nodes[current_knot + 1].initIt();
+            current_knot++;
+          }
+          else
+          {
+            // skip
+            graph_nodes[current_knot].pop_back();
+          }
+        }
+        return false;
+      }
+
       double GetDistance(const Jps &a, const Jps &b) const
       {
-        return _params.GetDistance(a, b);
+        return params.GetDistance(a, b);
       }
 
       void SortByDistance(const Jps &q_ref, std::vector<Jps> &jps_list) const
       {
-        _params.SortByDistance(q_ref, jps_list);
+        params.SortByDistance(q_ref, jps_list);
       }
 
       void SampleTheta(const double theta_ref, std::vector<double> &theta_list) const
       {
-        _params.SampleTheta(theta_ref, theta_list);
+        params.SampleTheta(theta_ref, theta_list);
       }
+
+      bool Connect(const PoseTrajectory &trajectory, const Jps &jps1, const double phase1, const Jps &jps2,
+                   const double phase2, std::vector<Jps> &local_trajectory)
+      {
+        int n_waypoints = params.milestones_per_knot;
+        // preliminary judgement
+        if (GetDistance(jps1, jps2) > n_waypoints * params.jps_dist_tolerance)
+          return false;
+
+        local_trajectory.clear();
+        local_trajectory.reserve(n_waypoints);
+        for (int i = 0; i < n_waypoints; ++i)
+        {
+          const double local_phase = double(i + 1) / double(n_waypoints);
+          Jps closest_ik_res;
+          if (i != n_waypoints - 1)
+          {
+            Jps jps_ = jps1 * (1 - local_phase) + jps2 * local_phase;
+            double phase_ = phase1 * (1 - local_phase) + phase2 * local_phase;
+            Matrix4d T_ee = trajectory(phase_);
+
+            std::vector<Jps> ik_results;
+            GetRawIK(T_ee, jps_(aux_input_index), ik_results);
+            bool ik_get = GetClosestIK(ik_results, jps_, closest_ik_res);
+            if (!ik_get)
+              return false; // equals to ik_results.empty()
+          }
+          else
+            closest_ik_res = jps2;
+
+          const Jps &jps_last = (i == 0) ? jps1 : local_trajectory.back();
+          // connect the adjacent milestones
+          if (GetDistance(closest_ik_res, jps_last) > params.jps_dist_tolerance)
+          {
+            local_trajectory.clear();
+            return false;
+          }
+          local_trajectory.push_back(std::move(closest_ik_res));
+        }
+        return true;
+      };
 
     private:
       void _ArrToVec(const JpsArr &arr, Jps &vec)
@@ -180,18 +323,22 @@ namespace robot_server_lib
         std::copy(vec.data(), vec.data() + ndof_, arr.begin());
       }
 
-      Matrix4d _GetTranformMatrix4d(const PoseQuaternion &pose_in, const pinocchio::SE3 &tcp_frame)
+      Matrix4d _toMatrix4d(const PoseQuaternion &pose_in)
       {
-        auto rotation_mat = pose_in.orientation.toRotationMatrix();
         Matrix4d T_ee;
-        T_ee << rotation_mat * tcp_frame.rotation().transpose(),
-            pose_in.position - rotation_mat * tcp_frame.rotation().transpose() * tcp_frame.translation(),
+        T_ee << pose_in.orientation.toRotationMatrix(), pose_in.position,
             0, 0, 0, 1;
         return T_ee;
       }
 
-      const YaikKinematicsParams _params;
+      Matrix4d _Inverse(const Matrix4d &mat4d)
+      {
+        Matrix4d result;
+        result << mat4d.topLeftCorner<3, 3>().transpose(), -mat4d.topLeftCorner<3, 3>().transpose() * mat4d.topRightCorner<3, 1>(), 0, 0, 0, 1;
+        return result;
+      }
 
+      YaikKinematicsParams params;
       std::shared_ptr<yaik_cpp::w1_left_arm_industrial_ik> ik_solver_ptr;
     };
 
