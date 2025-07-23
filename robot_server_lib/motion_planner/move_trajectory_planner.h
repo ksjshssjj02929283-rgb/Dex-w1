@@ -4,34 +4,69 @@
 
 namespace robot_server_lib
 {
-
-    enum
-    {
-        Trans = 0,
-        Rot = 1,
-        TransSecondary = 2,
-        RotSecondary = 3
-    };
-
     static constexpr int ndof_arms_ = 14;
+    static constexpr int ndof_left_ = 7;
+    static constexpr int ndof_right_ = 7;
+    static constexpr double step_forward_threshold = 0.75;
 
     class MoveTrajectoryPlanner : public MotionPlannerBase
     {
     public:
-        MoveLinePlanner(RobotModel robot_model, double controller_dt, bool wait_trajectory_upon_finish)
+        MoveTrajectoryPlanner(RobotModel robot_model, double controller_dt, bool wait_trajectory_upon_finish)
             : MotionPlannerBase(robot_model),
               controller_dt_(controller_dt),
               wait_trajectory_upon_finish_(wait_trajectory_upon_finish)
         {
+            for (int i = 0; i < ndof_arms_; ++i)
+            {
+                runtime_.input.max_velocity[i] = joint_bounds_.max_velocity;
+                runtime_.input.max_acceleration[i] = joint_bounds_.max_acceleration;
+                runtime_.input.max_jerk[i] = joint_bounds_.max_jerk;
+            }
+            current_index_ = 0;
+            trajectory_size_ = 200;
+
+            kine_ptr_primary_ = std::dynamic_pointer_cast<kinematics::YaikKinematics>(kinematics_ptr_);
+            kine_ptr_secondary_ = std::dynamic_pointer_cast<kinematics::YaikKinematics>(kinematics_secondary_ptr_);
         }
 
-        ~MoveLinePlanner() override = default;
+        ~MoveTrajectoryPlanner() override = default;
 
         ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
                                             const TimeMetaInfo &time_meta,
                                             JointCommand &joint_cmd) override
         {
-            UpdateRuckig();
+            const auto &q_ndof_current = measurement.q_desired_pre;
+            Eigen::VectorXd q_arms;
+            GetArmFromWholeBody(q_ndof_current, q_arms, motion_group_);
+            // auto q_current = measurement.q_desired_pre;
+
+            double ratio_left = 1.0, ratio_right = 1.0;
+            if (joint_trajectory_primary_.has_value())
+            {
+                auto &q_target = joint_trajectory_primary_(current_index_ + 1);
+                auto &q_prev = joint_trajectory_primary_(current_index_);
+                auto gap = (q_target - q_prev).norm();
+                ratio_left = gap > 1e-4 ? (q_arms.head(ndof_left_) - q_prev).norm() / gap : 1.0;
+            }
+            if (joint_trajectory_secondary_.has_value())
+            {
+                auto &q_target = joint_trajectory_secondary_(current_index_ + 1);
+                auto &q_prev = joint_trajectory_secondary_(current_index_);
+                auto gap = (q_target - q_prev).norm();
+                ratio_right = gap > 1e-4 ? (q_arms.tail(ndof_right_) - q_prev).norm() / gap : 1.0;
+            }
+
+            // Current target almost reached, update the next target
+            if (ratio_left > step_forward_threshold && ratio_right > step_forward_threshold)
+            {
+                if (current_index_ + 1 < trajectory_size_ - 1)
+                {
+                    ++current_index_;
+                }
+            }
+            UpdateRuckig(measurement);
+
             auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
             switch (status)
             {
@@ -46,23 +81,27 @@ namespace robot_server_lib
                 }
 
                 // Done
-                runtime_.output.pass_to_input(runtime_.input);
+                // runtime_.output.pass_to_input(runtime_.input);
                 return ComputeCommandStatus::TaskOngoing;
             };
             case ruckig::Finished:
             {
-                if (current_index_ == trajectory_size_)
+                if (current_index_ == trajectory_size_ - 1)
                 {
                     // Done
-                    if (wait_trajectory_upon_finish_)
+                    const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
+                    if (!wait_trajectory_upon_finish_ || robot_stopped)
                     {
-                        const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
-                        return robot_stopped ? ComputeCommandStatus::TaskFinished
-                                             : ComputeCommandStatus::TaskOngoing;
+                        if (robot_stopped)
+                        {
+                            joint_trajectory_primary_.clear();
+                            joint_trajectory_secondary_.clear();
+                            return ComputeCommandStatus::TaskFinished;
+                        }
                     }
                     else
                     {
-                        return ComputeCommandStatus::TaskFinished;
+                        return ComputeCommandStatus::TaskOngoing;
                     }
                 }
                 else
@@ -74,7 +113,6 @@ namespace robot_server_lib
                         joint_cmd.acceleration[i] = runtime_.output.new_acceleration[i];
                         joint_cmd.torque_feedforward[i] = 0;
                     }
-                    current_index_++;
                 }
             };
             default:
@@ -82,8 +120,9 @@ namespace robot_server_lib
             }
         }
 
-        bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement,
-                                   const TimeMetaInfo &time_meta) override
+        bool
+        ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement,
+                              const TimeMetaInfo &time_meta) override
         {
             assert(request.data.has_value());
             assert(std::holds_alternative<MoveRequest>(request.data.value()));
@@ -110,8 +149,8 @@ namespace robot_server_lib
                 assert(q_start.size() == ndof_primary_ + ndof_secondary_);
                 // 获取起点
                 PoseQuaternion pose_start_primary =
-                    kinematics_ptr_->GetFK(q_start.head(ndof_primary_), robot_property_.tcp_frame);
-                PoseQuaternion pose_start_secondary = kinematics_secondary_ptr_->GetFK(
+                    kine_ptr_primary_->GetFK(q_start.head(ndof_primary_), robot_property_.tcp_frame);
+                PoseQuaternion pose_start_secondary = kine_ptr_secondary_->GetFK(
                     q_start.tail(ndof_secondary_), robot_property_.tcp_frame_secondary);
                 // 获取目标点
                 std::vector<Eigen::Matrix<double, 7, 1>> poses_primary, poses_secondary;
@@ -123,14 +162,23 @@ namespace robot_server_lib
                     poses_primary.emplace_back(value.head(7));
                     poses_secondary.emplace_back(value.tail(7));
                 }
+                auto pose_trajectory_primary = PoseTrajectory(poses_primary);
+                auto pose_trajectory_secondary = PoseTrajectory(poses_secondary);
 
                 LOG_INFO << "Primary arm motion plan: trajectory: \n"
-                         << poses_primary.ToString();
+                         << pose_trajectory_primary.ToString();
                 LOG_INFO << "Secondary arm motion plan: trajectory: \n"
-                         << poses_secondary.ToString();
+                         << pose_trajectory_secondary.ToString();
 
-                joint_trajectory_primary_ = kinematics_ptr_->CalcJointTrajectory(q_start.head(ndof_primary_), {poses_primary});
-                joint_trajectory_secondary_ = kinematics_ptr_->CalcJointTrajectory(q_start.tail(ndof_secondary_), {poses_secondary});
+                auto &trajectory_primary = joint_trajectory_primary_.GetJointTrajectory();
+                auto &trajectory_secondary = joint_trajectory_secondary_.GetJointTrajectory();
+                auto trajectory_ok_primary = kine_ptr_primary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start.head(ndof_primary_), pose_trajectory_primary, trajectory_primary);
+                auto trajectory_ok_secondary = kine_ptr_secondary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start.tail(ndof_secondary_), pose_trajectory_secondary, trajectory_secondary);
+                if (!trajectory_ok_primary || !trajectory_ok_secondary)
+                {
+                    LOG_CRIT << "Failed to compute joint trajectory for both arms.";
+                    return false;
+                }
                 break;
             }
             case MotionGroup::Primary:
@@ -138,7 +186,7 @@ namespace robot_server_lib
                 Eigen::VectorXd q_start;
                 GetArmFromWholeBody(measurement.q_desired_pre, q_start);
                 assert(q_start.size() == ndof_primary_);
-                PoseQuaternion pose_start_primary = kinematics_ptr_->GetFK(q_start, robot_property_.tcp_frame);
+                PoseQuaternion pose_start_primary = kine_ptr_primary_->GetFK(q_start, robot_property_.tcp_frame);
 
                 std::vector<Eigen::Matrix<double, 7, 1>> poses_primary;
                 poses_primary.emplace_back(pose_start_primary.ToVectorXd());
@@ -147,12 +195,18 @@ namespace robot_server_lib
                     assert(7 == value.size());
                     poses_primary.emplace_back(value);
                 }
+                auto pose_trajectory_primary = PoseTrajectory(poses_primary);
                 LOG_INFO << "Primary arm motion plan: trajectory: \n"
-                         << poses_primary.ToString();
+                         << pose_trajectory_primary.ToString();
 
-                joint_trajectory_primary_ = kinematics_ptr_->CalcJointTrajectory(q_start, {poses_primary});
-                joint_trajectory_secondary_ = std::nullopt;
-
+                auto &trajectory_primary = joint_trajectory_primary_.GetJointTrajectory();
+                auto trajectory_ok = kine_ptr_primary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start, pose_trajectory_primary, trajectory_primary);
+                joint_trajectory_secondary_.clear();
+                if (!trajectory_ok)
+                {
+                    LOG_CRIT << "Failed to compute joint trajectory for primary arm.";
+                    return false;
+                }
                 break;
             }
             case MotionGroup::Secondary:
@@ -161,7 +215,7 @@ namespace robot_server_lib
                 GetArmFromWholeBody(measurement.q_desired_pre, q_start);
                 assert(q_start.size() == ndof_secondary_);
                 PoseQuaternion pose_start_secondary =
-                    kinematics_secondary_ptr_->GetFK(q_start, robot_property_.tcp_frame_secondary);
+                    kine_ptr_secondary_->GetFK(q_start, robot_property_.tcp_frame_secondary);
 
                 std::vector<Eigen::Matrix<double, 7, 1>> poses_secondary;
                 poses_secondary.emplace_back(pose_start_secondary.ToVectorXd());
@@ -170,11 +224,18 @@ namespace robot_server_lib
                     assert(7 == value.size());
                     poses_secondary.emplace_back(value);
                 }
+                auto poses_secondary_trajectory = PoseTrajectory(poses_secondary);
                 LOG_INFO << "Secondary arm motion plan: trajectory: \n"
-                         << poses_secondary.ToString();
+                         << poses_secondary_trajectory.ToString();
 
-                joint_trajectory_primary_ = std::nullopt;
-                joint_trajectory_secondary_ = kinematics_ptr_->CalcJointTrajectory(q_start, {poses_secondary});
+                joint_trajectory_primary_.clear();
+                auto &trajectory_secondary = joint_trajectory_secondary_.GetJointTrajectory();
+                auto trajectory_ok = kine_ptr_secondary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start, poses_secondary_trajectory, trajectory_secondary);
+                if (!trajectory_ok)
+                {
+                    LOG_CRIT << "Failed to compute joint trajectory for secondary arm.";
+                    return false;
+                }
                 break;
             }
             default:
@@ -182,67 +243,46 @@ namespace robot_server_lib
                 break;
             }
 
-            InitializeRuckig(measurement);
+            current_index_ = 0;
+            UpdateRuckig(measurement);
             return true;
         }
 
     protected:
-        void InitializeRuckig(const JointMeasurement &measurement)
+        void UpdateRuckig(const JointMeasurement &measurement)
         {
             for (int i = 0; i < ndof_arms_; i++)
             {
-                // Initialize translation input parameters
-                runtime_.input.current_position[i] = measurement.q_desired_pre[i];
-                runtime_.input.current_velocity[i] = measurement.velocity[i];
-                runtime_.input.current_acceleration[i] = 0.0;
+                if (current_index_ == 0)
+                {
+                    runtime_.input.current_position[i] = measurement.q_desired_pre[i];
+                    runtime_.input.current_velocity[i] = measurement.velocity[i];
+                    runtime_.input.current_acceleration[i] = 0.0;
+                }
+                else
+                {
+                    runtime_.input.current_position[i] = runtime_.output.new_position[i];
+                    runtime_.input.current_velocity[i] = runtime_.output.new_velocity[i];
+                    runtime_.input.current_acceleration[i] = runtime_.output.new_acceleration[i];
+                }
                 runtime_.input.target_position[i] = 0.0;
                 runtime_.input.target_velocity[i] = 0.0;
                 runtime_.input.target_acceleration[i] = 0.0;
             }
             if (joint_trajectory_primary_.has_value())
             {
-                auto target_q = joint_trajectory_primary_(0 + phase_gap_);
-                for (int i = 0; i < ndof_primary_, i++)
+                auto &q_target_left = joint_trajectory_primary_(current_index_ + 1);
+                for (int i = 0; i < ndof_primary_; i++)
                 {
-                    runtime_.input.target_position[i] = target_q(i);
+                    runtime_.input.target_position[i] = q_target_left(i);
                 }
             }
             if (joint_trajectory_secondary_.has_value())
             {
-                auto target_q = joint_trajectory_secondary_(0 + phase_gap_);
-                for (int i = ndof_primary_; i < ndof_primary_ + ndof_secondary_, i++)
+                auto &q_target_right = joint_trajectory_secondary_(current_index_ + 1);
+                for (int i = ndof_primary_; i < ndof_primary_ + ndof_secondary_; i++)
                 {
-                    runtime_.input.target_position[i] = target_q(i - ndof_primary_);
-                }
-            }
-            current_index_ = 0;
-        }
-
-        void UpdateRuckig()
-        {
-            // target_phase_ = current_phase_ + phase_gap_;
-            for (int i = 0; i < ndof_arms_; i++)
-            {
-                runtime_.input.target_position[i] = 0.0;
-                runtime_.input.target_velocity[i] = 0.0;
-                runtime_.input.target_acceleration[i] = 0.0;
-            }
-            if (joint_trajectory_primary_.has_value())
-            {
-                auto target_q = joint_trajectory_primary_(current_index_ + 1);
-                // auto target_q = joint_trajectory_primary_(target_phase_);
-                for (int i = 0; i < ndof_primary_, i++)
-                {
-                    runtime_.input.target_position[i] = target_q(i);
-                }
-            }
-            if (joint_trajectory_secondary_.has_value())
-            {
-                auto target_q = joint_trajectory_secondary_(current_index_ + 1);
-                // auto target_q = joint_trajectory_secondary_(target_phase_);
-                for (int i = ndof_primary_; i < ndof_primary_ + ndof_secondary_, i++)
-                {
-                    runtime_.input.target_position[i] = target_q(i - ndof_primary_);
+                    runtime_.input.target_position[i] = q_target_right(i - ndof_primary_);
                 }
             }
         }
@@ -257,10 +297,13 @@ namespace robot_server_lib
             ruckig::OutputParameter<ndof_arms_> output;
         } runtime_;
 
-        std::optional<JointTrajectory> joint_trajectory_primary_;
-        std::optional<JointTrajectory> joint_trajectory_secondary_;
-        double current_phase_;
+        JointTrajectory<ndof_left_> joint_trajectory_primary_;
+        JointTrajectory<ndof_right_> joint_trajectory_secondary_;
         int current_index_;
+        int trajectory_size_;
+
+        std::shared_ptr<kinematics::YaikKinematics> kine_ptr_primary_;
+        std::shared_ptr<kinematics::YaikKinematics> kine_ptr_secondary_;
     };
 
 } // namespace robot_server_lib

@@ -169,11 +169,15 @@ namespace robot_server_lib
             }
 
             int seg = 0;
-            while (seg + 1 < segment_times_.size() && t > segment_times_[seg + 1])
+            while (seg + 1 < segment_times_.size() && t >= segment_times_[seg + 1])
             {
                 ++seg;
             }
             double alpha = (t - segment_times_[seg]) / (segment_times_[seg + 1] - segment_times_[seg]);
+            if(t - segment_times_[seg] < 0.005) // corresponds to 200 milestones on trajectory
+            {
+                alpha = 0.0; // ensure all poses in poses_ can be sampled
+            }
 
             // interpolate position
             Vector3d p0 = poses_[seg].head<3>();
@@ -269,6 +273,23 @@ namespace robot_server_lib
         std::vector<Eigen::Matrix<double, nDoF, 1>> &GetJointTrajectory()
         {
             return joint_space_trajectory_;
+        }
+
+        void clear()
+        {
+            joint_space_trajectory_.clear();
+            times_.clear();
+        }
+
+        bool has_value()
+        {
+            return !joint_space_trajectory_.empty();
+        }
+
+        const Eigen::Matrix<double, nDoF, 1>& operator()(const int index) const
+        {
+            assert(index < joint_space_trajectory_.size() && "Index out of bounds");
+            return joint_space_trajectory_[index];
         }
 
     private:
