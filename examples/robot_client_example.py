@@ -11,42 +11,24 @@ joint_industrial_left0 = [-0.45, -0.65, 0.35, -1.5, -1, 1.1, -0.4]
 joint_industrial_right0 = [0.45, 0.65, -0.35, 1.5, 1, -1.1, 0.4]
 
 # pose采用四元数格式[x, y, z, qw, qx, qy, qz]
-pose_industrial_left0 = [
-    -0.3,
-    0.363727,
-    0.262795,
-    0.628296,
-    -0.599072,
-    -0.440151,
-    0.229399,
-]
-pose_industrial_right0 = [
-    0.3,
-    0.363727,
-    0.262795,
-    0.229399,
-    0.440151,
-    0.599072,
-    0.628296,
-]
-
+pose_industrial_left0 = [-0.3, 0.363727, 0.262795, -0.229399, -0.440151, 0.599072, 0.628296]
+pose_industrial_right0 = [0.3, 0.363727, 0.262795, 0.628296, -0.599072, 0.440151, -0.229399]
 
 def main(args=None):
-    "示例: 仿真client, 如需控制真实机器人则将is_sim设置为False"
+    "示例: 仿真client, 如需控制真实机器人则将is_sim设置为False即可"
     client_sim = RobotClient(is_sim=True)
-    status = client_sim.get_info().status
-    joint_position = client_sim.get_info().joint_position
-    ee_pose = client_sim.get_info().ee_pose
 
-    print(f"\nCurrent robot status: {status}")
-    print(f"\nCurrent joint position: {joint_position}")
-    print(f"\nCurrent ee_pose: {ee_pose}\n")
+    print(f"\nCurrent robot status: {client_sim.get_info().status}")
+    print(f"\nCurrent joint position: {client_sim.get_info().joint_position}")
+    print(f"\nCurrent ee_pose: {client_sim.get_info().ee_pose}\n")
 
     client_sim.set_global_speed(0.5)
+
     """move joint/line接口示例"""
     client_sim.move_joint_sync(
         joint_industrial_left0 + joint_industrial_right0, MotionGroup.BothArms
     )
+
     client_sim.move_line_sync(
         pose_industrial_left0 + pose_industrial_right0, MotionGroup.BothArms
     )

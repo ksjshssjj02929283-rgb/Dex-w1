@@ -8,7 +8,7 @@ from .data_structure import *
 
 
 class RobotClient(ABC):
-    def __init__(self, is_sim : bool = False):
+    def __init__(self, is_sim: bool = False):
         self.is_sim = is_sim
         self.latest_sent_id = -1
         self.latest_queued_id = -1

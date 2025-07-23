@@ -180,9 +180,13 @@ class RobotClientRos2(Node, RobotClient):
 
     def _init_action_client(self):
         if self.is_sim:
-            self._action_move_robot = ActionClient(self, MoveRobot, "/control/move_robot_sim")
+            self._action_move_robot = ActionClient(
+                self, MoveRobot, "/control/move_robot_sim"
+            )
         else:
-            self._action_move_robot = ActionClient(self, MoveRobot, "/control/move_robot")
+            self._action_move_robot = ActionClient(
+                self, MoveRobot, "/control/move_robot"
+            )
 
     def _feedback_move_robot_callback(self, feedback_msg):
         feedback = feedback_msg.feedback
