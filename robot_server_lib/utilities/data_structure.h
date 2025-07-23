@@ -226,46 +226,45 @@ namespace robot_server_lib
             double max_jerk{100000.0};
         };
 
-        // void ComputeTimeParametrization(JointConstraints constraints = JointConstraints())
-        // {
-        //     const auto &q_list = joint_space_trajectory_;
-        //     const int N = q_list.size();
-        //     if (N < 2)
-        //         return;
+        void ComputeTimeParametrization()
+        {
+            const auto &q_list = joint_space_trajectory_;
+            const int N = q_list.size();
+            assert(N >= 2 && "JointTrajectory must have at least 2 points for time parametrization");
 
-        //     times_.resize(N);
-        //     times_[0] = 0.0;
+            times_.resize(N);
+            times_[0] = 0.0;
 
-        //     std::vector<double> durations(N - 1);
-        //     for (int i = 0; i < N - 1; ++i)
-        //     {
-        //         double max_duration = 0.0;
-        //         for (int j = 0; j < nDoF; ++j)
-        //         {
-        //             double q0 = q_list[i](j);
-        //             double q1 = q_list[i + 1](j);
-        //             double delta = std::abs(q1 - q0);
-        //             // 估算当前段的速度 v_i ≈ Δq / Δt，用前后段近似加速度
-        //             double v0 = (i == 0) ? 0 : (q_list[i](j) - q_list[i - 1](j)) / durations[i - 1];
-        //             double v1 = (i == N - 2) ? 0 : (q_list[i + 2](j) - q_list[i + 1](j)) / durations[i + 1];
-        //             double avg_v = std::abs(v1 - v0);                       // 估算速度变化量
-        //             double avg_a = avg_v / std::max(1e-3, durations[i]);    // 估算加速度
-        //             double est_jerk = avg_a / std::max(1e-3, durations[i]); // 估算jerk
-        //             double t_j = std::cbrt(6.0 * delta / constraints.max_jerk); // 极限估算
-        //             double t_a = std::sqrt(delta / constraints.max_acceleration);
-        //             double t_v = delta / constraints.max_velocity;
+            std::vector<double> durations(N - 1);
+            for (int i = 0; i < N - 1; ++i)
+            {
+                double max_duration = 0.0;
+                for (int j = 0; j < nDoF; ++j)
+                {
+                    double q0 = q_list[i](j);
+                    double q1 = q_list[i + 1](j);
+                    double delta = std::abs(q1 - q0);
+                    // 估算当前段的速度 v_i ≈ Δq / Δt，用前后段近似加速度
+                    double v0 = (i == 0) ? 0 : (q_list[i](j) - q_list[i - 1](j)) / durations[i - 1];
+                    double v1 = (i == N - 2) ? 0 : (q_list[i + 2](j) - q_list[i + 1](j)) / durations[i + 1];
+                    double avg_v = std::abs(v1 - v0);                       // 估算速度变化量
+                    double avg_a = avg_v / std::max(1e-3, durations[i]);    // 估算加速度
+                    double est_jerk = avg_a / std::max(1e-3, durations[i]); // 估算jerk
+                    double t_j = std::cbrt(6.0 * delta / constraints.max_jerk); // 极限估算
+                    double t_a = std::sqrt(delta / constraints.max_acceleration);
+                    double t_v = delta / constraints.max_velocity;
 
-        //             double t = std::max({t_j * 3, t_a * 2, t_v}); // 保守估计
-        //             max_duration = std::max(max_duration, t);
-        //         }
-        //         durations[i] = max_duration;
-        //     }
+                    double t = std::max({t_j * 3, t_a * 2, t_v}); // 保守估计
+                    max_duration = std::max(max_duration, t);
+                }
+                durations[i] = max_duration;
+            }
 
-        //     for (int i = 1; i < N; ++i)
-        //     {
-        //         times_[i] = times_[i - 1] + durations[i - 1];
-        //     }
-        // }
+            for (int i = 1; i < N; ++i)
+            {
+                times_[i] = times_[i - 1] + durations[i - 1];
+            }
+        }
 
         std::vector<Eigen::Matrix<double, nDoF, 1>> &GetJointTrajectory()
         {
@@ -275,6 +274,7 @@ namespace robot_server_lib
     private:
         std::vector<Eigen::Matrix<double, nDoF, 1>> joint_space_trajectory_;
         std::vector<double> times_;
+        JointConstraints constraints;
     };
 
     // 移动指令

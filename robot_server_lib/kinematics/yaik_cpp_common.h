@@ -608,6 +608,13 @@ namespace yaik_cpp
     return disturb_matrix * transform;
   }
 
+  struct NumericalRefinementParams
+  {
+    int max_iterations{20};
+    double constraint_satisfied_tolerance{1e-3};
+    double diagonal_damping{1e-5};
+  };
+
   template <int robot_nq = 6>
   bool numericalRefinement(
       const std::function<Eigen::Matrix4d(const std::array<double, robot_nq> &)> &
@@ -615,9 +622,8 @@ namespace yaik_cpp
       const std::function<void(const std::array<double, robot_nq> &,
                                Eigen::Matrix<double, 6, robot_nq> &)> &
           twist_jacobian_functor,
-      const Eigen::Matrix4d &ee_target, std::array<double, robot_nq> &q, const int n_iterations = 10, 
-      const int constraint_satisfied_tolerance = 1e-3,
-      double diagonal_damping = 1e-5)
+      const Eigen::Matrix4d &ee_target, std::array<double, robot_nq> &q,
+      const NumericalRefinementParams &params = NumericalRefinementParams())
   {
     Eigen::Matrix<double, 6, robot_nq> jacobian;
     Eigen::Matrix<double, robot_nq, robot_nq> jtj;
@@ -625,7 +631,7 @@ namespace yaik_cpp
     Eigen::Matrix<double, 6, 1> twist_target;
 
     bool satisfied = false;
-    for (auto i = 0; i < n_iterations; i++)
+    for (auto i = 0; i < params.max_iterations; i++)
     {
       // Compute the twist target
       Eigen::Matrix4d ee_pose_i = fk_functor(q);
@@ -637,7 +643,7 @@ namespace yaik_cpp
       twist_target[4] = twist_target_4x4(1, 3);
       twist_target[5] = twist_target_4x4(2, 3);
 
-      if(twist_target.norm() < constraint_satisfied_tolerance)
+      if (twist_target.norm() < params.constraint_satisfied_tolerance)
       {
         satisfied = true;
         break; // Constraint satisfied
@@ -649,7 +655,7 @@ namespace yaik_cpp
       jte = jacobian.transpose() * twist_target;
       for (auto j = 0; j < robot_nq; j++)
       {
-        jtj(j, j) += diagonal_damping;
+        jtj(j, j) += params.diagonal_damping;
       }
 
       // Solve Ax = b and update
@@ -675,5 +681,42 @@ namespace yaik_cpp
   using AnalyticalIkSolver7 = AnalyticalIkSolver<7, double>;
   template <int robot_nq>
   using AnalyticalIkSolverN = AnalyticalIkSolver<robot_nq>;
+
+  template <int robot_nq>
+  class IkSolverBase
+  {
+  public:
+    using Jps = Eigen::Matrix<double, robot_nq, 1>;
+    using JpsArr = std::array<double, robot_nq>;
+    virtual ~IkSolverBase() = default;
+    virtual Eigen::Matrix4d computeFK(const Jps &q_in) = 0;
+    virtual void computeIK(const Eigen::Matrix4d &T_ee,
+                           const double aux_input,
+                           std::vector<Jps> &ik_output) = 0;
+    virtual bool projectToPose(
+        const Jps &q_in,
+        const Eigen::Matrix4d &T_ee,
+        Jps &q_out) = 0;
+
+    void _ArrToVec(const JpsArr &arr, Jps &vec)
+    {
+      vec = Eigen::Map<const Jps>(arr.data());
+    }
+    Jps _ArrToVec(const JpsArr &arr)
+    {
+      return Eigen::Map<const Jps>(arr.data());
+    }
+
+    void _VecToArr(const Jps &vec, JpsArr &arr)
+    {
+      std::copy(vec.data(), vec.data() + vec.size(), arr.begin());
+    }
+    JpsArr _VecToArr(const Jps &vec)
+    {
+      JpsArr arr;
+      std::copy(vec.data(), vec.data() + vec.size(), arr.begin());
+      return arr;
+    }
+  };
 
 }; // namespace yaik_cpp

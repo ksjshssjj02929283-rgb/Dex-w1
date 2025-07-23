@@ -1,7 +1,8 @@
 #pragma once
 
 #include "kinematics_base.h"
-#include "w1_left_arm_industrial_ik_generated.h"
+#include "w1_left_arm_industrial_ik_generated.hpp"
+#include "w1_right_arm_industrial_ik_generated.hpp"
 #include <unordered_set>
 
 namespace robot_server_lib
@@ -19,20 +20,35 @@ namespace robot_server_lib
       struct YaikKinematicsParams
       {
         // trajectory config
-        std::size_t milestones_per_knot{10}; // = n_milestones / n_knots, >= 1
-        std::size_t n_knots{20};             // number of knots
-        int dist_type{-1};                   // norm type of distance, -1 defaults to L∞ Norm
-        Jps dist_weight{Jps::Constant(1.0)};
-        double jps_dist_tolerance{0.2}; // tol of jps-distance between milestones
+        std::size_t milestones_per_knot; // = n_milestones / n_knots, >= 1
+        std::size_t n_knots;             // number of knots
+        int dist_type;                   // norm type of distance, -1 defaults to L∞ Norm
+        Jps dist_weight;
+        double jps_dist_tolerance; // tol of jps-distance between milestones
         // dfs config
-        bool update_nodes{true};      // if a node changes with its previous node
-        int dfs_max_iterations{5000}; // maximum number of dfs iterations
+        bool update_nodes;      // if a node changes with its previous node
+        int dfs_max_iterations; // maximum number of dfs iterations
         // sampling config
-        int n_theta{4};
-        double d_theta{3.14 / 24.0};
+        int n_theta;
+        double d_theta;
         // projection config
-        int max_constraint_project_iterations{20};
-        double constraint_satisfied_tolerance{1e-3};
+        int max_constraint_project_iterations;
+        double constraint_satisfied_tolerance;
+
+        YaikKinematicsParams()
+            : milestones_per_knot(10),
+              n_knots(20),
+              dist_type(-1),
+              dist_weight(Jps::Constant(1.0)),
+              jps_dist_tolerance(0.2),
+              update_nodes(true),
+              dfs_max_iterations(5000),
+              n_theta(4),
+              d_theta(3.14 / 24.0),
+              max_constraint_project_iterations(20),
+              constraint_satisfied_tolerance(1e-3)
+        {
+        }
 
         double GetDistance(const Jps &a, const Jps &b) const
         {
@@ -71,15 +87,13 @@ namespace robot_server_lib
         }
       };
 
-      YaikKinematics(const YaikKinematicsParams &_params)
-          : params(_params)
+      YaikKinematics(bool arm_type, YaikKinematicsParams _params = YaikKinematicsParams())
+          : params(std::move(_params))
       {
-        ik_solver_ptr = std::make_shared<yaik_cpp::w1_left_arm_industrial_ik>();
-      }
-
-      YaikKinematics() : params()
-      {
-        ik_solver_ptr = std::make_shared<yaik_cpp::w1_left_arm_industrial_ik>();
+        if (arm_type == 0)
+          ik_solver_ptr = std::make_shared<yaik_cpp::W1LeftArmIndustrial_IkSolver>();
+        else
+          ik_solver_ptr = std::make_shared<yaik_cpp::W1RightArmIndustrial_IkSolver>();
       }
 
     public:
@@ -87,9 +101,7 @@ namespace robot_server_lib
                            const pinocchio::SE3 &tcp_frame = pinocchio::SE3::Identity()) override
       {
         assert(q_in.size() == ndof_);
-        JpsArr q_arr;
-        _VecToArr(q_in, q_arr);
-        auto ee_pose = ik_solver_ptr->computeFK(q_arr);
+        auto ee_pose = ik_solver_ptr->computeFK(q_in);
         return PoseQuaternion(ee_pose * tcp_frame.toHomogeneousMatrix());
       }
 
@@ -106,14 +118,10 @@ namespace robot_server_lib
         return ik_get;
       }
 
-      void GetRawIK(const Matrix4d &T_ee, const double theta, std::vector<Jps> &ik_results)
+      void GetRawIK(const Matrix4d &T_ee, const double aux_input, std::vector<Jps> &ik_results)
       {
-        auto ik_results_in_arr = ik_solver_ptr->computeIK(T_ee, theta);
         ik_results.clear();
-        for (auto ik_arr : ik_results_in_arr)
-        {
-          ik_results.push_back(_ArrToVec(ik_arr));
-        }
+        ik_solver_ptr->computeIK(T_ee, aux_input, ik_results);
       }
 
       // Find closest ik result to q_ref, and the found min_dist should be smaller than *dist_in
@@ -140,20 +148,16 @@ namespace robot_server_lib
         return false;
       }
 
-      bool ProjectToConstraint(const Jps &q_in, const Matrix4d &T_ee, Jps &q_projected)
+      bool ProjectToPose(const Jps &q_in, const Matrix4d &T_ee, Jps &q_projected)
       {
-        JpsArr temp;
-        _VecToArr(q_in, temp);
-        bool project_ok = yaik_cpp::numericalRefinement<ndof_>(ik_solver_ptr->computeFK, ik_solver_ptr->computeTwistJacobian, T_ee, temp, params.max_constraint_project_iterations,
-                                                               params.constraint_satisfied_tolerance);
-        _ArrToVec(temp, q_projected);
+        bool project_ok = ik_solver_ptr->projectToPose(q_in, T_ee, q_projected);
         return project_ok;
       }
 
       void GetIKwithProjectionAndSampling(const Matrix4d &T_ee, const Jps &q_in, std::vector<Jps> &results)
       {
         Jps q_ref;
-        bool project_ok = ProjectToConstraint(q_in, T_ee, q_ref);
+        bool project_ok = ProjectToPose(q_in, T_ee, q_ref);
         // if(!project_ok) ...
 
         std::vector<double> theta_list;
@@ -309,20 +313,6 @@ namespace robot_server_lib
       };
 
     private:
-      void _ArrToVec(const JpsArr &arr, Jps &vec)
-      {
-        vec = Eigen::Map<const Jps>(arr.data());
-      }
-      Jps _ArrToVec(const JpsArr &arr)
-      {
-        return Eigen::Map<const Jps>(arr.data());
-      }
-
-      void _VecToArr(const Jps &vec, JpsArr &arr)
-      {
-        std::copy(vec.data(), vec.data() + ndof_, arr.begin());
-      }
-
       Matrix4d _toMatrix4d(const PoseQuaternion &pose_in)
       {
         Matrix4d T_ee;
@@ -339,7 +329,7 @@ namespace robot_server_lib
       }
 
       YaikKinematicsParams params;
-      std::shared_ptr<yaik_cpp::w1_left_arm_industrial_ik> ik_solver_ptr;
+      std::shared_ptr<yaik_cpp::IkSolverBase<7>> ik_solver_ptr;
     };
 
   } // namespace kinematics

@@ -44,30 +44,27 @@ namespace robot_server_lib
             // Initialize kinematics for both arms
             // if (robot_model_.params_ptr->left_arm_name == "W1LeftArmIndustrial")
             // {
-            //     kinematics_ptr_ =
-            //         std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmIndustrial());
+                // kinematics_ptr_ =
+                    // std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmIndustrial());
             // }
             // if (robot_model_.params_ptr->left_arm_name == "W1LeftArmAnthropomorphic")
             // {
-            //     kinematics_ptr_ =
-            //         std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmAnthropomorphic());
+                // kinematics_ptr_ =
+                    // std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmAnthropomorphic());
             // }
             // if (robot_model_.params_ptr->right_arm_name == "W1RightArmIndustrial")
             // {
-            //     kinematics_secondary_ptr_ =
-            //         std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmIndustrial());
+                // kinematics_secondary_ptr_ =
+                    // std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmIndustrial());
             // }
             // if (robot_model_.params_ptr->right_arm_name == "W1RightArmAnthropomorphic")
             // {
-            //     kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(
-            //         kinematics::W1RightArmAnthropomorphic());
+                // kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(
+                    // kinematics::W1RightArmAnthropomorphic());
             // }
 
-            // kinematics_ptr_ = std::make_shared<kinematics::YaikKinematics>(kinematics::YaikKinematics::YaikKinematicsParams());
-            // kinematics_secondary_ptr_ = std::make_shared<kinematics::YaikKinematics>(kinematics::YaikKinematics::YaikKinematicsParams());
-            
-            kinematics_ptr_ = std::make_shared<kinematics::YaikKinematics>();
-            kinematics_secondary_ptr_ = std::make_shared<kinematics::YaikKinematics>();
+            kinematics_ptr_ = std::make_shared<kinematics::YaikKinematics>(0);
+            kinematics_secondary_ptr_ = std::make_shared<kinematics::YaikKinematics>(1);
  
             // kinematics_ptr_ = std::make_shared<kinematics::NumericalKinematics>(*robot_model_.left_arm_model_ptr);
             // kinematics_secondary_ptr_ = std::make_shared<kinematics::NumericalKinematics>(*robot_model_.right_arm_model_ptr);

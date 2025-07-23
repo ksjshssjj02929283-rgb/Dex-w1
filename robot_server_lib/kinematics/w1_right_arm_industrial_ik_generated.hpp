@@ -4,8 +4,7 @@
 
 namespace yaik_cpp
 {
-
-    struct w1_left_arm_industrial_ik
+    struct w1_right_arm_industrial_ik
     {
 
         // Constants for solver
@@ -30,11 +29,11 @@ namespace yaik_cpp
         // unknown_i_raw = unknown_i_original + unknown_i_offset_original2raw
         static constexpr double th_0_offset_original2raw = 0.0;
         static constexpr double th_1_offset_original2raw = 3.141592653589793;
-        static constexpr double th_2_offset_original2raw = 1.5707963267948966;
-        static constexpr double th_3_offset_original2raw = 3.141592653589793;
+        static constexpr double th_2_offset_original2raw = -1.5707963267948966;
+        static constexpr double th_3_offset_original2raw = -3.141592653589793;
         static constexpr double th_4_offset_original2raw = 3.141592653589793;
         static constexpr double th_5_offset_original2raw = 3.141592653589793;
-        static constexpr double th_6_offset_original2raw = 3.141592653589793;
+        static constexpr double th_6_offset_original2raw = 0.0;
 
         // The transformation between raw and original ee target
         // Original value are the ones corresponded to robot (usually urdf/sdf)
@@ -1355,6 +1354,46 @@ namespace yaik_cpp
             return ik_output;
         }
 
-    }; // struct w1_left_arm_industrial_ik
+    }; // struct w1_right_arm_industrial_ik
+
+    class W1RightArmIndustrial_IkSolver : public IkSolverBase<7>
+    {
+    public:
+        W1RightArmIndustrial_IkSolver() : params()
+        {
+            ik_solver_ptr = std::make_shared<w1_right_arm_industrial_ik>();
+        }
+
+        Eigen::Matrix4d computeFK(const Jps &q_in) override
+        {
+            JpsArr q_arr = _VecToArr(q_in);
+            return ik_solver_ptr->computeFK(q_arr);
+        }
+
+        void computeIK(const Eigen::Matrix4d &T_ee, const double aux_input, std::vector<Jps> &ik_results) override
+        {
+            auto ik_results_in_arr = ik_solver_ptr->computeIK(T_ee, aux_input);
+            ik_results.clear();
+            for (auto ik_arr : ik_results_in_arr)
+            {
+                ik_results.push_back(_ArrToVec(ik_arr));
+            }
+        }
+
+        bool projectToPose(const Jps &q_in, const Eigen::Matrix4d &T_ee, Jps &q_projected) override
+        {
+            JpsArr temp;
+            _VecToArr(q_in, temp);
+            bool project_ok = numericalRefinement<7>(ik_solver_ptr->computeFK, ik_solver_ptr->computeTwistJacobian, T_ee, temp,
+                                                     params);
+            _ArrToVec(temp, q_projected);
+            return project_ok;
+        }
+
+    private:
+        static constexpr int aux_input_index = 4;
+        std::shared_ptr<w1_right_arm_industrial_ik> ik_solver_ptr;
+        const NumericalRefinementParams params;
+    };
 
 }; // namespace yaik_cpp
