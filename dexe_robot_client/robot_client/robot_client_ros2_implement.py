@@ -22,7 +22,7 @@ from std_msgs.msg import String
 class RobotClientRos2(Node, RobotClient):
     """ros2 client universal interfaces"""
 
-    def __init__(self, is_sim: bool = False):
+    def __init__(self, is_sim: bool = False, timeout_sec: float = 3.0):
         rclpy.init()
         Node.__init__(self, "robot_client")
         RobotClient.__init__(self, is_sim=is_sim)
@@ -30,11 +30,14 @@ class RobotClientRos2(Node, RobotClient):
         self._init_publisher()
         self._init_service_client()
         self._init_action_client()
-        for _ in range(10):
+        start_time = time.time()
+        while time.time() - start_time < timeout_sec:
+            rclpy.spin_once(self, timeout_sec = 0.1)
             if self.status != Status.Init:
                 self.get_logger().info(f"robot client init successed")
                 break
-            self.wait_second(0.5)
+        else:
+            self.get_logger().error("robot client init failed: connect to server timeout")
 
     """ ---------------------------------------------------------------------------
     implement interfaces of base class RobotClient
@@ -86,7 +89,7 @@ class RobotClientRos2(Node, RobotClient):
 
     def send_set_property_request(self, type: PropertyType, value: Any) -> int:
         if not self._srv_set_property.wait_for_service(timeout_sec=3.0):
-            self.get_logger().error("set_property service not available")
+            self.get_logger().error("Ros2 set_property service not available")
             return False
 
         req = SetProperty.Request()
@@ -103,7 +106,7 @@ class RobotClientRos2(Node, RobotClient):
     def send_move_robot_request(self, request: MoveRequest) -> int:
         # 检查动作服务器是否可用
         if not self._action_move_robot.wait_for_server(timeout_sec=3.0):
-            self.get_logger().error("Ros 2 action server not available!")
+            self.get_logger().error("Ros2 action server not available!")
             # return False  todo
 
         # 配置目标
