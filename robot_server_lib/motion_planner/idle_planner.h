@@ -13,7 +13,7 @@ class IdlePlanner : public MotionPlannerBase
 
     ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) override
     {
-        joint_cmd.position = idle_position_;
+        joint_cmd.position = idle_position_ = measurement.q_desired_pre;
         joint_cmd.velocity.setZero();
         joint_cmd.acceleration.setZero();
         joint_cmd.torque_feedforward.setZero();

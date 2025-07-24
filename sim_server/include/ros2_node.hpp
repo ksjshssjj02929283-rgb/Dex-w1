@@ -28,6 +28,7 @@ class Ros2Node : public rclcpp::Node
     rclcpp_action::CancelResponse HandleCancel(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>);
     rclcpp::TimerBase::SharedPtr publish_timer_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_server_state_publisher_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_server_state_real_subscriber_;
     rclcpp::Subscription<robot_server_interfaces::msg::StreamingCommand>::SharedPtr streaming_command_subscriber_;
     rclcpp::Service<robot_server_interfaces::srv::SetProperty>::SharedPtr set_property_srv_;
     rclcpp_action::Server<robot_server_interfaces::action::MoveRobot>::SharedPtr move_robot_action_server_;
@@ -49,10 +50,14 @@ class Ros2Node : public rclcpp::Node
     robot_server_lib::BoundedQueue<std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>>
         request_handle_queue_{32};
 
-    struct
-    {
+    struct {
         std::atomic_int64_t error_drop{-1};
         std::atomic_int64_t queued{-1};
         std::atomic_int64_t finished{-1};
     } latest_report_id_;
+
+    struct {
+        robot_server_lib::VectorDof joint_position;
+        bool is_updated = false;
+    } real_robot_sync_;
 };
