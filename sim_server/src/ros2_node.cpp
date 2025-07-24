@@ -159,7 +159,7 @@ void Ros2Node::InitRobotServer()
             }
         });
 
-    publish_timer_ = this->create_wall_timer(std::chrono::milliseconds(50),  // 20Hz
+    publish_timer_ = this->create_wall_timer(std::chrono::milliseconds(10),  // 100Hz
                                              [this]()
                                              {
                                                  std_msgs::msg::String robot_server_state_msg;
