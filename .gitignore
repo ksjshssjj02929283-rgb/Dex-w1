@@ -4,8 +4,11 @@
 .cache/*
 
 build*/
+install/
 
 __pycache__/
 *.pyc
+*.egg-info/
 
 log/
+data/

@@ -4,11 +4,5 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
-from enum import Enum
-'''
-状态码: 用于接口返回,表示调用结果
-
-- StatusCode > 0 : 表示调用结果正常  
-- StatusCode < 0 : 表示调用结果异常
-- StatusCode 组成: RC_模块_接口/失败原因
-'''
+from dexe_robot_client.robot_client.data_structure import *
+from dexe_robot_client.robot_client.robot_client_ros2_implement import RobotClientRos2
