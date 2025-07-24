@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Release)
 project(sim_server)
 
-option(ENABLE_SIM_SERVER "Enable sim_server package compilation" OFF)
+option(ENABLE_SIM_SERVER "Enable sim_server package compilation" ON)
 
 # Python interpreter setup
 set(PYTHON_EXECUTABLE "/usr/bin/python3")

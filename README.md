@@ -52,10 +52,10 @@ dexe_interfaces gitlab: http://69.235.177.182:8081/dexembodied/dexe_interfaces
 colcon build
 ```
 
-仿真可视化编译默认关闭, 如需开启则
+仿真可视化编译默认开启, 如需关闭则
 
 ```bash
-colcon build --cmake-args -DENABLE_SIM_SERVER=ON
+colcon build --cmake-args -DENABLE_SIM_SERVER=OFF
 ```
 
 ### 运行项目

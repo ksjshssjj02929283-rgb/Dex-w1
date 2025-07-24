@@ -16,20 +16,35 @@ void Ros2Node::InitRobotServer()
     nanolog::initialize(nanolog::GuaranteedLogger(), "log/", "robot_server", 10);
     nanolog::set_log_level(nanolog::LogLevel::DEBUG);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
 
-    // 创建 /feedback/robot_server_state 发布器
-    robot_server_state_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state", 10);
+    // 创建 /feedback/robot_server_state_sim 发布器
+    robot_server_state_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state_sim", 10);
 
-    // 创建 /control/streaming_command 订阅器
+    // 创建 /feedback/robot_server_state 仿真专用订阅器用于与真实机器人关节同步, 部署到真实机器人时不需要
+    robot_server_state_real_subscriber_ = this->create_subscription<std_msgs::msg::String>(
+        "/feedback/robot_server_state", 10, [this](const std_msgs::msg::String::SharedPtr msg)
+        {
+            auto json_msg = nlohmann::json::parse(msg->data);
+            if (json_msg.contains("joint_position")) {
+                std::vector<double> joint_pos = json_msg["joint_position"].get<std::vector<double>>();
+                auto temp = Eigen::Map<robot_server_lib::VectorDof>(joint_pos.data(), joint_pos.size());
+                if (!this->real_robot_sync_.joint_position.isApprox(temp, 0.001)) {
+                    this->real_robot_sync_.joint_position = temp;
+                    this->real_robot_sync_.is_updated = true;
+                }
+            }
+        });
+
+    // 创建 /control/streaming_command_sim 订阅器
     streaming_command_subscriber_ = this->create_subscription<robot_server_interfaces::msg::StreamingCommand>(
-        "/control/streaming_command", 10, std::bind(&Ros2Node::OnStreamingCommand, this, std::placeholders::_1));
+        "/control/streaming_command_sim", 10, std::bind(&Ros2Node::OnStreamingCommand, this, std::placeholders::_1));
 
-    // 创建 /control/set_property 服务
+    // 创建 /control/set_property_sim 服务
     set_property_srv_ = this->create_service<robot_server_interfaces::srv::SetProperty>(
-        "/control/set_property", std::bind(&Ros2Node::SetPropertyOnRequest, this, std::placeholders::_1, std::placeholders::_2));
+        "/control/set_property_sim", std::bind(&Ros2Node::SetPropertyOnRequest, this, std::placeholders::_1, std::placeholders::_2));
 
-    // 创建 /control/move_robot action server
+    // 创建 /control/move_robot_sim action server
     move_robot_action_server_ = rclcpp_action::create_server<robot_server_interfaces::action::MoveRobot>(
-        this, "/control/move_robot", std::bind(&Ros2Node::HandleGoal, this, std::placeholders::_1, std::placeholders::_2),
+        this, "/control/move_robot_sim", std::bind(&Ros2Node::HandleGoal, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&Ros2Node::HandleCancel, this, std::placeholders::_1), std::bind(&Ros2Node::HandleAccepted, this, std::placeholders::_1));
 
     const auto package_share_path = ament_index_cpp::get_package_share_directory("sim_server");
@@ -141,7 +156,7 @@ void Ros2Node::InitRobotServer()
             }
         });
 
-    publish_timer_ = this->create_wall_timer(std::chrono::milliseconds(100),  // 10Hz
+    publish_timer_ = this->create_wall_timer(std::chrono::milliseconds(50),  // 20Hz
                                              [this]()
                                              {
                                                  std_msgs::msg::String robot_server_state_msg;
@@ -250,13 +265,19 @@ void Ros2Node::InitSimulation()
             {
                 if (!manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
                 {
-                    q_cmd.cmd.position << 0.5, -1.0, 0.5, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5, 0.0, 0.0;
+                    q_cmd.cmd.position << 0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
                     q_cmd.cmd.velocity.setZero();
                     cache.q_desired_pre = q_cmd.cmd.position;
                 }
                 // 更新关节测量数据
                 cache.position = q_cmd.cmd.position;
                 cache.velocity = q_cmd.cmd.velocity;
+                if (this->real_robot_sync_.is_updated)
+                {
+                    cache.position = cache.q_desired_pre = this->real_robot_sync_.joint_position;
+                    cache.velocity.setZero();
+                    this->real_robot_sync_.is_updated = false;
+                }
                 auto ret = manager_buffers_.joint_measurement->AppendNewElement(cache);
                 cache.q_desired_pre = cache.position;
                 assert(ret);
