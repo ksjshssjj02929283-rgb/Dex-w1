@@ -45,6 +45,7 @@ class RobotClientRos2(Node, RobotClient):
     ----------------------------------------------------------------------------"""
     def refresh(self):
         rclpy.spin_once(self, timeout_sec = 0.001)
+        rclpy.spin_once(self, timeout_sec = 0.001)
 
     def wait_second(self, wait_second: float):
         """Wait for a specified time in seconds."""
