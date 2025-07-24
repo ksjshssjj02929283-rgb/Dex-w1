@@ -49,11 +49,8 @@ class VisualRos2Node(Node):
         )
         mesh_dir = urdf_path.parent
         self.robot = pin.RobotWrapper.BuildFromURDF(urdf_path, mesh_dir)
-        self.viewer = meshcat.Visualizer()
-
         self.vis_sim = MeshcatVisualizer(self.robot.model, self.robot.collision_model, self.robot.visual_model)
-
-        self.vis_sim.initViewer(self.viewer)
+        self.vis_sim.initViewer(open=True)
         self.vis_sim.loadViewerModel()
         q0 = np.zeros(self.robot.model.nq) # 初始关节角度
         self.vis_sim.display(q0)

@@ -21,13 +21,16 @@ void Ros2Node::InitRobotServer()
 
     // 创建 /feedback/robot_server_state 仿真专用订阅器用于与真实机器人关节同步, 部署到真实机器人时不需要
     robot_server_state_real_subscriber_ = this->create_subscription<std_msgs::msg::String>(
-        "/feedback/robot_server_state", 10, [this](const std_msgs::msg::String::SharedPtr msg)
+        "/feedback/robot_server_state", 10,
+        [this](const std_msgs::msg::String::SharedPtr msg)
         {
             auto json_msg = nlohmann::json::parse(msg->data);
-            if (json_msg.contains("joint_position")) {
+            if (json_msg.contains("joint_position"))
+            {
                 std::vector<double> joint_pos = json_msg["joint_position"].get<std::vector<double>>();
                 auto temp = Eigen::Map<robot_server_lib::VectorDof>(joint_pos.data(), joint_pos.size());
-                if (!this->real_robot_sync_.joint_position.isApprox(temp, 0.001)) {
+                if (!this->real_robot_sync_.joint_position.isApprox(temp, 0.001))
+                {
                     this->real_robot_sync_.joint_position = temp;
                     this->real_robot_sync_.is_updated = true;
                 }
@@ -68,7 +71,7 @@ void Ros2Node::InitRobotServer()
         LOG_CRIT << "Failed to load robot.cfg";
         assert(false);
     }
-    
+
     pinocchio::Model model, left_arm_model, right_arm_model;
     pinocchio::urdf::buildModel(params.urdf_path, model);
     pinocchio::urdf::buildModel(params.left_arm_urdf_path, left_arm_model);
@@ -191,8 +194,7 @@ void Ros2Node::InitRobotServer()
                                                      ",\"latest_queued_id\":" + std::to_string(latest_report_id_.queued) +
                                                      ",\"latest_finished_id\":" + std::to_string(latest_report_id_.finished) +
                                                      ",\"latest_errordrop_id\":" + std::to_string(latest_report_id_.error_drop) +
-                                                     ",\"joint_position\":" + joint_position_ss.str() + 
-                                                     ",\"ee_pose\":" + ee_pose_ss.str() + "}";
+                                                     ",\"joint_position\":" + joint_position_ss.str() + ",\"ee_pose\":" + ee_pose_ss.str() + "}";
                                                  robot_server_state_publisher_->publish(robot_server_state_msg);
                                              });
 }

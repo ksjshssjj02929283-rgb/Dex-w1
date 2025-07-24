@@ -57,6 +57,7 @@ colcon build
 ```bash
 colcon build --cmake-args -DENABLE_SIM_SERVER=OFF
 ```
+如果同时真机在运行, 仿真位置会同步真机位置
 
 ### 运行项目
 

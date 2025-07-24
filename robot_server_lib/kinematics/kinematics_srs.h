@@ -68,11 +68,15 @@ class SRSKinematics : public KinematicsBase
         Eigen::VectorXd nsparams = Eigen::VectorXd::LinSpaced(this->num_samples_, current_arm_angle - small_range_, current_arm_angle + small_range_);
         std::vector<Eigen::VectorXd> ik_solutions;
 
-        auto solve_and_choose_solution = [&](const Eigen::VectorXd& params) {
-            for (Int64 index = 0; index < params.size(); ++index) {
+        auto solve_and_choose_solution = [&](const Eigen::VectorXd &params)
+        {
+            for (Int64 index = 0; index < params.size(); ++index)
+            {
                 Eigen::Matrix<double, 4, 7> joints_list;
-                if (_ComputeInverseKinematics(pose_se3, q_in, params[index], joints_list)) {
-                    for (int j = 0; j < 4; ++j) {
+                if (_ComputeInverseKinematics(pose_se3, q_in, params[index], joints_list))
+                {
+                    for (int j = 0; j < 4; ++j)
+                    {
                         ik_solutions.emplace_back(joints_list.row(j));
                     }
                 }
@@ -80,7 +84,8 @@ class SRSKinematics : public KinematicsBase
             return _ChooseIKSolution(ik_solutions, q_in);
         };
 
-        if (solve_and_choose_solution(nsparams)) {
+        if (solve_and_choose_solution(nsparams))
+        {
             q_in_and_out = ik_solutions[0];
             return true;
         }
@@ -88,15 +93,16 @@ class SRSKinematics : public KinematicsBase
         // 无解则扩大采样范围再次求解
         LOG_WARN << "No IK solution found in the initial range, expanding search range.";
         ik_solutions.clear();
-        Eigen::VectorXd nsparams_wide_left = Eigen::VectorXd::LinSpaced(
-            5 * this->num_samples_, current_arm_angle - 10 * small_range_, current_arm_angle - small_range_);
-        Eigen::VectorXd nsparams_wide_right = Eigen::VectorXd::LinSpaced(
-            5 * this->num_samples_, current_arm_angle + small_range_, current_arm_angle + 10 * small_range_);
+        Eigen::VectorXd nsparams_wide_left =
+            Eigen::VectorXd::LinSpaced(5 * this->num_samples_, current_arm_angle - 10 * small_range_, current_arm_angle - small_range_);
+        Eigen::VectorXd nsparams_wide_right =
+            Eigen::VectorXd::LinSpaced(5 * this->num_samples_, current_arm_angle + small_range_, current_arm_angle + 10 * small_range_);
 
         Eigen::VectorXd nsparams_wide(10 * this->num_samples_);
         nsparams_wide << nsparams_wide_left, nsparams_wide_right;
 
-        if (solve_and_choose_solution(nsparams_wide)) {
+        if (solve_and_choose_solution(nsparams_wide))
+        {
             q_in_and_out = ik_solutions[0];
             return true;
         }
