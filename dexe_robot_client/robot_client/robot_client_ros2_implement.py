@@ -22,34 +22,36 @@ from std_msgs.msg import String
 class RobotClientRos2(Node, RobotClient):
     """ros2 client universal interfaces"""
 
-    def __init__(self):
+    def __init__(self, is_sim: bool = False, timeout_sec: float = 3.0):
         rclpy.init()
         Node.__init__(self, "robot_client")
-        RobotClient.__init__(self)
+        RobotClient.__init__(self, is_sim=is_sim)
         self._init_subscriber()
         self._init_publisher()
         self._init_service_client()
         self._init_action_client()
-        for _ in range(10):
+        start_time = time.time()
+        while time.time() - start_time < timeout_sec:
+            rclpy.spin_once(self, timeout_sec = 0.1)
             if self.status != Status.Init:
                 self.get_logger().info(f"robot client init successed")
                 break
-            self.wait_second(0.5)
+        else:
+            self.get_logger().error("robot client init failed: connect to server timeout")
 
     """ ---------------------------------------------------------------------------
     implement interfaces of base class RobotClient
     实现RobotClient基类的abstract接口
     ----------------------------------------------------------------------------"""
-
-    def close_client(self):
-        rclpy.shutdown()
-        self.get_logger().info("robot client is closed")
+    def refresh(self):
+        rclpy.spin_once(self, timeout_sec = 0.001)
+        rclpy.spin_once(self, timeout_sec = 0.001)
 
     def wait_second(self, wait_second: float):
         """Wait for a specified time in seconds."""
         start_time = time.time()
         while time.time() - start_time < wait_second:
-            rclpy.spin_once(self, timeout_sec=0.1)
+            rclpy.spin_once(self, timeout_sec=0.001)
         self.get_logger().info(f"Waited for {wait_second} seconds")
 
     def wait_request_finish(
@@ -86,7 +88,7 @@ class RobotClientRos2(Node, RobotClient):
 
     def send_set_property_request(self, type: PropertyType, value: Any) -> int:
         if not self._srv_set_property.wait_for_service(timeout_sec=3.0):
-            self.get_logger().error("set_property service not available")
+            self.get_logger().error("Ros2 set_property service not available")
             return False
 
         req = SetProperty.Request()
@@ -103,7 +105,7 @@ class RobotClientRos2(Node, RobotClient):
     def send_move_robot_request(self, request: MoveRequest) -> int:
         # 检查动作服务器是否可用
         if not self._action_move_robot.wait_for_server(timeout_sec=3.0):
-            self.get_logger().error("Ros 2 action server not available!")
+            self.get_logger().error("Ros2 action server not available!")
             # return False  todo
 
         # 配置目标
@@ -174,12 +176,23 @@ class RobotClientRos2(Node, RobotClient):
         self._publisher_streaming_command.publish(position_msg)
         return True
 
+    def close_client(self):
+        rclpy.shutdown()
+        self.get_logger().info("robot client is closed")
+
     """ ---------------------------------------------------------------------------
     init action
     ----------------------------------------------------------------------------"""
 
     def _init_action_client(self):
-        self._action_move_robot = ActionClient(self, MoveRobot, "/control/move_robot")
+        if self.is_sim:
+            self._action_move_robot = ActionClient(
+                self, MoveRobot, "/control/move_robot_sim"
+            )
+        else:
+            self._action_move_robot = ActionClient(
+                self, MoveRobot, "/control/move_robot"
+            )
 
     def _feedback_move_robot_callback(self, feedback_msg):
         feedback = feedback_msg.feedback
@@ -206,34 +219,48 @@ class RobotClientRos2(Node, RobotClient):
     ----------------------------------------------------------------------------"""
 
     def _init_subscriber(self):
-        self.create_subscription(
-            String,
-            "/feedback/robot_server_state",
-            self._subscriber_robot_server_state_callback,
-            10,
-        )
+        if self.is_sim:
+            self.create_subscription(
+                String,
+                "/feedback/robot_server_state_sim",
+                self._subscriber_robot_server_state_callback,
+                10,
+            )
+        else:
+            self.create_subscription(
+                String,
+                "/feedback/robot_server_state",
+                self._subscriber_robot_server_state_callback,
+                10,
+            )
 
     """ ---------------------------------------------------------------------------
     init publisher
     ----------------------------------------------------------------------------"""
 
     def _init_publisher(self):
-        self._publisher_streaming_command = self.create_publisher(
-            StreamingCommand, "/control/streaming_command", 10
-        )
+        if self.is_sim:
+            self._publisher_streaming_command = self.create_publisher(
+                StreamingCommand, "/control/streaming_command_sim", 10
+            )
+        else:
+            self._publisher_streaming_command = self.create_publisher(
+                StreamingCommand, "/control/streaming_command", 10
+            )
 
     """ ---------------------------------------------------------------------------
     init service interfaces
     ----------------------------------------------------------------------------"""
 
     def _init_service_client(self):
-        self._srv_set_property = self.create_client(
-            SetProperty, "/control/set_property"
-        )
-
-        self._srv_get_property = self.create_client(
-            GetProperty, "/feedback/get_property"
-        )
+        if self.is_sim:
+            self._srv_set_property = self.create_client(
+                SetProperty, "/control/set_property_sim"
+            )
+        else:
+            self._srv_set_property = self.create_client(
+                SetProperty, "/control/set_property"
+            )
 
     """ ---------------------------------------------------------------------------
     callbacks for subscribers

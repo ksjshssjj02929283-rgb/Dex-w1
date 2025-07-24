@@ -8,7 +8,8 @@ from .data_structure import *
 
 
 class RobotClient(ABC):
-    def __init__(self):
+    def __init__(self, is_sim: bool = False):
+        self.is_sim = is_sim
         self.latest_sent_id = -1
         self.latest_queued_id = -1
         self.latest_finished_id = -1
@@ -31,6 +32,7 @@ class RobotClient(ABC):
         Returns:
             RobotState: 机器人状态集合
         """
+        self.refresh()
         return RobotInfo(
             status=self.status, joint_position=self.joint_position, ee_pose=self.ee_pose
         )
@@ -306,12 +308,12 @@ class RobotClient(ABC):
     ----------------------------------------------------------------------------"""
 
     @abstractmethod
-    def close_client(self):
-        """sync interface - stop client from robot server
-        同步接口 - 关闭client, 不会影响server正在进行的动作
+    def refresh(self):
+        """sync interface - refresh robot state information
+        同步接口 - 刷新机器人状态信息, 包括状态, 关节位置, 末端执行器位姿等
         """
         pass
-
+    
     @abstractmethod
     def wait_second(self, wait_second: float):
         """sync interface - wait for a specified time in seconds
@@ -370,5 +372,13 @@ class RobotClient(ABC):
             streaming_finished: 是否是本次流控制最后的点位, true - 停止流控制, false - 继续流控制
         Returns:
             bool: true - send success, false - send fail
+        """
+        pass
+
+
+    @abstractmethod
+    def close_client(self):
+        """sync interface - stop client from robot server
+        同步接口 - 关闭client, 不会影响server正在进行的动作
         """
         pass
