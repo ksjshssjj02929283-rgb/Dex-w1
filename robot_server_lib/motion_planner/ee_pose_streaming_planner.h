@@ -13,9 +13,9 @@ class EEPoseStreamingPlanner : public MotionPlannerBase
     {
         for (auto i = 0; i < ndof_robot; i++)
         {
-            runtime_.input.max_velocity[i] = joint_bounds_.max_velocity;
-            runtime_.input.max_acceleration[i] = joint_bounds_.max_acceleration;
-            runtime_.input.max_jerk[i] = joint_bounds_.max_jerk;
+            runtime_.input.max_velocity[i] = streaming_bounds_.max_velocity;
+            runtime_.input.max_acceleration[i] = streaming_bounds_.max_acceleration;
+            runtime_.input.max_jerk[i] = streaming_bounds_.max_jerk;
         }
     }
 
