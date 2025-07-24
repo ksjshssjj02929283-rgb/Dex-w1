@@ -48,14 +48,10 @@ uint64_t timestamp_now()
 /* I want [2016-10-13 00:01:23.528514] */
 void format_timestamp(std::ostream &os, uint64_t timestamp)
 {
-    // The next 3 lines do not work on MSVC!
-    // auto duration = std::chrono::microseconds(timestamp);
-    // std::chrono::high_resolution_clock::time_point time_point(duration);
-    // std::time_t time_t = std::chrono::high_resolution_clock::to_time_t(time_point);
     std::time_t time_t = timestamp / 1000000;
-    auto gmtime = std::gmtime(&time_t);
+    auto localtime = std::localtime(&time_t); // 使用本地时区
     char buffer[32];
-    strftime(buffer, 32, "%Y-%m-%d %T.", gmtime);
+    strftime(buffer, 32, "%Y-%m-%d %T.", localtime);
     char microseconds[7];
     sprintf(microseconds, "%06" PRIu64, timestamp % 1000000);
     os << '[' << buffer << microseconds << ']';
