@@ -43,16 +43,14 @@ class RobotClientRos2(Node, RobotClient):
     implement interfaces of base class RobotClient
     实现RobotClient基类的abstract接口
     ----------------------------------------------------------------------------"""
-
-    def close_client(self):
-        rclpy.shutdown()
-        self.get_logger().info("robot client is closed")
+    def refresh(self):
+        rclpy.spin_once(self, timeout_sec = 0.001)
 
     def wait_second(self, wait_second: float):
         """Wait for a specified time in seconds."""
         start_time = time.time()
         while time.time() - start_time < wait_second:
-            rclpy.spin_once(self, timeout_sec=0.1)
+            rclpy.spin_once(self, timeout_sec=0.001)
         self.get_logger().info(f"Waited for {wait_second} seconds")
 
     def wait_request_finish(
@@ -176,6 +174,10 @@ class RobotClientRos2(Node, RobotClient):
         # )
         self._publisher_streaming_command.publish(position_msg)
         return True
+
+    def close_client(self):
+        rclpy.shutdown()
+        self.get_logger().info("robot client is closed")
 
     """ ---------------------------------------------------------------------------
     init action
