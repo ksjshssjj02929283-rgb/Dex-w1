@@ -50,13 +50,15 @@ class Ros2Node : public rclcpp::Node
     robot_server_lib::BoundedQueue<std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>>
         request_handle_queue_{32};
 
-    struct {
+    struct
+    {
         std::atomic_int64_t error_drop{-1};
         std::atomic_int64_t queued{-1};
         std::atomic_int64_t finished{-1};
     } latest_report_id_;
 
-    struct {
+    struct
+    {
         robot_server_lib::VectorDof joint_position;
         bool is_updated = false;
     } real_robot_sync_;
