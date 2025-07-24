@@ -52,7 +52,7 @@ class JointStreamingPlanner : public MotionPlannerBase
         if (runtime_.previous_cmd.has_value())
         {
             auto norm_diff = (runtime_.previous_cmd.value().command - latest_cmd.command).norm();
-            if (norm_diff < latest_cmd.command.size() * PositionThreshold)
+            if (norm_diff < PositionThreshold)
             {
                 update_ruckig = false;
             }

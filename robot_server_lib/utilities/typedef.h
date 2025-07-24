@@ -22,8 +22,8 @@ constexpr int simulation_dt_micro = 500;  // 2Khz
 constexpr double torque_ctrl_dt = double(torque_ctrl_dt_micro) / 1e6;
 constexpr double manager_dt = double(manager_dt_micro) / 1e6;
 constexpr double simulation_dt = double(simulation_dt_micro) / 1e6;
-constexpr double IdleVelocityThreshold = ndof_robot * 1e-2;
-constexpr double PositionThreshold = 1e-4;  // 位置误差容忍度
+constexpr double IdleVelocityThreshold = 1e-3;
+constexpr double PositionThreshold = 1e-6;  // 位置误差容忍度
 
 using Int64 = std::int64_t;
 using VectorDof = Eigen::Matrix<double, ndof_robot, 1>;
