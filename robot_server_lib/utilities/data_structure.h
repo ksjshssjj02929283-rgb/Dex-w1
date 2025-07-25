@@ -123,7 +123,7 @@ namespace robot_server_lib
             int N = poses_.size() - 1;
             assert(N > 0);
             std::vector<double> segment_lengths_(N);
-            double total_length = 0.0;
+            total_length_ = 0.0;
             const double q_weight = 0.5; // weight of quaternion distance
             for (int i = 0; i < N; ++i)
             {
@@ -131,22 +131,22 @@ namespace robot_server_lib
                 Vector3d p2 = poses_[i + 1].head<3>();
                 double pos_dist = (p2 - p1).norm();
 
-                Eigen::Quaterniond q1(poses_[i].tail<4>());
-                Eigen::Quaterniond q2(poses_[i + 1].tail<4>());
+                Eigen::Quaterniond q1(poses_[i](3), poses_[i](4), poses_[i](5), poses_[i](6));
+                Eigen::Quaterniond q2(poses_[i + 1](3), poses_[i + 1](4), poses_[i + 1](5), poses_[i + 1](6));
                 q1.normalize();
                 q2.normalize();
                 double ang_dist = q1.angularDistance(q2);
 
                 double seg_len = pos_dist + q_weight * ang_dist;
                 segment_lengths_[i] = seg_len;
-                total_length += seg_len;
+                total_length_ += seg_len;
             }
 
             segment_times_.resize(N + 1);
             segment_times_[0] = 0.0;
             for (int i = 0; i < N; ++i)
             {
-                double dt = segment_lengths_[i] / total_length;
+                double dt = segment_lengths_[i] / total_length_;
                 segment_times_[i + 1] = segment_times_[i] + dt;
             }
             assert(segment_times_.back() == 1.0);
@@ -157,14 +157,14 @@ namespace robot_server_lib
             Eigen::Matrix4d result = Matrix4d::Identity();
             if (t <= 0.0)
             {
-                result.block<3, 3>(0, 0) = Eigen::Quaterniond(Eigen::Vector4d(poses_.front().head(4))).toRotationMatrix();
-                result.block<3, 1>(0, 3) = poses_.front().tail(3);
+                result.block<3, 3>(0, 0) = Eigen::Quaterniond(poses_.front()(3), poses_.front()(4), poses_.front()(5), poses_.front()(6)).toRotationMatrix();
+                result.block<3, 1>(0, 3) = poses_.front().head(3);
                 return result;
             }
             if (t >= 1.0)
             {
-                result.block<3, 3>(0, 0) = Eigen::Quaterniond(Eigen::Vector4d(poses_.back().head(4))).toRotationMatrix();
-                result.block<3, 1>(0, 3) = poses_.back().tail(3);
+                result.block<3, 3>(0, 0) = Eigen::Quaterniond(poses_.back()(3), poses_.back()(4), poses_.back()(5), poses_.back()(6)).toRotationMatrix();
+                result.block<3, 1>(0, 3) = poses_.back().head(3);
                 return result;
             }
 
@@ -174,7 +174,7 @@ namespace robot_server_lib
                 ++seg;
             }
             double alpha = (t - segment_times_[seg]) / (segment_times_[seg + 1] - segment_times_[seg]);
-            if(t - segment_times_[seg] < 0.005) // corresponds to 200 milestones on trajectory
+            if (t - segment_times_[seg] < 0.005) // corresponds to 200 milestones on trajectory
             {
                 alpha = 0.0; // ensure all poses in poses_ can be sampled
             }
@@ -184,8 +184,8 @@ namespace robot_server_lib
             Vector3d p1 = poses_[seg + 1].head<3>();
             result.block<3, 1>(0, 3) = (1 - alpha) * p0 + alpha * p1;
             // interpolate orientation
-            Eigen::Quaterniond q0(Eigen::Vector4d(poses_[seg].tail<4>()));
-            Eigen::Quaterniond q1(Eigen::Vector4d(poses_[seg + 1].tail<4>()));
+            Eigen::Quaterniond q0(poses_[seg](3), poses_[seg](4), poses_[seg](5), poses_[seg](6));
+            Eigen::Quaterniond q1(poses_[seg + 1](3), poses_[seg + 1](4), poses_[seg + 1](5), poses_[seg + 1](6));
             q0.normalize();
             q1.normalize();
             result.block<3, 3>(0, 0) = (q0.slerp(alpha, q1)).toRotationMatrix();
@@ -209,9 +209,15 @@ namespace robot_server_lib
             return ss.str();
         }
 
+        double totalLength() const
+        {
+            return total_length_;
+        }
+
     private:
         std::vector<Vector7d> poses_;       // poses
         std::vector<double> segment_times_; // segment length
+        double total_length_;               // total length of trajectory
     };
 
     struct PlannerManagerCommand
@@ -220,92 +226,82 @@ namespace robot_server_lib
         JointCommand cmd;
     };
 
-    template <int nDoF>
+    template <int NDoF>
     struct JointTrajectory
     {
-        struct JointConstraints
+        static constexpr double VLIMIT = 1.0;
+        static constexpr double ALIMIT = 2.0;
+
+        void SetJointTrajectory(std::vector<Eigen::Matrix<double, NDoF, 1>> &&_trajectory)
         {
-            double max_velocity{1.0};
-            double max_acceleration{2.0};
-            double max_jerk{100000.0};
-        };
-
-        void ComputeTimeParametrization()
-        {
-            const auto &q_list = joint_space_trajectory_;
-            const int N = q_list.size();
-            assert(N >= 2 && "JointTrajectory must have at least 2 points for time parametrization");
-
-            times_.resize(N);
-            times_[0] = 0.0;
-
-            std::vector<double> durations(N - 1);
-            for (int i = 0; i < N - 1; ++i)
-            {
-                double max_duration = 0.0;
-                for (int j = 0; j < nDoF; ++j)
-                {
-                    double q0 = q_list[i](j);
-                    double q1 = q_list[i + 1](j);
-                    double delta = std::abs(q1 - q0);
-                    // 估算当前段的速度 v_i ≈ Δq / Δt，用前后段近似加速度
-                    double v0 = (i == 0) ? 0 : (q_list[i](j) - q_list[i - 1](j)) / durations[i - 1];
-                    double v1 = (i == N - 2) ? 0 : (q_list[i + 2](j) - q_list[i + 1](j)) / durations[i + 1];
-                    double avg_v = std::abs(v1 - v0);                       // 估算速度变化量
-                    double avg_a = avg_v / std::max(1e-3, durations[i]);    // 估算加速度
-                    double est_jerk = avg_a / std::max(1e-3, durations[i]); // 估算jerk
-                    double t_j = std::cbrt(6.0 * delta / constraints.max_jerk); // 极限估算
-                    double t_a = std::sqrt(delta / constraints.max_acceleration);
-                    double t_v = delta / constraints.max_velocity;
-
-                    double t = std::max({t_j * 3, t_a * 2, t_v}); // 保守估计
-                    max_duration = std::max(max_duration, t);
-                }
-                durations[i] = max_duration;
-            }
-
-            for (int i = 1; i < N; ++i)
-            {
-                times_[i] = times_[i - 1] + durations[i - 1];
-            }
-        }
-
-        std::vector<Eigen::Matrix<double, nDoF, 1>> &GetJointTrajectory()
-        {
-            return joint_space_trajectory_;
+            positions = std::move(_trajectory);
         }
 
         void clear()
         {
-            joint_space_trajectory_.clear();
-            times_.clear();
+            positions.clear();
+            velocities.clear();
+            accelerations.clear();
         }
 
         bool has_value()
         {
-            return !joint_space_trajectory_.empty();
+            return !positions.empty();
         }
 
-        const Eigen::Matrix<double, nDoF, 1>& operator()(const int index) const
+        const Eigen::Matrix<double, NDoF, 1> &operator()(const int index) const
         {
-            assert(index < joint_space_trajectory_.size() && "Index out of bounds");
-            return joint_space_trajectory_[index];
+            assert(index < positions.size() && "Index out of bounds");
+            return positions[index];
         }
 
-    private:
-        std::vector<Eigen::Matrix<double, nDoF, 1>> joint_space_trajectory_;
-        std::vector<double> times_;
-        JointConstraints constraints;
+        std::string ToString()
+        {
+            std::stringstream ss;
+            ss << "Positions:\n";
+            for (int i = 0; i < positions.size(); ++i)
+            {
+                ss << "  (";
+                const auto &p = positions[i];
+                for (int i = 0; i < 7; ++i)
+                {
+                    ss << p(i);
+                    if (i < 6)
+                        ss << ",";
+                }
+                ss << ")\n";
+            }
+            ss << "Velocities:\n";
+            for (int i = 0; i < velocities.size(); ++i)
+            {
+                ss << "  (";
+                const auto &v = velocities[i];
+                for (int i = 0; i < 7; ++i)
+                {
+                    ss << v(i);
+                    if (i < 6)
+                        ss << ",";
+                }
+                ss << ")\n";
+            }
+            return ss.str();
+        }
+
+        std::vector<Eigen::Matrix<double, NDoF, 1>> positions;
+        std::vector<Eigen::Matrix<double, NDoF, 1>> velocities;
+        std::vector<Eigen::Matrix<double, NDoF, 1>> accelerations;
+        Eigen::Matrix<double, NDoF, 1> max_velocity = Eigen::Matrix<double, NDoF, 1>::Constant(VLIMIT);
+        Eigen::Matrix<double, NDoF, 1> min_velocity = Eigen::Matrix<double, NDoF, 1>::Constant(-VLIMIT);
+        Eigen::Matrix<double, NDoF, 1> max_acceleration = Eigen::Matrix<double, NDoF, 1>::Constant(ALIMIT);
+        Eigen::Matrix<double, NDoF, 1> min_acceleration = Eigen::Matrix<double, NDoF, 1>::Constant(-ALIMIT);
     };
 
     // 移动指令
     struct MoveRequest
     {
         MotionGroup motion_group;
-        // 目标位置
+        // 目标位置/路径点
         Eigen::VectorXd value;
-        // 路径点
-        std::vector<Eigen::VectorXd> value_vec;
 
         std::optional<ReferenceFrame> reference_frame;
         std::optional<double> speed;

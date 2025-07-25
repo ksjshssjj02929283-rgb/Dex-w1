@@ -288,7 +288,7 @@ class MoveLinePlanner : public MotionPlannerBase
         return true;
     }
 
-    PoseQuaternion ComputeOutputPose(LineGeometry line, double ruckig_trans_position, double ruckig_rot_position)
+    PoseQuaternion ComputeOutputPose(const LineGeometry& line, double ruckig_trans_position, double ruckig_rot_position)
     {
         PoseQuaternion pose_cmd;
         pose_cmd.position = line.pose_start.position + line.direction * ruckig_trans_position;

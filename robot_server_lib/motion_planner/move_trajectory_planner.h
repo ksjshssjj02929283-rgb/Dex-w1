@@ -1,13 +1,13 @@
 #pragma once
 
 #include "move_planner_base.h"
+#include "trajectory_time_parameterization.hpp"
 
 namespace robot_server_lib
 {
     static constexpr int ndof_arms_ = 14;
     static constexpr int ndof_left_ = 7;
     static constexpr int ndof_right_ = 7;
-    static constexpr double step_forward_threshold = 0.75;
 
     class MoveTrajectoryPlanner : public MotionPlannerBase
     {
@@ -17,17 +17,9 @@ namespace robot_server_lib
               controller_dt_(controller_dt),
               wait_trajectory_upon_finish_(wait_trajectory_upon_finish)
         {
-            for (int i = 0; i < ndof_arms_; ++i)
-            {
-                runtime_.input.max_velocity[i] = joint_bounds_.max_velocity;
-                runtime_.input.max_acceleration[i] = joint_bounds_.max_acceleration;
-                runtime_.input.max_jerk[i] = joint_bounds_.max_jerk;
-            }
-            current_index_ = 0;
-            trajectory_size_ = 200;
-
             kine_ptr_primary_ = std::dynamic_pointer_cast<kinematics::YaikKinematics>(kinematics_ptr_);
             kine_ptr_secondary_ = std::dynamic_pointer_cast<kinematics::YaikKinematics>(kinematics_secondary_ptr_);
+            ClearCache();
         }
 
         ~MoveTrajectoryPlanner() override = default;
@@ -36,87 +28,49 @@ namespace robot_server_lib
                                             const TimeMetaInfo &time_meta,
                                             JointCommand &joint_cmd) override
         {
-            const auto &q_ndof_current = measurement.q_desired_pre;
-            Eigen::VectorXd q_arms;
-            GetArmFromWholeBody(q_ndof_current, q_arms, motion_group_);
-            // auto q_current = measurement.q_desired_pre;
-
-            double ratio_left = 1.0, ratio_right = 1.0;
-            if (joint_trajectory_primary_.has_value())
-            {
-                auto &q_target = joint_trajectory_primary_(current_index_ + 1);
-                auto &q_prev = joint_trajectory_primary_(current_index_);
-                auto gap = (q_target - q_prev).norm();
-                ratio_left = gap > 1e-4 ? (q_arms.head(ndof_left_) - q_prev).norm() / gap : 1.0;
-            }
-            if (joint_trajectory_secondary_.has_value())
-            {
-                auto &q_target = joint_trajectory_secondary_(current_index_ + 1);
-                auto &q_prev = joint_trajectory_secondary_(current_index_);
-                auto gap = (q_target - q_prev).norm();
-                ratio_right = gap > 1e-4 ? (q_arms.tail(ndof_right_) - q_prev).norm() / gap : 1.0;
-            }
-
-            // Current target almost reached, update the next target
-            if (ratio_left > step_forward_threshold && ratio_right > step_forward_threshold)
-            {
-                if (current_index_ + 1 < trajectory_size_ - 1)
-                {
-                    ++current_index_;
-                }
-            }
-            UpdateRuckig(measurement);
-
-            auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
-            switch (status)
-            {
-            case ruckig::Working:
-            {
-                for (auto i = 0; i < ndof_arms_; i++)
-                {
-                    joint_cmd.position[i] = runtime_.output.new_position[i];
-                    joint_cmd.velocity[i] = runtime_.output.new_velocity[i];
-                    joint_cmd.acceleration[i] = runtime_.output.new_acceleration[i];
-                    joint_cmd.torque_feedforward[i] = 0;
-                }
-
-                // Done
-                // runtime_.output.pass_to_input(runtime_.input);
-                return ComputeCommandStatus::TaskOngoing;
-            };
-            case ruckig::Finished:
-            {
-                if (current_index_ == trajectory_size_ - 1)
-                {
-                    // Done
-                    const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
-                    if (!wait_trajectory_upon_finish_ || robot_stopped)
-                    {
-                        if (robot_stopped)
-                        {
-                            joint_trajectory_primary_.clear();
-                            joint_trajectory_secondary_.clear();
-                            return ComputeCommandStatus::TaskFinished;
-                        }
-                    }
-                    else
-                    {
-                        return ComputeCommandStatus::TaskOngoing;
-                    }
-                }
-                else
-                {
-                    for (auto i = 0; i < ndof_arms_; i++)
-                    {
-                        joint_cmd.position[i] = runtime_.output.new_position[i];
-                        joint_cmd.velocity[i] = runtime_.output.new_velocity[i];
-                        joint_cmd.acceleration[i] = runtime_.output.new_acceleration[i];
-                        joint_cmd.torque_feedforward[i] = 0;
-                    }
-                }
-            };
-            default:
+            if (trajectory_spline_primary_.segments.empty() && trajectory_spline_secondary_.segments.empty())
                 return ComputeCommandStatus::Error;
+
+            if (current_phase_ < 1.0)
+                current_phase_ += controller_dt_ / total_time_;
+            JointPositionDof q_ndof = measurement.q_desired_pre;
+            JointPositionDof dq_ndof = measurement.velocity;
+            Eigen::VectorXd q_arms, dq_arms;
+            GetArmFromWholeBody(q_ndof, q_arms, MotionGroup::BothArms);
+            GetArmFromWholeBody(dq_ndof, dq_arms, MotionGroup::BothArms);
+            Eigen::Matrix<double, ndof_left_, 1> q_left(q_arms.head<ndof_left_>());
+            Eigen::Matrix<double, ndof_left_, 1> dq_left(dq_arms.head<ndof_left_>());
+            Eigen::Matrix<double, ndof_right_, 1> q_right(q_arms.tail<ndof_right_>());
+            Eigen::Matrix<double, ndof_right_, 1> dq_right(dq_arms.tail<ndof_right_>());
+
+            trajectory_spline_primary_.evaluate(current_phase_ * time_primary_, q_left, dq_left);
+            trajectory_spline_secondary_.evaluate(current_phase_ * time_secondary_, q_right, dq_right);
+            const bool goal_reached = current_phase_ >= 1.0 && ((q_left - q_arms.head<ndof_left_>()).norm() < 1e-4 && (q_right - q_arms.tail<ndof_right_>()).norm() < 1e-4);
+            // Todo: refine (q_left, q_right) by pose at current_phase_
+
+            q_arms.head<ndof_left_>() << q_left;
+            dq_arms.head<ndof_left_>() << dq_left;
+            q_arms.tail<ndof_right_>() << q_right;
+            dq_arms.tail<ndof_right_>() << dq_right;
+            MapArmToWholeBody(q_arms, q_ndof, MotionGroup::BothArms);
+            MapArmToWholeBody(dq_arms, dq_ndof, MotionGroup::BothArms);
+
+            if (goal_reached)
+            {
+                ClearCache();
+                return ComputeCommandStatus::TaskFinished;
+            }
+            else
+            {
+                for (auto i = 0; i < ndof_robot; i++)
+                {
+                    joint_cmd.position[i] = q_ndof[i];
+                    // joint_cmd.velocity[i] = 0.0;
+                    joint_cmd.velocity[i] = dq_ndof[i];
+                    joint_cmd.acceleration[i] = 0.0;
+                    joint_cmd.torque_feedforward[i] = 0.0;
+                }
+                return ComputeCommandStatus::TaskOngoing;
             }
         }
 
@@ -134,46 +88,60 @@ namespace robot_server_lib
             {
                 speed_ratio = speed_ratio * std::clamp(move_request.speed.value(), 0.01, 1.0);
             }
-            for (int i = 0; i < ndof_arms_; ++i)
-            {
-                runtime_.input.max_velocity[i] = joint_bounds_.max_velocity * speed_ratio;
-                runtime_.input.max_acceleration[i] = joint_bounds_.max_acceleration * speed_ratio;
-            }
+
+            JointTrajectory<ndof_left_> joint_trajectory_primary_;
+            JointTrajectory<ndof_right_> joint_trajectory_secondary_;
+            const double max_speed = speed_ratio * joint_bounds_.max_velocity;
+            const double max_acceleration = speed_ratio * joint_bounds_.max_acceleration;
+            joint_trajectory_primary_.max_velocity.setConstant(max_speed);
+            joint_trajectory_primary_.min_velocity.setConstant(-max_speed);
+            joint_trajectory_primary_.max_acceleration.setConstant(max_acceleration);
+            joint_trajectory_primary_.min_acceleration.setConstant(-max_acceleration);
+            joint_trajectory_secondary_.max_velocity.setConstant(max_speed);
+            joint_trajectory_secondary_.min_velocity.setConstant(-max_speed);
+            joint_trajectory_secondary_.max_acceleration.setConstant(max_acceleration);
+            joint_trajectory_secondary_.min_acceleration.setConstant(-max_acceleration);
+
+            Eigen::VectorXd q_start;
+            GetArmFromWholeBody(measurement.q_desired_pre, q_start);
 
             switch (move_request.motion_group)
             {
             case MotionGroup::BothArms:
             {
-                Eigen::VectorXd q_start;
-                GetArmFromWholeBody(measurement.q_desired_pre, q_start);
-                assert(q_start.size() == ndof_primary_ + ndof_secondary_);
+                assert(q_start.size() == ndof_arms_);
                 // 获取起点
                 PoseQuaternion pose_start_primary =
-                    kine_ptr_primary_->GetFK(q_start.head(ndof_primary_), robot_property_.tcp_frame);
+                    kine_ptr_primary_->GetFK(q_start.head(ndof_left_), robot_property_.tcp_frame);
                 PoseQuaternion pose_start_secondary = kine_ptr_secondary_->GetFK(
-                    q_start.tail(ndof_secondary_), robot_property_.tcp_frame_secondary);
+                    q_start.tail(ndof_right_), robot_property_.tcp_frame_secondary);
+
                 // 获取目标点
                 std::vector<Eigen::Matrix<double, 7, 1>> poses_primary, poses_secondary;
                 poses_primary.emplace_back(pose_start_primary.ToVectorXd());
                 poses_secondary.emplace_back(pose_start_secondary.ToVectorXd());
-                for (const auto &value : move_request.value_vec)
+                assert(move_request.value.size() % (ndof_arms_) == 0);
+                const int num_points = move_request.value.size() / (ndof_arms_);
+                assert(num_points > 0);
+                for (int i = 0; i < num_points; ++i)
                 {
-                    assert(14 == value.size());
-                    poses_primary.emplace_back(value.head(7));
-                    poses_secondary.emplace_back(value.tail(7));
+                    const auto &value = move_request.value.segment(i * ndof_arms_, ndof_arms_);
+                    poses_primary.emplace_back(value.head(ndof_left_));
+                    poses_secondary.emplace_back(value.tail(ndof_right_));
                 }
                 auto pose_trajectory_primary = PoseTrajectory(poses_primary);
                 auto pose_trajectory_secondary = PoseTrajectory(poses_secondary);
-
                 LOG_INFO << "Primary arm motion plan: trajectory: \n"
                          << pose_trajectory_primary.ToString();
                 LOG_INFO << "Secondary arm motion plan: trajectory: \n"
                          << pose_trajectory_secondary.ToString();
 
-                auto &trajectory_primary = joint_trajectory_primary_.GetJointTrajectory();
-                auto &trajectory_secondary = joint_trajectory_secondary_.GetJointTrajectory();
-                auto trajectory_ok_primary = kine_ptr_primary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start.head(ndof_primary_), pose_trajectory_primary, trajectory_primary);
-                auto trajectory_ok_secondary = kine_ptr_secondary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start.tail(ndof_secondary_), pose_trajectory_secondary, trajectory_secondary);
+                std::vector<Eigen::Matrix<double, ndof_left_, 1>> trajectory_primary;
+                std::vector<Eigen::Matrix<double, ndof_right_, 1>> trajectory_secondary;
+                auto trajectory_ok_primary = kine_ptr_primary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start.head(ndof_left_), pose_trajectory_primary, trajectory_primary, robot_property_.tcp_frame);
+                auto trajectory_ok_secondary = kine_ptr_secondary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start.tail(ndof_right_), pose_trajectory_secondary, trajectory_secondary, robot_property_.tcp_frame_secondary);
+                joint_trajectory_primary_.SetJointTrajectory(std::move(trajectory_primary));
+                joint_trajectory_secondary_.SetJointTrajectory(std::move(trajectory_secondary));
                 if (!trajectory_ok_primary || !trajectory_ok_secondary)
                 {
                     LOG_CRIT << "Failed to compute joint trajectory for both arms.";
@@ -183,24 +151,27 @@ namespace robot_server_lib
             }
             case MotionGroup::Primary:
             {
-                Eigen::VectorXd q_start;
-                GetArmFromWholeBody(measurement.q_desired_pre, q_start);
-                assert(q_start.size() == ndof_primary_);
+                assert(q_start.size() == ndof_left_);
                 PoseQuaternion pose_start_primary = kine_ptr_primary_->GetFK(q_start, robot_property_.tcp_frame);
 
                 std::vector<Eigen::Matrix<double, 7, 1>> poses_primary;
                 poses_primary.emplace_back(pose_start_primary.ToVectorXd());
-                for (const auto &value : move_request.value_vec)
+                assert(move_request.value.size() % (ndof_left_) == 0);
+                const int num_points = move_request.value.size() / (ndof_left_);
+                assert(num_points > 0);
+                for (int i = 0; i < num_points; ++i)
                 {
-                    assert(7 == value.size());
+                    const auto &value = move_request.value.segment(i * ndof_left_, ndof_left_);
                     poses_primary.emplace_back(value);
                 }
                 auto pose_trajectory_primary = PoseTrajectory(poses_primary);
                 LOG_INFO << "Primary arm motion plan: trajectory: \n"
                          << pose_trajectory_primary.ToString();
 
-                auto &trajectory_primary = joint_trajectory_primary_.GetJointTrajectory();
-                auto trajectory_ok = kine_ptr_primary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start, pose_trajectory_primary, trajectory_primary);
+                std::vector<Eigen::Matrix<double, ndof_left_, 1>> trajectory_primary;
+                auto trajectory_ok = kine_ptr_primary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start, pose_trajectory_primary, trajectory_primary, robot_property_.tcp_frame);
+
+                joint_trajectory_primary_.SetJointTrajectory(std::move(trajectory_primary));
                 joint_trajectory_secondary_.clear();
                 if (!trajectory_ok)
                 {
@@ -211,26 +182,29 @@ namespace robot_server_lib
             }
             case MotionGroup::Secondary:
             {
-                Eigen::VectorXd q_start;
-                GetArmFromWholeBody(measurement.q_desired_pre, q_start);
-                assert(q_start.size() == ndof_secondary_);
+                assert(q_start.size() == ndof_right_);
                 PoseQuaternion pose_start_secondary =
                     kine_ptr_secondary_->GetFK(q_start, robot_property_.tcp_frame_secondary);
 
                 std::vector<Eigen::Matrix<double, 7, 1>> poses_secondary;
                 poses_secondary.emplace_back(pose_start_secondary.ToVectorXd());
-                for (const auto &value : move_request.value_vec)
+                assert(move_request.value.size() % (ndof_right_) == 0);
+                const int num_points = move_request.value.size() / (ndof_right_);
+                assert(num_points > 0);
+                for (int i = 0; i < num_points; ++i)
                 {
-                    assert(7 == value.size());
+                    const auto &value = move_request.value.segment(i * ndof_right_, ndof_right_);
                     poses_secondary.emplace_back(value);
                 }
-                auto poses_secondary_trajectory = PoseTrajectory(poses_secondary);
+                auto poses_trajectory_secondary = PoseTrajectory(poses_secondary);
                 LOG_INFO << "Secondary arm motion plan: trajectory: \n"
-                         << poses_secondary_trajectory.ToString();
+                         << poses_trajectory_secondary.ToString();
+
+                std::vector<Eigen::Matrix<double, ndof_right_, 1>> trajectory_secondary;
+                auto trajectory_ok = kine_ptr_secondary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start, poses_trajectory_secondary, trajectory_secondary, robot_property_.tcp_frame_secondary);
 
                 joint_trajectory_primary_.clear();
-                auto &trajectory_secondary = joint_trajectory_secondary_.GetJointTrajectory();
-                auto trajectory_ok = kine_ptr_secondary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start, poses_secondary_trajectory, trajectory_secondary);
+                joint_trajectory_secondary_.SetJointTrajectory(std::move(trajectory_secondary));
                 if (!trajectory_ok)
                 {
                     LOG_CRIT << "Failed to compute joint trajectory for secondary arm.";
@@ -243,64 +217,52 @@ namespace robot_server_lib
                 break;
             }
 
-            current_index_ = 0;
-            UpdateRuckig(measurement);
-            return true;
-        }
-
-    protected:
-        void UpdateRuckig(const JointMeasurement &measurement)
-        {
-            for (int i = 0; i < ndof_arms_; i++)
+            ClearCache();
+            if (!joint_trajectory_primary_.has_value() && !joint_trajectory_secondary_.has_value())
             {
-                if (current_index_ == 0)
-                {
-                    runtime_.input.current_position[i] = measurement.q_desired_pre[i];
-                    runtime_.input.current_velocity[i] = measurement.velocity[i];
-                    runtime_.input.current_acceleration[i] = 0.0;
-                }
-                else
-                {
-                    runtime_.input.current_position[i] = runtime_.output.new_position[i];
-                    runtime_.input.current_velocity[i] = runtime_.output.new_velocity[i];
-                    runtime_.input.current_acceleration[i] = runtime_.output.new_acceleration[i];
-                }
-                runtime_.input.target_position[i] = 0.0;
-                runtime_.input.target_velocity[i] = 0.0;
-                runtime_.input.target_acceleration[i] = 0.0;
+                LOG_WARN << "No joint trajectory available for time parameterization.";
             }
             if (joint_trajectory_primary_.has_value())
             {
-                auto &q_target_left = joint_trajectory_primary_(current_index_ + 1);
-                for (int i = 0; i < ndof_primary_; i++)
-                {
-                    runtime_.input.target_position[i] = q_target_left(i);
-                }
+                std::vector<double> time_diff;
+                parameterizeJointTrajectory<ndof_left_>(joint_trajectory_primary_, time_diff, &time_primary_);
+                LOG_INFO << "Primary arm planned joint trajectory: \n"
+                         << joint_trajectory_primary_.ToString();
+                trajectory_spline_primary_.fromJointTrajectory(joint_trajectory_primary_, time_diff);
             }
             if (joint_trajectory_secondary_.has_value())
             {
-                auto &q_target_right = joint_trajectory_secondary_(current_index_ + 1);
-                for (int i = ndof_primary_; i < ndof_primary_ + ndof_secondary_; i++)
-                {
-                    runtime_.input.target_position[i] = q_target_right(i - ndof_primary_);
-                }
+                std::vector<double> time_diff;
+                parameterizeJointTrajectory<ndof_right_>(joint_trajectory_secondary_, time_diff, &time_secondary_);
+                LOG_INFO << "Secondary arm planned joint trajectory: \n"
+                         << joint_trajectory_secondary_.ToString();
+                trajectory_spline_secondary_.fromJointTrajectory(joint_trajectory_secondary_, time_diff);
             }
+            total_time_ = std::max(time_primary_, time_secondary_);
+
+            return true;
         }
 
+        void ClearCache()
+        {
+            current_phase_ = 0.0;
+            total_time_ = 0.0;
+            time_primary_ = 0.0;
+            time_secondary_ = 0.0;
+            trajectory_spline_primary_.segments.clear();
+            trajectory_spline_secondary_.segments.clear();
+        }
+
+    protected:
         const bool wait_trajectory_upon_finish_;
         const double controller_dt_{0.01};
-        ruckig::Ruckig<ndof_arms_> ruckig_otg_;
-        // cache
-        struct
-        {
-            ruckig::InputParameter<ndof_arms_> input;
-            ruckig::OutputParameter<ndof_arms_> output;
-        } runtime_;
 
-        JointTrajectory<ndof_left_> joint_trajectory_primary_;
-        JointTrajectory<ndof_right_> joint_trajectory_secondary_;
-        int current_index_;
-        int trajectory_size_;
+        // JointTrajectory<ndof_left_> joint_trajectory_primary_;
+        // JointTrajectory<ndof_right_> joint_trajectory_secondary_;
+        TrajectorySpline<ndof_left_> trajectory_spline_primary_;
+        TrajectorySpline<ndof_right_> trajectory_spline_secondary_;
+        double current_phase_;
+        double time_primary_, time_secondary_, total_time_;
 
         std::shared_ptr<kinematics::YaikKinematics> kine_ptr_primary_;
         std::shared_ptr<kinematics::YaikKinematics> kine_ptr_secondary_;

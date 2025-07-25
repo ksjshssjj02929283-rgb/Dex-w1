@@ -465,6 +465,10 @@ PlannerRequest Ros2Node::ParseMoveRequest(
     {
         planner_request.type = RequestType::MoveLine;
     }
+    else if (input_request->type == "MoveTrajectory")
+    {
+        planner_request.type = RequestType::MoveTrajectory;
+    }
     else if (input_request->type == "StartJointStreaming")
     {
         planner_request.type = RequestType::StartJointStreaming;

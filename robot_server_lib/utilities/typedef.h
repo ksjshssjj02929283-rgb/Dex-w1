@@ -61,6 +61,8 @@ enum class RequestType
     // Move Request
     MoveJoint,
     MoveLine,
+    MoveTrajectory,
+
     StartJointStreaming,
     StartEEPoseStreaming,
 
@@ -165,6 +167,8 @@ inline const char *ToString(RequestType type)
         return "MoveJoint";
     case RequestType::MoveLine:
         return "MoveLine";
+    case RequestType::MoveTrajectory:
+        return "MoveTrajectory";
     case RequestType::StartJointStreaming:
         return "StartJointStreaming";
     case RequestType::StartEEPoseStreaming:

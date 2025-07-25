@@ -612,10 +612,10 @@ namespace yaik_cpp
   {
     int max_iterations{20};
     double constraint_satisfied_tolerance{1e-3};
-    double diagonal_damping{1e-5};
+    double diagonal_damping{1e-4};
   };
 
-  template <int robot_nq = 6>
+  template <int robot_nq>
   bool numericalRefinement(
       const std::function<Eigen::Matrix4d(const std::array<double, robot_nq> &)> &
           fk_functor,

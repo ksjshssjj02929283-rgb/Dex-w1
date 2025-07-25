@@ -45,6 +45,7 @@ class PlannerManager
     std::shared_ptr<IdlePlanner> idle_planner_{nullptr};
     std::shared_ptr<MoveJointPlanner> move_joint_planner_{nullptr};
     std::shared_ptr<MoveLinePlanner> move_line_planner_{nullptr};
+    std::shared_ptr<MoveTrajectoryPlanner> move_trajectory_planner_{nullptr};
     std::shared_ptr<JointStreamingPlanner> joint_streaming_planner_{nullptr};
     std::shared_ptr<EEPoseStreamingPlanner> ee_pose_streaming_planner_{nullptr};
 

@@ -31,9 +31,6 @@ namespace robot_server_lib
         // sampling config
         int n_theta;
         double d_theta;
-        // projection config
-        int max_constraint_project_iterations;
-        double constraint_satisfied_tolerance;
 
         YaikKinematicsParams()
             : milestones_per_knot(10),
@@ -44,9 +41,7 @@ namespace robot_server_lib
               update_nodes(true),
               dfs_max_iterations(5000),
               n_theta(4),
-              d_theta(3.14 / 24.0),
-              max_constraint_project_iterations(20),
-              constraint_satisfied_tolerance(1e-3)
+              d_theta(3.14 / 24.0)
         {
         }
 
@@ -69,19 +64,34 @@ namespace robot_server_lib
 
         void SampleTheta(const double theta_ref, std::vector<double> &theta_list) const
         {
-          theta_list.clear();
           theta_list.reserve(2 * n_theta + 1);
-          std::unordered_set<double> inserted;
-          for (int i = n_theta; i > 0; --i)
+          double theta_;
+          bool upper_bound_reached = false, lower_bound_reached = false;
+          for (int i = n_theta; i > 0; i--)
           {
-            double theta_plus = theta_ref + i * d_theta;
-            double theta_minus = theta_ref - i * d_theta;
-            theta_plus = std::clamp(theta_plus, -3.14159, 3.14159);
-            theta_minus = std::clamp(theta_minus, -3.14159, 3.14159);
-            if (inserted.insert(theta_plus).second)
-              theta_list.push_back(theta_plus);
-            if (inserted.insert(theta_minus).second)
-              theta_list.push_back(theta_minus);
+            theta_ = theta_ref + double(i) * d_theta;
+            if (theta_ > 3.14159)
+            {
+              if (!upper_bound_reached)
+              {
+                upper_bound_reached = true;
+                theta_list.push_back(3.14159);
+              }
+            }
+            else
+              theta_list.push_back(theta_);
+
+            theta_ = theta_ref - double(i) * d_theta;
+            if (theta_ < -3.14159)
+            {
+              if (!lower_bound_reached)
+              {
+                lower_bound_reached = true;
+                theta_list.push_back(-3.14159);
+              }
+            }
+            else
+              theta_list.push_back(theta_);
           }
           theta_list.push_back(theta_ref);
         }
@@ -108,10 +118,9 @@ namespace robot_server_lib
       bool GetIK(const PoseQuaternion &pose_in, Eigen::VectorXd &q_in_and_out,
                  const pinocchio::SE3 &tcp_frame = pinocchio::SE3::Identity()) override
       {
-        Matrix4d T_ee = _toMatrix4d(pose_in) * tcp_frame.inverse().toHomogeneousMatrix();
         std::vector<Jps> ik_results;
         // GetRawIK(T_ee, q_in_and_out(aux_input_index), ik_results);
-        GetIKwithProjectionAndSampling(T_ee, q_in_and_out, ik_results);
+        GetIKwithProjectionAndSampling(_toMatrix4d(pose_in), q_in_and_out, ik_results, tcp_frame);
         Jps closest_ik;
         bool ik_get = GetClosestIK(ik_results, q_in_and_out, closest_ik);
         q_in_and_out = closest_ik;
@@ -120,7 +129,6 @@ namespace robot_server_lib
 
       void GetRawIK(const Matrix4d &T_ee, const double aux_input, std::vector<Jps> &ik_results)
       {
-        ik_results.clear();
         ik_solver_ptr->computeIK(T_ee, aux_input, ik_results);
       }
 
@@ -154,11 +162,13 @@ namespace robot_server_lib
         return project_ok;
       }
 
-      void GetIKwithProjectionAndSampling(const Matrix4d &T_ee, const Jps &q_in, std::vector<Jps> &results)
+      void GetIKwithProjectionAndSampling(const Matrix4d &T_ee, const Jps &q_in, std::vector<Jps> &results, const pinocchio::SE3 &tcp_frame)
       {
+        Matrix4d T_ee_corrected = T_ee * _Inverse(tcp_frame.toHomogeneousMatrix());
         Jps q_ref;
-        bool project_ok = ProjectToPose(q_in, T_ee, q_ref);
-        // if(!project_ok) ...
+        bool project_ok = ProjectToPose(q_in, T_ee_corrected, q_ref);
+        if (!project_ok)
+          q_ref = q_in;
 
         std::vector<double> theta_list;
         SampleTheta(q_ref(aux_input_index), theta_list);
@@ -168,14 +178,15 @@ namespace robot_server_lib
         std::vector<Jps> ik_results;
         for (auto &theta : theta_list)
         {
-          GetRawIK(T_ee, theta, ik_results);
+          GetRawIK(T_ee_corrected, theta, ik_results);
           results.insert(results.end(), ik_results.begin(), ik_results.end());
         }
         // SortByDistance(q_in, results);
       }
 
+      // ee_trajectory should begin with fk(q_start)
       bool RunGlobalRedundancyResolutionForJointTrajectory(const Jps &q_start, const PoseTrajectory &ee_trajectory,
-                                                           std::vector<Jps> &output)
+                                                           std::vector<Jps> &output, const pinocchio::SE3 &tcp_frame)
       {
         struct LayerNodes
         {
@@ -190,22 +201,38 @@ namespace robot_server_lib
           std::vector<Jps>::const_reverse_iterator r_iterator;
         };
 
+        int n_knots = params.n_knots;
+        double ee_trajectory_length = ee_trajectory.totalLength();
+        if (ee_trajectory_length < 0.01)
+        {
+          return false;
+        }
+        else if (ee_trajectory_length < 0.2)
+        {
+          n_knots = 5;
+        }
+        else if (ee_trajectory_length < 0.4)
+        {
+          n_knots = 10;
+        }
+
         std::vector<LayerNodes> graph_nodes; // tree of nodes for DFS
-        graph_nodes.resize(params.n_knots + 1);
+        graph_nodes.resize(n_knots + 1);
         graph_nodes[0].nodes() = {q_start};
         graph_nodes[0].initIt();
 
         // DFS initialization
-        const double knots_phase_gap = 1.0 / double(params.n_knots);
+        const double knots_phase_gap = 1.0 / double(n_knots);
         int current_knot = 0;
         Matrix4d T_ee = ee_trajectory(0.0 + knots_phase_gap);
-        GetIKwithProjectionAndSampling(T_ee, q_start, graph_nodes[current_knot + 1].nodes());
+        GetIKwithProjectionAndSampling(T_ee, q_start, graph_nodes[current_knot + 1].nodes(), tcp_frame);
         SortByDistance(q_start, graph_nodes[current_knot + 1].nodes());
         graph_nodes[current_knot + 1].initIt();
         current_knot++;
 
         int iter_count = 0;
         std::vector<Jps> local_trajectory, global_trajectory;
+        global_trajectory.emplace_back(q_start); // start with q_start
         // start DFS loop
         while (iter_count < params.dfs_max_iterations)
         {
@@ -213,26 +240,32 @@ namespace robot_server_lib
           while (graph_nodes[current_knot].empty())
           {
             if (current_knot == 1)
+            {
+              LOG_CRIT << "Global redundancy resolution error: no ik result at all\n";
               return false;
+            }
             current_knot--;
             graph_nodes[current_knot].pop_back();
             if (!params.update_nodes && graph_nodes[current_knot].empty())
+            {
+              LOG_CRIT << "Global redundancy resolution error: no ik result\n";
               return false;
+            }
           }
           iter_count++;
           // connect
           const Jps &parent_jps = graph_nodes[current_knot - 1].back();
           const Jps &current_jps = graph_nodes[current_knot].back();
-          const double current_phase = double(current_knot) / double(params.n_knots);
+          const double current_phase = double(current_knot) / double(n_knots);
           bool connected =
               Connect(ee_trajectory, parent_jps, current_phase - knots_phase_gap,
-                      current_jps, current_phase, local_trajectory);
+                      current_jps, current_phase, local_trajectory, tcp_frame);
           if (connected)
           {
-            global_trajectory.resize((current_knot - 1) * params.milestones_per_knot);
+            global_trajectory.resize((current_knot - 1) * params.milestones_per_knot + 1);
             global_trajectory.insert(global_trajectory.end(), local_trajectory.begin(),
                                      local_trajectory.end());
-            if (current_knot == params.n_knots)
+            if (current_knot == n_knots)
             {
               output = std::move(global_trajectory);
               return true;
@@ -241,7 +274,7 @@ namespace robot_server_lib
             if (params.update_nodes || graph_nodes[current_knot + 1].nodes().empty())
             {
               T_ee = ee_trajectory(current_phase + knots_phase_gap);
-              GetIKwithProjectionAndSampling(T_ee, current_jps, graph_nodes[current_knot + 1].nodes());
+              GetIKwithProjectionAndSampling(T_ee, current_jps, graph_nodes[current_knot + 1].nodes(), tcp_frame);
             }
             SortByDistance(current_jps, graph_nodes[current_knot + 1].nodes());
             graph_nodes[current_knot + 1].initIt();
@@ -253,6 +286,7 @@ namespace robot_server_lib
             graph_nodes[current_knot].pop_back();
           }
         }
+        LOG_CRIT << "Global redundancy resoltion error: reached max iters\n";
         return false;
       }
 
@@ -272,7 +306,7 @@ namespace robot_server_lib
       }
 
       bool Connect(const PoseTrajectory &trajectory, const Jps &jps1, const double phase1, const Jps &jps2,
-                   const double phase2, std::vector<Jps> &local_trajectory)
+                   const double phase2, std::vector<Jps> &local_trajectory, const pinocchio::SE3 &tcp_frame)
       {
         int n_waypoints = params.milestones_per_knot;
         // preliminary judgement
@@ -289,7 +323,7 @@ namespace robot_server_lib
           {
             Jps jps_ = jps1 * (1 - local_phase) + jps2 * local_phase;
             double phase_ = phase1 * (1 - local_phase) + phase2 * local_phase;
-            Matrix4d T_ee = trajectory(phase_);
+            Matrix4d T_ee = trajectory(phase_) * _Inverse(tcp_frame.toHomogeneousMatrix());
 
             std::vector<Jps> ik_results;
             GetRawIK(T_ee, jps_(aux_input_index), ik_results);
