@@ -121,24 +121,24 @@ class W1Manager:
             raise ValueError(f"W1Version {self._w1_version} are not support")
         
         # fmt: off
-        self.torso_ub = np.deg2rad([75., 0., 90., 90.])
-        self.torso_lb = np.deg2rad([0., -150., -100., -90.])
+        self.torso_ub = np.deg2rad([75., 5., 90., 90.])
+        self.torso_lb = np.deg2rad([-5., -150., -100., -90.])
         self.head_ub = np.deg2rad([90., 45.])
         self.head_lb = np.deg2rad([-90., -25.])
         if self._arm_type == W1ArmType.INDUSTRIAL:
             # left arm
-            self.left_arm_ub = np.deg2rad([90., 45., 170., 0., 170., 89., 170.])
+            self.left_arm_ub = np.deg2rad([90., 45., 170., 5., 170., 89., 170.])
             self.left_arm_lb = np.deg2rad([-170., -120., -170., -135., -170., -89., -170.])
             # right arm
             self.right_arm_ub = np.deg2rad([170., 120., 170., 135., 170., 89., 170.])
-            self.right_arm_lb = np.deg2rad([-90., -45., -170., 0., -170., -89., -170.])
+            self.right_arm_lb = np.deg2rad([-90., -45., -170., -5., -170., -89., -170.])
         elif self._arm_type == W1ArmType.ANTHROPOMORPHIC:
             # left arm
-            self.left_arm_ub = np.deg2rad([90., 45., 170., 0., 170., 48., 36.])
+            self.left_arm_ub = np.deg2rad([90., 45., 170., 5., 170., 48., 36.])
             self.left_arm_lb = np.deg2rad([-170., -115., -170., -130., -170., -35., -100.])
             # right arm
             self.right_arm_ub = np.deg2rad([170., 115., 170., 130., 170., 35., 100.])
-            self.right_arm_lb = np.deg2rad([-90., -45., -170., 0., -170., -48., -36.])
+            self.right_arm_lb = np.deg2rad([-90., -45., -170., -5., -170., -48., -36.])
         else:
             raise ValueError(f"W1ArmType {self._arm_type} are not support")
         # fmt: on
@@ -285,7 +285,9 @@ class W1Manager:
     def _load_home_qpos(self, file_path: str = f"{g_data_dir}/config.json") -> bool:
         file_path_ = pathlib.Path(file_path)
         if not file_path_.exists() or file_path_.stat().st_size == 0:
-            self.logger.error(f"Load home qpos from {file_path} failed")
+            self.logger.warning(f"{file_path} does not exist, would be created automatically")
+            if self._save_home_qpos(file_path):
+               return self._load_home_qpos(file_path) 
             return False
 
         with open(file_path, "r") as f:
@@ -605,10 +607,10 @@ class W1Manager:
             cur_count = -1
             while not stop_thread:
                 if count == target_count and count != cur_count:
-                    self.left_arm_ee_client.set_state(target_ee_qpos)
+                    self.left_arm_ee_client.set_state(np.array(target_ee_qpos))
                     self.logger.debug(f"left_arm_ee has triggered: {target_ee_qpos}")
                     if left_arm_ee_trigger_list_cp:
-                        target_ee_qpos = left_arm_ee_trigger_list_cp.pop()
+                        target_count, target_ee_qpos = left_arm_ee_trigger_list_cp.pop()
                     cur_count = count
                 time.sleep(self.TIME_STEP / 10)
 
@@ -620,10 +622,10 @@ class W1Manager:
             cur_count = -1
             while not stop_thread:
                 if count == target_count and count != cur_count:
-                    self.right_arm_ee_client.set_state(target_ee_qpos)
+                    self.right_arm_ee_client.set_state(np.array(target_ee_qpos))
                     self.logger.debug(f"right_arm_ee has triggered: {target_ee_qpos}")
                     if right_arm_ee_trigger_list_cp:
-                        target_ee_qpos = right_arm_ee_trigger_list_cp.pop()
+                        target_count, target_ee_qpos = right_arm_ee_trigger_list_cp.pop()
                     cur_count = count
                 time.sleep(self.TIME_STEP / 10)
 
@@ -735,9 +737,13 @@ class W1Manager:
             self.logger.debug(f"No waypoints in {name}")
             return 0, None, None, None
         
+        if not all(isinstance(pos, list) for pos in pos_list):
+            self.logger.error(f"{pos_list} not a 2d-list")
+            return -1, None, None, None
         if not is_cartesian and not self._check_qpos_dimension(name, pos_list):
             return -1, None, None, None
         if is_cartesian and not all(len(pos) == 6 for pos in pos_list):
+            self.logger.error(f"Dimension of {pos_list[0]} != 6")
             return -1, None, None, None
 
         speed_ratio_list = waypoints_dict.get(f"{name}_speed_ratio")
@@ -830,7 +836,8 @@ class W1Manager:
         qvel_limits_array, 
         arm_ee_state_list) =  self._parse_waypoints_from_dict(name, 
                                                             waypoints_dict, 
-                                                            speed_ratio)
+                                                            speed_ratio,
+                                                            is_cartesian)
         if int_res == -1:
             return False, None, None
         elif int_res == 0:
@@ -838,8 +845,10 @@ class W1Manager:
 
         # without ee motion
         if arm_ee_state_list is None:
-            res, qpos_array = self._plan_to_waypoint(name, cur_qpos, 
-                                                    waypoints_dict, 
+            res, qpos_array = self._plan_to_waypoint(name, 
+                                                    cur_qpos, 
+                                                    waypoints_dict,
+                                                    speed_ratio, 
                                                     is_cartesian, 
                                                     qpos_seed, 
                                                     cartesian_step)
@@ -848,7 +857,7 @@ class W1Manager:
             return True, qpos_array, None
 
         # with ee motion
-        if is_cartesian:
+        if not is_cartesian:
             pos_raw_array_ = np.vstack([cur_qpos, pos_raw_array])
         else:
             res_fk, cur_xpos = self._get_arm_controller(name).get_fk(cur_qpos)
@@ -859,7 +868,7 @@ class W1Manager:
 
         qvel_limits_array_ = np.vstack([self.default_qvel[self.component_manager.infos[name]["index"]],
                                         qvel_limits_array])
-        arm_ee_state_list_ = [0., cur_ee_qpos, 0.] + arm_ee_state_list
+        arm_ee_state_list_ = [[0., cur_ee_qpos.tolist(), 0.]] + arm_ee_state_list
 
         # segment raw waypoint
         arm_ee_trigger_list = [] # (count, ee_qpos)
@@ -889,7 +898,7 @@ class W1Manager:
                 return False, None, None
             
             # pre delay
-            pre_delay_time = arm_ee_state_list[end_idx][0]
+            pre_delay_time = arm_ee_state_list_[end_idx][0]
             if pre_delay_time >= self.TIME_STEP:
                 pre_delay_count = max(1, int(np.ceil(pre_delay_time / self.TIME_STEP)))
                 seg_qpos_samples_array = np.vstack([seg_qpos_samples_array, 
@@ -897,9 +906,9 @@ class W1Manager:
                                                             pre_delay_count, axis=0)])
             # ee trigger
             arm_ee_trigger_list.append((total_count + seg_qpos_samples_array.shape[0] - 1, 
-                                        arm_ee_state_list[end_idx][1]))
+                                        arm_ee_state_list_[end_idx][1]))
             # post delay
-            post_delay_time = arm_ee_state_list[end_idx][2]
+            post_delay_time = arm_ee_state_list_[end_idx][2]
             if post_delay_time >= self.TIME_STEP:
                 post_delay_count = max(1, int(np.ceil(post_delay_time / self.TIME_STEP)))
                 seg_qpos_samples_array = np.vstack([seg_qpos_samples_array, 
@@ -1157,77 +1166,9 @@ class W1Manager:
 
 
 if __name__ == "__main__":
-    w1_manager = W1Manager(W1ArmType.INDUSTRIAL, 
+    w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
                            W1Version.V2, 
-                           None,
+                           EndEffectorType.BRAINCO_HAND,
                            is_sim=True)
-    from IPython import embed; embed()
-
     # w1_manager.go_home()
-    
-    # torso_waypoints = [[0.7, -1.4, 0.7, 0.],
-    #                    [0.5, -1., 0.5, 0.5],
-    #                    [0.5, -1., 0.5, -0.5],
-    #                    [0.7, -1.4, 0.7, 0.]]
-    # w1_manager.move_joint_full_body(waypoints_dict = {"torso": torso_waypoints,
-    #                                                 "torso_speed_ratio": [1., 2., 2., 1.]})
-
-    # head_waypoints = [[0.5, 0.3],
-    #                   [-0.5, -0.3],
-    #                   [0., -0.3]]
-    # w1_manager.move_joint_full_body(waypoints_dict = {"head": head_waypoints,
-    #                                                   "head_speed_ratio": [1., 2., 1.]})
-    
-    # left_arm_waypoints = np.deg2rad([[5., -45., -5., -90., 0., 0., 0.],
-    #                                  [-80., -80., 45., -100., 10., -30., 10.],
-    #                                  [20., -80., -45., -100., -10., 30., -10.],
-    #                                  [5., -45., -5., -90., 0., 0., 0.]])
-
-    # # w1_manager.move_joint_full_body(waypoints_dict = {"left_arm": left_arm_waypoints.tolist(),
-    # #                                                   "left_arm_speed_ratio": [3.,3.,3.,2.]})
-    
-    # right_arm_waypoints = -left_arm_waypoints
-    # # w1_manager.move_joint_full_body(waypoints_dict = {"right_arm": right_arm_waypoints.tolist(),
-    # #                                                   "right_arm_speed_ratio": [3.,3.,3.,2.]})
-
-    # w1_manager.move_joint_full_body(waypoints_dict = {"torso": torso_waypoints,
-    #                                                 "torso_speed_ratio": [1., 2., 2., 1.],
-    #                                                 "head": head_waypoints,
-    #                                                 "head_speed_ratio": [1., 2., 1.],
-    #                                                 "left_arm": left_arm_waypoints.tolist(),
-    #                                                 "left_arm_speed_ratio": [3.,3.,3.,2.],
-    #                                                 "right_arm": right_arm_waypoints.tolist(),
-    #                                                 "right_arm_speed_ratio": [3.,3.,3.,2.]})
-
-    # cur_l_pose = w1_manager.get_current_pose("left_arm")[1]
-    # l_pose1 = deepcopy(cur_l_pose)
-    # l_pose1[0] += -100
-    # l_pose1[2] += -100
-    # l_pose2 = deepcopy(l_pose1)
-    # l_pose2[2] += 100
-    # l_pose3 = deepcopy(l_pose2)
-    # l_pose3[0] += 100
-    # l_pose3[2] += -100
-    # l_pose4 = deepcopy(l_pose3)
-    # l_pose4[2] += 100
-    # left_arm_waypoints = [l_pose1, l_pose2, l_pose3, l_pose4]
-    # # w1_manager.move_linear_full_body({"left_arm": left_arm_waypoints})
-
-    # cur_r_pose = w1_manager.get_current_pose("right_arm")[1]
-    # r_pose1 = deepcopy(cur_r_pose)
-    # r_pose1[0] += -100
-    # r_pose1[2] += -100
-    # r_pose2 = deepcopy(r_pose1)
-    # r_pose2[2] += 100
-    # r_pose3 = deepcopy(r_pose2)
-    # r_pose3[0] += 100
-    # r_pose3[2] += -100
-    # r_pose4 = deepcopy(r_pose3)
-    # r_pose4[2] += 100
-    # right_arm_waypoints = [r_pose1, r_pose2, r_pose3, r_pose4]
-    # # w1_manager.move_linear_full_body({"right_arm": right_arm_waypoints})
-
-    # w1_manager.move_linear_full_body({"torso": torso_waypoints, "torso_speed_ratio": [2., 2., 2., 2.],
-    #                                   "head": head_waypoints, "head_speed_ratio": [2., 2., 2.],
-    #                                   "left_arm": left_arm_waypoints,
-    #                                   "right_arm": right_arm_waypoints})
+    from IPython import embed; embed()
