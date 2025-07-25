@@ -16,7 +16,7 @@ sudo apt install ros-humble-ruckig
 sudo apt install ros-humble-pinocchio
 sudo apt install clang-format
 
-pip install mechcat
+pip install meshcat
 ```
 
 > **注意**：如已通过源码编译安装，无需再安装 ROS 版本，否则会链接冲突。

@@ -59,7 +59,7 @@ class SRSKinematics : public KinematicsBase
         pose_se3.translation() = pose_in.position;
         pose_se3.rotation() = pose_in.orientation.toRotationMatrix();
 
-        pose_se3 = T_b_ob_se3.inverse() * pose_se3 * T_oe_e_se3.inverse() * tcp_frame.inverse();
+        pose_se3 = T_b_ob_se3.inverse() * pose_se3 * tcp_frame.inverse() * T_oe_e_se3.inverse();
 
         // 计算当前臂角
         double current_arm_angle = _CalculateAnglePhi(q_in, pose_se3);
