@@ -10,214 +10,192 @@
 namespace robot_server_lib
 {
 
-    struct TrajectoryBounds
+struct TrajectoryBounds
+{
+    double max_velocity{1.0};
+    double max_acceleration{2.0};
+    double max_jerk{100000.0};
+};
+
+enum class ComputeCommandStatus
+{
+    // The request is invalid and it should NOT be used
+    // The state would be switched into error state
+    Error = 0,
+
+    // This controller::ComputeRequest would be invoked again
+    // in the next control loop
+    TaskOngoing = 1,
+
+    // It is guaranteed that once TaskFinished has been returned
+    // The same controller ComputeCommand would NOT be invoked
+    // without the next ResetForNewEpisode
+    TaskFinished = 2
+};
+
+class MotionPlannerBase
+{
+   public:
+    explicit MotionPlannerBase(RobotModel robot_model)
     {
-        double max_velocity{1.0};
-        double max_acceleration{2.0};
-        double max_jerk{100000.0};
+        // Initialize robot model
+        robot_model_ = std::move(robot_model);
+        robot_data_ = pinocchio::Data(*robot_model_.model_ptr);
+        // Initialize kinematics for both arms
+        // if (robot_model_.params_ptr->left_arm_name == "W1LeftArmIndustrial")
+        // {
+        // kinematics_ptr_ =
+        // std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmIndustrial());
+        // }
+        // if (robot_model_.params_ptr->left_arm_name == "W1LeftArmAnthropomorphic")
+        // {
+        // kinematics_ptr_ =
+        // std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmAnthropomorphic());
+        // }
+        // if (robot_model_.params_ptr->right_arm_name == "W1RightArmIndustrial")
+        // {
+        // kinematics_secondary_ptr_ =
+        // std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmIndustrial());
+        // }
+        // if (robot_model_.params_ptr->right_arm_name == "W1RightArmAnthropomorphic")
+        // {
+        // kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(
+        // kinematics::W1RightArmAnthropomorphic());
+        // }
+
+        kinematics_ptr_ = std::make_shared<kinematics::YaikKinematics>(0);
+        kinematics_secondary_ptr_ = std::make_shared<kinematics::YaikKinematics>(1);
+        // kinematics_ptr_ = std::make_shared<kinematics::NumericalKinematics>(*robot_model_.left_arm_model_ptr);
+        // kinematics_secondary_ptr_ = std::make_shared<kinematics::NumericalKinematics>(*robot_model_.right_arm_model_ptr);
+
+        assert(kinematics_ptr_ && kinematics_secondary_ptr_);
     };
 
-    enum class ComputeCommandStatus
+    virtual ~MotionPlannerBase() = default;
+
+    // Compute the next joint command in current episode
+    virtual ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) = 0;
+
+    virtual bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) = 0;
+
+    void SetRobotProperty(const RobotProperty &property) { robot_property_ = property; }
+
+    bool MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof) const { return MapArmToWholeBody(q, q_ndof, motion_group_); }
+    bool MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group) const
     {
-        // The request is invalid and it should NOT be used
-        // The state would be switched into error state
-        Error = 0,
+        Eigen::VectorXd joints_map;
+        switch (motion_group)
+        {
+        case MotionGroup::Primary:
+        {
+            joints_map = robot_model_.params_ptr->joints_primary;
+            break;
+        }
+        case MotionGroup::Secondary:
+        {
+            joints_map = robot_model_.params_ptr->joints_secondary;
+            break;
+        }
+        case MotionGroup::BothArms:
+        {
+            joints_map.resize(robot_model_.params_ptr->joints_primary.size() + robot_model_.params_ptr->joints_secondary.size());
+            joints_map << robot_model_.params_ptr->joints_primary, robot_model_.params_ptr->joints_secondary;
+            break;
+        }
+        case MotionGroup::WholeBody:
+        {
+            joints_map = Eigen::VectorXd::LinSpaced(ndof_robot, 0, ndof_robot - 1);
+            break;
+        }
+        case MotionGroup::Unknown:
+        default:
+            assert(false && "Unknown MotionGroup type");
+            break;
+        }
+        // 把target_q按照joints_map映射到target_ndof
+        assert(q.size() == joints_map.size() && "Target q size must match joints map size");
+        for (auto i = 0; i < joints_map.size(); ++i)
+        {
+            int joint_id = static_cast<int>(joints_map[i]);
+            if (joint_id >= 0 && joint_id < q_ndof.size())
+            {
+                q_ndof[joint_id] = q[i];
+            }
+        }
+        return true;
+    }
 
-        // This controller::ComputeRequest would be invoked again
-        // in the next control loop
-        TaskOngoing = 1,
+    bool GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q) const { return GetArmFromWholeBody(q_ndof, q, motion_group_); }
 
-        // It is guaranteed that once TaskFinished has been returned
-        // The same controller ComputeCommand would NOT be invoked
-        // without the next ResetForNewEpisode
-        TaskFinished = 2
-    };
-
-    class MotionPlannerBase
+    bool GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group) const
     {
-    public:
-        explicit MotionPlannerBase(RobotModel robot_model)
+        Eigen::VectorXd joints_map;
+        switch (motion_group)
         {
-            // Initialize robot model
-            robot_model_ = std::move(robot_model);
-            robot_data_ = pinocchio::Data(*robot_model_.model_ptr);
-            // Initialize kinematics for both arms
-            // if (robot_model_.params_ptr->left_arm_name == "W1LeftArmIndustrial")
-            // {
-            // kinematics_ptr_ =
-            // std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmIndustrial());
-            // }
-            // if (robot_model_.params_ptr->left_arm_name == "W1LeftArmAnthropomorphic")
-            // {
-            // kinematics_ptr_ =
-            // std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmAnthropomorphic());
-            // }
-            // if (robot_model_.params_ptr->right_arm_name == "W1RightArmIndustrial")
-            // {
-            // kinematics_secondary_ptr_ =
-            // std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmIndustrial());
-            // }
-            // if (robot_model_.params_ptr->right_arm_name == "W1RightArmAnthropomorphic")
-            // {
-            // kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(
-            // kinematics::W1RightArmAnthropomorphic());
-            // }
-
-            kinematics_ptr_ = std::make_shared<kinematics::YaikKinematics>(0);
-            kinematics_secondary_ptr_ = std::make_shared<kinematics::YaikKinematics>(1);
-            // kinematics_ptr_ = std::make_shared<kinematics::NumericalKinematics>(*robot_model_.left_arm_model_ptr);
-            // kinematics_secondary_ptr_ = std::make_shared<kinematics::NumericalKinematics>(*robot_model_.right_arm_model_ptr);
-
-            assert(kinematics_ptr_ && kinematics_secondary_ptr_);
-        };
-
-        virtual ~MotionPlannerBase() = default;
-
-        // Compute the next joint command in current episode
-        virtual ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
-                                                    const TimeMetaInfo &time_meta,
-                                                    JointCommand &joint_cmd) = 0;
-
-        virtual bool ResetForNewTrajectory(const PlannerRequest &request,
-                                           const JointMeasurement &measurement,
-                                           const TimeMetaInfo &time_meta) = 0;
-
-        void SetRobotProperty(const RobotProperty &property) { robot_property_ = property; }
-
-        bool MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof) const
+        case MotionGroup::Primary:
         {
-            return MapArmToWholeBody(q, q_ndof, motion_group_);
+            joints_map = robot_model_.params_ptr->joints_primary;
+            break;
         }
-        bool MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof,
-                               const MotionGroup &motion_group) const
+        case MotionGroup::Secondary:
         {
-            Eigen::VectorXd joints_map;
-            switch (motion_group)
-            {
-            case MotionGroup::Primary:
-            {
-                joints_map = robot_model_.params_ptr->joints_primary;
-                break;
-            }
-            case MotionGroup::Secondary:
-            {
-                joints_map = robot_model_.params_ptr->joints_secondary;
-                break;
-            }
-            case MotionGroup::BothArms:
-            {
-                joints_map.resize(robot_model_.params_ptr->joints_primary.size() +
-                                  robot_model_.params_ptr->joints_secondary.size());
-                joints_map << robot_model_.params_ptr->joints_primary,
-                    robot_model_.params_ptr->joints_secondary;
-                break;
-            }
-            case MotionGroup::WholeBody:
-            {
-                joints_map = Eigen::VectorXd::LinSpaced(ndof_robot, 0, ndof_robot - 1);
-                break;
-            }
-            case MotionGroup::Unknown:
-            default:
-                assert(false && "Unknown MotionGroup type");
-                break;
-            }
-            // 把target_q按照joints_map映射到target_ndof
-            assert(q.size() == joints_map.size() && "Target q size must match joints map size");
-            for (auto i = 0; i < joints_map.size(); ++i)
-            {
-                int joint_id = static_cast<int>(joints_map[i]);
-                if (joint_id >= 0 && joint_id < q_ndof.size())
-                {
-                    q_ndof[joint_id] = q[i];
-                }
-            }
-            return true;
+            joints_map = robot_model_.params_ptr->joints_secondary;
+            break;
         }
-
-        bool GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q) const
+        case MotionGroup::BothArms:
         {
-            return GetArmFromWholeBody(q_ndof, q, motion_group_);
+            joints_map.resize(robot_model_.params_ptr->joints_primary.size() + robot_model_.params_ptr->joints_secondary.size());
+            joints_map << robot_model_.params_ptr->joints_primary, robot_model_.params_ptr->joints_secondary;
+            break;
         }
-
-        bool GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q,
-                                 const MotionGroup &motion_group) const
+        case MotionGroup::WholeBody:
         {
-            Eigen::VectorXd joints_map;
-            switch (motion_group)
-            {
-            case MotionGroup::Primary:
-            {
-                joints_map = robot_model_.params_ptr->joints_primary;
-                break;
-            }
-            case MotionGroup::Secondary:
-            {
-                joints_map = robot_model_.params_ptr->joints_secondary;
-                break;
-            }
-            case MotionGroup::BothArms:
-            {
-                joints_map.resize(robot_model_.params_ptr->joints_primary.size() +
-                                  robot_model_.params_ptr->joints_secondary.size());
-                joints_map << robot_model_.params_ptr->joints_primary,
-                    robot_model_.params_ptr->joints_secondary;
-                break;
-            }
-            case MotionGroup::WholeBody:
-            {
-                joints_map = Eigen::VectorXd::LinSpaced(ndof_robot, 0, ndof_robot - 1);
-                break;
-            }
-            case MotionGroup::Unknown:
-            default:
-                assert(false && "Unknown MotionGroup type");
-                break;
-            }
-            // 把target_ndof按照joints_map映射到target_q
-            q = Eigen::VectorXd::Zero(joints_map.size());
-            for (auto i = 0; i < joints_map.size(); ++i)
-            {
-                int joint_id = static_cast<int>(joints_map[i]);
-                if (joint_id >= 0 && joint_id < q_ndof.size())
-                {
-                    q[i] = q_ndof[joint_id];
-                }
-            }
-            return true;
+            joints_map = Eigen::VectorXd::LinSpaced(ndof_robot, 0, ndof_robot - 1);
+            break;
         }
-        std::shared_ptr<kinematics::KinematicsBase> Kinematics() const { return kinematics_ptr_; }
-        std::shared_ptr<kinematics::KinematicsBase> KinematicsSecondary() const
-        {
-            return kinematics_secondary_ptr_;
+        case MotionGroup::Unknown:
+        default:
+            assert(false && "Unknown MotionGroup type");
+            break;
         }
-
-        TrajectoryBounds streaming_bounds_{1.0 * M_PI, 4.0 * M_PI, 8.0 * M_PI}; // trajectory bounds, unit: rad
-        TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI, 1.0 * M_PI};     // trajectory bounds, unit: rad
-
-    protected:
-        void SetMotionGroup(MotionGroup motion_group) { motion_group_ = motion_group; }
-        RobotModel robot_model_;
-        pinocchio::Data robot_data_;
-        RobotProperty robot_property_;
-        std::shared_ptr<kinematics::KinematicsBase> kinematics_ptr_;
-        std::shared_ptr<kinematics::KinematicsBase> kinematics_secondary_ptr_;
-
-        TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI,
-                                       1.0 * M_PI}; // trajectory bounds, unit: rad
-
-        struct
+        // 把target_ndof按照joints_map映射到target_q
+        q = Eigen::VectorXd::Zero(joints_map.size());
+        for (auto i = 0; i < joints_map.size(); ++i)
         {
-            TrajectoryBounds translation{0.25, 0.25,
-                                         0.25}; // cartesian space translation bounds, unit: m
-            TrajectoryBounds rotation{0.5 * M_PI, 0.5 * M_PI,
-                                      0.5 * M_PI}; // cartesian space rotation bounds, unit: rad
-        } cartesian_bounds_;
+            int joint_id = static_cast<int>(joints_map[i]);
+            if (joint_id >= 0 && joint_id < q_ndof.size())
+            {
+                q[i] = q_ndof[joint_id];
+            }
+        }
+        return true;
+    }
+    std::shared_ptr<kinematics::KinematicsBase> Kinematics() const { return kinematics_ptr_; }
+    std::shared_ptr<kinematics::KinematicsBase> KinematicsSecondary() const { return kinematics_secondary_ptr_; }
 
-        MotionGroup motion_group_;
+    Int64 episode_index{-1};  // 记录当前的episode索引
 
-        int ndof_primary_{7};
-        int ndof_secondary_{7};
-    };
+   protected:
+    void SetMotionGroup(MotionGroup motion_group) { motion_group_ = motion_group; }
+    RobotModel robot_model_;
+    pinocchio::Data robot_data_;
+    RobotProperty robot_property_;
+    std::shared_ptr<kinematics::KinematicsBase> kinematics_ptr_;
+    std::shared_ptr<kinematics::KinematicsBase> kinematics_secondary_ptr_;
 
-} // namespace robot_server_lib
+    TrajectoryBounds streaming_bounds_{1.0 * M_PI, 4.0 * M_PI, 8.0 * M_PI};  // trajectory bounds, unit: rad
+    TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI, 1.0 * M_PI};      // trajectory bounds, unit: rad
+
+    struct
+    {
+        TrajectoryBounds translation{0.25, 0.25, 0.25};                 // cartesian space translation bounds, unit: m
+        TrajectoryBounds rotation{0.5 * M_PI, 0.5 * M_PI, 0.5 * M_PI};  // cartesian space rotation bounds, unit: rad
+    } cartesian_bounds_;
+
+    MotionGroup motion_group_;
+
+    int ndof_primary_{7};
+    int ndof_secondary_{7};
+};
+
+}  // namespace robot_server_lib
