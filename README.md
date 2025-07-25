@@ -16,7 +16,7 @@ dexe_interfaces/
 ├── common_interfaces/              # Interfaces for general robot control like rebooting or diagnostics.
 ├── gripper_interfaces/             # Interfaces for grippers.
 ├── hand_interfaces/                # Interfaces for dexterous hands.
-├── motor_interfaces/               # All motor-related interfaces.
+├── joint_interfaces/               # All joint-related interfaces.
 ├── robot_server_interfaces/        # Interfaces for the robot server managing overall state.
 ├── sensor_interfaces/              # Custom interfaces for non-standard sensors.
 ├── template_interfaces/            # Template package for creating new interface packages.
@@ -48,7 +48,7 @@ This repository contains the following interface packages at its root:
 - `common_interfaces`: Interfaces for tasks applicable to multiple hardware components, like rebooting or diagnostics.
 - `gripper_interfaces`: Interfaces for grippers, including control and feedback.
 - `hand_interfaces`: Interfaces for dexterous hands, including finger control and feedback.
-- `motor_interfaces`: All interfaces related to motors, including position, velocity, and torque control.
+- `joint_interfaces`: All interfaces related to joints, including position, velocity, and torque control.
 - `robot_server_interfaces`: Interfaces for the robot server, which manages the overall robot state and provides high-level commands.
 - `sensor_interfaces`: Custom interfaces for non-standard sensors. For standard hardware like cameras and Lidars, we use the official `sensor_msgs` package.
 - `template_interfaces`: A template package that can be copied to create new interface packages.

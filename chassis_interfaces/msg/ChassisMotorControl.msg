@@ -1,0 +1,10 @@
+# 8电机控制
+std_msgs/Header header
+# [左前轮角度,右前轮角度，左后轮角度，右后轮角度]
+float64[] position
+# [左前轮速度，右前轮速度，左后轮速度，右后轮速度]
+float64[] speed
+# 急停
+int64 estop
+# 空档
+int64 neutral
