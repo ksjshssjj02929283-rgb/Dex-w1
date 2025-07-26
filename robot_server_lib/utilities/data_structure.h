@@ -114,8 +114,14 @@ struct PoseTrajectory
     using Vector3d = Eigen::Matrix<double, 3, 1>;
     using Vector7d = Eigen::Matrix<double, 7, 1>;
 
-    PoseTrajectory(const std::vector<Vector7d> &pose_list) : poses_(pose_list)
+    std::vector<Vector7d> poses_;        // poses
+    std::vector<double> segment_times_;  // normalized times 0~1 at poses
+    double total_length_;                // total length of trajectory
+
+    void InitializePosesAndTimes(std::vector<Vector7d> &&pose_list)
     {
+        poses_ = std::move(pose_list);
+
         int N = poses_.size() - 1;
         assert(N > 0);
         std::vector<double> segment_lengths_(N);
@@ -148,17 +154,17 @@ struct PoseTrajectory
         assert(segment_times_.back() == 1.0);
     }
 
-    Eigen::Matrix4d operator()(double t) const  // scaled time of 0~1
+    Eigen::Matrix4d operator()(const double phase) const  // scaled time of 0~1
     {
         Eigen::Matrix4d result = Matrix4d::Identity();
-        if (t <= 0.0)
+        if (phase <= 0.0)
         {
             result.block<3, 3>(0, 0) =
                 Eigen::Quaterniond(poses_.front()(3), poses_.front()(4), poses_.front()(5), poses_.front()(6)).toRotationMatrix();
             result.block<3, 1>(0, 3) = poses_.front().head(3);
             return result;
         }
-        if (t >= 1.0)
+        if (phase >= 1.0)
         {
             result.block<3, 3>(0, 0) = Eigen::Quaterniond(poses_.back()(3), poses_.back()(4), poses_.back()(5), poses_.back()(6)).toRotationMatrix();
             result.block<3, 1>(0, 3) = poses_.back().head(3);
@@ -166,12 +172,12 @@ struct PoseTrajectory
         }
 
         int seg = 0;
-        while (seg + 1 < segment_times_.size() && t >= segment_times_[seg + 1])
+        while (seg + 1 < segment_times_.size() && phase >= segment_times_[seg + 1])
         {
             ++seg;
         }
-        double alpha = (t - segment_times_[seg]) / (segment_times_[seg + 1] - segment_times_[seg]);
-        if (t - segment_times_[seg] < 0.005)  // corresponds to 200 milestones on trajectory
+        double alpha = (phase - segment_times_[seg]) / (segment_times_[seg + 1] - segment_times_[seg]);
+        if (phase - segment_times_[seg] < 0.005)  // corresponds to 200 milestones on trajectory
         {
             alpha = 0.0;  // ensure all poses in poses_ can be sampled
         }
@@ -187,6 +193,15 @@ struct PoseTrajectory
         q1.normalize();
         result.block<3, 3>(0, 0) = (q0.slerp(alpha, q1)).toRotationMatrix();
         return result;
+    }
+
+    double totalLength() const { return total_length_; }
+
+    void clear()
+    {
+        poses_.clear();
+        segment_times_.clear();
+        total_length_ = 0.0;
     }
 
     std::string ToString()
@@ -205,19 +220,6 @@ struct PoseTrajectory
         }
         return ss.str();
     }
-
-    double totalLength() const { return total_length_; }
-
-   private:
-    std::vector<Vector7d> poses_;        // poses
-    std::vector<double> segment_times_;  // segment length
-    double total_length_;                // total length of trajectory
-};
-
-struct PlannerManagerCommand
-{
-    std::int64_t sequence_number{-1};
-    JointCommand cmd;
 };
 
 template <int NDoF>
@@ -225,6 +227,14 @@ struct JointTrajectory
 {
     static constexpr double VLIMIT = 1.0;
     static constexpr double ALIMIT = 2.0;
+
+    std::vector<Eigen::Matrix<double, NDoF, 1>> positions;
+    std::vector<Eigen::Matrix<double, NDoF, 1>> velocities;
+    std::vector<Eigen::Matrix<double, NDoF, 1>> accelerations;
+    Eigen::Matrix<double, NDoF, 1> max_velocity = Eigen::Matrix<double, NDoF, 1>::Constant(VLIMIT);
+    Eigen::Matrix<double, NDoF, 1> min_velocity = Eigen::Matrix<double, NDoF, 1>::Constant(-VLIMIT);
+    Eigen::Matrix<double, NDoF, 1> max_acceleration = Eigen::Matrix<double, NDoF, 1>::Constant(ALIMIT);
+    Eigen::Matrix<double, NDoF, 1> min_acceleration = Eigen::Matrix<double, NDoF, 1>::Constant(-ALIMIT);
 
     void SetJointTrajectory(std::vector<Eigen::Matrix<double, NDoF, 1>> &&_trajectory) { positions = std::move(_trajectory); }
 
@@ -237,10 +247,26 @@ struct JointTrajectory
 
     bool has_value() { return !positions.empty(); }
 
-    const Eigen::Matrix<double, NDoF, 1> &operator()(const int index) const
+    int size() const
     {
-        assert(index < positions.size() && "Index out of bounds");
-        return positions[index];
+        return positions.size();
+    }
+
+    Eigen::Matrix<double, NDoF, 1> operator()(const double phase) const
+    {
+        if(phase <= 0.0)
+        {
+            return positions.front();
+        }
+        if(phase >= 1.0)
+        {
+            return positions.back();
+        }
+
+        int index = static_cast<int>(phase * (size() - 1));
+        double alpha = phase * (size() - 1) - index;
+        // linear interpolation
+        return (1 - alpha) * positions[index] + alpha * positions[index + 1];
     }
 
     std::string ToString()
@@ -274,14 +300,12 @@ struct JointTrajectory
         }
         return ss.str();
     }
+};
 
-    std::vector<Eigen::Matrix<double, NDoF, 1>> positions;
-    std::vector<Eigen::Matrix<double, NDoF, 1>> velocities;
-    std::vector<Eigen::Matrix<double, NDoF, 1>> accelerations;
-    Eigen::Matrix<double, NDoF, 1> max_velocity = Eigen::Matrix<double, NDoF, 1>::Constant(VLIMIT);
-    Eigen::Matrix<double, NDoF, 1> min_velocity = Eigen::Matrix<double, NDoF, 1>::Constant(-VLIMIT);
-    Eigen::Matrix<double, NDoF, 1> max_acceleration = Eigen::Matrix<double, NDoF, 1>::Constant(ALIMIT);
-    Eigen::Matrix<double, NDoF, 1> min_acceleration = Eigen::Matrix<double, NDoF, 1>::Constant(-ALIMIT);
+struct PlannerManagerCommand
+{
+    std::int64_t sequence_number{-1};
+    JointCommand cmd;
 };
 
 // 移动指令

@@ -1379,17 +1379,17 @@ struct w1_right_arm_industrial_ik
 class W1RightArmIndustrial_IkSolver : public IkSolverBase<7>
 {
    public:
-    W1RightArmIndustrial_IkSolver() : params() { ik_solver_ptr = std::make_shared<w1_right_arm_industrial_ik>(); }
+    W1RightArmIndustrial_IkSolver() : params() {}
 
     Eigen::Matrix4d computeFK(const Jps &q_in) override
     {
         JpsArr q_arr = _VecToArr(q_in);
-        return ik_solver_ptr->computeFK(q_arr);
+        return w1_right_arm_industrial_ik::computeFK(q_arr);
     }
 
     void computeIK(const Eigen::Matrix4d &T_ee, const double aux_input, std::vector<Jps> &ik_results) override
     {
-        auto ik_results_in_arr = ik_solver_ptr->computeIK(T_ee, aux_input);
+        auto ik_results_in_arr = w1_right_arm_industrial_ik::computeIK(T_ee, aux_input);
         ik_results.clear();
         for (auto ik_arr : ik_results_in_arr)
         {
@@ -1401,14 +1401,13 @@ class W1RightArmIndustrial_IkSolver : public IkSolverBase<7>
     {
         JpsArr temp;
         _VecToArr(q_in, temp);
-        bool project_ok = numericalRefinement<7>(ik_solver_ptr->computeFK, ik_solver_ptr->computeTwistJacobian, T_ee, temp, params);
+        bool project_ok = numericalRefinement<7>(w1_right_arm_industrial_ik::computeFK, w1_right_arm_industrial_ik::computeTwistJacobian, T_ee, temp, params);
         _ArrToVec(temp, q_projected);
         return project_ok;
     }
 
    private:
     static constexpr int aux_input_index = 4;
-    std::shared_ptr<w1_right_arm_industrial_ik> ik_solver_ptr;
     const NumericalRefinementParams params;
 };
 

@@ -61,7 +61,7 @@ TEST(MoveTrajectoryTest, MovePlanner)
 
     JointMeasurement measurement;
     measurement.q_desired_pre << 0, 0, 0, 0, -0.45, -0.65, 0.35, -1.5, -1, 1.1, -0.4, 0.45, 0.65, -0.35, 1.5, 1, -1.1, 0.4;
-    measurement.velocity = Eigen::VectorXd::Zero(14);
+    measurement.velocity = Eigen::VectorXd::Zero(20);
 
     TimeMetaInfo time_meta;
     time_meta.current_time = TimePointSystem::Now();

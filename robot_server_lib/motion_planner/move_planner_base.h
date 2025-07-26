@@ -194,8 +194,8 @@ class MotionPlannerBase
 
     MotionGroup motion_group_;
 
-    int ndof_primary_{7};
-    int ndof_secondary_{7};
+    static constexpr int ndof_primary_ = 7;
+    static constexpr int ndof_secondary_ = 7;
 };
 
 }  // namespace robot_server_lib
