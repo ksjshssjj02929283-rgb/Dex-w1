@@ -31,27 +31,31 @@ namespace robot_server_lib
 
         ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) override
         {
+            if (!joint_trajectory_primary_.has_value() && !joint_trajectory_secondary_.has_value())
+                return ComputeCommandStatus::Error;
+
             JointPositionDof q_ndof = measurement.q_desired_pre;
+            JointPositionDof dq_ndof = JointPositionDof::Zero();
             Eigen::VectorXd q_arms;
             GetArmFromWholeBody(q_ndof, q_arms, MotionGroup::BothArms);
 
-            // double ratio_left = 1.0, ratio_right = 1.0;
-            // if (joint_trajectory_primary_.has_value())
-            // {
-            //     auto q_target = joint_trajectory_primary_(current_phase_ + phase_gap_);
-            //     auto q_prev = joint_trajectory_primary_(current_phase_);
-            //     auto gap = (q_target - q_prev).norm();
-            //     ratio_left = gap > 1e-4 ? (q_arms.head(ndof_primary_) - q_prev).norm() / gap : 1.0;
-            // }
-            // if (joint_trajectory_secondary_.has_value())
-            // {
-            //     auto q_target = joint_trajectory_secondary_(current_phase_ + phase_gap_);
-            //     auto q_prev = joint_trajectory_secondary_(current_phase_);
-            //     auto gap = (q_target - q_prev).norm();
-            //     ratio_right = gap > 1e-4 ? (q_arms.tail(ndof_secondary_) - q_prev).norm() / gap : 1.0;
-            // }
-            // // Current target almost reached, update the next target
-            // if (ratio_left > step_forward_threshold && ratio_right > step_forward_threshold)
+            double ratio_left = 1.0, ratio_right = 1.0;
+            if (joint_trajectory_primary_.has_value())
+            {
+                auto q_target = joint_trajectory_primary_(current_phase_ + phase_gap_);
+                auto q_prev = joint_trajectory_primary_(current_phase_);
+                auto gap = (q_target - q_prev).norm();
+                ratio_left = gap > 1e-4 ? (q_arms.head(ndof_primary_) - q_prev).norm() / gap : 1.0;
+            }
+            if (joint_trajectory_secondary_.has_value())
+            {
+                auto q_target = joint_trajectory_secondary_(current_phase_ + phase_gap_);
+                auto q_prev = joint_trajectory_secondary_(current_phase_);
+                auto gap = (q_target - q_prev).norm();
+                ratio_right = gap > 1e-4 ? (q_arms.tail(ndof_secondary_) - q_prev).norm() / gap : 1.0;
+            }
+            // Current target almost reached, update the next target
+            if (ratio_left > step_forward_threshold && ratio_right > step_forward_threshold)
             {
                 if (current_phase_ + phase_gap_ < 1.0)
                 {
@@ -60,13 +64,21 @@ namespace robot_server_lib
                     SetRuckigTarget(measurement);
                 }
             }
-            LOG_INFO << "current_phase_ : " << std::to_string(current_phase_) << "\n";
 
             auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
             for (auto i = 0; i < ndof_robot; i++)
             {
                 q_ndof[i] = runtime_.output.new_position[i];
+                dq_ndof[i] = runtime_.output.new_velocity[i];
             }
+
+            Eigen::VectorXd q_left, pose_left_ref(7);
+            GetArmFromWholeBody(q_ndof, q_left, MotionGroup::Primary);
+            auto pose_left = kine_ptr_primary_->GetFK(q_left, robot_property_.tcp_frame).ToVectorXd();
+            pose_left_ref << -0.3, 0.363727, 0.262795, -0.229399, -0.440151, 0.599072, 0.628296;
+            auto norm = (pose_left - pose_left_ref).norm();
+            LOG_INFO << "Desired ref reached: " << std::to_string(norm) << "\n";
+
             // if(refine_q_cmd)
             // {
             //     Eigen::VectorXd q_primary, q_secondary;
@@ -83,7 +95,8 @@ namespace robot_server_lib
                 for (auto i = 0; i < ndof_robot; i++)
                 {
                     joint_cmd.position[i] = q_ndof[i];
-                    joint_cmd.velocity[i] = 0.0;
+                    joint_cmd.velocity[i] = dq_ndof[i];
+                    // joint_cmd.velocity[i] = 0.0;
                     joint_cmd.acceleration[i] = 0;
                     joint_cmd.torque_feedforward[i] = 0;
                 }
@@ -137,8 +150,10 @@ namespace robot_server_lib
             }
             for (int i = 0; i < ndof_robot; ++i)
             {
-                runtime_.input.max_velocity[i] = joint_bounds_.max_velocity * speed_ratio;
-                runtime_.input.max_acceleration[i] = joint_bounds_.max_acceleration * speed_ratio;
+                // runtime_.input.max_velocity[i] = joint_bounds_.max_velocity * speed_ratio;
+                // runtime_.input.max_acceleration[i] = joint_bounds_.max_acceleration * speed_ratio;
+                runtime_.input.max_velocity[i] = 0.5;
+                runtime_.input.max_acceleration[i] = 5.0;
             }
 
             Eigen::VectorXd q_start;
@@ -283,20 +298,28 @@ namespace robot_server_lib
         void SetRuckigTarget(const JointMeasurement &measurement)
         {
             JointPositionDof q_dof = measurement.q_desired_pre;
+            JointPositionDof dq_dof = measurement.velocity;
             if (joint_trajectory_primary_.has_value())
             {
                 auto q_target_left = joint_trajectory_primary_(current_phase_ + phase_gap_);
+                auto dq_target_left =
+                    (joint_trajectory_primary_(current_phase_ + 2 * phase_gap_) - q_target_left) / 0.5;
                 MapArmToWholeBody(q_target_left, q_dof, MotionGroup::Primary);
+                MapArmToWholeBody(dq_target_left, dq_dof, MotionGroup::Primary);
             }
             if (joint_trajectory_secondary_.has_value())
             {
                 auto q_target_right = joint_trajectory_secondary_(current_phase_ + phase_gap_);
+                auto dq_target_right =
+                    (joint_trajectory_secondary_(current_phase_ + 2 * phase_gap_) - q_target_right) / 0.5;
                 MapArmToWholeBody(q_target_right, q_dof, MotionGroup::Secondary);
+                MapArmToWholeBody(dq_target_right, dq_dof, MotionGroup::Secondary);
             }
             for (int i = 0; i < ndof_robot; i++)
             {
                 runtime_.input.target_position[i] = q_dof(i);
-                runtime_.input.target_velocity[i] = 0.0;
+                runtime_.input.target_velocity[i] = dq_dof(i);
+                // runtime_.input.target_velocity[i] = 0.0;
                 runtime_.input.target_acceleration[i] = 0.0;
             }
         }

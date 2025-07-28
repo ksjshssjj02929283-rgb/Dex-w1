@@ -35,7 +35,7 @@ namespace robot_server_lib
 
         YaikKinematicsParams()
             : milestones_per_knot(10),
-              n_knots(20),
+              n_knots(10),
               dist_type(-1),
               dist_weight(Jps::Constant(1.0)),
               jps_dist_tolerance(0.2),
@@ -201,16 +201,12 @@ namespace robot_server_lib
         double ee_trajectory_length = ee_trajectory.totalLength();
         if (ee_trajectory_length < 0.01)
         {
-            LOG_CRIT << "Global redundancy resolution error: trajectory too short\n";
-            return false;
+          LOG_CRIT << "Global redundancy resolution error: trajectory too short\n";
+          return false;
         }
-        else if (ee_trajectory_length < 0.2)
+        else
         {
-            n_knots = 5;
-        }
-        else if (ee_trajectory_length < 0.4)
-        {
-            n_knots = 10;
+          n_knots = int(ee_trajectory_length / 0.1) + 1; // 10 milestones for every 0.1 length
         }
 
         std::vector<LayerNodes> graph_nodes; // tree of nodes for DFS

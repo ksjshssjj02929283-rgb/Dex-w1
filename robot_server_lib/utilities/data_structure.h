@@ -177,10 +177,6 @@ struct PoseTrajectory
             ++seg;
         }
         double alpha = (phase - segment_times_[seg]) / (segment_times_[seg + 1] - segment_times_[seg]);
-        if (phase - segment_times_[seg] < 0.005)  // corresponds to 200 milestones on trajectory
-        {
-            alpha = 0.0;  // ensure all poses in poses_ can be sampled
-        }
 
         // interpolate position
         Vector3d p0 = poses_[seg].head<3>();
@@ -227,6 +223,7 @@ struct JointTrajectory
 {
     static constexpr double VLIMIT = 1.0;
     static constexpr double ALIMIT = 2.0;
+    static constexpr double JLIMIT = 100.0;
 
     std::vector<Eigen::Matrix<double, NDoF, 1>> positions;
     std::vector<Eigen::Matrix<double, NDoF, 1>> velocities;
@@ -235,6 +232,8 @@ struct JointTrajectory
     Eigen::Matrix<double, NDoF, 1> min_velocity = Eigen::Matrix<double, NDoF, 1>::Constant(-VLIMIT);
     Eigen::Matrix<double, NDoF, 1> max_acceleration = Eigen::Matrix<double, NDoF, 1>::Constant(ALIMIT);
     Eigen::Matrix<double, NDoF, 1> min_acceleration = Eigen::Matrix<double, NDoF, 1>::Constant(-ALIMIT);
+    Eigen::Matrix<double, NDoF, 1> max_jerk = Eigen::Matrix<double, NDoF, 1>::Constant(JLIMIT);
+    Eigen::Matrix<double, NDoF, 1> min_jerk = Eigen::Matrix<double, NDoF, 1>::Constant(-JLIMIT);
 
     void SetJointTrajectory(std::vector<Eigen::Matrix<double, NDoF, 1>> &&_trajectory) { positions = std::move(_trajectory); }
 
@@ -371,6 +370,9 @@ struct TorqueControlBuffer
 {
     std::shared_ptr<SingleWriterLatestBuffer<VectorDof>> torque_command_vector;
     std::shared_ptr<SingleWriterLatestBuffer<JointRawMeasurement>> joint_raw_measurement;
+
+    TorqueControlBuffer() = default;
+    ~TorqueControlBuffer() = default;
 
     void Initialize()
     {

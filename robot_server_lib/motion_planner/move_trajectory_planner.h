@@ -56,6 +56,13 @@ namespace robot_server_lib
             MapArmToWholeBody(q_arms, q_ndof, MotionGroup::BothArms);
             MapArmToWholeBody(dq_arms, dq_ndof, MotionGroup::BothArms);
 
+            Eigen::VectorXd q_left_cur, pose_left_ref(7);
+            GetArmFromWholeBody(q_ndof, q_left_cur, MotionGroup::Primary);
+            auto pose_left = kine_ptr_primary_->GetFK(q_left_cur, robot_property_.tcp_frame).ToVectorXd();
+            pose_left_ref << -0.3, 0.363727, 0.262795, -0.229399, -0.440151, 0.599072, 0.628296;
+            auto norm = (pose_left - pose_left_ref).norm();
+            LOG_INFO << "Desired ref reached: " << std::to_string(norm) << "\n";
+
             if (goal_reached)
             {
                 ClearCache();
@@ -91,16 +98,24 @@ namespace robot_server_lib
 
             JointTrajectory<ndof_left_> joint_trajectory_primary_;
             JointTrajectory<ndof_right_> joint_trajectory_secondary_;
-            const double max_speed = speed_ratio * joint_bounds_.max_velocity;
-            const double max_acceleration = speed_ratio * joint_bounds_.max_acceleration;
+            // const double max_speed = speed_ratio * joint_bounds_.max_velocity;
+            // const double max_acceleration = speed_ratio * joint_bounds_.max_acceleration;
+            // const double max_jerk = speed_ratio * joint_bounds_.max_jerk;
+            const double max_speed = 0.5;
+            const double max_acceleration = 5.0;
+            const double max_jerk = 20.0;
             joint_trajectory_primary_.max_velocity.setConstant(max_speed);
             joint_trajectory_primary_.min_velocity.setConstant(-max_speed);
             joint_trajectory_primary_.max_acceleration.setConstant(max_acceleration);
             joint_trajectory_primary_.min_acceleration.setConstant(-max_acceleration);
+            joint_trajectory_primary_.max_jerk.setConstant(max_jerk);
+            joint_trajectory_primary_.min_jerk.setConstant(-max_jerk);
             joint_trajectory_secondary_.max_velocity.setConstant(max_speed);
             joint_trajectory_secondary_.min_velocity.setConstant(-max_speed);
             joint_trajectory_secondary_.max_acceleration.setConstant(max_acceleration);
             joint_trajectory_secondary_.min_acceleration.setConstant(-max_acceleration);
+            joint_trajectory_secondary_.max_jerk.setConstant(max_jerk);
+            joint_trajectory_secondary_.min_jerk.setConstant(-max_jerk);
 
             Eigen::VectorXd q_start;
             GetArmFromWholeBody(measurement.q_desired_pre, q_start);
