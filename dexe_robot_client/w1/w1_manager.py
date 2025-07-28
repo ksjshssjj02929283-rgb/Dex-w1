@@ -21,11 +21,11 @@ from dexe_robot_client.end_effector_client import (EndEffectorType,
 from dexe_robot_client.robot_client import RobotClientRos2 as RobotClient
 from dexe_robot_client.robot_client import MotionGroup
 
-from kinemtaics.torso_kinematics import TorsoKinmatics
-from path_planner.bezier_blend_path import interpolate_cartesian_path
-from trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
-from utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
-from utils.component_manager import W1ComponentManager
+from dexe_robot_client.w1.kinemtaics.torso_kinematics import TorsoKinmatics
+from dexe_robot_client.w1.path_planner.bezier_blend_path import interpolate_cartesian_path
+from dexe_robot_client.w1.trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
+from dexe_robot_client.w1.utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
+from dexe_robot_client.w1.utils.component_manager import W1ComponentManager
 
 
 """TODO
@@ -207,6 +207,14 @@ class W1Manager:
         elif name == "right_arm":
             return self.right_arm_controller
 
+    def _get_arm_ee_client(self, name: str):
+        if not self._has_arm_ee_client(name):
+            return None
+        if name == "left_arm_ee":
+            return self.left_arm_ee_client
+        elif name == "right_arm_ee":
+            return self.right_arm_ee_client
+
     def _check_name(self, name: str) -> bool:
         """仅支持component检查，不包含ee"""
         if name not in self.component_manager.names:
@@ -328,6 +336,23 @@ class W1Manager:
         return True, np.hstack(temp_arrays)
 
     ######## 基础API #############
+    def set_ee_state(self, name: str, state: np.ndarray) -> bool:
+        """控制end effector运动
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+            state (np.ndarray): 期望位置 0~1
+
+        Returns:
+            bool
+        """
+        state_ = np.array(state)
+        if not self._has_arm_ee_client(name):
+            return False
+        if not self._check_qpos_dimension(name, state_):
+            return False
+        return self._get_arm_ee_client(name).set_state(state_)
+
     def set_home_qpos(self, 
                       home_qpos: np.ndarray, 
                       save_to_file: bool = False) -> bool:
@@ -379,16 +404,10 @@ class W1Manager:
             self.logger.error(f"{support_names} is supported, except {name}")
             return False, None
         
-        if name == "left_arm_ee":
-            if self.left_arm_ee_client is None:
-                self.logger.warning("left_arm_ee_client is not initialize")
+        if name in self.arm_ee_names:
+            if not self._has_arm_ee_client(name):
                 return False, None
-            return self.left_arm_ee_client.get_state()
-        elif name == "right_arm_ee":
-            if self.right_arm_ee_client is None:
-                self.logger.warning("right_arm_ee_client is not initialize")
-                return False, None
-            return self.right_arm_ee_client.get_state()
+            return self._get_arm_ee_client(name).get_state()
         
         robot_info = self.robot_client.get_info()
         cur_qpos = np.array(robot_info.joint_position)
@@ -608,7 +627,7 @@ class W1Manager:
             while not stop_thread:
                 if count == target_count and count != cur_count:
                     self.left_arm_ee_client.set_state(np.array(target_ee_qpos))
-                    self.logger.debug(f"left_arm_ee has triggered: {target_ee_qpos}")
+                    self.logger.debug(f"left_arm_ee has triggered: {target_count} {target_ee_qpos}")
                     if left_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = left_arm_ee_trigger_list_cp.pop()
                     cur_count = count
@@ -623,20 +642,20 @@ class W1Manager:
             while not stop_thread:
                 if count == target_count and count != cur_count:
                     self.right_arm_ee_client.set_state(np.array(target_ee_qpos))
-                    self.logger.debug(f"right_arm_ee has triggered: {target_ee_qpos}")
+                    self.logger.debug(f"right_arm_ee has triggered: {target_count} {target_ee_qpos}")
                     if right_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = right_arm_ee_trigger_list_cp.pop()
                     cur_count = count
                 time.sleep(self.TIME_STEP / 10)
 
-        if left_arm_ee_trigger_list is not None:
+        if self._has_arm_ee_client("left_arm_ee") and left_arm_ee_trigger_list is not None:
             if self._has_arm_ee_client("left_arm_ee"):
                 left_arm_ee_trigger_thread = threading.Thread(
                     target=left_arm_ee_trigger, daemon=True
                 )
                 left_arm_ee_trigger_thread.start()
 
-        if right_arm_ee_trigger_list is not None:
+        if self._has_arm_ee_client("right_arm_ee") and right_arm_ee_trigger_list is not None:
             if self._has_arm_ee_client("right_arm_ee"):
                 right_arm_ee_trigger_thread = threading.Thread(
                     target=right_arm_ee_trigger, daemon=True
@@ -655,6 +674,7 @@ class W1Manager:
                 # TODO: use pre_qpos
                 self.robot_client.send_streaming_command(qpos.tolist(), True)
                 self.logger.info(f"Stop sending streaming command")
+                stop_thread = True
                 return False
 
             if count == end_iter + 1:
@@ -669,6 +689,9 @@ class W1Manager:
                             f"and actual duration is {time.time() - t0}s")
         self.logger.info("Finish streaming")
         
+        stop_thread = True
+        # TODO: join thread?
+
         # check reach within timeout
         targt_qpos = qpos_array[-1]
         t1 = time.time()
@@ -887,12 +910,14 @@ class W1Manager:
             if is_cartesian:
                 seg_xpos_list = [user_pose_to_xpos(pose[:3].tolist(), pose[3:].tolist()) 
                                 for pose in seg_pos_list]
-                res_plan, seg_qpos_samples_array = self.plan_cartesian_traj(name, seg_xpos_list, 
+                res_plan, seg_qpos_samples_array = self.plan_cartesian_traj(name, 
+                                                                            seg_xpos_list, 
                                                                             cur_qpos_seed, 
                                                                             qvel_limits_array_, 
                                                                             cartesian_step)
             else:
-                res_plan, seg_qpos_samples_array = self.plan_joint_traj(seg_pos_list, 
+                res_plan, seg_qpos_samples_array = self.plan_joint_traj(name,
+                                                                        seg_pos_list, 
                                                                         seg_qvel_limits_list)
             if not res_plan:
                 return False, None, None
@@ -975,7 +1000,7 @@ class W1Manager:
 
         # left_arm
         left_arm_ee_trigger_list = None
-        if self.left_arm_ee_client is None:
+        if not self._has_arm_ee_client("left_arm_ee"):
             (res_left_arm, 
             left_arm_qpos_array) = self._plan_to_waypoint("left_arm", 
                                                         cur_left_arm_qpos, 
@@ -999,7 +1024,7 @@ class W1Manager:
 
         # right_arm
         right_arm_ee_trigger_list = None
-        if self.right_arm_ee_client is None:
+        if not self._has_arm_ee_client("right_arm_ee"):
             (res_right_arm, 
             right_arm_qpos_array) = self._plan_to_waypoint("right_arm", 
                                                         cur_right_arm_qpos, 
@@ -1093,7 +1118,7 @@ class W1Manager:
 
         # left_arm
         left_arm_ee_trigger_list = None
-        if self.left_arm_ee_client is None:
+        if not self._has_arm_ee_client("left_arm_ee"):
             (res_left_arm, 
             left_arm_qpos_array) = self._plan_to_waypoint("left_arm", 
                                                         cur_left_arm_qpos, 
@@ -1123,7 +1148,7 @@ class W1Manager:
 
         # right_arm
         right_arm_ee_trigger_list = None
-        if self.right_arm_ee_client is None:
+        if not self._has_arm_ee_client("right_arm_ee"):
             (res_right_arm, 
             right_arm_qpos_array) = self._plan_to_waypoint("right_arm", 
                                                         cur_right_arm_qpos, 
@@ -1169,6 +1194,8 @@ if __name__ == "__main__":
     w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
                            W1Version.V2, 
                            EndEffectorType.BRAINCO_HAND,
-                           is_sim=True)
-    # w1_manager.go_home()
+                           is_sim=False)
+    # w1_manager.set_ee_state("left_arm_ee", np.array([0.]*6))
+    # w1_manager.set_ee_state("right_arm_ee", np.array([0.]*6))
+    # w1_manager.go_home(0.5)
     from IPython import embed; embed()
