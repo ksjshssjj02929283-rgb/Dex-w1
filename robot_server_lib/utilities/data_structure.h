@@ -28,389 +28,420 @@ enum for various states and command types
 namespace robot_server_lib
 {
 
-/*-------------------------------------------------------------------------------
-robot state and request data structure class
-机器人状态和指令数据结构
--------------------------------------------------------------------------------*/
+    /*-------------------------------------------------------------------------------
+    robot state and request data structure class
+    机器人状态和指令数据结构
+    -------------------------------------------------------------------------------*/
 
-struct JointMeasurement
-{
-    VectorDof position;  // 关节位置
-    VectorDof velocity;  // 关节速度
-    VectorDof effort;    // 关节力矩
-
-    VectorDof q_desired_pre;  // 预期关节位置
-
-    std::string ToString() const
+    struct JointMeasurement
     {
-        std::stringstream ss;
-        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Effort: " << effort.transpose()
-           << ", Previous Q Desired: " << q_desired_pre.transpose();
-        return ss.str();
-    }
-};
+        VectorDof position; // 关节位置
+        VectorDof velocity; // 关节速度
+        VectorDof effort;   // 关节力矩
 
-struct JointRawMeasurement
-{
-    VectorDof position;  // 关节位置
-    VectorDof velocity;  // 关节速度
-    VectorDof effort;    // 关节力矩
-    TimePointSystem time_point;
+        VectorDof q_desired_pre; // 预期关节位置
 
-    std::string ToString() const
-    {
-        std::stringstream ss;
-        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Effort: " << effort.transpose();
-        return ss.str();
-    }
-};
-
-struct JointCommand
-{
-    VectorDof position;
-    VectorDof velocity;
-    VectorDof acceleration;
-    VectorDof torque_feedforward;
-
-    std::string ToString() const
-    {
-        std::stringstream ss;
-        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Acceleration: " << acceleration.transpose()
-           << ", Torque Feedforward: " << torque_feedforward.transpose();
-        return ss.str();
-    }
-};
-
-struct PoseQuaternion
-{
-    Eigen::Vector3d position{Eigen::Vector3d::Zero()};
-    Eigen::Quaterniond orientation{Eigen::Quaterniond::Identity()};
-
-    PoseQuaternion() = default;
-    explicit PoseQuaternion(const Eigen::Matrix4d &mat)
-    {
-        position = mat.block<3, 1>(0, 3);
-        orientation = Eigen::Quaterniond(mat.block<3, 3>(0, 0));
-    }
-
-    std::string ToString() const
-    {
-        std::stringstream ss;
-        ss << "Pose: (" << position.x() << ", " << position.y() << ", " << position.z() << ", " << orientation.w() << ", " << orientation.x() << ", "
-           << orientation.y() << ", " << orientation.z() << ")";
-        return ss.str();
-    }
-
-    Eigen::VectorXd ToVectorXd() const
-    {
-        Eigen::VectorXd vec(7);
-        vec << position, orientation.w(), orientation.x(), orientation.y(), orientation.z();
-        return vec;
-    }
-};
-
-struct PoseTrajectory
-{
-    using Vector3d = Eigen::Matrix<double, 3, 1>;
-    using Vector7d = Eigen::Matrix<double, 7, 1>;
-
-    std::vector<Vector7d> poses_;        // poses
-    std::vector<double> segment_times_;  // normalized times 0~1 at poses
-    double total_length_;                // total length of trajectory
-
-    void InitializePosesAndTimes(std::vector<Vector7d> &&pose_list)
-    {
-        poses_ = std::move(pose_list);
-
-        int N = poses_.size() - 1;
-        assert(N > 0);
-        std::vector<double> segment_lengths_(N);
-        total_length_ = 0.0;
-        const double q_weight = 0.5;  // weight of quaternion distance
-        for (int i = 0; i < N; ++i)
+        std::string ToString() const
         {
-            Vector3d p1 = poses_[i].head<3>();
-            Vector3d p2 = poses_[i + 1].head<3>();
-            double pos_dist = (p2 - p1).norm();
+            std::stringstream ss;
+            ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Effort: " << effort.transpose()
+               << ", Previous Q Desired: " << q_desired_pre.transpose();
+            return ss.str();
+        }
+    };
 
-            Eigen::Quaterniond q1(poses_[i](3), poses_[i](4), poses_[i](5), poses_[i](6));
-            Eigen::Quaterniond q2(poses_[i + 1](3), poses_[i + 1](4), poses_[i + 1](5), poses_[i + 1](6));
-            q1.normalize();
-            q2.normalize();
-            double ang_dist = q1.angularDistance(q2);
+    struct JointRawMeasurement
+    {
+        VectorDof position; // 关节位置
+        VectorDof velocity; // 关节速度
+        VectorDof effort;   // 关节力矩
+        TimePointSystem time_point;
 
-            double seg_len = pos_dist + q_weight * ang_dist;
-            segment_lengths_[i] = seg_len;
-            total_length_ += seg_len;
+        std::string ToString() const
+        {
+            std::stringstream ss;
+            ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Effort: " << effort.transpose();
+            return ss.str();
+        }
+    };
+
+    struct JointCommand
+    {
+        VectorDof position;
+        VectorDof velocity;
+        VectorDof acceleration;
+        VectorDof torque_feedforward;
+
+        std::string ToString() const
+        {
+            std::stringstream ss;
+            ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Acceleration: " << acceleration.transpose()
+               << ", Torque Feedforward: " << torque_feedforward.transpose();
+            return ss.str();
+        }
+    };
+
+    struct PoseQuaternion
+    {
+        Eigen::Vector3d position{Eigen::Vector3d::Zero()};
+        Eigen::Quaterniond orientation{Eigen::Quaterniond::Identity()};
+
+        PoseQuaternion() = default;
+        explicit PoseQuaternion(const Eigen::Matrix4d &mat)
+        {
+            position = mat.block<3, 1>(0, 3);
+            orientation = Eigen::Quaterniond(mat.block<3, 3>(0, 0));
         }
 
-        segment_times_.resize(N + 1);
-        segment_times_[0] = 0.0;
-        for (int i = 0; i < N; ++i)
+        std::string ToString() const
         {
-            double dt = segment_lengths_[i] / total_length_;
-            segment_times_[i + 1] = segment_times_[i] + dt;
+            std::stringstream ss;
+            ss << "Pose: (" << position.x() << ", " << position.y() << ", " << position.z() << ", " << orientation.w() << ", " << orientation.x() << ", "
+               << orientation.y() << ", " << orientation.z() << ")";
+            return ss.str();
         }
-        assert(segment_times_.back() == 1.0);
-    }
 
-    Eigen::Matrix4d operator()(const double phase) const  // scaled time of 0~1
-    {
-        Eigen::Matrix4d result = Matrix4d::Identity();
-        if (phase <= 0.0)
+        Eigen::VectorXd ToVectorXd() const
         {
-            result.block<3, 3>(0, 0) =
-                Eigen::Quaterniond(poses_.front()(3), poses_.front()(4), poses_.front()(5), poses_.front()(6)).toRotationMatrix();
-            result.block<3, 1>(0, 3) = poses_.front().head(3);
+            Eigen::VectorXd vec(7);
+            vec << position, orientation.w(), orientation.x(), orientation.y(), orientation.z();
+            return vec;
+        }
+    };
+
+    struct PoseTrajectory
+    {
+        using Vector3d = Eigen::Matrix<double, 3, 1>;
+        using Vector7d = Eigen::Matrix<double, 7, 1>;
+
+        std::vector<Vector7d> poses_;       // poses
+        std::vector<double> segment_times_; // normalized times 0~1 at poses
+        double total_length_;               // total length of trajectory
+        int order;                          // order of bezier interpolation
+
+        void Initialize(std::vector<Vector7d> &&pose_list, const int interp_order = 1)
+        {
+            poses_ = std::move(pose_list);
+
+            const int N = poses_.size() - 1;
+            assert(N > 0);
+            std::vector<double> segment_lengths_(N);
+            total_length_ = 0.0;
+            const double q_weight = 0.5; // weight of quaternion distance
+            for (int i = 0; i < N; ++i)
+            {
+                Vector3d p1 = poses_[i].head<3>();
+                Vector3d p2 = poses_[i + 1].head<3>();
+                double pos_dist = (p2 - p1).norm();
+
+                Eigen::Quaterniond q1(poses_[i](3), poses_[i](4), poses_[i](5), poses_[i](6));
+                Eigen::Quaterniond q2(poses_[i + 1](3), poses_[i + 1](4), poses_[i + 1](5), poses_[i + 1](6));
+                q1.normalize();
+                q2.normalize();
+                double ang_dist = q1.angularDistance(q2);
+
+                double seg_len = pos_dist + q_weight * ang_dist;
+                segment_lengths_[i] = seg_len;
+                total_length_ += seg_len;
+            }
+
+            segment_times_.resize(N + 1);
+            segment_times_[0] = 0.0;
+            for (int i = 0; i < N; ++i)
+            {
+                double dt = segment_lengths_[i] / total_length_;
+                segment_times_[i + 1] = segment_times_[i] + dt;
+            }
+            assert(segment_times_.back() == 1.0);
+
+            order = std::clamp(interp_order, 1, N);
+        }
+
+        // Bezier Interpolation
+        Eigen::Matrix4d operator()(const double phase) const // scaled time of 0~1
+        {
+            Eigen::Matrix4d result = Matrix4d::Identity();
+
+            if (phase <= 0.0)
+            {
+                const Vector7d &p = poses_.front();
+                result.block<3, 3>(0, 0) = Eigen::Quaterniond(p(3), p(4), p(5), p(6)).normalized().toRotationMatrix();
+                result.block<3, 1>(0, 3) = p.head<3>();
+                return result;
+            }
+
+            if (phase >= 1.0)
+            {
+                const Vector7d &p = poses_.back();
+                result.block<3, 3>(0, 0) = Eigen::Quaterniond(p(3), p(4), p(5), p(6)).normalized().toRotationMatrix();
+                result.block<3, 1>(0, 3) = p.head<3>();
+                return result;
+            }
+
+            // 找到当前处于哪个段落 seg
+            int seg = 0;
+            while (seg + 1 < segment_times_.size() && phase >= segment_times_[seg + 1])
+                ++seg;
+
+            int num_ctrl_pts = order + 1;
+            int start = std::clamp(seg - order / 2, 0, static_cast<int>(poses_.size()) - num_ctrl_pts);
+
+            // 时间归一化到当前段控制点时间范围
+            double t0 = segment_times_[start];
+            double t1 = segment_times_[start + order];
+            double alpha = (phase - t0) / (t1 - t0);
+
+            std::vector<Vector3d> pos_ctrl_pts;
+            std::vector<Eigen::Quaterniond> rot_ctrl_pts;
+            for (int i = 0; i < num_ctrl_pts; ++i)
+            {
+                pos_ctrl_pts.push_back(poses_[start + i].head<3>());
+                const auto &pose = poses_[start + i];
+                rot_ctrl_pts.emplace_back(pose(3), pose(4), pose(5), pose(6));
+                rot_ctrl_pts.back().normalize();
+            }
+
+            // Bezier 插值位置：De Casteljau 算法
+            for (int k = order + 1; k > 1; --k)
+            {
+                for (int i = 0; i < k - 1; ++i)
+                    pos_ctrl_pts[i] = (1.0 - alpha) * pos_ctrl_pts[i] + alpha * pos_ctrl_pts[i + 1];
+            }
+            result.block<3, 1>(0, 3) = pos_ctrl_pts[0];
+
+            // 类贝塞尔插值方向：递归 slerp
+            for (int k = order + 1; k > 1; --k)
+            {
+                for (int i = 0; i < k - 1; ++i)
+                    rot_ctrl_pts[i] = rot_ctrl_pts[i].slerp(alpha, rot_ctrl_pts[i + 1]);
+            }
+            result.block<3, 3>(0, 0) = rot_ctrl_pts[0].toRotationMatrix();
+
             return result;
         }
-        if (phase >= 1.0)
+
+        double totalLength() const { return total_length_; }
+
+        void clear()
         {
-            result.block<3, 3>(0, 0) = Eigen::Quaterniond(poses_.back()(3), poses_.back()(4), poses_.back()(5), poses_.back()(6)).toRotationMatrix();
-            result.block<3, 1>(0, 3) = poses_.back().head(3);
-            return result;
+            poses_.clear();
+            segment_times_.clear();
+            total_length_ = 0.0;
+            order = 0;
         }
 
-        int seg = 0;
-        while (seg + 1 < segment_times_.size() && phase >= segment_times_[seg + 1])
+        std::string ToString()
         {
-            ++seg;
-        }
-        double alpha = (phase - segment_times_[seg]) / (segment_times_[seg + 1] - segment_times_[seg]);
-
-        // interpolate position
-        Vector3d p0 = poses_[seg].head<3>();
-        Vector3d p1 = poses_[seg + 1].head<3>();
-        result.block<3, 1>(0, 3) = (1 - alpha) * p0 + alpha * p1;
-        // interpolate orientation
-        Eigen::Quaterniond q0(poses_[seg](3), poses_[seg](4), poses_[seg](5), poses_[seg](6));
-        Eigen::Quaterniond q1(poses_[seg + 1](3), poses_[seg + 1](4), poses_[seg + 1](5), poses_[seg + 1](6));
-        q0.normalize();
-        q1.normalize();
-        result.block<3, 3>(0, 0) = (q0.slerp(alpha, q1)).toRotationMatrix();
-        return result;
-    }
-
-    double totalLength() const { return total_length_; }
-
-    void clear()
-    {
-        poses_.clear();
-        segment_times_.clear();
-        total_length_ = 0.0;
-    }
-
-    std::string ToString()
-    {
-        std::stringstream ss;
-        for (const auto &pose : poses_)
-        {
-            ss << "Pose: (";
-            for (int i = 0; i < 7; ++i)
+            std::stringstream ss;
+            for (const auto &pose : poses_)
             {
-                ss << pose(i);
-                if (i < 6)
-                    ss << ",";
+                ss << "Pose: (";
+                for (int i = 0; i < 7; ++i)
+                {
+                    ss << pose(i);
+                    if (i < 6)
+                        ss << ",";
+                }
+                ss << ")\n";
             }
-            ss << ")\n";
+            return ss.str();
         }
-        return ss.str();
-    }
-};
+    };
 
-template <int NDoF>
-struct JointTrajectory
-{
-    static constexpr double VLIMIT = 1.0;
-    static constexpr double ALIMIT = 2.0;
-    static constexpr double JLIMIT = 100.0;
-
-    std::vector<Eigen::Matrix<double, NDoF, 1>> positions;
-    std::vector<Eigen::Matrix<double, NDoF, 1>> velocities;
-    std::vector<Eigen::Matrix<double, NDoF, 1>> accelerations;
-    Eigen::Matrix<double, NDoF, 1> max_velocity = Eigen::Matrix<double, NDoF, 1>::Constant(VLIMIT);
-    Eigen::Matrix<double, NDoF, 1> min_velocity = Eigen::Matrix<double, NDoF, 1>::Constant(-VLIMIT);
-    Eigen::Matrix<double, NDoF, 1> max_acceleration = Eigen::Matrix<double, NDoF, 1>::Constant(ALIMIT);
-    Eigen::Matrix<double, NDoF, 1> min_acceleration = Eigen::Matrix<double, NDoF, 1>::Constant(-ALIMIT);
-    Eigen::Matrix<double, NDoF, 1> max_jerk = Eigen::Matrix<double, NDoF, 1>::Constant(JLIMIT);
-    Eigen::Matrix<double, NDoF, 1> min_jerk = Eigen::Matrix<double, NDoF, 1>::Constant(-JLIMIT);
-
-    void SetJointTrajectory(std::vector<Eigen::Matrix<double, NDoF, 1>> &&_trajectory) { positions = std::move(_trajectory); }
-
-    void clear()
+    template <int NDoF>
+    struct JointTrajectory
     {
-        positions.clear();
-        velocities.clear();
-        accelerations.clear();
-    }
+        static constexpr double VLIMIT = 1.0;
+        static constexpr double ALIMIT = 2.0;
+        static constexpr double JLIMIT = 100.0;
 
-    bool has_value() { return !positions.empty(); }
+        std::vector<Eigen::Matrix<double, NDoF, 1>> positions;
+        std::vector<Eigen::Matrix<double, NDoF, 1>> velocities;
+        std::vector<Eigen::Matrix<double, NDoF, 1>> accelerations;
+        Eigen::Matrix<double, NDoF, 1> max_velocity = Eigen::Matrix<double, NDoF, 1>::Constant(VLIMIT);
+        Eigen::Matrix<double, NDoF, 1> min_velocity = Eigen::Matrix<double, NDoF, 1>::Constant(-VLIMIT);
+        Eigen::Matrix<double, NDoF, 1> max_acceleration = Eigen::Matrix<double, NDoF, 1>::Constant(ALIMIT);
+        Eigen::Matrix<double, NDoF, 1> min_acceleration = Eigen::Matrix<double, NDoF, 1>::Constant(-ALIMIT);
+        Eigen::Matrix<double, NDoF, 1> max_jerk = Eigen::Matrix<double, NDoF, 1>::Constant(JLIMIT);
+        Eigen::Matrix<double, NDoF, 1> min_jerk = Eigen::Matrix<double, NDoF, 1>::Constant(-JLIMIT);
 
-    int size() const
-    {
-        return positions.size();
-    }
+        void SetJointTrajectory(std::vector<Eigen::Matrix<double, NDoF, 1>> &&_trajectory) { positions = std::move(_trajectory); }
 
-    Eigen::Matrix<double, NDoF, 1> operator()(const double phase) const
-    {
-        if(phase <= 0.0)
+        void clear()
         {
-            return positions.front();
-        }
-        if(phase >= 1.0)
-        {
-            return positions.back();
+            positions.clear();
+            velocities.clear();
+            accelerations.clear();
         }
 
-        int index = static_cast<int>(phase * (size() - 1));
-        double alpha = phase * (size() - 1) - index;
-        // linear interpolation
-        return (1 - alpha) * positions[index] + alpha * positions[index + 1];
-    }
+        bool has_value() { return !positions.empty(); }
 
-    std::string ToString()
-    {
-        std::stringstream ss;
-        ss << "Positions:\n";
-        for (int i = 0; i < positions.size(); ++i)
+        int size() const
         {
-            ss << "  (";
-            const auto &p = positions[i];
-            for (int i = 0; i < 7; ++i)
+            return positions.size();
+        }
+
+        Eigen::Matrix<double, NDoF, 1> operator()(const double phase) const
+        {
+            if (phase <= 0.0)
             {
-                ss << p(i);
-                if (i < 6)
-                    ss << ",";
+                return positions.front();
             }
-            ss << ")\n";
-        }
-        ss << "Velocities:\n";
-        for (int i = 0; i < velocities.size(); ++i)
-        {
-            ss << "  (";
-            const auto &v = velocities[i];
-            for (int i = 0; i < 7; ++i)
+            if (phase >= 1.0)
             {
-                ss << v(i);
-                if (i < 6)
-                    ss << ",";
+                return positions.back();
             }
-            ss << ")\n";
+
+            int index = static_cast<int>(phase * (size() - 1));
+            double alpha = phase * (size() - 1) - index;
+            // linear interpolation
+            return (1 - alpha) * positions[index] + alpha * positions[index + 1];
         }
-        return ss.str();
-    }
-};
 
-struct PlannerManagerCommand
-{
-    std::int64_t sequence_number{-1};
-    JointCommand cmd;
-};
+        std::string ToString()
+        {
+            std::stringstream ss;
+            ss << "Positions:\n";
+            for (int i = 0; i < positions.size(); ++i)
+            {
+                ss << "  (";
+                const auto &p = positions[i];
+                for (int i = 0; i < 7; ++i)
+                {
+                    ss << p(i);
+                    if (i < 6)
+                        ss << ",";
+                }
+                ss << ")\n";
+            }
+            ss << "Velocities:\n";
+            for (int i = 0; i < velocities.size(); ++i)
+            {
+                ss << "  (";
+                const auto &v = velocities[i];
+                for (int i = 0; i < 7; ++i)
+                {
+                    ss << v(i);
+                    if (i < 6)
+                        ss << ",";
+                }
+                ss << ")\n";
+            }
+            return ss.str();
+        }
+    };
 
-// 移动指令
-struct MoveRequest
-{
-    MotionGroup motion_group;
-    // 目标位置/路径点
-    Eigen::VectorXd value;
-
-    std::optional<ReferenceFrame> reference_frame;
-    std::optional<double> speed;
-    std::optional<double> blend_tolerance;
-};
-
-using PlannerData = std::variant<MoveRequest, PoseQuaternion, double>;
-
-struct PlannerRequest
-{
-    Int64 request_id{-1};
-    RequestType type{RequestType::Empty};
-    std::optional<PlannerData> data;  // start streaming指令无data
-};
-
-struct StreamingCommand
-{
-    Int64 request_id{-1};
-    bool streaming_finished{false};
-    Eigen::VectorXd command;  // 用于存储流式数据
-    TimePointSystem received_time{};
-};
-
-struct TimeMetaInfo
-{
-    TimePointSystem current_time{};
-    TimePointSystem measurement_time{};
-    Int64 episode_index{-1};
-    TimePointSystem episode_start_time{};
-};
-
-// 线程间通信数据结构
-struct PlannerManagerBuffers
-{
-    std::shared_ptr<SingleWriterLatestBuffer<JointMeasurement>> joint_measurement;
-    std::shared_ptr<SingleWriterLatestBuffer<Eigen::VectorXd>> ee_pose_measurement;
-    std::shared_ptr<SingleWriterLatestBuffer<PlannerManagerCommand>> planner_manager_command;
-    std::shared_ptr<BoundedQueue<PlannerRequest>> request_queue;
-    std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_command_latest_buffer;
-
-    PlannerManagerBuffers() = default;
-    ~PlannerManagerBuffers() = default;
-
-    void Initialize()
+    struct PlannerManagerCommand
     {
-        joint_measurement = std::make_shared<SingleWriterLatestBuffer<JointMeasurement>>();
-        ee_pose_measurement = std::make_shared<SingleWriterLatestBuffer<Eigen::VectorXd>>();
-        planner_manager_command = std::make_shared<SingleWriterLatestBuffer<PlannerManagerCommand>>();
-        request_queue = std::make_shared<BoundedQueue<PlannerRequest>>(32);
-        streaming_command_latest_buffer = std::make_shared<SingleWriterLatestBuffer<StreamingCommand>>();
-    }
-};
+        std::int64_t sequence_number{-1};
+        JointCommand cmd;
+    };
 
-struct TorqueControlBuffer
-{
-    std::shared_ptr<SingleWriterLatestBuffer<VectorDof>> torque_command_vector;
-    std::shared_ptr<SingleWriterLatestBuffer<JointRawMeasurement>> joint_raw_measurement;
-
-    TorqueControlBuffer() = default;
-    ~TorqueControlBuffer() = default;
-
-    void Initialize()
+    // 移动指令
+    struct MoveRequest
     {
-        torque_command_vector = std::make_shared<SingleWriterLatestBuffer<VectorDof>>();
-        joint_raw_measurement = std::make_shared<SingleWriterLatestBuffer<JointRawMeasurement>>();
-    }
-};
+        MotionGroup motion_group;
+        // 目标位置/路径点
+        Eigen::VectorXd value;
 
-// 机器人配置文件参数
-struct RobotParams
-{
-    std::filesystem::path urdf_path;
-    std::filesystem::path left_arm_urdf_path;
-    std::filesystem::path right_arm_urdf_path;
-    std::string robot_name;
-    std::string left_arm_name;
-    std::string right_arm_name;
-    Eigen::VectorXd joints_primary;
-    Eigen::VectorXd joints_secondary;
-    // std::vector<double> zero_position {};
-};
+        std::optional<ReferenceFrame> reference_frame;
+        std::optional<double> speed;
+        std::optional<double> blend_tolerance;
+        std::optional<int> interp_order;
+    };
 
-struct RobotModel
-{
-    std::shared_ptr<const pinocchio::Model> model_ptr;
-    std::shared_ptr<const RobotParams> params_ptr;
-    std::shared_ptr<const pinocchio::Model> left_arm_model_ptr;
-    std::shared_ptr<const pinocchio::Model> right_arm_model_ptr;
+    using PlannerData = std::variant<MoveRequest, PoseQuaternion, double>;
 
-    RobotModel() = default;
-    ~RobotModel() = default;
-};
+    struct PlannerRequest
+    {
+        Int64 request_id{-1};
+        RequestType type{RequestType::Empty};
+        std::optional<PlannerData> data; // start streaming指令无data
+    };
 
-struct RobotProperty
-{
-    pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
-    pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
-    double global_speed_ratio{0.5};
-};
+    struct StreamingCommand
+    {
+        Int64 request_id{-1};
+        bool streaming_finished{false};
+        Eigen::VectorXd command; // 用于存储流式数据
+        TimePointSystem received_time{};
+    };
 
-}  // namespace robot_server_lib
+    struct TimeMetaInfo
+    {
+        TimePointSystem current_time{};
+        TimePointSystem measurement_time{};
+        Int64 episode_index{-1};
+        TimePointSystem episode_start_time{};
+    };
+
+    // 线程间通信数据结构
+    struct PlannerManagerBuffers
+    {
+        std::shared_ptr<SingleWriterLatestBuffer<JointMeasurement>> joint_measurement;
+        std::shared_ptr<SingleWriterLatestBuffer<Eigen::VectorXd>> ee_pose_measurement;
+        std::shared_ptr<SingleWriterLatestBuffer<PlannerManagerCommand>> planner_manager_command;
+        std::shared_ptr<BoundedQueue<PlannerRequest>> request_queue;
+        std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_command_latest_buffer;
+
+        PlannerManagerBuffers() = default;
+        ~PlannerManagerBuffers() = default;
+
+        void Initialize()
+        {
+            joint_measurement = std::make_shared<SingleWriterLatestBuffer<JointMeasurement>>();
+            ee_pose_measurement = std::make_shared<SingleWriterLatestBuffer<Eigen::VectorXd>>();
+            planner_manager_command = std::make_shared<SingleWriterLatestBuffer<PlannerManagerCommand>>();
+            request_queue = std::make_shared<BoundedQueue<PlannerRequest>>(32);
+            streaming_command_latest_buffer = std::make_shared<SingleWriterLatestBuffer<StreamingCommand>>();
+        }
+    };
+
+    struct TorqueControlBuffer
+    {
+        std::shared_ptr<SingleWriterLatestBuffer<VectorDof>> torque_command_vector;
+        std::shared_ptr<SingleWriterLatestBuffer<JointRawMeasurement>> joint_raw_measurement;
+
+        TorqueControlBuffer() = default;
+        ~TorqueControlBuffer() = default;
+
+        void Initialize()
+        {
+            torque_command_vector = std::make_shared<SingleWriterLatestBuffer<VectorDof>>();
+            joint_raw_measurement = std::make_shared<SingleWriterLatestBuffer<JointRawMeasurement>>();
+        }
+    };
+
+    // 机器人配置文件参数
+    struct RobotParams
+    {
+        std::filesystem::path urdf_path;
+        std::filesystem::path left_arm_urdf_path;
+        std::filesystem::path right_arm_urdf_path;
+        std::string robot_name;
+        std::string left_arm_name;
+        std::string right_arm_name;
+        Eigen::VectorXd joints_primary;
+        Eigen::VectorXd joints_secondary;
+        // std::vector<double> zero_position {};
+    };
+
+    struct RobotModel
+    {
+        std::shared_ptr<const pinocchio::Model> model_ptr;
+        std::shared_ptr<const RobotParams> params_ptr;
+        std::shared_ptr<const pinocchio::Model> left_arm_model_ptr;
+        std::shared_ptr<const pinocchio::Model> right_arm_model_ptr;
+
+        RobotModel() = default;
+        ~RobotModel() = default;
+    };
+
+    struct RobotProperty
+    {
+        pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
+        pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
+        double global_speed_ratio{0.5};
+    };
+
+} // namespace robot_server_lib

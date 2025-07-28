@@ -212,6 +212,8 @@ RequestResponse PlannerManager::OnRequestStateIdle()
         if (!ok)
         {
             ChangeState(Status::Error);
+            response.re_run = true;
+            ReportRequestStatus(request.request_id, request.type, RequestStatus::ErrorDrop, manager_state_);
             return response;
         }
         current_planner_->episode_index = time_meta.episode_index;
@@ -313,6 +315,8 @@ RequestResponse PlannerManager::OnRequestStateRunning()
     if (!ok)
     {
         ChangeState(Status::Error);
+        response.re_run = true;
+        ReportRequestStatus(request.request_id, request.type, RequestStatus::ErrorDrop, manager_state_);
         return response;
     }
     response.re_run = false;

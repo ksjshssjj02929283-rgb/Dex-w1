@@ -168,7 +168,7 @@ namespace robot_server_lib
         }
 
         // smooth time, comment this to keep time-optimal
-        const double ratio = 0.8;
+        const double ratio = 1.0;
         const double max_time = *std::max_element(time_diff.begin(), time_diff.end());
         for (double &dt : time_diff)
             dt = ((1.0 - ratio) * dt + ratio * max_time) * 1.1;

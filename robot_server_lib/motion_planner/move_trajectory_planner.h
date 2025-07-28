@@ -28,9 +28,6 @@ namespace robot_server_lib
 
         ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) override
         {
-            if (trajectory_spline_primary_.segments.empty() && trajectory_spline_secondary_.segments.empty())
-                return ComputeCommandStatus::Error;
-
             if (current_phase_ < 1.0)
                 current_phase_ += controller_dt_ / total_time_;
             JointPositionDof q_ndof = measurement.q_desired_pre;
@@ -45,9 +42,15 @@ namespace robot_server_lib
 
             trajectory_spline_primary_.evaluate(current_phase_ * time_primary_, q_left, dq_left);
             trajectory_spline_secondary_.evaluate(current_phase_ * time_secondary_, q_right, dq_right);
+            
+            if (refine_cmd)
+            {
+                kine_ptr_primary_->ProjectToPose(pose_trajectory_primary_(current_phase_), q_left);
+                kine_ptr_secondary_->ProjectToPose(pose_trajectory_secondary_(current_phase_), q_right);
+            }
+
             const bool goal_reached =
                 current_phase_ >= 1.0 && ((q_left - q_arms.head<ndof_left_>()).norm() < 1e-4 && (q_right - q_arms.tail<ndof_right_>()).norm() < 1e-4);
-            // Todo: refine (q_left, q_right) by pose at current_phase_
 
             q_arms.head<ndof_left_>() << q_left;
             dq_arms.head<ndof_left_>() << dq_left;
@@ -94,6 +97,12 @@ namespace robot_server_lib
             if (move_request.speed.has_value())
             {
                 speed_ratio = speed_ratio * std::clamp(move_request.speed.value(), 0.01, 1.0);
+            }
+            int interp_order_ = 1;
+            if(move_request.interp_order.has_value())
+            {
+                LOG_INFO << "12345: \n";
+                interp_order_ = move_request.interp_order.value();
             }
 
             JointTrajectory<ndof_left_> joint_trajectory_primary_;
@@ -142,8 +151,8 @@ namespace robot_server_lib
                     poses_primary.emplace_back(value.head(ndof_left_));
                     poses_secondary.emplace_back(value.tail(ndof_right_));
                 }
-                pose_trajectory_primary_.InitializePosesAndTimes(std::move(poses_primary));
-                pose_trajectory_secondary_.InitializePosesAndTimes(std::move(poses_secondary));
+                pose_trajectory_primary_.Initialize(std::move(poses_primary), interp_order_);
+                pose_trajectory_secondary_.Initialize(std::move(poses_secondary), interp_order_);
                 LOG_INFO << "Primary arm motion plan: trajectory: \n"
                          << pose_trajectory_primary_.ToString();
                 LOG_INFO << "Secondary arm motion plan: trajectory: \n"
@@ -179,7 +188,7 @@ namespace robot_server_lib
                     const auto &value = move_request.value.segment(i * ndof_left_, ndof_left_);
                     poses_primary.emplace_back(value);
                 }
-                pose_trajectory_primary_.InitializePosesAndTimes(std::move(poses_primary));
+                pose_trajectory_primary_.Initialize(std::move(poses_primary), interp_order_);
                 LOG_INFO << "Primary arm motion plan: trajectory: \n"
                          << pose_trajectory_primary_.ToString();
 
@@ -210,7 +219,7 @@ namespace robot_server_lib
                     const auto &value = move_request.value.segment(i * ndof_right_, ndof_right_);
                     poses_secondary.emplace_back(value);
                 }
-                pose_trajectory_secondary_.InitializePosesAndTimes(std::move(poses_secondary));
+                pose_trajectory_secondary_.Initialize(std::move(poses_secondary), interp_order_);
                 LOG_INFO << "Secondary arm motion plan: trajectory: \n"
                          << pose_trajectory_secondary_.ToString();
 
@@ -271,6 +280,7 @@ namespace robot_server_lib
     protected:
         const bool wait_trajectory_upon_finish_;
         const double controller_dt_{0.01};
+        const bool refine_cmd{true}; // refine joint command to reduce error from given trajectory
 
         // JointTrajectory<ndof_left_> joint_trajectory_primary_;
         // JointTrajectory<ndof_right_> joint_trajectory_secondary_;
