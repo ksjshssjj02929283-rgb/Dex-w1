@@ -42,11 +42,45 @@ namespace robot_server_lib
 
             trajectory_spline_primary_.evaluate(current_phase_ * time_primary_, q_left, dq_left);
             trajectory_spline_secondary_.evaluate(current_phase_ * time_secondary_, q_right, dq_right);
-            
+
             if (refine_cmd)
             {
-                kine_ptr_primary_->ProjectToPose(pose_trajectory_primary_(current_phase_), q_left);
-                kine_ptr_secondary_->ProjectToPose(pose_trajectory_secondary_(current_phase_), q_right);
+                auto refine_left = [&, this]()
+                {
+                    Eigen::Matrix<double, ndof_left_, 1> refined_q_left;
+                    auto ok = kine_ptr_primary_->ProjectToPose(q_left, pose_trajectory_primary_(current_phase_), refined_q_left);
+                    if (ok && (q_left - refined_q_left).norm() < 1e-2)
+                        q_left = refined_q_left;
+                };
+                auto refine_right = [&, this]()
+                {
+                    Eigen::Matrix<double, ndof_left_, 1> refined_q_right;
+                    auto ok = kine_ptr_secondary_->ProjectToPose(q_right, pose_trajectory_secondary_(current_phase_), refined_q_right);
+                    if (ok && (q_right - refined_q_right).norm() < 1e-2)
+                        q_right = refined_q_right;
+                };
+
+                switch (motion_group_)
+                {
+                case MotionGroup::BothArms:
+                {
+                    refine_left();
+                    refine_right();
+                    break;
+                }
+                case MotionGroup::Primary:
+                {
+                    refine_left();
+                    break;
+                }
+                case MotionGroup::Secondary:
+                {
+                    refine_left();
+                    break;
+                }
+                default:
+                    break;
+                }
             }
 
             const bool goal_reached =
@@ -99,9 +133,8 @@ namespace robot_server_lib
                 speed_ratio = speed_ratio * std::clamp(move_request.speed.value(), 0.01, 1.0);
             }
             int interp_order_ = 1;
-            if(move_request.interp_order.has_value())
+            if (move_request.interp_order.has_value())
             {
-                LOG_INFO << "12345: \n";
                 interp_order_ = move_request.interp_order.value();
             }
 

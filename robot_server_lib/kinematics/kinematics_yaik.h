@@ -158,15 +158,6 @@ namespace robot_server_lib
         return project_ok;
       }
 
-      bool ProjectToPose(const Matrix4d &T_ee, Jps &q_in_and_out)
-      {
-        Jps q_projected;
-        bool project_ok = ik_solver_ptr->projectToPose(q_in_and_out, T_ee, q_projected);
-        if (project_ok)
-          q_in_and_out = q_projected;
-        return project_ok;
-      }
-
       void GetIKwithProjectionAndSampling(const Matrix4d &T_ee, const Jps &q_in, std::vector<Jps> &results, const pinocchio::SE3 &tcp_frame)
       {
         Matrix4d T_ee_corrected = T_ee * _Inverse(tcp_frame.toHomogeneousMatrix());
