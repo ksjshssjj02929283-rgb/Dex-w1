@@ -27,6 +27,8 @@ class RobotClientRos2(Node, RobotClient):
 
     def __init__(self, is_sim: bool = False, timeout_sec: float = 3.0):
         self.logger = get_logger()
+        if not rclpy.ok():
+            rclpy.init()
         if is_sim:
             self._node_name = "robot_client_sim"
         else:

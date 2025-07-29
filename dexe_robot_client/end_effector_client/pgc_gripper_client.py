@@ -17,7 +17,7 @@ class PGCGripperClient(EndEffectorClient):
         else:
             name = "right"
         node_name = f"pgc_{name}_gripper_client"
-        super().__init__(self.node_name, qpos_bound=np.array([[0.], [100.]]))
+        super().__init__(node_name, qpos_bound=np.array([[0.], [100.]]))
 
         # Create subscriber and publisher
         self._qpos_subscription = self.create_subscription(
