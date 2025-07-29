@@ -8,8 +8,8 @@ import numpy as np
 from enum import Enum, auto
 from dataclasses import dataclass
 from typing import Optional, Union
-from geometry_msgs.msg import Pose
-from sensor_msgs.msg import JointState
+# from geometry_msgs.msg import Pose
+# from sensor_msgs.msg import JointState
 
 """----------------------------------------------------------------------------
 enum for various states and request types
