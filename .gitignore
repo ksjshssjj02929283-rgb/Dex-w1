@@ -2,9 +2,11 @@
 
 .cache/
 .cache/*
+cache/*
 
 build*/
 install/
+dist/
 
 __pycache__/
 *.pyc
