@@ -16,7 +16,7 @@ class PGCGripperClient(EndEffectorClient):
             name = "left"
         else:
             name = "right"
-        self.node_name = f"pgc_{name}_gripper_client"
+        node_name = f"pgc_{name}_gripper_client"
         super().__init__(self.node_name, qpos_bound=np.array([[0.], [100.]]))
 
         # Create subscriber and publisher
@@ -36,7 +36,7 @@ class PGCGripperClient(EndEffectorClient):
 
     def _qpos_callback(self, msg):
         self._current_qpos = np.array([msg.data])
-        self.get_logger().debug(f"{self.node_name}: received {self._current_qpos}")
+        self.logger.debug(f"{self.node_name}: received {self._current_qpos}")
 
     def set_qpos(self, qpos: np.ndarray | float) -> bool:
         if isinstance(qpos, (int, float)):
@@ -50,7 +50,7 @@ class PGCGripperClient(EndEffectorClient):
         msg = Float64MultiArray()
         msg.data = qpos_.tolist()
         self._set_qpos_publisher.publish(msg)
-        self.get_logger().debug(f"{self.node_name}: published {qpos_}")
+        self.logger.debug(f"{self.node_name}: published {qpos_}")
         return True
 
     def get_qpos(self) -> tuple[bool, np.ndarray]:

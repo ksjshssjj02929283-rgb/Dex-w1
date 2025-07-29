@@ -16,7 +16,7 @@ class BrainCoHandClient(EndEffectorClient):
             name = "left"
         else:
             name = "right"
-        self.node_name = f"brainco_{name}_hand_client"
+        node_name = f"brainco_{name}_hand_client"
         super().__init__(self.node_name, qpos_bound=np.array([[0.]*6, [1000.]*6]))
         
         # Create subscriber and publisher
@@ -32,7 +32,7 @@ class BrainCoHandClient(EndEffectorClient):
 
     def _qpos_callback(self, msg):
         self._current_qpos = np.array(msg.data)
-        self.get_logger().debug(f"{self.node_name}: received {self._current_qpos}")
+        self.logger.debug(f"{self.node_name}: received {self._current_qpos}")
 
     def set_qpos(self, qpos: np.ndarray) -> bool:
         if not self._check_input(qpos):
@@ -42,7 +42,7 @@ class BrainCoHandClient(EndEffectorClient):
         msg = Float64MultiArray()
         msg.data = qpos_.tolist()
         self._set_qpos_publisher.publish(msg)
-        self.get_logger().debug(f"{self.node_name}: published {qpos_}")
+        self.logger.debug(f"{self.node_name}: published {qpos_}")
         return True
 
     def get_qpos(self) -> tuple[bool, np.ndarray]:

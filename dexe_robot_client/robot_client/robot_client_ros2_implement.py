@@ -6,38 +6,51 @@
 
 import numpy as np
 import json
-import rclpy
 import time
 from typing import Any, Optional
+
+import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
-from .data_structure import *
-from .robot_client import RobotClient
+from std_msgs.msg import String
 from robot_server_interfaces.srv import GetProperty, SetProperty
 from robot_server_interfaces.action import MoveRobot
 from robot_server_interfaces.msg import StreamingCommand
-from std_msgs.msg import String
+
+from .data_structure import *
+from .robot_client import RobotClient
+from dexe_robot_client.common import get_logger
 
 
 class RobotClientRos2(Node, RobotClient):
     """ros2 client universal interfaces"""
 
     def __init__(self, is_sim: bool = False, timeout_sec: float = 3.0):
-        rclpy.init()
-        Node.__init__(self, "robot_client")
+        self.logger = get_logger()
+        if is_sim:
+            self._node_name = "robot_client_sim"
+        else:
+            self._node_name = "robot_client_real"
+        Node.__init__(self, self._node_name)
         RobotClient.__init__(self, is_sim=is_sim)
         self._init_subscriber()
         self._init_publisher()
         self._init_service_client()
         self._init_action_client()
+
+        if self.is_connected(timeout_sec):
+            self.logger.info(f"{self._node_name} init successed")
+        else:
+            self.logger.error(f"{self._node_name} init failed: connect to server timeout")
+            raise RuntimeError
+
+    def is_connected(self, timeout_sec: float = 0.5):
         start_time = time.time()
         while time.time() - start_time < timeout_sec:
             rclpy.spin_once(self, timeout_sec = 0.1)
-            if self.status != Status.Init:
-                self.get_logger().info(f"robot client init successed")
-                break
-        else:
-            self.get_logger().error("robot client init failed: connect to server timeout")
+            if self.status == Status.Idle:
+                return True
+        return False
 
     """ ---------------------------------------------------------------------------
     implement interfaces of base class RobotClient
@@ -52,7 +65,7 @@ class RobotClientRos2(Node, RobotClient):
         start_time = time.time()
         while time.time() - start_time < wait_second:
             rclpy.spin_once(self, timeout_sec=0.001)
-        self.get_logger().info(f"Waited for {wait_second} seconds")
+        # self.logger.info(f"Waited for {wait_second} seconds")
 
     def wait_request_finish(
         self, request_id: Optional[int] = None, timeout_sec: int = 100
@@ -60,7 +73,7 @@ class RobotClientRos2(Node, RobotClient):
         if not request_id:
             request_id = self.latest_sent_id
         # 如果未完成到指定request id则阻塞等待, 每两秒打印一次信息, 如果超时则返回
-        self.get_logger().info(
+        self.logger.info(
             "Wait_request_finish_sync(): Executing received request, waiting for finishing"
         )
 
@@ -70,17 +83,17 @@ class RobotClientRos2(Node, RobotClient):
             rclpy.spin_once(self)
             now = time.time()
             if now - last_log_time >= 2.0:
-                self.get_logger().info(
+                self.logger.info(
                     f"----Waiting for request id: {request_id} finish, "
                     f"latest finished id: {self.latest_finished_id}"
                 )
                 last_log_time = now
             if now - start_time > timeout_sec:
-                self.get_logger().warn(
+                self.logger.warning(
                     f"Wait_request_finish_sync(): Timeout, timeout_sec: {timeout_sec}"
                 )
                 return False
-        self.get_logger().info(
+        self.logger.info(
             f"----Wait_move_finish: wait for id: {request_id}, "
             f"latest finished id: {self.latest_finished_id}, move finished"
         )
@@ -88,7 +101,7 @@ class RobotClientRos2(Node, RobotClient):
 
     def send_set_property_request(self, type: PropertyType, value: Any) -> int:
         if not self._srv_set_property.wait_for_service(timeout_sec=3.0):
-            self.get_logger().error("Ros2 set_property service not available")
+            self.logger.error("Ros2 set_property service not available")
             return False
 
         req = SetProperty.Request()
@@ -97,7 +110,7 @@ class RobotClientRos2(Node, RobotClient):
         future = self._srv_set_property.call_async(req)
         rclpy.spin_until_future_complete(self, future)
         self.latest_sent_id = future.result().request_id
-        self.get_logger().info(
+        self.logger.info(
             f"Property request id: {future.result().request_id} accepted,  type: {type}"
         )
         return future.result().request_id
@@ -105,7 +118,7 @@ class RobotClientRos2(Node, RobotClient):
     def send_move_robot_request(self, request: MoveRequest) -> int:
         # 检查动作服务器是否可用
         if not self._action_move_robot.wait_for_server(timeout_sec=3.0):
-            self.get_logger().error("Ros2 action server not available!")
+            self.logger.error("Ros2 action server not available!")
             # return False  todo
 
         # 配置目标
@@ -135,10 +148,10 @@ class RobotClientRos2(Node, RobotClient):
 
         goal_handle = future.result()
         if goal_handle is None:
-            self.get_logger().error(f"Movement request failed to get goal handle!")
+            self.logger.error(f"Movement request failed to get goal handle!")
             return
         if not goal_handle.accepted:
-            self.get_logger().error(f"Movement request rejected!")
+            self.logger.error(f"Movement request rejected!")
             return False
 
         get_result_future = goal_handle.get_result_async()
@@ -149,13 +162,13 @@ class RobotClientRos2(Node, RobotClient):
         while not self._move_request_id_returned:
             rclpy.spin_once(self, timeout_sec=0.01)
             if time.time() - start_time > 1.0:
-                self.get_logger().error("Timeout waiting for request_id feedback!")
+                self.logger.error("Timeout waiting for request_id feedback!")
                 return -1
 
         target_str = (
             str(np.round(request.value, 4)) if request.value is not None else "None"
         )
-        self.get_logger().info(
+        self.logger.info(
             f"Movement request_id: {self.latest_sent_id} accepted, type: {request.type}, motion_group: {request.motion_group}, target: {target_str}"
         )
         self._move_request_id_returned = False
@@ -170,7 +183,7 @@ class RobotClientRos2(Node, RobotClient):
         position_msg.request_id = self.latest_sent_id
         position_msg.streaming_finished = streaming_finished
         position_msg.position = [float(x) for x in position]
-        # self.get_logger().info(
+        # self.logger.info(
         #     f"Publishing streaming command: {position_msg.position}, streaming finished: {streaming_finished}"
         # )
         self._publisher_streaming_command.publish(position_msg)
@@ -178,7 +191,7 @@ class RobotClientRos2(Node, RobotClient):
 
     def close_client(self):
         rclpy.shutdown()
-        self.get_logger().info("robot client is closed")
+        self.logger.info("robot client is closed")
 
     """ ---------------------------------------------------------------------------
     init action
@@ -197,22 +210,22 @@ class RobotClientRos2(Node, RobotClient):
     def _feedback_move_robot_callback(self, feedback_msg):
         feedback = feedback_msg.feedback
         self.latest_sent_id = feedback.request_id
-        self.get_logger().info(f"movement request id feedback: {feedback.request_id}")
+        self.logger.info(f"movement request id feedback: {feedback.request_id}")
         # 通知主线程
         self._move_request_id_returned = True
 
     def _get_result_move_robot_callback(self, future):
         result = future.result().result
         if result is None:
-            self.get_logger().error("MoveRobot action failed or was cancelled")
+            self.logger.error("MoveRobot action failed or was cancelled")
             return
         # 处理结果, 如果成功则更新last_finished_id
         if result.success:
-            self.get_logger().info(
+            self.logger.info(
                 f"Movement request_id: {result.request_id} executed, result: {result.success}"
             )
         else:
-            self.get_logger().error(f"Movement request_id: {result.request_id} failed")
+            self.logger.error(f"Movement request_id: {result.request_id} failed")
 
     """ ---------------------------------------------------------------------------
     init subscriber
