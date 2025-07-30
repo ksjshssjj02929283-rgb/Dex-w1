@@ -26,7 +26,6 @@ class Ros2Node : public rclcpp::Node
     void HandleAccepted(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>);
     rclcpp_action::GoalResponse HandleGoal(const rclcpp_action::GoalUUID &, std::shared_ptr<const robot_server_interfaces::action::MoveRobot::Goal>);
     rclcpp_action::CancelResponse HandleCancel(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>);
-    rclcpp::TimerBase::SharedPtr publish_timer_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_server_state_publisher_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_server_state_real_subscriber_;
     rclcpp::Subscription<robot_server_interfaces::msg::StreamingCommand>::SharedPtr streaming_command_subscriber_;
@@ -41,6 +40,7 @@ class Ros2Node : public rclcpp::Node
 
     std::thread manager_thread_;
     std::thread simulation_thread_;
+    std::thread publish_thread_;
 
     robot_server_lib::RobotModel robot_model_;
     robot_server_lib::PlannerManagerBuffers manager_buffers_;
