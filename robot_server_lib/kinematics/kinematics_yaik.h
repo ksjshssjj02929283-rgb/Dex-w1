@@ -119,13 +119,22 @@ namespace robot_server_lib
         GetIKwithProjectionAndSampling(_toMatrix4d(pose_in), q_in_and_out, ik_results, tcp_frame);
         Jps closest_ik;
         bool ik_get = GetClosestIK(ik_results, q_in_and_out, closest_ik);
-        q_in_and_out = closest_ik;
-        return ik_get;
+        if (ik_get)
+        {
+          q_in_and_out = closest_ik;
+          return true;
+        }
+        return false;
       }
 
       void GetRawIK(const Matrix4d &T_ee, const double aux_input, std::vector<Jps> &ik_results)
       {
         ik_solver_ptr->computeIK(T_ee, aux_input, ik_results);
+      }
+
+      void GetRawIK(const Matrix4d &T_ee, const Jps &q_in, std::vector<Jps> &ik_results)
+      {
+        ik_solver_ptr->computeIK(T_ee, q_in(aux_input_index), ik_results);
       }
 
       // Find closest ik result to q_ref, and the found min_dist should be smaller than *dist_in
@@ -152,6 +161,7 @@ namespace robot_server_lib
         return false;
       }
 
+      // Numerical ik
       bool ProjectToPose(const Jps &q_in, const Matrix4d &T_ee, Jps &q_projected)
       {
         bool project_ok = ik_solver_ptr->projectToPose(q_in, T_ee, q_projected);

@@ -47,17 +47,17 @@ namespace robot_server_lib
             {
                 auto refine_left = [&, this]()
                 {
-                    Eigen::Matrix<double, ndof_left_, 1> refined_q_left;
-                    auto ok = kine_ptr_primary_->ProjectToPose(q_left, pose_trajectory_primary_(current_phase_), refined_q_left);
-                    if (ok && (q_left - refined_q_left).norm() < 1e-2)
-                        q_left = refined_q_left;
+                    Eigen::VectorXd q_temp(q_left);
+                    bool ik_get = kine_ptr_primary_->GetIK(PoseQuaternion(pose_trajectory_primary_(current_phase_)), q_temp);
+                    if ((q_left - q_temp).norm() < 1e-3)
+                        q_left = q_temp;
                 };
                 auto refine_right = [&, this]()
                 {
-                    Eigen::Matrix<double, ndof_left_, 1> refined_q_right;
-                    auto ok = kine_ptr_secondary_->ProjectToPose(q_right, pose_trajectory_secondary_(current_phase_), refined_q_right);
-                    if (ok && (q_right - refined_q_right).norm() < 1e-2)
-                        q_right = refined_q_right;
+                    Eigen::VectorXd q_temp(q_right);
+                    bool ik_get = kine_ptr_secondary_->GetIK(PoseQuaternion(pose_trajectory_secondary_(current_phase_)), q_temp);
+                    if ((q_right - q_temp).norm() < 1e-3)
+                        q_right = q_temp;
                 };
 
                 switch (motion_group_)
@@ -96,7 +96,7 @@ namespace robot_server_lib
             Eigen::VectorXd q_left_cur, pose_left_ref(7);
             GetArmFromWholeBody(q_ndof, q_left_cur, MotionGroup::Primary);
             auto pose_left = kine_ptr_primary_->GetFK(q_left_cur, robot_property_.tcp_frame).ToVectorXd();
-            pose_left_ref << -0.3, 0.363727, 0.262795, -0.229399, -0.440151, 0.599072, 0.628296;
+            pose_left_ref << -0.163635, 0.363727, 0.262795, -0.229399, -0.440151, 0.599072, 0.628296;
             auto norm = (pose_left - pose_left_ref).norm();
             LOG_INFO << "Desired ref reached: " << std::to_string(norm) << "\n";
 
@@ -137,15 +137,14 @@ namespace robot_server_lib
             {
                 interp_order_ = move_request.interp_order.value();
             }
+            // if (interp_order_ == 1)
+            //     refine_cmd = true;
 
             JointTrajectory<ndof_left_> joint_trajectory_primary_;
             JointTrajectory<ndof_right_> joint_trajectory_secondary_;
-            // const double max_speed = speed_ratio * joint_bounds_.max_velocity;
-            // const double max_acceleration = speed_ratio * joint_bounds_.max_acceleration;
-            // const double max_jerk = speed_ratio * joint_bounds_.max_jerk;
-            const double max_speed = 0.5;
-            const double max_acceleration = 5.0;
-            const double max_jerk = 20.0;
+            const double max_speed = speed_ratio * streaming_bounds_.max_velocity;
+            const double max_acceleration = speed_ratio * streaming_bounds_.max_acceleration;
+            const double max_jerk = speed_ratio * streaming_bounds_.max_jerk;
             joint_trajectory_primary_.max_velocity.setConstant(max_speed);
             joint_trajectory_primary_.min_velocity.setConstant(-max_speed);
             joint_trajectory_primary_.max_acceleration.setConstant(max_acceleration);
@@ -167,25 +166,27 @@ namespace robot_server_lib
             case MotionGroup::BothArms:
             {
                 assert(q_start.size() == ndof_arms_);
-                // 获取起点
-                PoseQuaternion pose_start_primary = kine_ptr_primary_->GetFK(q_start.head(ndof_left_), robot_property_.tcp_frame);
-                PoseQuaternion pose_start_secondary = kine_ptr_secondary_->GetFK(q_start.tail(ndof_right_), robot_property_.tcp_frame_secondary);
-
-                // 获取目标点
-                std::vector<Eigen::Matrix<double, 7, 1>> poses_primary, poses_secondary;
-                poses_primary.emplace_back(pose_start_primary.ToVectorXd());
-                poses_secondary.emplace_back(pose_start_secondary.ToVectorXd());
                 assert(move_request.value.size() % (ndof_arms_) == 0);
                 const int num_points = move_request.value.size() / (ndof_arms_);
                 assert(num_points > 0);
+
+                std::vector<PoseQuaternion> poses_primary, poses_secondary;
+                poses_primary.reserve(num_points + 1);
+                poses_secondary.reserve(num_points + 1);
+                // 获取起点
+                PoseQuaternion pose_start_primary = kine_ptr_primary_->GetFK(q_start.head(ndof_left_), robot_property_.tcp_frame);
+                PoseQuaternion pose_start_secondary = kine_ptr_secondary_->GetFK(q_start.tail(ndof_right_), robot_property_.tcp_frame_secondary);
+                // 获取目标点
+                poses_primary.push_back(std::move(pose_start_primary));
+                poses_secondary.push_back(std::move(pose_start_secondary));
                 for (int i = 0; i < num_points; ++i)
                 {
                     const auto &value = move_request.value.segment(i * ndof_arms_, ndof_arms_);
-                    poses_primary.emplace_back(value.head(ndof_left_));
-                    poses_secondary.emplace_back(value.tail(ndof_right_));
+                    poses_primary.emplace_back(PoseQuaternion::FromVector7d(value.head(ndof_left_)));
+                    poses_secondary.emplace_back(PoseQuaternion::FromVector7d(value.tail(ndof_right_)));
                 }
-                pose_trajectory_primary_.Initialize(std::move(poses_primary), interp_order_);
-                pose_trajectory_secondary_.Initialize(std::move(poses_secondary), interp_order_);
+                pose_trajectory_primary_ = PoseTrajectory::FromPoses(std::move(poses_primary), interp_order_);
+                pose_trajectory_secondary_ = PoseTrajectory::FromPoses(std::move(poses_secondary), interp_order_);
                 LOG_INFO << "Primary arm motion plan: trajectory: \n"
                          << pose_trajectory_primary_.ToString();
                 LOG_INFO << "Secondary arm motion plan: trajectory: \n"
@@ -209,19 +210,20 @@ namespace robot_server_lib
             case MotionGroup::Primary:
             {
                 assert(q_start.size() == ndof_left_);
-                PoseQuaternion pose_start_primary = kine_ptr_primary_->GetFK(q_start, robot_property_.tcp_frame);
-
-                std::vector<Eigen::Matrix<double, 7, 1>> poses_primary;
-                poses_primary.emplace_back(pose_start_primary.ToVectorXd());
                 assert(move_request.value.size() % (ndof_left_) == 0);
                 const int num_points = move_request.value.size() / (ndof_left_);
                 assert(num_points > 0);
+
+                std::vector<PoseQuaternion> poses_primary;
+                poses_primary.reserve(num_points + 1);
+                PoseQuaternion pose_start_primary = kine_ptr_primary_->GetFK(q_start, robot_property_.tcp_frame);
+                poses_primary.push_back(std::move(pose_start_primary));
                 for (int i = 0; i < num_points; ++i)
                 {
                     const auto &value = move_request.value.segment(i * ndof_left_, ndof_left_);
-                    poses_primary.emplace_back(value);
+                    poses_primary.emplace_back(PoseQuaternion::FromVector7d(value));
                 }
-                pose_trajectory_primary_.Initialize(std::move(poses_primary), interp_order_);
+                pose_trajectory_primary_ = PoseTrajectory::FromPoses(std::move(poses_primary), interp_order_);
                 LOG_INFO << "Primary arm motion plan: trajectory: \n"
                          << pose_trajectory_primary_.ToString();
 
@@ -240,19 +242,20 @@ namespace robot_server_lib
             case MotionGroup::Secondary:
             {
                 assert(q_start.size() == ndof_right_);
-                PoseQuaternion pose_start_secondary = kine_ptr_secondary_->GetFK(q_start, robot_property_.tcp_frame_secondary);
-
-                std::vector<Eigen::Matrix<double, 7, 1>> poses_secondary;
-                poses_secondary.emplace_back(pose_start_secondary.ToVectorXd());
                 assert(move_request.value.size() % (ndof_right_) == 0);
                 const int num_points = move_request.value.size() / (ndof_right_);
                 assert(num_points > 0);
+
+                std::vector<PoseQuaternion> poses_secondary;
+                poses_secondary.reserve(num_points + 1);
+                PoseQuaternion pose_start_secondary = kine_ptr_secondary_->GetFK(q_start, robot_property_.tcp_frame_secondary);
+                poses_secondary.push_back(std::move(pose_start_secondary));
                 for (int i = 0; i < num_points; ++i)
                 {
                     const auto &value = move_request.value.segment(i * ndof_right_, ndof_right_);
-                    poses_secondary.emplace_back(value);
+                    poses_secondary.emplace_back(PoseQuaternion::FromVector7d(value));
                 }
-                pose_trajectory_secondary_.Initialize(std::move(poses_secondary), interp_order_);
+                pose_trajectory_secondary_ = PoseTrajectory::FromPoses(std::move(poses_secondary), interp_order_);
                 LOG_INFO << "Secondary arm motion plan: trajectory: \n"
                          << pose_trajectory_secondary_.ToString();
 
@@ -304,6 +307,7 @@ namespace robot_server_lib
             total_time_ = 0.0;
             time_primary_ = 0.0;
             time_secondary_ = 0.0;
+            refine_cmd = false;
             pose_trajectory_primary_.clear();
             pose_trajectory_secondary_.clear();
             trajectory_spline_primary_.segments.clear();
@@ -313,7 +317,6 @@ namespace robot_server_lib
     protected:
         const bool wait_trajectory_upon_finish_;
         const double controller_dt_{0.01};
-        const bool refine_cmd{true}; // refine joint command to reduce error from given trajectory
 
         // JointTrajectory<ndof_left_> joint_trajectory_primary_;
         // JointTrajectory<ndof_right_> joint_trajectory_secondary_;
@@ -322,6 +325,7 @@ namespace robot_server_lib
         PoseTrajectory pose_trajectory_primary_;
         PoseTrajectory pose_trajectory_secondary_;
 
+        bool refine_cmd{false}; // refine joint command to reduce error from given trajectory
         double current_phase_;
         double time_primary_, time_secondary_, total_time_;
 

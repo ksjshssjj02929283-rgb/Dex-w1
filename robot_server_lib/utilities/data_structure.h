@@ -24,6 +24,7 @@ enum for various states and command types
 #include "single_rw_latest_queue.h"
 #include "time_utility.h"
 #include "typedef.h"
+#include <unsupported/Eigen/Splines>
 
 namespace robot_server_lib
 {
@@ -93,6 +94,14 @@ namespace robot_server_lib
             orientation = Eigen::Quaterniond(mat.block<3, 3>(0, 0));
         }
 
+        static PoseQuaternion FromVector7d(const Eigen::Matrix<double, 7, 1> &vec)
+        {
+            PoseQuaternion pose;
+            pose.position = vec.head(3);
+            pose.orientation = Eigen::Quaterniond(vec(3), vec(4), vec(5), vec(6));
+            return pose;
+        }
+
         std::string ToString() const
         {
             std::stringstream ss;
@@ -111,138 +120,104 @@ namespace robot_server_lib
 
     struct PoseTrajectory
     {
-        using Vector3d = Eigen::Matrix<double, 3, 1>;
-        using Vector7d = Eigen::Matrix<double, 7, 1>;
+        using Spline3d = Eigen::Spline<double, 3>;
 
-        std::vector<Vector7d> poses_;       // poses
-        std::vector<double> segment_times_; // normalized times 0~1 at poses
-        double total_length_;               // total length of trajectory
-        int order;                          // order of bezier interpolation
+        std::vector<PoseQuaternion> poses; // poses
+        std::vector<double> segment_times; // normalized times 0~1 at poses
+        Spline3d pos_spline;
+        double total_length; // total length of trajectory
+        int degree;          // order of interpolation
 
-        void Initialize(std::vector<Vector7d> &&pose_list, const int interp_order = 1)
+        static PoseTrajectory FromPoses(std::vector<PoseQuaternion> &&pose_list, const int interp_degree = 1)
         {
-            poses_ = std::move(pose_list);
+            PoseTrajectory pose_trajectory;
+            auto &poses = pose_trajectory.poses;
+            auto &segment_times = pose_trajectory.segment_times;
+            auto &total_length = pose_trajectory.total_length;
+            auto &pos_spline = pose_trajectory.pos_spline;
+            auto &degree = pose_trajectory.degree;
 
-            const int N = poses_.size() - 1;
-            assert(N > 0);
-            std::vector<double> segment_lengths_(N);
-            total_length_ = 0.0;
+            poses = std::move(pose_list);
+            const int N = poses.size();
+            assert(N >= 2);
+            degree = std::clamp(interp_degree, 1, N - 1);
+            // Estimate length
+            std::vector<double> segment_lengths_(N - 1);
+            total_length = 0.0;
             const double q_weight = 0.5; // weight of quaternion distance
-            for (int i = 0; i < N; ++i)
+            for (int i = 0; i < N - 1; ++i)
             {
-                Vector3d p1 = poses_[i].head<3>();
-                Vector3d p2 = poses_[i + 1].head<3>();
-                double pos_dist = (p2 - p1).norm();
-
-                Eigen::Quaterniond q1(poses_[i](3), poses_[i](4), poses_[i](5), poses_[i](6));
-                Eigen::Quaterniond q2(poses_[i + 1](3), poses_[i + 1](4), poses_[i + 1](5), poses_[i + 1](6));
-                q1.normalize();
-                q2.normalize();
-                double ang_dist = q1.angularDistance(q2);
-
-                double seg_len = pos_dist + q_weight * ang_dist;
+                const auto &p1 = poses[i].position;
+                const auto &p2 = poses[i + 1].position;
+                const double pos_dist = (p2 - p1).norm();
+                const auto &q1 = poses[i].orientation;
+                const auto &q2 = poses[i + 1].orientation;
+                const double ang_dist = q1.angularDistance(q2);
+                const double seg_len = pos_dist + q_weight * ang_dist;
                 segment_lengths_[i] = seg_len;
-                total_length_ += seg_len;
+                total_length += seg_len;
             }
-
-            segment_times_.resize(N + 1);
-            segment_times_[0] = 0.0;
+            // Estimate time stamps
+            segment_times.resize(N);
+            segment_times[0] = 0.0;
+            for (int i = 0; i < N - 1; ++i)
+                segment_times[i + 1] = segment_times[i] + segment_lengths_[i] / total_length;
+            assert(segment_times.back() == 1.0);
+            // Construct position spline
+            Eigen::MatrixXd ctrl_points(3, N);
             for (int i = 0; i < N; ++i)
-            {
-                double dt = segment_lengths_[i] / total_length_;
-                segment_times_[i + 1] = segment_times_[i] + dt;
-            }
-            assert(segment_times_.back() == 1.0);
+                ctrl_points.col(i) = poses[i].position;
+            Eigen::RowVectorXd knots(N);
+            for (int i = 0; i < N; ++i)
+                knots(i) = segment_times[i];
+            pos_spline = Spline3d(Eigen::SplineFitting<Spline3d>::Interpolate(ctrl_points, degree, knots));
 
-            order = std::clamp(interp_order, 1, N);
+            return pose_trajectory;
         }
 
-        // Bezier Interpolation
+        // Spline Interpolation
         Eigen::Matrix4d operator()(const double phase) const // scaled time of 0~1
         {
-            Eigen::Matrix4d result = Matrix4d::Identity();
+            Eigen::Matrix4d result = Eigen::Matrix4d::Identity();
 
-            if (phase <= 0.0)
-            {
-                const Vector7d &p = poses_.front();
-                result.block<3, 3>(0, 0) = Eigen::Quaterniond(p(3), p(4), p(5), p(6)).normalized().toRotationMatrix();
-                result.block<3, 1>(0, 3) = p.head<3>();
-                return result;
-            }
+            double t = std::clamp(phase, 0.0, 1.0);
 
-            if (phase >= 1.0)
-            {
-                const Vector7d &p = poses_.back();
-                result.block<3, 3>(0, 0) = Eigen::Quaterniond(p(3), p(4), p(5), p(6)).normalized().toRotationMatrix();
-                result.block<3, 1>(0, 3) = p.head<3>();
-                return result;
-            }
+            // --- 位置 ---
+            Eigen::Vector3d pos = pos_spline(t);
+            result.block<3, 1>(0, 3) = pos;
 
-            // 找到当前处于哪个段落 seg
+            // --- 旋转 (用 SLERP 做段内线性插值) ---
             int seg = 0;
-            while (seg + 1 < segment_times_.size() && phase >= segment_times_[seg + 1])
+            while (seg + 1 < segment_times.size() && t >= segment_times[seg + 1])
                 ++seg;
-
-            int num_ctrl_pts = order + 1;
-            int start = std::clamp(seg - order / 2, 0, static_cast<int>(poses_.size()) - num_ctrl_pts);
-
-            // 时间归一化到当前段控制点时间范围
-            double t0 = segment_times_[start];
-            double t1 = segment_times_[start + order];
-            double alpha = (phase - t0) / (t1 - t0);
-
-            std::vector<Vector3d> pos_ctrl_pts;
-            std::vector<Eigen::Quaterniond> rot_ctrl_pts;
-            for (int i = 0; i < num_ctrl_pts; ++i)
-            {
-                pos_ctrl_pts.push_back(poses_[start + i].head<3>());
-                const auto &pose = poses_[start + i];
-                rot_ctrl_pts.emplace_back(pose(3), pose(4), pose(5), pose(6));
-                rot_ctrl_pts.back().normalize();
-            }
-
-            // Bezier 插值位置：De Casteljau 算法
-            for (int k = order + 1; k > 1; --k)
-            {
-                for (int i = 0; i < k - 1; ++i)
-                    pos_ctrl_pts[i] = (1.0 - alpha) * pos_ctrl_pts[i] + alpha * pos_ctrl_pts[i + 1];
-            }
-            result.block<3, 1>(0, 3) = pos_ctrl_pts[0];
-
-            // 类贝塞尔插值方向：递归 slerp
-            for (int k = order + 1; k > 1; --k)
-            {
-                for (int i = 0; i < k - 1; ++i)
-                    rot_ctrl_pts[i] = rot_ctrl_pts[i].slerp(alpha, rot_ctrl_pts[i + 1]);
-            }
-            result.block<3, 3>(0, 0) = rot_ctrl_pts[0].toRotationMatrix();
+            double t0 = segment_times[seg];
+            double t1 = segment_times[seg + 1];
+            double alpha = (t1 - t0 > 1e-6) ? (t - t0) / (t1 - t0) : 0.0;
+            Eigen::Quaterniond q = poses[seg].orientation.slerp(alpha, poses[seg + 1].orientation);
+            result.block<3, 3>(0, 0) = q.normalized().toRotationMatrix();
 
             return result;
         }
 
-        double totalLength() const { return total_length_; }
+        double totalLength() const { return total_length; }
 
         void clear()
         {
-            poses_.clear();
-            segment_times_.clear();
-            total_length_ = 0.0;
-            order = 0;
+            poses.clear();
+            segment_times.clear();
+            total_length = 0.0;
+            degree = 0;
         }
 
         std::string ToString()
         {
             std::stringstream ss;
-            for (const auto &pose : poses_)
+            ss << "PoseTrajectory:\n"
+               << "  Total Length: " << std::to_string(total_length) << "\n"
+               << "  Poses:\n";
+            for (int i = 0; i < poses.size(); ++i)
             {
-                ss << "Pose: (";
-                for (int i = 0; i < 7; ++i)
-                {
-                    ss << pose(i);
-                    if (i < 6)
-                        ss << ",";
-                }
-                ss << ")\n";
+                ss << "    Time: " << segment_times[i] << ",\t" << poses[i].ToString() << "\n";
             }
             return ss.str();
         }
@@ -252,7 +227,7 @@ namespace robot_server_lib
     struct JointTrajectory
     {
         static constexpr double VLIMIT = 1.0;
-        static constexpr double ALIMIT = 2.0;
+        static constexpr double ALIMIT = 10.0;
         static constexpr double JLIMIT = 100.0;
 
         std::vector<Eigen::Matrix<double, NDoF, 1>> positions;
