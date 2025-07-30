@@ -9,14 +9,20 @@ from copy import deepcopy
 
 from rlia.kit.drive_controllers.w1_drive_controller import W1Version, W1ArmType
 from dexe_robot_client.end_effector_client import EndEffectorType 
-from dexe_robot_client.w1.w1_manager import W1Manager
+from dexe_robot_client.w1 import W1Manager
 
 
-def move_full_body_example1(move_with_ee: bool = False):
-    w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
-                            W1Version.V2, 
-                            EndEffectorType.BRAINCO_HAND,
-                            is_sim=False)
+def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
+    if is_sim:
+        w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
+                                W1Version.V2, 
+                                None,
+                                is_sim = is_sim)
+    else:
+        w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
+                                W1Version.V2, 
+                                EndEffectorType.BRAINCO_HAND,
+                                is_sim = is_sim)
     
     w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
                                       5, -45, -5, -90, 0, -15, 0,
@@ -77,12 +83,21 @@ def move_full_body_example1(move_with_ee: bool = False):
                                                         }, speed_ratio=0.5)
 
 
-def move_full_body_example2(move_wtih_ee: bool = False):
-    w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
-                            W1Version.V2, 
-                            EndEffectorType.BRAINCO_HAND,
-                            is_sim=False)
+def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
+    if is_sim:
+        w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
+                                W1Version.V2, 
+                                None,
+                                is_sim = is_sim)
+    else:
+        w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
+                                W1Version.V2, 
+                                EndEffectorType.BRAINCO_HAND,
+                                is_sim = is_sim)
     
+    w1_manager.set_tcp("left_arm", np.eye(4))
+    w1_manager.set_tcp("right_arm", np.eye(4))
+
     w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
                                       5, -45, -5, -90, 0, -15, 0,
                                       -5, 45, 5, 90, 0, 15, 0]),
@@ -126,7 +141,7 @@ def move_full_body_example2(move_wtih_ee: bool = False):
                           [0., [0., 0.5, 0.5, 0.5, 0.5, 0.5], 0.5],
                           [0., [0., 0., 0., 0., 0., 0.], 0.]]
 
-    if move_wtih_ee:
+    if move_with_ee:
         w1_manager.move_linear_full_body(waypoints_dict = {"left_arm": left_arm_waypoints,
                                                            "left_arm_ee": left_arm_ee_states,
                                                             "right_arm": right_arm_waypoints,
@@ -139,6 +154,5 @@ def move_full_body_example2(move_wtih_ee: bool = False):
 
 
 if __name__ == "__main__":
-    # move_full_body_example1(move_with_ee=True)
-    
-    move_full_body_example2(move_wtih_ee=False)
+    move_full_body_example1(move_with_ee = False, is_sim = True)
+    # move_full_body_example2(move_with_ee = False, is_sim = True)

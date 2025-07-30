@@ -8,12 +8,15 @@ import numpy as np
 from abc import ABC, abstractmethod
 import rclpy
 from rclpy.node import Node
+from dexe_robot_client.common import get_logger
 
 class EndEffectorClient(ABC, Node):
     def __init__(self, name: str, qpos_bound: np.ndarray):
-        super().__init__(name)
+        self.logger = get_logger()
+        self.node_name = name
         self.qpos_lb = qpos_bound[0]
         self.qpos_ub = qpos_bound[1]
+        super().__init__(self.node_name)
 
     # qpos in qpos_limits
     @abstractmethod
@@ -26,7 +29,7 @@ class EndEffectorClient(ABC, Node):
 
     def _check_input(self, input: np.ndarray) -> bool:
         if input.shape[0] != self.qpos_lb.shape[0]:
-            self.get_logger().error(f"len({input}) != {self.qpos_lb.shape[0]}")
+            self.logger.error(f"len({input}) != {self.qpos_lb.shape[0]}")
             return False
         return True
 
@@ -40,6 +43,7 @@ class EndEffectorClient(ABC, Node):
     def get_state(self) -> tuple[bool, np.ndarray]:
         res, qpos = self.get_qpos()
         if not res:
+            self.logger.error(f"{self.node_name}: get state failed")
             return False, None
         state = qpos / (self.qpos_ub - self.qpos_lb)
         return True, state

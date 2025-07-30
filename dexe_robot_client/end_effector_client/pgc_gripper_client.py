@@ -16,8 +16,8 @@ class PGCGripperClient(EndEffectorClient):
             name = "left"
         else:
             name = "right"
-        self.node_name = f"pgc_{name}_gripper_client"
-        super().__init__(self.node_name, qpos_bound=np.array([[0.], [100.]]))
+        node_name = f"pgc_{name}_gripper_client"
+        super().__init__(node_name, qpos_bound=np.array([[0.], [100.]]))
 
         # Create subscriber and publisher
         self._qpos_subscription = self.create_subscription(
@@ -36,7 +36,7 @@ class PGCGripperClient(EndEffectorClient):
 
     def _qpos_callback(self, msg):
         self._current_qpos = np.array([msg.data])
-        self.get_logger().debug(f"{self.node_name}: received {self._current_qpos}")
+        self.logger.debug(f"{self.node_name}: received {self._current_qpos}")
 
     def set_qpos(self, qpos: np.ndarray | float) -> bool:
         if isinstance(qpos, (int, float)):
@@ -50,13 +50,12 @@ class PGCGripperClient(EndEffectorClient):
         msg = Float64MultiArray()
         msg.data = qpos_.tolist()
         self._set_qpos_publisher.publish(msg)
-        self.get_logger().debug(f"{self.node_name}: published {qpos_}")
+        self.logger.debug(f"{self.node_name}: published {qpos_}")
         return True
 
     def get_qpos(self) -> tuple[bool, np.ndarray]:
         self.spin_once()
         if self._current_qpos is None:
-            self.get_logger().error(f"{self.node_name}: get qpos failed")
             return False, None
         temp = deepcopy(self._current_qpos)
         self._current_qpos = None

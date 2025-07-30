@@ -21,18 +21,11 @@ from dexe_robot_client.end_effector_client import (EndEffectorType,
 from dexe_robot_client.robot_client import RobotClientRos2 as RobotClient
 from dexe_robot_client.robot_client import MotionGroup
 
-from dexe_robot_client.w1.kinemtaics.torso_kinematics import TorsoKinmatics
-from dexe_robot_client.w1.path_planner.bezier_blend_path import interpolate_cartesian_path
-from dexe_robot_client.w1.trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
-from dexe_robot_client.w1.utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
-from dexe_robot_client.w1.utils.component_manager import W1ComponentManager
+from dexe_robot_client.w1 import TorsoKinmatics, ToppraTrajectoryPlanner, W1ComponentManager
+from dexe_robot_client.w1 import interpolate_cartesian_path
+from dexe_robot_client.w1 import user_pose_to_xpos, xpos_to_user_pose
 
 
-"""TODO
-1. robot client 提供MoveJi、MoveTX, MoveBY, RotateBZ, RotateTX等基础运动API
-2. 支持用户坐标系user_frame设置
-3. 支持全身运动学，并脱离rlia依赖
-"""
 class W1Manager:
     _instance = None
     _lock = threading.Lock()
@@ -58,6 +51,8 @@ class W1Manager:
         self.arm_names = ["left_arm", "right_arm"]
 
         self.robot_client = None
+        self._robot_client_sim = None
+        self._robot_client_real = None
         self.left_arm_ee_client = None
         self.right_arm_ee_client = None
 
@@ -68,6 +63,7 @@ class W1Manager:
 
         self._init_clients()
         self._init_kine_solver()
+        self.set_use_sim(is_sim)
 
         self._home_qpos = np.deg2rad([45, -90, 45, 0, 0, 0,
                                       5, -45, -5, -90, 0, -15, 0,
@@ -81,7 +77,13 @@ class W1Manager:
 
     def _init_clients(self):
         try:
-            self.robot_client = RobotClient(self._is_sim)
+            if not rclpy.ok():
+                rclpy.init()
+
+            if self._is_sim:
+                self._robot_client_sim = RobotClient(is_sim = True)
+            else:
+                self._robot_client_real = RobotClient(is_sim = False)
 
             if self._end_effector_type == EndEffectorType.BRAINCO_HAND:
                 self.left_arm_ee_client = LeftBrainCoHadnClient()
@@ -105,8 +107,10 @@ class W1Manager:
 
     def _destroy_clients(self):
         try:
-            if self.robot_client is not None:
-                self.robot_client.destroy_node()
+            if self._robot_client_sim is not None:
+                self._robot_client_sim.destroy_node()
+            if self._robot_client_real is not None:
+                self._robot_client_real.destroy_node()
             if self.left_arm_ee_client is not None:
                 self.left_arm_ee_client.destroy_node()
             if self.right_arm_ee_client is not None:
@@ -193,7 +197,7 @@ class W1Manager:
                 return True
             if name == "right_arm_ee" and self.right_arm_ee_client is not None:
                 return True
-            self.logger.warning(f"{name} has not initialized")
+            # self.logger.warning(f"{name} has not initialized")
             return False
 
         self.logger.error(f"{self.arm_ee_names} is supported, except {name}")
@@ -233,6 +237,7 @@ class W1Manager:
         """支持component和ee的检查"""
         if name in self.arm_ee_names:
             if not self._has_arm_ee_client(name):
+                self.logger.error(f"{name} has not initialized")
                 return False
             dofs = self.arm_ee_dofs
         elif self._check_name(name):
@@ -266,6 +271,7 @@ class W1Manager:
     
     def _check_arm_ee_states(self, arm_ee_state_list: list) -> bool:
         if len(arm_ee_state_list) == 0:
+            self.logger.error("FIXME")
             return False
         if not all(isinstance(ee_state, (float, list, float)) for ee_state in arm_ee_state_list):
             self.logger.error(f"arm_ee state should be [pre_delay, ee_qpos, post_delay]")
@@ -336,6 +342,20 @@ class W1Manager:
         return True, np.hstack(temp_arrays)
 
     ######## 基础API #############
+    def set_use_sim(self, is_sim) -> bool:
+        self._is_sim = is_sim
+        if self._is_sim:
+            if self._robot_client_sim is None:
+                self._robot_client_sim = RobotClient(is_sim=True)
+            if self._robot_client_sim.is_connected():
+                self.robot_client = self._robot_client_sim
+        else:
+            if self._robot_client_real is None:
+                self._robot_client_real = RobotClient(is_sim=False)
+            if self._robot_client_real.is_connected():
+                self.robot_client = self._robot_client_real
+        return True
+
     def set_ee_state(self, name: str, state: np.ndarray) -> bool:
         """控制end effector运动
 
@@ -356,6 +376,15 @@ class W1Manager:
     def set_home_qpos(self, 
                       home_qpos: np.ndarray, 
                       save_to_file: bool = False) -> bool:
+        """设置home qpos
+
+        Args:
+            home_qpos (np.ndarray): 
+            save_to_file (bool, optional): 是否保存至默认路径data/config.json. Defaults to False.
+
+        Returns:
+            bool: 
+        """
         if not self._check_qpos_limits("full_body", home_qpos):
             return False
         self._home_qpos = home_qpos
@@ -449,6 +478,14 @@ class W1Manager:
         return True, arm_controller.get_tcp()
 
     def go_home(self, speed_ratio: float = 1.0) -> bool:
+        """从当前点MoveJ移动到home qpos
+
+        Args:
+            speed_ratio (float, optional): 0.1~1.0. Defaults to 1.0.
+
+        Returns:
+            bool: 
+        """
         target_qpos = deepcopy(self._home_qpos)
         target_torso_qpos = target_qpos[self.component_manager.torso_index]
         target_head_qpos = target_qpos[self.component_manager.head_index]
@@ -463,6 +500,11 @@ class W1Manager:
         return self.move_joint_full_body(waypoint_dict, max(0.1, min(speed_ratio, 1.0)))
 
     def stop_move(self) -> bool:
+        """停止发送streaming指令
+
+        Returns:
+            bool: 
+        """
         with self._stop_move_lock:
             self._stop_move_flag = True
         self.logger.info("Stop move by user")
@@ -603,6 +645,17 @@ class W1Manager:
                            left_arm_ee_trigger_list: list = None,
                            right_arm_ee_trigger_list: list = None,
                            reach_timeout: float = 2.0) -> bool:
+        """按10ms间隔执行关节轨迹
+
+        Args:
+            qpos_array (np.ndarray): 关节轨迹
+            left_arm_ee_trigger_list (list, optional): 左末端执行器触发序列. Defaults to None.
+            right_arm_ee_trigger_list (list, optional): 右末端执行器触发序列. Defaults to None.
+            reach_timeout (float, optional): 发送完指令后的到位检测timeout. Defaults to 2.0.
+
+        Returns:
+            bool: 
+        """
         # reset stop move flag
         self._stop_move_flag = False
 
@@ -974,6 +1027,8 @@ class W1Manager:
         Returns:
             bool
         """
+        self.logger.debug(f"waypoints_dict: {waypoints_dict}")
+
         res, cur_qpos = self.get_current_qpos()
         if not res:
             return False
@@ -1053,7 +1108,6 @@ class W1Manager:
                                                        right_arm_qpos_array)
         if not res_align:
             return False
-        
         # execute
         return self.execute_joint_traj(total_qpos_array, 
                                        left_arm_ee_trigger_list, 
@@ -1087,6 +1141,8 @@ class W1Manager:
         Returns:
             bool
         """
+        self.logger.debug(f"waypoints_dict: {waypoints_dict}")
+
         res, cur_qpos = self.get_current_qpos()
         if not res:
             return False
@@ -1194,7 +1250,7 @@ if __name__ == "__main__":
     w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
                            W1Version.V2, 
                            EndEffectorType.BRAINCO_HAND,
-                           is_sim=False)
+                           is_sim=True)
     # w1_manager.set_ee_state("left_arm_ee", np.array([0.]*6))
     # w1_manager.set_ee_state("right_arm_ee", np.array([0.]*6))
     # w1_manager.go_home(0.5)
