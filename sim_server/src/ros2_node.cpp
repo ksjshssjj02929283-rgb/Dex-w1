@@ -29,7 +29,7 @@ void Ros2Node::InitRobotServer()
             {
                 std::vector<double> joint_pos = json_msg["joint_position"].get<std::vector<double>>();
                 auto temp = Eigen::Map<robot_server_lib::VectorDof>(joint_pos.data(), joint_pos.size());
-                if (!this->real_robot_sync_.joint_position.isApprox(temp, 0.001))
+                if (!this->real_robot_sync_.joint_position.isApprox(temp, 0.0001))
                 {
                     this->real_robot_sync_.joint_position = temp;
                     this->real_robot_sync_.is_updated = true;
@@ -159,44 +159,49 @@ void Ros2Node::InitRobotServer()
             }
         });
 
-    publish_timer_ = this->create_wall_timer(std::chrono::milliseconds(10),  // 100Hz
-                                             [this]()
-                                             {
-                                                 std_msgs::msg::String robot_server_state_msg;
-                                                 JointMeasurement measurement;
-                                                 std::ostringstream joint_position_ss;
-                                                 Eigen::VectorXd ee_pose;
-                                                 std::ostringstream ee_pose_ss;
-                                                 if (manager_buffers_.joint_measurement->PeekLatest(&measurement))
-                                                 {
-                                                     joint_position_ss << "[";
-                                                     for (int i = 0; i < measurement.position.size(); ++i)
-                                                     {
-                                                         joint_position_ss << measurement.position[i];
-                                                         if (i != measurement.position.size() - 1)
-                                                             joint_position_ss << ",";
-                                                     }
-                                                     joint_position_ss << "]";
-                                                 }
-                                                 if (manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
-                                                 {
-                                                     ee_pose_ss << "[";
-                                                     for (int i = 0; i < ee_pose.size(); ++i)
-                                                     {
-                                                         ee_pose_ss << ee_pose[i];
-                                                         if (i != ee_pose.size() - 1)
-                                                             ee_pose_ss << ",";
-                                                     }
-                                                     ee_pose_ss << "]";
-                                                 }
-                                                 robot_server_state_msg.data =
-                                                     std::string("{\"status\":\"") + ToString(manager_state_) + "\"" +
-                                                     ",\"latest_queued_id\":" + std::to_string(latest_report_id_.queued) +
-                                                     ",\"latest_finished_id\":" + std::to_string(latest_report_id_.finished) +
-                                                     ",\"latest_errordrop_id\":" + std::to_string(latest_report_id_.error_drop) +
-                                                     ",\"joint_position\":" + joint_position_ss.str() + ",\"ee_pose\":" + ee_pose_ss.str() + "}";
-                                                 robot_server_state_publisher_->publish(robot_server_state_msg);
-                                             });
+        publish_thread_ = std::thread(
+            [this]() -> void
+            {
+                while (rclcpp::ok())
+                {
+                    std_msgs::msg::String robot_server_state_msg;
+                    JointMeasurement measurement;
+                    std::ostringstream joint_position_ss;
+                    Eigen::VectorXd ee_pose;
+                    std::ostringstream ee_pose_ss;
+                    if (manager_buffers_.joint_measurement->PeekLatest(&measurement))
+                    {
+                        joint_position_ss << "[";
+                        for (int i = 0; i < measurement.position.size(); ++i)
+                        {
+                            joint_position_ss << measurement.position[i];
+                            if (i != measurement.position.size() - 1)
+                                joint_position_ss << ",";
+                        }
+                        joint_position_ss << "]";
+                    }
+                    if (manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
+                    {
+                        ee_pose_ss << "[";
+                        for (int i = 0; i < ee_pose.size(); ++i)
+                        {
+                            ee_pose_ss << ee_pose[i];
+                            if (i != ee_pose.size() - 1)
+                                ee_pose_ss << ",";
+                        }
+                        ee_pose_ss << "]";
+                    }
+                    robot_server_state_msg.data =
+                        std::string("{\"status\":\"") + ToString(manager_state_) + "\"" +
+                        ",\"latest_queued_id\":" + std::to_string(latest_report_id_.queued) +
+                        ",\"latest_finished_id\":" + std::to_string(latest_report_id_.finished) +
+                        ",\"latest_errordrop_id\":" + std::to_string(latest_report_id_.error_drop) +
+                        ",\"joint_position\":" + joint_position_ss.str() +
+                        ",\"ee_pose\":" + ee_pose_ss.str() + "}";
+                    robot_server_state_publisher_->publish(robot_server_state_msg);
+                    std::this_thread::sleep_for(std::chrono::microseconds(10000)); //100hz
+                }
+            });
 }
 
 void Ros2Node::InitSimulation()
@@ -283,7 +288,7 @@ void Ros2Node::InitSimulation()
                 auto ret = manager_buffers_.joint_measurement->AppendNewElement(cache);
                 cache.q_desired_pre = cache.position;
                 assert(ret);
-                std::this_thread::sleep_for(std::chrono::microseconds(simulation_dt_micro));
+                std::this_thread::sleep_for(std::chrono::microseconds(manager_dt_micro));
             }
         });
 #endif
