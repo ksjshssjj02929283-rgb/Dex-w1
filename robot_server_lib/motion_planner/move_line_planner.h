@@ -91,7 +91,7 @@ class MoveLinePlanner : public MotionPlannerBase
             // Done
             if (wait_trajectory_upon_finish_)
             {
-                const bool robot_stopped = (measurement.velocity.norm() < ndof_robot * 1e-2);
+                const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
                 return robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
             }
             else
