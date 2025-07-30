@@ -4,5 +4,5 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
-from dexe_robot_client.robot_client.data_structure import *
-from dexe_robot_client.robot_client.robot_client_ros2_implement import RobotClientRos2
+from .data_structure import *
+from .robot_client_ros2_implement import RobotClientRos2
