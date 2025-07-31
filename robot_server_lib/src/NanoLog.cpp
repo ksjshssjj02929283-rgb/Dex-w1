@@ -49,7 +49,7 @@ uint64_t timestamp_now()
 void format_timestamp(std::ostream &os, uint64_t timestamp)
 {
     std::time_t time_t = timestamp / 1000000;
-    auto localtime = std::localtime(&time_t); // 使用本地时区
+    auto localtime = std::localtime(&time_t);  // 使用本地时区
     char buffer[32];
     strftime(buffer, 32, "%Y-%m-%d %T.", localtime);
     char microseconds[7];

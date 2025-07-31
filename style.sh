@@ -1,5 +1,7 @@
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -19,20 +21,11 @@ STYLE_CONFIG="{BasedOnStyle: Google, IndentWidth: 4, BreakBeforeBraces: Allman, 
 
 # 格式化所有 C++ 文件，排除编译目录
 echo -e "${BLUE}正在格式化文件...${NC}"
-find . -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" -o -name "*.cc" -o -name "*.cxx" \) \
-    -not -path "./build/*" \
-    -not -path "./install/*" \
-    -not -path "./log/*" \
-    -not -path "./.git/*" \
+find "$SCRIPT_DIR" -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" -o -name "*.cc" -o -name "*.cxx" \) \
+    -not -path "$SCRIPT_DIR/build/*" \
+    -not -path "$SCRIPT_DIR/install/*" \
+    -not -path "$SCRIPT_DIR/log/*" \
+    -not -path "$SCRIPT_DIR/.git/*" \
     -exec clang-format -i --style="$STYLE_CONFIG" {} \;
 
 echo -e "${GREEN}代码格式化完成!${NC}"
-
-# 可选：显示格式化的文件数量
-file_count=$(find . -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" -o -name "*.cc" -o -name "*.cxx" \) \
-    -not -path "./build/*" \
-    -not -path "./install/*" \
-    -not -path "./log/*" \
-    -not -path "./.git/*" | wc -l)
-
-echo -e "${GREEN}共处理了 $file_count 个文件${NC}"
