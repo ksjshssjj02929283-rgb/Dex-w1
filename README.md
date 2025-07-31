@@ -5,12 +5,11 @@
 ## 依赖库安装
 
 ```bash
-# ROS2 公钥导入
+# ROS2 公钥导入 如果已有公钥可跳过
 curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo tee /etc/apt/trusted.gpg.d/ros.asc > /dev/null
 
-sudo apt update
-
 # 安装依赖库
+sudo apt update
 sudo apt install nlohmann-json3-dev
 sudo apt install ros-humble-ruckig
 sudo apt install ros-humble-pinocchio
@@ -23,9 +22,13 @@ pip install meshcat
 
 ### 如果需要ruckig 源码编译安装:
 
+> **注意**：ruckig源码需要checkout到0.15.3版本，再之后的版本需要11.4以上的编译器，可能会导致编译失败
+
 ```bash
 git clone https://github.com/pantor/ruckig.git
 cd ruckig
+git checkout v0.15.3
+mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 sudo make install
@@ -61,21 +64,24 @@ colcon build --cmake-args -DENABLE_SIM_SERVER=OFF
 
 ### 运行项目
 
-运行部署的包, 如已编译仿真则运行以下开启仿真及可视化
+运行部署的包, 运行以下可开启仿真及可视化
 
 ```bash
 ./dexe_robot_server/run_sim.sh
 ```
 
-如运行w1则需运行 w1_control/ 中的运行脚本
+如运行w1则需运行 w1_control/run.sh 会同步启动仿真
 
 
-test默认关闭, 如需运行测试则
+test默认开启, 如需关闭则
 
 ```bash
-colcon build --cmake-args -DBUILD_TESTING=ON
-colcon test
-colcon test-result --verbose
+colcon build --cmake-args -DBUILD_TESTING=OFF
+```
+运行测试
+
+```bash
+./dexe_robot_server/test.sh
 ```
 
 ---
@@ -115,5 +121,5 @@ colcon test-result --verbose
 开发者提交代码前需统一代码风格, 请运行：
 
 ```bash
-./style.sh
+./dexe_robot_server/style.sh
 ```

@@ -77,7 +77,7 @@ ament_export_targets(export_robot_server_lib HAS_LIBRARY_TARGET)
 ament_export_libraries(robot_server_lib)
 ament_export_include_directories(include)
 
-option(BUILD_TESTING "Build tests" OFF)
+option(BUILD_TESTING "Build tests" ON)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)

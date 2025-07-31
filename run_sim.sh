@@ -1,6 +1,7 @@
-source install/setup.bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-cd "$(dirname "$0")"
+source $SCRIPT_DIR/../install/setup.bash
+
 # 启动sim_server和仿真可视化
-/bin/python3 sim_server/visualization/visual_ros2_node.py &
+/bin/python3 $SCRIPT_DIR/sim_server/visualization/visual_ros2_node.py &
 ros2 run sim_server sim_server
