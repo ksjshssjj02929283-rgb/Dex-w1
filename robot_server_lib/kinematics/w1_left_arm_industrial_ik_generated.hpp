@@ -1452,4 +1452,4 @@ namespace yaik_cpp
         const JpsArr q_min, q_max;
     };
 
-}; // namespace yaik_cpp
+} // namespace yaik_cpp

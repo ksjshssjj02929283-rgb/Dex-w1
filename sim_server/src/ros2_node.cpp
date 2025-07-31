@@ -547,9 +547,9 @@ PlannerRequest Ros2Node::ParseMoveRequest(
             move_request.blend_tolerance.emplace(input_config_json["blend_tolerance"].get<double>());
         }
 
-        if (input_config_json.contains("interp_order"))
+        if (input_config_json.contains("interp_degree"))
         {
-            move_request.interp_order.emplace(input_config_json["interp_order"].get<int>());
+            move_request.interp_degree.emplace(input_config_json["interp_degree"].get<int>());
         }
     }
     planner_request.data = move_request;

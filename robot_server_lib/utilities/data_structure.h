@@ -322,7 +322,7 @@ namespace robot_server_lib
         std::optional<ReferenceFrame> reference_frame;
         std::optional<double> speed;
         std::optional<double> blend_tolerance;
-        std::optional<int> interp_order;
+        std::optional<int> interp_degree;
     };
 
     using PlannerData = std::variant<MoveRequest, PoseQuaternion, double>;

@@ -7,7 +7,7 @@
 #include "utilities.h"
 
 using namespace robot_server_lib;
-TEST(SRSKinematicsTest, Kinematics)
+TEST(Kinematics, SRSKinematicsTest)
 {
     auto params_left = kinematics::W1LeftArmIndustrial();
 
