@@ -44,18 +44,14 @@ TEST(MovePlanner, MoveTrajectoryTest)
     robot_model_.params_ptr = std::make_shared<RobotParams>(params);
 
     Eigen::VectorXd pose_target(14);
-    pose_target << -0.3, 0.363727, 0.262795, -0.229399, -0.440151, 0.599072, 0.628296,
-                    0.3, 0.363727, 0.262795, 0.628296, -0.599072, 0.440151, -0.229399;
+    pose_target << -0.3, 0.363727, 0.262795, -0.229399, -0.440151, 0.599072, 0.628296, 0.3, 0.363727, 0.262795, 0.628296, -0.599072, 0.440151,
+        -0.229399;
 
     PlannerRequest request;
     request.type = RequestType::MoveTrajectory;
     request.request_id = 1;
     request.data = MoveRequest{
-        .motion_group = MotionGroup::BothArms,
-        .value = pose_target,
-        .reference_frame = ReferenceFrame::ArmBase,
-        .speed = 1.0,
-        .interp_degree = 1};
+        .motion_group = MotionGroup::BothArms, .value = pose_target, .reference_frame = ReferenceFrame::ArmBase, .speed = 1.0, .interp_degree = 1};
 
     JointMeasurement measurement;
     measurement.q_desired_pre << 0, 0, 0, 0, 0, 0, -0.45, -0.65, 0.35, -1.5, -1, 1.1, -0.4, 0.45, 0.65, -0.35, 1.5, 1, -1.1, 0.4;

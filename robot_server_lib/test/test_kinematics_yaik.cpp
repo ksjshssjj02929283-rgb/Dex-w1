@@ -27,7 +27,7 @@ TEST(KinematicsTest, YaikKinematicsTest)
         EXPECT_NEAR(pose_right[i], pose_right_ref[i], 0.01) << "FK mismatch at index " << i;
     }
     pose1 << -0.3, 0.363727, 0.262795, -0.229399, -0.440151, 0.599072, 0.628296;
-    
+
     auto pose_trajectory = PoseTrajectory::FromPoses({PoseQuaternion::FromVector7d(pose0), PoseQuaternion::FromVector7d(pose1)});
 
     std::vector<Eigen::Matrix<double, 7, 1>> joint_trajectory;

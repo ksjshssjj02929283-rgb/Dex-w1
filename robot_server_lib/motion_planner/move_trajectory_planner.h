@@ -5,339 +5,333 @@
 
 namespace robot_server_lib
 {
-    static constexpr int ndof_arms_ = 14;
-    static constexpr int ndof_left_ = 7;
-    static constexpr int ndof_right_ = 7;
+static constexpr int ndof_arms_ = 14;
+static constexpr int ndof_left_ = 7;
+static constexpr int ndof_right_ = 7;
 
-    class MoveTrajectoryPlanner : public MotionPlannerBase
+class MoveTrajectoryPlanner : public MotionPlannerBase
+{
+   public:
+    MoveTrajectoryPlanner(RobotModel robot_model, double controller_dt, bool wait_trajectory_upon_finish)
+        : MotionPlannerBase(robot_model), controller_dt_(controller_dt), wait_trajectory_upon_finish_(wait_trajectory_upon_finish)
     {
-    public:
-        MoveTrajectoryPlanner(RobotModel robot_model, double controller_dt, bool wait_trajectory_upon_finish)
-            : MotionPlannerBase(robot_model), controller_dt_(controller_dt), wait_trajectory_upon_finish_(wait_trajectory_upon_finish)
+        current_phase_ = 0.0;
+        total_time_ = 0.0;
+        time_primary_ = 0.0;
+        time_secondary_ = 0.0;
+
+        kine_ptr_primary_ = std::dynamic_pointer_cast<kinematics::YaikKinematics>(kinematics_ptr_);
+        kine_ptr_secondary_ = std::dynamic_pointer_cast<kinematics::YaikKinematics>(kinematics_secondary_ptr_);
+    }
+
+    ~MoveTrajectoryPlanner() override = default;
+
+    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) override
+    {
+        if (current_phase_ < 1.0)
+            current_phase_ += controller_dt_ / total_time_;
+        JointPositionDof q_ndof = measurement.q_desired_pre;
+        JointPositionDof dq_ndof = measurement.velocity;
+        Eigen::VectorXd q_arms, dq_arms;
+        GetArmFromWholeBody(q_ndof, q_arms, MotionGroup::BothArms);
+        GetArmFromWholeBody(dq_ndof, dq_arms, MotionGroup::BothArms);
+        Eigen::Matrix<double, ndof_left_, 1> q_left(q_arms.head<ndof_left_>());
+        Eigen::Matrix<double, ndof_left_, 1> dq_left(dq_arms.head<ndof_left_>());
+        Eigen::Matrix<double, ndof_right_, 1> q_right(q_arms.tail<ndof_right_>());
+        Eigen::Matrix<double, ndof_right_, 1> dq_right(dq_arms.tail<ndof_right_>());
+        // Get interpolated joint position and velocity synchronously
+        trajectory_spline_primary_.evaluate(current_phase_ * time_primary_, q_left, dq_left);
+        trajectory_spline_secondary_.evaluate(current_phase_ * time_secondary_, q_right, dq_right);
+
+        if (refine_cmd)  // Leads to joint vibration, deprecated
         {
-            current_phase_ = 0.0;
-            total_time_ = 0.0;
-            time_primary_ = 0.0;
-            time_secondary_ = 0.0;
-
-            kine_ptr_primary_ = std::dynamic_pointer_cast<kinematics::YaikKinematics>(kinematics_ptr_);
-            kine_ptr_secondary_ = std::dynamic_pointer_cast<kinematics::YaikKinematics>(kinematics_secondary_ptr_);
-        }
-
-        ~MoveTrajectoryPlanner() override = default;
-
-        ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) override
-        {
-            if (current_phase_ < 1.0)
-                current_phase_ += controller_dt_ / total_time_;
-            JointPositionDof q_ndof = measurement.q_desired_pre;
-            JointPositionDof dq_ndof = measurement.velocity;
-            Eigen::VectorXd q_arms, dq_arms;
-            GetArmFromWholeBody(q_ndof, q_arms, MotionGroup::BothArms);
-            GetArmFromWholeBody(dq_ndof, dq_arms, MotionGroup::BothArms);
-            Eigen::Matrix<double, ndof_left_, 1> q_left(q_arms.head<ndof_left_>());
-            Eigen::Matrix<double, ndof_left_, 1> dq_left(dq_arms.head<ndof_left_>());
-            Eigen::Matrix<double, ndof_right_, 1> q_right(q_arms.tail<ndof_right_>());
-            Eigen::Matrix<double, ndof_right_, 1> dq_right(dq_arms.tail<ndof_right_>());
-            // Get interpolated joint position and velocity synchronously
-            trajectory_spline_primary_.evaluate(current_phase_ * time_primary_, q_left, dq_left);
-            trajectory_spline_secondary_.evaluate(current_phase_ * time_secondary_, q_right, dq_right);
-
-            if (refine_cmd) // Leads to joint vibration, deprecated
+            // Refine q_left and q_right in accordance with poses at current phase
+            auto refine_left = [&, this]()
             {
-                // Refine q_left and q_right in accordance with poses at current phase
-                auto refine_left = [&, this]()
-                {
-                    Eigen::VectorXd q_temp(q_left);
-                    bool ik_get = kine_ptr_primary_->GetIK(PoseQuaternion(pose_trajectory_primary_(current_phase_)), q_temp);
-                    if ((q_left - q_temp).norm() < 1e-3)
-                        q_left = q_temp;
-                };
-                auto refine_right = [&, this]()
-                {
-                    Eigen::VectorXd q_temp(q_right);
-                    bool ik_get = kine_ptr_secondary_->GetIK(PoseQuaternion(pose_trajectory_secondary_(current_phase_)), q_temp);
-                    if ((q_right - q_temp).norm() < 1e-3)
-                        q_right = q_temp;
-                };
-
-                switch (motion_group_)
-                {
-                case MotionGroup::BothArms:
-                {
-                    refine_left();
-                    refine_right();
-                    break;
-                }
-                case MotionGroup::Primary:
-                {
-                    refine_left();
-                    break;
-                }
-                case MotionGroup::Secondary:
-                {
-                    refine_left();
-                    break;
-                }
-                default:
-                    break;
-                }
-            }
-            // Check if joint trajectory has ended
-            const bool goal_reached =
-                current_phase_ >= 1.0 && ((q_left - q_arms.head<ndof_left_>()).norm() < 1e-4 && (q_right - q_arms.tail<ndof_right_>()).norm() < 1e-4);
-
-            q_arms.head<ndof_left_>() << q_left;
-            dq_arms.head<ndof_left_>() << dq_left;
-            q_arms.tail<ndof_right_>() << q_right;
-            dq_arms.tail<ndof_right_>() << dq_right;
-            MapArmToWholeBody(q_arms, q_ndof, MotionGroup::BothArms);
-            MapArmToWholeBody(dq_arms, dq_ndof, MotionGroup::BothArms);
-
-            if (goal_reached)
+                Eigen::VectorXd q_temp(q_left);
+                bool ik_get = kine_ptr_primary_->GetIK(PoseQuaternion(pose_trajectory_primary_(current_phase_)), q_temp);
+                if ((q_left - q_temp).norm() < 1e-3)
+                    q_left = q_temp;
+            };
+            auto refine_right = [&, this]()
             {
-                for (auto i = 0; i < ndof_robot; i++)
-                {
-                    joint_cmd.position[i] = q_ndof[i];
-                    joint_cmd.velocity[i] = 0.0;
-                    joint_cmd.acceleration[i] = 0.0;
-                    joint_cmd.torque_feedforward[i] = 0.0;
-                }
-                ClearCache();
-                return ComputeCommandStatus::TaskFinished;
-            }
-            else
-            {
-                for (auto i = 0; i < ndof_robot; i++)
-                {
-                    joint_cmd.position[i] = q_ndof[i];
-                    // joint_cmd.velocity[i] = 0.0;
-                    joint_cmd.velocity[i] = dq_ndof[i];
-                    joint_cmd.acceleration[i] = 0.0;
-                    joint_cmd.torque_feedforward[i] = 0.0;
-                }
-                return ComputeCommandStatus::TaskOngoing;
-            }
-        }
+                Eigen::VectorXd q_temp(q_right);
+                bool ik_get = kine_ptr_secondary_->GetIK(PoseQuaternion(pose_trajectory_secondary_(current_phase_)), q_temp);
+                if ((q_right - q_temp).norm() < 1e-3)
+                    q_right = q_temp;
+            };
 
-        bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override
-        {
-            assert(request.data.has_value());
-            assert(std::holds_alternative<MoveRequest>(request.data.value()));
-            ClearCache();
-
-            const auto &move_request = std::get<MoveRequest>(request.data.value());
-            SetMotionGroup(move_request.motion_group);
-            double speed_ratio = robot_property_.global_speed_ratio;
-            if (move_request.speed.has_value())
-            {
-                speed_ratio = speed_ratio * std::clamp(move_request.speed.value(), 0.01, 1.0);
-            }
-            int interp_degree = 1;
-            if (move_request.interp_degree.has_value())
-            {
-                interp_degree = move_request.interp_degree.value();
-            }
-            // if (interp_degree == 1)
-            //     refine_cmd = true;
-
-            JointTrajectory<ndof_left_> joint_trajectory_primary_;
-            JointTrajectory<ndof_right_> joint_trajectory_secondary_;
-            // Joint constraints
-            const double max_speed = speed_ratio * streaming_bounds_.max_velocity;
-            const double max_acceleration = speed_ratio * streaming_bounds_.max_acceleration;
-            const double max_jerk = speed_ratio * streaming_bounds_.max_jerk;
-            joint_trajectory_primary_.max_velocity.setConstant(max_speed);
-            joint_trajectory_primary_.min_velocity.setConstant(-max_speed);
-            joint_trajectory_primary_.max_acceleration.setConstant(max_acceleration);
-            joint_trajectory_primary_.min_acceleration.setConstant(-max_acceleration);
-            joint_trajectory_primary_.max_jerk.setConstant(max_jerk);
-            joint_trajectory_primary_.min_jerk.setConstant(-max_jerk);
-            joint_trajectory_secondary_.max_velocity.setConstant(max_speed);
-            joint_trajectory_secondary_.min_velocity.setConstant(-max_speed);
-            joint_trajectory_secondary_.max_acceleration.setConstant(max_acceleration);
-            joint_trajectory_secondary_.min_acceleration.setConstant(-max_acceleration);
-            joint_trajectory_secondary_.max_jerk.setConstant(max_jerk);
-            joint_trajectory_secondary_.min_jerk.setConstant(-max_jerk);
-
-            Eigen::VectorXd q_start;
-            GetArmFromWholeBody(measurement.q_desired_pre, q_start);
-
-            switch (move_request.motion_group)
+            switch (motion_group_)
             {
             case MotionGroup::BothArms:
             {
-                assert(q_start.size() == ndof_arms_);
-                assert(move_request.value.size() % (ndof_arms_) == 0);
-                const int num_points = static_cast<int>(move_request.value.size()) / ndof_arms_;
-                assert(num_points > 0);
-                // Raw trajectory
-                std::vector<PoseQuaternion> poses_primary, poses_secondary;
-                poses_primary.reserve(num_points + 1);
-                poses_secondary.reserve(num_points + 1);
-                // Start pose
-                PoseQuaternion pose_start_primary = kine_ptr_primary_->GetFK(q_start.head(ndof_left_), robot_property_.tcp_frame);
-                PoseQuaternion pose_start_secondary = kine_ptr_secondary_->GetFK(q_start.tail(ndof_right_), robot_property_.tcp_frame_secondary);
-                poses_primary.push_back(std::move(pose_start_primary));
-                poses_secondary.push_back(std::move(pose_start_secondary));
-                // Target poses
-                for (int i = 0; i < num_points; ++i)
-                {
-                    const auto &value = move_request.value.segment(i * ndof_arms_, ndof_arms_);
-                    poses_primary.emplace_back(PoseQuaternion::FromVector7d(value.head(ndof_left_)));
-                    poses_secondary.emplace_back(PoseQuaternion::FromVector7d(value.tail(ndof_right_)));
-                }
-                // Initialize end-effector trajectory interpolator with poses
-                pose_trajectory_primary_ = PoseTrajectory::FromPoses(std::move(poses_primary), interp_degree);
-                pose_trajectory_secondary_ = PoseTrajectory::FromPoses(std::move(poses_secondary), interp_degree);
-                LOG_INFO << "Primary arm motion plan: trajectory: \n"
-                         << pose_trajectory_primary_.ToString();
-                LOG_INFO << "Secondary arm motion plan: trajectory: \n"
-                         << pose_trajectory_secondary_.ToString();
-
-                std::vector<Eigen::Matrix<double, ndof_left_, 1>> trajectory_primary;
-                std::vector<Eigen::Matrix<double, ndof_right_, 1>> trajectory_secondary;
-                auto trajectory_ok_primary = kine_ptr_primary_->RunGlobalRedundancyResolutionForJointTrajectory(
-                    q_start.head(ndof_left_), pose_trajectory_primary_, trajectory_primary, robot_property_.tcp_frame);
-                auto trajectory_ok_secondary = kine_ptr_secondary_->RunGlobalRedundancyResolutionForJointTrajectory(
-                    q_start.tail(ndof_right_), pose_trajectory_secondary_, trajectory_secondary, robot_property_.tcp_frame_secondary);
-                if (!trajectory_ok_primary || !trajectory_ok_secondary)
-                {
-                    LOG_CRIT << "Failed to compute joint trajectory for both arms.";
-                    return false;
-                }
-                // Initialize joint trajectory interpolator with joint configurations
-                joint_trajectory_primary_.SetJointTrajectory(std::move(trajectory_primary));
-                joint_trajectory_secondary_.SetJointTrajectory(std::move(trajectory_secondary));
+                refine_left();
+                refine_right();
                 break;
             }
             case MotionGroup::Primary:
             {
-                assert(q_start.size() == ndof_left_);
-                assert(move_request.value.size() % (ndof_left_) == 0);
-                const int num_points = static_cast<int>(move_request.value.size()) / ndof_left_;
-                assert(num_points > 0);
-
-                std::vector<PoseQuaternion> poses_primary;
-                poses_primary.reserve(num_points + 1);
-                PoseQuaternion pose_start_primary = kine_ptr_primary_->GetFK(q_start, robot_property_.tcp_frame);
-                poses_primary.push_back(std::move(pose_start_primary));
-                for (int i = 0; i < num_points; ++i)
-                {
-                    const auto &value = move_request.value.segment(i * ndof_left_, ndof_left_);
-                    poses_primary.emplace_back(PoseQuaternion::FromVector7d(value));
-                }
-                pose_trajectory_primary_ = PoseTrajectory::FromPoses(std::move(poses_primary), interp_degree);
-                LOG_INFO << "Primary arm motion plan: trajectory: \n"
-                         << pose_trajectory_primary_.ToString();
-
-                std::vector<Eigen::Matrix<double, ndof_left_, 1>> trajectory_primary;
-                auto trajectory_ok = kine_ptr_primary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start, pose_trajectory_primary_,
-                                                                                                        trajectory_primary, robot_property_.tcp_frame);
-                if (!trajectory_ok)
-                {
-                    LOG_CRIT << "Failed to compute joint trajectory for primary arm.";
-                    return false;
-                }
-                joint_trajectory_primary_.SetJointTrajectory(std::move(trajectory_primary));
+                refine_left();
                 break;
             }
             case MotionGroup::Secondary:
             {
-                assert(q_start.size() == ndof_right_);
-                assert(move_request.value.size() % (ndof_right_) == 0);
-                const int num_points = static_cast<int>(move_request.value.size()) / ndof_right_;
-                assert(num_points > 0);
-
-                std::vector<PoseQuaternion> poses_secondary;
-                poses_secondary.reserve(num_points + 1);
-                PoseQuaternion pose_start_secondary = kine_ptr_secondary_->GetFK(q_start, robot_property_.tcp_frame_secondary);
-                poses_secondary.push_back(std::move(pose_start_secondary));
-                for (int i = 0; i < num_points; ++i)
-                {
-                    const auto &value = move_request.value.segment(i * ndof_right_, ndof_right_);
-                    poses_secondary.emplace_back(PoseQuaternion::FromVector7d(value));
-                }
-                pose_trajectory_secondary_ = PoseTrajectory::FromPoses(std::move(poses_secondary), interp_degree);
-                LOG_INFO << "Secondary arm motion plan: trajectory: \n"
-                         << pose_trajectory_secondary_.ToString();
-
-                std::vector<Eigen::Matrix<double, ndof_right_, 1>> trajectory_secondary;
-                auto trajectory_ok = kine_ptr_secondary_->RunGlobalRedundancyResolutionForJointTrajectory(
-                    q_start, pose_trajectory_secondary_, trajectory_secondary, robot_property_.tcp_frame_secondary);
-                if (!trajectory_ok)
-                {
-                    LOG_CRIT << "Failed to compute joint trajectory for secondary arm.";
-                    return false;
-                }
-                joint_trajectory_secondary_.SetJointTrajectory(std::move(trajectory_secondary));
+                refine_left();
                 break;
             }
             default:
-                assert(false && "Unknown MotionGroup type");
                 break;
             }
-
-            // Compute joint trajectory time and interpolation parameterization
-            if (!joint_trajectory_primary_.has_value() && !joint_trajectory_secondary_.has_value())
-            {
-                LOG_WARN << "No joint trajectory available for time parameterization.";
-            }
-            if (joint_trajectory_primary_.has_value())
-            {
-                std::vector<double> time_diff; // Vector of dt of joint trajectory
-                parameterizeJointTrajectory<ndof_left_>(joint_trajectory_primary_, time_diff, &time_primary_);
-                LOG_INFO << "Primary arm planned joint trajectory: \n"
-                         << joint_trajectory_primary_.ToString();
-                trajectory_spline_primary_.fromJointTrajectory(joint_trajectory_primary_, time_diff);
-            }
-            if (joint_trajectory_secondary_.has_value())
-            {
-                std::vector<double> time_diff;
-                parameterizeJointTrajectory<ndof_right_>(joint_trajectory_secondary_, time_diff, &time_secondary_);
-                LOG_INFO << "Secondary arm planned joint trajectory: \n"
-                         << joint_trajectory_secondary_.ToString();
-                trajectory_spline_secondary_.fromJointTrajectory(joint_trajectory_secondary_, time_diff);
-            }
-            // Total time to execute both arms' joint trajectory
-            total_time_ = std::max(time_primary_, time_secondary_);
-
-            return true;
         }
+        // Check if joint trajectory has ended
+        const bool goal_reached =
+            current_phase_ >= 1.0 && ((q_left - q_arms.head<ndof_left_>()).norm() < 1e-4 && (q_right - q_arms.tail<ndof_right_>()).norm() < 1e-4);
 
-        void ClearCache()
+        q_arms.head<ndof_left_>() << q_left;
+        dq_arms.head<ndof_left_>() << dq_left;
+        q_arms.tail<ndof_right_>() << q_right;
+        dq_arms.tail<ndof_right_>() << dq_right;
+        MapArmToWholeBody(q_arms, q_ndof, MotionGroup::BothArms);
+        MapArmToWholeBody(dq_arms, dq_ndof, MotionGroup::BothArms);
+
+        if (goal_reached)
         {
-            current_phase_ = 0.0;
-            total_time_ = 0.0;
-            time_primary_ = 0.0;
-            time_secondary_ = 0.0;
-            refine_cmd = false;
-            pose_trajectory_primary_.clear();
-            pose_trajectory_secondary_.clear();
-            trajectory_spline_primary_.segments.clear();
-            trajectory_spline_secondary_.segments.clear();
+            for (auto i = 0; i < ndof_robot; i++)
+            {
+                joint_cmd.position[i] = q_ndof[i];
+                joint_cmd.velocity[i] = 0.0;
+                joint_cmd.acceleration[i] = 0.0;
+                joint_cmd.torque_feedforward[i] = 0.0;
+            }
+            ClearCache();
+            return ComputeCommandStatus::TaskFinished;
+        }
+        else
+        {
+            for (auto i = 0; i < ndof_robot; i++)
+            {
+                joint_cmd.position[i] = q_ndof[i];
+                // joint_cmd.velocity[i] = 0.0;
+                joint_cmd.velocity[i] = dq_ndof[i];
+                joint_cmd.acceleration[i] = 0.0;
+                joint_cmd.torque_feedforward[i] = 0.0;
+            }
+            return ComputeCommandStatus::TaskOngoing;
+        }
+    }
+
+    bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override
+    {
+        assert(request.data.has_value());
+        assert(std::holds_alternative<MoveRequest>(request.data.value()));
+        ClearCache();
+
+        const auto &move_request = std::get<MoveRequest>(request.data.value());
+        SetMotionGroup(move_request.motion_group);
+        double speed_ratio = robot_property_.global_speed_ratio;
+        if (move_request.speed.has_value())
+        {
+            speed_ratio = speed_ratio * std::clamp(move_request.speed.value(), 0.01, 1.0);
+        }
+        int interp_degree = 1;
+        if (move_request.interp_degree.has_value())
+        {
+            interp_degree = move_request.interp_degree.value();
+        }
+        // if (interp_degree == 1)
+        //     refine_cmd = true;
+
+        JointTrajectory<ndof_left_> joint_trajectory_primary_;
+        JointTrajectory<ndof_right_> joint_trajectory_secondary_;
+        // Joint constraints
+        const double max_speed = speed_ratio * streaming_bounds_.max_velocity;
+        const double max_acceleration = speed_ratio * streaming_bounds_.max_acceleration;
+        const double max_jerk = speed_ratio * streaming_bounds_.max_jerk;
+        joint_trajectory_primary_.max_velocity.setConstant(max_speed);
+        joint_trajectory_primary_.min_velocity.setConstant(-max_speed);
+        joint_trajectory_primary_.max_acceleration.setConstant(max_acceleration);
+        joint_trajectory_primary_.min_acceleration.setConstant(-max_acceleration);
+        joint_trajectory_primary_.max_jerk.setConstant(max_jerk);
+        joint_trajectory_primary_.min_jerk.setConstant(-max_jerk);
+        joint_trajectory_secondary_.max_velocity.setConstant(max_speed);
+        joint_trajectory_secondary_.min_velocity.setConstant(-max_speed);
+        joint_trajectory_secondary_.max_acceleration.setConstant(max_acceleration);
+        joint_trajectory_secondary_.min_acceleration.setConstant(-max_acceleration);
+        joint_trajectory_secondary_.max_jerk.setConstant(max_jerk);
+        joint_trajectory_secondary_.min_jerk.setConstant(-max_jerk);
+
+        Eigen::VectorXd q_start;
+        GetArmFromWholeBody(measurement.q_desired_pre, q_start);
+
+        switch (move_request.motion_group)
+        {
+        case MotionGroup::BothArms:
+        {
+            assert(q_start.size() == ndof_arms_);
+            assert(move_request.value.size() % (ndof_arms_) == 0);
+            const int num_points = static_cast<int>(move_request.value.size()) / ndof_arms_;
+            assert(num_points > 0);
+            // Raw trajectory
+            std::vector<PoseQuaternion> poses_primary, poses_secondary;
+            poses_primary.reserve(num_points + 1);
+            poses_secondary.reserve(num_points + 1);
+            // Start pose
+            PoseQuaternion pose_start_primary = kine_ptr_primary_->GetFK(q_start.head(ndof_left_), robot_property_.tcp_frame);
+            PoseQuaternion pose_start_secondary = kine_ptr_secondary_->GetFK(q_start.tail(ndof_right_), robot_property_.tcp_frame_secondary);
+            poses_primary.push_back(std::move(pose_start_primary));
+            poses_secondary.push_back(std::move(pose_start_secondary));
+            // Target poses
+            for (int i = 0; i < num_points; ++i)
+            {
+                const auto &value = move_request.value.segment(i * ndof_arms_, ndof_arms_);
+                poses_primary.emplace_back(PoseQuaternion::FromVector7d(value.head(ndof_left_)));
+                poses_secondary.emplace_back(PoseQuaternion::FromVector7d(value.tail(ndof_right_)));
+            }
+            // Initialize end-effector trajectory interpolator with poses
+            pose_trajectory_primary_ = PoseTrajectory::FromPoses(std::move(poses_primary), interp_degree);
+            pose_trajectory_secondary_ = PoseTrajectory::FromPoses(std::move(poses_secondary), interp_degree);
+            LOG_INFO << "Primary arm motion plan: trajectory: \n" << pose_trajectory_primary_.ToString();
+            LOG_INFO << "Secondary arm motion plan: trajectory: \n" << pose_trajectory_secondary_.ToString();
+
+            std::vector<Eigen::Matrix<double, ndof_left_, 1>> trajectory_primary;
+            std::vector<Eigen::Matrix<double, ndof_right_, 1>> trajectory_secondary;
+            auto trajectory_ok_primary = kine_ptr_primary_->RunGlobalRedundancyResolutionForJointTrajectory(
+                q_start.head(ndof_left_), pose_trajectory_primary_, trajectory_primary, robot_property_.tcp_frame);
+            auto trajectory_ok_secondary = kine_ptr_secondary_->RunGlobalRedundancyResolutionForJointTrajectory(
+                q_start.tail(ndof_right_), pose_trajectory_secondary_, trajectory_secondary, robot_property_.tcp_frame_secondary);
+            if (!trajectory_ok_primary || !trajectory_ok_secondary)
+            {
+                LOG_CRIT << "Failed to compute joint trajectory for both arms.";
+                return false;
+            }
+            // Initialize joint trajectory interpolator with joint configurations
+            joint_trajectory_primary_.SetJointTrajectory(std::move(trajectory_primary));
+            joint_trajectory_secondary_.SetJointTrajectory(std::move(trajectory_secondary));
+            break;
+        }
+        case MotionGroup::Primary:
+        {
+            assert(q_start.size() == ndof_left_);
+            assert(move_request.value.size() % (ndof_left_) == 0);
+            const int num_points = static_cast<int>(move_request.value.size()) / ndof_left_;
+            assert(num_points > 0);
+
+            std::vector<PoseQuaternion> poses_primary;
+            poses_primary.reserve(num_points + 1);
+            PoseQuaternion pose_start_primary = kine_ptr_primary_->GetFK(q_start, robot_property_.tcp_frame);
+            poses_primary.push_back(std::move(pose_start_primary));
+            for (int i = 0; i < num_points; ++i)
+            {
+                const auto &value = move_request.value.segment(i * ndof_left_, ndof_left_);
+                poses_primary.emplace_back(PoseQuaternion::FromVector7d(value));
+            }
+            pose_trajectory_primary_ = PoseTrajectory::FromPoses(std::move(poses_primary), interp_degree);
+            LOG_INFO << "Primary arm motion plan: trajectory: \n" << pose_trajectory_primary_.ToString();
+
+            std::vector<Eigen::Matrix<double, ndof_left_, 1>> trajectory_primary;
+            auto trajectory_ok = kine_ptr_primary_->RunGlobalRedundancyResolutionForJointTrajectory(q_start, pose_trajectory_primary_,
+                                                                                                    trajectory_primary, robot_property_.tcp_frame);
+            if (!trajectory_ok)
+            {
+                LOG_CRIT << "Failed to compute joint trajectory for primary arm.";
+                return false;
+            }
+            joint_trajectory_primary_.SetJointTrajectory(std::move(trajectory_primary));
+            break;
+        }
+        case MotionGroup::Secondary:
+        {
+            assert(q_start.size() == ndof_right_);
+            assert(move_request.value.size() % (ndof_right_) == 0);
+            const int num_points = static_cast<int>(move_request.value.size()) / ndof_right_;
+            assert(num_points > 0);
+
+            std::vector<PoseQuaternion> poses_secondary;
+            poses_secondary.reserve(num_points + 1);
+            PoseQuaternion pose_start_secondary = kine_ptr_secondary_->GetFK(q_start, robot_property_.tcp_frame_secondary);
+            poses_secondary.push_back(std::move(pose_start_secondary));
+            for (int i = 0; i < num_points; ++i)
+            {
+                const auto &value = move_request.value.segment(i * ndof_right_, ndof_right_);
+                poses_secondary.emplace_back(PoseQuaternion::FromVector7d(value));
+            }
+            pose_trajectory_secondary_ = PoseTrajectory::FromPoses(std::move(poses_secondary), interp_degree);
+            LOG_INFO << "Secondary arm motion plan: trajectory: \n" << pose_trajectory_secondary_.ToString();
+
+            std::vector<Eigen::Matrix<double, ndof_right_, 1>> trajectory_secondary;
+            auto trajectory_ok = kine_ptr_secondary_->RunGlobalRedundancyResolutionForJointTrajectory(
+                q_start, pose_trajectory_secondary_, trajectory_secondary, robot_property_.tcp_frame_secondary);
+            if (!trajectory_ok)
+            {
+                LOG_CRIT << "Failed to compute joint trajectory for secondary arm.";
+                return false;
+            }
+            joint_trajectory_secondary_.SetJointTrajectory(std::move(trajectory_secondary));
+            break;
+        }
+        default:
+            assert(false && "Unknown MotionGroup type");
+            break;
         }
 
-    protected:
-        const bool wait_trajectory_upon_finish_;
-        const double controller_dt_{0.01};
+        // Compute joint trajectory time and interpolation parameterization
+        if (!joint_trajectory_primary_.has_value() && !joint_trajectory_secondary_.has_value())
+        {
+            LOG_WARN << "No joint trajectory available for time parameterization.";
+        }
+        if (joint_trajectory_primary_.has_value())
+        {
+            std::vector<double> time_diff;  // Vector of dt of joint trajectory
+            parameterizeJointTrajectory<ndof_left_>(joint_trajectory_primary_, time_diff, &time_primary_);
+            LOG_INFO << "Primary arm planned joint trajectory: \n" << joint_trajectory_primary_.ToString();
+            trajectory_spline_primary_.fromJointTrajectory(joint_trajectory_primary_, time_diff);
+        }
+        if (joint_trajectory_secondary_.has_value())
+        {
+            std::vector<double> time_diff;
+            parameterizeJointTrajectory<ndof_right_>(joint_trajectory_secondary_, time_diff, &time_secondary_);
+            LOG_INFO << "Secondary arm planned joint trajectory: \n" << joint_trajectory_secondary_.ToString();
+            trajectory_spline_secondary_.fromJointTrajectory(joint_trajectory_secondary_, time_diff);
+        }
+        // Total time to execute both arms' joint trajectory
+        total_time_ = std::max(time_primary_, time_secondary_);
 
-        // JointTrajectory<ndof_left_> joint_trajectory_primary_;
-        // JointTrajectory<ndof_right_> joint_trajectory_secondary_;
+        return true;
+    }
 
-        // Joint trajectory interpolation
-        TrajectorySpline<ndof_left_> trajectory_spline_primary_;
-        TrajectorySpline<ndof_right_> trajectory_spline_secondary_;
-        // EE pose trajectory interpolation
-        PoseTrajectory pose_trajectory_primary_;
-        PoseTrajectory pose_trajectory_secondary_;
+    void ClearCache()
+    {
+        current_phase_ = 0.0;
+        total_time_ = 0.0;
+        time_primary_ = 0.0;
+        time_secondary_ = 0.0;
+        refine_cmd = false;
+        pose_trajectory_primary_.clear();
+        pose_trajectory_secondary_.clear();
+        trajectory_spline_primary_.segments.clear();
+        trajectory_spline_secondary_.segments.clear();
+    }
 
-        bool refine_cmd{false}; // Refine joint command to reduce error from given trajectory
-        double current_phase_;  // Scaled time of 0~1
-        double time_primary_, time_secondary_, total_time_;
+   protected:
+    const bool wait_trajectory_upon_finish_;
+    const double controller_dt_{0.01};
 
-        std::shared_ptr<kinematics::YaikKinematics> kine_ptr_primary_;
-        std::shared_ptr<kinematics::YaikKinematics> kine_ptr_secondary_;
-    };
+    // JointTrajectory<ndof_left_> joint_trajectory_primary_;
+    // JointTrajectory<ndof_right_> joint_trajectory_secondary_;
 
-} // namespace robot_server_lib
+    // Joint trajectory interpolation
+    TrajectorySpline<ndof_left_> trajectory_spline_primary_;
+    TrajectorySpline<ndof_right_> trajectory_spline_secondary_;
+    // EE pose trajectory interpolation
+    PoseTrajectory pose_trajectory_primary_;
+    PoseTrajectory pose_trajectory_secondary_;
+
+    bool refine_cmd{false};  // Refine joint command to reduce error from given trajectory
+    double current_phase_;   // Scaled time of 0~1
+    double time_primary_, time_secondary_, total_time_;
+
+    std::shared_ptr<kinematics::YaikKinematics> kine_ptr_primary_;
+    std::shared_ptr<kinematics::YaikKinematics> kine_ptr_secondary_;
+};
+
+}  // namespace robot_server_lib
