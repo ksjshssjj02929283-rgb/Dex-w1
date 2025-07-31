@@ -49,8 +49,8 @@ class RobotClientRos2(Node, RobotClient):
     def is_connected(self, timeout_sec: float = 0.5):
         start_time = time.time()
         while time.time() - start_time < timeout_sec:
-            rclpy.spin_once(self, timeout_sec = 0.1)
-            if self.status == Status.Idle:
+            rclpy.spin_once(self, timeout_sec = 0.01)
+            if self.is_connected:
                 return True
         return False
 
@@ -282,6 +282,7 @@ class RobotClientRos2(Node, RobotClient):
     ----------------------------------------------------------------------------"""
 
     def _subscriber_robot_server_state_callback(self, msg):
+        self.is_connected = True
         state = json.loads(msg.data)
 
         if "status" in state:
