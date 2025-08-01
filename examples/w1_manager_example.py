@@ -13,16 +13,15 @@ from dexe_robot_client.w1 import W1Manager
 
 
 def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
-    if is_sim:
-        w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
-                                W1Version.V2, 
-                                None,
-                                is_sim = is_sim)
+    if move_with_ee:
+        end_effector_type = EndEffectorType.BRAINCO_HAND
     else:
-        w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
-                                W1Version.V2, 
-                                EndEffectorType.BRAINCO_HAND,
-                                is_sim = is_sim)
+        end_effector_type = None
+
+    w1_manager = W1Manager(is_sim = is_sim,
+                            arm_type=W1ArmType.ANTHROPOMORPHIC, 
+                            w1_version=W1Version.V2, 
+                            end_effector_type = end_effector_type)
     
     w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
                                       5, -45, -5, -90, 0, -15, 0,
@@ -59,8 +58,6 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
                           [0., [0., 0.5, 0.5, 0.5, 0.5, 0.5], 0.5],
                           [0., [0., 0., 0., 0., 0., 0.], 0.]]
 
-
-
     if move_with_ee:
         w1_manager.move_joint_full_body(waypoints_dict = {
                                                         "torso": torso_waypoints,
@@ -84,16 +81,15 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
 
 
 def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
-    if is_sim:
-        w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
-                                W1Version.V2, 
-                                None,
-                                is_sim = is_sim)
+    if move_with_ee:
+        end_effector_type = EndEffectorType.BRAINCO_HAND
     else:
-        w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
-                                W1Version.V2, 
-                                EndEffectorType.BRAINCO_HAND,
-                                is_sim = is_sim)
+        end_effector_type = None
+    
+    w1_manager = W1Manager(is_sim = is_sim,
+                            arm_type=W1ArmType.ANTHROPOMORPHIC, 
+                            w1_version=W1Version.V2, 
+                            end_effector_type = end_effector_type)
     
     w1_manager.set_tcp("left_arm", np.eye(4))
     w1_manager.set_tcp("right_arm", np.eye(4))

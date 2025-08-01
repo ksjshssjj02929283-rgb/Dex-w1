@@ -4,6 +4,8 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
+import rclpy
+
 from dexe_robot_client.robot_client import RobotClientRos2 as RobotClient
 from dexe_robot_client.robot_client import MotionGroup
 
@@ -16,6 +18,7 @@ pose_industrial_right0 = [0.3, 0.363727, 0.262795, 0.628296, -0.599072, 0.440151
 
 def main(args=None):
     "示例: 仿真client, 如需控制真实机器人则将is_sim设置为False"
+    rclpy.init()
     client = RobotClient(is_sim=True)
 
     print(f"\nCurrent robot status: {client.get_info().status}")
@@ -56,7 +59,10 @@ def main(args=None):
     client.set_tcp([0, 0, 0.0, 1, 0, 0, 0])
     client.clear_error()
     client.wait_request_finish()
-    client.close_client()
+
+    # ros节点安全析构
+    client.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == "__main__":
