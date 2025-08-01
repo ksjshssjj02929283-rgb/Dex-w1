@@ -27,14 +27,13 @@ class RobotClientRos2(Node, RobotClient):
 
     def __init__(self, is_sim: bool = False, timeout_sec: float = 3.0):
         self.logger = get_logger()
-        if not rclpy.ok():
-            rclpy.init()
         if is_sim:
             self._node_name = "robot_client_sim"
         else:
             self._node_name = "robot_client_real"
         Node.__init__(self, self._node_name)
         RobotClient.__init__(self, is_sim=is_sim)
+        self._is_connected = False
         self._init_subscriber()
         self._init_publisher()
         self._init_service_client()
@@ -50,7 +49,7 @@ class RobotClientRos2(Node, RobotClient):
         start_time = time.time()
         while time.time() - start_time < timeout_sec:
             rclpy.spin_once(self, timeout_sec = 0.01)
-            if self.is_connected:
+            if self._is_connected:
                 return True
         return False
 
@@ -192,7 +191,7 @@ class RobotClientRos2(Node, RobotClient):
         return True
 
     def close_client(self):
-        rclpy.shutdown()
+        # rclpy.shutdown()
         self.logger.info("robot client is closed")
 
     """ ---------------------------------------------------------------------------
@@ -282,7 +281,7 @@ class RobotClientRos2(Node, RobotClient):
     ----------------------------------------------------------------------------"""
 
     def _subscriber_robot_server_state_callback(self, msg):
-        self.is_connected = True
+        self._is_connected = True
         state = json.loads(msg.data)
 
         if "status" in state:

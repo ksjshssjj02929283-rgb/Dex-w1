@@ -6,12 +6,15 @@
 
 import numpy as np
 from copy import deepcopy
+import rclpy
 from std_msgs.msg import Float64, Float64MultiArray
 from .end_effector_client import EndEffectorClient
+from dexe_robot_client.common import get_logger
 
 
 class PGCGripperClient(EndEffectorClient):
     def __init__(self, is_left: bool):
+        self.logger = get_logger()
         if is_left:
             name = "left"
         else:
@@ -76,20 +79,3 @@ class LeftPGCGripperClient(PGCGripperClient):
 class RightPGCGripperClient(PGCGripperClient):
     def __init__(self):
         super().__init__(is_left=False)
-
-
-
-if __name__ == "__main__":
-    import rclpy
-    from IPython import embed
-
-    rclpy.init()
-    executor = rclpy.executors.MultiThreadedExecutor()
-    left_gripper_node = LeftPGCGripperClient()
-    right_gripper_node = RightPGCGripperClient()
-
-    embed()
-
-    left_gripper_node.destroy_node()
-    right_gripper_node.destroy_node()
-    rclpy.shutdown()

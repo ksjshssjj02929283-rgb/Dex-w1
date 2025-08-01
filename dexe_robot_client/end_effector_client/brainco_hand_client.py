@@ -6,12 +6,15 @@
 
 import numpy as np
 from copy import deepcopy
+import rclpy
 from std_msgs.msg import Float64MultiArray
 from .end_effector_client import EndEffectorClient
+from dexe_robot_client.common import get_logger
 
 
 class BrainCoHandClient(EndEffectorClient):
     def __init__(self, is_left: bool):
+        self.logger = get_logger()
         if is_left:
             name = "left"
         else:
@@ -61,20 +64,3 @@ class LeftBrainCoHadnClient(BrainCoHandClient):
 class RightBrainCoHadnClient(BrainCoHandClient):
     def __init__(self):
         super().__init__(is_left=False)
-
-
-
-if __name__ == "__main__":
-    import rclpy
-    from IPython import embed
-
-    rclpy.init()
-    executor = rclpy.executors.MultiThreadedExecutor()
-    left_hand_node = LeftBrainCoHadnClient()
-    right_hand_node = RightBrainCoHadnClient()
-
-    embed()
-
-    left_hand_node.destroy_node()
-    right_hand_node.destroy_node()
-    rclpy.shutdown()
