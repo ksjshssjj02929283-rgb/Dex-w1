@@ -1417,7 +1417,7 @@ struct W1RightArmIndustrial_IkSolver : public IkSolverBase<7>
     }
 
     template <typename JointType>
-    bool withinJointLimit(const JointType &q)
+    static bool withinJointLimit(const JointType &q)
     {
         for (int i = 0; i < 7; ++i)
         {

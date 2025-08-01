@@ -160,7 +160,7 @@ class YaikKinematics : public KinematicsBase
         return false;
     }
 
-    // Numerical ik
+    // 数值解，不管是否project_ok都会改变q_projected
     bool ProjectToPose(const Jps &q_in, const Matrix4d &T_ee, Jps &q_projected)
     {
         bool project_ok = ik_solver_ptr->projectToPose(q_in, T_ee, q_projected);
