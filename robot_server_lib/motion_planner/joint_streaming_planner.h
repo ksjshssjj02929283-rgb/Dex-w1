@@ -20,7 +20,7 @@ class JointStreamingPlanner : public MotionPlannerBase
     }
 
     ~JointStreamingPlanner() override = default;
-
+    
     ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &output_joint_cmd) override
     {
         // 尝试从缓存中获取最新的StreamingCommand
@@ -62,13 +62,25 @@ class JointStreamingPlanner : public MotionPlannerBase
         MapArmToWholeBody(latest_cmd.command, command_ndof);
         if (update_ruckig)
         {
+            double time_interval = 0.0; // 默认值
+            if (runtime_.previous_cmd.has_value())
+            {
+                time_interval = (latest_cmd.received_time.time_in_ns() - runtime_.previous_cmd.value().received_time.time_in_ns()) * 1e-9;
+            }
             for (auto i = 0; i < ndof_robot; i++)
             {
                 runtime_.input.current_position[i] = measurement.q_desired_pre[i];
                 runtime_.input.current_velocity[i] = measurement.velocity[i];
                 runtime_.input.current_acceleration[i] = runtime_.output.new_acceleration[i];
                 runtime_.input.target_position[i] = command_ndof[i];
-                runtime_.input.target_velocity[i] = 0.0;
+                if (runtime_.previous_cmd.has_value() && time_interval > 1e-3)
+                {
+                    runtime_.input.target_velocity[i] = (command_ndof[i] - runtime_.previous_cmd.value().command[i]) / time_interval;
+                }
+                else
+                {
+                    runtime_.input.target_velocity[i] = 0.0;
+                }
                 runtime_.input.target_acceleration[i] = 0.0;
             }
         }

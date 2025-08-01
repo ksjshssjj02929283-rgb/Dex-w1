@@ -141,6 +141,7 @@ struct StreamingCommand
     Int64 request_id{-1};
     bool streaming_finished{false};
     Eigen::VectorXd command;  // 用于存储流式数据
+    TimePointSystem received_time{};
 };
 
 struct TimeMetaInfo
