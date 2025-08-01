@@ -9,18 +9,12 @@ class JointStreamingPlanner : public MotionPlannerBase
 {
    public:
     JointStreamingPlanner(RobotModel robot_model, std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer, double controller_dt)
-        : MotionPlannerBase(robot_model), streaming_buffer_(streaming_buffer), controller_dt_(controller_dt), ruckig_otg_(controller_dt)
+        : MotionPlannerBase(robot_model), streaming_buffer_(streaming_buffer), controller_dt_(controller_dt)
     {
-        for (auto i = 0; i < ndof_robot; i++)
-        {
-            runtime_.input.max_velocity[i] = streaming_bounds_.max_velocity;
-            runtime_.input.max_acceleration[i] = streaming_bounds_.max_acceleration;
-            runtime_.input.max_jerk[i] = streaming_bounds_.max_jerk;
-        }
     }
 
     ~JointStreamingPlanner() override = default;
-    
+
     ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &output_joint_cmd) override
     {
         // 尝试从缓存中获取最新的StreamingCommand
@@ -30,6 +24,10 @@ class JointStreamingPlanner : public MotionPlannerBase
             bool received = streaming_buffer_->PeekLatest(&cmd_buffer);
             if (received && cmd_buffer.request_id == runtime_.request_id)
             {
+                JointPositionDof target_ndof = measurement.q_desired_pre;
+                // cmd_buffer按照joints_map映射到ndof
+                MapArmToWholeBody(cmd_buffer.command, target_ndof);
+                cmd_buffer.command = target_ndof;
                 runtime_.latest_cmd.emplace(cmd_buffer);
             }
         }
@@ -48,21 +46,9 @@ class JointStreamingPlanner : public MotionPlannerBase
         if (latest_cmd.streaming_finished)
             runtime_.streaming_finished = true;
 
-        bool update_ruckig = true;
-        if (runtime_.previous_cmd.has_value())
-        {
-            auto norm_diff = (runtime_.previous_cmd.value().command - latest_cmd.command).norm();
-            if (norm_diff < PositionThreshold)
-            {
-                update_ruckig = false;
-            }
-        }
-        JointPositionDof command_ndof = measurement.q_desired_pre;
-        // latest_cmd.command按照joints_map映射到ndof_command
-        MapArmToWholeBody(latest_cmd.command, command_ndof);
         for (auto i = 0; i < ndof_robot; i++)
         {
-            output_joint_cmd.position[i] = command_ndof[i];
+            output_joint_cmd.position[i] = latest_cmd.command[i];
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
@@ -73,62 +59,6 @@ class JointStreamingPlanner : public MotionPlannerBase
         }
         const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
         return robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
-    
-        // if (update_ruckig)
-        // {
-        //     double time_interval = 0.0; // 默认值
-        //     if (runtime_.previous_cmd.has_value())
-        //     {
-        //         time_interval = (latest_cmd.received_time.time_in_ns() - runtime_.previous_cmd.value().received_time.time_in_ns()) * 1e-9;
-        //     }
-        //     for (auto i = 0; i < ndof_robot; i++)
-        //     {
-        //         runtime_.input.current_position[i] = measurement.q_desired_pre[i];
-        //         runtime_.input.current_velocity[i] = measurement.velocity[i];
-        //         runtime_.input.current_acceleration[i] = runtime_.output.new_acceleration[i];
-        //         runtime_.input.target_position[i] = command_ndof[i];
-        //         if (runtime_.previous_cmd.has_value() && !runtime_.streaming_finished && time_interval > 1e-3)
-        //         {
-        //             runtime_.input.target_velocity[i] = (command_ndof[i] - runtime_.previous_cmd.value().command[i]) / time_interval;
-        //         }
-        //         else
-        //         {
-        //             runtime_.input.target_velocity[i] = 0.0;
-        //         }
-        //         runtime_.input.target_acceleration[i] = 0.0;
-        //     }
-        // }
-        // runtime_.previous_cmd = latest_cmd;
-
-        // auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
-        // if (status == ruckig::Finished)
-        // {
-        //     for (auto i = 0; i < ndof_robot; i++)
-        //     {
-        //         output_joint_cmd.position[i] = runtime_.output.new_position[i];
-        //         output_joint_cmd.velocity[i] = 0.0;
-        //         output_joint_cmd.acceleration[i] = 0.0;
-        //         output_joint_cmd.torque_feedforward[i] = 0.0;
-        //     }
-        //     return runtime_.streaming_finished ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
-        // }
-        // if (status == ruckig::Working)
-        // {
-        //     for (auto i = 0; i < ndof_robot; i++)
-        //     {
-        //         output_joint_cmd.position[i] = runtime_.output.new_position[i];
-        //         output_joint_cmd.velocity[i] = runtime_.output.new_velocity[i];
-        //         output_joint_cmd.acceleration[i] = runtime_.output.new_acceleration[i];
-        //         output_joint_cmd.torque_feedforward[i] = 0;
-        //     }
-
-        //     runtime_.output.pass_to_input(runtime_.input);
-        //     return ComputeCommandStatus::TaskOngoing;
-        // }
-        // else
-        // {
-        //     return ComputeCommandStatus::Error;
-        // }
     }
 
     bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override
@@ -141,7 +71,6 @@ class JointStreamingPlanner : public MotionPlannerBase
         runtime_.request_id = request.request_id;
         runtime_.streaming_finished = false;
         runtime_.latest_cmd = std::nullopt;
-        runtime_.previous_cmd = std::nullopt;
 
         return true;
     }
@@ -149,18 +78,12 @@ class JointStreamingPlanner : public MotionPlannerBase
    protected:
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer_;
     const double controller_dt_{0.01};
-    ruckig::Ruckig<ndof_robot> ruckig_otg_;
 
-    // cache
     struct
     {
         Int64 request_id{-1};
         bool streaming_finished{false};
         std::optional<StreamingCommand> latest_cmd;
-        std::optional<StreamingCommand> previous_cmd;
-
-        ruckig::InputParameter<ndof_robot> input;
-        ruckig::OutputParameter<ndof_robot> output;
     } runtime_;
 };
 
