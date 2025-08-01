@@ -434,19 +434,21 @@ PlannerRequest Ros2Node::ParseSetPropertyRequest(const std::shared_ptr<robot_ser
 
 StreamingCommand Ros2Node::ParseStreamingCommand(const std::shared_ptr<robot_server_interfaces::msg::StreamingCommand> msg)
 {
-    StreamingCommand steaming_command;
+    StreamingCommand streaming_command;
 
-    steaming_command.request_id = msg->request_id;
-    steaming_command.streaming_finished = msg->streaming_finished;
+    streaming_command.request_id = msg->request_id;
+    streaming_command.streaming_finished = msg->streaming_finished;
+    streaming_command.received_time = TimePointSystem::Now();
+
     if (msg->position.size() > 0)
     {
-        steaming_command.command.resize(msg->position.size());
+        streaming_command.command.resize(msg->position.size());
         for (size_t i = 0; i < msg->position.size(); ++i)
         {
-            steaming_command.command[i] = msg->position[i];
+            streaming_command.command[i] = msg->position[i];
         }
     }
-    return steaming_command;
+    return streaming_command;
 }
 
 // 解析MoveRobot动作的命令
