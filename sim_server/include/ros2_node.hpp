@@ -16,6 +16,7 @@ class Ros2Node : public rclcpp::Node
 {
    public:
     Ros2Node();
+    ~Ros2Node();
 
    private:
     void InitSimulation();

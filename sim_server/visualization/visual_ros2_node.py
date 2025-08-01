@@ -1,11 +1,11 @@
 import numpy as np
-import meshcat
 import pinocchio as pin
 from pinocchio.visualize import MeshcatVisualizer
 from ament_index_python.packages import get_package_share_directory
 from pathlib import Path
 import rclpy
 import json
+import signal
 from rclpy.node import Node
 from std_msgs.msg import String
 
@@ -66,9 +66,24 @@ class VisualRos2Node(Node):
 def main(args=None):
     rclpy.init(args=args)
     visual_node = VisualRos2Node()
-    rclpy.spin(visual_node)
-    rclpy.shutdown()
+    shutdown_requested = False
+    shutdown_called = False
 
+    def signal_handler(sig, frame):
+        nonlocal shutdown_requested
+        shutdown_requested = True
+
+    signal.signal(signal.SIGINT, signal_handler)
+
+    try:
+        while not shutdown_requested and rclpy.ok():
+            rclpy.spin_once(visual_node, timeout_sec=0.1)
+    finally:
+        visual_node.destroy_node()
+        if not shutdown_called and rclpy.ok():
+            rclpy.shutdown()
+            shutdown_called = True
+        print("VisualRos2Node closed")
 
 if __name__ == "__main__":
     main()
