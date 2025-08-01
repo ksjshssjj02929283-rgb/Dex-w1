@@ -10,6 +10,22 @@ Ros2Node::Ros2Node() : Node("sim_server")
     LOG_INFO << "Initialized successfully.";
 }
 
+Ros2Node::~Ros2Node()
+{
+    if (publish_thread_.joinable())
+    {
+        publish_thread_.join();
+    }
+    if (simulation_thread_.joinable())
+    {
+        simulation_thread_.join();
+    }
+    if (manager_thread_.joinable())
+    {
+        manager_thread_.join();
+    }
+}
+
 void Ros2Node::InitRobotServer()
 {
     std::filesystem::create_directories("log/");
