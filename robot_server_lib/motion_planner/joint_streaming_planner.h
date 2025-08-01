@@ -60,61 +60,75 @@ class JointStreamingPlanner : public MotionPlannerBase
         JointPositionDof command_ndof = measurement.q_desired_pre;
         // latest_cmd.command按照joints_map映射到ndof_command
         MapArmToWholeBody(latest_cmd.command, command_ndof);
-        if (update_ruckig)
+        for (auto i = 0; i < ndof_robot; i++)
         {
-            double time_interval = 0.0; // 默认值
-            if (runtime_.previous_cmd.has_value())
-            {
-                time_interval = (latest_cmd.received_time.time_in_ns() - runtime_.previous_cmd.value().received_time.time_in_ns()) * 1e-9;
-            }
-            for (auto i = 0; i < ndof_robot; i++)
-            {
-                runtime_.input.current_position[i] = measurement.q_desired_pre[i];
-                runtime_.input.current_velocity[i] = measurement.velocity[i];
-                runtime_.input.current_acceleration[i] = runtime_.output.new_acceleration[i];
-                runtime_.input.target_position[i] = command_ndof[i];
-                if (runtime_.previous_cmd.has_value() && time_interval > 1e-3)
-                {
-                    runtime_.input.target_velocity[i] = (command_ndof[i] - runtime_.previous_cmd.value().command[i]) / time_interval;
-                }
-                else
-                {
-                    runtime_.input.target_velocity[i] = 0.0;
-                }
-                runtime_.input.target_acceleration[i] = 0.0;
-            }
+            output_joint_cmd.position[i] = command_ndof[i];
+            output_joint_cmd.velocity[i] = 0.0;
+            output_joint_cmd.acceleration[i] = 0.0;
+            output_joint_cmd.torque_feedforward[i] = 0.0;
         }
-        runtime_.previous_cmd = latest_cmd;
-
-        auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
-        if (status == ruckig::Finished)
+        if (!runtime_.streaming_finished)
         {
-            for (auto i = 0; i < ndof_robot; i++)
-            {
-                output_joint_cmd.position[i] = runtime_.output.new_position[i];
-                output_joint_cmd.velocity[i] = 0.0;
-                output_joint_cmd.acceleration[i] = 0.0;
-                output_joint_cmd.torque_feedforward[i] = 0.0;
-            }
-            return runtime_.streaming_finished ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
-        }
-        if (status == ruckig::Working)
-        {
-            for (auto i = 0; i < ndof_robot; i++)
-            {
-                output_joint_cmd.position[i] = runtime_.output.new_position[i];
-                output_joint_cmd.velocity[i] = runtime_.output.new_velocity[i];
-                output_joint_cmd.acceleration[i] = runtime_.output.new_acceleration[i];
-                output_joint_cmd.torque_feedforward[i] = 0;
-            }
-
-            runtime_.output.pass_to_input(runtime_.input);
             return ComputeCommandStatus::TaskOngoing;
         }
-        else
-        {
-            return ComputeCommandStatus::Error;
-        }
+        const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
+        return robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
+    
+        // if (update_ruckig)
+        // {
+        //     double time_interval = 0.0; // 默认值
+        //     if (runtime_.previous_cmd.has_value())
+        //     {
+        //         time_interval = (latest_cmd.received_time.time_in_ns() - runtime_.previous_cmd.value().received_time.time_in_ns()) * 1e-9;
+        //     }
+        //     for (auto i = 0; i < ndof_robot; i++)
+        //     {
+        //         runtime_.input.current_position[i] = measurement.q_desired_pre[i];
+        //         runtime_.input.current_velocity[i] = measurement.velocity[i];
+        //         runtime_.input.current_acceleration[i] = runtime_.output.new_acceleration[i];
+        //         runtime_.input.target_position[i] = command_ndof[i];
+        //         if (runtime_.previous_cmd.has_value() && !runtime_.streaming_finished && time_interval > 1e-3)
+        //         {
+        //             runtime_.input.target_velocity[i] = (command_ndof[i] - runtime_.previous_cmd.value().command[i]) / time_interval;
+        //         }
+        //         else
+        //         {
+        //             runtime_.input.target_velocity[i] = 0.0;
+        //         }
+        //         runtime_.input.target_acceleration[i] = 0.0;
+        //     }
+        // }
+        // runtime_.previous_cmd = latest_cmd;
+
+        // auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
+        // if (status == ruckig::Finished)
+        // {
+        //     for (auto i = 0; i < ndof_robot; i++)
+        //     {
+        //         output_joint_cmd.position[i] = runtime_.output.new_position[i];
+        //         output_joint_cmd.velocity[i] = 0.0;
+        //         output_joint_cmd.acceleration[i] = 0.0;
+        //         output_joint_cmd.torque_feedforward[i] = 0.0;
+        //     }
+        //     return runtime_.streaming_finished ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
+        // }
+        // if (status == ruckig::Working)
+        // {
+        //     for (auto i = 0; i < ndof_robot; i++)
+        //     {
+        //         output_joint_cmd.position[i] = runtime_.output.new_position[i];
+        //         output_joint_cmd.velocity[i] = runtime_.output.new_velocity[i];
+        //         output_joint_cmd.acceleration[i] = runtime_.output.new_acceleration[i];
+        //         output_joint_cmd.torque_feedforward[i] = 0;
+        //     }
+
+        //     runtime_.output.pass_to_input(runtime_.input);
+        //     return ComputeCommandStatus::TaskOngoing;
+        // }
+        // else
+        // {
+        //     return ComputeCommandStatus::Error;
+        // }
     }
 
     bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override
