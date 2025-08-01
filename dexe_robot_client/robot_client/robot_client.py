@@ -15,7 +15,7 @@ class RobotClient(ABC):
         self.latest_finished_id = -1
         self.latest_errordrop_id = -1
 
-        self.status = Status.Init
+        self.status = None
         self.joint_position = list[float]()
         self.ee_pose = list[float]()
 

@@ -33,10 +33,10 @@ def _divide_waypoints(three_waypoints: np.ndarray,
                      has_start: bool = False,
                      has_end: bool = False) -> tuple[bool, list[list]]:
     if len(three_waypoints) != 3:
-        get_logger().error(f"Num of waypoints must = 3")
+        get_logger().error(f"Num of waypoints must = 3.")
         return False, None
     if blend_tolerance < SMALL_NUM:
-        get_logger().error(f"blend_tolerance must > 0")
+        get_logger().error(f"blend_tolerance must > 0.")
         return False, None
 
     p0 = three_waypoints[0]
@@ -46,7 +46,7 @@ def _divide_waypoints(three_waypoints: np.ndarray,
     len1 = np.linalg.norm(p1 - p0)
     len2 = np.linalg.norm(p2 - p1)
     if len1 < 2*SMALL_NUM or len2 < 2*SMALL_NUM:
-        get_logger().error(f"len ~= 0")
+        get_logger().error(f"len ~= 0.")
         return False, None
 
     blend1 = blend_tolerance
@@ -81,11 +81,11 @@ def interpolate_cartesian_path(waypoint_list: list[np.ndarray],
     # 输入参数检查
     num_raw_waypoints = len(waypoint_list)
     if num_raw_waypoints < 2:
-        get_logger().error(f"Number of waypoints must >= 2 rather than {num_raw_waypoints}")
+        get_logger().error(f"Number of waypoints must >= 2 rather than {num_raw_waypoints}.")
         return False, None
     
     if not all(isinstance(item, np.ndarray) and item.shape == (4,4) for item in waypoint_list):
-        get_logger().error(f"Each waypoints should be 4x4 np.ndarray")
+        get_logger().error(f"Each waypoints should be 4x4 np.ndarray.")
         return False, None
     
     # 对重复的waypoint合并
@@ -102,8 +102,8 @@ def interpolate_cartesian_path(waypoint_list: list[np.ndarray],
             # 检查SO3距离
             temp = processed_waypoint_list[-1][:3,:3].T @ waypoint[:3,:3]
             SO3_dist = np.sum(R.from_matrix(temp).as_euler(seq = "xyz", degrees = False))
-            if SO3_dist > SMALL_NUM:
-                get_logger().error(f"Repeat waypoints with the same R3 and different SO3 are not supported")
+            if SO3_dist > np.pi/2:
+                get_logger().error(f"Repeat waypoints with the same R3 and different SO3 are not supported.")
                 return False, None
 
     num_waypoints = len(processed_waypoint_list)

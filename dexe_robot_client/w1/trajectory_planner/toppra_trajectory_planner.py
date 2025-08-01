@@ -18,9 +18,9 @@ class ToppraTrajectoryPlanner:
         self.vel_limits = np.array([[-v, v] for v in vel_limits])
         self.acc_limits = np.array([[-a, a] for a in acc_limits])
         if self.vel_limits.shape[0] != self.dofs:
-            raise ValueError(f"Vel limits dimension mismatch, {self.vel_limits.shape[0]} != {self.dofs}")
+            raise ValueError(f"Vel limits dimension mismatch, {self.vel_limits.shape[0]} != {self.dofs}.")
         if self.acc_limits.shape[0] != self.dofs:
-            raise ValueError(f"Acc limits dimension mismatch, {self.acc_limits.shape[0]} != {self.dofs}")
+            raise ValueError(f"Acc limits dimension mismatch, {self.acc_limits.shape[0]} != {self.dofs}.")
 
     def plan(self, 
              qpos_array: np.ndarray, 
@@ -28,7 +28,7 @@ class ToppraTrajectoryPlanner:
              time_step: float = 0.01) -> tuple[bool, np.ndarray, np.ndarray, np.ndarray, float]:
         if qpos_array.shape[0] == 2 and \
             np.allclose(qpos_array[0], qpos_array[1], atol=np.deg2rad(0.1)):
-            self.logger.info(f"Only two same waypoints, do not plan")
+            self.logger.info(f"Only two same waypoints, do not plan.")
             return (True, 
                     qpos_array, 
                     np.array([[0.]*self.dofs, [0.]*self.dofs]), 
@@ -42,7 +42,7 @@ class ToppraTrajectoryPlanner:
         # Set constraints
         if qvel_limits_array is not None:
             if qvel_limits_array.shape != qpos_array.shape:
-                self.logger.error(f"qpos and qvel_limits dimension mismatch, {qvel_limits_array.shape} != {qpos_array.shape}")
+                self.logger.error(f"qpos and qvel_limits dimension mismatch, {qvel_limits_array.shape} != {qpos_array.shape}.")
                 return False, None, None, None, None
             
             qvel_bound_list = []
@@ -73,7 +73,7 @@ class ToppraTrajectoryPlanner:
         # Compute parameterized trajectory
         jnt_traj = instance.compute_trajectory()
         if jnt_traj is None:
-            self.logger.error(f"Unable to find feasible trajectory")
+            self.logger.error(f"Unable to find feasible trajectory.")
             return False, None, None, None, None
 
         # Sample trajectory points
@@ -95,7 +95,7 @@ class ToppraTrajectoryPlanner:
                            (acc_array <= _acc_limits[:, 1]))
         
         if not acc_valid:
-            self.logger.error(f"Failed to plan trajectory that satisfied acceleration constraint")
+            self.logger.error(f"Failed to plan trajectory that satisfied acceleration constraint.")
             acc_exceed_info = []
             min_acc = np.min(acc_array, axis=0)
             max_acc = np.max(acc_array, axis=0)
@@ -108,7 +108,7 @@ class ToppraTrajectoryPlanner:
                     if temp > exceed_ratio:
                         exceed_ratio = temp
                 acc_exceed_info.append(exceed_ratio * 100)
-            self.logger.info(f"Acc exceeding limit result: {acc_exceed_info} %")
+            self.logger.info(f"Acc exceeding limit result: {acc_exceed_info} %.")
 
         return acc_valid
 

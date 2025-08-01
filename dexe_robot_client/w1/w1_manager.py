@@ -9,7 +9,9 @@ np.set_printoptions(precision=4, suppress=True)
 import time, threading
 import pathlib, json
 from copy import deepcopy
+import atexit
 import rclpy
+# from rclpy.executors import MultiThreadedExecutor
 
 from rlia.kit.drive_controllers import W1DriveController
 from rlia.kit.drive_controllers.w1_drive_controller import W1Version, W1ArmType
@@ -19,7 +21,7 @@ from dexe_robot_client.end_effector_client import (EndEffectorType,
                           LeftBrainCoHadnClient, RightBrainCoHadnClient, 
                           LeftPGCGripperClient, RightPGCGripperClient)
 from dexe_robot_client.robot_client import RobotClientRos2 as RobotClient
-from dexe_robot_client.robot_client import MotionGroup
+from dexe_robot_client.robot_client import MotionGroup, Status
 
 from dexe_robot_client.w1 import TorsoKinmatics, ToppraTrajectoryPlanner, W1ComponentManager
 from dexe_robot_client.w1 import interpolate_cartesian_path
@@ -37,10 +39,10 @@ class W1Manager:
         return cls._instance
 
     def __init__(self, 
+                is_sim: bool,
                 arm_type: W1ArmType, 
                 w1_version: W1Version = W1Version.V2,
-                end_effector_type: EndEffectorType = None,
-                is_sim: bool = True):
+                end_effector_type: EndEffectorType = None):
         self.logger = get_logger()
 
         self.TIME_STEP = 0.01 # 100Hz
@@ -56,14 +58,14 @@ class W1Manager:
         self.left_arm_ee_client = None
         self.right_arm_ee_client = None
 
-        self._is_sim = is_sim
+        self._is_sim = None
         self._arm_type = arm_type
         self._w1_version = w1_version
         self._end_effector_type = end_effector_type
 
-        self._init_clients()
+        self._init_clients(is_sim)
         self._init_kine_solver()
-        self.set_use_sim(is_sim)
+        self.set_sim_mode(is_sim)
 
         self._home_qpos = np.deg2rad([45, -90, 45, 0, 0, 0,
                                       5, -45, -5, -90, 0, -15, 0,
@@ -74,16 +76,22 @@ class W1Manager:
         self._stop_move_flag = False
         self._stop_move_lock = threading.Lock()
 
+        # 在主线程中正常退出时自动调用
+        atexit.register(self._destroy_ros2_clients)
 
-    def _init_clients(self):
+
+    def _init_clients(self, is_sim: bool):
         try:
             if not rclpy.ok():
                 rclpy.init()
 
-            if self._is_sim:
-                self._robot_client_sim = RobotClient(is_sim = True)
-            else:
+            self._robot_client_sim = RobotClient(is_sim = True)
+            if not is_sim:
+                # 按需构造，real_server未必启动
                 self._robot_client_real = RobotClient(is_sim = False)
+            # 初始化先进入仿真模式，sim_server是必定会启动
+            self._is_sim = True
+            self.robot_client = self._robot_client_sim
 
             if self._end_effector_type == EndEffectorType.BRAINCO_HAND:
                 self.left_arm_ee_client = LeftBrainCoHadnClient()
@@ -94,18 +102,28 @@ class W1Manager:
                 self.right_arm_ee_client = RightPGCGripperClient()
                 self.arm_ee_dofs = 1
             elif self._end_effector_type is None:
-                self.logger.info(f"No movable end effector")
+                self.logger.info(f"No movable end effector.")
             else:
-                raise ValueError(f"Unsupport end effector type: {self._end_effector_type}")
+                raise ValueError(f"Unsupport end effector type: {self._end_effector_type}.")
+            
+            # FIXME
+            # self._executor = MultiThreadedExecutor()
+            # for node in [self._robot_client_sim, self._robot_client_real, 
+            #              self.left_arm_ee_client, self.right_arm_ee_client]:
+            #     if node is not None:
+            #         self._executor.add_node(node)
+            
+            # self._node_thread = threading.Thread(target=self._executor.spin, daemon=True)
+            # self._node_thread.start()
 
         except Exception as e:
-            self.logger.error(f"ROS2 node create failed: {str(e)}")
-            self._destroy_clients()
-            raise RuntimeError("Failed to initialize clients") from e
+            self.logger.error(f"Ros2 node create failed: {str(e)}.")
+            self._destroy_ros2_clients()
+            raise RuntimeError("Failed to initialize clients.") from e
         
-        self.logger.info("Initialize ROS2 client")
+        self.logger.info("Initialize Ros2 client.")
 
-    def _destroy_clients(self):
+    def _destroy_ros2_clients(self):
         try:
             if self._robot_client_sim is not None:
                 self._robot_client_sim.destroy_node()
@@ -116,13 +134,14 @@ class W1Manager:
             if self.right_arm_ee_client is not None:
                 self.right_arm_ee_client.destroy_node()
             rclpy.shutdown()
+            self.logger.debug(f"Ros2 node destroyed")
         except Exception as e:
-            self.logger.warning(f"ROS2 node destory failed: {str(e)}")
+            self.logger.warning(f"Ros2 node destroy failed: {str(e)}.")
 
     def _init_kine_solver(self):
         # TODO: params read from json
         if self._w1_version != W1Version.V2:
-            raise ValueError(f"W1Version {self._w1_version} are not support")
+            raise ValueError(f"W1Version {self._w1_version} are not support.")
         
         # fmt: off
         self.torso_ub = np.deg2rad([75., 5., 90., 90.])
@@ -144,7 +163,7 @@ class W1Manager:
             self.right_arm_ub = np.deg2rad([170., 115., 170., 130., 170., 35., 100.])
             self.right_arm_lb = np.deg2rad([-90., -45., -170., -5., -170., -48., -36.])
         else:
-            raise ValueError(f"W1ArmType {self._arm_type} are not support")
+            raise ValueError(f"W1ArmType {self._arm_type} are not support.")
         # fmt: on
         self.qpos_ub = np.r_[self.torso_ub, 
                             self.head_ub, 
@@ -189,7 +208,7 @@ class W1Manager:
                                 3., 3., 3., 5., 10., 10., 10.,
                                 3., 3., 3., 5., 10., 10., 10.])
         # fmt: on
-        self.logger.info("Initialize kinematic solver")
+        self.logger.info("Initialize kinematic solver.")
 
     def _has_arm_ee_client(self, name: str) -> bool:
         if name in self.arm_ee_names:
@@ -200,7 +219,7 @@ class W1Manager:
             # self.logger.warning(f"{name} has not initialized")
             return False
 
-        self.logger.error(f"{self.arm_ee_names} is supported, except {name}")
+        self.logger.error(f"{self.arm_ee_names} is supported, except {name}.")
         return False
 
     def _get_arm_controller(self, name: str):
@@ -222,14 +241,14 @@ class W1Manager:
     def _check_name(self, name: str) -> bool:
         """仅支持component检查，不包含ee"""
         if name not in self.component_manager.names:
-            self.logger.error(f"{self.component_manager.names} is supported, except {name}")
+            self.logger.error(f"{self.component_manager.names} is supported, except {name}.")
             return False
         return True
 
     def _check_arm_name(self, name: str) -> bool:
         support_names = self.arm_names
         if name not in support_names:
-            self.logger.error(f"{support_names} is supported, except {name}")
+            self.logger.error(f"{support_names} is supported, except {name}.")
             return False
         return True
 
@@ -271,10 +290,10 @@ class W1Manager:
     
     def _check_arm_ee_states(self, arm_ee_state_list: list) -> bool:
         if len(arm_ee_state_list) == 0:
-            self.logger.error("FIXME")
+            self.logger.error("Unexpected error, FIXME!")
             return False
         if not all(isinstance(ee_state, (float, list, float)) for ee_state in arm_ee_state_list):
-            self.logger.error(f"arm_ee state should be [pre_delay, ee_qpos, post_delay]")
+            self.logger.error(f"arm_ee_state should be [pre_delay, ee_qpos, post_delay].")
             return False
         if not self._check_qpos_dimension("left_arm_ee", 
                                           [ee_state[1] for ee_state in arm_ee_state_list]):
@@ -299,7 +318,7 @@ class W1Manager:
     def _load_home_qpos(self, file_path: str = f"{g_data_dir}/config.json") -> bool:
         file_path_ = pathlib.Path(file_path)
         if not file_path_.exists() or file_path_.stat().st_size == 0:
-            self.logger.warning(f"{file_path} does not exist, would be created automatically")
+            self.logger.warning(f"{file_path} does not exist, would be created automatically.")
             if self._save_home_qpos(file_path):
                return self._load_home_qpos(file_path) 
             return False
@@ -308,7 +327,7 @@ class W1Manager:
             json_data = json.load(f)
             home_qpos_deg = json_data.get("home_qpos_deg")
             if home_qpos_deg is not None:
-                self.logger.info(f"Load home qpos from {file_path}")
+                self.logger.info(f"Load home qpos from {file_path}.")
                 return self.set_home_qpos(np.deg2rad(home_qpos_deg), False)
 
         return False
@@ -342,19 +361,56 @@ class W1Manager:
         return True, np.hstack(temp_arrays)
 
     ######## 基础API #############
-    def set_use_sim(self, is_sim) -> bool:
-        self._is_sim = is_sim
-        if self._is_sim:
-            if self._robot_client_sim is None:
-                self._robot_client_sim = RobotClient(is_sim=True)
-            if self._robot_client_sim.is_connected():
-                self.robot_client = self._robot_client_sim
+    def set_sim_mode(self, is_sim: bool) -> bool:
+        if self._is_sim == is_sim:
+            if self._is_sim:
+                self.logger.info("Robot client already in sim mode.")
+            else:
+                self.logger.info("Robot client already in real mode.")
+            return True
+
+        if is_sim:
+            cur_name = "real"
+            target_name = "sim"
+            target_client = self._robot_client_sim
         else:
-            if self._robot_client_real is None:
-                self._robot_client_real = RobotClient(is_sim=False)
-            if self._robot_client_real.is_connected():
-                self.robot_client = self._robot_client_real
-        return True
+            cur_name = "sim"
+            target_name = "real"
+            target_client = self._robot_client_real
+
+        self._robot_client_sim.wait_second(0.01)
+        self._robot_client_real.wait_second(0.01)
+
+        # 避免未被初始化（纯sim模式切换至real模式）
+        if target_client is None:
+            self.logger.error(f"Robot_client_{target_name} is not initialized.")
+            return False
+
+        if target_client.status not in [Status.Init, Status.Idle]:
+            self.logger.error(f"Robot_client_{target_name} status: {target_client.status}, can not switch mode!")
+            return False
+        
+        # 避免未连接获取到None
+        if not self.robot_client.is_connected():
+            self.logger.error(f"Robot_client_{cur_name} is not connected!")
+            return False
+
+        if self.robot_client.status in [Status.Init, Status.Idle]:
+            self.robot_client = target_client
+            self._is_sim = is_sim
+            self.logger.info(f"Robot client set to {target_name} mode.")
+            return True
+        elif self.robot_client.status == Status.Running:
+            self.logger.warning(f"Robot_client_{cur_name} is running, can not switch mode!")
+            return False
+        elif self.robot_client.status == Status.Error:
+            self.logger.error(f"Robot_client_{cur_name} is in error!")
+            return False
+
+        self.logger.error("Should not happened, FIXME!")
+        self.logger.error(f"Robot_client_real status: {self._robot_client_real.status}, " + 
+                         f"Robot_client_sim status: {self._robot_client_sim.status}")
+        return False
 
     def set_ee_state(self, name: str, state: np.ndarray) -> bool:
         """控制end effector运动
@@ -430,7 +486,7 @@ class W1Manager:
         """
         support_names = list(self.component_manager.names) + self.arm_ee_names
         if name not in support_names:
-            self.logger.error(f"{support_names} is supported, except {name}")
+            self.logger.error(f"{support_names} is supported, except {name}.")
             return False, None
         
         if name in self.arm_ee_names:
@@ -441,7 +497,7 @@ class W1Manager:
         robot_info = self.robot_client.get_info()
         cur_qpos = np.array(robot_info.joint_position)
         if cur_qpos is None:
-            self.logger.error(f"Get current robot info failed: {robot_info.status}")
+            self.logger.error(f"Get current robot info failed: {robot_info.status}.")
             return False, None
         
         if name == "full_body":
@@ -507,7 +563,7 @@ class W1Manager:
         """
         with self._stop_move_lock:
             self._stop_move_flag = True
-        self.logger.info("Stop move by user")
+        self.logger.info("Stop move by user!")
         return True
 
     def plan_joint_traj(self, 
@@ -606,10 +662,10 @@ class W1Manager:
             if not np.allclose(cur_qpos, cur_qseed, atol=np.deg2rad(90)):
                 self.logger.error(f"qpos traj is not continues\n" + \
                                   f"cur_qpos: {np.rad2deg(cur_qpos)}\n" + \
-                                  f"cur_qseed: {np.rad2deg(cur_qseed)}")
+                                  f"cur_qseed: {np.rad2deg(cur_qseed)}.")
                 return False, None
             if not res_ik:
-                self.logger.error(f"{name} solve ik failed, cur_qseed: {np.rad2deg(cur_qseed)}")
+                self.logger.error(f"{name} solve ik failed, cur_qseed: {np.rad2deg(cur_qseed)}.")
                 return False, None
             qpos_list.append(cur_qpos)
             cur_qseed = cur_qpos
@@ -637,7 +693,7 @@ class W1Manager:
 
         if start_idx < len(arm_ee_state_list) - 1:
             segment_list.append([start_idx, len(arm_ee_state_list)-1])
-        self.logger.debug(f"plan_arm_ee_trigger result: {segment_list}")
+        self.logger.debug(f"plan_arm_ee_trigger result: {segment_list}.")
         return True, segment_list
 
     def execute_joint_traj(self, 
@@ -656,6 +712,17 @@ class W1Manager:
         Returns:
             bool: 
         """
+        # check enable
+        if self.robot_client.status == Status.Init:
+            self.logger.error(f"Robot client not enabled.")
+            return False
+        elif self.robot_client.status == Status.Running:
+            self.logger.error(f"Robot client is running.")
+            return False
+        elif self.robot_client.status == Status.Error:
+            self.logger.error(f"Robot client is in error.")
+            return False
+
         # reset stop move flag
         self._stop_move_flag = False
 
@@ -664,7 +731,7 @@ class W1Manager:
         if not res: 
             return False
         if not np.allclose(cur_qpos, qpos_array[0], atol=np.deg2rad(1)):
-            self.logger.error(f"cur_qpos ({cur_qpos}) is not equal to start_qpos ({qpos_array[0]})")
+            self.logger.error(f"cur_qpos ({cur_qpos}) is not equal to start_qpos ({qpos_array[0]}).")
             return False
 
         count = 1
@@ -680,7 +747,7 @@ class W1Manager:
             while not stop_thread:
                 if count == target_count and count != cur_count:
                     self.left_arm_ee_client.set_state(np.array(target_ee_qpos))
-                    self.logger.debug(f"left_arm_ee has triggered: {target_count} {target_ee_qpos}")
+                    self.logger.debug(f"left_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if left_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = left_arm_ee_trigger_list_cp.pop()
                     cur_count = count
@@ -695,7 +762,7 @@ class W1Manager:
             while not stop_thread:
                 if count == target_count and count != cur_count:
                     self.right_arm_ee_client.set_state(np.array(target_ee_qpos))
-                    self.logger.debug(f"right_arm_ee has triggered: {target_count} {target_ee_qpos}")
+                    self.logger.debug(f"right_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if right_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = right_arm_ee_trigger_list_cp.pop()
                     cur_count = count
@@ -718,7 +785,7 @@ class W1Manager:
         # streaming
         end_iter = qpos_array.shape[0] - 1
         self.robot_client.start_joint_streaming_request(MotionGroup.WholeBody)
-        self.logger.info("Start streaming")
+        self.logger.info("Start streaming.")
         t0 = time.time()
         for qpos in qpos_array:
             if self._stop_move_flag:
@@ -738,9 +805,10 @@ class W1Manager:
                                                      streaming_finished)
             self.robot_client.wait_second(self.TIME_STEP)
             count += 1
+        self.robot_client.wait_request_finish()
         self.logger.info(f"Ideal duration should be {(count-1) * self.TIME_STEP}s, " +
-                            f"and actual duration is {time.time() - t0}s")
-        self.logger.info("Finish streaming")
+                            f"and actual duration is {time.time() - t0}s.")
+        self.logger.info("Finish streaming.")
         
         stop_thread = True
         # TODO: join thread?
@@ -757,7 +825,7 @@ class W1Manager:
             time.sleep(5*self.TIME_STEP)
 
         self.logger.error(f"Current qpos does NOT reach the target qpos until {reach_timeout}s, " +
-                          f"qpos error: {np.rad2deg(cur_qpos - targt_qpos)} deg")
+                          f"qpos error: {np.rad2deg(cur_qpos - targt_qpos)} deg.")
         return False
 
 
@@ -810,23 +878,23 @@ class W1Manager:
             int: -1 错误输入； 0 空输入； 1 有效输入"""
         pos_list = waypoints_dict.get(name)
         if not pos_list: # None or []
-            self.logger.debug(f"No waypoints in {name}")
+            self.logger.debug(f"No waypoints in {name}.")
             return 0, None, None, None
         
         if not all(isinstance(pos, list) for pos in pos_list):
-            self.logger.error(f"{pos_list} not a 2d-list")
+            self.logger.error(f"{pos_list} not a 2d-list.")
             return -1, None, None, None
         if not is_cartesian and not self._check_qpos_dimension(name, pos_list):
             return -1, None, None, None
         if is_cartesian and not all(len(pos) == 6 for pos in pos_list):
-            self.logger.error(f"Dimension of {pos_list[0]} != 6")
+            self.logger.error(f"Dimension of {pos_list[0]} != 6.")
             return -1, None, None, None
 
         speed_ratio_list = waypoints_dict.get(f"{name}_speed_ratio")
         if not speed_ratio_list: # None or []
             speed_ratio_list = [speed_ratio] * len(pos_list)
         elif len(speed_ratio_list) != len(pos_list):
-            self.logger.error(f"{name} qpos and speed_ratio dimension mismatch")
+            self.logger.error(f"{name} qpos and speed_ratio dimension mismatch.")
             return -1, None, None, None
         # 将None元素替换为global_speed_ratio
         speed_ratio_list = [sr if sr is not None else speed_ratio
@@ -845,7 +913,7 @@ class W1Manager:
             if not arm_ee_state_list: # None or []
                 arm_ee_state_list = None
             elif len(arm_ee_state_list) != len(pos_list):
-                self.logger.error(f"{name} qpos and arm_ee_state dimension mismatch")
+                self.logger.error(f"{name} qpos and arm_ee_state dimension mismatch.")
                 return -1, None, None, None
             elif not self._check_arm_ee_states(arm_ee_state_list):
                 return -1, None, None, None
@@ -877,7 +945,7 @@ class W1Manager:
         if is_cartesian:
             res_fk, cur_xpos = self._get_arm_controller(name).get_fk(cur_qpos)
             if not res_fk:
-                self.logger.error(f"{name} solve fk failed")
+                self.logger.error(f"{name} solve fk failed!")
                 return False, None
             xpos_raw_list = [user_pose_to_xpos(pose[:3].tolist(), pose[3:].tolist()) 
                               for pose in pos_raw_array]
@@ -938,7 +1006,7 @@ class W1Manager:
         else:
             res_fk, cur_xpos = self._get_arm_controller(name).get_fk(cur_qpos)
             if not res_fk:
-                self.logger.error(f"{name} solve fk failed")
+                self.logger.error(f"{name} solve fk failed!")
                 return False, None, None
             pos_raw_array_ = np.vstack([xpos_to_user_pose(cur_xpos), pos_raw_array])
 
@@ -1027,7 +1095,7 @@ class W1Manager:
         Returns:
             bool
         """
-        self.logger.debug(f"waypoints_dict: {waypoints_dict}")
+        self.logger.debug(f"waypoints_dict: {waypoints_dict}.")
 
         res, cur_qpos = self.get_current_qpos()
         if not res:
@@ -1141,7 +1209,7 @@ class W1Manager:
         Returns:
             bool
         """
-        self.logger.debug(f"waypoints_dict: {waypoints_dict}")
+        self.logger.debug(f"waypoints_dict: {waypoints_dict}.")
 
         res, cur_qpos = self.get_current_qpos()
         if not res:
@@ -1245,13 +1313,40 @@ class W1Manager:
                                        left_arm_ee_trigger_list, 
                                        right_arm_ee_trigger_list)
 
+    def move_arm_linear(self, 
+                        name: str,
+                        delta_trans_mm: list, 
+                        speed_ratio: float = 1.,
+                        along_base_frame: bool = True) -> bool:
+        if not self._check_arm_name(name):
+            return False
+        res, cur_xpos = self.get_current_xpos(name)
+        if not res:
+            return False
+        delta_xpos = user_pose_to_xpos(delta_trans_mm, [0., 0., 0.])
+        if along_base_frame:
+            target_xpos = delta_xpos @ cur_xpos
+        else:
+            target_xpos = cur_xpos @ delta_xpos
+        
+        return self.move_linear_full_body(waypoints_dict={f"{name}": [xpos_to_user_pose(target_xpos)]},
+                                        speed_ratio=speed_ratio)
 
-if __name__ == "__main__":
-    w1_manager = W1Manager(W1ArmType.ANTHROPOMORPHIC, 
-                           W1Version.V2, 
-                           EndEffectorType.BRAINCO_HAND,
-                           is_sim=True)
-    # w1_manager.set_ee_state("left_arm_ee", np.array([0.]*6))
-    # w1_manager.set_ee_state("right_arm_ee", np.array([0.]*6))
-    # w1_manager.go_home(0.5)
-    from IPython import embed; embed()
+    def rotate_arm_linear(self, 
+                        name: str,
+                        delta_rot_deg: list, 
+                        speed_ratio: float = 1.,
+                        along_base_frame: bool = True) -> bool:
+        if not self._check_arm_name(name):
+            return False
+        res, cur_xpos = self.get_current_xpos(name)
+        if not res:
+            return False
+        delta_xpos = user_pose_to_xpos([0., 0., 0.], delta_rot_deg)
+        if along_base_frame:
+            target_xpos = delta_xpos @ cur_xpos
+        else:
+            target_xpos = cur_xpos @ delta_xpos
+        
+        return self.move_linear_full_body(waypoints_dict={f"{name}": [xpos_to_user_pose(target_xpos)]},
+                                        speed_ratio=speed_ratio)
