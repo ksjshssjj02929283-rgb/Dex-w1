@@ -52,18 +52,21 @@ enum class RequestType
 {
     Empty,  // empty command
 
-    TcpPrimary,    // tool primary
-    TcpSecondary,  // tool secondary
+    // Set Property Request
+    TcpPrimary,
+    TcpSecondary,
+    SpeedRatio,
+    ClearError,
 
-    SpeedRatio,  // global speed ratio
-
-    ClearError,  // clear error
-
+    // Move Request
     MoveJoint,
     MoveLine,
-
     StartJointStreaming,
     StartEEPoseStreaming,
+
+    // Emergency Request
+    StopMove,
+    ResetToInit,
 
     Unknown
 };

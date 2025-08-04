@@ -158,8 +158,9 @@ struct PlannerManagerBuffers
     std::shared_ptr<SingleWriterLatestBuffer<JointMeasurement>> joint_measurement;
     std::shared_ptr<SingleWriterLatestBuffer<Eigen::VectorXd>> ee_pose_measurement;
     std::shared_ptr<SingleWriterLatestBuffer<PlannerManagerCommand>> planner_manager_command;
-    std::shared_ptr<BoundedQueue<PlannerRequest>> request_queue;
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_command_latest_buffer;
+    std::shared_ptr<BoundedQueue<PlannerRequest>> request_queue;
+    std::shared_ptr<BoundedQueue<PlannerRequest>> emergency_request_queue;
 
     PlannerManagerBuffers() = default;
     ~PlannerManagerBuffers() = default;
@@ -169,8 +170,9 @@ struct PlannerManagerBuffers
         joint_measurement = std::make_shared<SingleWriterLatestBuffer<JointMeasurement>>();
         ee_pose_measurement = std::make_shared<SingleWriterLatestBuffer<Eigen::VectorXd>>();
         planner_manager_command = std::make_shared<SingleWriterLatestBuffer<PlannerManagerCommand>>();
-        request_queue = std::make_shared<BoundedQueue<PlannerRequest>>(32);
         streaming_command_latest_buffer = std::make_shared<SingleWriterLatestBuffer<StreamingCommand>>();
+        request_queue = std::make_shared<BoundedQueue<PlannerRequest>>(32);
+        emergency_request_queue = std::make_shared<BoundedQueue<PlannerRequest>>(32);
     }
 };
 
