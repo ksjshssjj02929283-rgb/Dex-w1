@@ -211,10 +211,8 @@ class YaikKinematics : public KinematicsBase
             LOG_CRIT << "Global redundancy resolution error: trajectory too short\n";
             return false;
         }
-        if (ee_trajectory_length <= 0.1)
-            n_knots = 1;
         else
-            n_knots = int(ee_trajectory_length / 0.1);  // 10 milestones for every 0.1 length
+            n_knots = int(ee_trajectory_length / 0.05) + 1;  // 10 milestones for every 0.06 length
 
         std::vector<LayerNodes> graph_nodes;  // tree of nodes for DFS
         graph_nodes.resize(n_knots + 1);

@@ -43,46 +43,6 @@ class MoveTrajectoryPlanner : public MotionPlannerBase
         trajectory_spline_primary_.evaluate(current_phase_ * time_primary_, q_left, dq_left);
         trajectory_spline_secondary_.evaluate(current_phase_ * time_secondary_, q_right, dq_right);
 
-        if (refine_cmd)  // Leads to joint vibration, deprecated
-        {
-            // Refine q_left and q_right in accordance with poses at current phase
-            auto refine_left = [&, this]()
-            {
-                Eigen::VectorXd q_temp(q_left);
-                bool ik_get = kine_ptr_primary_->GetIK(PoseQuaternion(pose_trajectory_primary_(current_phase_)), q_temp);
-                if ((q_left - q_temp).norm() < 1e-3)
-                    q_left = q_temp;
-            };
-            auto refine_right = [&, this]()
-            {
-                Eigen::VectorXd q_temp(q_right);
-                bool ik_get = kine_ptr_secondary_->GetIK(PoseQuaternion(pose_trajectory_secondary_(current_phase_)), q_temp);
-                if ((q_right - q_temp).norm() < 1e-3)
-                    q_right = q_temp;
-            };
-
-            switch (motion_group_)
-            {
-            case MotionGroup::BothArms:
-            {
-                refine_left();
-                refine_right();
-                break;
-            }
-            case MotionGroup::Primary:
-            {
-                refine_left();
-                break;
-            }
-            case MotionGroup::Secondary:
-            {
-                refine_left();
-                break;
-            }
-            default:
-                break;
-            }
-        }
         // Check if joint trajectory has ended
         const bool goal_reached =
             current_phase_ >= 1.0 && ((q_left - q_arms.head<ndof_left_>()).norm() < 1e-4 && (q_right - q_arms.tail<ndof_right_>()).norm() < 1e-4);
@@ -188,8 +148,8 @@ class MoveTrajectoryPlanner : public MotionPlannerBase
                 poses_secondary.emplace_back(PoseQuaternion::FromVector7d(value.tail(ndof_right_)));
             }
             // Initialize end-effector trajectory interpolator with poses
-            pose_trajectory_primary_ = PoseTrajectory::FromPoses(std::move(poses_primary), interp_degree);
-            pose_trajectory_secondary_ = PoseTrajectory::FromPoses(std::move(poses_secondary), interp_degree);
+            auto pose_trajectory_primary_ = PoseTrajectory::FromPoses(std::move(poses_primary), interp_degree);
+            auto pose_trajectory_secondary_ = PoseTrajectory::FromPoses(std::move(poses_secondary), interp_degree);
             LOG_INFO << "Primary arm motion plan: trajectory: \n" << pose_trajectory_primary_.ToString();
             LOG_INFO << "Secondary arm motion plan: trajectory: \n" << pose_trajectory_secondary_.ToString();
 
@@ -225,7 +185,7 @@ class MoveTrajectoryPlanner : public MotionPlannerBase
                 const auto &value = move_request.value.segment(i * ndof_left_, ndof_left_);
                 poses_primary.emplace_back(PoseQuaternion::FromVector7d(value));
             }
-            pose_trajectory_primary_ = PoseTrajectory::FromPoses(std::move(poses_primary), interp_degree);
+            auto pose_trajectory_primary_ = PoseTrajectory::FromPoses(std::move(poses_primary), interp_degree);
             LOG_INFO << "Primary arm motion plan: trajectory: \n" << pose_trajectory_primary_.ToString();
 
             std::vector<Eigen::Matrix<double, ndof_left_, 1>> trajectory_primary;
@@ -255,7 +215,7 @@ class MoveTrajectoryPlanner : public MotionPlannerBase
                 const auto &value = move_request.value.segment(i * ndof_right_, ndof_right_);
                 poses_secondary.emplace_back(PoseQuaternion::FromVector7d(value));
             }
-            pose_trajectory_secondary_ = PoseTrajectory::FromPoses(std::move(poses_secondary), interp_degree);
+            auto pose_trajectory_secondary_ = PoseTrajectory::FromPoses(std::move(poses_secondary), interp_degree);
             LOG_INFO << "Secondary arm motion plan: trajectory: \n" << pose_trajectory_secondary_.ToString();
 
             std::vector<Eigen::Matrix<double, ndof_right_, 1>> trajectory_secondary;
@@ -305,9 +265,6 @@ class MoveTrajectoryPlanner : public MotionPlannerBase
         total_time_ = 0.0;
         time_primary_ = 0.0;
         time_secondary_ = 0.0;
-        refine_cmd = false;
-        pose_trajectory_primary_.clear();
-        pose_trajectory_secondary_.clear();
         trajectory_spline_primary_.segments.clear();
         trajectory_spline_secondary_.segments.clear();
     }
@@ -323,10 +280,9 @@ class MoveTrajectoryPlanner : public MotionPlannerBase
     TrajectorySpline<ndof_left_> trajectory_spline_primary_;
     TrajectorySpline<ndof_right_> trajectory_spline_secondary_;
     // EE pose trajectory interpolation
-    PoseTrajectory pose_trajectory_primary_;
-    PoseTrajectory pose_trajectory_secondary_;
+    // PoseTrajectory pose_trajectory_primary_;
+    // PoseTrajectory pose_trajectory_secondary_;
 
-    bool refine_cmd{false};  // Refine joint command to reduce error from given trajectory
     double current_phase_;   // Scaled time of 0~1
     double time_primary_, time_secondary_, total_time_;
 

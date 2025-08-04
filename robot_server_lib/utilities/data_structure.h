@@ -124,53 +124,86 @@ struct PoseTrajectory
 
     std::vector<PoseQuaternion> poses;  // poses
     std::vector<double> segment_times;  // normalized times 0~1 at poses
-    Spline3d pos_spline;                // b-spline interpolation of poses w.r.t. segment_times
+    Spline3d pos_spline;                // b-spline interpolation of positions w.r.t. segment_times
     double total_length;                // total length of trajectory
     int degree;                         // order of interpolation
 
     // Create end-effector trajectory interpolator with poses
     static PoseTrajectory FromPoses(std::vector<PoseQuaternion> &&pose_list, const int interp_degree = 1)
     {
-        PoseTrajectory pose_trajectory;
-        auto &poses = pose_trajectory.poses;
-        auto &segment_times = pose_trajectory.segment_times;
-        auto &total_length = pose_trajectory.total_length;
-        auto &pos_spline = pose_trajectory.pos_spline;
-        auto &degree = pose_trajectory.degree;
-
-        poses = std::move(pose_list);
-        const int N = poses.size();
+        PoseTrajectory traj;
+        traj.poses = std::move(pose_list);
+        const int N = traj.poses.size();
         assert(N >= 2);
-        degree = std::clamp(interp_degree, 1, N - 1);
+        int degree = std::clamp(interp_degree, -(N - 1), N - 1);
+        traj.degree = degree;
+
+        auto &poses = traj.poses;
+        auto &segment_times = traj.segment_times;
+        auto &total_length = traj.total_length;
+        auto &pos_spline = traj.pos_spline;
         // Estimate length
         std::vector<double> segment_lengths_(N - 1);
         total_length = 0.0;
         const double q_weight = 0.5;  // weight of quaternion distance
         for (int i = 0; i < N - 1; ++i)
         {
-            const auto &p1 = poses[i].position;
-            const auto &p2 = poses[i + 1].position;
-            const double pos_dist = (p2 - p1).norm();
-            const auto &q1 = poses[i].orientation;
-            const auto &q2 = poses[i + 1].orientation;
-            const double ang_dist = q1.angularDistance(q2);
-            const double seg_len = pos_dist + q_weight * ang_dist;
-            segment_lengths_[i] = seg_len;
-            total_length += seg_len;
+            const double pos_dist = (poses[i + 1].position - poses[i].position).norm();
+            const double ang_dist = poses[i].orientation.angularDistance(poses[i + 1].orientation);
+            segment_lengths_[i] = pos_dist + q_weight * ang_dist;
+            total_length += segment_lengths_[i];
         }
         // Estimate time stamps
         segment_times.resize(N);
         segment_times[0] = 0.0;
         for (int i = 0; i < N - 1; ++i) segment_times[i + 1] = segment_times[i] + segment_lengths_[i] / total_length;
         assert(segment_times.back() == 1.0);
-        // Construct position spline
-        Eigen::MatrixXd ctrl_points(3, N);
-        for (int i = 0; i < N; ++i) ctrl_points.col(i) = poses[i].position;
-        Eigen::RowVectorXd knots(N);
-        for (int i = 0; i < N; ++i) knots(i) = segment_times[i];
-        pos_spline = Spline3d(Eigen::SplineFitting<Spline3d>::Interpolate(ctrl_points, degree, knots));
 
-        return pose_trajectory;
+        if(degree == 1 || degree == -1); // 线性插值，不使用spline
+        else if(degree == 0) // 拐角平滑
+        {
+            Eigen::MatrixXd ctrl_points(3, N*2); // 控制点
+            for (int i = 0; i < N; ++i)
+            {
+                ctrl_points.col(2*i) = poses[i].position;
+                ctrl_points.col(2*i+1) = poses[i].position;
+            }
+
+            Eigen::RowVectorXd knots(N*2); // 拟合参数
+            for (int i = 0; i < N; ++i) 
+            {
+                knots(2*i) = segment_times[i];
+                knots(2*i+1) = segment_times[i];
+            }
+            Eigen::RowVectorXd knots_spline;
+            Eigen::KnotAveraging(knots, 3, knots_spline);
+            pos_spline = Spline3d(knots_spline, ctrl_points);
+        }
+        else 
+        {
+            Eigen::MatrixXd ctrl_points(3, N);
+            for (int i = 0; i < N; ++i)
+            {
+                ctrl_points.col(i) = poses[i].position;
+            }
+            Eigen::RowVectorXd knots(N);
+            for (int i = 0; i < N; ++i) 
+            {
+                knots(i) = segment_times[i];
+            }
+            if(degree > 0) // 拟合
+            {
+                Eigen::RowVectorXd knots_spline;
+                Eigen::KnotAveraging(knots, degree, knots_spline);
+                pos_spline = Spline3d(knots_spline, ctrl_points);
+            }
+            else if(degree < 0) // 插值
+            {
+                pos_spline = Eigen::SplineFitting<Spline3d>::Interpolate(ctrl_points, -degree, knots);
+            }
+        }
+
+        return traj;
     }
 
     // Spline interpolation for random access
@@ -179,17 +212,19 @@ struct PoseTrajectory
         Eigen::Matrix4d result = Eigen::Matrix4d::Identity();
 
         double t = std::clamp(phase, 0.0, 1.0);
-
-        // --- 位置 ---
-        Eigen::Vector3d pos = pos_spline(t);
-        result.block<3, 1>(0, 3) = pos;
-
-        // --- 旋转 (用 SLERP 做段内线性插值) ---
         int seg = 0;
         while (seg + 1 < segment_times.size() && t >= segment_times[seg + 1]) ++seg;
         double t0 = segment_times[seg];
         double t1 = segment_times[seg + 1];
         double alpha = (t1 - t0 > 1e-6) ? (t - t0) / (t1 - t0) : 0.0;
+
+        // --- 位置 ---
+        if(degree == 1 || degree == -1)
+            result.block<3, 1>(0, 3) = (1-alpha)*poses[seg].position + alpha*poses[seg+1].position;
+        else
+            result.block<3, 1>(0, 3) = pos_spline(t);
+
+        // --- 旋转 (用 SLERP 做段内线性插值) ---
         Eigen::Quaterniond q = poses[seg].orientation.slerp(alpha, poses[seg + 1].orientation);
         result.block<3, 3>(0, 0) = q.normalized().toRotationMatrix();
 
