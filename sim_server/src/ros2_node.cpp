@@ -210,16 +210,14 @@ void Ros2Node::InitRobotServer()
                         ee_pose_ss << ",";
                 }
                 ee_pose_ss << "]";
-                
+
                 uint64_t timestamp_ns = this->now().nanoseconds();
 
-                robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) +
-                                            ",\"status\":\"" + ToString(manager_state_) + "\"" +
-                                            ",\"latest_queued_id\":" + std::to_string(latest_report_id_.queued) +
-                                            ",\"latest_finished_id\":" + std::to_string(latest_report_id_.finished) +
-                                            ",\"latest_errordrop_id\":" + std::to_string(latest_report_id_.error_drop) +
-                                            ",\"joint_position\":" + joint_position_ss.str() + 
-                                            ",\"ee_pose\":" + ee_pose_ss.str() + "}";
+                robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" +
+                                              ToString(manager_state_) + "\"" + ",\"latest_queued_id\":" + std::to_string(latest_report_id_.queued) +
+                                              ",\"latest_finished_id\":" + std::to_string(latest_report_id_.finished) +
+                                              ",\"latest_errordrop_id\":" + std::to_string(latest_report_id_.error_drop) +
+                                              ",\"joint_position\":" + joint_position_ss.str() + ",\"ee_pose\":" + ee_pose_ss.str() + "}";
 
                 robot_server_state_publisher_->publish(robot_server_state_msg);
                 std::this_thread::sleep_for(std::chrono::microseconds(10000));  // 100Hz
