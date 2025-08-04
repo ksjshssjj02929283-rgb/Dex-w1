@@ -154,3 +154,43 @@ TEST(KinematicsTest, Efficiency)
             << "\t  IK Success Rate: " << (double)success_yaik / 100.0 << "%\n"
             << "\t  IK Average Time: " << ik_yaik / 10000.0 << " ms\n";
 }
+
+// TEST(KinematicsTest, RawIK)
+// {
+//   kinematics::SRSKinematics srs = kinematics::SRSKinematics(kinematics::W1LeftArmIndustrial());
+//   kinematics::YaikKinematics yaik(0);
+
+//   Eigen::VectorXd q(7), pose(7);
+//   q << -0.45, -0.65, 0.35, -1.5, -1, 1.1, -0.4;
+//   pose << -0.163635, 0.363727, 0.262755, -0.229399, -0.440151, 0.599072, 0.628296;
+//   auto poseQ = PoseQuaternion::FromVector7d(pose);
+//   Matrix4d T_ee;
+//   T_ee << poseQ.orientation.toRotationMatrix(), poseQ.position, 0.0, 0.0, 0.0, 1.0;
+//   pinocchio::SE3 se3(T_ee);
+
+//   std::vector<Eigen::Matrix<double, 7, 1>> ik_results;
+//   {
+//     auto start_time = std::chrono::high_resolution_clock::now();
+//     yaik.GetRawIK(T_ee, q(4), ik_results);
+//     auto end_time = std::chrono::high_resolution_clock::now();
+//     std::chrono::duration<double, std::micro> dt = end_time - start_time;
+//     std::cout << "Time of YAIK: " << dt.count() / 1000.0 << " ms\n";
+//     for (auto ik : ik_results)
+//     {
+//       std::cout << yaik.GetFK(Eigen::Map<const Eigen::Matrix<double, 7, 1>>(ik.data())).ToString() << "\n";
+//     }
+//   }
+//   {
+//     Eigen::Matrix<double, 4, 7> result;
+//     auto phi = srs._CalculateAnglePhi(q, se3);
+//     auto start_time = std::chrono::high_resolution_clock::now();
+//     auto ok = srs._ComputeInverseKinematics(se3, q, phi, result);
+//     auto end_time = std::chrono::high_resolution_clock::now();
+//     std::chrono::duration<double, std::micro> dt = end_time - start_time;
+//     std::cout << "Time of SRS:  " << dt.count() / 1000.0 << " ms\n";
+//     std::cout << srs.GetFK(result.row(0)).ToString() << "\n";
+//     std::cout << srs.GetFK(result.row(1)).ToString() << "\n";
+//     std::cout << srs.GetFK(result.row(2)).ToString() << "\n";
+//     std::cout << srs.GetFK(result.row(3)).ToString() << "\n";
+//   }
+// }

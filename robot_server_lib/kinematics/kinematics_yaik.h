@@ -338,7 +338,7 @@ class YaikKinematics : public KinematicsBase
     Matrix4d _toMatrix4d(const PoseQuaternion &pose_in)
     {
         Matrix4d T_ee;
-        T_ee << pose_in.orientation.toRotationMatrix(), pose_in.position, 0, 0, 0, 1;
+        T_ee << pose_in.orientation.toRotationMatrix(), pose_in.position, 0.0, 0.0, 0.0, 1.0;
         return T_ee;
     }
 
