@@ -1,5 +1,4 @@
 # DexEmbodied Robot Client
-# DexEmbodied Robot Client
 
 ## 📦 Dependencies
 Refer to `dependencies/README.md`
