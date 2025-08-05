@@ -5,9 +5,23 @@
 # ----------------------------------------------------------------------------
 
 import time
+import threading
 import serial
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
 
 class BraincoHands:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls, *args, **kwargs):
+        with cls._lock:
+            if not cls._instance:
+                cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self, tty_name):
         self.client = serial.Serial(
         port=tty_name,
@@ -21,14 +35,14 @@ class BraincoHands:
         try:
             if not self.client.is_open:
                  self.client.open()
-                 print("串口已打开")
+                 logging.info("串口已打开")
         except Exception as e:
-             print(f"错误: {e}")
+             logging.error(f"错误: {e}")
 
-    def CloseSerial(self):
+    def close(self):
         if self.client.is_open:
             self.client.close()
-            print("串口已关闭")
+            logging.info("串口已关闭")
 
     def modbus_crc16(self,buffer):
         """计算Modbus RTU CRC16校验码"""
@@ -42,7 +56,6 @@ class BraincoHands:
                 else:
                     crc >>= 1
         return ((crc << 8) | (crc >> 8)) & 0xFFFF
-
 
     def send_modbus_read_command(self, device_id, register_address, register_count):
         """发送Modbus RTU读保持寄存器命令(功能码0x03)"""
@@ -64,7 +77,7 @@ class BraincoHands:
         
         # 发送请求
         ser.write(request)
-        print(f"发送读请求: {request.hex(' ')}")
+        logging.debug(f"发送读请求: {request.hex(' ')}")
         
         # 等待响应
         time.sleep(0.03)  # 等待设备响应
@@ -72,11 +85,11 @@ class BraincoHands:
         # 读取响应
         if ser.in_waiting > 0:
             response = ser.read(ser.in_waiting)
-            print(f"接收读响应: {response.hex(' ')}")
+            logging.debug(f"接收读响应: {response.hex(' ')}")
             
             # 简单验证响应
             if len(response) < 5:  # 至少包含: 设备ID(1) + 功能码(1) + 字节数(1) + 数据(n) + CRC(2)
-                print("响应数据长度不足")
+                logging.error("响应数据长度不足")
                 return None
                 
             # 验证CRC校验
@@ -85,7 +98,7 @@ class BraincoHands:
           #  calculated_crc = self.modbus_crc16(response_data)
           #  
           #  if response_crc != calculated_crc:
-          #      print("CRC校验失败")
+          #      logging.error("CRC校验失败")
           #      return None
                 
             # 解析响应数据
@@ -98,13 +111,12 @@ class BraincoHands:
                         values.append(reg_value)
                     return values
                 else:
-                    print(f"字节数不匹配: 期望 {register_count*2}, 实际 {byte_count}")
+                    logging.error(f"字节数不匹配: 期望 {register_count*2}, 实际 {byte_count}")
             elif response[1] == 0x83:  # 异常响应
                 error_code = response[2]
-                print(f"Modbus异常响应: 错误码 {error_code}")
+                logging.error(f"Modbus异常响应: 错误码 {error_code}")
                 
-        return [10]*6 
-
+        return None
 
     def send_modbus_write_command(self,device_id, register_address, register_values):
         """发送Modbus RTU写多个寄存器命令"""
@@ -134,7 +146,7 @@ class BraincoHands:
  
         # 发送请求
         ser.write(request)
-        print(f"发送请求: {request.hex(' ')}")
+        logging.debug(f"发送请求: {request.hex(' ')}")
  
         # 等待响应
         time.sleep(0.03)
@@ -142,7 +154,7 @@ class BraincoHands:
         # 读取响应
         if ser.in_waiting > 0:
             response = ser.read(ser.in_waiting)
-            print(f"接收响应: {response.hex(' ')}")
+            logging.debug(f"接收响应: {response.hex(' ')}")
             return response
         return None
 
@@ -167,7 +179,7 @@ class BraincoHands:
 
         # 发送请求
         ser.write(request)
-        print(f"发送请求 en Turbo: {request.hex(' ')}")
+        logging.info(f"发送请求 en Turbo: {request.hex(' ')}")
 
         # 等待响应
         time.sleep(0.03)
@@ -175,7 +187,7 @@ class BraincoHands:
         # 读取响应
         if ser.in_waiting > 0:
             response = ser.read(ser.in_waiting)
-            print(f"接收响应: {response.hex(' ')}")
+            logging.info(f"接收响应: {response.hex(' ')}")
             return response
          
     def read_position(self, hand_id):
@@ -198,29 +210,28 @@ if __name__ == '__main__':
     hands.enable_TurboMode(1,1)
     hands.enable_TurboMode(2,1)
     for i in range(100):
-        print(f"loop : {i}\r\n")
+        logging.info(f"loop : {i}\r\n")
         hands.write_position(1, [100]*6)
         time.sleep(1)
-        print('position: ', hands.read_position(1))
-        print('current: ', hands.read_current(1))
+        logging.info('position: ', hands.read_position(1))
+        logging.info('current: ', hands.read_current(1))
         #time.sleep(5)
 
         hands.write_position(1, [0]*6)
         time.sleep(1)
-        print('position: ', hands.read_position(1))
-        print('current: ', hands.read_current(1))
+        logging.info('position: ', hands.read_position(1))
+        logging.info('current: ', hands.read_current(1))
         #time.sleep(5)
 
         hands.write_position(2, [100]*6)
         time.sleep(1)
-        print('position: ', hands.read_position(2))
-        print('current: ', hands.read_current(2))
+        logging.info('position: ', hands.read_position(2))
+        logging.info('current: ', hands.read_current(2))
         #time.sleep(5)
 
         hands.write_position(2, [0]*6)
         time.sleep(1)
-        print('position: ', hands.read_position(2))
-        print('current: ', hands.read_current(2))
+        logging.info('position: ', hands.read_position(2))
+        logging.info('current: ', hands.read_current(2))
         #time.sleep(5)
-    hands.CloseSerial()
-
+    hands.close()

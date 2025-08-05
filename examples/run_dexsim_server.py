@@ -4,8 +4,18 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
+import rclpy
 from dexe_robot_client.sim_server import DexsimServer
 
-if __name__ == "__main__":
+def main():
+    rclpy.init()
     dexsim_server = DexsimServer()
-    dexsim_server.run()
+    
+    try:
+        dexsim_server.run()
+    finally:
+        if rclpy.ok():
+            rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()

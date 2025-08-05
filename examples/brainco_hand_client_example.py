@@ -4,35 +4,46 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
-from dexe_robot_client.end_effector_client import LeftBrainCoHadnClient, RightBrainCoHadnClient
-
+import time
+import numpy as np
+from IPython import embed
 import rclpy
 import threading
 from rclpy.executors import MultiThreadedExecutor
-from IPython import embed
+
+from dexe_robot_client.end_effector_client import LeftBrainCoHadnClient, RightBrainCoHadnClient
+
 
 def main():
     rclpy.init()
 
-    executor = MultiThreadedExecutor()
     left_hand_node = LeftBrainCoHadnClient()
     right_hand_node = RightBrainCoHadnClient()
 
+    executor = MultiThreadedExecutor()
     executor.add_node(left_hand_node)
     executor.add_node(right_hand_node)
 
-    # 在后台启动 executor
-    t = threading.Thread(target=executor.spin, daemon=True)
-    t.start()
+    ros_thread = threading.Thread(target=executor.spin, daemon=True)
+    ros_thread.start()
 
     try:
-        embed()  # 在这里交互式调试
+        left_hand_node.set_state(np.zeros(6))
+        time.sleep(1)
+        for i in range(6):
+            state = np.zeros(6)
+            state[i] = 0.3
+            left_hand_node.set_state(state)
+            time.sleep(0.05)
+        left_hand_node.set_state(np.zeros(6))
+        embed()
     finally:
-        # 安全退出：先关闭 executor，再释放资源
         executor.shutdown()
         left_hand_node.destroy_node()
         right_hand_node.destroy_node()
-        rclpy.shutdown()
+        ros_thread.join()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == "__main__":
     main()
