@@ -8,13 +8,13 @@ import serial
 import threading
 import logging
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 
-class dh_device(object):
+class dh_device:
     def __init__(self):
         r"""Initialize the dh_device class with a threading lock."""
-        self.lock = threading.Lock()
+        self._lock = threading.Lock()
         self.serialPort = serial.Serial(timeout=1.0)
 
     def connect_device(self, portname, Baudrate):
@@ -27,12 +27,12 @@ class dh_device(object):
         Returns:
             int: 0 if the connection is successful, -1 otherwise.
         """
-        with self.lock:
+        with self._lock:
             try:
                 self.serialPort.port = portname
                 self.serialPort.baudrate = Baudrate
                 self.serialPort.bytesize = 8
-                self.serialPort.parity = "N"
+                self.serialPort.parity = 'N'
                 self.serialPort.stopbits = 1
                 self.serialPort.set_output_flow_control = False
                 self.serialPort.set_input_flow_control = False
@@ -50,14 +50,14 @@ class dh_device(object):
 
     def disconnect_device(self):
         r"""Disconnect the device by closing the serial port."""
-        with self.lock:
+        with self._lock:
             if self.serialPort.isOpen():
                 self.serialPort.close()
                 logging.info("Serial Port Closed")
             else:
                 logging.warning("Serial Port Already Closed")
 
-    async def device_write(self, write_data):
+    def device_write(self, write_data):
         r"""Write data to the device.
 
         Args:
@@ -66,23 +66,19 @@ class dh_device(object):
         Returns:
             int: The number of bytes written if successful, 0 if there is an error, -1 if the serial port is not open.
         """
-        with self.lock:
+        with self._lock:
             if self.serialPort.isOpen():
-                try:
-                    write_length = self.serialPort.write(write_data)
-                    if write_length == len(write_data):
-                        return write_length
-                    else:
-                        logging.debug(f"Write error! send_buff: {write_data}")
-                        return 0
-                except serial.SerialTimeoutException as e:
-                    logging.debug(f"Write Timeout Exception: {e}")
+                write_length = self.serialPort.write(write_data)
+                if write_length == len(write_data):
+                    return write_length
+                else:
+                    logging.error(f"Write error! send_buff: {write_data}")
                     return 0
             else:
                 logging.error("Serial Port Not Open")
                 return -1
 
-    async def device_read(self, wlen):
+    def device_read(self, wlen):
         r"""Read data from the device.
 
         Args:
@@ -91,14 +87,13 @@ class dh_device(object):
         Returns:
             bytes: The data read from the device if successful, -1 if the serial port is not open.
         """
-        with self.lock:
+        with self._lock:
             if self.serialPort.isOpen():
-                try:
-                    responseData = self.serialPort.read(wlen)
-                    return responseData
-                except serial.SerialTimeoutException as e:
-                    logging.error(f"Read Timeout Exception: {e}")
-                    return -1
+                responseData = self.serialPort.read(wlen)
+                if len(responseData) != wlen:
+                    logging.warning(f"Read incomplete: expected {wlen}, got {len(responseData)}")
+                    return None
+                return responseData
             else:
                 logging.error("Serial Port Not Open")
-                return -1
+                return None
