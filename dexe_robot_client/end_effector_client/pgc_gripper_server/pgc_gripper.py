@@ -8,14 +8,21 @@ import threading
 import logging
 from pgc_device import dh_device
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 
-class dh_modbus_gripper(object):
+class dh_modbus_gripper:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls, *args, **kwargs):
+        with cls._lock:
+            if not cls._instance:
+                cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self):
-        r"""Initialize the gripper with default ID and create a lock for thread safety."""
-        self.gripper_ID = 0x01
-        self._transaction_lock = threading.Lock()
+        r"""Initialize the gripper with a lock for thread safety."""
         self.device = dh_device()
 
     def CRC16(self, nData, wLength):
@@ -28,19 +35,19 @@ class dh_modbus_gripper(object):
         Returns:
             int: The calculated CRC16 checksum.
         """
-        if nData == 0x00:
+        if nData==0x00:
             return 0x0000
-        wCRCWord = 0xFFFF
-        poly = 0xA001
+        wCRCWord=0xFFFF
+        poly=0xA001
         for num in range(wLength):
             date = nData[num]
-            wCRCWord = (date & 0xFF) ^ wCRCWord
-            for bit in range(8):
-                if (wCRCWord & 0x01) != 0:
-                    wCRCWord >>= 1
-                    wCRCWord ^= poly
+            wCRCWord = (date & 0xFF)^ wCRCWord
+            for bit in range(8) : 
+                if(wCRCWord&0x01)!=0:
+                    wCRCWord>>=1
+                    wCRCWord^= poly
                 else:
-                    wCRCWord >>= 1
+                    wCRCWord>>=1
         return wCRCWord
 
     def open(self, PortName, BaudRate):
@@ -53,70 +60,19 @@ class dh_modbus_gripper(object):
         Returns:
             int: 0 if successful, negative value if failed.
         """
-        with self._transaction_lock:
-            ret = self.device.connect_device(PortName, BaudRate)
-            if ret < 0:
-                logging.error("Failed to open connection")
-            else:
-                logging.info("Connection opened successfully")
-            return ret
+        ret = self.device.connect_device(PortName, BaudRate)
+        if ret < 0:
+            logging.error("Failed to open connection")
+        else:
+            logging.info("Connection opened successfully")
+        return ret
 
     def close(self):
         r"""Close the connection to the gripper device."""
-        with self._transaction_lock:
-            self.device.disconnect_device()
-            logging.info("Connection closed")
+        self.device.disconnect_device()
+        logging.info("Connection closed")
 
-    async def _send_command(self, send_buf, expected_length):
-        r"""Send a command to the device and read the response.
-
-        Args:
-            send_buf (list): The command to send.
-            expected_length (int): The expected length of the response.
-
-        Returns:
-            list: The response from the device.
-        """
-        send_temp = send_buf
-        retrycount = 3
-
-        while retrycount > 0:
-            wdlen = await self.device.device_write(send_temp)
-            if len(send_temp) != wdlen:
-                logging.debug(f"Write error! Sent: {send_temp}")
-                retrycount -= 1
-                continue
-
-            rev_buf = await self.device.device_read(expected_length)
-            if len(rev_buf) == expected_length:
-                return rev_buf
-
-            retrycount -= 1
-
-        logging.debug("Failed to communicate with device after retries")
-        return None
-
-    def _prepare_command(self, function_code, index, value=None, gripper_id=0x01):
-        r"""Prepare a command buffer with CRC16 checksum.
-
-        Args:
-            function_code (int): The function code for the command.
-            index (int): The register index.
-            value (int, optional): The value to write (for write commands).
-
-        Returns:
-            list: The prepared command buffer.
-        """
-        send_buf = [gripper_id, function_code, (index >> 8) & 0xFF, index & 0xFF]
-        if value is not None:
-            send_buf.extend([(value >> 8) & 0xFF, value & 0xFF])
-        else:
-            send_buf.extend([0x00, 0x01])
-        crc = self.CRC16(send_buf, len(send_buf))
-        send_buf.extend([crc & 0xFF, (crc >> 8) & 0xFF])
-        return send_buf
-
-    async def WriteRegisterFunc(self, index, value, gripper_id=0x01):
+    def WriteRegisterFunc(self, index, value, gripper_id=0x01):
         r"""Write a value to a specific register of the gripper.
 
         Args:
@@ -126,12 +82,43 @@ class dh_modbus_gripper(object):
         Returns:
             bool: True if the write operation was successful, False otherwise.
         """
-        with self._transaction_lock:
-            send_buf = self._prepare_command(0x06, index, value, gripper_id)
-            response = await self._send_command(send_buf, 8)
-            return response is not None
+        send_buf = [0,0,0,0,0,0,0,0]
+        send_buf[0] = gripper_id
+        send_buf[1] = 0x06
+        send_buf[2] = (index >> 8) & 0xFF
+        send_buf[3] = index & 0xFF
+        send_buf[4] = (value >> 8) & 0xFF
+        send_buf[5] = value & 0xFF
+        
+        crc = self.CRC16(send_buf,len(send_buf)-2)
+        send_buf[6] = crc & 0xFF
+        send_buf[7] = (crc >> 8) & 0xFF
 
-    async def ReadRegisterFunc(self, index, gripper_id=0x01):
+        send_temp = send_buf
+        ret = False
+        retrycount = 3
+
+        while ( ret == False ):
+            ret = False
+
+            if(retrycount < 0) :
+                break
+            retrycount = retrycount - 1
+
+            wdlen = self.device.device_write(send_temp)
+            if(len(send_temp) != wdlen) :
+                logging.error(f"Write error! Sent: {send_temp}")
+                continue
+
+            rev_buf = self.device.device_read(8)
+            if rev_buf is None:
+                ret = False
+            elif(len(rev_buf) == wdlen) :
+                ret = True
+        logging.error("Failed to communicate with device after retries")
+        return ret
+
+    def ReadRegisterFunc(self, index, gripper_id=0x01):
         r"""Read a value from a specific register of the gripper.
 
         Args:
@@ -140,77 +127,104 @@ class dh_modbus_gripper(object):
         Returns:
             int: The value read from the register.
         """
-        with self._transaction_lock:
-            send_buf = self._prepare_command(0x03, index, gripper_id)
-            response = await self._send_command(send_buf, 7)
-            if response:
-                return (response[3] << 8) | (response[4] & 0xFF)
-            return None
+        send_buf = [0,0,0,0,0,0,0,0]
+        send_buf[0] = gripper_id
+        send_buf[1] = 0x03
+        send_buf[2] = (index >> 8) & 0xFF
+        send_buf[3] = index & 0xFF
+        send_buf[4] = 0x00
+        send_buf[5] = 0x01
 
-    async def Initialization(self, gripper_id=0x01):
+        crc = self.CRC16(send_buf,len(send_buf)-2)
+        send_buf[6] = crc & 0xFF
+        send_buf[7] = (crc >> 8) & 0xFF
+
+        send_temp = send_buf
+        ret = False
+        retrycount = 3
+
+        while ( ret == False ):
+            ret = False
+
+            if(retrycount < 0) :
+                break
+            retrycount = retrycount - 1
+
+            wdlen = self.device.device_write(send_temp)
+            if(len(send_temp) != wdlen) :
+                logging.error(f"Write error! Sent: {send_temp}")
+                continue
+
+            rev_buf = self.device.device_read(7)
+            if(len(rev_buf) == 7) :
+                value = ((rev_buf[4]&0xFF)|(rev_buf[3] << 8))
+                ret = True
+        return value
+
+    def Initialization(self, gripper_id=0x01):
         """Initialize the gripper by writing to the initialization register."""
-        await self.WriteRegisterFunc(0x0100, 0xA5, gripper_id)
+        self.WriteRegisterFunc(0x0100, 0xA5, gripper_id)
 
-    async def SetTargetPosition(self, refpos, gripper_id=0x01):
+    def SetTargetPosition(self, refpos, gripper_id=0x01):
         r"""Set the target position of the gripper.
 
         Args:
             refpos (int): The target position to set.
         """
-        await self.WriteRegisterFunc(0x0103, refpos, gripper_id)
+        self.WriteRegisterFunc(0x0103, refpos, gripper_id)
 
-    async def SetTargetForce(self, force, gripper_id=0x01):
+    def SetTargetForce(self, force, gripper_id=0x01):
         r"""Set the target force of the gripper.
 
         Args:
             force (int): The target force to set.
         """
-        await self.WriteRegisterFunc(0x0101, force, gripper_id)
+        self.WriteRegisterFunc(0x0101, force, gripper_id)
 
-    async def SetTargetSpeed(self, speed, gripper_id=0x01):
+    def SetTargetSpeed(self, speed, gripper_id=0x01):
         r"""Set the target speed of the gripper.
 
         Args:
             speed (int): The target speed to set.
         """
-        await self.WriteRegisterFunc(0x0104, speed, gripper_id)
+        self.WriteRegisterFunc(0x0104, speed, gripper_id)
 
-    async def GetCurrentPosition(self, gripper_id=0x01):
+    def GetCurrentPosition(self, gripper_id=0x01):
         r"""Get the current position of the gripper.
 
         Returns:
             int: The current position of the gripper.
         """
-        return await self.ReadRegisterFunc(0x0202, gripper_id)
+        return self.ReadRegisterFunc(0x0202, gripper_id)
 
-    async def GetCurrentTargetForce(self, gripper_id=0x01):
+    def GetCurrentTargetForce(self, gripper_id=0x01):
         r"""Get the current target force of the gripper.
 
         Returns:
             int: The current target force of the gripper.
         """
-        return await self.ReadRegisterFunc(0x0101, gripper_id)
+        return self.ReadRegisterFunc(0x0101, gripper_id)
 
-    async def GetCurrentTargetSpeed(self, gripper_id=0x01):
+    def GetCurrentTargetSpeed(self, gripper_id=0x01):
         r"""Get the current target speed of the gripper.
 
         Returns:
             int: The current target speed of the gripper.
         """
-        return await self.ReadRegisterFunc(0x0104, gripper_id)
+        return self.ReadRegisterFunc(0x0104, gripper_id)
 
-    async def GetInitState(self, gripper_id=0x01):
+    def GetInitState(self, gripper_id=0x01):
         r"""Get the initialization state of the gripper.
 
         Returns:
             int: The initialization state of the gripper.
         """
-        return await self.ReadRegisterFunc(0x0200, gripper_id)
+        return self.ReadRegisterFunc(0x0200, gripper_id)
 
-    async def GetGripState(self, gripper_id=0x01):
+    def GetGripState(self, gripper_id=0x01):
         r"""Get the grip state of the gripper.
 
         Returns:
             int: The grip state of the gripper.
         """
-        return await self.ReadRegisterFunc(0x0201, gripper_id)
+        return self.ReadRegisterFunc(0x0201, gripper_id)

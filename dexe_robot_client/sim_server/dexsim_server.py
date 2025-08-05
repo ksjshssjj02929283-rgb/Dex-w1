@@ -49,11 +49,9 @@ class DexsimServer:
         # fmt: on
         self._init_visualization()
         self._init_ros2_node()
-
-        self._shutdown_requested = False
+        self.logger.debug("Dexsim server initialized.")
 
     def _init_ros2_node(self):
-        rclpy.init()
         self._ros_node = Node("dexsim_server")
         self._ros_node.create_subscription(String, 
                                         "/feedback/robot_server_state_sim", 
@@ -126,20 +124,20 @@ class DexsimServer:
             self._articulation.set_current_qpos(qpos)
 
     def _shutdown(self):
-        rclpy.shutdown()
-        self._ros_thread.join()
-        self._executor.shutdown()
-        self._ros_node.destroy_node()
-        self.logger.debug("Dexsim server closed")
+        try:
+            self._executor.shutdown()
+            self._ros_node.destroy_node()
+            self._ros_thread.join()
+            self.logger.debug("Dexsim server closed.")
+        except Exception as e:
+            self.logger.error(f"Error during shutdown: {e}")
 
     def run(self):
-        def signal_handler(sig, frame):
-            self._shutdown_requested = True
-
-        signal.signal(signal.SIGINT, signal_handler)
         try:
-            self.logger.debug("Dexsim server running")
-            while not self._shutdown_requested and rclpy.ok():
+            self.logger.debug("Dexsim server running.")
+            while True:
                 time.sleep(0.1)
+        except KeyboardInterrupt:
+            pass
         finally:
             self._shutdown()

@@ -32,7 +32,6 @@ class RobotClient(ABC):
         Returns:
             RobotState: 机器人状态集合
         """
-        self.refresh()
         return RobotInfo(
             status=self.status, joint_position=self.joint_position, ee_pose=self.ee_pose
         )
@@ -307,12 +306,6 @@ class RobotClient(ABC):
     底层抽象接口, 需由派生类实现
     ----------------------------------------------------------------------------"""
 
-    @abstractmethod
-    def refresh(self):
-        """sync interface - refresh robot state information
-        同步接口 - 刷新机器人状态信息, 包括状态, 关节位置, 末端执行器位姿等
-        """
-        pass
     
     @abstractmethod
     def wait_second(self, wait_second: float):

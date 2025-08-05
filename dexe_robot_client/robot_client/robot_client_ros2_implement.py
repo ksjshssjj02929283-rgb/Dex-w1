@@ -7,8 +7,8 @@
 import numpy as np
 import json
 import time
+import threading
 from typing import Any, Optional
-
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
@@ -21,7 +21,6 @@ from .data_structure import *
 from .robot_client import RobotClient
 from dexe_robot_client.common import get_logger
 
-
 class RobotClientRos2(Node, RobotClient):
     """ros2 client universal interfaces"""
 
@@ -33,11 +32,20 @@ class RobotClientRos2(Node, RobotClient):
             self._node_name = "robot_client_real"
         Node.__init__(self, self._node_name)
         RobotClient.__init__(self, is_sim=is_sim)
-        self._is_connected = False
+        self._last_msg_time = None
+        self._connection_timeout = 0.1 
+
         self._init_subscriber()
         self._init_publisher()
         self._init_service_client()
         self._init_action_client()
+
+        # 创建一个线程来保持节点运行
+        self.spin_thread = threading.Thread(target=rclpy.spin, args=(self,))
+        self.spin_thread.daemon = True
+        self.spin_thread.start()
+        # 创建定时器检查连接状态
+        self.create_timer(0.1, self._check_connection_status)
 
         if self.is_connected(timeout_sec):
             self.logger.info(f"{self._node_name} init successed")
@@ -45,27 +53,36 @@ class RobotClientRos2(Node, RobotClient):
             self.logger.error(f"{self._node_name} init failed: connect to server timeout")
             raise RuntimeError
 
-    def is_connected(self, timeout_sec: float = 0.5):
+    def _check_connection_status(self):
+        """定时检查消息是否超时"""
+        if self._last_msg_time is not None and (time.time() - self._last_msg_time) > self._connection_timeout:
+            self.status = None
+            self.joint_position = None
+            self.ee_pose = None
+            self._last_msg_time = None
+            self.latest_queued_id = None
+            self.latest_finished_id = None
+            self.latest_errordrop_id = None
+
+    def is_connected(self, timeout_sec: float = 0.1):
         start_time = time.time()
         while time.time() - start_time < timeout_sec:
-            rclpy.spin_once(self, timeout_sec = 0.01)
-            if self._is_connected:
+            if self._last_msg_time is not None:
                 return True
+            self.wait_second(0.01)
+
         return False
 
     """ ---------------------------------------------------------------------------
     implement interfaces of base class RobotClient
     实现RobotClient基类的abstract接口
     ----------------------------------------------------------------------------"""
-    def refresh(self):
-        rclpy.spin_once(self, timeout_sec = 0.001)
-        rclpy.spin_once(self, timeout_sec = 0.001)
 
     def wait_second(self, wait_second: float):
         """Wait for a specified time in seconds."""
         start_time = time.time()
         while time.time() - start_time < wait_second:
-            rclpy.spin_once(self, timeout_sec=0.001)
+            time.sleep(0.01)
         # self.logger.info(f"Waited for {wait_second} seconds")
 
     def wait_request_finish(
@@ -81,7 +98,7 @@ class RobotClientRos2(Node, RobotClient):
         start_time = time.time()
         last_log_time = start_time
         while self.latest_finished_id < request_id:
-            rclpy.spin_once(self)
+            time.sleep(0.01)
             now = time.time()
             if now - last_log_time >= 2.0:
                 self.logger.info(
@@ -101,7 +118,7 @@ class RobotClientRos2(Node, RobotClient):
         return True
 
     def send_set_property_request(self, type: PropertyType, value: Any) -> int:
-        if not self._srv_set_property.wait_for_service(timeout_sec=3.0):
+        if not self._srv_set_property.wait_for_service(timeout_sec=1.0):
             self.logger.error("Ros2 set_property service not available")
             return False
 
@@ -109,12 +126,14 @@ class RobotClientRos2(Node, RobotClient):
         req.property_type = type.name
         req.value = value_to_string(value)
         future = self._srv_set_property.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        self.latest_sent_id = future.result().request_id
-        self.logger.info(
-            f"Property request id: {future.result().request_id} accepted,  type: {type}"
-        )
-        return future.result().request_id
+        while not future.done():
+            time.sleep(0.01)
+        if future.result() is not None:
+            self.latest_sent_id = future.result().request_id
+            self.logger.info(
+                f"Property request id: {future.result().request_id} accepted,  type: {type}"
+            )
+            return future.result().request_id
 
     def send_move_robot_request(self, request: MoveRequest) -> int:
         # 检查动作服务器是否可用
@@ -145,35 +164,36 @@ class RobotClientRos2(Node, RobotClient):
         future = self._action_move_robot.send_goal_async(
             goal_msg, feedback_callback=self._feedback_move_robot_callback
         )
-        rclpy.spin_until_future_complete(self, future)
+        while not future.done():
+            time.sleep(0.01)
+        if future.result() is not None:
+            goal_handle = future.result()
+            if goal_handle is None:
+                self.logger.error(f"Movement request failed to get goal handle!")
+                return
+            if not goal_handle.accepted:
+                self.logger.error(f"Movement request rejected!")
+                return False
 
-        goal_handle = future.result()
-        if goal_handle is None:
-            self.logger.error(f"Movement request failed to get goal handle!")
-            return
-        if not goal_handle.accepted:
-            self.logger.error(f"Movement request rejected!")
-            return False
+            get_result_future = goal_handle.get_result_async()
+            get_result_future.add_done_callback(self._get_result_move_robot_callback)
 
-        get_result_future = goal_handle.get_result_async()
-        get_result_future.add_done_callback(self._get_result_move_robot_callback)
+            # 等待 feedback request id
+            start_time = time.time()
+            while not self._move_request_id_returned:
+                self.wait_second(0.01)
+                if time.time() - start_time > 1.0:
+                    self.logger.error("Timeout waiting for request_id feedback!")
+                    return -1
 
-        # 等待 feedback request id
-        start_time = time.time()
-        while not self._move_request_id_returned:
-            rclpy.spin_once(self, timeout_sec=0.01)
-            if time.time() - start_time > 1.0:
-                self.logger.error("Timeout waiting for request_id feedback!")
-                return -1
-
-        target_str = (
-            str(np.round(request.value, 4)) if request.value is not None else "None"
-        )
-        self.logger.info(
-            f"Movement request_id: {self.latest_sent_id} accepted, type: {request.type}, motion_group: {request.motion_group}, target: {target_str}"
-        )
-        self._move_request_id_returned = False
-        return self.latest_sent_id
+            target_str = (
+                str(np.round(request.value, 4)) if request.value is not None else "None"
+            )
+            self.logger.info(
+                f"Movement request_id: {self.latest_sent_id} accepted, type: {request.type}, motion_group: {request.motion_group}, target: {target_str}"
+            )
+            self._move_request_id_returned = False
+            return self.latest_sent_id
 
     def send_streaming_command(
         self,
@@ -238,14 +258,14 @@ class RobotClientRos2(Node, RobotClient):
                 String,
                 "/feedback/robot_server_state_sim",
                 self._subscriber_robot_server_state_callback,
-                10,
+                rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
             )
         else:
             self.create_subscription(
                 String,
                 "/feedback/robot_server_state",
                 self._subscriber_robot_server_state_callback,
-                10,
+                rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
             )
 
     """ ---------------------------------------------------------------------------
@@ -276,14 +296,16 @@ class RobotClientRos2(Node, RobotClient):
                 SetProperty, "/control/set_property"
             )
 
+
     """ ---------------------------------------------------------------------------
     callbacks for subscribers
     ----------------------------------------------------------------------------"""
 
     def _subscriber_robot_server_state_callback(self, msg):
-        self._is_connected = True
         state = json.loads(msg.data)
-
+        if "timestamp" in state:
+            timestamp_ns = state["timestamp"]
+            self._last_msg_time = timestamp_ns / 1e9
         if "status" in state:
             self.status = Status[state["status"]]
         if "latest_queued_id" in state:

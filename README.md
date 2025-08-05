@@ -79,9 +79,10 @@ Refer to [commit message guidelines](https://github.com/angular/angular/blob/mai
 
 ## 📋 TODO
 - [ ] Some basic motion API, such as `MoveJi()`, `MoveTX()`, `MoveBY()`, `RotateBZ()`, `RotateTX()`, etc
-- [ ] Support `set_user_frame()`
+- [ ] Add `set_user_frame()`
 - [ ] Deprecate rlia-related kinematic dependencies
-- [ ] Support downloading urdf files from nas
-- [ ] Support `end-effector sim_server`
+- [ ] Add downloading urdf files from nas
+- [ ] Add `ee_sim_server`
+- [ ] Add end effector heartbeat mechanism
 - [ ] Support end-effector in dexsim visualizer
 - [ ] SDK packaging
