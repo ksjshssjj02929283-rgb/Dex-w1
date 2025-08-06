@@ -211,8 +211,8 @@ class RobotClientRos2(Node, RobotClient):
         return True
 
     def close_client(self):
-        # rclpy.shutdown()
-        self.logger.info("robot client is closed")
+        # NOTE: join spin_thread here?
+        self.logger.info(f"{self._node_name} is closed")
 
     """ ---------------------------------------------------------------------------
     init action

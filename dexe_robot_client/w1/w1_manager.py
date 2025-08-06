@@ -11,7 +11,7 @@ import pathlib, json
 from copy import deepcopy
 import atexit
 import rclpy
-# from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import MultiThreadedExecutor
 
 from rlia.kit.drive_controllers import W1DriveController
 from rlia.kit.drive_controllers.w1_drive_controller import W1Version, W1ArmType
@@ -106,15 +106,14 @@ class W1Manager:
             else:
                 raise ValueError(f"Unsupport end effector type: {self._end_effector_type}.")
             
-            # FIXME
-            # self._executor = MultiThreadedExecutor()
-            # for node in [self._robot_client_sim, self._robot_client_real, 
-            #              self.left_arm_ee_client, self.right_arm_ee_client]:
-            #     if node is not None:
-            #         self._executor.add_node(node)
-            
-            # self._node_thread = threading.Thread(target=self._executor.spin, daemon=True)
-            # self._node_thread.start()
+            self._executor = MultiThreadedExecutor()
+            # NOTE: self._robot_client_sim 和 self._robot_client_real已经在内部spin了
+            for node in [self.left_arm_ee_client, self.right_arm_ee_client]:
+                if node is not None:
+                    self._executor.add_node(node)
+            self._node_thread = threading.Thread(target=self._executor.spin, 
+                                                 daemon=True)
+            self._node_thread.start()
 
         except Exception as e:
             self.logger.error(f"Ros2 node create failed: {str(e)}.")
@@ -125,15 +124,20 @@ class W1Manager:
 
     def _destroy_ros2_clients(self):
         try:
+            self._executor.shutdown()
             if self._robot_client_sim is not None:
+                self._robot_client_sim.close_client()
                 self._robot_client_sim.destroy_node()
             if self._robot_client_real is not None:
+                self._robot_client_real.close_client()
                 self._robot_client_real.destroy_node()
             if self.left_arm_ee_client is not None:
                 self.left_arm_ee_client.destroy_node()
             if self.right_arm_ee_client is not None:
                 self.right_arm_ee_client.destroy_node()
-            rclpy.shutdown()
+            self._node_thread.join()
+            if rclpy.ok():
+                rclpy.shutdown()
             self.logger.debug(f"Ros2 node destroyed")
         except Exception as e:
             self.logger.warning(f"Ros2 node destroy failed: {str(e)}.")
