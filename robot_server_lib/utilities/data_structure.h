@@ -91,14 +91,14 @@ struct PoseQuaternion
     explicit PoseQuaternion(const Eigen::Matrix4d &mat)
     {
         position = mat.block<3, 1>(0, 3);
-        orientation = Eigen::Quaterniond(mat.block<3, 3>(0, 0));
+        orientation = Eigen::Quaterniond(mat.block<3, 3>(0, 0)).normalized();
     }
 
     static PoseQuaternion FromVector7d(const Eigen::Matrix<double, 7, 1> &vec)
     {
         PoseQuaternion pose;
         pose.position = vec.head(3);
-        pose.orientation = Eigen::Quaterniond(vec(3), vec(4), vec(5), vec(6));
+        pose.orientation = Eigen::Quaterniond(vec(3), vec(4), vec(5), vec(6)).normalized();
         return pose;
     }
 
@@ -133,32 +133,40 @@ struct PoseTrajectory
     {
         PoseTrajectory traj;
         traj.poses = std::move(pose_list);
-        const int N = traj.poses.size();
-        assert(N >= 2);
-        int degree = std::clamp(interp_degree, -(N - 1), N - 1);
-        traj.degree = degree;
 
         auto &poses = traj.poses;
         auto &segment_times = traj.segment_times;
         auto &total_length = traj.total_length;
-        auto &pos_spline = traj.pos_spline;
         // Estimate length
-        std::vector<double> segment_lengths_(N - 1);
+        std::vector<double> segment_lengths_;
         total_length = 0.0;
-        const double q_weight = 0.5;  // weight of quaternion distance
-        for (int i = 0; i < N - 1; ++i)
+        const double q_weight = 0.1;  // weight of quaternion distance
+        int i = 0;
+        while (i < static_cast<int>(poses.size()) - 1)
         {
-            const double pos_dist = (poses[i + 1].position - poses[i].position).norm();
-            const double ang_dist = poses[i].orientation.angularDistance(poses[i + 1].orientation);
-            segment_lengths_[i] = pos_dist + q_weight * ang_dist;
-            total_length += segment_lengths_[i];
+            double pos_dist = (poses[i + 1].position - poses[i].position).norm();
+            double ang_dist = poses[i].orientation.angularDistance(poses[i + 1].orientation);
+            double length_ = pos_dist + q_weight * ang_dist;
+            if (length_ > 1e-3)
+            {
+                segment_lengths_.push_back(length_);
+                total_length += length_;
+                ++i;
+            }
+            else // remove duplicate
+                poses.erase(poses.begin() + i + 1);
         }
+        int N = static_cast<int>(poses.size());
         // Estimate time stamps
         segment_times.resize(N);
         segment_times[0] = 0.0;
         for (int i = 0; i < N - 1; ++i) segment_times[i + 1] = segment_times[i] + segment_lengths_[i] / total_length;
         assert(segment_times.back() == 1.0);
 
+        int degree = std::clamp(interp_degree, -(N - 1), N - 1);
+        traj.degree = degree;
+        auto &pos_spline = traj.pos_spline;
+        
         if(degree == 1 || degree == -1); // 线性插值，不使用spline
         else if(degree == 0) // 拐角平滑
         {
