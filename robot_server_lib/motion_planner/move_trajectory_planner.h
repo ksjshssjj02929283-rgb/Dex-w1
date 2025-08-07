@@ -47,10 +47,10 @@ class MoveTrajectoryPlanner : public MotionPlannerBase
         const bool goal_reached =
             current_phase_ >= 1.0 && ((q_left - q_arms.head<ndof_left_>()).norm() < 1e-4 && (q_right - q_arms.tail<ndof_right_>()).norm() < 1e-4);
 
-        q_arms.head<ndof_left_>() << q_left;
-        dq_arms.head<ndof_left_>() << dq_left;
-        q_arms.tail<ndof_right_>() << q_right;
-        dq_arms.tail<ndof_right_>() << dq_right;
+        q_arms.head<ndof_left_>() = q_left;
+        dq_arms.head<ndof_left_>() = dq_left;
+        q_arms.tail<ndof_right_>() = q_right;
+        dq_arms.tail<ndof_right_>() = dq_right;
         MapArmToWholeBody(q_arms, q_ndof, MotionGroup::BothArms);
         MapArmToWholeBody(dq_arms, dq_ndof, MotionGroup::BothArms);
 

@@ -1376,7 +1376,7 @@ struct w1_right_arm_industrial_ik
 
 };  // struct w1_right_arm_industrial_ik
 
-struct W1RightArmIndustrial_IkSolver : public IkSolverBase<7>
+struct W1RightArmIndustrialIkSolver : public IkSolverBase<7>
 {
    public:
     static constexpr int aux_input_index = 4;

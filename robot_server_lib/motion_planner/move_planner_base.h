@@ -42,29 +42,27 @@ class MotionPlannerBase
         robot_model_ = std::move(robot_model);
         robot_data_ = pinocchio::Data(*robot_model_.model_ptr);
         // Initialize kinematics for both arms
-        // if (robot_model_.params_ptr->left_arm_name == "W1LeftArmIndustrial")
-        // {
-        // kinematics_ptr_ =
-        // std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmIndustrial());
-        // }
-        // if (robot_model_.params_ptr->left_arm_name == "W1LeftArmAnthropomorphic")
-        // {
-        // kinematics_ptr_ =
-        // std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmAnthropomorphic());
-        // }
-        // if (robot_model_.params_ptr->right_arm_name == "W1RightArmIndustrial")
-        // {
-        // kinematics_secondary_ptr_ =
-        // std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmIndustrial());
-        // }
-        // if (robot_model_.params_ptr->right_arm_name == "W1RightArmAnthropomorphic")
-        // {
-        // kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(
-        // kinematics::W1RightArmAnthropomorphic());
-        // }
+        if (robot_model_.params_ptr->left_arm_name == "W1LeftArmIndustrial")
+        {
+            // kinematics_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmIndustrial());
+            kinematics_ptr_ = std::make_shared<kinematics::YaikKinematics>(0, 0);
+        }
+        if (robot_model_.params_ptr->left_arm_name == "W1LeftArmAnthropomorphic")
+        {
+            // kinematics_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmAnthropomorphic());
+            kinematics_ptr_ = std::make_shared<kinematics::YaikKinematics>(0, 1);
+        }
+        if (robot_model_.params_ptr->right_arm_name == "W1RightArmIndustrial")
+        {
+            // kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmIndustrial());
+            kinematics_secondary_ptr_ = std::make_shared<kinematics::YaikKinematics>(1, 0);
+        }
+        if (robot_model_.params_ptr->right_arm_name == "W1RightArmAnthropomorphic")
+        {
+            // kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmAnthropomorphic());
+            kinematics_secondary_ptr_ = std::make_shared<kinematics::YaikKinematics>(1, 1);
+        }
 
-        kinematics_ptr_ = std::make_shared<kinematics::YaikKinematics>(0);
-        kinematics_secondary_ptr_ = std::make_shared<kinematics::YaikKinematics>(1);
         // kinematics_ptr_ = std::make_shared<kinematics::NumericalKinematics>(*robot_model_.left_arm_model_ptr);
         // kinematics_secondary_ptr_ = std::make_shared<kinematics::NumericalKinematics>(*robot_model_.right_arm_model_ptr);
 
