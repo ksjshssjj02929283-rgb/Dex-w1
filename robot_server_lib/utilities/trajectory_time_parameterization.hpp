@@ -162,7 +162,7 @@ bool parameterizeJointTrajectory(JointTrajectory<NDoF> &joint, std::vector<doubl
     }
 
     // smooth time, comment this to keep time-optimal
-    const double ratio = 0.25;
+    const double ratio = 0.5;
     const double max_time = *std::max_element(time_diff.begin(), time_diff.end());
     int wall = (n - 1) / 10;
     for (int i = 0; i < n - 1; ++i)

@@ -98,7 +98,9 @@ TEST(KinematicsTest, Efficiency)
   Eigen::Matrix<double, 7, 1> qrd, disturbance;
   PoseQuaternion pose0, pose1;
   double fk_srs = 0.0, fk_yaik = 0.0, ik_srs = 0.0, ik_yaik = 0.0;
+  double total_dist_srs = 0.0, total_dist_yaik = 0.0;
   int success_srs = 0, success_yaik = 0;
+  bool ok1, ok2;
   while (count < 10000)
   {
     qrd = randomJointWithinLimit();
@@ -120,25 +122,30 @@ TEST(KinematicsTest, Efficiency)
     {
       Eigen::VectorXd qin(qrd + disturbance);
       auto start_time = std::chrono::high_resolution_clock::now();
-      auto ok = srs.GetIK(pose0, qin);
+      ok1 = srs.GetIK(pose0, qin);
       auto end_time = std::chrono::high_resolution_clock::now();
-      if (ok)
+      if (ok1)
       {
         success_srs++;
         std::chrono::duration<double, std::micro> dt = end_time - start_time;
         ik_srs += dt.count() / 1000.0;
+        auto dist = (qin - (qrd + disturbance)).norm();
+        total_dist_srs += dist;
       }
     }
     {
       Eigen::VectorXd qin(qrd + disturbance);
       auto start_time = std::chrono::high_resolution_clock::now();
-      auto ok = yaik.GetIK(pose1, qin);
+      ok2 = yaik.GetIK(pose1, qin);
       auto end_time = std::chrono::high_resolution_clock::now();
-      if (ok)
+      if (ok2)
       {
         success_yaik++;
         std::chrono::duration<double, std::micro> dt = end_time - start_time;
         ik_yaik += dt.count() / 1000.0;
+        auto dist = (qin - (qrd + disturbance)).norm();
+        if(ok1)
+          total_dist_yaik += dist;
       }
     }
     count++;
@@ -149,10 +156,12 @@ TEST(KinematicsTest, Efficiency)
             << "\t  FK Average Time: " << fk_srs / 10000.0 << " ms\n"
             << "\t  IK Success Rate: " << (double)success_srs / 100.0 << "%\n"
             << "\t  IK Average Time: " << ik_srs / 10000.0 << " ms\n"
+            << "\t  IK Total Distance: " << total_dist_srs << " \n"
             << "\tYAIK:\n"
             << "\t  FK Average Time: " << fk_yaik / 10000.0 << " ms\n"
             << "\t  IK Success Rate: " << (double)success_yaik / 100.0 << "%\n"
-            << "\t  IK Average Time: " << ik_yaik / 10000.0 << " ms\n";
+            << "\t  IK Average Time: " << ik_yaik / 10000.0 << " ms\n"
+            << "\t  IK Total Distance: " << total_dist_yaik << " \n";
 }
 
 // TEST(KinematicsTest, RawIK)
