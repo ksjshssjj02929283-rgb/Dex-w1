@@ -31,13 +31,13 @@ def main():
     try:
         embed()  # 在这里交互式调试
     finally:
-        # 安全退出：先关闭 executor，再释放资源
+        if rclpy.ok():
+            rclpy.shutdown()
+        ros_thread.join()
         executor.shutdown()
         left_gripper_node.destroy_node()
         right_gripper_node.destroy_node()
-        ros_thread.join()
-        if rclpy.ok():
-            rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()
