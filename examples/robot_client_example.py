@@ -74,6 +74,7 @@ def main(is_sim = True):
 
     # 安全退出：先关闭 executor，再释放资源
     executor.shutdown()
+    client.close_client()
     client.destroy_node()
     ros_thread.join()
     if rclpy.ok():

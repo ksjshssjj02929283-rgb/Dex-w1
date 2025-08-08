@@ -209,6 +209,8 @@ class RobotClientRos2(Node, RobotClient):
         self._publisher_streaming_command.publish(position_msg)
         return True
 
+    def close_client(self):
+        pass
 
     """ ---------------------------------------------------------------------------
     init action
