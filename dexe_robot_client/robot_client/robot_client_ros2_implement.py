@@ -33,20 +33,17 @@ class RobotClientRos2(Node, RobotClient):
         Node.__init__(self, self._node_name)
         RobotClient.__init__(self, is_sim=is_sim)
         self._last_msg_time = None
-        self._connection_timeout = 0.1 
+        self._connection_timeout = 1.0
 
         self._init_subscriber()
         self._init_publisher()
         self._init_service_client()
         self._init_action_client()
 
-        # 创建一个线程来保持节点运行
-        self.spin_thread = threading.Thread(target=rclpy.spin, args=(self,))
-        self.spin_thread.daemon = True
-        self.spin_thread.start()
         # 创建定时器检查连接状态
         self.create_timer(0.1, self._check_connection_status)
 
+        rclpy.spin_once(self, timeout_sec = 1.)
         if self.is_connected(timeout_sec):
             self.logger.info(f"{self._node_name} init successed")
         else:
@@ -55,14 +52,16 @@ class RobotClientRos2(Node, RobotClient):
 
     def _check_connection_status(self):
         """定时检查消息是否超时"""
-        if self._last_msg_time is not None and (time.time() - self._last_msg_time) > self._connection_timeout:
-            self.status = None
-            self.joint_position = None
-            self.ee_pose = None
-            self._last_msg_time = None
-            self.latest_queued_id = None
-            self.latest_finished_id = None
-            self.latest_errordrop_id = None
+        if self._last_msg_time is not None:
+            cur_time = self.get_clock().now().nanoseconds / 1e9
+            if (cur_time - self._last_msg_time) > self._connection_timeout:
+                self.status = None
+                self.joint_position = None
+                self.ee_pose = None
+                self._last_msg_time = None
+                self.latest_queued_id = None
+                self.latest_finished_id = None
+                self.latest_errordrop_id = None
 
     def is_connected(self, timeout_sec: float = 0.1):
         start_time = time.time()
@@ -82,7 +81,7 @@ class RobotClientRos2(Node, RobotClient):
         """Wait for a specified time in seconds."""
         start_time = time.time()
         while time.time() - start_time < wait_second:
-            time.sleep(0.01)
+            time.sleep(0.001)
         # self.logger.info(f"Waited for {wait_second} seconds")
 
     def wait_request_finish(
@@ -98,7 +97,7 @@ class RobotClientRos2(Node, RobotClient):
         start_time = time.time()
         last_log_time = start_time
         while self.latest_finished_id < request_id:
-            time.sleep(0.01)
+            self.wait_second(0.001)
             now = time.time()
             if now - last_log_time >= 2.0:
                 self.logger.info(
@@ -127,7 +126,7 @@ class RobotClientRos2(Node, RobotClient):
         req.value = value_to_string(value)
         future = self._srv_set_property.call_async(req)
         while not future.done():
-            time.sleep(0.01)
+            self.wait_second(0.01)
         if future.result() is not None:
             self.latest_sent_id = future.result().request_id
             self.logger.info(
@@ -165,7 +164,7 @@ class RobotClientRos2(Node, RobotClient):
             goal_msg, feedback_callback=self._feedback_move_robot_callback
         )
         while not future.done():
-            time.sleep(0.01)
+            self.wait_second(0.01)
         if future.result() is not None:
             goal_handle = future.result()
             if goal_handle is None:
@@ -204,15 +203,12 @@ class RobotClientRos2(Node, RobotClient):
         position_msg.request_id = self.latest_sent_id
         position_msg.streaming_finished = streaming_finished
         position_msg.position = [float(x) for x in position]
-        # self.logger.info(
+        # self.logger.debug(
         #     f"Publishing streaming command: {position_msg.position}, streaming finished: {streaming_finished}"
         # )
         self._publisher_streaming_command.publish(position_msg)
         return True
 
-    def close_client(self):
-        # rclpy.shutdown()
-        self.logger.info("robot client is closed")
 
     """ ---------------------------------------------------------------------------
     init action
@@ -303,9 +299,7 @@ class RobotClientRos2(Node, RobotClient):
 
     def _subscriber_robot_server_state_callback(self, msg):
         state = json.loads(msg.data)
-        if "timestamp" in state:
-            timestamp_ns = state["timestamp"]
-            self._last_msg_time = timestamp_ns / 1e9
+        self._last_msg_time = self.get_clock().now().nanoseconds / 1e9
         if "status" in state:
             self.status = Status[state["status"]]
         if "latest_queued_id" in state:
