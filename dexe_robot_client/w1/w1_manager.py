@@ -57,13 +57,20 @@ class W1Manager:
         self._robot_client_real = None
         self.left_arm_ee_client = None
         self.right_arm_ee_client = None
+        self._executor = None
+        self._node_thread = None
 
         self._is_sim = None
         self._arm_type = arm_type
         self._w1_version = w1_version
         self._end_effector_type = end_effector_type
 
-        self._init_clients(is_sim)
+        try:
+            self._init_clients(is_sim)
+        except Exception:
+            self._destroy_clients()
+            raise RuntimeError("Ros2 node create failed ")
+
         self._init_kine_solver()
         self.set_sim_mode(is_sim)
 
@@ -73,74 +80,70 @@ class W1Manager:
         if not self._load_home_qpos():
             raise ValueError
         
-        self._stop_move_flag = False
-        self._stop_move_lock = threading.Lock()
+        self._stop_move_event = threading.Event()
+        self._stop_move_event.clear()
 
         # 在主线程中正常退出时自动调用
-        atexit.register(self._destroy_ros2_clients)
-
+        atexit.register(self._destroy_clients)
 
     def _init_clients(self, is_sim: bool):
-        try:
-            if not rclpy.ok():
-                rclpy.init()
+        if not rclpy.ok():
+            rclpy.init()
 
-            self._robot_client_sim = RobotClient(is_sim = True)
-            if not is_sim:
-                # 按需构造，real_server未必启动
-                self._robot_client_real = RobotClient(is_sim = False)
-            # 初始化先进入仿真模式，sim_server是必定会启动
-            self._is_sim = True
-            self.robot_client = self._robot_client_sim
+        self._robot_client_sim = RobotClient(is_sim = True)
+        if not is_sim:
+            # 按需构造，real_server未必启动
+            self._robot_client_real = RobotClient(is_sim = False)
+        # 初始化先进入仿真模式，sim_server是必定会启动
+        self._is_sim = True
+        self.robot_client = self._robot_client_sim
 
-            if self._end_effector_type == EndEffectorType.BRAINCO_HAND:
-                self.left_arm_ee_client = LeftBrainCoHadnClient()
-                self.right_arm_ee_client = RightBrainCoHadnClient()
-                self.arm_ee_dofs = 6
-            elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
-                self.left_arm_ee_client = LeftPGCGripperClient()
-                self.right_arm_ee_client = RightPGCGripperClient()
-                self.arm_ee_dofs = 1
-            elif self._end_effector_type is None:
-                self.logger.info(f"No movable end effector.")
-            else:
-                raise ValueError(f"Unsupport end effector type: {self._end_effector_type}.")
-            
-            self._executor = MultiThreadedExecutor()
-            # NOTE: self._robot_client_sim 和 self._robot_client_real已经在内部spin了
-            for node in [self.left_arm_ee_client, self.right_arm_ee_client]:
-                if node is not None:
-                    self._executor.add_node(node)
-            self._node_thread = threading.Thread(target=self._executor.spin, 
-                                                 daemon=True)
-            self._node_thread.start()
-
-        except Exception as e:
-            self.logger.error(f"Ros2 node create failed: {str(e)}.")
-            self._destroy_ros2_clients()
-            raise RuntimeError("Failed to initialize clients.") from e
+        if self._end_effector_type == EndEffectorType.BRAINCO_HAND:
+            self.left_arm_ee_client = LeftBrainCoHadnClient()
+            self.right_arm_ee_client = RightBrainCoHadnClient()
+            self.arm_ee_dofs = 6
+        elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
+            self.left_arm_ee_client = LeftPGCGripperClient()
+            self.right_arm_ee_client = RightPGCGripperClient()
+            self.arm_ee_dofs = 1
+        elif self._end_effector_type is None:
+            self.logger.info(f"No movable end effector.")
+        else:
+            raise ValueError(f"Unsupport end effector type: {self._end_effector_type}.")
         
-        self.logger.info("Initialize Ros2 client.")
+        self._executor = MultiThreadedExecutor()
+        for node in [self._robot_client_sim, self._robot_client_real, 
+                        self.left_arm_ee_client, self.right_arm_ee_client]:
+            if node is not None:
+                self._executor.add_node(node)
+        self._node_thread = threading.Thread(target=self._executor.spin, 
+                                            daemon=True)
+        self._node_thread.start()
+        self.logger.info("Ros2 client initialized.")
 
-    def _destroy_ros2_clients(self):
+    def _destroy_clients(self):
         try:
-            self._executor.shutdown()
+            if rclpy.ok():
+                rclpy.shutdown() # 停止ros触发spin
+
+            if self._node_thread is not None:
+                self._node_thread.join()
+
+            if self._executor is not None:
+                self._executor.shutdown()
+
             if self._robot_client_sim is not None:
-                self._robot_client_sim.close_client()
                 self._robot_client_sim.destroy_node()
             if self._robot_client_real is not None:
-                self._robot_client_real.close_client()
                 self._robot_client_real.destroy_node()
             if self.left_arm_ee_client is not None:
                 self.left_arm_ee_client.destroy_node()
             if self.right_arm_ee_client is not None:
                 self.right_arm_ee_client.destroy_node()
-            self._node_thread.join()
-            if rclpy.ok():
-                rclpy.shutdown()
-            self.logger.debug(f"Ros2 node destroyed")
+
+            self.logger.debug(f"Ros2 node destroyed.")
         except Exception as e:
-            self.logger.warning(f"Ros2 node destroy failed: {str(e)}.")
+            self.logger.error(f"Ros2 node destroy failed: {e}.")
 
     def _init_kine_solver(self):
         # TODO: params read from json
@@ -565,8 +568,7 @@ class W1Manager:
         Returns:
             bool: 
         """
-        with self._stop_move_lock:
-            self._stop_move_flag = True
+        self._stop_move_event.set()
         self.logger.info("Stop move by user!")
         return True
 
@@ -717,18 +719,13 @@ class W1Manager:
             bool: 
         """
         # check enable
-        if self.robot_client.status == Status.Init:
-            self.logger.error(f"Robot client not enabled.")
-            return False
-        elif self.robot_client.status == Status.Running:
-            self.logger.error(f"Robot client is running.")
-            return False
-        elif self.robot_client.status == Status.Error:
-            self.logger.error(f"Robot client is in error.")
+        if self.robot_client.status in (Status.Init, Status.Running, Status.Error):
+            self.logger.error(f"Robot client not in idle. ({self.robot_client.status})")
             return False
 
         # reset stop move flag
-        self._stop_move_flag = False
+        if self._stop_move_event.is_set():
+            self._stop_move_event.clear()
 
         # check current qpos and start qpos
         res, cur_qpos = self.get_current_qpos()
@@ -739,16 +736,16 @@ class W1Manager:
             return False
 
         count = 1
-        stop_thread = False
+        stop_ee_thread = False
 
         # ee trigger
         def left_arm_ee_trigger():
-            nonlocal count, stop_thread
+            nonlocal count, stop_ee_thread
             left_arm_ee_trigger_list_cp = deepcopy(left_arm_ee_trigger_list)
             left_arm_ee_trigger_list_cp.reverse()
             target_count, target_ee_qpos = left_arm_ee_trigger_list_cp.pop()
             cur_count = -1
-            while not stop_thread:
+            while not stop_ee_thread:
                 if count == target_count and count != cur_count:
                     self.left_arm_ee_client.set_state(np.array(target_ee_qpos))
                     self.logger.debug(f"left_arm_ee has triggered: {target_count} {target_ee_qpos}.")
@@ -758,12 +755,12 @@ class W1Manager:
                 time.sleep(self.TIME_STEP / 10)
 
         def right_arm_ee_trigger():
-            nonlocal count, stop_thread
+            nonlocal count, stop_ee_thread
             right_arm_ee_trigger_list_cp = deepcopy(right_arm_ee_trigger_list)
             right_arm_ee_trigger_list_cp.reverse()
             target_count, target_ee_qpos = right_arm_ee_trigger_list_cp.pop()
             cur_count = -1
-            while not stop_thread:
+            while not stop_ee_thread:
                 if count == target_count and count != cur_count:
                     self.right_arm_ee_client.set_state(np.array(target_ee_qpos))
                     self.logger.debug(f"right_arm_ee has triggered: {target_count} {target_ee_qpos}.")
@@ -772,6 +769,7 @@ class W1Manager:
                     cur_count = count
                 time.sleep(self.TIME_STEP / 10)
 
+        left_arm_ee_trigger_thread = None
         if self._has_arm_ee_client("left_arm_ee") and left_arm_ee_trigger_list is not None:
             if self._has_arm_ee_client("left_arm_ee"):
                 left_arm_ee_trigger_thread = threading.Thread(
@@ -779,6 +777,7 @@ class W1Manager:
                 )
                 left_arm_ee_trigger_thread.start()
 
+        right_arm_ee_trigger_thread = None
         if self._has_arm_ee_client("right_arm_ee") and right_arm_ee_trigger_list is not None:
             if self._has_arm_ee_client("right_arm_ee"):
                 right_arm_ee_trigger_thread = threading.Thread(
@@ -791,14 +790,18 @@ class W1Manager:
         self.robot_client.start_joint_streaming_request(MotionGroup.WholeBody)
         self.logger.info("Start streaming.")
         t0 = time.time()
+        last_qpos = cur_qpos
         for qpos in qpos_array:
-            if self._stop_move_flag:
-                with self._stop_move_lock:
-                    self._stop_move_flag = False
-                # TODO: use pre_qpos
-                self.robot_client.send_streaming_command(qpos.tolist(), True)
+            if self._stop_move_event.is_set():
+                self.robot_client.send_streaming_command(position = last_qpos.tolist(), 
+                                                         streaming_finished = True)
                 self.logger.info(f"Stop sending streaming command")
-                stop_thread = True
+                stop_ee_thread = True
+                if left_arm_ee_trigger_thread is not None:
+                    left_arm_ee_trigger_thread.join()
+                if right_arm_ee_trigger_thread is not None:
+                    right_arm_ee_trigger_thread.join()
+                self._stop_move_event.clear()
                 return False
 
             if count == end_iter + 1:
@@ -809,13 +812,18 @@ class W1Manager:
                                                      streaming_finished)
             self.robot_client.wait_second(self.TIME_STEP)
             count += 1
+            last_qpos = qpos
         self.robot_client.wait_request_finish()
+
         self.logger.info(f"Ideal duration should be {(count-1) * self.TIME_STEP}s, " +
                             f"and actual duration is {time.time() - t0}s.")
         self.logger.info("Finish streaming.")
         
-        stop_thread = True
-        # TODO: join thread?
+        stop_ee_thread = True
+        if left_arm_ee_trigger_thread is not None:
+            left_arm_ee_trigger_thread.join()
+        if right_arm_ee_trigger_thread is not None:
+            right_arm_ee_trigger_thread.join()
 
         # check reach within timeout
         targt_qpos = qpos_array[-1]

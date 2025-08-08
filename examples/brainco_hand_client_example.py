@@ -38,12 +38,13 @@ def main():
         left_hand_node.set_state(np.zeros(6))
         embed()
     finally:
+        if rclpy.ok():
+            rclpy.shutdown()
+        ros_thread.join()
         executor.shutdown()
         left_hand_node.destroy_node()
         right_hand_node.destroy_node()
-        ros_thread.join()
-        if rclpy.ok():
-            rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()

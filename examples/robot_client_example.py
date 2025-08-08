@@ -4,7 +4,9 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
+import threading
 import rclpy
+from rclpy.executors import MultiThreadedExecutor
 
 from dexe_robot_client.robot_client import RobotClientRos2 as RobotClient
 from dexe_robot_client.robot_client import MotionGroup
@@ -16,22 +18,29 @@ joint_industrial_right0 = [0.45, 0.65, -0.35, 1.5, 1, -1.1, 0.4]
 pose_industrial_left0 = [-0.3, 0.363727, 0.262795, -0.229399, -0.440151, 0.599072, 0.628296]
 pose_industrial_right0 = [0.3, 0.363727, 0.262795, 0.628296, -0.599072, 0.440151, -0.229399]
 
-def main(args=None):
+def main(is_sim = True):
     "示例: 仿真client, 如需控制真实机器人则将is_sim设置为False"
     rclpy.init()
-    client = RobotClient(is_sim=True)
+    client_sim = RobotClient(is_sim=True)
+    client = RobotClient(is_sim=False)
+    executor = MultiThreadedExecutor()
+    executor.add_node(client_sim)
+    executor.add_node(client)
+    # 在后台启动 executor
+    ros_thread = threading.Thread(target=executor.spin, daemon=True)
+    ros_thread.start()
 
+    print(f"\nclient is connnected: {client.is_connected()}")
+    print(f"\nclient_sim is connnected: {client_sim.is_connected()}")
     print(f"\nCurrent robot status: {client.get_info().status}")
     print(f"\nCurrent joint position: {client.get_info().joint_position}")
     print(f"\nCurrent ee_pose: {client.get_info().ee_pose}\n")
 
     client.set_global_speed(0.5)
-
     """move joint/line接口示例"""
     client.move_joint_sync(
         joint_industrial_left0 + joint_industrial_right0, MotionGroup.BothArms
     )
-
     client.move_line_sync(
         pose_industrial_left0 + pose_industrial_right0, MotionGroup.BothArms
     )
@@ -39,20 +48,20 @@ def main(args=None):
     """joint streaming接口示例"""
     joint_position = client.get_info().joint_position
     client.start_joint_streaming_request(MotionGroup.WholeBody)
-    for _ in range(5):
-        joint_position[8] -= 0.1
+    for _ in range(50):
+        joint_position[8] -= 0.01
         client.send_streaming_command(joint_position, streaming_finished=False)
-        client.wait_second(0.1)
+        client.wait_second(0.01)
     client.send_streaming_command(joint_position, streaming_finished=True)
 
     """ee pose streaming示例"""
     ee_pose = client.get_info().ee_pose
     client.start_ee_pose_streaming_request(MotionGroup.BothArms)
-    for _ in range(10):
-        ee_pose[0] -= 0.01
-        ee_pose[7] += 0.01
+    for _ in range(50):
+        ee_pose[0] -= 0.001
+        ee_pose[7] += 0.001
         client.send_streaming_command(ee_pose, streaming_finished=False)
-        client.wait_second(0.1)
+        client.wait_second(0.01)
     client.send_streaming_command(ee_pose, streaming_finished=True)
 
     """其他接口示例"""
@@ -60,10 +69,16 @@ def main(args=None):
     client.clear_error()
     client.wait_request_finish()
 
-    # ros节点安全析构
-    client.destroy_node()
-    rclpy.shutdown()
+    print(f"\nclient is connnected: {client.is_connected()}")
+    print(f"\nclient_sim is connnected: {client_sim.is_connected()}")
 
+    if rclpy.ok():
+        rclpy.shutdown()
+    ros_thread.join()
+    executor.shutdown()
+    client.destroy_node()
+    client_sim.destroy_node()
+    
 
 if __name__ == "__main__":
-    main()
+    main(is_sim=True)
