@@ -23,6 +23,12 @@ Ros2Node::~Ros2Node()
     {
         manager_thread_.join();
     }
+#if TORQUE_CONTROL
+    if (torque_control_thread_.joinable())
+    {
+        torque_control_thread_.join();
+    }
+#endif
 }
 
 void Ros2Node::InitRobotServer()
@@ -103,7 +109,7 @@ void Ros2Node::InitRobotServer()
     InitSimulation();
 
 #if TORQUE_CONTROL
-    //Init torque control thread
+    // Init torque control thread
     torque_control_thread_ = std::thread(
         [this]() -> void
         {
@@ -276,7 +282,8 @@ void Ros2Node::InitSimulation()
                     torque_cmd.setZero();
                 }
 
-                ddq = pinocchio::ForwardDynamics(*robot_model_.model_ptr, robot_data, q, dq, torque_cmd, robot_model_.params_ptr->joint_command_sequence_by_name);
+                ddq = pinocchio::ForwardDynamics(*robot_model_.model_ptr, robot_data, q, dq, torque_cmd,
+                                                 robot_model_.params_ptr->joint_command_sequence_by_name);
 
                 q += simulation_dt * dq;
                 dq += simulation_dt * ddq;
@@ -289,9 +296,8 @@ void Ros2Node::InitSimulation()
                 assert(ret);
                 std::this_thread::sleep_for(std::chrono::microseconds(simulation_dt_micro));
             }
-    });
+        });
 #else
-    std::cout << "TORQUE_CONTROL is disabled" << std::endl;
     RCLCPP_INFO(this->get_logger(), "TORQUE_CONTROL is disabled");
     simulation_thread_ = std::thread(
         [this]() -> void

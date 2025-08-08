@@ -9,9 +9,9 @@
 #include <std_msgs/msg/string.hpp>
 
 #include "rclcpp/rclcpp.hpp"
-#include "robot_server_lib/utilities.h"
 #include "robot_server_lib/planner_manager.h"
 #include "robot_server_lib/torque_controller_manager.h"
+#include "robot_server_lib/utilities.h"
 
 class Ros2Node : public rclcpp::Node
 {
@@ -41,10 +41,11 @@ class Ros2Node : public rclcpp::Node
     robot_server_lib::StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interfaces::msg::StreamingCommand> msg);
 
     std::thread manager_thread_;
-    std::thread torque_control_thread_;
     std::thread simulation_thread_;
     std::thread publish_thread_;
-
+#if TORQUE_CONTROL
+    std::thread torque_control_thread_;
+#endif
     robot_server_lib::RobotModel robot_model_;
     robot_server_lib::PlannerManagerBuffers manager_buffers_;
     robot_server_lib::TorqueControlBuffer robot_buffers_;

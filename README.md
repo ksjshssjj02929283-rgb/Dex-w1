@@ -73,11 +73,11 @@ colcon build --cmake-args -DENABLE_SIM_SERVER=OFF
 colcon build --cmake-args -DBUILD_TESTING=OFF
 ```
 
-**力控模式：开启后运行力控线程和力控仿真，输出的关节位置为力控仿真后的关节位置**
+**力控仿真模式：需在可视化仿真开启后开启，运行力控仿真，输出的关节位置为力控仿真后的关节位置**
 
 默认关闭，如需开启则
 ```bash
-colcon build --cmake-args -DENABLE_TORQUE_CONTROL=ON
+colcon build --cmake-args -DENABLE_TORQUE_CONTROL_SIMULATION=ON
 ```
 
 

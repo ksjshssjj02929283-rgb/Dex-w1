@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+
 #include "utilities.h"
 
 using namespace robot_server_lib;
@@ -28,12 +29,15 @@ TEST(PinocchioModelTest, Pinocchio)
     pinocchio::urdf::buildModel(params.left_arm_urdf_path, left_arm_model);
     pinocchio::urdf::buildModel(params.right_arm_urdf_path, right_arm_model);
 
-    auto print_model_info = [](const pinocchio::Model& model, const std::string& tag) {
+    auto print_model_info = [](const pinocchio::Model& model, const std::string& tag)
+    {
         std::cout << "==== " << tag << " ====" << std::endl;
         std::cout << "Number of joints: " << model.nv << std::endl;
-        for (int idx = 1; idx <= model.nv; ++idx) {
+        for (int idx = 1; idx <= model.nv; ++idx)
+        {
             std::cout << "Joint " << idx << ": " << model.names[idx];
-            if (model.joints[idx].nq() > 0) {
+            if (model.joints[idx].nq() > 0)
+            {
                 std::cout << ", parent link: " << model.frames[model.joints[idx].idx_q()].name;
             }
             std::cout << std::endl;

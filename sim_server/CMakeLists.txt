@@ -5,7 +5,7 @@ set(CMAKE_BUILD_TYPE Debug)
 project(sim_server)
 
 option(ENABLE_SIM_SERVER "Enable sim_server package compilation" ON)
-option(ENABLE_TORQUE_CONTROL "Enable torque control" OFF)
+option(ENABLE_TORQUE_CONTROL_SIMULATION "Enable torque control" OFF)
 
 # Python interpreter setup
 set(PYTHON_EXECUTABLE "/usr/bin/python3")
@@ -41,7 +41,7 @@ if(ENABLE_SIM_SERVER)
 
   add_executable(${PROJECT_NAME} ${LIB_SRCS})
 
-  if(ENABLE_TORQUE_CONTROL)
+  if(ENABLE_TORQUE_CONTROL_SIMULATION)
     target_compile_definitions(${PROJECT_NAME} PRIVATE TORQUE_CONTROL=1)
   else()
     target_compile_definitions(${PROJECT_NAME} PRIVATE TORQUE_CONTROL=0)

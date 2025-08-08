@@ -15,7 +15,8 @@ class IdleControllerInvDynamic : public TorqueControllerBase
 
         VectorDof ddq_desired{};
         ddq_desired = parameters_.K_p * (idle_q_ - feedback_q) + parameters_.K_v * (-feedback_dq);
-        VectorDof tau = pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, ddq_desired, robot_model_.params_ptr->joint_command_sequence_by_name);
+        VectorDof tau = pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, ddq_desired,
+                                                   robot_model_.params_ptr->joint_command_sequence_by_name);
 
         output_cmd.torque = tau;
         output_cmd.q_desired = idle_q_;
@@ -42,7 +43,8 @@ class DecelerationControllerInvDynamic : public TorqueControllerBase
 
         VectorDof ddq_desired{};
         ddq_desired = parameters_.K_v * (-dq);
-        VectorDof tau = pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data_, q, dq, ddq_desired, robot_model_.params_ptr->joint_command_sequence_by_name);
+        VectorDof tau = pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data_, q, dq, ddq_desired,
+                                                   robot_model_.params_ptr->joint_command_sequence_by_name);
 
         output_cmd.torque = tau;
         output_cmd.q_desired = q;
@@ -65,7 +67,8 @@ class OperatingControllerInvDynamic : public TorqueControllerBase
 
         VectorDof ddq_desired{};
         ddq_desired = cmd_ddq + parameters_.K_p * (cmd_q - feedback_q) + parameters_.K_v * (cmd_dq - feedback_dq);
-        VectorDof tau = pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data_, cmd_q, cmd_dq, ddq_desired, robot_model_.params_ptr->joint_command_sequence_by_name);
+        VectorDof tau = pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data_, cmd_q, cmd_dq, ddq_desired,
+                                                   robot_model_.params_ptr->joint_command_sequence_by_name);
 
         output_cmd.torque = tau + input_cmd.cmd.torque_feedforward;
         output_cmd.q_desired = cmd_q;
