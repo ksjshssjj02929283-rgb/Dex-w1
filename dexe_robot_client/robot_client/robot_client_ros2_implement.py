@@ -36,6 +36,7 @@ class RobotClientRos2(Node, RobotClient):
         self._connection_timeout = 1.0
 
         self._init_subscriber()
+        rclpy.spin_once(self, timeout_sec = 1.)
         self._init_publisher()
         self._init_service_client()
         self._init_action_client()
@@ -43,7 +44,6 @@ class RobotClientRos2(Node, RobotClient):
         # 创建定时器检查连接状态
         self.create_timer(0.1, self._check_connection_status)
 
-        rclpy.spin_once(self, timeout_sec = 1.)
         if self.is_connected(timeout_sec):
             self.logger.info(f"{self._node_name} init successed")
         else:
