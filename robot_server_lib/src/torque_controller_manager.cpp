@@ -45,7 +45,7 @@ void TorqueControllerManager::LoopOnce()
     else
     {
         time_meta.measurement_time = TimePointSystem::Now();
-        LOG_DEBUG << "Raw Measurement received:  " << raw_measurement.ToString();
+        // LOG_DEBUG << "Raw Measurement received:  " << raw_measurement.ToString();
     }
 
     // 获取最新的位置控制下发的joint command
@@ -95,7 +95,7 @@ void TorqueControllerManager::LoopOnce()
         robot_buffers_.torque_command_vector->AppendNewElement(output_cmd.torque);
         std::ostringstream oss;
         oss << output_cmd.torque.transpose();
-        LOG_DEBUG << "Torque controller output: " << oss.str();
+        // LOG_DEBUG << "Torque controller output: " << oss.str();
     }
 }
 
@@ -227,5 +227,6 @@ void TorqueControllerManager::ChangeState(TorqueControllerState new_state)
     time_meta.episode_index += 1;
     time_meta.episode_start_time = time_meta.current_time;
     controller_state_ = new_state;
+    LOG_INFO << "TorqueControllerManager state changed to: " << ToString(controller_state_);
 }
 }  // namespace robot_server_lib

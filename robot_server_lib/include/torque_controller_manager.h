@@ -15,6 +15,23 @@ enum class TorqueControllerState
     Operating
 };
 
+inline const char *ToString(TorqueControllerState state)
+{
+    switch (state)
+    {
+    case TorqueControllerState::Init:
+        return "Init";
+    case TorqueControllerState::Idle:
+        return "Idle";
+    case TorqueControllerState::Decelerating:
+        return "Decelerating";
+    case TorqueControllerState::Operating:
+        return "Operating";
+    default:
+        return "Unknown";
+    }
+}
+
 struct ProcessResponse
 {
     bool re_run{false};

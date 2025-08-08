@@ -55,12 +55,31 @@ dexe_interfaces gitlab: http://69.235.177.182:8081/dexembodied/dexe_interfaces
 colcon build
 ```
 
-仿真可视化编译默认开启, 如需关闭则
+### 编译可配置项
+
+**可视化仿真：**
+
+默认开启, 如需关闭则
 
 ```bash
 colcon build --cmake-args -DENABLE_SIM_SERVER=OFF
 ```
-如果同时真机在运行, 仿真位置会同步真机位置
+
+**gtest单元测试：**
+
+默认开启, 如需关闭则
+
+```bash
+colcon build --cmake-args -DBUILD_TESTING=OFF
+```
+
+**力控模式：开启后运行力控线程和力控仿真，输出的关节位置为力控仿真后的关节位置**
+
+默认关闭，如需开启则
+```bash
+colcon build --cmake-args -DENABLE_TORQUE_CONTROL=ON
+```
+
 
 ### 运行项目
 
@@ -72,14 +91,7 @@ colcon build --cmake-args -DENABLE_SIM_SERVER=OFF
 
 如运行w1则需运行 w1_control/run.sh 会同步启动仿真
 
-
-test默认开启, 如需关闭则
-
-```bash
-colcon build --cmake-args -DBUILD_TESTING=OFF
-```
 运行测试
-
 ```bash
 ./dexe_robot_server/test.sh
 ```
@@ -96,7 +108,7 @@ colcon build --cmake-args -DBUILD_TESTING=OFF
 
 ```json
 {
-    "robot_name": "w1_v02_1_with_hand",
+    "robot_name": "W1Industrial",
     "left_arm_name": "W1LeftArmIndustrial",
     "right_arm_name": "W1RightArmIndustrial",
     "joints_primary": [6, 7, 8, 9, 10, 11, 12],

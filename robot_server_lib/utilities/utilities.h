@@ -60,6 +60,16 @@ inline bool GetRobotParamsFromConfig(json config_json, RobotParams &params)
     parse_joints_maps("joints_primary", params.joints_primary);
     parse_joints_maps("joints_secondary", params.joints_secondary);
 
+    if (config_json.contains("joint_command_sequence_by_name"))
+    {
+        auto arr = config_json["joint_command_sequence_by_name"];
+        params.joint_command_sequence_by_name.clear();
+        for (const auto& item : arr)
+        {
+            params.joint_command_sequence_by_name.push_back(item.get<std::string>());
+        }
+    }
+    
     return true;
 }
 

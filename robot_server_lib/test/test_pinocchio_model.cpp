@@ -28,7 +28,6 @@ TEST(PinocchioModelTest, Pinocchio)
     pinocchio::urdf::buildModel(params.left_arm_urdf_path, left_arm_model);
     pinocchio::urdf::buildModel(params.right_arm_urdf_path, right_arm_model);
 
-
     auto print_model_info = [](const pinocchio::Model& model, const std::string& tag) {
         std::cout << "==== " << tag << " ====" << std::endl;
         std::cout << "Number of joints: " << model.nv << std::endl;

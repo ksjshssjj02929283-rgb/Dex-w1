@@ -200,9 +200,9 @@ struct RobotParams
     std::string robot_name;
     std::string left_arm_name;
     std::string right_arm_name;
+    std::vector<std::string> joint_command_sequence_by_name;  // 关节指令顺序
     Eigen::VectorXd joints_primary;
     Eigen::VectorXd joints_secondary;
-    // std::vector<double> zero_position {};
 };
 
 struct RobotModel

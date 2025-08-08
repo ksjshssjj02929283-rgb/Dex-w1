@@ -5,7 +5,6 @@ using namespace robot_server_lib;
 Ros2Node::Ros2Node() : Node("sim_server")
 {
     InitRobotServer();
-    InitSimulation();
     RCLCPP_INFO(this->get_logger(), "Initialized successfully.");
     LOG_INFO << "Initialized successfully.";
 }
@@ -101,6 +100,23 @@ void Ros2Node::InitRobotServer()
     // 初始化全局共享buffer
     manager_buffers_.Initialize();
     robot_buffers_.Initialize();
+    InitSimulation();
+
+#if TORQUE_CONTROL
+    //Init torque control thread
+    torque_control_thread_ = std::thread(
+        [this]() -> void
+        {
+            TorqueControllerManager torque_controller_manager(this->robot_model_, this->manager_buffers_, this->robot_buffers_);
+            while (rclcpp::ok())
+            {
+                torque_controller_manager.LoopOnce();
+                std::this_thread::sleep_for(std::chrono::microseconds(torque_ctrl_dt_micro));
+            }
+        });
+    RCLCPP_INFO(this->get_logger(), "torque_control_thread is started");
+    LOG_INFO << "torque_control_thread is started";
+#endif
 
     manager_thread_ = std::thread(
         [this]() -> void
@@ -228,17 +244,20 @@ void Ros2Node::InitRobotServer()
 void Ros2Node::InitSimulation()
 {
 // 创建仿真线程, 模拟执行torque_cmd生成joint raw measurement
-#if TORQUECONTROL
-    std::thread simulation_thread(
-        [this]()
+#if TORQUE_CONTROL
+    RCLCPP_INFO(this->get_logger(), "TORQUE_CONTROL is enabled");
+    simulation_thread_ = std::thread(
+        [this]() -> void
         {
             pinocchio::Data robot_data(*robot_model_.model_ptr);
             JointRawMeasurement cache{};
             // 初始更新关节测量数据
-            Eigen::VectorXd q = Eigen::VectorXd::Zero(robot_model_.model_ptr->nv);
-            Eigen::VectorXd dq = Eigen::VectorXd::Zero(robot_model_.model_ptr->nv);
-            Eigen::VectorXd ddq = Eigen::VectorXd::Zero(robot_model_.model_ptr->nv);
-            Eigen::VectorXd torque_cmd = Eigen::VectorXd::Zero(robot_model_.model_ptr->nv);
+            assert(ndof_robot == robot_model_.model_ptr->nv && "Robot model DOF mismatch");
+            VectorDof q, dq, ddq, torque_cmd;
+            q << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
+            dq.setZero();
+            ddq.setZero();
+            torque_cmd.setZero();
             cache.position = q;
             cache.velocity = dq;
             cache.effort = torque_cmd;
@@ -246,7 +265,7 @@ void Ros2Node::InitSimulation()
             auto ret = robot_buffers_.joint_raw_measurement->AppendNewElement(cache);
             VectorDof temp_torque{};
 
-            for (int i = 0; i < 25000 && rclcpp::ok(); ++i)
+            while (rclcpp::ok())
             {
                 if (robot_buffers_.torque_command_vector && robot_buffers_.torque_command_vector->PeekLatest(&temp_torque))
                 {
@@ -257,7 +276,7 @@ void Ros2Node::InitSimulation()
                     torque_cmd.setZero();
                 }
 
-                ddq = pinocchio::aba(*robot_model_.model_ptr, robot_data, q, dq, torque_cmd);
+                ddq = pinocchio::ForwardDynamics(*robot_model_.model_ptr, robot_data, q, dq, torque_cmd, robot_model_.params_ptr->joint_command_sequence_by_name);
 
                 q += simulation_dt * dq;
                 dq += simulation_dt * ddq;
@@ -270,20 +289,10 @@ void Ros2Node::InitSimulation()
                 assert(ret);
                 std::this_thread::sleep_for(std::chrono::microseconds(simulation_dt_micro));
             }
-        });
-
-    // Init torque control thread
-    torque_control_thread_ = std::thread(
-        [this]() -> void
-        {
-            TorqueControllerManager torque_controller_manager(this->robot_model_, this->manager_buffers_, this->robot_buffers_);
-            while (rclcpp::ok())
-            {
-                torque_controller_manager.LoopOnce();
-                std::this_thread::sleep_for(std::chrono::microseconds(torque_ctrl_dt_micro));
-            }
-        });
+    });
 #else
+    std::cout << "TORQUE_CONTROL is disabled" << std::endl;
+    RCLCPP_INFO(this->get_logger(), "TORQUE_CONTROL is disabled");
     simulation_thread_ = std::thread(
         [this]() -> void
         {

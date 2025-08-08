@@ -1,5 +1,4 @@
 #pragma once
-#include "pinocchio_include.h"
 #include "utilities.h"
 
 namespace robot_server_lib
@@ -29,8 +28,8 @@ class TorqueControllerBase
     // Gain parameter
     struct
     {
-        double K_p{120};
-        double K_v{45};
+        double K_p{1600};
+        double K_v{80};
     } parameters_;
 };
 }  // namespace robot_server_lib

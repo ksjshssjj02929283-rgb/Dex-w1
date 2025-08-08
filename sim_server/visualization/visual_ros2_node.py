@@ -19,6 +19,7 @@ class VisualRos2Node(Node):
         self.joint_position = None
         self.ee_pose = None
         self.vis_sim = None
+        self.json_error_logged = False 
         self._init_subscriber()
         self._init_visualization()
 
@@ -52,14 +53,21 @@ class VisualRos2Node(Node):
         self.robot_name = cfg.get("robot_name")
 
     def _subscriber_robot_server_state_sim_callback(self, msg):
-        state = json.loads(msg.data)
+        try:
+            state = json.loads(msg.data)
+            self.json_error_logged = False
+        except json.JSONDecodeError as e:
+            if not self.json_error_logged:
+                self.get_logger().warn(f"JSON decode error: {e}. Message data: {msg.data[:200]}...")
+                self.json_error_logged = True
+            return
+
         if "joint_position" in state:
+            self.joint_position = np.array(state["joint_position"])
             if self.robot_name == "W1Industrial" or self.robot_name == "W1Anthropomorphic":
                 idx = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 4, 5]
                 arr = np.array(state["joint_position"])
                 self.joint_position = arr[idx]
-            else:
-                self.joint_position = np.array(state["joint_position"])
             self.vis_sim.display(self.joint_position)
 
 def main(args=None):
