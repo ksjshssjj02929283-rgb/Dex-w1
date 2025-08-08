@@ -36,7 +36,6 @@ class RobotClientRos2(Node, RobotClient):
 
         self._init_subscriber()
         rclpy.spin_once(self, timeout_sec = 1.)
-
         self._init_publisher()
         self._init_service_client()
         self._init_action_client()
