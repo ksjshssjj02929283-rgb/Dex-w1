@@ -43,7 +43,8 @@ class JointStreamingPlanner : public MotionPlannerBase
 
         const StreamingCommand &latest_cmd = runtime_.latest_cmd.value();
         assert(latest_cmd.request_id == runtime_.request_id);
-        if (latest_cmd.streaming_finished)
+        auto time_interval = (time_meta.current_time.time_in_ns() - latest_cmd.received_time.time_in_ns()) * 1e-9;
+        if (latest_cmd.streaming_finished || time_interval > StreamingCommandTimeout)
             runtime_.streaming_finished = true;
 
         for (auto i = 0; i < ndof_robot; i++)

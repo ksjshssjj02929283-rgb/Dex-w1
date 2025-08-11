@@ -24,6 +24,7 @@ constexpr double manager_dt = double(manager_dt_micro) / 1e6;
 constexpr double simulation_dt = double(simulation_dt_micro) / 1e6;
 constexpr double IdleVelocityThreshold = 2e-3;  // 静止状态的速度阈值
 constexpr double PositionThreshold = 1e-6;      // 位置误差容忍度
+constexpr double StreamingCommandTimeout = 3.0;  // 流式命令超时3秒
 
 using Int64 = std::int64_t;
 using VectorDof = Eigen::Matrix<double, ndof_robot, 1>;
