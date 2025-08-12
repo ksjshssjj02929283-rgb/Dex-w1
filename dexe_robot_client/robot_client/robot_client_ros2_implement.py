@@ -7,7 +7,6 @@
 import numpy as np
 import json
 import time
-import threading
 from typing import Any, Optional
 import rclpy
 from rclpy.node import Node
@@ -21,16 +20,19 @@ from .data_structure import *
 from .robot_client import RobotClient
 from dexe_robot_client.common import get_logger
 
+
 class RobotClientRos2(Node, RobotClient):
     """ros2 client universal interfaces"""
 
-    def __init__(self, is_sim: bool = False, timeout_sec: float = 3.0):
+    def __init__(self, 
+                 is_sim: bool = False, 
+                 timeout_sec: float = 3.0):
         self.logger = get_logger()
         if is_sim:
-            self._node_name = "robot_client_sim"
+            self.node_name = "robot_client_sim"
         else:
-            self._node_name = "robot_client_real"
-        Node.__init__(self, self._node_name)
+            self.node_name = "robot_client_real"
+        Node.__init__(self, self.node_name)
         RobotClient.__init__(self, is_sim=is_sim)
         self._last_msg_time = None
         self._connection_timeout = 1.0
@@ -45,9 +47,9 @@ class RobotClientRos2(Node, RobotClient):
         self.create_timer(0.1, self._check_connection_status)
 
         if self.is_connected(timeout_sec):
-            self.logger.info(f"{self._node_name} init successed")
+            self.logger.info(f"{self.node_name} init successed")
         else:
-            self.logger.error(f"{self._node_name} init failed: connect to server timeout")
+            self.logger.error(f"{self.node_name} init failed: connect to server timeout")
             raise RuntimeError
 
     def _check_connection_status(self):

@@ -11,14 +11,14 @@ import rclpy
 import threading
 from rclpy.executors import MultiThreadedExecutor
 
-from dexe_robot_client.end_effector_client import LeftBrainCoHadnClient, RightBrainCoHadnClient
+from dexe_robot_client.end_effector_client import LeftBrainCoHandClient, RightBrainCoHandClient
 
 
-def main():
+def main(is_sim = True):
     rclpy.init()
 
-    left_hand_node = LeftBrainCoHadnClient()
-    right_hand_node = RightBrainCoHadnClient()
+    left_hand_node = LeftBrainCoHandClient(is_sim)
+    right_hand_node = RightBrainCoHandClient(is_sim)
 
     executor = MultiThreadedExecutor()
     executor.add_node(left_hand_node)
@@ -28,14 +28,14 @@ def main():
     ros_thread.start()
 
     try:
-        left_hand_node.set_state(np.zeros(6))
+        left_hand_node.set_qpos(np.zeros(6))
         time.sleep(1)
         for i in range(6):
-            state = np.zeros(6)
-            state[i] = 0.3
-            left_hand_node.set_state(state)
+            qpos = np.zeros(6)
+            qpos[i] = 30.
+            left_hand_node.set_qpos(qpos)
             time.sleep(0.05)
-        left_hand_node.set_state(np.zeros(6))
+        left_hand_node.set_qpos(np.zeros(6))
         embed()
     finally:
         executor.shutdown()
@@ -45,5 +45,6 @@ def main():
         if rclpy.ok():
             rclpy.shutdown()
 
+
 if __name__ == "__main__":
-    main()
+    main(is_sim = True)

@@ -7,7 +7,7 @@
 import time
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float64, Float64MultiArray, Int32
+from std_msgs.msg import Float64, Int32
 from pgc_gripper import dh_modbus_gripper
 
 # 配置参数
@@ -92,51 +92,45 @@ class PGCNode(Node):
 
     def _init_publishers(self):
         """初始化发布器"""
-        self.left_grip_state_publisher = self.create_publisher(
-            Int32, f"/left_pgc_node/grip_state", 10
-        )
         self.left_qpos_publisher = self.create_publisher(
-            Float64, f"/left_pgc_node/current_position", 10
+            Float64, f"/feedback/gripper/left", 10
         )
+        # self.left_grip_state_publisher = self.create_publisher(
+        #     Int32, f"/feedback/gripper/left/grip_state", 10
+        # )
 
-        self.right_grip_state_publisher = self.create_publisher(
-            Int32, f"/right_pgc_node/grip_state", 10
-        )
         self.right_qpos_publisher = self.create_publisher(
-            Float64, f"/right_pgc_node/current_position", 10
+            Float64, f"/feedback/gripper/right", 10
         )
+        # self.right_grip_state_publisher = self.create_publisher(
+        #     Int32, f"/feedback/gripper/right/grip_state", 10
+        # )
 
     def _init_subscribers(self):
         """初始化订阅器"""
         self.create_subscription(
-            Float64MultiArray,
-            f"/set_left_pgc_position",
-            self._left_qpos_callback,
-            10,
+            Float64, f"/control/gripper/left", self._left_qpos_callback, 10,
         )
-        self.create_subscription(
-            Float64, f"/set_left_pgc_force", self._left_force_callback, 10
-        )
-        self.create_subscription(
-            Float64, f"/set_left_pgc_speed", self._left_speed_callback, 10
-        )
+        # self.create_subscription(
+        #     Float64, f"/control/gripper/left/speed", self._left_speed_callback, 10
+        # )
+        # self.create_subscription(
+        #     Float64, f"/control/gripper/left/force", self._left_force_callback, 10
+        # )
 
         self.create_subscription(
-            Float64MultiArray,
-            f"/set_right_pgc_position",
-            self._right_qpos_callback,
-            10,
+            Float64, f"/control/gripper/right", self._right_qpos_callback, 10,
         )
-        self.create_subscription(
-            Float64, f"/set_right_pgc_force", self._right_force_callback, 10
-        )
-        self.create_subscription(
-            Float64, f"/set_right_pgc_speed", self._right_speed_callback, 10
-        )
+        # self.create_subscription(
+        #     Float64, f"/control/gripper/right/speed", self._right_speed_callback, 10
+        # )
+        # self.create_subscription(
+        #     Float64, f"/control/gripper/right/force", self._right_force_callback, 10
+        # )
 
     def _left_qpos_callback(self, msg):
         """左夹爪位置指令回调"""
-        angle = msg.data[0]
+        angle = msg.data[0]*10.
         if 0. <= angle <= 1000.:
             self.gripper.SetTargetPosition(int(angle), self.left_gripper_id)
         else:
@@ -144,64 +138,68 @@ class PGCNode(Node):
 
     def _right_qpos_callback(self, msg):
         """右夹爪位置指令回调"""
-        angle = msg.data[0]
+        angle = msg.data[0]*10.
         if 0. <= angle <= 1000.:
             self.gripper.SetTargetPosition(int(angle), self.right_gripper_id)
         else:
             self.get_logger().warning(f"Invalid right gripper target position: {angle}")
 
-    def _left_force_callback(self, msg):
-        """左夹爪力指令回调"""
-        force = msg.data
-        if 20 <= force <= 100:
-            self.gripper.SetTargetForce(int(force), self.left_gripper_id)
-        else:
-            self.get_logger().warning(f"Invalid left gripper target force: {force}")
+    # def _left_force_callback(self, msg):
+    #     """左夹爪力指令回调"""
+    #     force = msg.data
+    #     if 20 <= force <= 100:
+    #         self.gripper.SetTargetForce(int(force), self.left_gripper_id)
+    #     else:
+    #         self.get_logger().warning(f"Invalid left gripper target force: {force}")
 
-    def _right_force_callback(self, msg):
-        """右夹爪力指令回调"""
-        force = msg.data
-        if 20 <= force <= 100:
-            self.gripper.SetTargetForce(int(force), self.right_gripper_id)
-        else:
-            self.get_logger().warning(f"Invalid right gripper target force: {force}")
+    # def _right_force_callback(self, msg):
+    #     """右夹爪力指令回调"""
+    #     force = msg.data
+    #     if 20 <= force <= 100:
+    #         self.gripper.SetTargetForce(int(force), self.right_gripper_id)
+    #     else:
+    #         self.get_logger().warning(f"Invalid right gripper target force: {force}")
 
-    def _left_speed_callback(self, msg):
-        """左夹爪速度指令回调"""
-        speed = msg.data
-        if 0 <= speed <= 100:
-            self.gripper.SetTargetSpeed(int(speed), self.left_gripper_id)
-        else:
-            self.get_logger().warning(f"Invalid left gripper target speed: {speed}")
+    # def _left_speed_callback(self, msg):
+    #     """左夹爪速度指令回调"""
+    #     speed = msg.data
+    #     if 0 <= speed <= 100:
+    #         self.gripper.SetTargetSpeed(int(speed), self.left_gripper_id)
+    #     else:
+    #         self.get_logger().warning(f"Invalid left gripper target speed: {speed}")
 
-    def _right_speed_callback(self, msg):
-        """右夹爪速度指令回调"""
-        speed = msg.data
-        if 0 <= speed <= 100:
-            self.gripper.SetTargetSpeed(int(speed), self.right_gripper_id)
-        else:
-            self.get_logger().warning(f"Invalid right gripper target speed: {speed}")
+    # def _right_speed_callback(self, msg):
+    #     """右夹爪速度指令回调"""
+    #     speed = msg.data
+    #     if 0 <= speed <= 100:
+    #         self.gripper.SetTargetSpeed(int(speed), self.right_gripper_id)
+    #     else:
+    #         self.get_logger().warning(f"Invalid right gripper target speed: {speed}")
 
     def _publish_states(self):
         """状态发布"""
         if not self.connected:
             return
         try:
-            left_grip_state = self.gripper.GetGripState(self.left_gripper_id)
             left_qpos = self.gripper.GetCurrentPosition(self.left_gripper_id)
-            self.left_grip_state_publisher.publish(Int32(data=int(left_grip_state)))
+            if left_qpos is not None:
+                left_qpos = left_qpos / 10.
             self.left_qpos_publisher.publish(Float64(data=float(left_qpos)))
-            self.get_logger().debug(f"left grip state: {left_grip_state}")
-            self.get_logger().debug(f"left qpos: {left_qpos}")
+            self.get_logger().debug(f"Left gripper qpos: {left_qpos}")
+            # left_grip_state = self.gripper.GetGripState(self.left_gripper_id)
+            # self.left_grip_state_publisher.publish(Int32(data=int(left_grip_state)))
+            # self.get_logger().debug(f"Left gripper grip state: {left_grip_state}")
 
-            right_grip_state = self.gripper.GetGripState(self.right_gripper_id)
             right_qpos = self.gripper.GetCurrentPosition(self.right_gripper_id)
-            self.right_grip_state_publisher.publish(Int32(data=int(right_grip_state)))
+            if right_qpos is not None:
+                right_qpos = right_qpos / 10.
             self.right_qpos_publisher.publish(Float64(data=float(right_qpos)))
-            self.get_logger().debug(f"right grip state: {right_grip_state}")
-            self.get_logger().debug(f"right qpos: {right_qpos}")
+            self.get_logger().debug(f"Right gripper qpos: {right_qpos}")
+            # right_grip_state = self.gripper.GetGripState(self.right_gripper_id)
+            # self.right_grip_state_publisher.publish(Int32(data=int(right_grip_state)))
+            # self.get_logger().debug(f"Right gripper grip state: {right_grip_state}")
         except Exception as e:
-            self.get_logger().warning(f"Publish failed: {str(e)}")
+            self.get_logger().warning(f"Feedback publish failed: {str(e)}")
 
     def destroy_node(self):
         """清理任务"""
