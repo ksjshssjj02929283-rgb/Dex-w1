@@ -23,12 +23,10 @@ Ros2Node::~Ros2Node()
     {
         manager_thread_.join();
     }
-#if TORQUE_CONTROL
     if (torque_control_thread_.joinable())
     {
         torque_control_thread_.join();
     }
-#endif
 }
 
 void Ros2Node::InitRobotServer()
@@ -127,6 +125,38 @@ void Ros2Node::InitRobotServer()
         });
     RCLCPP_INFO(this->get_logger(), "torque_control_thread is started");
     LOG_INFO << "torque_control_thread is started";
+#else
+    // 不开启力控输出时，只计算当前状态的理论力矩
+    torque_control_thread_ = std::thread(
+        [this]() -> void
+        {
+            pinocchio::Data robot_data(*robot_model_.model_ptr);
+            JointMeasurement measurement;
+            VectorDof feedback_q{};
+            VectorDof feedback_dq{};
+            VectorDof ddq_desired{};
+            VectorDof tau{};
+
+            while (rclcpp::ok())
+            {
+                auto t_start = TimePointSystem::Now();
+
+                if (manager_buffers_.joint_measurement->PeekLatest(&measurement))
+                {
+                    feedback_q = measurement.position;
+                    feedback_dq = measurement.velocity;
+                    tau = pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data, feedback_q, feedback_dq, ddq_desired,
+                                        robot_model_.params_ptr->joint_command_sequence_by_name);
+                    // std::cout << "Arm InverseDynamics computed: " << tau.tail(14).transpose() << std::endl;
+                }
+
+                int duration_micro = (t_start.time_in_ns() - TimePointSystem::Now().time_in_ns()) / 1e3;
+                if (duration_micro < torque_ctrl_dt_micro)
+                {
+                    std::this_thread::sleep_for(std::chrono::microseconds(torque_ctrl_dt_micro - duration_micro));
+                }
+            }
+        });
 #endif
 
     manager_thread_ = std::thread(
