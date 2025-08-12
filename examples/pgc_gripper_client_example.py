@@ -28,12 +28,12 @@ def main(is_sim = True):
     try:
         embed()
     finally:
+        if rclpy.ok():
+            rclpy.shutdown()
+        ros_thread.join()
         executor.shutdown()
         left_gripper_node.destroy_node()
         right_gripper_node.destroy_node()
-        ros_thread.join()
-        if rclpy.ok():
-            rclpy.shutdown()
 
 if __name__ == "__main__":
     main(is_sim = True)

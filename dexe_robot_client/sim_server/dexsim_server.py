@@ -148,8 +148,8 @@ class DexsimServer:
     def _shutdown(self):
         try:
             self._executor.shutdown()
-            self._ros_node.destroy_node()
             self._ros_thread.join()
+            self._ros_node.destroy_node()
             self.logger.debug("Dexsim server closed.")
         except Exception as e:
             self.logger.error(f"Error during shutdown: {e}")
