@@ -5,7 +5,6 @@
 # ----------------------------------------------------------------------------
 
 import time
-import signal
 import json
 import threading
 import numpy as np
@@ -14,7 +13,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 from dexe_robot_client.common import get_logger
-import dexsim
+
 
 """TODO
 1. select robot type
@@ -25,27 +24,49 @@ class DexsimServer:
         self.logger = get_logger()
         # fmt: off
         self.real2sim_index = [
-            0,      # Ankle    -> [0  | Trunk forward/backward tilt]
-            1,      # Knee     -> [1  | Trunk forward/backward tilt]
-            2,      # Buttock  -> [2  | Trunk forward/backward tilt]
-            3,      # Loin     -> [3  | Trunk left/right rotation]
-            6,      # Left J1  -> [4  | Left shoulder first joint - Shoulder forward/back]
-            4,      # Neck     -> [5  | Neck left/right rotation]
-            13,     # Right J1 -> [6  | Right shoulder first joint - Shoulder forward/back]
-            7,      # Left J2  -> [7  | Left shoulder abduction/adduction]
-            5,      # Head     -> [8  | Head pitch up/down]
-            14,     # Right J2 -> [9  | Right shoulder abduction/adduction]
-            8,      # Left J3  -> [10 | Left shoulder internal/external rotation]
-            15,     # Right J3 -> [11 | Right shoulder internal/external rotation]
-            9,      # Left J4  -> [12 | Left elbow flexion/extension]
-            16,     # Right J4 -> [13 | Right elbow flexion/extension]
-            10,     # Left J5  -> [14 | Left forearm pronation/supination]
-            17,     # Right J5 -> [15 | Right forearm pronation/supination]
-            11,     # Left J6  -> [16 | Left wrist flexion/extension]
-            18,     # Right J6 -> [17 | Right wrist flexion/extension]
-            12,     # Left J7  -> [18 | Left wrist radial/ulnar deviation]
-            19,     # Right J7 -> [19 | Right wrist radial/ulnar deviation]
-        ]  # Note: Hand joints (fingers) are controlled separately via dedicated nodes
+            0,      # ANKLE    <- [torso 0]
+            1,      # KNEE     <- [torso 1]
+            2,      # BUTTOCK  <- [torso 2]
+            3,      # WAIST    <- [torso 3]
+            6,      # LEFT_J1  <- [head 4]
+            4,      # NECK1    <- [head 5]
+            13,     # RIGHT_J1 <- [left_arm 6]
+            7,      # LEFT_J2  <- [left_arm 7]
+            5,      # NECK2    <- [left_arm 8]
+            14,     # RIGHT_J2 <- [left_arm 9]
+            8,      # LEFT_J3  <- [left_arm 10]
+            15,     # RIGHT_J3 <- [left_arm 11]
+            9,      # LEFT_J4  <- [left_arm 12]
+            16,     # RIGHT_J4 <- [right_arm 13]
+            10,     # LEFT_J5  <- [right_arm 14]
+            17,     # RIGHT_J5 <- [right_arm 15]
+            11,     # LEFT_J6  <- [right_arm 16]
+            18,     # RIGHT_J6 <- [right_arm 17]
+            12,     # LEFT_J7  <- [right_arm 18]
+            19      # RIGHT_J7 <- [right_arm 19]
+        ]
+        self.sim2real_index = [
+            0,  # ANKLE 
+            1,  # KNEE
+            2,  # BUTTOCK
+            3,  # WAIST
+            5,  # NECK1
+            8,  # NECK2
+            4,  # LEFT_J1
+            7,  # LEFT_J2
+            10, # LEFT_J3
+            12, # LEFT_J4
+            14, # LEFT_J5
+            16, # LEFT_J6
+            18, # LEFT_J7
+            6,  # RIGHT_J1
+            9,  # RIGHT_J2
+            11, # RIGHT_J3
+            13, # RIGHT_J4
+            15, # RIGHT_J5
+            17, # RIGHT_J6
+            19  # RIGHT_J7
+        ]
         # fmt: on
         self._init_visualization()
         self._init_ros2_node()
@@ -65,6 +86,7 @@ class DexsimServer:
         self._ros_thread.start()
 
     def _init_visualization(self):
+        import dexsim
         # 仿真世界配置
         config = dexsim.WorldConfig()
         config.open_windows = True

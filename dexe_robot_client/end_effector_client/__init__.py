@@ -5,5 +5,5 @@
 # ----------------------------------------------------------------------------
 
 from .end_effector_type import EndEffectorType
-from .brainco_hand_client import LeftBrainCoHadnClient, RightBrainCoHadnClient
+from .brainco_hand_client import LeftBrainCoHandClient, RightBrainCoHandClient
 from .pgc_gripper_client import LeftPGCGripperClient, RightPGCGripperClient
