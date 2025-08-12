@@ -15,16 +15,18 @@ class TorqueControllerTimeDelay : public TorqueControllerBase
         output_tau_.setZero();
         last_measurement_time_point_ = TimePointSystem::Invalid();
         // todo: param tune
-        M_bar_ << 0.1, 0.1, 0.1, 0.1, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01;
-        parameters_.K_p = 10;
-        parameters_.K_v = 6;
+        M_bar_ << 0.1, 0.1, 0.1, 0.1, 0.01, 0.01,
+                  0.02, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01,
+                  0.02, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01;
+        parameters_.K_p = 100;
+        parameters_.K_v = 20;
     }
     bool ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd, TorqueCtrlCommand &output_cmd) override
     {
         if (last_measurement_time_point_.is_invalid())
         {
             last_measurement_time_point_ = raw_measurement.time_point;
-            return true;
+            output_cmd.q_desired = raw_measurement.position;
         }
         double dt_micro = (raw_measurement.time_point.time_in_ns() - last_measurement_time_point_.time_in_ns()) / 1e3;
         if (dt_micro < torque_ctrl_dt)
