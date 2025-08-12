@@ -11,7 +11,7 @@ from std_msgs.msg import Float64, Float64MultiArray, Int32
 from pgc_gripper import dh_modbus_gripper
 
 # 配置参数
-GRIPPER_PORT = "/dev/ttyPGCGripper"
+GRIPPER_PORT = "/dev/ttyUSB_485"
 BAUDRATE = 115200
 TIMEOUT = 10
 GRIPPER_FORCE = 30

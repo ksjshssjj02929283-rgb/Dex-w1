@@ -115,6 +115,7 @@ class dh_modbus_gripper:
                 ret = False
             elif(len(rev_buf) == wdlen) :
                 ret = True
+                return ret
         logging.error("Failed to communicate with device after retries")
         return ret
 
