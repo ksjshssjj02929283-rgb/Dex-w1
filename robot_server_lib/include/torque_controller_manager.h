@@ -7,14 +7,6 @@
 namespace robot_server_lib
 {
 
-enum class TorqueControllerState
-{
-    Init,
-    Idle,
-    Decelerating,
-    Operating
-};
-
 inline const char *ToString(TorqueControllerState state)
 {
     switch (state)
@@ -63,10 +55,7 @@ class TorqueControllerManager
 
     TorqueControllerState controller_state_{TorqueControllerState::Init};
 
-    std::shared_ptr<TorqueControllerBase> current_controller_{nullptr};
-    std::shared_ptr<IdleControllerInvDynamic> idle_torque_controller_{nullptr};
-    std::shared_ptr<DecelerationControllerInvDynamic> deceleration_torque_controller_{nullptr};
-    std::shared_ptr<OperatingControllerInvDynamic> operating_torque_controller_{nullptr};
+    std::shared_ptr<TorqueControllerBase> torque_controller_{nullptr};
 
     // Runtime data
     Int64 current_episode_index_{-1};

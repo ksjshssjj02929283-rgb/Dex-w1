@@ -10,6 +10,14 @@ struct TorqueCtrlCommand
     VectorDof q_desired;
 };
 
+enum class TorqueControllerState
+{
+    Init,
+    Idle,
+    Decelerating,
+    Operating
+};
+
 class TorqueControllerBase
 {
    public:
@@ -20,11 +28,12 @@ class TorqueControllerBase
     virtual bool ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd,
                                 TorqueCtrlCommand &output_cmd) = 0;
 
-    virtual bool ResetForNewEpisode(const JointRawMeasurement &raw_measurement) { return true; };
+    virtual bool ResetForNewEpisode(const JointRawMeasurement &raw_measurement, const TorqueControllerState &state) = 0;
 
    protected:
     RobotModel robot_model_;
     pinocchio::Data robot_data_;
+    TorqueControllerState state_{TorqueControllerState::Init};
     // Gain parameter
     struct
     {

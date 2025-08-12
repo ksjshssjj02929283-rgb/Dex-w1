@@ -116,8 +116,13 @@ void Ros2Node::InitRobotServer()
             TorqueControllerManager torque_controller_manager(this->robot_model_, this->manager_buffers_, this->robot_buffers_);
             while (rclcpp::ok())
             {
+                auto t_start = TimePointSystem::Now();
                 torque_controller_manager.LoopOnce();
-                std::this_thread::sleep_for(std::chrono::microseconds(torque_ctrl_dt_micro));
+                int duration_micro = (t_start.time_in_ns() - TimePointSystem::Now().time_in_ns()) / 1e3;
+                if (duration_micro < torque_ctrl_dt_micro)
+                {
+                    std::this_thread::sleep_for(std::chrono::microseconds(torque_ctrl_dt_micro - duration_micro));
+                }
             }
         });
     RCLCPP_INFO(this->get_logger(), "torque_control_thread is started");
@@ -183,16 +188,12 @@ void Ros2Node::InitRobotServer()
 
             while (rclcpp::ok())
             {
-                auto start_time = std::chrono::high_resolution_clock::now();
-
+                auto t_start = TimePointSystem::Now();
                 planner_manager.LoopOnce();
-
-                auto end_time = std::chrono::high_resolution_clock::now();
-                auto elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
-
-                if (elapsed_time < manager_dt_micro)
+                int duration_micro = (t_start.time_in_ns() - TimePointSystem::Now().time_in_ns()) / 1e3;
+                if (duration_micro < manager_dt_micro)
                 {
-                    std::this_thread::sleep_for(std::chrono::microseconds(manager_dt_micro - elapsed_time));
+                    std::this_thread::sleep_for(std::chrono::microseconds(manager_dt_micro - duration_micro));
                 }
             }
         });
@@ -281,10 +282,10 @@ void Ros2Node::InitSimulation()
                 {
                     torque_cmd.setZero();
                 }
-
+                auto t_start = TimePointSystem::Now();
                 ddq = pinocchio::ForwardDynamics(*robot_model_.model_ptr, robot_data, q, dq, torque_cmd,
-                                                 robot_model_.params_ptr->joint_command_sequence_by_name);
-
+                                                robot_model_.params_ptr->joint_command_sequence_by_name);
+                int duration_micro = (t_start.time_in_ns() - TimePointSystem::Now().time_in_ns()) / 1e3;
                 q += simulation_dt * dq;
                 dq += simulation_dt * ddq;
                 // 更新关节测量数据
@@ -294,7 +295,10 @@ void Ros2Node::InitSimulation()
                 cache.time_point = TimePointSystem::Now();
                 auto ret = robot_buffers_.joint_raw_measurement->AppendNewElement(cache);
                 assert(ret);
-                std::this_thread::sleep_for(std::chrono::microseconds(simulation_dt_micro));
+                if (duration_micro < simulation_dt_micro)
+                {
+                    std::this_thread::sleep_for(std::chrono::microseconds(simulation_dt_micro - duration_micro));
+                }
             }
         });
 #else
