@@ -4,8 +4,6 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
-import time
-import numpy as np
 from IPython import embed
 import rclpy
 import threading
@@ -14,22 +12,21 @@ from rclpy.executors import MultiThreadedExecutor
 from dexe_robot_client.end_effector_client import LeftPGCGripperClient, RightPGCGripperClient
 
 
-def main():
+def main(is_sim = True):
     rclpy.init()
 
-    left_gripper_node = LeftPGCGripperClient()
-    right_gripper_node = RightPGCGripperClient()
+    left_gripper_node = LeftPGCGripperClient(is_sim)
+    right_gripper_node = RightPGCGripperClient(is_sim)
 
     executor = MultiThreadedExecutor()
     executor.add_node(left_gripper_node)
     executor.add_node(right_gripper_node)
 
-    # 在后台启动 executor
     ros_thread = threading.Thread(target=executor.spin, daemon=True)
     ros_thread.start()
 
     try:
-        embed()  # 在这里交互式调试
+        embed()
     finally:
         if rclpy.ok():
             rclpy.shutdown()
@@ -40,4 +37,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(is_sim = True)

@@ -77,12 +77,12 @@ def main(is_sim = True):
     print(f"\nclient_real is connnected: {client_real.is_connected()}")
 
     # 安全退出：先关闭 executor，再释放资源
+    if rclpy.ok():
+        rclpy.shutdown()
+    ros_thread.join()
     executor.shutdown()
     client.close_client()
     client.destroy_node()
-    ros_thread.join()
-    if rclpy.ok():
-        rclpy.shutdown()
 
 
 if __name__ == "__main__":

@@ -23,37 +23,42 @@ class BraincoHandsNode(Node):
         
         # 初始化SDK
         self.hands = BraincoHands(args.port)
-        
-        # 创建订阅器和发布器
-        self._write_lock = threading.Lock()
-        self.create_subscription(Float64MultiArray, 'set_brainco_left_hand_qpos', self._left_qpos_callback, 10)
-        self.create_subscription(Float64MultiArray, 'set_brainco_right_hand_qpos', self._right_qpos_callback, 10)
-        
-        self.left_qpos_pub = self.create_publisher(Float64MultiArray, 'brainco_left_hand_qpos', 10)
-        self.right_qpos_pub = self.create_publisher(Float64MultiArray, 'brainco_right_hand_qpos', 10)
-
         self.hands.enable_TurboMode(self.hands.left_id, 1)
         self.hands.enable_TurboMode(self.hands.right_id, 1)
+
+        # 创建订阅器和发布器
+        self._write_lock = threading.Lock()
+        self.create_subscription(Float64MultiArray, 
+                                 '/control/hand/left', 
+                                 self._left_qpos_callback, 10)
+        self.create_subscription(Float64MultiArray, 
+                                 '/control/hand/right', 
+                                 self._right_qpos_callback, 10)
         
-        self.create_timer(0.1, self._publish_states) # 定时器(10Hz)
+        self.left_qpos_pub = self.create_publisher(Float64MultiArray, 
+                                                   '/feedback/hand/left', 10)
+        self.right_qpos_pub = self.create_publisher(Float64MultiArray, 
+                                                    '/feedback/hand/right', 10)
+
+        self.create_timer(0.1, self._publish_feedback) # 定时器(10Hz)
               
-        self.get_logger().info(f"灵巧手节点已启动，使用串口: {args.port}")
+        self.get_logger().info(f"Hand initialized, use serial: {args.port}")
 
     def _left_qpos_callback(self, msg):
         if len(msg.data) == 6:
             left_data = [int(x) for x in msg.data]
             with self._write_lock:
                 self.hands.write_position(self.hands.left_id, left_data)
-                self.get_logger().info(f"左手设置: {left_data}")
+                self.get_logger().info(f"Left hand qpos is set: {left_data}")
     
     def _right_qpos_callback(self, msg):
         if len(msg.data) == 6:
             right_data = [int(x) for x in msg.data]
             with self._write_lock:
                 self.hands.write_position(self.hands.right_id, right_data)
-                self.get_logger().info(f"右手设置: {right_data}")
+                self.get_logger().info(f"Right hand qpos is set: {right_data}")
 
-    def _publish_states(self):
+    def _publish_feedback(self):
         try:
             # 发布左手状态
             left_response = self.hands.read_position(self.hands.left_id)
@@ -61,7 +66,7 @@ class BraincoHandsNode(Node):
                 left_pos = Float64MultiArray()
                 left_pos.data = [float(x) for x in left_response]
                 self.left_qpos_pub.publish(left_pos)
-                self.get_logger().debug(f"left qpos: {left_response}")
+                self.get_logger().debug(f"Left hand qpos: {left_response}")
             
             # 发布右手状态
             right_response = self.hands.read_position(self.hands.right_id)
@@ -69,10 +74,10 @@ class BraincoHandsNode(Node):
                 right_pos = Float64MultiArray()
                 right_pos.data = [float(x) for x in right_response]
                 self.right_qpos_pub.publish(right_pos)
-                self.get_logger().debug(f"right qpos: {right_response}")
+                self.get_logger().debug(f"Right hand qpos: {right_response}")
             
         except Exception as e:
-            self.get_logger().error(f"状态发布失败: {str(e)}")
+            self.get_logger().error(f"Feedback publish failed: {str(e)}")
 
     def destroy_node(self):
         """清理任务"""

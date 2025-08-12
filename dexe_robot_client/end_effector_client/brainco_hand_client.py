@@ -4,47 +4,57 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
+
 import numpy as np
-from copy import deepcopy
 from std_msgs.msg import Float64MultiArray
 from .end_effector_client import EndEffectorClient
 from dexe_robot_client.common import get_logger
 
 
 class BrainCoHandClient(EndEffectorClient):
-    def __init__(self, is_left: bool):
+    def __init__(self, 
+                 is_left: bool, 
+                 is_sim: bool = False,
+                 timeout_sec: float = 3.0):
         self.logger = get_logger()
         if is_left:
-            name = "left"
+            self._name = "left"
         else:
-            name = "right"
-        node_name = f"brainco_{name}_hand_client"
-        super().__init__(node_name, qpos_bound=np.array([[0.]*6, [100.]*6]))
+            self._name = "right"
+        node_name = f"brainco_{self._name}_hand_client"
+        super().__init__(node_name, 
+                         6,
+                         is_sim, 
+                         timeout_sec)
         
-        # Create subscriber and publisher
-        self.create_subscription(
-            Float64MultiArray, f"/brainco_{name}_hand_qpos", 
-            self._qpos_callback, 10
-        )
-        self._set_qpos_publisher = self.create_publisher(
-            Float64MultiArray, f"/set_brainco_{name}_hand_qpos", 10
-        )
+    def _init_subscriber(self, is_sim: bool):
+        if is_sim:
+            self.create_subscription(
+                Float64MultiArray, f"/feedback_sim/hand/{self._name}", 
+                self._qpos_callback, 10
+            )
+        else:
+            self.create_subscription(
+                Float64MultiArray, f"/feedback/hand/{self._name}", 
+                self._qpos_callback, 10
+            )
 
-    def set_qpos(self, qpos: np.ndarray) -> bool:
-        if not self._check_input(qpos):
-            return False
-        qpos_ = np.clip(qpos, self.qpos_lb, self.qpos_ub)
-        
-        msg = Float64MultiArray()
-        msg.data = qpos_.tolist()
-        self._set_qpos_publisher.publish(msg)
-        self.logger.debug(f"{self.node_name}: published {qpos_}")
-        return True
+    def _init_publisher(self, is_sim: bool):
+        if is_sim:
+            self._set_qpos_publisher = self.create_publisher(
+                Float64MultiArray, f"/control_sim/hand/{self._name}", 10
+            )
+        else:
+            self._set_qpos_publisher = self.create_publisher(
+                Float64MultiArray, f"/control/hand/{self._name}", 10
+            )
 
-class LeftBrainCoHadnClient(BrainCoHandClient):
-    def __init__(self):
-        super().__init__(is_left=True)
 
-class RightBrainCoHadnClient(BrainCoHandClient):
-    def __init__(self):
-        super().__init__(is_left=False)
+class LeftBrainCoHandClient(BrainCoHandClient):
+    def __init__(self, is_sim: bool = False):
+        super().__init__(True, is_sim)
+
+
+class RightBrainCoHandClient(BrainCoHandClient):
+    def __init__(self, is_sim: bool = False):
+        super().__init__(False, is_sim)
