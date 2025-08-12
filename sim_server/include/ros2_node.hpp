@@ -44,7 +44,7 @@ class Ros2Node : public rclcpp::Node
     std::thread simulation_thread_;
     std::thread publish_thread_;
     std::thread torque_control_thread_;
-    
+
     robot_server_lib::RobotModel robot_model_;
     robot_server_lib::PlannerManagerBuffers manager_buffers_;
     robot_server_lib::TorqueControlBuffer robot_buffers_;

@@ -37,8 +37,8 @@ class TorqueControllerBase
     // Gain parameter
     struct
     {
-        double K_p{1600};
-        double K_v{80};
+        double K_p{400};
+        double K_v{40};
     } parameters_;
 };
 }  // namespace robot_server_lib

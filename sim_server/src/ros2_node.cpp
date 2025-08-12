@@ -146,7 +146,7 @@ void Ros2Node::InitRobotServer()
                     feedback_q = measurement.position;
                     feedback_dq = measurement.velocity;
                     tau = pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data, feedback_q, feedback_dq, ddq_desired,
-                                        robot_model_.params_ptr->joint_command_sequence_by_name);
+                                                     robot_model_.params_ptr->joint_command_sequence_by_name);
                     // std::cout << "Arm InverseDynamics computed: " << tau.tail(14).transpose() << std::endl;
                 }
 
@@ -314,7 +314,7 @@ void Ros2Node::InitSimulation()
                 }
                 auto t_start = TimePointSystem::Now();
                 ddq = pinocchio::ForwardDynamics(*robot_model_.model_ptr, robot_data, q, dq, torque_cmd,
-                                                robot_model_.params_ptr->joint_command_sequence_by_name);
+                                                 robot_model_.params_ptr->joint_command_sequence_by_name);
                 int duration_micro = (t_start.time_in_ns() - TimePointSystem::Now().time_in_ns()) / 1e3;
                 q += simulation_dt * dq;
                 dq += simulation_dt * ddq;

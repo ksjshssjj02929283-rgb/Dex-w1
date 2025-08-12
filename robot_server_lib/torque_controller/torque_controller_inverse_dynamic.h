@@ -20,26 +20,26 @@ class TorqueControllerInvDynamic : public TorqueControllerBase
 
         switch (state_)
         {
-            case TorqueControllerState::Idle:
-                ddq_desired = parameters_.K_p * (idle_q_ - feedback_q) + parameters_.K_v * (-feedback_dq);
-                output_cmd.torque = pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, ddq_desired,
-                                                   robot_model_.params_ptr->joint_command_sequence_by_name);
-                output_cmd.q_desired = idle_q_;
-                break;
-            case TorqueControllerState::Decelerating:
-                ddq_desired = parameters_.K_v * (-feedback_dq);
-                output_cmd.torque = pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, ddq_desired,
-                                                   robot_model_.params_ptr->joint_command_sequence_by_name);
-                output_cmd.q_desired = feedback_q;
-                break;
-            case TorqueControllerState::Operating:
-                ddq_desired = cmd_ddq + parameters_.K_p * (cmd_q - feedback_q) + parameters_.K_v * (cmd_dq - feedback_dq);
-                output_cmd.torque = torque_feedforward + pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, ddq_desired,
-                                                   robot_model_.params_ptr->joint_command_sequence_by_name);
-                output_cmd.q_desired = cmd_q;
-                break;
-            default:
-                break;
+        case TorqueControllerState::Idle:
+            ddq_desired = parameters_.K_p * (idle_q_ - feedback_q) + parameters_.K_v * (-feedback_dq);
+            output_cmd.torque = pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, ddq_desired,
+                                                           robot_model_.params_ptr->joint_command_sequence_by_name);
+            output_cmd.q_desired = idle_q_;
+            break;
+        case TorqueControllerState::Decelerating:
+            ddq_desired = parameters_.K_v * (-feedback_dq);
+            output_cmd.torque = pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, ddq_desired,
+                                                           robot_model_.params_ptr->joint_command_sequence_by_name);
+            output_cmd.q_desired = feedback_q;
+            break;
+        case TorqueControllerState::Operating:
+            ddq_desired = cmd_ddq + parameters_.K_p * (cmd_q - feedback_q) + parameters_.K_v * (cmd_dq - feedback_dq);
+            output_cmd.torque = torque_feedforward + pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq,
+                                                                                ddq_desired, robot_model_.params_ptr->joint_command_sequence_by_name);
+            output_cmd.q_desired = cmd_q;
+            break;
+        default:
+            break;
         }
         return true;
     }
