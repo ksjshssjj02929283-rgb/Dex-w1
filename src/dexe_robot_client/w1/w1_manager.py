@@ -16,16 +16,17 @@ from rclpy.executors import MultiThreadedExecutor
 from rlia.kit.drive_controllers import W1DriveController
 from rlia.kit.drive_controllers.w1_drive_controller import W1Version, W1ArmType
 
-from dexe_robot_client.common import g_data_dir, get_logger
-from dexe_robot_client.end_effector_client import (EndEffectorType, 
+from ..common import get_logger, DATA_DIR
+from ..end_effector_client import (EndEffectorType, 
                           LeftBrainCoHandClient, RightBrainCoHandClient, 
                           LeftPGCGripperClient, RightPGCGripperClient)
-from dexe_robot_client.robot_client import RobotClientRos2 as RobotClient
-from dexe_robot_client.robot_client import MotionGroup, Status
-
-from dexe_robot_client.w1 import TorsoKinematics, ToppraTrajectoryPlanner, W1ComponentManager
-from dexe_robot_client.w1 import interpolate_cartesian_path
-from dexe_robot_client.w1 import user_pose_to_xpos, xpos_to_user_pose
+from ..robot_client import RobotClientRos2 as RobotClient
+from ..robot_client import MotionGroup, Status
+from .kinemtaics.torso_kinematics import TorsoKinematics
+from .path_planner.bezier_blend_path import interpolate_cartesian_path
+from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
+from .utils.component_manager import W1ComponentManager
+from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 
 
 class W1Manager:
@@ -333,7 +334,7 @@ class W1Manager:
             return False
         return True
 
-    def _save_home_qpos(self, file_path: str = f"{g_data_dir}/config.json") -> bool:
+    def _save_home_qpos(self, file_path = DATA_DIR / "config.json") -> bool:
         file_path_ = pathlib.Path(file_path)
         if not file_path_.exists() or file_path_.stat().st_size == 0:
             file_path_.write_text("{}")
@@ -348,7 +349,7 @@ class W1Manager:
         
         return True
 
-    def _load_home_qpos(self, file_path: str = f"{g_data_dir}/config.json") -> bool:
+    def _load_home_qpos(self, file_path = DATA_DIR / "config.json") -> bool:
         file_path_ = pathlib.Path(file_path)
         if not file_path_.exists() or file_path_.stat().st_size == 0:
             self.logger.warning(f"{file_path} does not exist, would be created automatically.")

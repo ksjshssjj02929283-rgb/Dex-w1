@@ -12,16 +12,33 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from dexe_robot_client.common import get_logger
+from rlia.kit.drive_controllers.w1_drive_controller import W1Version, W1ArmType
 
+from ..common import get_logger, ASSETS_DIR, URL_PREFIX, download_and_unzip_file
+from ..end_effector_client import EndEffectorType
 
 """TODO
-1. select robot type
-2. select end-effector type
+add end-effector
 """
 class DexsimServer:
-    def __init__(self):
+    def __init__(self, 
+                arm_type: W1ArmType, 
+                w1_version: W1Version = W1Version.V2,
+                end_effector_type: EndEffectorType = None):
         self.logger = get_logger()
+
+        if w1_version != W1Version.V2:
+            raise ValueError(f"W1Version {w1_version} are not support.")
+        if not download_and_unzip_file(URL_PREFIX / "DexforceW1V02_v1.zip"):
+            raise FileNotFoundError
+
+        if arm_type == W1ArmType.INDUSTRIAL:
+            self._urdf_path = ASSETS_DIR / "DexforceW1V02_v1/DexforceW1_v02_2.urdf"
+        elif arm_type == W1ArmType.ANTHROPOMORPHIC:
+            self._urdf_path = ASSETS_DIR / "DexforceW1V02_v1/DexforceW1_v02_1.urdf"
+        else:
+            raise ValueError(f"W1ArmType {arm_type} are not support.")
+
         # fmt: off
         self.real2sim_index = [
             0,      # ANKLE    <- [torso 0]
@@ -128,8 +145,7 @@ class DexsimServer:
         plane_handle.set_material(material_handle.get_inst())
 
         # 设置机器人
-        urdf_path = "./data/assets/DexforceW1V02_v1/DexforceW1_v02_2.urdf" # FIXME
-        self._articulation = self._env.load_urdf(urdf_path)
+        self._articulation = self._env.load_urdf(str(self._urdf_path))
         robot_pose = np.eye(4, dtype=float)
         # 设置世界坐标系
         self._articulation.set_world_pose(robot_pose)

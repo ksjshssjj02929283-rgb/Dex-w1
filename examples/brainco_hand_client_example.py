@@ -46,6 +46,5 @@ def main(is_sim = True):
         right_hand_node.destroy_node()
 
 
-
 if __name__ == "__main__":
     main(is_sim = True)

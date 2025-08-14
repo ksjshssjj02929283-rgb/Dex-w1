@@ -10,8 +10,7 @@ import colorlog
 import pathlib
 import threading
 from datetime import datetime
-from .global_data import g_log_dir, g_software_name
-
+from .config import LOG_DIR, PACKAGE_NAME
 
 def get_logger() -> logging.Logger:
     return Logger.get_instance()
@@ -48,7 +47,7 @@ class Logger:
 
     @classmethod
     def get_instance(cls) -> logging.Logger:
-        return cls(g_log_dir / f"{g_software_name}.log", g_software_name)._logger
+        return cls(LOG_DIR / f"{PACKAGE_NAME}.log", PACKAGE_NAME)._logger
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:

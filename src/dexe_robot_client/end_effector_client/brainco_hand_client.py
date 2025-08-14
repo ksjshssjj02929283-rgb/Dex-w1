@@ -5,10 +5,9 @@
 # ----------------------------------------------------------------------------
 
 
-import numpy as np
 from std_msgs.msg import Float64MultiArray
 from .end_effector_client import EndEffectorClient
-from dexe_robot_client.common import get_logger
+from ..common import get_logger
 
 
 class BrainCoHandClient(EndEffectorClient):

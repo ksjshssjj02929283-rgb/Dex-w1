@@ -35,6 +35,5 @@ def main(is_sim = True):
         left_gripper_node.destroy_node()
         right_gripper_node.destroy_node()
 
-
 if __name__ == "__main__":
     main(is_sim = True)
