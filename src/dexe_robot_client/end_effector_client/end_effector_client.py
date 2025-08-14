@@ -13,7 +13,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float64MultiArray
 
-from dexe_robot_client.common import get_logger
+from ..common import get_logger
 
 
 class EndEffectorClient(ABC, Node):

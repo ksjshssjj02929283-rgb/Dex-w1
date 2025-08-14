@@ -10,7 +10,7 @@ import numpy as np
 from copy import deepcopy
 from std_msgs.msg import Float64, Int32
 from .end_effector_client import EndEffectorClient
-from dexe_robot_client.common import get_logger
+from ..common import get_logger
 
 
 class PGCGripperClient(EndEffectorClient):

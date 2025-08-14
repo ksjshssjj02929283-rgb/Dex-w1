@@ -26,16 +26,17 @@ def main(is_sim = True):
     if not is_sim:
         client_real = RobotClient(is_sim=False)
         client = client_real
+        executor.add_node(client_real)
     else:
         client = client_sim
     executor.add_node(client_sim)
-    executor.add_node(client_real)
     # 在后台启动 executor
     ros_thread = threading.Thread(target=executor.spin, daemon=True)
     ros_thread.start()
 
     print(f"\nclient_sim is connnected: {client_sim.is_connected()}")
-    print(f"\nclient_real is connnected: {client_real.is_connected()}")
+    if not is_sim:
+        print(f"\nclient_real is connnected: {client_real.is_connected()}")
     print(f"\nCurrent robot status: {client.get_info().status}")
     print(f"\nCurrent joint position: {client.get_info().joint_position}")
     print(f"\nCurrent ee_pose: {client.get_info().ee_pose}\n")
@@ -74,7 +75,8 @@ def main(is_sim = True):
     client.wait_request_finish()
 
     print(f"\nclient_sim is connnected: {client_sim.is_connected()}")
-    print(f"\nclient_real is connnected: {client_real.is_connected()}")
+    if not is_sim:
+        print(f"\nclient_real is connnected: {client_real.is_connected()}")
 
     # 安全退出：先关闭 executor，再释放资源
     if rclpy.ok():
