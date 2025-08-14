@@ -18,7 +18,7 @@ from robot_server_interfaces.msg import StreamingCommand
 
 from .data_structure import *
 from .robot_client import RobotClient
-from dexe_robot_client.common import get_logger
+from ..common import get_logger
 
 
 class RobotClientRos2(Node, RobotClient):

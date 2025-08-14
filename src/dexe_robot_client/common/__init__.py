@@ -4,6 +4,6 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
-from .global_data import g_software_name, g_log_dir, g_data_dir
+from .config import PACKAGE_NAME, DATA_DIR, ASSETS_DIR, LOG_DIR, URL_PREFIX
 from .logger import get_logger
-from .timer import timer
+from .utils import time_consuming, download_file, unzip_file, download_and_unzip_file

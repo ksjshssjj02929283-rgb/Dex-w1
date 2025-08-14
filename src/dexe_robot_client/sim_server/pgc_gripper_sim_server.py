@@ -5,9 +5,9 @@
 # ----------------------------------------------------------------------------
 
 from rclpy.node import Node
-from std_msgs.msg import Float64, Int32
+from std_msgs.msg import Float64
 
-from dexe_robot_client.common import get_logger
+from ..common import get_logger
 
 
 class PGCGrippersSimServer(Node):
