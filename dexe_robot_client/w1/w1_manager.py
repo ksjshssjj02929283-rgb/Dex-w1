@@ -18,12 +18,12 @@ from rlia.kit.drive_controllers.w1_drive_controller import W1Version, W1ArmType
 
 from dexe_robot_client.common import g_data_dir, get_logger
 from dexe_robot_client.end_effector_client import (EndEffectorType, 
-                          LeftBrainCoHadnClient, RightBrainCoHadnClient, 
+                          LeftBrainCoHandClient, RightBrainCoHandClient, 
                           LeftPGCGripperClient, RightPGCGripperClient)
 from dexe_robot_client.robot_client import RobotClientRos2 as RobotClient
 from dexe_robot_client.robot_client import MotionGroup, Status
 
-from dexe_robot_client.w1 import TorsoKinmatics, ToppraTrajectoryPlanner, W1ComponentManager
+from dexe_robot_client.w1 import TorsoKinematics, ToppraTrajectoryPlanner, W1ComponentManager
 from dexe_robot_client.w1 import interpolate_cartesian_path
 from dexe_robot_client.w1 import user_pose_to_xpos, xpos_to_user_pose
 
@@ -55,8 +55,15 @@ class W1Manager:
         self.robot_client = None
         self._robot_client_sim = None
         self._robot_client_real = None
-        self.left_arm_ee_client = None
-        self.right_arm_ee_client = None
+
+        self.left_ee_client = None
+        self._left_ee_client_sim = None
+        self._left_ee_client_real = None
+
+        self.right_ee_client = None
+        self._right_ee_client_sim = None
+        self._right_ee_client_real = None
+
         self._executor = None
         self._node_thread = None
 
@@ -90,30 +97,44 @@ class W1Manager:
         if not rclpy.ok():
             rclpy.init()
 
+        self._is_sim = True
         self._robot_client_sim = RobotClient(is_sim = True)
         if not is_sim:
             # 按需构造，real_server未必启动
             self._robot_client_real = RobotClient(is_sim = False)
         # 初始化先进入仿真模式，sim_server是必定会启动
-        self._is_sim = True
         self.robot_client = self._robot_client_sim
 
-        if self._end_effector_type == EndEffectorType.BRAINCO_HAND:
-            self.left_arm_ee_client = LeftBrainCoHadnClient()
-            self.right_arm_ee_client = RightBrainCoHadnClient()
-            self.arm_ee_dofs = 6
-        elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
-            self.left_arm_ee_client = LeftPGCGripperClient()
-            self.right_arm_ee_client = RightPGCGripperClient()
-            self.arm_ee_dofs = 1
-        elif self._end_effector_type is None:
+        if self._end_effector_type is None:
             self.logger.info(f"No movable end effector.")
         else:
-            raise ValueError(f"Unsupport end effector type: {self._end_effector_type}.")
+            if self._end_effector_type == EndEffectorType.BRAINCO_HAND:
+                self.arm_ee_dofs = 6
+                self._left_ee_client_sim = LeftBrainCoHandClient(is_sim = True)
+                self._right_ee_client_sim = RightBrainCoHandClient(is_sim = True)
+                if not is_sim:
+                    self._left_ee_client_real = LeftBrainCoHandClient(is_sim = False)
+                    self._right_ee_client_real = RightBrainCoHandClient(is_sim = False)
+
+            elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
+                self.arm_ee_dofs = 1
+                self._left_ee_client_sim = LeftPGCGripperClient(is_sim = True)
+                self._right_ee_client_sim = RightPGCGripperClient(is_sim = True)
+                if not is_sim:
+                    self._left_ee_client_real = LeftPGCGripperClient(is_sim = False)
+                    self._right_ee_client_real = RightPGCGripperClient(is_sim = False)
+
+            else:
+                raise ValueError(f"Unsupport end effector type: {self._end_effector_type}.")
         
+            self.left_ee_client = self._left_ee_client_sim
+            self.right_ee_client = self._right_ee_client_sim
+
+        # NOTE: 构建的时候采用仿真模式，则无法切换至真机模式（真机client未创建）
         self._executor = MultiThreadedExecutor()
         for node in [self._robot_client_sim, self._robot_client_real, 
-                        self.left_arm_ee_client, self.right_arm_ee_client]:
+                     self._left_ee_client_sim, self._left_ee_client_real, 
+                     self._right_ee_client_sim, self._right_ee_client_real]:
             if node is not None:
                 self._executor.add_node(node)
         self._node_thread = threading.Thread(target=self._executor.spin, 
@@ -132,14 +153,11 @@ class W1Manager:
             if self._executor is not None:
                 self._executor.shutdown()
 
-            if self._robot_client_sim is not None:
-                self._robot_client_sim.destroy_node()
-            if self._robot_client_real is not None:
-                self._robot_client_real.destroy_node()
-            if self.left_arm_ee_client is not None:
-                self.left_arm_ee_client.destroy_node()
-            if self.right_arm_ee_client is not None:
-                self.right_arm_ee_client.destroy_node()
+            for node in [self._robot_client_sim, self._robot_client_real, 
+                        self._left_ee_client_sim, self._left_ee_client_real, 
+                        self._right_ee_client_sim, self._right_ee_client_real]:
+                if node is not None:
+                    node.destroy_node()
 
             self.logger.debug(f"Ros2 node destroyed.")
         except Exception as e:
@@ -185,11 +203,14 @@ class W1Manager:
         _ik_sample_num = 1600
         # _arm_angle_sample_range = np.deg2rad(45)
 
-        self.torso_kine_solver = TorsoKinmatics()
+        self.torso_kine_solver = TorsoKinematics()
         self.left_arm_controller = W1DriveController(is_left_arm = True, 
                                                     type_version = self._w1_version, 
-                                                    arm_type = self._arm_type)
+                                                    arm_type = self._arm_type,
+                                                    is_yaik_solver=False)
         self.left_arm_controller.set_joint_limits(upper_limits = self.left_arm_ub,
+                                                   lower_limits = self.left_arm_lb)
+        self.left_arm_controller.set_user_joint_limits(upper_limits = self.left_arm_ub,
                                                    lower_limits = self.left_arm_lb)
         self.left_arm_controller.set_ik_nearst_weight(_ik_nearst_weight)
         left_kin_solver = self.left_arm_controller.solver.get_kin_solver()
@@ -198,8 +219,11 @@ class W1Manager:
 
         self.right_arm_controller = W1DriveController(is_left_arm = False, 
                                                     type_version = self._w1_version, 
-                                                    arm_type = self._arm_type)
+                                                    arm_type = self._arm_type,
+                                                    is_yaik_solver=False)
         self.right_arm_controller.set_joint_limits(upper_limits = self.right_arm_ub,
+                                                   lower_limits = self.right_arm_lb)
+        self.right_arm_controller.set_user_joint_limits(upper_limits = self.right_arm_ub,
                                                    lower_limits = self.right_arm_lb)
         self.right_arm_controller.set_ik_nearst_weight(_ik_nearst_weight)
         right_kin_solver = self.right_arm_controller.solver.get_kin_solver()
@@ -219,9 +243,9 @@ class W1Manager:
 
     def _has_arm_ee_client(self, name: str) -> bool:
         if name in self.arm_ee_names:
-            if name == "left_arm_ee" and self.left_arm_ee_client is not None:
+            if name == "left_arm_ee" and self.left_ee_client is not None:
                 return True
-            if name == "right_arm_ee" and self.right_arm_ee_client is not None:
+            if name == "right_arm_ee" and self.right_ee_client is not None:
                 return True
             # self.logger.warning(f"{name} has not initialized")
             return False
@@ -241,9 +265,9 @@ class W1Manager:
         if not self._has_arm_ee_client(name):
             return None
         if name == "left_arm_ee":
-            return self.left_arm_ee_client
+            return self.left_ee_client
         elif name == "right_arm_ee":
-            return self.right_arm_ee_client
+            return self.right_ee_client
 
     def _check_name(self, name: str) -> bool:
         """仅支持component检查，不包含ee"""
@@ -299,11 +323,13 @@ class W1Manager:
         if len(arm_ee_state_list) == 0:
             self.logger.error("Unexpected error, FIXME!")
             return False
-        if not all(isinstance(ee_state, (float, list, float)) for ee_state in arm_ee_state_list):
+        
+        valid_ee_state = [ee_state for ee_state in arm_ee_state_list if ee_state is not None]
+        if not all(isinstance(ee_state, (float, list, float)) for ee_state in valid_ee_state):
             self.logger.error(f"arm_ee_state should be [pre_delay, ee_qpos, post_delay].")
             return False
         if not self._check_qpos_dimension("left_arm_ee", 
-                                          [ee_state[1] for ee_state in arm_ee_state_list]):
+                                          [ee_state[1] for ee_state in valid_ee_state]):
             return False
         return True
 
@@ -369,6 +395,7 @@ class W1Manager:
 
     ######## 基础API #############
     def set_sim_mode(self, is_sim: bool) -> bool:
+        # TODO: add ee sim client
         if self._is_sim == is_sim:
             if self._is_sim:
                 self.logger.info("Robot client already in sim mode.")
@@ -377,64 +404,80 @@ class W1Manager:
             return True
 
         if is_sim:
-            cur_name = "real"
             target_name = "sim"
-            target_client = self._robot_client_sim
+            target_robot_client = self._robot_client_sim
+            target_left_ee_client = self._left_ee_client_sim
+            target_right_ee_client = self._right_ee_client_sim
         else:
-            cur_name = "sim"
             target_name = "real"
-            target_client = self._robot_client_real
+            target_robot_client = self._robot_client_real
+            target_left_ee_client = self._left_ee_client_real
+            target_right_ee_client = self._right_ee_client_real
 
-        self._robot_client_sim.wait_second(0.01)
-        self._robot_client_real.wait_second(0.01)
-
-        # 避免未被初始化（纯sim模式切换至real模式）
-        if target_client is None:
+        # 检查target client
+        if target_robot_client is None:
             self.logger.error(f"Robot_client_{target_name} is not initialized.")
             return False
-
-        if target_client.status not in [Status.Init, Status.Idle]:
-            self.logger.error(f"Robot_client_{target_name} status: {target_client.status}, can not switch mode!")
+        if not target_robot_client.is_connected():
+            self.logger.error(f"{target_robot_client.node_name} is not connected!")
             return False
-        
-        # 避免未连接获取到None
+        if target_robot_client.status not in [Status.Init, Status.Idle]:
+            self.logger.error(f"{target_robot_client.node_name} status: {target_robot_client.status}, can not switch mode!")
+            return False
+
+        if target_left_ee_client is None:
+            self.logger.error(f"Left_ee_client_{target_name} is not initialized.")
+            return False
+        if not target_left_ee_client.is_connected():
+            self.logger.error(f"{target_left_ee_client.node_name} is not connected!")
+            return False
+        if target_right_ee_client is None:
+            self.logger.error(f"Right_ee_client_{target_name} is not initialized.")
+            return False
+        if not target_right_ee_client.is_connected():
+            self.logger.error(f"{target_right_ee_client.node_name} is not connected!")
+            return False
+
+        # 检查current client
         if not self.robot_client.is_connected():
-            self.logger.error(f"Robot_client_{cur_name} is not connected!")
+            self.logger.error(f"{self.robot_client.node_name} is not connected!")
+            return False
+        if self.robot_client.status not in [Status.Init, Status.Idle]:
+            self.logger.error(f"{self.robot_client.node_name} status: {self.robot_client.status}, can not switch mode!")
             return False
 
-        if self.robot_client.status in [Status.Init, Status.Idle]:
-            self.robot_client = target_client
-            self._is_sim = is_sim
-            self.logger.info(f"Robot client set to {target_name} mode.")
-            return True
-        elif self.robot_client.status == Status.Running:
-            self.logger.warning(f"Robot_client_{cur_name} is running, can not switch mode!")
+        if not self.left_ee_client.is_connected():
+            self.logger.error(f"{self.left_ee_client.node_name} is not connected!")
             return False
-        elif self.robot_client.status == Status.Error:
-            self.logger.error(f"Robot_client_{cur_name} is in error!")
+        if not self.right_ee_client.is_connected():
+            self.logger.error(f"{self.right_ee_client.node_name} is not connected!")
             return False
 
-        self.logger.error("Should not happened, FIXME!")
-        self.logger.error(f"Robot_client_real status: {self._robot_client_real.status}, " + 
-                         f"Robot_client_sim status: {self._robot_client_sim.status}")
-        return False
+        self.robot_client = target_robot_client
+        self.left_ee_client = target_left_ee_client
+        self.right_ee_client = target_right_ee_client
+        self._is_sim = is_sim
+        self.logger.info(f"Robot client set to {target_name} mode.")
+        self.logger.info(f"Left ee client set to {target_name} mode.")
+        self.logger.info(f"Right ee client set to {target_name} mode.")
+        return True
 
-    def set_ee_state(self, name: str, state: np.ndarray) -> bool:
+    def set_ee_qpos(self, name: str, qpos: np.ndarray) -> bool:
         """控制end effector运动
 
         Args:
             name (str): ["left_arm", "right_arm"]
-            state (np.ndarray): 期望位置 0~1
+            qpos (np.ndarray): 期望位置 0~100
 
         Returns:
             bool
         """
-        state_ = np.array(state)
+        qpos_ = np.array(qpos)
         if not self._has_arm_ee_client(name):
             return False
-        if not self._check_qpos_dimension(name, state_):
+        if not self._check_qpos_dimension(name, qpos_):
             return False
-        return self._get_arm_ee_client(name).set_state(state_)
+        return self._get_arm_ee_client(name).set_qpos(qpos_)
 
     def set_home_qpos(self, 
                       home_qpos: np.ndarray, 
@@ -472,7 +515,7 @@ class W1Manager:
             if not self._has_arm_ee_client(name):
                 return False, None, None
             qpos_lb = np.array([0.]*self.arm_ee_dofs)
-            qpos_ub = np.array([1.]*self.arm_ee_dofs)
+            qpos_ub = np.array([100.]*self.arm_ee_dofs)
 
         elif not self._check_name(name):
             return False, None, None
@@ -499,7 +542,7 @@ class W1Manager:
         if name in self.arm_ee_names:
             if not self._has_arm_ee_client(name):
                 return False, None
-            return self._get_arm_ee_client(name).get_state()
+            return self._get_arm_ee_client(name).get_qpos()
         
         robot_info = self.robot_client.get_info()
         cur_qpos = np.array(robot_info.joint_position)
@@ -747,7 +790,7 @@ class W1Manager:
             cur_count = -1
             while not stop_ee_thread:
                 if count == target_count and count != cur_count:
-                    self.left_arm_ee_client.set_state(np.array(target_ee_qpos))
+                    self.left_ee_client.set_qpos(np.array(target_ee_qpos))
                     self.logger.debug(f"left_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if left_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = left_arm_ee_trigger_list_cp.pop()
@@ -762,7 +805,7 @@ class W1Manager:
             cur_count = -1
             while not stop_ee_thread:
                 if count == target_count and count != cur_count:
-                    self.right_arm_ee_client.set_state(np.array(target_ee_qpos))
+                    self.right_ee_client.set_qpos(np.array(target_ee_qpos))
                     self.logger.debug(f"right_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if right_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = right_arm_ee_trigger_list_cp.pop()
@@ -864,6 +907,9 @@ class W1Manager:
         Returns:
             tuple[bool, list]
         """
+        pre_torso_qpos = np.array(pre_torso_qpos)
+        target_torso_qpos = np.array(target_torso_qpos)
+        
         if not self._check_arm_name(name):
             return False, None
         if not self._check_qpos_dimension("torso", pre_torso_qpos) or \
@@ -1024,7 +1070,9 @@ class W1Manager:
 
         qvel_limits_array_ = np.vstack([self.default_qvel[self.component_manager.infos[name]["index"]],
                                         qvel_limits_array])
-        arm_ee_state_list_ = [[0., cur_ee_qpos.tolist(), 0.]] + arm_ee_state_list
+        cur_ee_state = [0., cur_ee_qpos.tolist(), 0.]
+        arm_ee_state_list_ = [cur_ee_state] + [ee_state if ee_state is not None else cur_ee_state 
+                                               for ee_state in arm_ee_state_list]
 
         # segment raw waypoint
         arm_ee_trigger_list = [] # (count, ee_qpos)

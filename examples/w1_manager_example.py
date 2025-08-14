@@ -28,8 +28,8 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
                                       -5, 45, 5, 90, 0, 15, 0]),
                             save_to_file=False)
 
-    w1_manager.set_ee_state("left_arm_ee", np.array([0.]*6))
-    w1_manager.set_ee_state("right_arm_ee", np.array([0.]*6))
+    w1_manager.set_ee_qpos("left_arm_ee", np.array([0.]*6))
+    w1_manager.set_ee_qpos("right_arm_ee", np.array([0.]*6))
     w1_manager.go_home(0.5)    
 
     torso_waypoints = [[0.7854, -1.5708,  0.7853, -0.],
@@ -46,16 +46,16 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
                                      [-5., -35., 5., -80., -10., 10., -10.],
                                      [5., -45., -5., -90., 0., -15., 0.]])
     
-    left_arm_ee_states = [[0., [0., 0.5, 0.5, 0.5, 0.5, 0.5], 0.5],
+    left_arm_ee_states = [[0., [0., 50., 50., 50., 50., 50.], 0.5],
                           [0., [0., 0., 0., 0., 0., 0.], 0.5],
-                          [0., [1., 1., 0., 0., 1., 1.], 0.5],
+                          [0., [100., 100., 0., 0., 100., 100.], 0.5],
                           [0., [0., 0., 0., 0., 0., 0.], 0.]]
 
     right_arm_waypoints = -left_arm_waypoints
 
-    right_arm_ee_states = [[0., [1., 1., 0., 0., 1., 1.], 0.5],
+    right_arm_ee_states = [[0., [100., 100., 0., 0., 100., 100.], 0.5],
                           [0., [0., 0., 0., 0., 0., 0.], 0.5],
-                          [0., [0., 0.5, 0.5, 0.5, 0.5, 0.5], 0.5],
+                          [0., [0., 50., 50., 50., 50., 50.], 0.5],
                           [0., [0., 0., 0., 0., 0., 0.], 0.]]
 
     if move_with_ee:
@@ -99,8 +99,8 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
                                       -5, 45, 5, 90, 0, 15, 0]),
                             save_to_file=False)
 
-    w1_manager.set_ee_state("left_arm_ee", np.array([0.]*6))
-    w1_manager.set_ee_state("right_arm_ee", np.array([0.]*6))
+    w1_manager.set_ee_qpos("left_arm_ee", np.array([0.]*6))
+    w1_manager.set_ee_qpos("right_arm_ee", np.array([0.]*6))
     w1_manager.go_home(0.5)  
 
     cur_l_pose = w1_manager.get_current_pose("left_arm")[1]
@@ -115,9 +115,9 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
     l_pose4 = deepcopy(l_pose3)
     l_pose4[2] += 100
     left_arm_waypoints = [l_pose1, l_pose2, l_pose3, l_pose4]
-    left_arm_ee_states = [[0., [0., 0.5, 0.5, 0.5, 0.5, 0.5], 0.5],
+    left_arm_ee_states = [[0., [0., 50., 50., 50., 50., 50.], 0.5],
                           [0., [0., 0., 0., 0., 0., 0.], 0.5],
-                          [0., [1., 1., 0., 0., 1., 1.], 0.5],
+                          [0., [100., 100., 0., 0., 100., 100.], 0.5],
                           [0., [0., 0., 0., 0., 0., 0.], 0.]]
 
     cur_r_pose = w1_manager.get_current_pose("right_arm")[1]
@@ -132,9 +132,9 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
     r_pose4 = deepcopy(r_pose3)
     r_pose4[2] += 100
     right_arm_waypoints = [r_pose1, r_pose2, r_pose3, r_pose4]
-    right_arm_ee_states = [[0., [1., 1., 0., 0., 1., 1.], 0.5],
+    right_arm_ee_states = [[0., [100., 100., 0., 0., 100., 100.], 0.5],
                           [0., [0., 0., 0., 0., 0., 0.], 0.5],
-                          [0., [0., 0.5, 0.5, 0.5, 0.5, 0.5], 0.5],
+                          [0., [0., 50, 50, 50, 50, 50], 0.5],
                           [0., [0., 0., 0., 0., 0., 0.], 0.]]
 
     if move_with_ee:
@@ -150,5 +150,5 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
 
 
 if __name__ == "__main__":
-    move_full_body_example1(move_with_ee = False, is_sim = True)
-    # move_full_body_example2(move_with_ee = False, is_sim = True)
+    move_full_body_example1(move_with_ee = True, is_sim = True)
+    # move_full_body_example2(move_with_ee = True, is_sim = True)

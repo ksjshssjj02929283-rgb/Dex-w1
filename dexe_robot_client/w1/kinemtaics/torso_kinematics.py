@@ -6,7 +6,7 @@
 
 import numpy as np
 
-class TorsoKinmatics:
+class TorsoKinematics:
     def __init__(self):
         self.calf_length = 0.34
         self.thigh_length = 0.34
@@ -57,5 +57,5 @@ class TorsoKinmatics:
 
 if __name__ == "__main__":
     np.set_printoptions(precision=4, suppress=True)
-    torso_kine = TorsoKinmatics()
+    torso_kine = TorsoKinematics()
     print(torso_kine.get_fk(np.array([np.pi/4, -np.pi/2, np.pi/4, 0.]), True))
