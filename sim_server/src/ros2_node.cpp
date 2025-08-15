@@ -150,7 +150,7 @@ void Ros2Node::InitRobotServer()
                     // std::cout << "Arm InverseDynamics computed: " << tau.tail(14).transpose() << std::endl;
                 }
 
-                int duration_micro = (t_start.time_in_ns() - TimePointSystem::Now().time_in_ns()) / 1e3;
+                int duration_micro = (TimePointSystem::Now().time_in_ns() - t_start.time_in_ns()) / 1e3;
                 if (duration_micro < torque_ctrl_dt_micro)
                 {
                     std::this_thread::sleep_for(std::chrono::microseconds(torque_ctrl_dt_micro - duration_micro));
@@ -220,7 +220,7 @@ void Ros2Node::InitRobotServer()
             {
                 auto t_start = TimePointSystem::Now();
                 planner_manager.LoopOnce();
-                int duration_micro = (t_start.time_in_ns() - TimePointSystem::Now().time_in_ns()) / 1e3;
+                int duration_micro = (TimePointSystem::Now().time_in_ns() - t_start.time_in_ns()) / 1e3;
                 if (duration_micro < manager_dt_micro)
                 {
                     std::this_thread::sleep_for(std::chrono::microseconds(manager_dt_micro - duration_micro));
@@ -337,26 +337,26 @@ void Ros2Node::InitSimulation()
         [this]() -> void
         {
             PlannerManagerCommand q_cmd{};
-            JointMeasurement cache{};
+            JointMeasurement measurement{};
             while (rclcpp::ok())
             {
                 if (!manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
                 {
                     q_cmd.cmd.position << 0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
                     q_cmd.cmd.velocity.setZero();
-                    cache.q_desired_pre = q_cmd.cmd.position;
+                    measurement.q_desired_pre = q_cmd.cmd.position;
                 }
                 // 更新关节测量数据
-                cache.position = q_cmd.cmd.position;
-                cache.velocity = q_cmd.cmd.velocity;
+                measurement.position = q_cmd.cmd.position;
+                measurement.velocity = q_cmd.cmd.velocity;
                 if (this->real_robot_sync_.is_updated)
                 {
-                    cache.position = cache.q_desired_pre = this->real_robot_sync_.joint_position;
-                    cache.velocity.setZero();
+                    measurement.position = measurement.q_desired_pre = this->real_robot_sync_.joint_position;
+                    measurement.velocity.setZero();
                     this->real_robot_sync_.is_updated = false;
                 }
-                auto ret = manager_buffers_.joint_measurement->AppendNewElement(cache);
-                cache.q_desired_pre = cache.position;
+                auto ret = manager_buffers_.joint_measurement->AppendNewElement(measurement);
+                measurement.q_desired_pre = measurement.position;
                 assert(ret);
                 std::this_thread::sleep_for(std::chrono::microseconds(manager_dt_micro));
             }

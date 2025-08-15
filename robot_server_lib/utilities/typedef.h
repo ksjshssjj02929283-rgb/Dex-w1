@@ -58,6 +58,8 @@ enum class RequestType
     TcpSecondary,
     SpeedRatio,
     ClearError,
+    EnableDrag,
+    SafeLevel,
 
     // Move Request
     MoveJoint,

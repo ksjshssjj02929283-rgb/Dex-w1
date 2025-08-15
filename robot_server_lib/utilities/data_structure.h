@@ -127,7 +127,7 @@ struct MoveRequest
     std::optional<double> blend_tolerance;
 };
 
-using PlannerData = std::variant<MoveRequest, PoseQuaternion, double>;
+using PlannerData = std::variant<MoveRequest, PoseQuaternion, bool, double>;
 
 struct PlannerRequest
 {
