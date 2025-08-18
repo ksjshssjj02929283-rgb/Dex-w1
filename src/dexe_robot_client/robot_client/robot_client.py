@@ -17,8 +17,10 @@ class RobotClient(ABC):
 
         self.status = None
         self.joint_position = list[float]()
+        self.joint_velocity = list[float]()
+        self.actual_arm_torque = list[float]()
+        self.command_arm_torque = list[float]()
         self.ee_pose = list[float]()
-
         self._move_request_id_returned = False
 
     """---------------------------------------------------------------------------
@@ -33,7 +35,8 @@ class RobotClient(ABC):
             RobotState: 机器人状态集合
         """
         return RobotInfo(
-            status=self.status, joint_position=self.joint_position, ee_pose=self.ee_pose
+            status=self.status, joint_position=self.joint_position, joint_velocity=self.joint_velocity,
+            actual_arm_torque=self.actual_arm_torque, command_arm_torque=self.command_arm_torque, ee_pose=self.ee_pose
         )
 
     def set_tcp(
@@ -72,9 +75,19 @@ class RobotClient(ABC):
         """async interface - clearing robot error
         异步接口 - 清除机器人错误
         Returns:
-            -int: request id 指令号, 可用于等待对应运动指令完成等
+            - int: request id 指令号, 可用于等待对应运动指令完成等
         """
         return self.send_set_property_request(PropertyType.ClearError, None)
+
+    def set_drag_mode(self, set_enable: bool) -> int:
+        """async interface - setting robot drag mode
+        异步接口 - 开关机器人拖动示教模式, 开启后仅可拖拽, 无法通过运动指令控制机器人运动
+        Args:
+            - set_enable: bool: 是否开启拖动示教模式, True: 开启拖动示教模式, False: 关闭拖动示教模式
+        Returns:
+            - int: request id 指令号, 可用于等待对应运动指令完成等
+        """
+        return self.send_set_property_request(PropertyType.EnableDrag, set_enable)
 
     """ ---------------------------------------------------------------------------
     User interfaces - Move requests

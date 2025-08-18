@@ -60,6 +60,8 @@ class RobotClientRos2(Node, RobotClient):
                 self.status = None
                 self.joint_position = None
                 self.ee_pose = None
+                self.actual_torque = None
+                self.command_torque = None
                 self._last_msg_time = None
                 self.latest_queued_id = None
                 self.latest_finished_id = None
@@ -314,5 +316,11 @@ class RobotClientRos2(Node, RobotClient):
             self.latest_errordrop_id = state["latest_errordrop_id"]
         if "joint_position" in state:
             self.joint_position = state["joint_position"]
+        if "joint_velocity" in state:
+            self.joint_velocity = state["joint_velocity"]
         if "ee_pose" in state:
             self.ee_pose = state["ee_pose"]
+        if "actual_arm_torque" in state:
+            self.actual_arm_torque = state["actual_arm_torque"]
+        if "command_arm_torque" in state:
+            self.command_arm_torque = state["command_arm_torque"]
