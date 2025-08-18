@@ -20,7 +20,7 @@ class SinglePlanner:
     use_ee = None
     env_json_path = None
     urdf_path = None
-    collision_path = None
+    robot_type = None
 
     @classmethod
     def set_arms_cfg(cls, arml_dim: int, armr_dim: int, arml_bounds: np.ndarray, armr_bounds: np.ndarray):
@@ -70,7 +70,7 @@ class SinglePlanner:
             if robot_type not in RobotType:
                 raise ValueError(f"Unsupported robot type: {robot_type}. Please use one of {list(RobotType)}.")
             cls.urdf_path = get_robot_urdf(robot_type)
-            cls.collision_path = get_robot_mesh_path(robot_type)
+            cls.robot_type = robot_type
         else:
             raise ValueError(f"Robot type must be specified. Please use  one of {list(RobotType)}.")
 
@@ -85,7 +85,7 @@ class SinglePlanner:
 
     def __init__(self):
 
-        self._init_fcl_checker(self.collision_path, self.ee_type)
+        self._init_fcl_checker(self.robot_type, self.ee_type)
         self.arml_start, self.armr_start, self.arml_goal, self.armr_goal = None, None, None, None
         self.armlee_wait_time, self.armree_wait_time = 0, 0
         self.armlee_exec_time, self.armree_exec_time = 0, 0
@@ -93,8 +93,8 @@ class SinglePlanner:
         self.torso_qpos = np.zeros(TORSO_DIM)
 
         
-    def _init_fcl_checker(self, collision_path: str, ee_type: EndEffectorType):
-        self.fcl_checker = FCLChecker(collision_path, ee_type)
+    def _init_fcl_checker(self, robot_type: RobotType, ee_type: EndEffectorType):
+        self.fcl_checker = FCLChecker(robot_type, ee_type)
         self.fcl_checker.create_robot_obj()
         self.fcl_checker.create_robot_manager()
         if self.env_json_path is not None:
