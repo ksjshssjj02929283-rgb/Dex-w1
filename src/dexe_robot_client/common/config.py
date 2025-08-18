@@ -20,4 +20,4 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 DOWNLOAD_DIR = DATA_DIR / "downloads"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-URL_PREFIX = pathlib.Path("http://192.168.3.120/CoreEngine/Data/embodychain_data")
+URL_PREFIX = "http://192.168.3.120/CoreEngine/Data/embodychain_data"

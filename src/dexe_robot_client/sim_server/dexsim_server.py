@@ -29,7 +29,7 @@ class DexsimServer:
 
         if w1_version != W1Version.V2:
             raise ValueError(f"W1Version {w1_version} are not support.")
-        if not download_and_unzip_file(URL_PREFIX / "DexforceW1V02_v1.zip"):
+        if not download_and_unzip_file(URL_PREFIX + "/DexforceW1V02_v1.zip"):
             raise FileNotFoundError
 
         if arm_type == W1ArmType.INDUSTRIAL:

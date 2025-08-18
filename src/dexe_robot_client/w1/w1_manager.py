@@ -208,27 +208,27 @@ class W1Manager:
         self.left_arm_controller = W1DriveController(is_left_arm = True, 
                                                     type_version = self._w1_version, 
                                                     arm_type = self._arm_type,
-                                                    is_yaik_solver=False)
+                                                    is_yaik_solver=True)
         self.left_arm_controller.set_joint_limits(upper_limits = self.left_arm_ub,
                                                    lower_limits = self.left_arm_lb)
         self.left_arm_controller.set_user_joint_limits(upper_limits = self.left_arm_ub,
                                                    lower_limits = self.left_arm_lb)
         self.left_arm_controller.set_ik_nearst_weight(_ik_nearst_weight)
-        left_kin_solver = self.left_arm_controller.solver.get_kin_solver()
-        left_kin_solver.set_num_samples(_ik_sample_num)
+        # left_kin_solver = self.left_arm_controller.solver.get_kin_solver()
+        # left_kin_solver.set_num_samples(_ik_sample_num)
         # left_kin_solver.set_small_range_qt(_arm_angle_sample_range)
 
         self.right_arm_controller = W1DriveController(is_left_arm = False, 
                                                     type_version = self._w1_version, 
                                                     arm_type = self._arm_type,
-                                                    is_yaik_solver=False)
+                                                    is_yaik_solver=True)
         self.right_arm_controller.set_joint_limits(upper_limits = self.right_arm_ub,
                                                    lower_limits = self.right_arm_lb)
         self.right_arm_controller.set_user_joint_limits(upper_limits = self.right_arm_ub,
                                                    lower_limits = self.right_arm_lb)
         self.right_arm_controller.set_ik_nearst_weight(_ik_nearst_weight)
-        right_kin_solver = self.right_arm_controller.solver.get_kin_solver()
-        right_kin_solver.set_num_samples(_ik_sample_num)
+        # right_kin_solver = self.right_arm_controller.solver.get_kin_solver()
+        # right_kin_solver.set_num_samples(_ik_sample_num)
         # right_kin_solver.set_small_range_qt(_arm_angle_sample_range)
 
         # fmt: off
