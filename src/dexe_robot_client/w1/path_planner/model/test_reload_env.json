@@ -1,0 +1,23 @@
+{
+  "scene_objects": [
+    {
+      "name": "table",
+      "shape": {
+        "shape_type": "box",
+        "raw_data": [1.0, 1.0, 0.03]
+      },
+      "pose": [0.8, 0.0, 1.1, 1, 0, 0, 0]
+    }
+  ],
+
+  "user_workobjects": [
+    {
+      "name_key": "box2",
+      "shape": {
+        "shape_type": "box",
+        "raw_data": [0.1, 0.1, 0.08]
+      },
+      "pose": [0.45, -0.15, 1.165, 1, 0, 0, 0]
+    }
+  ]
+}

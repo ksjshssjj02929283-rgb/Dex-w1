@@ -5,8 +5,9 @@ import open3d as o3d
 import time
 import os
 import json
+from copy import deepcopy 
 from dexe_robot_client.end_effector_client import EndEffectorType 
-from dexe_robot_client.w1.path_planner.robot_type import *
+from dexe_robot_client.w1.path_planner.utils.robot_type import *
 
 
 class FCLChecker:
@@ -53,10 +54,19 @@ class FCLChecker:
         self.armr_attached = False
         self.arml7_T_object = None
         self.armr7_T_object = None
+        self.arml_grasp_obj_name = None
+        self.armr_grasp_obj_name = None
 
         self._create_robot_obj()
         self._create_robot_manager()
 
+        self.compute_distance = False
+
+    def set_compute_distance(self, compute_distance: bool = False):
+        """
+        Enable the distance computation between objects.
+        """
+        self.compute_distance = compute_distance
 
     def _obj2fcl(self, obj_path):
         mesh = trimesh.load(obj_path, force='mesh')
@@ -182,6 +192,28 @@ class FCLChecker:
         self.obstacle_manager.setup()
     
     def load_env_json(self, json_path):
+
+        # Clear existing obstacles and grasp objects
+        self.obstacles.clear()
+        self.obstacle_manager = fcl.DynamicAABBTreeCollisionManager()
+        self.grasp_objects.clear()
+        self.grasp_objects_manager = fcl.DynamicAABBTreeCollisionManager()
+        # self.grasp_objects_dict.clear()
+        temp_grasp_objects_dict = {}
+        if self.arml_attached:
+            temp_grasped_obj_l = self.grasp_objects_dict[self.arml_grasp_obj_name]
+            self.grasp_objects.append(temp_grasped_obj_l)
+            temp_grasp_objects_dict[self.arml_grasp_obj_name] = temp_grasped_obj_l
+        if self.armr_attached:
+            temp_grasped_obj_r = self.grasp_objects_dict[self.armr_grasp_obj_name]
+            self.grasp_objects.append(temp_grasped_obj_r)
+            temp_grasp_objects_dict[self.armr_grasp_obj_name] = temp_grasped_obj_r
+        
+        self.grasp_objects_dict.clear()
+        self.grasp_objects_dict.update(temp_grasp_objects_dict)
+        
+        
+
         with open(json_path, 'r') as f:
             env_data = json.load(f)
         # Load environment obstacles
@@ -282,6 +314,7 @@ class FCLChecker:
             raise ValueError("Left arm already attached to an object. Please detach first.")
         self.arml_attached = True
         self.arml7_T_object = flange_T_object
+        self.arml_grasp_obj_name = obj_name
 
         self.arml_links.append(fcl_obj)
         self.grasp_objects_manager.unregisterObject(fcl_obj)
@@ -309,6 +342,7 @@ class FCLChecker:
 
         self.arml_attached = False
         self.arml7_T_object = None
+        self.arml_grasp_obj_name = None
 
         self.arml_links.remove(fcl_obj)
         self.arml_manager.unregisterObject(fcl_obj)
@@ -327,6 +361,7 @@ class FCLChecker:
             raise ValueError("Right arm already attached to an object. Please detach first.")
         self.armr_attached = True
         self.armr7_T_object = flange_T_object
+        self.armr_grasp_obj_name = obj_name
 
         self.armr_links.append(fcl_obj)
         self.grasp_objects_manager.unregisterObject(fcl_obj)
@@ -352,6 +387,7 @@ class FCLChecker:
 
         self.armr_attached = False
         self.armr7_T_object = None
+        self.armr_grasp_obj_name = None
 
         self.armr_links.remove(fcl_obj)
         self.armr_manager.unregisterObject(fcl_obj)
@@ -504,3 +540,14 @@ class FCLChecker:
                     return True
         return False
 
+    def compute_distance(self):
+        dreq = fcl.DistanceRequest(enable_nearest_points=True) # enable_signed_distance=True
+        ddata = fcl.DistanceData(request=dreq)
+        
+        ddata.done = False
+        self.arml_manager.distance(self.obstacle_manager, ddata, fcl.defaultDistanceCallback)
+        print(f"Left arm distance to obstacles: {ddata.result.min_distance}")
+
+
+
+        
