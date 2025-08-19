@@ -12,10 +12,9 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from rlia.kit.drive_controllers.w1_drive_controller import W1Version, W1ArmType
-
 from ..common import get_logger, ASSETS_DIR, URL_PREFIX, download_and_unzip_file
 from ..end_effector_client import EndEffectorType
+from ..w1.utils.w1_params import W1Version, W1ArmType
 from .utils.mapping_idx import get_sim2real_idx, get_real2sim_idx
 
 """TODO
@@ -87,9 +86,9 @@ class DexsimServer:
         # ]
         # fmt: on
         self._init_visualization()
-        self._init_ros2_node()
         self.real2sim_index = get_real2sim_idx(self._articulation)
         self.sim2real_index = get_sim2real_idx(self._articulation)
+        self._init_ros2_node()
         self.logger.debug("Dexsim server initialized.")
 
     def _init_ros2_node(self):

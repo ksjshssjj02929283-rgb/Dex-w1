@@ -10,6 +10,7 @@ import colorlog
 import pathlib
 import threading
 from datetime import datetime
+from pprint import pformat
 from .config import LOG_DIR, PACKAGE_NAME
 
 def get_logger() -> logging.Logger:
@@ -21,16 +22,37 @@ LEVEL_COLORS = {
     "INFO": "green",
     "WARNING": "yellow",
     "ERROR": "red",
-    "CRITICAL": "red",
+    "CRITICAL": "bold_red",
 }
 
 
 class Logger:
+    class PrettyFilter(logging.Filter):
+        def __init__(self,  
+                     indent: int = 2, 
+                     width: int = 100, 
+                     sort_dicts: bool = False):
+            super().__init__()
+            self.indent = indent
+            self.width = width
+            self.sort_dicts = sort_dicts
+            self._pretty_types = (dict, list, tuple, set)
+
+        def _pp(self, obj):
+            return pformat(obj, indent=self.indent, width=self.width, sort_dicts=self.sort_dicts)
+
+        def filter(self, record: logging.LogRecord) -> bool:
+            if isinstance(record.msg, self._pretty_types):
+                record.msg = "\n" + self._pp(record.msg)
+                record.args = ()
+
+            return True
+
     class BaseMicroSecondFormatter:
         def formatTime(self, record, datefmt=None):
-            dt = datetime.fromtimestamp(record.created)  # 生成 datetime 对象
+            dt = datetime.fromtimestamp(record.created)
             if datefmt:
-                return dt.strftime(datefmt) + f",{dt.microsecond // 1000:03d}"  # 手动补全毫秒
+                return dt.strftime(datefmt) + f",{dt.microsecond // 1000:03d}"
             else:
                 return dt.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -56,7 +78,13 @@ class Logger:
                     cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self, log_file_path="", name="root"):
+    def __init__(self, 
+                 log_file_path="",
+                 name="root",
+                 console_level: int = logging.DEBUG,
+                 file_level: int = logging.DEBUG,
+                 pretty_in_console = True,
+                 pretty_in_file = True):
         if hasattr(self, "_initialized") and self._initialized:
             return
         self._initialized = True
@@ -69,12 +97,13 @@ class Logger:
 
         self._logger = logging.getLogger(name)
         self._logger.setLevel(logging.DEBUG)
+        self._logger.propagate = False
 
         for handler in self._logger.handlers[:]:
             self._logger.removeHandler(handler)
 
         self.console_handler = logging.StreamHandler()
-        self.console_handler.setLevel(logging.DEBUG)  # 修改终端日志打印等级
+        self.console_handler.setLevel(console_level)
         self.console_handler.setFormatter(
             self.MicroSecondColoredFormatter(
                 "[%(asctime)s] [%(name)s] [%(log_color)s%(levelname)s%(light_white)s] [%(filename)s-%(lineno)d line]: %(message)s",
@@ -82,6 +111,10 @@ class Logger:
                 log_colors=LEVEL_COLORS,
             )
         )
+        if pretty_in_console:
+            self.console_handler.addFilter(
+                self.PrettyFilter(indent=2, width=100, sort_dicts=False)
+            )
 
         self.file_handler = logging.handlers.RotatingFileHandler(
             filename=self._log_file_path,
@@ -89,24 +122,17 @@ class Logger:
             backupCount=20,
             encoding="utf8",
         )
-        self.file_handler.setLevel(logging.DEBUG)
+        self.file_handler.setLevel(file_level)
         self.file_handler.setFormatter(
             self.MicroSecondFormatter(
                 "[%(asctime)s] [%(name)s] [%(levelname)s] [%(filename)s-%(lineno)d行]: %(message)s",
                 datefmt="%Y-%m-%d %H:%M:%S",
             )
         )
+        if pretty_in_file:
+            self.file_handler.addFilter(
+                self.PrettyFilter(indent=2, width=100, sort_dicts=False)
+            )
 
         self._logger.addHandler(self.console_handler)
         self._logger.addHandler(self.file_handler)
-
-
-if __name__ == "__main__":
-    rcs_logger = get_logger()  # 单例
-
-    # 会记录到文件 和 打印至终端
-    rcs_logger.debug("debug")
-    rcs_logger.info("info")
-    rcs_logger.warning("warning")
-    rcs_logger.error("error")
-    rcs_logger.critical("critical")
