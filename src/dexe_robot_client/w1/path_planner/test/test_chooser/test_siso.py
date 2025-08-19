@@ -1,9 +1,9 @@
 import os
-from dexe_robot_client.w1.path_planner.robot_type import *
+from dexe_robot_client.w1.path_planner.utils.robot_type import *
 from dexe_robot_client.w1.path_planner.single_planner import SinglePlanner
 from dexe_robot_client.w1.path_planner.fcl_checker import FCLChecker
 from dexe_robot_client.w1.path_planner.ompl_plan import *
-from dexe_robot_client.w1.path_planner.mapping_index import get_sim2real_idx, get_real2sim_idx, get_pin2real_idx, get_real2pin_idx
+from dexe_robot_client.w1.path_planner.utils.mapping_index import get_sim2real_idx, get_real2sim_idx, get_pin2real_idx, get_real2pin_idx
 import numpy as np
 import time
 
@@ -253,5 +253,5 @@ if __name__ == "__main__":
     print(f"pin2real_idx: {pin2real_idx}")
     real2pin_idx = get_real2pin_idx(pin_model=pin_model)
     print(f"real2pin_idx: {real2pin_idx}")
-    embed()
+    # embed()
     test_siso_plan(_articulation, pin_model, pin_data)

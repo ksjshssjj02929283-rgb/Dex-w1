@@ -6,7 +6,7 @@ from copy import deepcopy
 
 from dexe_robot_client.w1.path_planner.fcl_checker import FCLChecker
 from dexe_robot_client.w1.path_planner.ompl_plan import OMPLPlanSingle, OMPLPlanCentralized, OMPLPlanDecoupled
-from dexe_robot_client.w1.path_planner.robot_type import RobotType, RobotURDF, RobotCollision, get_robot_urdf, get_robot_mesh_path
+from dexe_robot_client.w1.path_planner.utils.robot_type import RobotType, RobotURDF, RobotCollision, get_robot_urdf, get_robot_mesh_path
 from dexe_robot_client.end_effector_client import EndEffectorType 
 
 HEAD_DIM = 2

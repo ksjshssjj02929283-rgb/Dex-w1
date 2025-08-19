@@ -1,7 +1,7 @@
 import os
 from dexe_robot_client.w1.path_planner.ompl_plan import *
 from dexe_robot_client.w1.path_planner.fcl_checker import *
-from dexe_robot_client.w1.path_planner.robot_type import RobotType, RobotURDF, RobotCollision, get_robot_urdf, get_robot_mesh_path
+from dexe_robot_client.w1.path_planner.utils.robot_type import RobotType, RobotURDF, RobotCollision, get_robot_urdf, get_robot_mesh_path
 import numpy as np
 import time
 
