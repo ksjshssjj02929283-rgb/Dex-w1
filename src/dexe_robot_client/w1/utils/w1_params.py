@@ -1,0 +1,268 @@
+# ----------------------------------------------------------------------------
+# Copyright (c) 2021-2025 DexForce Technology Co., Ltd.
+#
+# All rights reserved.
+# ----------------------------------------------------------------------------
+
+import json
+from copy import deepcopy
+from enum import Enum, auto
+import numpy as np
+from ...end_effector_client.end_effector_type import EndEffectorType
+from ...common.logger import get_logger
+from ...common.config import DATA_DIR
+
+
+class W1ArmType(Enum):
+    INDUSTRIAL = auto()
+    ANTHROPOMORPHIC = auto()
+
+class W1Version(Enum):
+    V2 = auto()
+
+
+class W1Params:
+    def __init__(self, 
+                 arm_type: W1ArmType, 
+                 w1_version: W1Version = W1Version.V2, 
+                 end_effector_type: EndEffectorType = None):
+        self._arm_type = arm_type
+
+        self._w1_version = w1_version
+        if self._w1_version != W1Version.V2:
+            raise ValueError(f"W1Version {self._w1_version.name} are not support.")
+
+        self.arm_ee_dofs = None
+        self._end_effector_type = end_effector_type
+        if self._end_effector_type is None:
+            get_logger().info(f"No movable end effector.")
+        elif self._end_effector_type == EndEffectorType.BRAINCO_HAND:
+            self.arm_ee_dofs = 6
+        elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
+            self.arm_ee_dofs = 1
+        else:
+            raise ValueError(f"Unsupport end effector type: {self._end_effector_type.name}.")
+
+        self.torso_dofs = 4
+        self.head_dofs = 2
+        self.arm_dofs = 7
+        self.full_body_dofs = 20
+
+        # IndexManager
+        self.torso_index = list(range(4))
+        self.head_index = [4, 5]
+        self.left_arm_index = list(range(6, 13))
+        self.right_arm_index = list(range(13, 20))
+        self.full_body_index = list(range(20))
+
+        self.index_infos = {"torso": {"dofs": self.torso_dofs, 
+                                    "index": self.torso_index},
+                            "head": {"dofs": self.head_dofs,
+                                    "index": self.head_index},
+                            "left_arm": {"dofs": self.arm_dofs,
+                                        "index": self.left_arm_index},
+                            "right_arm": {"dofs": self.arm_dofs,
+                                        "index": self.right_arm_index},
+                            "full_body": {"dofs": self.full_body_dofs,
+                                        "index": self.full_body_index}}
+        
+        self.names = ("torso", "head", "left_arm", "right_arm", "full_body")
+        self.arm_names = ["left_arm", "right_arm"]
+        self.arm_ee_names = ["left_arm_ee", "right_arm_ee"]
+
+        # Arm Kinematics Params
+        self.torso_ub = np.deg2rad([75., 5., 90., 90.])
+        self.torso_lb = np.deg2rad([-5., -150., -100., -90.])
+        self.head_ub = np.deg2rad([90., 45.])
+        self.head_lb = np.deg2rad([-90., -45.])
+
+        self._left_arm_kine_params = W1ArmKineParams(True, self._arm_type, self._w1_version)
+        self._right_arm_kine_params = W1ArmKineParams(False, self._arm_type, self._w1_version)
+        self.left_arm_ub = deepcopy(self._left_arm_kine_params.qpos_limits[:,1])
+        self.left_arm_lb = deepcopy(self._left_arm_kine_params.qpos_limits[:,0])
+        self.right_arm_ub = deepcopy(self._right_arm_kine_params.qpos_limits[:,1])
+        self.right_arm_lb = deepcopy(self._right_arm_kine_params.qpos_limits[:,0])
+
+        self.qpos_ub = np.r_[self.torso_ub, 
+                            self.head_ub, 
+                            self.left_arm_ub, 
+                            self.right_arm_ub]
+        self.qpos_lb = np.r_[self.torso_lb,
+                            self.head_lb,
+                            self.left_arm_lb,
+                            self.right_arm_lb]
+
+        self.default_qvel = np.array([0.3]*self.full_body_dofs)
+        self.min_qvel = np.array([0.05]*self.full_body_dofs)
+        self.max_qvel = np.array([1.0]*self.full_body_dofs)
+        self.max_qacc = np.array([1., 1., 1., 1.,
+                                5., 5.,
+                                3., 3., 3., 5., 10., 10., 10.,
+                                3., 3., 3., 5., 10., 10., 10.])
+
+        self.home_qpos = np.deg2rad([45, -90, 45, 0, 0, 0,
+                                      5, -45, -5, -90, 0, -15, 0,
+                                      -5, 45, 5, 90, 0, 15, 0])
+        
+        self.update_params()
+
+    def update_params(self, file_path = DATA_DIR / "config.json"):
+        if not file_path.exists() or file_path.stat().st_size == 0:
+            file_path.write_text("{}")
+            get_logger().warning(f"{str(file_path)} does not exist, would be created automatically.")
+            return
+        
+        with open(file_path, "rb") as f:
+            json_data = json.load(f)
+            
+            home_qpos = json_data.get("home_qpos")
+            if home_qpos is not None:
+                if len(home_qpos) != self.full_body_dofs:
+                    get_logger().error(f"home_qpos dimension mismatch!")
+                else:
+                    self.home_qpos = np.array(home_qpos)
+                    get_logger().debug(f"Update home_qpos from json.")
+            
+            qpos_limits = json_data.get("qpos_limits")
+            if qpos_limits is not None:
+                if np.array(qpos_limits).shape != (self.full_body_dofs, 2):
+                    get_logger().error(f"qpos_limits dimension mismatch!")
+                else:
+                    self.qpos_lb = np.array(qpos_limits)[:,0]
+                    self.qpos_ub = np.array(qpos_limits)[:,1]
+
+                    self.torso_lb = np.maximum(self.torso_lb, self.qpos_lb[self.torso_index])
+                    self.head_lb = np.maximum(self.head_lb, self.qpos_lb[self.head_index])
+                    self.left_arm_lb = np.maximum(self.left_arm_lb, self.qpos_lb[self.left_arm_index])
+                    self.right_arm_lb = np.maximum(self.right_arm_lb, self.qpos_lb[self.right_arm_index])
+
+                    self.torso_ub = np.minimum(self.torso_ub, self.qpos_ub[self.torso_index])
+                    self.head_ub = np.minimum(self.head_ub, self.qpos_ub[self.head_index])
+                    self.left_arm_ub = np.minimum(self.left_arm_ub, self.qpos_ub[self.left_arm_index])
+                    self.right_arm_ub = np.minimum(self.right_arm_ub, self.qpos_ub[self.right_arm_index])
+                    get_logger().debug(f"Update qpos_limits from json.")
+
+            max_qvel = json_data.get("max_qvel")
+            if max_qvel is not None:
+                if len(max_qvel) != self.full_body_dofs:
+                    get_logger().error(f"max_qvel dimension mismatch!")
+                else:
+                    self.max_qvel = np.clip(max_qvel, 0., 1.5)
+                    get_logger().debug(f"Update max_qvel from json.")
+
+            max_qacc = json_data.get("max_qacc")
+            if max_qacc is not None:
+                if len(max_qacc) != self.full_body_dofs:
+                    get_logger().error(f"max_qacc dimension mismatch!")
+                else:
+                    self.max_qacc = np.clip(max_qacc, 0., 15.)
+                    get_logger().debug(f"Update max_qacc from json.")
+
+            default_qvel = json_data.get("default_qvel")
+            if default_qvel is not None:
+                if len(default_qvel) != self.full_body_dofs:
+                    get_logger().error(f"default_qvel dimension mismatch!")
+                else:
+                    self.default_qvel = np.clip(default_qvel, 
+                                                np.array([0.]*self.full_body_dofs), 
+                                                self.max_qvel)
+                    get_logger().debug(f"Update default_qvel from json.")
+
+
+
+# TODO:
+class RobotConfig:
+    pass
+
+
+class W1ArmKineParams:
+    def __init__(self, 
+                 is_left_arm: bool, 
+                 arm_type: W1ArmType, 
+                 version: W1Version = W1Version.V2):
+        if version != W1Version.V2:
+            raise ValueError(f"W1Version {version} are not support.")
+        
+        self.arm_type = arm_type
+        self.is_left_arm = is_left_arm
+        self.d_bs = 0.1025
+        self.d_se = 0.26
+        self.d_ew = 0.264
+        self.d_wt = 0.
+        if self.arm_type == W1ArmType.INDUSTRIAL:
+            self.T_origin_tcp = np.array([[1., 0., 0., 0.],
+                                          [0., 1., 0., 0.],
+                                          [0., 0., 1., 0.066],
+                                          [0., 0., 0., 1.]])
+
+            if is_left_arm:
+                self.dh_params = [[0., -np.pi/2,  self.d_bs, 0.], 
+                                [0.,  np.pi/2,     0.,     0.], 
+                                [0., -np.pi/2,  self.d_se, -np.pi/2],
+                                [0.,  np.pi/2,     0.,     0.],
+                                [0., -np.pi/2,  self.d_ew, 0.],
+                                [0.,  np.pi/2,     0.,     0.],
+                                [0.,       0.,  self.d_wt, 0.]]
+                self.qpos_limits = np.deg2rad([[-170., 170.],
+                                               [-120., 90.],
+                                               [-170., 170.],
+                                               [-135., 90.],
+                                               [-170., 170.],
+                                               [-90., 90.],
+                                               [-170., 170.]])
+            else:
+                self.dh_params = [[0., -np.pi/2,  self.d_bs, 0.], 
+                                [0.,  np.pi/2,     0.,     0.], 
+                                [0., -np.pi/2,  self.d_se, np.pi/2],
+                                [0.,  np.pi/2,     0.,     0.],
+                                [0., -np.pi/2,  self.d_ew, 0.],
+                                [0.,  np.pi/2,     0.,     0.],
+                                [0.,       0.,  self.d_wt, 0.]]
+                self.qpos_limits = np.deg2rad([[-170., 170.],
+                                               [-90., 120.],
+                                               [-170., 170.],
+                                               [-90., 135.],
+                                               [-170., 170.],
+                                               [-90., 90.],
+                                               [-170., 170.]])
+        
+        elif self.arm_type == W1ArmType.ANTHROPOMORPHIC:
+            if is_left_arm:
+                self.T_origin_tcp = np.array([[0., 0., 1., 0.066],
+                                              [0., 1., 0., 0.],
+                                              [-1., 0., 0., 0.],
+                                              [0., 0., 0., 1.]])
+                self.dh_params = [[0., -np.pi/2,  self.d_bs, 0.], 
+                                  [0.,  np.pi/2,     0.,     0.], 
+                                  [0., -np.pi/2,  self.d_se, -np.pi/2],
+                                  [0.,  np.pi/2,     0.,     0.],
+                                  [0., -np.pi/2,  self.d_ew, 0.],
+                                  [0.,  np.pi/2,     0.,     -np.pi/2],
+                                  [0.,       0.,  self.d_wt, 0.]]
+                self.qpos_limits = np.deg2rad([[-170., 170.],
+                                               [-120., 90.],
+                                               [-170., 170.],
+                                               [-135., 90.],
+                                               [-170., 170.],
+                                               [-45., 45.],
+                                               [-90., 60.]])
+            else:
+                self.T_origin_tcp = np.array([[0., 0., -1., -0.066],
+                                              [0., 1., 0., 0.],
+                                              [1., 0., 0., 0.],
+                                              [0., 0., 0., 1.]])
+                self.dh_params = [[0., -np.pi/2,  self.d_bs, 0.], 
+                                  [0.,  np.pi/2,     0.,     0.], 
+                                  [0., -np.pi/2,  self.d_se, np.pi/2],
+                                  [0.,  np.pi/2,     0.,     0.],
+                                  [0., -np.pi/2,  self.d_ew, 0.],
+                                  [0.,  np.pi/2,     0.,     np.pi/2],
+                                  [0.,       0.,  self.d_wt, 0.]]    
+                self.qpos_limits = np.deg2rad([[-170., 170.],
+                                               [-90., 120.],
+                                               [-170., 170.],
+                                               [-90., 135.],
+                                               [-170., 170.],
+                                               [-45., 45.],
+                                               [-60., 90.]])
+# fmt: on

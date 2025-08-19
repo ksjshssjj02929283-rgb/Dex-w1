@@ -5,7 +5,7 @@
 # ----------------------------------------------------------------------------
 
 import rclpy
-from rlia.kit.drive_controllers.w1_drive_controller import W1Version, W1ArmType
+from dexe_robot_client.w1 import W1Version, W1ArmType
 from dexe_robot_client.sim_server import DexsimServer
 
 def main():
