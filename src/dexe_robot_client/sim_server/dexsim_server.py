@@ -87,9 +87,9 @@ class DexsimServer:
         # ]
         # fmt: on
         self._init_visualization()
-        self._init_ros2_node()
         self.real2sim_index = get_real2sim_idx(self._articulation)
         self.sim2real_index = get_sim2real_idx(self._articulation)
+        self._init_ros2_node()
         self.logger.debug("Dexsim server initialized.")
 
     def _init_ros2_node(self):
