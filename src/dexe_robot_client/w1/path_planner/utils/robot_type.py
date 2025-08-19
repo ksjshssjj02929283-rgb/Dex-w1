@@ -1,11 +1,22 @@
 from enum import Enum, auto
 import os
 import pathlib
+import numpy as np
 from dexe_robot_client.common.config import PACKAGE_NAME, DATA_DIR, ASSETS_DIR
 from dexe_robot_client.end_effector_client import EndEffectorType 
 
-# current_path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-# model_path = os.path.join(current_path, "model")
+SINGLE_ARM_DIM = 7
+DUAL_ARM_DIM = 14
+
+LARM_BOUND = np.array([
+        [-2.9670597283903604, -2.0943951023931953, -2.9670597283903604, -2.356194490192345, -2.9670597283903604, -1.5707963267948966, -2.9670597283903604],
+        [2.9670597283903604, 1.5707963267948966, 2.9670597283903604, 1.5707963267948966, 2.96705972839036041, 1.5707963267948966, 2.9670597283903604]
+    ])
+RARM_BOUND = np.array([
+        [-2.9670597283903604, -1.5707963267948966, -2.9670597283903604, -1.5707963267948966, -2.9670597283903604, -1.5707963267948966, -2.9670597283903604],
+        [2.9670597283903604, 2.0943951023931953, 2.9670597283903604, 2.356194490192345, 2.9670597283903604, 1.5707963267948966, 2.9670597283903604]
+    ])
+
 MODEL_DIR = ASSETS_DIR / "DexforceW1V02_v1"
 COLLISION_DIR = MODEL_DIR / "Collision"
 ARML_COMMON_LINK_NAMES = ["arml1.obj", "arml2.obj", "arml3.obj", "arml4.obj", "arml5.obj"]

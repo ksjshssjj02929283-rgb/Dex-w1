@@ -95,3 +95,54 @@ def get_real2pin_idx(pin_model) -> List[int]:
     for pin_name in pin_names:
         real2pin_idx.append(real_dict[pin_name])
     return real2pin_idx
+
+def get_real_idx():
+    """
+    This function returns the start and end indices for torso, head, left arm, and right arm in the real robot.
+
+    returns:
+        tuples that contain the start and end indices for torso, head, left arm, and right arm
+    
+    Notes:
+        - This function requires the joints order in real robot can't have torso, head, arml, armr overlapped
+    """
+    real_names = [realjoint.name for realjoint in RealRobotIdx]
+    real_dict = {name: idx for idx, name in enumerate(real_names)}
+    torso_start_idx = real_dict["ANKLE"]
+    torso_end_idx = real_dict["WAIST"]
+    head_start_idx = real_dict["NECK1"]
+    head_end_idx = real_dict["NECK2"]
+    left_arm_start_idx = real_dict["LEFT_J1"]
+    left_arm_end_idx = real_dict["LEFT_J7"]
+    right_arm_start_idx = real_dict["RIGHT_J1"]
+    right_arm_end_idx = real_dict["RIGHT_J7"]
+    return (torso_start_idx, torso_end_idx), (head_start_idx, head_end_idx), \
+           (left_arm_start_idx, left_arm_end_idx), (right_arm_start_idx, right_arm_end_idx)
+
+
+
+def get_pin_idx(pin_model):
+    """
+    This function returns the start and end indices for torso, head, left arm, and right arm in the pinocchio model.
+
+    Args:
+        pin_model: The pinocchio model of the robot
+
+    Returns:
+        tuples that contain the start and end indices for torso, head, left arm, and right arm
+
+    Notes:
+        - This function requires the joints order in pinocchio can't have torso, head, arml, armr overlapped
+    """
+    pin_names = list(pin_model.names)[1:]
+    pin_dict = {name: idx for idx, name in enumerate(pin_names)}
+    torso_start_idx = pin_dict["ANKLE"]
+    torso_end_idx = pin_dict["WAIST"]
+    head_start_idx = pin_dict["NECK1"]
+    head_end_idx = pin_dict["NECK2"]
+    left_arm_start_idx = pin_dict["LEFT_J1"]
+    left_arm_end_idx = pin_dict["LEFT_J7"]
+    right_arm_start_idx = pin_dict["RIGHT_J1"]
+    right_arm_end_idx = pin_dict["RIGHT_J7"]
+    return (torso_start_idx, torso_end_idx), (head_start_idx, head_end_idx), \
+           (left_arm_start_idx, left_arm_end_idx), (right_arm_start_idx, right_arm_end_idx)
