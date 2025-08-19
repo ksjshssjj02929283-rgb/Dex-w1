@@ -95,8 +95,8 @@ class SinglePlanner:
         
     def _init_fcl_checker(self, robot_type: RobotType, ee_type: EndEffectorType):
         self.fcl_checker = FCLChecker(robot_type, ee_type)
-        self.fcl_checker.create_robot_obj()
-        self.fcl_checker.create_robot_manager()
+        # self.fcl_checker.create_robot_obj()
+        # self.fcl_checker.create_robot_manager()
         if self.env_json_path is not None:
             self.fcl_checker.load_env_json(self.env_json_path)
 
@@ -137,6 +137,21 @@ class SinglePlanner:
         self.armlee_wait_time, self.armree_wait_time = armlee_wait_time, armree_wait_time
         self.armlee_exec_time, self.armree_exec_time = armlee_exec_time, armree_exec_time
 
+    def attach_object(self, obj_name: str, which_arm: str, flange_T_object: np.ndarray = None):
+        if which_arm not in ['left', 'right']:
+            raise ValueError("which_arm must be either 'left' or 'right'.")
+        if which_arm == "left":
+            self.fcl_checker.attach_object_arml(obj_name=obj_name, flange_T_object=flange_T_object)
+        if which_arm == "right":
+            self.fcl_checker.attach_object_armr(obj_name=obj_name, flange_T_object=flange_T_object)
+
+    def detach_object(self, obj_name: str, which_arm: str, arm7_transform: np.ndarray):
+        if which_arm not in ['left', 'right']:
+            raise ValueError("which_arm must be either 'left' or 'right'.")
+        if which_arm == "left":
+            self.fcl_checker.detach_object_arml(obj_name=obj_name, arml7_transform=arm7_transform)
+        if which_arm == "right":    
+            self.fcl_checker.detach_object_armr(obj_name=obj_name, armr7_transform=arm7_transform)
     def plan(self):
         """
         Solve the planning problem which will decide which planner to use based on the start and goal configurations of the arms.
@@ -146,9 +161,10 @@ class SinglePlanner:
             right_trajectory (np.ndarray): Planned trajectory for the right arm, shape (N, armr_dim)
             plan_time (float): Total time taken for the planning process
         """
-        is_arml_plan = True if np.max(np.abs(self.arml_goal - self.arml_start)) < 1e-4 else False
-        is_armr_plan = True if np.max(np.abs(self.armr_goal - self.armr_start)) < 1e-4 else False
+        is_arml_plan = True if np.max(np.abs(self.arml_goal - self.arml_start)) > 1e-4 else False
+        is_armr_plan = True if np.max(np.abs(self.armr_goal - self.armr_start)) > 1e-4 else False
         if is_arml_plan and not is_armr_plan:
+            print("----------------using Left arm Single Planner----------------")
             ompl_planner = OMPLPlanSingle(self.arml_dim, self.arml_bounds, self.arml_start, self.arml_goal,
                                           self.fcl_checker, urdf_path=self.urdf_path,
                                           which_arm='left', other_arm_qpos=self.armr_start,
@@ -161,6 +177,7 @@ class SinglePlanner:
                 return None, None, None
             
         if is_armr_plan and not is_arml_plan:
+            print("----------------using Right arm Single Planner----------------")
             ompl_planner = OMPLPlanSingle(self.armr_dim, self.armr_bounds, self.armr_start, self.armr_goal,
                                           self.fcl_checker, urdf_path=self.urdf_path,
                                           which_arm='right', other_arm_qpos=self.arml_start,
@@ -173,6 +190,7 @@ class SinglePlanner:
                 return None, None, None
             
         if is_arml_plan and is_armr_plan:
+            print("----------------using Decoupled Planner----------------")
             ompl_planner = OMPLPlanDecoupled(self.arml_dim, self.armr_dim, 
                                              self.arml_bounds, self.armr_bounds,
                                              self.arml_start, self.armr_start,
@@ -187,3 +205,7 @@ class SinglePlanner:
             else:
                 print("Failed to find a trajectory for dual arm Decoupled planning")
                 return None, None, None
+            
+        if not is_arml_plan and not is_armr_plan:
+            print("No planning needed, both arms are already at their goal positions.")
+            return None, None, 0.0

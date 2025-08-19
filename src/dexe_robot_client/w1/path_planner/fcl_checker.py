@@ -6,11 +6,19 @@ import time
 import os
 import json
 from dexe_robot_client.end_effector_client import EndEffectorType 
-from dexe_robot_client.w1.path_planner.robot_type import RobotType, RobotURDF, RobotCollision
+from dexe_robot_client.w1.path_planner.robot_type import *
 
 
 class FCLChecker:
-    def __init__(self, mesh_path, end_effector_type: EndEffectorType = None):
+    def __init__(self, robot_type: RobotType = None, end_effector_type: EndEffectorType = None):
+        if robot_type is None:
+            raise ValueError(f"Robot type must be specified as {RobotType.W1V02_1} or {RobotType.W1V02_2}.")
+        self.arml_full_path = get_arml_full_path(robot_type)
+        self.armr_full_path = get_armr_full_path(robot_type)
+        self.head_full_path = get_head_full_path()
+        self.torso_full_path = get_torso_full_path()
+        
+
         # Containers for fcl objects
         self.arml_links = []
         self.armr_links = []
@@ -30,28 +38,24 @@ class FCLChecker:
 
         self.grasp_objects_dict = {}
 
-        self.mesh_path = mesh_path
-        if self.mesh_path.endswith("/"):
-            self.mesh_path = self.mesh_path[:-1]
 
         self.use_ee = False
         if end_effector_type is not None:
-            if end_effector_type == EndEffectorType.PGC_GRIPPER:
-                self.armlee_linkNames = ["left_gripper_fixed.obj"]
-                self.armree_linkNames = ["right_gripper_fixed.obj"]
+            if isinstance(end_effector_type, EndEffectorType):
+                self.ee_full_path = get_ee_full_path(end_effector_type)
+                self.arml_full_path.append(self.ee_full_path[0])
+                self.armr_full_path.append(self.ee_full_path[1])
                 self.use_ee = True
             else:
-                if end_effector_type == EndEffectorType.BRAINCO_HAND:
-                    self.armlee_linkNames = ["left_hand.obj"]
-                    self.armree_linkNames = ["right_hand.obj"]
-                    self.use_ee = True
-                else:
-                    raise ValueError(f"Unsupported End Effector Type: {end_effector_type}")
+                raise ValueError(f"Unsupported End Effector Type: {end_effector_type}. Please use PGC_GRIPPER or BRAINCO_HAND.")
         
         self.arml_attached = False
         self.armr_attached = False
         self.arml7_T_object = None
         self.armr7_T_object = None
+
+        self._create_robot_obj()
+        self._create_robot_manager()
 
 
     def _obj2fcl(self, obj_path):
@@ -74,27 +78,15 @@ class FCLChecker:
     
 
 
-    def create_robot_obj(self):
-        arml_link_names = ["arml1.obj", "arml2.obj", "arml3.obj", "arml4.obj", "arml5.obj", "arml6.obj", "arml7.obj"]
-        armr_link_names = ["armr1.obj", "armr2.obj", "armr3.obj", "armr4.obj", "armr5.obj", "armr6.obj", "armr7.obj"]
-        if self.use_ee:
-            arml_link_names = arml_link_names + self.armlee_linkNames
-            armr_link_names = armr_link_names + self.armree_linkNames
-        head_link_names = ["head1.obj", "head2.obj"]
-        body_link_names = ["body1.obj", "body2.obj", "body3.obj", "body4.obj"]
-        arml_full_path = [self.mesh_path + "/" + name for name in arml_link_names]
-        armr_full_path = [self.mesh_path + "/" + name for name in armr_link_names]
-        head_full_path = [self.mesh_path + "/" + name for name in head_link_names]
-        body_full_path = [self.mesh_path + "/" + name for name in body_link_names]
-
-        self.arml_links = [self._obj2fcl(path) for path in arml_full_path]
-        self.armr_links = [self._obj2fcl(path) for path in armr_full_path]
-        self.head_links = [self._obj2fcl(path) for path in head_full_path]
-        self.body_links = [self._obj2fcl(path) for path in body_full_path]
+    def _create_robot_obj(self):
+        self.arml_links = [self._obj2fcl(path) for path in self.arml_full_path]
+        self.armr_links = [self._obj2fcl(path) for path in self.armr_full_path]
+        self.head_links = [self._obj2fcl(path) for path in self.head_full_path]
+        self.body_links = [self._obj2fcl(path) for path in self.torso_full_path]
 
         print(f"Created FCL Objects: {len(self.arml_links)} left arm links, {len(self.armr_links)} right arm links, {len(self.head_links)} head links, {len(self.body_links)} body links")
 
-    def create_robot_manager(self):
+    def _create_robot_manager(self):
         for link in self.arml_links:
             self.arml_manager.registerObject(link)
         for link in self.armr_links:
@@ -430,31 +422,45 @@ class FCLChecker:
 
         # Check left arm vs obstacles
         self.arml_manager.collide(self.obstacle_manager, cdata, self._is_collide)
-        if cdata.done: return True
+        if cdata.done: 
+            # print("Left arm collided with obstacles.")
+            return True
         # Check right arm vs obstacles
         self.armr_manager.collide(self.obstacle_manager, cdata, self._is_collide)
-        if cdata.done:return True
+        if cdata.done:
+            # print("Right arm collided with obstacles.")
+            return True
         
         self_arm_collide = self._check_collision_single_arm(cdata)
-        if self_arm_collide: return True
+        if self_arm_collide: 
+            # print("self arm collided with itself.")
+            return True
 
         # Check left arm vs right arm
         self.arml_manager.collide(self.armr_manager, cdata, self._is_collide)
-        if cdata.done:return True
+        if cdata.done:
+            # print("Left arm collided with right arm.")
+            return True
         # Check left arm vs head
         self.arml_manager.collide(self.head_manager, cdata, self._is_collide)
-        if cdata.done:return True
+        if cdata.done:
+            # print("Left arm collided with head.")
+            return True
         # Check right arm vs head
         self.armr_manager.collide(self.head_manager, cdata, self._is_collide)
-        if cdata.done: return True
+        if cdata.done: 
+            # print("Right arm collided with head.")
+            return True
         
         for l_link in self.arml_links[1:]:
             for b_link in self.body_links:
                 if self._is_collide(l_link, b_link, cdata):
+                    # print("Left arm collided with body.")
                     return True
         for r_link in self.armr_links[1:]:
             for b_link in self.body_links:
                 if self._is_collide(r_link, b_link, cdata):
+                    # print("Right arm collided with body.")
                     return True
                 
         # Check collision between arms and grasp objects manager

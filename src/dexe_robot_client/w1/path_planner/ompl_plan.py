@@ -66,12 +66,12 @@ class OMPLPlanSingle:
         # pinocchio will output 21 transformation matrices include universe as the first one
         if body_qpos is None or head_qpos is None:
             raise ValueError("body_qpos and head_qpos must be set before calling _get_Kinematics")
-        q = np.concatenate((body_qpos, arml_qpos, armr_qpos, head_qpos))
+        q = np.concatenate((body_qpos, arml_qpos, head_qpos, armr_qpos))
         pinocchio.forwardKinematics(self.pin_model, self.pin_data, q)
         pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
         transform_chain = [oMi.homogeneous for oMi in self.pin_data.oMi]
         left_transform_chain = transform_chain[5:12]  # left arm links
-        right_transform_chain = transform_chain[12:19]  # right arm links
+        right_transform_chain = transform_chain[14:21]  # right arm links
         if self.use_ee:
             armlee_ID = self.pin_model.getFrameId("armlee")  
             armree_ID = self.pin_model.getFrameId("armree")  
@@ -81,7 +81,7 @@ class OMPLPlanSingle:
             right_transform_chain.append(ree_trans)
         
         body_transform_chain = transform_chain[1:5]
-        head_transform_chain = transform_chain[19:21]
+        head_transform_chain = transform_chain[12:14]
 
         return body_transform_chain, left_transform_chain, right_transform_chain, head_transform_chain
 
@@ -293,22 +293,22 @@ class OMPLPlanCentralized:
         # pinocchio will output 21 transformation matrices include universe as the first one
         if body_qpos is None or head_qpos is None:
             raise ValueError("body_qpos and head_qpos must be set before calling _get_Kinematics")
-        q = np.concatenate((body_qpos, arml_qpos, armr_qpos, head_qpos))
+        q = np.concatenate((body_qpos, arml_qpos, head_qpos, armr_qpos))
         pinocchio.forwardKinematics(self.pin_model, self.pin_data, q)
         pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
         transform_chain = [oMi.homogeneous for oMi in self.pin_data.oMi]
         left_transform_chain = transform_chain[5:12]  # left arm links
-        right_transform_chain = transform_chain[12:19]  # right arm links
+        right_transform_chain = transform_chain[14:21]  # right arm links
         if self.use_ee:
-            armlee_ID = self.pin_model.getFrameId("armlee")  
-            armree_ID = self.pin_model.getFrameId("armree")  
+            armlee_ID = self.pin_model.getFrameId("LEFT_EE")  
+            armree_ID = self.pin_model.getFrameId("RIGHT_EE")  
             lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
             ree_trans = self.pin_data.oMf[armree_ID].homogeneous
             left_transform_chain.append(lee_trans)
             right_transform_chain.append(ree_trans)
 
         body_transform_chain = transform_chain[1:5]
-        head_transform_chain = transform_chain[19:21]
+        head_transform_chain = transform_chain[12:14]
 
         return body_transform_chain, left_transform_chain, right_transform_chain, head_transform_chain
 
@@ -515,10 +515,10 @@ class OMPLPlanDecoupled:
         arml_path, arml_trajectory, arml_plan_time = self.arml_planner.plan(planning_time=2.0)
         armr_path, armr_trajectory, armr_plan_time = self.armr_planner.plan(planning_time=2.0)
         if arml_path is None:
-            print("Failed to find a path for left arm")
+            # print("Failed to find a path for left arm")
             return None, None, None
         if armr_path is None:
-            print("Failed to find a path for right arm")
+            # print("Failed to find a path for right arm")
             return None, None, None
         
         start_time = time.time()

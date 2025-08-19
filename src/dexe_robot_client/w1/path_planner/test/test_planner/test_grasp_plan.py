@@ -26,8 +26,9 @@ RARM_BOUND = np.array([
         [2.9670597283903604, 2.0943951023931953, 2.9670597283903604, 2.356194490192345, 2.9670597283903604, 1.5707963267948966, 2.9670597283903604]
     ])
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_DIR = os.path.join(SCRIPT_DIR, "..", "model")
+# SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# MODEL_DIR = os.path.join(SCRIPT_DIR, "..", "..", "model")
+
 
 ROBOT_TYPE = RobotType.W1V02_2
 
@@ -81,9 +82,9 @@ def test_grasp_plan(robot_type: RobotType, ee_type: EndEffectorType = None, sim_
     urdf_path = get_robot_urdf(robot_type)
     collision_path = get_robot_mesh_path(robot_type)
 
-    fcl_checker = FCLChecker(collision_path, ee_type)
-    fcl_checker.create_robot_obj()
-    fcl_checker.create_robot_manager()
+    fcl_checker = FCLChecker(robot_type, ee_type)
+    # fcl_checker.create_robot_obj()
+    # fcl_checker.create_robot_manager()
 
     fcl_checker.add_cube_obstacle(TABLE_CENTER, TABLE_SIZE)
     fcl_checker.add_grasp_object(obj_type="box", center=np.array([0.45, 0.15, 1.165]), size=np.array([0.1, 0.1, 0.08]), name="box1")

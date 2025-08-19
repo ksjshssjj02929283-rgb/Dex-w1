@@ -50,7 +50,7 @@ class ForwardMotionValidator(ob.MotionValidator):
 class GridRRT:
     def __init__(self, grid_map, left_traj, right_traj,
                  left_idx_chain, right_idx_chain,
-                 fcl_checker: FCLChecker, urdf_path):
+                 fcl_checker: FCLChecker, urdf_path, use_ee: bool = False):
         self.space = ob.RealVectorStateSpace(2)
         self.bounds = ob.RealVectorBounds(2)
         for i in range(2):
@@ -72,27 +72,31 @@ class GridRRT:
 
         self.flag_map = np.zeros((self.grid_map.shape[0], self.grid_map.shape[1]))
 
+        self.use_ee = use_ee
+
     def _get_Kinematics(self, body_qpos, arml_qpos, armr_qpos, head_qpos):
         # NOTE: 
         # q's order depends on urdf, currently is [body(4), left arm(7), right arm(7), head(2)]
         # pinocchio will output 21 transformation matrices include universe as the first one
         if body_qpos is None or head_qpos is None:
             raise ValueError("body_qpos and head_qpos must be set before calling _get_Kinematics")
-        q = np.concatenate((body_qpos, arml_qpos, armr_qpos, head_qpos))
+        q = np.concatenate((body_qpos, arml_qpos, head_qpos, armr_qpos))
         pinocchio.forwardKinematics(self.pin_model, self.pin_data, q)
         pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
         transform_chain = [oMi.homogeneous for oMi in self.pin_data.oMi]
+        
         left_transform_chain = transform_chain[5:12]  # left arm links
-        right_transform_chain = transform_chain[12:19]  # right arm links
-        armlee_ID = self.pin_model.getFrameId("armlee")  
-        armree_ID = self.pin_model.getFrameId("armree")  
-        lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
-        ree_trans = self.pin_data.oMf[armree_ID].homogeneous
-        left_transform_chain.append(lee_trans)
-        right_transform_chain.append(ree_trans)
+        right_transform_chain = transform_chain[14:21]  # right arm links
+        if self.use_ee:
+            armlee_ID = self.pin_model.getFrameId("LEFT_EE")  
+            armree_ID = self.pin_model.getFrameId("RIGHT_EE")  
+            lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
+            ree_trans = self.pin_data.oMf[armree_ID].homogeneous
+            left_transform_chain.append(lee_trans)
+            right_transform_chain.append(ree_trans)
 
         body_transform_chain = transform_chain[1:5]
-        head_transform_chain = transform_chain[19:21]
+        head_transform_chain = transform_chain[12:14]
 
         return body_transform_chain, left_transform_chain, right_transform_chain, head_transform_chain
     
@@ -200,7 +204,7 @@ class GridRRT:
             return None
 
 class Coordination:
-    def __init__(self, left_traj, right_traj, fcl_checker: FCLChecker, urdf_path, coordination_res=0.1, traj_res=0.01):
+    def __init__(self, left_traj, right_traj, fcl_checker: FCLChecker, urdf_path, coordination_res=0.1, traj_res=0.01, use_ee: bool = False):
         # coordination_res: resolution of coordination map, unit: s
         # traj_res: resolution of trajectory(dt between two waypoints), unit: s
         self.left_traj = left_traj
@@ -211,6 +215,7 @@ class Coordination:
         self.coordination_res = coordination_res
         self.traj_res = traj_res
         self.urdf_path = urdf_path
+        self.use_ee = use_ee
 
         self.pin_model = pinocchio.buildModelFromUrdf(urdf_path)
         self.pin_data = self.pin_model.createData()
@@ -243,21 +248,22 @@ class Coordination:
         # pinocchio will output 21 transformation matrices include universe as the first one
         if body_qpos is None or head_qpos is None:
             raise ValueError("body_qpos and head_qpos must be set before calling _get_Kinematics")
-        q = np.concatenate((body_qpos, arml_qpos, armr_qpos, head_qpos))
+        q = np.concatenate((body_qpos, arml_qpos, head_qpos, armr_qpos))
         pinocchio.forwardKinematics(self.pin_model, self.pin_data, q)
         pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
         transform_chain = [oMi.homogeneous for oMi in self.pin_data.oMi]
         left_transform_chain = transform_chain[5:12]  # left arm links
-        right_transform_chain = transform_chain[12:19]  # right arm links
-        armlee_ID = self.pin_model.getFrameId("armlee")  
-        armree_ID = self.pin_model.getFrameId("armree")  
-        lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
-        ree_trans = self.pin_data.oMf[armree_ID].homogeneous
-        left_transform_chain.append(lee_trans)
-        right_transform_chain.append(ree_trans)
+        right_transform_chain = transform_chain[14:21]  # right arm links
+        if self.use_ee:
+            armlee_ID = self.pin_model.getFrameId("LEFT_EE")  
+            armree_ID = self.pin_model.getFrameId("RIGHT_EE")  
+            lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
+            ree_trans = self.pin_data.oMf[armree_ID].homogeneous
+            left_transform_chain.append(lee_trans)
+            right_transform_chain.append(ree_trans)
 
         body_transform_chain = transform_chain[1:5]
-        head_transform_chain = transform_chain[19:21]
+        head_transform_chain = transform_chain[12:14]
 
         return body_transform_chain, left_transform_chain, right_transform_chain, head_transform_chain
     
@@ -452,7 +458,7 @@ class Coordination:
         This method use RRT Connect method based on OMPL to find a path in the coordination space.(Hard to do obstacle expansion)
         During the sampling process, it will check the sample grid is occupied or not, which will save the planning time.
         """
-        ompl_planner = GridRRT(self.grid_map, self.left_traj, self.right_traj, self.left_idx_chain, self.right_idx_chain, self.fcl_checker, self.urdf_path)
+        ompl_planner = GridRRT(self.grid_map, self.left_traj, self.right_traj, self.left_idx_chain, self.right_idx_chain, self.fcl_checker, self.urdf_path, self.use_ee)
         ompl_planner.set_head_body(self.head_qpos, self.body_qpos)
         path, planning_time, original_path = ompl_planner.plan(planning_time=1.0)
         new_grid_map = ompl_planner.get_grid_map()
