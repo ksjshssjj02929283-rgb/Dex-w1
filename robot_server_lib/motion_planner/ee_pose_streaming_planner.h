@@ -46,7 +46,7 @@ class EEPoseStreamingPlanner : public MotionPlannerBase
         const StreamingCommand &latest_cmd = runtime_.latest_cmd.value();
         assert(latest_cmd.request_id == runtime_.request_id);
         bool is_timeout = false;
-        if (latest_cmd.received_time.is_invalid())
+        if (latest_cmd.received_time.is_valid())
         {
             auto time_interval = (time_meta.current_time.time_in_ns() - latest_cmd.received_time.time_in_ns()) * 1e-9;
             is_timeout = time_interval > StreamingCommandTimeout;
