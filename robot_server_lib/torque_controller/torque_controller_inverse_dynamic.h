@@ -9,7 +9,7 @@ class TorqueControllerInvDynamic : public TorqueControllerBase
    public:
     TorqueControllerInvDynamic(RobotModel robot_model) : TorqueControllerBase(robot_model)
     {
-        parameters_.K_p = 10;
+        parameters_.K_p = 50;
         parameters_.K_v = 0;
     }    
     bool ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd, TorqueCtrlCommand &output_cmd) override
