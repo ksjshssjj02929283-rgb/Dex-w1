@@ -1033,7 +1033,7 @@ class W1Manager:
                 res_plan, seg_qpos_samples_array = self.plan_cartesian_traj(name, 
                                                                             seg_xpos_list, 
                                                                             cur_qpos_seed, 
-                                                                            qvel_limits_array_, 
+                                                                            seg_qvel_limits_list, 
                                                                             cartesian_step)
             else:
                 res_plan, seg_qpos_samples_array = self.plan_joint_traj(name,
@@ -1187,7 +1187,7 @@ class W1Manager:
                               waypoints_dict: dict, 
                               left_qpos_seed: np.ndarray = None,
                               right_qpos_seed: np.ndarray = None,
-                              cartesian_step: float = 0.05,
+                              cartesian_step: float = 0.005,
                               speed_ratio: float = 1.0) -> bool:
         """规划各部件独立关节空间运动，arm执行笛卡尔空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
