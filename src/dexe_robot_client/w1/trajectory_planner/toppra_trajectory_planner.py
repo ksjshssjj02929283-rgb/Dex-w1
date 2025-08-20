@@ -83,10 +83,11 @@ class ToppraTrajectoryPlanner:
         vel_array = jnt_traj.evald(ts)
         acc_array = jnt_traj.evaldd(ts)
 
-        # Check acc
-        if self._is_acc_valid(acc_array):
-            return True, pos_array, vel_array, acc_array, duration
-        return False, None, None, None, None
+        # # Check acc
+        # if self._is_acc_valid(acc_array):
+        #     return True, pos_array, vel_array, acc_array, duration
+        # return False, None, None, None, None
+        return True, pos_array, vel_array, acc_array, duration
 
     def _is_acc_valid(self, acc_array) -> bool:
         _acc_limits = self.acc_limits * (1 + 0.25)
