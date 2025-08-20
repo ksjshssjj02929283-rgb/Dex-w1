@@ -147,7 +147,7 @@ void NanoLogLine::stringify(std::ostream &os)
 
     format_timestamp(os, timestamp);
 
-    os << '[' << to_string(loglevel) << ']' << '[' << threadid << ']' << '[' << file.m_s << ':' << function.m_s << ':' << line << "] ";
+    // os << '[' << to_string(loglevel) << ']' << '[' << threadid << ']' << '[' << file.m_s << ':' << function.m_s << ':' << line << "] ";
 
     stringify(os, b, end);
 

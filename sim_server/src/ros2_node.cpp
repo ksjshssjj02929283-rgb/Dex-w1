@@ -32,8 +32,11 @@ Ros2Node::~Ros2Node()
 void Ros2Node::InitRobotServer()
 {
     std::filesystem::create_directories("log/");
-    nanolog::initialize(nanolog::GuaranteedLogger(), "log/", "robot_server", 10);
+    nanolog::initialize(nanolog::GuaranteedLogger(), "log/", "robot_server_sim", 10);
     nanolog::set_log_level(nanolog::LogLevel::DEBUG);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
+
+    // 创建 /feedback/joint 发布器
+    feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint_sim", 10);
 
     // 创建 /feedback/robot_server_state_sim 发布器
     robot_server_state_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state_sim", 10);
@@ -106,11 +109,11 @@ void Ros2Node::InitRobotServer()
     robot_buffers_.Initialize();
     InitSimulation();
 
-#if TORQUE_CONTROL
     // Init torque control thread
     torque_control_thread_ = std::thread(
         [this]() -> void
         {
+#if TORQUE_CONTROL
             TorqueControllerManager torque_controller_manager(this->robot_model_, this->manager_buffers_, this->robot_buffers_);
             while (rclcpp::ok())
             {
@@ -122,14 +125,8 @@ void Ros2Node::InitRobotServer()
                     std::this_thread::sleep_for(std::chrono::microseconds(torque_ctrl_dt_micro - duration_micro));
                 }
             }
-        });
-    RCLCPP_INFO(this->get_logger(), "torque_control_thread is started");
-    LOG_INFO << "torque_control_thread is started";
 #else
-    // 不开启力控输出时，只计算当前状态的理论力矩
-    torque_control_thread_ = std::thread(
-        [this]() -> void
-        {
+            // 不开启力控输出时，只计算当前状态的理论力矩
             pinocchio::Data robot_data(*robot_model_.model_ptr);
             JointMeasurement measurement;
             VectorDof feedback_q{};
@@ -266,6 +263,7 @@ void Ros2Node::InitRobotServer()
 
                 uint64_t timestamp_ns = this->now().nanoseconds();
 
+                // Publish /feedback/robot_server_state_sim
                 robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" +
                                               ToString(manager_state_) + "\"" + ",\"latest_queued_id\":" + std::to_string(latest_report_id_.queued) +
                                               ",\"latest_finished_id\":" + std::to_string(latest_report_id_.finished) +
@@ -273,6 +271,23 @@ void Ros2Node::InitRobotServer()
                                               ",\"joint_position\":" + joint_position_ss.str() + ",\"ee_pose\":" + ee_pose_ss.str() + "}";
 
                 robot_server_state_publisher_->publish(robot_server_state_msg);
+
+                // Publish /feedback/joint_sim
+                sensor_msgs::msg::JointState feedback_msg;
+                feedback_msg.header.stamp = this->get_clock()->now();
+                feedback_msg.name.resize(ndof_robot);
+                feedback_msg.position.resize(ndof_robot);
+                feedback_msg.velocity.resize(ndof_robot);
+                feedback_msg.effort.resize(ndof_robot);
+                for (int i = 0; i < ndof_robot; ++i)
+                {
+                    feedback_msg.name[i] = robot_model_.params_ptr->joint_command_sequence_by_name[i];
+                    feedback_msg.position[i] = measurement.position[i];
+                    feedback_msg.velocity[i] = measurement.velocity[i];
+                    feedback_msg.effort[i] = measurement.effort[i];
+                }
+
+                feedback_publisher_->publish(feedback_msg);
                 std::this_thread::sleep_for(std::chrono::microseconds(10000));  // 100Hz
             }
         });
