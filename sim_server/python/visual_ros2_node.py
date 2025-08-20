@@ -90,7 +90,6 @@ def main(args=None):
         if not shutdown_called and rclpy.ok():
             rclpy.shutdown()
             shutdown_called = True
-        print("VisualRos2Node closed")
 
 if __name__ == "__main__":
     main()
