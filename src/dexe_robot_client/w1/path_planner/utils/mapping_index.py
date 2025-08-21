@@ -1,5 +1,6 @@
 from enum import Enum, auto
 from typing import List
+import pinocchio
 
 class RealRobotIdx(Enum):
     ANKLE = auto()
@@ -60,16 +61,17 @@ def get_real2sim_idx(articulation) -> List[int]:
         real2sim_dix.append(real_dict[sim_name])
     return real2sim_dix
 
-def get_pin2real_idx(pin_model) -> List[int]:
+def get_pin2real_idx(urdf_path) -> List[int]:
     """
     This function maps the pinocchio joints to the real robot joint indices.
 
     Args:
-        pin_model: The pinocchio model of the robot
+        urdf_path: the urdf path used to build the pinocchio model
     
     Returns:
         pin2real_idx: A list of indices mapping pinocchio joints to real robot joints
     """
+    pin_model = pinocchio.buildModelFromUrdf(urdf_path)
     pin_names = list(pin_model.names)[1:]
     pin_dict = {name: idx for idx, name in enumerate(pin_names)}
     real_names = [realjoint.name for realjoint in RealRobotIdx]
@@ -78,16 +80,17 @@ def get_pin2real_idx(pin_model) -> List[int]:
         pin2real_idx.append(pin_dict[real_name])
     return pin2real_idx
 
-def get_real2pin_idx(pin_model) -> List[int]:
+def get_real2pin_idx(urdf_path) -> List[int]:
     """
     This function maps the real robot joint indices to the pinocchio joints.
 
     Args: 
-        pin_model: The pinocchio model of the robot
+        urdf_path: the urdf path used to build the pinocchio model
     
     Returns:
         real2pin_idx: A list of indices mapping real robot joint indices to pinocchio joints
     """
+    pin_model = pinocchio.buildModelFromUrdf(urdf_path)
     pin_names = list(pin_model.names)[1:]
     real_names = [realjoint.name for realjoint in RealRobotIdx]
     real_dict = {name: idx for idx, name in enumerate(real_names)}
@@ -121,19 +124,19 @@ def get_real_idx():
 
 
 
-def get_pin_idx(pin_model):
+def get_pin_idx(urdf_path):
     """
     This function returns the start and end indices for torso, head, left arm, and right arm in the pinocchio model.
 
     Args:
-        pin_model: The pinocchio model of the robot
-
+        urdf_path: the urdf path used to build the pinocchio model
     Returns:
         tuples that contain the start and end indices for torso, head, left arm, and right arm
 
     Notes:
         - This function requires the joints order in pinocchio can't have torso, head, arml, armr overlapped
     """
+    pin_model = pinocchio.buildModelFromUrdf(urdf_path)
     pin_names = list(pin_model.names)[1:]
     pin_dict = {name: idx for idx, name in enumerate(pin_names)}
     torso_start_idx = pin_dict["ANKLE"]

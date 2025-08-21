@@ -25,8 +25,18 @@ ARML_SPECIAL_LINK_NAMES = ["arml6.obj", "arml7.obj"]
 ARMR_SPECIAL_LINK_NAMES = ["armr6.obj", "armr7.obj"]
 HEAD_LINK_NAMES = ["head1.obj", "head2.obj"]
 TORSO_LINK_NAMES = ["torso1.obj", "torso2.obj", "torso3.obj", "torso4.obj"]
-PGC_LINK_NAMES = ["pgc_left.obj", "pgc_right.obj"]
-BRAINCO_LINK_NAMES = ["brainco_left.obj", "brainco_right.obj"]
+
+PGC_ANTHROPOMORPHIC_LINK_NAMES = ["pgc_left_anth.obj", "pgc_right_anth.obj"]
+PGC_INDUSTRIAL_LINK_NAMES = ["pgc_left_anth.obj", "pgc_right_anth.obj"]
+
+# BRAINCO_CLOSE_ANTHROPOMORPHIC_LINK_NAMES = ["brainco_left_close_anthropomorphic.obj", "brainco_right_close_anthropomorphic.obj"]
+# BRAINCO_CLOSE_INDUSTRIAL_LINK_NAMES = ["brainco_left_close_industrial.obj", "brainco_right_close_industrial.obj"]
+BRAINCO_ANTHROPOMORPHIC_LINK_NAMES = ["convex_left_anth.obj", "convex_right_anth.obj"]
+
+# BRAINCO_OPEN_ANTHROPOMORPHIC_LINK_NAMES = ["brainco_left_open_anthropomorphic.obj", "brainco_right_open_anthropomorphic.obj"]
+# BRAINCO_OPEN_INDUSTRIAL_LINK_NAMES = ["brainco_left_open_industrial.obj", "brainco_right_open_industrial.obj"]
+BRAINCO_INDUSTRIAL_LINK_NAMES = ["convex_left_industrial.obj", "convex_right_industrial.obj"]
+
 
 class RobotType(Enum):
     W1V02_1 = auto()
@@ -105,11 +115,21 @@ def get_torso_full_path():
     torso_full_path = [RobotCollision.W1V02_COMMON_TORSO.value + "/" + name for name in TORSO_LINK_NAMES]
     return torso_full_path
 
-def get_ee_full_path(ee_type: EndEffectorType):
+def get_ee_full_path(robot_type: RobotType, ee_type: EndEffectorType):
     if ee_type == EndEffectorType.PGC_GRIPPER:
-        return [RobotEE.PGC_GRIPPER.value + "/" + name for name in PGC_LINK_NAMES]
+        if robot_type == RobotType.W1V02_1:
+            return [RobotEE.PGC_GRIPPER.value + "/" + name for name in PGC_ANTHROPOMORPHIC_LINK_NAMES]
+        if robot_type == RobotType.W1V02_2:
+            return [RobotEE.PGC_GRIPPER.value + "/" + name for name in PGC_INDUSTRIAL_LINK_NAMES]
+        if robot_type is None or robot_type not in list(RobotType):
+            raise ValueError(f"Unsupported robot type: {robot_type}. Please use W1V02_1 or W1V02_2.")
     elif ee_type == EndEffectorType.BRAINCO_HAND:
-        return [RobotEE.BRAINCO_HAND.value + "/" + name for name in BRAINCO_LINK_NAMES]
+        if robot_type == RobotType.W1V02_1:
+            return [RobotEE.BRAINCO_HAND.value + "/" + name for name in BRAINCO_ANTHROPOMORPHIC_LINK_NAMES]
+        if robot_type == RobotType.W1V02_2:
+            return [RobotEE.BRAINCO_HAND.value + "/" + name for name in BRAINCO_INDUSTRIAL_LINK_NAMES]
+        if robot_type is None or robot_type not in list(RobotType):
+            raise ValueError(f"Unsupported robot type: {robot_type}. Please use W1V02_1 or W1V02_2.")
     else:
         raise ValueError(f"Unsupported end effector type: {ee_type}. Please use PGC_GRIPPER or BRAINCO_HAND.")
     
