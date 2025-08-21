@@ -35,7 +35,9 @@ class PropertyType(Enum):
     RunMode = auto()  # run mode
 
     ClearError = auto()  # clear error
+
     EnableDrag = auto()
+    SafeLevel = auto()
 
     TcpPrimary = auto()  # tool primary
     TcpSecondary = auto()  # tool secondary

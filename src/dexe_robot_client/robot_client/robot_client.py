@@ -27,7 +27,6 @@ class RobotClient(ABC):
     User interfaces - setting/getting parameters, mode or state
     用户接口 - 设置/获取机器人参数, 模式或状态
     ----------------------------------------------------------------------------"""
-
     def get_info(self) -> RobotInfo:
         """Get robot state information.
         获取机器人状态信息
@@ -81,13 +80,24 @@ class RobotClient(ABC):
 
     def set_drag_mode(self, set_enable: bool) -> int:
         """async interface - setting robot drag mode
-        异步接口 - 开关机器人拖动示教模式, 开启后仅可拖拽, 无法通过运动指令控制机器人运动
+        异步接口 - 开关机器人拖动示教模式, 开启后仅可拖拽, 无法通过运动指令控制机器人运动, 仅真实机器人生效
         Args:
             - set_enable: bool: 是否开启拖动示教模式, True: 开启拖动示教模式, False: 关闭拖动示教模式
         Returns:
             - int: request id 指令号, 可用于等待对应运动指令完成等
         """
         return self.send_set_property_request(PropertyType.EnableDrag, set_enable)
+
+    def set_safe_level(self, safe_level: float) -> int:
+        """async interface - setting robot safe level
+        异步接口 - 设置机器人安全级别, 仅真实机器人生效
+        Args:
+            - safe_level: float: 安全级别, 取值范围 [0.1, 1], 默认为1.0, 
+                值越小机械臂柔性越大, 0.1时机械臂柔性最大, 1.0时机械臂刚性最大, 刚性越大运动跟踪性能越好, 但碰撞时容易造成机械臂损坏
+        Returns:
+            - int: request id 指令号, 可用于等待对应运动指令完成等
+        """
+        return self.send_set_property_request(PropertyType.SafeLevel, safe_level)
 
     """ ---------------------------------------------------------------------------
     User interfaces - Move requests
@@ -318,12 +328,21 @@ class RobotClient(ABC):
     Low-level abstract interfaces, need to be implemented by derived classes
     底层抽象接口, 需由派生类实现
     ----------------------------------------------------------------------------"""
+    @abstractmethod
+    def connect_robot(self, timeout_sec: float = 0.5, ip: str = None) -> bool:
+        """Connect to the robot.
+        连接机器人
+        Args:
+            - ip: str: 机器人IP地址 (Ros2连接无需指定)
+        Returns:
+            - bool: True if connected successfully, False otherwise
+        """
+        pass
 
-    
     @abstractmethod
     def wait_second(self, wait_second: float):
         """sync interface - wait for a specified time in seconds
-        同步接口 - 等待指定时间同时可以持续获取server状态, 单位秒
+        同步接口 - 等待指定时间, 单位秒
         Args:
             wait_second: float: 等待时间, 单位秒
         """

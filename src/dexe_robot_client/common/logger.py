@@ -106,7 +106,7 @@ class Logger:
         self.console_handler.setLevel(console_level)
         self.console_handler.setFormatter(
             self.MicroSecondColoredFormatter(
-                "[%(asctime)s] [%(name)s] [%(log_color)s%(levelname)s%(light_white)s] [%(filename)s-%(lineno)d line]: %(message)s",
+                "[%(asctime)s] [%(log_color)s%(levelname)s%(light_white)s] [%(filename)s-%(lineno)d]: %(message)s",
                 datefmt="%Y-%m-%d %H:%M:%S",
                 log_colors=LEVEL_COLORS,
             )
@@ -125,7 +125,7 @@ class Logger:
         self.file_handler.setLevel(file_level)
         self.file_handler.setFormatter(
             self.MicroSecondFormatter(
-                "[%(asctime)s] [%(name)s] [%(levelname)s] [%(filename)s-%(lineno)d行]: %(message)s",
+                "[%(asctime)s] [%(levelname)s] [%(filename)s-%(lineno)d]: %(message)s",
                 datefmt="%Y-%m-%d %H:%M:%S",
             )
         )
