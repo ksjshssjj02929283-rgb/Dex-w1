@@ -1,5 +1,5 @@
 # streaming request对应的id
-uint64 request_id
+int64 request_id
 
 # 本指令是否是本次streaming request的最后一帧
 bool streaming_finished

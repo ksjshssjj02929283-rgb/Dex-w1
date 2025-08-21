@@ -5,4 +5,4 @@ string property_type
 string value
 ---
 # 返回本次设置参数请求的request id
-uint64 request_id 
+int64 request_id 

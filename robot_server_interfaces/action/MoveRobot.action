@@ -14,7 +14,7 @@ string config
 ---
 # Result:
 # 本次运动请求的request id
-uint64 request_id 
+int64 request_id 
 
 # 运动结束时返回结果
 bool success
@@ -22,5 +22,5 @@ bool success
 ---
 # Feedback: 
 #返回本次运动请求的request id
-uint64 request_id 
+int64 request_id 
 
