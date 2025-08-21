@@ -30,7 +30,7 @@ class DexsimServer:
         self.logger = get_logger()
 
         if w1_version != W1Version.V2:
-            raise ValueError(f"W1Version {w1_version} are not support.")
+            raise ValueError(f"W1Version.{w1_version} are not support.")
         if not download_and_unzip_file(URL_PREFIX + "/DexforceW1V02_v1.zip"):
             raise FileNotFoundError
 
@@ -39,7 +39,7 @@ class DexsimServer:
         elif arm_type == W1ArmType.ANTHROPOMORPHIC:
             self._urdf_path = ASSETS_DIR / "DexforceW1V02_v1/DexforceW1_v02_1.urdf"
         else:
-            raise ValueError(f"W1ArmType {arm_type} are not support.")
+            raise ValueError(f"W1ArmType.{arm_type} are not support.")
 
         self._init_visualization()
         self.real2sim_index = get_real2sim_idx(self._articulation)
