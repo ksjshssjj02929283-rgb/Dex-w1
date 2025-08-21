@@ -6,7 +6,6 @@
 
 import time
 import threading
-from copy import deepcopy
 import numpy as np
 from abc import ABC, abstractmethod
 import rclpy
@@ -99,13 +98,11 @@ class EndEffectorClient(ABC, Node):
         with self._qpos_lock:
             if self._cur_qpos is None or \
                 self._last_msg_time is None:
+                self.logger.critical(f"{self.node_name} not connected!")
                 return False, None
             if time.time() - self._last_msg_time > 0.1:
-                return False, None
-            temp = deepcopy(self._cur_qpos)
-            self._cur_qpos = None
-            self._last_msg_time = None
-        return True, temp
+                self.logger.warning(f"{self.node_name}: data is outdated.")
+        return True, self._cur_qpos
 
     def _qpos_callback(self, msg):
         with self._qpos_lock:
