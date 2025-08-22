@@ -106,13 +106,3 @@ class PGCGripperClient(EndEffectorClient):
         self._set_qpos_publisher.publish(msg)
         self.logger.debug(f"{self.node_name} published:  {qpos_clip}")
         return True
-
-
-class LeftPGCGripperClient(PGCGripperClient):
-    def __init__(self, is_sim: bool = False):
-        super().__init__(True, is_sim)
-
-
-class RightPGCGripperClient(PGCGripperClient):
-    def __init__(self, is_sim: bool = False):
-        super().__init__(False, is_sim)

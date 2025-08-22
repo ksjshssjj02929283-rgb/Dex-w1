@@ -13,16 +13,14 @@ import atexit
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
-from ..common import get_logger, DATA_DIR
-from ..end_effector_client import (EndEffectorType, 
-                          LeftBrainCoHandClient, RightBrainCoHandClient, 
-                          LeftPGCGripperClient, RightPGCGripperClient)
+from ..common import get_logger, DATA_DIR, W1ArmType, W1Version
+from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
 from .kinemtaics.torso_kinematics import TorsoKinematics
 from .path_planner.bezier_blend_path import interpolate_cartesian_path
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
-from .utils.w1_params import  W1ArmType, W1Version, W1Params
+from .utils.w1_params import W1Params
 from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 
 
@@ -77,10 +75,6 @@ class W1Manager:
 
         self._init_kine_solver()
         self.set_sim_mode(is_sim)
-
-        self._home_qpos = np.deg2rad([45, -90, 45, 0, 0, 0,
-                                      5, -45, -5, -90, 0, -15, 0,
-                                      -5, 45, 5, 90, 0, 15, 0])
         
         self._stop_move_event = threading.Event()
         self._stop_move_event.clear()
@@ -95,31 +89,23 @@ class W1Manager:
         self._is_sim = True
         self._robot_client_sim = RobotClient(is_sim = True)
         if not is_sim:
-            # 按需构造，real_server未必启动
+            # 按需构造
             self._robot_client_real = RobotClient(is_sim = False)
-        # 初始化先进入仿真模式，sim_server是必定会启动
+        # 初始化先进入仿真
         self.robot_client = self._robot_client_sim
 
         if self._end_effector_type is None:
             self.logger.info(f"No movable end effector.")
         else:
-            if self._end_effector_type == EndEffectorType.BRAINCO_HAND:
-                self._left_ee_client_sim = LeftBrainCoHandClient(is_sim = True)
-                self._right_ee_client_sim = RightBrainCoHandClient(is_sim = True)
-                if not is_sim:
-                    self._left_ee_client_real = LeftBrainCoHandClient(is_sim = False)
-                    self._right_ee_client_real = RightBrainCoHandClient(is_sim = False)
-
-            elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
-                self._left_ee_client_sim = LeftPGCGripperClient(is_sim = True)
-                self._right_ee_client_sim = RightPGCGripperClient(is_sim = True)
-                if not is_sim:
-                    self._left_ee_client_real = LeftPGCGripperClient(is_sim = False)
-                    self._right_ee_client_real = RightPGCGripperClient(is_sim = False)
-
-            else:
-                raise ValueError(f"Unsupport end effector type: {self._end_effector_type.name}.")
-        
+            self._left_ee_client_sim = create_end_effector_client(is_left = True, is_sim = True, 
+                                                                  end_effector_type = self._end_effector_type)
+            self._right_ee_client_sim = create_end_effector_client(is_left = False, is_sim = True, 
+                                                                  end_effector_type = self._end_effector_type)
+            if not is_sim:
+                self._left_ee_client_real = create_end_effector_client(is_left = True, is_sim = False, 
+                                                                  end_effector_type = self._end_effector_type)
+                self._right_ee_client_real = create_end_effector_client(is_left = False, is_sim = False, 
+                                                                  end_effector_type = self._end_effector_type)
             self.left_ee_client = self._left_ee_client_sim
             self.right_ee_client = self._right_ee_client_sim
 
@@ -188,15 +174,11 @@ class W1Manager:
                                                    lower_limits = self.w1_params.right_arm_lb)
         self.right_arm_controller.set_ik_nearst_weight(_ik_nearst_weight)
 
-
         # fmt: off
-        self.default_qvel = np.array([0.3]*self.w1_params.full_body_dofs)
-        self.min_qvel = np.array([0.05]*self.w1_params.full_body_dofs)
-        self.max_qvel = np.array([1.0]*self.w1_params.full_body_dofs)
-        self.max_qacc = np.array([1., 1., 1., 1.,
-                                5., 5.,
-                                3., 3., 3., 5., 10., 10., 10.,
-                                3., 3., 3., 5., 10., 10., 10.])
+        self.default_qvel = self.w1_params.default_qvel
+        self.min_qvel = self.w1_params.min_qvel
+        self.max_qvel = self.w1_params.max_qvel
+        self.max_qacc = self.w1_params.max_qacc
         # fmt: on
         self.logger.info("Initialize kinematic solver.")
 
@@ -435,13 +417,13 @@ class W1Manager:
         """
         if not self._check_qpos_limits("full_body", home_qpos):
             return False
-        self._home_qpos = home_qpos
+        self.w1_params.home_qpos = home_qpos
         if save_to_file:
             return self._save_home_qpos()
         return True
 
     def get_home_qpos(self) -> np.ndarray:
-        return self._home_qpos
+        return self.w1_params.home_qpos
     
     def get_qpos_limits(self, name: str = "full_body") -> tuple[bool, np.ndarray, np.ndarray]:
         """获取特定部件(支持ee)的关节极限
@@ -534,7 +516,7 @@ class W1Manager:
         Returns:
             bool: 
         """
-        target_qpos = deepcopy(self._home_qpos)
+        target_qpos = deepcopy(self.w1_params.home_qpos)
         target_torso_qpos = target_qpos[self.w1_params.torso_index]
         target_head_qpos = target_qpos[self.w1_params.head_index]
         target_left_arm_qpos = target_qpos[self.w1_params.left_arm_index]
@@ -1348,10 +1330,11 @@ class W1Manager:
         if not res:
             return False
         delta_xpos = user_pose_to_xpos([0., 0., 0.], delta_rot_deg)
+        target_xpos = deepcopy(cur_xpos)
         if along_base_frame:
-            target_xpos = delta_xpos @ cur_xpos
+            target_xpos[:3,:3] = delta_xpos[:3,:3] @ cur_xpos[:3,:3]
         else:
-            target_xpos = cur_xpos @ delta_xpos
+            target_xpos[:3,:3] = cur_xpos[:3,:3] @ delta_xpos[:3,:3]
         
         return self.move_linear_full_body(waypoints_dict={f"{name}": [xpos_to_user_pose(target_xpos)]},
                                         speed_ratio=speed_ratio)

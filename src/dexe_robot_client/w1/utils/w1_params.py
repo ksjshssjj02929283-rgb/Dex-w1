@@ -6,19 +6,9 @@
 
 import json
 from copy import deepcopy
-from enum import Enum, auto
 import numpy as np
 from ...end_effector_client.end_effector_type import EndEffectorType
-from ...common.logger import get_logger
-from ...common.config import DATA_DIR
-
-
-class W1ArmType(Enum):
-    INDUSTRIAL = auto()
-    ANTHROPOMORPHIC = auto()
-
-class W1Version(Enum):
-    V2 = auto()
+from ...common import get_logger, DATA_DIR, W1ArmType, W1Version
 
 
 class W1Params:
@@ -177,14 +167,14 @@ class RobotConfig:
 
 class W1ArmKineParams:
     def __init__(self, 
-                 is_left_arm: bool, 
+                 is_left: bool, 
                  arm_type: W1ArmType, 
                  version: W1Version = W1Version.V2):
         if version != W1Version.V2:
             raise ValueError(f"W1Version {version} are not support.")
         
         self.arm_type = arm_type
-        self.is_left_arm = is_left_arm
+        self.is_left_arm = is_left
         self.d_bs = 0.1025
         self.d_se = 0.26
         self.d_ew = 0.264
@@ -195,7 +185,7 @@ class W1ArmKineParams:
                                           [0., 0., 1., 0.066],
                                           [0., 0., 0., 1.]])
 
-            if is_left_arm:
+            if is_left:
                 self.dh_params = [[0., -np.pi/2,  self.d_bs, 0.], 
                                 [0.,  np.pi/2,     0.,     0.], 
                                 [0., -np.pi/2,  self.d_se, -np.pi/2],
@@ -227,7 +217,7 @@ class W1ArmKineParams:
                                                [-170., 170.]])
         
         elif self.arm_type == W1ArmType.ANTHROPOMORPHIC:
-            if is_left_arm:
+            if is_left:
                 self.T_origin_tcp = np.array([[0., 0., 1., 0.066],
                                               [0., 1., 0., 0.],
                                               [-1., 0., 0., 0.],

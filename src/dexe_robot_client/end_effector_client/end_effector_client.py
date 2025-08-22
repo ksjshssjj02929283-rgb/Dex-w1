@@ -6,7 +6,6 @@
 
 import time
 import threading
-from copy import deepcopy
 import numpy as np
 from abc import ABC, abstractmethod
 import rclpy
