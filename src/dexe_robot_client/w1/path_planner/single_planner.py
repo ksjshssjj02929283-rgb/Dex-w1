@@ -100,6 +100,9 @@ class SinglePlanner:
         if self.env_json_path is not None:
             self.fcl_checker.load_env_json(self.env_json_path)
 
+    def update_fcl_env(self, env_json_path: str):
+        self.fcl_checker.load_env_json(env_json_path)
+
     def set_start_goal(self, arml_start: np.ndarray, armr_start: np.ndarray, 
                        arml_goal: np.ndarray, armr_goal: np.ndarray):
         """
