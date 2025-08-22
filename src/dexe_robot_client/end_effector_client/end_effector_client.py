@@ -44,11 +44,6 @@ class EndEffectorClient(ABC, Node):
 
         # 创建定时器检查连接状态
         self.create_timer(0.1, self._check_connection_status)
-        if self.is_connected(timeout_sec):
-            self.logger.info(f"{self.node_name} init successed")
-        else:
-            self.logger.error(f"{self.node_name} init failed: connect to server timeout")
-            raise RuntimeError
 
     def _check_dim(self, input: np.ndarray) -> bool:
         if input.shape[0] != self.dof:
@@ -70,7 +65,6 @@ class EndEffectorClient(ABC, Node):
             if self._last_msg_time is not None:
                 return True
             time.sleep(0.01)
-
         return False
 
     @abstractmethod
