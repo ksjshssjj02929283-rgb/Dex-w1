@@ -55,6 +55,8 @@ class W1Manager:
         self._right_ee_client_sim = None
         self._right_ee_client_real = None
 
+        self._clients = []
+
         self._executor = None
         self._node_thread = None
 
@@ -68,7 +70,7 @@ class W1Manager:
                                   self._end_effector_type)
 
         try:
-            self._init_clients(is_sim)
+            self._init_clients()
         except Exception:
             self._destroy_clients()
             raise RuntimeError("Ros2 node create failed ")
@@ -82,16 +84,12 @@ class W1Manager:
         # 在主线程中正常退出时自动调用
         atexit.register(self._destroy_clients)
 
-    def _init_clients(self, is_sim: bool):
+    def _init_clients(self):
         if not rclpy.ok():
             rclpy.init()
 
-        self._is_sim = True
         self._robot_client_sim = RobotClient(is_sim = True)
-        if not is_sim:
-            # 按需构造
-            self._robot_client_real = RobotClient(is_sim = False)
-        # 初始化先进入仿真
+        self._robot_client_real = RobotClient(is_sim = False)
         self.robot_client = self._robot_client_sim
 
         if self._end_effector_type is None:
@@ -101,21 +99,22 @@ class W1Manager:
                                                                   end_effector_type = self._end_effector_type)
             self._right_ee_client_sim = create_end_effector_client(is_left = False, is_sim = True, 
                                                                   end_effector_type = self._end_effector_type)
-            if not is_sim:
-                self._left_ee_client_real = create_end_effector_client(is_left = True, is_sim = False, 
-                                                                  end_effector_type = self._end_effector_type)
-                self._right_ee_client_real = create_end_effector_client(is_left = False, is_sim = False, 
-                                                                  end_effector_type = self._end_effector_type)
+            self._left_ee_client_real = create_end_effector_client(is_left = True, is_sim = False, 
+                                                                end_effector_type = self._end_effector_type)
+            self._right_ee_client_real = create_end_effector_client(is_left = False, is_sim = False, 
+                                                                end_effector_type = self._end_effector_type)
             self.left_ee_client = self._left_ee_client_sim
             self.right_ee_client = self._right_ee_client_sim
 
-        # NOTE: 构建的时候采用仿真模式，则无法切换至真机模式（真机client未创建）
+        self._is_sim = True
+
+        self._clients = [self._robot_client_sim, self._robot_client_real, 
+                        self._left_ee_client_sim, self._left_ee_client_real, 
+                        self._right_ee_client_sim, self._right_ee_client_real]
+
         self._executor = MultiThreadedExecutor()
-        for node in [self._robot_client_sim, self._robot_client_real, 
-                     self._left_ee_client_sim, self._left_ee_client_real, 
-                     self._right_ee_client_sim, self._right_ee_client_real]:
-            if node is not None:
-                self._executor.add_node(node)
+        for node in self._clients:
+            self._executor.add_node(node)
         self._node_thread = threading.Thread(target=self._executor.spin, 
                                             daemon=True)
         self._node_thread.start()
@@ -132,11 +131,8 @@ class W1Manager:
             if self._executor is not None:
                 self._executor.shutdown()
 
-            for node in [self._robot_client_sim, self._robot_client_real, 
-                        self._left_ee_client_sim, self._left_ee_client_real, 
-                        self._right_ee_client_sim, self._right_ee_client_real]:
-                if node is not None:
-                    node.destroy_node()
+            for node in self._clients:
+                node.destroy_node()
 
             self.logger.debug(f"Ros2 node destroyed.")
         except Exception as e:
@@ -277,7 +273,7 @@ class W1Manager:
     def _save_home_qpos(self, file_path = DATA_DIR / "config.json") -> bool:
         file_path_ = pathlib.Path(file_path)
         if not file_path_.exists() or file_path_.stat().st_size == 0:
-            file_path_.write_text("{}")
+            file_path_.write_text("{}") # FIXME:
 
         with open(file_path, "r") as f:
             json_data = json.load(f)
@@ -318,16 +314,41 @@ class W1Manager:
         return True, np.hstack(temp_arrays)
 
     ######## 基础API #############
-    def set_sim_mode(self, is_sim: bool) -> bool:
-        # TODO: add ee sim client
-        if self._is_sim == is_sim:
+    def connect(self, timeout_sec: float = 0.5) -> bool:
+        """连接client(sim/real)
+
+        Returns:
+            bool: 
+        """
+        return self.is_connected(timeout_sec)
+
+    def is_connected(self, timeout_sec: float = 0.1) -> bool:
+        """检查所有client是否处于连接状态
+
+        Returns:
+            bool: 
+        """
+        res = True
+        if not self.robot_client.is_connected(timeout_sec):
+            self.logger.error(f"{self.robot_client.node_name} is not connected!")
+            res = False
+        if not self.left_ee_client.is_connected(timeout_sec):
+            self.logger.error(f"{self.left_ee_client.node_name} is not connected!")
+            res = False
+        if not self.right_ee_client.is_connected(timeout_sec):
+            self.logger.error(f"{self.right_ee_client.node_name} is not connected!")
+            res = False
+        return res
+
+    def set_sim_mode(self, enable_sim: bool) -> bool:
+        if self._is_sim == enable_sim:
             if self._is_sim:
-                self.logger.info("Robot client already in sim mode.")
+                self.logger.info("W1 manager already in sim mode.")
             else:
-                self.logger.info("Robot client already in real mode.")
+                self.logger.info("W1 manager already in real mode.")
             return True
 
-        if is_sim:
+        if enable_sim:
             target_name = "sim"
             target_robot_client = self._robot_client_sim
             target_left_ee_client = self._left_ee_client_sim
@@ -339,25 +360,25 @@ class W1Manager:
             target_right_ee_client = self._right_ee_client_real
 
         # 检查target client
-        if target_robot_client is None:
-            self.logger.error(f"Robot_client_{target_name} is not initialized.")
-            return False
-        if not target_robot_client.is_connected():
+        # if target_robot_client is None:
+        #     self.logger.error(f"Robot_client_{target_name} is not initialized.")
+        #     return False
+        if not target_robot_client.is_connected(timeout_sec=0.1):
             self.logger.error(f"{target_robot_client.node_name} is not connected!")
             return False
         if target_robot_client.status not in [Status.Init, Status.Idle]:
             self.logger.error(f"{target_robot_client.node_name} status: {target_robot_client.status}, can not switch mode!")
             return False
 
-        if target_left_ee_client is None:
-            self.logger.error(f"Left_ee_client_{target_name} is not initialized.")
-            return False
+        # if target_left_ee_client is None:
+        #     self.logger.error(f"Left_ee_client_{target_name} is not initialized.")
+        #     return False
         if not target_left_ee_client.is_connected():
             self.logger.error(f"{target_left_ee_client.node_name} is not connected!")
             return False
-        if target_right_ee_client is None:
-            self.logger.error(f"Right_ee_client_{target_name} is not initialized.")
-            return False
+        # if target_right_ee_client is None:
+        #     self.logger.error(f"Right_ee_client_{target_name} is not initialized.")
+        #     return False
         if not target_right_ee_client.is_connected():
             self.logger.error(f"{target_right_ee_client.node_name} is not connected!")
             return False
@@ -380,10 +401,8 @@ class W1Manager:
         self.robot_client = target_robot_client
         self.left_ee_client = target_left_ee_client
         self.right_ee_client = target_right_ee_client
-        self._is_sim = is_sim
-        self.logger.info(f"Robot client set to {target_name} mode.")
-        self.logger.info(f"Left ee client set to {target_name} mode.")
-        self.logger.info(f"Right ee client set to {target_name} mode.")
+        self._is_sim = enable_sim
+        self.logger.info(f"W1 manager set to {target_name} mode.")
         return True
 
     def set_ee_qpos(self, name: str, qpos: np.ndarray) -> bool:
