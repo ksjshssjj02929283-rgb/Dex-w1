@@ -92,7 +92,7 @@ class RobotClientRos2(Node, RobotClient):
             self.logger.error(f"No connection to robot")
             return False
         if request_id < 0:
-            self.logger.error(f"Waiting for request id: {request_id}, no valid request")
+            self.logger.warning(f"The previous request is invalid or none")
             return False
         # 如果未完成到指定request id则阻塞等待, 如果超时则返回
         self.logger.info(
