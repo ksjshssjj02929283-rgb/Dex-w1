@@ -92,6 +92,8 @@ class SinglePlanner:
         self.head_qpos = np.zeros(HEAD_DIM)
         self.torso_qpos = np.zeros(TORSO_DIM)
 
+        self.traj_max_vel = 0.3
+
         
     def _init_fcl_checker(self, robot_type: RobotType, ee_type: EndEffectorType):
         self.fcl_checker = FCLChecker(robot_type, ee_type)
@@ -140,6 +142,11 @@ class SinglePlanner:
         self.armlee_wait_time, self.armree_wait_time = armlee_wait_time, armree_wait_time
         self.armlee_exec_time, self.armree_exec_time = armlee_exec_time, armree_exec_time
 
+    def set_traj_max_vel(self, max_vel):
+        if max_vel <= 0:
+            raise ValueError(f"max_vel must be positive, got {max_vel}")
+        self.traj_max_vel = max_vel
+
     def attach_object(self, obj_name: str, which_arm: str, flange_T_object: np.ndarray = None):
         if which_arm not in ['left', 'right']:
             raise ValueError("which_arm must be either 'left' or 'right'.")
@@ -155,6 +162,9 @@ class SinglePlanner:
             self.fcl_checker.detach_object_arml(obj_name=obj_name, arml7_transform=arm7_transform)
         if which_arm == "right":    
             self.fcl_checker.detach_object_armr(obj_name=obj_name, armr7_transform=arm7_transform)
+
+    
+
     def plan(self):
         """
         Solve the planning problem which will decide which planner to use based on the start and goal configurations of the arms.
@@ -173,6 +183,7 @@ class SinglePlanner:
                                           which_arm='left', other_arm_qpos=self.armr_start,
                                           use_ee=self.use_ee)
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
+            ompl_planner.set_traj_max_vel(self.traj_max_vel)
             left_path, left_trajectory, left_plan_time = ompl_planner.plan(planning_time=2.0)
             if left_path is not None:
                 return left_trajectory, None, left_plan_time
@@ -186,6 +197,7 @@ class SinglePlanner:
                                           which_arm='right', other_arm_qpos=self.arml_start,
                                           use_ee=self.use_ee)
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
+            ompl_planner.set_traj_max_vel(self.traj_max_vel)
             right_path, right_trajectory, right_plan_time = ompl_planner.plan(planning_time=2.0)
             if right_path is not None:
                 return None, right_trajectory, right_plan_time
@@ -202,6 +214,7 @@ class SinglePlanner:
                                              urdf_path=self.urdf_path,
                                              use_ee=self.use_ee)
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
+            ompl_planner.set_traj_max_vel(self.traj_max_vel)
             coordinated_left, coordinated_right, plan_time = ompl_planner.plan()
             if coordinated_left is not None and coordinated_right is not None:
                 return coordinated_left, coordinated_right, plan_time

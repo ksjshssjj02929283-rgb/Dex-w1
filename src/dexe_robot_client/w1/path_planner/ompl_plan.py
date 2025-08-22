@@ -59,6 +59,8 @@ class OMPLPlanSingle:
 
         self.use_ee = use_ee
         
+        self.traj_max_vel = 0.3
+
 
     def _get_Kinematics(self, body_qpos, arml_qpos, armr_qpos, head_qpos):
         # NOTE: 
@@ -101,7 +103,10 @@ class OMPLPlanSingle:
         self.fcl_checker.set_head_body_transform(head, body)
         
 
-        
+    def set_traj_max_vel(self, max_vel):
+        if max_vel <= 0:
+            raise ValueError(f"max_vel must be positive, got {max_vel}")
+        self.traj_max_vel = max_vel
     
     def set_start_goal(self, start, goal):
         if start.shape[0] != self.space.getDimension():
@@ -242,7 +247,7 @@ class OMPLPlanSingle:
 
             total_time = time.time() - start_time
             print(f"Finish find a path with {path.getStateCount()} waypoints in {total_time:.6f} seconds")
-            result_traj, result_vel, result_acc, duration = self.gen_trajectory(np_path, max_v=0.3)
+            result_traj, result_vel, result_acc, duration = self.gen_trajectory(np_path, max_v=self.traj_max_vel)
             self.result_traj = result_traj
             return np_path, self.result_traj, total_time
         else:
@@ -287,6 +292,8 @@ class OMPLPlanCentralized:
 
         self.use_ee = use_ee
 
+        self.traj_max_vel = 0.3
+
     def _get_Kinematics(self, body_qpos, arml_qpos, armr_qpos, head_qpos):
         # NOTE: 
         # q's order depends on urdf, currently is [body(4), left arm(7), right arm(7), head(2)]
@@ -312,6 +319,10 @@ class OMPLPlanCentralized:
 
         return body_transform_chain, left_transform_chain, right_transform_chain, head_transform_chain
 
+    def set_traj_max_vel(self, max_vel):
+        if max_vel <= 0:
+            raise ValueError(f"max_vel must be positive, got {max_vel}")
+        self.traj_max_vel = max_vel
         
     def set_head_body(self, head_qpos, body_qpos):
         if head_qpos.shape[0] != 2:
@@ -420,7 +431,7 @@ class OMPLPlanCentralized:
 
             total_time = time.time() - start_time
             print(f"Finish find a path with {path.getStateCount()} waypoints in {total_time:.6f} seconds")
-            result_traj, result_vel, result_acc, duration = self.gen_trajectory(np_path, max_v=0.3)
+            result_traj, result_vel, result_acc, duration = self.gen_trajectory(np_path, max_v=self.traj_max_vel)
             self.result_traj = result_traj
 
             return np_path, self.result_traj, total_time
@@ -465,7 +476,14 @@ class OMPLPlanDecoupled:
         self.arml_result_trajectory = None
         self.armr_result_trajectory = None
 
-        
+        self.traj_max_vel = 0.3
+
+    def set_traj_max_vel(self, max_vel):
+        if max_vel <= 0:
+            raise ValueError(f"max_vel must be positive, got {max_vel}")
+        self.traj_max_vel = max_vel
+        # self.arml_planner.set_traj_max_vel(max_vel)
+        # self.armr_planner.set_traj_max_vel(max_vel)
 
     def set_head_body(self, head_qpos, body_qpos):
         if head_qpos.shape[0] != 2:
@@ -522,8 +540,8 @@ class OMPLPlanDecoupled:
             return None, None, None
         
         start_time = time.time()
-        arml_traj, arml_vel, arml_acc, arml_duration = self.gen_trajectory(arml_path, max_v=0.3, is_left=True)
-        armr_traj, armr_vel, armr_acc, armr_duration = self.gen_trajectory(armr_path, max_v=0.3, is_left=False)
+        arml_traj, arml_vel, arml_acc, arml_duration = self.gen_trajectory(arml_path, max_v=self.traj_max_vel, is_left=True)
+        armr_traj, armr_vel, armr_acc, armr_duration = self.gen_trajectory(armr_path, max_v=self.traj_max_vel, is_left=False)
 
         coordinator = Coordination(arml_traj, armr_traj, self.fcl_checker, self.urdf_path, coordination_res=0.1, traj_res=0.01)
         coordinator.set_head_body(self.head_qpos, self.body_qpos)
