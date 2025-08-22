@@ -12,10 +12,12 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from rlia.kit.drive_controllers.w1_drive_controller import W1Version, W1ArmType
-
-from ..common import get_logger, ASSETS_DIR, URL_PREFIX, download_and_unzip_file
+from ..common import (get_logger, 
+                      ASSETS_DIR, URL_PREFIX, 
+                      download_and_unzip_file, 
+                      W1Version, W1ArmType)
 from ..end_effector_client import EndEffectorType
+from .utils.mapping_idx import get_sim2real_idx, get_real2sim_idx
 
 """TODO
 add end-effector
@@ -28,8 +30,8 @@ class DexsimServer:
         self.logger = get_logger()
 
         if w1_version != W1Version.V2:
-            raise ValueError(f"W1Version {w1_version} are not support.")
-        if not download_and_unzip_file(URL_PREFIX / "DexforceW1V02_v1.zip"):
+            raise ValueError(f"{w1_version.name} are not support.")
+        if not download_and_unzip_file(URL_PREFIX + "/DexforceW1V02_v1.zip"):
             raise FileNotFoundError
 
         if arm_type == W1ArmType.INDUSTRIAL:
@@ -37,55 +39,11 @@ class DexsimServer:
         elif arm_type == W1ArmType.ANTHROPOMORPHIC:
             self._urdf_path = ASSETS_DIR / "DexforceW1V02_v1/DexforceW1_v02_1.urdf"
         else:
-            raise ValueError(f"W1ArmType {arm_type} are not support.")
+            raise ValueError(f"{arm_type.name} are not support.")
 
-        # fmt: off
-        self.real2sim_index = [
-            0,      # ANKLE    <- [torso 0]
-            1,      # KNEE     <- [torso 1]
-            2,      # BUTTOCK  <- [torso 2]
-            3,      # WAIST    <- [torso 3]
-            6,      # LEFT_J1  <- [head 4]
-            4,      # NECK1    <- [head 5]
-            13,     # RIGHT_J1 <- [left_arm 6]
-            7,      # LEFT_J2  <- [left_arm 7]
-            5,      # NECK2    <- [left_arm 8]
-            14,     # RIGHT_J2 <- [left_arm 9]
-            8,      # LEFT_J3  <- [left_arm 10]
-            15,     # RIGHT_J3 <- [left_arm 11]
-            9,      # LEFT_J4  <- [left_arm 12]
-            16,     # RIGHT_J4 <- [right_arm 13]
-            10,     # LEFT_J5  <- [right_arm 14]
-            17,     # RIGHT_J5 <- [right_arm 15]
-            11,     # LEFT_J6  <- [right_arm 16]
-            18,     # RIGHT_J6 <- [right_arm 17]
-            12,     # LEFT_J7  <- [right_arm 18]
-            19      # RIGHT_J7 <- [right_arm 19]
-        ]
-        self.sim2real_index = [
-            0,  # ANKLE 
-            1,  # KNEE
-            2,  # BUTTOCK
-            3,  # WAIST
-            5,  # NECK1
-            8,  # NECK2
-            4,  # LEFT_J1
-            7,  # LEFT_J2
-            10, # LEFT_J3
-            12, # LEFT_J4
-            14, # LEFT_J5
-            16, # LEFT_J6
-            18, # LEFT_J7
-            6,  # RIGHT_J1
-            9,  # RIGHT_J2
-            11, # RIGHT_J3
-            13, # RIGHT_J4
-            15, # RIGHT_J5
-            17, # RIGHT_J6
-            19  # RIGHT_J7
-        ]
-        # fmt: on
         self._init_visualization()
+        self.real2sim_index = get_real2sim_idx(self._articulation)
+        self.sim2real_index = get_sim2real_idx(self._articulation)
         self._init_ros2_node()
         self.logger.debug("Dexsim server initialized.")
 

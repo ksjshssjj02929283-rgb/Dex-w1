@@ -13,19 +13,14 @@ import atexit
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
-from rlia.kit.drive_controllers import W1DriveController
-from rlia.kit.drive_controllers.w1_drive_controller import W1Version, W1ArmType
-
-from ..common import get_logger, DATA_DIR
-from ..end_effector_client import (EndEffectorType, 
-                          LeftBrainCoHandClient, RightBrainCoHandClient, 
-                          LeftPGCGripperClient, RightPGCGripperClient)
+from ..common import get_logger, DATA_DIR, W1ArmType, W1Version
+from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
 from .kinemtaics.torso_kinematics import TorsoKinematics
 from .path_planner.bezier_blend_path import interpolate_cartesian_path
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
-from .utils.component_manager import W1ComponentManager
+from .utils.w1_params import W1Params
 from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 
 
@@ -48,11 +43,6 @@ class W1Manager:
 
         self.TIME_STEP = 0.01 # 100Hz
 
-        self.component_manager = W1ComponentManager()
-        self.arm_ee_names = ["left_arm_ee", "right_arm_ee"]
-        self.arm_ee_dofs = None
-        self.arm_names = ["left_arm", "right_arm"]
-
         self.robot_client = None
         self._robot_client_sim = None
         self._robot_client_real = None
@@ -73,6 +63,10 @@ class W1Manager:
         self._w1_version = w1_version
         self._end_effector_type = end_effector_type
 
+        self.w1_params = W1Params(self._arm_type, 
+                                  self._w1_version, 
+                                  self._end_effector_type)
+
         try:
             self._init_clients(is_sim)
         except Exception:
@@ -81,12 +75,6 @@ class W1Manager:
 
         self._init_kine_solver()
         self.set_sim_mode(is_sim)
-
-        self._home_qpos = np.deg2rad([45, -90, 45, 0, 0, 0,
-                                      5, -45, -5, -90, 0, -15, 0,
-                                      -5, 45, 5, 90, 0, 15, 0])
-        if not self._load_home_qpos():
-            raise ValueError
         
         self._stop_move_event = threading.Event()
         self._stop_move_event.clear()
@@ -101,33 +89,23 @@ class W1Manager:
         self._is_sim = True
         self._robot_client_sim = RobotClient(is_sim = True)
         if not is_sim:
-            # 按需构造，real_server未必启动
+            # 按需构造
             self._robot_client_real = RobotClient(is_sim = False)
-        # 初始化先进入仿真模式，sim_server是必定会启动
+        # 初始化先进入仿真
         self.robot_client = self._robot_client_sim
 
         if self._end_effector_type is None:
             self.logger.info(f"No movable end effector.")
         else:
-            if self._end_effector_type == EndEffectorType.BRAINCO_HAND:
-                self.arm_ee_dofs = 6
-                self._left_ee_client_sim = LeftBrainCoHandClient(is_sim = True)
-                self._right_ee_client_sim = RightBrainCoHandClient(is_sim = True)
-                if not is_sim:
-                    self._left_ee_client_real = LeftBrainCoHandClient(is_sim = False)
-                    self._right_ee_client_real = RightBrainCoHandClient(is_sim = False)
-
-            elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
-                self.arm_ee_dofs = 1
-                self._left_ee_client_sim = LeftPGCGripperClient(is_sim = True)
-                self._right_ee_client_sim = RightPGCGripperClient(is_sim = True)
-                if not is_sim:
-                    self._left_ee_client_real = LeftPGCGripperClient(is_sim = False)
-                    self._right_ee_client_real = RightPGCGripperClient(is_sim = False)
-
-            else:
-                raise ValueError(f"Unsupport end effector type: {self._end_effector_type}.")
-        
+            self._left_ee_client_sim = create_end_effector_client(is_left = True, is_sim = True, 
+                                                                  end_effector_type = self._end_effector_type)
+            self._right_ee_client_sim = create_end_effector_client(is_left = False, is_sim = True, 
+                                                                  end_effector_type = self._end_effector_type)
+            if not is_sim:
+                self._left_ee_client_real = create_end_effector_client(is_left = True, is_sim = False, 
+                                                                  end_effector_type = self._end_effector_type)
+                self._right_ee_client_real = create_end_effector_client(is_left = False, is_sim = False, 
+                                                                  end_effector_type = self._end_effector_type)
             self.left_ee_client = self._left_ee_client_sim
             self.right_ee_client = self._right_ee_client_sim
 
@@ -165,85 +143,47 @@ class W1Manager:
             self.logger.error(f"Ros2 node destroy failed: {e}.")
 
     def _init_kine_solver(self):
-        # TODO: params read from json
-        if self._w1_version != W1Version.V2:
-            raise ValueError(f"W1Version {self._w1_version} are not support.")
-        
-        # fmt: off
-        self.torso_ub = np.deg2rad([75., 5., 90., 90.])
-        self.torso_lb = np.deg2rad([-5., -150., -100., -90.])
-        self.head_ub = np.deg2rad([90., 45.])
-        self.head_lb = np.deg2rad([-90., -25.])
+        self.torso_kine_solver = TorsoKinematics()
+
+        import rlia
+        from rlia.kit.drive_controllers import W1DriveController
+        rlia_w1_version = rlia.kit.drive_controllers.w1_drive_controller.W1Version.V2
         if self._arm_type == W1ArmType.INDUSTRIAL:
-            # left arm
-            self.left_arm_ub = np.deg2rad([90., 45., 170., 5., 170., 89., 170.])
-            self.left_arm_lb = np.deg2rad([-170., -120., -170., -135., -170., -89., -170.])
-            # right arm
-            self.right_arm_ub = np.deg2rad([170., 120., 170., 135., 170., 89., 170.])
-            self.right_arm_lb = np.deg2rad([-90., -45., -170., -5., -170., -89., -170.])
-        elif self._arm_type == W1ArmType.ANTHROPOMORPHIC:
-            # left arm
-            self.left_arm_ub = np.deg2rad([90., 45., 170., 5., 170., 48., 36.])
-            self.left_arm_lb = np.deg2rad([-170., -115., -170., -130., -170., -35., -100.])
-            # right arm
-            self.right_arm_ub = np.deg2rad([170., 115., 170., 130., 170., 35., 100.])
-            self.right_arm_lb = np.deg2rad([-90., -45., -170., -5., -170., -48., -36.])
+            rlia_arm_type = rlia.kit.drive_controllers.w1_drive_controller.W1ArmType.INDUSTRIAL
         else:
-            raise ValueError(f"W1ArmType {self._arm_type} are not support.")
-        # fmt: on
-        self.qpos_ub = np.r_[self.torso_ub, 
-                            self.head_ub, 
-                            self.left_arm_ub, 
-                            self.right_arm_ub]
-        self.qpos_lb = np.r_[self.torso_lb,
-                            self.head_lb,
-                            self.left_arm_lb,
-                            self.right_arm_lb]
+            rlia_arm_type = rlia.kit.drive_controllers.w1_drive_controller.W1ArmType.ANTHROPOMORPHIC
 
         _ik_nearst_weight = [2., 2., 2., 1., 1., 1., 1.]
-        _ik_sample_num = 1600
-        # _arm_angle_sample_range = np.deg2rad(45)
-
-        self.torso_kine_solver = TorsoKinematics()
         self.left_arm_controller = W1DriveController(is_left_arm = True, 
-                                                    type_version = self._w1_version, 
-                                                    arm_type = self._arm_type,
-                                                    is_yaik_solver=False)
-        self.left_arm_controller.set_joint_limits(upper_limits = self.left_arm_ub,
-                                                   lower_limits = self.left_arm_lb)
-        self.left_arm_controller.set_user_joint_limits(upper_limits = self.left_arm_ub,
-                                                   lower_limits = self.left_arm_lb)
+                                                    type_version = rlia_w1_version, 
+                                                    arm_type = rlia_arm_type,
+                                                    is_yaik_solver=True)
+        self.left_arm_controller.set_joint_limits(upper_limits = self.w1_params.left_arm_ub,
+                                                   lower_limits = self.w1_params.left_arm_lb)
+        self.left_arm_controller.set_user_joint_limits(upper_limits = self.w1_params.left_arm_ub,
+                                                   lower_limits = self.w1_params.left_arm_lb)
         self.left_arm_controller.set_ik_nearst_weight(_ik_nearst_weight)
-        left_kin_solver = self.left_arm_controller.solver.get_kin_solver()
-        left_kin_solver.set_num_samples(_ik_sample_num)
-        # left_kin_solver.set_small_range_qt(_arm_angle_sample_range)
 
         self.right_arm_controller = W1DriveController(is_left_arm = False, 
-                                                    type_version = self._w1_version, 
-                                                    arm_type = self._arm_type,
-                                                    is_yaik_solver=False)
-        self.right_arm_controller.set_joint_limits(upper_limits = self.right_arm_ub,
-                                                   lower_limits = self.right_arm_lb)
-        self.right_arm_controller.set_user_joint_limits(upper_limits = self.right_arm_ub,
-                                                   lower_limits = self.right_arm_lb)
+                                                    type_version = rlia_w1_version, 
+                                                    arm_type = rlia_arm_type,
+                                                    is_yaik_solver=True)
+        self.right_arm_controller.set_joint_limits(upper_limits = self.w1_params.right_arm_ub,
+                                                   lower_limits = self.w1_params.right_arm_lb)
+        self.right_arm_controller.set_user_joint_limits(upper_limits = self.w1_params.right_arm_ub,
+                                                   lower_limits = self.w1_params.right_arm_lb)
         self.right_arm_controller.set_ik_nearst_weight(_ik_nearst_weight)
-        right_kin_solver = self.right_arm_controller.solver.get_kin_solver()
-        right_kin_solver.set_num_samples(_ik_sample_num)
-        # right_kin_solver.set_small_range_qt(_arm_angle_sample_range)
 
         # fmt: off
-        self.default_qvel = np.array([0.3]*self.component_manager.full_body_dofs)
-        self.min_qvel = np.array([0.05]*self.component_manager.full_body_dofs)
-        self.max_qvel = np.array([1.0]*self.component_manager.full_body_dofs)
-        self.max_qacc = np.array([1., 1., 1., 1.,
-                                5., 5.,
-                                3., 3., 3., 5., 10., 10., 10.,
-                                3., 3., 3., 5., 10., 10., 10.])
+        self.default_qvel = self.w1_params.default_qvel
+        self.min_qvel = self.w1_params.min_qvel
+        self.max_qvel = self.w1_params.max_qvel
+        self.max_qacc = self.w1_params.max_qacc
         # fmt: on
         self.logger.info("Initialize kinematic solver.")
 
     def _has_arm_ee_client(self, name: str) -> bool:
-        if name in self.arm_ee_names:
+        if name in self.w1_params.arm_ee_names:
             if name == "left_arm_ee" and self.left_ee_client is not None:
                 return True
             if name == "right_arm_ee" and self.right_ee_client is not None:
@@ -251,7 +191,7 @@ class W1Manager:
             # self.logger.warning(f"{name} has not initialized")
             return False
 
-        self.logger.error(f"{self.arm_ee_names} is supported, except {name}.")
+        self.logger.error(f"{self.w1_params.arm_ee_names} is supported, except {name}.")
         return False
 
     def _get_arm_controller(self, name: str):
@@ -272,13 +212,13 @@ class W1Manager:
 
     def _check_name(self, name: str) -> bool:
         """仅支持component检查，不包含ee"""
-        if name not in self.component_manager.names:
-            self.logger.error(f"{self.component_manager.names} is supported, except {name}.")
+        if name not in self.w1_params.names:
+            self.logger.error(f"{self.w1_params.names} is supported, except {name}.")
             return False
         return True
 
     def _check_arm_name(self, name: str) -> bool:
-        support_names = self.arm_names
+        support_names = self.w1_params.arm_names
         if name not in support_names:
             self.logger.error(f"{support_names} is supported, except {name}.")
             return False
@@ -286,13 +226,13 @@ class W1Manager:
 
     def _check_qpos_dimension(self, name: str, qpos) -> bool:
         """支持component和ee的检查"""
-        if name in self.arm_ee_names:
+        if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name):
                 self.logger.error(f"{name} has not initialized")
                 return False
-            dofs = self.arm_ee_dofs
+            dofs = self.w1_params.arm_ee_dofs
         elif self._check_name(name):
-            dofs = self.component_manager.infos[name]["dofs"]
+            dofs = self.w1_params.index_infos[name]["dofs"]
         else:
             return False
         
@@ -342,29 +282,12 @@ class W1Manager:
         with open(file_path, "r") as f:
             json_data = json.load(f)
 
-        json_data["home_qpos_deg"] = np.rad2deg(self.get_home_qpos()).tolist()
+        json_data["home_qpos"] = self.get_home_qpos().tolist()
 
         with open(file_path, "w") as f:
             json.dump(json_data, f, indent=4)
-        
+        self.w1_params.update_params(file_path)
         return True
-
-    def _load_home_qpos(self, file_path = DATA_DIR / "config.json") -> bool:
-        file_path_ = pathlib.Path(file_path)
-        if not file_path_.exists() or file_path_.stat().st_size == 0:
-            self.logger.warning(f"{file_path} does not exist, would be created automatically.")
-            if self._save_home_qpos(file_path):
-               return self._load_home_qpos(file_path) 
-            return False
-
-        with open(file_path, "r") as f:
-            json_data = json.load(f)
-            home_qpos_deg = json_data.get("home_qpos_deg")
-            if home_qpos_deg is not None:
-                self.logger.info(f"Load home qpos from {file_path}.")
-                return self.set_home_qpos(np.deg2rad(home_qpos_deg), False)
-
-        return False
 
     def _qpos_align(self, 
                     torso_qpos_array: np.ndarray, 
@@ -494,13 +417,13 @@ class W1Manager:
         """
         if not self._check_qpos_limits("full_body", home_qpos):
             return False
-        self._home_qpos = home_qpos
+        self.w1_params.home_qpos = home_qpos
         if save_to_file:
             return self._save_home_qpos()
         return True
 
     def get_home_qpos(self) -> np.ndarray:
-        return self._home_qpos
+        return self.w1_params.home_qpos
     
     def get_qpos_limits(self, name: str = "full_body") -> tuple[bool, np.ndarray, np.ndarray]:
         """获取特定部件(支持ee)的关节极限
@@ -512,17 +435,17 @@ class W1Manager:
         Returns:
             tuple[bool, np.ndarray, np.ndarray]: 状态码；下极限；上极限
         """
-        if name in self.arm_ee_names:
+        if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name):
                 return False, None, None
-            qpos_lb = np.array([0.]*self.arm_ee_dofs)
-            qpos_ub = np.array([100.]*self.arm_ee_dofs)
+            qpos_lb = np.array([0.]*self.w1_params.arm_ee_dofs)
+            qpos_ub = np.array([100.]*self.w1_params.arm_ee_dofs)
 
         elif not self._check_name(name):
             return False, None, None
         else:
-            qpos_lb = self.qpos_lb[self.component_manager.infos[name]["index"]]
-            qpos_ub = self.qpos_ub[self.component_manager.infos[name]["index"]]
+            qpos_lb = self.w1_params.qpos_lb[self.w1_params.index_infos[name]["index"]]
+            qpos_ub = self.w1_params.qpos_ub[self.w1_params.index_infos[name]["index"]]
         return True, qpos_lb, qpos_ub
 
     def get_current_qpos(self, name: str = "full_body") -> tuple[bool, np.ndarray]:
@@ -535,12 +458,12 @@ class W1Manager:
         Returns:
             tuple[bool, np.ndarray]
         """
-        support_names = list(self.component_manager.names) + self.arm_ee_names
+        support_names = list(self.w1_params.names) + self.w1_params.arm_ee_names
         if name not in support_names:
             self.logger.error(f"{support_names} is supported, except {name}.")
             return False, None
         
-        if name in self.arm_ee_names:
+        if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name):
                 return False, None
             return self._get_arm_ee_client(name).get_qpos()
@@ -553,7 +476,7 @@ class W1Manager:
         
         if name == "full_body":
             return True, cur_qpos
-        return True, cur_qpos[self.component_manager.infos[name]["index"]]
+        return True, cur_qpos[self.w1_params.index_infos[name]["index"]]
 
     def get_current_xpos(self, name: str) -> tuple[bool, np.ndarray]:
         arm_controller = self._get_arm_controller(name)
@@ -593,11 +516,11 @@ class W1Manager:
         Returns:
             bool: 
         """
-        target_qpos = deepcopy(self._home_qpos)
-        target_torso_qpos = target_qpos[self.component_manager.torso_index]
-        target_head_qpos = target_qpos[self.component_manager.head_index]
-        target_left_arm_qpos = target_qpos[self.component_manager.left_arm_index]
-        target_right_arm_qpos = target_qpos[self.component_manager.right_arm_index]
+        target_qpos = deepcopy(self.w1_params.home_qpos)
+        target_torso_qpos = target_qpos[self.w1_params.torso_index]
+        target_head_qpos = target_qpos[self.w1_params.head_index]
+        target_left_arm_qpos = target_qpos[self.w1_params.left_arm_index]
+        target_right_arm_qpos = target_qpos[self.w1_params.right_arm_index]
 
         waypoint_dict = {"torso": [target_torso_qpos.tolist()],
                          "head": [target_head_qpos.tolist()],
@@ -635,8 +558,8 @@ class W1Manager:
         if not self._check_qpos_limits(name, qpos_array):
             return False, None
 
-        dofs = self.component_manager.infos[name]["dofs"]
-        index = self.component_manager.infos[name]["index"]
+        dofs = self.w1_params.index_infos[name]["dofs"]
+        index = self.w1_params.index_infos[name]["index"]
         vel_limits = self.max_qvel[index]
         acc_limits = self.max_qacc[index]
         traj_planner = ToppraTrajectoryPlanner(dofs, vel_limits, acc_limits)
@@ -705,12 +628,10 @@ class W1Manager:
         qpos_list = []
         cur_qseed = qpos_seed
         for i, cur_xpos in enumerate(xpos_sample_array):
-            # if i == 1:
-            #     arm_controller.set_use_small_range_first(True)
             res_ik, cur_qpos = arm_controller.get_ik(xpos=cur_xpos, 
                                                      qpos_seed=cur_qseed)
             if not np.allclose(cur_qpos, cur_qseed, atol=np.deg2rad(90)):
-                self.logger.error(f"qpos traj is not continues\n" + \
+                self.logger.error(f"{name} qpos traj is not continues\n" + \
                                   f"cur_qpos: {np.rad2deg(cur_qpos)}\n" + \
                                   f"cur_qseed: {np.rad2deg(cur_qseed)}.")
                 return False, None
@@ -719,7 +640,6 @@ class W1Manager:
                 return False, None
             qpos_list.append(cur_qpos)
             cur_qseed = cur_qpos
-        # arm_controller.set_use_small_range_first(False)
 
         return self.plan_joint_traj(name, np.array(qpos_list), qvel_limits_array_)
 
@@ -959,15 +879,15 @@ class W1Manager:
         speed_ratio_list = [sr if sr is not None else speed_ratio
                             for sr in speed_ratio_list]
 
-        default_qvel = self.default_qvel[self.component_manager.infos[name]["index"]]
-        min_qvel = self.min_qvel[self.component_manager.infos[name]["index"]]
-        max_qvel = self.max_qvel[self.component_manager.infos[name]["index"]]
+        default_qvel = self.default_qvel[self.w1_params.index_infos[name]["index"]]
+        min_qvel = self.min_qvel[self.w1_params.index_infos[name]["index"]]
+        max_qvel = self.max_qvel[self.w1_params.index_infos[name]["index"]]
         qvel_limits_array = np.clip(np.outer(speed_ratio_list, default_qvel), 
                                     min_qvel, max_qvel)
 
         # 额外读取ee的输入
         arm_ee_state_list = None
-        if name in self.arm_names:
+        if name in self.w1_params.arm_names:
             arm_ee_state_list = waypoints_dict.get(f"{name}_ee")
             if not arm_ee_state_list: # None or []
                 arm_ee_state_list = None
@@ -999,7 +919,7 @@ class W1Manager:
         elif int_res == 0: # 输入为空
             return True, qpos_array
         # 输入合法
-        qvel_limits_array_ = np.vstack([self.default_qvel[self.component_manager.infos[name]["index"]],
+        qvel_limits_array_ = np.vstack([self.default_qvel[self.w1_params.index_infos[name]["index"]],
                                         qvel_limits_array])
         if is_cartesian:
             res_fk, cur_xpos = self._get_arm_controller(name).get_fk(cur_qpos)
@@ -1069,7 +989,7 @@ class W1Manager:
                 return False, None, None
             pos_raw_array_ = np.vstack([xpos_to_user_pose(cur_xpos), pos_raw_array])
 
-        qvel_limits_array_ = np.vstack([self.default_qvel[self.component_manager.infos[name]["index"]],
+        qvel_limits_array_ = np.vstack([self.default_qvel[self.w1_params.index_infos[name]["index"]],
                                         qvel_limits_array])
         cur_ee_state = [0., cur_ee_qpos.tolist(), 0.]
         arm_ee_state_list_ = [cur_ee_state] + [ee_state if ee_state is not None else cur_ee_state 
@@ -1095,7 +1015,7 @@ class W1Manager:
                 res_plan, seg_qpos_samples_array = self.plan_cartesian_traj(name, 
                                                                             seg_xpos_list, 
                                                                             cur_qpos_seed, 
-                                                                            qvel_limits_array_, 
+                                                                            seg_qvel_limits_list, 
                                                                             cartesian_step)
             else:
                 res_plan, seg_qpos_samples_array = self.plan_joint_traj(name,
@@ -1156,16 +1076,19 @@ class W1Manager:
         Returns:
             bool
         """
-        self.logger.debug(f"waypoints_dict: {waypoints_dict}.")
-
         res, cur_qpos = self.get_current_qpos()
         if not res:
             return False
-        cur_torso_qpos = cur_qpos[self.component_manager.torso_index]
-        cur_head_qpos = cur_qpos[self.component_manager.head_index]
-        cur_left_arm_qpos = cur_qpos[self.component_manager.left_arm_index]
-        cur_right_arm_qpos = cur_qpos[self.component_manager.right_arm_index]
+        cur_torso_qpos = cur_qpos[self.w1_params.torso_index]
+        cur_head_qpos = cur_qpos[self.w1_params.head_index]
+        cur_left_arm_qpos = cur_qpos[self.w1_params.left_arm_index]
+        cur_right_arm_qpos = cur_qpos[self.w1_params.right_arm_index]
         
+        self.logger.debug("Input waypoints_dict:")
+        self.logger.debug(waypoints_dict)
+        self.logger.debug(f"Input speed_ratio: {speed_ratio}")
+        self.logger.debug(f"Input cur_qpos: {cur_qpos}")
+
         # torso
         res_torso, torso_qpos_array = self._plan_to_waypoint("torso", 
                                                              cur_torso_qpos, 
@@ -1246,7 +1169,7 @@ class W1Manager:
                               waypoints_dict: dict, 
                               left_qpos_seed: np.ndarray = None,
                               right_qpos_seed: np.ndarray = None,
-                              cartesian_step: float = 0.05,
+                              cartesian_step: float = 0.005,
                               speed_ratio: float = 1.0) -> bool:
         """规划各部件独立关节空间运动，arm执行笛卡尔空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
@@ -1270,15 +1193,18 @@ class W1Manager:
         Returns:
             bool
         """
-        self.logger.debug(f"waypoints_dict: {waypoints_dict}.")
-
         res, cur_qpos = self.get_current_qpos()
         if not res:
             return False
-        cur_torso_qpos = cur_qpos[self.component_manager.torso_index]
-        cur_head_qpos = cur_qpos[self.component_manager.head_index]
-        cur_left_arm_qpos = cur_qpos[self.component_manager.left_arm_index]
-        cur_right_arm_qpos = cur_qpos[self.component_manager.right_arm_index]
+        cur_torso_qpos = cur_qpos[self.w1_params.torso_index]
+        cur_head_qpos = cur_qpos[self.w1_params.head_index]
+        cur_left_arm_qpos = cur_qpos[self.w1_params.left_arm_index]
+        cur_right_arm_qpos = cur_qpos[self.w1_params.right_arm_index]        
+
+        self.logger.debug("Input waypoints_dict:")
+        self.logger.debug(waypoints_dict)
+        self.logger.debug(f"Input speed_ratio: {speed_ratio}")
+        self.logger.debug(f"Input cur_qpos: {cur_qpos}")
 
         if left_qpos_seed is None:
             left_qpos_seed = cur_left_arm_qpos
@@ -1404,10 +1330,11 @@ class W1Manager:
         if not res:
             return False
         delta_xpos = user_pose_to_xpos([0., 0., 0.], delta_rot_deg)
+        target_xpos = deepcopy(cur_xpos)
         if along_base_frame:
-            target_xpos = delta_xpos @ cur_xpos
+            target_xpos[:3,:3] = delta_xpos[:3,:3] @ cur_xpos[:3,:3]
         else:
-            target_xpos = cur_xpos @ delta_xpos
+            target_xpos[:3,:3] = cur_xpos[:3,:3] @ delta_xpos[:3,:3]
         
         return self.move_linear_full_body(waypoints_dict={f"{name}": [xpos_to_user_pose(target_xpos)]},
                                         speed_ratio=speed_ratio)

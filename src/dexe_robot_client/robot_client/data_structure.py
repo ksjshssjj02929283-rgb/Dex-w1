@@ -36,6 +36,9 @@ class PropertyType(Enum):
 
     ClearError = auto()  # clear error
 
+    EnableDrag = auto()
+    SafeLevel = auto()
+
     TcpPrimary = auto()  # tool primary
     TcpSecondary = auto()  # tool secondary
 
@@ -78,6 +81,9 @@ class RobotInfo:
 
     status: Status
     joint_position: list[float]
+    joint_velocity: list[float]
+    actual_arm_torque: list[float]
+    command_arm_torque: list[float]
     ee_pose: list[float]
 
 

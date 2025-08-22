@@ -47,13 +47,3 @@ class BrainCoHandClient(EndEffectorClient):
             self._set_qpos_publisher = self.create_publisher(
                 Float64MultiArray, f"/control/hand/{self._name}", 10
             )
-
-
-class LeftBrainCoHandClient(BrainCoHandClient):
-    def __init__(self, is_sim: bool = False):
-        super().__init__(True, is_sim)
-
-
-class RightBrainCoHandClient(BrainCoHandClient):
-    def __init__(self, is_sim: bool = False):
-        super().__init__(False, is_sim)

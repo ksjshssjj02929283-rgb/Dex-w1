@@ -161,6 +161,7 @@ def interpolate_cartesian_path(waypoint_list: list[np.ndarray],
     for i, s in enumerate(s_list):
         # 转换至path segment的normalize s
         if i == len(s_list) - 1:
+            cur_path_seg_idx = len(path_seg_dist_list) - 1
             normal_s = 1.
         elif s - cur_path_seg_length < SMALL_NUM:
             normal_s = 0.
