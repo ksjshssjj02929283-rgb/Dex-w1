@@ -170,12 +170,6 @@ class W1Manager:
                                                    lower_limits = self.w1_params.right_arm_lb)
         self.right_arm_controller.set_ik_nearst_weight(_ik_nearst_weight)
 
-        # fmt: off
-        self.default_qvel = self.w1_params.default_qvel
-        self.min_qvel = self.w1_params.min_qvel
-        self.max_qvel = self.w1_params.max_qvel
-        self.max_qacc = self.w1_params.max_qacc
-        # fmt: on
         self.logger.info("Initialize kinematic solver.")
 
     def _has_arm_ee_client(self, name: str) -> bool:
@@ -281,7 +275,7 @@ class W1Manager:
         json_data["home_qpos"] = self.get_home_qpos().tolist()
 
         with open(file_path, "w") as f:
-            json.dump(json_data, f, indent=4)
+            json.dump(json_data, f, indent=4, ensure_ascii=False)
         self.w1_params.update_params(file_path)
         return True
 
@@ -579,8 +573,8 @@ class W1Manager:
 
         dofs = self.w1_params.index_infos[name]["dofs"]
         index = self.w1_params.index_infos[name]["index"]
-        vel_limits = self.max_qvel[index]
-        acc_limits = self.max_qacc[index]
+        vel_limits = self.w1_params.max_qvel[index]
+        acc_limits = self.w1_params.max_qacc[index]
         traj_planner = ToppraTrajectoryPlanner(dofs, vel_limits, acc_limits)
         res, pos_array, _, _, _ = traj_planner.plan(qpos_array, 
                                                     qvel_limits_array,
@@ -898,9 +892,9 @@ class W1Manager:
         speed_ratio_list = [sr if sr is not None else speed_ratio
                             for sr in speed_ratio_list]
 
-        default_qvel = self.default_qvel[self.w1_params.index_infos[name]["index"]]
-        min_qvel = self.min_qvel[self.w1_params.index_infos[name]["index"]]
-        max_qvel = self.max_qvel[self.w1_params.index_infos[name]["index"]]
+        default_qvel = self.w1_params.default_qvel[self.w1_params.index_infos[name]["index"]]
+        min_qvel = self.w1_params.min_qvel[self.w1_params.index_infos[name]["index"]]
+        max_qvel = self.w1_params.max_qvel[self.w1_params.index_infos[name]["index"]]
         qvel_limits_array = np.clip(np.outer(speed_ratio_list, default_qvel), 
                                     min_qvel, max_qvel)
 
@@ -938,7 +932,7 @@ class W1Manager:
         elif int_res == 0: # 输入为空
             return True, qpos_array
         # 输入合法
-        qvel_limits_array_ = np.vstack([self.default_qvel[self.w1_params.index_infos[name]["index"]],
+        qvel_limits_array_ = np.vstack([self.w1_params.default_qvel[self.w1_params.index_infos[name]["index"]],
                                         qvel_limits_array])
         if is_cartesian:
             res_fk, cur_xpos = self._get_arm_controller(name).get_fk(cur_qpos)
@@ -1008,7 +1002,7 @@ class W1Manager:
                 return False, None, None
             pos_raw_array_ = np.vstack([xpos_to_user_pose(cur_xpos), pos_raw_array])
 
-        qvel_limits_array_ = np.vstack([self.default_qvel[self.w1_params.index_infos[name]["index"]],
+        qvel_limits_array_ = np.vstack([self.w1_params.default_qvel[self.w1_params.index_infos[name]["index"]],
                                         qvel_limits_array])
         cur_ee_state = [0., cur_ee_qpos.tolist(), 0.]
         arm_ee_state_list_ = [cur_ee_state] + [ee_state if ee_state is not None else cur_ee_state 
