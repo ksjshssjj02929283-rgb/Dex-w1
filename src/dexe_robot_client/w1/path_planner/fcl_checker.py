@@ -8,6 +8,7 @@ import json
 from copy import deepcopy 
 from dexe_robot_client.end_effector_client import EndEffectorType 
 from dexe_robot_client.w1.path_planner.utils.robot_type import *
+from IPython import embed
 
 
 class FCLChecker:
@@ -43,9 +44,16 @@ class FCLChecker:
         self.use_ee = False
         if end_effector_type is not None:
             if isinstance(end_effector_type, EndEffectorType):
-                self.ee_full_path = get_ee_full_path(end_effector_type)
+                self.ee_full_path = get_ee_full_path(robot_type, end_effector_type)
                 self.arml_full_path.append(self.ee_full_path[0])
                 self.armr_full_path.append(self.ee_full_path[1])
+
+                # self.ee_open_full_path, self.ee_close_full_path = get_ee_full_path(robot_type, end_effector_type)
+                # self.arml_full_path.append(self.ee_open_full_path[0])
+                # self.armr_full_path.append(self.ee_open_full_path[1])
+                # self.arml_full_path.append(self.ee_close_full_path[0])
+                # self.armr_full_path.append(self.ee_close_full_path[1])
+
                 self.use_ee = True
             else:
                 raise ValueError(f"Unsupported End Effector Type: {end_effector_type}. Please use PGC_GRIPPER or BRAINCO_HAND.")
@@ -59,14 +67,6 @@ class FCLChecker:
 
         self._create_robot_obj()
         self._create_robot_manager()
-
-        self.compute_distance = False
-
-    def set_compute_distance(self, compute_distance: bool = False):
-        """
-        Enable the distance computation between objects.
-        """
-        self.compute_distance = compute_distance
 
     def _obj2fcl(self, obj_path):
         mesh = trimesh.load(obj_path, force='mesh')
@@ -540,14 +540,123 @@ class FCLChecker:
                     return True
         return False
 
-    def compute_distance(self):
-        dreq = fcl.DistanceRequest(enable_nearest_points=True) # enable_signed_distance=True
-        ddata = fcl.DistanceData(request=dreq)
+
+    def _compute_distance_signle_arm(self):
+        for i in range(len(self.arml_links)):
+            if i+2 >= len(self.arml_links):
+                break
+            for j in range(i+2, len(self.arml_links)):
+                dreq = fcl.DistanceRequest(enable_nearest_points=False)
+                dres = fcl.DistanceResult()
+                ret = fcl.distance(self.arml_links[i], self.arml_links[j], dreq, dres)
+                if ret < 0.02:
+                    print(f"Left arm link {i} and link {j} are too close, distance: {ret}")
+                    return True
+        for i in range(len(self.armr_links)):
+            if i+2 >= len(self.armr_links):
+                break
+            for j in range(i+2, len(self.armr_links)):
+                dreq = fcl.DistanceRequest(enable_nearest_points=False)
+                dres = fcl.DistanceResult()
+                ret = fcl.distance(self.armr_links[i], self.armr_links[j], dreq, dres)
+                if ret < 0.02:
+                    print(f"Right arm link {i} and link {j} are too close, distance: {ret}")
+                    return True
+        return False
+
+
+    def compute_self_distance(self):
         
-        ddata.done = False
-        self.arml_manager.distance(self.obstacle_manager, ddata, fcl.defaultDistanceCallback)
-        print(f"Left arm distance to obstacles: {ddata.result.min_distance}")
+        dreq = fcl.DistanceRequest()
+        dreq.enable_nearest_points = False
+        dreq.gjk_solver_type = fcl.GJKSolverType.GST_INDEP
+        dreq.rel_err = 0.01
+        dres = fcl.DistanceResult()
 
 
-
+        ddata = fcl.DistanceData(dreq, dres)
+        start_time = time.time()
+        self.arml_manager.distance(self.armr_manager, ddata, fcl.defaultDistanceCallback)
+        if ddata.result.min_distance < 0.02:
+            print(f"Left arm and right arm are too close, distance: {ddata.result.min_distance}")
+            return True
+        end_time = time.time()
+        print(f"Distance computation between arms took {end_time - start_time:.6f} seconds.")
         
+        self_arm_collide = self._compute_distance_signle_arm()
+        if self_arm_collide:
+            print("Self arm collision detected.")
+            return True
+        
+        ddata = fcl.DistanceData(request=fcl.DistanceRequest(enable_nearest_points=False), result=fcl.DistanceResult())
+        self.arml_manager.distance(self.head_manager, ddata, fcl.defaultDistanceCallback)
+        if ddata.result.min_distance < 0.02:
+            print(f"Left arm and head are too close, distance: {ddata.result.min_distance}")
+            return True
+        
+        ddata = fcl.DistanceData(request=fcl.DistanceRequest(enable_nearest_points=False), result=fcl.DistanceResult())
+        self.armr_manager.distance(self.head_manager, ddata, fcl.defaultDistanceCallback)
+        if ddata.result.min_distance < 0.02:
+            print(f"Right arm and head are too close, distance: {ddata.result.min_distance}")
+            return True
+        
+        for l_link in self.arml_links[1:]:
+            for b_link in self.body_links:
+                dreq = fcl.DistanceRequest(enable_nearest_points=False)
+                dres = fcl.DistanceResult()
+                ret = fcl.distance(l_link, b_link, dreq, dres)
+                if ret < 0.02:
+                    print(f"Left arm link and body link are too close, distance: {ret}")
+                    return True
+            for r_link in self.armr_links[1:]:
+                dreq = fcl.DistanceRequest(enable_nearest_points=False)
+                dres = fcl.DistanceResult()
+                ret = fcl.distance(l_link, r_link, dreq, dres)
+                if ret < 0.02:
+                    print(f"Left arm link and right arm link are too close, distance: {ret}")
+                    return True
+                
+        end_time = time.time()
+        print(f"Distance computation took {end_time - start_time:.6f} seconds.")
+        return False
+
+
+
+
+
+
+
+
+#------------------------------------Visulaize-----------------------------------------
+
+    def enable_visualize(self):
+        self.visualize = True
+        self.robot_mesh_list = []
+        for path in self.arml_full_path:
+            self.create_mesh(path)
+        for path in self.armr_full_path:
+            self.create_mesh(path)
+        for path in self.head_full_path:
+            self.create_mesh(path)
+        for path in self.torso_full_path:
+            self.create_mesh(path)
+        
+
+    def create_mesh(self, obj_path):
+        mesh = trimesh.load(obj_path, force='mesh')
+        self.robot_mesh_list.append(mesh)
+
+    def update_vis_transform(self, tf):
+        new_tf = tf[6:14] + tf[14:22] + tf[4:6] + tf[:4]
+        vis_mesh = deepcopy(self.robot_mesh_list)
+        # if len(vis_mesh) == 24:
+        #     new_tf = tf[6:14] + [tf[13]] + tf[14:22] + [tf[21]] + tf[4:6] + tf[:4]
+        for i, mesh in enumerate(vis_mesh):
+            mesh.apply_transform(new_tf[i])
+        scene = trimesh.Scene()
+        for mesh in vis_mesh:
+            scene.add_geometry(mesh)
+        scene.show()
+        embed()
+
+        # rotation = trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0])

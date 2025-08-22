@@ -86,8 +86,8 @@ def _get_Kinematics(cur_body, cur_arml, cur_armr, cur_head, pin_model, pin_data)
     left_transform_chain = transform_chain[5:12]  # left arm links
     right_transform_chain = transform_chain[14:21]  # right arm links
     if ROBOT_EE_TYPE is not None:
-        armlee_ID = pin_model.getFrameId("armlee")  
-        armree_ID = pin_model.getFrameId("armree")  
+        armlee_ID = pin_model.getFrameId("LEFT_EE")  
+        armree_ID = pin_model.getFrameId("RIGHT_EE")  
         lee_trans = pin_data.oMf[armlee_ID].homogeneous
         ree_trans = pin_data.oMf[armree_ID].homogeneous
         left_transform_chain.append(lee_trans)
@@ -249,9 +249,9 @@ if __name__ == "__main__":
     real2sim_dix = get_real2sim_idx(articulation=_articulation)
     print(f"real2sim_idx: {real2sim_dix}")
 
-    pin2real_idx = get_pin2real_idx(pin_model=pin_model)
+    pin2real_idx = get_pin2real_idx(robot_urdf_path)
     print(f"pin2real_idx: {pin2real_idx}")
-    real2pin_idx = get_real2pin_idx(pin_model=pin_model)
+    real2pin_idx = get_real2pin_idx(robot_urdf_path)
     print(f"real2pin_idx: {real2pin_idx}")
     # embed()
     test_siso_plan(_articulation, pin_model, pin_data)

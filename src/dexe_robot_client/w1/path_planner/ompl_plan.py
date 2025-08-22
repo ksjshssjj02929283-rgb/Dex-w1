@@ -73,8 +73,8 @@ class OMPLPlanSingle:
         left_transform_chain = transform_chain[5:12]  # left arm links
         right_transform_chain = transform_chain[14:21]  # right arm links
         if self.use_ee:
-            armlee_ID = self.pin_model.getFrameId("armlee")  
-            armree_ID = self.pin_model.getFrameId("armree")  
+            armlee_ID = self.pin_model.getFrameId("LEFT_EE")  
+            armree_ID = self.pin_model.getFrameId("RIGHT_EE")  
             lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
             ree_trans = self.pin_data.oMf[armree_ID].homogeneous
             left_transform_chain.append(lee_trans)

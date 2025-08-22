@@ -37,8 +37,8 @@ def test_single_plan():
     collision_path = os.path.join(model_folder, "W1V02_2_collision")
 
     fcl_checker = FCLChecker(collision_path, EndEffectorType.PGC_GRIPPER)
-    fcl_checker.create_robot_obj()
-    fcl_checker.create_robot_manager()
+    # fcl_checker.create_robot_obj()
+    # fcl_checker.create_robot_manager()
 
     fcl_checker.add_cube_obstacle(TABLE_CENTER, TABLE_SIZE)
 
