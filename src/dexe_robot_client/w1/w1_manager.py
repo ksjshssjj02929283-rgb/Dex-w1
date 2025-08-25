@@ -357,6 +357,24 @@ class W1Manager:
             res = False
         return res
 
+    def set_drag_mode(self, enable_drag: bool) -> bool:
+        """开关机器人拖动示教模式
+
+        Args:
+            enable_drag (bool): 是否开启拖动示教模式
+
+        Returns:
+            bool: 
+        """
+        if self._is_sim:
+            self.logger.error("Only support real mode.")
+            return False
+        res = self.robot_client.set_drag_mode(enable_drag)
+        if res == -1:
+            self.logger.error("Set drag mode failed! FIXME")
+            return False
+        return True
+
     def set_sim_mode(self, enable_sim: bool) -> bool:
         if self._is_sim == enable_sim:
             if self._is_sim:
