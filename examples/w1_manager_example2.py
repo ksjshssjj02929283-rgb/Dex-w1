@@ -18,8 +18,8 @@ if __name__ == "__main__":
         w1_manager.go_home(1.)
         
         w1_manager.move_arm_linear("left_arm", [50,0,0], along_base_frame=True)
-        w1_manager.rotate_arm_linear("left_arm", [5,0,0], along_base_frame=True)
+        w1_manager.rotate_arm_linear("left_arm", [10,0,0], along_base_frame=True)
         
         w1_manager.move_arm_linear("right_arm", [0,0,50], along_base_frame=False)
-        w1_manager.rotate_arm_linear("right_arm", [0,0,5], along_base_frame=False)
+        w1_manager.rotate_arm_linear("right_arm", [0,0,10], along_base_frame=False)
         # from IPython import embed; embed() # FIXME: embed退出后会报错！
