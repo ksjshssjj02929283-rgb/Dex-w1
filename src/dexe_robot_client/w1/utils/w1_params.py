@@ -194,7 +194,7 @@ class W1ArmKineParams:
             raise ValueError(f"W1Version {version} are not support.")
         
         self.arm_type = arm_type
-        self.is_left_arm = is_left
+        self.is_left = is_left
         self.d_bs = 0.1025
         self.d_se = 0.26
         self.d_ew = 0.264
@@ -238,10 +238,14 @@ class W1ArmKineParams:
         
         elif self.arm_type == W1ArmType.ANTHROPOMORPHIC:
             if is_left:
+                # self.T_origin_tcp = np.array([[0., 0., 1., 0.066],
+                #                               [0., 1., 0., 0.],
+                #                               [-1., 0., 0., 0.],
+                #                               [0., 0., 0., 1.]])
                 self.T_origin_tcp = np.array([[0., 0., 1., 0.066],
-                                              [0., 1., 0., 0.],
-                                              [-1., 0., 0., 0.],
-                                              [0., 0., 0., 1.]])
+                                              [0., -1., 0., 0.],
+                                              [1., 0., 0., 0.],
+                                              [0., 0., 0., 1.]])                
                 self.dh_params = [[0., -np.pi/2,  self.d_bs, 0.], 
                                   [0.,  np.pi/2,     0.,     0.], 
                                   [0., -np.pi/2,  self.d_se, -np.pi/2],

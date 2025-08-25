@@ -18,6 +18,7 @@ from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
 from .kinemtaics.torso_kinematics import TorsoKinematics
+from .kinemtaics.arm_kinematics import SRSKinematics
 from .path_planner.bezier_blend_path import interpolate_cartesian_path
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from .utils.w1_params import W1Params
@@ -38,7 +39,8 @@ class W1Manager:
                 is_sim: bool,
                 arm_type: W1ArmType, 
                 w1_version: W1Version = W1Version.V2,
-                end_effector_type: EndEffectorType = None):
+                end_effector_type: EndEffectorType = None, 
+                use_rlia: bool = True):
         self.logger = get_logger()
 
         self.TIME_STEP = 0.01 # 100Hz
@@ -75,7 +77,9 @@ class W1Manager:
             self._destroy_clients()
             raise RuntimeError("Ros2 node create failed ")
 
+        self._use_rlia = use_rlia
         self._init_kine_solver()
+
         self.set_sim_mode(is_sim)
         
         self._stop_move_event = threading.Event()
@@ -141,36 +145,54 @@ class W1Manager:
     def _init_kine_solver(self):
         self.torso_kine_solver = TorsoKinematics()
 
-        import rlia
-        from rlia.kit.drive_controllers import W1DriveController
-        rlia_w1_version = rlia.kit.drive_controllers.w1_drive_controller.W1Version.V2
-        if self._arm_type == W1ArmType.INDUSTRIAL:
-            rlia_arm_type = rlia.kit.drive_controllers.w1_drive_controller.W1ArmType.INDUSTRIAL
+        ik_nearst_weight = np.array([2., 2., 2., 1., 1., 1., 1.])
+        if self._use_rlia:
+            import rlia
+            from rlia.kit.drive_controllers import W1DriveController
+            rlia_w1_version = rlia.kit.drive_controllers.w1_drive_controller.W1Version.V2
+            if self._arm_type == W1ArmType.INDUSTRIAL:
+                rlia_arm_type = rlia.kit.drive_controllers.w1_drive_controller.W1ArmType.INDUSTRIAL
+            else:
+                rlia_arm_type = rlia.kit.drive_controllers.w1_drive_controller.W1ArmType.ANTHROPOMORPHIC
+
+            self.left_arm_kine = W1DriveController(is_left_arm = True, 
+                                                    type_version = rlia_w1_version, 
+                                                    arm_type = rlia_arm_type,
+                                                    is_yaik_solver=True)
+            self.left_arm_kine.set_joint_limits(upper_limits = self.w1_params.left_arm_ub,
+                                                    lower_limits = self.w1_params.left_arm_lb)
+            self.left_arm_kine.set_user_joint_limits(upper_limits = self.w1_params.left_arm_ub,
+                                                    lower_limits = self.w1_params.left_arm_lb)
+            self.left_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
+
+            self.right_arm_kine = W1DriveController(is_left_arm = False, 
+                                                    type_version = rlia_w1_version, 
+                                                    arm_type = rlia_arm_type,
+                                                    is_yaik_solver=True)
+            self.right_arm_kine.set_joint_limits(upper_limits = self.w1_params.right_arm_ub,
+                                                    lower_limits = self.w1_params.right_arm_lb)
+            self.right_arm_kine.set_user_joint_limits(upper_limits = self.w1_params.right_arm_ub,
+                                                    lower_limits = self.w1_params.right_arm_lb)
+            self.right_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
+
+            self.logger.info("Initialize rlia kinematic solver.")
+        
         else:
-            rlia_arm_type = rlia.kit.drive_controllers.w1_drive_controller.W1ArmType.ANTHROPOMORPHIC
+            self.left_arm_kine = SRSKinematics(self.w1_params._left_arm_kine_params)
+            self.left_arm_kine.set_joint_limits(lower_bound = self.w1_params.left_arm_lb,
+                                                upper_bound = self.w1_params.left_arm_ub)
+            self.left_arm_kine.set_user_joint_limits(lower_bound = self.w1_params.left_arm_lb,
+                                                     upper_bound = self.w1_params.left_arm_ub)
+            self.left_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
 
-        _ik_nearst_weight = [2., 2., 2., 1., 1., 1., 1.]
-        self.left_arm_controller = W1DriveController(is_left_arm = True, 
-                                                    type_version = rlia_w1_version, 
-                                                    arm_type = rlia_arm_type,
-                                                    is_yaik_solver=True)
-        self.left_arm_controller.set_joint_limits(upper_limits = self.w1_params.left_arm_ub,
-                                                   lower_limits = self.w1_params.left_arm_lb)
-        self.left_arm_controller.set_user_joint_limits(upper_limits = self.w1_params.left_arm_ub,
-                                                   lower_limits = self.w1_params.left_arm_lb)
-        self.left_arm_controller.set_ik_nearst_weight(_ik_nearst_weight)
+            self.right_arm_kine = SRSKinematics(self.w1_params._right_arm_kine_params)
+            self.right_arm_kine.set_joint_limits(lower_bound = self.w1_params.right_arm_lb,
+                                                upper_bound = self.w1_params.right_arm_ub)
+            self.right_arm_kine.set_user_joint_limits(lower_bound = self.w1_params.right_arm_lb,
+                                                     upper_bound = self.w1_params.right_arm_ub)
+            self.right_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
 
-        self.right_arm_controller = W1DriveController(is_left_arm = False, 
-                                                    type_version = rlia_w1_version, 
-                                                    arm_type = rlia_arm_type,
-                                                    is_yaik_solver=True)
-        self.right_arm_controller.set_joint_limits(upper_limits = self.w1_params.right_arm_ub,
-                                                   lower_limits = self.w1_params.right_arm_lb)
-        self.right_arm_controller.set_user_joint_limits(upper_limits = self.w1_params.right_arm_ub,
-                                                   lower_limits = self.w1_params.right_arm_lb)
-        self.right_arm_controller.set_ik_nearst_weight(_ik_nearst_weight)
-
-        self.logger.info("Initialize kinematic solver.")
+            self.logger.info("Initialize srs-python kinematic solver.")
 
     def _has_arm_ee_client(self, name: str) -> bool:
         if name in self.w1_params.arm_ee_names:
@@ -184,13 +206,13 @@ class W1Manager:
         self.logger.error(f"{self.w1_params.arm_ee_names} is supported, except {name}.")
         return False
 
-    def _get_arm_controller(self, name: str):
+    def _get_arm_kine(self, name: str):
         if not self._check_arm_name(name):
             return None
         if name == "left_arm":
-            return self.left_arm_controller
+            return self.left_arm_kine
         elif name == "right_arm":
-            return self.right_arm_controller
+            return self.right_arm_kine
 
     def _get_arm_ee_client(self, name: str):
         if not self._has_arm_ee_client(name):
@@ -267,7 +289,8 @@ class W1Manager:
     def _save_home_qpos(self, file_path = DATA_DIR / "config.json") -> bool:
         file_path_ = pathlib.Path(file_path)
         if not file_path_.exists() or file_path_.stat().st_size == 0:
-            file_path_.write_text("{}") # FIXME:
+            self.logger.error(f"{str(file_path)} invalid.")
+            return False
 
         with open(file_path, "r") as f:
             json_data = json.load(f)
@@ -492,15 +515,15 @@ class W1Manager:
         return True, cur_qpos[self.w1_params.index_infos[name]["index"]]
 
     def get_current_xpos(self, name: str) -> tuple[bool, np.ndarray]:
-        arm_controller = self._get_arm_controller(name)
-        if arm_controller is None:
+        arm_kine = self._get_arm_kine(name)
+        if arm_kine is None:
             return False, None
 
         res, cur_qpos = self.get_current_qpos(name)
         if not res:
             return False, None
         
-        res, cur_xpos = arm_controller.get_fk(qpos=cur_qpos)
+        res, cur_xpos = arm_kine.get_fk(qpos=cur_qpos)
         if not res:
             self.logger.error(f"{name} solve fk failed")
             return False, None
@@ -508,17 +531,17 @@ class W1Manager:
 
     def set_tcp(self, name: str, xpos:np.ndarray) -> bool:
         # TODO: set tcp in robot client too
-        arm_controller = self._get_arm_controller(name)
-        if arm_controller is None:
+        arm_kine = self._get_arm_kine(name)
+        if arm_kine is None:
             return False
-        arm_controller.set_tcp(xpos=xpos)
+        arm_kine.set_tcp(xpos=xpos)
         return True
 
     def get_tcp(self, name: str) -> tuple[bool, np.ndarray]:
-        arm_controller = self._get_arm_controller(name)
-        if arm_controller is None:
+        arm_kine = self._get_arm_kine(name)
+        if arm_kine is None:
             return False, None
-        return True, arm_controller.get_tcp()
+        return True, arm_kine.get_tcp()
 
     def go_home(self, speed_ratio: float = 1.0) -> bool:
         """从当前点MoveJ移动到home qpos
@@ -601,8 +624,8 @@ class W1Manager:
         Returns:
             tuple[bool, np.ndarray]
         """
-        arm_controller = self._get_arm_controller(name)
-        if arm_controller is None:
+        arm_kine = self._get_arm_kine(name)
+        if arm_kine is None:
             return False, None
 
         # cartesian interpolation
@@ -641,8 +664,12 @@ class W1Manager:
         qpos_list = []
         cur_qseed = qpos_seed
         for i, cur_xpos in enumerate(xpos_sample_array):
-            res_ik, cur_qpos = arm_controller.get_ik(xpos=cur_xpos, 
-                                                     qpos_seed=cur_qseed)
+            if self._use_rlia:
+                res_ik, cur_qpos = arm_kine.get_ik(xpos=cur_xpos, 
+                                                    qpos_seed=cur_qseed)
+            else:
+                res_ik, cur_qpos = arm_kine.get_nearst_ik(xpos=cur_xpos, 
+                                                    qpos_seed=cur_qseed)
             if not np.allclose(cur_qpos, cur_qseed, atol=np.deg2rad(90)):
                 self.logger.error(f"{name} qpos traj is not continues\n" + \
                                   f"cur_qpos: {np.rad2deg(cur_qpos)}\n" + \
@@ -935,7 +962,7 @@ class W1Manager:
         qvel_limits_array_ = np.vstack([self.w1_params.default_qvel[self.w1_params.index_infos[name]["index"]],
                                         qvel_limits_array])
         if is_cartesian:
-            res_fk, cur_xpos = self._get_arm_controller(name).get_fk(cur_qpos)
+            res_fk, cur_xpos = self._get_arm_kine(name).get_fk(cur_qpos)
             if not res_fk:
                 self.logger.error(f"{name} solve fk failed!")
                 return False, None
@@ -996,7 +1023,7 @@ class W1Manager:
         if not is_cartesian:
             pos_raw_array_ = np.vstack([cur_qpos, pos_raw_array])
         else:
-            res_fk, cur_xpos = self._get_arm_controller(name).get_fk(cur_qpos)
+            res_fk, cur_xpos = self._get_arm_kine(name).get_fk(cur_qpos)
             if not res_fk:
                 self.logger.error(f"{name} solve fk failed!")
                 return False, None, None
