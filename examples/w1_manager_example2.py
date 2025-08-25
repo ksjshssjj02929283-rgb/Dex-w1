@@ -10,15 +10,16 @@ from dexe_robot_client.w1 import W1Manager
 
 
 if __name__ == "__main__":
-    from IPython import embed
-
     w1_manager = W1Manager(is_sim=True,
-                        arm_type=W1ArmType.INDUSTRIAL, 
+                        arm_type=W1ArmType.ANTHROPOMORPHIC, 
                         w1_version=W1Version.V2, 
-                        end_effector_type=None)
-    w1_manager.go_home(1.)
-    
-    # w1_manager.move_arm_linear("right_arm", [0,10,0], along_base_frame=True)
-    # w1_manager.move_arm_linear("right_arm", [0,0,10], along_base_frame=False)
-    # w1_manager.rotate_arm_linear("right_arm", [5,0,0], along_base_frame=False)
-    # embed() # FIXME: embed退出后会报错！
+                        end_effector_type=EndEffectorType.BRAINCO_HAND)
+    if w1_manager.connect():
+        w1_manager.go_home(1.)
+        
+        w1_manager.move_arm_linear("left_arm", [50,0,0], along_base_frame=True)
+        w1_manager.rotate_arm_linear("left_arm", [10,0,0], along_base_frame=True)
+        
+        w1_manager.move_arm_linear("right_arm", [0,0,50], along_base_frame=False)
+        w1_manager.rotate_arm_linear("right_arm", [0,0,10], along_base_frame=False)
+        # from IPython import embed; embed() # FIXME: embed退出后会报错！

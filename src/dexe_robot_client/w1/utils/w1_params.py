@@ -16,6 +16,8 @@ class W1Params:
                  arm_type: W1ArmType, 
                  w1_version: W1Version = W1Version.V2, 
                  end_effector_type: EndEffectorType = None):
+        self.logger = get_logger()
+
         self._arm_type = arm_type
 
         self._w1_version = w1_version
@@ -25,7 +27,7 @@ class W1Params:
         self.arm_ee_dofs = None
         self._end_effector_type = end_effector_type
         if self._end_effector_type is None:
-            get_logger().info(f"No movable end effector.")
+            self.logger.info(f"No movable end effector.")
         elif self._end_effector_type == EndEffectorType.BRAINCO_HAND:
             self.arm_ee_dofs = 6
         elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
@@ -96,68 +98,86 @@ class W1Params:
         
         self.update_params()
 
-    def update_params(self, file_path = DATA_DIR / "config.json"):
+    def update_params(self, file_path = DATA_DIR / "config.json") -> bool:
         if not file_path.exists() or file_path.stat().st_size == 0:
-            file_path.write_text("{}")
-            get_logger().warning(f"{str(file_path)} does not exist, would be created automatically.")
-            return
+            self.logger.warning(f"{str(file_path)} does not exist, would be created automatically.")
+            template_json_data = self._parse_to_dict()
+            file_path.write_text(json.dumps(template_json_data, indent=4, ensure_ascii=False),
+                                encoding="utf-8")
+            return False
         
         with open(file_path, "rb") as f:
             json_data = json.load(f)
-            
-            home_qpos = json_data.get("home_qpos")
-            if home_qpos is not None:
-                if len(home_qpos) != self.full_body_dofs:
-                    get_logger().error(f"home_qpos dimension mismatch!")
-                else:
-                    self.home_qpos = np.array(home_qpos)
-                    get_logger().debug(f"Update home_qpos from json.")
-            
-            qpos_limits = json_data.get("qpos_limits")
-            if qpos_limits is not None:
-                if np.array(qpos_limits).shape != (self.full_body_dofs, 2):
-                    get_logger().error(f"qpos_limits dimension mismatch!")
-                else:
-                    self.qpos_lb = np.array(qpos_limits)[:,0]
-                    self.qpos_ub = np.array(qpos_limits)[:,1]
+            self._update_from_dict(json_data)            
 
-                    self.torso_lb = np.maximum(self.torso_lb, self.qpos_lb[self.torso_index])
-                    self.head_lb = np.maximum(self.head_lb, self.qpos_lb[self.head_index])
-                    self.left_arm_lb = np.maximum(self.left_arm_lb, self.qpos_lb[self.left_arm_index])
-                    self.right_arm_lb = np.maximum(self.right_arm_lb, self.qpos_lb[self.right_arm_index])
+    def _update_from_dict(self, data: dict) -> bool:
+        home_qpos = data.get("home_qpos")
+        if home_qpos is not None:
+            if len(home_qpos) != self.full_body_dofs:
+                self.logger.error(f"home_qpos dimension mismatch!")
+                return False
+            else:
+                self.home_qpos = np.array(home_qpos)
+                self.logger.debug(f"Update home_qpos from json.")
+        
+        qpos_limits = data.get("qpos_limits")
+        if qpos_limits is not None:
+            if np.array(qpos_limits).shape != (self.full_body_dofs, 2):
+                self.logger.error(f"qpos_limits dimension mismatch!")
+                return False
+            else:
+                self.qpos_lb = np.array(qpos_limits)[:,0]
+                self.qpos_ub = np.array(qpos_limits)[:,1]
 
-                    self.torso_ub = np.minimum(self.torso_ub, self.qpos_ub[self.torso_index])
-                    self.head_ub = np.minimum(self.head_ub, self.qpos_ub[self.head_index])
-                    self.left_arm_ub = np.minimum(self.left_arm_ub, self.qpos_ub[self.left_arm_index])
-                    self.right_arm_ub = np.minimum(self.right_arm_ub, self.qpos_ub[self.right_arm_index])
-                    get_logger().debug(f"Update qpos_limits from json.")
+                self.torso_lb = np.maximum(self.torso_lb, self.qpos_lb[self.torso_index])
+                self.head_lb = np.maximum(self.head_lb, self.qpos_lb[self.head_index])
+                self.left_arm_lb = np.maximum(self.left_arm_lb, self.qpos_lb[self.left_arm_index])
+                self.right_arm_lb = np.maximum(self.right_arm_lb, self.qpos_lb[self.right_arm_index])
 
-            max_qvel = json_data.get("max_qvel")
-            if max_qvel is not None:
-                if len(max_qvel) != self.full_body_dofs:
-                    get_logger().error(f"max_qvel dimension mismatch!")
-                else:
-                    self.max_qvel = np.clip(max_qvel, 0., 1.5)
-                    get_logger().debug(f"Update max_qvel from json.")
+                self.torso_ub = np.minimum(self.torso_ub, self.qpos_ub[self.torso_index])
+                self.head_ub = np.minimum(self.head_ub, self.qpos_ub[self.head_index])
+                self.left_arm_ub = np.minimum(self.left_arm_ub, self.qpos_ub[self.left_arm_index])
+                self.right_arm_ub = np.minimum(self.right_arm_ub, self.qpos_ub[self.right_arm_index])
+                self.logger.debug(f"Update qpos_limits from json.")
 
-            max_qacc = json_data.get("max_qacc")
-            if max_qacc is not None:
-                if len(max_qacc) != self.full_body_dofs:
-                    get_logger().error(f"max_qacc dimension mismatch!")
-                else:
-                    self.max_qacc = np.clip(max_qacc, 0., 15.)
-                    get_logger().debug(f"Update max_qacc from json.")
+        max_qvel = data.get("max_qvel")
+        if max_qvel is not None:
+            if len(max_qvel) != self.full_body_dofs:
+                self.logger.error(f"max_qvel dimension mismatch!")
+                return False
+            else:
+                self.max_qvel = np.clip(max_qvel, 0., 1.5)
+                self.logger.debug(f"Update max_qvel from json.")
 
-            default_qvel = json_data.get("default_qvel")
-            if default_qvel is not None:
-                if len(default_qvel) != self.full_body_dofs:
-                    get_logger().error(f"default_qvel dimension mismatch!")
-                else:
-                    self.default_qvel = np.clip(default_qvel, 
-                                                np.array([0.]*self.full_body_dofs), 
-                                                self.max_qvel)
-                    get_logger().debug(f"Update default_qvel from json.")
+        max_qacc = data.get("max_qacc")
+        if max_qacc is not None:
+            if len(max_qacc) != self.full_body_dofs:
+                self.logger.error(f"max_qacc dimension mismatch!")
+                return False
+            else:
+                self.max_qacc = np.clip(max_qacc, 0., 15.)
+                self.logger.debug(f"Update max_qacc from json.")
 
+        default_qvel = data.get("default_qvel")
+        if default_qvel is not None:
+            if len(default_qvel) != self.full_body_dofs:
+                self.logger.error(f"default_qvel dimension mismatch!")
+                return False
+            else:
+                self.default_qvel = np.clip(default_qvel, 
+                                            np.array([0.]*self.full_body_dofs), 
+                                            self.max_qvel)
+                self.logger.debug(f"Update default_qvel from json.")
+
+    def _parse_to_dict(self) -> dict:
+        data = {
+            "home_qpos": self.home_qpos.tolist(),
+            "qpos_limits": np.vstack((self.qpos_lb, self.qpos_ub)).T.tolist(),
+            "max_qvel": self.max_qvel.tolist(),
+            "max_qacc": self.max_qacc.tolist(),
+            "default_qvel": self.default_qvel.tolist()
+        }
+        return data
 
 
 # TODO:
@@ -174,7 +194,7 @@ class W1ArmKineParams:
             raise ValueError(f"W1Version {version} are not support.")
         
         self.arm_type = arm_type
-        self.is_left_arm = is_left
+        self.is_left = is_left
         self.d_bs = 0.1025
         self.d_se = 0.26
         self.d_ew = 0.264
@@ -218,10 +238,14 @@ class W1ArmKineParams:
         
         elif self.arm_type == W1ArmType.ANTHROPOMORPHIC:
             if is_left:
+                # self.T_origin_tcp = np.array([[0., 0., 1., 0.066],
+                #                               [0., 1., 0., 0.],
+                #                               [-1., 0., 0., 0.],
+                #                               [0., 0., 0., 1.]])
                 self.T_origin_tcp = np.array([[0., 0., 1., 0.066],
-                                              [0., 1., 0., 0.],
-                                              [-1., 0., 0., 0.],
-                                              [0., 0., 0., 1.]])
+                                              [0., -1., 0., 0.],
+                                              [1., 0., 0., 0.],
+                                              [0., 0., 0., 1.]])                
                 self.dh_params = [[0., -np.pi/2,  self.d_bs, 0.], 
                                   [0.,  np.pi/2,     0.,     0.], 
                                   [0., -np.pi/2,  self.d_se, -np.pi/2],
