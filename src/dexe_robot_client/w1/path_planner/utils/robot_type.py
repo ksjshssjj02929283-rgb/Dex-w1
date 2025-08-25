@@ -132,4 +132,9 @@ def get_ee_full_path(robot_type: RobotType, ee_type: EndEffectorType):
             raise ValueError(f"Unsupported robot type: {robot_type}. Please use W1V02_1 or W1V02_2.")
     else:
         raise ValueError(f"Unsupported end effector type: {ee_type}. Please use PGC_GRIPPER or BRAINCO_HAND.")
-    
+
+def get_env_json_path():
+    """
+    Returns the path to the environment JSON file.
+    """
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "model", "env.json") 

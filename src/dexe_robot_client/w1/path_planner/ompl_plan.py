@@ -476,14 +476,14 @@ class OMPLPlanDecoupled:
         self.arml_result_trajectory = None
         self.armr_result_trajectory = None
 
-        self.traj_max_vel = 0.3
+        self.left_traj_max_vel = 0.3
+        self.right_traj_max_vel = 0.3
 
-    def set_traj_max_vel(self, max_vel):
-        if max_vel <= 0:
-            raise ValueError(f"max_vel must be positive, got {max_vel}")
-        self.traj_max_vel = max_vel
-        # self.arml_planner.set_traj_max_vel(max_vel)
-        # self.armr_planner.set_traj_max_vel(max_vel)
+    def set_traj_max_vel(self, left_max_vel, right_max_vel):
+        if left_max_vel <= 0 or right_max_vel <= 0:
+            raise ValueError(f"max_vel must be positive, got {left_max_vel} and {right_max_vel}")
+        self.left_traj_max_vel = left_max_vel
+        self.right_traj_max_vel = right_max_vel
 
     def set_head_body(self, head_qpos, body_qpos):
         if head_qpos.shape[0] != 2:
@@ -540,8 +540,8 @@ class OMPLPlanDecoupled:
             return None, None, None
         
         start_time = time.time()
-        arml_traj, arml_vel, arml_acc, arml_duration = self.gen_trajectory(arml_path, max_v=self.traj_max_vel, is_left=True)
-        armr_traj, armr_vel, armr_acc, armr_duration = self.gen_trajectory(armr_path, max_v=self.traj_max_vel, is_left=False)
+        arml_traj, arml_vel, arml_acc, arml_duration = self.gen_trajectory(arml_path, max_v=self.left_traj_max_vel, is_left=True)
+        armr_traj, armr_vel, armr_acc, armr_duration = self.gen_trajectory(armr_path, max_v=self.right_traj_max_vel, is_left=False)
 
         coordinator = Coordination(arml_traj, armr_traj, self.fcl_checker, self.urdf_path, coordination_res=0.1, traj_res=0.01)
         coordinator.set_head_body(self.head_qpos, self.body_qpos)
