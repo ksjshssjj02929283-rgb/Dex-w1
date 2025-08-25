@@ -7,6 +7,7 @@ Refer to `dependencies/README.md`
 #### Clone
 ```bash
 git clone http://69.235.177.182:8081/dexembodied/dexe_robot_client.git
+cd dexe_robot_client
 git submodule update --init --recursive
 ```
 
