@@ -4,6 +4,7 @@ import csv
 import time
 from dexe_robot_client.w1.path_planner.fcl_checker import *
 from dexe_robot_client.w1.path_planner.ompl_plan import *
+from dexe_robot_client.w1.path_planner.planner_pinocchio import Planner_Pin
 import matplotlib.pyplot as plt
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
@@ -50,7 +51,7 @@ class ForwardMotionValidator(ob.MotionValidator):
 class GridRRT:
     def __init__(self, grid_map, left_traj, right_traj,
                  left_idx_chain, right_idx_chain,
-                 fcl_checker: FCLChecker, urdf_path, use_ee: bool = False):
+                 fcl_checker: FCLChecker, planner_pin: Planner_Pin, use_ee: bool = False):
         self.space = ob.RealVectorStateSpace(2)
         self.bounds = ob.RealVectorBounds(2)
         for i in range(2):
@@ -67,38 +68,39 @@ class GridRRT:
         self.right_idx_chain = right_idx_chain
 
         self.fcl_checker = fcl_checker
-        self.pin_model = pinocchio.buildModelFromUrdf(urdf_path)
-        self.pin_data = self.pin_model.createData()
+        # self.pin_model = pinocchio.buildModelFromUrdf(urdf_path)
+        # self.pin_data = self.pin_model.createData()
+        self.planner_pin = planner_pin
 
         self.flag_map = np.zeros((self.grid_map.shape[0], self.grid_map.shape[1]))
 
         self.use_ee = use_ee
 
-    def _get_Kinematics(self, body_qpos, arml_qpos, armr_qpos, head_qpos):
-        # NOTE: 
-        # q's order depends on urdf, currently is [body(4), left arm(7), right arm(7), head(2)]
-        # pinocchio will output 21 transformation matrices include universe as the first one
-        if body_qpos is None or head_qpos is None:
-            raise ValueError("body_qpos and head_qpos must be set before calling _get_Kinematics")
-        q = np.concatenate((body_qpos, arml_qpos, head_qpos, armr_qpos))
-        pinocchio.forwardKinematics(self.pin_model, self.pin_data, q)
-        pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
-        transform_chain = [oMi.homogeneous for oMi in self.pin_data.oMi]
+    # def _get_Kinematics(self, body_qpos, arml_qpos, armr_qpos, head_qpos):
+    #     # NOTE: 
+    #     # q's order depends on urdf, currently is [body(4), left arm(7), right arm(7), head(2)]
+    #     # pinocchio will output 21 transformation matrices include universe as the first one
+    #     if body_qpos is None or head_qpos is None:
+    #         raise ValueError("body_qpos and head_qpos must be set before calling _get_Kinematics")
+    #     q = np.concatenate((body_qpos, arml_qpos, head_qpos, armr_qpos))
+    #     pinocchio.forwardKinematics(self.pin_model, self.pin_data, q)
+    #     pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
+    #     transform_chain = [oMi.homogeneous for oMi in self.pin_data.oMi]
         
-        left_transform_chain = transform_chain[5:12]  # left arm links
-        right_transform_chain = transform_chain[14:21]  # right arm links
-        if self.use_ee:
-            armlee_ID = self.pin_model.getFrameId("LEFT_EE")  
-            armree_ID = self.pin_model.getFrameId("RIGHT_EE")  
-            lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
-            ree_trans = self.pin_data.oMf[armree_ID].homogeneous
-            left_transform_chain.append(lee_trans)
-            right_transform_chain.append(ree_trans)
+    #     left_transform_chain = transform_chain[5:12]  # left arm links
+    #     right_transform_chain = transform_chain[14:21]  # right arm links
+    #     if self.use_ee:
+    #         armlee_ID = self.pin_model.getFrameId("LEFT_EE")  
+    #         armree_ID = self.pin_model.getFrameId("RIGHT_EE")  
+    #         lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
+    #         ree_trans = self.pin_data.oMf[armree_ID].homogeneous
+    #         left_transform_chain.append(lee_trans)
+    #         right_transform_chain.append(ree_trans)
 
-        body_transform_chain = transform_chain[1:5]
-        head_transform_chain = transform_chain[12:14]
+    #     body_transform_chain = transform_chain[1:5]
+    #     head_transform_chain = transform_chain[12:14]
 
-        return body_transform_chain, left_transform_chain, right_transform_chain, head_transform_chain
+    #     return body_transform_chain, left_transform_chain, right_transform_chain, head_transform_chain
     
     def pos_to_idx(self, state):
         state = np.array([state[i] for i in range(2)], dtype=np.float64)
@@ -116,12 +118,16 @@ class GridRRT:
         armr_dim = self.right_traj.shape[1]
         temp_arml_qpos = np.zeros(arml_dim)
         temp_armr_qpos = np.zeros(armr_dim)
-        body, arml, armr, head = self._get_Kinematics(self.body_qpos, temp_arml_qpos, temp_armr_qpos, self.head_qpos)
-        self.fcl_checker.set_head_body_transform(head, body)
+        real_qpos = np.concatenate((self.body_qpos, self.head_qpos, temp_arml_qpos, temp_armr_qpos))
+        torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
+        # body, arml, armr, head = self._get_Kinematics(self.body_qpos, temp_arml_qpos, temp_armr_qpos, self.head_qpos)
+        self.fcl_checker.set_head_body_transform(head_trans, torso_trans)
 
     def _update_fcl_transform(self, arml_qpos, armr_qpos):
-        body, arml, armr, head = self._get_Kinematics(self.body_qpos, arml_qpos, armr_qpos, self.head_qpos)
-        transform = arml + armr
+        real_qpos = np.concatenate((self.body_qpos, self.head_qpos, arml_qpos, armr_qpos))
+        torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
+        # body, arml, armr, head = self._get_Kinematics(self.body_qpos, arml_qpos, armr_qpos, self.head_qpos)
+        transform = arml_trans + armr_trans
         self.fcl_checker.update_arm_transform(transform)
 
     def _is_state_valid(self, state):
@@ -204,7 +210,7 @@ class GridRRT:
             return None
 
 class Coordination:
-    def __init__(self, left_traj, right_traj, fcl_checker: FCLChecker, urdf_path, coordination_res=0.1, traj_res=0.01, use_ee: bool = False):
+    def __init__(self, left_traj, right_traj, fcl_checker: FCLChecker, planner_pin: Planner_Pin, coordination_res=0.1, traj_res=0.01, use_ee: bool = False):
         # coordination_res: resolution of coordination map, unit: s
         # traj_res: resolution of trajectory(dt between two waypoints), unit: s
         self.left_traj = left_traj
@@ -214,11 +220,11 @@ class Coordination:
             raise ValueError(f"coordination_res ({coordination_res}) must be greater than traj_res ({traj_res})")
         self.coordination_res = coordination_res
         self.traj_res = traj_res
-        self.urdf_path = urdf_path
+        self.planner_pin = planner_pin
         self.use_ee = use_ee
 
-        self.pin_model = pinocchio.buildModelFromUrdf(urdf_path)
-        self.pin_data = self.pin_model.createData()
+        # self.pin_model = pinocchio.buildModelFromUrdf(urdf_path)
+        # self.pin_data = self.pin_model.createData()
 
         self.head_qpos = None
         self.body_qpos = None
@@ -242,30 +248,30 @@ class Coordination:
         print(f"Get original {self.left_traj.shape[0]} waypoints for left arm and {self.right_traj.shape[0]} waypoints for right arm")
         print(f"Construct coordination space with {self.len_vert} * {self.len_hori}")
 
-    def _get_Kinematics(self, body_qpos, arml_qpos, armr_qpos, head_qpos):
-        # NOTE: 
-        # q's order depends on urdf, currently is [body(4), left arm(7), right arm(7), head(2)]
-        # pinocchio will output 21 transformation matrices include universe as the first one
-        if body_qpos is None or head_qpos is None:
-            raise ValueError("body_qpos and head_qpos must be set before calling _get_Kinematics")
-        q = np.concatenate((body_qpos, arml_qpos, head_qpos, armr_qpos))
-        pinocchio.forwardKinematics(self.pin_model, self.pin_data, q)
-        pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
-        transform_chain = [oMi.homogeneous for oMi in self.pin_data.oMi]
-        left_transform_chain = transform_chain[5:12]  # left arm links
-        right_transform_chain = transform_chain[14:21]  # right arm links
-        if self.use_ee:
-            armlee_ID = self.pin_model.getFrameId("LEFT_EE")  
-            armree_ID = self.pin_model.getFrameId("RIGHT_EE")  
-            lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
-            ree_trans = self.pin_data.oMf[armree_ID].homogeneous
-            left_transform_chain.append(lee_trans)
-            right_transform_chain.append(ree_trans)
+    # def _get_Kinematics(self, body_qpos, arml_qpos, armr_qpos, head_qpos):
+    #     # NOTE: 
+    #     # q's order depends on urdf, currently is [body(4), left arm(7), right arm(7), head(2)]
+    #     # pinocchio will output 21 transformation matrices include universe as the first one
+    #     if body_qpos is None or head_qpos is None:
+    #         raise ValueError("body_qpos and head_qpos must be set before calling _get_Kinematics")
+    #     q = np.concatenate((body_qpos, arml_qpos, head_qpos, armr_qpos))
+    #     pinocchio.forwardKinematics(self.pin_model, self.pin_data, q)
+    #     pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
+    #     transform_chain = [oMi.homogeneous for oMi in self.pin_data.oMi]
+    #     left_transform_chain = transform_chain[5:12]  # left arm links
+    #     right_transform_chain = transform_chain[14:21]  # right arm links
+    #     if self.use_ee:
+    #         armlee_ID = self.pin_model.getFrameId("LEFT_EE")  
+    #         armree_ID = self.pin_model.getFrameId("RIGHT_EE")  
+    #         lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
+    #         ree_trans = self.pin_data.oMf[armree_ID].homogeneous
+    #         left_transform_chain.append(lee_trans)
+    #         right_transform_chain.append(ree_trans)
 
-        body_transform_chain = transform_chain[1:5]
-        head_transform_chain = transform_chain[12:14]
+    #     body_transform_chain = transform_chain[1:5]
+    #     head_transform_chain = transform_chain[12:14]
 
-        return body_transform_chain, left_transform_chain, right_transform_chain, head_transform_chain
+    #     return body_transform_chain, left_transform_chain, right_transform_chain, head_transform_chain
     
     def set_head_body(self, head_qpos, body_qpos):
         if head_qpos.shape[0] != 2:
@@ -278,12 +284,16 @@ class Coordination:
         armr_dim = self.right_traj.shape[1]
         temp_arml_qpos = np.zeros(arml_dim)
         temp_armr_qpos = np.zeros(armr_dim)
-        body, arml, armr, head = self._get_Kinematics(self.body_qpos, temp_arml_qpos, temp_armr_qpos, self.head_qpos)
-        self.fcl_checker.set_head_body_transform(head, body)
+        real_qpos = np.concatenate((self.body_qpos, self.head_qpos, temp_arml_qpos, temp_armr_qpos))
+        torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
+        # body, arml, armr, head = self._get_Kinematics(self.body_qpos, temp_arml_qpos, temp_armr_qpos, self.head_qpos)
+        self.fcl_checker.set_head_body_transform(head_trans, torso_trans)
 
     def _update_fcl_transform(self, arml_qpos, armr_qpos):
-        body, arml, armr, head = self._get_Kinematics(self.body_qpos, arml_qpos, armr_qpos, self.head_qpos)
-        transform = arml + armr
+        real_qpos = np.concatenate((self.body_qpos, self.head_qpos, arml_qpos, armr_qpos))
+        torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
+        # body, arml, armr, head = self._get_Kinematics(self.body_qpos, arml_qpos, armr_qpos, self.head_qpos)
+        transform = arml_trans + armr_trans
         self.fcl_checker.update_arm_transform(transform)
 
     def _align_traj(self, left_traj, right_traj):
@@ -458,7 +468,7 @@ class Coordination:
         This method use RRT Connect method based on OMPL to find a path in the coordination space.(Hard to do obstacle expansion)
         During the sampling process, it will check the sample grid is occupied or not, which will save the planning time.
         """
-        ompl_planner = GridRRT(self.grid_map, self.left_traj, self.right_traj, self.left_idx_chain, self.right_idx_chain, self.fcl_checker, self.urdf_path, self.use_ee)
+        ompl_planner = GridRRT(self.grid_map, self.left_traj, self.right_traj, self.left_idx_chain, self.right_idx_chain, self.fcl_checker, self.planner_pin, self.use_ee)
         ompl_planner.set_head_body(self.head_qpos, self.body_qpos)
         path, planning_time, original_path = ompl_planner.plan(planning_time=1.0)
         new_grid_map = ompl_planner.get_grid_map()
@@ -473,8 +483,8 @@ class Coordination:
             py.append(path.getState(i)[0])
 
         # Plot the grid map and path in coordination space
-        self.plot_grid_map_RRT(new_grid_map, 0, 0, px, py, ori_px, ori_py)
-        self.plot_flag_map_RRT(flag_map, 0, 0, px, py, ori_px, ori_py)
+        # self.plot_grid_map_RRT(new_grid_map, 0, 0, px, py, ori_px, ori_py)
+        # self.plot_flag_map_RRT(flag_map, 0, 0, px, py, ori_px, ori_py)
         # plt.show()
 
         modified_left, modified_right = self._tune_velocity(px, py)

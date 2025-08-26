@@ -37,6 +37,8 @@ BRAINCO_ANTHROPOMORPHIC_LINK_NAMES = ["convex_left_anth.obj", "convex_right_anth
 # BRAINCO_OPEN_INDUSTRIAL_LINK_NAMES = ["brainco_left_open_industrial.obj", "brainco_right_open_industrial.obj"]
 BRAINCO_INDUSTRIAL_LINK_NAMES = ["convex_left_industrial.obj", "convex_right_industrial.obj"]
 
+END_EFFECTOR_JOINT_NAMES = ["LEFT_EE", "RIGHT_EE"]
+
 
 class RobotType(Enum):
     W1V02_1 = auto()
@@ -138,3 +140,10 @@ def get_env_json_path():
     Returns the path to the environment JSON file.
     """
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "model", "coffee_env.json") 
+
+
+def get_ee_joint_names():
+    """
+    Get the names of the end effector joints which will be used in Pinocchio Forward Kinematics
+    """
+    return END_EFFECTOR_JOINT_NAMES[0], END_EFFECTOR_JOINT_NAMES[1]

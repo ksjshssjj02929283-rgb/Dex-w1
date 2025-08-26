@@ -8,6 +8,7 @@ from dexe_robot_client.w1.path_planner.fcl_checker import FCLChecker
 from dexe_robot_client.w1.path_planner.ompl_plan import OMPLPlanSingle, OMPLPlanCentralized, OMPLPlanDecoupled
 from dexe_robot_client.w1.path_planner.utils.robot_type import RobotType, RobotURDF, RobotCollision, get_robot_urdf, get_robot_mesh_path
 from dexe_robot_client.end_effector_client import EndEffectorType 
+from dexe_robot_client.w1.path_planner.planner_pinocchio import Planner_Pin
 
 HEAD_DIM = 2
 TORSO_DIM = 4
@@ -86,6 +87,7 @@ class SinglePlanner:
     def __init__(self):
 
         self._init_fcl_checker(self.robot_type, self.ee_type)
+        self._init_planner_pinocchio(self.robot_type, self.ee_type)
         self.arml_start, self.armr_start, self.arml_goal, self.armr_goal = None, None, None, None
         self.armlee_wait_time, self.armree_wait_time = 0, 0
         self.armlee_exec_time, self.armree_exec_time = 0, 0
@@ -102,6 +104,9 @@ class SinglePlanner:
         # self.fcl_checker.create_robot_manager()
         if self.env_json_path is not None:
             self.fcl_checker.load_env_json(self.env_json_path)
+
+    def _init_planner_pinocchio(self, robot_type: RobotType, ee_type: EndEffectorType):
+        self.planner_pin = Planner_Pin(robot_type, ee_type)
 
     def update_fcl_env(self, env_json_path: str):
         self.fcl_checker.load_env_json(env_json_path)
