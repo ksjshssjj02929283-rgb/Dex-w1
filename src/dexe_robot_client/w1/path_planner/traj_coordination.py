@@ -365,7 +365,7 @@ class Coordination:
                             right_idx_chain[k] += 1
         aligned_left, aligned_right = self._align_traj(left_traj, right_traj)
         print(f"The coordinated trajectories have {aligned_left.shape[0]} waypoints for left arm and {aligned_right.shape[0]} waypoints for right arm")
-        plt.show()
+        # plt.show()
         return aligned_left, aligned_right
 
     def _tune_velocity(self, px, py):
@@ -475,7 +475,7 @@ class Coordination:
         # Plot the grid map and path in coordination space
         self.plot_grid_map_RRT(new_grid_map, 0, 0, px, py, ori_px, ori_py)
         self.plot_flag_map_RRT(flag_map, 0, 0, px, py, ori_px, ori_py)
-        plt.show()
+        # plt.show()
 
         modified_left, modified_right = self._tune_velocity(px, py)
         aligned_left, aligned_right = self._align_traj(modified_left, modified_right)
