@@ -9,6 +9,7 @@ from copy import deepcopy
 from dexe_robot_client.end_effector_client import EndEffectorType 
 from dexe_robot_client.w1.path_planner.utils.robot_type import *
 from IPython import embed
+from scipy.spatial.transform import Rotation as R
 
 
 class FCLChecker:
@@ -132,24 +133,28 @@ class FCLChecker:
         self.head_manager.update()
         self.body_manager.update()
 
-    def add_cube_obstacle(self, center, size):
+    def add_cube_obstacle(self, center, size, quaternion = np.array([1, 0, 0, 0])):
         box = fcl.Box(size[0], size[1], size[2])
-        transform = fcl.Transform(np.eye(3), center)
+        q_scipy = np.array([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
+        rot_mat = R.from_quat(q_scipy).as_matrix()
+        transform = fcl.Transform(rot_mat, center)
         fcl_obj = fcl.CollisionObject(box, transform)
 
         self.obstacles.append(fcl_obj)
         self.obstacle_manager.registerObject(fcl_obj)
         self.obstacle_manager.setup()
-    def add_sphere_obstacle(self, center, radius):
+    def add_sphere_obstacle(self, center, radius, quaternion = np.array([1, 0, 0, 0])):
         sphere = fcl.Sphere(radius)
-        transform = fcl.Transform(np.eye(3), center)
+        q_scipy = np.array([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
+        rot_mat = R.from_quat(q_scipy).as_matrix()
+        transform = fcl.Transform(rot_mat, center)
         fcl_obj = fcl.CollisionObject(sphere, transform)
 
         self.obstacles.append(fcl_obj)
         self.obstacle_manager.registerObject(fcl_obj)
         self.obstacle_manager.setup()
 
-    def add_mesh_obstacle(self, mesh_path, center):
+    def add_mesh_obstacle(self, mesh_path, center, quaternion = np.array([1, 0, 0, 0])):
         mesh = trimesh.load(mesh_path, force='mesh')
         vertices = np.asarray(mesh.vertices, dtype=np.float64)
         triangles = np.asarray(mesh.faces, dtype=np.int32)
@@ -159,9 +164,10 @@ class FCLChecker:
         bvh.addSubModel(vertices, triangles)
         bvh.endModel()
 
-        rotation = np.eye(3, dtype=np.float64)
+        q_scipy = np.array([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
+        rot_mat = R.from_quat(q_scipy).as_matrix()
         translation = center.reshape(3, 1).astype(np.float64)
-        fcl_transform = fcl.Transform(rotation, translation)
+        fcl_transform = fcl.Transform(rot_mat, translation)
         fcl_obj = fcl.CollisionObject(bvh, fcl_transform)
 
         self.obstacles.append(fcl_obj)
@@ -222,19 +228,22 @@ class FCLChecker:
             if obj["shape"]["shape_type"] == "box":
                 center = np.array(obj["pose"])[:3]
                 size = np.array(obj["shape"]["raw_data"])
-                self.add_cube_obstacle(center, size)
+                quaternion = np.array(obj["pose"])[3:]
+                self.add_cube_obstacle(center, size, quaternion)
                 print(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with size: {size} and name: {obj['name']}")
             if obj["shape"]["shape_type"] == "sphere":
                 center = np.array(obj["pose"])[:3]
                 radius = obj["shape"]["raw_data"][0]
-                self.add_sphere_obstacle(center, radius)
+                quaternion = np.array(obj["pose"])[3:]
+                self.add_sphere_obstacle(center, radius, quaternion)
                 print(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with radius: {radius} and name: {obj['name']}")
             if obj["shape"]["shape_type"] == "mesh":
                 obj_mesh_path = obj["shape"]["raw_data"]
                 if not os.path.exists(obj_mesh_path):
                     raise ValueError(f"Obstacle mesh path {obj_mesh_path} does not exist.")
                 center = np.array(obj["pose"])[:3]
-                self.add_mesh_obstacle(obj_mesh_path, center)
+                quaternion = np.array(obj["pose"])[3:]
+                self.add_mesh_obstacle(obj_mesh_path, center, quaternion)
                 print(f"Successfully add a {obj['shape']['shape_type']} obstacle with mesh path: {obj_mesh_path} at center: {center} and name: {obj['name']}")
         
         # Load environment grasp objects
@@ -242,26 +251,34 @@ class FCLChecker:
         for grasp_obj in grasp_cfg:
             if grasp_obj["shape"]["shape_type"] == "box":
                 center = np.array(grasp_obj["pose"])[:3]
+                quaternion = np.array(grasp_obj["pose"])[3:]
                 size = np.array(grasp_obj["shape"]["raw_data"])
                 name = grasp_obj["name_key"]
-                self.add_grasp_object(obj_type="box", center=center, size=size, name=name)
+                self.add_grasp_object(obj_type="box", center=center, quaternion=quaternion, size=size, name=name)
                 print(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
             if grasp_obj["shape"]["shape_type"] == "sphere":
                 center = np.array(grasp_obj["pose"])[:3]
+                quaternion = np.array(grasp_obj["pose"])[3:]
                 radius = grasp_obj["shape"]["raw_data"][0]
                 name = grasp_obj["name_key"]
-                self.add_grasp_object(obj_type="sphere", center=center, size=np.array([radius]), name=name)
+                self.add_grasp_object(obj_type="sphere", center=center, quaternion=quaternion, size=np.array([radius]), name=name)
                 print(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
             if grasp_obj["shape"]["shape_type"] == "mesh":
                 grasp_obj_mesh_path = grasp_obj["shape"]["raw_data"]
                 if not os.path.exists(grasp_obj_mesh_path):
                     raise ValueError(f"Grasp object mesh path {grasp_obj_mesh_path} does not exist.")
                 center = np.array(grasp_obj["pose"])[:3]
+                quaternion = np.array(grasp_obj["pose"])[3:]
                 name = grasp_obj["name_key"]
-                self.add_grasp_object(obj_type="mesh", objMesh_path=grasp_obj_mesh_path, center=center, name=name)
+                self.add_grasp_object(obj_type="mesh", objMesh_path=grasp_obj_mesh_path, center=center, quaternion=quaternion, name=name)
                 print(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object with mesh path: {grasp_obj_mesh_path}")
 
-    def add_grasp_object(self, obj_type: str = None, objMesh_path: str =None, center: np.ndarray = None, size: np.ndarray = None, name: str = None):
+    def add_grasp_object(self, obj_type: str = None, 
+                         objMesh_path: str =None, 
+                         center: np.ndarray = None,
+                         quaternion: np.ndarray = np.array([1, 0, 0, 0]), 
+                         size: np.ndarray = None, 
+                         name: str = None):
         """
         obj_type: "box", "sphere", "mesh"
         objMesh_path: Path to the mesh file if obj_type is "mesh"
@@ -279,21 +296,26 @@ class FCLChecker:
             bvh.beginModel(len(vertices), len(triangles))
             bvh.addSubModel(vertices, triangles)
             bvh.endModel()
-            rotation = np.eye(3, dtype=np.float64)
+            q_scipy = np.array([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
+            rot_mat = R.from_quat(q_scipy).as_matrix()
             translation = center.reshape(3, 1).astype(np.float64)
-            fcl_transform = fcl.Transform(rotation, translation)
+            fcl_transform = fcl.Transform(rot_mat, translation)
             fcl_obj = fcl.CollisionObject(bvh, fcl_transform)
         elif obj_type == "box":
             if center is None or size is None or len(size) != 3:
                 raise ValueError("Try to add a box object, but center or size is None or size is not a 3-element array.")
             box = fcl.Box(size[0], size[1], size[2])
-            transform = fcl.Transform(np.eye(3), center)
+            q_scipy = np.array([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
+            rot_mat = R.from_quat(q_scipy).as_matrix()
+            transform = fcl.Transform(rot_mat, center)
             fcl_obj = fcl.CollisionObject(box, transform)
         elif obj_type == "sphere":
             if center is None or size is None or len(size) != 1:
                 raise ValueError("Try to add a sphere object, but center or size is None or size is not a 1-element array(radius)")
             sphere = fcl.Sphere(size[0])
-            transform = fcl.Transform(np.eye(3), center)
+            q_scipy = np.array([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
+            rot_mat = R.from_quat(q_scipy).as_matrix()
+            transform = fcl.Transform(rot_mat, center)
             fcl_obj = fcl.CollisionObject(sphere, transform)
         
         if name in self.grasp_objects_dict:
@@ -459,44 +481,44 @@ class FCLChecker:
         # Check left arm vs obstacles
         self.arml_manager.collide(self.obstacle_manager, cdata, self._is_collide)
         if cdata.done: 
-            # print("Left arm collided with obstacles.")
+            print("Left arm collided with obstacles.")
             return True
         # Check right arm vs obstacles
         self.armr_manager.collide(self.obstacle_manager, cdata, self._is_collide)
         if cdata.done:
-            # print("Right arm collided with obstacles.")
+            print("Right arm collided with obstacles.")
             return True
         
         self_arm_collide = self._check_collision_single_arm(cdata)
         if self_arm_collide: 
-            # print("self arm collided with itself.")
+            print("self arm collided with itself.")
             return True
 
         # Check left arm vs right arm
         self.arml_manager.collide(self.armr_manager, cdata, self._is_collide)
         if cdata.done:
-            # print("Left arm collided with right arm.")
+            print("Left arm collided with right arm.")
             return True
         # Check left arm vs head
         self.arml_manager.collide(self.head_manager, cdata, self._is_collide)
         if cdata.done:
-            # print("Left arm collided with head.")
+            print("Left arm collided with head.")
             return True
         # Check right arm vs head
         self.armr_manager.collide(self.head_manager, cdata, self._is_collide)
         if cdata.done: 
-            # print("Right arm collided with head.")
+            print("Right arm collided with head.")
             return True
         
         for l_link in self.arml_links[1:]:
             for b_link in self.body_links:
                 if self._is_collide(l_link, b_link, cdata):
-                    # print("Left arm collided with body.")
+                    print("Left arm collided with body.")
                     return True
         for r_link in self.armr_links[1:]:
             for b_link in self.body_links:
                 if self._is_collide(r_link, b_link, cdata):
-                    # print("Right arm collided with body.")
+                    print("Right arm collided with body.")
                     return True
                 
         # Check collision between arms and grasp objects manager
