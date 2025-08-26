@@ -141,11 +141,13 @@ if __name__ == "__main__":
     shelf_handle = _env.create_cube()
     shelf_xpos = np.array([[0.707,-0.707,0,0.55],
                            [0.707,0.707,0,0.4],
-                           [0,0,1,1.15],
+                           [0,0,1,1.0],
                            [0,0,0,1]])
     shelf_handle.set_world_pose(shelf_xpos)
-    shelf_handle.set_body_scale(0.2, 0.1, 0.8)
+    shelf_handle.set_body_scale(0.2, 0.1, 0.5)
     shelf_handle.set_material(material_handle.get_inst())
+
+    
 
     coffee_machine_handle = _env.create_cube()
     coffee_machine_xpos = np.array([[0.707,0.707,0,0.55],

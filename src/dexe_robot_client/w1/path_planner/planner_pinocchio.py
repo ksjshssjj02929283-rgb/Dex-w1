@@ -12,7 +12,7 @@ class Planner_Pin:
         self.pin2real_idx = get_pin2real_idx(robot_urdf)
         self.real2pin_idx = get_real2pin_idx(robot_urdf)
 
-        self.pin_torso_idx, self.pin_head_idx, self.pin_arml_idx, self.pin_armr_idx = get_pin_idx()
+        self.pin_torso_idx, self.pin_head_idx, self.pin_arml_idx, self.pin_armr_idx = get_pin_idx(robot_urdf)
 
         if ee_type is not None and isinstance(ee_type, EndEffectorType):
             self.use_ee = True

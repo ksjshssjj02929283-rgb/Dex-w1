@@ -186,7 +186,7 @@ class SinglePlanner:
         if is_arml_plan and not is_armr_plan:
             print("----------------using Left arm Single Planner----------------")
             ompl_planner = OMPLPlanSingle(self.arml_dim, self.arml_bounds, self.arml_start, self.arml_goal,
-                                          self.fcl_checker, urdf_path=self.urdf_path,
+                                          self.fcl_checker, planner_pin=self.planner_pin,
                                           which_arm='left', other_arm_qpos=self.armr_start,
                                           use_ee=self.use_ee)
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
@@ -200,7 +200,7 @@ class SinglePlanner:
         if is_armr_plan and not is_arml_plan:
             print("----------------using Right arm Single Planner----------------")
             ompl_planner = OMPLPlanSingle(self.armr_dim, self.armr_bounds, self.armr_start, self.armr_goal,
-                                          self.fcl_checker, urdf_path=self.urdf_path,
+                                          self.fcl_checker, planner_pin=self.planner_pin,
                                           which_arm='right', other_arm_qpos=self.arml_start,
                                           use_ee=self.use_ee)
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
@@ -218,7 +218,7 @@ class SinglePlanner:
                                              self.arml_start, self.armr_start,
                                              self.arml_goal, self.armr_goal,
                                              self.fcl_checker,
-                                             urdf_path=self.urdf_path,
+                                             planner_pin=self.planner_pin,
                                              use_ee=self.use_ee)
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
             ompl_planner.set_traj_max_vel(self.left_traj_max_vel, self.right_traj_max_vel)

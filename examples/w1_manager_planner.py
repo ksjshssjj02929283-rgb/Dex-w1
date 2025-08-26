@@ -11,11 +11,11 @@ def test_single_task():
     torso_waypoint = [[0.7853981633974483, -1.5707963267948966, 0.7853981633974483, 0.03490658503988659]]
     head_waypoint = [[0.4188790204786391, -0.6108652381980153]]
     left_arm_waypoint = [[-176.73, 190.87, 72.72, -174.17, 16.13, -98.1]]
-    # left_arm_ee_state = [[0., [0., 50., 50., 50., 50., 50.], 0.5]]
-    left_arm_ee_state = []
-    right_arm_waypoint = [[328.316, 104.862, 256.042, -161.411, 60.056, -50.58]]
-    # right_arm_ee_state = [[0., [100., 100., 0., 0., 100., 100.], 0.5]]
-    right_arm_ee_state = []
+    left_arm_ee_state = [[0., [0., 50., 50., 50., 50., 50.], 0.5]]
+    # left_arm_ee_state = []
+    right_arm_waypoint = [[217.868, 215.12, 216.22, -169.87, 45.22, -64.85]]
+    right_arm_ee_state = [[0., [100., 100., 0., 0., 100., 100.], 0.5]]
+    # right_arm_ee_state = []
 
     w1_manager.move_dual_arm_single_task(task_dict={
                                                     "torso": torso_waypoint,
@@ -84,8 +84,8 @@ if __name__ == "__main__":
 
     print("load w1 manager done")
     w1_manager.set_home_qpos(np.array([0, 0, 0, 0, 0.0, 0.0, 
-                                      -0.7516, -0.3681,  1.5708, -2.1179,  0.915 , -0.1155,  0.6287, 
-                                      -0.4864, 0.8013,  0.116 ,  1.8058, -1.3278,  0.5119, -0.6207]),
+                                      -np.pi / 2, -np.pi / 4, np.pi / 2, -np.pi / 4, -np.pi / 2, np.pi / 5, 0.0, 
+                                      np.pi / 2, np.pi / 4, -np.pi / 2, np.pi / 4, np.pi / 2, -np.pi / 5, 0.0]),
                             save_to_file=False)
     
     w1_manager.set_ee_qpos("left_arm_ee", np.array([0.]*6))

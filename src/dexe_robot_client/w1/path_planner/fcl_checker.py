@@ -514,44 +514,44 @@ class FCLChecker:
         # Check left arm vs obstacles
         self.arml_manager.collide(self.obstacle_manager, cdata, self._is_collide)
         if cdata.done: 
-            print("Left arm collided with obstacles.")
+            # print("Left arm collided with obstacles.")
             return True
         # Check right arm vs obstacles
         self.armr_manager.collide(self.obstacle_manager, cdata, self._is_collide)
         if cdata.done:
-            print("Right arm collided with obstacles.")
+            # print("Right arm collided with obstacles.")
             return True
         
         self_arm_collide = self._check_collision_single_arm(cdata)
         if self_arm_collide: 
-            print("self arm collided with itself.")
+            # print("self arm collided with itself.")
             return True
 
         # Check left arm vs right arm
         self.arml_manager.collide(self.armr_manager, cdata, self._is_collide)
         if cdata.done:
-            print("Left arm collided with right arm.")
+            # print("Left arm collided with right arm.")
             return True
         # Check left arm vs head
         self.arml_manager.collide(self.head_manager, cdata, self._is_collide)
         if cdata.done:
-            print("Left arm collided with head.")
+            # print("Left arm collided with head.")
             return True
         # Check right arm vs head
         self.armr_manager.collide(self.head_manager, cdata, self._is_collide)
         if cdata.done: 
-            print("Right arm collided with head.")
+            # print("Right arm collided with head.")
             return True
         
         for l_link in self.arml_links[1:]:
             for b_link in self.body_links:
                 if self._is_collide(l_link, b_link, cdata):
-                    print("Left arm collided with body.")
+                    # print("Left arm collided with body.")
                     return True
         for r_link in self.armr_links[1:]:
             for b_link in self.body_links:
                 if self._is_collide(r_link, b_link, cdata):
-                    print("Right arm collided with body.")
+                    # print("Right arm collided with body.")
                     return True
                 
         # Check collision between arms and grasp objects manager
