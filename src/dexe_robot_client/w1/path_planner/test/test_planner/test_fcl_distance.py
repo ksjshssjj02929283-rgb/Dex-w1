@@ -16,7 +16,7 @@ ROBOT_TYPE = RobotType.W1V02_1
 ROBOT_EE_TYPE = None
 TABLE_CENTER = np.array([0.8, 0.0, 1.1])
 TABLE_SIZE = np.array([1.0, 1.0, 0.03])
-ENV_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "model", "env.json")
+ENV_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "model", "coffee_env.json")
 
 def _get_Kinematics(real_q, pin_model, pin_data):
     if real_q is None:
@@ -43,15 +43,17 @@ def _get_Kinematics(real_q, pin_model, pin_data):
 
 def test_fcl_distance(articulation, pin_model, pin_data):
     fcl_checker = FCLChecker(ROBOT_TYPE, ROBOT_EE_TYPE)
-    fcl_checker.load_env_json(ENV_JSON_PATH)
+    
 
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # The following is used to test brainco hand visualize
-    # fcl_checker.enable_visualize()
-    # real_q = np.zeros(20)
-    # body_tf, head_tf, arml_tf, armr_tf = _get_Kinematics(real_q, pin_model, pin_data)
-    # fcl_checker.update_vis_transform(body_tf+head_tf+arml_tf+armr_tf)
+    fcl_checker.enable_visualize()
+    fcl_checker.load_env_json(ENV_JSON_PATH)
+    cur_sim_q = articulation.get_current_qpos()
+    real_q = cur_sim_q[sim2real_idx]
+    body_tf, head_tf, arml_tf, armr_tf = _get_Kinematics(real_q, pin_model, pin_data)
+    fcl_checker.update_vis_transform(body_tf+head_tf+arml_tf+armr_tf)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -74,11 +76,6 @@ def test_fcl_distance(articulation, pin_model, pin_data):
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    real_q = np.zeros(20)
-    body_tf, head_tf, arml_tf, armr_tf = _get_Kinematics(real_q, pin_model, pin_data)
-    fcl_checker.set_head_body_transform(head_transforms=head_tf, body_transforms=body_tf)
-    fcl_checker.update_arm_transform(arml_tf+armr_tf)
-    is_collide = fcl_checker.compute_self_distance()
 
     
 
@@ -117,22 +114,49 @@ if __name__ == "__main__":
     plane_handle.set_material(material_handle.get_inst())
     
     """ create obstacle """
-    table_handle = _env.create_cube()
-    table_xpos = np.array([[1,0,0,TABLE_CENTER[0]],
-                           [0,1,0,TABLE_CENTER[1]],
-                           [0,0,1,TABLE_CENTER[2]],
+    # table_handle = _env.create_cube()
+    # table_xpos = np.array([[1,0,0,TABLE_CENTER[0]],
+    #                        [0,1,0,TABLE_CENTER[1]],
+    #                        [0,0,1,TABLE_CENTER[2]],
+    #                        [0,0,0,1]])
+    # table_handle.set_world_pose(table_xpos)
+    # table_handle.set_body_scale(TABLE_SIZE[0], TABLE_SIZE[1], TABLE_SIZE[2])
+
+    # grasp_cube_handle = _env.create_cube()
+    # grasp_cube_xpos = np.array([[1,0,0,0.45],
+    #                             [0,1,0,0.15], 
+    #                             [0,0,1,1.165],
+    #                             [0,0,0,1]])
+    # grasp_cube_handle.set_world_pose(grasp_cube_xpos)
+    # grasp_cube_handle.set_body_scale(0.1, 0.1, 0.08)
+    # grasp_cube_handle.set_material(material_handle.get_inst())
+
+    table_handle = _env.load_actor("/home/young/Downloads/table_coffee_demo_fixed.obj")
+    table_xpos = np.array([[1,0,0,0.5],
+                           [0,1,0,0.0],
+                           [0,0,1,0.0],
                            [0,0,0,1]])
     table_handle.set_world_pose(table_xpos)
-    table_handle.set_body_scale(TABLE_SIZE[0], TABLE_SIZE[1], TABLE_SIZE[2])
 
-    grasp_cube_handle = _env.create_cube()
-    grasp_cube_xpos = np.array([[1,0,0,0.45],
-                                [0,1,0,0.15], 
-                                [0,0,1,1.165],
-                                [0,0,0,1]])
-    grasp_cube_handle.set_world_pose(grasp_cube_xpos)
-    grasp_cube_handle.set_body_scale(0.1, 0.1, 0.08)
-    grasp_cube_handle.set_material(material_handle.get_inst())
+    shelf_handle = _env.create_cube()
+    shelf_xpos = np.array([[0.707,-0.707,0,0.55],
+                           [0.707,0.707,0,0.4],
+                           [0,0,1,1.15],
+                           [0,0,0,1]])
+    shelf_handle.set_world_pose(shelf_xpos)
+    shelf_handle.set_body_scale(0.2, 0.1, 0.8)
+    shelf_handle.set_material(material_handle.get_inst())
+
+    coffee_machine_handle = _env.create_cube()
+    coffee_machine_xpos = np.array([[0.707,0.707,0,0.55],
+                                    [-0.707,0.707,0,-0.4],
+                                    [0,0,1,0.8675], 
+                                    [0,0,0,1]])
+    coffee_machine_handle.set_world_pose(coffee_machine_xpos)
+    coffee_machine_handle.set_body_scale(0.37, 0.2, 0.235)
+    coffee_machine_handle.set_material(material_handle.get_inst())
+
+
 
     robot_urdf_path = get_robot_urdf(ROBOT_TYPE)
     _articulation = _env.load_urdf(robot_urdf_path)
@@ -164,10 +188,13 @@ if __name__ == "__main__":
     init_armr_qpos = -np.array([-np.pi / 2, -np.pi / 4, np.pi / 2, -np.pi / 4, -np.pi / 2, np.pi / 5, 0.0])
     q = np.concatenate([init_body_qpos, init_head_qpos, init_arml_qpos, init_armr_qpos])
     _articulation.set_current_qpos(q[real2sim_dix])
-
+    q = np.array([0.7854, -1.5708,  0.7853,  0.    ,  0.4999,  0.2999, -0.7516,
+        -0.3681,  1.5708, -2.1179,  0.915 , -0.1155,  0.6287, -0.4864,
+         0.8013,  0.116 ,  1.8058, -1.3278,  0.5119, -0.6207])
+    _articulation.set_current_qpos(q[real2sim_dix])
     
-
-    test_fcl_distance(_articulation, pin_model, pin_data)
+    embed()
+    # test_fcl_distance(_articulation, pin_model, pin_data)
 
 
 

@@ -543,7 +543,7 @@ class OMPLPlanDecoupled:
         arml_traj, arml_vel, arml_acc, arml_duration = self.gen_trajectory(arml_path, max_v=self.left_traj_max_vel, is_left=True)
         armr_traj, armr_vel, armr_acc, armr_duration = self.gen_trajectory(armr_path, max_v=self.right_traj_max_vel, is_left=False)
 
-        coordinator = Coordination(arml_traj, armr_traj, self.fcl_checker, self.urdf_path, coordination_res=0.1, traj_res=0.01)
+        coordinator = Coordination(arml_traj, armr_traj, self.fcl_checker, self.urdf_path, coordination_res=0.1, traj_res=0.01, use_ee=self.use_ee)
         coordinator.set_head_body(self.head_qpos, self.body_qpos)
         # coordinated_left, coordinated_right = coordinator.Coordinate_Astar()
         coordinated_left, coordinated_right = coordinator.Coordinate_RRT()

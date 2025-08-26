@@ -69,6 +69,8 @@ class FCLChecker:
         self._create_robot_obj()
         self._create_robot_manager()
 
+        self.visualize = False
+
     def _obj2fcl(self, obj_path):
         mesh = trimesh.load(obj_path, force='mesh')
         vertices = np.asarray(mesh.vertices, dtype=np.float64)
@@ -143,6 +145,17 @@ class FCLChecker:
         self.obstacles.append(fcl_obj)
         self.obstacle_manager.registerObject(fcl_obj)
         self.obstacle_manager.setup()
+
+        # for visualize
+        if self.visualize:
+            vis_trans = np.eye(4)
+            vis_trans[:3, 3] = center
+            vis_trans[:3, :3] = rot_mat
+            vis_box = trimesh.creation.box(extents=size)
+            vis_box.apply_transform(vis_trans)
+            self.obstacle_mesh_list.append(vis_box)
+
+
     def add_sphere_obstacle(self, center, radius, quaternion = np.array([1, 0, 0, 0])):
         sphere = fcl.Sphere(radius)
         q_scipy = np.array([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
@@ -153,6 +166,15 @@ class FCLChecker:
         self.obstacles.append(fcl_obj)
         self.obstacle_manager.registerObject(fcl_obj)
         self.obstacle_manager.setup()
+
+        # for visualize
+        if self.visualize:
+            vis_trans = np.eye(4)
+            vis_trans[:3, 3] = center
+            vis_trans[:3, :3] = rot_mat
+            vis_sphere = trimesh.creation.icosphere(subdivisions=3, radius=radius)
+            vis_sphere.apply_transform(vis_trans)
+            self.obstacle_mesh_list.append(vis_sphere)
 
     def add_mesh_obstacle(self, mesh_path, center, quaternion = np.array([1, 0, 0, 0])):
         mesh = trimesh.load(mesh_path, force='mesh')
@@ -173,6 +195,15 @@ class FCLChecker:
         self.obstacles.append(fcl_obj)
         self.obstacle_manager.registerObject(fcl_obj)
         self.obstacle_manager.setup()
+
+        # for visualize
+        if self.visualize:
+            vis_trans = np.eye(4)
+            vis_trans[:3, 3] = center
+            vis_trans[:3, :3] = rot_mat
+            vis_mesh = deepcopy(mesh)
+            vis_mesh.apply_transform(vis_trans)
+            self.obstacle_mesh_list.append(vis_mesh)
         
     def _save_point_cloud(self, point_cloud):
         current_path = os.path.dirname(os.path.abspath(__file__))
@@ -198,6 +229,8 @@ class FCLChecker:
         self.obstacle_manager.setup()
     
     def load_env_json(self, json_path):
+
+        print(f"Loading environment from {json_path}")
 
         # Clear existing obstacles and grasp objects
         self.obstacles.clear()
@@ -654,6 +687,9 @@ class FCLChecker:
     def enable_visualize(self):
         self.visualize = True
         self.robot_mesh_list = []
+        self.obstacle_mesh_list = []
+        self.grasp_object_mesh_list = []
+
         for path in self.arml_full_path:
             self.create_mesh(path)
         for path in self.armr_full_path:
@@ -668,6 +704,7 @@ class FCLChecker:
         mesh = trimesh.load(obj_path, force='mesh')
         self.robot_mesh_list.append(mesh)
 
+
     def update_vis_transform(self, tf):
         new_tf = tf[6:14] + tf[14:22] + tf[4:6] + tf[:4]
         vis_mesh = deepcopy(self.robot_mesh_list)
@@ -678,7 +715,12 @@ class FCLChecker:
         scene = trimesh.Scene()
         for mesh in vis_mesh:
             scene.add_geometry(mesh)
+        for mesh in self.obstacle_mesh_list:
+            scene.add_geometry(mesh)
+        for mesh in self.grasp_object_mesh_list:
+            scene.add_geometry(mesh)
         scene.show()
         embed()
 
-        # rotation = trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0])
+
+

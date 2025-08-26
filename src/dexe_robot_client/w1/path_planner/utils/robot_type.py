@@ -137,4 +137,4 @@ def get_env_json_path():
     """
     Returns the path to the environment JSON file.
     """
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "model", "env.json") 
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "model", "coffee_env.json") 
