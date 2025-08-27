@@ -108,6 +108,27 @@ class SinglePlanner:
     def _init_planner_pinocchio(self, robot_type: RobotType, ee_type: EndEffectorType):
         self.planner_pin = Planner_Pin(robot_type, ee_type)
 
+    def set_arm_bounds(self, arml_bounds: np.ndarray = None, armr_bounds: np.ndarray = None):
+        """
+        This function is used to update the arm bounds after the class instance is created.
+
+        Args:
+            arml_bounds (np.ndarray, size: 2xN): Bounds for the left arm's joint angles
+            armr_bounds (np.ndarray, size: 2xN): Bounds for the right arm's joint angles
+        
+        Notes:
+            - The bounds should be in the format [[min1, min2, ...], [max1, max2, ...]].
+            - The bounds are in radians for joint angles.
+        """
+        if arml_bounds is not None:
+            if arml_bounds.shape[1] != self.arml_dim or arml_bounds.shape[0] != 2:
+                raise ValueError(f"Left arm bounds should be of shape (2, {self.arml_dim}) but got {arml_bounds.shape}.")
+            self.arml_bounds = arml_bounds
+        if armr_bounds is not None:
+            if armr_bounds.shape[1] != self.armr_dim or armr_bounds.shape[0] != 2:
+                raise ValueError(f"Right arm bounds should be of shape (2, {self.armr_dim}) but got {armr_bounds.shape}.")
+            self.armr_bounds = armr_bounds
+
     def update_fcl_env(self, env_json_path: str):
         self.fcl_checker.load_env_json(env_json_path)
 
