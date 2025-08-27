@@ -9,15 +9,19 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
 # Msg files
 set(MSG_FILES
   "msg/RGBD.msg"
 )
+set(SRV_FILES 
+  "srv/Control.srv")
 
 # Generate interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${MSG_FILES}
+  ${SRV_FILES}
   DEPENDENCIES sensor_msgs
 )
 
