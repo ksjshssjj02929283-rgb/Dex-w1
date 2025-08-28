@@ -13,7 +13,8 @@ if __name__ == "__main__":
     w1_manager = W1Manager(is_sim=True,
                         arm_type=W1ArmType.ANTHROPOMORPHIC, 
                         w1_version=W1Version.V2, 
-                        end_effector_type=EndEffectorType.BRAINCO_HAND)
+                        end_effector_type=EndEffectorType.BRAINCO_HAND,
+                        use_rlia=False)
     if w1_manager.connect():
         w1_manager.go_home(1.)
         

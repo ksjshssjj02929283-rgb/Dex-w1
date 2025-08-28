@@ -266,6 +266,31 @@ class SRSKinematics:
 
         return True, qpos
 
+    def _calc_dist_cost(self, 
+                        qpos: np.ndarray, 
+                        ref_qpos: np.ndarray) -> float:
+        # return np.sqrt(np.sum(self._joint_weights * (qpos - ref_qpos) ** 2))
+        return np.sum(self._joint_weights * np.abs((qpos - ref_qpos) / (self._qpos_ub - self._qpos_lb)))
+
+    def _calc_qpos_limit_cost(self, 
+                              qpos: np.ndarray, 
+                              penalty_bound = 0.95):
+        # temp -> [0,1] 对超过penalty_bound的进行惩罚
+        qpos_middle = (self._qpos_ub + self._qpos_lb) / 2.
+        qpos_range = self._qpos_ub - self._qpos_lb
+        temp = np.abs((qpos - qpos_middle) / (qpos_range / 2.))
+        temp2 = np.where(temp <= penalty_bound, 0.1 * temp, np.exp(10. * (temp - penalty_bound)))
+        return np.sum(self._joint_weights * temp2)
+
+    def _calc_singularity_cost(self, 
+                               qpos: np.ndarray, 
+                               penalty_bound = np.deg2rad(3)):
+        cost = 0.
+        if qpos[1] - 0. < penalty_bound:
+            cost += 100.
+        if qpos[5] + self._kine_params.dh_params[5][3] - 0. < penalty_bound:
+            cost += 100.
+        return cost
 
     def get_nearst_ik(self, 
                       xpos: np.ndarray, 
@@ -295,11 +320,15 @@ class SRSKinematics:
             self.logger.error(f"Calc nearst ik failed\n xpos: {xpos}\n qpos_seed: {qpos_seed_}")
             return False, None
 
-        dist = [np.sqrt(np.sum(self._joint_weights * (qpos - qpos_seed_) ** 2))
-                 for qpos in qpos_list]
-        nearst_idx = dist.index(min(dist))
-        return True, qpos_list[nearst_idx]
+        cost_list = [self._calc_dist_cost(qpos, qpos_seed_) + 
+                    self._calc_qpos_limit_cost(qpos) + 
+                    self._calc_singularity_cost(qpos)
+                    for qpos in qpos_list]
+        # cost_list = [self._calc_dist_cost(qpos, qpos_seed_)
+        #              for qpos in qpos_list]
 
+        nearst_idx = cost_list.index(min(cost_list))
+        return True, qpos_list[nearst_idx]
 
     def set_tcp(self, xpos: np.ndarray) -> bool:
         # TODO: check SE3 and project to nearst SE3
