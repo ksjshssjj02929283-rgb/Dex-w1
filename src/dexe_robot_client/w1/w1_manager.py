@@ -284,7 +284,7 @@ class W1Manager:
             return False
         # qpos = np.atleast_2d(qpos)
         if np.any(qpos < qpos_lb) or np.any(qpos > qpos_ub):
-            self.logger.error(f"{name} qpos excceeded limits")
+            self.logger.error(f"{name} qpos excceeded limits: {np.rad2deg(qpos)}")
             return False
         return True
     
@@ -633,10 +633,12 @@ class W1Manager:
             bool: 
         """
         # NOTE: 最大速度 伸直构型下 仅基座关节运动导致的末端位移 5 * 0.01s * 1rad/s * 0.7m = 3.5cm
-        for qpos in qpos_array[::step]:
+        qpos_array_check = np.vstack((qpos_array[::step], qpos_array[-1]))
+        for qpos in qpos_array_check:
             if self.check_collision(qpos):
+                self.logger.error(f"Traj is collision at {qpos}, do not executed!")
                 return True
-        return self.check_collision(qpos_array[-1])
+        return False
     
     def plan_joint_traj(self, 
                         name: str,
@@ -726,20 +728,20 @@ class W1Manager:
         # solve ik
         qpos_list = []
         cur_qseed = qpos_seed
-        for i, cur_xpos in enumerate(xpos_sample_array):
+        for cur_xpos in xpos_sample_array:
             if self._use_rlia:
                 res_ik, cur_qpos = arm_kine.get_ik(xpos=cur_xpos, 
                                                     qpos_seed=cur_qseed)
             else:
                 res_ik, cur_qpos = arm_kine.get_nearst_ik(xpos=cur_xpos, 
                                                     qpos_seed=cur_qseed)
+            if not res_ik:
+                self.logger.error(f"{name} solve ik failed, cur_qseed: {np.rad2deg(cur_qseed)}.")
+                return False, None
             if not np.allclose(cur_qpos, cur_qseed, atol=np.deg2rad(90)):
                 self.logger.error(f"{name} qpos traj is not continues\n" + \
                                   f"cur_qpos: {np.rad2deg(cur_qpos)}\n" + \
                                   f"cur_qseed: {np.rad2deg(cur_qseed)}.")
-                return False, None
-            if not res_ik:
-                self.logger.error(f"{name} solve ik failed, cur_qseed: {np.rad2deg(cur_qseed)}.")
                 return False, None
             qpos_list.append(cur_qpos)
             cur_qseed = cur_qpos
@@ -1272,7 +1274,6 @@ class W1Manager:
         
         # check collision
         if self._check_traj_collision(total_qpos_array):
-            self.logger.error("Trajectory is collision, do not executed!")
             return False
 
         # execute
@@ -1416,10 +1417,9 @@ class W1Manager:
         if not res_align:
             return False
         
-        # check collision
-        if self._check_traj_collision(total_qpos_array):
-            self.logger.error("Trajectory is collision, do not executed!")
-            return False
+        # # check collision
+        # if self._check_traj_collision(total_qpos_array):
+        #     return False
 
         # execute
         return self.execute_joint_traj(total_qpos_array, 

@@ -161,6 +161,7 @@ class SRSKinematics:
                arm_angle: float, 
                config: tuple,
                verbose: float = True) -> tuple[bool, np.ndarray]:
+        # TODO: calc multi arm_angle result?
         if len(config) != 3:
             self.logger.error(f"len(config) != 3")
             return False, None
@@ -295,7 +296,6 @@ class SRSKinematics:
     def get_nearst_ik(self, 
                       xpos: np.ndarray, 
                       qpos_seed: np.ndarray) -> tuple[bool, np.ndarray]:
-        # NOTE: dirty implementation!
         qpos_seed_ = np.array(qpos_seed)
         if qpos_seed_.shape[0] != self.dofs:
             self.logger.error(f"dimension != {self.dofs}")
@@ -307,16 +307,53 @@ class SRSKinematics:
         if not res:
             return False, None
 
-        sample_range = np.deg2rad(5.)
-        sample_step = np.deg2rad(1.)
-        psi_samples = ref_psi + np.arange(-sample_range, sample_range + sample_step, sample_step)
+        # NOTE: dirty implementation!
+        # TODO: calc arm angle valid range
+        def generate_samples(ref_psi, max_range = 5., step = 1.):
+            psi_samples_list = []
+            psi_samples_list.append(np.deg2rad([ref_psi]))
+            is_ub_reach = False
+            is_lb_reach = False
+            ub = 180.
+            lb = -180.
+            cur_u = ref_psi
+            cur_l = cur_u
+            delta = np.arange(step, max_range+step, step)
 
+            while not (is_ub_reach and is_lb_reach):
+                psi_samples = []
+                if not is_lb_reach:
+                    temp = [x for x in (cur_l - delta) if x > lb]
+                    if not temp or len(temp) < max_range:
+                        is_lb_reach = True
+                    else:
+                        cur_l = temp[-1]
+                        psi_samples += temp
+            
+                if not is_ub_reach:
+                    temp = [x for x in (cur_u + delta) if x < ub]
+                    if not temp or len(temp) < max_range:
+                        is_ub_reach = True
+                    else:
+                        cur_u = temp[-1]
+                        psi_samples += temp
+                
+                if psi_samples:
+                    psi_samples_list.append(np.deg2rad(psi_samples).tolist())                
+            
+            return psi_samples_list
+
+        psi_samples_list = generate_samples(np.rad2deg(ref_psi), 5., 1.)
         qpos_list = []
-        for psi in psi_samples:
-            res, qpos = self.get_ik(xpos, psi, ref_config, verbose = False)
-            if res:
-                qpos_list.append(qpos)
-        if not len(qpos_list):
+        for psi_samples in psi_samples_list:
+            for psi in psi_samples:
+                res, qpos = self.get_ik(xpos, psi, ref_config, verbose = False)
+                if res:
+                    qpos_list.append(qpos)
+            if qpos_list:
+                break
+        
+        if not qpos_list:
             self.logger.error(f"Calc nearst ik failed\n xpos: {xpos}\n qpos_seed: {qpos_seed_}")
             return False, None
 
