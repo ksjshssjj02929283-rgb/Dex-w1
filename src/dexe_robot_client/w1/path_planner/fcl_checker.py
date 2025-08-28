@@ -1,3 +1,9 @@
+# ----------------------------------------------------------------------------
+# Copyright (c) 2021-2025 DexForce Technology Co., Ltd.
+#
+# All rights reserved.
+# ----------------------------------------------------------------------------
+
 import fcl
 import numpy as np
 import trimesh
@@ -5,17 +11,21 @@ import open3d as o3d
 import time
 import os
 import json
-from copy import deepcopy 
-from ...end_effector_client import EndEffectorType 
-from .utils.robot_type import *
 from IPython import embed
 from scipy.spatial.transform import Rotation as R
+from copy import deepcopy 
+
+from ...end_effector_client import EndEffectorType 
+from .utils.robot_type import *
+from ...common import get_logger
 
 
 class FCLChecker:
     def __init__(self, robot_type: RobotType = None, end_effector_type: EndEffectorType = None):
         if robot_type is None:
             raise ValueError(f"Robot type must be specified as {RobotType.W1V02_1} or {RobotType.W1V02_2}.")
+        self.logger = get_logger()
+
         self.arml_full_path = get_arml_full_path(robot_type)
         self.armr_full_path = get_armr_full_path(robot_type)
         self.head_full_path = get_head_full_path()
@@ -75,7 +85,7 @@ class FCLChecker:
         mesh = trimesh.load(obj_path, force='mesh')
         vertices = np.asarray(mesh.vertices, dtype=np.float64)
         triangles = np.asarray(mesh.faces, dtype=np.int32)
-        print(f"vertices length {len(vertices)}, triangles length {len(triangles)}")
+        self.logger.debug(f"vertices length {len(vertices)}, triangles length {len(triangles)}")
 
         bvh = fcl.BVHModel()
         bvh.beginModel(len(vertices), len(triangles))
@@ -97,7 +107,7 @@ class FCLChecker:
         self.head_links = [self._obj2fcl(path) for path in self.head_full_path]
         self.body_links = [self._obj2fcl(path) for path in self.torso_full_path]
 
-        print(f"Created FCL Objects: {len(self.arml_links)} left arm links, {len(self.armr_links)} right arm links, {len(self.head_links)} head links, {len(self.body_links)} body links")
+        self.logger.debug(f"Created FCL Objects: {len(self.arml_links)} left arm links, {len(self.armr_links)} right arm links, {len(self.head_links)} head links, {len(self.body_links)} body links")
 
     def _create_robot_manager(self):
         for link in self.arml_links:
@@ -230,7 +240,7 @@ class FCLChecker:
     
     def load_env_json(self, json_path):
 
-        print(f"Loading environment from {json_path}")
+        self.logger.info(f"Loading environment from {json_path}")
 
         # Clear existing obstacles and grasp objects
         self.obstacles.clear()
@@ -263,13 +273,13 @@ class FCLChecker:
                 size = np.array(obj["shape"]["raw_data"])
                 quaternion = np.array(obj["pose"])[3:]
                 self.add_cube_obstacle(center, size, quaternion)
-                print(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with size: {size} and name: {obj['name']}")
+                self.logger.info(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with size: {size} and name: {obj['name']}")
             if obj["shape"]["shape_type"] == "sphere":
                 center = np.array(obj["pose"])[:3]
                 radius = obj["shape"]["raw_data"][0]
                 quaternion = np.array(obj["pose"])[3:]
                 self.add_sphere_obstacle(center, radius, quaternion)
-                print(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with radius: {radius} and name: {obj['name']}")
+                self.logger.info(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with radius: {radius} and name: {obj['name']}")
             if obj["shape"]["shape_type"] == "mesh":
                 obj_mesh_path = obj["shape"]["raw_data"]
                 if not os.path.exists(obj_mesh_path):
@@ -277,7 +287,7 @@ class FCLChecker:
                 center = np.array(obj["pose"])[:3]
                 quaternion = np.array(obj["pose"])[3:]
                 self.add_mesh_obstacle(obj_mesh_path, center, quaternion)
-                print(f"Successfully add a {obj['shape']['shape_type']} obstacle with mesh path: {obj_mesh_path} at center: {center} and name: {obj['name']}")
+                self.logger.info(f"Successfully add a {obj['shape']['shape_type']} obstacle with mesh path: {obj_mesh_path} at center: {center} and name: {obj['name']}")
         
         # Load environment grasp objects
         grasp_cfg = env_data["user_workobjects"]
@@ -288,14 +298,14 @@ class FCLChecker:
                 size = np.array(grasp_obj["shape"]["raw_data"])
                 name = grasp_obj["name_key"]
                 self.add_grasp_object(obj_type="box", center=center, quaternion=quaternion, size=size, name=name)
-                print(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
+                self.logger.info(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
             if grasp_obj["shape"]["shape_type"] == "sphere":
                 center = np.array(grasp_obj["pose"])[:3]
                 quaternion = np.array(grasp_obj["pose"])[3:]
                 radius = grasp_obj["shape"]["raw_data"][0]
                 name = grasp_obj["name_key"]
                 self.add_grasp_object(obj_type="sphere", center=center, quaternion=quaternion, size=np.array([radius]), name=name)
-                print(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
+                self.logger.info(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
             if grasp_obj["shape"]["shape_type"] == "mesh":
                 grasp_obj_mesh_path = grasp_obj["shape"]["raw_data"]
                 if not os.path.exists(grasp_obj_mesh_path):
@@ -304,7 +314,7 @@ class FCLChecker:
                 quaternion = np.array(grasp_obj["pose"])[3:]
                 name = grasp_obj["name_key"]
                 self.add_grasp_object(obj_type="mesh", objMesh_path=grasp_obj_mesh_path, center=center, quaternion=quaternion, name=name)
-                print(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object with mesh path: {grasp_obj_mesh_path}")
+                self.logger.info(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object with mesh path: {grasp_obj_mesh_path}")
 
     def add_grasp_object(self, obj_type: str = None, 
                          objMesh_path: str =None, 
@@ -377,7 +387,7 @@ class FCLChecker:
         self.arml_manager.setup()
         self.grasp_objects_manager.update()
 
-        print(f"After attaching object, left arm manager has {len(self.arml_manager.getObjects())} objects, grasp objects manager has {len(self.grasp_objects_manager.getObjects())} objects.")
+        self.logger.debug(f"After attaching object, left arm manager has {len(self.arml_manager.getObjects())} objects, grasp objects manager has {len(self.grasp_objects_manager.getObjects())} objects.")
 
     def detach_object_arml(self, obj_name: str=None, arml7_transform: np.ndarray = None):
         if obj_name is None or obj_name not in self.grasp_objects_dict:
@@ -514,44 +524,44 @@ class FCLChecker:
         # Check left arm vs obstacles
         self.arml_manager.collide(self.obstacle_manager, cdata, self._is_collide)
         if cdata.done: 
-            # print("Left arm collided with obstacles.")
+            # self.logger.info("Left arm collided with obstacles.")
             return True
         # Check right arm vs obstacles
         self.armr_manager.collide(self.obstacle_manager, cdata, self._is_collide)
         if cdata.done:
-            # print("Right arm collided with obstacles.")
+            # self.logger.info("Right arm collided with obstacles.")
             return True
         
         self_arm_collide = self._check_collision_single_arm(cdata)
         if self_arm_collide: 
-            # print("self arm collided with itself.")
+            # self.logger.info("self arm collided with itself.")
             return True
 
         # Check left arm vs right arm
         self.arml_manager.collide(self.armr_manager, cdata, self._is_collide)
         if cdata.done:
-            # print("Left arm collided with right arm.")
+            # self.logger.info("Left arm collided with right arm.")
             return True
         # Check left arm vs head
         self.arml_manager.collide(self.head_manager, cdata, self._is_collide)
         if cdata.done:
-            # print("Left arm collided with head.")
+            # self.logger.info("Left arm collided with head.")
             return True
         # Check right arm vs head
         self.armr_manager.collide(self.head_manager, cdata, self._is_collide)
         if cdata.done: 
-            # print("Right arm collided with head.")
+            # self.logger.info("Right arm collided with head.")
             return True
         
         for l_link in self.arml_links[1:]:
             for b_link in self.body_links:
                 if self._is_collide(l_link, b_link, cdata):
-                    # print("Left arm collided with body.")
+                    # self.logger.info("Left arm collided with body.")
                     return True
         for r_link in self.armr_links[1:]:
             for b_link in self.body_links:
                 if self._is_collide(r_link, b_link, cdata):
-                    # print("Right arm collided with body.")
+                    # self.logger.info("Right arm collided with body.")
                     return True
                 
         # Check collision between arms and grasp objects manager
@@ -605,7 +615,7 @@ class FCLChecker:
                 dres = fcl.DistanceResult()
                 ret = fcl.distance(self.arml_links[i], self.arml_links[j], dreq, dres)
                 if ret < 0.02:
-                    print(f"Left arm link {i} and link {j} are too close, distance: {ret}")
+                    self.logger.info(f"Left arm link {i} and link {j} are too close, distance: {ret}")
                     return True
         for i in range(len(self.armr_links)):
             if i+2 >= len(self.armr_links):
@@ -615,7 +625,7 @@ class FCLChecker:
                 dres = fcl.DistanceResult()
                 ret = fcl.distance(self.armr_links[i], self.armr_links[j], dreq, dres)
                 if ret < 0.02:
-                    print(f"Right arm link {i} and link {j} are too close, distance: {ret}")
+                    self.logger.info(f"Right arm link {i} and link {j} are too close, distance: {ret}")
                     return True
         return False
 
@@ -633,26 +643,26 @@ class FCLChecker:
         start_time = time.time()
         self.arml_manager.distance(self.armr_manager, ddata, fcl.defaultDistanceCallback)
         if ddata.result.min_distance < 0.02:
-            print(f"Left arm and right arm are too close, distance: {ddata.result.min_distance}")
+            self.logger.info(f"Left arm and right arm are too close, distance: {ddata.result.min_distance}")
             return True
         end_time = time.time()
-        print(f"Distance computation between arms took {end_time - start_time:.6f} seconds.")
+        self.logger.info(f"Distance computation between arms took {end_time - start_time:.6f} seconds.")
         
         self_arm_collide = self._compute_distance_signle_arm()
         if self_arm_collide:
-            print("Self arm collision detected.")
+            self.logger.info("Self arm collision detected.")
             return True
         
         ddata = fcl.DistanceData(request=fcl.DistanceRequest(enable_nearest_points=False), result=fcl.DistanceResult())
         self.arml_manager.distance(self.head_manager, ddata, fcl.defaultDistanceCallback)
         if ddata.result.min_distance < 0.02:
-            print(f"Left arm and head are too close, distance: {ddata.result.min_distance}")
+            self.logger.info(f"Left arm and head are too close, distance: {ddata.result.min_distance}")
             return True
         
         ddata = fcl.DistanceData(request=fcl.DistanceRequest(enable_nearest_points=False), result=fcl.DistanceResult())
         self.armr_manager.distance(self.head_manager, ddata, fcl.defaultDistanceCallback)
         if ddata.result.min_distance < 0.02:
-            print(f"Right arm and head are too close, distance: {ddata.result.min_distance}")
+            self.logger.info(f"Right arm and head are too close, distance: {ddata.result.min_distance}")
             return True
         
         for l_link in self.arml_links[1:]:
@@ -661,18 +671,18 @@ class FCLChecker:
                 dres = fcl.DistanceResult()
                 ret = fcl.distance(l_link, b_link, dreq, dres)
                 if ret < 0.02:
-                    print(f"Left arm link and body link are too close, distance: {ret}")
+                    self.logger.info(f"Left arm link and body link are too close, distance: {ret}")
                     return True
             for r_link in self.armr_links[1:]:
                 dreq = fcl.DistanceRequest(enable_nearest_points=False)
                 dres = fcl.DistanceResult()
                 ret = fcl.distance(l_link, r_link, dreq, dres)
                 if ret < 0.02:
-                    print(f"Left arm link and right arm link are too close, distance: {ret}")
+                    self.logger.info(f"Left arm link and right arm link are too close, distance: {ret}")
                     return True
                 
         end_time = time.time()
-        print(f"Distance computation took {end_time - start_time:.6f} seconds.")
+        self.logger.info(f"Distance computation took {end_time - start_time:.6f} seconds.")
         return False
 
 

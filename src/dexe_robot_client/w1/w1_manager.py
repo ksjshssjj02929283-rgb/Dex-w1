@@ -539,11 +539,12 @@ class W1Manager:
             return self._get_arm_ee_client(name).get_qpos()
         
         robot_info = self.robot_client.get_info()
-        cur_qpos = np.array(robot_info.joint_position)
-        if cur_qpos is None:
-            self.logger.error(f"Get current robot info failed: {robot_info.status}.")
+        if robot_info.joint_position is None:
+            self.logger.error(f"Get current robot info failed, status: {robot_info.status}.")
             return False, None
         
+        cur_qpos = np.array(robot_info.joint_position)
+
         if name == "full_body":
             return True, cur_qpos
         return True, cur_qpos[self.w1_params.index_infos[name]["index"]]
@@ -631,6 +632,7 @@ class W1Manager:
         Returns:
             bool: 
         """
+        # NOTE: 最大速度 伸直构型下 仅基座关节运动导致的末端位移 5 * 0.01s * 1rad/s * 0.7m = 3.5cm
         for qpos in qpos_array[::step]:
             if self.check_collision(qpos):
                 return True
@@ -771,7 +773,7 @@ class W1Manager:
                            qpos_array: np.ndarray,
                            left_arm_ee_trigger_list: list = None,
                            right_arm_ee_trigger_list: list = None,
-                           reach_timeout: float = 2.0) -> bool:
+                           reach_timeout: float = 1.0) -> bool:
         """按10ms间隔执行关节轨迹
 
         Args:
@@ -871,16 +873,18 @@ class W1Manager:
                 streaming_finished = True
             else:
                 streaming_finished = False
-            self.robot_client.send_streaming_command(qpos.tolist(), 
-                                                     streaming_finished)
+            if not self.robot_client.send_streaming_command(qpos.tolist(), 
+                                                            streaming_finished):
+                self.logger.critical("Streaming command send failed.")
+                return False
             self.robot_client.wait_second(self.TIME_STEP)
             count += 1
             last_qpos = qpos
         self.robot_client.wait_request_finish()
 
-        self.logger.info(f"Ideal duration should be {(count-1) * self.TIME_STEP}s, " +
-                            f"and actual duration is {time.time() - t0}s.")
-        self.logger.info("Finish streaming.")
+        self.logger.info("Finish streaming. " +
+                        f"Ideal duration should be {(count-1) * self.TIME_STEP}s, " +
+                        f"and actual duration is {time.time() - t0}s.")
         
         stop_ee_thread = True
         if left_arm_ee_trigger_thread is not None:
@@ -894,7 +898,7 @@ class W1Manager:
         while time.time() - t1 < reach_timeout:
             res, cur_qpos = self.get_current_qpos()
             if not res: 
-                continue
+                return False
             if np.allclose(cur_qpos, targt_qpos, atol=np.deg2rad(1)):
                 return True
             time.sleep(5*self.TIME_STEP)
@@ -1183,10 +1187,10 @@ class W1Manager:
         cur_left_arm_qpos = cur_qpos[self.w1_params.left_arm_index]
         cur_right_arm_qpos = cur_qpos[self.w1_params.right_arm_index]
         
-        self.logger.debug("Input waypoints_dict:")
+        self.logger.debug("move_joint_full_body() input waypoints_dict:")
         self.logger.debug(waypoints_dict)
-        self.logger.debug(f"Input speed_ratio: {speed_ratio}")
-        self.logger.debug(f"Input cur_qpos: {cur_qpos}")
+        self.logger.debug(f"move_joint_full_body() input speed_ratio: {speed_ratio}")
+        self.logger.debug(f"move_joint_full_body() input cur_qpos: {cur_qpos}")
 
         # torso
         res_torso, torso_qpos_array = self._plan_to_waypoint("torso", 
@@ -1312,10 +1316,10 @@ class W1Manager:
         cur_left_arm_qpos = cur_qpos[self.w1_params.left_arm_index]
         cur_right_arm_qpos = cur_qpos[self.w1_params.right_arm_index]        
 
-        self.logger.debug("Input waypoints_dict:")
+        self.logger.debug("move_linear_full_body() input waypoints_dict:")
         self.logger.debug(waypoints_dict)
-        self.logger.debug(f"Input speed_ratio: {speed_ratio}")
-        self.logger.debug(f"Input cur_qpos: {cur_qpos}")
+        self.logger.debug(f"move_linear_full_body() input speed_ratio: {speed_ratio}")
+        self.logger.debug(f"move_linear_full_body() input cur_qpos: {cur_qpos}")
 
         if left_qpos_seed is None:
             left_qpos_seed = cur_left_arm_qpos

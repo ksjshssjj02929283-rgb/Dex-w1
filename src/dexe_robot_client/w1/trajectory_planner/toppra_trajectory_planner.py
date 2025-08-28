@@ -28,7 +28,7 @@ class ToppraTrajectoryPlanner:
              time_step: float = 0.01) -> tuple[bool, np.ndarray, np.ndarray, np.ndarray, float]:
         if qpos_array.shape[0] == 2 and \
             np.allclose(qpos_array[0], qpos_array[1], atol=np.deg2rad(0.1)):
-            self.logger.info(f"Only two same waypoints, do not plan.")
+            self.logger.debug(f"Only two same waypoints, do not plan.")
             return (True, 
                     qpos_array, 
                     np.array([[0.]*self.dofs, [0.]*self.dofs]), 
@@ -109,6 +109,6 @@ class ToppraTrajectoryPlanner:
                     if temp > exceed_ratio:
                         exceed_ratio = temp
                 acc_exceed_info.append(exceed_ratio * 100)
-            self.logger.info(f"Acc exceeding limit result: {acc_exceed_info} %.")
+            self.logger.error(f"Acc exceeding limit result: {acc_exceed_info} %.")
 
         return acc_valid
