@@ -11,6 +11,7 @@ from dexe_robot_client.w1 import W1Manager
 
 
 def arm_angle_motion():
+    """利用SRSKinematics实现手臂冗余运动的示例"""
     w1_manager = W1Manager(is_sim=True,
                         arm_type=W1ArmType.ANTHROPOMORPHIC, 
                         w1_version=W1Version.V2, 

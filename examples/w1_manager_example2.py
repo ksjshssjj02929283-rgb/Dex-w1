@@ -10,6 +10,7 @@ from dexe_robot_client.w1 import W1Manager
 
 
 if __name__ == "__main__":
+    """单点运动API move_arm_linear()和rotate_arm_linear()的使用示例"""
     w1_manager = W1Manager(is_sim=True,
                         arm_type=W1ArmType.ANTHROPOMORPHIC, 
                         w1_version=W1Version.V2, 
