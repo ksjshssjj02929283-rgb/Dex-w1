@@ -161,6 +161,7 @@ class SRSKinematics:
                arm_angle: float, 
                config: tuple,
                verbose: float = True) -> tuple[bool, np.ndarray]:
+        # TODO: calc multi arm_angle result?
         if len(config) != 3:
             self.logger.error(f"len(config) != 3")
             return False, None
@@ -266,11 +267,35 @@ class SRSKinematics:
 
         return True, qpos
 
+    def _calc_dist_cost(self, 
+                        qpos: np.ndarray, 
+                        ref_qpos: np.ndarray) -> float:
+        # return np.sqrt(np.sum(self._joint_weights * (qpos - ref_qpos) ** 2))
+        return np.sum(self._joint_weights * np.abs((qpos - ref_qpos) / (self._qpos_ub - self._qpos_lb)))
+
+    def _calc_qpos_limit_cost(self, 
+                              qpos: np.ndarray, 
+                              penalty_bound = 0.95):
+        # temp -> [0,1] 对超过penalty_bound的进行惩罚
+        qpos_middle = (self._qpos_ub + self._qpos_lb) / 2.
+        qpos_range = self._qpos_ub - self._qpos_lb
+        temp = np.abs((qpos - qpos_middle) / (qpos_range / 2.))
+        temp2 = np.where(temp <= penalty_bound, 0.1 * temp, np.exp(10. * (temp - penalty_bound)))
+        return np.sum(self._joint_weights * temp2)
+
+    def _calc_singularity_cost(self, 
+                               qpos: np.ndarray, 
+                               penalty_bound = np.deg2rad(3)):
+        cost = 0.
+        if qpos[1] - 0. < penalty_bound:
+            cost += 100.
+        if qpos[5] + self._kine_params.dh_params[5][3] - 0. < penalty_bound:
+            cost += 100.
+        return cost
 
     def get_nearst_ik(self, 
                       xpos: np.ndarray, 
                       qpos_seed: np.ndarray) -> tuple[bool, np.ndarray]:
-        # NOTE: dirty implementation!
         qpos_seed_ = np.array(qpos_seed)
         if qpos_seed_.shape[0] != self.dofs:
             self.logger.error(f"dimension != {self.dofs}")
@@ -282,24 +307,65 @@ class SRSKinematics:
         if not res:
             return False, None
 
-        sample_range = np.deg2rad(5.)
-        sample_step = np.deg2rad(1.)
-        psi_samples = ref_psi + np.arange(-sample_range, sample_range + sample_step, sample_step)
+        # NOTE: dirty implementation!
+        # TODO: calc arm angle valid range
+        def generate_samples(ref_psi, max_range = 5., step = 1.):
+            psi_samples_list = []
+            psi_samples_list.append(np.deg2rad([ref_psi]))
+            is_ub_reach = False
+            is_lb_reach = False
+            ub = 180.
+            lb = -180.
+            cur_u = ref_psi
+            cur_l = cur_u
+            delta = np.arange(step, max_range+step, step)
 
+            while not (is_ub_reach and is_lb_reach):
+                psi_samples = []
+                if not is_lb_reach:
+                    temp = [x for x in (cur_l - delta) if x > lb]
+                    if not temp or len(temp) < max_range:
+                        is_lb_reach = True
+                    else:
+                        cur_l = temp[-1]
+                        psi_samples += temp
+            
+                if not is_ub_reach:
+                    temp = [x for x in (cur_u + delta) if x < ub]
+                    if not temp or len(temp) < max_range:
+                        is_ub_reach = True
+                    else:
+                        cur_u = temp[-1]
+                        psi_samples += temp
+                
+                if psi_samples:
+                    psi_samples_list.append(np.deg2rad(psi_samples).tolist())                
+            
+            return psi_samples_list
+
+        psi_samples_list = generate_samples(np.rad2deg(ref_psi), 5., 1.)
         qpos_list = []
-        for psi in psi_samples:
-            res, qpos = self.get_ik(xpos, psi, ref_config, verbose = False)
-            if res:
-                qpos_list.append(qpos)
-        if not len(qpos_list):
+        for psi_samples in psi_samples_list:
+            for psi in psi_samples:
+                res, qpos = self.get_ik(xpos, psi, ref_config, verbose = False)
+                if res:
+                    qpos_list.append(qpos)
+            if qpos_list:
+                break
+        
+        if not qpos_list:
             self.logger.error(f"Calc nearst ik failed\n xpos: {xpos}\n qpos_seed: {qpos_seed_}")
             return False, None
 
-        dist = [np.sqrt(np.sum(self._joint_weights * (qpos - qpos_seed_) ** 2))
-                 for qpos in qpos_list]
-        nearst_idx = dist.index(min(dist))
-        return True, qpos_list[nearst_idx]
+        cost_list = [self._calc_dist_cost(qpos, qpos_seed_) + 
+                    self._calc_qpos_limit_cost(qpos) + 
+                    self._calc_singularity_cost(qpos)
+                    for qpos in qpos_list]
+        # cost_list = [self._calc_dist_cost(qpos, qpos_seed_)
+        #              for qpos in qpos_list]
 
+        nearst_idx = cost_list.index(min(cost_list))
+        return True, qpos_list[nearst_idx]
 
     def set_tcp(self, xpos: np.ndarray) -> bool:
         # TODO: check SE3 and project to nearst SE3
