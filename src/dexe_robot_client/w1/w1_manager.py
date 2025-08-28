@@ -23,6 +23,9 @@ from .path_planner.bezier_blend_path import interpolate_cartesian_path
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from .utils.w1_params import W1Params
 from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
+from .path_planner.utils.robot_type import RobotType
+from .path_planner.fcl_checker import FCLChecker
+from .path_planner.planner_pinocchio import Planner_Pin
 
 
 class W1Manager:
@@ -79,6 +82,8 @@ class W1Manager:
 
         self._use_rlia = use_rlia
         self._init_kine_solver()
+
+        self._init_collision_checker()
 
         self.set_sim_mode(is_sim)
         
@@ -193,6 +198,17 @@ class W1Manager:
             self.right_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
 
             self.logger.info("Initialize srs-python kinematic solver.")
+
+    def _init_collision_checker(self):
+        if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
+            robot_type = RobotType.W1V02_1
+        else:
+            robot_type = RobotType.W1V02_2
+        self._pin_kine = Planner_Pin(robot_type, 
+                                     self._end_effector_type)
+        self._collision_checker = FCLChecker(robot_type, 
+                                             self._end_effector_type)
+        self.logger.info("Initialize FCL collision checker.")
 
     def _has_arm_ee_client(self, name: str, verbose: bool = True) -> bool:
         if name in self.w1_params.arm_ee_names:
@@ -593,6 +609,33 @@ class W1Manager:
         self.logger.info("Stop move by user!")
         return True
 
+    def check_collision(self, qpos: np.ndarray) -> bool:
+        """检查qpos状态是否碰撞"""
+        if not self._check_qpos_dimension("full_body", qpos):
+            return True
+        torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(qpos)
+        self._collision_checker.set_head_body_transform(head_transforms=head_tf, 
+                                                        body_transforms=torso_tf)
+        self._collision_checker.update_arm_transform(arml_tf + armr_tf)
+        return self._collision_checker.check_collision()
+
+    def _check_traj_collision(self, 
+                              qpos_array: np.ndarray, 
+                              step: int = 5) -> bool:
+        """检查轨迹是否碰撞
+
+        Args:
+            qpos_array (np.ndarray): 10ms间隔的轨迹
+            step (int, optional): 检测步长，每步10ms. Defaults to 5.
+
+        Returns:
+            bool: 
+        """
+        for qpos in qpos_array[::step]:
+            if self.check_collision(qpos):
+                return True
+        return self.check_collision(qpos_array[-1])
+    
     def plan_joint_traj(self, 
                         name: str,
                         qpos_array: np.ndarray, 
@@ -1222,6 +1265,12 @@ class W1Manager:
                                                        right_arm_qpos_array)
         if not res_align:
             return False
+        
+        # check collision
+        if self._check_traj_collision(total_qpos_array):
+            self.logger.error("Trajectory is collision, do not executed!")
+            return False
+
         # execute
         return self.execute_joint_traj(total_qpos_array, 
                                        left_arm_ee_trigger_list, 
@@ -1363,6 +1412,11 @@ class W1Manager:
         if not res_align:
             return False
         
+        # check collision
+        if self._check_traj_collision(total_qpos_array):
+            self.logger.error("Trajectory is collision, do not executed!")
+            return False
+
         # execute
         return self.execute_joint_traj(total_qpos_array, 
                                        left_arm_ee_trigger_list, 
