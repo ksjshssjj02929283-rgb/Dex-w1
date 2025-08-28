@@ -227,14 +227,11 @@ class RobotClientRos2(Node, RobotClient):
         streaming_finished: bool = False,
     ) -> bool:
         position_msg = StreamingCommand()
-        if self.latest_sent_id < 0:
+        if self.latest_sent_id < 0 or self.is_connected() is False:
             return False
         position_msg.request_id = self.latest_sent_id
         position_msg.streaming_finished = streaming_finished
         position_msg.position = [float(x) for x in position]
-        # self.logger.debug(
-        #     f"Publishing streaming command: {position_msg.position}, streaming finished: {streaming_finished}"
-        # )
         self._publisher_streaming_command.publish(position_msg)
         return True
 
