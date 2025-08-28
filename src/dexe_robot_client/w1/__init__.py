@@ -11,6 +11,10 @@ from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanne
 from .utils.w1_params import W1Params, W1ArmType, W1Version, W1ArmKineParams
 from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 from .w1_manager import W1Manager
+from .path_planner.utils.robot_type import RobotType
+from .path_planner.planner_pinocchio import Planner_Pin
+from .path_planner.fcl_checker import FCLChecker
+
 
 __all__ = [
     "TorsoKinematics",
@@ -23,5 +27,8 @@ __all__ = [
     "W1ArmKineParams",
     "user_pose_to_xpos",
     "xpos_to_user_pose",
-    "W1Manager"
+    "W1Manager",
+    "RobotType",
+    "Planner_Pin",
+    "FCLChecker"
 ]

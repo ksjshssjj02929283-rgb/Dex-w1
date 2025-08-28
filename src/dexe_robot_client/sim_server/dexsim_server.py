@@ -15,9 +15,9 @@ from std_msgs.msg import String
 from ..common import (get_logger, 
                       ASSETS_DIR, URL_PREFIX, 
                       download_and_unzip_file, 
-                      W1Version, W1ArmType)
+                      W1Version, W1ArmType,
+                      get_sim2real_idx, get_real2sim_idx)
 from ..end_effector_client import EndEffectorType
-from .utils.mapping_idx import get_sim2real_idx, get_real2sim_idx
 
 """TODO
 add end-effector
