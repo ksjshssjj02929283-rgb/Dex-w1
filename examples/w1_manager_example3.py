@@ -19,13 +19,16 @@ def arm_angle_motion():
                         use_rlia=False)
     if not w1_manager.connect():
         return
-     
+    w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
+                                      5, -45, -5, -90, 0, -15, 0,
+                                      -5, 45, 5, 90, 0, 15, 0]),
+                            save_to_file=False)
     w1_manager.go_home(1.)
 
     # arm angle trajectory
     T = 10.
     t_list = np.arange(0, T + w1_manager.TIME_STEP, w1_manager.TIME_STEP).round(2)
-    delta_psi_list = np.deg2rad(45) * np.sin(2*np.pi / T * t_list)
+    delta_psi_list = np.deg2rad(30) * np.sin(2*np.pi / T * t_list)
 
     # left arm
     cur_left_qpos = w1_manager.get_current_qpos("left_arm")[1]
