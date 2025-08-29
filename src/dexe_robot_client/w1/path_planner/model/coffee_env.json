@@ -4,9 +4,25 @@
       "name": "table",
       "shape": {
         "shape_type": "mesh",
-        "raw_data": "/home/young/Downloads/table_coffee_demo_fixed.obj"
+        "raw_data": "/home/young/Model/coffee_demo/table_coffee_demo_fixed.obj"
       },
-      "pose": [100, 0.0, 0.0, 1, 0, 0, 0]
+      "pose": [0.5, 0.0, 0.0, 1, 0, 0, 0]
+    },
+    {
+      "name": "cup_shelf",
+      "shape": {
+        "shape_type": "mesh",
+        "raw_data": "/home/young/Model/coffee_demo/cup_shelf.obj"
+      },
+      "pose": [0.53, 0.37, 0.75, 0.382683, 0, 0, -0.92388]
+    },
+    {
+      "name": "coffee_machine",
+      "shape": {
+        "shape_type": "mesh",
+        "raw_data": "/home/young/Model/coffee_demo/coffee_machine.obj"
+      },
+      "pose": [0.49, -0.33, 0.75, 0.382683, 0, 0, 0.92388]
     }
     
   ],

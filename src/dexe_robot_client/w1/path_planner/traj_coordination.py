@@ -517,6 +517,36 @@ class Coordination:
 
         return aligned_left, aligned_right
     
+    def _find_traj_idx(self, left_traj_idx = None, right_traj_idx = None):
+        """
+        This function is used to find the coordination point is in which trajectory segment
+        Args:
+            left_traj_idx (int): the index of the left arm trajectory
+            right_traj_idx (int): the index of the right arm trajectory
+        
+        Returns:
+            left_segment_idx (int): the index of the left arm trajectory segment in the identifier list
+            left_segment (tuple): the trajectory segment tuple(traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) for left arm
+            right_segment_idx (int): the index of the right arm trajectory segment in the identifier list
+            right_segment (tuple): the trajectory segment tuple(traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) for right arm
+        """
+        if left_traj_idx is None and right_traj_idx is None:
+            return -1, -1
+        left_traj_segment_idx, right_traj_segment_idx = -1, -1
+        
+        for i, (traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) in enumerate(self.left_identifier_list):
+            if left_traj_idx >= traj_start_idx and left_traj_idx <= traj_end_idx:
+                left_traj_segment_idx = i
+                # if left_traj_idx >= 
+                break
+        for j, (traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) in enumerate(self.right_identifier_list):
+            if right_traj_idx >= traj_start_idx and right_traj_idx <= traj_end_idx:
+                right_traj_segment_idx = j
+                break
+        return left_traj_segment_idx, right_traj_segment_idx
+            
+                
+
     def _tune_velocity_with_EE(self, px, py):
         px = np.floor(np.array(px) + 0.5).astype(int)
         py = np.floor(np.array(py) + 0.5).astype(int)
@@ -566,6 +596,8 @@ class Coordination:
                         for dim in range(7):
                             interp_func = interp1d(time_orig, right_traj[x_start_idx:x_end_idx, dim], kind="linear")
                             x_interpolated_traj[:, dim] = interp_func(time_target)
+                        # TODO: find the trajectory segment and check if there is an ee waiting part
+
                 else:
                     x_interpolated_traj = right_traj[x_start_idx:x_end_idx,:]
                 if not np.isclose(ratio_y, 1.0):

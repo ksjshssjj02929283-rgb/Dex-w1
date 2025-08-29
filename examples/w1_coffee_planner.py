@@ -56,16 +56,16 @@ if __name__ == "__main__":
     table_handle.set_world_pose(table_xpos)
 
     cup_shelf_handle = _env.load_actor("/home/young/Model/coffee_demo/cup_shelf.obj")
-    cup_shelf_xpos = np.array([[-0.707,0.707,0,0.55],
-                                [-0.707,-0.707,0,0.4],
+    cup_shelf_xpos = np.array([[-0.707,0.707,0,0.53],
+                                [-0.707,-0.707,0,0.37],
                                 [0,0,1,0.75],
                                 [0,0,0,1]])
     cup_shelf_handle.set_world_pose(cup_shelf_xpos)
     cup_shelf_handle.set_material(metal_material_handle.get_inst()) 
 
     coffee_machine_handle = _env.load_actor("/home/young/Model/coffee_demo/coffee_machine.obj")
-    coffee_machine_xpos = np.array([[-0.707,-0.707,0,0.55],
-                                    [0.707,-0.707,0,-0.4],
+    coffee_machine_xpos = np.array([[-0.707,-0.707,0,0.49],
+                                    [0.707,-0.707,0,-0.33],
                                     [0,0,1,0.75],
                                     [0,0,0,1]])
     coffee_machine_handle.set_world_pose(coffee_machine_xpos)
@@ -101,10 +101,15 @@ if __name__ == "__main__":
     torso_pin_idx, head_pin_idx, arml_pin_idx, armr_pin_idx = get_pin_idx(robot_urdf_path)
 
     
-    init_real_qpos = np.deg2rad([45, -90, 45, 0, 
-                            0, 0,
-                            5, -45, -5, -60, 0, -15, 0,
-                            -5, 45, 5, 60, 0, 15, 0])
+    # init_real_qpos = np.deg2rad([45, -90, 45, 0, 
+    #                         0, 0,
+    #                         5, -45, -5, -60, 0, -15, 0,
+    #                         -5, 45, 5, 60, 0, 15, 0])
+    torso_init_qpos = np.deg2rad([45, -90, 45, 2])
+    head_init_qpos = np.deg2rad([24, -32])
+    arml_init_qpos = np.array([0.218, -0.718, 0.563, -2.083, 1.125, -0.501, 0.393])
+    armr_iniit_qpos = np.array([-0.51, 0.851, -0.291, 1.821, 1.187, -0.104, 0.946])
+    init_real_qpos = np.concatenate((torso_init_qpos, head_init_qpos, arml_init_qpos, armr_iniit_qpos))
     _articulation.set_current_qpos(init_real_qpos[real2sim_idx])
 
     # init w1 manager
@@ -132,108 +137,76 @@ if __name__ == "__main__":
     cur_arml_qpos = current_real_qpos[arml_real_idx[0]: arml_real_idx[1]+1]
     cur_armr_qpos = current_real_qpos[armr_real_idx[0]: armr_real_idx[1]+1]
     
-    # arml_target_pose = np.array([-126.29, 300.57, 326.69, 28.97, 67.64, 129.92])
-    # armr_target_pose = np.array([266.044, 71.307, 254.868, -161.749, 60.184, -56.87])
-    # arml_target_xpos = user_pose_to_xpos(arml_target_pose[:3], arml_target_pose[3:])
-    # armr_target_xpos = user_pose_to_xpos(armr_target_pose[:3], armr_target_pose[3:])
+    task1_torso_qpos = np.deg2rad([31, -70, 45, 2])
+    task1_head_qpos = np.deg2rad([-5, -25])
+    task1_arml_qpos = np.array([-0.113, -0.604, 0.462, -1.539, 0.646, 0.269, -0.235])
+    task1_armr_qpos = np.array([-0.69, 0.69, -0.25, 1.43, 1.91, 0.02, 1.27])
+    task1_real_qpos = np.concatenate((task1_torso_qpos, task1_head_qpos, task1_arml_qpos, task1_armr_qpos))
 
-    # arml_ik_qpos = arml_kine.get_nearst_ik(xpos=arml_target_xpos, qpos_seed=cur_arml_qpos)
-    # armr_ik_qpos = armr_kine.get_nearst_ik(xpos=armr_target_xpos, qpos_seed=cur_armr_qpos)
-    # print(f"arml_ik_qpos: {arml_ik_qpos}")
-    # print(f"armr_ik_qpos: {armr_ik_qpos}")
+    task2_torso_qpos = np.deg2rad([31, -70, 45, 2])
+    task2_head_qpos = np.deg2rad([-5, -25])
+    task2_arml_qpos = np.array([-0.477, -0.703, 0.552, -1.91, -0.099, 0.249, -0.611])
+    task2_armr_qpos = np.array([-0.69, 0.69, -0.25, 1.43, 1.91, 0.02, 1.27])
+    task2_real_qpos = np.concatenate((task2_torso_qpos, task2_head_qpos, task2_arml_qpos, task2_armr_qpos))
 
-    # target_real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, arml_ik_qpos[1], armr_ik_qpos[1]))
-    # _articulation.set_current_qpos(target_real_qpos[real2sim_idx])
+    task3_torso_qpos = np.deg2rad([31, -70, 45, 2])
+    task3_head_qpos = np.deg2rad([0, -15])
+    task3_arml_qpos = np.array([-1.0, -1.02, 0.5, -2.04, 0.42, 0.72, -0.54])
+    task3_armr_qpos = np.array([-0.66, 0.64, 0.44, 2.03, 0.92, 0.48, 0.32])
+    task3_real_qpos = np.concatenate((task3_torso_qpos, task3_head_qpos, task3_arml_qpos, task3_armr_qpos))
 
-    arml_target_pose_list = [
-                [-176.73, 190.87, 72.72, -174.17, 16.13, -98.1],
-                [-220.179, 335.021, 251.264, 51.501, 69.117, -175.001],
-                [-270.183, 335.024, 251.261, 51.501, 69.117, -175.001],
-                [-280.18, 330.021, 251.256, 51.501, 69.117, -175.001],
-                [-287.18, 325.025, 251.261, 51.501, 69.117, -175.001],
-                [-270.183, 335.024, 251.261, 51.501, 69.117, -175.001],
-                [-220.184, 325.016, 251.265, 51.501, 69.117, -175.001],
-                [-142.71, 320.29, 119.75, -160.73, 65.87, -34.3],
-                [-5.141, 375.012, 60.233, -140.505, 69.868, -40.018],
-                [-33.142, 375.016, 60.229, -140.505, 69.868, -40.018],
-                [30.136, 345.013, 130.206, -140.512, 79.865, -40.026],
-                [-236.141, 221.45, 253.569, -63.476, -3.253, -10.561],
-                [-206.744, 294.044, 280.958, -59.643, -3.117, -13.263],
-                [-146.718, 280.038, 273.96, -59.639, -3.122, -10.259],
-                [-109.164, 281.189, 273.194, -59.639, -3.122, -10.259],
-                [-206.744, 294.044, 280.958, -59.643, -3.117, -13.263],
-                [-206.744, 294.044, 280.958, -59.643, -3.117, -13.263],
-                [-206.744, 294.044, 280.958, -59.643, -3.117, -13.263],
-                [-206.744, 294.044, 280.958, -59.643, -3.117, -13.263],
-                [-206.744, 294.044, 280.958, -59.643, -3.117, -13.263],
-                [-290.787, 260.284, 130.106, -72.835, -3.188, -6.71],
-                [-289.127, 275.251, 62.114, -86.825, -3.475, -6.537],
-                [-289.127, 275.251, 62.114, -86.825, -3.475, -6.537],
-                [-289.127, 275.251, 62.114, -86.825, -3.475, -6.537],
-                [-247.656, 220.622, 60.016, -72.456, -0.782, -8.705],
-                [-277.674, 420.605, 121.001, -72.456, -0.782, -8.705],
-                [-277.664, 260.603, 120.999, -72.456, -0.782, -8.705]
-
-    ]
-    armr_target_pose_list = [
-                 [328.316, 104.862, 256.042, -161.411, 60.056, -50.58],
-                 [300.317, 190.859, 209.996, -161.411, 60.056, -50.58],
-                 [290.321, 190.865, 209.999, -161.411, 60.056, -50.58],
-                 [300.317, 190.859, 209.996, -161.411, 60.056, -50.58],
-                 [328.316, 104.862, 256.042, -161.411, 60.056, -50.58],
-                 [328.316, 104.862, 256.042, -161.411, 60.056, -50.58],
-                 [328.316, 104.862, 256.042, -161.411, 60.056, -50.58],
-                 [328.316, 104.862, 256.042, -161.411, 60.056, -50.58],
-                 [-5.141, 375.012, 60.233, -140.505, 69.868, -40.018],
-                [-33.142, 375.016, 60.229, -140.505, 69.868, -40.018],
-                [30.136, 345.013, 130.206, -140.512, 79.865, -40.026],
-                [-84.856, 400.003, 200.272, -150.367, -51.862, 85.181],
-                 [-35.864, 389.997, 220.273, -150.367, -51.862, 85.181],
-                 [35.86, 300.003, 170.272, -150.367, -51.862, 85.181],
-                 [76.477, 302.529, 167.3, -155.996, -52.389, 84.982],
-                 [132.642, 293.439, 161.596, -139.989, -32.453, 69.101],
-                 [163.022, 240.411, 191.676, -157.663, -32.769, 79.424],
-                 [173.662, 237.601, 188.42, -161.481, -29.404, 78.073],
-                 [173.662, 237.601, 188.42, -161.481, -29.404, 78.073],
-                 [72.379, 298.874, 192.999, -157.254, -37.805, 81.157],
-                 [100.939, 365.774, -68.299, -167.665, -44.531, 89.399],
-                 [101.006, 395.773, -118.312, -167.665, -44.531, 89.399],
-                 [101.006, 395.773, -118.312, -167.665, -44.531, 89.399],
-                 [100.948, 345.78, 0.309, -167.665, -44.531, 89.399],
-                 [70.513, 151.665, 256.24, -144.455, -27.939, 46.678],
-                 [70.513, 151.665, 256.24, -144.455, -27.939, 46.678],
-                 [70.513, 151.665, 256.24, -144.455, -27.939, 46.678],
+    task4_torso_qpos = np.deg2rad([38, -80, 50, -10])
+    task4_head_qpos = np.deg2rad([10, -20])
+    task4_arml_qpos = np.array([0.51, -0.64, 0.09, -1.7, -0.78, -0.41, 0.69])
+    task4_armr_qpos = np.array([0.66, 0.67, -0.03, 1.82, 0.16, 0.19, 0.24])
+    task4_real_qpos = np.concatenate((task4_torso_qpos, task4_head_qpos, task4_arml_qpos, task4_armr_qpos))
 
 
-    ]
+    task5_torso_qpos = np.deg2rad([36, -80, 50, -45])
+    task5_head_qpos = np.deg2rad([0, -15])
+    task5_arml_qpos = np.array([0.15, -0.72, 0.58, -1.66, -0.65, -0.33, 0.58])
+    task5_armr_qpos = np.array([0.64, 1.05, -0.77, 1.8, -0.78, -0.02, 0.07])
+    task5_real_qpos = np.concatenate((task5_torso_qpos, task5_head_qpos, task5_arml_qpos, task5_armr_qpos))
 
-    for i in range(len(arml_target_pose_list)):
-        arml_target_pose = np.array(arml_target_pose_list[i])
-        arml_target_xpos = user_pose_to_xpos(arml_target_pose[:3], arml_target_pose[3:])
-        arml_ik_qpos = arml_kine.get_nearst_ik(xpos=arml_target_xpos, qpos_seed=cur_arml_qpos)
-        if arml_ik_qpos[0]:
-            print(f"arml_ik_qpos: {arml_ik_qpos[1]}")
-            target_real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, arml_ik_qpos[1], cur_armr_qpos))
-            _articulation.set_current_qpos(target_real_qpos[real2sim_idx])
-            cur_arml_qpos = arml_ik_qpos[1]
-            input("Press Enter to continue...")
-        else:
-            print(f"Cannot find IK for target pose: {arml_target_pose}")
-            input("Press Enter to continue...")
+    task6_torso_qpos = np.deg2rad([36, -80, 50, -45])
+    task6_head_qpos = np.deg2rad([0, -15])
+    task6_arml_qpos = np.array([0.213, -1.308, 0.244, -1.685, -0.171, -0.308, 0.579])
+    task6_armr_qpos = np.array([-0.651, 0.546, 0.356, 1.899, 0.524, 0.058, 0.622])
+    task6_real_qpos = np.concatenate((task6_torso_qpos, task6_head_qpos, task6_arml_qpos, task6_armr_qpos))
 
-    for i in range(len(armr_target_pose_list)):
-        armr_target_pose = np.array(armr_target_pose_list[i])
-        armr_target_xpos = user_pose_to_xpos(armr_target_pose[:3], armr_target_pose[3:])
-        armr_ik_qpos = armr_kine.get_nearst_ik(xpos=armr_target_xpos, qpos_seed=cur_armr_qpos)
-        if armr_ik_qpos[0]:
-            print(f"armr_ik_qpos: {armr_ik_qpos[1]}")
-            target_real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_ik_qpos[1]))
-            _articulation.set_current_qpos(target_real_qpos[real2sim_idx])
-            cur_armr_qpos = armr_ik_qpos[1]
-            input("Press Enter to continue...")
-        else:
-            print(f"Cannot find IK for target pose: {armr_target_pose}")
-            input("Press Enter to continue...")
+    for target_qpos in [task1_real_qpos, task2_real_qpos, task3_real_qpos, task4_real_qpos, task5_real_qpos, task6_real_qpos]:
+        _articulation.set_current_qpos(target_qpos[real2sim_idx])
+        input("Press Enter to continue...")
+
+
+
+    # for i in range(len(arml_target_pose_list)):
+    #     arml_target_pose = np.array(arml_target_pose_list[i])
+    #     arml_target_xpos = user_pose_to_xpos(arml_target_pose[:3], arml_target_pose[3:])
+    #     arml_ik_qpos = arml_kine.get_nearst_ik(xpos=arml_target_xpos, qpos_seed=cur_arml_qpos)
+    #     if arml_ik_qpos[0]:
+    #         print(f"arml_ik_qpos: {arml_ik_qpos[1]}")
+    #         target_real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, arml_ik_qpos[1], cur_armr_qpos))
+    #         _articulation.set_current_qpos(target_real_qpos[real2sim_idx])
+    #         cur_arml_qpos = arml_ik_qpos[1]
+    #         input("Press Enter to continue...")
+    #     else:
+    #         print(f"Cannot find IK for target pose: {arml_target_pose}")
+    #         input("Press Enter to continue...")
+
+    # for i in range(len(armr_target_pose_list)):
+    #     armr_target_pose = np.array(armr_target_pose_list[i])
+    #     armr_target_xpos = user_pose_to_xpos(armr_target_pose[:3], armr_target_pose[3:])
+    #     armr_ik_qpos = armr_kine.get_nearst_ik(xpos=armr_target_xpos, qpos_seed=cur_armr_qpos)
+    #     if armr_ik_qpos[0]:
+    #         print(f"armr_ik_qpos: {armr_ik_qpos[1]}")
+    #         target_real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_ik_qpos[1]))
+    #         _articulation.set_current_qpos(target_real_qpos[real2sim_idx])
+    #         cur_armr_qpos = armr_ik_qpos[1]
+    #         input("Press Enter to continue...")
+    #     else:
+    #         print(f"Cannot find IK for target pose: {armr_target_pose}")
+    #         input("Press Enter to continue...")
     embed()
 
 

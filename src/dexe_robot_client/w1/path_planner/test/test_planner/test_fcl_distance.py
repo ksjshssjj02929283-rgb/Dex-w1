@@ -13,7 +13,7 @@ from dexe_robot_client.common import download_and_unzip_file, URL_PREFIX, ASSETS
 from IPython import embed
 
 ROBOT_TYPE = RobotType.W1V02_1
-ROBOT_EE_TYPE = None
+ROBOT_EE_TYPE = EndEffectorType.BRAINCO_HAND
 TABLE_CENTER = np.array([0.8, 0.0, 1.1])
 TABLE_SIZE = np.array([1.0, 1.0, 0.03])
 ENV_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "model", "coffee_env.json")
@@ -49,7 +49,7 @@ def test_fcl_distance(articulation, pin_model, pin_data):
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # The following is used to test brainco hand visualize
     fcl_checker.enable_visualize()
-    # fcl_checker.load_env_json(ENV_JSON_PATH)
+    fcl_checker.load_env_json(ENV_JSON_PATH)
     cur_sim_q = articulation.get_current_qpos()
     # real_q = cur_sim_q[sim2real_idx]
     real_q = np.array([0.7636, -1.5396,  0.7854,  0.0349,  0.3648, -0.5454,  
@@ -209,7 +209,7 @@ if __name__ == "__main__":
     _articulation.set_current_qpos(q[real2sim_dix])
     
     # embed()
-    # test_fcl_distance(_articulation, pin_model, pin_data)
+    test_fcl_distance(_articulation, pin_model, pin_data)
 
 
 
