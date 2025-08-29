@@ -6,11 +6,10 @@
         "shape_type": "mesh",
         "raw_data": "/home/young/Downloads/table_coffee_demo_fixed.obj"
       },
-      "pose": [0.5, 0.0, 0.0, 1, 0, 0, 0]
+      "pose": [100, 0.0, 0.0, 1, 0, 0, 0]
     }
     
   ],
-
   "user_workobjects": [
     {
       "name_key": "example_grasp_box",

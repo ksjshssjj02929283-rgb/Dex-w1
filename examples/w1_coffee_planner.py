@@ -81,8 +81,12 @@ if __name__ == "__main__":
     _articulation.set_drive(drive_type=dexsim.types.DriveType.FORCE)
 
     if ee_type == EndEffectorType.BRAINCO_HAND:
-        left_hand_handle = _env.load_actor(get_ee_full_path(robot_type, EndEffectorType.BRAINCO_HAND)[0])
-        right_hand_handle = _env.load_actor(get_ee_full_path(robot_type, EndEffectorType.BRAINCO_HAND)[1])
+        left_ee_path = "/home/young/dexe_robot_client_data/assets/DexforceW1V02_v1/Collision/Brainco/brainco_left_open_anthropomorphic.obj"
+        right_ee_path = "/home/young/dexe_robot_client_data/assets/DexforceW1V02_v1/Collision/Brainco/brainco_right_open_anthropomorphic.obj"
+        left_hand_handle = _env.load_actor(left_ee_path)
+        right_hand_handle = _env.load_actor(right_ee_path)
+        # left_hand_handle = _env.load_actor(get_ee_full_path(robot_type, EndEffectorType.BRAINCO_HAND)[0])
+        # right_hand_handle = _env.load_actor(get_ee_full_path(robot_type, EndEffectorType.BRAINCO_HAND)[1])
         _articulation.attach_node(left_hand_handle.node, "left_ee", np.eye(4, dtype=float))
         _articulation.attach_node(right_hand_handle.node, "right_ee", np.eye(4, dtype=float))
     elif ee_type == EndEffectorType.PGC_GRIPPER:
@@ -171,7 +175,37 @@ if __name__ == "__main__":
                 [-277.664, 260.603, 120.999, -72.456, -0.782, -8.705]
 
     ]
-    armr_target_pose_list = []
+    armr_target_pose_list = [
+                 [328.316, 104.862, 256.042, -161.411, 60.056, -50.58],
+                 [300.317, 190.859, 209.996, -161.411, 60.056, -50.58],
+                 [290.321, 190.865, 209.999, -161.411, 60.056, -50.58],
+                 [300.317, 190.859, 209.996, -161.411, 60.056, -50.58],
+                 [328.316, 104.862, 256.042, -161.411, 60.056, -50.58],
+                 [328.316, 104.862, 256.042, -161.411, 60.056, -50.58],
+                 [328.316, 104.862, 256.042, -161.411, 60.056, -50.58],
+                 [328.316, 104.862, 256.042, -161.411, 60.056, -50.58],
+                 [-5.141, 375.012, 60.233, -140.505, 69.868, -40.018],
+                [-33.142, 375.016, 60.229, -140.505, 69.868, -40.018],
+                [30.136, 345.013, 130.206, -140.512, 79.865, -40.026],
+                [-84.856, 400.003, 200.272, -150.367, -51.862, 85.181],
+                 [-35.864, 389.997, 220.273, -150.367, -51.862, 85.181],
+                 [35.86, 300.003, 170.272, -150.367, -51.862, 85.181],
+                 [76.477, 302.529, 167.3, -155.996, -52.389, 84.982],
+                 [132.642, 293.439, 161.596, -139.989, -32.453, 69.101],
+                 [163.022, 240.411, 191.676, -157.663, -32.769, 79.424],
+                 [173.662, 237.601, 188.42, -161.481, -29.404, 78.073],
+                 [173.662, 237.601, 188.42, -161.481, -29.404, 78.073],
+                 [72.379, 298.874, 192.999, -157.254, -37.805, 81.157],
+                 [100.939, 365.774, -68.299, -167.665, -44.531, 89.399],
+                 [101.006, 395.773, -118.312, -167.665, -44.531, 89.399],
+                 [101.006, 395.773, -118.312, -167.665, -44.531, 89.399],
+                 [100.948, 345.78, 0.309, -167.665, -44.531, 89.399],
+                 [70.513, 151.665, 256.24, -144.455, -27.939, 46.678],
+                 [70.513, 151.665, 256.24, -144.455, -27.939, 46.678],
+                 [70.513, 151.665, 256.24, -144.455, -27.939, 46.678],
+
+
+    ]
 
     for i in range(len(arml_target_pose_list)):
         arml_target_pose = np.array(arml_target_pose_list[i])
@@ -187,7 +221,19 @@ if __name__ == "__main__":
             print(f"Cannot find IK for target pose: {arml_target_pose}")
             input("Press Enter to continue...")
 
-
+    for i in range(len(armr_target_pose_list)):
+        armr_target_pose = np.array(armr_target_pose_list[i])
+        armr_target_xpos = user_pose_to_xpos(armr_target_pose[:3], armr_target_pose[3:])
+        armr_ik_qpos = armr_kine.get_nearst_ik(xpos=armr_target_xpos, qpos_seed=cur_armr_qpos)
+        if armr_ik_qpos[0]:
+            print(f"armr_ik_qpos: {armr_ik_qpos[1]}")
+            target_real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_ik_qpos[1]))
+            _articulation.set_current_qpos(target_real_qpos[real2sim_idx])
+            cur_armr_qpos = armr_ik_qpos[1]
+            input("Press Enter to continue...")
+        else:
+            print(f"Cannot find IK for target pose: {armr_target_pose}")
+            input("Press Enter to continue...")
     embed()
 
 

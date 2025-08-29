@@ -75,7 +75,7 @@ class FCLChecker:
         mesh = trimesh.load(obj_path, force='mesh')
         vertices = np.asarray(mesh.vertices, dtype=np.float64)
         triangles = np.asarray(mesh.faces, dtype=np.int32)
-        print(f"vertices length {len(vertices)}, triangles length {len(triangles)}")
+        # print(f"vertices length {len(vertices)}, triangles length {len(triangles)}")
 
         bvh = fcl.BVHModel()
         bvh.beginModel(len(vertices), len(triangles))
@@ -586,12 +586,14 @@ class FCLChecker:
                 break
             for j in range(i+2, len(self.arml_links)):
                 if self._is_collide(self.arml_links[i], self.arml_links[j], cdata):
+                    print(f"Left arm link {i+1} and link {j+1} are colliding.")
                     return True
         for i in range(len(self.armr_links)):
             if i+2 >= len(self.armr_links):
                 break
             for j in range(i+2, len(self.armr_links)):
                 if self._is_collide(self.armr_links[i], self.armr_links[j], cdata):
+                    print(f"Right arm link {i+1} and link {j+1} are colliding.")
                     return True
         return False
 

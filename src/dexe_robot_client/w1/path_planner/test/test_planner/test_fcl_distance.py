@@ -49,10 +49,21 @@ def test_fcl_distance(articulation, pin_model, pin_data):
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # The following is used to test brainco hand visualize
     fcl_checker.enable_visualize()
-    fcl_checker.load_env_json(ENV_JSON_PATH)
+    # fcl_checker.load_env_json(ENV_JSON_PATH)
     cur_sim_q = articulation.get_current_qpos()
-    real_q = cur_sim_q[sim2real_idx]
+    # real_q = cur_sim_q[sim2real_idx]
+    real_q = np.array([0.7636, -1.5396,  0.7854,  0.0349,  0.3648, -0.5454,  
+                       0.0159, -0.5363,  0.4621, -1.6844, -0.7981, -0.5831,  0.8724,  
+                       0.0075,  0.5741, -0.0466,  1.8989, -0.1984, 0.569,  -0.001])
+    torso_real_q = real_q[real_torso_idx[0]:real_torso_idx[1]+1]
+    head_real_q = real_q[real_head_idx[0]:real_head_idx[1]+1]
+    arml_real_q = real_q[real_arml_idx[0]:real_arml_idx[1]+1]
+    armr_real_q = real_q[real_armr_idx[0]:real_armr_idx[1]+1]
+    
     body_tf, head_tf, arml_tf, armr_tf = _get_Kinematics(real_q, pin_model, pin_data)
+    fcl_checker.set_head_body_transform(head_tf, body_tf)
+    fcl_checker.update_arm_transform(arml_tf+armr_tf)
+    fcl_checker.check_collision()
     fcl_checker.update_vis_transform(body_tf+head_tf+arml_tf+armr_tf)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -131,31 +142,27 @@ if __name__ == "__main__":
     # grasp_cube_handle.set_body_scale(0.1, 0.1, 0.08)
     # grasp_cube_handle.set_material(material_handle.get_inst())
 
-    table_handle = _env.load_actor("/home/young/Downloads/table_coffee_demo_fixed.obj")
+    table_handle = _env.load_actor("/home/young/Model/coffee_demo/table_coffee_demo_fixed.obj")
     table_xpos = np.array([[1,0,0,0.5],
                            [0,1,0,0.0],
                            [0,0,1,0.0],
                            [0,0,0,1]])
     table_handle.set_world_pose(table_xpos)
 
-    shelf_handle = _env.create_cube()
-    shelf_xpos = np.array([[0.707,-0.707,0,0.55],
-                           [0.707,0.707,0,0.4],
-                           [0,0,1,1.0],
-                           [0,0,0,1]])
-    shelf_handle.set_world_pose(shelf_xpos)
-    shelf_handle.set_body_scale(0.2, 0.1, 0.5)
-    shelf_handle.set_material(material_handle.get_inst())
+    cup_shelf_handle = _env.load_actor("/home/young/Model/coffee_demo/cup_shelf.obj")
+    cup_shelf_xpos = np.array([[-0.707,0.707,0,0.55],
+                                [-0.707,-0.707,0,0.4],
+                                [0,0,1,0.75],
+                                [0,0,0,1]])
+    cup_shelf_handle.set_world_pose(cup_shelf_xpos)
+    cup_shelf_handle.set_material(material_handle.get_inst()) 
 
-    
-
-    coffee_machine_handle = _env.create_cube()
-    coffee_machine_xpos = np.array([[0.707,0.707,0,0.55],
-                                    [-0.707,0.707,0,-0.4],
-                                    [0,0,1,0.8675], 
+    coffee_machine_handle = _env.load_actor("/home/young/Model/coffee_demo/coffee_machine.obj")
+    coffee_machine_xpos = np.array([[-0.707,-0.707,0,0.55],
+                                    [0.707,-0.707,0,-0.4],
+                                    [0,0,1,0.75],
                                     [0,0,0,1]])
     coffee_machine_handle.set_world_pose(coffee_machine_xpos)
-    coffee_machine_handle.set_body_scale(0.37, 0.2, 0.235)
     coffee_machine_handle.set_material(material_handle.get_inst())
 
 
@@ -166,6 +173,12 @@ if __name__ == "__main__":
     _articulation.set_world_pose(robot_pose)
     _articulation.set_articulation_flag(dexsim.types.ArticulationFlag.DISABLE_SELF_COLLISION, True)
     _articulation.set_drive(drive_type=dexsim.types.DriveType.FORCE)
+
+    left_hand_handle = _env.load_actor(get_ee_full_path(ROBOT_TYPE, EndEffectorType.BRAINCO_HAND)[0])
+    right_hand_handle = _env.load_actor(get_ee_full_path(ROBOT_TYPE, EndEffectorType.BRAINCO_HAND)[1])
+    _articulation.attach_node(left_hand_handle.node, "left_ee", np.eye(4, dtype=float))
+    _articulation.attach_node(right_hand_handle.node, "right_ee", np.eye(4, dtype=float))
+
 
     pin_model = pinocchio.buildModelFromUrdf(robot_urdf_path)
     pin_data = pin_model.createData()
@@ -195,7 +208,7 @@ if __name__ == "__main__":
          0.8013,  0.116 ,  1.8058, -1.3278,  0.5119, -0.6207])
     _articulation.set_current_qpos(q[real2sim_dix])
     
-    embed()
+    # embed()
     # test_fcl_distance(_articulation, pin_model, pin_data)
 
 

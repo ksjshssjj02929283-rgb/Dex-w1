@@ -19,8 +19,8 @@ RARM_BOUND = np.array([
 
 MODEL_DIR = ASSETS_DIR / "DexforceW1V02_v1"
 COLLISION_DIR = MODEL_DIR / "Collision"
-ARML_COMMON_LINK_NAMES = ["arml1.obj", "arml2.obj", "arml3.obj", "arml4.obj", "arml5.obj"]
-ARMR_COMMON_LINK_NAMES = ["armr1.obj", "armr2.obj", "armr3.obj", "armr4.obj", "armr5.obj"]
+ARML_COMMON_LINK_NAMES = ["arml1.obj", "arml2.obj", "arml3.obj", "arml4.obj", "arml5_short.obj"]
+ARMR_COMMON_LINK_NAMES = ["armr1.obj", "armr2.obj", "armr3.obj", "armr4.obj", "armr5_short.obj"]
 ARML_SPECIAL_LINK_NAMES = ["arml6.obj", "arml7.obj"]
 ARMR_SPECIAL_LINK_NAMES = ["armr6.obj", "armr7.obj"]
 HEAD_LINK_NAMES = ["head1.obj", "head2.obj"]

@@ -312,6 +312,31 @@ class Coordination:
         print(f"Aligned left trajectory length: {left_traj.shape[0]}")
         print(f"Aligned right trajectory length: {right_traj.shape[0]}")
         return left_traj, right_traj  
+    
+    def set_identifier(self, left_identifier_list, right_identifier_list):
+        """
+        This function is used to set the identifier list for dual arms
+        (which is used for two joint-trajectories including ee waiting trajectories) to coordinate
+
+        Args:
+            left_identifier_list (list(tuple)): the element in the list is tuple(traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx)
+            right_identifier_list (list(tuple)): the element in the list is tuple(traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx)
+
+        Notes:
+            - The length of the identifier list is the same as the count of trajectories for each arm 
+        """
+        if len(left_identifier_list) == 0 or left_identifier_list is None:
+            raise ValueError("left_identifier_list must be a non-empty list")
+        if len(right_identifier_list) == 0 or right_identifier_list is None:
+            raise ValueError("right_identifier_list must be a non-empty list")
+        
+        self.left_identifier_list = left_identifier_list
+        self.right_identifier_list = right_identifier_list
+        self.left_ee_trigger, self.right_ee_trigger = [], []
+        for i in range(len(self.left_identifier_list)):
+            self.left_ee_trigger.append(self.left_identifier_list[i][2])
+        for i in range(len(self.right_identifier_list)):
+            self.right_ee_trigger.append(self.right_identifier_list[i][2])
 
     def Coordinate_Astar(self):
         """
@@ -492,6 +517,109 @@ class Coordination:
 
         return aligned_left, aligned_right
     
+    def _tune_velocity_with_EE(self, px, py):
+        px = np.floor(np.array(px) + 0.5).astype(int)
+        py = np.floor(np.array(py) + 0.5).astype(int)
+        seg_cnt = len(px)-1
+        duration = np.zeros(seg_cnt)
+        for i in range(seg_cnt):
+            px_T = px[i+1] - px[i]
+            py_T = py[i+1] - py[i]
+            T = np.maximum(px_T, py_T)
+            duration[i] = T
+        print(f"Duration: {duration}")
+        left_traj = self.left_traj.copy()
+        right_traj = self.right_traj.copy()
+        print(f"px {px}")
+        print(f"py {py}")
+        def modify_traj(left_traj, right_traj, px, py, duration):
+            x_traj = []
+            y_traj = []
+            for i in range(len(duration)):
+                ratio_x = duration[i]/(px[i+1]-px[i])
+                ratio_y = duration[i]/(py[i+1]-py[i])
+                print(f"ratio_x: {ratio_x}, ratio_y: {ratio_y}")
+                x_start_idx = self.right_idx_chain[px[i]]
+                x_end_idx = self.right_idx_chain[px[i+1]]
+                x_len = x_end_idx - x_start_idx
+                y_start_idx = self.left_idx_chain[py[i]]
+                y_end_idx = self.left_idx_chain[py[i+1]]
+                y_len = y_end_idx - y_start_idx
+                if not np.isclose(ratio_x, 1.0):
+                    if x_len == 0:
+                        insert_row = right_traj[x_start_idx,:]
+                        x_interpolated_traj = np.tile(insert_row, (int(self.idx_increment*duration[i]),1))
+                    else:
+                        # time_orig = np.linspace(0, 1, x_len)
+                        # time_target = np.linspace(0, 1, int(self.idx_increment*duration[i]))
+                        print(f"x_len: {x_len}")
+                        if x_len == 1:
+                            x_len = 2
+                            x_end_idx += 1
+                        time_orig = np.linspace(0, x_len, x_len)
+                        time_target = np.linspace(0, x_len, int(self.idx_increment*duration[i]))
+                        print(time_orig)
+                        print(time_target)
+                        # print(f"right_traj: {right_traj}")
+                        # print(f"right_traj[x_start_idx:x_end_idx,:]: {right_traj[x_start_idx:x_end_idx, :]}")
+                        x_interpolated_traj = np.zeros((int(self.idx_increment*duration[i]),7))
+                        for dim in range(7):
+                            interp_func = interp1d(time_orig, right_traj[x_start_idx:x_end_idx, dim], kind="linear")
+                            x_interpolated_traj[:, dim] = interp_func(time_target)
+                else:
+                    x_interpolated_traj = right_traj[x_start_idx:x_end_idx,:]
+                if not np.isclose(ratio_y, 1.0):
+                    if y_len == 0:
+                        insert_row = left_traj[y_start_idx, :]
+                        y_interpolated_traj = np.tile(insert_row, (int(self.idx_increment*duration[i]),1))
+                    else:
+                        # time_orig = np.linspace(0, 1, y_len)
+                        # time_target = np.linspace(0, 1, int(self.idx_increment*duration[i]))
+                        if y_len == 1:
+                            y_len = 2
+                            y_end_idx += 1
+                        time_orig = np.linspace(0, y_len, y_len)
+                        time_target = np.linspace(0, y_len, int(self.idx_increment*duration[i]))
+                        y_interpolated_traj = np.zeros((int(self.idx_increment*duration[i]),7))
+                        for dim in range(7):
+                            interp_func = interp1d(time_orig, left_traj[y_start_idx:y_end_idx, dim], kind="linear")
+                            y_interpolated_traj[:, dim] = interp_func(time_target)
+                else:
+                    y_interpolated_traj = left_traj[y_start_idx:y_end_idx,:]
+                x_traj.append(x_interpolated_traj)
+                y_traj.append(y_interpolated_traj)
+                # print(x_interpolated_traj.shape[0])
+                # print(y_interpolated_traj.shape[0])
+
+            x_traj = np.concatenate(x_traj, axis=0)
+            y_traj = np.concatenate(y_traj, axis=0)
+            x_traj = np.insert(x_traj, -1, right_traj[self.right_idx_chain[-1], :], axis=0)
+            y_traj = np.insert(y_traj, -1, left_traj[self.left_idx_chain[-1], :], axis=0)
+            return y_traj, x_traj
+        modified_left, modified_right = modify_traj(left_traj, right_traj, px, py, duration)
+        print(f"Modified left trajectory length: {modified_left.shape[0]}")
+        print(f"Modified right trajectory length: {modified_right.shape[0]}")
+            
+        return modified_left, modified_right
+
+    def Coordinate_RRT_with_EE(self):
+        ompl_planner = GridRRT(self.grid_map, self.left_traj, self.right_traj, self.left_idx_chain, self.right_idx_chain,
+                               self.fcl_checker, self.planner_pin, self.use_ee)
+        ompl_planner.set_head_body(self.head_qpos, self.body_qpos)
+        path, planning_time, original_path = ompl_planner.plan(planning_time=2.0)
+        new_grid_map = ompl_planner.get_grid_map()
+        flag_map = ompl_planner.get_flag_map()
+
+        px, py, ori_px, ori_py = [], [], [], []
+        for i in range(len(original_path)):
+            ori_px.append(original_path[i][1])
+            ori_py.append(original_path[i][0])
+        for i in range(path.getStateCount()):
+            px.append(path.getState(i)[1])
+            py.append(path.getState(i)[0])
+
+        
+
     def plot_grid_map_Astar(self, grid_map, start, end, px, py):
         fig, ax = plt.subplots(figsize=(8, 12))
         ax.imshow(grid_map, cmap="gray", origin="upper", vmin=0, vmax=1)
