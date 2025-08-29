@@ -13,7 +13,7 @@ import atexit
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
-from ..common import get_logger, DATA_DIR, W1ArmType, W1Version
+from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version
 from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
@@ -366,7 +366,7 @@ class W1Manager:
         if not self.robot_client.is_connected(timeout_sec):
             self.logger.error(f"{self.robot_client.node_name} is not connected!")
             res = False
-        if self._has_arm_ee_client("left_arm", False):
+        if self._has_arm_ee_client("left_arm_ee", False):
             if not self.left_ee_client.is_connected(timeout_sec):
                 self.logger.error(f"{self.left_ee_client.node_name} is not connected!")
                 res = False
@@ -1161,6 +1161,7 @@ class W1Manager:
         
         return True, total_qpos_array, arm_ee_trigger_list
 
+    @time_consuming
     def plan_joint_full_body(self,
                              start_qpos: np.ndarray,
                              start_left_arm_ee_qpos: np.ndarray, 
@@ -1342,6 +1343,7 @@ class W1Manager:
                                        left_arm_ee_trigger_list, 
                                        right_arm_ee_trigger_list)
 
+    @time_consuming
     def plan_linear_full_body(self,
                              start_qpos: np.ndarray,
                              start_left_arm_ee_qpos: np.ndarray, 
@@ -1391,6 +1393,11 @@ class W1Manager:
         start_left_arm_qpos = start_qpos[self.w1_params.left_arm_index]
         start_right_arm_qpos = start_qpos[self.w1_params.right_arm_index]
         
+        if left_qpos_seed is None:
+            left_qpos_seed = start_left_arm_qpos
+        if right_qpos_seed is None:
+            right_qpos_seed = start_right_arm_qpos
+
         self.logger.debug(f"plan_joint_full_body() input cur_qpos: {start_qpos}")
         self.logger.debug("plan_joint_full_body() input waypoints_dict:")
         self.logger.debug(waypoints_dict)
@@ -1531,11 +1538,6 @@ class W1Manager:
             res, cur_right_arm_ee_qpos = self.get_current_qpos("right_arm_ee")
             if not res:
                 return False
-
-        if left_qpos_seed is None:
-            left_qpos_seed = cur_qpos[self.w1_params.left_arm_index]
-        if right_qpos_seed is None:
-            right_qpos_seed = cur_qpos[self.w1_params.right_arm_index]
 
         # plan traj
         (res, 
