@@ -23,7 +23,26 @@ class RealRobotIdx(Enum):
     RIGHT_J5 = auto()
     RIGHT_J6 = auto()
     RIGHT_J7 = auto()
-
+    # LEFT_L_INDEXMCP = auto()
+    # LEFT_L_LITTLEMCP = auto()
+    # LEFT_L_MIDDLEMCP = auto()
+    # LEFT_L_RINGMCP = auto()
+    # LEFT_L_THUMBMCP1 = auto()
+    # RIGHT_R_INDEXMCP = auto()
+    # RIGHT_R_LITTLEMCP = auto()
+    # RIGHT_R_MIDDLEMCP = auto()
+    # RIGHT_R_RINGMCP = auto()
+    # RIGHT_R_THUMBMCP1 = auto()
+    # LEFT_L_INDEXPIP = auto()
+    # LEFT_L_LITTLEPIP = auto()
+    # LEFT_L_MIDDLEPIP = auto()
+    # LEFT_L_RINGPIP = auto()
+    # LEFT_L_THUMBMCP2 = auto()
+    # RIGHT_R_INDEXPIP = auto()
+    # RIGHT_R_LITTLEPIP = auto()
+    # RIGHT_R_MIDDLEPIP = auto()
+    # RIGHT_R_RINGPIP = auto()
+    # RIGHT_R_THUMBMCP2 = auto()
 
 def get_sim2real_idx(articulation) -> List[int]: 
     """

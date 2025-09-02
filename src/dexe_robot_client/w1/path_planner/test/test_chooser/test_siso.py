@@ -108,20 +108,32 @@ def _vis_traj(arml_traj, armr_traj, articulation):
         print("No trajectory to move")
         return
     if arml_traj is not None and armr_traj is not None:
+        # start_time = time.time()
         for i in range(len(arml_traj)):
             qpos = np.concatenate([cur_torso, cur_head, arml_traj[i], armr_traj[i]])
+            # qpos = np.concatenate([qpos[REAL2SIM_IDX], np.zeros(20)])
+            # articulation.set_current_qpos(qpos)
             articulation.set_current_qpos(qpos[REAL2SIM_IDX])
-            time.sleep(0.002)
+            # time.sleep(0.002)
+        # end_time = time.time()
+        # print(f"mean set qpos time: {(end_time - start_time) / len(arml_traj)}")
     elif arml_traj is not None and armr_traj is None:
+        # start_time = time.time()
         for i in range(len(arml_traj)):
             qpos = np.concatenate([cur_torso, cur_head, arml_traj[i], cur_armr])
+            # qpos = np.concatenate([qpos[REAL2SIM_IDX], np.zeros(20)])
+            # articulation.set_current_qpos(qpos)
             articulation.set_current_qpos(qpos[REAL2SIM_IDX])
-            time.sleep(0.002)
+            # time.sleep(0.002)
+        # end_time = time.time()
+        # print(f"mean set qpos time: {(end_time - start_time) / len(arml_traj)}")
     elif arml_traj is None and armr_traj is not None:
         for i in range(len(armr_traj)):
             qpos = np.concatenate([cur_torso, cur_head, cur_arml, armr_traj[i]])
+            # qpos = np.concatenate([qpos[REAL2SIM_IDX], np.zeros(20)])
+            # articulation.set_current_qpos(qpos)
             articulation.set_current_qpos(qpos[REAL2SIM_IDX])
-            time.sleep(0.002)
+            # time.sleep(0.002)
 
 def test_siso_plan(articulation, pin_model, pin_data):
     SinglePlanner.set_arms_cfg(SINGLE_ARM_DIM, SINGLE_ARM_DIM, LARM_BOUND, RARM_BOUND)
@@ -139,8 +151,8 @@ def test_siso_plan(articulation, pin_model, pin_data):
     arml_traj1, armr_traj1, planning_time = siso_planner.plan()
 
     _vis_traj(arml_traj1, armr_traj1, articulation)
-
-    current_qpos = articulation.get_current_qpos()[SIM2REAL_IDX]
+    embed()
+    current_qpos = articulation.get_current_qpos()[:20][SIM2REAL_IDX]
     cur_torso, cur_head, cur_arml, cur_armr = current_qpos[:4], current_qpos[4:6], current_qpos[6:13], current_qpos[13:]
     siso_planner.set_head_torso(cur_head, cur_torso)
     body_tf, arml_tf, armr_tf, head_tf = _get_Kinematics(cur_torso, cur_arml, cur_armr, cur_head, pin_model, pin_data)
@@ -207,7 +219,10 @@ if __name__ == "__main__":
     material_fpath = material_data.extract_dir + "/materials"
     material_handle = _env.load_material(material_fpath + "/Concrete033", "Concrete033")
     plane_handle.set_material(material_handle.get_inst())
-    
+
+
+
+
     """ create obstacle """
     table_handle = _env.create_cube()
     table_xpos = np.array([[1,0,0,TABLE_CENTER[0]],
@@ -227,22 +242,18 @@ if __name__ == "__main__":
     grasp_cube_handle.set_material(material_handle.get_inst())
 
     robot_urdf_path = get_robot_urdf(ROBOT_TYPE)
+    # robot_urdf_path = "/home/young/Downloads/W1_V2_/W1_V2_A_BRAINCO/W1_V2_A_BRAINCO.urdf"
     _articulation = _env.load_urdf(robot_urdf_path)
     robot_pose = np.eye(4, dtype=float)
+    # robot_pose[2, 3] = 1.5
     _articulation.set_world_pose(robot_pose)
     _articulation.set_articulation_flag(dexsim.types.ArticulationFlag.DISABLE_SELF_COLLISION, True)
     _articulation.set_drive(drive_type=dexsim.types.DriveType.FORCE)
-
-    init_head_qpos = np.array([0.0, 0.0])
-    init_body_qpos = np.array([0.0, 0.0, 0.0, 0.0])
-    init_arml_qpos = np.array([-np.pi / 2, -np.pi / 4, np.pi / 2, -np.pi / 4, -np.pi / 2, np.pi / 5, 0.0])
-    init_armr_qpos = -np.array([-np.pi / 2, -np.pi / 4, np.pi / 2, -np.pi / 4, -np.pi / 2, np.pi / 5, 0.0])
-    q = np.concatenate([init_body_qpos, init_head_qpos, init_arml_qpos, init_armr_qpos])
-    _articulation.set_current_qpos(q[REAL2SIM_IDX])
+    time.sleep(1)  # wait for the robot to settle
+    # embed()
 
     pin_model = pinocchio.buildModelFromUrdf(robot_urdf_path)
     pin_data = pin_model.createData()
-
 
     sim2real_idx = get_sim2real_idx(articulation=_articulation)
     print(f"sim2real_idx: {sim2real_idx}")
@@ -254,4 +265,31 @@ if __name__ == "__main__":
     real2pin_idx = get_real2pin_idx(robot_urdf_path)
     print(f"real2pin_idx: {real2pin_idx}")
     # embed()
+
+    init_head_qpos = np.array([0.0, 0.0])
+    init_body_qpos = np.array([0.0, 0.0, 0.0, 0.0])
+    init_arml_qpos = np.array([-np.pi / 2, -np.pi / 4, np.pi / 2, -np.pi / 4, -np.pi / 2, np.pi / 5, 0.0])
+    init_armr_qpos = -np.array([-np.pi / 2, -np.pi / 4, np.pi / 2, -np.pi / 4, -np.pi / 2, np.pi / 5, 0.0])
+    q = np.concatenate([init_body_qpos, init_head_qpos, init_arml_qpos, init_armr_qpos])
+    _articulation.set_current_qpos(q[real2sim_dix])
+    # hand_q = np.array([-0.    ,
+    #    -0.    , -0.    ,  0.    , -0.    , -0.    ,  0.    ,  0.    ,
+    #    -0.    ,  0.    , -0.1614, -0.1687, -0.1527, -0.1382,  0.    ,
+    #    -0.1614, -0.1688, -0.1527, -0.1382, -0.])
+    # q = np.concatenate([q, hand_q])[real2sim_dix]
+
+    q_zero = np.zeros(40)
+
+    # Linear interpolation from q_zero to q with 100 steps
+    # for i in range(100):
+    #     alpha = i / 99.0  # alpha from 0 to 1
+    #     q_interpolated = (1 - alpha) * q_zero + alpha * q
+    #     _articulation.set_current_qpos(q_interpolated)
+    #     # _world.update(0.01)
+    #     time.sleep(0.001)  # Adjusted for smoother visualization
+    # embed()
+    
+    
+    
+
     test_siso_plan(_articulation, pin_model, pin_data)

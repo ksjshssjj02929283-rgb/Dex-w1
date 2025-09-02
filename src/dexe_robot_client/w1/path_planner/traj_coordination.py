@@ -517,35 +517,57 @@ class Coordination:
 
         return aligned_left, aligned_right
     
-    def _find_traj_idx(self, left_traj_idx = None, right_traj_idx = None):
-        """
-        This function is used to find the coordination point is in which trajectory segment
-        Args:
-            left_traj_idx (int): the index of the left arm trajectory
-            right_traj_idx (int): the index of the right arm trajectory
+    # def _find_traj_idx(self, left_traj_idx = None, right_traj_idx = None):
+    #     """
+    #     This function is used to find the coordination point is in which trajectory segment
+    #     Args:
+    #         left_traj_idx (int): the index of the left arm trajectory
+    #         right_traj_idx (int): the index of the right arm trajectory
         
-        Returns:
-            left_segment_idx (int): the index of the left arm trajectory segment in the identifier list
-            left_segment (tuple): the trajectory segment tuple(traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) for left arm
-            right_segment_idx (int): the index of the right arm trajectory segment in the identifier list
-            right_segment (tuple): the trajectory segment tuple(traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) for right arm
-        """
-        if left_traj_idx is None and right_traj_idx is None:
-            return -1, -1
-        left_traj_segment_idx, right_traj_segment_idx = -1, -1
+    #     Returns:
+    #         left_segment_idx (int): the index of the left arm trajectory segment in the identifier list
+    #         left_segment (tuple): the trajectory segment tuple(traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) for left arm
+    #         right_segment_idx (int): the index of the right arm trajectory segment in the identifier list
+    #         right_segment (tuple): the trajectory segment tuple(traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) for right arm
+    #     """
+    #     if left_traj_idx is None and right_traj_idx is None:
+    #         return -1, -1
+    #     left_traj_segment_idx, right_traj_segment_idx = -1, -1
         
-        for i, (traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) in enumerate(self.left_identifier_list):
-            if left_traj_idx >= traj_start_idx and left_traj_idx <= traj_end_idx:
-                left_traj_segment_idx = i
-                # if left_traj_idx >= 
-                break
-        for j, (traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) in enumerate(self.right_identifier_list):
-            if right_traj_idx >= traj_start_idx and right_traj_idx <= traj_end_idx:
-                right_traj_segment_idx = j
-                break
-        return left_traj_segment_idx, right_traj_segment_idx
+    #     for i, (traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) in enumerate(self.left_identifier_list):
+    #         if left_traj_idx >= traj_start_idx and left_traj_idx <= traj_end_idx:
+    #             left_traj_segment_idx = i
+    #             # if left_traj_idx >= 
+    #             break
+    #     for j, (traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) in enumerate(self.right_identifier_list):
+    #         if right_traj_idx >= traj_start_idx and right_traj_idx <= traj_end_idx:
+    #             right_traj_segment_idx = j
+    #             break
+    #     return left_traj_segment_idx, right_traj_segment_idx
             
+    def build_index_map(orig_spans, new_spans):
+        """
+        orig_spans/new_spans: [(os, oe), ...] / [(ns, ne), ...]，半开区间
+        返回: old2new 映射字典
+        """
+        old2new = {}
+        for (os, oe), (ns, ne) in zip(orig_spans, new_spans):
+            orig_len = max(1, oe - os)
+            new_len  = max(1, ne - ns)
+
+            if orig_len == 1:
                 
+                old2new[os] = ns
+                continue
+
+            denom = orig_len - 1
+            for old in range(os, oe):  
+                alpha = (old - os) / denom               
+                new_local = int(round(alpha * (new_len - 1)))
+                new_idx = ns + new_local
+                old2new[old] = new_idx
+        return old2new
+                    
 
     def _tune_velocity_with_EE(self, px, py):
         px = np.floor(np.array(px) + 0.5).astype(int)
@@ -563,9 +585,11 @@ class Coordination:
         print(f"px {px}")
         print(f"py {py}")
         def modify_traj(left_traj, right_traj, px, py, duration):
-            x_traj = []
-            y_traj = []
+            x_traj, y_traj = [], []
+            x_orig_duration, y_orig_duration = [], []
+            x_new_duration, y_new_duration = [], []
             for i in range(len(duration)):
+                # TODO: if one arm is purely waiting, px[i+1]-px[i] will be 0 which will cause a fault at duration[i]/(px[i+1]-px[i])
                 ratio_x = duration[i]/(px[i+1]-px[i])
                 ratio_y = duration[i]/(py[i+1]-py[i])
                 print(f"ratio_x: {ratio_x}, ratio_y: {ratio_y}")
@@ -600,6 +624,8 @@ class Coordination:
 
                 else:
                     x_interpolated_traj = right_traj[x_start_idx:x_end_idx,:]
+
+
                 if not np.isclose(ratio_y, 1.0):
                     if y_len == 0:
                         insert_row = left_traj[y_start_idx, :]
@@ -618,20 +644,33 @@ class Coordination:
                             y_interpolated_traj[:, dim] = interp_func(time_target)
                 else:
                     y_interpolated_traj = left_traj[y_start_idx:y_end_idx,:]
+
+                x_orig_duration.append((x_start_idx, x_end_idx))
+                x_new_duration.append((len(x_traj), len(x_traj)+len(x_interpolated_traj)))
+                y_orig_duration.append((y_start_idx, y_end_idx))
+                y_new_duration.append((len(y_traj), len(y_traj)+len(y_interpolated_traj)))
                 x_traj.append(x_interpolated_traj)
                 y_traj.append(y_interpolated_traj)
-                # print(x_interpolated_traj.shape[0])
-                # print(y_interpolated_traj.shape[0])
+
+            left_old2new = self.build_index_map(y_orig_duration, y_new_duration)
+            right_old2new = self.build_index_map(x_orig_duration, x_new_duration)
+            left_ee_trigger_new = [left_old2new[idx] for idx in self.left_ee_trigger if idx in left_old2new]
+            right_ee_trigger_new = [right_old2new[idx] for idx in self.right_ee_trigger if idx in right_old2new]
+            print(f"left_ee_trigger_new: {left_ee_trigger_new}")
+            print(f"right_ee_trigger_new: {right_ee_trigger_new}")
 
             x_traj = np.concatenate(x_traj, axis=0)
             y_traj = np.concatenate(y_traj, axis=0)
             x_traj = np.insert(x_traj, -1, right_traj[self.right_idx_chain[-1], :], axis=0)
             y_traj = np.insert(y_traj, -1, left_traj[self.left_idx_chain[-1], :], axis=0)
-            return y_traj, x_traj
-        modified_left, modified_right = modify_traj(left_traj, right_traj, px, py, duration)
+            return y_traj, x_traj, left_ee_trigger_new, right_ee_trigger_new
+        modified_left, modified_right, modified_left_ee_trigger, modified_right_ee_trigger = modify_traj(left_traj, right_traj, px, py, duration)
         print(f"Modified left trajectory length: {modified_left.shape[0]}")
         print(f"Modified right trajectory length: {modified_right.shape[0]}")
-            
+        
+        self.modified_left_ee_trigger = modified_left_ee_trigger
+        self.modified_right_ee_trigger = modified_right_ee_trigger
+
         return modified_left, modified_right
 
     def Coordinate_RRT_with_EE(self):
@@ -649,6 +688,11 @@ class Coordination:
         for i in range(path.getStateCount()):
             px.append(path.getState(i)[1])
             py.append(path.getState(i)[0])
+
+        modified_left, modified_right = self._tune_velocity_with_EE(px, py)
+        aligned_left, aligned_right = self._align_traj(modified_left, modified_right)
+
+        return aligned_left, aligned_right, self.modified_left_ee_trigger, self.modified_right_ee_trigger
 
         
 

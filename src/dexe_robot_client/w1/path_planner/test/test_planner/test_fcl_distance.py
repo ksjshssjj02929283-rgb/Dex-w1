@@ -168,11 +168,14 @@ if __name__ == "__main__":
 
 
     robot_urdf_path = get_robot_urdf(ROBOT_TYPE)
+    # robot_urdf_path = "/home/young/Downloads/W1_V2_/W1_V2_A_BRAINCO/W1_V2_A_BRAINCO.urdf"
     _articulation = _env.load_urdf(robot_urdf_path)
     robot_pose = np.eye(4, dtype=float)
     _articulation.set_world_pose(robot_pose)
     _articulation.set_articulation_flag(dexsim.types.ArticulationFlag.DISABLE_SELF_COLLISION, True)
     _articulation.set_drive(drive_type=dexsim.types.DriveType.FORCE)
+
+    
 
     left_hand_handle = _env.load_actor(get_ee_full_path(ROBOT_TYPE, EndEffectorType.BRAINCO_HAND)[0])
     right_hand_handle = _env.load_actor(get_ee_full_path(ROBOT_TYPE, EndEffectorType.BRAINCO_HAND)[1])
@@ -207,9 +210,11 @@ if __name__ == "__main__":
         -0.3681,  1.5708, -2.1179,  0.915 , -0.1155,  0.6287, -0.4864,
          0.8013,  0.116 ,  1.8058, -1.3278,  0.5119, -0.6207])
     _articulation.set_current_qpos(q[real2sim_dix])
+
+
     
-    # embed()
-    test_fcl_distance(_articulation, pin_model, pin_data)
+    embed()
+    # test_fcl_distance(_articulation, pin_model, pin_data)
 
 
 
