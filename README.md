@@ -85,5 +85,5 @@ Refer to [commit message guidelines](https://github.com/angular/angular/blob/mai
 - [x] Add downloading urdf files from nas
 - [x] Add `ee_sim_server`
 - [x] Add end effector heartbeat mechanism
-- [ ] Support end-effector in dexsim visualizer
+- [x] Support end-effector in dexsim visualizer
 - [ ] SDK packaging

@@ -7,6 +7,8 @@
 from enum import Enum, auto
 from typing import List
 import pinocchio
+from ..end_effector_client import EndEffectorType
+
 
 class RealRobotIdx(Enum):
     ANKLE = auto()
@@ -31,7 +33,7 @@ class RealRobotIdx(Enum):
     RIGHT_J7 = auto()
 
 
-def get_sim2real_idx(articulation) -> List[int]: 
+def get_robot_sim2real_idx(articulation) -> List[int]: 
     """
     This function maps the simulation joints to the real robot joint indices.
     
@@ -49,7 +51,7 @@ def get_sim2real_idx(articulation) -> List[int]:
         sim2real_idx.append(sim_dict[real_name])
     return sim2real_idx
 
-def get_real2sim_idx(articulation) -> List[int]:
+def get_robot_real2sim_idx(articulation) -> List[int]:
     """
     This function maps the real robot joint indices to the simulation joints.
 
@@ -64,7 +66,8 @@ def get_real2sim_idx(articulation) -> List[int]:
     real_dict = {name: idx for idx, name in enumerate(real_names)}
     real2sim_dix = []
     for sim_name in sim_actived_names:
-        real2sim_dix.append(real_dict[sim_name])
+        if sim_name in real_names:
+            real2sim_dix.append(real_dict[sim_name])
     return real2sim_dix
 
 def get_pin2real_idx(urdf_path) -> List[int]:
@@ -128,8 +131,6 @@ def get_real_idx():
     return (torso_start_idx, torso_end_idx), (head_start_idx, head_end_idx), \
            (left_arm_start_idx, left_arm_end_idx), (right_arm_start_idx, right_arm_end_idx)
 
-
-
 def get_pin_idx(urdf_path):
     """
     This function returns the start and end indices for torso, head, left arm, and right arm in the pinocchio model.
@@ -155,3 +156,57 @@ def get_pin_idx(urdf_path):
     right_arm_end_idx = pin_dict["RIGHT_J7"]
     return (torso_start_idx, torso_end_idx), (head_start_idx, head_end_idx), \
            (left_arm_start_idx, left_arm_end_idx), (right_arm_start_idx, right_arm_end_idx)
+
+
+class LeftPGCGripperIdx(Enum):
+    LEFT_FINGER1_JOINT = auto()
+
+class RightPGCGripperIdx(Enum):
+    RIGHT_FINGER1_JOINT = auto()
+
+class LeftBrainCoHandIdx(Enum):
+    LEFT_THUMBCMC = auto()
+    LEFT_THUMBMCP = auto()
+    LEFT_INDEXMCP = auto()
+    LEFT_MIDDLEMCP = auto()
+    LEFT_RINGMCP = auto()
+    LEFT_LITTLEMCP = auto()
+
+class RightBrainCoHandIdx(Enum):
+    RIGHT_THUMBCMC = auto()
+    RIGHT_THUMBMCP = auto()
+    RIGHT_INDEXMCP = auto()
+    RIGHT_MIDDLEMCP = auto()
+    RIGHT_RINGMCP = auto()
+    RIGHT_LITTLEMCP = auto()
+
+def get_ee_sim2real_idx(articulation, 
+                        is_left: bool, 
+                        end_effector_type: EndEffectorType) -> List[int]: 
+    sim_actived_names = articulation.get_actived_joint_names()
+    sim_dict = {name: idx for idx, name in enumerate(sim_actived_names)}
+
+    idx_class_map = {
+        (EndEffectorType.BRAINCO_HAND, True): LeftBrainCoHandIdx,
+        (EndEffectorType.BRAINCO_HAND, False): RightBrainCoHandIdx,
+        (EndEffectorType.PGC_GRIPPER, True): LeftPGCGripperIdx,
+        (EndEffectorType.PGC_GRIPPER, False): RightPGCGripperIdx,
+    }
+
+    idx_class = None
+    try:
+        idx_class = idx_class_map[(end_effector_type, is_left)]
+    except KeyError:
+        raise ValueError(f"{end_effector_type.name} are not support.")
+    
+    real_names = [realjoint.name for realjoint in idx_class]
+    sim2real_idx = []
+    for real_name in real_names:
+        sim2real_idx.append(sim_dict[real_name])
+    return sim2real_idx
+
+def get_ee_real2sim_idx(articulation, 
+                        is_left: bool, 
+                        endeffector_type: EndEffectorType) -> List[int]: 
+    # TODO:
+    pass
