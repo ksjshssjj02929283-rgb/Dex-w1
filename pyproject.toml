@@ -20,7 +20,7 @@ dependencies = [
     "scipy>=1.12",
     "toppra==0.6.3",
     "pin>=2.7.0",
-    "trimesh",
+    "trimesh==4.2.4",
     "open3d"
 ]
 

@@ -208,7 +208,7 @@ class W1Manager:
         self._pin_kine = Planner_Pin(robot_type, 
                                      self._end_effector_type)
         self._collision_checker = FCLChecker(robot_type, 
-                                             self._end_effector_type)
+                                             None)
         self.logger.info("Initialize FCL collision checker.")
 
     def _has_arm_ee_client(self, name: str, verbose: bool = True) -> bool:
@@ -285,7 +285,9 @@ class W1Manager:
             return False
         # qpos = np.atleast_2d(qpos)
         if np.any(qpos < qpos_lb) or np.any(qpos > qpos_ub):
-            self.logger.error(f"{name} qpos excceeded limits: {np.rad2deg(qpos)}")
+            invalid_idx = np.where((qpos < qpos_lb) | (qpos > qpos_ub))[0][0]
+            self.logger.error(f"{name} {invalid_idx+1}th qpos({qpos.tolist()}) " + \
+                              f"excceeded limits([{qpos_lb[invalid_idx]}, {qpos_ub[invalid_idx]}]).")
             return False
         return True
     
@@ -738,12 +740,12 @@ class W1Manager:
                 res_ik, cur_qpos = arm_kine.get_nearst_ik(xpos=cur_xpos, 
                                                     qpos_seed=cur_qseed)
             if not res_ik:
-                self.logger.error(f"{name} solve ik failed, cur_qseed: {np.rad2deg(cur_qseed)}.")
+                self.logger.error(f"{name} solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
                 return False, None
             if not np.allclose(cur_qpos, cur_qseed, atol=np.deg2rad(90)):
                 self.logger.error(f"{name} qpos traj is not continues\n" + \
-                                  f"cur_qpos: {np.rad2deg(cur_qpos)}\n" + \
-                                  f"cur_qseed: {np.rad2deg(cur_qseed)}.")
+                                  f"cur_qpos(deg): {np.rad2deg(cur_qpos)}\n" + \
+                                  f"cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
                 return False, None
             qpos_list.append(cur_qpos)
             cur_qseed = cur_qpos
@@ -908,7 +910,7 @@ class W1Manager:
             time.sleep(5*self.TIME_STEP)
 
         self.logger.error(f"Current qpos does NOT reach the target qpos until {reach_timeout}s, " +
-                          f"qpos error: {np.rad2deg(cur_qpos - targt_qpos)} deg.")
+                          f"qpos error(deg): {np.rad2deg(cur_qpos - targt_qpos)}.")
         return False
 
 
@@ -1334,9 +1336,9 @@ class W1Manager:
         if not res:
             return False
         
-        # check collision
-        if self._check_traj_collision(total_qpos_array):
-            return False
+        # # check collision
+        # if self._check_traj_collision(total_qpos_array):
+        #     return False
 
         # execute
         return self.execute_joint_traj(total_qpos_array, 
@@ -1551,10 +1553,12 @@ class W1Manager:
                                                                 right_qpos_seed,
                                                                 cartesian_step,
                                                                 speed_ratio)
-
-        # check collision
-        if self._check_traj_collision(total_qpos_array):
+        if not res:
             return False
+
+        # # check collision
+        # if self._check_traj_collision(total_qpos_array):
+        #     return False
 
         # execute
         return self.execute_joint_traj(total_qpos_array, 

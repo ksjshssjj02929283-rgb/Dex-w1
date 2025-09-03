@@ -4,11 +4,10 @@ set -xe
 mkdir -p fcl_dependencies
 cd fcl_dependencies
 
-rm -rf libccd fcl python-fcl
 # git clone https://github.com/danfis/libccd.git
 # git clone https://github.com/flexible-collision-library/fcl.git
 # git clone https://github.com/BerkeleyAutomation/python-fcl.git
-if [ ! -d octomap-1.10.0]; then
+if [ ! -d octomap-1.10.0 ]; then
     wget https://github.com/OctoMap/octomap/archive/refs/tags/v1.10.0.tar.gz -O octomap.tar.gz
     tar -xzf octomap.tar.gz
 fi
@@ -68,9 +67,3 @@ echo "=== Installing python-fcl ==="
 
 cd python-fcl-0.7.0.8
 pip install .
-
-# echo "=== Installing trimesh ==="
-# pip install trimesh==4.5.3
-
-
-
