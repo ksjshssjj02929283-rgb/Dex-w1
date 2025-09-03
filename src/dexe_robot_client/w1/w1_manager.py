@@ -377,6 +377,21 @@ class W1Manager:
                 res = False
         return res
 
+    def clear_robot_error(self) -> bool:
+        """清除机器人错误
+
+        Returns:
+            bool: 
+        """
+        if self._is_sim:
+            self.logger.error("Only support real mode.")
+            return False
+        res = self.robot_client.clear_error()
+        if res == -1:
+            self.logger.error("Clear robot error failed!")
+            return False
+        return True
+
     def set_drag_mode(self, enable_drag: bool) -> bool:
         """开关机器人拖动示教模式
 
@@ -391,7 +406,27 @@ class W1Manager:
             return False
         res = self.robot_client.set_drag_mode(enable_drag)
         if res == -1:
-            self.logger.error("Set drag mode failed! FIXME")
+            self.logger.error("Set drag mode failed!")
+            return False
+        return True
+
+    def set_safe_level(self, safe_level: float) -> bool:
+        """设置机器人安全等级
+
+        Args:
+            safe_level (float): 安全级别, 取值范围 [0.1, 1], 默认为0.5  
+                                0.1时机械臂柔性最大,1.0时机械臂刚性最大   
+                                值越小机械臂柔性越大越安全, 刚性越大运动跟踪性能越好但碰撞时容易造成机械臂损坏
+
+        Returns:
+            bool: 
+        """
+        if self._is_sim:
+            self.logger.error("Only support real mode.")
+            return False
+        res = self.robot_client.set_safe_level(safe_level)
+        if res == -1:
+            self.logger.error("Set save level failed!")
             return False
         return True
 
@@ -554,15 +589,37 @@ class W1Manager:
         return True, cur_qpos[self.w1_params.index_infos[name]["index"]]
 
     def get_current_xpos(self, name: str) -> tuple[bool, np.ndarray]:
-        arm_kine = self._get_arm_kine(name)
-        if arm_kine is None:
-            return False, None
+        """获取left_arm/right_arm的当前笛卡尔位置
 
+        Args:
+            name (str): ["left_arm", "right_arm"]
+
+        Returns:
+            tuple[bool, np.ndarray]: 
+        """
         res, cur_qpos = self.get_current_qpos(name)
         if not res:
             return False, None
+        return self.get_xpos(name, cur_qpos)
+
+    def get_xpos(self, name: str, qpos: np.ndarray) -> tuple[bool, np.ndarray]:
+        """获取left_arm/right_arm的目标qpos的笛卡尔位置
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+            qpos (np.ndarray): 目标关节角
+
+        Returns:
+            tuple[bool, np.ndarray]: 
+        """
+        if not self._check_qpos_dimension(name, qpos):
+            return False, None
         
-        res, cur_xpos = arm_kine.get_fk(qpos=cur_qpos)
+        arm_kine = self._get_arm_kine(name)
+        if arm_kine is None:
+            return False, None
+        
+        res, cur_xpos = arm_kine.get_fk(qpos=qpos)
         if not res:
             self.logger.error(f"{name} solve fk failed")
             return False, None
@@ -915,8 +972,31 @@ class W1Manager:
 
 
     ########## demo定制API ###########
-    def get_current_pose(self, name: str) -> tuple[bool, np.ndarray]:
+    def get_current_pose(self, name: str) -> tuple[bool, list]:
+        """获取left_arm/right_arm的当前笛卡尔位置[xyz_mm, rpy_deg]
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+
+        Returns:
+            tuple[bool, list]: 
+        """
         res, cur_xpos = self.get_current_xpos(name)
+        if not res: 
+            return False, None
+        return True, xpos_to_user_pose(cur_xpos)
+
+    def get_pose(self, name: str, qpos: np.ndarray) -> tuple[bool, list]:
+        """获取left_arm/right_arm目标qpos的笛卡尔位置[xyz_mm, rpy_deg]
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+            qpos (np.ndarray): 目标关节角
+
+        Returns:
+            tuple[bool, list]: 
+        """
+        res, cur_xpos = self.get_xpos(name, qpos)
         if not res: 
             return False, None
         return True, xpos_to_user_pose(cur_xpos)
