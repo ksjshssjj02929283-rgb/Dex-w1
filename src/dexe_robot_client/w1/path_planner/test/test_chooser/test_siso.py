@@ -257,8 +257,8 @@ if __name__ == "__main__":
 
     sim2real_idx = get_sim2real_idx(articulation=_articulation)
     print(f"sim2real_idx: {sim2real_idx}")
-    real2sim_dix = get_real2sim_idx(articulation=_articulation)
-    print(f"real2sim_idx: {real2sim_dix}")
+    real2sim_idx = get_real2sim_idx(articulation=_articulation)
+    print(f"real2sim_idx: {real2sim_idx}")
 
     pin2real_idx = get_pin2real_idx(robot_urdf_path)
     print(f"pin2real_idx: {pin2real_idx}")
@@ -271,12 +271,12 @@ if __name__ == "__main__":
     init_arml_qpos = np.array([-np.pi / 2, -np.pi / 4, np.pi / 2, -np.pi / 4, -np.pi / 2, np.pi / 5, 0.0])
     init_armr_qpos = -np.array([-np.pi / 2, -np.pi / 4, np.pi / 2, -np.pi / 4, -np.pi / 2, np.pi / 5, 0.0])
     q = np.concatenate([init_body_qpos, init_head_qpos, init_arml_qpos, init_armr_qpos])
-    _articulation.set_current_qpos(q[real2sim_dix])
+    _articulation.set_current_qpos(q[real2sim_idx])
     # hand_q = np.array([-0.    ,
     #    -0.    , -0.    ,  0.    , -0.    , -0.    ,  0.    ,  0.    ,
     #    -0.    ,  0.    , -0.1614, -0.1687, -0.1527, -0.1382,  0.    ,
     #    -0.1614, -0.1688, -0.1527, -0.1382, -0.])
-    # q = np.concatenate([q, hand_q])[real2sim_dix]
+    # q = np.concatenate([q, hand_q])[real2sim_idx]
 
     q_zero = np.zeros(40)
 
