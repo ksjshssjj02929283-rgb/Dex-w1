@@ -21,6 +21,10 @@ find_package(ruckig REQUIRED)
 find_package(pinocchio REQUIRED)
 
 aux_source_directory(src LIB_SRCS)
+aux_source_directory(kinematics LIB_SRCS)
+aux_source_directory(motion_planner LIB_SRCS)
+aux_source_directory(torque_controller LIB_SRCS)
+aux_source_directory(utilities LIB_SRCS)
 add_library(robot_server_lib ${LIB_SRCS})
 
 target_include_directories(robot_server_lib PUBLIC

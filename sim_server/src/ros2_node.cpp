@@ -33,7 +33,7 @@ void Ros2Node::InitRobotServer()
 {
     std::filesystem::create_directories("log/");
     nanolog::initialize(nanolog::GuaranteedLogger(), "log/", "robot_server_sim", 10);
-    nanolog::set_log_level(nanolog::LogLevel::DEBUG);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
+    nanolog::set_log_level(nanolog::LogLevel::INFO);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
 
     // 创建 /feedback/joint 发布器
     feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint_sim", 10);

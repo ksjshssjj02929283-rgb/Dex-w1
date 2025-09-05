@@ -3,8 +3,7 @@
  * @brief 机器人类型定义和宏定义
  * @copyright Copyright (C) 2025 DexForce Technology Co., Ltd. All Rights Reserved.
  */
-#ifndef BASE_TYPEDEF_H
-#define BASE_TYPEDEF_H
+#pragma once
 
 #include <Eigen/Dense>
 #include <array>
@@ -208,5 +207,3 @@ inline const char *ToString(ReferenceFrame frame)
 }
 
 }  // namespace robot_server_lib
-
-#endif  // BASE_TYPEDEF_H
