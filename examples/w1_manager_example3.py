@@ -11,6 +11,7 @@ from dexe_robot_client.w1 import W1Manager
 
 
 def arm_angle_motion():
+    """利用SRSKinematics实现手臂冗余运动的示例"""
     w1_manager = W1Manager(is_sim=True,
                         arm_type=W1ArmType.ANTHROPOMORPHIC, 
                         w1_version=W1Version.V2, 
@@ -18,7 +19,10 @@ def arm_angle_motion():
                         use_rlia=False)
     if not w1_manager.connect():
         return
-     
+    w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
+                                      5, -45, -5, -90, 0, -15, 0,
+                                      -5, 45, 5, 90, 0, 15, 0]),
+                            save_to_file=False)
     w1_manager.go_home(1.)
 
     # arm angle trajectory
@@ -72,7 +76,12 @@ def arm_angle_motion():
     qpos_array[:,6:13] = np.array(left_qpos_list)
     qpos_array[:,13:20] = np.array(right_qpos_list)
 
-    # move
+    # check collision
+    if w1_manager._check_traj_collision(qpos_array):
+        get_logger().error("Trajectory is collision, do not executed!")
+        return
+
+    # execute
     w1_manager.execute_joint_traj(qpos_array)
 
 if __name__ == "__main__":

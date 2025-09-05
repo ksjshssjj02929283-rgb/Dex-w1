@@ -12,5 +12,4 @@ __pycache__/
 *.pyc
 *.egg-info/
 
-log/
-data/
+*_dependencies/

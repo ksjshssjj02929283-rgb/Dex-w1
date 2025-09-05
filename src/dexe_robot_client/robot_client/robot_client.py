@@ -92,7 +92,7 @@ class RobotClient(ABC):
         """async interface - setting robot safe level
         异步接口 - 设置机器人安全级别, 仅真实机器人生效
         Args:
-            - safe_level: float: 安全级别, 取值范围 [0.1, 1], 默认为1.0, 
+            - safe_level: float: 安全级别, 取值范围 [0.1, 1], 默认为0.5, 
                 值越小机械臂柔性越大, 0.1时机械臂柔性最大, 1.0时机械臂刚性最大, 刚性越大运动跟踪性能越好, 但碰撞时容易造成机械臂损坏
         Returns:
             - int: request id 指令号, 可用于等待对应运动指令完成等

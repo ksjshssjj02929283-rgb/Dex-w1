@@ -1,10 +1,17 @@
+# ----------------------------------------------------------------------------
+# Copyright (c) 2021-2025 DexForce Technology Co., Ltd.
+#
+# All rights reserved.
+# ----------------------------------------------------------------------------
+
 import pinocchio
-from dexe_robot_client.w1.path_planner.utils.mapping_index import *
-from dexe_robot_client.w1.path_planner.utils.robot_type import *
+from ...common import get_pin2real_idx, get_real2pin_idx, get_pin_idx
+from .utils.robot_type import *
+
 
 class Planner_Pin:
 
-    def __init__(self, robot_type: RobotType = RobotType.W1V02_1, ee_type: EndEffectorType = None):
+    def __init__(self, robot_type: RobotType = RobotType.W1V02_1, end_effector_type: EndEffectorType = None):
         robot_urdf = get_robot_urdf(robot_type=robot_type)
         self.pin_model = pinocchio.buildModelFromUrdf(robot_urdf)
         self.pin_data = self.pin_model.createData()
@@ -14,9 +21,9 @@ class Planner_Pin:
 
         self.pin_torso_idx, self.pin_head_idx, self.pin_arml_idx, self.pin_armr_idx = get_pin_idx(robot_urdf)
 
-        if ee_type is not None and isinstance(ee_type, EndEffectorType):
+        if end_effector_type is not None and isinstance(end_effector_type, EndEffectorType):
             self.use_ee = True
-            self.ee_type = ee_type
+            self.ee_type = end_effector_type
         else:
             self.use_ee = False
             self.ee_type = None

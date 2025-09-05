@@ -13,7 +13,7 @@ import atexit
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
-from ..common import get_logger, DATA_DIR, W1ArmType, W1Version
+from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version
 from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
@@ -23,6 +23,9 @@ from .path_planner.bezier_blend_path import interpolate_cartesian_path
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from .utils.w1_params import W1Params
 from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
+from .path_planner.utils.robot_type import RobotType
+from .path_planner.fcl_checker import FCLChecker
+from .path_planner.planner_pinocchio import Planner_Pin
 
 from dexe_robot_client.w1.path_planner.utils.mapping_index import *
 from dexe_robot_client.w1.path_planner.utils.robot_type import *
@@ -85,6 +88,8 @@ class W1Manager:
 
         self._use_rlia = use_rlia
         self._init_kine_solver()
+
+        self._init_collision_checker()
 
         self.set_sim_mode(is_sim)
 
@@ -162,6 +167,7 @@ class W1Manager:
 
         if self._end_effector_type is None:
             self.logger.info(f"No movable end effector.")
+            self._clients = [self._robot_client_sim, self._robot_client_real]
         else:
             self._left_ee_client_sim = create_end_effector_client(is_left = True, is_sim = True, 
                                                                   end_effector_type = self._end_effector_type)
@@ -174,11 +180,11 @@ class W1Manager:
             self.left_ee_client = self._left_ee_client_sim
             self.right_ee_client = self._right_ee_client_sim
 
-        self._is_sim = True
+            self._clients = [self._robot_client_sim, self._robot_client_real, 
+                            self._left_ee_client_sim, self._left_ee_client_real, 
+                            self._right_ee_client_sim, self._right_ee_client_real]
 
-        self._clients = [self._robot_client_sim, self._robot_client_real, 
-                        self._left_ee_client_sim, self._left_ee_client_real, 
-                        self._right_ee_client_sim, self._right_ee_client_real]
+        self._is_sim = True
 
         self._executor = MultiThreadedExecutor()
         for node in self._clients:
@@ -258,6 +264,17 @@ class W1Manager:
 
             self.logger.info("Initialize srs-python kinematic solver.")
 
+    def _init_collision_checker(self):
+        if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
+            robot_type = RobotType.W1V02_1
+        else:
+            robot_type = RobotType.W1V02_2
+        self._pin_kine = Planner_Pin(robot_type, 
+                                     self._end_effector_type)
+        self._collision_checker = FCLChecker(robot_type, 
+                                             None)
+        self.logger.info("Initialize FCL collision checker.")
+
     def _has_arm_ee_client(self, name: str, verbose: bool = True) -> bool:
         if name in self.w1_params.arm_ee_names:
             if name == "left_arm_ee" and self.left_ee_client is not None:
@@ -332,7 +349,9 @@ class W1Manager:
             return False
         # qpos = np.atleast_2d(qpos)
         if np.any(qpos < qpos_lb) or np.any(qpos > qpos_ub):
-            self.logger.error(f"{name} qpos excceeded limits")
+            invalid_idx = np.where((qpos < qpos_lb) | (qpos > qpos_ub))[0][0]
+            self.logger.error(f"{name} {invalid_idx+1}th qpos({qpos.tolist()}) " + \
+                              f"excceeded limits([{qpos_lb[invalid_idx]}, {qpos_ub[invalid_idx]}]).")
             return False
         return True
     
@@ -413,13 +432,29 @@ class W1Manager:
         if not self.robot_client.is_connected(timeout_sec):
             self.logger.error(f"{self.robot_client.node_name} is not connected!")
             res = False
-        if not self.left_ee_client.is_connected(timeout_sec):
-            self.logger.error(f"{self.left_ee_client.node_name} is not connected!")
-            res = False
-        if not self.right_ee_client.is_connected(timeout_sec):
-            self.logger.error(f"{self.right_ee_client.node_name} is not connected!")
-            res = False
+        if self._has_arm_ee_client("left_arm_ee", False):
+            if not self.left_ee_client.is_connected(timeout_sec):
+                self.logger.error(f"{self.left_ee_client.node_name} is not connected!")
+                res = False
+            if not self.right_ee_client.is_connected(timeout_sec):
+                self.logger.error(f"{self.right_ee_client.node_name} is not connected!")
+                res = False
         return res
+
+    def clear_robot_error(self) -> bool:
+        """清除机器人错误
+
+        Returns:
+            bool: 
+        """
+        if self._is_sim:
+            self.logger.error("Only support real mode.")
+            return False
+        res = self.robot_client.clear_error()
+        if res == -1:
+            self.logger.error("Clear robot error failed!")
+            return False
+        return True
 
     def set_drag_mode(self, enable_drag: bool) -> bool:
         """开关机器人拖动示教模式
@@ -435,7 +470,27 @@ class W1Manager:
             return False
         res = self.robot_client.set_drag_mode(enable_drag)
         if res == -1:
-            self.logger.error("Set drag mode failed! FIXME")
+            self.logger.error("Set drag mode failed!")
+            return False
+        return True
+
+    def set_safe_level(self, safe_level: float) -> bool:
+        """设置机器人安全等级
+
+        Args:
+            safe_level (float): 安全级别, 取值范围 [0.1, 1], 默认为0.5  
+                                0.1时机械臂柔性最大,1.0时机械臂刚性最大   
+                                值越小机械臂柔性越大越安全, 刚性越大运动跟踪性能越好但碰撞时容易造成机械臂损坏
+
+        Returns:
+            bool: 
+        """
+        if self._is_sim:
+            self.logger.error("Only support real mode.")
+            return False
+        res = self.robot_client.set_safe_level(safe_level)
+        if res == -1:
+            self.logger.error("Set save level failed!")
             return False
         return True
 
@@ -587,25 +642,48 @@ class W1Manager:
             return self._get_arm_ee_client(name).get_qpos()
         
         robot_info = self.robot_client.get_info()
-        cur_qpos = np.array(robot_info.joint_position)
-        if cur_qpos is None:
-            self.logger.error(f"Get current robot info failed: {robot_info.status}.")
+        if robot_info.joint_position is None:
+            self.logger.error(f"Get current robot info failed, status: {robot_info.status}.")
             return False, None
         
+        cur_qpos = np.array(robot_info.joint_position)
+
         if name == "full_body":
             return True, cur_qpos
         return True, cur_qpos[self.w1_params.index_infos[name]["index"]]
 
     def get_current_xpos(self, name: str) -> tuple[bool, np.ndarray]:
-        arm_kine = self._get_arm_kine(name)
-        if arm_kine is None:
-            return False, None
+        """获取left_arm/right_arm的当前笛卡尔位置
 
+        Args:
+            name (str): ["left_arm", "right_arm"]
+
+        Returns:
+            tuple[bool, np.ndarray]: 
+        """
         res, cur_qpos = self.get_current_qpos(name)
         if not res:
             return False, None
+        return self.get_xpos(name, cur_qpos)
+
+    def get_xpos(self, name: str, qpos: np.ndarray) -> tuple[bool, np.ndarray]:
+        """获取left_arm/right_arm的目标qpos的笛卡尔位置
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+            qpos (np.ndarray): 目标关节角
+
+        Returns:
+            tuple[bool, np.ndarray]: 
+        """
+        if not self._check_qpos_dimension(name, qpos):
+            return False, None
         
-        res, cur_xpos = arm_kine.get_fk(qpos=cur_qpos)
+        arm_kine = self._get_arm_kine(name)
+        if arm_kine is None:
+            return False, None
+        
+        res, cur_xpos = arm_kine.get_fk(qpos=qpos)
         if not res:
             self.logger.error(f"{name} solve fk failed")
             return False, None
@@ -657,6 +735,36 @@ class W1Manager:
         self.logger.info("Stop move by user!")
         return True
 
+    def check_collision(self, qpos: np.ndarray) -> bool:
+        """检查qpos状态是否碰撞"""
+        if not self._check_qpos_dimension("full_body", qpos):
+            return True
+        torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(qpos)
+        self._collision_checker.set_head_body_transform(head_transforms=head_tf, 
+                                                        body_transforms=torso_tf)
+        self._collision_checker.update_arm_transform(arml_tf + armr_tf)
+        return self._collision_checker.check_collision()
+
+    def _check_traj_collision(self, 
+                              qpos_array: np.ndarray, 
+                              step: int = 5) -> bool:
+        """检查轨迹是否碰撞
+
+        Args:
+            qpos_array (np.ndarray): 10ms间隔的轨迹
+            step (int, optional): 检测步长，每步10ms. Defaults to 5.
+
+        Returns:
+            bool: 
+        """
+        # NOTE: 最大速度 伸直构型下 仅基座关节运动导致的末端位移 5 * 0.01s * 1rad/s * 0.7m = 3.5cm
+        qpos_array_check = np.vstack((qpos_array[::step], qpos_array[-1]))
+        for qpos in qpos_array_check:
+            if self.check_collision(qpos):
+                self.logger.error(f"Traj is collision at {qpos}, do not executed!")
+                return True
+        return False
+    
     def plan_joint_traj(self, 
                         name: str,
                         qpos_array: np.ndarray, 
@@ -745,20 +853,20 @@ class W1Manager:
         # solve ik
         qpos_list = []
         cur_qseed = qpos_seed
-        for i, cur_xpos in enumerate(xpos_sample_array):
+        for cur_xpos in xpos_sample_array:
             if self._use_rlia:
                 res_ik, cur_qpos = arm_kine.get_ik(xpos=cur_xpos, 
                                                     qpos_seed=cur_qseed)
             else:
                 res_ik, cur_qpos = arm_kine.get_nearst_ik(xpos=cur_xpos, 
                                                     qpos_seed=cur_qseed)
+            if not res_ik:
+                self.logger.error(f"{name} solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
+                return False, None
             if not np.allclose(cur_qpos, cur_qseed, atol=np.deg2rad(90)):
                 self.logger.error(f"{name} qpos traj is not continues\n" + \
-                                  f"cur_qpos: {np.rad2deg(cur_qpos)}\n" + \
-                                  f"cur_qseed: {np.rad2deg(cur_qseed)}.")
-                return False, None
-            if not res_ik:
-                self.logger.error(f"{name} solve ik failed, cur_qseed: {np.rad2deg(cur_qseed)}.")
+                                  f"cur_qpos(deg): {np.rad2deg(cur_qpos)}\n" + \
+                                  f"cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
                 return False, None
             qpos_list.append(cur_qpos)
             cur_qseed = cur_qpos
@@ -792,7 +900,7 @@ class W1Manager:
                            qpos_array: np.ndarray,
                            left_arm_ee_trigger_list: list = None,
                            right_arm_ee_trigger_list: list = None,
-                           reach_timeout: float = 2.0) -> bool:
+                           reach_timeout: float = 1.0) -> bool:
         """按10ms间隔执行关节轨迹
 
         Args:
@@ -892,16 +1000,18 @@ class W1Manager:
                 streaming_finished = True
             else:
                 streaming_finished = False
-            self.robot_client.send_streaming_command(qpos.tolist(), 
-                                                     streaming_finished)
+            if not self.robot_client.send_streaming_command(qpos.tolist(), 
+                                                            streaming_finished):
+                self.logger.critical("Streaming command send failed.")
+                return False
             self.robot_client.wait_second(self.TIME_STEP)
             count += 1
             last_qpos = qpos
         self.robot_client.wait_request_finish()
 
-        self.logger.info(f"Ideal duration should be {(count-1) * self.TIME_STEP}s, " +
-                            f"and actual duration is {time.time() - t0}s.")
-        self.logger.info("Finish streaming.")
+        self.logger.info("Finish streaming. " +
+                        f"Ideal duration should be {(count-1) * self.TIME_STEP}s, " +
+                        f"and actual duration is {time.time() - t0}s.")
         
         stop_ee_thread = True
         if left_arm_ee_trigger_thread is not None:
@@ -915,19 +1025,42 @@ class W1Manager:
         while time.time() - t1 < reach_timeout:
             res, cur_qpos = self.get_current_qpos()
             if not res: 
-                continue
+                return False
             if np.allclose(cur_qpos, targt_qpos, atol=np.deg2rad(1)):
                 return True
             time.sleep(5*self.TIME_STEP)
 
         self.logger.error(f"Current qpos does NOT reach the target qpos until {reach_timeout}s, " +
-                          f"qpos error: {np.rad2deg(cur_qpos - targt_qpos)} deg.")
+                          f"qpos error(deg): {np.rad2deg(cur_qpos - targt_qpos)}.")
         return False
 
 
     ########## demo定制API ###########
-    def get_current_pose(self, name: str) -> tuple[bool, np.ndarray]:
+    def get_current_pose(self, name: str) -> tuple[bool, list]:
+        """获取left_arm/right_arm的当前笛卡尔位置[xyz_mm, rpy_deg]
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+
+        Returns:
+            tuple[bool, list]: 
+        """
         res, cur_xpos = self.get_current_xpos(name)
+        if not res: 
+            return False, None
+        return True, xpos_to_user_pose(cur_xpos)
+
+    def get_pose(self, name: str, qpos: np.ndarray) -> tuple[bool, list]:
+        """获取left_arm/right_arm目标qpos的笛卡尔位置[xyz_mm, rpy_deg]
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+            qpos (np.ndarray): 目标关节角
+
+        Returns:
+            tuple[bool, list]: 
+        """
+        res, cur_xpos = self.get_xpos(name, qpos)
         if not res: 
             return False, None
         return True, xpos_to_user_pose(cur_xpos)
@@ -1174,10 +1307,134 @@ class W1Manager:
         
         return True, total_qpos_array, arm_ee_trigger_list
 
+    @time_consuming
+    def plan_joint_full_body(self,
+                             start_qpos: np.ndarray,
+                             start_left_arm_ee_qpos: np.ndarray, 
+                             start_right_arm_ee_qpos: np.ndarray,
+                             waypoints_dict: dict, 
+                             speed_ratio: float = 1.0) -> tuple[bool, np.ndarray, list, list]:
+        """规划各部件独立关节空间运动
+        - 每个key接收多个qpos路径点，key省略视为不控制
+        - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
+        - 未指定速度的路径点(None)按speed_ratio补全
+        - left_arm_ee/right_arm_ee的每个路径点输入格式为[pre_delay_time, ee_qpos, post_delay_time]
+        - key对应的value为 None / [] 视为不控制，其余特殊输入视为不支持
+
+        Args:
+            start_qpos (np.ndarray): 规划起始的全身qpos
+
+            start_left_arm_ee_qpos (np.ndarray): 规划起始的left_arm_ee_qpos
+
+            start_right_arm_ee_qpos (np.ndarray): 规划起始的right_arm_ee_qpos   
+
+            waypoints_dict (dict): {"torso": [torso_qpos1,torso_qpos2,], "torso_speed_ratio": [torso_speed1, torso_speed2,],   
+                                    "head": [head_qpos1,], "head_speed_ratio": [head_speed1,],   
+                                    "left_arm": [left_arm_qpos1,], "left_arm_speed_ratio": [left_arm_speed1,], 
+                                    "left_arm_ee": [[0.,left_arm_ee_qpos1,0.5],],  
+                                    "right_arm": [right_arm_qpos1,], "right_arm_speed_ratio": [right_arm_speed1], 
+                                    "right_arm_ee": [[0.,right_arm_ee_qpos1,0.5],]}
+
+            speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0.
+
+        Returns:
+            tuple[bool, np.ndarray, list, list]: 规划成功与否，全身关节轨迹，左末端执行器轨迹，右末端执行器轨迹
+        """
+        if not self._check_qpos_limits("full_body", start_qpos):
+            return False, None, None, None
+
+        start_torso_qpos = start_qpos[self.w1_params.torso_index]
+        start_head_qpos = start_qpos[self.w1_params.head_index]
+        start_left_arm_qpos = start_qpos[self.w1_params.left_arm_index]
+        start_right_arm_qpos = start_qpos[self.w1_params.right_arm_index]
+        
+        self.logger.debug(f"plan_joint_full_body() input cur_qpos: {start_qpos}")
+        self.logger.debug("plan_joint_full_body() input waypoints_dict:")
+        self.logger.debug(waypoints_dict)
+        self.logger.debug(f"plan_joint_full_body() input speed_ratio: {speed_ratio}")
+
+        # torso
+        res_torso, torso_qpos_array = self._plan_to_waypoint("torso", 
+                                                             start_torso_qpos, 
+                                                             waypoints_dict, 
+                                                             speed_ratio)
+        if not res_torso:
+            self.logger.error("Plan to torso traj failed.")
+            return False, None, None, None
+        
+        # head
+        res_head, head_qpos_array = self._plan_to_waypoint("head", 
+                                                             start_head_qpos, 
+                                                             waypoints_dict, 
+                                                             speed_ratio)
+        if not res_head:
+            self.logger.error("Plan to head traj failed.")
+            return False, None, None, None
+
+        # left_arm
+        left_arm_ee_trigger_list = None
+        if not self._has_arm_ee_client("left_arm_ee", False):
+            (res_left_arm, 
+            left_arm_qpos_array) = self._plan_to_waypoint("left_arm", 
+                                                        start_left_arm_qpos, 
+                                                        waypoints_dict, 
+                                                        speed_ratio)
+            if not res_left_arm:
+                self.logger.error("Plan to left arm traj failed.")
+                return False, None, None, None
+        else:
+            if not self._check_qpos_limits("left_arm_ee", start_left_arm_ee_qpos):
+                return False, None, None, None
+            (res_left_arm, 
+            left_arm_qpos_array,
+            left_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee("left_arm", 
+                                                                       start_left_arm_qpos, 
+                                                                       start_left_arm_ee_qpos, 
+                                                                       waypoints_dict, 
+                                                                       speed_ratio)
+            if not res_left_arm:
+                self.logger.error("Plan to left arm traj with ee failed.")
+                return False, None, None, None
+
+        # right_arm
+        right_arm_ee_trigger_list = None
+        if not self._has_arm_ee_client("right_arm_ee", False):
+            (res_right_arm, 
+            right_arm_qpos_array) = self._plan_to_waypoint("right_arm", 
+                                                        start_right_arm_qpos, 
+                                                        waypoints_dict, 
+                                                        speed_ratio)
+            if not res_right_arm:
+                self.logger.error("Plan to right arm traj failed.")
+                return False, None, None, None
+        else:
+            if not self._check_qpos_limits("right_arm_ee", start_right_arm_ee_qpos):
+                return False, None, None, None
+            (res_right_arm, 
+            right_arm_qpos_array,
+            right_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee("right_arm", 
+                                                                       start_right_arm_qpos, 
+                                                                       start_right_arm_ee_qpos, 
+                                                                       waypoints_dict, 
+                                                                       speed_ratio)
+            if not res_right_arm:
+                self.logger.error("Plan to right arm traj with ee failed.")
+                return False, None, None, None
+
+        # align
+        res_align, total_qpos_array = self._qpos_align(torso_qpos_array, 
+                                                       head_qpos_array, 
+                                                       left_arm_qpos_array, 
+                                                       right_arm_qpos_array)
+        if not res_align:
+            return False, None, None, None
+
+        return True, total_qpos_array, left_arm_ee_trigger_list, right_arm_ee_trigger_list
+
     def move_joint_full_body(self, 
                              waypoints_dict: dict, 
                              speed_ratio: float = 1.0) -> bool:
-        """规划各部件独立关节空间运动
+        """从当前位置规划并执行各部件独立关节空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
         - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
         - 未指定速度的路径点(None)按speed_ratio补全
@@ -1191,6 +1448,7 @@ class W1Manager:
                                     "left_arm_ee": [[0.,left_arm_ee_qpos1,0.5],],  
                                     "right_arm": [right_arm_qpos1,], "right_arm_speed_ratio": [right_arm_speed1], 
                                     "right_arm_ee": [[0.,right_arm_ee_qpos1,0.5],]}
+
             speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0.
 
         Returns:
@@ -1199,85 +1457,177 @@ class W1Manager:
         res, cur_qpos = self.get_current_qpos()
         if not res:
             return False
-        cur_torso_qpos = cur_qpos[self.w1_params.torso_index]
-        cur_head_qpos = cur_qpos[self.w1_params.head_index]
-        cur_left_arm_qpos = cur_qpos[self.w1_params.left_arm_index]
-        cur_right_arm_qpos = cur_qpos[self.w1_params.right_arm_index]
+        cur_left_arm_ee_qpos = None
+        if self._has_arm_ee_client("left_arm_ee", False):
+            res, cur_left_arm_ee_qpos = self.get_current_qpos("left_arm_ee")
+            if not res:
+                return False
+        cur_right_arm_ee_qpos = None
+        if self._has_arm_ee_client("right_arm_ee", False):
+            res, cur_right_arm_ee_qpos = self.get_current_qpos("right_arm_ee")
+            if not res:
+                return False
+
+        # plan traj
+        (res, 
+         total_qpos_array, 
+         left_arm_ee_trigger_list, 
+         right_arm_ee_trigger_list) = self.plan_joint_full_body(cur_qpos, 
+                                                                cur_left_arm_ee_qpos, 
+                                                                cur_right_arm_ee_qpos, 
+                                                                waypoints_dict,
+                                                                speed_ratio)
+        if not res:
+            return False
         
-        self.logger.debug("Input waypoints_dict:")
+        # # check collision
+        # if self._check_traj_collision(total_qpos_array):
+        #     return False
+
+        # execute
+        return self.execute_joint_traj(total_qpos_array, 
+                                       left_arm_ee_trigger_list, 
+                                       right_arm_ee_trigger_list)
+
+    @time_consuming
+    def plan_linear_full_body(self,
+                             start_qpos: np.ndarray,
+                             start_left_arm_ee_qpos: np.ndarray, 
+                             start_right_arm_ee_qpos: np.ndarray,
+                             waypoints_dict: dict, 
+                             left_qpos_seed: np.ndarray = None,
+                             right_qpos_seed: np.ndarray = None,
+                             cartesian_step: float = 0.005,
+                             speed_ratio: float = 1.0) -> tuple[bool, np.ndarray, list, list]:
+        """规划各部件独立关节空间运动，arm执行笛卡尔空间运动
+        - 每个key接收多个qpos路径点，key省略视为不控制
+        - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
+        - 未指定速度的路径点(None)按speed_ratio补全
+        - left_arm_ee/right_arm_ee的每个路径点输入格式为[pre_delay_time, ee_qpos, post_delay_time]
+        - key对应的value为 None / [] 视为不控制，其余特殊输入视为不支持
+
+        Args:
+            start_qpos (np.ndarray): 规划起始的全身qpos
+
+            start_left_arm_ee_qpos (np.ndarray): 规划起始的left_arm_ee_qpos
+
+            start_right_arm_ee_qpos (np.ndarray): 规划起始的right_arm_ee_qpos   
+
+            waypoints_dict (dict): {"torso": [torso_qpos1,torso_qpos2,], "torso_speed_ratio": [torso_speed1, torso_speed2,],   
+                                    "head": [head_qpos1,], "head_speed_ratio": [head_speed1,],   
+                                    "left_arm": [left_arm_qpos1,], "left_arm_speed_ratio": [left_arm_speed1,], 
+                                    "left_arm_ee": [[0.,left_arm_ee_qpos1,0.5],],  
+                                    "right_arm": [right_arm_qpos1,], "right_arm_speed_ratio": [right_arm_speed1], 
+                                    "right_arm_ee": [[0.,right_arm_ee_qpos1,0.5],]}
+
+            left_qpos_seed (np.ndarray, optional): ik reference seed. Defaults to None.
+
+            right_qpos_seed (np.ndarray, optional): ik reference seed. Defaults to None.
+            
+            cartesian_step (float, optional): cartesian sample step. Defaults to 0.05.
+
+            speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0.
+
+        Returns:
+            tuple[bool, np.ndarray, list, list]: 规划成功与否，全身关节轨迹，左末端执行器轨迹，右末端执行器轨迹
+        """
+        if not self._check_qpos_limits("full_body", start_qpos):
+            return False, None, None, None
+
+        start_torso_qpos = start_qpos[self.w1_params.torso_index]
+        start_head_qpos = start_qpos[self.w1_params.head_index]
+        start_left_arm_qpos = start_qpos[self.w1_params.left_arm_index]
+        start_right_arm_qpos = start_qpos[self.w1_params.right_arm_index]
+        
+        if left_qpos_seed is None:
+            left_qpos_seed = start_left_arm_qpos
+        if right_qpos_seed is None:
+            right_qpos_seed = start_right_arm_qpos
+
+        self.logger.debug(f"plan_joint_full_body() input cur_qpos: {start_qpos}")
+        self.logger.debug("plan_joint_full_body() input waypoints_dict:")
         self.logger.debug(waypoints_dict)
-        self.logger.debug(f"Input speed_ratio: {speed_ratio}")
-        self.logger.debug(f"Input cur_qpos: {cur_qpos}")
+        self.logger.debug(f"plan_joint_full_body() input speed_ratio: {speed_ratio}")
 
         # torso
         res_torso, torso_qpos_array = self._plan_to_waypoint("torso", 
-                                                             cur_torso_qpos, 
+                                                             start_torso_qpos, 
                                                              waypoints_dict, 
                                                              speed_ratio)
         if not res_torso:
             self.logger.error("Plan to torso traj failed.")
-            return False
+            return False, None, None, None
         
         # head
         res_head, head_qpos_array = self._plan_to_waypoint("head", 
-                                                             cur_head_qpos, 
+                                                             start_head_qpos, 
                                                              waypoints_dict, 
                                                              speed_ratio)
         if not res_head:
             self.logger.error("Plan to head traj failed.")
-            return False
+            return False, None, None, None
 
         # left_arm
         left_arm_ee_trigger_list = None
         if not self._has_arm_ee_client("left_arm_ee", False):
             (res_left_arm, 
             left_arm_qpos_array) = self._plan_to_waypoint("left_arm", 
-                                                        cur_left_arm_qpos, 
+                                                        start_left_arm_qpos, 
                                                         waypoints_dict, 
-                                                        speed_ratio)
+                                                        speed_ratio,
+                                                        is_cartesian=True,
+                                                        qpos_seed=left_qpos_seed,
+                                                        cartesian_step=cartesian_step)
             if not res_left_arm:
                 self.logger.error("Plan to left arm traj failed.")
-                return False
+                return False, None, None, None
         else:
-            res, cur_left_arm_ee_qpos = self.get_current_qpos("left_arm_ee")
-            if not res:
-                return False
+            if not self._check_qpos_limits("left_arm_ee", start_left_arm_ee_qpos):
+                return False, None, None, None
             (res_left_arm, 
             left_arm_qpos_array,
             left_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee("left_arm", 
-                                                                       cur_left_arm_qpos, 
-                                                                       cur_left_arm_ee_qpos, 
+                                                                       start_left_arm_qpos, 
+                                                                       start_left_arm_ee_qpos, 
                                                                        waypoints_dict, 
-                                                                       speed_ratio)
+                                                                       speed_ratio,
+                                                                       is_cartesian=True,
+                                                                       qpos_seed=left_qpos_seed,
+                                                                       cartesian_step=cartesian_step)
             if not res_left_arm:
                 self.logger.error("Plan to left arm traj with ee failed.")
-                return False
+                return False, None, None, None
 
         # right_arm
         right_arm_ee_trigger_list = None
         if not self._has_arm_ee_client("right_arm_ee", False):
             (res_right_arm, 
             right_arm_qpos_array) = self._plan_to_waypoint("right_arm", 
-                                                        cur_right_arm_qpos, 
+                                                        start_right_arm_qpos, 
                                                         waypoints_dict, 
-                                                        speed_ratio)
+                                                        speed_ratio,
+                                                        is_cartesian=True,
+                                                        qpos_seed=right_qpos_seed,
+                                                        cartesian_step=cartesian_step)
             if not res_right_arm:
                 self.logger.error("Plan to right arm traj failed.")
-                return False
+                return False, None, None, None
         else:
-            res, cur_right_arm_ee_qpos = self.get_current_qpos("right_arm_ee")
-            if not res:
-                return False
+            if not self._check_qpos_limits("right_arm_ee", start_right_arm_ee_qpos):
+                return False, None, None, None
             (res_right_arm, 
             right_arm_qpos_array,
             right_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee("right_arm", 
-                                                                       cur_right_arm_qpos, 
-                                                                       cur_right_arm_ee_qpos, 
+                                                                       start_right_arm_qpos, 
+                                                                       start_right_arm_ee_qpos, 
                                                                        waypoints_dict, 
-                                                                       speed_ratio)
+                                                                       speed_ratio,
+                                                                       is_cartesian=True,
+                                                                       qpos_seed=right_qpos_seed,
+                                                                       cartesian_step=cartesian_step)
             if not res_right_arm:
                 self.logger.error("Plan to right arm traj with ee failed.")
-                return False
+                return False, None, None, None
 
         # align
         res_align, total_qpos_array = self._qpos_align(torso_qpos_array, 
@@ -1285,11 +1635,9 @@ class W1Manager:
                                                        left_arm_qpos_array, 
                                                        right_arm_qpos_array)
         if not res_align:
-            return False
-        # execute
-        return self.execute_joint_traj(total_qpos_array, 
-                                       left_arm_ee_trigger_list, 
-                                       right_arm_ee_trigger_list)
+            return False, None, None, None
+
+        return True, total_qpos_array, left_arm_ee_trigger_list, right_arm_ee_trigger_list
 
     def move_linear_full_body(self,
                               waypoints_dict: dict, 
@@ -1297,7 +1645,7 @@ class W1Manager:
                               right_qpos_seed: np.ndarray = None,
                               cartesian_step: float = 0.005,
                               speed_ratio: float = 1.0) -> bool:
-        """规划各部件独立关节空间运动，arm执行笛卡尔空间运动
+        """从当前位置规划各部件独立关节空间运动，arm执行笛卡尔空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
         - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
         - 未指定速度的路径点(None)按speed_ratio补全
@@ -1310,10 +1658,14 @@ class W1Manager:
                                     "left_arm": [left_arm_pose1,], "left_arm_speed_ratio": [left_arm_speed1,], 
                                     "left_arm_ee": [[0.,left_arm_ee_qpos1,0.5],],  
                                     "right_arm": [right_arm_pose1,], "right_arm_speed_ratio": [right_arm_speed1], 
-                                    "right_arm_ee": [[0.,right_arm_ee_qpos1,0.5],]}
+                                    "right_arm_ee": [[0.,right_arm_ee_qpos1,0.5],]} 
+
             left_qpos_seed (np.ndarray, optional): ik reference seed. Defaults to None.
+
             right_qpos_seed (np.ndarray, optional): ik reference seed. Defaults to None.
+
             cartesian_step (float, optional): cartesian sample step. Defaults to 0.05.
+
             speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0.
 
         Returns:
@@ -1322,111 +1674,36 @@ class W1Manager:
         res, cur_qpos = self.get_current_qpos()
         if not res:
             return False
-        cur_torso_qpos = cur_qpos[self.w1_params.torso_index]
-        cur_head_qpos = cur_qpos[self.w1_params.head_index]
-        cur_left_arm_qpos = cur_qpos[self.w1_params.left_arm_index]
-        cur_right_arm_qpos = cur_qpos[self.w1_params.right_arm_index]        
-
-        self.logger.debug("Input waypoints_dict:")
-        self.logger.debug(waypoints_dict)
-        self.logger.debug(f"Input speed_ratio: {speed_ratio}")
-        self.logger.debug(f"Input cur_qpos: {cur_qpos}")
-
-        if left_qpos_seed is None:
-            left_qpos_seed = cur_left_arm_qpos
-        if right_qpos_seed is None:
-            right_qpos_seed = cur_right_arm_qpos
-
-        # torso
-        res_torso, torso_qpos_array = self._plan_to_waypoint("torso", 
-                                                             cur_torso_qpos, 
-                                                             waypoints_dict, 
-                                                             speed_ratio)
-        if not res_torso:
-            self.logger.error("Plan to torso traj failed.")
-            return False
-        
-        # head
-        res_head, head_qpos_array = self._plan_to_waypoint("head", 
-                                                             cur_head_qpos, 
-                                                             waypoints_dict, 
-                                                             speed_ratio)
-        if not res_head:
-            self.logger.error("Plan to head traj failed.")
-            return False
-
-        # left_arm
-        left_arm_ee_trigger_list = None
-        if not self._has_arm_ee_client("left_arm_ee", False):
-            (res_left_arm, 
-            left_arm_qpos_array) = self._plan_to_waypoint("left_arm", 
-                                                        cur_left_arm_qpos, 
-                                                        waypoints_dict, 
-                                                        speed_ratio,
-                                                        is_cartesian=True,
-                                                        qpos_seed=left_qpos_seed,
-                                                        cartesian_step=cartesian_step)
-            if not res_left_arm:
-                self.logger.error("Plan to left arm traj failed.")
-                return False
-        else:
+        cur_left_arm_ee_qpos = None
+        if self._has_arm_ee_client("left_arm_ee", False):
             res, cur_left_arm_ee_qpos = self.get_current_qpos("left_arm_ee")
             if not res:
                 return False
-            (res_left_arm, 
-            left_arm_qpos_array,
-            left_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee("left_arm", 
-                                                                       cur_left_arm_qpos, 
-                                                                       cur_left_arm_ee_qpos, 
-                                                                       waypoints_dict, 
-                                                                       speed_ratio,
-                                                                       is_cartesian=True,
-                                                                       qpos_seed=left_qpos_seed,
-                                                                       cartesian_step=cartesian_step)
-            if not res_left_arm:
-                self.logger.error("Plan to left arm traj with ee failed.")
-                return False
-
-        # right_arm
-        right_arm_ee_trigger_list = None
-        if not self._has_arm_ee_client("right_arm_ee", False):
-            (res_right_arm, 
-            right_arm_qpos_array) = self._plan_to_waypoint("right_arm", 
-                                                        cur_right_arm_qpos, 
-                                                        waypoints_dict, 
-                                                        speed_ratio,
-                                                        is_cartesian=True,
-                                                        qpos_seed=right_qpos_seed,
-                                                        cartesian_step=cartesian_step)
-            if not res_right_arm:
-                self.logger.error("Plan to right arm traj failed.")
-                return False
-        else:
+        cur_right_arm_ee_qpos = None
+        if self._has_arm_ee_client("right_arm_ee", False):
             res, cur_right_arm_ee_qpos = self.get_current_qpos("right_arm_ee")
             if not res:
                 return False
-            (res_right_arm, 
-            right_arm_qpos_array,
-            right_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee("right_arm", 
-                                                                       cur_right_arm_qpos, 
-                                                                       cur_right_arm_ee_qpos, 
-                                                                       waypoints_dict, 
-                                                                       speed_ratio,
-                                                                       is_cartesian=True,
-                                                                       qpos_seed=right_qpos_seed,
-                                                                       cartesian_step=cartesian_step)
-            if not res_right_arm:
-                self.logger.error("Plan to right arm traj with ee failed.")
-                return False
 
-        # align
-        res_align, total_qpos_array = self._qpos_align(torso_qpos_array, 
-                                                       head_qpos_array, 
-                                                       left_arm_qpos_array, 
-                                                       right_arm_qpos_array)
-        if not res_align:
+        # plan traj
+        (res, 
+         total_qpos_array, 
+         left_arm_ee_trigger_list, 
+         right_arm_ee_trigger_list) = self.plan_linear_full_body(cur_qpos, 
+                                                                cur_left_arm_ee_qpos, 
+                                                                cur_right_arm_ee_qpos, 
+                                                                waypoints_dict,
+                                                                left_qpos_seed,
+                                                                right_qpos_seed,
+                                                                cartesian_step,
+                                                                speed_ratio)
+        if not res:
             return False
-        
+
+        # # check collision
+        # if self._check_traj_collision(total_qpos_array):
+        #     return False
+
         # execute
         return self.execute_joint_traj(total_qpos_array, 
                                        left_arm_ee_trigger_list, 

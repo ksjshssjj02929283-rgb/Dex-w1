@@ -13,6 +13,7 @@ from dexe_robot_client.w1 import W1Manager
 
 
 def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
+    """move_joint_full_body()的使用示例"""
     if move_with_ee:
         end_effector_type = EndEffectorType.BRAINCO_HAND
     else:
@@ -21,7 +22,8 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
     w1_manager = W1Manager(is_sim = is_sim,
                             arm_type=W1ArmType.ANTHROPOMORPHIC, 
                             w1_version=W1Version.V2, 
-                            end_effector_type = end_effector_type)
+                            end_effector_type = end_effector_type,
+                            use_rlia=False)
     if not w1_manager.connect():
         return
 
@@ -83,6 +85,7 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
 
 
 def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
+    """move_linear_full_body()的使用示例"""
     if move_with_ee:
         end_effector_type = EndEffectorType.BRAINCO_HAND
     else:
@@ -91,7 +94,8 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
     w1_manager = W1Manager(is_sim = is_sim,
                             arm_type=W1ArmType.ANTHROPOMORPHIC, 
                             w1_version=W1Version.V2, 
-                            end_effector_type = end_effector_type)
+                            end_effector_type = end_effector_type,
+                            use_rlia=False)
     if not w1_manager.connect():
         return
 
@@ -155,4 +159,4 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
 
 if __name__ == "__main__":
     move_full_body_example1(move_with_ee = True, is_sim = True)
-    # move_full_body_example2(move_with_ee = True, is_sim = True)
+    # move_full_body_example2(move_with_ee = False, is_sim = True)

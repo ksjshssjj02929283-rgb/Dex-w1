@@ -2,8 +2,8 @@ from enum import Enum, auto
 import os
 import pathlib
 import numpy as np
-from dexe_robot_client.common.config import PACKAGE_NAME, DATA_DIR, ASSETS_DIR
-from dexe_robot_client.end_effector_client import EndEffectorType 
+from ....common.config import ASSETS_DIR
+from ....end_effector_client import EndEffectorType 
 
 SINGLE_ARM_DIM = 7
 DUAL_ARM_DIM = 14
