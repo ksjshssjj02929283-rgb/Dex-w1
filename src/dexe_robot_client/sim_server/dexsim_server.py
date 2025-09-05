@@ -36,14 +36,6 @@ class DexsimServer:
         self._lock = threading.Lock()        
         self._cur_qpos = None
         self._init_visualization()
-
-        self.robot_sim2real_index = get_robot_sim2real_idx(self._articulation)
-        if end_effector_type is not None:
-            self.left_ee_sim2real_index = get_ee_sim2real_idx(self._articulation, True, end_effector_type)
-            self.left_ee_joint_limits = self._articulation.get_joint_limits()[self.left_ee_sim2real_index]
-
-            self.right_ee_sim2real_index = get_ee_sim2real_idx(self._articulation, False, end_effector_type)
-            self.right_ee_joint_limits = self._articulation.get_joint_limits()[self.right_ee_sim2real_index]
         
         self._init_ros2_node()
         self.logger.debug("Dexsim server initialized.")
@@ -153,16 +145,31 @@ class DexsimServer:
 
         # 设置机器人
         self._articulation = self._env.load_urdf(str(self._urdf_path))
-        robot_pose = np.eye(4, dtype=float)
         # 设置世界坐标系
+        robot_pose = np.eye(4, dtype=float)
         self._articulation.set_world_pose(robot_pose)
         # 取消自碰撞
         self._articulation.set_articulation_flag(dexsim.types.ArticulationFlag.DISABLE_SELF_COLLISION, True)
-        # 设置运动学仿真dexsim.types.DriveType.FORCE 或 动力学仿真dexsim.types.DriveType.TARGET
-        self._articulation.set_drive(stiffness=1e4,
-                                    damping=1e3,
-                                    max_force=1e5, 
-                                    drive_type=dexsim.types.DriveType.FORCE)
+        
+        if self._end_effector_type is not None:
+            self.left_ee_sim2real_index = get_ee_sim2real_idx(self._articulation, True, self._end_effector_type)
+            self.left_ee_joint_limits = self._articulation.get_joint_limits()[self.left_ee_sim2real_index]
+
+            self.right_ee_sim2real_index = get_ee_sim2real_idx(self._articulation, False, self._end_effector_type)
+            self.right_ee_joint_limits = self._articulation.get_joint_limits()[self.right_ee_sim2real_index] 
+
+            self._articulation.set_drive(stiffness = 1e2, damping = 1e1, max_force = 1e3, 
+                                        drive_type = dexsim.types.DriveType.FORCE)
+
+        self.robot_sim2real_index = get_robot_sim2real_idx(self._articulation)
+        self._articulation.set_drive(stiffness = 1e4, damping = 1e3, max_force = 1e5, 
+                                    drive_type = dexsim.types.DriveType.FORCE,
+                                    joint_ids = self.robot_sim2real_index)
+
+        torso_ids = self.robot_sim2real_index[:4]
+        self._articulation.set_drive(stiffness = 1e5, damping = 1e4, max_force = 1e6, 
+                                    drive_type = dexsim.types.DriveType.FORCE,
+                                    joint_ids = torso_ids)
 
         self._cur_qpos = self._articulation.get_current_qpos()
 
