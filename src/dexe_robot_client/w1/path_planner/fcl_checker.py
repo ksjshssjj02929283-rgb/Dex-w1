@@ -14,6 +14,13 @@ from scipy.spatial.transform import Rotation as R
 
 class FCLChecker:
     def __init__(self, robot_type: RobotType = None, end_effector_type: EndEffectorType = None):
+        """
+        Initialize the FCL collision checker for specific robot and arm type.
+
+        Args:
+            robot_type(RobotType): Type of the robot (e.g., W1V02_1, W1V02_2).
+            end_effector_type(EndEffectorType): Type of the end effector (e.g., PGC_GRIPPER, BRAINCO_HAND).
+        """
         if robot_type is None:
             raise ValueError(f"Robot type must be specified as {RobotType.W1V02_1} or {RobotType.W1V02_2}.")
         self.arml_full_path = get_arml_full_path(robot_type)
@@ -214,6 +221,10 @@ class FCLChecker:
         o3d.io.write_point_cloud(saved_file_path, point_cloud)
 
     def add_octomap(self, ply_path, external_trans, octo_res):
+
+        self.obstacles.clear()
+        self.obstacle_manager = fcl.DynamicAABBTreeCollisionManager()
+
         point_cloud = o3d.io.read_point_cloud(ply_path)
         # Apply transformation to the world coordinates
         point_cloud.transform(external_trans)
@@ -256,55 +267,57 @@ class FCLChecker:
         with open(json_path, 'r') as f:
             env_data = json.load(f)
         # Load environment obstacles
-        obstacle_cfg = env_data["scene_objects"]
-        for obj in obstacle_cfg:
-            if obj["shape"]["shape_type"] == "box":
-                center = np.array(obj["pose"])[:3]
-                size = np.array(obj["shape"]["raw_data"])
-                quaternion = np.array(obj["pose"])[3:]
-                self.add_cube_obstacle(center, size, quaternion)
-                print(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with size: {size} and name: {obj['name']}")
-            if obj["shape"]["shape_type"] == "sphere":
-                center = np.array(obj["pose"])[:3]
-                radius = obj["shape"]["raw_data"][0]
-                quaternion = np.array(obj["pose"])[3:]
-                self.add_sphere_obstacle(center, radius, quaternion)
-                print(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with radius: {radius} and name: {obj['name']}")
-            if obj["shape"]["shape_type"] == "mesh":
-                obj_mesh_path = obj["shape"]["raw_data"]
-                if not os.path.exists(obj_mesh_path):
-                    raise ValueError(f"Obstacle mesh path {obj_mesh_path} does not exist.")
-                center = np.array(obj["pose"])[:3]
-                quaternion = np.array(obj["pose"])[3:]
-                self.add_mesh_obstacle(obj_mesh_path, center, quaternion)
-                print(f"Successfully add a {obj['shape']['shape_type']} obstacle with mesh path: {obj_mesh_path} at center: {center} and name: {obj['name']}")
-        
+        obstacle_cfg = env_data.get("scene_objects", None)
+        if obstacle_cfg is not None:
+            for obj in obstacle_cfg:
+                if obj["shape"]["shape_type"] == "box":
+                    center = np.array(obj["pose"])[:3]
+                    size = np.array(obj["shape"]["raw_data"])
+                    quaternion = np.array(obj["pose"])[3:]
+                    self.add_cube_obstacle(center, size, quaternion)
+                    print(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with size: {size} and name: {obj['name']}")
+                if obj["shape"]["shape_type"] == "sphere":
+                    center = np.array(obj["pose"])[:3]
+                    radius = obj["shape"]["raw_data"][0]
+                    quaternion = np.array(obj["pose"])[3:]
+                    self.add_sphere_obstacle(center, radius, quaternion)
+                    print(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with radius: {radius} and name: {obj['name']}")
+                if obj["shape"]["shape_type"] == "mesh":
+                    obj_mesh_path = obj["shape"]["raw_data"]
+                    if not os.path.exists(obj_mesh_path):
+                        raise ValueError(f"Obstacle mesh path {obj_mesh_path} does not exist.")
+                    center = np.array(obj["pose"])[:3]
+                    quaternion = np.array(obj["pose"])[3:]
+                    self.add_mesh_obstacle(obj_mesh_path, center, quaternion)
+                    print(f"Successfully add a {obj['shape']['shape_type']} obstacle with mesh path: {obj_mesh_path} at center: {center} and name: {obj['name']}")
+            
         # Load environment grasp objects
-        grasp_cfg = env_data["user_workobjects"]
-        for grasp_obj in grasp_cfg:
-            if grasp_obj["shape"]["shape_type"] == "box":
-                center = np.array(grasp_obj["pose"])[:3]
-                quaternion = np.array(grasp_obj["pose"])[3:]
-                size = np.array(grasp_obj["shape"]["raw_data"])
-                name = grasp_obj["name_key"]
-                self.add_grasp_object(obj_type="box", center=center, quaternion=quaternion, size=size, name=name)
-                print(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
-            if grasp_obj["shape"]["shape_type"] == "sphere":
-                center = np.array(grasp_obj["pose"])[:3]
-                quaternion = np.array(grasp_obj["pose"])[3:]
-                radius = grasp_obj["shape"]["raw_data"][0]
-                name = grasp_obj["name_key"]
-                self.add_grasp_object(obj_type="sphere", center=center, quaternion=quaternion, size=np.array([radius]), name=name)
-                print(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
-            if grasp_obj["shape"]["shape_type"] == "mesh":
-                grasp_obj_mesh_path = grasp_obj["shape"]["raw_data"]
-                if not os.path.exists(grasp_obj_mesh_path):
-                    raise ValueError(f"Grasp object mesh path {grasp_obj_mesh_path} does not exist.")
-                center = np.array(grasp_obj["pose"])[:3]
-                quaternion = np.array(grasp_obj["pose"])[3:]
-                name = grasp_obj["name_key"]
-                self.add_grasp_object(obj_type="mesh", objMesh_path=grasp_obj_mesh_path, center=center, quaternion=quaternion, name=name)
-                print(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object with mesh path: {grasp_obj_mesh_path}")
+        grasp_cfg = env_data.get("user_workobjects", None)
+        if grasp_cfg is not None:
+            for grasp_obj in grasp_cfg:
+                if grasp_obj["shape"]["shape_type"] == "box":
+                    center = np.array(grasp_obj["pose"])[:3]
+                    quaternion = np.array(grasp_obj["pose"])[3:]
+                    size = np.array(grasp_obj["shape"]["raw_data"])
+                    name = grasp_obj["name_key"]
+                    self.add_grasp_object(obj_type="box", center=center, quaternion=quaternion, size=size, name=name)
+                    print(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
+                if grasp_obj["shape"]["shape_type"] == "sphere":
+                    center = np.array(grasp_obj["pose"])[:3]
+                    quaternion = np.array(grasp_obj["pose"])[3:]
+                    radius = grasp_obj["shape"]["raw_data"][0]
+                    name = grasp_obj["name_key"]
+                    self.add_grasp_object(obj_type="sphere", center=center, quaternion=quaternion, size=np.array([radius]), name=name)
+                    print(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
+                if grasp_obj["shape"]["shape_type"] == "mesh":
+                    grasp_obj_mesh_path = grasp_obj["shape"]["raw_data"]
+                    if not os.path.exists(grasp_obj_mesh_path):
+                        raise ValueError(f"Grasp object mesh path {grasp_obj_mesh_path} does not exist.")
+                    center = np.array(grasp_obj["pose"])[:3]
+                    quaternion = np.array(grasp_obj["pose"])[3:]
+                    name = grasp_obj["name_key"]
+                    self.add_grasp_object(obj_type="mesh", objMesh_path=grasp_obj_mesh_path, center=center, quaternion=quaternion, name=name)
+                    print(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object with mesh path: {grasp_obj_mesh_path}")
 
     def add_grasp_object(self, obj_type: str = None, 
                          objMesh_path: str =None, 
