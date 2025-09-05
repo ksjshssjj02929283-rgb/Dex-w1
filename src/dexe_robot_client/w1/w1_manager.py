@@ -1978,7 +1978,7 @@ class W1Manager:
 
         print(f"Finish Planning, time consumption: {planning_time}, with left arm traj shape: {None if arml_traj is None else arml_traj.shape}, right arm traj shape: {None if armr_traj is None else armr_traj.shape}")
         # input("Press any key to continue...")
-        left_gripper_task = task_dict.get("left_gripper")
+        left_gripper_task = task_dict.get("left_arm_ee")
         if left_gripper_task is not None and left_gripper_task != []:
             if left_gripper_task[0] is not None and left_gripper_task[0] != []:
                 lee_pre_time = left_gripper_task[0][0]
@@ -1998,7 +1998,7 @@ class W1Manager:
         
 
 
-        right_gripper_task = task_dict.get("right_gripper")
+        right_gripper_task = task_dict.get("right_arm_ee")
         if right_gripper_task is not None and right_gripper_task != []:
             if right_gripper_task[0] is not None and right_gripper_task[0] != []:
                 ree_pre_time = right_gripper_task[0][0]
@@ -2036,6 +2036,7 @@ class W1Manager:
             self.execute_joint_traj(qpos_array=move_arml_armr_traj,
                                     left_arm_ee_trigger_list=armlee_trigger,
                                     right_arm_ee_trigger_list=armree_trigger)
+            print(armlee_trigger, armree_trigger)
             return
         
         if arml_traj is not None and armr_traj is None:
@@ -2054,6 +2055,7 @@ class W1Manager:
             self.execute_joint_traj(qpos_array=move_arml_armr_traj,
                                     left_arm_ee_trigger_list=armlee_trigger,
                                     right_arm_ee_trigger_list=armree_trigger)
+            print(armlee_trigger, armree_trigger)
             return
         
         if arml_traj is None and armr_traj is not None:
@@ -2072,6 +2074,7 @@ class W1Manager:
             self.execute_joint_traj(qpos_array=move_arml_armr_traj,
                                     left_arm_ee_trigger_list=armlee_trigger,
                                     right_arm_ee_trigger_list=armree_trigger)
+            print(armlee_trigger, armree_trigger)
             return
         
         if arml_traj is None and armr_traj is None:
@@ -2091,6 +2094,7 @@ class W1Manager:
             self.execute_joint_traj(qpos_array=move_arml_armr_traj,
                                     left_arm_ee_trigger_list=armlee_trigger,
                                     right_arm_ee_trigger_list=armree_trigger)
+            print(armlee_trigger, armree_trigger)
             return            
 
             
