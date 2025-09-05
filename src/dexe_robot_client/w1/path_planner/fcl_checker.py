@@ -229,6 +229,14 @@ class FCLChecker:
         o3d.io.write_point_cloud(saved_file_path, point_cloud)
 
     def add_octomap(self, ply_path, external_trans, octo_res):
+        """
+        This function loads a point cloud from a PLY file, applies a transformation to align it with the base-link frame
+        
+        Args:
+            ply_path (str) : Path to the PLY file containing the point cloud data(This parameter will be changed to a numpy array in future)
+            external_trans (nd.array, shape=(4, 4)): The transformation matrix from the point cloud frame to the base-link frame.
+            octo_res (float): The resolution of the octomap.
+        """
 
         self.obstacles.clear()
         self.obstacle_manager = fcl.DynamicAABBTreeCollisionManager()

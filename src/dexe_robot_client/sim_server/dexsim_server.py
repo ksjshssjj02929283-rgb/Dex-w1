@@ -173,6 +173,32 @@ class DexsimServer:
 
         self._cur_qpos = self._articulation.get_current_qpos()
 
+        # 用于可视化一些demo的环境设置，push的时候需要删除或者注释
+        metal_material_handle = self._env.load_material(material_fpath + "/Metal022", "Metal022")
+
+        table_handle = self._env.load_actor("/home/young/Model/coffee_demo/table_coffee_demo_fixed.obj")
+        table_xpos = np.array([[1,0,0,0.5],
+                            [0,1,0,0.0],
+                            [0,0,1,0.0],
+                            [0,0,0,1]])
+        table_handle.set_world_pose(table_xpos)
+
+        cup_shelf_handle = self._env.load_actor("/home/young/Model/coffee_demo/cup_shelf.obj")
+        cup_shelf_xpos = np.array([[-0.707,0.707,0,0.53],
+                                    [-0.707,-0.707,0,0.37],
+                                    [0,0,1,0.75],
+                                    [0,0,0,1]])
+        cup_shelf_handle.set_world_pose(cup_shelf_xpos)
+        cup_shelf_handle.set_material(metal_material_handle.get_inst()) 
+
+        coffee_machine_handle = self._env.load_actor("/home/young/Model/coffee_demo/coffee_machine.obj")
+        coffee_machine_xpos = np.array([[-0.707,-0.707,0,0.49],
+                                        [0.707,-0.707,0,-0.33],
+                                        [0,0,1,0.75],
+                                        [0,0,0,1]])
+        coffee_machine_handle.set_world_pose(coffee_machine_xpos)
+        coffee_machine_handle.set_material(metal_material_handle.get_inst())
+
     def _subscriber_robot_callback(self, msg):
         state = json.loads(msg.data)
         if "joint_position" not in state:
