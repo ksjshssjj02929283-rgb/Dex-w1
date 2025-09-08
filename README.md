@@ -1,4 +1,7 @@
 # DexEmbodied Robot Client
+## 💻 System
+Ubuntu22.04  
+Python310
 
 ## 📦 Dependencies
 Refer to `dependencies/README.md`
@@ -33,28 +36,53 @@ pip uninstall dexe_robot_client
 
 
 ## 📘 Examples
-Deploy `dexe_robot_server`, refer to [dexe_robot_server](http://69.235.177.182:8081/dexembodied/dexe_robot_server).
+Deploy `dexe_robot_server(dev)`, refer to [dexe_robot_server](http://69.235.177.182:8081/dexembodied/dexe_robot_server).
 
-#### Run real robot server
-todo
+Deploy `dexe_devices(dev)`, refer to [dexe_devices](http://69.235.177.182:8081/dexembodied/dexe_devices).
 
-#### Run sim robot server with meshcat visualizer
+#### Run robot server
+Automatic startup in PC1.
+
+#### Run sim server
+- W1
 ```bash
 cd dexe_robot_server
-./run_sim.sh
+source ./install/setup.bas
+ros2 run sim_server sim_server
+```
+- EndEffector
+```bash
+cd dexe_devices
+python3 ./brainco_hand/brainco_sim_server.py
+# python3 ./pgc_gripper/pgc_sim_server.py
 ```
 
 #### Run dexsim visualizer
 ```bash
 cd dexe_robot_client
-python3 ./examples/run_dexsim_server.py
+python3 ./examples/run_dexsim_server.py # Modify params according to your config
 ```
 
 #### Run examples
-```bash
-cd dexe_robot_client
-python3 ./examples/w1_manager_example.py
+```python
+from dexe_robot_client.end_effector_client import EndEffectorType 
+from dexe_robot_client.common import W1Version, W1ArmType
+from dexe_robot_client.w1 import W1Manager
+
+w1_manager = W1Manager(is_sim = True,
+                        arm_type=W1ArmType.ANTHROPOMORPHIC, 
+                        w1_version=W1Version.V2, 
+                        end_effector_type = EndEffectorType.BRAINCO_HAND,
+                        use_rlia=True)
+
+if not w1_manager.connect():
+    return
+    
+w1_manager.set_sim_mode(enable_sim = False)
+#w1_manager.set_sim_mode(enable_sim = True)
+pass
 ```
+More examlpes see `dexe_robot_client/examples`.
 
 
 ## 🏷️ Others
