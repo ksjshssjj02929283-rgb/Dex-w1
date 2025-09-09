@@ -38,8 +38,7 @@ bool TorqueControllerTimeDelay::ComputeCommand(const JointRawMeasurement &raw_me
     VectorDof feedback_ddq = (feedback_dq - last_feedback_dq_) / dt_micro;
     VectorDof cmd_q = input_cmd.cmd.position;
     VectorDof cmd_dq = input_cmd.cmd.velocity;
-    VectorDof cmd_ddq = input_cmd.cmd.acceleration;
-    VectorDof torque_feedforward = input_cmd.cmd.torque_feedforward;
+    // VectorDof cmd_ddq = input_cmd.cmd.acceleration;
     VectorDof q_desired{};
     VectorDof ddq_desired{};
 

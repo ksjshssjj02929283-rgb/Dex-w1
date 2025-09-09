@@ -2,7 +2,6 @@
 
 #include <optional>
 #include "kinematics_include.h"
-#include "pinocchio_include.h"
 #include "ruckig/ruckig.hpp"
 #include "utilities.h"
 

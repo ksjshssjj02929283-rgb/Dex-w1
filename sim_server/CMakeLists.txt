@@ -10,7 +10,7 @@ option(ENABLE_TORQUE_CONTROL_SIMULATION "Enable torque control" OFF)
 # Python interpreter setup
 set(PYTHON_EXECUTABLE "/usr/bin/python3")
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic -Wno-psabi -Wno-reorder -Wno-dev)
+  add_compile_options(-Wall -Wextra -Wpedantic -Wno-psabi -Wno-reorder -Wno-dev -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable)
 endif()
 find_package(PythonInterp 3.6 REQUIRED)
 set(PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}" CACHE FILEPATH "Python interpreter" FORCE)

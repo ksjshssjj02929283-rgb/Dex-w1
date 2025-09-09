@@ -1,6 +1,5 @@
 #pragma once
 
-#include "pinocchio_include.h"
 #include "torque_controller_include.h"
 #include "utilities.h"
 

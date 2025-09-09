@@ -5,7 +5,7 @@ set(CMAKE_BUILD_TYPE Release)
 
 project(robot_server_lib)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic -Wno-psabi -Wno-reorder -Wno-dev)
+  add_compile_options(-Wall -Wextra -Wpedantic -Wno-psabi -Wno-reorder -Wno-dev -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable)
 endif()
 
 # find dependencies

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "motion_planner_include.h"
-#include "pinocchio_include.h"
 #include "utilities.h"
 
 namespace robot_server_lib

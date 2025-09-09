@@ -20,7 +20,7 @@ enum for various states and command types
 #include <vector>
 
 #include "bounded_queue.h"
-#include "pinocchio_include.h"
+#include "pinocchio_api.h"
 #include "single_rw_latest_queue.h"
 #include "time_utility.h"
 #include "typedef.h"

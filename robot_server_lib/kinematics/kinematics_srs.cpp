@@ -165,7 +165,6 @@ bool SRSKinematics::_ChooseIKSolution(std::vector<Eigen::VectorXd> &ik_solutions
 }
 
 bool SRSKinematics::_CalculateJointAngles(const Eigen::Vector3d &P_s_to_w, int elbow_GC4, Eigen::VectorXd &joints) const {
-    double d_bs = this->params_.link_lengths(0);
     double d_se = this->params_.link_lengths(1);
     double d_ew = this->params_.link_lengths(2);
     double norm_P26 = P_s_to_w.norm();
