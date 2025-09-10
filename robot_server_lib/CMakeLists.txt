@@ -19,19 +19,20 @@ find_package(Eigen3 REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(ruckig REQUIRED)
 find_package(pinocchio REQUIRED)
+find_package(robot_server_interfaces REQUIRED)
 
 aux_source_directory(src LIB_SRCS)
 aux_source_directory(kinematics LIB_SRCS)
 aux_source_directory(motion_planner LIB_SRCS)
 aux_source_directory(torque_controller LIB_SRCS)
-aux_source_directory(utilities LIB_SRCS)
+aux_source_directory(utils LIB_SRCS)
 add_library(robot_server_lib ${LIB_SRCS})
 
 target_include_directories(robot_server_lib PUBLIC
   ${EIGEN3_INCLUDE_DIR}
   $<INSTALL_INTERFACE:include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/utilities>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/utils>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/kinematics>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/motion_planner>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/torque_controller>
@@ -51,6 +52,7 @@ ament_target_dependencies(robot_server_lib
   rclcpp_action
   std_msgs
   sensor_msgs
+  robot_server_interfaces
 )
 
 
@@ -64,7 +66,7 @@ install(
 install(
   DIRECTORY
     include/
-    utilities/
+    utils/
     kinematics/
     motion_planner/
     torque_controller/

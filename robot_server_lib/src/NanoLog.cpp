@@ -596,9 +596,9 @@ class NanoLogger
 
     NanoLogger(GuaranteedLogger gl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb)
         : m_state(State::INIT),
-      m_buffer_base(new QueueBuffer()),
-      m_file_writer(log_directory, log_file_name, std::max(1u, log_file_roll_size_mb)),
-      m_thread(&NanoLogger::pop, this)
+          m_buffer_base(new QueueBuffer()),
+          m_file_writer(log_directory, log_file_name, std::max(1u, log_file_roll_size_mb)),
+          m_thread(&NanoLogger::pop, this)
     {
         m_state.store(State::READY, std::memory_order_release);
     }

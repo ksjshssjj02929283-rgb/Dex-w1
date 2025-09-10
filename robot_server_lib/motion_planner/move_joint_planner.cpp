@@ -99,4 +99,4 @@ bool MoveJointPlanner::ResetForNewTrajectory(const PlannerRequest &request, cons
     return true;
 }
 
-} // namespace robot_server_lib
+}  // namespace robot_server_lib

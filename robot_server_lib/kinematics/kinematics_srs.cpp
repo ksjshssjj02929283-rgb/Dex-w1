@@ -1,10 +1,13 @@
 #include "kinematics_srs.h"
 
-namespace robot_server_lib {
-namespace kinematics {
+namespace robot_server_lib
+{
+namespace kinematics
+{
 
 // SRSKinematics 构造函数
-SRSKinematics::SRSKinematics(const SRSParameters &srs_params) : KinematicsBase() {
+SRSKinematics::SRSKinematics(const SRSParameters &srs_params) : KinematicsBase()
+{
     this->params_ = srs_params;
     this->ndof_ = 7;
     this->ik_weight_ = Eigen::VectorXd(this->ndof_);
@@ -13,14 +16,17 @@ SRSKinematics::SRSKinematics(const SRSParameters &srs_params) : KinematicsBase()
 
 SRSKinematics::~SRSKinematics() = default;
 
-PoseQuaternion SRSKinematics::GetFK(const Eigen::VectorXd &q_in, const pinocchio::SE3 &tcp_frame) {
+PoseQuaternion SRSKinematics::GetFK(const Eigen::VectorXd &q_in, const pinocchio::SE3 &tcp_frame)
+{
     pinocchio::SE3 pose_se3 = pinocchio::SE3::Identity();
-    for (int i = 0; i < this->params_.dh_params.rows(); ++i) {
+    for (int i = 0; i < this->params_.dh_params.rows(); ++i)
+    {
         double d = this->params_.dh_params(i, 0);
         double alpha = this->params_.dh_params(i, 1);
         double a = this->params_.dh_params(i, 2);
         double theta = this->params_.dh_params(i, 3);
-        if (i < q_in.size()) {
+        if (i < q_in.size())
+        {
             theta += q_in[i] * this->params_.rotation_directions[i];
         }
         pinocchio::SE3 T = this->_DHCalc(d, alpha, a, theta);
@@ -36,7 +42,8 @@ PoseQuaternion SRSKinematics::GetFK(const Eigen::VectorXd &q_in, const pinocchio
     return pose_out;
 }
 
-bool SRSKinematics::GetIK(const PoseQuaternion &pose_in, Eigen::VectorXd &q_in_and_out, const pinocchio::SE3 &tcp_frame) {
+bool SRSKinematics::GetIK(const PoseQuaternion &pose_in, Eigen::VectorXd &q_in_and_out, const pinocchio::SE3 &tcp_frame)
+{
     assert(q_in_and_out.size() == this->ndof_);
     const auto &q_in = q_in_and_out;
     pinocchio::SE3 pose_se3;
@@ -48,35 +55,45 @@ bool SRSKinematics::GetIK(const PoseQuaternion &pose_in, Eigen::VectorXd &q_in_a
     double current_arm_angle = _CalculateAnglePhi(q_in, pose_se3);
     Eigen::VectorXd nsparams = Eigen::VectorXd::LinSpaced(this->num_samples_, current_arm_angle - small_range_, current_arm_angle + small_range_);
     std::vector<Eigen::VectorXd> ik_solutions;
-    auto solve_and_choose_solution = [&](const Eigen::VectorXd &params) {
-        for (Int64 index = 0; index < params.size(); ++index) {
+    auto solve_and_choose_solution = [&](const Eigen::VectorXd &params)
+    {
+        for (Int64 index = 0; index < params.size(); ++index)
+        {
             Eigen::Matrix<double, 4, 7> joints_list;
-            if (_ComputeInverseKinematics(pose_se3, q_in, params[index], joints_list)) {
-                for (int j = 0; j < 4; ++j) {
+            if (_ComputeInverseKinematics(pose_se3, q_in, params[index], joints_list))
+            {
+                for (int j = 0; j < 4; ++j)
+                {
                     ik_solutions.emplace_back(joints_list.row(j));
                 }
             }
         }
         return _ChooseIKSolution(ik_solutions, q_in);
     };
-    if (solve_and_choose_solution(nsparams)) {
+    if (solve_and_choose_solution(nsparams))
+    {
         q_in_and_out = ik_solutions[0];
         return true;
     }
     LOG_WARN << "No IK solution found in the initial range, expanding search range.";
     ik_solutions.clear();
-    Eigen::VectorXd nsparams_wide_left = Eigen::VectorXd::LinSpaced(5 * this->num_samples_, current_arm_angle - 10 * small_range_, current_arm_angle - small_range_);
-    Eigen::VectorXd nsparams_wide_right = Eigen::VectorXd::LinSpaced(5 * this->num_samples_, current_arm_angle + small_range_, current_arm_angle + 10 * small_range_);
+    Eigen::VectorXd nsparams_wide_left =
+        Eigen::VectorXd::LinSpaced(5 * this->num_samples_, current_arm_angle - 10 * small_range_, current_arm_angle - small_range_);
+    Eigen::VectorXd nsparams_wide_right =
+        Eigen::VectorXd::LinSpaced(5 * this->num_samples_, current_arm_angle + small_range_, current_arm_angle + 10 * small_range_);
     Eigen::VectorXd nsparams_wide(10 * this->num_samples_);
     nsparams_wide << nsparams_wide_left, nsparams_wide_right;
-    if (solve_and_choose_solution(nsparams_wide)) {
+    if (solve_and_choose_solution(nsparams_wide))
+    {
         q_in_and_out = ik_solutions[0];
         return true;
     }
     return false;
 }
 
-bool SRSKinematics::_ComputeInverseKinematics(const pinocchio::SE3 &target_pose_se3, const Eigen::VectorXd &joint_seed, double nsparam, Eigen::Matrix<double, 4, 7> &joints_list) const {
+bool SRSKinematics::_ComputeInverseKinematics(const pinocchio::SE3 &target_pose_se3, const Eigen::VectorXd &joint_seed, double nsparam,
+                                              Eigen::Matrix<double, 4, 7> &joints_list) const
+{
     int elbow_config = _Sign(joint_seed(3)) * this->params_.rotation_directions[3];
     Eigen::Vector3d P_target = target_pose_se3.translation();
     Eigen::Matrix3d R_target = target_pose_se3.rotation();
@@ -86,7 +103,8 @@ bool SRSKinematics::_ComputeInverseKinematics(const pinocchio::SE3 &target_pose_
     Eigen::Vector3d P26 = P06 - P02;
     Eigen::VectorXd joints = Eigen::VectorXd::Zero(7);
     bool res = this->_CalculateJointAngles(P26, elbow_config, joints);
-    if (!res) {
+    if (!res)
+    {
         return false;
     }
     pinocchio::SE3 T34 = this->_DHCalc(this->params_.dh_params(3, 0), this->params_.dh_params(3, 1), this->params_.dh_params(3, 2), joints(3));
@@ -95,7 +113,8 @@ bool SRSKinematics::_ComputeInverseKinematics(const pinocchio::SE3 &target_pose_
     Eigen::Matrix3d R03_o;
     Eigen::VectorXd joint_v;
     res = this->_ReferencePlane(target_pose_se3, elbow_config, V_v_to_sew, R03_o, joint_v);
-    if (!res) {
+    if (!res)
+    {
         return false;
     }
     Eigen::Vector3d usw = P26.normalized();
@@ -123,8 +142,10 @@ bool SRSKinematics::_ComputeInverseKinematics(const pinocchio::SE3 &target_pose_
     angle6[1] = -_SafeAcos(R47(2, 2));
     angle7[0] = std::atan2(R47(2, 1), -R47(2, 0));
     angle7[1] = std::atan2(-R47(2, 1), R47(2, 0));
-    for (int64_t i = 0; i < 2; ++i) {
-        for (int64_t j = 0; j < 2; ++j) {
+    for (int64_t i = 0; i < 2; ++i)
+    {
+        for (int64_t j = 0; j < 2; ++j)
+        {
             joints_list(i * 2 + j, 0) = (angle1[i] - this->params_.dh_params(0, 3)) * this->params_.rotation_directions[0];
             joints_list(i * 2 + j, 1) = (angle2[i] - this->params_.dh_params(1, 3)) * this->params_.rotation_directions[1];
             joints_list(i * 2 + j, 2) = (angle3[i] - this->params_.dh_params(2, 3)) * this->params_.rotation_directions[2];
@@ -137,45 +158,61 @@ bool SRSKinematics::_ComputeInverseKinematics(const pinocchio::SE3 &target_pose_
     return true;
 }
 
-bool SRSKinematics::_ChooseIKSolution(std::vector<Eigen::VectorXd> &ik_solutions, const Eigen::VectorXd &joints_seed) const {
+bool SRSKinematics::_ChooseIKSolution(std::vector<Eigen::VectorXd> &ik_solutions, const Eigen::VectorXd &joints_seed) const
+{
     int ik_number = ik_solutions.size();
-    if (0 == ik_number) {
+    if (0 == ik_number)
+    {
         return false;
     }
-    ik_solutions.erase(std::remove_if(ik_solutions.begin(), ik_solutions.end(), [this, &joints_seed](const Eigen::VectorXd &solution) {
-        for (int i = 0; i < this->ndof_; ++i) {
-            if (solution(i) < this->params_.q_min(i) || solution(i) > this->params_.q_max(i) || std::abs(solution(i) - joints_seed(i)) > this->joint_threshold_) {
-                return true;
-            }
-        }
-        return false;
-    }), ik_solutions.end());
+    ik_solutions.erase(std::remove_if(ik_solutions.begin(), ik_solutions.end(),
+                                      [this, &joints_seed](const Eigen::VectorXd &solution)
+                                      {
+                                          for (int i = 0; i < this->ndof_; ++i)
+                                          {
+                                              if (solution(i) < this->params_.q_min(i) || solution(i) > this->params_.q_max(i) ||
+                                                  std::abs(solution(i) - joints_seed(i)) > this->joint_threshold_)
+                                              {
+                                                  return true;
+                                              }
+                                          }
+                                          return false;
+                                      }),
+                       ik_solutions.end());
     if (ik_solutions.empty())
         return false;
-    std::sort(ik_solutions.begin(), ik_solutions.end(), [this, &joints_seed](const Eigen::VectorXd &a, const Eigen::VectorXd &b) {
-        double temp_distance_a = 0.0;
-        double temp_distance_b = 0.0;
-        for (int i = 0; i < this->ndof_; ++i) {
-            temp_distance_a += std::abs((a(i) - joints_seed(i)) * this->ik_weight_(i));
-            temp_distance_b += std::abs((b(i) - joints_seed(i)) * this->ik_weight_(i));
-        }
-        return temp_distance_a < temp_distance_b;
-    });
+    std::sort(ik_solutions.begin(), ik_solutions.end(),
+              [this, &joints_seed](const Eigen::VectorXd &a, const Eigen::VectorXd &b)
+              {
+                  double temp_distance_a = 0.0;
+                  double temp_distance_b = 0.0;
+                  for (int i = 0; i < this->ndof_; ++i)
+                  {
+                      temp_distance_a += std::abs((a(i) - joints_seed(i)) * this->ik_weight_(i));
+                      temp_distance_b += std::abs((b(i) - joints_seed(i)) * this->ik_weight_(i));
+                  }
+                  return temp_distance_a < temp_distance_b;
+              });
     return true;
 }
 
-bool SRSKinematics::_CalculateJointAngles(const Eigen::Vector3d &P_s_to_w, int elbow_GC4, Eigen::VectorXd &joints) const {
+bool SRSKinematics::_CalculateJointAngles(const Eigen::Vector3d &P_s_to_w, int elbow_GC4, Eigen::VectorXd &joints) const
+{
     double d_se = this->params_.link_lengths(1);
     double d_ew = this->params_.link_lengths(2);
     double norm_P26 = P_s_to_w.norm();
     double elbow_cos_angle = (norm_P26 * norm_P26 - d_se * d_se - d_ew * d_ew) / (2 * d_se * d_ew);
-    if (std::abs(elbow_cos_angle) > 1.0) {
+    if (std::abs(elbow_cos_angle) > 1.0)
+    {
         return false;
     }
     joints(3) = elbow_GC4 * std::acos(elbow_cos_angle);
-    if (std::abs(P_s_to_w.z()) > 1e-6) {
+    if (std::abs(P_s_to_w.z()) > 1e-6)
+    {
         joints(0) = std::atan2(P_s_to_w.y(), P_s_to_w.x());
-    } else {
+    }
+    else
+    {
         joints(0) = 0;
     }
     double euclidean_norm = std::hypot(P_s_to_w.x(), P_s_to_w.y());
@@ -184,7 +221,9 @@ bool SRSKinematics::_CalculateJointAngles(const Eigen::Vector3d &P_s_to_w, int e
     return true;
 }
 
-bool SRSKinematics::_ReferencePlane(const pinocchio::SE3 &pose, int elbow_GC4, Eigen::Vector3d &V_v_to_sew, Eigen::Matrix3d &R03_v, Eigen::VectorXd &joint_v) const {
+bool SRSKinematics::_ReferencePlane(const pinocchio::SE3 &pose, int elbow_GC4, Eigen::Vector3d &V_v_to_sew, Eigen::Matrix3d &R03_v,
+                                    Eigen::VectorXd &joint_v) const
+{
     Eigen::Vector3d P_target = pose.translation();
     Eigen::Vector3d P02(0, 0, this->params_.link_lengths(0));
     Eigen::Vector3d P67(0, 0, this->params_.dh_params(6, 0));
@@ -192,7 +231,8 @@ bool SRSKinematics::_ReferencePlane(const pinocchio::SE3 &pose, int elbow_GC4, E
     Eigen::Vector3d P26 = P06 - P02;
     joint_v = Eigen::VectorXd::Zero(7);
     bool res = this->_CalculateJointAngles(P26, elbow_GC4, joint_v);
-    if (!res) {
+    if (!res)
+    {
         return false;
     }
     pinocchio::SE3 T34_v = this->_DHCalc(this->params_.dh_params(3, 0), this->params_.dh_params(3, 1), this->params_.dh_params(3, 2), joint_v(3));
@@ -201,13 +241,15 @@ bool SRSKinematics::_ReferencePlane(const pinocchio::SE3 &pose, int elbow_GC4, E
     Eigen::Vector3d v2 = (P06 - P02).normalized();
     V_v_to_sew = v1.cross(v2);
     R03_v = Eigen::Matrix3d::Identity();
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 3; ++i)
+    {
         R03_v *= this->_DHCalc(this->params_.dh_params(i, 0), this->params_.dh_params(i, 1), this->params_.dh_params(i, 2), joint_v(i)).rotation();
     }
     return true;
 }
 
-double SRSKinematics::_CalculateAnglePhi(const Eigen::VectorXd &joint_angles, const pinocchio::SE3 &current_pose) {
+double SRSKinematics::_CalculateAnglePhi(const Eigen::VectorXd &joint_angles, const pinocchio::SE3 &current_pose)
+{
     Eigen::Vector3d P_target = current_pose.translation();
     Eigen::Vector3d P02(0, 0, this->params_.link_lengths(0));
     Eigen::Vector3d P67(0, 0, this->params_.dh_params(6, 0));
@@ -220,9 +262,11 @@ double SRSKinematics::_CalculateAnglePhi(const Eigen::VectorXd &joint_angles, co
     Eigen::Vector3d V_v_to_sew;
     _ReferencePlane(current_pose, elbow_config, V_v_to_sew, R03_v, joint_v);
     Eigen::Matrix3d R03_actual = Eigen::Matrix3d::Identity();
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 3; ++i)
+    {
         double theta = joint_angles(i) * this->params_.rotation_directions[i] + this->params_.dh_params(i, 3);
-        R03_actual = R03_actual * this->_DHCalc(this->params_.dh_params(i, 0), this->params_.dh_params(i, 1), this->params_.dh_params(i, 2), theta).rotation();
+        R03_actual =
+            R03_actual * this->_DHCalc(this->params_.dh_params(i, 0), this->params_.dh_params(i, 1), this->params_.dh_params(i, 2), theta).rotation();
     }
     Eigen::Matrix3d skew_usw = _SkewSymmetric(usw);
     Eigen::Matrix3d A_s = skew_usw * R03_v;
@@ -232,20 +276,24 @@ double SRSKinematics::_CalculateAnglePhi(const Eigen::VectorXd &joint_angles, co
     return psi;
 }
 
-pinocchio::SE3 SRSKinematics::_DHCalc(double d, double alpha, double a, double theta) const {
+pinocchio::SE3 SRSKinematics::_DHCalc(double d, double alpha, double a, double theta) const
+{
     Eigen::Matrix3d Rot;
-    Rot << std::cos(theta), -std::sin(theta) * std::cos(alpha), std::sin(theta) * std::sin(alpha), std::sin(theta), std::cos(theta) * std::cos(alpha), -std::cos(theta) * std::sin(alpha), 0, std::sin(alpha), std::cos(alpha);
+    Rot << std::cos(theta), -std::sin(theta) * std::cos(alpha), std::sin(theta) * std::sin(alpha), std::sin(theta), std::cos(theta) * std::cos(alpha),
+        -std::cos(theta) * std::sin(alpha), 0, std::sin(alpha), std::cos(alpha);
     Eigen::Vector3d Trans(a * std::cos(theta), a * std::sin(theta), d);
     return pinocchio::SE3(Rot, Trans);
 }
 
-Eigen::Matrix3d SRSKinematics::_SkewSymmetric(const Eigen::Vector3d &vector) const {
+Eigen::Matrix3d SRSKinematics::_SkewSymmetric(const Eigen::Vector3d &vector) const
+{
     Eigen::Matrix3d skew_matrix;
     skew_matrix << 0, -vector.z(), vector.y(), vector.z(), 0, -vector.x(), -vector.y(), vector.x(), 0;
     return skew_matrix;
 }
 
-double SRSKinematics::_SafeAcos(double x) const {
+double SRSKinematics::_SafeAcos(double x) const
+{
     if (x < -1.0)
         x = -1.0;
     else if (x > 1.0)
@@ -253,13 +301,17 @@ double SRSKinematics::_SafeAcos(double x) const {
     return acos(x);
 }
 
-int SRSKinematics::_Sign(double value) const {
-    if (value >= 0) {
+int SRSKinematics::_Sign(double value) const
+{
+    if (value >= 0)
+    {
         return 1;
-    } else {
+    }
+    else
+    {
         return -1;
     }
 }
 
-} // namespace kinematics
-} // namespace robot_server_lib
+}  // namespace kinematics
+}  // namespace robot_server_lib

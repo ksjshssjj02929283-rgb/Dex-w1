@@ -102,10 +102,9 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
         GetArmFromWholeBody(measurement.q_desired_pre, q_start);
         assert(q_start.size() == ndof_primary_ + ndof_secondary_);
         PoseQuaternion pose_start = kinematics_ptr_->GetFK(q_start.head(ndof_primary_), robot_property_.tcp_frame);
-        PoseQuaternion pose_start_secondary =
-            kinematics_secondary_ptr_->GetFK(q_start.tail(ndof_secondary_), robot_property_.tcp_frame_secondary);
-        PoseQuaternion pose_target = utilities::VectorXdToPoseQuaternion(move_request.value.head(7));
-        PoseQuaternion pose_target_secondary = utilities::VectorXdToPoseQuaternion(move_request.value.tail(7));
+        PoseQuaternion pose_start_secondary = kinematics_secondary_ptr_->GetFK(q_start.tail(ndof_secondary_), robot_property_.tcp_frame_secondary);
+        PoseQuaternion pose_target = utils::VectorXdToPoseQuaternion(move_request.value.head(7));
+        PoseQuaternion pose_target_secondary = utils::VectorXdToPoseQuaternion(move_request.value.tail(7));
         LOG_INFO << "Primary arm motion plan: start: " << pose_start.ToString() << ", target: " << pose_target.ToString();
         LOG_INFO << "Secondary arm motion plan: start: " << pose_start_secondary.ToString() << ", target: " << pose_target_secondary.ToString();
         line_primary_.emplace(CalcLineGeometry(pose_start, pose_target));
@@ -119,7 +118,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
         GetArmFromWholeBody(measurement.q_desired_pre, q_start);
         assert(q_start.size() == ndof_primary_);
         PoseQuaternion pose_start = kinematics_ptr_->GetFK(q_start, robot_property_.tcp_frame);
-        PoseQuaternion pose_target = utilities::VectorXdToPoseQuaternion(move_request.value);
+        PoseQuaternion pose_target = utils::VectorXdToPoseQuaternion(move_request.value);
         LOG_INFO << "Primary arm motion plan: start: " << pose_start.ToString() << ", target: " << pose_target.ToString();
         line_primary_.emplace(CalcLineGeometry(pose_start, pose_target));
         line_secondary_ = std::nullopt;
@@ -132,7 +131,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
         GetArmFromWholeBody(measurement.q_desired_pre, q_start);
         assert(q_start.size() == ndof_secondary_);
         PoseQuaternion pose_start = kinematics_secondary_ptr_->GetFK(q_start, robot_property_.tcp_frame_secondary);
-        PoseQuaternion pose_target = utilities::VectorXdToPoseQuaternion(move_request.value);
+        PoseQuaternion pose_target = utils::VectorXdToPoseQuaternion(move_request.value);
         LOG_INFO << "Secondary arm motion plan: start: " << pose_start.ToString() << ", target: " << pose_target.ToString();
         line_primary_ = std::nullopt;
         line_secondary_.emplace(CalcLineGeometry(pose_start, pose_target));
@@ -250,4 +249,4 @@ PoseQuaternion MoveLinePlanner::ComputeOutputPose(LineGeometry line, double ruck
     return pose_cmd;
 }
 
-} // namespace robot_server_lib
+}  // namespace robot_server_lib

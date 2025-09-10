@@ -7,7 +7,6 @@ kill_process() {
     local name=$1
     pids=$(pgrep -f "$name")
     if [ -n "$pids" ]; then
-        echo "Killing existing $name processes: $pids"
         kill -9 $pids
     fi
 }

@@ -7,14 +7,14 @@ namespace robot_server_lib
 
 class IdlePlanner : public MotionPlannerBase
 {
-public:
+   public:
     IdlePlanner(RobotModel robot_model);
     ~IdlePlanner() override;
 
     ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) override;
     bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override;
 
-protected:
+   protected:
     VectorDof idle_position_{};
 };
 
