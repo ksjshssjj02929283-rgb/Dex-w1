@@ -63,3 +63,22 @@ class Planner_Pin:
 
         return torso_transform_chain, head_transform_chain, arml_transform_chain, armr_transform_chain
 
+
+    def get_arm_base_tf(self, real_qpos: np.ndarray = None):
+        """
+        This function computes the transformation matrices of left and right arm base
+
+        Args:
+            real_qpos (nd.array, shape=(20, )): The joint qpos of real robot, usually in order of [torso, head, arml, armr]
+
+        Returns:
+            The tuple of transformation matrices in order of [left arm base, right arm base]
+        """
+        pin_qpos = real_qpos[self.real2pin_idx]
+        pinocchio.forwardKinematics(self.pin_model, self.pin_data, pin_qpos)
+        pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
+        arml_base_ID = self.pin_model.getFrameId("LRFT_ARM_BASE")
+        armr_base_ID = self.pin_model.getFrameId("RIGHT_ARM_BASE")
+        arml_base_tf = self.pin_data.oMf[arml_base_ID].homogeneous
+        armr_base_tf = self.pin_data.oMf[armr_base_ID].homogeneous
+        return arml_base_tf, armr_base_tf

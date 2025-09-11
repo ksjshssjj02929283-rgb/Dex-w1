@@ -90,7 +90,7 @@ class FCLChecker:
         mesh = trimesh.load(obj_path, force='mesh')
         vertices = np.asarray(mesh.vertices, dtype=np.float64)
         triangles = np.asarray(mesh.faces, dtype=np.int32)
-        self.logger.debug(f"vertices length {len(vertices)}, triangles length {len(triangles)}")
+        # self.logger.debug(f"vertices length {len(vertices)}, triangles length {len(triangles)}")
 
         bvh = fcl.BVHModel()
         bvh.beginModel(len(vertices), len(triangles))
@@ -228,14 +228,20 @@ class FCLChecker:
         saved_file_path = os.path.join(saved_folder_path, "transformed_point_cloud.ply")
         o3d.io.write_point_cloud(saved_file_path, point_cloud)
 
-    def add_octomap(self, ply_path, external_trans, octo_res):
+    def add_octomap_from_file(self, ply_path: str, 
+                              extrinsics: np.ndarray, 
+                              octo_res: float, 
+                              base_link_T_arm_base: np.ndarray,
+                              visualize: bool = False):
+        # TODO: extrinsics is just a tf from camera frame to one of arm base frame, arm_base_T_camera, add FK in future to transform to base link frame
         """
-        This function loads a point cloud from a PLY file, applies a transformation to align it with the base-link frame
-        
+        This function loads a point cloud file and transform it to base link frame, then create an octomap for collision checking
+
         Args:
-            ply_path (str) : Path to the PLY file containing the point cloud data(This parameter will be changed to a numpy array in future)
-            external_trans (nd.array, shape=(4, 4)): The transformation matrix from the point cloud frame to the base-link frame.
+            point_cloud (nd.array, shape=(N, 3)): The point cloud data in numpy array format which is in camera frame.
+            extrinsics (nd.array, shape=(4, 4)): The transformation matrix from the point cloud frame to one of arm base frame.(will be neck2 frame in the future)
             octo_res (float): The resolution of the octomap.
+
         """
 
         self.obstacles.clear()
@@ -243,18 +249,67 @@ class FCLChecker:
 
         point_cloud = o3d.io.read_point_cloud(ply_path)
         # Apply transformation to the world coordinates
-        point_cloud.transform(external_trans)
+        base_link_T_camera = base_link_T_arm_base @ extrinsics
+        point_cloud.transform(base_link_T_camera)
         # Downsample the point cloud
         point_cloud = point_cloud.voxel_down_sample(voxel_size=0.01)
         # save the point cloud
-        self._save_point_cloud(point_cloud)
+        # self._save_point_cloud(point_cloud)
+        if visualize:
+            o3d.visualization.draw_geometries([point_cloud])
 
         point_cloud_array = np.asarray(point_cloud.points)
         octo_obj = fcl.OcTree(r=octo_res, points=point_cloud_array)
-        self.obstacles.append(octo_obj)
-        self.obstacle_manager.registerObject(octo_obj)
+        fcl_octo_obj = fcl.CollisionObject(octo_obj)
+        self.obstacles.append(fcl_octo_obj)
+        self.obstacle_manager.registerObject(fcl_octo_obj)
         self.obstacle_manager.setup()
-    
+
+        # point_cloud = o3d.io.read_point_cloud(ply_path)
+        if self.visualize:
+            trimesh_cloud = trimesh.points.PointCloud(np.asarray(point_cloud.points))
+            self.obstacle_mesh_list.append(trimesh_cloud)
+
+
+
+    def add_octomap_from_numpy(self, point_cloud: np.ndarray,
+                                extrinsics: np.ndarray, 
+                                octo_res: float, 
+                                base_link_T_arm_base: np.ndarray, 
+                                visualize: bool = False):
+        """
+        This function loads a numpy array point cloud and transform it to base link frame, then create an octomap for collision checking
+
+        Args:
+            point_cloud (nd.array, shape=(N, 3)): The point cloud data in numpy array format which is in camera frame.
+            extrinsics (nd.array, shape=(4, 4)): The transformation matrix from the point cloud frame to one of arm base frame.(will be neck2 frame in the future)
+            octo_res (float): The resolution of the octomap.
+
+        """
+        self.obstacles.clear()
+        self.obstacle_manager = fcl.DynamicAABBTreeCollisionManager()
+
+        point_cloud_o3d = o3d.geometry.PointCloud()
+        point_cloud_o3d.points = o3d.utility.Vector3dVector(point_cloud)
+
+        base_link_T_camera = base_link_T_arm_base @ extrinsics
+        point_cloud_o3d.transform(base_link_T_camera)
+        point_cloud_o3d = point_cloud_o3d.voxel_down_sample(voxel_size=0.01)
+        if visualize:
+            o3d.visualization.draw_geometries([point_cloud_o3d])
+        
+        point_cloud_array = np.asarray(point_cloud_o3d.points)
+        octo_obj = fcl.OcTree(r=octo_res, points=point_cloud_array)
+        fcl_octo_obj = fcl.CollisionObject(octo_obj)
+        self.obstacles.append(fcl_octo_obj)
+        self.obstacle_manager.registerObject(fcl_octo_obj)
+        self.obstacle_manager.setup()
+
+        if self.visualize:
+            trimesh_cloud = trimesh.points.PointCloud(np.asarray(point_cloud_array))
+            self.obstacle_mesh_list.append(trimesh_cloud)
+
+
     def load_env_json(self, json_path):
 
         self.logger.info(f"Loading environment from {json_path}")
@@ -749,7 +804,7 @@ class FCLChecker:
         for mesh in self.grasp_object_mesh_list:
             scene.add_geometry(mesh)
         scene.show()
-        embed()
+        # embed()
 
 
 
