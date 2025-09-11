@@ -35,16 +35,18 @@ PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interf
 StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interfaces::msg::StreamingCommand> msg);
 PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> action_handle);
 template <typename VectorType>
-std::ostringstream VectorToJsonArrayString(const VectorType& vec) {
+std::ostringstream VectorToJsonArrayString(const VectorType &vec)
+{
     std::ostringstream ss;
     ss << "[";
-    for (int i = 0; i < vec.size(); ++i) {
+    for (int i = 0; i < vec.size(); ++i)
+    {
         ss << vec[i];
         if (i != vec.size() - 1)
             ss << ",";
     }
     ss << "]";
     return ss;
-}   
+}
 }  // namespace utils
 }  // namespace robot_server_lib

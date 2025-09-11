@@ -18,7 +18,7 @@ constexpr int ndof_robot = 20;
 constexpr int torque_ctrl_dt_micro = 1000;  // 1kHz
 constexpr int manager_dt_micro = 4 * torque_ctrl_dt_micro;
 constexpr int simulation_dt_micro = 500;  // 2Khz
-constexpr int publish_dt_micro = 10000;  // 100 hz
+constexpr int publish_dt_micro = 10000;   // 100 hz
 
 constexpr double torque_ctrl_dt = double(torque_ctrl_dt_micro) / 1e6;
 constexpr double manager_dt = double(manager_dt_micro) / 1e6;

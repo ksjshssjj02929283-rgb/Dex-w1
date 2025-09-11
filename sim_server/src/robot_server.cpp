@@ -11,8 +11,10 @@ RobotServer::RobotServer() : Node("sim_server")
 
 RobotServer::~RobotServer()
 {
-    auto join_thread_if_joinable = [](std::thread &t) {
-        if (t.joinable()) t.join();
+    auto join_thread_if_joinable = [](std::thread &t)
+    {
+        if (t.joinable())
+            t.join();
     };
     join_thread_if_joinable(this->publish_thread_);
     join_thread_if_joinable(this->simulation_thread_);
@@ -52,12 +54,13 @@ void RobotServer::Init()
         [this](const robot_server_interfaces::msg::StreamingCommand::SharedPtr streaming_msg)
         {
             this->manager_buffers_.streaming_command_latest_buffer->AppendNewElement(utils::ParseStreamingCommand(streaming_msg));
-            
+
             RCLCPP_INFO(this->get_logger(), "Request_id = %ld, streaming command Received, data size = %zu, streaming_finished = %s",
                         streaming_msg->request_id, streaming_msg->position.size(), streaming_msg->streaming_finished ? "true" : "false");
 
             std::string pos_str;
-            if (!streaming_msg->position.empty()) {
+            if (!streaming_msg->position.empty())
+            {
                 std::ostringstream oss;
                 std::copy(streaming_msg->position.begin(), streaming_msg->position.end() - 1, std::ostream_iterator<double>(oss, " "));
                 oss << streaming_msg->position.back();
@@ -106,49 +109,33 @@ void RobotServer::Init()
     this->simulation_thread_ = std::thread(
         [this]() -> void
         {
-            pinocchio::Data robot_data(*this->robot_model_.model_ptr);
-            JointRawMeasurement raw_measurement{};
             // 初始更新关节测量数据
-            assert(ndof_robot == this->robot_model_.model_ptr->nv && "Robot model DOF mismatch");
-            VectorDof q, dq, ddq, torque_cmd;
-            q << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
-            dq.setZero();
-            ddq.setZero();
-            torque_cmd.setZero();
-            raw_measurement.position = q;
-            raw_measurement.velocity = dq;
-            raw_measurement.effort = torque_cmd;
+            pinocchio::Data robot_data(*this->robot_model_.model_ptr);
+            VectorDof torque_cmd{};
+            JointRawMeasurement raw_measurement{};
+            raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
+            raw_measurement.velocity.setZero();
+            raw_measurement.effort.setZero();
             raw_measurement.time_point = TimePointSystem::Now();
             auto ret = this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
-            VectorDof temp_torque{};
 
+            auto next_cycle_time_point = std::chrono::steady_clock::now();
             while (rclcpp::ok())
             {
-                if (this->robot_buffers_.torque_command_vector && this->robot_buffers_.torque_command_vector->PeekLatest(&temp_torque))
-                {
-                    torque_cmd = temp_torque;
-                }
-                else
+                next_cycle_time_point += std::chrono::microseconds(simulation_dt_micro);
+                if (!this->robot_buffers_.torque_command_vector->PeekLatest(&torque_cmd))
                 {
                     torque_cmd.setZero();
                 }
-                auto t_start = TimePointSystem::Now();
-                ddq = pinocchio::ForwardDynamics(*rthis->obot_model_.model_ptr, robot_data, q, dq, torque_cmd,
-                                                 this->robot_model_.params_ptr->joint_command_sequence_by_name);
-                int duration_micro = (t_start.time_in_ns() - TimePointSystem::Now().time_in_ns()) / 1e3;
-                q += simulation_dt * dq;
-                dq += simulation_dt * ddq;
-                // 更新关节测量数据
-                raw_measurement.position = q;
-                raw_measurement.velocity = dq;
+                VectorDof ddq =
+                    dynamics::ForwardDynamics(*this->robot_model_.model_ptr, robot_data, raw_measurement.position, raw_measurement.velocity,
+                                              torque_cmd, this->robot_model_.params_ptr->joint_command_sequence_by_name);
+                raw_measurement.position += simulation_dt * raw_measurement.velocity;
+                raw_measurement.velocity += simulation_dt * ddq;
                 raw_measurement.effort = torque_cmd;
                 raw_measurement.time_point = TimePointSystem::Now();
-                auto ret = this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
-                assert(ret);
-                if (duration_micro < simulation_dt_micro)
-                {
-                    std::this_thread::sleep_for(std::chrono::microseconds(simulation_dt_micro - duration_micro));
-                }
+                this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
+                std::this_thread::sleep_until(next_cycle_time_point);
             }
         });
 #else
@@ -167,8 +154,8 @@ void RobotServer::Init()
             while (rclcpp::ok())
             {
                 next_cycle_time_point += std::chrono::microseconds(manager_dt_micro);
-
-                if (this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd)) {
+                if (this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
+                {
                     // 更新关节测量数据
                     raw_measurement.position = q_cmd.cmd.position;
                     raw_measurement.velocity = q_cmd.cmd.velocity;
@@ -195,8 +182,9 @@ void RobotServer::Init()
     this->manager_thread_ = std::thread(
         [this]() -> void
         {
-            PlannerManager planner_manager(this->robot_model_, this->manager_buffers_, std::bind(&RobotServer::ReportRequestStatus, 
-                                            this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
+            PlannerManager planner_manager(this->robot_model_, this->manager_buffers_,
+                                           std::bind(&RobotServer::ReportRequestStatus, this, std::placeholders::_1, std::placeholders::_2,
+                                                     std::placeholders::_3, std::placeholders::_4));
             PlannerManagerCommand q_cmd{};
             auto next_cycle_time_point = std::chrono::steady_clock::now();
             while (rclcpp::ok())
@@ -227,7 +215,8 @@ void RobotServer::Init()
             while (rclcpp::ok())
             {
                 std_msgs::msg::String robot_server_state_msg;
-                if (this->manager_buffers_.joint_measurement->PeekLatest(&measurement) && this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
+                if (this->manager_buffers_.joint_measurement->PeekLatest(&measurement) &&
+                    this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
                 {
                     next_cycle_time_point += std::chrono::microseconds(publish_dt_micro);
                     std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(measurement.position);
@@ -235,17 +224,19 @@ void RobotServer::Init()
                     std::ostringstream joint_torque_ss = utils::VectorToJsonArrayString(measurement.effort);
                     std::ostringstream ee_pose_ss = utils::VectorToJsonArrayString(ee_pose);
                     uint64_t timestamp_ns = this->now().nanoseconds();
-                    robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" +
-                                                ToString(this->manager_state_) + "\"" + ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
-                                                ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
-                                                ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
-                                                ",\"ee_pose\":" + ee_pose_ss.str() + ",\"joint_position\":" + joint_position_ss.str() + 
-                                                ",\"joint_velocity\":" + joint_velocity_ss.str() + ",\"actual_arm_torque\":" + joint_torque_ss.str() + "}";
+                    robot_server_state_msg.data =
+                        std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" + ToString(this->manager_state_) + "\"" +
+                        ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+                        ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
+                        ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) + ",\"ee_pose\":" + ee_pose_ss.str() +
+                        ",\"joint_position\":" + joint_position_ss.str() + ",\"joint_velocity\":" + joint_velocity_ss.str() +
+                        ",\"actual_arm_torque\":" + joint_torque_ss.str() + "}";
                 }
                 else
                 {
                     uint64_t timestamp_ns = this->now().nanoseconds();
-                    robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" + ToString(this->manager_state_) + "\"}";
+                    robot_server_state_msg.data =
+                        std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" + ToString(this->manager_state_) + "\"}";
                 }
                 this->robot_server_state_publisher_->publish(robot_server_state_msg);
 
@@ -304,7 +295,7 @@ void RobotServer::HandleAccepted(const std::shared_ptr<rclcpp_action::ServerGoal
              << ", arm = " << request_handle->get_goal()->motion_group;
 }
 
-rclcpp_action::GoalResponse RobotServer::HandleGoal(const rclcpp_action::GoalUUID&,
+rclcpp_action::GoalResponse RobotServer::HandleGoal(const rclcpp_action::GoalUUID &,
                                                     std::shared_ptr<const robot_server_interfaces::action::MoveRobot::Goal> goal)
 {
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;

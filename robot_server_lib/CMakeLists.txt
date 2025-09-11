@@ -23,6 +23,7 @@ find_package(robot_server_interfaces REQUIRED)
 
 aux_source_directory(src LIB_SRCS)
 aux_source_directory(kinematics LIB_SRCS)
+aux_source_directory(dynamics LIB_SRCS)
 aux_source_directory(motion_planner LIB_SRCS)
 aux_source_directory(torque_controller LIB_SRCS)
 aux_source_directory(utils LIB_SRCS)
@@ -34,6 +35,7 @@ target_include_directories(robot_server_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/utils>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/kinematics>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/dynamics>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/motion_planner>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/torque_controller>
 )
@@ -68,6 +70,7 @@ install(
     include/
     utils/
     kinematics/
+    dynamics/
     motion_planner/
     torque_controller/
   DESTINATION include/${PROJECT_NAME}
