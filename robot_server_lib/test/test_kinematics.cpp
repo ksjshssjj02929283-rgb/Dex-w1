@@ -4,7 +4,7 @@
 #include <chrono>
 
 #include "kinematics_include.h"
-#include "utilities.h"
+#include "utils.h"
 
 using namespace robot_server_lib;
 TEST(SRSKinematicsTest, Kinematics)

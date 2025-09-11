@@ -1,27 +1,26 @@
 #include "torque_controller_time_delay.h"
-#include <sstream>
+
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 
 namespace robot_server_lib
 {
 
-TorqueControllerTimeDelay::TorqueControllerTimeDelay(RobotModel robot_model)
-    : TorqueControllerBase(robot_model)
+TorqueControllerTimeDelay::TorqueControllerTimeDelay(RobotModel robot_model) : TorqueControllerBase(robot_model)
 {
     idle_q_.setZero();
     last_feedback_dq_.setZero();
     output_tau_.setZero();
     last_measurement_time_point_ = TimePointSystem::Invalid();
     // todo: param tune
-    M_bar_ << 0.1, 0.1, 0.1, 0.1, 0.01, 0.01,
-              0.02, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01,
-              0.02, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01;
+    M_bar_ << 0.1, 0.1, 0.1, 0.1, 0.01, 0.01, 0.02, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01, 0.02, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01;
     parameters_.K_p = 100;
     parameters_.K_v = 20;
 }
 
-bool TorqueControllerTimeDelay::ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd, TorqueCtrlCommand &output_cmd)
+bool TorqueControllerTimeDelay::ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd,
+                                               TorqueCtrlCommand &output_cmd)
 {
     if (last_measurement_time_point_.is_invalid())
     {
@@ -97,4 +96,4 @@ bool TorqueControllerTimeDelay::ResetForNewEpisode(const JointRawMeasurement &ra
     return true;
 }
 
-} // namespace robot_server_lib
+}  // namespace robot_server_lib

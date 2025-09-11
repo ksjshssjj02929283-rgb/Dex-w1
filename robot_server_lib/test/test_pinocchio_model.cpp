@@ -1,33 +1,13 @@
 #include <gtest/gtest.h>
 
-#include "utilities.h"
+#include "utils.h"
 
 using namespace robot_server_lib;
 TEST(PinocchioModelTest, Pinocchio)
 {
     const auto package_share_path = ament_index_cpp::get_package_share_directory("sim_server");
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot.cfg";
-    json config_json;
-    if (!std::filesystem::exists(robot_cfg_path))
-    {
-        assert(false && "Robot configuration file not found");
-    }
-    std::ifstream ifs(robot_cfg_path);
-    if (!ifs.is_open() || !(ifs >> config_json))
-    {
-        assert(false && "Can't open or parse robot.cfg");
-    }
-    // 初始化机器人模型
-    RobotParams params;
-    if (!utilities::GetRobotParamsFromConfig(config_json, params))
-    {
-        assert(false);
-    }
-
-    pinocchio::Model model, left_arm_model, right_arm_model;
-    pinocchio::urdf::buildModel(params.urdf_path, model);
-    pinocchio::urdf::buildModel(params.left_arm_urdf_path, left_arm_model);
-    pinocchio::urdf::buildModel(params.right_arm_urdf_path, right_arm_model);
+    RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 
     auto print_model_info = [](const pinocchio::Model& model, const std::string& tag)
     {
@@ -44,7 +24,7 @@ TEST(PinocchioModelTest, Pinocchio)
         }
     };
 
-    print_model_info(model, "Full Model");
-    print_model_info(left_arm_model, "Left Arm Model");
-    print_model_info(right_arm_model, "Right Arm Model");
+    print_model_info(*robot_model.model_ptr, "Full Model");
+    print_model_info(*robot_model.left_arm_model_ptr, "Left Arm Model");
+    print_model_info(*robot_model.right_arm_model_ptr, "Right Arm Model");
 }

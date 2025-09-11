@@ -5,17 +5,17 @@
 namespace robot_server_lib
 {
 
-
 class EEPoseStreamingPlanner : public MotionPlannerBase
 {
-public:
-    EEPoseStreamingPlanner(RobotModel robot_model, std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer, double controller_dt);
+   public:
+    EEPoseStreamingPlanner(RobotModel robot_model, std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer,
+                           double controller_dt);
     ~EEPoseStreamingPlanner() override;
 
     ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &output_joint_cmd) override;
     bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override;
 
-protected:
+   protected:
     bool ToJointStreamingCommand(StreamingCommand &cmd, const JointMeasurement &measurement);
 
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer_;

@@ -1,9 +1,10 @@
 #pragma once
 
 #include <optional>
+
 #include "kinematics_include.h"
 #include "ruckig/ruckig.hpp"
-#include "utilities.h"
+#include "utils.h"
 
 namespace robot_server_lib
 {

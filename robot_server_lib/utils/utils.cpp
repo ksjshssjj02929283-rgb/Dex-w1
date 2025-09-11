@@ -1,0 +1,284 @@
+#include "utils.h"
+
+namespace robot_server_lib
+{
+namespace utils
+{
+
+RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path)
+{
+    json config_json;
+    RobotParams params;
+    RobotModel robot_model;
+    if (!std::filesystem::exists(robot_cfg_path))
+    {
+        LOG_CRIT << "Robot configuration file not found: " << robot_cfg_path;
+        assert(false && "Robot configuration file not found");
+    }
+    std::ifstream ifs(robot_cfg_path);
+    if (!ifs.is_open() || !(ifs >> config_json))
+    {
+        LOG_CRIT << "Can't open or parse robot.cfg: " << robot_cfg_path;
+        assert(false && "Can't open or parse robot.cfg");
+    }
+    const auto package_share_path = ament_index_cpp::get_package_share_directory("robot_server_lib");
+    if (!config_json.contains("robot_name") || !config_json["robot_name"].is_string())
+    {
+        LOG_CRIT << "robot.cfg missing 'robot_name' field";
+        assert(false && "robot.cfg missing 'robot_name' field");
+    }
+    params.robot_name = config_json["robot_name"].get<std::string>();
+    params.urdf_path = std::filesystem::path(package_share_path) / "robot_models" / params.robot_name / (params.robot_name + ".urdf");
+
+    if (config_json.contains("left_arm_name"))
+    {
+        params.left_arm_name = config_json["left_arm_name"].get<std::string>();
+        params.left_arm_urdf_path =
+            std::filesystem::path(package_share_path) / "robot_models" / params.left_arm_name / (params.left_arm_name + ".urdf");
+    }
+    if (config_json.contains("right_arm_name"))
+    {
+        params.right_arm_name = config_json["right_arm_name"].get<std::string>();
+        params.right_arm_urdf_path =
+            std::filesystem::path(package_share_path) / "robot_models" / params.right_arm_name / (params.right_arm_name + ".urdf");
+    }
+
+    auto parse_joints_maps = [&](const std::string &key, Eigen::VectorXd &dst)
+    {
+        if (config_json.contains(key))
+        {
+            auto arr = config_json[key];
+            dst = Eigen::VectorXd::Zero(arr.size());
+            for (size_t i = 0; i < arr.size(); ++i)
+            {
+                dst[i] = arr[i].get<int>();
+            }
+        }
+    };
+
+    parse_joints_maps("joints_primary", params.joints_primary);
+    parse_joints_maps("joints_secondary", params.joints_secondary);
+
+    if (config_json.contains("joint_command_sequence_by_name"))
+    {
+        auto arr = config_json["joint_command_sequence_by_name"];
+        params.joint_command_sequence_by_name.clear();
+        for (const auto &item : arr)
+        {
+            params.joint_command_sequence_by_name.push_back(item.get<std::string>());
+        }
+    }
+
+    pinocchio::Model model, left_arm_model, right_arm_model;
+    pinocchio::urdf::buildModel(params.urdf_path, model);
+    pinocchio::urdf::buildModel(params.left_arm_urdf_path, left_arm_model);
+    pinocchio::urdf::buildModel(params.right_arm_urdf_path, right_arm_model);
+
+    robot_model.model_ptr = std::make_shared<pinocchio::Model>(model);
+    robot_model.left_arm_model_ptr = std::make_shared<pinocchio::Model>(left_arm_model);
+    robot_model.right_arm_model_ptr = std::make_shared<pinocchio::Model>(right_arm_model);
+    robot_model.params_ptr = std::make_shared<RobotParams>(params);
+
+    return robot_model;
+}
+
+void SetMax(std::atomic_int64_t &maximum_value, std::int64_t value)
+{
+    std::int64_t prev_value = maximum_value;
+    while (prev_value < value && !maximum_value.compare_exchange_weak(prev_value, value))
+    {
+    }
+}
+
+PoseQuaternion VectorXdToPoseQuaternion(const Eigen::VectorXd &vec)
+{
+    PoseQuaternion pose;
+    pose.position = Eigen::Vector3d(vec[0], vec[1], vec[2]);
+    pose.orientation = Eigen::Quaterniond(vec[3], vec[4], vec[5], vec[6]);
+    pose.orientation.normalize();
+    return pose;
+}
+
+PoseQuaternion StringToPoseQuaternion(const std::string &str)
+{
+    PoseQuaternion pose;
+    std::stringstream ss(str);
+    std::string item;
+    double values[7] = {0};
+    int idx = 0;
+    while (std::getline(ss, item, ',') && idx < 7)
+    {
+        try
+        {
+            values[idx++] = std::stod(item);
+        }
+        catch (...)
+        {
+        }
+    }
+    pose.position = Eigen::Vector3d(values[0], values[1], values[2]);
+    pose.orientation = Eigen::Quaterniond(values[3], values[4], values[5], values[6]);
+    pose.orientation.normalize();
+    return pose;
+}
+
+PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request)
+{
+    PlannerRequest planner_request;
+
+    if (request->property_type == "TcpPrimary")
+    {
+        planner_request.type = RequestType::TcpPrimary;
+        planner_request.data = utils::StringToPoseQuaternion(request->value);
+    }
+    else if (request->property_type == "TcpSecondary")
+    {
+        planner_request.type = RequestType::TcpSecondary;
+        planner_request.data = utils::StringToPoseQuaternion(request->value);
+    }
+    else if (request->property_type == "SpeedRatio")
+    {
+        planner_request.type = RequestType::SpeedRatio;
+        double speed = std::clamp(std::stod(request->value), 0.01, 1.0);
+        planner_request.data = speed;
+    }
+    else if (request->property_type == "ClearError")
+    {
+        planner_request.type = RequestType::ClearError;
+        planner_request.data = std::nullopt;  // Clear error request does not require additional data
+    }
+    else if (request->property_type == "EnableDrag")
+    {
+        planner_request.type = RequestType::EnableDrag;
+        planner_request.data = request->value == "1" ? true : false;
+    }
+    else if (request->property_type == "SafeLevel")
+    {
+        planner_request.type = RequestType::SafeLevel;
+        planner_request.data = std::clamp(std::stod(request->value), 0.1, 1.0);
+    }
+    else
+    {
+        planner_request.type = RequestType::Empty;
+        LOG_CRIT << "Parse property: type not defined: " << request->property_type;
+    }
+    return planner_request;
+}
+
+StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interfaces::msg::StreamingCommand> msg)
+{
+    StreamingCommand streaming_command;
+
+    streaming_command.request_id = msg->request_id;
+    streaming_command.streaming_finished = msg->streaming_finished;
+    streaming_command.received_time = TimePointSystem::Now();
+    if (msg->position.size() > 0)
+    {
+        streaming_command.command.resize(msg->position.size());
+        for (size_t i = 0; i < msg->position.size(); ++i)
+        {
+            streaming_command.command[i] = msg->position[i];
+        }
+    }
+    return streaming_command;
+}
+
+// 解析MoveRobot动作的命令
+PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> action_handle)
+{
+    const auto &input_request = action_handle->get_goal();
+
+    PlannerRequest planner_request;
+    // type/motion_group 转换为枚举
+    if (input_request->type == "MoveJoint")
+    {
+        planner_request.type = RequestType::MoveJoint;
+    }
+    else if (input_request->type == "MoveLine")
+    {
+        planner_request.type = RequestType::MoveLine;
+    }
+    else if (input_request->type == "StartJointStreaming")
+    {
+        planner_request.type = RequestType::StartJointStreaming;
+    }
+    else if (input_request->type == "StartEEPoseStreaming")
+    {
+        planner_request.type = RequestType::StartEEPoseStreaming;
+    }
+    else
+    {
+        planner_request.type = RequestType::Unknown;
+        return planner_request;
+    }
+
+    MoveRequest move_request;
+    if (input_request->motion_group == "Primary")
+    {
+        move_request.motion_group = MotionGroup::Primary;
+    }
+    else if (input_request->motion_group == "Secondary")
+    {
+        move_request.motion_group = MotionGroup::Secondary;
+    }
+    else if (input_request->motion_group == "BothArms")
+    {
+        move_request.motion_group = MotionGroup::BothArms;
+    }
+    else if (input_request->motion_group == "WholeBody")
+    {
+        move_request.motion_group = MotionGroup::WholeBody;
+    }
+    else
+    {
+        move_request.motion_group = MotionGroup::Unknown;
+    }
+
+    Eigen::VectorXd value;
+    if (input_request->target.size() > 0)
+    {
+        value.resize(input_request->target.size());
+        for (size_t i = 0; i < input_request->target.size(); ++i)
+        {
+            value[i] = input_request->target[i];
+        }
+        move_request.value = value;
+    }
+
+    json input_config_json;
+    if (!input_request->config.empty())
+    {
+        input_config_json = json::parse(input_request->config);
+
+        if (input_config_json.contains("reference_frame"))
+        {
+            if (input_request->motion_group == "ArmBase")
+            {
+                move_request.reference_frame.emplace(ReferenceFrame::ArmBase);
+            }
+            else if (input_request->motion_group == "WorldBase")
+            {
+                move_request.reference_frame.emplace(ReferenceFrame::WorldBase);
+            }
+            else
+            {
+                move_request.reference_frame.emplace(ReferenceFrame::Unknown);
+            }
+        }
+
+        if (input_config_json.contains("speed"))
+        {
+            move_request.speed.emplace(input_config_json["speed"].get<double>());
+        }
+
+        if (input_config_json.contains("blend_tolerance"))
+        {
+            move_request.blend_tolerance.emplace(input_config_json["blend_tolerance"].get<double>());
+        }
+    }
+    planner_request.data = move_request;
+    return planner_request;
+}
+
+}  // namespace utils
+}  // namespace robot_server_lib

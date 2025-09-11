@@ -3,14 +3,16 @@
 namespace robot_server_lib
 {
 
-JointStreamingPlanner::JointStreamingPlanner(RobotModel robot_model, std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer, double controller_dt)
+JointStreamingPlanner::JointStreamingPlanner(RobotModel robot_model, std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer,
+                                             double controller_dt)
     : MotionPlannerBase(robot_model), streaming_buffer_(streaming_buffer), controller_dt_(controller_dt)
 {
 }
 
 JointStreamingPlanner::~JointStreamingPlanner() = default;
 
-ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &output_joint_cmd)
+ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta,
+                                                           JointCommand &output_joint_cmd)
 {
     if (!runtime_.streaming_finished)
     {
@@ -73,4 +75,4 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     return true;
 }
 
-} // namespace robot_server_lib
+}  // namespace robot_server_lib

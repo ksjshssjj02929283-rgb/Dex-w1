@@ -1,52 +1,63 @@
 #include "move_planner_base.h"
 
-namespace robot_server_lib {
+namespace robot_server_lib
+{
 
-MotionPlannerBase::MotionPlannerBase(RobotModel robot_model) {
+MotionPlannerBase::MotionPlannerBase(RobotModel robot_model)
+{
     // Initialize robot model
     robot_model_ = std::move(robot_model);
     robot_data_ = pinocchio::Data(*robot_model_.model_ptr);
     // Initialize kinematics for both arms
-    if (robot_model_.params_ptr->left_arm_name == "W1LeftArmIndustrial") {
+    if (robot_model_.params_ptr->left_arm_name == "W1LeftArmIndustrial")
+    {
         kinematics_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmIndustrial());
     }
-    if (robot_model_.params_ptr->left_arm_name == "W1LeftArmAnthropomorphic") {
+    if (robot_model_.params_ptr->left_arm_name == "W1LeftArmAnthropomorphic")
+    {
         kinematics_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmAnthropomorphic());
     }
-    if (robot_model_.params_ptr->right_arm_name == "W1RightArmIndustrial") {
+    if (robot_model_.params_ptr->right_arm_name == "W1RightArmIndustrial")
+    {
         kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmIndustrial());
     }
-    if (robot_model_.params_ptr->right_arm_name == "W1RightArmAnthropomorphic") {
+    if (robot_model_.params_ptr->right_arm_name == "W1RightArmAnthropomorphic")
+    {
         kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmAnthropomorphic());
     }
     assert(kinematics_ptr_ && kinematics_secondary_ptr_);
 }
 
-void MotionPlannerBase::SetRobotProperty(const RobotProperty &property) {
-    robot_property_ = property;
-}
+void MotionPlannerBase::SetRobotProperty(const RobotProperty &property) { robot_property_ = property; }
 
-bool MotionPlannerBase::MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof) const {
+bool MotionPlannerBase::MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof) const
+{
     return MapArmToWholeBody(q, q_ndof, motion_group_);
 }
 
-bool MotionPlannerBase::MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group) const {
+bool MotionPlannerBase::MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group) const
+{
     Eigen::VectorXd joints_map;
-    switch (motion_group) {
-    case MotionGroup::Primary: {
+    switch (motion_group)
+    {
+    case MotionGroup::Primary:
+    {
         joints_map = robot_model_.params_ptr->joints_primary;
         break;
     }
-    case MotionGroup::Secondary: {
+    case MotionGroup::Secondary:
+    {
         joints_map = robot_model_.params_ptr->joints_secondary;
         break;
     }
-    case MotionGroup::BothArms: {
+    case MotionGroup::BothArms:
+    {
         joints_map.resize(robot_model_.params_ptr->joints_primary.size() + robot_model_.params_ptr->joints_secondary.size());
         joints_map << robot_model_.params_ptr->joints_primary, robot_model_.params_ptr->joints_secondary;
         break;
     }
-    case MotionGroup::WholeBody: {
+    case MotionGroup::WholeBody:
+    {
         joints_map = Eigen::VectorXd::LinSpaced(ndof_robot, 0, ndof_robot - 1);
         break;
     }
@@ -57,36 +68,45 @@ bool MotionPlannerBase::MapArmToWholeBody(const Eigen::VectorXd &q, JointPositio
     }
     // 把target_q按照joints_map映射到target_ndof
     assert(q.size() == joints_map.size() && "Target q size must match joints map size");
-    for (auto i = 0; i < joints_map.size(); ++i) {
+    for (auto i = 0; i < joints_map.size(); ++i)
+    {
         int joint_id = static_cast<int>(joints_map[i]);
-        if (joint_id >= 0 && joint_id < q_ndof.size()) {
+        if (joint_id >= 0 && joint_id < q_ndof.size())
+        {
             q_ndof[joint_id] = q[i];
         }
     }
     return true;
 }
 
-bool MotionPlannerBase::GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q) const {
+bool MotionPlannerBase::GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q) const
+{
     return GetArmFromWholeBody(q_ndof, q, motion_group_);
 }
 
-bool MotionPlannerBase::GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group) const {
+bool MotionPlannerBase::GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group) const
+{
     Eigen::VectorXd joints_map;
-    switch (motion_group) {
-    case MotionGroup::Primary: {
+    switch (motion_group)
+    {
+    case MotionGroup::Primary:
+    {
         joints_map = robot_model_.params_ptr->joints_primary;
         break;
     }
-    case MotionGroup::Secondary: {
+    case MotionGroup::Secondary:
+    {
         joints_map = robot_model_.params_ptr->joints_secondary;
         break;
     }
-    case MotionGroup::BothArms: {
+    case MotionGroup::BothArms:
+    {
         joints_map.resize(robot_model_.params_ptr->joints_primary.size() + robot_model_.params_ptr->joints_secondary.size());
         joints_map << robot_model_.params_ptr->joints_primary, robot_model_.params_ptr->joints_secondary;
         break;
     }
-    case MotionGroup::WholeBody: {
+    case MotionGroup::WholeBody:
+    {
         joints_map = Eigen::VectorXd::LinSpaced(ndof_robot, 0, ndof_robot - 1);
         break;
     }
@@ -97,13 +117,15 @@ bool MotionPlannerBase::GetArmFromWholeBody(const JointPositionDof &q_ndof, Eige
     }
     // 把target_ndof按照joints_map映射到target_q
     q = Eigen::VectorXd::Zero(joints_map.size());
-    for (auto i = 0; i < joints_map.size(); ++i) {
+    for (auto i = 0; i < joints_map.size(); ++i)
+    {
         int joint_id = static_cast<int>(joints_map[i]);
-        if (joint_id >= 0 && joint_id < q_ndof.size()) {
+        if (joint_id >= 0 && joint_id < q_ndof.size())
+        {
             q[i] = q_ndof[joint_id];
         }
     }
     return true;
 }
 
-} // namespace robot_server_lib
+}  // namespace robot_server_lib

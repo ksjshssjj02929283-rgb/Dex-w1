@@ -5,8 +5,7 @@ namespace robot_server_lib
 namespace kinematics
 {
 
-NumericalKinematics::NumericalKinematics(const pinocchio::Model &model)
-    : KinematicsBase(), model_(model), data_(model), ndof_(model.nv)
+NumericalKinematics::NumericalKinematics(const pinocchio::Model &model) : KinematicsBase(), model_(model), data_(model), ndof_(model.nv)
 {
     // Initialize the kinematics with the provided parameters
 }

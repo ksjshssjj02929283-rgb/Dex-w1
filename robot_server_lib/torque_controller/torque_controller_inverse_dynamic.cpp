@@ -3,14 +3,14 @@
 namespace robot_server_lib
 {
 
-TorqueControllerInvDynamic::TorqueControllerInvDynamic(RobotModel robot_model)
-    : TorqueControllerBase(robot_model)
+TorqueControllerInvDynamic::TorqueControllerInvDynamic(RobotModel robot_model) : TorqueControllerBase(robot_model)
 {
     parameters_.K_p = 50;
     parameters_.K_v = 0;
 }
 
-bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd, TorqueCtrlCommand &output_cmd)
+bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd,
+                                                TorqueCtrlCommand &output_cmd)
 {
     VectorDof feedback_q = raw_measurement.position;
     VectorDof feedback_dq = raw_measurement.velocity;
@@ -56,4 +56,4 @@ bool TorqueControllerInvDynamic::ResetForNewEpisode(const JointRawMeasurement &r
     return true;
 }
 
-} // namespace robot_server_lib
+}  // namespace robot_server_lib

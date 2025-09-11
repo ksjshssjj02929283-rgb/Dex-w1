@@ -3,14 +3,16 @@
 namespace robot_server_lib
 {
 
-EEPoseStreamingPlanner::EEPoseStreamingPlanner(RobotModel robot_model, std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer, double controller_dt)
+EEPoseStreamingPlanner::EEPoseStreamingPlanner(RobotModel robot_model, std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer,
+                                               double controller_dt)
     : MotionPlannerBase(robot_model), streaming_buffer_(streaming_buffer), controller_dt_(controller_dt)
 {
 }
 
 EEPoseStreamingPlanner::~EEPoseStreamingPlanner() = default;
 
-ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &output_joint_cmd)
+ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta,
+                                                            JointCommand &output_joint_cmd)
 {
     if (!runtime_.streaming_finished)
     {
@@ -86,8 +88,8 @@ bool EEPoseStreamingPlanner::ToJointStreamingCommand(StreamingCommand &cmd, cons
     case MotionGroup::BothArms:
     {
         assert(14 == cmd.command.size());
-        auto pose_cmd_primary = utilities::VectorXdToPoseQuaternion(Eigen::VectorXd(cmd.command.head(7)));
-        auto pose_cmd_secondary = utilities::VectorXdToPoseQuaternion(Eigen::VectorXd(cmd.command.tail(7)));
+        auto pose_cmd_primary = utils::VectorXdToPoseQuaternion(Eigen::VectorXd(cmd.command.head(7)));
+        auto pose_cmd_secondary = utils::VectorXdToPoseQuaternion(Eigen::VectorXd(cmd.command.tail(7)));
 
         assert(joint_cmd.size() == ndof_primary_ + ndof_secondary_);
         Eigen::VectorXd q_primary = joint_cmd.head(ndof_primary_);
@@ -107,7 +109,7 @@ bool EEPoseStreamingPlanner::ToJointStreamingCommand(StreamingCommand &cmd, cons
     case MotionGroup::Primary:
     {
         assert(7 == cmd.command.size());
-        auto pose_cmd = utilities::VectorXdToPoseQuaternion(cmd.command);
+        auto pose_cmd = utils::VectorXdToPoseQuaternion(cmd.command);
         assert(joint_cmd.size() == ndof_primary_);
         if (!kinematics_ptr_->GetIK(pose_cmd, joint_cmd, robot_property_.tcp_frame))
         {
@@ -121,7 +123,7 @@ bool EEPoseStreamingPlanner::ToJointStreamingCommand(StreamingCommand &cmd, cons
     case MotionGroup::Secondary:
     {
         assert(7 == cmd.command.size());
-        auto pose_cmd = utilities::VectorXdToPoseQuaternion(cmd.command);
+        auto pose_cmd = utils::VectorXdToPoseQuaternion(cmd.command);
         assert(joint_cmd.size() == ndof_secondary_);
         if (!kinematics_secondary_ptr_->GetIK(pose_cmd, joint_cmd, robot_property_.tcp_frame_secondary))
         {
@@ -139,4 +141,4 @@ bool EEPoseStreamingPlanner::ToJointStreamingCommand(StreamingCommand &cmd, cons
     return true;
 }
 
-} // namespace robot_server_lib
+}  // namespace robot_server_lib
