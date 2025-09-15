@@ -121,6 +121,7 @@ void PlannerManager::LoopOnce()
         PlannerManagerCommand temp_planner_command{};
         temp_planner_command.sequence_number = runtime_data_.loop_counter;
         temp_planner_command.cmd = joint_cmd;
+        temp_planner_command.robot_property = robot_property_;
         manager_buffer_.planner_manager_command->AppendNewElement(temp_planner_command);
         if (Status::Running == manager_state_)
             LOG_DEBUG << "Current Planner: " << typeid(*current_planner_).name() << " output: " << joint_cmd.ToString();
