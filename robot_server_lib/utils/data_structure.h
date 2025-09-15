@@ -109,10 +109,20 @@ struct PoseQuaternion
     }
 };
 
+struct RobotProperty
+{
+    pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
+    pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
+    RunMode run_mode{RunMode::Position};
+    double global_speed_ratio{0.5};
+    double safe_level{0.7};
+};
+
 struct PlannerManagerCommand
 {
     std::int64_t sequence_number{-1};
     JointCommand cmd;
+    RobotProperty robot_property;
 };
 
 // 移动指令
@@ -214,13 +224,6 @@ struct RobotModel
 
     RobotModel() = default;
     ~RobotModel() = default;
-};
-
-struct RobotProperty
-{
-    pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
-    pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
-    double global_speed_ratio{0.5};
 };
 
 }  // namespace robot_server_lib

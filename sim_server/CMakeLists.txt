@@ -37,7 +37,7 @@ find_package(robot_server_lib REQUIRED)
 
 if(ENABLE_SIM_SERVER)
 
-  aux_source_directory(src LIB_SRCS)
+  aux_source_directory(cpp LIB_SRCS)
 
   add_executable(${PROJECT_NAME} ${LIB_SRCS})
 
@@ -48,7 +48,7 @@ if(ENABLE_SIM_SERVER)
   endif()
 
   target_include_directories(${PROJECT_NAME} PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/cpp>
     $<INSTALL_INTERFACE:include>
   )
 

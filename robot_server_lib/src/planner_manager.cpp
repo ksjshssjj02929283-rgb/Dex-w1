@@ -217,6 +217,8 @@ RequestResponse PlannerManager::OnRequestStateIdle()
     case RequestType::TcpPrimary:
     case RequestType::TcpSecondary:
     case RequestType::SpeedRatio:
+    case RequestType::EnableDrag:
+    case RequestType::SafeLevel:
     case RequestType::ClearError:
     {
         SetProperty(request);
@@ -399,6 +401,25 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
     {
         assert(request.data.has_value() && std::holds_alternative<double>(request.data.value()));
         robot_property_.global_speed_ratio = std::get<double>(request.data.value());
+        return;
+    }
+    case RequestType::EnableDrag:
+    {
+        assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
+        bool enable_drag = std::get<bool>(request.data.value());
+        if (enable_drag)
+            robot_property_.run_mode = RunMode::Drag;
+        else
+            robot_property_.run_mode = RunMode::Position;
+        std::cout << "Set run mode to " << ToString(robot_property_.run_mode) << std::endl;
+        return;
+    }
+    case RequestType::SafeLevel:
+    {
+        assert(request.data.has_value() && std::holds_alternative<double>(request.data.value()));
+        double safe_level = std::get<double>(request.data.value());
+        robot_property_.safe_level = std::clamp(safe_level, 0.1, 1.0);
+        std::cout << "Set safe level to " << robot_property_.safe_level << std::endl;
         return;
     }
     case RequestType::ClearError:
