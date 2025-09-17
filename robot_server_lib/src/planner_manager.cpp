@@ -58,12 +58,12 @@ void PlannerManager::LoopOnce()
     {
         time_meta.measurement_time = TimePointSystem::Now();
 
-        Eigen::VectorXd joint_primary, joint_secondary;
+        Eigen::VectorXd measurement_primary, measurement_secondary;
         PoseQuaternion ee_pose_primary, ee_pose_secondary;
-        idle_planner_->GetArmFromWholeBody(measurement.position, joint_primary, MotionGroup::Primary);
-        idle_planner_->GetArmFromWholeBody(measurement.position, joint_secondary, MotionGroup::Secondary);
-        ee_pose_primary = idle_planner_->Kinematics()->GetFK(joint_primary, robot_property_.tcp_frame);
-        ee_pose_secondary = idle_planner_->KinematicsSecondary()->GetFK(joint_secondary, robot_property_.tcp_frame_secondary);
+        utils::GetArmFromWholeBody(this->robot_model_, measurement.position, measurement_primary, MotionGroup::Primary);
+        utils::GetArmFromWholeBody(this->robot_model_, measurement.position, measurement_secondary, MotionGroup::Secondary);
+        ee_pose_primary = idle_planner_->Kinematics()->GetFK(measurement_primary, robot_property_.tcp_frame);
+        ee_pose_secondary = idle_planner_->KinematicsSecondary()->GetFK(measurement_secondary, robot_property_.tcp_frame_secondary);
         Eigen::VectorXd ee_pose(14);
         ee_pose << ee_pose_primary.ToVectorXd(), ee_pose_secondary.ToVectorXd();
         manager_buffer_.ee_pose_measurement->AppendNewElement(ee_pose);

@@ -81,7 +81,7 @@ bool EEPoseStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request
 bool EEPoseStreamingPlanner::ToJointStreamingCommand(StreamingCommand &cmd, const JointMeasurement &measurement)
 {
     Eigen::VectorXd joint_cmd;
-    GetArmFromWholeBody(measurement.q_desired_pre, joint_cmd);
+    utils::GetArmFromWholeBody(this->robot_model_, measurement.q_desired_pre, joint_cmd, this->motion_group_);
     JointPositionDof joint_cmd_ndof = measurement.q_desired_pre;
     switch (motion_group_)
     {
@@ -101,8 +101,8 @@ bool EEPoseStreamingPlanner::ToJointStreamingCommand(StreamingCommand &cmd, cons
             LOG_CRIT << "Inverse Kinematics failed";
             return false;
         }
-        MapArmToWholeBody(q_primary, joint_cmd_ndof, MotionGroup::Primary);
-        MapArmToWholeBody(q_secondary, joint_cmd_ndof, MotionGroup::Secondary);
+        utils::MapArmToWholeBody(this->robot_model_, q_primary, joint_cmd_ndof, MotionGroup::Primary);
+        utils::MapArmToWholeBody(this->robot_model_, q_secondary, joint_cmd_ndof, MotionGroup::Secondary);
         cmd.command = joint_cmd_ndof;
         break;
     }
@@ -116,7 +116,7 @@ bool EEPoseStreamingPlanner::ToJointStreamingCommand(StreamingCommand &cmd, cons
             LOG_CRIT << "Inverse Kinematics failed";
             return false;
         }
-        MapArmToWholeBody(joint_cmd, joint_cmd_ndof);
+        utils::MapArmToWholeBody(this->robot_model_, joint_cmd, joint_cmd_ndof, this->motion_group_);
         cmd.command = joint_cmd_ndof;
         break;
     }
@@ -130,7 +130,7 @@ bool EEPoseStreamingPlanner::ToJointStreamingCommand(StreamingCommand &cmd, cons
             LOG_CRIT << "Inverse Kinematics failed";
             return false;
         }
-        MapArmToWholeBody(joint_cmd, joint_cmd_ndof);
+        utils::MapArmToWholeBody(this->robot_model_, joint_cmd, joint_cmd_ndof, this->motion_group_);
         cmd.command = joint_cmd_ndof;
         break;
     }

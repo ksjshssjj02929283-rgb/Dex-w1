@@ -14,6 +14,6 @@ namespace pinocchio
 {
 
 // 计算雅可比矩阵接口
-Eigen::MatrixXd GetJacobiMatrix(const Model& model, Data& data, const Eigen::VectorXd& q);
+Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q);
 
 }  // namespace pinocchio

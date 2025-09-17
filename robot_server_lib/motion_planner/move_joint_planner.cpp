@@ -85,7 +85,7 @@ bool MoveJointPlanner::ResetForNewTrajectory(const PlannerRequest &request, cons
              << " target_q: " << oss.str();
     JointPositionDof target_ndof = measurement.q_desired_pre;
     SetMotionGroup(move_request.motion_group);
-    MapArmToWholeBody(target_q, target_ndof);
+    utils::MapArmToWholeBody(this->robot_model_, target_q, target_ndof, this->motion_group_);
 
     for (auto i = 0; i < ndof_robot; i++)
     {

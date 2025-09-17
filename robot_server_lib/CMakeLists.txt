@@ -8,6 +8,8 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic -Wno-psabi -Wno-reorder -Wno-dev -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable)
 endif()
 
+option(ENABLE_TORQUE_CONTROL_SIMULATION "Enable torque control" OFF)
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -27,9 +29,9 @@ aux_source_directory(dynamics LIB_SRCS)
 aux_source_directory(motion_planner LIB_SRCS)
 aux_source_directory(torque_controller LIB_SRCS)
 aux_source_directory(utils LIB_SRCS)
-add_library(robot_server_lib ${LIB_SRCS})
+add_library(${PROJECT_NAME} ${LIB_SRCS})
 
-target_include_directories(robot_server_lib PUBLIC
+target_include_directories(${PROJECT_NAME} PUBLIC
   ${EIGEN3_INCLUDE_DIR}
   $<INSTALL_INTERFACE:include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -40,11 +42,17 @@ target_include_directories(robot_server_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/torque_controller>
 )
 
-target_link_libraries(robot_server_lib
+target_link_libraries(${PROJECT_NAME}
   nlohmann_json::nlohmann_json
   pinocchio::pinocchio
   ruckig::ruckig
 )
+
+if(ENABLE_TORQUE_CONTROL_SIMULATION)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE TORQUE_CONTROL=1)
+else()
+  target_compile_definitions(${PROJECT_NAME} PRIVATE TORQUE_CONTROL=0)
+endif()
 
 ament_target_dependencies(robot_server_lib
   Eigen3 

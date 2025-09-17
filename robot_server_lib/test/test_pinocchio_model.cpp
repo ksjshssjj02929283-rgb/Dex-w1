@@ -23,9 +23,8 @@ TEST(PinocchioModelTest, Pinocchio)
     PrintModelInfo(*robot_model.right_arm_model_ptr, "Right Arm Model");
 
     // 计算7个关节全0时的Jacobi矩阵
-    pinocchio::Data data(*robot_model.left_arm_model_ptr);
     Eigen::VectorXd q = Eigen::VectorXd::Zero(robot_model.left_arm_model_ptr->nv);
 
-    auto J = pinocchio::GetJacobiMatrix(*robot_model.left_arm_model_ptr, data, q);
+    auto J = pinocchio::GetJacobiMatrix(*robot_model.left_arm_model_ptr, q);
     std::cout << std::fixed << std::setprecision(3) << "Jacobian at left ee_link (q = 0):\n" << J << std::endl;
 }

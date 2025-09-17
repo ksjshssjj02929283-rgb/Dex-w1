@@ -40,6 +40,12 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
         },
         std::bind(&RobotServerBase::HandleAccepted, this, std::placeholders::_1));
 
+    this->wrench_subscriber_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
+        "/feedback/wrist_wrench/left", 10,
+        [this](const geometry_msgs::msg::WrenchStamped::SharedPtr msg) {
+            std::atomic_store(&this->latest_wrench_, msg);
+        });
+
     InitExtraInterfaces();
 
     // 初始化机器人模型
@@ -100,12 +106,16 @@ void RobotServerBase::TorqueControlThreadFunc()
 void RobotServerBase::RobotThreadFunc()
 {
 #if TORQUE_CONTROL
+    RCLCPP_INFO(this->get_logger(), "Torque control is enabled.");
+    LOG_INFO << "Torque control is enabled.";
+
     pinocchio::Data robot_data(*this->robot_model_.model_ptr);
     VectorDof torque_cmd{};
     JointRawMeasurement raw_measurement{};
     raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
     raw_measurement.velocity.setZero();
     raw_measurement.effort.setZero();
+    raw_measurement.sensor_wrench = Eigen::VectorXd::Zero(6);
     raw_measurement.time_point = TimePointSystem::Now();
     this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
 
@@ -122,11 +132,23 @@ void RobotServerBase::RobotThreadFunc()
         raw_measurement.position += simulation_dt * raw_measurement.velocity;
         raw_measurement.velocity += simulation_dt * ddq;
         raw_measurement.effort = torque_cmd;
+        auto wrench_ptr = std::atomic_load(&this->latest_wrench_);
+        if (wrench_ptr) {
+            raw_measurement.sensor_wrench[0] = wrench_ptr->wrench.force.x;
+            raw_measurement.sensor_wrench[1] = wrench_ptr->wrench.force.y;
+            raw_measurement.sensor_wrench[2] = wrench_ptr->wrench.force.z;
+            raw_measurement.sensor_wrench[3] = wrench_ptr->wrench.torque.x;
+            raw_measurement.sensor_wrench[4] = wrench_ptr->wrench.torque.y;
+            raw_measurement.sensor_wrench[5] = wrench_ptr->wrench.torque.z;
+        }
         raw_measurement.time_point = TimePointSystem::Now();
         this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 #else
+    RCLCPP_INFO(this->get_logger(), "Torque control is disabled.");
+    LOG_INFO << "Torque control is disabled.";
+    
     PlannerManagerCommand q_cmd{};
     JointRawMeasurement raw_measurement{};
     raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;

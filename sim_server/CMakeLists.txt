@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.15)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Release)
+
 project(sim_server)
 
-option(ENABLE_SIM_SERVER "Enable sim_server package compilation" ON)
 option(ENABLE_TORQUE_CONTROL_SIMULATION "Enable torque control" OFF)
 
 # Python interpreter setup
@@ -35,49 +35,46 @@ find_package(pinocchio REQUIRED)
 find_package(robot_server_interfaces REQUIRED)
 find_package(robot_server_lib REQUIRED)
 
-if(ENABLE_SIM_SERVER)
+aux_source_directory(cpp LIB_SRCS)
 
-  aux_source_directory(cpp LIB_SRCS)
+add_executable(${PROJECT_NAME} ${LIB_SRCS})
 
-  add_executable(${PROJECT_NAME} ${LIB_SRCS})
-
-  if(ENABLE_TORQUE_CONTROL_SIMULATION)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE TORQUE_CONTROL=1)
-  else()
-    target_compile_definitions(${PROJECT_NAME} PRIVATE TORQUE_CONTROL=0)
-  endif()
-
-  target_include_directories(${PROJECT_NAME} PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/cpp>
-    $<INSTALL_INTERFACE:include>
-  )
-
-  ament_target_dependencies(${PROJECT_NAME}
-    rclcpp
-    rclcpp_action
-    std_msgs
-    std_srvs
-    geometry_msgs
-    sensor_msgs
-    ament_index_cpp 
-    Eigen3 
-    eigen3_cmake_module
-    robot_server_interfaces
-    robot_server_lib
-  )
-
-  target_link_libraries(${PROJECT_NAME}
-    pinocchio::pinocchio
-    ruckig::ruckig
-  )
-
-  install(TARGETS ${PROJECT_NAME}
-    DESTINATION lib/${PROJECT_NAME}
-  )
-
-  install(
-    FILES robot.cfg
-    DESTINATION share/${PROJECT_NAME}
-  )
+if(ENABLE_TORQUE_CONTROL_SIMULATION)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE TORQUE_CONTROL=1)
+else()
+  target_compile_definitions(${PROJECT_NAME} PRIVATE TORQUE_CONTROL=0)
 endif()
+
+target_include_directories(${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/cpp>
+  $<INSTALL_INTERFACE:include>
+)
+
+ament_target_dependencies(${PROJECT_NAME}
+  rclcpp
+  rclcpp_action
+  std_msgs
+  std_srvs
+  geometry_msgs
+  sensor_msgs
+  ament_index_cpp 
+  Eigen3 
+  eigen3_cmake_module
+  robot_server_interfaces
+  robot_server_lib
+)
+
+target_link_libraries(${PROJECT_NAME}
+  pinocchio::pinocchio
+  ruckig::ruckig
+)
+
+install(TARGETS ${PROJECT_NAME}
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
+  FILES robot.cfg
+  DESTINATION share/${PROJECT_NAME}
+)
 ament_package()

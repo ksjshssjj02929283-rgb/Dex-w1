@@ -122,6 +122,94 @@ PoseQuaternion StringToPoseQuaternion(const std::string &str)
     return pose;
 }
 
+bool MapArmToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group)
+{
+    Eigen::VectorXd joints_map;
+    switch (motion_group)
+    {
+    case MotionGroup::Primary:
+    {
+        joints_map = robot_model.params_ptr->joints_primary;
+        break;
+    }
+    case MotionGroup::Secondary:
+    {
+        joints_map = robot_model.params_ptr->joints_secondary;
+        break;
+    }
+    case MotionGroup::BothArms:
+    {
+        joints_map.resize(robot_model.params_ptr->joints_primary.size() + robot_model.params_ptr->joints_secondary.size());
+        joints_map << robot_model.params_ptr->joints_primary, robot_model.params_ptr->joints_secondary;
+        break;
+    }
+    case MotionGroup::WholeBody:
+    {
+        joints_map = Eigen::VectorXd::LinSpaced(ndof_robot, 0, ndof_robot - 1);
+        break;
+    }
+    case MotionGroup::Unknown:
+    default:
+        assert(false && "Unknown MotionGroup type");
+        break;
+    }
+    // 把target_q按照joints_map映射到target_ndof
+    assert(q.size() == joints_map.size() && "Target q size must match joints map size");
+    for (auto i = 0; i < joints_map.size(); ++i)
+    {
+        int joint_id = static_cast<int>(joints_map[i]);
+        if (joint_id >= 0 && joint_id < q_ndof.size())
+        {
+            q_ndof[joint_id] = q[i];
+        }
+    }
+    return true;
+}
+
+bool GetArmFromWholeBody(const RobotModel &robot_model, const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group)
+{
+    Eigen::VectorXd joints_map;
+    switch (motion_group)
+    {
+    case MotionGroup::Primary:
+    {
+        joints_map = robot_model.params_ptr->joints_primary;
+        break;
+    }
+    case MotionGroup::Secondary:
+    {
+        joints_map = robot_model.params_ptr->joints_secondary;
+        break;
+    }
+    case MotionGroup::BothArms:
+    {
+        joints_map.resize(robot_model.params_ptr->joints_primary.size() + robot_model.params_ptr->joints_secondary.size());
+        joints_map << robot_model.params_ptr->joints_primary, robot_model.params_ptr->joints_secondary;
+        break;
+    }
+    case MotionGroup::WholeBody:
+    {
+        joints_map = Eigen::VectorXd::LinSpaced(ndof_robot, 0, ndof_robot - 1);
+        break;
+    }
+    case MotionGroup::Unknown:
+    default:
+        assert(false && "Unknown MotionGroup type");
+        break;
+    }
+    // 把target_ndof按照joints_map映射到target_q
+    q = Eigen::VectorXd::Zero(joints_map.size());
+    for (auto i = 0; i < joints_map.size(); ++i)
+    {
+        int joint_id = static_cast<int>(joints_map[i]);
+        if (joint_id >= 0 && joint_id < q_ndof.size())
+        {
+            q[i] = q_ndof[joint_id];
+        }
+    }
+    return true;
+}
+
 PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request)
 {
     PlannerRequest planner_request;

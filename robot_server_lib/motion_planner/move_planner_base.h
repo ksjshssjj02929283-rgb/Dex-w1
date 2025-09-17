@@ -45,12 +45,7 @@ class MotionPlannerBase
     virtual bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) = 0;
 
     void SetRobotProperty(const RobotProperty &property);
-
-    bool MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof) const;
-    bool MapArmToWholeBody(const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group) const;
-
-    bool GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q) const;
-    bool GetArmFromWholeBody(const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group) const;
+    
     std::shared_ptr<kinematics::KinematicsBase> Kinematics() const { return kinematics_ptr_; }
     std::shared_ptr<kinematics::KinematicsBase> KinematicsSecondary() const { return kinematics_secondary_ptr_; }
 

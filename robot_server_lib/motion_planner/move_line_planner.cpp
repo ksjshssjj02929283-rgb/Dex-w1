@@ -99,7 +99,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
     {
         assert(14 == move_request.value.size());
         Eigen::VectorXd q_start;
-        GetArmFromWholeBody(measurement.q_desired_pre, q_start);
+        utils::GetArmFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
         assert(q_start.size() == ndof_primary_ + ndof_secondary_);
         PoseQuaternion pose_start = kinematics_ptr_->GetFK(q_start.head(ndof_primary_), robot_property_.tcp_frame);
         PoseQuaternion pose_start_secondary = kinematics_secondary_ptr_->GetFK(q_start.tail(ndof_secondary_), robot_property_.tcp_frame_secondary);
@@ -115,7 +115,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
     {
         assert(7 == move_request.value.size());
         Eigen::VectorXd q_start;
-        GetArmFromWholeBody(measurement.q_desired_pre, q_start);
+        utils::GetArmFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
         assert(q_start.size() == ndof_primary_);
         PoseQuaternion pose_start = kinematics_ptr_->GetFK(q_start, robot_property_.tcp_frame);
         PoseQuaternion pose_target = utils::VectorXdToPoseQuaternion(move_request.value);
@@ -128,7 +128,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
     {
         assert(7 == move_request.value.size());
         Eigen::VectorXd q_start;
-        GetArmFromWholeBody(measurement.q_desired_pre, q_start);
+        utils::GetArmFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
         assert(q_start.size() == ndof_secondary_);
         PoseQuaternion pose_start = kinematics_secondary_ptr_->GetFK(q_start, robot_property_.tcp_frame_secondary);
         PoseQuaternion pose_target = utils::VectorXdToPoseQuaternion(move_request.value);
@@ -204,28 +204,28 @@ bool MoveLinePlanner::ComputeOutputJoint(JointPositionDof &q_ndof)
     {
         PoseQuaternion pose_cmd = ComputeOutputPose(*line_primary_, runtime_.output.new_position[Trans], runtime_.output.new_position[Rot]);
         Eigen::VectorXd q_primary;
-        GetArmFromWholeBody(q_ndof, q_primary, MotionGroup::Primary);
+        utils::GetArmFromWholeBody(this->robot_model_, q_ndof, q_primary, MotionGroup::Primary);
         assert(q_primary.size() == ndof_primary_);
         if (!kinematics_ptr_->GetIK(pose_cmd, q_primary, robot_property_.tcp_frame))
         {
             LOG_CRIT << "Inverse Kinematics failed for target pose: " << pose_cmd.ToString();
             return false;
         }
-        MapArmToWholeBody(q_primary, q_ndof, MotionGroup::Primary);
+        utils::MapArmToWholeBody(this->robot_model_, q_primary, q_ndof, MotionGroup::Primary);
     }
     if (line_secondary_.has_value())
     {
         PoseQuaternion pose_cmd_secondary =
             ComputeOutputPose(*line_secondary_, runtime_.output.new_position[TransSecondary], runtime_.output.new_position[RotSecondary]);
         Eigen::VectorXd q_secondary;
-        GetArmFromWholeBody(q_ndof, q_secondary, MotionGroup::Secondary);
+        utils::GetArmFromWholeBody(this->robot_model_, q_ndof, q_secondary, MotionGroup::Secondary);
         assert(q_secondary.size() == ndof_secondary_);
         if (!kinematics_secondary_ptr_->GetIK(pose_cmd_secondary, q_secondary, robot_property_.tcp_frame_secondary))
         {
             LOG_CRIT << "Inverse Kinematics failed for target pose: " << pose_cmd_secondary.ToString();
             return false;
         }
-        MapArmToWholeBody(q_secondary, q_ndof, MotionGroup::Secondary);
+        utils::MapArmToWholeBody(this->robot_model_, q_secondary, q_ndof, MotionGroup::Secondary);
     }
     return true;
 }

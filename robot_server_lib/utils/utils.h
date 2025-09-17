@@ -28,12 +28,13 @@ namespace utils
 {
 
 RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path);
+
 void SetMax(std::atomic_int64_t &maximum_value, std::int64_t value);
+
 PoseQuaternion VectorXdToPoseQuaternion(const Eigen::VectorXd &vec);
+
 PoseQuaternion StringToPoseQuaternion(const std::string &str);
-PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request);
-StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interfaces::msg::StreamingCommand> msg);
-PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> action_handle);
+
 template <typename VectorType>
 std::ostringstream VectorToJsonArrayString(const VectorType &vec)
 {
@@ -48,5 +49,14 @@ std::ostringstream VectorToJsonArrayString(const VectorType &vec)
     ss << "]";
     return ss;
 }
+
+PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request);
+StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interfaces::msg::StreamingCommand> msg);
+PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> action_handle);
+
+bool MapArmToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group);
+
+bool GetArmFromWholeBody(const RobotModel &robot_model, const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group);
+
 }  // namespace utils
 }  // namespace robot_server_lib
