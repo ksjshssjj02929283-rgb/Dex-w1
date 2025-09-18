@@ -8,7 +8,6 @@
 #include "planner_manager.h"
 #include "rclcpp/rclcpp.hpp"
 #include "torque_controller_manager.h"
-#include "utils.h"
 
 namespace robot_server_lib
 {
@@ -40,7 +39,8 @@ class RobotServerBase : public rclcpp::Node
     rclcpp::Subscription<robot_server_interfaces::msg::StreamingCommand>::SharedPtr streaming_command_subscriber_;
     rclcpp::Service<robot_server_interfaces::srv::SetProperty>::SharedPtr set_property_srv_;
     rclcpp_action::Server<robot_server_interfaces::action::MoveRobot>::SharedPtr move_robot_action_server_;
-    rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_subscriber_;
+    rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_subscriber_primary_;
+    rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_subscriber_secondary_;
     
     std::thread manager_thread_;
     std::thread publish_thread_;
@@ -53,7 +53,8 @@ class RobotServerBase : public rclcpp::Node
     TorqueControlBuffer robot_buffers_;
     Status manager_state_{Status::Init};
     Int64 latest_received_id_{-1};
-    std::shared_ptr<geometry_msgs::msg::WrenchStamped> latest_wrench_;
+    std::shared_ptr<geometry_msgs::msg::WrenchStamped> latest_wrench_primary_{nullptr};
+    std::shared_ptr<geometry_msgs::msg::WrenchStamped> latest_wrench_secondary_{nullptr};
     BoundedQueue<std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>> request_handle_queue_{32};
 
     struct

@@ -368,5 +368,28 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
     return planner_request;
 }
 
+Eigen::VectorXd GetSensorWrench(const std::shared_ptr<geometry_msgs::msg::WrenchStamped>& wrench_primary_ptr,
+                                const std::shared_ptr<geometry_msgs::msg::WrenchStamped>& wrench_secondary_ptr)
+{
+    Eigen::VectorXd sensor_wrench = Eigen::VectorXd::Zero(12);
+    if (wrench_primary_ptr) {
+        sensor_wrench[0] = wrench_primary_ptr->wrench.force.x;
+        sensor_wrench[1] = wrench_primary_ptr->wrench.force.y;
+        sensor_wrench[2] = wrench_primary_ptr->wrench.force.z;
+        sensor_wrench[3] = wrench_primary_ptr->wrench.torque.x;
+        sensor_wrench[4] = wrench_primary_ptr->wrench.torque.y;
+        sensor_wrench[5] = wrench_primary_ptr->wrench.torque.z;
+    }
+    if (wrench_secondary_ptr) {
+        sensor_wrench[6] = wrench_secondary_ptr->wrench.force.x;
+        sensor_wrench[7] = wrench_secondary_ptr->wrench.force.y;
+        sensor_wrench[8] = wrench_secondary_ptr->wrench.force.z;
+        sensor_wrench[9] = wrench_secondary_ptr->wrench.torque.x;
+        sensor_wrench[10] = wrench_secondary_ptr->wrench.torque.y;
+        sensor_wrench[11] = wrench_secondary_ptr->wrench.torque.z;
+    }
+    return sensor_wrench;
+}
+
 }  // namespace utils
 }  // namespace robot_server_lib

@@ -1,3 +1,5 @@
+#include <memory>
+
 /**
  * @file utils.h
  * @brief 通用工具函数
@@ -13,6 +15,7 @@
 #include <robot_server_interfaces/action/move_robot.hpp>
 #include <robot_server_interfaces/msg/streaming_command.hpp>
 #include <robot_server_interfaces/srv/set_property.hpp>
+#include <geometry_msgs/msg/wrench_stamped.hpp>
 #include <string>
 #include <vector>
 
@@ -26,7 +29,6 @@ namespace robot_server_lib
 {
 namespace utils
 {
-
 RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path);
 
 void SetMax(std::atomic_int64_t &maximum_value, std::int64_t value);
@@ -58,5 +60,7 @@ bool MapArmToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, 
 
 bool GetArmFromWholeBody(const RobotModel &robot_model, const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group);
 
+Eigen::VectorXd GetSensorWrench(const std::shared_ptr<geometry_msgs::msg::WrenchStamped>& wrench_primary_ptr,
+                                const std::shared_ptr<geometry_msgs::msg::WrenchStamped>& wrench_secondary_ptr);
 }  // namespace utils
 }  // namespace robot_server_lib

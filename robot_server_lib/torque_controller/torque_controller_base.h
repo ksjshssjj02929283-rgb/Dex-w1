@@ -29,7 +29,7 @@ public:
 
     virtual bool ResetForNewEpisode(const JointRawMeasurement &raw_measurement, const TorqueControllerState &state) = 0;
 
-    VectorDof GetJointExternalTorque(const Eigen::VectorXd &sensor_wrench, const VectorDof &q_desired, const MotionGroup &motion_group);
+    VectorDof GetJointExternalTorque(const Eigen::VectorXd &sensor_wrench, const VectorDof &q_desired);
 
    protected:
     RobotModel robot_model_;
@@ -41,7 +41,7 @@ public:
     // Gain parameter
     struct
     {
-        double M_d = 0.1;
+        double M_d = 0.05;
         double K_p{400};
         double K_v{40};
     } parameters_;

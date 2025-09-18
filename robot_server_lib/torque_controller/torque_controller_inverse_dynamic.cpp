@@ -21,7 +21,7 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
     VectorDof cmd_ddq = input_cmd.cmd.acceleration;
     VectorDof torque_feedforward = input_cmd.cmd.torque_feedforward;
     VectorDof ddq_desired{};
-    VectorDof external_torque = this->GetJointExternalTorque(raw_measurement.sensor_wrench, feedback_q, MotionGroup::Primary);
+    VectorDof external_torque = this->GetJointExternalTorque(raw_measurement.sensor_wrench, feedback_q);
 
     switch (state_)
     {
