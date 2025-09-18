@@ -10,12 +10,12 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <geometry_msgs/msg/wrench_stamped.hpp>
 #include <nlohmann/json.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <robot_server_interfaces/action/move_robot.hpp>
 #include <robot_server_interfaces/msg/streaming_command.hpp>
 #include <robot_server_interfaces/srv/set_property.hpp>
-#include <geometry_msgs/msg/wrench_stamped.hpp>
 #include <string>
 #include <vector>
 
@@ -60,7 +60,7 @@ bool MapArmToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, 
 
 bool GetArmFromWholeBody(const RobotModel &robot_model, const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group);
 
-Eigen::VectorXd GetSensorWrench(const std::shared_ptr<geometry_msgs::msg::WrenchStamped>& wrench_primary_ptr,
-                                const std::shared_ptr<geometry_msgs::msg::WrenchStamped>& wrench_secondary_ptr);
+Eigen::VectorXd GetSensorWrench(const std::shared_ptr<geometry_msgs::msg::WrenchStamped> &wrench_primary_ptr,
+                                const std::shared_ptr<geometry_msgs::msg::WrenchStamped> &wrench_secondary_ptr);
 }  // namespace utils
 }  // namespace robot_server_lib

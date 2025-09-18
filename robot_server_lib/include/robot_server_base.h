@@ -1,10 +1,11 @@
 #pragma once
 
-#include <sensor_msgs/msg/joint_state.hpp>
+#include <atomic>
 #include <geometry_msgs/msg/wrench_stamped.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 #include <std_msgs/msg/string.hpp>
-#include <atomic>
+
 #include "planner_manager.h"
 #include "rclcpp/rclcpp.hpp"
 #include "torque_controller_manager.h"
@@ -41,12 +42,12 @@ class RobotServerBase : public rclcpp::Node
     rclcpp_action::Server<robot_server_interfaces::action::MoveRobot>::SharedPtr move_robot_action_server_;
     rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_subscriber_primary_;
     rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_subscriber_secondary_;
-    
+
     std::thread manager_thread_;
     std::thread publish_thread_;
     std::thread torque_control_thread_;
     std::thread robot_thread_;
-    
+
     bool is_robot_ready_{true};
     RobotModel robot_model_;
     PlannerManagerBuffers manager_buffers_;

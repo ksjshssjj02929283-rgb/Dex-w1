@@ -20,7 +20,7 @@ enum class TorqueControllerState
 
 class TorqueControllerBase
 {
-public:
+   public:
     TorqueControllerBase(RobotModel robot_model);
     virtual ~TorqueControllerBase();
 

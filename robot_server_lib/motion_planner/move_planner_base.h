@@ -45,7 +45,7 @@ class MotionPlannerBase
     virtual bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) = 0;
 
     void SetRobotProperty(const RobotProperty &property);
-    
+
     std::shared_ptr<kinematics::KinematicsBase> Kinematics() const { return kinematics_ptr_; }
     std::shared_ptr<kinematics::KinematicsBase> KinematicsSecondary() const { return kinematics_secondary_ptr_; }
 

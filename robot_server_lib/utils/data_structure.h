@@ -52,17 +52,17 @@ struct JointMeasurement
 
 struct JointRawMeasurement
 {
-    VectorDof position;  // 关节位置
-    VectorDof velocity;  // 关节速度
-    VectorDof effort;    // 关节力矩
-    Eigen::VectorXd sensor_wrench; // 六维力传感器数据
+    VectorDof position;             // 关节位置
+    VectorDof velocity;             // 关节速度
+    VectorDof effort;               // 关节力矩
+    Eigen::VectorXd sensor_wrench;  // 六维力传感器数据
     TimePointSystem time_point;
 
     std::string ToString() const
     {
         std::stringstream ss;
-        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose()
-            << ", Effort: " << effort.transpose() << ", Sensor Wrench: " << sensor_wrench.transpose();
+        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Effort: " << effort.transpose()
+           << ", Sensor Wrench: " << sensor_wrench.transpose();
         return ss.str();
     }
 };

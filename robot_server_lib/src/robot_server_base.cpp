@@ -27,30 +27,22 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
 
     // 创建action server
     this->move_robot_action_server_ = rclcpp_action::create_server<robot_server_interfaces::action::MoveRobot>(
-        this,
-        "/control/move_robot" + interface_suffix,
+        this, "/control/move_robot" + interface_suffix,
         // Goal callback
-        [](const rclcpp_action::GoalUUID &,
-           std::shared_ptr<const robot_server_interfaces::action::MoveRobot::Goal>) {
-            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
-        },
+        [](const rclcpp_action::GoalUUID &, std::shared_ptr<const robot_server_interfaces::action::MoveRobot::Goal>)
+        { return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE; },
         // Cancel callback
-        [](const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>){
-            return rclcpp_action::CancelResponse::ACCEPT;
-        },
+        [](const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>)
+        { return rclcpp_action::CancelResponse::ACCEPT; },
         std::bind(&RobotServerBase::HandleAccepted, this, std::placeholders::_1));
 
     this->wrench_subscriber_primary_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
-        "/feedback/wrist_sensor/left", 10,
-        [this](const geometry_msgs::msg::WrenchStamped::SharedPtr msg) {
-            std::atomic_store(&this->latest_wrench_primary_, msg);
-        });
+        "/feedback/force_sensor/left", 10,
+        [this](const geometry_msgs::msg::WrenchStamped::SharedPtr msg) { std::atomic_store(&this->latest_wrench_primary_, msg); });
 
     this->wrench_subscriber_secondary_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
-        "/feedback/wrist_sensor/right", 10,
-        [this](const geometry_msgs::msg::WrenchStamped::SharedPtr msg) {
-            std::atomic_store(&this->latest_wrench_secondary_, msg);
-        });
+        "/feedback/force_sensor/right", 10,
+        [this](const geometry_msgs::msg::WrenchStamped::SharedPtr msg) { std::atomic_store(&this->latest_wrench_secondary_, msg); });
 
     InitExtraInterfaces();
 
@@ -146,7 +138,7 @@ void RobotServerBase::RobotThreadFunc()
 #else
     RCLCPP_INFO(this->get_logger(), "Torque control is disabled.");
     LOG_INFO << "Torque control is disabled.";
-    
+
     PlannerManagerCommand q_cmd{};
     JointRawMeasurement raw_measurement{};
     raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;

@@ -368,25 +368,35 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
     return planner_request;
 }
 
-Eigen::VectorXd GetSensorWrench(const std::shared_ptr<geometry_msgs::msg::WrenchStamped>& wrench_primary_ptr,
-                                const std::shared_ptr<geometry_msgs::msg::WrenchStamped>& wrench_secondary_ptr)
+Eigen::VectorXd GetSensorWrench(const std::shared_ptr<geometry_msgs::msg::WrenchStamped> &wrench_primary_ptr,
+                                const std::shared_ptr<geometry_msgs::msg::WrenchStamped> &wrench_secondary_ptr)
 {
     Eigen::VectorXd sensor_wrench = Eigen::VectorXd::Zero(12);
-    if (wrench_primary_ptr) {
-        sensor_wrench[0] = wrench_primary_ptr->wrench.force.x;
-        sensor_wrench[1] = wrench_primary_ptr->wrench.force.y;
-        sensor_wrench[2] = wrench_primary_ptr->wrench.force.z;
-        sensor_wrench[3] = wrench_primary_ptr->wrench.torque.x;
-        sensor_wrench[4] = wrench_primary_ptr->wrench.torque.y;
-        sensor_wrench[5] = wrench_primary_ptr->wrench.torque.z;
+    auto process = [](double value, double threshold) -> double
+    {
+        if (std::abs(value) < threshold)
+            return 0.0;
+        else
+            return (value > 0 ? value - threshold : value + threshold);
+    };
+
+    if (wrench_primary_ptr)
+    {
+        sensor_wrench[0] = process(wrench_primary_ptr->wrench.force.x, 10.0);
+        sensor_wrench[1] = process(wrench_primary_ptr->wrench.force.y, 10.0);
+        sensor_wrench[2] = process(wrench_primary_ptr->wrench.force.z, 10.0);
+        sensor_wrench[3] = process(wrench_primary_ptr->wrench.torque.x, 1.0);
+        sensor_wrench[4] = process(wrench_primary_ptr->wrench.torque.y, 1.0);
+        sensor_wrench[5] = process(wrench_primary_ptr->wrench.torque.z, 1.0);
     }
-    if (wrench_secondary_ptr) {
-        sensor_wrench[6] = wrench_secondary_ptr->wrench.force.x;
-        sensor_wrench[7] = wrench_secondary_ptr->wrench.force.y;
-        sensor_wrench[8] = wrench_secondary_ptr->wrench.force.z;
-        sensor_wrench[9] = wrench_secondary_ptr->wrench.torque.x;
-        sensor_wrench[10] = wrench_secondary_ptr->wrench.torque.y;
-        sensor_wrench[11] = wrench_secondary_ptr->wrench.torque.z;
+    if (wrench_secondary_ptr)
+    {
+        sensor_wrench[6] = process(wrench_secondary_ptr->wrench.force.x, 10.0);
+        sensor_wrench[7] = process(wrench_secondary_ptr->wrench.force.y, 10.0);
+        sensor_wrench[8] = process(wrench_secondary_ptr->wrench.force.z, 10.0);
+        sensor_wrench[9] = process(wrench_secondary_ptr->wrench.torque.x, 1.0);
+        sensor_wrench[10] = process(wrench_secondary_ptr->wrench.torque.y, 1.0);
+        sensor_wrench[11] = process(wrench_secondary_ptr->wrench.torque.z, 1.0);
     }
     return sensor_wrench;
 }

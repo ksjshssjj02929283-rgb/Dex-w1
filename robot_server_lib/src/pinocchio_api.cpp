@@ -17,9 +17,10 @@ Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q)
 {
     Eigen::MatrixXd J(6, model.nv);
     pinocchio::Data data(model);
-    
+
     int ee_frame_id = model.getFrameId("ee_link");
-    if (ee_frame_id == -1) {
+    if (ee_frame_id == -1)
+    {
         throw std::runtime_error("Frame 'ee_link' not found in model!");
     }
 
