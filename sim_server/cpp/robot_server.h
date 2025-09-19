@@ -8,11 +8,12 @@ namespace robot_server_lib
 class RobotServer : public RobotServerBase
 {
    public:
-    using RobotServerBase::RobotServerBase;
+    RobotServer(std::filesystem::path robot_cfg_path, bool is_sim);
 
    protected:
-    void InitExtraInterfaces() override;
+    void RobotThreadFunc() override;
     void ManagerThreadFunc() override;
+    void InitExtraInterfaces() override;
 
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_server_state_real_subscriber_;
     struct

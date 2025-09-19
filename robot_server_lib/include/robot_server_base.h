@@ -20,12 +20,13 @@ class RobotServerBase : public rclcpp::Node
     ~RobotServerBase();
 
    protected:
-    virtual void InitExtraInterfaces(){};
+    virtual void RobotThreadFunc() = 0;
     virtual void ManagerThreadFunc();
     virtual void TorqueControlThreadFunc();
     virtual void PublishThreadFunc();
-    virtual void RobotThreadFunc();
+    virtual void InitExtraInterfaces(){};
 
+    void Run();
     Int64 MakeNewRequestID(RequestType type);
     void StreamingCommandCallback(const robot_server_interfaces::msg::StreamingCommand::SharedPtr msg);
     void SetPropertyCallback(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request>,
