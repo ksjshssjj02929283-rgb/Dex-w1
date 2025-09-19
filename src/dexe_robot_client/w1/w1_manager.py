@@ -93,13 +93,14 @@ class W1Manager:
 
         self.set_sim_mode(is_sim)
 
-        print("init fcl checker and pinocchio model and planner...")
         # initialize fcl checker and pinocchio model and planner
         self._init_fcl_checker(arm_type=arm_type, w1_version=w1_version, end_effector_type=end_effector_type)
         self._init_pinocchio(arm_type=arm_type, w1_version=w1_version)
         self.real_torso_idx, self.real_head_idx, self.real_arml_idx, self.real_armr_idx = get_real_idx()
         self._init_planner(arm_type=arm_type, w1_version=w1_version, end_effector_type=end_effector_type)
-        print("init fcl checker and pinocchio model and planner done")
+
+        self.planner_cnt = 0
+
         
         self._stop_move_event = threading.Event()
         self._stop_move_event.clear()
@@ -155,6 +156,7 @@ class W1Manager:
             SinglePlanner.set_robot_cfg(robot_type=planner_robot_type, ee_type=end_effector_type)
             SinglePlanner.set_env_json(get_env_json_path())
             self.siso_planner = SinglePlanner()
+
 
 
     def _init_clients(self):
@@ -1000,6 +1002,8 @@ class W1Manager:
                 streaming_finished = True
             else:
                 streaming_finished = False
+
+            # self.logger.debug(f"planner_cnt: {self.planner_cnt}")
             if not self.robot_client.send_streaming_command(qpos.tolist(), 
                                                             streaming_finished):
                 self.logger.critical("Streaming command send failed.")
@@ -2364,6 +2368,18 @@ class W1Manager:
                 self.execute_joint_traj(qpos_array=move_arml_armr_traj,
                                         left_arm_ee_trigger_list=None,
                                         right_arm_ee_trigger_list=armr_trigger)
+                
 
+    def planner_thread(self):
+        cnt = 0
+        while True:
+            start_time = time.time()
+            for i in range(100000000):
+                a = 1
+            # self.logger.info(f"thread loop duration: {time.time()-start_time}")
+            cnt += 1
+            self.planner_cnt = cnt
+            # self.logger.info(f"planner thread loop: {cnt}")
+            
 
         

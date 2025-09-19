@@ -21,6 +21,89 @@ class ToppraTrajectoryPlanner:
             raise ValueError(f"Vel limits dimension mismatch, {self.vel_limits.shape[0]} != {self.dofs}.")
         if self.acc_limits.shape[0] != self.dofs:
             raise ValueError(f"Acc limits dimension mismatch, {self.acc_limits.shape[0]} != {self.dofs}.")
+        
+        self.last_joint_vel = 0.0
+        
+
+    def set_last_joint_vel(self, last_joint_vel):
+        self.last_joint_vel = last_joint_vel
+
+    def plan_with_last_vel(self, 
+             qpos_array: np.ndarray, 
+             qvel_limits_array: np.ndarray = None, 
+             time_step: float = 0.01) -> tuple[bool, np.ndarray, np.ndarray, np.ndarray, float]:
+        if qpos_array.shape[0] == 2 and \
+            np.allclose(qpos_array[0], qpos_array[1], atol=np.deg2rad(0.1)):
+            self.logger.debug(f"Only two same waypoints, do not plan.")
+            return (True, 
+                    qpos_array, 
+                    np.array([[0.]*self.dofs, [0.]*self.dofs]), 
+                    np.array([[0.]*self.dofs, [0.]*self.dofs]), 
+                    2*time_step)
+        
+        # Create spline interpolation
+        ss = np.linspace(0, 1, qpos_array.shape[0])
+        path = ta.SplineInterpolator(ss, qpos_array)
+
+        t = path.evald(0)
+        norm2 = float(np.dot(t, t))
+        self.logger.debug(f"toppra qpos list: {qpos_array}")
+        # print(f"qpos_array shape: {qpos_array.shape}")
+        # print(f"t type: {type(t)} with shape {t.shape}")
+        # print(f"last joint vel: {self.last_joint_vel}")
+        # print(f"self.last_joint_vel shape: {self.last_joint_vel.shape}")
+        v_start = float(np.dot(t, self.last_joint_vel) / norm2)
+
+
+        # Set constraints
+        if qvel_limits_array is not None:
+            if qvel_limits_array.shape != qpos_array.shape:
+                self.logger.error(f"qpos and qvel_limits dimension mismatch, {qvel_limits_array.shape} != {qpos_array.shape}.")
+                return False, None, None, None, None
+            
+            qvel_bound_list = []
+            for qvel_limits in qvel_limits_array:
+                qvel_bound = np.array([[-v, v] for v in qvel_limits])
+                qvel_bound_list.append(qvel_bound)
+            
+            def vlim_func(s):
+                idx = bisect.bisect_right(ss, s)
+                if idx >= len(ss):
+                    idx = len(ss) - 1
+                return qvel_bound_list[idx]
+            
+            pc_vel = constraint.JointVelocityConstraintVarying(vlim_func)
+        else:
+            pc_vel = constraint.JointVelocityConstraint(self.vel_limits)
+       
+        pc_acc = constraint.JointAccelerationConstraint(self.acc_limits)
+        
+        # Create TOPPRA instance
+        instance = ta.algorithm.TOPPRA(
+            [pc_vel, pc_acc],
+            path,
+            parametrizer="ParametrizeConstAccel", # 会导致加速度锯齿状，但强约束保证
+            gridpt_min_nb_points=max(100, 15 * qpos_array.shape[0]),
+        )
+
+        # Compute parameterized trajectory
+        jnt_traj = instance.compute_trajectory(np.abs(v_start), 0.0)
+        if jnt_traj is None:
+            self.logger.error(f"Unable to find feasible trajectory.")
+            return False, None, None, None, None
+
+        # Sample trajectory points
+        duration = jnt_traj.duration
+        ts = np.arange(0, duration, time_step)
+        pos_array = jnt_traj.eval(ts)
+        vel_array = jnt_traj.evald(ts)
+        acc_array = jnt_traj.evaldd(ts)
+
+        # # Check acc
+        # if self._is_acc_valid(acc_array):
+        #     return True, pos_array, vel_array, acc_array, duration
+        # return False, None, None, None, None
+        return True, pos_array, vel_array, acc_array, duration
 
     def plan(self, 
              qpos_array: np.ndarray, 

@@ -14,6 +14,7 @@ from .w1_manager import W1Manager
 from .path_planner.utils.robot_type import RobotType
 from .path_planner.planner_pinocchio import Planner_Pin
 from .path_planner.fcl_checker import FCLChecker
+from .dynamic_controller import DynamicController
 
 
 __all__ = [

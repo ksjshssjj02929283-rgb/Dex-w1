@@ -11,9 +11,12 @@ from dexe_robot_client.sim_server import DexsimServer
 
 def main():
     rclpy.init()
+    # dexsim_server = DexsimServer(arm_type = W1ArmType.ANTHROPOMORPHIC,
+    #                              w1_version = W1Version.V2,
+    #                              end_effector_type = EndEffectorType.BRAINCO_HAND)
     dexsim_server = DexsimServer(arm_type = W1ArmType.ANTHROPOMORPHIC,
                                  w1_version = W1Version.V2,
-                                 end_effector_type = EndEffectorType.BRAINCO_HAND)
+                                 end_effector_type = None)
     
     # dexsim_server = DexsimServer(arm_type = W1ArmType.INDUSTRIAL,
     #                              w1_version = W1Version.V2,

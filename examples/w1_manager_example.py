@@ -6,6 +6,8 @@
 
 import numpy as np
 from copy import deepcopy
+import threading
+import time
 
 from dexe_robot_client.end_effector_client import EndEffectorType 
 from dexe_robot_client.common import W1Version, W1ArmType
@@ -26,6 +28,9 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
                             use_rlia=False)
     if not w1_manager.connect():
         return
+    
+    planner_t = threading.Thread(target=w1_manager.planner_thread, daemon=True)
+    planner_t.start()
 
     w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
                                       5, -45, -5, -90, 0, -15, 0,
@@ -61,7 +66,7 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
                           [0., [0., 0., 0., 0., 0., 0.], 0.5],
                           [0., [0., 50., 50., 50., 50., 50.], 0.5],
                           [0., [0., 0., 0., 0., 0., 0.], 0.]]
-
+    start_time = time.time()
     if move_with_ee:
         w1_manager.move_joint_full_body(waypoints_dict = {
                                                         "torso": torso_waypoints,
@@ -82,6 +87,7 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
                                                         "left_arm": left_arm_waypoints.tolist(),
                                                         "right_arm": right_arm_waypoints.tolist(),
                                                         }, speed_ratio=0.5)
+    print(f"move_joint_full_body total time: {time.time()-start_time}")
 
 
 def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
@@ -158,5 +164,5 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
 
 
 if __name__ == "__main__":
-    move_full_body_example1(move_with_ee = True, is_sim = True)
+    move_full_body_example1(move_with_ee = False, is_sim = True)
     # move_full_body_example2(move_with_ee = False, is_sim = True)

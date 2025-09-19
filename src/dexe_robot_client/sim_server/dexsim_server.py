@@ -40,6 +40,9 @@ class DexsimServer:
         self._init_ros2_node()
         self.logger.debug("Dexsim server initialized.")
 
+        # for point cloud update
+        self._point_cloud_handle = None
+
     def _init_ros2_node(self):
         self._ros2_nodes = []
 
@@ -49,6 +52,15 @@ class DexsimServer:
                                             "/feedback/robot_server_state_sim", 
                                             self._subscriber_robot_callback,
                                             10)
+        # for point cloud update
+        self._pcd_node = Node("pcd_node")
+        self._sub_pcd = self._pcd_node.create_subscription(
+            String,
+            "/dexe_robot_client/dexsim_server/update_env",
+            self._subscriber_update_env_callback,
+            10
+        )
+        self._ros2_nodes.append(self._pcd_node)
         self._ros2_nodes.append(self._robot_node)
         
         if self._end_effector_type is not None:
@@ -173,33 +185,34 @@ class DexsimServer:
 
         self._cur_qpos = self._articulation.get_current_qpos()
 
-        # 用于可视化一些demo的环境设置，push的时候需要删除或者注释
-        metal_material_handle = self._env.load_material(material_fpath + "/Metal022", "Metal022")
+        # # 用于可视化一些demo的环境设置，push的时候需要删除或者注释
+        # metal_material_handle = self._env.load_material(material_fpath + "/Metal022", "Metal022")
 
-        table_handle = self._env.load_actor("/home/young/Model/coffee_demo/table_coffee_demo_fixed.obj")
-        table_xpos = np.array([[1,0,0,0.5],
-                            [0,1,0,0.0],
-                            [0,0,1,0.0],
-                            [0,0,0,1]])
-        table_handle.set_world_pose(table_xpos)
+        # table_handle = self._env.load_actor("/home/young/Model/coffee_demo/table_coffee_demo_fixed.obj")
+        # table_xpos = np.array([[1,0,0,0.5],
+        #                     [0,1,0,0.0],
+        #                     [0,0,1,0.0],
+        #                     [0,0,0,1]])
+        # table_handle.set_world_pose(table_xpos)
 
-        cup_shelf_handle = self._env.load_actor("/home/young/Model/coffee_demo/cup_shelf.obj")
-        cup_shelf_xpos = np.array([[-0.707,0.707,0,0.53],
-                                    [-0.707,-0.707,0,0.37],
-                                    [0,0,1,0.75],
-                                    [0,0,0,1]])
-        cup_shelf_handle.set_world_pose(cup_shelf_xpos)
-        cup_shelf_handle.set_material(metal_material_handle.get_inst()) 
+        # cup_shelf_handle = self._env.load_actor("/home/young/Model/coffee_demo/cup_shelf.obj")
+        # cup_shelf_xpos = np.array([[-0.707,0.707,0,0.53],
+        #                             [-0.707,-0.707,0,0.37],
+        #                             [0,0,1,0.75],
+        #                             [0,0,0,1]])
+        # cup_shelf_handle.set_world_pose(cup_shelf_xpos)
+        # cup_shelf_handle.set_material(metal_material_handle.get_inst()) 
 
-        coffee_machine_handle = self._env.load_actor("/home/young/Model/coffee_demo/coffee_machine.obj")
-        coffee_machine_xpos = np.array([[-0.707,-0.707,0,0.49],
-                                        [0.707,-0.707,0,-0.33],
-                                        [0,0,1,0.75],
-                                        [0,0,0,1]])
-        coffee_machine_handle.set_world_pose(coffee_machine_xpos)
-        coffee_machine_handle.set_material(metal_material_handle.get_inst())
+        # coffee_machine_handle = self._env.load_actor("/home/young/Model/coffee_demo/coffee_machine.obj")
+        # coffee_machine_xpos = np.array([[-0.707,-0.707,0,0.49],
+        #                                 [0.707,-0.707,0,-0.33],
+        #                                 [0,0,1,0.75],
+        #                                 [0,0,0,1]])
+        # coffee_machine_handle.set_world_pose(coffee_machine_xpos)
+        # coffee_machine_handle.set_material(metal_material_handle.get_inst())
 
     def _subscriber_robot_callback(self, msg):
+        # self.logger.debug("Receive robot state.")
         state = json.loads(msg.data)
         if "joint_position" not in state:
             return 
@@ -229,6 +242,15 @@ class DexsimServer:
         #                                         np.array(self.right_ee_sim2real_index))
         with self._lock:
             self._cur_qpos[self.right_ee_sim2real_index] = qpos
+
+    # for point cloud update
+    def _subscriber_update_env_callback(self, msg):
+        self.logger.info("update point cloud")
+        if self._point_cloud_handle is not None:
+            self._env.remove_point_cloud(self._point_cloud_handle)
+            self._point_cloud_handle = None
+        saved_pcd_path = "/home/young/workspace/dexe_robot_client/examples/output/dexsim_vis_pcd.ply"
+        self._point_cloud_handle = self._env.load_point_cloud(saved_pcd_path)
 
     def _shutdown(self):
         try:
