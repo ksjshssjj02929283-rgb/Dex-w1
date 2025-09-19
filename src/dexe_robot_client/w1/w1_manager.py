@@ -80,18 +80,23 @@ class W1Manager:
                                   self._w1_version, 
                                   self._end_effector_type)
 
+        # 在主线程中正常退出时自动调用
+        atexit.register(self._destroy_clients)
+
         try:
             self._init_clients()
         except Exception:
-            self._destroy_clients()
-            raise RuntimeError("Ros2 node create failed ")
+            raise RuntimeError("Ros2 node create failed")
 
         self._use_rlia = use_rlia
         self._init_kine_solver()
 
         self._init_collision_checker()
 
-        self.set_sim_mode(is_sim)
+        if not self.set_sim_mode(is_sim):
+            if is_sim:
+                raise RuntimeError("Set sim mode failed")
+            raise RuntimeError("Set real mode failed")
 
         # initialize fcl checker and pinocchio model and planner
         self._init_fcl_checker(arm_type=arm_type, w1_version=w1_version, end_effector_type=end_effector_type)
@@ -105,8 +110,6 @@ class W1Manager:
         self._stop_move_event = threading.Event()
         self._stop_move_event.clear()
 
-        # 在主线程中正常退出时自动调用
-        atexit.register(self._destroy_clients)
 
     def _init_fcl_checker(self, arm_type: W1ArmType, w1_version: W1Version = W1Version.V2, end_effector_type: EndEffectorType = None):
         if w1_version == W1Version.V2:
