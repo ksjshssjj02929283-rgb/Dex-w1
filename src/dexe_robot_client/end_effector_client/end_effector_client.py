@@ -96,7 +96,7 @@ class EndEffectorClient(ABC, Node):
                 return False, None
             if time.time() - self._last_msg_time > 0.1:
                 self.logger.warning(f"{self.node_name}: data is outdated.")
-        return True, self._cur_qpos
+            return True, self._cur_qpos
 
     def _qpos_callback(self, msg):
         with self._qpos_lock:

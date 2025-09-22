@@ -10,7 +10,7 @@ class TorsoKinematics:
     def __init__(self):
         self.calf_length = 0.34
         self.thigh_length = 0.34
-        self.torso_length = 0.385
+        self.torso_length = 0.3928
         self.torso_width = 0.197
         '''MDH
         i: a(i-1)  alpha(i-1)  d(i) theta(i)
