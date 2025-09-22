@@ -227,7 +227,7 @@ class RobotClientRos2(Node, RobotClient):
         streaming_finished: bool = False,
     ) -> bool:
         position_msg = StreamingCommand()
-        if self.latest_sent_id < 0 or self.is_connected() is False:
+        if self.latest_sent_id < 0 or self.is_connected() is False or self.status == Status.Init:
             return False
         position_msg.request_id = self.latest_sent_id
         position_msg.streaming_finished = streaming_finished

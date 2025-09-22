@@ -289,8 +289,8 @@ class W1Manager:
         # qpos = np.atleast_2d(qpos)
         if np.any(qpos < qpos_lb) or np.any(qpos > qpos_ub):
             invalid_idx = np.where((qpos < qpos_lb) | (qpos > qpos_ub))[0][0]
-            self.logger.error(f"{name} {invalid_idx+1}th qpos({qpos.tolist()}) " + \
-                              f"excceeded limits([{qpos_lb[invalid_idx]}, {qpos_ub[invalid_idx]}]).")
+            self.logger.error(f"{name} {invalid_idx}th qpos({qpos.tolist()}) " + \
+                              f"excceeded limits([{qpos_lb[invalid_idx-1]}, {qpos_ub[invalid_idx-1]}]).")
             return False
         return True
     
@@ -434,6 +434,7 @@ class W1Manager:
         return True
 
     def set_sim_mode(self, enable_sim: bool) -> bool:
+        """设置仿真/真实模式"""
         if self._is_sim == enable_sim:
             if self._is_sim:
                 self.logger.info("W1 manager already in sim mode.")
@@ -629,6 +630,15 @@ class W1Manager:
         return True, cur_xpos
 
     def set_tcp(self, name: str, xpos:np.ndarray) -> bool:
+        """设置left_arm/right_arm的tcp
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+            xpos (np.ndarray): 目标tcp
+
+        Returns:
+            bool: 
+        """
         # TODO: set tcp in robot client too
         arm_kine = self._get_arm_kine(name)
         if arm_kine is None:
@@ -637,6 +647,11 @@ class W1Manager:
         return True
 
     def get_tcp(self, name: str) -> tuple[bool, np.ndarray]:
+        """获取left_arm/right_arm的tcp
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+        """
         arm_kine = self._get_arm_kine(name)
         if arm_kine is None:
             return False, None
@@ -836,10 +851,10 @@ class W1Manager:
         return True, segment_list
 
     def execute_joint_traj(self, 
-                           qpos_array: np.ndarray,
-                           left_arm_ee_trigger_list: list = None,
-                           right_arm_ee_trigger_list: list = None,
-                           reach_timeout: float = 1.0) -> bool:
+                            qpos_array: np.ndarray,
+                            left_arm_ee_trigger_list: list = None,
+                            right_arm_ee_trigger_list: list = None,
+                            reach_timeout: float = 1.0) -> bool:
         """按10ms间隔执行关节轨迹
 
         Args:
@@ -1371,8 +1386,8 @@ class W1Manager:
         return True, total_qpos_array, left_arm_ee_trigger_list, right_arm_ee_trigger_list
 
     def move_joint_full_body(self, 
-                             waypoints_dict: dict, 
-                             speed_ratio: float = 1.0) -> bool:
+                                waypoints_dict: dict, 
+                                speed_ratio: float = 1.0) -> bool:
         """从当前位置规划并执行各部件独立关节空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
         - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
@@ -1579,11 +1594,11 @@ class W1Manager:
         return True, total_qpos_array, left_arm_ee_trigger_list, right_arm_ee_trigger_list
 
     def move_linear_full_body(self,
-                              waypoints_dict: dict, 
-                              left_qpos_seed: np.ndarray = None,
-                              right_qpos_seed: np.ndarray = None,
-                              cartesian_step: float = 0.005,
-                              speed_ratio: float = 1.0) -> bool:
+                                waypoints_dict: dict, 
+                                left_qpos_seed: np.ndarray = None,
+                                right_qpos_seed: np.ndarray = None,
+                                cartesian_step: float = 0.005,
+                                speed_ratio: float = 1.0) -> bool:
         """从当前位置规划各部件独立关节空间运动，arm执行笛卡尔空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
         - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
@@ -1653,6 +1668,17 @@ class W1Manager:
                         delta_trans_mm: list, 
                         speed_ratio: float = 1.,
                         along_base_frame: bool = True) -> bool:
+        """从当前位置直线移动相对距离
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+            delta_trans_mm (list): 直线相对运动距离
+            speed_ratio (float, optional): 运动速率. Defaults to 1..
+            along_base_frame (bool, optional): 参考机械臂base坐标系/tcp坐标系. Defaults to True.
+
+        Returns:
+            bool: 
+        """
         if not self._check_arm_name(name):
             return False
         res, cur_xpos = self.get_current_xpos(name)
@@ -1672,6 +1698,17 @@ class W1Manager:
                         delta_rot_deg: list, 
                         speed_ratio: float = 1.,
                         along_base_frame: bool = True) -> bool:
+        """从当前位置旋转相对距离
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+            delta_rot_deg (list): 旋转相对运动距离
+            speed_ratio (float, optional): 运动速率. Defaults to 1..
+            along_base_frame (bool, optional): 参考机械臂base坐标系/tcp坐标系. Defaults to True.
+
+        Returns:
+            bool: 
+        """
         if not self._check_arm_name(name):
             return False
         res, cur_xpos = self.get_current_xpos(name)
