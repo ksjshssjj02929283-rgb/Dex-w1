@@ -127,7 +127,7 @@ void RobotServerBase::PublishThreadFunc()
 
         // Publish /feedback/robot_server_state
         std_msgs::msg::String robot_server_state_msg;
-        if (robot_is_ready_ && this->manager_buffers_.joint_measurement->PeekLatest(&measurement) && this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
+        if (is_robot_ready_ && this->manager_buffers_.joint_measurement->PeekLatest(&measurement) && this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
         {
             std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(measurement.position);
             std::ostringstream joint_velocity_ss = utils::VectorToJsonArrayString(measurement.velocity);
