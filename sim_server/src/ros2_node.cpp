@@ -5,7 +5,6 @@ using namespace robot_server_lib;
 Ros2Node::Ros2Node() : Node("sim_server")
 {
     InitRobotServer();
-    InitSimulation();
     RCLCPP_INFO(this->get_logger(), "Initialized successfully.");
     LOG_INFO << "Initialized successfully.";
 }
@@ -24,13 +23,20 @@ Ros2Node::~Ros2Node()
     {
         manager_thread_.join();
     }
+    if (torque_control_thread_.joinable())
+    {
+        torque_control_thread_.join();
+    }
 }
 
 void Ros2Node::InitRobotServer()
 {
     std::filesystem::create_directories("log/");
-    nanolog::initialize(nanolog::GuaranteedLogger(), "log/", "robot_server", 10);
-    nanolog::set_log_level(nanolog::LogLevel::DEBUG);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
+    nanolog::initialize(nanolog::GuaranteedLogger(), "log/", "robot_server_sim", 10);
+    nanolog::set_log_level(nanolog::LogLevel::INFO);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
+
+    // 创建 /feedback/joint 发布器
+    feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint_sim", 10);
 
     // 创建 /feedback/robot_server_state_sim 发布器
     robot_server_state_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state_sim", 10);
@@ -101,6 +107,54 @@ void Ros2Node::InitRobotServer()
     // 初始化全局共享buffer
     manager_buffers_.Initialize();
     robot_buffers_.Initialize();
+    InitSimulation();
+
+    // Init torque control thread
+    torque_control_thread_ = std::thread(
+        [this]() -> void
+        {
+#if TORQUE_CONTROL
+            TorqueControllerManager torque_controller_manager(this->robot_model_, this->manager_buffers_, this->robot_buffers_);
+            while (rclcpp::ok())
+            {
+                auto t_start = TimePointSystem::Now();
+                torque_controller_manager.LoopOnce();
+                int duration_micro = (t_start.time_in_ns() - TimePointSystem::Now().time_in_ns()) / 1e3;
+                if (duration_micro < torque_ctrl_dt_micro)
+                {
+                    std::this_thread::sleep_for(std::chrono::microseconds(torque_ctrl_dt_micro - duration_micro));
+                }
+            }
+#else
+            // 不开启力控输出时，只计算当前状态的理论力矩
+            pinocchio::Data robot_data(*robot_model_.model_ptr);
+            JointMeasurement measurement;
+            VectorDof feedback_q{};
+            VectorDof feedback_dq{};
+            VectorDof ddq_desired{};
+            VectorDof tau{};
+
+            while (rclcpp::ok())
+            {
+                auto t_start = TimePointSystem::Now();
+
+                if (manager_buffers_.joint_measurement->PeekLatest(&measurement))
+                {
+                    feedback_q = measurement.position;
+                    feedback_dq = measurement.velocity;
+                    tau = pinocchio::InverseDynamics(*robot_model_.model_ptr, robot_data, feedback_q, feedback_dq, ddq_desired,
+                                                     robot_model_.params_ptr->joint_command_sequence_by_name);
+                    // std::cout << "Arm InverseDynamics computed: " << tau.tail(14).transpose() << std::endl;
+                }
+
+                int duration_micro = (TimePointSystem::Now().time_in_ns() - t_start.time_in_ns()) / 1e3;
+                if (duration_micro < torque_ctrl_dt_micro)
+                {
+                    std::this_thread::sleep_for(std::chrono::microseconds(torque_ctrl_dt_micro - duration_micro));
+                }
+            }
+        });
+#endif
 
     manager_thread_ = std::thread(
         [this]() -> void
@@ -161,16 +215,12 @@ void Ros2Node::InitRobotServer()
 
             while (rclcpp::ok())
             {
-                auto start_time = std::chrono::high_resolution_clock::now();
-
+                auto t_start = TimePointSystem::Now();
                 planner_manager.LoopOnce();
-
-                auto end_time = std::chrono::high_resolution_clock::now();
-                auto elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
-
-                if (elapsed_time < manager_dt_micro)
+                int duration_micro = (TimePointSystem::Now().time_in_ns() - t_start.time_in_ns()) / 1e3;
+                if (duration_micro < manager_dt_micro)
                 {
-                    std::this_thread::sleep_for(std::chrono::microseconds(manager_dt_micro - elapsed_time));
+                    std::this_thread::sleep_for(std::chrono::microseconds(manager_dt_micro - duration_micro));
                 }
             }
         });
@@ -213,6 +263,7 @@ void Ros2Node::InitRobotServer()
 
                 uint64_t timestamp_ns = this->now().nanoseconds();
 
+                // Publish /feedback/robot_server_state_sim
                 robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" +
                                               ToString(manager_state_) + "\"" + ",\"latest_queued_id\":" + std::to_string(latest_report_id_.queued) +
                                               ",\"latest_finished_id\":" + std::to_string(latest_report_id_.finished) +
@@ -220,6 +271,23 @@ void Ros2Node::InitRobotServer()
                                               ",\"joint_position\":" + joint_position_ss.str() + ",\"ee_pose\":" + ee_pose_ss.str() + "}";
 
                 robot_server_state_publisher_->publish(robot_server_state_msg);
+
+                // Publish /feedback/joint_sim
+                sensor_msgs::msg::JointState feedback_msg;
+                feedback_msg.header.stamp = this->get_clock()->now();
+                feedback_msg.name.resize(ndof_robot);
+                feedback_msg.position.resize(ndof_robot);
+                feedback_msg.velocity.resize(ndof_robot);
+                feedback_msg.effort.resize(ndof_robot);
+                for (int i = 0; i < ndof_robot; ++i)
+                {
+                    feedback_msg.name[i] = robot_model_.params_ptr->joint_command_sequence_by_name[i];
+                    feedback_msg.position[i] = measurement.position[i];
+                    feedback_msg.velocity[i] = measurement.velocity[i];
+                    feedback_msg.effort[i] = measurement.effort[i];
+                }
+
+                feedback_publisher_->publish(feedback_msg);
                 std::this_thread::sleep_for(std::chrono::microseconds(10000));  // 100Hz
             }
         });
@@ -228,17 +296,20 @@ void Ros2Node::InitRobotServer()
 void Ros2Node::InitSimulation()
 {
 // 创建仿真线程, 模拟执行torque_cmd生成joint raw measurement
-#if TORQUECONTROL
-    std::thread simulation_thread(
-        [this]()
+#if TORQUE_CONTROL
+    RCLCPP_INFO(this->get_logger(), "TORQUE_CONTROL is enabled");
+    simulation_thread_ = std::thread(
+        [this]() -> void
         {
             pinocchio::Data robot_data(*robot_model_.model_ptr);
             JointRawMeasurement cache{};
             // 初始更新关节测量数据
-            Eigen::VectorXd q = Eigen::VectorXd::Zero(robot_model_.model_ptr->nv);
-            Eigen::VectorXd dq = Eigen::VectorXd::Zero(robot_model_.model_ptr->nv);
-            Eigen::VectorXd ddq = Eigen::VectorXd::Zero(robot_model_.model_ptr->nv);
-            Eigen::VectorXd torque_cmd = Eigen::VectorXd::Zero(robot_model_.model_ptr->nv);
+            assert(ndof_robot == robot_model_.model_ptr->nv && "Robot model DOF mismatch");
+            VectorDof q, dq, ddq, torque_cmd;
+            q << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
+            dq.setZero();
+            ddq.setZero();
+            torque_cmd.setZero();
             cache.position = q;
             cache.velocity = dq;
             cache.effort = torque_cmd;
@@ -246,7 +317,7 @@ void Ros2Node::InitSimulation()
             auto ret = robot_buffers_.joint_raw_measurement->AppendNewElement(cache);
             VectorDof temp_torque{};
 
-            for (int i = 0; i < 25000 && rclcpp::ok(); ++i)
+            while (rclcpp::ok())
             {
                 if (robot_buffers_.torque_command_vector && robot_buffers_.torque_command_vector->PeekLatest(&temp_torque))
                 {
@@ -256,9 +327,10 @@ void Ros2Node::InitSimulation()
                 {
                     torque_cmd.setZero();
                 }
-
-                ddq = pinocchio::aba(*robot_model_.model_ptr, robot_data, q, dq, torque_cmd);
-
+                auto t_start = TimePointSystem::Now();
+                ddq = pinocchio::ForwardDynamics(*robot_model_.model_ptr, robot_data, q, dq, torque_cmd,
+                                                 robot_model_.params_ptr->joint_command_sequence_by_name);
+                int duration_micro = (t_start.time_in_ns() - TimePointSystem::Now().time_in_ns()) / 1e3;
                 q += simulation_dt * dq;
                 dq += simulation_dt * ddq;
                 // 更新关节测量数据
@@ -268,46 +340,38 @@ void Ros2Node::InitSimulation()
                 cache.time_point = TimePointSystem::Now();
                 auto ret = robot_buffers_.joint_raw_measurement->AppendNewElement(cache);
                 assert(ret);
-                std::this_thread::sleep_for(std::chrono::microseconds(simulation_dt_micro));
-            }
-        });
-
-    // Init torque control thread
-    torque_control_thread_ = std::thread(
-        [this]() -> void
-        {
-            TorqueControllerManager torque_controller_manager(this->robot_model_, this->manager_buffers_, this->robot_buffers_);
-            while (rclcpp::ok())
-            {
-                torque_controller_manager.LoopOnce();
-                std::this_thread::sleep_for(std::chrono::microseconds(torque_ctrl_dt_micro));
+                if (duration_micro < simulation_dt_micro)
+                {
+                    std::this_thread::sleep_for(std::chrono::microseconds(simulation_dt_micro - duration_micro));
+                }
             }
         });
 #else
+    RCLCPP_INFO(this->get_logger(), "TORQUE_CONTROL is disabled");
     simulation_thread_ = std::thread(
         [this]() -> void
         {
             PlannerManagerCommand q_cmd{};
-            JointMeasurement cache{};
+            JointMeasurement measurement{};
             while (rclcpp::ok())
             {
                 if (!manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
                 {
                     q_cmd.cmd.position << 0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
                     q_cmd.cmd.velocity.setZero();
-                    cache.q_desired_pre = q_cmd.cmd.position;
+                    measurement.q_desired_pre = q_cmd.cmd.position;
                 }
                 // 更新关节测量数据
-                cache.position = q_cmd.cmd.position;
-                cache.velocity = q_cmd.cmd.velocity;
+                measurement.position = q_cmd.cmd.position;
+                measurement.velocity = q_cmd.cmd.velocity;
                 if (this->real_robot_sync_.is_updated)
                 {
-                    cache.position = cache.q_desired_pre = this->real_robot_sync_.joint_position;
-                    cache.velocity.setZero();
+                    measurement.position = measurement.q_desired_pre = this->real_robot_sync_.joint_position;
+                    measurement.velocity.setZero();
                     this->real_robot_sync_.is_updated = false;
                 }
-                auto ret = manager_buffers_.joint_measurement->AppendNewElement(cache);
-                cache.q_desired_pre = cache.position;
+                auto ret = manager_buffers_.joint_measurement->AppendNewElement(measurement);
+                measurement.q_desired_pre = measurement.position;
                 assert(ret);
                 std::this_thread::sleep_for(std::chrono::microseconds(manager_dt_micro));
             }

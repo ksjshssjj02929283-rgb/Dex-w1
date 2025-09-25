@@ -20,7 +20,7 @@ enum for various states and command types
 #include <vector>
 
 #include "bounded_queue.h"
-#include "pinocchio_include.h"
+#include "pinocchio_api.h"
 #include "single_rw_latest_queue.h"
 #include "time_utility.h"
 #include "typedef.h"
@@ -127,7 +127,7 @@ struct MoveRequest
     std::optional<double> blend_tolerance;
 };
 
-using PlannerData = std::variant<MoveRequest, PoseQuaternion, double>;
+using PlannerData = std::variant<MoveRequest, PoseQuaternion, bool, double>;
 
 struct PlannerRequest
 {
@@ -141,7 +141,7 @@ struct StreamingCommand
     Int64 request_id{-1};
     bool streaming_finished{false};
     Eigen::VectorXd command;  // 用于存储流式数据
-    TimePointSystem received_time{};
+    TimePointSystem received_time{TimePointSystem::Invalid()};
 };
 
 struct TimeMetaInfo
@@ -158,8 +158,9 @@ struct PlannerManagerBuffers
     std::shared_ptr<SingleWriterLatestBuffer<JointMeasurement>> joint_measurement;
     std::shared_ptr<SingleWriterLatestBuffer<Eigen::VectorXd>> ee_pose_measurement;
     std::shared_ptr<SingleWriterLatestBuffer<PlannerManagerCommand>> planner_manager_command;
-    std::shared_ptr<BoundedQueue<PlannerRequest>> request_queue;
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_command_latest_buffer;
+    std::shared_ptr<BoundedQueue<PlannerRequest>> request_queue;
+    std::shared_ptr<BoundedQueue<PlannerRequest>> emergency_request_queue;
 
     PlannerManagerBuffers() = default;
     ~PlannerManagerBuffers() = default;
@@ -169,8 +170,9 @@ struct PlannerManagerBuffers
         joint_measurement = std::make_shared<SingleWriterLatestBuffer<JointMeasurement>>();
         ee_pose_measurement = std::make_shared<SingleWriterLatestBuffer<Eigen::VectorXd>>();
         planner_manager_command = std::make_shared<SingleWriterLatestBuffer<PlannerManagerCommand>>();
-        request_queue = std::make_shared<BoundedQueue<PlannerRequest>>(32);
         streaming_command_latest_buffer = std::make_shared<SingleWriterLatestBuffer<StreamingCommand>>();
+        request_queue = std::make_shared<BoundedQueue<PlannerRequest>>(32);
+        emergency_request_queue = std::make_shared<BoundedQueue<PlannerRequest>>(32);
     }
 };
 
@@ -198,9 +200,9 @@ struct RobotParams
     std::string robot_name;
     std::string left_arm_name;
     std::string right_arm_name;
+    std::vector<std::string> joint_command_sequence_by_name;  // 关节指令顺序
     Eigen::VectorXd joints_primary;
     Eigen::VectorXd joints_secondary;
-    // std::vector<double> zero_position {};
 };
 
 struct RobotModel

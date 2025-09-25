@@ -5,7 +5,7 @@ set(CMAKE_BUILD_TYPE Release)
 
 project(robot_server_lib)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic -Wno-psabi -Wno-reorder)
+  add_compile_options(-Wall -Wextra -Wpedantic -Wno-psabi -Wno-reorder -Wno-dev -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable)
 endif()
 
 # find dependencies
@@ -21,6 +21,10 @@ find_package(ruckig REQUIRED)
 find_package(pinocchio REQUIRED)
 
 aux_source_directory(src LIB_SRCS)
+aux_source_directory(kinematics LIB_SRCS)
+aux_source_directory(motion_planner LIB_SRCS)
+aux_source_directory(torque_controller LIB_SRCS)
+aux_source_directory(utilities LIB_SRCS)
 add_library(robot_server_lib ${LIB_SRCS})
 
 target_include_directories(robot_server_lib PUBLIC

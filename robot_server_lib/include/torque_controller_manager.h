@@ -1,19 +1,27 @@
 #pragma once
 
-#include "pinocchio_include.h"
 #include "torque_controller_include.h"
 #include "utilities.h"
 
 namespace robot_server_lib
 {
 
-enum class TorqueControllerState
+inline const char *ToString(TorqueControllerState state)
 {
-    Init,
-    Idle,
-    Decelerating,
-    Operating
-};
+    switch (state)
+    {
+    case TorqueControllerState::Init:
+        return "Init";
+    case TorqueControllerState::Idle:
+        return "Idle";
+    case TorqueControllerState::Decelerating:
+        return "Decelerating";
+    case TorqueControllerState::Operating:
+        return "Operating";
+    default:
+        return "Unknown";
+    }
+}
 
 struct ProcessResponse
 {
@@ -46,10 +54,7 @@ class TorqueControllerManager
 
     TorqueControllerState controller_state_{TorqueControllerState::Init};
 
-    std::shared_ptr<TorqueControllerBase> current_controller_{nullptr};
-    std::shared_ptr<IdleControllerInvDynamic> idle_torque_controller_{nullptr};
-    std::shared_ptr<DecelerationControllerInvDynamic> deceleration_torque_controller_{nullptr};
-    std::shared_ptr<OperatingControllerInvDynamic> operating_torque_controller_{nullptr};
+    std::shared_ptr<TorqueControllerBase> torque_controller_{nullptr};
 
     // Runtime data
     Int64 current_episode_index_{-1};

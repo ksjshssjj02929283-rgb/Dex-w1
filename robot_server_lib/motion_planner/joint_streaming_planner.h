@@ -8,72 +8,10 @@ namespace robot_server_lib
 class JointStreamingPlanner : public MotionPlannerBase
 {
    public:
-    JointStreamingPlanner(RobotModel robot_model, std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer, double controller_dt)
-        : MotionPlannerBase(robot_model), streaming_buffer_(streaming_buffer), controller_dt_(controller_dt)
-    {
-    }
-
-    ~JointStreamingPlanner() override = default;
-
-    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &output_joint_cmd) override
-    {
-        // 尝试从缓存中获取最新的StreamingCommand
-        if (!runtime_.streaming_finished)
-        {
-            StreamingCommand cmd_buffer;
-            bool received = streaming_buffer_->PeekLatest(&cmd_buffer);
-            if (received && cmd_buffer.request_id == runtime_.request_id)
-            {
-                JointPositionDof target_ndof = measurement.q_desired_pre;
-                // cmd_buffer按照joints_map映射到ndof
-                MapArmToWholeBody(cmd_buffer.command, target_ndof);
-                cmd_buffer.command = target_ndof;
-                runtime_.latest_cmd.emplace(cmd_buffer);
-            }
-        }
-        // streaming_buffer_没有值时的初始化
-        if (!runtime_.latest_cmd.has_value())
-        {
-            output_joint_cmd.position = measurement.q_desired_pre;
-            output_joint_cmd.velocity.setZero();
-            output_joint_cmd.acceleration.setZero();
-            output_joint_cmd.torque_feedforward.setZero();
-            return ComputeCommandStatus::TaskOngoing;
-        }
-
-        const StreamingCommand &latest_cmd = runtime_.latest_cmd.value();
-        assert(latest_cmd.request_id == runtime_.request_id);
-        if (latest_cmd.streaming_finished)
-            runtime_.streaming_finished = true;
-
-        for (auto i = 0; i < ndof_robot; i++)
-        {
-            output_joint_cmd.position[i] = latest_cmd.command[i];
-            output_joint_cmd.velocity[i] = 0.0;
-            output_joint_cmd.acceleration[i] = 0.0;
-            output_joint_cmd.torque_feedforward[i] = 0.0;
-        }
-        if (!runtime_.streaming_finished)
-        {
-            return ComputeCommandStatus::TaskOngoing;
-        }
-        const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
-        return robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
-    }
-
-    bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override
-    {
-        assert(request.data.has_value());
-        assert(std::holds_alternative<MoveRequest>(request.data.value()));
-        auto move_request = std::get<MoveRequest>(request.data.value());
-        SetMotionGroup(move_request.motion_group);
-
-        runtime_.request_id = request.request_id;
-        runtime_.streaming_finished = false;
-        runtime_.latest_cmd = std::nullopt;
-
-        return true;
-    }
+    JointStreamingPlanner(RobotModel robot_model, std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer, double controller_dt);
+    ~JointStreamingPlanner() override;
+    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &output_joint_cmd) override;
+    bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override;
 
    protected:
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer_;

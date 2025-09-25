@@ -22,10 +22,8 @@ void TorqueControllerManager::Initialize()
     time_meta.episode_index = 0;
     time_meta.episode_start_time = time_meta.current_time;
 
-    // Initialize torque controller todo: 不用inv dynamic时的初始化
-    idle_torque_controller_ = std::make_shared<IdleControllerInvDynamic>(robot_model_);
-    deceleration_torque_controller_ = std::make_shared<DecelerationControllerInvDynamic>(robot_model_);
-    operating_torque_controller_ = std::make_shared<OperatingControllerInvDynamic>(robot_model_);
+    // Initialize torque controller
+    torque_controller_ = std::make_shared<TorqueControllerInvDynamic>(robot_model_);
 }
 
 void TorqueControllerManager::LoopOnce()
@@ -45,7 +43,7 @@ void TorqueControllerManager::LoopOnce()
     else
     {
         time_meta.measurement_time = TimePointSystem::Now();
-        LOG_DEBUG << "Raw Measurement received:  " << raw_measurement.ToString();
+        // LOG_DEBUG << "Raw Measurement received:  " << raw_measurement.ToString();
     }
 
     // 获取最新的位置控制下发的joint command
@@ -81,10 +79,8 @@ void TorqueControllerManager::LoopOnce()
         }
     }
 
-    assert(current_controller_ != nullptr);
-
     // Publish
-    if (current_controller_->ComputeCommand(raw_measurement, input_joint_cmd.cmd, output_cmd))
+    if (controller_state_ != TorqueControllerState::Init && torque_controller_->ComputeCommand(raw_measurement, input_joint_cmd.cmd, output_cmd))
     {
         JointMeasurement measurement_publish{};
         measurement_publish.position = raw_measurement.position;
@@ -95,7 +91,7 @@ void TorqueControllerManager::LoopOnce()
         robot_buffers_.torque_command_vector->AppendNewElement(output_cmd.torque);
         std::ostringstream oss;
         oss << output_cmd.torque.transpose();
-        LOG_DEBUG << "Torque controller output: " << oss.str();
+        // LOG_DEBUG << "Torque controller output: " << oss.str();
     }
 }
 
@@ -119,12 +115,9 @@ ProcessResponse TorqueControllerManager::IdleProcess()
     const auto &time_meta = runtime_data_.time_meta;
     const auto &raw_measurement = runtime_data_.raw_measurement;
 
-    // 切换controller
-    current_controller_ = idle_torque_controller_;
-
     ProcessResponse response;
     Int64 received_cmd_sequence = runtime_data_.input_joint_cmd.cmd.sequence_number;
-    if (time_meta.episode_index == current_episode_index_)
+    if (current_episode_index_ == time_meta.episode_index)
     {
         if (received_cmd_sequence >= 0 && received_cmd_sequence > last_cmd_sequence_number_)
         {
@@ -139,7 +132,7 @@ ProcessResponse TorqueControllerManager::IdleProcess()
         // A new idle episode
         current_episode_index_ = time_meta.episode_index;
         last_cmd_sequence_number_ = received_cmd_sequence;
-        current_controller_->ResetForNewEpisode(raw_measurement);
+        torque_controller_->ResetForNewEpisode(raw_measurement, controller_state_);
     }
 
     return response;
@@ -153,10 +146,7 @@ ProcessResponse TorqueControllerManager::DeceleratingProcess()
     const auto &raw_measurement = runtime_data_.raw_measurement;
     Int64 received_cmd_sequence = runtime_data_.input_joint_cmd.cmd.sequence_number;
 
-    // 切换controller
-    current_controller_ = deceleration_torque_controller_;
-
-    if (time_meta.episode_index == current_episode_index_)
+    if (current_episode_index_ == time_meta.episode_index)
     {
         if (received_cmd_sequence >= 0 && received_cmd_sequence > last_cmd_sequence_number_)
         {
@@ -179,7 +169,7 @@ ProcessResponse TorqueControllerManager::DeceleratingProcess()
         // A new episode
         current_episode_index_ = time_meta.episode_index;
         last_cmd_sequence_number_ = received_cmd_sequence;
-        current_controller_->ResetForNewEpisode(raw_measurement);
+        torque_controller_->ResetForNewEpisode(raw_measurement, controller_state_);
     }
     return response;
 }
@@ -193,10 +183,7 @@ ProcessResponse TorqueControllerManager::OperatingProcess()
     const auto &time_meta = runtime_data_.time_meta;
     const auto &raw_measurement = runtime_data_.raw_measurement;
 
-    // 切换controller
-    current_controller_ = operating_torque_controller_;
-
-    if (time_meta.episode_index == current_episode_index_)
+    if (current_episode_index_ == time_meta.episode_index)
     {
         // In this episode, check if the cmd is too old
         const auto now = TimePointSystem::Now();
@@ -214,7 +201,7 @@ ProcessResponse TorqueControllerManager::OperatingProcess()
         // A new episode
         current_episode_index_ = time_meta.episode_index;
         last_cmd_sequence_number_ = received_cmd_seq;
-        current_controller_->ResetForNewEpisode(raw_measurement);
+        torque_controller_->ResetForNewEpisode(raw_measurement, controller_state_);
     }
 
     return response;
@@ -227,5 +214,6 @@ void TorqueControllerManager::ChangeState(TorqueControllerState new_state)
     time_meta.episode_index += 1;
     time_meta.episode_start_time = time_meta.current_time;
     controller_state_ = new_state;
+    LOG_INFO << "TorqueControllerManager state changed to: " << ToString(controller_state_);
 }
 }  // namespace robot_server_lib

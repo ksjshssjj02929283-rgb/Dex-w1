@@ -3,8 +3,7 @@
  * @brief 机器人类型定义和宏定义
  * @copyright Copyright (C) 2025 DexForce Technology Co., Ltd. All Rights Reserved.
  */
-#ifndef BASE_TYPEDEF_H
-#define BASE_TYPEDEF_H
+#pragma once
 
 #include <Eigen/Dense>
 #include <array>
@@ -22,8 +21,9 @@ constexpr int simulation_dt_micro = 500;  // 2Khz
 constexpr double torque_ctrl_dt = double(torque_ctrl_dt_micro) / 1e6;
 constexpr double manager_dt = double(manager_dt_micro) / 1e6;
 constexpr double simulation_dt = double(simulation_dt_micro) / 1e6;
-constexpr double IdleVelocityThreshold = 2e-3;  // 静止状态的速度阈值
-constexpr double PositionThreshold = 1e-6;      // 位置误差容忍度
+constexpr double IdleVelocityThreshold = 2e-3;   // 静止状态的速度阈值
+constexpr double PositionThreshold = 1e-6;       // 位置误差容忍度
+constexpr double StreamingCommandTimeout = 3.0;  // 流式命令超时3秒
 
 using Int64 = std::int64_t;
 using VectorDof = Eigen::Matrix<double, ndof_robot, 1>;
@@ -52,18 +52,23 @@ enum class RequestType
 {
     Empty,  // empty command
 
-    TcpPrimary,    // tool primary
-    TcpSecondary,  // tool secondary
+    // Set Property Request
+    TcpPrimary,
+    TcpSecondary,
+    SpeedRatio,
+    ClearError,
+    EnableDrag,
+    SafeLevel,
 
-    SpeedRatio,  // global speed ratio
-
-    ClearError,  // clear error
-
+    // Move Request
     MoveJoint,
     MoveLine,
-
     StartJointStreaming,
     StartEEPoseStreaming,
+
+    // Emergency Request
+    StopMove,
+    ResetToInit,
 
     Unknown
 };
@@ -202,5 +207,3 @@ inline const char *ToString(ReferenceFrame frame)
 }
 
 }  // namespace robot_server_lib
-
-#endif  // BASE_TYPEDEF_H

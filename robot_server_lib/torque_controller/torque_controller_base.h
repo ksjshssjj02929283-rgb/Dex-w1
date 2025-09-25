@@ -1,5 +1,4 @@
 #pragma once
-#include "pinocchio_include.h"
 #include "utilities.h"
 
 namespace robot_server_lib
@@ -9,6 +8,14 @@ struct TorqueCtrlCommand
 {
     VectorDof torque;
     VectorDof q_desired;
+};
+
+enum class TorqueControllerState
+{
+    Init,
+    Idle,
+    Decelerating,
+    Operating
 };
 
 class TorqueControllerBase
@@ -21,16 +28,17 @@ class TorqueControllerBase
     virtual bool ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd,
                                 TorqueCtrlCommand &output_cmd) = 0;
 
-    virtual bool ResetForNewEpisode(const JointRawMeasurement &raw_measurement) { return true; };
+    virtual bool ResetForNewEpisode(const JointRawMeasurement &raw_measurement, const TorqueControllerState &state) = 0;
 
    protected:
     RobotModel robot_model_;
     pinocchio::Data robot_data_;
+    TorqueControllerState state_{TorqueControllerState::Init};
     // Gain parameter
     struct
     {
-        double K_p{120};
-        double K_v{45};
+        double K_p{400};
+        double K_v{40};
     } parameters_;
 };
 }  // namespace robot_server_lib

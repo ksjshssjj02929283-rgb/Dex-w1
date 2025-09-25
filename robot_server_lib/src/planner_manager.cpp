@@ -340,23 +340,30 @@ RequestResponse PlannerManager::OnRequestStateError()
 
 RequestResponse PlannerManager::OnRequest()
 {
+    RequestResponse response{};
     switch (manager_state_)
     {
     case Status::Init:
-        return OnRequestStateInit();
+        response = OnRequestStateInit();
+        break;
 
     case Status::Idle:
-        return OnRequestStateIdle();
+        response = OnRequestStateIdle();
+        break;
 
     case Status::Running:
-        return OnRequestStateRunning();
+        response = OnRequestStateRunning();
+        break;
 
     case Status::Error:
-        return OnRequestStateError();
+        response = OnRequestStateError();
+        break;
 
     default:
         assert(false);  // should never reach here
     }
+
+    return response;
 }
 
 void PlannerManager::ChangeState(Status new_state)
