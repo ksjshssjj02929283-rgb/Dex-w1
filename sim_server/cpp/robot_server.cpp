@@ -97,12 +97,15 @@ void RobotServer::ManagerThreadFunc()
     while (rclcpp::ok())
     {
         next_cycle_time_point += std::chrono::microseconds(manager_dt_micro);
-        planner_manager.LoopOnce();
-        if (this->real_robot_sync_.is_updated && this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
+        if (is_robot_ready_)
         {
-            q_cmd.cmd.position = this->real_robot_sync_.joint_position;
-            q_cmd.cmd.velocity.setZero();
-            this->real_robot_sync_.is_updated = false;
+            planner_manager.LoopOnce();
+            if (this->real_robot_sync_.is_updated && this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
+            {
+                q_cmd.cmd.position = this->real_robot_sync_.joint_position;
+                q_cmd.cmd.velocity.setZero();
+                this->real_robot_sync_.is_updated = false;
+            }
         }
         std::this_thread::sleep_until(next_cycle_time_point);
     }

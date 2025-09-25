@@ -32,7 +32,7 @@ class RobotServerBase : public rclcpp::Node
     void SetPropertyCallback(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request>,
                              std::shared_ptr<robot_server_interfaces::srv::SetProperty::Response>);
 
-    void HandleAccepted(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>);
+    void MoveRobotCallback(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>);
     void ReportRequestStatus(Int64 request_id, RequestType request_type, RequestStatus request_status, Status manager_state);
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;

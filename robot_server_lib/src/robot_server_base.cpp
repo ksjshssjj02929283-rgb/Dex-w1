@@ -34,7 +34,7 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
         // Cancel callback
         [](const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>)
         { return rclcpp_action::CancelResponse::ACCEPT; },
-        std::bind(&RobotServerBase::HandleAccepted, this, std::placeholders::_1));
+        std::bind(&RobotServerBase::MoveRobotCallback, this, std::placeholders::_1));
 
     this->wrench_subscriber_primary_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
         "/feedback/force_sensor/left", 10,
@@ -86,8 +86,12 @@ void RobotServerBase::ManagerThreadFunc()
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok())
     {
+        
         next_cycle_time_point += std::chrono::microseconds(manager_dt_micro);
-        planner_manager.LoopOnce();
+        if (is_robot_ready_)
+        {
+            planner_manager.LoopOnce();
+        }
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }
@@ -99,7 +103,10 @@ void RobotServerBase::TorqueControlThreadFunc()
     while (rclcpp::ok())
     {
         next_cycle_time_point += std::chrono::microseconds(torque_ctrl_dt_micro);
-        torque_controller_manager.LoopOnce();
+        if (is_robot_ready_)
+        {
+            torque_controller_manager.LoopOnce();
+        }
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }
@@ -116,10 +123,12 @@ void RobotServerBase::PublishThreadFunc()
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok())
     {
+        next_cycle_time_point += std::chrono::microseconds(publish_dt_micro);
+
+        // Publish /feedback/robot_server_state
         std_msgs::msg::String robot_server_state_msg;
-        if (this->manager_buffers_.joint_measurement->PeekLatest(&measurement) && this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
+        if (robot_is_ready_ && this->manager_buffers_.joint_measurement->PeekLatest(&measurement) && this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
         {
-            next_cycle_time_point += std::chrono::microseconds(publish_dt_micro);
             std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(measurement.position);
             std::ostringstream joint_velocity_ss = utils::VectorToJsonArrayString(measurement.velocity);
             std::ostringstream joint_torque_ss = utils::VectorToJsonArrayString(measurement.effort);
@@ -131,13 +140,13 @@ void RobotServerBase::PublishThreadFunc()
                                           ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
                                           ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
                                           ",\"ee_pose\":" + ee_pose_ss.str() + ",\"joint_position\":" + joint_position_ss.str() +
-                                          ",\"joint_velocity\":" + joint_velocity_ss.str() + ",\"actual_arm_torque\":" + joint_torque_ss.str() + "}";
+                                          ",\"joint_velocity\":" + joint_velocity_ss.str() + ",\"joint_torque\":" + joint_torque_ss.str() + "}";
         }
         else
         {
             uint64_t timestamp_ns = this->now().nanoseconds();
             robot_server_state_msg.data =
-                std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" + ToString(this->manager_state_) + "\"}";
+                std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" + ToString(Status::Init) + "\"}";
         }
         this->robot_server_state_publisher_->publish(robot_server_state_msg);
 
@@ -174,7 +183,7 @@ Int64 RobotServerBase::MakeNewRequestID(RequestType type)
     return ++this->latest_received_id_;
 }
 
-void RobotServerBase::HandleAccepted(
+void RobotServerBase::MoveRobotCallback(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> request_handle)
 {
     PlannerRequest planner_request = utils::ParseMoveRequest(request_handle);
@@ -187,8 +196,8 @@ void RobotServerBase::HandleAccepted(
 
     if (request_id < 0)
     {
-        RCLCPP_WARN(this->get_logger(), "Still existed previous move request, failed to queue start streaming request");
-        LOG_CRIT << "Still existed previous move request, failed to queue start streaming request";
+        RCLCPP_WARN(this->get_logger(), "MakeNewRequestID < 0, failed to queue move robot request");
+        LOG_CRIT << "MakeNewRequestID < 0, failed to queue move robot request";
         return;
     }
     planner_request.request_id = request_id;
@@ -204,6 +213,12 @@ void RobotServerBase::HandleAccepted(
 
 void RobotServerBase::StreamingCommandCallback(const robot_server_interfaces::msg::StreamingCommand::SharedPtr streaming_msg)
 {
+    if(!is_robot_ready_)
+    {
+        RCLCPP_WARN(this->get_logger(), "Not in all OP state, failed to accept streaming command");
+        LOG_CRIT << "Not in all OP state, failed to accept streaming command";
+        return;
+    }
     RCLCPP_INFO(this->get_logger(), "Request_id = %ld, streaming command Received, data size = %zu, streaming_finished = %s",
                 streaming_msg->request_id, streaming_msg->position.size(), streaming_msg->streaming_finished ? "true" : "false");
     std::ostringstream ss;

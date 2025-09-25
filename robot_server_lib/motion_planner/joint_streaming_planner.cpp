@@ -48,7 +48,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
 
     for (auto i = 0; i < ndof_robot; i++)
     {
-        output_joint_cmd.position[i] = latest_cmd.command[i];
+        output_joint_cmd.position[i] = is_timeout? measurement.q_desired_pre[i] : latest_cmd.command[i];
         output_joint_cmd.velocity[i] = 0.0;
         output_joint_cmd.acceleration[i] = 0.0;
         output_joint_cmd.torque_feedforward[i] = 0.0;
