@@ -2,8 +2,15 @@
 
 .cache/
 .cache/*
+cache/*
 
 build*/
+install/
+dist/
 
 __pycache__/
 *.pyc
+*.egg-info/
+
+log/
+data/
