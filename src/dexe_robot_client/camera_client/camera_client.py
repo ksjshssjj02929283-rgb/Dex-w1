@@ -64,12 +64,13 @@ class CameraClient(ABC, Node):
                 return False, None
             if time.time() - self._last_msg_time > 0.1:
                 self.logger.warning(f"{self.node_name}: data is outdated")
-            points = np.array([
-                [p[0], p[1], p[2]]
-                for p in point_cloud2.read_points(self.point_cloud, field_names=("x", "y", "z"), skip_nans=True)
-            ], dtype=np.float32)
-
-        return True, points
+            # points = np.array([
+            #     [p[0], p[1], p[2]]
+            #     for p in point_cloud2.read_points(self.point_cloud, field_names=("x", "y", "z"), skip_nans=True)
+            # ], dtype=np.float32)
+            points = np.frombuffer(self.point_cloud.data, dtype=np.float32).reshape(-1, int(self.point_cloud.point_step / np.dtype(np.float32).itemsize))
+            print(f"point cloud shape: {points[:, 0:3].shape}")
+        return True, points[:, 0:3]
 
     def _point_cloud_callback(self, msg):
         with self._pcd_lock:

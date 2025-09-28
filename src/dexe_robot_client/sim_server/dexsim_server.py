@@ -106,7 +106,7 @@ class DexsimServer:
             self._ros2_nodes.append(self._right_ee_node)
 
         # 在单独线程运行ros node
-        self._executor = rclpy.executors.MultiThreadedExecutor()
+        self._executor = rclpy.executors.MultiThreadedExecutor(num_threads=4)
         for node in self._ros2_nodes:
             self._executor.add_node(node)
 
