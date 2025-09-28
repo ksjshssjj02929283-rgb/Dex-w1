@@ -77,7 +77,7 @@ class Planner_Pin:
         pin_qpos = real_qpos[self.real2pin_idx]
         pinocchio.forwardKinematics(self.pin_model, self.pin_data, pin_qpos)
         pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
-        arml_base_ID = self.pin_model.getFrameId("LEFT_ARM_BASE")
+        arml_base_ID = self.pin_model.getFrameId("LRFT_ARM_BASE")
         armr_base_ID = self.pin_model.getFrameId("RIGHT_ARM_BASE")
         arml_base_tf = self.pin_data.oMf[arml_base_ID].homogeneous
         armr_base_tf = self.pin_data.oMf[armr_base_ID].homogeneous

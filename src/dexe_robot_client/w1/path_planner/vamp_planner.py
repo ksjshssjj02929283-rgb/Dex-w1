@@ -123,6 +123,7 @@ class VampPlanner:
     def plan(self):
         solve_cnt = 1
         start_time = time.time()
+        
         result = self.planner_func(self.start, self.goal, self.env, self.plan_settings, self.sampler)
         # embed()
         # print(f"First planning time: {time.time() - start_time}s")

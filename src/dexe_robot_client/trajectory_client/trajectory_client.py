@@ -44,7 +44,6 @@ class TrajectoryClient(ABC, Node):
 
         self.create_timer(0.5, self._check_connection_status)
 
-        self.received_cnt = 0
 
     # # FIXME: modify the topic name and queue size if needed
     # def _init_publisher(self):
@@ -57,7 +56,12 @@ class TrajectoryClient(ABC, Node):
         if self._last_msg_time is not None:
             cur_time = self.get_clock().now().nanoseconds / 1e9
             if (cur_time - self._last_msg_time) > self._connection_timeout:
-                self._cur_qpos = None
+                self.trajectory_msg = None
+                self.is_new_trajectory = False
+                self.streaming_position = None
+                self.last_streaming_position = None
+                self.streaming_vel = None
+                self.is_first_streaming = True
                 self._last_msg_time = None
 
     def is_connected(self, timeout_sec: float = 0.5):

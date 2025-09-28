@@ -87,7 +87,7 @@ class ToppraTrajectoryPlanner:
         )
 
         # Compute parameterized trajectory
-        jnt_traj = instance.compute_trajectory(np.abs(v_start), 0.0)
+        jnt_traj = instance.compute_trajectory(np.max((0.0, v_start)), 0.0)
         if jnt_traj is None:
             self.logger.error(f"Unable to find feasible trajectory.")
             return False, None, None, None, None
