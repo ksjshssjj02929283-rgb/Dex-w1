@@ -29,8 +29,6 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
     if not w1_manager.connect():
         return
     
-    planner_t = threading.Thread(target=w1_manager.planner_thread, daemon=True)
-    planner_t.start()
 
     w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
                                       5, -45, -5, -90, 0, -15, 0,
