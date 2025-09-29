@@ -24,7 +24,6 @@ class RobotServerBase : public rclcpp::Node
     virtual void ManagerThreadFunc();
     virtual void TorqueControlThreadFunc();
     virtual void PublishThreadFunc();
-    virtual void InitExtraInterfaces(){};
 
     void Run();
     Int64 MakeNewRequestID(RequestType type);

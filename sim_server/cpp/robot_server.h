@@ -13,7 +13,6 @@ class RobotServer : public RobotServerBase
    protected:
     void RobotThreadFunc() override;
     void ManagerThreadFunc() override;
-    void InitExtraInterfaces() override;
 
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_server_state_real_subscriber_;
     struct

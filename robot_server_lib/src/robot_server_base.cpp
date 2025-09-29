@@ -14,6 +14,7 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
 
     // 创建publisher
     this->feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint" + interface_suffix, 10);
+    
     this->robot_server_state_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state" + interface_suffix, 10);
 
     // 创建subscriber
@@ -43,8 +44,6 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
     this->wrench_subscriber_secondary_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
         "/feedback/force_sensor/right", 10,
         [this](const geometry_msgs::msg::WrenchStamped::SharedPtr msg) { std::atomic_store(&this->latest_wrench_secondary_, msg); });
-
-    InitExtraInterfaces();
 
     // 初始化机器人模型
     this->robot_model_ = utils::GetRobotModelFromConfig(robot_cfg_path);

@@ -3,10 +3,8 @@
 namespace robot_server_lib
 {
 
-RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : RobotServerBase(robot_cfg_path, is_sim) { this->Run(); }
-
-void RobotServer::InitExtraInterfaces()
-{
+RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : RobotServerBase(robot_cfg_path, is_sim) 
+{ 
     // 创建 /feedback/robot_server_state 仿真专用订阅器用于与真实机器人关节同步, 部署到真实机器人时不需要
     this->robot_server_state_real_subscriber_ = this->create_subscription<std_msgs::msg::String>(
         "/feedback/robot_server_state", 10,
@@ -24,6 +22,8 @@ void RobotServer::InitExtraInterfaces()
                 }
             }
         });
+
+    this->Run(); 
 }
 
 void RobotServer::RobotThreadFunc()
