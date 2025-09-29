@@ -5,6 +5,9 @@ namespace robot_server_lib
 
 RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : RobotServerBase(robot_cfg_path, is_sim) 
 { 
+    // 创建publisher
+    this->feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint_sim", 10);
+    
     // 创建 /feedback/robot_server_state 仿真专用订阅器用于与真实机器人关节同步, 部署到真实机器人时不需要
     this->robot_server_state_real_subscriber_ = this->create_subscription<std_msgs::msg::String>(
         "/feedback/robot_server_state", 10,
@@ -22,8 +25,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
                 }
             }
         });
-
+    // 创建定时器，定时发布feedback 定时器回调函数
     this->Run(); 
+    control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
 }
 
 void RobotServer::RobotThreadFunc()
@@ -108,6 +112,32 @@ void RobotServer::ManagerThreadFunc()
             }
         }
         std::this_thread::sleep_until(next_cycle_time_point);
+    }
+}
+
+void RobotServer::PublishFeedback()
+{
+    // 发布关节状态反馈
+    sensor_msgs::msg::JointState feedback_msg;
+    feedback_msg.header.stamp = this->get_clock()->now();
+
+    feedback_msg.name.resize(ndof_robot);
+    feedback_msg.position.resize(ndof_robot);
+    feedback_msg.velocity.resize(ndof_robot);
+    feedback_msg.effort.resize(ndof_robot);
+
+    JointRawMeasurement raw_measurement{};
+    if (this->robot_buffers_.joint_raw_measurement->PeekLatest(&raw_measurement))
+    {
+        for (int i = 0; i < ndof_robot; ++i)
+        {
+            feedback_msg.name[i] = this->robot_model_.params_ptr->joint_command_sequence_by_name[i];
+            feedback_msg.position[i] = raw_measurement.position[i];
+            feedback_msg.velocity[i] = raw_measurement.velocity[i];
+            feedback_msg.effort[i] = raw_measurement.effort[i];
+        }
+
+        feedback_publisher_->publish(feedback_msg);
     }
 }
 }  // namespace robot_server_lib

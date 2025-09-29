@@ -12,9 +12,6 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
 
     std::string interface_suffix = (is_sim) ? "_sim" : "";
 
-    // 创建publisher
-    this->feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint" + interface_suffix, 10);
-    
     this->robot_server_state_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state" + interface_suffix, 10);
 
     // 创建subscriber
@@ -114,11 +111,6 @@ void RobotServerBase::PublishThreadFunc()
 {
     JointMeasurement measurement;
     Eigen::VectorXd ee_pose;
-    sensor_msgs::msg::JointState feedback_msg;
-    feedback_msg.name.resize(ndof_robot);
-    feedback_msg.position.resize(ndof_robot);
-    feedback_msg.velocity.resize(ndof_robot);
-    feedback_msg.effort.resize(ndof_robot);
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok())
     {
@@ -148,18 +140,6 @@ void RobotServerBase::PublishThreadFunc()
                 std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" + ToString(Status::Init) + "\"}";
         }
         this->robot_server_state_publisher_->publish(robot_server_state_msg);
-
-        // Publish /feedback/joint_sim
-        feedback_msg.header.stamp = this->get_clock()->now();
-        for (int i = 0; i < ndof_robot; ++i)
-        {
-            feedback_msg.name[i] = this->robot_model_.params_ptr->joint_command_sequence_by_name[i];
-            feedback_msg.position[i] = measurement.position[i];
-            feedback_msg.velocity[i] = measurement.velocity[i];
-            feedback_msg.effort[i] = measurement.effort[i];
-        }
-
-        this->feedback_publisher_->publish(feedback_msg);
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }

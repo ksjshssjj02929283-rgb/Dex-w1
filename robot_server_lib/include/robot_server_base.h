@@ -34,7 +34,6 @@ class RobotServerBase : public rclcpp::Node
     void MoveRobotCallback(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>);
     void ReportRequestStatus(Int64 request_id, RequestType request_type, RequestStatus request_status, Status manager_state);
 
-    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_server_state_publisher_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_server_state_real_subscriber_;
     rclcpp::Subscription<robot_server_interfaces::msg::StreamingCommand>::SharedPtr streaming_command_subscriber_;

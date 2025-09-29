@@ -13,7 +13,10 @@ class RobotServer : public RobotServerBase
    protected:
     void RobotThreadFunc() override;
     void ManagerThreadFunc() override;
+    void PublishFeedback();
 
+    rclcpp::TimerBase::SharedPtr control_timer_;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_server_state_real_subscriber_;
     struct
     {
