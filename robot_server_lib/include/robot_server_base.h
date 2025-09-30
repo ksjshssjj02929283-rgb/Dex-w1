@@ -12,6 +12,9 @@
 
 namespace robot_server_lib
 {
+using StreamingCommandMsg = robot_server_interfaces::msg::StreamingCommand;
+using MoveRobot = robot_server_interfaces::action::MoveRobot;
+using SetProperty = robot_server_interfaces::srv::SetProperty;
 
 class RobotServerBase : public rclcpp::Node
 {

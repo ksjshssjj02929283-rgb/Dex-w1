@@ -15,22 +15,22 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
     this->robot_server_state_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state" + interface_suffix, 10);
 
     // 创建subscriber
-    this->streaming_command_subscriber_ = this->create_subscription<robot_server_interfaces::msg::StreamingCommand>(
+    this->streaming_command_subscriber_ = this->create_subscription<StreamingCommandMsg>(
         "/control/streaming_command" + interface_suffix, 10, std::bind(&RobotServerBase::StreamingCommandCallback, this, std::placeholders::_1));
 
     // 创建service server
-    this->set_property_srv_ = this->create_service<robot_server_interfaces::srv::SetProperty>(
+    this->set_property_srv_ = this->create_service<SetProperty>(
         "/control/set_property" + interface_suffix,
         std::bind(&RobotServerBase::SetPropertyCallback, this, std::placeholders::_1, std::placeholders::_2));
 
     // 创建action server
-    this->move_robot_action_server_ = rclcpp_action::create_server<robot_server_interfaces::action::MoveRobot>(
+    this->move_robot_action_server_ = rclcpp_action::create_server<MoveRobot>(
         this, "/control/move_robot" + interface_suffix,
         // Goal callback
-        [](const rclcpp_action::GoalUUID &, std::shared_ptr<const robot_server_interfaces::action::MoveRobot::Goal>)
+        [](const rclcpp_action::GoalUUID &, std::shared_ptr<const MoveRobot::Goal>)
         { return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE; },
         // Cancel callback
-        [](const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>)
+        [](const std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>>)
         { return rclcpp_action::CancelResponse::ACCEPT; },
         std::bind(&RobotServerBase::MoveRobotCallback, this, std::placeholders::_1));
 
@@ -156,6 +156,8 @@ Int64 RobotServerBase::MakeNewRequestID(RequestType type)
     {
         if (this->latest_received_id_ > this->latest_report_id_.finished)
         {
+            RCLCPP_WARN(this->get_logger(), "Still existed previous move request, failed to queue start streaming request");
+            LOG_CRIT << "Still existed previous move request, failed to queue start streaming request";
             return -1;
         }
     }
@@ -163,13 +165,13 @@ Int64 RobotServerBase::MakeNewRequestID(RequestType type)
 }
 
 void RobotServerBase::MoveRobotCallback(
-    const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> request_handle)
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> request_handle)
 {
     PlannerRequest planner_request = utils::ParseMoveRequest(request_handle);
     auto request_id = MakeNewRequestID(planner_request.type);
 
     // Publish feedback with request id
-    auto feedback = std::make_shared<robot_server_interfaces::action::MoveRobot::Feedback>();
+    auto feedback = std::make_shared<MoveRobot::Feedback>();
     feedback->request_id = request_id;
     request_handle->publish_feedback(feedback);
 
@@ -190,7 +192,7 @@ void RobotServerBase::MoveRobotCallback(
              << ", arm = " << request_handle->get_goal()->motion_group;
 }
 
-void RobotServerBase::StreamingCommandCallback(const robot_server_interfaces::msg::StreamingCommand::SharedPtr streaming_msg)
+void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::SharedPtr streaming_msg)
 {
     if (!is_robot_ready_)
     {
@@ -217,8 +219,8 @@ void RobotServerBase::StreamingCommandCallback(const robot_server_interfaces::ms
     manager_buffers_.streaming_command_latest_buffer->AppendNewElement(utils::ParseStreamingCommand(streaming_msg));
 }
 
-void RobotServerBase::SetPropertyCallback(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request,
-                                          std::shared_ptr<robot_server_interfaces::srv::SetProperty::Response> response)
+void RobotServerBase::SetPropertyCallback(const std::shared_ptr<SetProperty::Request> request,
+                                          std::shared_ptr<SetProperty::Response> response)
 {
     PlannerRequest planner_request = utils::ParseSetPropertyRequest(request);
     planner_request.request_id = MakeNewRequestID(planner_request.type);
@@ -253,10 +255,10 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id, RequestType request_
         utils::SetMax(this->latest_report_id_.finished, request_id);
         if (request_type >= RequestType::MoveJoint)
         {
-            std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> handle_temp;
+            std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> handle_temp;
             if (this->request_handle_queue_.DeQueue(&handle_temp))
             {
-                auto result_msg = std::make_shared<robot_server_interfaces::action::MoveRobot::Result>();
+                auto result_msg = std::make_shared<MoveRobot::Result>();
                 result_msg->request_id = request_id;
                 result_msg->success = true;
                 handle_temp->succeed(result_msg);
@@ -267,10 +269,10 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id, RequestType request_
         utils::SetMax(this->latest_report_id_.error_drop, request_id);
         if (request_type >= RequestType::MoveJoint)
         {
-            std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> handle_temp;
+            std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> handle_temp;
             if (this->request_handle_queue_.DeQueue(&handle_temp))
             {
-                auto result_msg = std::make_shared<robot_server_interfaces::action::MoveRobot::Result>();
+                auto result_msg = std::make_shared<MoveRobot::Result>();
                 result_msg->request_id = request_id;
                 result_msg->success = false;
                 handle_temp->succeed(result_msg);
