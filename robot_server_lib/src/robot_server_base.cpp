@@ -82,7 +82,6 @@ void RobotServerBase::ManagerThreadFunc()
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok())
     {
-        
         next_cycle_time_point += std::chrono::microseconds(manager_dt_micro);
         if (is_robot_ready_)
         {
@@ -118,7 +117,8 @@ void RobotServerBase::PublishThreadFunc()
 
         // Publish /feedback/robot_server_state
         std_msgs::msg::String robot_server_state_msg;
-        if (is_robot_ready_ && this->manager_buffers_.joint_measurement->PeekLatest(&measurement) && this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
+        if (is_robot_ready_ && this->manager_buffers_.joint_measurement->PeekLatest(&measurement) &&
+            this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
         {
             std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(measurement.position);
             std::ostringstream joint_velocity_ss = utils::VectorToJsonArrayString(measurement.velocity);
@@ -192,7 +192,7 @@ void RobotServerBase::MoveRobotCallback(
 
 void RobotServerBase::StreamingCommandCallback(const robot_server_interfaces::msg::StreamingCommand::SharedPtr streaming_msg)
 {
-    if(!is_robot_ready_)
+    if (!is_robot_ready_)
     {
         RCLCPP_WARN(this->get_logger(), "Not in all OP state, failed to accept streaming command");
         LOG_CRIT << "Not in all OP state, failed to accept streaming command";

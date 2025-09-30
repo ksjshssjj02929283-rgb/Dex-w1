@@ -1,13 +1,13 @@
-#include "robot_server.h"
+#include "robot_server_sim.h"
 
 namespace robot_server_lib
 {
 
-RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : RobotServerBase(robot_cfg_path, is_sim) 
-{ 
+RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : RobotServerBase(robot_cfg_path, is_sim)
+{
     // 创建publisher
     this->feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint_sim", 10);
-    
+
     // 创建 /feedback/robot_server_state 仿真专用订阅器用于与真实机器人关节同步, 部署到真实机器人时不需要
     this->robot_server_state_real_subscriber_ = this->create_subscription<std_msgs::msg::String>(
         "/feedback/robot_server_state", 10,
@@ -26,7 +26,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
             }
         });
     // 创建定时器，定时发布feedback 定时器回调函数
-    this->Run(); 
+    this->Run();
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
 }
 
@@ -109,6 +109,7 @@ void RobotServer::ManagerThreadFunc()
                 q_cmd.cmd.position = this->real_robot_sync_.joint_position;
                 q_cmd.cmd.velocity.setZero();
                 this->real_robot_sync_.is_updated = false;
+                this->manager_buffers_.planner_manager_command->AppendNewElement(q_cmd);
             }
         }
         std::this_thread::sleep_until(next_cycle_time_point);
