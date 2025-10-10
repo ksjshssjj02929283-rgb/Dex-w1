@@ -30,6 +30,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
 
     // 创建定时器，定时发布feedback 定时器回调函数
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
+    
     this->Run(); 
 }
 
@@ -50,8 +51,8 @@ void RobotServer::RobotThreadFunc()
         raw_measurement.sensor_wrench = utils::GetSensorWrench(latest_wrench_primary_, latest_wrench_secondary_);
         // 读取反馈数据
         RobotFeedback feedback_data{};
-        bool ret = feedback_shm_instance.Read(&feedback_data);
-        is_robot_ready_ = ret && (feedback_data.robot_status_word & STATUSWORD_MOTOR_READY);
+        bool ret = feedback_shm_instance.PeekLatest(&feedback_data);
+        bool is_robot_ready_ = feedback_data.robot_status_word & STATUSWORD_MOTOR_READY;
         robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT;
 
         if (is_robot_ready_)
@@ -79,7 +80,7 @@ void RobotServer::RobotThreadFunc()
             }
         }
 
-        control_shm_instance.Write(robot_control_);
+        control_shm_instance.AppendNewElement(robot_control_);
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }
@@ -137,6 +138,8 @@ Int64 RobotServer::StartStreaming(PlannerRequest planner_request)
 
     if (request_id < 0)
     {
+        RCLCPP_WARN(this->get_logger(), "Still existed previous move request, failed to queue start streaming request");
+        LOG_CRIT << "Still existed previous move request, failed to queue start streaming request";
         return request_id;
     }
     planner_request.request_id = request_id;
@@ -149,12 +152,6 @@ Int64 RobotServer::StartStreaming(PlannerRequest planner_request)
 
 void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg)
 {
-    if(!is_robot_ready_)
-    {
-        RCLCPP_WARN(this->get_logger(), "Not in all OP state, failed to accept joint control command");
-        LOG_CRIT << "Not in all OP state, failed to accept joint control command";
-        return;
-    }
     auto robot_control_temp = robot_control_;
     for (size_t i = 0; i < msg->name.size(); ++i)
     {
@@ -192,12 +189,6 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg)
 
 void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedPtr msg)
 {
-    if (!is_robot_ready_)
-    {
-        RCLCPP_WARN(this->get_logger(), "Not in all OP state, failed to accept position control command");
-        LOG_CRIT << "Not in all OP state, failed to accept position control command";
-        return;
-    }
     auto robot_control_temp = robot_control_;
     for (size_t i = 0; i < msg->name.size(); ++i)
     {

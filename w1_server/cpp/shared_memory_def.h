@@ -1,9 +1,10 @@
 #pragma once
 
-#include <pthread.h>
-#include <sys/shm.h>
-#include <time.h>
+#include <array>
 #include <atomic>
+#include <sys/shm.h>
+#include <cassert>
+#include <cstring>
 #include <iostream>
 
 #define FEEDBACK_SHM_KEY 0x1000
@@ -42,7 +43,16 @@ struct RobotControl
     double chassis_right_velocity = 0.0;
 };
 
-template <typename T, key_t SHM_KEY>
+inline void decodeTwoUint32FromUint64(std::uint64_t v, std::uint32_t &latest, std::uint32_t &reader) {
+    latest = static_cast<std::uint32_t>(v >> 32);
+    reader = static_cast<std::uint32_t>(v & 0xFFFFFFFFu);
+}
+
+inline std::uint64_t encodeTwoUint32AsUint64(std::uint32_t latest, std::uint32_t reader) {
+    return (static_cast<std::uint64_t>(latest) << 32) | reader;
+}
+
+template <typename T, std::uint64_t BufferCapacity, key_t SHM_KEY>
 class SharedMemory
 {
    public:
@@ -51,115 +61,71 @@ class SharedMemory
         static SharedMemory instance;
         return instance;
     }
-    SharedMemory(const SharedMemory&) = delete;
-    SharedMemory& operator=(const SharedMemory&) = delete;
 
+    bool AppendNewElement(const T &data);
+    bool PeekLatest(T *data);
+    bool is_valid() const { return valid_; }
     // 设置超时时间（毫秒），-1表示不检测超时, 默认为100ms
     static void SetDataValidTimeoutMs(int64_t ms) { timeout_ms_.store(ms, std::memory_order_relaxed); }
-
-    bool Write(const T& data) const
-    {
-        if (data_raw_ == nullptr)
-        {
-            std::cerr << "data_raw_ == nullptr" << std::endl;
-            return false;
-        }
-        pthread_rwlock_wrlock(&data_raw_->rwlock);
-        data_raw_->cnt++;
-        data_raw_->data = data;
-        clock_gettime(CLOCK_REALTIME, &data_raw_->ts);
-        pthread_rwlock_unlock(&data_raw_->rwlock);
-        return true;
-    }
-
-    bool Read(T* data) const
-    {
-        struct timespec now;
-        clock_gettime(CLOCK_REALTIME, &now);
-        if (data_raw_ == nullptr)
-        {
-            std::cerr << "data_raw_ == nullptr" << std::endl;
-            return false;
-        }
-
-        int64_t timeout = timeout_ms_.load(std::memory_order_relaxed);
-        // -1时不检测超时
-        if (timeout != -1)
-        {
-            int64_t diff = (now.tv_sec - data_raw_->ts.tv_sec) * 1000LL + (now.tv_nsec - data_raw_->ts.tv_nsec) / 1000000LL;
-            if (diff > timeout)
-            {
-                return false;
-            }
-        }
-
-        pthread_rwlock_rdlock(&data_raw_->rwlock);
-        *data = data_raw_->data;
-        data->cnt = data_raw_->cnt;
-        pthread_rwlock_unlock(&data_raw_->rwlock);
-        return true;
-    }
-
+    
    protected:
-    struct DataRaw
+    struct QueueElement
     {
-        pthread_rwlock_t rwlock;
+        T data;
         uint64_t cnt = 0;
         struct timespec ts;
-        T data;
+        bool valid{false};  // Handle the case if no element has arrived yet
     };
 
-    DataRaw* const data_raw_ = nullptr;
-    int shmid_ = -1;
-
-    SharedMemory() : data_raw_(nullptr)
+    struct ShmStruct
     {
-        const int shm_size = sizeof(DataRaw);
-        shmid_ = shmget(SHM_KEY, shm_size, IPC_CREAT | IPC_EXCL | 0666);
-        int created = 0;
-        if (shmid_ < 0)
-        {
-            if (errno == EEXIST)
-            {
-                shmid_ = shmget(SHM_KEY, shm_size, 0666);
-                if (shmid_ < 0)
-                {
-                    std::cerr << "shmget" << std::endl;
+        QueueElement ring_buffer[BufferCapacity];
+        std::atomic_uint64_t latest_and_reader;
+    };
+
+    ShmStruct* shm_ptr_;
+    int shmid_ = -1;
+    bool valid_ = false;
+    int64_t cnt_ = 0;
+    static std::atomic<int64_t> timeout_ms_;
+    static constexpr std::uint32_t kInvalidReader = 0xFFFFFFFFu;
+
+    SharedMemory() : shm_ptr_(nullptr) {
+        shmid_ = shmget(SHM_KEY, sizeof(ShmStruct), IPC_CREAT | IPC_EXCL | 0666);
+        bool created = false;
+        if (shmid_ < 0) {
+            if (errno == EEXIST) {
+                shmid_ = shmget(SHM_KEY, sizeof(ShmStruct), 0666);
+                if (shmid_ < 0) {
+                    std::cerr << "shmget failed, errno=" << errno << " (" << strerror(errno) << ")\n";
+                    valid_ = false;
                     return;
                 }
-                created = 0;
-            }
-            else
-            {
-                std::cerr << "shmget" << std::endl;
+            } else {
+                std::cerr << "shmget failed, errno=" << errno << " (" << strerror(errno) << ")\n";
+                valid_ = false;
                 return;
             }
+        } else {
+            created = true;
         }
-        else
-        {
-            created = 1;
-        }
-        DataRaw* tmp = (DataRaw*)shmat(shmid_, NULL, 0);
-        if (tmp == (void*)(-1))
-        {
-            std::cerr << "shmat" << std::endl;
+        void* tmp = shmat(shmid_, NULL, 0);
+        if (tmp == (void*)(-1)) {
+            std::cerr << "shmat failed, errno=" << errno << " (" << strerror(errno) << ")\n";
+            valid_ = false;
             return;
         }
-        const_cast<DataRaw*&>(data_raw_) = tmp;
-        if (created)
-        {
-            pthread_rwlockattr_t attr;
-            pthread_rwlockattr_init(&attr);
-            pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-            pthread_rwlock_init(&data_raw_->rwlock, &attr);
-            pthread_rwlockattr_destroy(&attr);
+        shm_ptr_ = reinterpret_cast<ShmStruct*>(tmp);
+        if (created) {
+            memset(shm_ptr_, 0, sizeof(ShmStruct));
+            shm_ptr_->latest_and_reader.store(encodeTwoUint32AsUint64(0, kInvalidReader), std::memory_order_relaxed);
         }
+        valid_ = true;
     }
-    ~SharedMemory()
-    {
-        if (data_raw_ != nullptr)
-        {
-            shmdt(data_raw_);
+
+    ~SharedMemory() {
+        if (shm_ptr_) {
+            shmdt(shm_ptr_);
         }
         if (shmid_ != -1)
         {
@@ -177,16 +143,15 @@ class SharedMemory
         }
     }
 
-    // 默认超时时间100ms，-1表示不检测超时
-    static std::atomic<int64_t> timeout_ms_;
+    void tryWrapLatestAndReader(std::uint32_t &latest, std::uint32_t &reader);
 };
 
 // 静态成员初始化
-template <typename T, key_t SHM_KEY>
-std::atomic<int64_t> SharedMemory<T, SHM_KEY>::timeout_ms_{100};
+template <typename T, std::uint64_t BufferCapacity, key_t SHM_KEY>
+std::atomic<int64_t> SharedMemory<T, BufferCapacity, SHM_KEY>::timeout_ms_{100};
 
 // 反馈共享内存单例
-class FeedbackSharedMemory : public SharedMemory<RobotFeedback, FEEDBACK_SHM_KEY>
+class FeedbackSharedMemory : public SharedMemory<RobotFeedback, 8, FEEDBACK_SHM_KEY>
 {
    public:
     static FeedbackSharedMemory& GetInstance()
@@ -202,7 +167,7 @@ class FeedbackSharedMemory : public SharedMemory<RobotFeedback, FEEDBACK_SHM_KEY
 };
 
 // 控制共享内存单例
-class ControlSharedMemory : public SharedMemory<RobotControl, CONTROL_SHM_KEY>
+class ControlSharedMemory : public SharedMemory<RobotControl, 8, CONTROL_SHM_KEY>
 {
    public:
     static ControlSharedMemory& GetInstance()
@@ -216,3 +181,5 @@ class ControlSharedMemory : public SharedMemory<RobotControl, CONTROL_SHM_KEY>
    private:
     ControlSharedMemory() : SharedMemory() {}  // 显式声明默认构造函数
 };
+
+#include "shared_memory_def.hpp"
