@@ -20,10 +20,10 @@ sudo cp -r install /opt/w1_server
     echo "/opt/ros/humble/lib"
     echo "/opt/ros/humble/lib/aarch64-linux-gnu"
     echo "/opt/ros/humble/lib/x86_64-linux-gnu"
-    echo "/opt/w1_control/chassis_interfaces/lib"
-    echo "/opt/w1_control/joint_interfaces/lib"
-    echo "/opt/w1_control/robot_server_interfaces/lib"
-    echo "/opt/w1_control/robot_server_lib/lib"
-} | sudo tee /etc/ld.so.conf.d/w1_control.conf
+    echo "/opt/w1_server/chassis_interfaces/lib"
+    echo "/opt/w1_server/joint_interfaces/lib"
+    echo "/opt/w1_server/robot_server_interfaces/lib"
+    echo "/opt/w1_server/robot_server_lib/lib"
+} | sudo tee /etc/ld.so.conf.d/w1_server.conf
 sudo ldconfig
 ##################################################################
