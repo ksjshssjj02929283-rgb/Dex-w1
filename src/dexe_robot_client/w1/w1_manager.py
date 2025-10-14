@@ -97,7 +97,7 @@ class W1Manager:
 
         # initialize fcl checker and pinocchio model and planner
         self._init_fcl_checker(arm_type=arm_type, w1_version=w1_version, end_effector_type=end_effector_type)
-        self._init_pinocchio(arm_type=arm_type, w1_version=w1_version)
+        self._init_pinocchio(arm_type=arm_type, w1_version=w1_version, end_effector_type=end_effector_type)
         self.real_torso_idx, self.real_head_idx, self.real_arml_idx, self.real_armr_idx = get_real_idx()
         self._init_planner(arm_type=arm_type, w1_version=w1_version, end_effector_type=end_effector_type)
  
@@ -115,11 +115,19 @@ class W1Manager:
                 raise ValueError(f"Not supported arm type: {arm_type} for fcl checker")
                 return
             self.fcl_checker = FCLChecker(fcl_robot_type, end_effector_type)
-            env_json_path = get_env_json_path()
-            self.fcl_checker.load_env_json(env_json_path)
         else:
             raise ValueError(f"Not supported w1 version: {w1_version} for fcl checker")
-    
+        
+    def load_fcl_environment(self, file_path: str = None):
+        """
+        file_path: the path of fcl environment json file path
+        """
+        if file_path is None:
+            env_json_path = get_env_json_path()
+        else:
+            env_json_path = file_path
+        self.fcl_checker.load_env_json(env_json_path)
+
     def _init_pinocchio(self, arm_type: W1ArmType = W1ArmType.ANTHROPOMORPHIC, 
                         w1_version: W1Version = W1Version.V2, 
                         end_effector_type: EndEffectorType = None):
@@ -134,7 +142,7 @@ class W1Manager:
             else:
                 raise ValueError(f"Not supported arm type: {arm_type} for pinocchio model")
                 return
-            if end_effector_type is None or isinstance(EndEffectorType):
+            if end_effector_type is None or isinstance(end_effector_type, EndEffectorType):
                 pin_ee_type = end_effector_type
             else:
                 raise ValueError(f"Not supported end_effector_type: {end_effector_type} for pinocchio model")
@@ -161,10 +169,18 @@ class W1Manager:
                 return
             SinglePlanner.set_arms_cfg(SINGLE_ARM_DIM, SINGLE_ARM_DIM, LARM_BOUND, RARM_BOUND)
             SinglePlanner.set_robot_cfg(robot_type=planner_robot_type, ee_type=end_effector_type)
-            SinglePlanner.set_env_json(get_env_json_path())
+            # SinglePlanner.set_env_json(get_env_json_path())
             self.siso_planner = SinglePlanner()
 
-
+    def load_planner_environment(self, file_path: str = None):
+        """
+        file_path: the path of planner environment json file path
+        """
+        if file_path is None:
+            env_json_path = get_env_json_path()
+        else:
+            env_json_path = file_path
+        self.siso_planner.set_env_json(env_json_path)
 
     def _init_clients(self):
         if not rclpy.ok():

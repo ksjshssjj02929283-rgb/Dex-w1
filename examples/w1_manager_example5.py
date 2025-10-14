@@ -74,7 +74,6 @@ if __name__ == "__main__":
     w1_manager.set_ee_qpos("right_arm_ee", np.array([0.]*6))
     w1_manager.go_home(1) 
 
-    # test_single_task()
     # input("Press Enter to continue to next test...")
     test_single_arm()
 
@@ -157,19 +156,19 @@ if __name__ == "__main__":
                 "right_arm_ee": [[0.5, [0, 0, 0, 0, 0, 0], 0.5]]
                 }
     
-    # test_single_task(task_dict=task_dict1)
-    # input("Press Enter to continue to next test...")
-    # test_single_task(task_dict=task_dict2)
-    # input("Press Enter to continue to next test...")
-    # test_single_task(task_dict=task_dict3)
-    # input("Press Enter to continue to next test...")    
-    # test_single_task(task_dict=task_dict4)
-    # input("Press Enter to continue to next test...")
-    # test_single_task(task_dict=task_dict5)
-    # input("Press Enter to continue to next test...")
-    # test_single_task(task_dict=task_dict6)
-    # input("Press Enter to exit...")
-    # embed()
+    test_single_task(task_dict=task_dict1)
+    input("Press Enter to continue to next test...")
+    test_single_task(task_dict=task_dict2)
+    input("Press Enter to continue to next test...")
+    test_single_task(task_dict=task_dict3)
+    input("Press Enter to continue to next test...")    
+    test_single_task(task_dict=task_dict4)
+    input("Press Enter to continue to next test...")
+    test_single_task(task_dict=task_dict5)
+    input("Press Enter to continue to next test...")
+    test_single_task(task_dict=task_dict6)
+    input("Press Enter to exit...")
+    embed()
 
     
 
