@@ -27,6 +27,7 @@ struct RobotControl
     uint16_t robot_control_word = 0x0000;
     double position[MAX_JOINT_NUM] = {0};
     double velocity[MAX_JOINT_NUM] = {0};
+    double acceleration[MAX_JOINT_NUM] = {0};
     double torque_feedforward[MAX_JOINT_NUM] = {0};
     double torque_external[MAX_JOINT_NUM] = {0};
 

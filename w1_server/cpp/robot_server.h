@@ -13,6 +13,7 @@
 #define CTRLWORD_MOTOR_ENABLE         (1U << 1)
 #define CTRLWORD_MOTOR_QUICK_STOP     (1u << 2)
 #define CTRLWORD_MOTOR_CLEAR_FAULT    (1U << 3)
+#define CTRLWORD_MOTOR_CST_MODE       (1U << 4)
 
 #define STATUSWORD_MOTOR_READY        (1U << 0)
 #define STATUSWORD_MOTOR_ENABLED      (1U << 1)
