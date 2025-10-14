@@ -19,6 +19,11 @@ def main():
     #                              w1_version = W1Version.V2,
     #                              end_effector_type = EndEffectorType.PGC_GRIPPER)
 
+    # Used to generate assebled urdf without end effector
+    # dexsim_server = DexsimServer(arm_type = W1ArmType.ANTHROPOMORPHIC,
+    #                             w1_version = W1Version.V2,
+    #                             end_effector_type = None)
+
     try:
         dexsim_server.run()
     finally:

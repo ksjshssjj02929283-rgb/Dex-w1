@@ -29,8 +29,8 @@ INDU_COLLISION_DIR = INDU_MODEL_DIR / "Collision"
 # ARMR_SPECIAL_LINK_NAMES = ["armr6.obj", "armr7.obj"]
 
 # The following link names are used for new folder structure
-ARML_LINK_NAMES = ["arml1.obj", "arml2.obj", "arml3.obj", "arml4.obj", "arml5_short.obj", "arml6.obj", "arml7.obj"]
-ARMR_LINK_NAMES = ["armr1.obj", "armr2.obj", "armr3.obj", "armr4.obj", "armr5_short.obj", "armr6.obj", "armr7.obj"]
+ARML_LINK_NAMES = ["arml1.obj", "arml2.obj", "arml3.obj", "arml4.obj", "arml5.obj", "arml6.obj", "arml7.obj"]
+ARMR_LINK_NAMES = ["armr1.obj", "armr2.obj", "armr3.obj", "armr4.obj", "armr5.obj", "armr6.obj", "armr7.obj"]
 HEAD_LINK_NAMES = ["head1.obj", "head2.obj"]
 TORSO_LINK_NAMES = ["torso1.obj", "torso2.obj", "torso3.obj", "torso4.obj"]
 
