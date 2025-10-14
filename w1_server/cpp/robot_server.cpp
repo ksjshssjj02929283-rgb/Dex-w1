@@ -42,6 +42,7 @@ void RobotServer::RobotThreadFunc()
     auto& feedback_shm_instance = FeedbackSharedMemory::GetInstance();
     auto& control_shm_instance = ControlSharedMemory::GetInstance();
     PlannerManagerCommand q_cmd{};
+    TorqueCtrlCommand torque_cmd{};
     JointRawMeasurement raw_measurement{};
     auto next_cycle_time_point = std::chrono::steady_clock::now();
 
@@ -53,7 +54,7 @@ void RobotServer::RobotThreadFunc()
         RobotFeedback feedback_data{};
         bool ret = feedback_shm_instance.PeekLatest(&feedback_data);
         bool is_robot_ready_ = feedback_data.robot_status_word & STATUSWORD_MOTOR_READY;
-        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT;
+        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT | CTRLWORD_MOTOR_CST_MODE;
 
         if (is_robot_ready_)
         {
@@ -68,15 +69,31 @@ void RobotServer::RobotThreadFunc()
             this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
 
             // 写入控制数据
-            if (this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
+            if (this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd) && this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd))
             {
                 for (int i = 0; i < ndof_robot; ++i)
                 {
                     // 更新关节测量数据
                     robot_control_.position[i] = q_cmd.cmd.position[i];
                     robot_control_.velocity[i] = q_cmd.cmd.velocity[i];
+                    robot_control_.torque_external[i] = torque_cmd.torque_external[i];
                 }
-                robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT;
+                // 每隔1000次（外循环周期）打印一次 torque_external
+                static int torque_print_counter = 0;
+                if (++torque_print_counter >= 1000)
+                {
+                    torque_print_counter = 0;
+                    std::string s = "torque_external: [";
+                    for (int k = 6; k < ndof_robot; ++k)
+                    {
+                        s += std::to_string(robot_control_.torque_external[k]);
+                        if (k + 1 < ndof_robot)
+                            s += ", ";
+                    }
+                    s += "]";
+                    LOG_INFO << s;
+                }
+                robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT | CTRLWORD_MOTOR_CST_MODE;
             }
         }
 

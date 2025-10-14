@@ -4,12 +4,6 @@
 namespace robot_server_lib
 {
 
-struct TorqueCtrlCommand
-{
-    VectorDof torque;
-    VectorDof q_desired;
-};
-
 enum class TorqueControllerState
 {
     Init,

@@ -127,6 +127,13 @@ struct PlannerManagerCommand
     RobotProperty robot_property;
 };
 
+struct TorqueCtrlCommand
+{
+    VectorDof torque;
+    VectorDof torque_external;
+    VectorDof q_desired;
+};
+
 // 移动指令
 struct MoveRequest
 {
@@ -190,7 +197,7 @@ struct PlannerManagerBuffers
 
 struct TorqueControlBuffer
 {
-    std::shared_ptr<SingleWriterLatestBuffer<VectorDof>> torque_command_vector;
+    std::shared_ptr<SingleWriterLatestBuffer<TorqueCtrlCommand>> torque_controller_command;
     std::shared_ptr<SingleWriterLatestBuffer<JointRawMeasurement>> joint_raw_measurement;
 
     TorqueControlBuffer() = default;
@@ -198,7 +205,7 @@ struct TorqueControlBuffer
 
     void Initialize()
     {
-        torque_command_vector = std::make_shared<SingleWriterLatestBuffer<VectorDof>>();
+        torque_controller_command = std::make_shared<SingleWriterLatestBuffer<TorqueCtrlCommand>>();
         joint_raw_measurement = std::make_shared<SingleWriterLatestBuffer<JointRawMeasurement>>();
     }
 };

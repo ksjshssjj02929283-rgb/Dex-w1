@@ -88,7 +88,7 @@ void TorqueControllerManager::LoopOnce()
         measurement_publish.effort = raw_measurement.effort;
         measurement_publish.q_desired_pre = output_cmd.q_desired;
         manager_buffers_.joint_measurement->AppendNewElement(measurement_publish);
-        robot_buffers_.torque_command_vector->AppendNewElement(output_cmd.torque);
+        robot_buffers_.torque_controller_command->AppendNewElement(output_cmd);
         std::ostringstream oss;
         oss << output_cmd.torque.transpose();
         // LOG_DEBUG << "Torque controller output: " << oss.str();

@@ -37,7 +37,7 @@ void RobotServer::RobotThreadFunc()
     LOG_INFO << "Torque control is enabled.";
 
     pinocchio::Data robot_data(*this->robot_model_.model_ptr);
-    VectorDof torque_cmd{};
+    TorqueCtrlCommand torque_cmd{};
     JointRawMeasurement raw_measurement{};
     raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
     raw_measurement.velocity.setZero();
@@ -50,15 +50,15 @@ void RobotServer::RobotThreadFunc()
     while (rclcpp::ok())
     {
         next_cycle_time_point += std::chrono::microseconds(simulation_dt_micro);
-        if (!this->robot_buffers_.torque_command_vector->PeekLatest(&torque_cmd))
+        if (!this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd))
         {
-            torque_cmd.setZero();
+            torque_cmd.torque.setZero();
         }
         VectorDof ddq = dynamics::ForwardDynamics(*this->robot_model_.model_ptr, robot_data, raw_measurement.position, raw_measurement.velocity,
-                                                  torque_cmd, this->robot_model_.params_ptr->joint_command_sequence_by_name);
+                                                  torque_cmd.torque, this->robot_model_.params_ptr->joint_command_sequence_by_name);
         raw_measurement.position += simulation_dt * raw_measurement.velocity;
         raw_measurement.velocity += simulation_dt * ddq;
-        raw_measurement.effort = torque_cmd;
+        raw_measurement.effort = torque_cmd.torque;
         raw_measurement.sensor_wrench = utils::GetSensorWrench(latest_wrench_primary_, latest_wrench_secondary_);
         raw_measurement.time_point = TimePointSystem::Now();
         this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
