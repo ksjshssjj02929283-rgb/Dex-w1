@@ -27,6 +27,9 @@ class EEPoseStreamingPlanner : public MotionPlannerBase
         bool streaming_finished{false};
         std::optional<StreamingCommand> latest_cmd;
     } runtime_;
+
+  private:
+    TimePointSystem request_start_time_{TimePointSystem::Invalid()};
 };
 
 }  // namespace robot_server_lib
