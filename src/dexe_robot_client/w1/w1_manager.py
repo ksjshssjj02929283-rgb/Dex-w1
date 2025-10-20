@@ -540,9 +540,6 @@ class W1Manager:
             target_right_ee_client = self._right_ee_client_real
 
         # 检查target client
-        # if target_robot_client is None:
-        #     self.logger.error(f"Robot_client_{target_name} is not initialized.")
-        #     return False
         if not target_robot_client.is_connected(timeout_sec=0.1):
             self.logger.error(f"{target_robot_client.node_name} is not connected!")
             return False
@@ -550,18 +547,13 @@ class W1Manager:
             self.logger.error(f"{target_robot_client.node_name} status: {target_robot_client.status}, can not switch mode!")
             return False
 
-        # if target_left_ee_client is None:
-        #     self.logger.error(f"Left_ee_client_{target_name} is not initialized.")
-        #     return False
-        if not target_left_ee_client.is_connected():
-            self.logger.error(f"{target_left_ee_client.node_name} is not connected!")
-            return False
-        # if target_right_ee_client is None:
-        #     self.logger.error(f"Right_ee_client_{target_name} is not initialized.")
-        #     return False
-        if not target_right_ee_client.is_connected():
-            self.logger.error(f"{target_right_ee_client.node_name} is not connected!")
-            return False
+        if self._end_effector_type is not None:
+            if not target_left_ee_client.is_connected():
+                self.logger.error(f"{target_left_ee_client.node_name} is not connected!")
+                return False
+            if not target_right_ee_client.is_connected():
+                self.logger.error(f"{target_right_ee_client.node_name} is not connected!")
+                return False
 
         # 检查current client
         if not self.robot_client.is_connected():
@@ -571,16 +563,18 @@ class W1Manager:
             self.logger.error(f"{self.robot_client.node_name} status: {self.robot_client.status}, can not switch mode!")
             return False
 
-        if not self.left_ee_client.is_connected():
-            self.logger.error(f"{self.left_ee_client.node_name} is not connected!")
-            return False
-        if not self.right_ee_client.is_connected():
-            self.logger.error(f"{self.right_ee_client.node_name} is not connected!")
-            return False
+        if self._end_effector_type is not None:
+            if not self.left_ee_client.is_connected():
+                self.logger.error(f"{self.left_ee_client.node_name} is not connected!")
+                return False
+            if not self.right_ee_client.is_connected():
+                self.logger.error(f"{self.right_ee_client.node_name} is not connected!")
+                return False
 
         self.robot_client = target_robot_client
-        self.left_ee_client = target_left_ee_client
-        self.right_ee_client = target_right_ee_client
+        if self._end_effector_type is not None:
+            self.left_ee_client = target_left_ee_client
+            self.right_ee_client = target_right_ee_client
         self._is_sim = enable_sim
         self.logger.info(f"W1 manager set to {target_name} mode.")
         return True
