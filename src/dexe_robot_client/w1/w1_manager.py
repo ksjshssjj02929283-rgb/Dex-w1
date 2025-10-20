@@ -13,7 +13,7 @@ import atexit
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
-from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version
+from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, generate_w1_urdf
 from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
@@ -95,6 +95,14 @@ class W1Manager:
                 raise RuntimeError("Set sim mode failed")
             raise RuntimeError("Set real mode failed")
 
+        # for visual
+        if not generate_w1_urdf(arm_type, w1_version, end_effector_type)[1]:
+            raise ValueError(f"Found URDF failed.")
+
+        # for collision check
+        if self._end_effector_type is not None:
+            if not generate_w1_urdf(arm_type, w1_version, None)[1]:
+                raise ValueError(f"Found URDF failed.")
         # initialize fcl checker and pinocchio model and planner
         self._init_fcl_checker(arm_type=arm_type, w1_version=w1_version, end_effector_type=end_effector_type)
         self._init_pinocchio(arm_type=arm_type, w1_version=w1_version, end_effector_type=end_effector_type)
