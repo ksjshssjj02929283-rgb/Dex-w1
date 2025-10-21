@@ -17,8 +17,7 @@ from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version,
 from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
-from .kinemtaics.torso_kinematics import TorsoKinematics
-from .kinemtaics.arm_kinematics import SRSKinematics
+from dexe_rp import SRSKinematics, W1V02KineParams, SRSConfig, TorsoKinematics
 from .path_planner.bezier_blend_path import interpolate_cartesian_path
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from .utils.w1_params import W1Params
@@ -28,7 +27,6 @@ from .path_planner.planner_pinocchio import Planner_Pin
 from ..common.mapping_index import *
 from .path_planner.utils.robot_type import *
 from .path_planner.single_planner import SinglePlanner
-import pinocchio
 
 
 class W1Manager:
@@ -87,8 +85,6 @@ class W1Manager:
 
         self._use_rlia = use_rlia
         self._init_kine_solver()
-
-        # self._init_collision_checker()
 
         if not self.set_sim_mode(is_sim):
             if is_sim:
@@ -157,11 +153,6 @@ class W1Manager:
                 return
             
             self._pin_kine = Planner_Pin(robot_type=pin_robot_type, end_effector_type=pin_ee_type)
-            # robot_urdf_path = get_robot_urdf(pin_robot_type)
-            # self.pin_model = pinocchio.buildModelFromUrdf(robot_urdf_path)
-            # self.pin_data = self.pin_model.createData()
-            # self.real2pin_idx = get_real2pin_idx(robot_urdf_path)
-            # self.pin_torso_idx, self.pin_head_idx, self.pin_arml_idx, self.pin_armr_idx = get_pin_idx(robot_urdf_path)
             
         else:
             raise ValueError(f"Not supported w1 version: {w1_version} for pinocchio model")
@@ -281,32 +272,21 @@ class W1Manager:
             self.logger.info("Initialize rlia kinematic solver.")
         
         else:
-            self.left_arm_kine = SRSKinematics(self.w1_params._left_arm_kine_params)
-            self.left_arm_kine.set_joint_limits(lower_bound = self.w1_params.left_arm_lb,
-                                                upper_bound = self.w1_params.left_arm_ub)
-            self.left_arm_kine.set_user_joint_limits(lower_bound = self.w1_params.left_arm_lb,
-                                                     upper_bound = self.w1_params.left_arm_ub)
-            self.left_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
+            is_anthropmorphic = True
+            if self._arm_type == W1ArmType.INDUSTRIAL:
+                is_anthropmorphic = False
 
-            self.right_arm_kine = SRSKinematics(self.w1_params._right_arm_kine_params)
-            self.right_arm_kine.set_joint_limits(lower_bound = self.w1_params.right_arm_lb,
-                                                upper_bound = self.w1_params.right_arm_ub)
-            self.right_arm_kine.set_user_joint_limits(lower_bound = self.w1_params.right_arm_lb,
-                                                     upper_bound = self.w1_params.right_arm_ub)
+            left_kine_params = W1V02KineParams(True, is_anthropmorphic);
+            self.left_arm_kine = SRSKinematics(left_kine_params)
+            self.left_arm_kine.set_joint_limits(self.w1_params.left_arm_lb, self.w1_params.left_arm_ub)
+            self.left_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
+            
+            right_kine_params = W1V02KineParams(False, is_anthropmorphic);
+            self.right_arm_kine = SRSKinematics(right_kine_params)
+            self.right_arm_kine.set_joint_limits(self.w1_params.right_arm_lb, self.w1_params.right_arm_ub)
             self.right_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
 
             self.logger.info("Initialize srs-python kinematic solver.")
-
-    # def _init_collision_checker(self):
-    #     if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
-    #         robot_type = RobotType.W1V02_1
-    #     else:
-    #         robot_type = RobotType.W1V02_2
-    #     self._pin_kine = Planner_Pin(robot_type, 
-    #                                  self._end_effector_type)
-    #     self._collision_checker = FCLChecker(robot_type, 
-    #                                          None)
-    #     self.logger.info("Initialize FCL collision checker.")
 
     def _has_arm_ee_client(self, name: str, verbose: bool = True) -> bool:
         if name in self.w1_params.arm_ee_names:
@@ -731,7 +711,7 @@ class W1Manager:
         arm_kine = self._get_arm_kine(name)
         if arm_kine is None:
             return False
-        arm_kine.set_tcp(xpos=xpos)
+        arm_kine.set_tcp(xpos)
         return True
 
     def get_tcp(self, name: str) -> tuple[bool, np.ndarray]:
@@ -1814,30 +1794,6 @@ class W1Manager:
         return self.move_linear_full_body(waypoints_dict={f"{name}": [xpos_to_user_pose(target_xpos)]},
                                         speed_ratio=speed_ratio)
     
-
-    
-    # def _get_Kinematics(self, real_q: np.ndarray, pin_model, pin_data):
-    #     pin_q = real_q[self.real2pin_idx]
-    #     pinocchio.forwardKinematics(pin_model, pin_data, pin_q)
-    #     pinocchio.updateFramePlacements(pin_model, pin_data)
-    #     transform_chain = [oMi.homogeneous for oMi in pin_data.oMi][1:]
-    #     torso_transform_chain = transform_chain[self.pin_torso_idx[0]:self.pin_torso_idx[1]+1]
-    #     head_transform_chain = transform_chain[self.pin_head_idx[0]:self.pin_head_idx[1]+1]
-    #     left_transform_chain = transform_chain[self.pin_arml_idx[0]:self.pin_arml_idx[1]+1]
-    #     right_transform_chain = transform_chain[self.pin_armr_idx[0]:self.pin_armr_idx[1]+1]
-    #     if self._end_effector_type is not None:
-    #         armlee_ID = pin_model.getFrameId("LEFT_EE")
-    #         armree_ID = pin_model.getFrameId("RIGHT_EE")
-    #         lee_trans = pin_data.oMf[armlee_ID].homogeneous
-    #         ree_trans = pin_data.oMf[armree_ID].homogeneous
-    #         left_transform_chain.append(lee_trans)
-    #         right_transform_chain.append(ree_trans)
-
-    #     return torso_transform_chain, head_transform_chain, left_transform_chain, right_transform_chain
-
-
-
-
     def move_dual_arm_single_task(self,
                          task_dict: dict,
                          speed_ratio: float = 1.0) -> bool:
@@ -1879,9 +1835,6 @@ class W1Manager:
             for i in range(torso_qpos_array.shape[0]):
                 target_torso_qpos = torso_qpos_array[i]
                 real_qpos = np.concatenate((target_torso_qpos, cur_head_qpos, cur_arml_qpos, cur_armr_qpos))
-                # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=real_qpos)
-                # self.fcl_checker.set_head_body_transform(head_transforms=head_tf, body_transforms=torso_tf)
-                # self.fcl_checker.update_arm_transform(arml_tf+armr_tf)
                 if self.check_collision(real_qpos):
                     self.logger.warning("It will occur collision for this torso moving trajectory")
                     return False
@@ -1896,9 +1849,6 @@ class W1Manager:
             for i in range(head_qpos_array.shape[0]):
                 target_head_qpos = head_qpos_array[i]
                 real_qpos = np.concatenate((cur_torso_qpos, target_head_qpos, cur_arml_qpos, cur_armr_qpos))
-                # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=real_qpos)
-                # self.fcl_checker.set_head_body_transform(head_transforms=head_tf, body_transforms=torso_tf)
-                # self.fcl_checker.update_arm_transform(arml_tf+armr_tf)
                 if self.check_collision(real_qpos):
                     self.logger.waring("It will occur collision for this head moving trajectory")
                     return False
@@ -1929,22 +1879,20 @@ class W1Manager:
             arml_speed_ratio = speed_ratio
 
 
-        left_ref_psi = arml_kine._calc_arm_angle(cur_arml_qpos)[1]
+        left_ref_psi = arml_kine.calc_arm_angle(cur_arml_qpos)[1]
         left_qpos_seed = cur_arml_qpos
 
         if target_arml_pose is not None and target_arml_pose != []:
             target_arml_xpos = user_pose_to_xpos(target_arml_pose[0][:3], target_arml_pose[0][3:])
 
             while True:
-                res, arml_ik_qpos = arml_kine.get_ik(xpos=target_arml_xpos, arm_angle=left_ref_psi, config=np.sign(left_qpos_seed[[1,3,5]]))
+                srs_cfg = SRSConfig(left_qpos_seed, left_ref_psi)
+                res, arml_ik_qpos = arml_kine.get_ik(target_arml_xpos, srs_cfg)
                 if not res:
                     left_ref_psi += 5./180.*np.pi
                     continue
                 else:
                     real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, arml_ik_qpos, cur_armr_qpos))
-                    # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=real_qpos)
-                    # self.fcl_checker.set_head_body_transform(head_transforms=head_tf, body_transforms=torso_tf)
-                    # self.fcl_checker.update_arm_transform(arml_tf+armr_tf)
                     if self.check_collision(real_qpos):
                         self.logger.warning("It will occur collision for this left arm ik solution, try to find another one")
                         left_ref_psi += 5./180.*np.pi
@@ -1953,27 +1901,6 @@ class W1Manager:
                         target_arml_qpos = arml_ik_qpos
                         self.logger.info(f"Successfully solve ik for left arm with qpos: {target_arml_qpos}")
                         break
-            # res, arml_ik_qpos = arml_kine.get_ik(xpos=target_arml_xpos, arm_angle=left_ref_psi, config=np.sign(left_qpos_seed[[1,3,5]]))
-            # if not res:
-            #     print("Failed to solve ik for left arm before planning trajectory")
-            #     return False
-            # else:
-            #     while True:
-            #         real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, arml_ik_qpos, cur_armr_qpos))
-            #         torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=real_qpos)
-            #         self.fcl_checker.set_head_body_transform(head_transforms=head_tf, body_transforms=torso_tf)
-            #         self.fcl_checker.update_arm_transform(arml_tf+armr_tf)
-            #         if self.fcl_checker.check_collision():
-            #             print("It will occur collision for this left arm ik solution, try to find another one")
-            #             left_ref_psi += 5./180.*np.pi
-            #             res, arml_ik_qpos = arml_kine.get_ik(xpos=target_arml_xpos, arm_angle=left_ref_psi, config=np.sign(left_qpos_seed[[1,3,5]]))
-            #             if not res:
-            #                 print("Failed to solve ik for left arm before planning trajectory")
-            #                 return False
-            #         else:
-            #             target_arml_qpos = arml_ik_qpos
-            #             print(f"Successfully solve ik for left arm with qpos: {target_arml_pose}")
-            #             break
         else:
             target_arml_qpos = cur_arml_qpos
 
@@ -1989,21 +1916,19 @@ class W1Manager:
         else:
             armr_speed_ratio = speed_ratio
 
-        right_ref_psi = armr_kine._calc_arm_angle(cur_armr_qpos)[1]
+        right_ref_psi = armr_kine.calc_arm_angle(cur_armr_qpos)[1]
         right_qpos_seed = cur_armr_qpos
 
         if target_armr_pose is not None and target_armr_pose != []:
             target_armr_xpos = user_pose_to_xpos(target_armr_pose[0][:3], target_armr_pose[0][3:])
             while True:
-                res, armr_ik_qpos = armr_kine.get_ik(xpos=target_armr_xpos, arm_angle=right_ref_psi, config=np.sign(right_qpos_seed[[1,3,5]]))
+                srs_cfg = SRSConfig(right_qpos_seed, right_ref_psi)
+                res, armr_ik_qpos = armr_kine.get_ik(target_armr_xpos, srs_cfg)
                 if not res:
                     right_ref_psi += 5./180.*np.pi
                     continue
                 else:
                     real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_ik_qpos))
-                    # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=real_qpos)
-                    # self.fcl_checker.set_head_body_transform(head_transforms=head_tf, body_transforms=torso_tf)
-                    # self.fcl_checker.update_arm_transform(arml_tf+armr_tf)
                     if self.check_collision(real_qpos):
                         self.logger.warning("It will occur collision for this right arm ik solution, try to find another one")
                         right_ref_psi += 5./180.*np.pi
@@ -2012,27 +1937,6 @@ class W1Manager:
                         target_armr_qpos = armr_ik_qpos
                         self.logger.info(f"Successfully solve ik for right arm with qpos: {target_armr_qpos}")
                         break
-            # res, armr_ik_qpos = armr_kine.get_ik(xpos=target_armr_xpos, arm_angle=right_ref_psi, config=np.sign(right_qpos_seed[[1,3,5]]))
-            # if not res:
-            #     print("Failed to solve ik for right arm before planning trajectory")
-            #     return False
-            # else:
-            #     while True:
-            #         real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_ik_qpos))
-            #         torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=real_qpos)
-            #         self.fcl_checker.set_head_body_transform(head_transforms=head_tf, body_transforms=torso_tf)
-            #         self.fcl_checker.update_arm_transform(arml_tf+armr_tf)
-            #         if self.fcl_checker.check_collision():
-            #             print("It will occur collision for this right arm ik solution, try to find another one")
-            #             right_ref_psi += 5./180.*np.pi
-            #             res, armr_ik_qpos = armr_kine.get_ik(xpos=target_armr_xpos, arm_angle=right_ref_psi, config=np.sign(right_qpos_seed[[1,3,5]]))
-            #             if not res:
-            #                 print("Failed to solve ik for right arm before planning trajectory")
-            #                 return False
-            #         else:
-            #             target_armr_qpos = armr_ik_qpos
-            #             print(f"Successfully solve ik for right arm with qpos: {target_armr_qpos}")
-            #             break
         else:
             target_armr_qpos = cur_armr_qpos
 
@@ -2208,9 +2112,6 @@ class W1Manager:
             for i in range(torso_qpos_array.shape[0]):
                 target_torso_qpos = torso_qpos_array[i]
                 real_qpos = np.concatenate((target_torso_qpos, cur_head_qpos, cur_arml_qpos, cur_armr_qpos))
-                # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=real_qpos)
-                # self.fcl_checker.set_head_body_transform(head_transforms=head_tf, body_transforms=torso_tf)
-                # self.fcl_checker.update_arm_transform(arml_tf+armr_tf)
                 if self.check_collision(real_qpos):
                     self.logger.warning("It will occur collision for this torso moving trajectory")
                     return False
@@ -2225,9 +2126,6 @@ class W1Manager:
             for i in range(head_qpos_array.shape[0]):
                 target_head_qpos = head_qpos_array[i]
                 real_qpos = np.concatenate((cur_torso_qpos, target_head_qpos, cur_arml_qpos, cur_armr_qpos))
-                # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=real_qpos)
-                # self.fcl_checker.set_head_body_transform(head_transforms=head_tf, body_transforms=torso_tf)
-                # self.fcl_checker.update_arm_transform(arml_tf+armr_tf)
                 if self.check_collision(real_qpos):
                     self.logger.info("It will occur collision for this head moving trajectory")
                     return False
@@ -2266,20 +2164,18 @@ class W1Manager:
                 arml_trigger = []
                 target_arml_pose = arml_target_list[i]
                 arml_speed_ratio = arml_speed_ratio_list[i]
-                left_ref_psi = arml_kine._calc_arm_angle(cur_arml_qpos)[1]
+                left_ref_psi = arml_kine.calc_arm_angle(cur_arml_qpos)[1]
                 left_qpos_seed = cur_arml_qpos
                 if target_arml_pose is not None and target_arml_pose != []:
                     target_arml_xpos = user_pose_to_xpos(target_arml_pose[:3], target_arml_pose[3:])
                     while True:
-                        res_ik, arml_ik_qpos = arml_kine.get_ik(xpos=target_arml_xpos, arm_angle=left_ref_psi, config=np.sign(left_qpos_seed[[1,3,5]]))
+                        srs_cfg = SRSConfig(left_qpos_seed, left_ref_psi)
+                        res_ik, arml_ik_qpos = arml_kine.get_ik(target_arml_xpos, srs_cfg)
                         if not res_ik:
                             left_ref_psi += 5./180.*np.pi
                             continue
                         else:
                             real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, arml_ik_qpos, cur_armr_qpos))
-                            # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=real_qpos)
-                            # self.fcl_checker.set_head_body_transform(head_transforms=head_tf, body_transforms=torso_tf)
-                            # self.fcl_checker.update_arm_transform(arml_tf+armr_tf)
                             if self.check_collision(real_qpos):
                                 self.logger.warning("It will occur collision for this left arm ik solution, try to find another one")
                                 left_ref_psi += 5./180.*np.pi
@@ -2288,27 +2184,6 @@ class W1Manager:
                                 target_arml_qpos = arml_ik_qpos
                                 self.logger.info(f"Successfully solve ik for left arm with qpos: {target_arml_qpos}")
                                 break
-                    # res_ik, arml_ik_qpos = arml_kine.get_ik(xpos=target_arml_xpos, arm_angle=left_ref_psi, config=np.sign(left_qpos_seed[[1,3,5]]))
-                    # if not res_ik:
-                    #     print("Failed to solve ik for left arm before planning trajectory")
-                    #     return False
-                    # else:
-                    #     while True:
-                    #         real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, arml_ik_qpos, cur_armr_qpos))
-                    #         torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=real_qpos)
-                    #         self.fcl_checker.set_head_body_transform(head_transforms=head_tf, body_transforms=torso_tf)
-                    #         self.fcl_checker.update_arm_transform(arml_tf+armr_tf)
-                    #         if self.fcl_checker.check_collision():
-                    #             print("It will occur collision for this left arm ik solution, try to find another one")
-                    #             left_ref_psi += 5./180.*np.pi
-                    #             res_ik, arml_ik_qpos = arml_kine.get_ik(xpos=target_arml_xpos, arm_angle=left_ref_psi, config=np.sign(left_qpos_seed[[1,3,5]]))
-                    #             if not res_ik:
-                    #                 print("Failed to solve ik for left arm before planning trajectory")
-                    #                 return False
-                    #         else:
-                    #             target_arml_qpos = arml_ik_qpos
-                    #             print(f"Successfully solve ik for left arm with qpos: {target_arml_qpos}")
-                    #             break
                 else:
                     self.logger.warning("invalid left arm target input")
                     return False    
@@ -2363,20 +2238,18 @@ class W1Manager:
                 target_armr_pose = armr_target_list[i]
                 armr_speed_ratio = armr_speed_ratio_list[i]
 
-                right_ref_psi = armr_kine._calc_arm_angle(cur_armr_qpos)[1]
+                right_ref_psi = armr_kine.calc_arm_angle(cur_armr_qpos)[1]
                 right_qpos_seed = cur_armr_qpos
                 if target_armr_pose is not None and target_armr_pose != []:
                     target_armr_xpos = user_pose_to_xpos(target_armr_pose[:3], target_armr_pose[3:])
                     while True:
-                        res_ik, armr_ik_qpos = armr_kine.get_ik(xpos=target_armr_xpos, arm_angle=right_ref_psi, config=np.sign(right_qpos_seed[[1,3,5]]))
+                        srs_cfg = SRSConfig(right_qpos_seed, right_ref_psi)
+                        res_ik, armr_ik_qpos = armr_kine.get_ik(target_armr_xpos, srs_cfg)
                         if not res_ik:
                             right_ref_psi += 5./180.*np.pi
                             continue
                         else:
                             real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_ik_qpos))
-                            # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=real_qpos)
-                            # self.fcl_checker.set_head_body_transform(head_transforms=head_tf, body_transforms=torso_tf)
-                            # self.fcl_checker.update_arm_transform(arml_tf+armr_tf)
                             if self.check_collision(real_qpos):
                                 self.logger.warning("It will occur collision for this right arm ik solution, try to find another one")
                                 right_ref_psi += 5./180.*np.pi
@@ -2385,27 +2258,6 @@ class W1Manager:
                                 target_armr_qpos = armr_ik_qpos
                                 self.logger.info(f"Successfully solve ik for right arm with qpos: {target_armr_qpos}")
                                 break
-                    # res_ik, armr_ik_qpos = armr_kine.get_ik(xpos=target_armr_xpos, arm_angle=right_ref_psi, config=np.sign(right_qpos_seed[[1,3,5]]))
-                    # if not res_ik:
-                    #     print("Failed to solve ik for right arm before planning trajectory")
-                    #     return False
-                    # else:
-                    #     while True:
-                    #         real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_ik_qpos))
-                    #         torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=real_qpos)
-                    #         self.fcl_checker.set_head_body_transform(head_transforms=head_tf, body_transforms=torso_tf)
-                    #         self.fcl_checker.update_arm_transform(arml_tf+armr_tf)
-                    #         if self.fcl_checker.check_collision():
-                    #             print("It will occur collision for this right arm ik solution, try to find another one")
-                    #             right_ref_psi += 5./180.*np.pi
-                    #             res_ik, armr_ik_qpos = armr_kine.get_ik(xpos=target_armr_xpos, arm_angle=right_ref_psi, config=np.sign(right_qpos_seed[[1,3,5]]))
-                    #             if not res_ik:
-                    #                 print("Failed to solve ik for right arm before planning trajectory")
-                    #                 return False
-                    #         else:
-                    #             target_armr_qpos = armr_ik_qpos
-                    #             print(f"Successfully solve ik for right arm with qpos: {target_armr_qpos}")
-                    #             break
                 else:
                     self.logger.warning("invalid right arm target")
                     return False    
