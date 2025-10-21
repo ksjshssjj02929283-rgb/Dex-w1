@@ -8,6 +8,7 @@ import numpy as np
 from dexe_robot_client.common import W1Version, W1ArmType, get_logger
 from dexe_robot_client.end_effector_client import EndEffectorType 
 from dexe_robot_client.w1 import W1Manager
+from dexe_rp import SRSConfig
 
 
 def arm_angle_motion():
@@ -32,15 +33,15 @@ def arm_angle_motion():
 
     # left arm
     cur_left_qpos = w1_manager.get_current_qpos("left_arm")[1]
-    left_ref_psi = w1_manager.left_arm_kine._calc_arm_angle(cur_left_qpos)[1]
+    left_ref_psi = w1_manager.left_arm_kine.calc_arm_angle(cur_left_qpos)[1]
     cur_left_xpos = w1_manager.left_arm_kine.get_fk(cur_left_qpos)[1]
     
     left_psi_list = left_ref_psi + delta_psi_list
     left_qpos_seed = cur_left_qpos
     left_qpos_list = []
     for psi in left_psi_list:
-        res, qpos = w1_manager.left_arm_kine.get_ik(cur_left_xpos, psi, 
-                                                    np.sign(left_qpos_seed[[1,3,5]]))
+        srs_cfg = SRSConfig(left_qpos_seed, psi)
+        res, qpos = w1_manager.left_arm_kine.get_ik(cur_left_xpos, srs_cfg)
         if not res:
             get_logger().error("ik failed")
             return
@@ -52,15 +53,15 @@ def arm_angle_motion():
 
     # right arm
     cur_right_qpos = w1_manager.get_current_qpos("right_arm")[1]
-    right_ref_psi = w1_manager.right_arm_kine._calc_arm_angle(cur_right_qpos)[1]
+    right_ref_psi = w1_manager.right_arm_kine.calc_arm_angle(cur_right_qpos)[1]
     cur_right_xpos = w1_manager.right_arm_kine.get_fk(cur_right_qpos)[1]
 
     right_psi_list = right_ref_psi - delta_psi_list
     right_qpos_seed = cur_right_qpos
     right_qpos_list = []
     for psi in right_psi_list:
-        res, qpos = w1_manager.right_arm_kine.get_ik(cur_right_xpos, psi, 
-                                                    np.sign(right_qpos_seed[[1,3,5]]))
+        srs_cfg = SRSConfig(right_qpos_seed, psi)
+        res, qpos = w1_manager.right_arm_kine.get_ik(cur_right_xpos, srs_cfg)
         if not res:
             get_logger().error("ik failed")
             return
