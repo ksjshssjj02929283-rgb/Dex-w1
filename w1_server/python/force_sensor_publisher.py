@@ -34,7 +34,6 @@ class SensorReader(Node):
         return alpha
 
     def sleep_ms(self, milliseconds):
-        """毫秒级延迟"""
         time.sleep(milliseconds / 1000.0)
         
     def configure_port(self):
@@ -166,16 +165,8 @@ class SensorReader(Node):
         My -= self.zero_frame[4]
         Mz -= self.zero_frame[5]
 
-        # 低通滤波
-        raw = np.array([Fx, Fy, Fz, Mx, My, Mz])
-        if self.filtered is None:
-            self.filtered = np.zeros(6)
-        else:
-            self.filtered = self.lowpass_filter(raw, self.filtered)
-        Fx, Fy, Fz, Mx, My, Mz = self.filtered
-
         sensor_data = {
-            'Fx': Fx,
+            'Fx': -Fx,
             'Fy': Fy,
             'Fz': Fz,
             'Mx': Mx,
@@ -205,9 +196,7 @@ class SensorReader(Node):
         # 配置串口
         if not self.configure_port():
             return
-        
         self.init()
-
         try:
             while True:
                 self.pub_sensor_data()
@@ -230,13 +219,15 @@ def run_sensor(port, topic):
 
 if __name__ == "__main__":
     rclpy.init(args=None)
-    try:
-        left_thread = threading.Thread(target=run_sensor, args=('/dev/ttyUSB0', '/feedback/force_sensor/left'))
-        left_thread.start()
-        left_thread.join()
 
-        right_thread = threading.Thread(target=run_sensor, args=('/dev/ttyUSB1', '/feedback/force_sensor/right'))
-        right_thread.start()
-        right_thread.join()
+    try:
+        run_sensor('/dev/ttyUSB1', '/feedback/force_sensor/left')
+        # left_thread = threading.Thread(target=run_sensor, args=('/dev/ttyUSB1', '/feedback/force_sensor/left'))
+        # left_thread.start()
+        # left_thread.join()
+
+        # right_thread = threading.Thread(target=run_sensor, args=('/dev/ttyUSB2', '/feedback/force_sensor/right'))
+        # right_thread.start()
+        # right_thread.join()
     except KeyboardInterrupt:
         print("\n安全退出传感器线程...")

@@ -32,6 +32,8 @@ using VectorDof = Eigen::Matrix<double, ndof_robot, 1>;
 using JointPositionDof = VectorDof;  // 关节位置
 using Matrix3d = Eigen::Matrix<double, 3, 3>;
 using Matrix4d = Eigen::Matrix<double, 4, 4>;
+using Vector6d = Eigen::Matrix<double, 6, 1>;
+using Vector12d = Eigen::Matrix<double, 12, 1>;
 
 enum class RunMode
 {

@@ -59,7 +59,6 @@ void RobotServer::RobotThreadFunc()
         raw_measurement.position += simulation_dt * raw_measurement.velocity;
         raw_measurement.velocity += simulation_dt * ddq;
         raw_measurement.effort = torque_cmd.torque;
-        raw_measurement.sensor_wrench = utils::GetSensorWrench(latest_wrench_primary_, latest_wrench_secondary_);
         raw_measurement.time_point = TimePointSystem::Now();
         this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
         std::this_thread::sleep_until(next_cycle_time_point);

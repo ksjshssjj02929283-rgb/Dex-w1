@@ -30,14 +30,40 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
 
     // 创建定时器，定时发布feedback 定时器回调函数
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
-    
+        
+    // 初始化力传感器
+    primary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");
+    secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB2");
+
+    if(!primary_sensor_->Initialize())
+    {
+        RCLCPP_INFO(this->get_logger(), "No primary force sensor connected");
+        LOG_INFO << "No primary force sensor connected";
+        primary_sensor_.reset();
+    }
+    else
+    {
+        RCLCPP_INFO(this->get_logger(), "Primary force sensor initialized successfully.");
+        LOG_INFO << "Primary force sensor initialized successfully.";
+
+    }
+    if(!secondary_sensor_->Initialize())
+    {
+        RCLCPP_INFO(this->get_logger(), "No secondary force sensor connected");
+        LOG_INFO << "No secondary force sensor connected";
+        secondary_sensor_.reset();
+    }
+    else
+    {
+        RCLCPP_INFO(this->get_logger(), "Secondary force sensor initialized successfully.");
+        LOG_INFO << "Secondary force sensor initialized successfully.";
+    }
     this->Run(); 
 }
 
-void RobotServer::RobotThreadFunc()
+void RobotServer::TorqueControlThreadFunc()
 {
-    RCLCPP_INFO(this->get_logger(), "Torque control is disabled.");
-    LOG_INFO << "Torque control is disabled.";
+    TorqueControllerManager torque_controller_manager(this->robot_model_, this->manager_buffers_, this->robot_buffers_);
     // 初始化共享内存
     auto& feedback_shm_instance = FeedbackSharedMemory::GetInstance();
     auto& control_shm_instance = ControlSharedMemory::GetInstance();
@@ -49,12 +75,33 @@ void RobotServer::RobotThreadFunc()
     while (rclcpp::ok())
     {
         next_cycle_time_point += std::chrono::microseconds(torque_ctrl_dt_micro);
-        raw_measurement.sensor_wrench = utils::GetSensorWrench(latest_wrench_primary_, latest_wrench_secondary_);
+        
+        Vector6d sensor_data_primary = Vector6d::Zero();
+        Vector6d sensor_data_secondary = Vector6d::Zero();
+
+        if (primary_sensor_)
+        {
+            primary_sensor_->Read(sensor_data_primary);
+        }
+        if (secondary_sensor_)
+        {
+            secondary_sensor_->Read(sensor_data_secondary);
+        }
+        raw_measurement.sensor_wrench = utils::GetSensorWrench(sensor_data_primary, sensor_data_secondary);
+
+        static int torque_print_counter = 0;
+        if (++torque_print_counter >= 250)
+        {
+            torque_print_counter = 0;
+            LOG_INFO << "torque sensor: " << raw_measurement.sensor_wrench.transpose();
+        }
+
         // 读取反馈数据
         RobotFeedback feedback_data{};
         bool ret = feedback_shm_instance.PeekLatest(&feedback_data);
         bool is_robot_ready_ = feedback_data.robot_status_word & STATUSWORD_MOTOR_READY;
         robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT | CTRLWORD_MOTOR_CST_MODE;
+        // robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT;
 
         if (is_robot_ready_)
         {
@@ -68,6 +115,9 @@ void RobotServer::RobotThreadFunc()
             }
             this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
 
+            // 力控计算处理
+            torque_controller_manager.LoopOnce();
+
             // 写入控制数据
             if (this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd) && this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd))
             {
@@ -78,22 +128,8 @@ void RobotServer::RobotThreadFunc()
                     robot_control_.velocity[i] = q_cmd.cmd.velocity[i];
                     robot_control_.torque_external[i] = torque_cmd.torque_external[i];
                 }
-                // 每隔1000次（外循环周期）打印一次 torque_external
-                static int torque_print_counter = 0;
-                if (++torque_print_counter >= 1000)
-                {
-                    torque_print_counter = 0;
-                    std::string s = "torque_external: [";
-                    for (int k = 6; k < ndof_robot; ++k)
-                    {
-                        s += std::to_string(robot_control_.torque_external[k]);
-                        if (k + 1 < ndof_robot)
-                            s += ", ";
-                    }
-                    s += "]";
-                    LOG_INFO << s;
-                }
                 robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT | CTRLWORD_MOTOR_CST_MODE;
+                // robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT;
             }
         }
 

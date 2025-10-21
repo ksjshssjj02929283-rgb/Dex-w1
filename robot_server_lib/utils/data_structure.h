@@ -55,7 +55,7 @@ struct JointRawMeasurement
     VectorDof position;             // 关节位置
     VectorDof velocity;             // 关节速度
     VectorDof effort;               // 关节力矩
-    Eigen::VectorXd sensor_wrench;  // 六维力传感器数据
+    Vector12d sensor_wrench{Vector12d::Zero()};        // 六维力传感器数据
     TimePointSystem time_point;
 
     std::string ToString() const

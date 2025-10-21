@@ -368,36 +368,34 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
     return planner_request;
 }
 
-Eigen::VectorXd GetSensorWrench(const std::shared_ptr<geometry_msgs::msg::WrenchStamped> &wrench_primary_ptr,
-                                const std::shared_ptr<geometry_msgs::msg::WrenchStamped> &wrench_secondary_ptr)
+Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary)
 {
-    Eigen::VectorXd sensor_wrench = Eigen::VectorXd::Zero(12);
-    auto process = [](double value, double threshold) -> double
-    {
-        if (std::abs(value) < threshold)
-            return 0.0;
-        else
-            return (value > 0 ? value - threshold : value + threshold);
+    constexpr double force_threshold = 5.0;
+    constexpr double torque_threshold = 0.5;
+    constexpr double force_max = 60.0;
+    constexpr double torque_max = 6.0;
+
+    auto deadzone_saturate = [](double x, double th, double mx) noexcept -> double {
+        double y = std::max(0.0, std::abs(x) - th);
+        if (y > mx) y = mx;
+        return std::copysign(y, x);
     };
 
-    if (wrench_primary_ptr)
-    {
-        sensor_wrench[0] = process(wrench_primary_ptr->wrench.force.x, 10.0);
-        sensor_wrench[1] = process(wrench_primary_ptr->wrench.force.y, 10.0);
-        sensor_wrench[2] = process(wrench_primary_ptr->wrench.force.z, 10.0);
-        sensor_wrench[3] = process(wrench_primary_ptr->wrench.torque.x, 1.0);
-        sensor_wrench[4] = process(wrench_primary_ptr->wrench.torque.y, 1.0);
-        sensor_wrench[5] = process(wrench_primary_ptr->wrench.torque.z, 1.0);
-    }
-    if (wrench_secondary_ptr)
-    {
-        sensor_wrench[6] = process(wrench_secondary_ptr->wrench.force.x, 10.0);
-        sensor_wrench[7] = process(wrench_secondary_ptr->wrench.force.y, 10.0);
-        sensor_wrench[8] = process(wrench_secondary_ptr->wrench.force.z, 10.0);
-        sensor_wrench[9] = process(wrench_secondary_ptr->wrench.torque.x, 1.0);
-        sensor_wrench[10] = process(wrench_secondary_ptr->wrench.torque.y, 1.0);
-        sensor_wrench[11] = process(wrench_secondary_ptr->wrench.torque.z, 1.0);
-    }
+    auto process6 = [&](const Vector6d &w) noexcept -> Vector6d {
+        Vector6d out;
+        for (int i = 0; i < 6; ++i)
+        {
+            const bool is_force = i < 3;
+            const double th = is_force ? force_threshold : torque_threshold;
+            const double mx = is_force ? force_max : torque_max;
+            out[i] = deadzone_saturate(w[i], th, mx);
+        }
+        return out;
+    };
+
+    Vector12d sensor_wrench;
+    sensor_wrench.head<6>() = process6(wrench_primary);
+    sensor_wrench.tail<6>() = process6(wrench_secondary);
     return sensor_wrench;
 }
 

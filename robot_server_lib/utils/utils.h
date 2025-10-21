@@ -60,7 +60,6 @@ bool MapArmToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, 
 
 bool GetArmFromWholeBody(const RobotModel &robot_model, const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group);
 
-Eigen::VectorXd GetSensorWrench(const std::shared_ptr<geometry_msgs::msg::WrenchStamped> &wrench_primary_ptr,
-                                const std::shared_ptr<geometry_msgs::msg::WrenchStamped> &wrench_secondary_ptr);
+Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary);
 }  // namespace utils
 }  // namespace robot_server_lib

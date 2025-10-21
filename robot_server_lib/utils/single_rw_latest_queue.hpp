@@ -28,7 +28,7 @@ bool SingleReadWriteLatestQueue<T, BufferCapacity>::AppendNewElement(const T &el
 {
     std::uint64_t latest_and_reader = latest_and_reader_.load(std::memory_order_acquire);
     std::uint32_t latest, reader;
-    decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
+    utils::decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
     assert((latest >= reader) || (reader == kInvalidReader));
 
     // Latest is a valid position, we would write to latest + 1
@@ -52,11 +52,11 @@ bool SingleReadWriteLatestQueue<T, BufferCapacity>::AppendNewElement(const T &el
     tryWrapLatestAndReader(wrap_latest, wrap_reader);
 
     // Update the index
-    std::uint64_t new_latest_and_reader = encodeTwoUint32AsUint64(wrap_latest, wrap_reader);
+    std::uint64_t new_latest_and_reader = utils::encodeTwoUint32AsUint64(wrap_latest, wrap_reader);
     while (!latest_and_reader_.compare_exchange_weak(latest_and_reader, new_latest_and_reader, std::memory_order_acq_rel, std::memory_order_relaxed))
     {
         // Update the reader
-        decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
+        utils::decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
         assert((latest >= reader) || (reader == kInvalidReader));
 
         // Perform wrapping
@@ -65,7 +65,7 @@ bool SingleReadWriteLatestQueue<T, BufferCapacity>::AppendNewElement(const T &el
         tryWrapLatestAndReader(wrap_latest, wrap_reader);
 
         // Encode again
-        new_latest_and_reader = encodeTwoUint32AsUint64(wrap_latest, wrap_reader);
+        new_latest_and_reader = utils::encodeTwoUint32AsUint64(wrap_latest, wrap_reader);
     }
 
     // Done
@@ -84,9 +84,9 @@ bool SingleReadWriteLatestQueue<T, BufferCapacity>::PeekLatest(T *element_output
     // First "lock" a place to read, no wrapping here
     do
     {
-        decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
+        utils::decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
         assert(reader == kInvalidReader);
-        latest_and_reader_reserved = encodeTwoUint32AsUint64(latest, latest);
+        latest_and_reader_reserved = utils::encodeTwoUint32AsUint64(latest, latest);
     } while (!latest_and_reader_.compare_exchange_weak(latest_and_reader, latest_and_reader_reserved, std::memory_order_acq_rel,
                                                        std::memory_order_relaxed));
 
@@ -105,13 +105,13 @@ bool SingleReadWriteLatestQueue<T, BufferCapacity>::PeekLatest(T *element_output
 
     // Now release the lock via updating the reader to invalid
     // Also no wrapping here
-    std::uint64_t latest_and_reader_released = encodeTwoUint32AsUint64(latest, kInvalidReader);
+    std::uint64_t latest_and_reader_released = utils::encodeTwoUint32AsUint64(latest, kInvalidReader);
     while (!latest_and_reader_.compare_exchange_weak(latest_and_reader, latest_and_reader_released, std::memory_order_acq_rel,
                                                      std::memory_order_relaxed))
     {
-        decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
+        utils::decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
         assert(reader != kInvalidReader);  // It is me
-        latest_and_reader_released = encodeTwoUint32AsUint64(latest, kInvalidReader);
+        latest_and_reader_released = utils::encodeTwoUint32AsUint64(latest, kInvalidReader);
     }
 
     // Done

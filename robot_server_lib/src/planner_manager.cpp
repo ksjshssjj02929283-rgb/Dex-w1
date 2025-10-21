@@ -52,7 +52,10 @@ void PlannerManager::LoopOnce()
     if (!manager_buffer_.joint_measurement->PeekLatest(&measurement))
     {
         time_meta.measurement_time = TimePointSystem::Invalid();
-        LOG_CRIT << "No joint measurement available, skipping loop.";
+        if (runtime_data_.loop_counter % 3000 == 0)
+        {
+            LOG_CRIT << "No joint measurement available, skipping loop.";
+        }
     }
     else
     {

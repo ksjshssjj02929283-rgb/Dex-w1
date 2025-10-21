@@ -6,6 +6,9 @@
 #include <cassert>
 #include <cstring>
 #include <iostream>
+#include <new>    
+#include <cstdint>   
+#include <cerrno>     
 
 #define FEEDBACK_SHM_KEY 0x1000
 #define CONTROL_SHM_KEY 0x2000
@@ -118,8 +121,14 @@ class SharedMemory
         }
         shm_ptr_ = reinterpret_cast<ShmStruct*>(tmp);
         if (created) {
-            memset(shm_ptr_, 0, sizeof(ShmStruct));
-            shm_ptr_->latest_and_reader.store(encodeTwoUint32AsUint64(0, kInvalidReader), std::memory_order_relaxed);
+            // 在共享内存中值初始化构造对象
+            new (shm_ptr_) ShmStruct();
+
+            // 设置 latest/reader 初值（避免 0 的歧义，显式使用 0u）
+            shm_ptr_->latest_and_reader.store(
+                encodeTwoUint32AsUint64(0u, kInvalidReader),
+                std::memory_order_relaxed
+            );
         }
         valid_ = true;
     }

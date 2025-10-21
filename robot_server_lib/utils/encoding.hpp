@@ -4,6 +4,9 @@
 
 namespace robot_server_lib
 {
+namespace utils
+{
+
 
 inline std::uint64_t encodeTwoUint32AsUint64(std::uint32_t a, std::uint32_t b)
 {
@@ -15,4 +18,5 @@ inline void decodeTwoUint32FromUint64(std::uint64_t packed, std::uint32_t &a, st
     decodeTwo32BitIntFrom64Bit<std::uint32_t, std::uint64_t>(packed, a, b);
 }
 
+}  // namespace utils
 }  // namespace robot_server_lib

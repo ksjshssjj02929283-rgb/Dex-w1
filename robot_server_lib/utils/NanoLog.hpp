@@ -32,6 +32,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <string>
 #include <type_traits>
 #include <vector>
+#include <sstream>
+#include <Eigen/Dense>
 
 namespace nanolog
 {
@@ -83,6 +85,26 @@ class NanoLogLine
         }
         (*this) << "]";
         return *this;
+    }
+
+    template <typename Derived>
+    NanoLogLine &operator<<(const Eigen::EigenBase<Derived> &expr)
+    {
+        // 无括号，无对齐，元素与行之间都用 ", " 分隔
+        static const Eigen::IOFormat kFmt(
+            Eigen::StreamPrecision, Eigen::DontAlignCols, ", ", ", ", "", "", "", "");
+        std::ostringstream oss;
+        oss << expr.derived().eval().format(kFmt);
+        return (*this) << oss.str();
+    }
+
+    template <typename Derived>
+    NanoLogLine &operator<<(const Eigen::QuaternionBase<Derived> &q)
+    {
+        // 同样去掉括号
+        std::ostringstream oss;
+        oss << q.x() << ", " << q.y() << ", " << q.z() << ", " << q.w();
+        return (*this) << oss.str();
     }
 
     template <typename Arg>
@@ -166,14 +188,30 @@ struct GuaranteedLogger
  * Ensure initialize() is called prior to any log statements.
  * log_directory - where to create the logs. For example - "/tmp/"
  * log_file_name - root of the file name. For example - "nanolog"
- * This will create log files of the form -
- * /tmp/nanolog.1.txt
- * /tmp/nanolog.2.txt
- * etc.
- * log_file_roll_size_mb - mega bytes after which we roll to next log file.
+ * This will create rolling log files of the form (max_files = K) -
+ * /tmp/nanolog.txt
+ * /tmp/nanolog1.txt
+ * /tmp/nanolog2.txt
+ * ...
+ * /tmp/nanolog(K-1).txt
+ * The newest is nanolog.txt, the oldest is nanolog(K-1).txt.
+ * Rotation happens when nanolog.txt exceeds roll size.
  */
 void initialize(GuaranteedLogger gl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb);
 void initialize(NonGuaranteedLogger ngl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb);
+
+// New overloads with fixed rolling file count
+void initialize(GuaranteedLogger gl,
+                std::string const &log_directory,
+                std::string const &log_file_name,
+                uint32_t log_file_roll_size_mb,
+                uint32_t max_files);
+
+void initialize(NonGuaranteedLogger ngl,
+                std::string const &log_directory,
+                std::string const &log_file_name,
+                uint32_t log_file_roll_size_mb,
+                uint32_t max_files);
 
 }  // namespace nanolog
 
