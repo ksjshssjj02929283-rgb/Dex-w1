@@ -90,7 +90,30 @@ def generate_w1_urdf(arm_type: W1ArmType,
     if w1_version != W1Version.V2:
         logger.error(f"{w1_version.name} are not support.")
         return False, None
+    
     name += "_V2"
+    if arm_type == W1ArmType.ANTHROPOMORPHIC:
+        name += "_A"
+    elif arm_type == W1ArmType.INDUSTRIAL:
+        name += "_I"
+    else:
+        logger.error(f"{arm_type.name} are not support.")
+        return False, None
+
+    if end_effector_type is None:
+        pass
+    elif end_effector_type == EndEffectorType.BRAINCO_HAND:
+        name += "_BRAINCO"
+    elif end_effector_type == EndEffectorType.PGC_GRIPPER:
+        name += "_PGC"
+    else:
+        logger.error(f"{end_effector_type.name} are not support.")
+        return False, None
+
+    file_path = ASSETS_DIR / name / f"{name}.urdf"
+    if file_path.exists():
+        logger.info(f"File already exists: {file_path}, skipping generation.")
+        return True, str(file_path)
 
     import rlia
     urdf_manager = rlia.kit.toolkit.URDFAssemblyManager()
@@ -108,20 +131,13 @@ def generate_w1_urdf(arm_type: W1ArmType,
                                 str(ASSETS_DIR / "left_arm_a/left_arm.urdf"))
         urdf_manager.add_component("right_arm", 
                                 str(ASSETS_DIR / "right_arm_a/right_arm.urdf"))
-        name += "_A"
     elif arm_type == W1ArmType.INDUSTRIAL:
         urdf_manager.add_component("left_arm",
                                 str(ASSETS_DIR / "left_arm_i/left_arm.urdf"))
         urdf_manager.add_component("right_arm", 
                                 str(ASSETS_DIR / "right_arm_i/right_arm.urdf"))
-        name += "_I"
-    else:
-        logger.error(f"{arm_type.name} are not support.")
-        return False, None
 
-    if end_effector_type is None:
-        pass
-    elif end_effector_type == EndEffectorType.BRAINCO_HAND:
+    if end_effector_type == EndEffectorType.BRAINCO_HAND:
         left_hand_attach_xpos = np.array([[-1, 0, 0, 0],
                                         [0, 0, 1, 0],
                                         [0, 1, 0, 0.02],
@@ -137,7 +153,6 @@ def generate_w1_urdf(arm_type: W1ArmType,
         urdf_manager.add_component("right_hand",
                                 str(ASSETS_DIR / "right_brainco/right_hand.urdf"),
                                 transform=right_hand_attach_xpos)
-        name += "_BRAINCO"
     elif end_effector_type == EndEffectorType.PGC_GRIPPER:
         urdf_manager.add_component("left_hand",
                                 str(ASSETS_DIR / "left_pgc/left_hand.urdf"),
@@ -145,16 +160,7 @@ def generate_w1_urdf(arm_type: W1ArmType,
         urdf_manager.add_component("right_hand",
                                 str(ASSETS_DIR / "right_pgc/right_hand.urdf"),
                                 transform=np.eye(4))
-        name += "_PGC"
-    else:
-        logger.error(f"{end_effector_type.name} are not support.")
-        return False, None
-
-    file_path = ASSETS_DIR / name / f"{name}.urdf"
-    if file_path.exists():
-        logger.info(f"File already exists: {file_path}, skipping generation.")
-        return True, str(file_path)
-    
+   
     try:
         urdf_manager.merge_urdfs(output_path=str(file_path))
     except Exception as e:

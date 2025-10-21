@@ -22,16 +22,21 @@ from ...common import get_logger
 
 class FCLChecker:
     def __init__(self, robot_type: RobotType = None, end_effector_type: EndEffectorType = None):
+        """
+        Initialize the FCL collision checker for specific robot and arm type.
+
+        Args:
+            robot_type(RobotType): Type of the robot (e.g., W1V02_1, W1V02_2).
+            end_effector_type(EndEffectorType): Type of the end effector (e.g., PGC_GRIPPER, BRAINCO_HAND).
+        """
         if robot_type is None:
             raise ValueError(f"Robot type must be specified as {RobotType.W1V02_1} or {RobotType.W1V02_2}.")
-        self.logger = get_logger()
-
         self.arml_full_path = get_arml_full_path(robot_type)
         self.armr_full_path = get_armr_full_path(robot_type)
         self.head_full_path = get_head_full_path()
         self.torso_full_path = get_torso_full_path()
         
-
+        self.logger = get_logger()
         # Containers for fcl objects
         self.arml_links = []
         self.armr_links = []
@@ -85,7 +90,7 @@ class FCLChecker:
         mesh = trimesh.load(obj_path, force='mesh')
         vertices = np.asarray(mesh.vertices, dtype=np.float64)
         triangles = np.asarray(mesh.faces, dtype=np.int32)
-        self.logger.debug(f"vertices length {len(vertices)}, triangles length {len(triangles)}")
+        # self.logger.debug(f"vertices length {len(vertices)}, triangles length {len(triangles)}")
 
         bvh = fcl.BVHModel()
         bvh.beginModel(len(vertices), len(triangles))
@@ -223,21 +228,88 @@ class FCLChecker:
         saved_file_path = os.path.join(saved_folder_path, "transformed_point_cloud.ply")
         o3d.io.write_point_cloud(saved_file_path, point_cloud)
 
-    def add_octomap(self, ply_path, external_trans, octo_res):
+    def add_octomap_from_file(self, ply_path: str, 
+                              extrinsics: np.ndarray, 
+                              octo_res: float, 
+                              base_link_T_arm_base: np.ndarray,
+                              visualize: bool = False):
+        # TODO: extrinsics is just a tf from camera frame to one of arm base frame, arm_base_T_camera, add FK in future to transform to base link frame
+        """
+        This function loads a point cloud file and transform it to base link frame, then create an octomap for collision checking
+
+        Args:
+            point_cloud (nd.array, shape=(N, 3)): The point cloud data in numpy array format which is in camera frame.
+            extrinsics (nd.array, shape=(4, 4)): The transformation matrix from the point cloud frame to one of arm base frame.(will be neck2 frame in the future)
+            octo_res (float): The resolution of the octomap.
+
+        """
+
+        self.obstacles.clear()
+        self.obstacle_manager = fcl.DynamicAABBTreeCollisionManager()
+
         point_cloud = o3d.io.read_point_cloud(ply_path)
         # Apply transformation to the world coordinates
-        point_cloud.transform(external_trans)
+        base_link_T_camera = base_link_T_arm_base @ extrinsics
+        point_cloud.transform(base_link_T_camera)
         # Downsample the point cloud
         point_cloud = point_cloud.voxel_down_sample(voxel_size=0.01)
         # save the point cloud
-        self._save_point_cloud(point_cloud)
+        # self._save_point_cloud(point_cloud)
+        if visualize:
+            o3d.visualization.draw_geometries([point_cloud])
 
         point_cloud_array = np.asarray(point_cloud.points)
         octo_obj = fcl.OcTree(r=octo_res, points=point_cloud_array)
-        self.obstacles.append(octo_obj)
-        self.obstacle_manager.registerObject(octo_obj)
+        fcl_octo_obj = fcl.CollisionObject(octo_obj)
+        self.obstacles.append(fcl_octo_obj)
+        self.obstacle_manager.registerObject(fcl_octo_obj)
         self.obstacle_manager.setup()
-    
+
+        # point_cloud = o3d.io.read_point_cloud(ply_path)
+        if self.visualize:
+            trimesh_cloud = trimesh.points.PointCloud(np.asarray(point_cloud.points))
+            self.obstacle_mesh_list.append(trimesh_cloud)
+
+
+
+    def add_octomap_from_numpy(self, point_cloud: np.ndarray,
+                                extrinsics: np.ndarray, 
+                                octo_res: float, 
+                                base_link_T_arm_base: np.ndarray, 
+                                visualize: bool = False):
+        """
+        This function loads a numpy array point cloud and transform it to base link frame, then create an octomap for collision checking
+
+        Args:
+            point_cloud (nd.array, shape=(N, 3)): The point cloud data in numpy array format which is in camera frame.
+            extrinsics (nd.array, shape=(4, 4)): The transformation matrix from the point cloud frame to one of arm base frame.(will be neck2 frame in the future)
+            octo_res (float): The resolution of the octomap.
+
+        """
+        self.obstacles.clear()
+        self.obstacle_manager = fcl.DynamicAABBTreeCollisionManager()
+
+        point_cloud_o3d = o3d.geometry.PointCloud()
+        point_cloud_o3d.points = o3d.utility.Vector3dVector(point_cloud)
+
+        base_link_T_camera = base_link_T_arm_base @ extrinsics
+        point_cloud_o3d.transform(base_link_T_camera)
+        point_cloud_o3d = point_cloud_o3d.voxel_down_sample(voxel_size=0.01)
+        if visualize:
+            o3d.visualization.draw_geometries([point_cloud_o3d])
+        
+        point_cloud_array = np.asarray(point_cloud_o3d.points)
+        octo_obj = fcl.OcTree(r=octo_res, points=point_cloud_array)
+        fcl_octo_obj = fcl.CollisionObject(octo_obj)
+        self.obstacles.append(fcl_octo_obj)
+        self.obstacle_manager.registerObject(fcl_octo_obj)
+        self.obstacle_manager.setup()
+
+        if self.visualize:
+            trimesh_cloud = trimesh.points.PointCloud(np.asarray(point_cloud_array))
+            self.obstacle_mesh_list.append(trimesh_cloud)
+
+
     def load_env_json(self, json_path):
 
         self.logger.info(f"Loading environment from {json_path}")
@@ -266,55 +338,57 @@ class FCLChecker:
         with open(json_path, 'r') as f:
             env_data = json.load(f)
         # Load environment obstacles
-        obstacle_cfg = env_data["scene_objects"]
-        for obj in obstacle_cfg:
-            if obj["shape"]["shape_type"] == "box":
-                center = np.array(obj["pose"])[:3]
-                size = np.array(obj["shape"]["raw_data"])
-                quaternion = np.array(obj["pose"])[3:]
-                self.add_cube_obstacle(center, size, quaternion)
-                self.logger.info(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with size: {size} and name: {obj['name']}")
-            if obj["shape"]["shape_type"] == "sphere":
-                center = np.array(obj["pose"])[:3]
-                radius = obj["shape"]["raw_data"][0]
-                quaternion = np.array(obj["pose"])[3:]
-                self.add_sphere_obstacle(center, radius, quaternion)
-                self.logger.info(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with radius: {radius} and name: {obj['name']}")
-            if obj["shape"]["shape_type"] == "mesh":
-                obj_mesh_path = obj["shape"]["raw_data"]
-                if not os.path.exists(obj_mesh_path):
-                    raise ValueError(f"Obstacle mesh path {obj_mesh_path} does not exist.")
-                center = np.array(obj["pose"])[:3]
-                quaternion = np.array(obj["pose"])[3:]
-                self.add_mesh_obstacle(obj_mesh_path, center, quaternion)
-                self.logger.info(f"Successfully add a {obj['shape']['shape_type']} obstacle with mesh path: {obj_mesh_path} at center: {center} and name: {obj['name']}")
-        
+        obstacle_cfg = env_data.get("scene_objects", None)
+        if obstacle_cfg is not None:
+            for obj in obstacle_cfg:
+                if obj["shape"]["shape_type"] == "box":
+                    center = np.array(obj["pose"])[:3]
+                    size = np.array(obj["shape"]["raw_data"])
+                    quaternion = np.array(obj["pose"])[3:]
+                    self.add_cube_obstacle(center, size, quaternion)
+                    self.logger.info(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with size: {size} and name: {obj['name']}")
+                if obj["shape"]["shape_type"] == "sphere":
+                    center = np.array(obj["pose"])[:3]
+                    radius = obj["shape"]["raw_data"][0]
+                    quaternion = np.array(obj["pose"])[3:]
+                    self.add_sphere_obstacle(center, radius, quaternion)
+                    self.logger.info(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with radius: {radius} and name: {obj['name']}")
+                if obj["shape"]["shape_type"] == "mesh":
+                    obj_mesh_path = obj["shape"]["raw_data"]
+                    if not os.path.exists(obj_mesh_path):
+                        raise ValueError(f"Obstacle mesh path {obj_mesh_path} does not exist.")
+                    center = np.array(obj["pose"])[:3]
+                    quaternion = np.array(obj["pose"])[3:]
+                    self.add_mesh_obstacle(obj_mesh_path, center, quaternion)
+                    self.logger.info(f"Successfully add a {obj['shape']['shape_type']} obstacle with mesh path: {obj_mesh_path} at center: {center} and name: {obj['name']}")
+            
         # Load environment grasp objects
-        grasp_cfg = env_data["user_workobjects"]
-        for grasp_obj in grasp_cfg:
-            if grasp_obj["shape"]["shape_type"] == "box":
-                center = np.array(grasp_obj["pose"])[:3]
-                quaternion = np.array(grasp_obj["pose"])[3:]
-                size = np.array(grasp_obj["shape"]["raw_data"])
-                name = grasp_obj["name_key"]
-                self.add_grasp_object(obj_type="box", center=center, quaternion=quaternion, size=size, name=name)
-                self.logger.info(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
-            if grasp_obj["shape"]["shape_type"] == "sphere":
-                center = np.array(grasp_obj["pose"])[:3]
-                quaternion = np.array(grasp_obj["pose"])[3:]
-                radius = grasp_obj["shape"]["raw_data"][0]
-                name = grasp_obj["name_key"]
-                self.add_grasp_object(obj_type="sphere", center=center, quaternion=quaternion, size=np.array([radius]), name=name)
-                self.logger.info(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
-            if grasp_obj["shape"]["shape_type"] == "mesh":
-                grasp_obj_mesh_path = grasp_obj["shape"]["raw_data"]
-                if not os.path.exists(grasp_obj_mesh_path):
-                    raise ValueError(f"Grasp object mesh path {grasp_obj_mesh_path} does not exist.")
-                center = np.array(grasp_obj["pose"])[:3]
-                quaternion = np.array(grasp_obj["pose"])[3:]
-                name = grasp_obj["name_key"]
-                self.add_grasp_object(obj_type="mesh", objMesh_path=grasp_obj_mesh_path, center=center, quaternion=quaternion, name=name)
-                self.logger.info(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object with mesh path: {grasp_obj_mesh_path}")
+        grasp_cfg = env_data.get("user_workobjects", None)
+        if grasp_cfg is not None:
+            for grasp_obj in grasp_cfg:
+                if grasp_obj["shape"]["shape_type"] == "box":
+                    center = np.array(grasp_obj["pose"])[:3]
+                    quaternion = np.array(grasp_obj["pose"])[3:]
+                    size = np.array(grasp_obj["shape"]["raw_data"])
+                    name = grasp_obj["name_key"]
+                    self.add_grasp_object(obj_type="box", center=center, quaternion=quaternion, size=size, name=name)
+                    self.logger.info(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
+                if grasp_obj["shape"]["shape_type"] == "sphere":
+                    center = np.array(grasp_obj["pose"])[:3]
+                    quaternion = np.array(grasp_obj["pose"])[3:]
+                    radius = grasp_obj["shape"]["raw_data"][0]
+                    name = grasp_obj["name_key"]
+                    self.add_grasp_object(obj_type="sphere", center=center, quaternion=quaternion, size=np.array([radius]), name=name)
+                    self.logger.info(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object")
+                if grasp_obj["shape"]["shape_type"] == "mesh":
+                    grasp_obj_mesh_path = grasp_obj["shape"]["raw_data"]
+                    if not os.path.exists(grasp_obj_mesh_path):
+                        raise ValueError(f"Grasp object mesh path {grasp_obj_mesh_path} does not exist.")
+                    center = np.array(grasp_obj["pose"])[:3]
+                    quaternion = np.array(grasp_obj["pose"])[3:]
+                    name = grasp_obj["name_key"]
+                    self.add_grasp_object(obj_type="mesh", objMesh_path=grasp_obj_mesh_path, center=center, quaternion=quaternion, name=name)
+                    self.logger.info(f"Successfully add a {grasp_obj['shape']['shape_type']} grasp object with mesh path: {grasp_obj_mesh_path}")
 
     def add_grasp_object(self, obj_type: str = None, 
                          objMesh_path: str =None, 
@@ -730,7 +804,7 @@ class FCLChecker:
         for mesh in self.grasp_object_mesh_list:
             scene.add_geometry(mesh)
         scene.show()
-        embed()
+        # embed()
 
 
 
