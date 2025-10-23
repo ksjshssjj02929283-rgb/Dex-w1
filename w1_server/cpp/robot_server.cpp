@@ -1,4 +1,9 @@
 #include "robot_server.h"
+#include <cstdlib>
+#include <filesystem>
+#include <system_error>
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/json_parser.hpp>
 
 namespace robot_server_lib
 {
@@ -28,6 +33,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     diff_chassis_control_subscriber_ = this->create_subscription<geometry_msgs::msg::Twist>(
         "/control/cmd_vel", 10, std::bind(&RobotServer::DiffChassisControlCallback, this, std::placeholders::_1));
 
+    // 参数初始化
+    InitParamConfig();
+    
     // 创建定时器，定时发布feedback 定时器回调函数
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
         
@@ -35,30 +43,90 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     primary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");
     secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB2");
 
-    if(!primary_sensor_->Initialize())
-    {
-        RCLCPP_INFO(this->get_logger(), "No primary force sensor connected");
-        LOG_INFO << "No primary force sensor connected";
-        primary_sensor_.reset();
-    }
-    else
-    {
-        RCLCPP_INFO(this->get_logger(), "Primary force sensor initialized successfully.");
-        LOG_INFO << "Primary force sensor initialized successfully.";
-
-    }
-    if(!secondary_sensor_->Initialize())
-    {
-        RCLCPP_INFO(this->get_logger(), "No secondary force sensor connected");
-        LOG_INFO << "No secondary force sensor connected";
-        secondary_sensor_.reset();
-    }
-    else
-    {
-        RCLCPP_INFO(this->get_logger(), "Secondary force sensor initialized successfully.");
-        LOG_INFO << "Secondary force sensor initialized successfully.";
-    }
     this->Run(); 
+}
+
+void RobotServer::InitParamConfig()
+{
+    const char* home = std::getenv("HOME");
+    std::filesystem::path log_dir = (home && *home) ? (std::filesystem::path(home) / "dexe_robot_server_data")
+                                                    : std::filesystem::path("dexe_robot_server_data");
+    std::filesystem::create_directories(log_dir);
+    auto config_path = log_dir / "config.json";
+
+    using boost::property_tree::ptree;
+    constexpr std::size_t kNumJoints = ndof_robot;
+
+    auto array_to_pt = [](const double* a, std::size_t n) {
+        ptree arr;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            ptree v;
+            v.put("", a[i]);
+            arr.push_back(std::make_pair("", v));
+        }
+        return arr;
+    };
+
+    // 配置文件不存在则创建文件并写入默认配置
+    if (!std::filesystem::exists(config_path))
+    {
+        ptree root;
+        ptree torque_node;
+        torque_node.add_child("positive_limit_Nm", array_to_pt(torque_limit_.positive_limit_Nm, kNumJoints));
+        torque_node.add_child("negative_limit_Nm", array_to_pt(torque_limit_.negative_limit_Nm, kNumJoints));
+        root.add_child("torque_limit", torque_node);
+
+        boost::property_tree::write_json(config_path.string(), root);
+        RCLCPP_INFO(this->get_logger(), "Created default config.json at: %s", config_path.string().c_str());
+        LOG_INFO << "Created default config.json at: " << config_path;
+        return;
+    }
+
+    // 配置文件存在则读取；缺少 torque_limit 时写入默认
+    ptree root;
+    boost::property_tree::read_json(config_path.string(), root);
+
+    auto torque_opt = root.get_child_optional("torque_limit");
+    if (!torque_opt)
+    {
+        RCLCPP_WARN(this->get_logger(), "config.json has no 'torque_limit' section, writing defaults.");
+        LOG_CRIT << "config.json has no 'torque_limit' section, writing defaults.";
+
+        ptree torque_node;
+        torque_node.add_child("positive_limit_Nm", array_to_pt(torque_limit_.positive_limit_Nm, kNumJoints));
+        torque_node.add_child("negative_limit_Nm", array_to_pt(torque_limit_.negative_limit_Nm, kNumJoints));
+        root.put_child("torque_limit", torque_node);
+        boost::property_tree::write_json(config_path.string(), root);
+
+        torque_opt = root.get_child_optional("torque_limit");
+        if (!torque_opt) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to get 'torque_limit' after writing defaults.");
+            LOG_CRIT << "Failed to get 'torque_limit' after writing defaults.";
+            return;
+        }
+    }
+
+    // 读取配置参数（严格使用 *_Nm，不回退旧键名）
+    const ptree& torque_node = *torque_opt;
+    auto read_array = [&](const char* key, double out[kNumJoints]) -> bool {
+        auto child_opt = torque_node.get_child_optional(key);
+        if (!child_opt) return false;
+        const ptree& arr = *child_opt;
+        if (static_cast<std::size_t>(std::distance(arr.begin(), arr.end())) != kNumJoints) return false;
+        std::size_t idx = 0;
+        for (const auto& kv : arr)
+        {
+            out[idx++] = kv.second.get_value<double>();
+        }
+        return true;
+    };
+
+    read_array("positive_limit_Nm",  torque_limit_.positive_limit_Nm);
+    read_array("negative_limit_Nm",  torque_limit_.negative_limit_Nm);
+
+    RCLCPP_INFO(this->get_logger(), "Loaded config.json from: %s", config_path.string().c_str());
+    LOG_INFO << "Loaded config.json from: " << config_path;
 }
 
 void RobotServer::TorqueControlThreadFunc()
@@ -67,45 +135,43 @@ void RobotServer::TorqueControlThreadFunc()
     // 初始化共享内存
     auto& feedback_shm_instance = FeedbackSharedMemory::GetInstance();
     auto& control_shm_instance = ControlSharedMemory::GetInstance();
-    PlannerManagerCommand q_cmd{};
+    PlannerManagerCommand planner_cmd{};
     TorqueCtrlCommand torque_cmd{};
     JointRawMeasurement raw_measurement{};
+    JointMeasurement manager_measurement{};
+    Vector6d sensor_data_primary = Vector6d::Zero();
+    Vector6d sensor_data_secondary = Vector6d::Zero();
     auto next_cycle_time_point = std::chrono::steady_clock::now();
 
     while (rclcpp::ok())
     {
         next_cycle_time_point += std::chrono::microseconds(torque_ctrl_dt_micro);
-        
-        Vector6d sensor_data_primary = Vector6d::Zero();
-        Vector6d sensor_data_secondary = Vector6d::Zero();
 
-        if (primary_sensor_)
-        {
-            primary_sensor_->Read(sensor_data_primary);
-        }
-        if (secondary_sensor_)
-        {
-            secondary_sensor_->Read(sensor_data_secondary);
-        }
+        // 读取力传感器数据
+        primary_sensor_->Read(sensor_data_primary);
+        secondary_sensor_->Read(sensor_data_secondary);
         raw_measurement.sensor_wrench = utils::GetSensorWrench(sensor_data_primary, sensor_data_secondary);
 
+        // 打印力传感器数据
         static int torque_print_counter = 0;
-        if (++torque_print_counter >= 250)
+        if (++torque_print_counter % 250 == 0)
         {
-            torque_print_counter = 0;
-            LOG_INFO << "torque sensor: " << raw_measurement.sensor_wrench.transpose();
+            // std::cout << "Torque Sensor Wrench: " << raw_measurement.sensor_wrench.transpose() << std::endl;
+            // LOG_INFO << "Torque Sensor Wrench: " << raw_measurement.sensor_wrench.transpose();
         }
 
-        // 读取反馈数据
+        // 读取机器人反馈数据
         RobotFeedback feedback_data{};
         bool ret = feedback_shm_instance.PeekLatest(&feedback_data);
         bool is_robot_ready_ = feedback_data.robot_status_word & STATUSWORD_MOTOR_READY;
-        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT | CTRLWORD_MOTOR_CST_MODE;
-        // robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT;
+
+        // 写入默认控制字
+        // robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT | CTRLWORD_MOTOR_CST_MODE;
+        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT;
 
         if (is_robot_ready_)
         {
-            // 读取关节测量数据
+            // 关节反馈数据写入测量数据
             for (int i = 0; i < ndof_robot; ++i)
             {
                 raw_measurement.position[i] = feedback_data.position[i];
@@ -118,18 +184,62 @@ void RobotServer::TorqueControlThreadFunc()
             // 力控计算处理
             torque_controller_manager.LoopOnce();
 
-            // 写入控制数据
-            if (this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd) && this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd))
+            // 写入控制数据: 关节位置, 速度, 关节力矩限制, 外部力矩
+            if (this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) && this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd))
             {
+                double safe_level = planner_cmd.robot_property.safe_level;
+                auto run_mode = planner_cmd.robot_property.run_mode;
                 for (int i = 0; i < ndof_robot; ++i)
                 {
-                    // 更新关节测量数据
-                    robot_control_.position[i] = q_cmd.cmd.position[i];
-                    robot_control_.velocity[i] = q_cmd.cmd.velocity[i];
+                    robot_control_.position[i] = planner_cmd.cmd.position[i];
+                    robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
+                    switch (run_mode)
+                    {
+                        case RunMode::Position:
+                            // 更新关节力矩限制
+                            robot_control_.positive_torque_limit[i] = std::clamp(torque_cmd.torque[i] + torque_limit_.positive_limit_Nm[i] * safe_level,
+                                                                        0.1 * torque_limit_.positive_limit_Nm[i], torque_limit_.positive_limit_Nm[i]);
+                            robot_control_.negative_torque_limit[i] = std::clamp(-torque_cmd.torque[i] + torque_limit_.negative_limit_Nm[i] * safe_level,
+                                                                        0.1 * torque_limit_.negative_limit_Nm[i], torque_limit_.negative_limit_Nm[i]);
+                            break;
+                        case RunMode::Drag:
+                            // 位置等于反馈位置
+                            manager_buffers_.joint_measurement->PeekLatest(&manager_measurement);
+                            if (i >= first_arm_joint_index_)
+                            {
+                                manager_measurement.q_desired_pre[i] = raw_measurement.position[i];
+                            }
+                            manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
+
+                            // 更新关节力矩限制
+                            if (torque_cmd.torque[i] >= 0)
+                            {
+                                robot_control_.positive_torque_limit[i] = std::clamp(torque_cmd.torque[i], 0.0, torque_limit_.positive_limit_Nm[i]);
+                                robot_control_.negative_torque_limit[i] = 0.0;
+                            }
+                            else
+                            {
+                                robot_control_.positive_torque_limit[i] = 0.0;
+                                robot_control_.negative_torque_limit[i] = std::clamp(-torque_cmd.torque[i], 0.0, torque_limit_.negative_limit_Nm[i]);
+                            }
+                            break;
+                        default:
+                            robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
+                            robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
+                            break;
+                    }
+                    if(i >= first_arm_joint_index_ && torque_print_counter % 250 == 0)
+                    {
+                        // std::cout << "Joint " << i << " Torque Cmd: " << torque_cmd.torque[i]
+                        //           << ", Pos Limit: " << robot_control_.positive_torque_limit[i]
+                        //           << ", Neg Limit: " << robot_control_.negative_torque_limit[i] << std::endl;
+                    }
+
+                    // 更新外部力矩
                     robot_control_.torque_external[i] = torque_cmd.torque_external[i];
                 }
-                robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT | CTRLWORD_MOTOR_CST_MODE;
-                // robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT;
+                // robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT | CTRLWORD_MOTOR_CST_MODE;
+                robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT;
             }
         }
 

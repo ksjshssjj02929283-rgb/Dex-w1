@@ -82,12 +82,12 @@ void TorqueControllerManager::LoopOnce()
     // Publish
     if (controller_state_ != TorqueControllerState::Init && torque_controller_->ComputeCommand(raw_measurement, input_joint_cmd.cmd, output_cmd))
     {
-        JointMeasurement measurement_publish{};
-        measurement_publish.position = raw_measurement.position;
-        measurement_publish.velocity = raw_measurement.velocity;
-        measurement_publish.effort = raw_measurement.effort;
-        measurement_publish.q_desired_pre = output_cmd.q_desired;
-        manager_buffers_.joint_measurement->AppendNewElement(measurement_publish);
+        JointMeasurement manager_measurement{};
+        manager_measurement.position = raw_measurement.position;
+        manager_measurement.velocity = raw_measurement.velocity;
+        manager_measurement.effort = raw_measurement.effort;
+        manager_measurement.q_desired_pre = output_cmd.q_desired;
+        manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
         robot_buffers_.torque_controller_command->AppendNewElement(output_cmd);
         std::ostringstream oss;
         oss << output_cmd.torque.transpose();

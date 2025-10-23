@@ -30,14 +30,12 @@ using JointPositionControlMsg = joint_interfaces::msg::JointPositionControl;
 using ChassisWholeControlMsg = chassis_interfaces::msg::ChassisWholeControl;
 using JointVelocityTorqueLimitFeedbackMsg = joint_interfaces::msg::JointVelocityTorqueLimitFeedback;
 
-
-
 class RobotServer : public RobotServerBase
 {
    public:
     RobotServer(std::filesystem::path robot_cfg_path, bool is_sim);
 
-   protected:
+   private:
     void TorqueControlThreadFunc() override;
     Int64 StartStreaming(const PlannerRequest planner_request);
 
@@ -61,7 +59,13 @@ class RobotServer : public RobotServerBase
     const std::string ecat_joint_name[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",    "NECK2",   "LEFT_J1",
                                                      "LEFT_J2",  "LEFT_J3",  "LEFT_J4",  "LEFT_J5",  "LEFT_J6",  "LEFT_J7", "RIGHT_J1",
                                                      "RIGHT_J2", "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
+    struct
+    {
+        double positive_limit_Nm[20]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0, 10.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
+        double negative_limit_Nm[20]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0, 10.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
+    } torque_limit_; // 关节力矩限制参数默认值, 单位: Nm
 
+    const int first_arm_joint_index_ = 6;  // 左臂第一个关节在整体关节数组中的索引
     std::shared_ptr<ForceSensorReader> primary_sensor_;
     bool primary_sensor_ready_ = false;
 
@@ -72,6 +76,8 @@ class RobotServer : public RobotServerBase
     Eigen::Vector<double, 6> sensor_filtered_ = Eigen::Vector<double, 6>::Zero();
     double sensor_lpf_alpha_ = 1.0;        // alpha: 越小越平滑（0..1）
     bool sensor_filter_initialized_ = false;
+    
+    void InitParamConfig();  // 初始化/读写 torque_limit_ 的 JSON 配置
 };
 
 }  // namespace robot_server_lib

@@ -7,6 +7,10 @@
 #include <vector>
 #include <numeric>
 #include "robot_server_lib/typedef.h"
+#include <thread>
+#include <chrono>
+#include <cerrno>
+#include <poll.h>
 
 using namespace robot_server_lib;
 
@@ -14,8 +18,9 @@ class ForceSensorReader
 {
 public:
     explicit ForceSensorReader(const std::string &port, int baud = 460800)
-        : port_(port), baud_(baud), fd_(-1), zero_calibrated_(false), frame_count_(0)
+        : port_(port), baud_(baud), fd_(-1), zero_calibrated_(false)
     {
+        Initialize();
     }
 
     ~ForceSensorReader()
@@ -25,18 +30,21 @@ public:
     }
 
     // 初始化传感器并做零点校准100ms
-    bool Initialize()
+    void Initialize()
     {
-        bool sensor_ready = false;
         if (this->ConfigurePort())
         {
             this->StartSensor();
-            if (this->InitZeroCalibration(100))
+            if (fd_ >= 0) tcflush(fd_, TCIFLUSH);
+            // 零点校准线程避免阻塞
+            std::thread([this]() 
             {
-                sensor_ready = true;
-            }
+                if (this->InitZeroCalibration(500))
+                {
+                    sensor_ready_ = true;
+                }
+            }).detach();
         }
-        return sensor_ready;
     }
 
     bool ConfigurePort()
@@ -54,18 +62,24 @@ public:
         cfsetospeed(&tty, B460800);
         cfsetispeed(&tty, B460800);
 #else
-        // 如果系统不支持 B460800，请根据环境设置
         cfsetospeed(&tty, B115200);
         cfsetispeed(&tty, B115200);
 #endif
         tty.c_cflag |= (CLOCAL | CREAD);
         tty.c_cflag &= ~CRTSCTS;
-        tty.c_cc[VMIN] = 0;
-        tty.c_cc[VTIME] = 1; // 0.1s
+
+        // 非阻塞：由 O_NONBLOCK 控制等待，VMIN/VTIME 设为 0，避免 read 额外阻塞
+        tty.c_cc[VMIN]  = 0;
+        tty.c_cc[VTIME] = 0;
 
         tcflush(fd_, TCIOFLUSH);
         if (tcsetattr(fd_, TCSANOW, &tty) != 0)
             return false;
+
+        // 设置文件描述符为非阻塞
+        int flags = fcntl(fd_, F_GETFL, 0);
+        if (flags == -1) return false;
+        if (fcntl(fd_, F_SETFL, flags | O_NONBLOCK) == -1) return false;
 
         return true;
     }
@@ -81,18 +95,12 @@ public:
     }
 
     // 初始化并做零点校准（收集 count 帧取均值）
-    bool InitZeroCalibration(int count = 1000)
+    bool InitZeroCalibration(int count = 500)
     {
-        if (fd_ < 0)
-            if (!ConfigurePort())
-                return false;
-        if (!StartSensor())
-            return false;
-
         std::vector<std::array<double, 6>> buf;
         buf.reserve(count);
         int attempts = 0;
-        while ((int)buf.size() < count && attempts < count * 5)
+        while ((int)buf.size() < count && attempts < count * 3)
         {
             std::array<double, 6> darr;
             if (ReadFrameOnce(darr))
@@ -103,7 +111,10 @@ public:
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         if (buf.empty())
+        {
+            std::cout << "Failed to calibrate force sensor in port " << port_ << ", no sensor data." << std::endl;
             return false;
+        }
 
         std::array<double, 6> mean{};
         for (int i = 0; i < 6; ++i)
@@ -118,51 +129,107 @@ public:
         return true;
     }
 
-    // 尝试读取一帧，返回 true 并填充 out（单位：SI，与 Python 保持一致）
-    bool ReadFrameOnce(std::array<double, 6> &out, double timeout_s = 0.01)
+    // 尝试读取一帧（非阻塞 + 整体超时，避免死等）
+    bool ReadFrameOnce(std::array<double, 6> &out, int attempts = 3)
     {
         if (fd_ < 0)
             return false;
 
         uint8_t buf[28];
-        ssize_t n = 0;
-        auto start = std::chrono::steady_clock::now();
-        // 读取第一个字节（过滤非 0x48/0x49）
-        while (true)
+
+        for (int attempt = 0; attempt < attempts; ++attempt)
         {
-            uint8_t b;
-            ssize_t r = ::read(fd_, &b, 1);
-            if (r == 1)
+            // 等待读事件，最久 2ms，避免 busy-loop
+            struct pollfd pfd{fd_, POLLIN, 0};
+            int pr = poll(&pfd, 1, 2);
+            if (pr <= 0)
             {
-                if (b == 0x48 || b == 0x49)
-                {
-                    buf[0] = b;
-                    // 然后读取剩余的 27 字节
-                    ssize_t got = 0;
-                    while (got < 27)
-                    {
-                        ssize_t rr = ::read(fd_, buf + 1 + got, 27 - got);
-                        if (rr > 0)
-                            got += rr;
-                        else
-                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    }
-                    // 验证尾部 CR LF
-                    if (buf[26] != 0x0D || buf[27] != 0x0A)
-                        break;
-                    // 解析 6 个 float（小端，偏移 2 开始）
-                    for (int i = 0; i < 6; ++i)
-                    {
-                        float v;
-                        std::memcpy(&v, buf + 2 + i * 4, 4);
-                        out[i] = static_cast<double>(v) * 9.80665; // 与 Python 保持一致
-                    }
-                    ++frame_count_;
-                    return true;
-                }
+                // 超时或被信号打断，下一次尝试
+                continue;
             }
-            if (std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() > timeout_s)
+
+            // 读首字节
+            uint8_t b = 0;
+            ssize_t r = ::read(fd_, &b, 1);
+            if (r < 0)
+            {
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                    continue;
+                // 其他错误
                 return false;
+            }
+            if (r == 0)
+                continue;
+
+            if (b != 0x48 && b != 0x49)
+            {
+                // 非起始字节，丢弃继续
+                continue;
+            }
+
+            buf[0] = b;
+
+            // 读取剩余 27 字节，设置整体 2ms deadline
+            auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2);
+            ssize_t got = 0;
+            while (got < 27)
+            {
+                auto now = std::chrono::steady_clock::now();
+                if (now >= deadline)
+                {
+                    // 放弃当前帧并清理缓冲以重新同步
+                    tcflush(fd_, TCIFLUSH);
+                    break;
+                }
+
+                int remain = 27 - got;
+                int wait_ms = (int)std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+                if (wait_ms > 2) wait_ms = 2; // 小步等待
+
+                struct pollfd p2{fd_, POLLIN, 0};
+                int pr2 = poll(&p2, 1, wait_ms);
+                if (pr2 <= 0)
+                {
+                    // 超时或被信号打断，继续循环检查整体超时
+                    continue;
+                }
+
+                ssize_t rr = ::read(fd_, buf + 1 + got, remain);
+                if (rr > 0)
+                {
+                    got += rr;
+                    continue;
+                }
+                if (rr < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                {
+                    // 还没数据，继续等
+                    continue;
+                }
+                // 其他错误或异常，放弃该帧
+                break;
+            }
+
+            if (got < 27)
+            {
+                // 本次帧不完整
+                continue;
+            }
+
+            // 验证尾部 CR LF
+            if (buf[26] != 0x0D || buf[27] != 0x0A)
+            {
+                // 尾部不对，尝试下一帧
+                continue;
+            }
+
+            // 解析 6 个 float（小端，偏移 2 开始）
+            for (int i = 0; i < 6; ++i)
+            {
+                float v;
+                std::memcpy(&v, buf + 2 + i * 4, 4);
+                out[i] = static_cast<double>(v) * 9.80665;
+            }
+            return true;
         }
         return false;
     }
@@ -170,16 +237,14 @@ public:
     // 非阻塞读取并自动做零点补偿，返回是否有新数据
     bool Read(Vector6d &out)
     {
-        if (!zero_calibrated_)
+        out = Vector6d::Zero();
+        if (!zero_calibrated_ || !sensor_ready_)
             return false;
         std::array<double, 6> tmp{};
         if (!ReadFrameOnce(tmp))
             return false;
-        // 零点校准补偿并转换为 Eigen 向量
         for (int i = 0; i < 6; ++i)
             out(i) = tmp[i] - zero_frame_[i];
-        out(0) = -out(0);
-        out(5) = -out(5);
         return true;
     }
 
@@ -207,6 +272,6 @@ private:
     int baud_;
     int fd_;
     bool zero_calibrated_;
+    bool sensor_ready_ = false;
     std::array<double, 6> zero_frame_;
-    int frame_count_;
 };
