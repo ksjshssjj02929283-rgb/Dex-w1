@@ -72,8 +72,7 @@ from dexe_robot_client.w1 import W1Manager
 w1_manager = W1Manager(is_sim = True,
                         arm_type=W1ArmType.ANTHROPOMORPHIC, 
                         w1_version=W1Version.V2, 
-                        end_effector_type = EndEffectorType.BRAINCO_HAND,
-                        use_rlia=True)
+                        end_effector_type = EndEffectorType.BRAINCO_HAND)
 
 if not w1_manager.connect():
     return

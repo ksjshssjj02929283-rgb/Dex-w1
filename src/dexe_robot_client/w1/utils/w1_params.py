@@ -5,7 +5,6 @@
 # ----------------------------------------------------------------------------
 
 import json
-from copy import deepcopy
 import numpy as np
 from ...end_effector_client.end_effector_type import EndEffectorType
 from ...common import get_logger, DATA_DIR, W1ArmType, W1Version
@@ -68,12 +67,16 @@ class W1Params:
         self.head_ub = np.deg2rad([90., 25.])
         self.head_lb = np.deg2rad([-90., -45.])
 
-        self._left_arm_kine_params = W1ArmKineParams(True, self._arm_type, self._w1_version)
-        self._right_arm_kine_params = W1ArmKineParams(False, self._arm_type, self._w1_version)
-        self.left_arm_ub = deepcopy(self._left_arm_kine_params.qpos_limits[:,1])
-        self.left_arm_lb = deepcopy(self._left_arm_kine_params.qpos_limits[:,0])
-        self.right_arm_ub = deepcopy(self._right_arm_kine_params.qpos_limits[:,1])
-        self.right_arm_lb = deepcopy(self._right_arm_kine_params.qpos_limits[:,0])
+        if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
+            self.left_arm_ub = np.deg2rad([170., 90., 170., 90., 170., 45., 60.])
+            self.left_arm_lb = np.deg2rad([-170., -120., -170., -135., -170., -45., -90.])
+            self.right_arm_ub = np.deg2rad([170., 120., 170., 135., 170., 45., 90.])
+            self.right_arm_lb = np.deg2rad([-170., -90., -170., -90., -170., -45., -60.])
+        else:
+            self.left_arm_ub = np.deg2rad([170., 90., 170., 90., 170., 90., 170.])
+            self.left_arm_lb = np.deg2rad([-170., -120., -170., -135., -170., -90., -170.])
+            self.right_arm_ub = np.deg2rad([170., 120., 170., 135., 170., 90., 170.])
+            self.right_arm_lb = np.deg2rad([-170., -90., -170., -90., -170., -90., -170.])
 
         self.qpos_ub = np.r_[self.torso_ub, 
                             self.head_ub, 
@@ -178,105 +181,3 @@ class W1Params:
             "default_qvel": self.default_qvel.tolist()
         }
         return data
-
-
-# TODO:
-class RobotConfig:
-    pass
-
-
-class W1ArmKineParams:
-    def __init__(self, 
-                 is_left: bool, 
-                 arm_type: W1ArmType, 
-                 version: W1Version = W1Version.V2):
-        if version != W1Version.V2:
-            raise ValueError(f"W1Version {version} are not support.")
-        
-        self.arm_type = arm_type
-        self.is_left = is_left
-        self.d_bs = 0.1025
-        self.d_se = 0.26
-        self.d_ew = 0.264
-        self.d_wt = 0.
-        if self.arm_type == W1ArmType.INDUSTRIAL:
-            self.T_origin_tcp = np.array([[1., 0., 0., 0.],
-                                          [0., 1., 0., 0.],
-                                          [0., 0., 1., 0.066],
-                                          [0., 0., 0., 1.]])
-
-            if is_left:
-                self.dh_params = [[0., -np.pi/2,  self.d_bs, 0.], 
-                                [0.,  np.pi/2,     0.,     0.], 
-                                [0., -np.pi/2,  self.d_se, -np.pi/2],
-                                [0.,  np.pi/2,     0.,     0.],
-                                [0., -np.pi/2,  self.d_ew, 0.],
-                                [0.,  np.pi/2,     0.,     0.],
-                                [0.,       0.,  self.d_wt, 0.]]
-                self.qpos_limits = np.deg2rad([[-170., 170.],
-                                               [-120., 90.],
-                                               [-170., 170.],
-                                               [-135., 90.],
-                                               [-170., 170.],
-                                               [-90., 90.],
-                                               [-170., 170.]])
-            else:
-                self.dh_params = [[0., -np.pi/2,  self.d_bs, 0.], 
-                                [0.,  np.pi/2,     0.,     0.], 
-                                [0., -np.pi/2,  self.d_se, np.pi/2],
-                                [0.,  np.pi/2,     0.,     0.],
-                                [0., -np.pi/2,  self.d_ew, 0.],
-                                [0.,  np.pi/2,     0.,     0.],
-                                [0.,       0.,  self.d_wt, 0.]]
-                self.qpos_limits = np.deg2rad([[-170., 170.],
-                                               [-90., 120.],
-                                               [-170., 170.],
-                                               [-90., 135.],
-                                               [-170., 170.],
-                                               [-90., 90.],
-                                               [-170., 170.]])
-        
-        elif self.arm_type == W1ArmType.ANTHROPOMORPHIC:
-            if is_left:
-                # self.T_origin_tcp = np.array([[0., 0., 1., 0.066],
-                #                               [0., 1., 0., 0.],
-                #                               [-1., 0., 0., 0.],
-                #                               [0., 0., 0., 1.]])
-                self.T_origin_tcp = np.array([[0., 0., 1., 0.066],
-                                              [0., -1., 0., 0.],
-                                              [1., 0., 0., 0.],
-                                              [0., 0., 0., 1.]])                
-                self.dh_params = [[0., -np.pi/2,  self.d_bs, 0.], 
-                                  [0.,  np.pi/2,     0.,     0.], 
-                                  [0., -np.pi/2,  self.d_se, -np.pi/2],
-                                  [0.,  np.pi/2,     0.,     0.],
-                                  [0., -np.pi/2,  self.d_ew, 0.],
-                                  [0.,  np.pi/2,     0.,     -np.pi/2],
-                                  [0.,       0.,  self.d_wt, 0.]]
-                self.qpos_limits = np.deg2rad([[-170., 170.],
-                                               [-120., 90.],
-                                               [-170., 170.],
-                                               [-135., 90.],
-                                               [-170., 170.],
-                                               [-45., 45.],
-                                               [-90., 60.]])
-            else:
-                self.T_origin_tcp = np.array([[0., 0., -1., -0.066],
-                                              [0., 1., 0., 0.],
-                                              [1., 0., 0., 0.],
-                                              [0., 0., 0., 1.]])
-                self.dh_params = [[0., -np.pi/2,  self.d_bs, 0.], 
-                                  [0.,  np.pi/2,     0.,     0.], 
-                                  [0., -np.pi/2,  self.d_se, np.pi/2],
-                                  [0.,  np.pi/2,     0.,     0.],
-                                  [0., -np.pi/2,  self.d_ew, 0.],
-                                  [0.,  np.pi/2,     0.,     np.pi/2],
-                                  [0.,       0.,  self.d_wt, 0.]]    
-                self.qpos_limits = np.deg2rad([[-170., 170.],
-                                               [-90., 120.],
-                                               [-170., 170.],
-                                               [-90., 135.],
-                                               [-170., 170.],
-                                               [-45., 45.],
-                                               [-60., 90.]])
-# fmt: on

@@ -22,8 +22,7 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
     w1_manager = W1Manager(is_sim = is_sim,
                             arm_type=W1ArmType.ANTHROPOMORPHIC, 
                             w1_version=W1Version.V2, 
-                            end_effector_type = end_effector_type,
-                            use_rlia=False)
+                            end_effector_type = end_effector_type)
     if not w1_manager.connect():
         return
 
@@ -94,8 +93,7 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
     w1_manager = W1Manager(is_sim = is_sim,
                             arm_type=W1ArmType.ANTHROPOMORPHIC, 
                             w1_version=W1Version.V2, 
-                            end_effector_type = end_effector_type,
-                            use_rlia=False)
+                            end_effector_type = end_effector_type)
     if not w1_manager.connect():
         return
 
@@ -158,5 +156,5 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
 
 
 if __name__ == "__main__":
-    move_full_body_example1(move_with_ee = True, is_sim = True)
-    # move_full_body_example2(move_with_ee = False, is_sim = True)
+    # move_full_body_example1(move_with_ee = True, is_sim = True)
+    move_full_body_example2(move_with_ee = False, is_sim = True)
