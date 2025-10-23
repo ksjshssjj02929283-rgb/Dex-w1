@@ -53,7 +53,7 @@ if __name__ == "__main__":
                            arm_type=W1ArmType.ANTHROPOMORPHIC,
                            w1_version=W1Version.V2,
                            end_effector_type=robot_ee_type)
-    if not w1_manager.connect():
+    if not w1_manager.connect() and not w1_manager.is_enabled():
         raise RuntimeError("Failed to connect to W1 robot.")
     
     w1_manager.set_tcp("left_arm", np.eye(4))

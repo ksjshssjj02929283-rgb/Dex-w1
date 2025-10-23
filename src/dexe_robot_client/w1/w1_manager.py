@@ -399,16 +399,35 @@ class W1Manager:
         """
         res = True
         if not self.robot_client.is_connected(timeout_sec):
-            self.logger.error(f"{self.robot_client.node_name} is not connected!")
+            self.logger.info(f"{self.robot_client.node_name} is not connected!")
             res = False
         if self._has_arm_ee_client("left_arm_ee", False):
             if not self.left_ee_client.is_connected(timeout_sec):
-                self.logger.error(f"{self.left_ee_client.node_name} is not connected!")
+                self.logger.info(f"{self.left_ee_client.node_name} is not connected!")
                 res = False
             if not self.right_ee_client.is_connected(timeout_sec):
-                self.logger.error(f"{self.right_ee_client.node_name} is not connected!")
+                self.logger.info(f"{self.right_ee_client.node_name} is not connected!")
                 res = False
         return res
+
+    def enable(self, timeout_sec: float = 0.5) -> bool:
+        self.logger.warning("Not implemented (Currently it will automatically OP).")
+        # TODO: self.robot_client.enable(timeout_sec)
+        return True
+
+    def is_enabled(self) -> bool:
+        """检查robot是否处于OP状态
+
+        Returns:
+            bool: 
+        """
+        if not self.robot_client.is_connected(0.5):
+            self.logger.info(f"{self.robot_client.node_name} is not connected!")
+            return False
+        if self.robot_client.status == Status.Init:
+            self.logger.info(f"{self.robot_client.node_name} is not enabled!")
+            return False
+        return True
 
     def clear_robot_error(self) -> bool:
         """清除机器人错误
@@ -1785,7 +1804,7 @@ class W1Manager:
                         delta_rot_deg: list, 
                         speed_ratio: float = 1.,
                         along_base_frame: bool = True) -> bool:
-        """从当前位置旋转相对距离
+        """机械臂从当前位置旋转相对角度
 
         Args:
             name (str): ["left_arm", "right_arm"]

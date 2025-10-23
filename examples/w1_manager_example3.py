@@ -17,7 +17,7 @@ def arm_angle_motion():
                         arm_type=W1ArmType.ANTHROPOMORPHIC, 
                         w1_version=W1Version.V2, 
                         end_effector_type=EndEffectorType.BRAINCO_HAND)
-    if not w1_manager.connect():
+    if not w1_manager.connect() and not w1_manager.is_enabled():
         return
     w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
                                       5, -45, -5, -90, 0, -15, 0,
