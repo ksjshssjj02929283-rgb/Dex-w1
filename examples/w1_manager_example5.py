@@ -52,8 +52,7 @@ if __name__ == "__main__":
     w1_manager = W1Manager(is_sim=True,
                            arm_type=W1ArmType.ANTHROPOMORPHIC,
                            w1_version=W1Version.V2,
-                           end_effector_type=robot_ee_type,
-                           use_rlia=False)
+                           end_effector_type=robot_ee_type)
     if not w1_manager.connect():
         raise RuntimeError("Failed to connect to W1 robot.")
     

@@ -16,8 +16,7 @@ def arm_angle_motion():
     w1_manager = W1Manager(is_sim=True,
                         arm_type=W1ArmType.ANTHROPOMORPHIC, 
                         w1_version=W1Version.V2, 
-                        end_effector_type=EndEffectorType.BRAINCO_HAND,
-                        use_rlia=False)
+                        end_effector_type=EndEffectorType.BRAINCO_HAND)
     if not w1_manager.connect():
         return
     w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
@@ -33,15 +32,15 @@ def arm_angle_motion():
 
     # left arm
     cur_left_qpos = w1_manager.get_current_qpos("left_arm")[1]
-    left_ref_psi = w1_manager.left_arm_kine.calc_arm_angle(cur_left_qpos)[1]
-    cur_left_xpos = w1_manager.left_arm_kine.get_fk(cur_left_qpos)[1]
+    left_ref_psi = w1_manager.kine.left_arm_kine.calc_arm_angle(cur_left_qpos)[1]
+    cur_left_xpos = w1_manager.kine.left_arm_kine.get_fk(cur_left_qpos)[1]
     
     left_psi_list = left_ref_psi + delta_psi_list
     left_qpos_seed = cur_left_qpos
     left_qpos_list = []
     for psi in left_psi_list:
         srs_cfg = SRSConfig(left_qpos_seed, psi)
-        res, qpos = w1_manager.left_arm_kine.get_ik(cur_left_xpos, srs_cfg)
+        res, qpos = w1_manager.kine.left_arm_kine.get_ik(cur_left_xpos, srs_cfg)
         if not res:
             get_logger().error("ik failed")
             return
@@ -53,15 +52,15 @@ def arm_angle_motion():
 
     # right arm
     cur_right_qpos = w1_manager.get_current_qpos("right_arm")[1]
-    right_ref_psi = w1_manager.right_arm_kine.calc_arm_angle(cur_right_qpos)[1]
-    cur_right_xpos = w1_manager.right_arm_kine.get_fk(cur_right_qpos)[1]
+    right_ref_psi = w1_manager.kine.right_arm_kine.calc_arm_angle(cur_right_qpos)[1]
+    cur_right_xpos = w1_manager.kine.right_arm_kine.get_fk(cur_right_qpos)[1]
 
     right_psi_list = right_ref_psi - delta_psi_list
     right_qpos_seed = cur_right_qpos
     right_qpos_list = []
     for psi in right_psi_list:
         srs_cfg = SRSConfig(right_qpos_seed, psi)
-        res, qpos = w1_manager.right_arm_kine.get_ik(cur_right_xpos, srs_cfg)
+        res, qpos = w1_manager.kine.right_arm_kine.get_ik(cur_right_xpos, srs_cfg)
         if not res:
             get_logger().error("ik failed")
             return

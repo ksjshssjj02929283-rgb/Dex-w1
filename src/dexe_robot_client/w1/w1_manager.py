@@ -17,7 +17,6 @@ from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version,
 from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
-from dexe_rp import SRSKinematics, W1V02KineParams, SRSConfig, TorsoKinematics
 from .path_planner.bezier_blend_path import interpolate_cartesian_path
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from .utils.w1_params import W1Params
@@ -27,6 +26,8 @@ from .path_planner.planner_pinocchio import Planner_Pin
 from ..common.mapping_index import *
 from .path_planner.utils.robot_type import *
 from .path_planner.single_planner import SinglePlanner
+
+from dexe_rp import DexforceW1Kinematics, SRSConfig
 
 
 class W1Manager:
@@ -43,8 +44,7 @@ class W1Manager:
                 is_sim: bool,
                 arm_type: W1ArmType, 
                 w1_version: W1Version = W1Version.V2,
-                end_effector_type: EndEffectorType = None, 
-                use_rlia: bool = True):
+                end_effector_type: EndEffectorType = None):
         self.logger = get_logger()
 
         self.TIME_STEP = 0.01 # 100Hz
@@ -83,7 +83,6 @@ class W1Manager:
         except Exception:
             raise RuntimeError("Ros2 node create failed")
 
-        self._use_rlia = use_rlia
         self._init_kine_solver()
 
         if not self.set_sim_mode(is_sim):
@@ -237,56 +236,13 @@ class W1Manager:
             self.logger.error(f"Ros2 node destroy failed: {e}.")
 
     def _init_kine_solver(self):
-        self.torso_kine_solver = TorsoKinematics()
-
         ik_nearst_weight = np.array([2., 2., 2., 1., 1., 1., 1.])
-        if self._use_rlia:
-            import rlia
-            from rlia.kit.drive_controllers import W1DriveController
-            rlia_w1_version = rlia.kit.drive_controllers.w1_drive_controller.W1Version.V2
-            if self._arm_type == W1ArmType.INDUSTRIAL:
-                rlia_arm_type = rlia.kit.drive_controllers.w1_drive_controller.W1ArmType.INDUSTRIAL
-            else:
-                rlia_arm_type = rlia.kit.drive_controllers.w1_drive_controller.W1ArmType.ANTHROPOMORPHIC
-
-            self.left_arm_kine = W1DriveController(is_left_arm = True, 
-                                                    type_version = rlia_w1_version, 
-                                                    arm_type = rlia_arm_type,
-                                                    is_yaik_solver=True)
-            self.left_arm_kine.set_joint_limits(upper_limits = self.w1_params.left_arm_ub,
-                                                    lower_limits = self.w1_params.left_arm_lb)
-            self.left_arm_kine.set_user_joint_limits(upper_limits = self.w1_params.left_arm_ub,
-                                                    lower_limits = self.w1_params.left_arm_lb)
-            self.left_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
-
-            self.right_arm_kine = W1DriveController(is_left_arm = False, 
-                                                    type_version = rlia_w1_version, 
-                                                    arm_type = rlia_arm_type,
-                                                    is_yaik_solver=True)
-            self.right_arm_kine.set_joint_limits(upper_limits = self.w1_params.right_arm_ub,
-                                                    lower_limits = self.w1_params.right_arm_lb)
-            self.right_arm_kine.set_user_joint_limits(upper_limits = self.w1_params.right_arm_ub,
-                                                    lower_limits = self.w1_params.right_arm_lb)
-            self.right_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
-
-            self.logger.info("Initialize rlia kinematic solver.")
+        self.kine = DexforceW1Kinematics(self._arm_type == W1ArmType.ANTHROPOMORPHIC)
+        self.kine.left_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
+        self.kine.right_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
+        self.kine.set_user_qpos_limits(self.w1_params.qpos_lb, self.w1_params.qpos_ub)
         
-        else:
-            is_anthropmorphic = True
-            if self._arm_type == W1ArmType.INDUSTRIAL:
-                is_anthropmorphic = False
-
-            left_kine_params = W1V02KineParams(True, is_anthropmorphic);
-            self.left_arm_kine = SRSKinematics(left_kine_params)
-            self.left_arm_kine.set_joint_limits(self.w1_params.left_arm_lb, self.w1_params.left_arm_ub)
-            self.left_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
-            
-            right_kine_params = W1V02KineParams(False, is_anthropmorphic);
-            self.right_arm_kine = SRSKinematics(right_kine_params)
-            self.right_arm_kine.set_joint_limits(self.w1_params.right_arm_lb, self.w1_params.right_arm_ub)
-            self.right_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
-
-            self.logger.info("Initialize srs-python kinematic solver.")
+        self.logger.info("Initialize srs-python kinematic solver.")
 
     def _has_arm_ee_client(self, name: str, verbose: bool = True) -> bool:
         if name in self.w1_params.arm_ee_names:
@@ -305,9 +261,9 @@ class W1Manager:
         if not self._check_arm_name(name):
             return None
         if name == "left_arm":
-            return self.left_arm_kine
+            return self.kine.left_arm_kine
         elif name == "right_arm":
-            return self.right_arm_kine
+            return self.kine.right_arm_kine
 
     def _get_arm_ee_client(self, name: str):
         if not self._has_arm_ee_client(name):
@@ -660,42 +616,52 @@ class W1Manager:
             return True, cur_qpos
         return True, cur_qpos[self.w1_params.index_infos[name]["index"]]
 
-    def get_current_xpos(self, name: str) -> tuple[bool, np.ndarray]:
+
+    def get_current_xpos(self, name: str, is_local: bool = True) -> tuple[bool, np.ndarray]:
         """获取left_arm/right_arm的当前笛卡尔位置
 
         Args:
             name (str): ["left_arm", "right_arm"]
+            is_local (bool, optional): w.r.t. arm base frame or chassis frame. Defaults to True.
 
         Returns:
             tuple[bool, np.ndarray]: 
         """
-        res, cur_qpos = self.get_current_qpos(name)
-        if not res:
-            return False, None
-        return self.get_xpos(name, cur_qpos)
+        if is_local:
+            res, cur_qpos = self.get_current_qpos(name)
+            if not res:
+                return False, None
+        else:
+            res, cur_qpos = self.get_current_qpos("full_body")
+            if not res:
+                return False, None
+        return self.get_xpos(name, cur_qpos, is_local)
 
-    def get_xpos(self, name: str, qpos: np.ndarray) -> tuple[bool, np.ndarray]:
+    def get_xpos(self, name: str, qpos: np.ndarray, is_local: bool = True) -> tuple[bool, np.ndarray]:
         """获取left_arm/right_arm的目标qpos的笛卡尔位置
 
         Args:
             name (str): ["left_arm", "right_arm"]
             qpos (np.ndarray): 目标关节角
+            is_local (bool, optional): w.r.t. arm base frame or chassis frame. Defaults to True.
 
         Returns:
             tuple[bool, np.ndarray]: 
-        """
-        if not self._check_qpos_dimension(name, qpos):
-            return False, None
-        
-        arm_kine = self._get_arm_kine(name)
-        if arm_kine is None:
-            return False, None
-        
-        res, cur_xpos = arm_kine.get_fk(qpos=qpos)
-        if not res:
-            self.logger.error(f"{name} solve fk failed")
-            return False, None
-        return True, cur_xpos
+        """        
+        if is_local:
+            if not self._check_qpos_dimension(name, qpos):
+                return False, None
+            
+            arm_kine = self._get_arm_kine(name)
+            if arm_kine is None:
+                return False, None
+            
+            return arm_kine.get_fk(qpos)
+        else:
+            if not self._check_qpos_dimension("full_body", qpos):
+                return False, None
+            
+            return self.kine.get_fk(name, qpos)
 
     def set_tcp(self, name: str, xpos:np.ndarray) -> bool:
         """设置left_arm/right_arm的tcp
@@ -708,11 +674,7 @@ class W1Manager:
             bool: 
         """
         # TODO: set tcp in robot client too
-        arm_kine = self._get_arm_kine(name)
-        if arm_kine is None:
-            return False
-        arm_kine.set_tcp(xpos)
-        return True
+        return self.kine.set_tcp(name, xpos)
 
     def get_tcp(self, name: str) -> tuple[bool, np.ndarray]:
         """获取left_arm/right_arm的tcp
@@ -720,10 +682,7 @@ class W1Manager:
         Args:
             name (str): ["left_arm", "right_arm"]
         """
-        arm_kine = self._get_arm_kine(name)
-        if arm_kine is None:
-            return False, None
-        return True, arm_kine.get_tcp()
+        return self.kine.get_tcp(name)
 
     def go_home(self, speed_ratio: float = 1.0) -> bool:
         """从当前点MoveJ移动到home qpos
@@ -876,12 +835,7 @@ class W1Manager:
         qpos_list = []
         cur_qseed = qpos_seed
         for cur_xpos in xpos_sample_array:
-            if self._use_rlia:
-                res_ik, cur_qpos = arm_kine.get_ik(xpos=cur_xpos, 
-                                                    qpos_seed=cur_qseed)
-            else:
-                res_ik, cur_qpos = arm_kine.get_nearst_ik(xpos=cur_xpos, 
-                                                    qpos_seed=cur_qseed)
+            res_ik, cur_qpos = arm_kine.get_nearst_ik(xpos=cur_xpos, qpos_seed=cur_qseed)
             if not res_ik:
                 self.logger.error(f"{name} solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
                 return False, None
@@ -1060,31 +1014,33 @@ class W1Manager:
 
 
     ########## demo定制API ###########
-    def get_current_pose(self, name: str) -> tuple[bool, list]:
+    def get_current_pose(self, name: str, is_local: bool = True) -> tuple[bool, list]:
         """获取left_arm/right_arm的当前笛卡尔位置[xyz_mm, rpy_deg]
 
         Args:
             name (str): ["left_arm", "right_arm"]
+            is_local (bool, optional): w.r.t. arm base frame or chassis frame. Defaults to True.
 
         Returns:
             tuple[bool, list]: 
         """
-        res, cur_xpos = self.get_current_xpos(name)
+        res, cur_xpos = self.get_current_xpos(name, is_local)
         if not res: 
             return False, None
         return True, xpos_to_user_pose(cur_xpos)
 
-    def get_pose(self, name: str, qpos: np.ndarray) -> tuple[bool, list]:
+    def get_pose(self, name: str, qpos: np.ndarray, is_local: bool = True) -> tuple[bool, list]:
         """获取left_arm/right_arm目标qpos的笛卡尔位置[xyz_mm, rpy_deg]
 
         Args:
             name (str): ["left_arm", "right_arm"]
             qpos (np.ndarray): 目标关节角
+            is_local (bool, optional): w.r.t. arm base frame or chassis frame. Defaults to True.
 
         Returns:
             tuple[bool, list]: 
         """
-        res, cur_xpos = self.get_xpos(name, qpos)
+        res, cur_xpos = self.get_xpos(name, qpos, is_local)
         if not res: 
             return False, None
         return True, xpos_to_user_pose(cur_xpos)
@@ -1114,16 +1070,24 @@ class W1Manager:
             not self._check_qpos_dimension("torso", target_torso_qpos):
             return False, None
 
-        if name == "left_arm":
-            is_left_base = True
-        elif name == "right_arm":
-            is_left_base = False
+        T_armbase_ee_pre = user_pose_to_xpos(pre_grasp_pose[:3], pre_grasp_pose[3:])
+        
+        qpos_pre = np.zeros(self.w1_params.full_body_dofs)
+        qpos_pre[:4] = pre_torso_qpos
+        res_fk, T_chassis_armbase_pre = self.kine.get_fk(name + "_base", qpos_pre)
+        if not res_fk:
+            self.logger.error(f"{name} solve fk failed!")
+            return False, None
 
-        pre_xpos = user_pose_to_xpos(pre_grasp_pose[:3], pre_grasp_pose[3:])
-        pre_xpos_torso_armbase = self.torso_kine_solver.get_fk(pre_torso_qpos, is_left_base)
-        target_xpos_torso_armbase = self.torso_kine_solver.get_fk(target_torso_qpos, is_left_base)
-        target_xpos = np.linalg.inv(target_xpos_torso_armbase) @ pre_xpos_torso_armbase @ pre_xpos
-        return True, xpos_to_user_pose(target_xpos)
+        qpos_target = np.zeros(self.w1_params.full_body_dofs)
+        qpos_target[:4] = target_torso_qpos
+        res_fk, T_chasis_armbase_target = self.kine.get_fk(name + "_base", qpos_target)
+        if not res_fk:
+            self.logger.error(f"{name} solve fk failed!")
+            return False, None
+
+        T_armbase_ee_target = np.linalg.inv(T_chasis_armbase_target) @ T_chassis_armbase_pre @ T_armbase_ee_pre
+        return True, xpos_to_user_pose(T_armbase_ee_target)
 
     def _parse_waypoints_from_dict(self, 
                                    name: str, 
@@ -1548,7 +1512,7 @@ class W1Manager:
 
             right_qpos_seed (np.ndarray, optional): ik reference seed. Defaults to None.
             
-            cartesian_step (float, optional): cartesian sample step. Defaults to 0.05.
+            cartesian_step (float, optional): cartesian sample step. Defaults to 0.005.
 
             speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0.
 
@@ -1688,7 +1652,7 @@ class W1Manager:
 
             right_qpos_seed (np.ndarray, optional): ik reference seed. Defaults to None.
 
-            cartesian_step (float, optional): cartesian sample step. Defaults to 0.05.
+            cartesian_step (float, optional): cartesian sample step. Defaults to 0.005.
 
             speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0.
 
@@ -1733,34 +1697,87 @@ class W1Manager:
                                        left_arm_ee_trigger_list, 
                                        right_arm_ee_trigger_list)
 
+    def move_torso_linear(self, 
+                          delta_x_mm: float, 
+                          delta_z_mm: float, 
+                          cartesian_step = 0.002,
+                          speed_ratio: float = 1.) -> bool:
+        """腿部从当前位置直线移动相对距离
+
+        Args:
+            delta_x_mm (float): x方向(前后)直线相对运动距离
+            delta_z_mm (float): z方向(上下)直线相对运动距离
+            cartesian_step (float, optional): 直线离散步长. Defaults to 0.002.
+            speed_ratio (float, optional): 运动速率. Defaults to 1..
+
+        Returns:
+            bool: 
+        """
+        res, cur_qpos = self.get_current_qpos()
+        if not res:
+            return False
+        res_fk, cur_x, cur_z, cur_y_theta = self.kine.get_torso_fk(cur_qpos[:3])
+        if not res_fk:
+            return False
+        target_x = cur_x + (delta_x_mm / 1000.)
+        target_z = cur_z + (delta_z_mm / 1000.)
+        # TODO: check com in support polyhedron
+
+        # Create path
+        p_cur = np.array([cur_x, cur_z])
+        p_target = np.array([target_x, target_z])
+        dist = np.linalg.norm(p_target - p_cur)
+        n_steps = int(np.ceil(dist / cartesian_step))
+        s_list = np.linspace(0, 1, n_steps+1)
+        p_list = [p_cur + (p_target - p_cur) * s for s in s_list]
+        
+        # Solve ik
+        qpos_list = []
+        for p in p_list:
+            res_ik, qpos = self.kine.get_torso_ik(p[0], p[1], cur_y_theta, cur_qpos[1] < 0)
+            if not res_ik:
+                return False
+            qpos_list.append(np.r_[qpos, cur_qpos[3]])
+
+        return self.move_joint_full_body(waypoints_dict={f"torso": [qpos.tolist() for qpos in qpos_list]},
+                                         speed_ratio=speed_ratio)
+
     def move_arm_linear(self, 
                         name: str,
                         delta_trans_mm: list, 
+                        cartesian_step = 0.005,
                         speed_ratio: float = 1.,
                         along_base_frame: bool = True) -> bool:
-        """从当前位置直线移动相对距离
+        """机械臂从当前位置直线移动相对距离
 
         Args:
             name (str): ["left_arm", "right_arm"]
             delta_trans_mm (list): 直线相对运动距离
+            cartesian_step (float, optional): 直线离散步长. Defaults to 0.005.
             speed_ratio (float, optional): 运动速率. Defaults to 1..
-            along_base_frame (bool, optional): 参考机械臂base坐标系/tcp坐标系. Defaults to True.
+            along_base_frame (bool, optional): 参考chassis_base坐标系/tcp坐标系. Defaults to True.
 
         Returns:
             bool: 
         """
         if not self._check_arm_name(name):
             return False
-        res, cur_xpos = self.get_current_xpos(name)
+        
+        res, T_armbase_ee = self.get_current_xpos(name)
         if not res:
             return False
+        
         delta_xpos = user_pose_to_xpos(delta_trans_mm, [0., 0., 0.])
         if along_base_frame:
-            target_xpos = delta_xpos @ cur_xpos
+            res, T_chassis_ee = self.get_current_xpos(name, False)
+            if not res:
+                return False
+            target_xpos = T_armbase_ee @ np.linalg.inv(T_chassis_ee) @ (delta_xpos @ T_chassis_ee)
         else:
-            target_xpos = cur_xpos @ delta_xpos
-        
+            target_xpos = T_armbase_ee @ delta_xpos
+
         return self.move_linear_full_body(waypoints_dict={f"{name}": [xpos_to_user_pose(target_xpos)]},
+                                        cartesian_step=cartesian_step, 
                                         speed_ratio=speed_ratio)
 
     def rotate_arm_linear(self, 
@@ -1774,22 +1791,28 @@ class W1Manager:
             name (str): ["left_arm", "right_arm"]
             delta_rot_deg (list): 旋转相对运动距离
             speed_ratio (float, optional): 运动速率. Defaults to 1..
-            along_base_frame (bool, optional): 参考机械臂base坐标系/tcp坐标系. Defaults to True.
+            along_base_frame (bool, optional): 参考chassis_base坐标系/tcp坐标系. Defaults to True.
 
         Returns:
             bool: 
         """
         if not self._check_arm_name(name):
             return False
-        res, cur_xpos = self.get_current_xpos(name)
+        
+        res, T_armbase_ee = self.get_current_xpos(name)
         if not res:
             return False
+        
         delta_xpos = user_pose_to_xpos([0., 0., 0.], delta_rot_deg)
-        target_xpos = deepcopy(cur_xpos)
+        target_xpos = deepcopy(T_armbase_ee)
+
         if along_base_frame:
-            target_xpos[:3,:3] = delta_xpos[:3,:3] @ cur_xpos[:3,:3]
+            res, T_chassis_ee = self.get_current_xpos(name, False)
+            if not res:
+                return False
+            target_xpos[:3,:3] = T_armbase_ee[:3,:3] @ T_chassis_ee[:3,:3].T @ delta_xpos[:3,:3] @ T_chassis_ee[:3,:3]
         else:
-            target_xpos[:3,:3] = cur_xpos[:3,:3] @ delta_xpos[:3,:3]
+            target_xpos[:3,:3] = T_armbase_ee[:3,:3] @ delta_xpos[:3,:3]
         
         return self.move_linear_full_body(waypoints_dict={f"{name}": [xpos_to_user_pose(target_xpos)]},
                                         speed_ratio=speed_ratio)
@@ -1814,7 +1837,6 @@ class W1Manager:
         Notes:
             - It will execute the moving of torso and head first, then execute the moving of left and right arms including the end effectors.
         """
-
         current_qpos = self.get_current_qpos()
         current_qpos = current_qpos[1]
         
@@ -1854,11 +1876,12 @@ class W1Manager:
                     return False
         
         res_align, move_torso_head_traj = self._qpos_align(torso_qpos_array, head_qpos_array, cur_arml_qpos, cur_armr_qpos)
-        self.execute_joint_traj(qpos_array=move_torso_head_traj,
-                                left_arm_ee_trigger_list=None,
-                                right_arm_ee_trigger_list=None
-                                )
-    
+        res_execute = self.execute_joint_traj(qpos_array=move_torso_head_traj,
+                                    left_arm_ee_trigger_list=None,
+                                    right_arm_ee_trigger_list=None)
+        if not res_execute:
+            return False
+
         current_qpos = self.get_current_qpos()
         current_qpos = current_qpos[1]
         cur_torso_qpos = current_qpos[self.real_torso_idx[0]:self.real_torso_idx[1]+1]
@@ -1877,7 +1900,6 @@ class W1Manager:
                 arml_speed_ratio = speed_ratio
         else:
             arml_speed_ratio = speed_ratio
-
 
         left_ref_psi = arml_kine.calc_arm_angle(cur_arml_qpos)[1]
         left_qpos_seed = cur_arml_qpos
@@ -1947,7 +1969,7 @@ class W1Manager:
         arml_traj, armr_traj, planning_time = self.siso_planner.plan()
 
         self.logger.info(f"Finish Planning, time consumption: {planning_time}, with left arm traj shape: {None if arml_traj is None else arml_traj.shape}, right arm traj shape: {None if armr_traj is None else armr_traj.shape}")
-        # input("Press any key to continue...")
+
         left_gripper_task = task_dict.get("left_arm_ee")
         if left_gripper_task is not None and left_gripper_task != []:
             if left_gripper_task[0] is not None and left_gripper_task[0] != []:
@@ -1966,8 +1988,6 @@ class W1Manager:
         arml_pre_insert = lee_pre_time/self.TIME_STEP
         arml_post_insert = lee_post_time/self.TIME_STEP
         
-
-
         right_gripper_task = task_dict.get("right_arm_ee")
         if right_gripper_task is not None and right_gripper_task != []:
             if right_gripper_task[0] is not None and right_gripper_task[0] != []:
@@ -1986,7 +2006,6 @@ class W1Manager:
         armr_pre_insert = ree_pre_time/self.TIME_STEP
         armr_post_insert = ree_post_time/self.TIME_STEP
         
-
         armlee_trigger, armree_trigger = [], [] # (idx, ee_qpos)
 
         if arml_traj is not None and armr_traj is not None:
@@ -2003,12 +2022,10 @@ class W1Manager:
             armr_traj = np.vstack([armr_traj, np.tile(armr_traj[-1, :], (int(armr_pre_insert+armr_post_insert), 1))])
 
             res_align, move_arml_armr_traj = self._qpos_align(cur_torso_qpos, cur_head_qpos, arml_traj, armr_traj)
-            self.execute_joint_traj(qpos_array=move_arml_armr_traj,
-                                    left_arm_ee_trigger_list=armlee_trigger,
-                                    right_arm_ee_trigger_list=armree_trigger)
-            # self.logger.info(armlee_trigger, armree_trigger)
-            return
-        
+            return self.execute_joint_traj(qpos_array=move_arml_armr_traj,
+                                        left_arm_ee_trigger_list=armlee_trigger,
+                                        right_arm_ee_trigger_list=armree_trigger)
+
         if arml_traj is not None and armr_traj is None:
             if lee_target is not None:
                 armlee_trigger.append((arml_traj.shape[0]+arml_pre_insert, lee_target))
@@ -2019,15 +2036,14 @@ class W1Manager:
             else: 
                 armree_trigger = None 
 
+            self.logger.info(armlee_trigger, armree_trigger)
             arml_traj = np.vstack([arml_traj, np.tile(arml_traj[-1, :], (int(arml_pre_insert+arml_post_insert), 1))])
 
             res_align, move_arml_armr_traj = self._qpos_align(cur_torso_qpos, cur_head_qpos, arml_traj, cur_armr_qpos)
-            self.execute_joint_traj(qpos_array=move_arml_armr_traj,
-                                    left_arm_ee_trigger_list=armlee_trigger,
-                                    right_arm_ee_trigger_list=armree_trigger)
-            self.logger.info(armlee_trigger, armree_trigger)
-            return
-        
+            return self.execute_joint_traj(qpos_array=move_arml_armr_traj,
+                                        left_arm_ee_trigger_list=armlee_trigger,
+                                        right_arm_ee_trigger_list=armree_trigger)
+            
         if arml_traj is None and armr_traj is not None:
             if lee_target is not None:
                 armlee_trigger.append((arml_pre_insert, lee_target))
@@ -2041,11 +2057,9 @@ class W1Manager:
             armr_traj = np.vstack([armr_traj, np.tile(armr_traj[-1, :], (int(armr_pre_insert+armr_post_insert), 1))])
 
             res_align, move_arml_armr_traj = self._qpos_align(cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_traj)
-            self.execute_joint_traj(qpos_array=move_arml_armr_traj,
-                                    left_arm_ee_trigger_list=armlee_trigger,
-                                    right_arm_ee_trigger_list=armree_trigger)
-            # self.logger.info(armlee_trigger, armree_trigger)
-            return
+            return self.execute_joint_traj(qpos_array=move_arml_armr_traj,
+                                        left_arm_ee_trigger_list=armlee_trigger,
+                                        right_arm_ee_trigger_list=armree_trigger)
         
         if arml_traj is None and armr_traj is None:
             if lee_target is not None:
@@ -2061,13 +2075,9 @@ class W1Manager:
             armr_traj = np.tile(cur_armr_qpos, (armr_pre_insert+armr_post_insert, 1))
 
             res_align, move_arml_armr_traj = self._qpos_align(cur_torso_qpos, cur_head_qpos, arml_traj, armr_traj)
-            self.execute_joint_traj(qpos_array=move_arml_armr_traj,
-                                    left_arm_ee_trigger_list=armlee_trigger,
-                                    right_arm_ee_trigger_list=armree_trigger)
-            # self.logger.info(armlee_trigger, armree_trigger)
-            return            
-
-            
+            return self.execute_joint_traj(qpos_array=move_arml_armr_traj,
+                                        left_arm_ee_trigger_list=armlee_trigger,
+                                        right_arm_ee_trigger_list=armree_trigger)           
 
     def move_single_arm(self,
                         task_dict: dict,
@@ -2279,7 +2289,7 @@ class W1Manager:
                 armr_trigger.append((armr_traj.shape[0]+armr_pre_insert, ree_target))
                 armr_traj = np.vstack([armr_traj, np.tile(armr_traj[-1, :], (int(armr_pre_insert+armr_post_insert), 1))])
                 res_align, move_arml_armr_traj = self._qpos_align(cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_traj)
-                self.execute_joint_traj(qpos_array=move_arml_armr_traj,
-                                        left_arm_ee_trigger_list=None,
-                                        right_arm_ee_trigger_list=armr_trigger)
+                return self.execute_joint_traj(qpos_array=move_arml_armr_traj,
+                                            left_arm_ee_trigger_list=None,
+                                            right_arm_ee_trigger_list=armr_trigger)
       
