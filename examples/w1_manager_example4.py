@@ -17,7 +17,7 @@ def main(use_parallel = False):
                         arm_type=W1ArmType.ANTHROPOMORPHIC, 
                         w1_version=W1Version.V2, 
                         end_effector_type=None)
-    if not w1_manager.connect():
+    if not w1_manager.connect() and not w1_manager.is_enabled():
         return
     w1_manager.set_home_qpos(np.array([0.7854, -1.5708, 0.7854, 0.0, 0.0, 0.0,  
                                        0.0068, -0.9103, 0.0235, -1.9158, 0.1378, 0.1401, 0.0072, 
