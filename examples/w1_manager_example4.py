@@ -16,9 +16,8 @@ def main(use_parallel = False):
     w1_manager = W1Manager(is_sim=True,
                         arm_type=W1ArmType.ANTHROPOMORPHIC, 
                         w1_version=W1Version.V2, 
-                        end_effector_type=None,
-                        use_rlia=False)
-    if not w1_manager.connect():
+                        end_effector_type=None)
+    if not w1_manager.connect() and not w1_manager.is_enabled():
         return
     w1_manager.set_home_qpos(np.array([0.7854, -1.5708, 0.7854, 0.0, 0.0, 0.0,  
                                        0.0068, -0.9103, 0.0235, -1.9158, 0.1378, 0.1401, 0.0072, 
@@ -105,4 +104,4 @@ if __name__ == "__main__":
         
         当execute_joint_traj()不采用streaming模式，而是move_traj模式，python中并行提升大
         """
-    main(use_parallel=False)
+    main(use_parallel=True)

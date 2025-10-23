@@ -1,9 +1,11 @@
 # Install Dependencies
 
-### FCL
+### DexeRP
+
+### OMPL & FCL
 ```bash
 cd dependencies
-bash ./install_python_fcl.sh
+bash ./install_planner_dependencies.sh
 ```
 
 ### Ros2-humble

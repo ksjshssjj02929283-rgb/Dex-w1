@@ -22,9 +22,8 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
     w1_manager = W1Manager(is_sim = is_sim,
                             arm_type=W1ArmType.ANTHROPOMORPHIC, 
                             w1_version=W1Version.V2, 
-                            end_effector_type = end_effector_type,
-                            use_rlia=False)
-    if not w1_manager.connect():
+                            end_effector_type = end_effector_type)
+    if not w1_manager.connect() and not w1_manager.is_enabled():
         return
 
     w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
@@ -94,9 +93,8 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
     w1_manager = W1Manager(is_sim = is_sim,
                             arm_type=W1ArmType.ANTHROPOMORPHIC, 
                             w1_version=W1Version.V2, 
-                            end_effector_type = end_effector_type,
-                            use_rlia=False)
-    if not w1_manager.connect():
+                            end_effector_type = end_effector_type)
+    if not w1_manager.connect() and not w1_manager.is_enabled():
         return
 
     w1_manager.set_tcp("left_arm", np.eye(4))
@@ -158,5 +156,5 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
 
 
 if __name__ == "__main__":
-    move_full_body_example1(move_with_ee = True, is_sim = True)
-    # move_full_body_example2(move_with_ee = False, is_sim = True)
+    # move_full_body_example1(move_with_ee = True, is_sim = True)
+    move_full_body_example2(move_with_ee = False, is_sim = True)
