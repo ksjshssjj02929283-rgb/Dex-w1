@@ -38,7 +38,7 @@ pip uninstall dexe_robot_client
 ## 📘 Examples
 Deploy `dexe_robot_server(dev)`, refer to [dexe_robot_server](http://69.235.177.182:8081/dexembodied/dexe_robot_server).
 
-Deploy `dexe_devices(dev)`, refer to [dexe_devices](http://69.235.177.182:8081/dexembodied/dexe_devices).
+Deploy `dexe_devices(main)`, refer to [dexe_devices](http://69.235.177.182:8081/dexembodied/dexe_devices).
 
 #### Run robot server
 Automatic startup in PC1.
@@ -47,7 +47,7 @@ Automatic startup in PC1.
 - W1
 ```bash
 cd dexe_robot_server
-source ./install/setup.bas
+source ./install/setup.bash
 ros2 run sim_server sim_server
 ```
 - EndEffector
@@ -74,7 +74,7 @@ w1_manager = W1Manager(is_sim = True,
                         w1_version=W1Version.V2, 
                         end_effector_type = EndEffectorType.BRAINCO_HAND)
 
-if not w1_manager.connect():
+if not w1_manager.connect() and not w1_manager.is_enabled():
     return
     
 w1_manager.set_sim_mode(enable_sim = False)
@@ -87,7 +87,7 @@ More examlpes see `dexe_robot_client/examples`.
 ## 🏷️ Others
 #### Branches
 - Universal functions of the robot are developed on the `main` and `dev` branches
-- W1 humanoid is developed on the `w1` branch and needs to continuously merge the latest `dev` changes
+- W1 humanoid is developed on the `main_w1` and `dev_w1` branch and needs to continuously merge the latest changes of `main`
 - The feat branch is recommended to be named in the style of `zyn/dev/xxx` and `fsh/w1/xxx`
 
 #### Commit-msg
@@ -100,17 +100,3 @@ Refer to [commit message guidelines](https://github.com/angular/angular/blob/mai
 - test: Adding missing tests or correcting existing tests
 - build: Changes that affect the build system or external dependencies (example scopes: gulp, broccoli, npm)
 - ci: Changes to our CI configuration files and scripts (examples: CircleCi, SauceLabs)
-
-#### format
-- python
-- cpp
-
-## 📋 TODO
-- [ ] Some basic motion API, such as `MoveJi()`, `MoveTX()`, `MoveBY()`, `RotateBZ()`, `RotateTX()`, etc
-- [ ] Add `set_user_frame()`
-- [x] Deprecate rlia-related kinematic dependencies
-- [x] Add downloading urdf files from nas
-- [x] Add `ee_sim_server`
-- [x] Add end effector heartbeat mechanism
-- [x] Support end-effector in dexsim visualizer
-- [ ] SDK packaging
