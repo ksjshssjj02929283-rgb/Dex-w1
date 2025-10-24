@@ -10,12 +10,12 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
     std::string interface_suffix = (is_sim) ? "_sim" : "";
 
     // 初始化日志系统 Initialize the logging system, 固定路径为 ~/dexe_robot_server_data/logs
-    std::filesystem::path log_dir = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data" / "logs";
-    std::filesystem::create_directories(log_dir);
-    nanolog::initialize(nanolog::GuaranteedLogger(), log_dir.string() + "/", "robot_server" + interface_suffix, 20,
+    std::filesystem::create_directories(server_data_dir_ / "logs");
+    nanolog::initialize(nanolog::GuaranteedLogger(), (server_data_dir_ / "logs/").string(), "robot_server" + interface_suffix, 20,
                         10);                          // 每个日志文件最大20MB，最多保留10个日志文件
     nanolog::set_log_level(nanolog::LogLevel::INFO);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
-    RCLCPP_INFO(this->get_logger(), "Logs directory: %s", (log_dir.string() + "/robot_server" + interface_suffix + ".txt").c_str());
+    RCLCPP_INFO(this->get_logger(), "Logs directory: %s",
+                ((server_data_dir_ / "logs").string() + "/robot_server" + interface_suffix + ".txt").c_str());
 
     this->robot_server_state_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state" + interface_suffix, 10);
 

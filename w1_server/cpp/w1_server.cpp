@@ -1,4 +1,4 @@
-#include "robot_server.h"
+#include "w1_server.h"
 
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -49,11 +49,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
 
 void RobotServer::InitParamConfig()
 {
-    const char* home = std::getenv("HOME");
-    std::filesystem::path log_dir =
-        (home && *home) ? (std::filesystem::path(home) / "dexe_robot_server_data") : std::filesystem::path("dexe_robot_server_data");
-    std::filesystem::create_directories(log_dir);
-    auto config_path = log_dir / "config.json";
+    auto config_path = server_data_dir_ / "w1_config.json";
 
     using boost::property_tree::ptree;
     constexpr std::size_t kNumJoints = ndof_robot;

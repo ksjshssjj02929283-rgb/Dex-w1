@@ -55,6 +55,7 @@ class RobotServerBase : public rclcpp::Node
     Status manager_state_{Status::Init};
     Int64 latest_received_id_{-1};
     BoundedQueue<std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>> request_handle_queue_{32};
+    std::filesystem::path server_data_dir_ = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
 
     struct
     {
