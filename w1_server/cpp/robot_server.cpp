@@ -135,43 +135,31 @@ void RobotServer::TorqueControlThreadFunc()
     // 初始化共享内存
     auto& feedback_shm_instance = FeedbackSharedMemory::GetInstance();
     auto& control_shm_instance = ControlSharedMemory::GetInstance();
-    PlannerManagerCommand planner_cmd{};
-    TorqueCtrlCommand torque_cmd{};
-    JointRawMeasurement raw_measurement{};
-    JointMeasurement manager_measurement{};
-    Vector6d sensor_data_primary = Vector6d::Zero();
-    Vector6d sensor_data_secondary = Vector6d::Zero();
+
+    Int64 loop_counter = -1;
     auto next_cycle_time_point = std::chrono::steady_clock::now();
 
     while (rclcpp::ok())
     {
+        loop_counter++;
         next_cycle_time_point += std::chrono::microseconds(torque_ctrl_dt_micro);
 
         // 读取力传感器数据
+        Vector6d sensor_data_primary = Vector6d::Zero();
+        Vector6d sensor_data_secondary = Vector6d::Zero();
         primary_sensor_->Read(sensor_data_primary);
         secondary_sensor_->Read(sensor_data_secondary);
-        raw_measurement.sensor_wrench = utils::GetSensorWrench(sensor_data_primary, sensor_data_secondary);
-
-        // 打印力传感器数据
-        static int torque_print_counter = 0;
-        if (++torque_print_counter % 250 == 0)
-        {
-            // std::cout << "Torque Sensor Wrench: " << raw_measurement.sensor_wrench.transpose() << std::endl;
-            // LOG_INFO << "Torque Sensor Wrench: " << raw_measurement.sensor_wrench.transpose();
-        }
 
         // 读取机器人反馈数据
         RobotFeedback feedback_data{};
         bool ret = feedback_shm_instance.PeekLatest(&feedback_data);
-        bool is_robot_ready_ = feedback_data.robot_status_word & STATUSWORD_MOTOR_READY;
+        this->is_robot_ready_ = ret && (feedback_data.robot_status_word & STATUSWORD_MOTOR_READY);
 
-        // 写入默认控制字
-        // robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT | CTRLWORD_MOTOR_CST_MODE;
-        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT;
-
-        if (is_robot_ready_)
+        if (this->is_robot_ready_)
         {
             // 关节反馈数据写入测量数据
+            JointRawMeasurement raw_measurement{};
+            raw_measurement.sensor_wrench = utils::GetSensorWrench(sensor_data_primary, sensor_data_secondary);
             for (int i = 0; i < ndof_robot; ++i)
             {
                 raw_measurement.position[i] = feedback_data.position[i];
@@ -180,70 +168,79 @@ void RobotServer::TorqueControlThreadFunc()
                 raw_measurement.time_point = TimePointSystem::Now();
             }
             this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
-
-            // 力控计算处理
-            torque_controller_manager.LoopOnce();
-
-            // 写入控制数据: 关节位置, 速度, 关节力矩限制, 外部力矩
-            if (this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) && this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd))
+        }
+        else
+        {
+            this->robot_buffers_.joint_raw_measurement->Reset();
+            if (loop_counter % 3000 == 0)
             {
-                double safe_level = planner_cmd.robot_property.safe_level;
-                auto run_mode = planner_cmd.robot_property.run_mode;
-                for (int i = 0; i < ndof_robot; ++i)
-                {
-                    robot_control_.position[i] = planner_cmd.cmd.position[i];
-                    robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
-                    switch (run_mode)
-                    {
-                        case RunMode::Position:
-                            // 更新关节力矩限制
-                            robot_control_.positive_torque_limit[i] = std::clamp(torque_cmd.torque[i] + torque_limit_.positive_limit_Nm[i] * safe_level,
-                                                                        0.1 * torque_limit_.positive_limit_Nm[i], torque_limit_.positive_limit_Nm[i]);
-                            robot_control_.negative_torque_limit[i] = std::clamp(-torque_cmd.torque[i] + torque_limit_.negative_limit_Nm[i] * safe_level,
-                                                                        0.1 * torque_limit_.negative_limit_Nm[i], torque_limit_.negative_limit_Nm[i]);
-                            break;
-                        case RunMode::Drag:
-                            // 位置等于反馈位置
-                            manager_buffers_.joint_measurement->PeekLatest(&manager_measurement);
-                            if (i >= first_arm_joint_index_)
-                            {
-                                manager_measurement.q_desired_pre[i] = raw_measurement.position[i];
-                            }
-                            manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
-
-                            // 更新关节力矩限制
-                            if (torque_cmd.torque[i] >= 0)
-                            {
-                                robot_control_.positive_torque_limit[i] = std::clamp(torque_cmd.torque[i], 0.0, torque_limit_.positive_limit_Nm[i]);
-                                robot_control_.negative_torque_limit[i] = 0.0;
-                            }
-                            else
-                            {
-                                robot_control_.positive_torque_limit[i] = 0.0;
-                                robot_control_.negative_torque_limit[i] = std::clamp(-torque_cmd.torque[i], 0.0, torque_limit_.negative_limit_Nm[i]);
-                            }
-                            break;
-                        default:
-                            robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
-                            robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
-                            break;
-                    }
-                    if(i >= first_arm_joint_index_ && torque_print_counter % 250 == 0)
-                    {
-                        // std::cout << "Joint " << i << " Torque Cmd: " << torque_cmd.torque[i]
-                        //           << ", Pos Limit: " << robot_control_.positive_torque_limit[i]
-                        //           << ", Neg Limit: " << robot_control_.negative_torque_limit[i] << std::endl;
-                    }
-
-                    // 更新外部力矩
-                    robot_control_.torque_external[i] = torque_cmd.torque_external[i];
-                }
-                // robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT | CTRLWORD_MOTOR_CST_MODE;
-                robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT;
+                RCLCPP_WARN(this->get_logger(), "Robot is not ready, please check OP state.");
+                LOG_CRIT << "Robot is not ready, please check OP state.";
             }
         }
 
-        control_shm_instance.AppendNewElement(robot_control_);
+        // 力控计算处理
+        torque_controller_manager.LoopOnce();
+
+        // 获取并写入控制数据: 关节位置, 速度, 关节力矩限制, 外部力矩
+        PlannerManagerCommand planner_cmd{};
+        TorqueCtrlCommand torque_cmd{};
+        if (this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) && this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd))
+        {
+            JointMeasurement manager_measurement{};
+            double safe_level = planner_cmd.robot_property.safe_level;
+            auto run_mode = planner_cmd.robot_property.run_mode;
+            for (int i = 0; i < ndof_robot; ++i)
+            {
+                robot_control_.position[i] = planner_cmd.cmd.position[i];
+                robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
+                robot_control_.torque_feedforward[i] = torque_cmd.torque[i];
+                switch (run_mode)
+                {
+                    case RunMode::Position:
+                        // 更新关节力矩限制
+                        robot_control_.positive_torque_limit[i] = std::clamp(torque_cmd.torque[i] + torque_limit_.positive_limit_Nm[i] * safe_level,
+                                                                    0.1 * torque_limit_.positive_limit_Nm[i], torque_limit_.positive_limit_Nm[i]);
+                        robot_control_.negative_torque_limit[i] = std::clamp(-torque_cmd.torque[i] + torque_limit_.negative_limit_Nm[i] * safe_level,
+                                                                    0.1 * torque_limit_.negative_limit_Nm[i], torque_limit_.negative_limit_Nm[i]);
+                        break;
+                    case RunMode::Drag:
+                        // 位置等于反馈位置
+                        if (manager_buffers_.joint_measurement->PeekLatest(&manager_measurement))
+                        {
+                            if (i >= first_arm_joint_index_)
+                            {
+                                manager_measurement.q_desired_pre[i] = feedback_data.position[i];
+                            }
+                            manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
+                        }
+
+                        // 更新关节力矩限制
+                        if (torque_cmd.torque[i] >= 0)
+                        {
+                            robot_control_.positive_torque_limit[i] = std::clamp(torque_cmd.torque[i], 0.0, torque_limit_.positive_limit_Nm[i]);
+                            robot_control_.negative_torque_limit[i] = 0.0;
+                        }
+                        else
+                        {
+                            robot_control_.positive_torque_limit[i] = 0.0;
+                            robot_control_.negative_torque_limit[i] = std::clamp(-torque_cmd.torque[i], 0.0, torque_limit_.negative_limit_Nm[i]);
+                        }
+                        break;
+                    default:
+                        robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
+                        robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
+                        break;
+                }
+
+                // 更新外部力矩
+                robot_control_.torque_external[i] = torque_cmd.torque_external[i];
+            }
+            // robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT | CTRLWORD_MOTOR_CST_MODE;
+            robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT;
+            control_shm_instance.AppendNewElement(robot_control_);
+        }
+
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }

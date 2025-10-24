@@ -118,6 +118,19 @@ bool SingleReadWriteLatestQueue<T, BufferCapacity>::PeekLatest(T *element_output
     return read_ok;
 }
 
+template <typename T, std::uint64_t BufferCapacity>
+void SingleReadWriteLatestQueue<T, BufferCapacity>::Reset()
+{
+    // 清空环形缓冲区内容与有效位
+    for (auto &slot : ring_buffer_)
+    {
+        slot.data = T{};
+        slot.valid = false;
+    }
+    // 重置索引：latest=0, reader=kInvalidReader
+    latest_and_reader_.store(utils::encodeTwoUint32AsUint64(0u, kInvalidReader), std::memory_order_release);
+}
+
 template <typename T, std::int64_t ConcurrentReadersHint>
 bool SingleWriterLatestBuffer<T, ConcurrentReadersHint>::PeekLatest(T *out)
 {
@@ -211,6 +224,21 @@ bool SingleWriterLatestBuffer<T, ConcurrentReadersHint>::AppendNewElement(const 
 
     // Done
     return true;
+}
+
+template <typename T, std::int64_t ConcurrentReadersHint>
+void SingleWriterLatestBuffer<T, ConcurrentReadersHint>::Reset()
+{
+    // 清空元素内容
+    for (auto &e : elements_)
+        e = T{};
+
+    // 清空版本与引用计数
+    for (auto &vr : version_refcount_)
+        vr.store(0u, std::memory_order_relaxed);
+
+    // 重置 active
+    active_.store(-1, std::memory_order_release);
 }
 
 }  // namespace robot_server_lib

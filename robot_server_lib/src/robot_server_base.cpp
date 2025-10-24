@@ -13,6 +13,7 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
     std::filesystem::create_directories(log_dir);
     nanolog::initialize(nanolog::GuaranteedLogger(), log_dir.string() + "/", "robot_server" + interface_suffix, 20, 10); // 每个日志文件最大20MB，最多保留10个日志文件
     nanolog::set_log_level(nanolog::LogLevel::INFO);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
+    RCLCPP_INFO(this->get_logger(), "Logs directory: %s", (log_dir.string() + "/robot_server" + interface_suffix + ".txt").c_str()); 
 
     this->robot_server_state_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state" + interface_suffix, 10);
 
@@ -77,10 +78,7 @@ void RobotServerBase::ManagerThreadFunc()
     while (rclcpp::ok())
     {
         next_cycle_time_point += std::chrono::microseconds(manager_dt_micro);
-        if (is_robot_ready_)
-        {
-            planner_manager.LoopOnce();
-        }
+        planner_manager.LoopOnce();
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }
@@ -92,10 +90,7 @@ void RobotServerBase::TorqueControlThreadFunc()
     while (rclcpp::ok())
     {
         next_cycle_time_point += std::chrono::microseconds(torque_ctrl_dt_micro);
-        if (is_robot_ready_)
-        {
-            torque_controller_manager.LoopOnce();
-        }
+        torque_controller_manager.LoopOnce();
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }
@@ -131,7 +126,7 @@ void RobotServerBase::PublishThreadFunc()
         {
             uint64_t timestamp_ns = this->now().nanoseconds();
             robot_server_state_msg.data =
-                std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" + ToString(Status::Init) + "\"}";
+                std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" + ToString(this->manager_state_) + "\"}";
         }
         this->robot_server_state_publisher_->publish(robot_server_state_msg);
         std::this_thread::sleep_until(next_cycle_time_point);
@@ -140,12 +135,6 @@ void RobotServerBase::PublishThreadFunc()
 
 Int64 RobotServerBase::MakeNewRequestID(RequestType type)
 {
-    if (!is_robot_ready_)
-    {
-        RCLCPP_WARN(this->get_logger(), "Not in all OP state, failed to make new request ID");
-        LOG_CRIT << "Not in all OP state, failed to make new request ID";
-        return -1;
-    }
     if (type == RequestType::StartJointStreaming || type == RequestType::StartEEPoseStreaming)
     {
         if (this->latest_received_id_ > this->latest_report_id_.finished)
@@ -196,12 +185,6 @@ void RobotServerBase::MoveRobotCallback(
 
 void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::SharedPtr streaming_msg)
 {
-    if (!is_robot_ready_)
-    {
-        RCLCPP_WARN(this->get_logger(), "Not in all OP state, failed to accept streaming command");
-        LOG_CRIT << "Not in all OP state, failed to accept streaming command";
-        return;
-    }
     RCLCPP_INFO(this->get_logger(), "Request_id = %ld, streaming command Received, data size = %zu, streaming_finished = %s",
                 streaming_msg->request_id, streaming_msg->position.size(), streaming_msg->streaming_finished ? "true" : "false");
     std::ostringstream ss;

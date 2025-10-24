@@ -87,42 +87,44 @@ bool SharedMemory<T, BufferCapacity, SHM_KEY>::PeekLatest(T *element_output)
         decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
         assert(reader == kInvalidReader);
         latest_and_reader_reserved = encodeTwoUint32AsUint64(latest, latest);
-    } while (!shm_ptr_->latest_and_reader.compare_exchange_weak(latest_and_reader, latest_and_reader_reserved, std::memory_order_acq_rel,
-                                                       std::memory_order_relaxed));
+    } while (!shm_ptr_->latest_and_reader.compare_exchange_weak(
+                 latest_and_reader, latest_and_reader_reserved, std::memory_order_acq_rel, std::memory_order_relaxed));
 
-    // Check the data validity and read it
+    // Check the data validity and timeout BEFORE writing to element_output
     const std::uint32_t latest_place = latest % BufferCapacity;
-    if (!shm_ptr_->ring_buffer[latest_place].valid)
+    const auto &elem = shm_ptr_->ring_buffer[latest_place];
+    if (!elem.valid)
     {
         read_ok = false;
     }
 
-    // Now the data is valid
-    if (element_output != nullptr && read_ok)
+    if (read_ok)
     {
-        *element_output = shm_ptr_->ring_buffer[latest_place].data;
-        element_output->cnt = shm_ptr_->ring_buffer[latest_place].cnt;
-        auto data_ts = shm_ptr_->ring_buffer[latest_place].ts;
-        struct timespec now;
-        clock_gettime(CLOCK_REALTIME, &now);
         int64_t timeout = timeout_ms_.load(std::memory_order_relaxed);
-        // -1时不检测超时
         if (timeout != -1)
         {
-            int64_t diff = (now.tv_sec - data_ts.tv_sec) * 1000LL + (now.tv_nsec - data_ts.tv_nsec) / 1000000LL;
+            struct timespec now;
+            clock_gettime(CLOCK_REALTIME, &now);
+            int64_t diff = (now.tv_sec - elem.ts.tv_sec) * 1000LL + (now.tv_nsec - elem.ts.tv_nsec) / 1000000LL;
             if (diff > timeout)
             {
-                // std::cout << "[SharedMemory] data read timeout: " << diff << " ms" << std::endl;
                 read_ok = false;
             }
         }
     }
 
+    // Only overwrite output when not timed out and data is valid
+    if (element_output != nullptr && read_ok)
+    {
+        *element_output = elem.data;
+        element_output->cnt = elem.cnt;
+    }
+
     // Now release the lock via updating the reader to invalid
     // Also no wrapping here
     std::uint64_t latest_and_reader_released = encodeTwoUint32AsUint64(latest, kInvalidReader);
-    while (!shm_ptr_->latest_and_reader.compare_exchange_weak(latest_and_reader, latest_and_reader_released, std::memory_order_acq_rel,
-                                                     std::memory_order_relaxed))
+    while (!shm_ptr_->latest_and_reader.compare_exchange_weak(
+        latest_and_reader, latest_and_reader_released, std::memory_order_acq_rel, std::memory_order_relaxed))
     {
         decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
         assert(reader != kInvalidReader);  // It is me
@@ -131,5 +133,5 @@ bool SharedMemory<T, BufferCapacity, SHM_KEY>::PeekLatest(T *element_output)
 
     // Done
     return read_ok;
-}   
-    
+}
+

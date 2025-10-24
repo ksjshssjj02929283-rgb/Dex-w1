@@ -25,6 +25,8 @@ class SingleReadWriteLatestQueue
     // Read the latest element and store it into element_out. This method
     // return false only if no element has been appended.
     bool PeekLatest(T *element_output);
+    // Reset the queue to initial state.
+    void Reset();
 
    private:
     // The element stored in the queue
@@ -80,6 +82,8 @@ class SingleWriterLatestBuffer
     // 写入新数据。它会寻找一个没有读者正在读取的槽位（version_refcount_ == 0），写入数据后更新
     // active_ 指向新数据。
     bool AppendNewElement(const T &to_write);
+    // 重置缓冲区
+    void Reset();
 
    private:
     static constexpr std::int64_t kArrayCapacity = ConcurrentReadersHint + 1;

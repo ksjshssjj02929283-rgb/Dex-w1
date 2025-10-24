@@ -57,6 +57,7 @@ bool TorqueControllerInvDynamic::ResetForNewEpisode(const JointRawMeasurement &r
     if (state_ == TorqueControllerState::Idle)
     {
         idle_q_ = raw_measurement.position;
+        LOG_INFO << "TorqueControllerInvDynamic set idle_q_: " << idle_q_.transpose();
     }
     return true;
 }

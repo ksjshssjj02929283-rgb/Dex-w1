@@ -42,8 +42,13 @@ public:
                 if (this->InitZeroCalibration(500))
                 {
                     sensor_ready_ = true;
+                    std::cout << "Force sensor on port " << port_ << " is ready." << std::endl;
                 }
             }).detach();
+        }
+        else
+        {
+            std::cout << "No force sensor in port: " << port_ << std::endl;
         }
     }
 
@@ -237,7 +242,6 @@ public:
     // 非阻塞读取并自动做零点补偿，返回是否有新数据
     bool Read(Vector6d &out)
     {
-        out = Vector6d::Zero();
         if (!zero_calibrated_ || !sensor_ready_)
             return false;
         std::array<double, 6> tmp{};

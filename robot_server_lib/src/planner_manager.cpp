@@ -52,10 +52,6 @@ void PlannerManager::LoopOnce()
     if (!manager_buffer_.joint_measurement->PeekLatest(&measurement))
     {
         time_meta.measurement_time = TimePointSystem::Invalid();
-        if (runtime_data_.loop_counter % 3000 == 0)
-        {
-            LOG_CRIT << "No joint measurement available, skipping loop.";
-        }
     }
     else
     {
@@ -141,8 +137,7 @@ void PlannerManager::LoopOnce()
     case ComputeCommandStatus::Error:
         if (manager_state_ == Status::Init || manager_state_ == Status::Error)
         {
-            // 如果处于Init状态说明暂未接收到measurement不报错继续等待,
-            // 已经处于Error则不再切换状态和报告错误
+            // 如果处于Init状态说明暂未接收到measurement不报错继续等待, 已经处于Error则不再切换状态和报告错误
         }
         else
         {
@@ -163,8 +158,6 @@ RequestResponse PlannerManager::OnRequestStateInit()
     const auto &request = runtime_data_.planner_request;
     auto &measurement = runtime_data_.measurement;
     auto &joint_cmd = runtime_data_.joint_cmd;
-    assert(response.re_run == false);
-    assert(response.request_consumed == false);
 
     // 切换 current_planner_ switch to nullptr
     current_planner_ = nullptr;
@@ -173,6 +166,7 @@ RequestResponse PlannerManager::OnRequestStateInit()
     // If the measurement time is invalid, the new measurement is not here yet
     if (time_meta.measurement_time.is_invalid())
     {
+        manager_buffer_.planner_manager_command->Reset();  // 重置命令缓冲区 Reset the command buffer
         if (request.type != RequestType::Empty)
         {
             ReportRequestStatus(request.request_id, request.type, RequestStatus::ErrorDrop, manager_state_);
@@ -200,9 +194,12 @@ RequestResponse PlannerManager::OnRequestStateIdle()
     const auto &time_meta = runtime_data_.time_meta;
     const auto &request = runtime_data_.planner_request;
     const auto &measurement = runtime_data_.measurement;
-    assert(response.re_run == false);
-    assert(response.request_consumed == false);
-    assert(time_meta.measurement_time.is_valid());
+    if (time_meta.measurement_time.is_invalid()) // 如果measurement_time无效则说明测量数据错误, 不能继续运行
+    {
+        ChangeState(Status::Init);
+        LOG_CRIT << "Measurement time invalid in Running state, changing to Init state.";
+        return response;
+    }
     // 切换到idle planner switch to idle planner
     current_planner_ = idle_planner_;
 
@@ -256,9 +253,12 @@ RequestResponse PlannerManager::OnRequestStateRunning()
     const auto &time_meta = runtime_data_.time_meta;
     const auto &request = runtime_data_.planner_request;
     const auto &measurement = runtime_data_.measurement;
-    assert(response.re_run == false);
-    assert(response.request_consumed == false);
-    assert(time_meta.measurement_time.is_valid());
+    if (time_meta.measurement_time.is_invalid()) // 如果measurement_time无效则说明测量数据错误, 不能继续运行
+    {
+        ChangeState(Status::Init);
+        LOG_CRIT << "Measurement time invalid in Running state, changing to Init state.";
+        return response;
+    }
 
     // 如果当前规划器episode索引与time_meta的episode索引不同，则说明state改变过,
     // 需要重新选取并重置当前规划器 If the current planner's episode index is different from the
@@ -317,8 +317,12 @@ RequestResponse PlannerManager::OnRequestStateError()
 {
     RequestResponse response{};
     const auto &request = runtime_data_.planner_request;
-    assert(response.re_run == false);
-    assert(response.request_consumed == false);
+    if (runtime_data_.time_meta.measurement_time.is_invalid()) // 如果measurement_time无效则说明测量数据错误, 不能继续运行
+    {
+        ChangeState(Status::Init);
+        LOG_CRIT << "Measurement time invalid in Running state, changing to Init state.";
+        return response;
+    }
     // current_planner_ switch to nullptr
     current_planner_ = nullptr;
 
