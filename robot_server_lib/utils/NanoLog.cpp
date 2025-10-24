@@ -31,12 +31,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <chrono>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <queue>
+#include <system_error>
 #include <thread>
 #include <tuple>
-#include <filesystem>
-#include <system_error>
 
 namespace
 {
@@ -540,10 +540,7 @@ class QueueBuffer : public BufferBase
 class FileWriter
 {
    public:
-    FileWriter(std::string const &log_directory,
-               std::string const &log_file_name,
-               uint32_t log_file_roll_size_mb,
-               uint32_t max_files)
+    FileWriter(std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb, uint32_t max_files)
         : m_log_file_roll_size_bytes(std::max(1u, log_file_roll_size_mb) * 1024u * 1024u),
           m_name(log_directory + log_file_name),
           m_max_files(std::max(1u, max_files))
@@ -566,7 +563,8 @@ class FileWriter
     std::string make_path(uint32_t index) const
     {
         std::string path = m_name;
-        if (index > 0) path.append(std::to_string(index));
+        if (index > 0)
+            path.append(std::to_string(index));
         path.append(".txt");
         return path;
     }
@@ -605,18 +603,15 @@ class FileWriter
     uint32_t m_file_number = 0;  // unused but kept for structure compatibility
     std::streamoff m_bytes_written = 0;
     uint32_t const m_log_file_roll_size_bytes;
-    std::string const m_name;   // directory + base name (no extension, suffix added here)
-    uint32_t const m_max_files; // fixed rolling count
+    std::string const m_name;    // directory + base name (no extension, suffix added here)
+    uint32_t const m_max_files;  // fixed rolling count
     std::unique_ptr<std::ofstream> m_os;
 };
 
 class NanoLogger
 {
    public:
-    NanoLogger(NonGuaranteedLogger ngl,
-               std::string const &log_directory,
-               std::string const &log_file_name,
-               uint32_t log_file_roll_size_mb,
+    NanoLogger(NonGuaranteedLogger ngl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb,
                uint32_t max_files)
         : m_state(State::INIT),
           m_buffer_base(new RingBuffer(std::max(1u, ngl.ring_buffer_size_mb) * 1024 * 4)),
@@ -626,10 +621,7 @@ class NanoLogger
         m_state.store(State::READY, std::memory_order_release);
     }
 
-    NanoLogger(GuaranteedLogger /*gl*/,
-               std::string const &log_directory,
-               std::string const &log_file_name,
-               uint32_t log_file_roll_size_mb,
+    NanoLogger(GuaranteedLogger /*gl*/, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb,
                uint32_t max_files)
         : m_state(State::INIT),
           m_buffer_base(new QueueBuffer()),
@@ -704,20 +696,14 @@ void initialize(GuaranteedLogger gl, std::string const &log_directory, std::stri
 }
 
 // New initialize with fixed rolling file count
-void initialize(NonGuaranteedLogger ngl,
-                std::string const &log_directory,
-                std::string const &log_file_name,
-                uint32_t log_file_roll_size_mb,
+void initialize(NonGuaranteedLogger ngl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb,
                 uint32_t max_files)
 {
     nanologger.reset(new NanoLogger(ngl, log_directory, log_file_name, log_file_roll_size_mb, max_files));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
 }
 
-void initialize(GuaranteedLogger gl,
-                std::string const &log_directory,
-                std::string const &log_file_name,
-                uint32_t log_file_roll_size_mb,
+void initialize(GuaranteedLogger gl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb,
                 uint32_t max_files)
 {
     nanologger.reset(new NanoLogger(gl, log_directory, log_file_name, log_file_roll_size_mb, max_files));

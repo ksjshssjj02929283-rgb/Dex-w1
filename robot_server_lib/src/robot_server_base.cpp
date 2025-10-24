@@ -1,4 +1,5 @@
 #include "robot_server_base.h"
+
 #include <cstdlib>
 
 namespace robot_server_lib
@@ -11,9 +12,10 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
     // 初始化日志系统 Initialize the logging system, 固定路径为 ~/dexe_robot_server_data/logs
     std::filesystem::path log_dir = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data" / "logs";
     std::filesystem::create_directories(log_dir);
-    nanolog::initialize(nanolog::GuaranteedLogger(), log_dir.string() + "/", "robot_server" + interface_suffix, 20, 10); // 每个日志文件最大20MB，最多保留10个日志文件
+    nanolog::initialize(nanolog::GuaranteedLogger(), log_dir.string() + "/", "robot_server" + interface_suffix, 20,
+                        10);                          // 每个日志文件最大20MB，最多保留10个日志文件
     nanolog::set_log_level(nanolog::LogLevel::INFO);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
-    RCLCPP_INFO(this->get_logger(), "Logs directory: %s", (log_dir.string() + "/robot_server" + interface_suffix + ".txt").c_str()); 
+    RCLCPP_INFO(this->get_logger(), "Logs directory: %s", (log_dir.string() + "/robot_server" + interface_suffix + ".txt").c_str());
 
     this->robot_server_state_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state" + interface_suffix, 10);
 
@@ -22,19 +24,17 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
         "/control/streaming_command" + interface_suffix, 10, std::bind(&RobotServerBase::StreamingCommandCallback, this, std::placeholders::_1));
 
     // 创建service server
-    this->set_property_srv_ = this->create_service<SetProperty>(
-        "/control/set_property" + interface_suffix,
-        std::bind(&RobotServerBase::SetPropertyCallback, this, std::placeholders::_1, std::placeholders::_2));
+    this->set_property_srv_ =
+        this->create_service<SetProperty>("/control/set_property" + interface_suffix,
+                                          std::bind(&RobotServerBase::SetPropertyCallback, this, std::placeholders::_1, std::placeholders::_2));
 
     // 创建action server
     this->move_robot_action_server_ = rclcpp_action::create_server<MoveRobot>(
         this, "/control/move_robot" + interface_suffix,
         // Goal callback
-        [](const rclcpp_action::GoalUUID &, std::shared_ptr<const MoveRobot::Goal>)
-        { return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE; },
+        [](const rclcpp_action::GoalUUID &, std::shared_ptr<const MoveRobot::Goal>) { return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE; },
         // Cancel callback
-        [](const std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>>)
-        { return rclcpp_action::CancelResponse::ACCEPT; },
+        [](const std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>>) { return rclcpp_action::CancelResponse::ACCEPT; },
         std::bind(&RobotServerBase::MoveRobotCallback, this, std::placeholders::_1));
 
     // 初始化机器人模型
@@ -147,15 +147,14 @@ Int64 RobotServerBase::MakeNewRequestID(RequestType type)
     return ++this->latest_received_id_;
 }
 
-void RobotServerBase::MoveRobotCallback(
-    const std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> request_handle)
+void RobotServerBase::MoveRobotCallback(const std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> request_handle)
 {
     PlannerRequest planner_request = utils::ParseMoveRequest(request_handle);
     auto request_id = MakeNewRequestID(planner_request.type);
 
     // Check if in Drag mode
     PlannerManagerCommand planner_cmd{};
-    if(this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) && planner_cmd.robot_property.run_mode == RunMode::Drag)
+    if (this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) && planner_cmd.robot_property.run_mode == RunMode::Drag)
     {
         RCLCPP_WARN(this->get_logger(), "In Drag mode, cannot accept new move robot request");
         LOG_CRIT << "In Drag mode, cannot accept new move robot request";
@@ -204,8 +203,7 @@ void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::Shared
     manager_buffers_.streaming_command_latest_buffer->AppendNewElement(utils::ParseStreamingCommand(streaming_msg));
 }
 
-void RobotServerBase::SetPropertyCallback(const std::shared_ptr<SetProperty::Request> request,
-                                          std::shared_ptr<SetProperty::Response> response)
+void RobotServerBase::SetPropertyCallback(const std::shared_ptr<SetProperty::Request> request, std::shared_ptr<SetProperty::Response> response)
 {
     PlannerRequest planner_request = utils::ParseSetPropertyRequest(request);
     planner_request.request_id = MakeNewRequestID(planner_request.type);

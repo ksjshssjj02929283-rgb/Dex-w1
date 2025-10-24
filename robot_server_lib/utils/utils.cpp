@@ -375,13 +375,16 @@ Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench
     constexpr double force_max = 60.0;
     constexpr double torque_max = 6.0;
 
-    auto deadzone_saturate = [](double x, double th, double mx) noexcept -> double {
+    auto deadzone_saturate = [](double x, double th, double mx) noexcept -> double
+    {
         double y = std::max(0.0, std::abs(x) - th);
-        if (y > mx) y = mx;
+        if (y > mx)
+            y = mx;
         return std::copysign(y, x);
     };
 
-    auto process6 = [&](const Vector6d &w) noexcept -> Vector6d {
+    auto process6 = [&](const Vector6d &w) noexcept -> Vector6d
+    {
         Vector6d out;
         for (int i = 0; i < 6; ++i)
         {

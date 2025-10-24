@@ -26,14 +26,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #ifndef NANO_LOG_HEADER_GUARD
 #define NANO_LOG_HEADER_GUARD
 
+#include <Eigen/Dense>
 #include <cstdint>
 #include <iosfwd>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <vector>
-#include <sstream>
-#include <Eigen/Dense>
 
 namespace nanolog
 {
@@ -91,8 +91,7 @@ class NanoLogLine
     NanoLogLine &operator<<(const Eigen::EigenBase<Derived> &expr)
     {
         // 无括号，无对齐，元素与行之间都用 ", " 分隔
-        static const Eigen::IOFormat kFmt(
-            Eigen::StreamPrecision, Eigen::DontAlignCols, ", ", ", ", "", "", "", "");
+        static const Eigen::IOFormat kFmt(Eigen::StreamPrecision, Eigen::DontAlignCols, ", ", ", ", "", "", "", "");
         std::ostringstream oss;
         oss << expr.derived().eval().format(kFmt);
         return (*this) << oss.str();
@@ -201,16 +200,10 @@ void initialize(GuaranteedLogger gl, std::string const &log_directory, std::stri
 void initialize(NonGuaranteedLogger ngl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb);
 
 // New overloads with fixed rolling file count
-void initialize(GuaranteedLogger gl,
-                std::string const &log_directory,
-                std::string const &log_file_name,
-                uint32_t log_file_roll_size_mb,
+void initialize(GuaranteedLogger gl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb,
                 uint32_t max_files);
 
-void initialize(NonGuaranteedLogger ngl,
-                std::string const &log_directory,
-                std::string const &log_file_name,
-                uint32_t log_file_roll_size_mb,
+void initialize(NonGuaranteedLogger ngl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb,
                 uint32_t max_files);
 
 }  // namespace nanolog

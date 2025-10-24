@@ -7,7 +7,6 @@ namespace robot_server_lib
 namespace utils
 {
 
-
 inline std::uint64_t encodeTwoUint32AsUint64(std::uint32_t a, std::uint32_t b)
 {
     return encodeTwo32BitIntAs64Bit<std::uint32_t, std::uint64_t>(a, b);

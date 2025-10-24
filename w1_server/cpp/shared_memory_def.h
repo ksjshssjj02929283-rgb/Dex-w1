@@ -1,14 +1,12 @@
 #pragma once
 
+#include <sys/shm.h>
+
 #include <array>
 #include <atomic>
-#include <sys/shm.h>
 #include <cassert>
 #include <cstring>
 #include <iostream>
-#include <new>    
-#include <cstdint>   
-#include <cerrno>     
 
 #define FEEDBACK_SHM_KEY 0x1000
 #define CONTROL_SHM_KEY 0x2000
@@ -47,12 +45,14 @@ struct RobotControl
     double chassis_right_velocity = 0.0;
 };
 
-inline void decodeTwoUint32FromUint64(std::uint64_t v, std::uint32_t &latest, std::uint32_t &reader) {
+inline void decodeTwoUint32FromUint64(std::uint64_t v, std::uint32_t& latest, std::uint32_t& reader)
+{
     latest = static_cast<std::uint32_t>(v >> 32);
     reader = static_cast<std::uint32_t>(v & 0xFFFFFFFFu);
 }
 
-inline std::uint64_t encodeTwoUint32AsUint64(std::uint32_t latest, std::uint32_t reader) {
+inline std::uint64_t encodeTwoUint32AsUint64(std::uint32_t latest, std::uint32_t reader)
+{
     return (static_cast<std::uint64_t>(latest) << 32) | reader;
 }
 
@@ -66,12 +66,12 @@ class SharedMemory
         return instance;
     }
 
-    bool AppendNewElement(const T &data);
-    bool PeekLatest(T *data);
+    bool AppendNewElement(const T& data);
+    bool PeekLatest(T* data);
     bool is_valid() const { return valid_; }
     // 设置超时时间（毫秒），-1表示不检测超时, 默认为100ms
     static void SetDataValidTimeoutMs(int64_t ms) { timeout_ms_.store(ms, std::memory_order_relaxed); }
-    
+
    protected:
     struct QueueElement
     {
@@ -94,47 +94,56 @@ class SharedMemory
     static std::atomic<int64_t> timeout_ms_;
     static constexpr std::uint32_t kInvalidReader = 0xFFFFFFFFu;
 
-    SharedMemory() : shm_ptr_(nullptr) {
+    SharedMemory() : shm_ptr_(nullptr)
+    {
         shmid_ = shmget(SHM_KEY, sizeof(ShmStruct), IPC_CREAT | IPC_EXCL | 0666);
         bool created = false;
-        if (shmid_ < 0) {
-            if (errno == EEXIST) {
+        if (shmid_ < 0)
+        {
+            if (errno == EEXIST)
+            {
                 shmid_ = shmget(SHM_KEY, sizeof(ShmStruct), 0666);
-                if (shmid_ < 0) {
+                if (shmid_ < 0)
+                {
                     std::cerr << "shmget failed, errno=" << errno << " (" << strerror(errno) << ")\n";
                     valid_ = false;
                     return;
                 }
-            } else {
+            }
+            else
+            {
                 std::cerr << "shmget failed, errno=" << errno << " (" << strerror(errno) << ")\n";
                 valid_ = false;
                 return;
             }
-        } else {
+        }
+        else
+        {
             created = true;
         }
         void* tmp = shmat(shmid_, NULL, 0);
-        if (tmp == (void*)(-1)) {
+        if (tmp == (void*)(-1))
+        {
             std::cerr << "shmat failed, errno=" << errno << " (" << strerror(errno) << ")\n";
             valid_ = false;
             return;
         }
         shm_ptr_ = reinterpret_cast<ShmStruct*>(tmp);
-        if (created) {
+        if (created)
+        {
             // 在共享内存中值初始化构造对象
             new (shm_ptr_) ShmStruct();
 
             // 设置 latest/reader 初值（避免 0 的歧义，显式使用 0u）
-            shm_ptr_->latest_and_reader.store(
-                encodeTwoUint32AsUint64(0u, kInvalidReader),
-                std::memory_order_relaxed
-            );
+            shm_ptr_->latest_and_reader.store(encodeTwoUint32AsUint64(0u, kInvalidReader), std::memory_order_relaxed);
         }
         valid_ = true;
     }
 
-    ~SharedMemory() {
-        if (shm_ptr_) {
+    ~SharedMemory()
+    {
+        if (shm_ptr_)
+        {
             shmdt(shm_ptr_);
         }
         if (shmid_ != -1)
@@ -148,12 +157,13 @@ class SharedMemory
             }
             else
             {
-                std::cout << "buf.shm_nattch = " << buf.shm_nattch << "." << " Shared memory segment still in use." << std::endl;
+                std::cout << "buf.shm_nattch = " << buf.shm_nattch << "."
+                          << " Shared memory segment still in use." << std::endl;
             }
         }
     }
 
-    void tryWrapLatestAndReader(std::uint32_t &latest, std::uint32_t &reader);
+    void tryWrapLatestAndReader(std::uint32_t& latest, std::uint32_t& reader);
 };
 
 // 静态成员初始化

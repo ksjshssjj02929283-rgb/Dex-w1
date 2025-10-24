@@ -3,23 +3,23 @@
 #include <geometry_msgs/msg/twist.hpp>
 
 #include "chassis_interfaces/msg/chassis_whole_control.hpp"
+#include "force_sensor_reader.h"
 #include "joint_interfaces/msg/joint_control.hpp"
 #include "joint_interfaces/msg/joint_position_control.hpp"
 #include "joint_interfaces/msg/joint_velocity_torque_limit_feedback.hpp"
 #include "robot_server_lib/robot_server_base.h"
-#include "force_sensor_reader.h"
 #include "shared_memory_def.h"
 
-#define CTRLWORD_MOTOR_SWITCH_ON      (1U << 0)
-#define CTRLWORD_MOTOR_ENABLE         (1U << 1)
-#define CTRLWORD_MOTOR_QUICK_STOP     (1u << 2)
-#define CTRLWORD_MOTOR_CLEAR_FAULT    (1U << 3)
-#define CTRLWORD_MOTOR_CST_MODE       (1U << 4)
+#define CTRLWORD_MOTOR_SWITCH_ON (1U << 0)
+#define CTRLWORD_MOTOR_ENABLE (1U << 1)
+#define CTRLWORD_MOTOR_QUICK_STOP (1u << 2)
+#define CTRLWORD_MOTOR_CLEAR_FAULT (1U << 3)
+#define CTRLWORD_MOTOR_CST_MODE (1U << 4)
 
-#define STATUSWORD_MOTOR_READY        (1U << 0)
-#define STATUSWORD_MOTOR_ENABLED      (1U << 1)
-#define STATUSWORD_MOTOR_FAULT        (1U << 2)
-#define STATUSWORD_MOTOR_QUICK_STOP   (1U << 3)
+#define STATUSWORD_MOTOR_READY (1U << 0)
+#define STATUSWORD_MOTOR_ENABLED (1U << 1)
+#define STATUSWORD_MOTOR_FAULT (1U << 2)
+#define STATUSWORD_MOTOR_QUICK_STOP (1U << 3)
 
 namespace robot_server_lib
 {
@@ -61,9 +61,11 @@ class RobotServer : public RobotServerBase
                                                      "RIGHT_J2", "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
     struct
     {
-        double positive_limit_Nm[20]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0, 10.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
-        double negative_limit_Nm[20]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0, 10.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
-    } torque_limit_; // 关节力矩限制参数默认值, 单位: Nm
+        double positive_limit_Nm[20]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0,
+                                     10.0,  10.0,  10.0,  25.0,  25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
+        double negative_limit_Nm[20]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0,
+                                     10.0,  10.0,  10.0,  25.0,  25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
+    } torque_limit_;  // 关节力矩限制参数默认值, 单位: Nm
 
     const int first_arm_joint_index_ = 6;  // 左臂第一个关节在整体关节数组中的索引
     std::shared_ptr<ForceSensorReader> primary_sensor_;
@@ -74,9 +76,9 @@ class RobotServer : public RobotServerBase
 
     // 低通滤波状态与参数（用于传感器数据）
     Eigen::Vector<double, 6> sensor_filtered_ = Eigen::Vector<double, 6>::Zero();
-    double sensor_lpf_alpha_ = 1.0;        // alpha: 越小越平滑（0..1）
+    double sensor_lpf_alpha_ = 1.0;  // alpha: 越小越平滑（0..1）
     bool sensor_filter_initialized_ = false;
-    
+
     void InitParamConfig();  // 初始化/读写 torque_limit_ 的 JSON 配置
 };
 

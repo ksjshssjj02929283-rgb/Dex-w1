@@ -1,4 +1,5 @@
 #include "joint_streaming_planner.h"
+
 #include <chrono>
 
 namespace robot_server_lib
@@ -27,7 +28,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             runtime_.latest_cmd.emplace(cmd_buffer);
         }
     }
-    
+
     if (!runtime_.latest_cmd.has_value())
     {
         // 如果自请求开始已经超过超时，则认为任务结束

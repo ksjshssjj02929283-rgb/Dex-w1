@@ -1,24 +1,25 @@
-#include <termios.h>
 #include <fcntl.h>
-#include <unistd.h>
-#include <sys/select.h>
-#include <cstring>
-#include <array>
-#include <vector>
-#include <numeric>
-#include "robot_server_lib/typedef.h"
-#include <thread>
-#include <chrono>
-#include <cerrno>
 #include <poll.h>
+#include <sys/select.h>
+#include <termios.h>
+#include <unistd.h>
+
+#include <array>
+#include <cerrno>
+#include <chrono>
+#include <cstring>
+#include <numeric>
+#include <thread>
+#include <vector>
+
+#include "robot_server_lib/typedef.h"
 
 using namespace robot_server_lib;
 
 class ForceSensorReader
 {
-public:
-    explicit ForceSensorReader(const std::string &port, int baud = 460800)
-        : port_(port), baud_(baud), fd_(-1), zero_calibrated_(false)
+   public:
+    explicit ForceSensorReader(const std::string &port, int baud = 460800) : port_(port), baud_(baud), fd_(-1), zero_calibrated_(false)
     {
         Initialize();
     }
@@ -35,16 +36,19 @@ public:
         if (this->ConfigurePort())
         {
             this->StartSensor();
-            if (fd_ >= 0) tcflush(fd_, TCIFLUSH);
+            if (fd_ >= 0)
+                tcflush(fd_, TCIFLUSH);
             // 零点校准线程避免阻塞
-            std::thread([this]() 
-            {
-                if (this->InitZeroCalibration(500))
+            std::thread(
+                [this]()
                 {
-                    sensor_ready_ = true;
-                    std::cout << "Force sensor on port " << port_ << " is ready." << std::endl;
-                }
-            }).detach();
+                    if (this->InitZeroCalibration(500))
+                    {
+                        sensor_ready_ = true;
+                        std::cout << "Force sensor on port " << port_ << " is ready." << std::endl;
+                    }
+                })
+                .detach();
         }
         else
         {
@@ -74,7 +78,7 @@ public:
         tty.c_cflag &= ~CRTSCTS;
 
         // 非阻塞：由 O_NONBLOCK 控制等待，VMIN/VTIME 设为 0，避免 read 额外阻塞
-        tty.c_cc[VMIN]  = 0;
+        tty.c_cc[VMIN] = 0;
         tty.c_cc[VTIME] = 0;
 
         tcflush(fd_, TCIOFLUSH);
@@ -83,21 +87,17 @@ public:
 
         // 设置文件描述符为非阻塞
         int flags = fcntl(fd_, F_GETFL, 0);
-        if (flags == -1) return false;
-        if (fcntl(fd_, F_SETFL, flags | O_NONBLOCK) == -1) return false;
+        if (flags == -1)
+            return false;
+        if (fcntl(fd_, F_SETFL, flags | O_NONBLOCK) == -1)
+            return false;
 
         return true;
     }
 
-    bool StartSensor()
-    {
-        return SendCommand(0x48);
-    }
+    bool StartSensor() { return SendCommand(0x48); }
 
-    bool StopSensor()
-    {
-        return SendCommand(0x43);
-    }
+    bool StopSensor() { return SendCommand(0x43); }
 
     // 初始化并做零点校准（收集 count 帧取均值）
     bool InitZeroCalibration(int count = 500)
@@ -125,8 +125,7 @@ public:
         for (int i = 0; i < 6; ++i)
         {
             double s = 0;
-            for (auto &r : buf)
-                s += r[i];
+            for (auto &r : buf) s += r[i];
             mean[i] = s / buf.size();
         }
         zero_frame_ = mean;
@@ -145,7 +144,10 @@ public:
         for (int attempt = 0; attempt < attempts; ++attempt)
         {
             // 等待读事件，最久 2ms，避免 busy-loop
-            struct pollfd pfd{fd_, POLLIN, 0};
+            struct pollfd pfd
+            {
+                fd_, POLLIN, 0
+            };
             int pr = poll(&pfd, 1, 2);
             if (pr <= 0)
             {
@@ -189,9 +191,13 @@ public:
 
                 int remain = 27 - got;
                 int wait_ms = (int)std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
-                if (wait_ms > 2) wait_ms = 2; // 小步等待
+                if (wait_ms > 2)
+                    wait_ms = 2;  // 小步等待
 
-                struct pollfd p2{fd_, POLLIN, 0};
+                struct pollfd p2
+                {
+                    fd_, POLLIN, 0
+                };
                 int pr2 = poll(&p2, 1, wait_ms);
                 if (pr2 <= 0)
                 {
@@ -247,12 +253,11 @@ public:
         std::array<double, 6> tmp{};
         if (!ReadFrameOnce(tmp))
             return false;
-        for (int i = 0; i < 6; ++i)
-            out(i) = tmp[i] - zero_frame_[i];
+        for (int i = 0; i < 6; ++i) out(i) = tmp[i] - zero_frame_[i];
         return true;
     }
 
-private:
+   private:
     bool SendCommand(uint8_t cmd)
     {
         if (fd_ < 0)

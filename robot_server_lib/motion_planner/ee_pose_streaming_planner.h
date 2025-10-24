@@ -28,7 +28,7 @@ class EEPoseStreamingPlanner : public MotionPlannerBase
         std::optional<StreamingCommand> latest_cmd;
     } runtime_;
 
-  private:
+   private:
     TimePointSystem request_start_time_{TimePointSystem::Invalid()};
 };
 

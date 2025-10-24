@@ -53,7 +53,8 @@ bool SharedMemory<T, BufferCapacity, SHM_KEY>::AppendNewElement(const T &element
 
     // Update the index
     std::uint64_t new_latest_and_reader = encodeTwoUint32AsUint64(wrap_latest, wrap_reader);
-    while (!shm_ptr_->latest_and_reader.compare_exchange_weak(latest_and_reader, new_latest_and_reader, std::memory_order_acq_rel, std::memory_order_relaxed))
+    while (!shm_ptr_->latest_and_reader.compare_exchange_weak(latest_and_reader, new_latest_and_reader, std::memory_order_acq_rel,
+                                                              std::memory_order_relaxed))
     {
         // Update the reader
         decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
@@ -87,8 +88,8 @@ bool SharedMemory<T, BufferCapacity, SHM_KEY>::PeekLatest(T *element_output)
         decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
         assert(reader == kInvalidReader);
         latest_and_reader_reserved = encodeTwoUint32AsUint64(latest, latest);
-    } while (!shm_ptr_->latest_and_reader.compare_exchange_weak(
-                 latest_and_reader, latest_and_reader_reserved, std::memory_order_acq_rel, std::memory_order_relaxed));
+    } while (!shm_ptr_->latest_and_reader.compare_exchange_weak(latest_and_reader, latest_and_reader_reserved, std::memory_order_acq_rel,
+                                                                std::memory_order_relaxed));
 
     // Check the data validity and timeout BEFORE writing to element_output
     const std::uint32_t latest_place = latest % BufferCapacity;
@@ -123,8 +124,8 @@ bool SharedMemory<T, BufferCapacity, SHM_KEY>::PeekLatest(T *element_output)
     // Now release the lock via updating the reader to invalid
     // Also no wrapping here
     std::uint64_t latest_and_reader_released = encodeTwoUint32AsUint64(latest, kInvalidReader);
-    while (!shm_ptr_->latest_and_reader.compare_exchange_weak(
-        latest_and_reader, latest_and_reader_released, std::memory_order_acq_rel, std::memory_order_relaxed))
+    while (!shm_ptr_->latest_and_reader.compare_exchange_weak(latest_and_reader, latest_and_reader_released, std::memory_order_acq_rel,
+                                                              std::memory_order_relaxed))
     {
         decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
         assert(reader != kInvalidReader);  // It is me
@@ -134,4 +135,3 @@ bool SharedMemory<T, BufferCapacity, SHM_KEY>::PeekLatest(T *element_output)
     // Done
     return read_ok;
 }
-

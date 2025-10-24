@@ -230,12 +230,10 @@ template <typename T, std::int64_t ConcurrentReadersHint>
 void SingleWriterLatestBuffer<T, ConcurrentReadersHint>::Reset()
 {
     // 清空元素内容
-    for (auto &e : elements_)
-        e = T{};
+    for (auto &e : elements_) e = T{};
 
     // 清空版本与引用计数
-    for (auto &vr : version_refcount_)
-        vr.store(0u, std::memory_order_relaxed);
+    for (auto &vr : version_refcount_) vr.store(0u, std::memory_order_relaxed);
 
     // 重置 active
     active_.store(-1, std::memory_order_release);

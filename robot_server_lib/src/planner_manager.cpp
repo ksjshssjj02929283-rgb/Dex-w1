@@ -194,7 +194,7 @@ RequestResponse PlannerManager::OnRequestStateIdle()
     const auto &time_meta = runtime_data_.time_meta;
     const auto &request = runtime_data_.planner_request;
     const auto &measurement = runtime_data_.measurement;
-    if (time_meta.measurement_time.is_invalid()) // 如果measurement_time无效则说明测量数据错误, 不能继续运行
+    if (time_meta.measurement_time.is_invalid())  // 如果measurement_time无效则说明测量数据错误, 不能继续运行
     {
         ChangeState(Status::Init);
         LOG_CRIT << "Measurement time invalid in Running state, changing to Init state.";
@@ -253,7 +253,7 @@ RequestResponse PlannerManager::OnRequestStateRunning()
     const auto &time_meta = runtime_data_.time_meta;
     const auto &request = runtime_data_.planner_request;
     const auto &measurement = runtime_data_.measurement;
-    if (time_meta.measurement_time.is_invalid()) // 如果measurement_time无效则说明测量数据错误, 不能继续运行
+    if (time_meta.measurement_time.is_invalid())  // 如果measurement_time无效则说明测量数据错误, 不能继续运行
     {
         ChangeState(Status::Init);
         LOG_CRIT << "Measurement time invalid in Running state, changing to Init state.";
@@ -317,7 +317,7 @@ RequestResponse PlannerManager::OnRequestStateError()
 {
     RequestResponse response{};
     const auto &request = runtime_data_.planner_request;
-    if (runtime_data_.time_meta.measurement_time.is_invalid()) // 如果measurement_time无效则说明测量数据错误, 不能继续运行
+    if (runtime_data_.time_meta.measurement_time.is_invalid())  // 如果measurement_time无效则说明测量数据错误, 不能继续运行
     {
         ChangeState(Status::Init);
         LOG_CRIT << "Measurement time invalid in Running state, changing to Init state.";
