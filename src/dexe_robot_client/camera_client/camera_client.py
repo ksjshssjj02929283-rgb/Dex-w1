@@ -61,21 +61,21 @@ class CameraClient(ABC, Node):
         with self._pcd_lock:
             if self.point_cloud is None or self._last_msg_time is None:
                 self.logger.critical(f"{self.node_name} not connected")
-                return False, None
-            if time.time() - self._last_msg_time > 0.1:
+                return False, None, None
+            if time.time() - self._last_msg_time > 0.2:
                 self.logger.warning(f"{self.node_name}: data is outdated")
-            # points = np.array([
-            #     [p[0], p[1], p[2]]
-            #     for p in point_cloud2.read_points(self.point_cloud, field_names=("x", "y", "z"), skip_nans=True)
-            # ], dtype=np.float32)
+            
             points = np.frombuffer(self.point_cloud.data, dtype=np.float32).reshape(-1, int(self.point_cloud.point_step / np.dtype(np.float32).itemsize))
-            print(f"point cloud shape: {points[:, 0:3].shape}")
-        return True, points[:, 0:3]
+            # print(f"point cloud shape: {points[:, 0:3].shape}")
+        return True, points[:, 0:3], self.point_cloud.header.stamp.sec + self.point_cloud.header.stamp.nanosec*1e-9
 
     def _point_cloud_callback(self, msg):
         with self._pcd_lock:
             self.point_cloud = msg
-            self._last_msg_time = time.time()
+            self._last_msg_time = self.get_clock().now().nanoseconds / 1e9
+            # self.logger.debug(f"pcd msg time stamp: {msg.header.stamp.sec + msg.header.stamp.nanosec*1e-9}")
+            # self.logger.debug(f"Received new point cloud time stamp: {self._last_msg_time}")
+
 
     def spin_once(self, timeout_sec: float = 0.1):
         r"""Spin the node once with a timeout of 0.1 sec."""

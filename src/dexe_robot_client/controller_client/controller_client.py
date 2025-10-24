@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 import rclpy
 from rclpy.node import Node
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from std_msgs.msg import String, Float64
 
 from ..common import get_logger
 
@@ -24,6 +25,9 @@ class ControllerClient(ABC, Node):
 
         self._connection_timeout = 1.
 
+        self._stop_dynamic_moving_lock = threading.Lock()
+        self._stop_dynamic_moving = False
+
         self._init_subscriber()
         self.spin_once(timeout_sec = 1.)
 
@@ -35,6 +39,12 @@ class ControllerClient(ABC, Node):
             "/dexe_robot_client/trajectory",
             self._trajectory_callback,
             rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
+        )
+        self.create_subscription(
+            String,
+            '/dexe_robot_client/stop_dynamic_moving',
+            self._stop_dynamic_moving_callback,
+            1
         )
 
     def _check_connection_status(self):
@@ -55,7 +65,7 @@ class ControllerClient(ABC, Node):
         return False
 
     def _trajectory_callback(self, msg):
-        self.logger.debug(f"Received new trajectory message")
+        # self.logger.debug(f"Received new trajectory message")
         with self._traj_lock:
             self.trajectory_msg = msg
             self._traj_last_msg_time = time.time()
@@ -70,6 +80,8 @@ class ControllerClient(ABC, Node):
             traj_points = self.trajectory_msg.points
             traj_list = [point.positions for point in traj_points]
             self.trajectory = np.array(traj_list, dtype=np.float32)
+            if self.trajectory.shape[0] == 0:
+                self.trajectory = None
             self.is_new_trajectory = False
             
         return self.trajectory
@@ -80,6 +92,20 @@ class ControllerClient(ABC, Node):
         
     def set_is_new_trajectory(self, is_new: bool):
         self.is_new_trajectory = is_new
+
+    def _stop_dynamic_moving_callback(self, msg):
+        self.logger.info("Received stop dynamic moving command")
+        with self._stop_dynamic_moving_lock:
+            self._stop_dynamic_moving = True
+        
+
+    def get_stop_dynamic_moving_flag(self):
+        with self._stop_dynamic_moving_lock:
+            return self._stop_dynamic_moving
+        
+    def reset_stop_dynamic_moving_flag(self):
+        with self._stop_dynamic_moving_lock:
+            self._stop_dynamic_moving = False
 
     def spin_once(self, timeout_sec: float = 0.1):
         r"""Spin the node once with a timeout of 0.1 sec."""

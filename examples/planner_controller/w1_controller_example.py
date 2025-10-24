@@ -9,7 +9,7 @@ import time
 
 def test_w1_controller():
     w1_controller = W1Controller(
-        is_sim=True,
+        is_sim=False,
         arm_type=W1ArmType.ANTHROPOMORPHIC,
         w1_version=W1Version.V2,
         end_effector_type=None

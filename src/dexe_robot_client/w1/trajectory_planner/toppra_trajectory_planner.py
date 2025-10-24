@@ -47,11 +47,6 @@ class ToppraTrajectoryPlanner:
 
         t = path.evald(0)
         norm2 = float(np.dot(t, t))
-        self.logger.debug(f"toppra qpos list: {qpos_array}")
-        # print(f"qpos_array shape: {qpos_array.shape}")
-        # print(f"t type: {type(t)} with shape {t.shape}")
-        # print(f"last joint vel: {self.last_joint_vel}")
-        # print(f"self.last_joint_vel shape: {self.last_joint_vel.shape}")
         v_start = float(np.dot(t, self.last_joint_vel) / norm2)
 
 

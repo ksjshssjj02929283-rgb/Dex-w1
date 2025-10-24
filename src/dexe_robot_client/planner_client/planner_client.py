@@ -11,6 +11,7 @@ from ..robot_client.data_structure import *
 from ..end_effector_client import EndEffectorType
 from robot_server_interfaces.msg import StreamingCommand
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from collections import deque
 
 from ..common import get_logger
 
@@ -51,6 +52,7 @@ class PlannerClient(ABC, Node):
         self.is_first_streaming = True
         self.streaming_dt = 0.01  # 100Hz
         
+        self.streaming_history = deque(maxlen=50) # buffer to store the last 20 streaming points
 
         self._connection_timeout = 1.0
 
@@ -92,12 +94,13 @@ class PlannerClient(ABC, Node):
         """定时检查消息是否超时"""
         if self._streaming_last_msg_time is not None:
             cur_time = self.get_clock().now().nanoseconds / 1e9
-            if (cur_time - self._streaming_last_msg_time) > self._connection_timeout:
+            if (cur_time - self._streaming_last_msg_time) > 0.2:
                 self.streaming_position = None
                 self.last_streaming_position = None
                 self.streaming_vel = None
                 self.is_first_streaming = True
                 self._streaming_last_msg_time = None
+                self.streaming_history.clear()
 
     def is_connected(self, timeout_sec: float = 0.5):
         start_time = time.time()
@@ -112,6 +115,9 @@ class PlannerClient(ABC, Node):
     def _init_publisher(self):
         self.trajectory_publisher = self.create_publisher(
             JointTrajectory, '/dexe_robot_client/trajectory', 1
+        )
+        self.stop_dynamic_moving_publisher = self.create_publisher(
+            String, '/dexe_robot_client/stop_dynamic_moving', 1
         )
     def _init_subscriber(self):
         if self.is_sim: 
@@ -214,29 +220,45 @@ class PlannerClient(ABC, Node):
             self._armree_last_msg_time = self.get_clock().now().nanoseconds / 1e9
 
     def _streaming_cmd_callback(self, msg):
+        now = self.get_clock().now().nanoseconds / 1e9
+        # self.logger.debug(f"receiving time: {now}")
+        # self.logger.debug(f"streaming command: {msg.position[6:13]}")
         with self._streaming_cmd_lock:
             if self.is_first_streaming:
                 self.is_first_streaming = False
                 self.streaming_position = msg.position
                 self.last_streaming_position = msg.position
                 self.streaming_vel = np.zeros(len(msg.position))
-                self._streaming_last_msg_time = self.get_clock().now().nanoseconds / 1e9
+                self._streaming_last_msg_time = now
+
+                self.streaming_history.append({
+                    "time": now,
+                    "position": msg.position,
+                    "velocity": np.zeros(len(msg.position))
+                })
+
                 if msg.streaming_finished:
                     self.is_first_streaming = True
             else:
                 self.streaming_position = msg.position
                 self.streaming_vel = (np.array(self.streaming_position) - np.array(self.last_streaming_position)) / self.streaming_dt
+                self._streaming_last_msg_time = now
+
+                self.streaming_history.append({
+                    "time": now,
+                    "position": msg.position,
+                    "velocity": (np.array(msg.position) - np.array(self.last_streaming_position)) / self.streaming_dt
+                })
                 self.last_streaming_position = msg.position
-                self._streaming_last_msg_time = self.get_clock().now().nanoseconds / 1e9
-                # self.logger.debug(f"streaming last msg time: {self._streaming_last_msg_time}")
+
                 if msg.streaming_finished:
                     self.is_first_streaming = True
 
     def get_streaming_cmd(self):
         with self._streaming_cmd_lock:
             if self.is_first_streaming:
-                return None, np.zeros(20)
-            return self.streaming_position, self.streaming_vel
+                return None, np.zeros(20), None, None
+            return self.streaming_position, self.streaming_vel, self._streaming_last_msg_time, self.streaming_history
 
 
     def get_state(self):

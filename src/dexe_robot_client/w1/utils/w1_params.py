@@ -66,7 +66,7 @@ class W1Params:
         self.torso_ub = np.deg2rad([90., 155., 90., 170.])
         self.torso_lb = np.deg2rad([-90., -155., -110., -170.])
         self.head_ub = np.deg2rad([90., 25.])
-        self.head_lb = np.deg2rad([-90., -45.])
+        self.head_lb = np.deg2rad([-90., -60.])
 
         self._left_arm_kine_params = W1ArmKineParams(True, self._arm_type, self._w1_version)
         self._right_arm_kine_params = W1ArmKineParams(False, self._arm_type, self._w1_version)

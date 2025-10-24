@@ -18,9 +18,19 @@ class OrbbecClient(CameraClient):
                          timeout_sec = timeout_sec)
         
     def _init_subscriber(self):
+        # Orbbec Camera Dabai DCW2 subscriber
+
+        # self.create_subscription(
+        #     PointCloud2, 
+        #     "/camera/depth/points",
+        #     self._point_cloud_callback,
+        #     rclpy.qos.QoSProfile(reliability=rclpy.qos.QoSReliabilityPolicy.BEST_EFFORT, depth=1, durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
+        # )
+
+        # Realsense D455 subscriber
         self.create_subscription(
-            PointCloud2, 
-            "/camera/depth/points",
+            PointCloud2,
+            "/camera/camera/depth/color/points",
             self._point_cloud_callback,
             rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
         )

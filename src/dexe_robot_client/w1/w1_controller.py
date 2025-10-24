@@ -99,6 +99,9 @@ class W1Controller:
         
         self._stop_move_event = threading.Event()
         self._stop_move_event.clear()
+
+        self._stop_dynamic_moving = False
+
         
     def _init_service_servers(self):
         if not rclpy.ok():
@@ -145,7 +148,7 @@ class W1Controller:
         self.start_moving_server = self.service_node.create_service(ClientService,
                                                                     "start_moving",
                                                                     self.start_moving_callback)
-
+        
         self.service_executor.add_node(self.service_node)
         self._service_thread = threading.Thread(target=self.service_executor.spin, 
                                             daemon=True)
@@ -473,6 +476,7 @@ class W1Controller:
         return response
 
     def set_sim_mode(self, enable_sim: bool) -> bool:
+        """设置仿真/真实模式"""
         if self._is_sim == enable_sim:
             if self._is_sim:
                 self.logger.info("W1 manager already in sim mode.")
@@ -505,15 +509,18 @@ class W1Controller:
         # if target_left_ee_client is None:
         #     self.logger.error(f"Left_ee_client_{target_name} is not initialized.")
         #     return False
-        if not target_left_ee_client.is_connected():
-            self.logger.error(f"{target_left_ee_client.node_name} is not connected!")
-            return False
+
+        if self._end_effector_type is not None:
+            if not target_left_ee_client.is_connected():
+                self.logger.error(f"{target_left_ee_client.node_name} is not connected!")
+                return False
         # if target_right_ee_client is None:
         #     self.logger.error(f"Right_ee_client_{target_name} is not initialized.")
         #     return False
-        if not target_right_ee_client.is_connected():
-            self.logger.error(f"{target_right_ee_client.node_name} is not connected!")
-            return False
+        if self._end_effector_type is not None:
+            if not target_right_ee_client.is_connected():
+                self.logger.error(f"{target_right_ee_client.node_name} is not connected!")
+                return False
 
         # 检查current client
         if not self.robot_client.is_connected():
@@ -523,12 +530,13 @@ class W1Controller:
             self.logger.error(f"{self.robot_client.node_name} status: {self.robot_client.status}, can not switch mode!")
             return False
 
-        if not self.left_ee_client.is_connected():
-            self.logger.error(f"{self.left_ee_client.node_name} is not connected!")
-            return False
-        if not self.right_ee_client.is_connected():
-            self.logger.error(f"{self.right_ee_client.node_name} is not connected!")
-            return False
+        if self._end_effector_type is not None:
+            if not self.left_ee_client.is_connected():
+                self.logger.error(f"{self.left_ee_client.node_name} is not connected!")
+                return False
+            if not self.right_ee_client.is_connected():
+                self.logger.error(f"{self.right_ee_client.node_name} is not connected!")
+                return False
 
         self.robot_client = target_robot_client
         self.left_ee_client = target_left_ee_client
@@ -770,6 +778,8 @@ class W1Controller:
         )
         return response
     
+
+
     def execute_joint_traj(self, 
                            qpos_array: np.ndarray,
                            left_arm_ee_trigger_list: list = None,
@@ -949,6 +959,12 @@ class W1Controller:
         return response
     
     def start_moving(self):
+
+        self.controller_client.reset_stop_dynamic_moving_flag()
+
+        start_qpos = self.get_current_qpos()[1]
+        self.robot_client.send_streaming_command(position = start_qpos.tolist(),
+                                                             streaming_finished = True)
         if self.robot_client.status in (Status.Init, Status.Running, Status.Error):
             self.logger.error(f"Robot client not in idle. ({self.robot_client.status})")
             return False
@@ -958,17 +974,30 @@ class W1Controller:
         last_qpos = None
         # input("press enter to continue")
         while True:
+            if self.controller_client.get_stop_dynamic_moving_flag():
+                self.logger.info("Stop dynamic moving by controller client!")
+                last_qpos = self.get_current_qpos()[1]
+                self.robot_client.send_streaming_command(position = last_qpos.tolist(),
+                                                             streaming_finished = True)
+                self.robot_client.wait_request_finish()
+                break
+
             # start_time = time.time()
             received_traj = self.controller_client.get_trajectory_numpy()
             
-            self.logger.debug(f"last qpos: {last_qpos[6:13] if last_qpos is not None else None}")
-            self.logger.debug(f"received first qpos: {received_traj[0, 6:13] if received_traj is not None else None}")
+            # self.logger.debug(f"last qpos: {last_qpos[6:13] if last_qpos is not None else None}")
+            # self.logger.debug(f"received first qpos: {received_traj[0, 6:13] if received_traj is not None else None}")
             # self.logger.debug(f"current received time: {time.time()}")
             if received_traj is None:
+                # self.logger.debug("No new trajectory.")
                 current_traj_finish = False
                 continue
+            else:
+                current_traj_finish = False
+                self.logger.debug(f"Received new trajectory with length {received_traj.shape}")
 
             if current_traj_finish:
+                self.logger.debug("current traj finish True")
                 continue
 
             if self._stop_move_event.is_set():
@@ -976,6 +1005,7 @@ class W1Controller:
 
             res, cur_qpos = self.get_current_qpos()
             if not res:
+                self.logger.debug("get qpos failed")
                 continue
 
             
@@ -996,6 +1026,11 @@ class W1Controller:
             # if record_new_traj_time is not None:
             #     self.logger.debug(f"wait new traj time: {time.time() - record_new_traj_time}s")
             #     record_new_traj_time = None
+
+            if self.robot_client.status != Status.Running:
+                self.robot_client.start_joint_streaming_request(MotionGroup.WholeBody)
+                self.logger.info("Robot client start streaming request again.")
+
             for qpos in received_traj:
                 # self.logger.debug("enter the received traj loop and publish point")
                 is_new_traj = self.controller_client.get_is_new_trajectory()
@@ -1017,7 +1052,7 @@ class W1Controller:
                     # self.robot_client.wait_second(self.TIME_STEP)
                     # self._stop_move_event.clear()
                     break
-
+                
                 if count == end_iter + 1:
                     streaming_finished = True
                 else:
@@ -1026,8 +1061,8 @@ class W1Controller:
                 if not self.robot_client.send_streaming_command(qpos.tolist(),
                                                                 streaming_finished):
                     self.logger.critical("Streaming command send failed.")
-                    current_traj_finish = True
-                    self.robot_client.start_joint_streaming_request(MotionGroup.WholeBody)
+                    # current_traj_finish = True
+                    # self.robot_client.start_joint_streaming_request(MotionGroup.WholeBody)
                     break
                 if streaming_finished:
                     current_traj_finish = True
@@ -1050,3 +1085,4 @@ class W1Controller:
             }
         )
         return response
+    
