@@ -138,7 +138,7 @@ void RobotServer::TorqueControlThreadFunc()
     auto& feedback_shm_instance = FeedbackSharedMemory::GetInstance();
     auto& control_shm_instance = ControlSharedMemory::GetInstance();
 
-    Int64 loop_counter = -1;
+    Int64 loop_counter = 0;
     auto next_cycle_time_point = std::chrono::steady_clock::now();
 
     while (rclcpp::ok())
@@ -156,7 +156,7 @@ void RobotServer::TorqueControlThreadFunc()
         RobotFeedback feedback_data{};
         bool ret = feedback_shm_instance.PeekLatest(&feedback_data);
         this->is_robot_ready_ = ret && (feedback_data.robot_status_word & STATUSWORD_MOTOR_READY);
-
+        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT;
         if (this->is_robot_ready_)
         {
             // 关节反馈数据写入测量数据
@@ -176,8 +176,8 @@ void RobotServer::TorqueControlThreadFunc()
             this->robot_buffers_.joint_raw_measurement->Reset();
             if (loop_counter % 3000 == 0)
             {
-                RCLCPP_WARN(this->get_logger(), "Robot is not ready, please check OP state.");
-                LOG_CRIT << "Robot is not ready, please check OP state.";
+                RCLCPP_WARN(this->get_logger(), "Robot is not ready, please check Connection, OP or Error state.");
+                LOG_CRIT << "Robot is not ready, please check Connection, OP or Error state.";
             }
         }
 
@@ -244,9 +244,9 @@ void RobotServer::TorqueControlThreadFunc()
             // robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT |
             // CTRLWORD_MOTOR_CST_MODE;
             robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT;
-            control_shm_instance.AppendNewElement(robot_control_);
         }
 
+        control_shm_instance.AppendNewElement(robot_control_);
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }
