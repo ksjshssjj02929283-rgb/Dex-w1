@@ -304,8 +304,6 @@ Int64 RobotServer::StartStreaming(PlannerRequest planner_request)
 
     if (request_id < 0)
     {
-        RCLCPP_WARN(this->get_logger(), "Still existed previous move request, failed to queue start streaming request");
-        LOG_CRIT << "Still existed previous move request, failed to queue start streaming request";
         return request_id;
     }
     planner_request.request_id = request_id;

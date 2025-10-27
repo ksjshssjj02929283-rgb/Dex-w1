@@ -256,6 +256,8 @@ RequestResponse PlannerManager::OnRequestStateRunning()
     if (time_meta.measurement_time.is_invalid())  // 如果measurement_time无效则说明测量数据错误, 不能继续运行
     {
         ChangeState(Status::Init);
+        ReportRequestStatus(runtime_data_.latest_processing_request_id, runtime_data_.latest_processing_request_type, RequestStatus::ErrorDrop,
+                            manager_state_);
         LOG_CRIT << "Measurement time invalid in Running state, changing to Init state.";
         return response;
     }

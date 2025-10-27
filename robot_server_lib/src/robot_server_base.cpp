@@ -137,10 +137,12 @@ Int64 RobotServerBase::MakeNewRequestID(RequestType type)
 {
     if (type == RequestType::StartJointStreaming || type == RequestType::StartEEPoseStreaming)
     {
-        if (this->latest_received_id_ > this->latest_report_id_.finished)
+        if (this->latest_received_id_ > (std::max(this->latest_report_id_.finished.load(), this->latest_report_id_.error_drop.load())))
         {
-            RCLCPP_WARN(this->get_logger(), "Still existed previous move request, failed to queue start streaming request");
-            LOG_CRIT << "Still existed previous move request, failed to queue start streaming request";
+            RCLCPP_WARN(this->get_logger(), "Still existed previous move request, failed to queue start streaming request, latest_received_id_: %ld, latest_finished_id_: %ld, latest_errordrop_id_: %ld",
+                        this->latest_received_id_, this->latest_report_id_.finished.load(), this->latest_report_id_.error_drop.load());
+            LOG_CRIT << "Still existed previous move request, failed to queue start streaming request" << ", latest_received_id_: " << this->latest_received_id_
+                     << ", latest_finished_id_: " << this->latest_report_id_.finished.load() << ", latest_errordrop_id_: " << this->latest_report_id_.error_drop.load();
             return -1;
         }
     }
