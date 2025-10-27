@@ -1,3 +1,5 @@
+#include <cmath>    // 新增：std::isfinite
+#include <iomanip>  // 新增：std::setprecision
 #include <memory>
 
 /**
@@ -44,7 +46,15 @@ std::ostringstream VectorToJsonArrayString(const VectorType &vec)
     ss << "[";
     for (int i = 0; i < vec.size(); ++i)
     {
-        ss << vec[i];
+        double v = static_cast<double>(vec[i]);
+        if (std::isfinite(v))
+        {
+            ss << std::setprecision(15) << v;
+        }
+        else
+        {
+            ss << "null";
+        }
         if (i != vec.size() - 1)
             ss << ",";
     }

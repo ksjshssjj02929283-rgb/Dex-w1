@@ -19,13 +19,18 @@ class EEPoseStreamingPlanner : public MotionPlannerBase
     bool ToJointStreamingCommand(StreamingCommand &cmd, const JointMeasurement &measurement);
 
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer_;
-    const double controller_dt_{0.01};
+    const double controller_dt_{0.004};
+    ruckig::Ruckig<ndof_robot> ruckig_otg_;
 
     struct
     {
         Int64 request_id{-1};
         bool streaming_finished{false};
         std::optional<StreamingCommand> latest_cmd;
+        std::optional<StreamingCommand> previous_cmd;
+
+        ruckig::InputParameter<ndof_robot> input;
+        ruckig::OutputParameter<ndof_robot> output;
     } runtime_;
 
    private:

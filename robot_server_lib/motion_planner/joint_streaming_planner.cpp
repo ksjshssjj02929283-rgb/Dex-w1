@@ -7,8 +7,14 @@ namespace robot_server_lib
 
 JointStreamingPlanner::JointStreamingPlanner(RobotModel robot_model, std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer,
                                              double controller_dt)
-    : MotionPlannerBase(robot_model), streaming_buffer_(streaming_buffer), controller_dt_(controller_dt)
+    : MotionPlannerBase(robot_model), streaming_buffer_(streaming_buffer), controller_dt_(controller_dt), ruckig_otg_(controller_dt_)
 {
+    for (auto i = 0; i < ndof_robot; i++)
+    {
+        runtime_.input.max_velocity[i] = streaming_bounds_.max_velocity;
+        runtime_.input.max_acceleration[i] = streaming_bounds_.max_acceleration;
+        runtime_.input.max_jerk[i] = streaming_bounds_.max_jerk;
+    }
 }
 
 JointStreamingPlanner::~JointStreamingPlanner() = default;
@@ -20,6 +26,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
     {
         StreamingCommand cmd_buffer;
         bool received = streaming_buffer_->PeekLatest(&cmd_buffer);
+        // 如果收到了新的命令，并且请求ID匹配，则更新最新命令
         if (received && cmd_buffer.request_id == runtime_.request_id)
         {
             JointPositionDof target_ndof = measurement.q_desired_pre;
@@ -28,44 +35,83 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             runtime_.latest_cmd.emplace(cmd_buffer);
         }
     }
-
+    
+    // 如果从startstreaming后没有收到任何流式命令，检查是否超时, 超时则结束任务
     if (!runtime_.latest_cmd.has_value())
     {
-        // 如果自请求开始已经超过超时，则认为任务结束
-        auto time_interval = (time_meta.current_time.time_in_ns() - request_start_time_.time_in_ns()) * 1e-9;
-
         output_joint_cmd.position = measurement.q_desired_pre;
         output_joint_cmd.velocity.setZero();
         output_joint_cmd.acceleration.setZero();
         output_joint_cmd.torque_feedforward.setZero();
-
+        auto time_interval = (time_meta.current_time.time_in_ns() - request_start_time_.time_in_ns()) * 1e-9;
         return time_interval < StreamingCommandTimeout ? ComputeCommandStatus::TaskOngoing : ComputeCommandStatus::TaskFinished;
     }
 
     const StreamingCommand &latest_cmd = runtime_.latest_cmd.value();
-    assert(latest_cmd.request_id == runtime_.request_id);
+
+    // 检查是否超时, 如果超时则认为流式命令结束
     bool is_timeout = false;
     if (latest_cmd.received_time.is_valid())
     {
         auto time_interval = (time_meta.current_time.time_in_ns() - latest_cmd.received_time.time_in_ns()) * 1e-9;
         is_timeout = time_interval > StreamingCommandTimeout;
     }
-    if (latest_cmd.streaming_finished || is_timeout)
-        runtime_.streaming_finished = true;
+    runtime_.streaming_finished = latest_cmd.streaming_finished || is_timeout;
 
-    for (auto i = 0; i < ndof_robot; i++)
+    // 检测输入是否更新
+    bool target_updated = true;
+    if (runtime_.previous_cmd.has_value())
     {
-        output_joint_cmd.position[i] = is_timeout ? measurement.q_desired_pre[i] : latest_cmd.command[i];
-        output_joint_cmd.velocity[i] = 0.0;
-        output_joint_cmd.acceleration[i] = 0.0;
-        output_joint_cmd.torque_feedforward[i] = 0.0;
+        target_updated = ((runtime_.previous_cmd.value().command - latest_cmd.command).norm()) > PositionThreshold;
     }
-    if (!runtime_.streaming_finished)
+    // 如果输入更新了则更新Ruckig输入
+    if (target_updated)
     {
+        for (auto i = 0; i < ndof_robot; i++)
+        {
+            runtime_.input.current_position[i] = measurement.q_desired_pre[i];
+            runtime_.input.current_velocity[i] = runtime_.output.new_velocity[i];
+            runtime_.input.current_acceleration[i] = runtime_.output.new_acceleration[i];
+            runtime_.input.target_position[i] = latest_cmd.command[i];
+            runtime_.input.target_velocity[i] = 0.0;
+            runtime_.input.target_acceleration[i] = 0.0;
+        }
+    }
+    runtime_.previous_cmd = latest_cmd;
+
+    // Ruckig进行轨迹计算
+    auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
+
+    // Ruckig输出
+    if (status == ruckig::Working)
+    {
+        for (auto i = 0; i < ndof_robot; i++)
+        {
+            output_joint_cmd.position[i] = runtime_.output.new_position[i];
+            output_joint_cmd.velocity[i] = runtime_.output.new_velocity[i];
+            output_joint_cmd.acceleration[i] = runtime_.output.new_acceleration[i];
+            output_joint_cmd.torque_feedforward[i] = 0;
+        }
+        runtime_.output.pass_to_input(runtime_.input);
         return ComputeCommandStatus::TaskOngoing;
     }
-    const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
-    return robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
+    else if (status == ruckig::Finished)
+    {
+        for (auto i = 0; i < ndof_robot; i++)
+        {
+            output_joint_cmd.position[i] = runtime_.output.new_position[i];
+            output_joint_cmd.velocity[i] = 0.0;
+            output_joint_cmd.acceleration[i] = 0.0;
+            output_joint_cmd.torque_feedforward[i] = 0.0;
+        }
+        // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
+        const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
+        return robot_stopped && runtime_.streaming_finished ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
+    }
+    else
+    {
+        return ComputeCommandStatus::Error;
+    }
 }
 
 bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta)
@@ -74,10 +120,20 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
     auto move_request = std::get<MoveRequest>(request.data.value());
     SetMotionGroup(move_request.motion_group);
+    streaming_buffer_->Reset();
 
     runtime_.request_id = request.request_id;
     runtime_.streaming_finished = false;
     runtime_.latest_cmd = std::nullopt;
+    runtime_.previous_cmd = std::nullopt;
+
+    // 初始化Ruckig输出
+    for (auto i = 0; i < ndof_robot; i++)
+    {
+        runtime_.output.new_position[i] = measurement.q_desired_pre[i];
+        runtime_.output.new_velocity[i] = 0.0;
+        runtime_.output.new_acceleration[i] = 0.0;
+    }
 
     // 记录请求开始时间（用于判断没有收到任何流式命令时的超时）
     request_start_time_ = TimePointSystem::Now();
