@@ -36,7 +36,7 @@ find_package(joint_interfaces REQUIRED)
 find_package(robot_server_interfaces REQUIRED)
 find_package(robot_server_lib REQUIRED)
 
-aux_source_directory(cpp LIB_SRCS)
+aux_source_directory(src LIB_SRCS)
 
 add_executable(${PROJECT_NAME} ${LIB_SRCS})
 
@@ -47,7 +47,7 @@ else()
 endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/cpp>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/utils>
   $<INSTALL_INTERFACE:include>
 )

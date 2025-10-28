@@ -1,0 +1,14 @@
+ethercat download -p  9 0x4602 0 0
+ethercat download -p 10 0x4602 0 0
+ethercat download -p 11 0x4602 0 0
+ethercat download -p 12 0x4602 0 0
+ethercat download -p 13 0x4602 0 0
+ethercat download -p 14 0x4602 0 0
+ethercat download -p 15 0x4602 0 0
+ethercat download -p 16 0x4602 0 0
+ethercat download -p 17 0x4602 0 0
+ethercat download -p 18 0x4602 0 0
+ethercat download -p 19 0x4602 0 0
+ethercat download -p 20 0x4602 0 0
+ethercat download -p 21 0x4602 0 0
+ethercat download -p 22 0x4602 0 0

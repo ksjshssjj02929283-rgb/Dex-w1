@@ -26,4 +26,3 @@ sudo cp -r install /opt/w1_server
     echo "/opt/w1_server/robot_server_lib/lib"
 } | sudo tee /etc/ld.so.conf.d/w1_server.conf
 sudo ldconfig
-##################################################################

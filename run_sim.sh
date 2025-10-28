@@ -1,6 +1,7 @@
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# 切换到脚本所在目录
+cd "$(dirname "$0")"
 
-source $SCRIPT_DIR/../install/setup.bash
+source ../install/setup.bash
 
 # Function to kill process by name
 kill_process() {
@@ -16,5 +17,5 @@ kill_process "visual_ros2_node.py"
 kill_process "sim_server"
 
 # 启动sim_server和仿真可视化
-/bin/python3 $SCRIPT_DIR/sim_server/python/visual_ros2_node.py &
+/bin/python3 python/visual_ros2_node.py &
 ros2 run sim_server sim_server

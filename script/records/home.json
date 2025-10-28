@@ -1,0 +1,42 @@
+{
+    "frames": [
+        {
+            "frame_id": 0,
+            "timestamp": 0,
+            "data": {
+                "ANKLE": 5.992123881526368e-06,
+                "KNEE": 5.992123881526368e-06,
+                "BUTTOCK": 5.992123881526368e-06,
+                "WAIST": 5.992123881526368e-06,
+                "NECK1": 5.992123881526368e-06,
+                "NECK2": 5.992123881526368e-06,
+                "LEFT_J1": 5.992123881526368e-06,
+                "LEFT_J2": 5.992123881526368e-06,
+                "LEFT_J3": 5.992123881526368e-06,
+                "LEFT_J4": 5.992123881526368e-06,
+                "LEFT_J5": 5.992123881526368e-06,
+                "LEFT_J6": 5.992123881526368e-06,
+                "LEFT_J7": 5.992123881526368e-06,
+                "RIGHT_J1": 5.992123881526368e-06,
+                "RIGHT_J2": 5.992123881526368e-06,
+                "RIGHT_J3": 5.992123881526368e-06,
+                "RIGHT_J4": 5.992123881526368e-06,
+                "RIGHT_J5": 5.992123881526368e-06,
+                "RIGHT_J6": 5.992123881526368e-06,
+                "RIGHT_J7": 5.992123881526368e-06,
+                "LEFT_HAND_THUMB1": 0.0,
+                "LEFT_HAND_THUMB2": 0.0,
+                "LEFT_HAND_INDEX": 0.0,
+                "LEFT_HAND_MIDDLE": 0.0,
+                "LEFT_HAND_RING": 0.0,
+                "LEFT_HAND_PINKY": 0.0,
+                "RIGHT_HAND_THUMB1": 0.0,
+                "RIGHT_HAND_THUMB2": 0.0,
+                "RIGHT_HAND_INDEX": 0.0,
+                "RIGHT_HAND_MIDDLE": 0.0,
+                "RIGHT_HAND_RING": 0.0,
+                "RIGHT_HAND_PINKY": 0.0
+            }
+        }
+    ]
+}

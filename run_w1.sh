@@ -18,6 +18,6 @@ kill_process "sim_server"
 kill_process "w1_server"
 
 # 启动sim_server和仿真可视化
-# /bin/python3 sim_server/python/visual_ros2_node.py &
+/bin/python3 python/visual_ros2_node.py &
 ros2 run sim_server sim_server > /dev/null 2>&1 &
 ros2 run w1_server w1_server

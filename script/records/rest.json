@@ -1,0 +1,42 @@
+{
+    "frames": [
+        {
+            "frame_id": 0,
+            "timestamp": 0,
+            "data": {
+                "ANKLE": 1.53,
+                "KNEE": -2.63,
+                "BUTTOCK": 1.1,
+                "WAIST": 0.0,
+                "NECK1": 0.0,
+                "NECK2": -0.18,
+                "LEFT_J1": 0.78,
+                "LEFT_J2": -1.57,
+                "LEFT_J3": 0.1,
+                "LEFT_J4": -1.57,
+                "LEFT_J5": 0.0,
+                "LEFT_J6": 0.0,
+                "LEFT_J7": 0.0,
+                "RIGHT_J1": -0.78,
+                "RIGHT_J2": 1.57,
+                "RIGHT_J3": -0.1,
+                "RIGHT_J4": 1.57,
+                "RIGHT_J5": 0.0,
+                "RIGHT_J6": 0.0,
+                "RIGHT_J7": 0.0,
+                "LEFT_HAND_THUMB1": 0.0,
+                "LEFT_HAND_THUMB2": 0.0,
+                "LEFT_HAND_INDEX": 0.0,
+                "LEFT_HAND_MIDDLE": 0.0,
+                "LEFT_HAND_RING": 0.0,
+                "LEFT_HAND_PINKY": 0.0,
+                "RIGHT_HAND_THUMB1": 0.0,
+                "RIGHT_HAND_THUMB2": 0.0,
+                "RIGHT_HAND_INDEX": 0.0,
+                "RIGHT_HAND_MIDDLE": 0.0,
+                "RIGHT_HAND_RING": 0.0,
+                "RIGHT_HAND_PINKY": 0.0
+            }
+        }
+    ]
+}
