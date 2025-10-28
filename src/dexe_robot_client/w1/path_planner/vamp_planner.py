@@ -10,7 +10,7 @@ from dexe_robot_client.end_effector_client import EndEffectorType
 from ...common import get_logger
 from IPython import embed
 
-from vamp import pybullet_interface as vpb
+# from vamp import pybullet_interface as vpb
 
 class VampPlanner:
     def __init__(self, 
