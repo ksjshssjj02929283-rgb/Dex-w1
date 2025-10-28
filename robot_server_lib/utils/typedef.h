@@ -165,6 +165,10 @@ inline const char *ToString(RequestType type)
         return "TcpSecondary";
     case RequestType::SpeedRatio:
         return "SpeedRatio";
+    case RequestType::EnableDrag:
+        return "EnableDrag";
+    case RequestType::SafeLevel:
+        return "SafeLevel";
     case RequestType::ClearError:
         return "ClearError";
     case RequestType::MoveJoint:
