@@ -8,17 +8,11 @@ import pinocchio
 from scipy.spatial.transform import Rotation as R
 
 class JointZeroCalibrate:
-    def __init__(self, arm, data_qpos_deg, tcp=None):
+    def __init__(self, arm, data_qpos_rad):
         # tcp: None 或 7 元素序列 [tx,ty,tz,qx,qy,qz,qw]
-        self.data_qpos_rad = np.radians(data_qpos_deg).T
+        self.data_qpos_rad = data_qpos_rad.T
         self.max_iterations = 100  # maximum number of iterations
         self.tolerance = 1e-5  # convergence tolerance
-        self.tcp = None
-        if tcp is not None:
-            tcp_arr = np.asarray(tcp, dtype=float).flatten()
-            if tcp_arr.size != 7:
-                raise ValueError("tcp must be a 7-element [tx,ty,tz,qx,qy,qz,qw]")
-            self.tcp = tcp_arr.copy()
         self._init_robot_model(arm)
 
     def _init_robot_model(self, arm):
@@ -38,11 +32,11 @@ class JointZeroCalibrate:
             Path(package_share_path)
             / "robot_models"
             / self.robot_name
-            / (self.robot_name + ".urdf")
+            / (self.robot_name + "_calibration.urdf")
         )
         self.arm_model = pinocchio.buildModelFromUrdf(urdf_path)
 
-    def get_fk(self, q, ee_frame_name="ee_link", tcp=None):
+    def get_fk(self, q, ee_frame_name="ee_link"):
         """
         返回 4x4 齐次变换矩阵（末端在 base 坐标系下的位姿）。
         tcp: 可选，工具坐标系相对于末端执行器的位姿。
@@ -69,24 +63,9 @@ class JointZeroCalibrate:
         T[:3, :3] = np.array(oMf.rotation)
         T[:3, 3] = np.array(oMf.translation)
 
-        # 处理 tcp（仅支持 7 元素: 平移 + 四元数）
-        if tcp is not None:
-            tcp_arr = np.asarray(tcp, dtype=float).flatten()
-            if tcp_arr.size != 7:
-                raise ValueError("tcp must be None or 7-element [tx,ty,tz,qx,qy,qz,qw];")
-            trans = tcp_arr[0:3]
-            quat = tcp_arr[3:7]
-
-            R_tcp = R.from_quat(quat).as_matrix()
-            T_tcp = np.eye(4, dtype=float)
-            T_tcp[:3, :3] = R_tcp
-            T_tcp[:3, 3] = trans
-            # base -> tcp = (base -> ee) * (ee -> tcp)
-            T = T @ T_tcp
-
         return T
     
-    def get_jacobian(self, q, ee_frame_name="ee_link", tcp=None):
+    def get_jacobian(self, q, ee_frame_name="ee_link"):
         """
         返回 6 x nv 的雅可比矩阵（线速度在上，角速度在下）。
         tcp: 同 get_fk，支持 None 或 7 元素 (tx,ty,tz,qx,qy,qz,qw)。
@@ -114,30 +93,6 @@ class JointZeroCalibrate:
         J = pinocchio.computeFrameJacobian(self.arm_model, data, q, ee_frame_id, pinocchio.LOCAL)
         J = np.asarray(J, dtype=float)  # 6 x nv
 
-        if tcp is not None:
-            tcp_arr = np.asarray(tcp, dtype=float).flatten()
-            if tcp_arr.size != 7:
-                raise ValueError("tcp must be None or 7-element [tx,ty,tz,qx,qy,qz,qw];")
-            trans = tcp_arr[0:3]
-            quat = tcp_arr[3:7]
-
-            R_tcp = R.from_quat(quat).as_matrix()
-
-            # 构造 Ad(T_tcp)：格式为 [[R,  skew(t) @ R],
-            #                       [0,         R  ]]
-            def skew(v):
-                return np.array([[0.0, -v[2], v[1]],
-                                 [v[2], 0.0, -v[0]],
-                                 [-v[1], v[0], 0.0]], dtype=float)
-
-            Ad = np.zeros((6, 6), dtype=float)
-            Ad[0:3, 0:3] = R_tcp
-            Ad[3:6, 3:6] = R_tcp
-            Ad[0:3, 3:6] = skew(trans) @ R_tcp
-
-            # 将工具的 adjoint 作用到雅可比上（J_tcp = Ad * J）
-            J = Ad @ J
-
         return J
 
     def cal(self):
@@ -154,8 +109,8 @@ class JointZeroCalibrate:
                 q_corrected = self.data_qpos_rad[:, i] + result_rad
                 try:
                     # 传入 self.tcp（可能为 None）
-                    T = self.get_fk(q_corrected, tcp=self.tcp)
-                    J = self.get_jacobian(q_corrected, tcp=self.tcp)
+                    T = self.get_fk(q_corrected)
+                    J = self.get_jacobian(q_corrected)
                     P_list.append(T[:3, 3])
                     J_list.append(J[:3])
                 except Exception as e:
@@ -203,22 +158,18 @@ def main():
     with open(input_path, "r") as f:
         data = json.load(f)
 
-    arm_key = data.get("arm", "left")
+    arm_key = data.get("arm")
 
-    data_qpos_deg = data.get("data_qpos_deg", None)
-    if data_qpos_deg is None:
+    data_qpos = data.get("data_qpos", None)
+    if data_qpos is None:
         raise ValueError("input_data.json missing 'data_qpos_deg'")
 
-    tcp_frame = data.get("tcp_frame", None)
-    if tcp_frame is not None:
-        tcp_arr = np.asarray(tcp_frame, dtype=float).flatten()
-        if tcp_arr.size != 7:
-            raise ValueError("input_data.json 'tcp_frame' must be 7 elements: [tx,ty,tz,qx,qy,qz,qw]")
+    if data.get("data_unit", "deg") == "deg":
+        data_qpos_rad = np.radians(np.array(data_qpos, dtype=float))
+    else:
+        data_qpos_rad = np.array(data_qpos, dtype=float)
 
-    # captured_qpos 期望为 list of samples: shape (num_samples, dof)
-    data_qpos_deg = np.array(data_qpos_deg, dtype=float)
-
-    joint_zero_calibrate = JointZeroCalibrate(arm_key, data_qpos_deg, tcp=tcp_frame)
+    joint_zero_calibrate = JointZeroCalibrate(arm_key, data_qpos_rad)
     res, estimated_offsets_deg = joint_zero_calibrate.cal()
     if res:
         print("Estimated offsets (deg):", estimated_offsets_deg)
