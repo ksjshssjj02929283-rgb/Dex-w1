@@ -71,6 +71,9 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     runtime_.streaming_finished = false;
     runtime_.latest_cmd = std::nullopt;
 
+    // 记录请求开始时间（用于判断没有收到任何流式命令时的超时）
+    request_start_time_ = TimePointSystem::Now();
+    
     return true;
 }
 
