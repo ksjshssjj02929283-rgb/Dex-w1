@@ -30,7 +30,8 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
         output_joint_cmd.velocity.setZero();
         output_joint_cmd.acceleration.setZero();
         output_joint_cmd.torque_feedforward.setZero();
-        return ComputeCommandStatus::TaskOngoing;
+        auto time_interval = (time_meta.current_time.time_in_ns() - request_start_time_.time_in_ns()) * 1e-9;
+        return time_interval < StreamingCommandTimeout ? ComputeCommandStatus::TaskOngoing : ComputeCommandStatus::TaskFinished;
     }
 
     const StreamingCommand &latest_cmd = runtime_.latest_cmd.value();
