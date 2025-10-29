@@ -5,10 +5,8 @@ namespace robot_server_lib
 
 TorqueControllerInvDynamic::TorqueControllerInvDynamic(RobotModel robot_model) : TorqueControllerBase(robot_model)
 {
-#ifndef TORQUE_CONTROL
     this->parameters_.K_p = 50;
     this->parameters_.K_v = 0;
-#endif
 }
 
 bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd,

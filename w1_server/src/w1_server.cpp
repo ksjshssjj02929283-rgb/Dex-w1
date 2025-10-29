@@ -219,7 +219,6 @@ void RobotServer::TorqueControlThreadFunc()
                         }
                         manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
                     }
-
                     // 更新关节力矩限制
                     if (torque_cmd.torque[i] >= 0)
                     {
@@ -233,8 +232,7 @@ void RobotServer::TorqueControlThreadFunc()
                     }
                     break;
                 default:
-                    robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
-                    robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
+                    assert(false && "Unknown RunMode");
                     break;
                 }
 
