@@ -9,7 +9,7 @@ from copy import deepcopy
 
 from dexe_robot_client.end_effector_client import EndEffectorType 
 from dexe_robot_client.common import W1Version, W1ArmType
-from dexe_robot_client.w1 import W1Manager
+from dexe_robot_client.w1 import W1Manager, xpos_to_user_pose, user_pose_to_xpos
 
 
 def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
@@ -83,7 +83,7 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
                                                         }, speed_ratio=0.5)
 
 
-def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
+def move_full_body_example2(move_with_ee: bool, is_sim: bool = True, is_local: bool = False):
     """move_linear_full_body()的使用示例"""
     if move_with_ee:
         end_effector_type = EndEffectorType.BRAINCO_HAND
@@ -121,6 +121,10 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
     l_pose4 = deepcopy(l_pose3)
     l_pose4[2] += 100
     left_arm_waypoints = [l_pose1, l_pose2, l_pose3, l_pose4]
+    if not is_local:
+        T_chassis_armbase = w1_manager.get_current_xpos("left_arm_base", is_local=False)[1]
+        temp = [T_chassis_armbase @ user_pose_to_xpos(pose[:3], pose[3:]) for pose in left_arm_waypoints]
+        left_arm_waypoints = [xpos_to_user_pose(xpos) for xpos in temp]
     left_arm_ee_states = [[0., [0., 50., 50., 50., 50., 50.], 0.5],
                           [0., [0., 0., 0., 0., 0., 0.], 0.5],
                           [0., [100., 100., 0., 0., 100., 100.], 0.5],
@@ -138,6 +142,10 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
     r_pose4 = deepcopy(r_pose3)
     r_pose4[2] += 100
     right_arm_waypoints = [r_pose1, r_pose2, r_pose3, r_pose4]
+    if not is_local:
+        T_chassis_armbase = w1_manager.get_current_xpos("right_arm_base", is_local=False)[1]
+        temp = [T_chassis_armbase @ user_pose_to_xpos(pose[:3], pose[3:]) for pose in right_arm_waypoints]
+        right_arm_waypoints = [xpos_to_user_pose(xpos) for xpos in temp]
     right_arm_ee_states = [[0., [100., 100., 0., 0., 100., 100.], 0.5],
                           [0., [0., 0., 0., 0., 0., 0.], 0.5],
                           [0., [0., 50, 50, 50, 50, 50], 0.5],
@@ -148,13 +156,15 @@ def move_full_body_example2(move_with_ee: bool, is_sim: bool = True):
                                                            "left_arm_ee": left_arm_ee_states,
                                                             "right_arm": right_arm_waypoints,
                                                             "right_arm_ee": right_arm_ee_states}, 
-                                                            speed_ratio=0.5)
+                                                            speed_ratio=0.5,
+                                                            is_local=is_local)
     else:
         w1_manager.move_linear_full_body(waypoints_dict = {"left_arm": left_arm_waypoints,
                                                             "right_arm": right_arm_waypoints}, 
-                                                            speed_ratio=0.5)
+                                                            speed_ratio=0.5,
+                                                            is_local=is_local)
 
 
 if __name__ == "__main__":
     # move_full_body_example1(move_with_ee = True, is_sim = True)
-    move_full_body_example2(move_with_ee = False, is_sim = True)
+    move_full_body_example2(move_with_ee = False, is_sim = True, is_local = False)

@@ -7,7 +7,7 @@ where = ["src"]
 
 [project]
 name = "dexe_robot_client"
-version = "0.1.0"
+version = "0.1.1"
 description = "DexEmbodied Robot Client"
 authors = [
     { name = "Dexforce", email = "dexforce@dexforce.com" }
