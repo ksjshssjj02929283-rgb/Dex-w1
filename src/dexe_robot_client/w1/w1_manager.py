@@ -15,6 +15,7 @@ from rclpy.executors import MultiThreadedExecutor
 
 from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, generate_w1_urdf
 from ..end_effector_client import EndEffectorType, create_end_effector_client
+from ..navigation_client import ChassisClient
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
 from .path_planner.bezier_blend_path import interpolate_cartesian_path
@@ -44,7 +45,8 @@ class W1Manager:
                 is_sim: bool,
                 arm_type: W1ArmType, 
                 w1_version: W1Version = W1Version.V2,
-                end_effector_type: EndEffectorType = None):
+                end_effector_type: EndEffectorType = None,
+                use_nav: bool = False):
         self.logger = get_logger()
 
         self.TIME_STEP = 0.01 # 100Hz
@@ -60,6 +62,11 @@ class W1Manager:
         self.right_ee_client = None
         self._right_ee_client_sim = None
         self._right_ee_client_real = None
+
+        self._use_nav = use_nav
+        self.chassis_client = None
+        self._chassis_client_sim = None
+        self._chassis_client_real = None
 
         self._clients = []
 
@@ -186,11 +193,16 @@ class W1Manager:
 
         self._robot_client_sim = RobotClient(is_sim = True)
         self._robot_client_real = RobotClient(is_sim = False)
+        self._chassis_client_real = ChassisClient(is_sim = False)
         self.robot_client = self._robot_client_sim
 
         if self._end_effector_type is None:
             self.logger.info(f"No movable end effector.")
-            self._clients = [self._robot_client_sim, self._robot_client_real]
+            if self._use_nav:
+                self._clients = [self._robot_client_sim, self._robot_client_real,
+                                self._chassis_client_real]
+            else:
+                self._clients = [self._robot_client_sim, self._robot_client_real]
         else:
             self._left_ee_client_sim = create_end_effector_client(is_left = True, is_sim = True, 
                                                                   end_effector_type = self._end_effector_type)
@@ -203,9 +215,15 @@ class W1Manager:
             self.left_ee_client = self._left_ee_client_sim
             self.right_ee_client = self._right_ee_client_sim
 
-            self._clients = [self._robot_client_sim, self._robot_client_real, 
-                            self._left_ee_client_sim, self._left_ee_client_real, 
-                            self._right_ee_client_sim, self._right_ee_client_real]
+            if self._use_nav:
+                self._clients = [self._robot_client_sim, self._robot_client_real, 
+                                self._left_ee_client_sim, self._left_ee_client_real, 
+                                self._right_ee_client_sim, self._right_ee_client_real,
+                                self._chassis_client_real]
+            else:
+                self._clients = [self._robot_client_sim, self._robot_client_real, 
+                                self._left_ee_client_sim, self._left_ee_client_real, 
+                                self._right_ee_client_sim, self._right_ee_client_real]
 
         self._is_sim = True
 
@@ -256,6 +274,20 @@ class W1Manager:
 
         self.logger.error(f"{self.w1_params.arm_ee_names} is supported, except {name}.")
         return False
+    
+    def _has_chassis_client(self) -> bool:
+        if self._use_nav is False:
+            self.logger.error("Navigation function is disabled.")
+            return False
+        if self.chassis_client is None:
+            self.logger.error("Chassis client has not initialized")
+            return False
+        return True
+    
+    def _get_chassis_client(self):
+        if not self._has_chassis_client():
+            return None
+        return self.chassis_client
 
     def _get_arm_kine(self, name: str):
         if not self._check_arm_name(name):
@@ -408,6 +440,9 @@ class W1Manager:
             if not self.right_ee_client.is_connected(timeout_sec):
                 self.logger.info(f"{self.right_ee_client.node_name} is not connected!")
                 res = False
+        if( self._use_nav and not self.chassis_client.is_connected()):
+            self.logger.error(f"{self.chassis_client.node_name} is not connected!")
+            res = False
         return res
 
     def enable(self, timeout_sec: float = 0.5) -> bool:
@@ -490,19 +525,28 @@ class W1Manager:
             else:
                 self.logger.info("W1 manager already in real mode.")
             return True
-
+        
         if enable_sim:
             target_name = "sim"
             target_robot_client = self._robot_client_sim
             target_left_ee_client = self._left_ee_client_sim
             target_right_ee_client = self._right_ee_client_sim
+            target_chassis_client = None
+            if self._use_nav:
+                self.logger.info("Navigation client only support real mode. use_nav set to False.")
+                self._use_nav = False
         else:
             target_name = "real"
             target_robot_client = self._robot_client_real
             target_left_ee_client = self._left_ee_client_real
             target_right_ee_client = self._right_ee_client_real
+            if self._use_nav:
+                target_chassis_client = self._chassis_client_real
+            else:
+                target_chassis_client = None
 
         # 检查target client
+        
         if not target_robot_client.is_connected(timeout_sec=0.1):
             self.logger.error(f"{target_robot_client.node_name} is not connected!")
             return False
@@ -517,7 +561,11 @@ class W1Manager:
             if not target_right_ee_client.is_connected():
                 self.logger.error(f"{target_right_ee_client.node_name} is not connected!")
                 return False
-
+        
+        if self._use_nav and target_chassis_client is not None and not target_chassis_client.is_connected():
+            self.logger.error(f"{target_chassis_client.node_name} is not connected!")
+            return False
+        
         # 检查current client
         if not self.robot_client.is_connected():
             self.logger.error(f"{self.robot_client.node_name} is not connected!")
@@ -533,14 +581,51 @@ class W1Manager:
             if not self.right_ee_client.is_connected():
                 self.logger.error(f"{self.right_ee_client.node_name} is not connected!")
                 return False
+        
+        if self._use_nav and target_chassis_client is not None and not target_chassis_client.is_connected():
+            self.logger.error(f"{self.chassis_client.node_name} is not connected!")
+            return False
+
 
         self.robot_client = target_robot_client
         if self._end_effector_type is not None:
             self.left_ee_client = target_left_ee_client
             self.right_ee_client = target_right_ee_client
         self._is_sim = enable_sim
+        if self._use_nav and target_chassis_client is not None:
+            self.chassis_client = target_chassis_client
         self.logger.info(f"W1 manager set to {target_name} mode.")
         return True
+
+    def move_chassis_nav2(self, base_position: np.ndarray) -> bool:
+        """移动底盘至目标位置，使用导航栈"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return False
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return False
+        return self._get_chassis_client().set_chassis_nav2_position(base_position)
+    
+    def move_chassis_ctrl(self, base_position: np.ndarray) -> bool:
+        """移动底盘至目标位置，使用底盘控制接口"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return False
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return False
+        return self._get_chassis_client().set_chassis_control_position(base_position)
+    
+    def get_current_chassis_pose(self) -> tuple[bool, np.ndarray]:
+        """获取底盘当前位姿[x(m), y(m), yaw(angle)]"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return False, None
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return False, None
+        return self._get_chassis_client().get_chassis_position()
 
     def set_ee_qpos(self, name: str, qpos: np.ndarray) -> bool:
         """控制end effector运动
