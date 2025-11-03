@@ -1,6 +1,7 @@
 # Install Dependencies
 
-### DexeRP
+### DexeRP V0.1.0
+Downloads from http://192.168.3.120/dexe_release/dexe_robot_planning/ and `pip install`
 
 ### OMPL & FCL
 ```bash

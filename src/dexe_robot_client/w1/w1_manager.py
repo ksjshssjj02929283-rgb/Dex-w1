@@ -15,6 +15,7 @@ from rclpy.executors import MultiThreadedExecutor
 
 from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, generate_w1_urdf
 from ..end_effector_client import EndEffectorType, create_end_effector_client
+from ..navigation_client import ChassisClient
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
 from .path_planner.bezier_blend_path import interpolate_cartesian_path
@@ -44,7 +45,8 @@ class W1Manager:
                 is_sim: bool,
                 arm_type: W1ArmType, 
                 w1_version: W1Version = W1Version.V2,
-                end_effector_type: EndEffectorType = None):
+                end_effector_type: EndEffectorType = None,
+                use_nav: bool = False):
         self.logger = get_logger()
 
         self.TIME_STEP = 0.01 # 100Hz
@@ -60,6 +62,11 @@ class W1Manager:
         self.right_ee_client = None
         self._right_ee_client_sim = None
         self._right_ee_client_real = None
+
+        self._use_nav = use_nav
+        self.chassis_client = None
+        self._chassis_client_sim = None
+        self._chassis_client_real = None
 
         self._clients = []
 
@@ -186,11 +193,16 @@ class W1Manager:
 
         self._robot_client_sim = RobotClient(is_sim = True)
         self._robot_client_real = RobotClient(is_sim = False)
+        self._chassis_client_real = ChassisClient(is_sim = False)
         self.robot_client = self._robot_client_sim
 
         if self._end_effector_type is None:
             self.logger.info(f"No movable end effector.")
-            self._clients = [self._robot_client_sim, self._robot_client_real]
+            if self._use_nav:
+                self._clients = [self._robot_client_sim, self._robot_client_real,
+                                self._chassis_client_real]
+            else:
+                self._clients = [self._robot_client_sim, self._robot_client_real]
         else:
             self._left_ee_client_sim = create_end_effector_client(is_left = True, is_sim = True, 
                                                                   end_effector_type = self._end_effector_type)
@@ -203,9 +215,15 @@ class W1Manager:
             self.left_ee_client = self._left_ee_client_sim
             self.right_ee_client = self._right_ee_client_sim
 
-            self._clients = [self._robot_client_sim, self._robot_client_real, 
-                            self._left_ee_client_sim, self._left_ee_client_real, 
-                            self._right_ee_client_sim, self._right_ee_client_real]
+            if self._use_nav:
+                self._clients = [self._robot_client_sim, self._robot_client_real, 
+                                self._left_ee_client_sim, self._left_ee_client_real, 
+                                self._right_ee_client_sim, self._right_ee_client_real,
+                                self._chassis_client_real]
+            else:
+                self._clients = [self._robot_client_sim, self._robot_client_real, 
+                                self._left_ee_client_sim, self._left_ee_client_real, 
+                                self._right_ee_client_sim, self._right_ee_client_real]
 
         self._is_sim = True
 
@@ -242,7 +260,7 @@ class W1Manager:
         self.kine.right_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
         self.kine.set_user_qpos_limits(self.w1_params.qpos_lb, self.w1_params.qpos_ub)
         
-        self.logger.info("Initialize srs-python kinematic solver.")
+        self.logger.info("Initialize kinematic solver.")
 
     def _has_arm_ee_client(self, name: str, verbose: bool = True) -> bool:
         if name in self.w1_params.arm_ee_names:
@@ -256,6 +274,20 @@ class W1Manager:
 
         self.logger.error(f"{self.w1_params.arm_ee_names} is supported, except {name}.")
         return False
+    
+    def _has_chassis_client(self) -> bool:
+        if self._use_nav is False:
+            self.logger.error("Navigation function is disabled.")
+            return False
+        if self.chassis_client is None:
+            self.logger.error("Chassis client has not initialized")
+            return False
+        return True
+    
+    def _get_chassis_client(self):
+        if not self._has_chassis_client():
+            return None
+        return self.chassis_client
 
     def _get_arm_kine(self, name: str):
         if not self._check_arm_name(name):
@@ -408,6 +440,9 @@ class W1Manager:
             if not self.right_ee_client.is_connected(timeout_sec):
                 self.logger.info(f"{self.right_ee_client.node_name} is not connected!")
                 res = False
+        if( self._use_nav and not self.chassis_client.is_connected()):
+            self.logger.error(f"{self.chassis_client.node_name} is not connected!")
+            res = False
         return res
 
     def enable(self, timeout_sec: float = 0.5) -> bool:
@@ -490,17 +525,25 @@ class W1Manager:
             else:
                 self.logger.info("W1 manager already in real mode.")
             return True
-
+        
         if enable_sim:
             target_name = "sim"
             target_robot_client = self._robot_client_sim
             target_left_ee_client = self._left_ee_client_sim
             target_right_ee_client = self._right_ee_client_sim
+            target_chassis_client = None
+            if self._use_nav:
+                self.logger.info("Navigation client only support real mode. use_nav set to False.")
+                self._use_nav = False
         else:
             target_name = "real"
             target_robot_client = self._robot_client_real
             target_left_ee_client = self._left_ee_client_real
             target_right_ee_client = self._right_ee_client_real
+            if self._use_nav:
+                target_chassis_client = self._chassis_client_real
+            else:
+                target_chassis_client = None
 
         # 检查target client
         if not target_robot_client.is_connected(timeout_sec=0.1):
@@ -517,7 +560,11 @@ class W1Manager:
             if not target_right_ee_client.is_connected():
                 self.logger.error(f"{target_right_ee_client.node_name} is not connected!")
                 return False
-
+        
+        if self._use_nav and target_chassis_client is not None and not target_chassis_client.is_connected():
+            self.logger.error(f"{target_chassis_client.node_name} is not connected!")
+            return False
+        
         # 检查current client
         if not self.robot_client.is_connected():
             self.logger.error(f"{self.robot_client.node_name} is not connected!")
@@ -533,14 +580,51 @@ class W1Manager:
             if not self.right_ee_client.is_connected():
                 self.logger.error(f"{self.right_ee_client.node_name} is not connected!")
                 return False
+        
+        if self._use_nav and target_chassis_client is not None and not target_chassis_client.is_connected():
+            self.logger.error(f"{self.chassis_client.node_name} is not connected!")
+            return False
+
 
         self.robot_client = target_robot_client
         if self._end_effector_type is not None:
             self.left_ee_client = target_left_ee_client
             self.right_ee_client = target_right_ee_client
         self._is_sim = enable_sim
+        if self._use_nav and target_chassis_client is not None:
+            self.chassis_client = target_chassis_client
         self.logger.info(f"W1 manager set to {target_name} mode.")
         return True
+
+    def move_chassis_nav2(self, base_position: np.ndarray) -> bool:
+        """移动底盘至目标位置，使用导航栈"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return False
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return False
+        return self._get_chassis_client().set_chassis_nav2_position(base_position)
+    
+    def move_chassis_ctrl(self, base_position: np.ndarray) -> bool:
+        """移动底盘至目标位置，使用底盘控制接口"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return False
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return False
+        return self._get_chassis_client().set_chassis_control_position(base_position)
+    
+    def get_current_chassis_pose(self) -> tuple[bool, np.ndarray]:
+        """获取底盘当前位姿[x(m), y(m), yaw(angle)]"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return False, None
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return False, None
+        return self._get_chassis_client().get_chassis_position()
 
     def set_ee_qpos(self, name: str, qpos: np.ndarray) -> bool:
         """控制end effector运动
@@ -635,9 +719,13 @@ class W1Manager:
             return True, cur_qpos
         return True, cur_qpos[self.w1_params.index_infos[name]["index"]]
 
-
     def get_current_xpos(self, name: str, is_local: bool = True) -> tuple[bool, np.ndarray]:
-        """获取left_arm/right_arm的当前笛卡尔位置
+        """is_local=True，获取left_arm/right_arm相对于arm base坐标系的笛卡尔位姿
+        
+            is_local=False，获取["head", "head_flange" 
+                                 "left_arm_base", "left_arm", "left_arm_flange", 
+                                "right_arm_base", "right_arm", "right_arm_flange"]
+                                相对于chassis坐标系的笛卡尔位姿
 
         Args:
             name (str): ["left_arm", "right_arm"]
@@ -657,11 +745,18 @@ class W1Manager:
         return self.get_xpos(name, cur_qpos, is_local)
 
     def get_xpos(self, name: str, qpos: np.ndarray, is_local: bool = True) -> tuple[bool, np.ndarray]:
-        """获取left_arm/right_arm的目标qpos的笛卡尔位置
+        """is_local=True，获取left_arm/right_arm相对于arm base坐标系的笛卡尔位姿，size(qpos)=7
+        
+            is_local=False，获取["head", "head_flange" 
+                                 "left_arm_base", "left_arm", "left_arm_flange", 
+                                "right_arm_base", "right_arm", "right_arm_flange"]
+                                相对于chassis坐标系的笛卡尔位姿，size(qpos)=20
 
         Args:
-            name (str): ["left_arm", "right_arm"]
-            qpos (np.ndarray): 目标关节角
+            name (str): ["head", "head_flange"
+                        "left_arm_base", "left_arm", "left_arm_flange", 
+                        "right_arm_base", "right_arm", "right_arm_flange"]
+            qpos (np.ndarray): 
             is_local (bool, optional): w.r.t. arm base frame or chassis frame. Defaults to True.
 
         Returns:
@@ -973,9 +1068,9 @@ class W1Manager:
             right_arm_ee_trigger_thread.start()
 
         # streaming
+        self.logger.info("Start streaming.")
         end_iter = qpos_array.shape[0] - 1
         self.robot_client.start_joint_streaming_request(MotionGroup.WholeBody)
-        self.logger.info("Start streaming.")
         t0 = time.time()
         last_qpos = cur_qpos
         for qpos in qpos_array:
@@ -996,15 +1091,25 @@ class W1Manager:
             else:
                 streaming_finished = False
 
-            # self.logger.debug(f"planner_cnt: {self.planner_cnt}")
             if not self.robot_client.send_streaming_command(qpos.tolist(), 
                                                             streaming_finished):
                 self.logger.critical("Streaming command send failed.")
+                stop_ee_thread = True
+                if left_arm_ee_trigger_thread is not None:
+                    left_arm_ee_trigger_thread.join()
+                if right_arm_ee_trigger_thread is not None:
+                    right_arm_ee_trigger_thread.join()
                 return False
             self.robot_client.wait_second(self.TIME_STEP)
             count += 1
             last_qpos = qpos
-        self.robot_client.wait_request_finish()
+        if not self.robot_client.wait_request_finish(timeout_sec=0.5):
+            stop_ee_thread = True
+            if left_arm_ee_trigger_thread is not None:
+                left_arm_ee_trigger_thread.join()
+            if right_arm_ee_trigger_thread is not None:
+                right_arm_ee_trigger_thread.join()
+            return False
 
         self.logger.info("Finish streaming. " +
                         f"Ideal duration should be {(count-1) * self.TIME_STEP}s, " +
@@ -1016,7 +1121,7 @@ class W1Manager:
         if right_arm_ee_trigger_thread is not None:
             right_arm_ee_trigger_thread.join()
 
-        # check reach within timeout
+        # check reach within timeout TODO: 假设wait_request_finish生效，则不需要这里的到位检测了？
         targt_qpos = qpos_array[-1]
         t1 = time.time()
         while time.time() - t1 < reach_timeout:
@@ -1034,7 +1139,9 @@ class W1Manager:
 
     ########## demo定制API ###########
     def get_current_pose(self, name: str, is_local: bool = True) -> tuple[bool, list]:
-        """获取left_arm/right_arm的当前笛卡尔位置[xyz_mm, rpy_deg]
+        """is_local=True，获取left_arm/right_arm当前相对于arm base坐标系的笛卡尔位姿[xyz_mm, rpy_deg]
+
+            is_local=False，获取left_arm/right_arm当前相对于chassis坐标系的笛卡尔位姿[xyz_mm, rpy_deg]
 
         Args:
             name (str): ["left_arm", "right_arm"]
@@ -1049,11 +1156,13 @@ class W1Manager:
         return True, xpos_to_user_pose(cur_xpos)
 
     def get_pose(self, name: str, qpos: np.ndarray, is_local: bool = True) -> tuple[bool, list]:
-        """获取left_arm/right_arm目标qpos的笛卡尔位置[xyz_mm, rpy_deg]
+        """is_local=True，获取left_arm/right_arm相对于arm base坐标系的笛卡尔位姿[xyz_mm, rpy_deg]，size(qpos)=7
+
+            is_local=False，获取left_arm/right_arm相对于chassis坐标系的笛卡尔位姿[xyz_mm, rpy_deg]，size(qpos)=20
 
         Args:
             name (str): ["left_arm", "right_arm"]
-            qpos (np.ndarray): 目标关节角
+            qpos (np.ndarray): 
             is_local (bool, optional): w.r.t. arm base frame or chassis frame. Defaults to True.
 
         Returns:
@@ -1166,8 +1275,12 @@ class W1Manager:
                           speed_ratio: float,
                           is_cartesian: bool = False,
                           qpos_seed: np.ndarray = None,
-                          cartesian_step: float = None) -> tuple[bool, np.ndarray]:
-        qpos_array = cur_qpos
+                          cartesian_step: float = None,
+                          is_local: bool = True) -> tuple[bool, np.ndarray]:
+        if not is_local:
+            qpos_array = cur_qpos[self.w1_params.index_infos[name]["index"]]
+        else:
+            qpos_array = cur_qpos
         (int_res, 
         pos_raw_array, 
         qvel_limits_array, _) =  self._parse_waypoints_from_dict(name, 
@@ -1182,7 +1295,23 @@ class W1Manager:
         qvel_limits_array_ = np.vstack([self.w1_params.default_qvel[self.w1_params.index_infos[name]["index"]],
                                         qvel_limits_array])
         if is_cartesian:
-            res_fk, cur_xpos = self._get_arm_kine(name).get_fk(cur_qpos)
+            if not is_local:
+                # Transfer global frame to local frame
+                ref_torso_qpos = cur_qpos[self.w1_params.index_infos["torso"]["index"]]
+                ref_qpos = np.zeros(self.w1_params.full_body_dofs)
+                ref_qpos[self.w1_params.index_infos["torso"]["index"]] = ref_torso_qpos
+                res_fk, T_chassis_armbase = self.get_xpos(f"{name}_base", ref_qpos, is_local=False)
+                if not res_fk:
+                    self.logger.error(f"{name}_base solve fk failed!")
+                    return False, None
+                temp = [np.linalg.inv(T_chassis_armbase) @ user_pose_to_xpos(pose[:3].tolist(), pose[3:].tolist()) for pose in pos_raw_array]
+                pos_raw_array = [np.array(xpos_to_user_pose(xpos)) for xpos in temp]
+                cur_arm_qpos = cur_qpos[self.w1_params.index_infos[name]["index"]]
+            else:
+                cur_arm_qpos = cur_qpos
+
+            # In local frame
+            res_fk, cur_xpos = self._get_arm_kine(name).get_fk(cur_arm_qpos)
             if not res_fk:
                 self.logger.error(f"{name} solve fk failed!")
                 return False, None
@@ -1211,8 +1340,12 @@ class W1Manager:
                                   speed_ratio: float,
                                   is_cartesian: bool = False,
                                   qpos_seed: np.ndarray = None,
-                                  cartesian_step: float = None) -> tuple[bool, np.ndarray, list]:
-        qpos_array = cur_qpos
+                                  cartesian_step: float = None,
+                                  is_local: bool = True) -> tuple[bool, np.ndarray, list]:
+        if not is_local:
+            qpos_array = cur_qpos[self.w1_params.index_infos[name]["index"]]
+        else:
+            qpos_array = cur_qpos
 
         (int_res, 
         pos_raw_array, 
@@ -1234,7 +1367,8 @@ class W1Manager:
                                                     speed_ratio, 
                                                     is_cartesian, 
                                                     qpos_seed, 
-                                                    cartesian_step)
+                                                    cartesian_step,
+                                                    is_local)
             if not res:
                 return False, None, None
             return True, qpos_array, None
@@ -1243,7 +1377,22 @@ class W1Manager:
         if not is_cartesian:
             pos_raw_array_ = np.vstack([cur_qpos, pos_raw_array])
         else:
-            res_fk, cur_xpos = self._get_arm_kine(name).get_fk(cur_qpos)
+            if not is_local:
+                # Transfer global frame to local frame
+                ref_torso_qpos = cur_qpos[self.w1_params.index_infos["torso"]["index"]]
+                ref_qpos = np.zeros(self.w1_params.full_body_dofs)
+                ref_qpos[self.w1_params.index_infos["torso"]["index"]] = ref_torso_qpos
+                res_fk, T_chassis_armbase = self.get_xpos(f"{name}_base", ref_qpos, is_local=False)
+                if not res_fk:
+                    self.logger.error(f"{name}_base solve fk failed!")
+                    return False, None, None
+                temp = [np.linalg.inv(T_chassis_armbase) @ user_pose_to_xpos(pose[:3].tolist(), pose[3:].tolist()) for pose in pos_raw_array]
+                pos_raw_array = [np.array(xpos_to_user_pose(xpos)) for xpos in temp]
+                cur_arm_qpos = cur_qpos[self.w1_params.index_infos[name]["index"]]
+            else:
+                cur_arm_qpos = cur_qpos
+
+            res_fk, cur_xpos = self._get_arm_kine(name).get_fk(cur_arm_qpos)
             if not res_fk:
                 self.logger.error(f"{name} solve fk failed!")
                 return False, None, None
@@ -1505,7 +1654,8 @@ class W1Manager:
                              left_qpos_seed: np.ndarray = None,
                              right_qpos_seed: np.ndarray = None,
                              cartesian_step: float = 0.005,
-                             speed_ratio: float = 1.0) -> tuple[bool, np.ndarray, list, list]:
+                             speed_ratio: float = 1.0,
+                             is_local: bool = True) -> tuple[bool, np.ndarray, list, list]:
         """规划各部件独立关节空间运动，arm执行笛卡尔空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
         - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
@@ -1534,6 +1684,8 @@ class W1Manager:
             cartesian_step (float, optional): cartesian sample step. Defaults to 0.005.
 
             speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0.
+
+            is_local (bool, optional): w.r.t. arm base frame or chassis frame. Defaults to True.
 
         Returns:
             tuple[bool, np.ndarray, list, list]: 规划成功与否，全身关节轨迹，左末端执行器轨迹，右末端执行器轨迹
@@ -1577,30 +1729,56 @@ class W1Manager:
         # left_arm
         left_arm_ee_trigger_list = None
         if not self._has_arm_ee_client("left_arm_ee", False):
-            (res_left_arm, 
-            left_arm_qpos_array) = self._plan_to_waypoint("left_arm", 
-                                                        start_left_arm_qpos, 
-                                                        waypoints_dict, 
-                                                        speed_ratio,
-                                                        is_cartesian=True,
-                                                        qpos_seed=left_qpos_seed,
-                                                        cartesian_step=cartesian_step)
+            if is_local:
+                (res_left_arm, 
+                left_arm_qpos_array) = self._plan_to_waypoint("left_arm", 
+                                                            start_left_arm_qpos, 
+                                                            waypoints_dict, 
+                                                            speed_ratio,
+                                                            is_cartesian=True,
+                                                            qpos_seed=left_qpos_seed,
+                                                            cartesian_step=cartesian_step,
+                                                            is_local=True)
+            else:
+                (res_left_arm, 
+                left_arm_qpos_array) = self._plan_to_waypoint("left_arm", 
+                                                            start_qpos, 
+                                                            waypoints_dict, 
+                                                            speed_ratio,
+                                                            is_cartesian=True,
+                                                            qpos_seed=left_qpos_seed,
+                                                            cartesian_step=cartesian_step,
+                                                            is_local=False)
             if not res_left_arm:
                 self.logger.error("Plan to left arm traj failed.")
                 return False, None, None, None
         else:
             if not self._check_qpos_limits("left_arm_ee", start_left_arm_ee_qpos):
                 return False, None, None, None
-            (res_left_arm, 
-            left_arm_qpos_array,
-            left_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee("left_arm", 
-                                                                       start_left_arm_qpos, 
-                                                                       start_left_arm_ee_qpos, 
-                                                                       waypoints_dict, 
-                                                                       speed_ratio,
-                                                                       is_cartesian=True,
-                                                                       qpos_seed=left_qpos_seed,
-                                                                       cartesian_step=cartesian_step)
+            if is_local:
+                (res_left_arm, 
+                left_arm_qpos_array,
+                left_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee("left_arm", 
+                                                                        start_left_arm_qpos, 
+                                                                        start_left_arm_ee_qpos, 
+                                                                        waypoints_dict, 
+                                                                        speed_ratio,
+                                                                        is_cartesian=True,
+                                                                        qpos_seed=left_qpos_seed,
+                                                                        cartesian_step=cartesian_step,
+                                                                        is_local=True)
+            else:
+                (res_left_arm, 
+                left_arm_qpos_array,
+                left_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee("left_arm", 
+                                                                        start_qpos, 
+                                                                        start_left_arm_ee_qpos, 
+                                                                        waypoints_dict, 
+                                                                        speed_ratio,
+                                                                        is_cartesian=True,
+                                                                        qpos_seed=left_qpos_seed,
+                                                                        cartesian_step=cartesian_step,
+                                                                        is_local=False)
             if not res_left_arm:
                 self.logger.error("Plan to left arm traj with ee failed.")
                 return False, None, None, None
@@ -1608,30 +1786,56 @@ class W1Manager:
         # right_arm
         right_arm_ee_trigger_list = None
         if not self._has_arm_ee_client("right_arm_ee", False):
-            (res_right_arm, 
-            right_arm_qpos_array) = self._plan_to_waypoint("right_arm", 
-                                                        start_right_arm_qpos, 
-                                                        waypoints_dict, 
-                                                        speed_ratio,
-                                                        is_cartesian=True,
-                                                        qpos_seed=right_qpos_seed,
-                                                        cartesian_step=cartesian_step)
+            if is_local:
+                (res_right_arm, 
+                right_arm_qpos_array) = self._plan_to_waypoint("right_arm", 
+                                                            start_right_arm_qpos, 
+                                                            waypoints_dict, 
+                                                            speed_ratio,
+                                                            is_cartesian=True,
+                                                            qpos_seed=right_qpos_seed,
+                                                            cartesian_step=cartesian_step,
+                                                            is_local=True)
+            else:
+                (res_right_arm, 
+                right_arm_qpos_array) = self._plan_to_waypoint("right_arm", 
+                                                            start_qpos, 
+                                                            waypoints_dict, 
+                                                            speed_ratio,
+                                                            is_cartesian=True,
+                                                            qpos_seed=right_qpos_seed,
+                                                            cartesian_step=cartesian_step,
+                                                            is_local=False)
             if not res_right_arm:
                 self.logger.error("Plan to right arm traj failed.")
                 return False, None, None, None
         else:
             if not self._check_qpos_limits("right_arm_ee", start_right_arm_ee_qpos):
                 return False, None, None, None
-            (res_right_arm, 
-            right_arm_qpos_array,
-            right_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee("right_arm", 
-                                                                       start_right_arm_qpos, 
-                                                                       start_right_arm_ee_qpos, 
-                                                                       waypoints_dict, 
-                                                                       speed_ratio,
-                                                                       is_cartesian=True,
-                                                                       qpos_seed=right_qpos_seed,
-                                                                       cartesian_step=cartesian_step)
+            if is_local:
+                (res_right_arm, 
+                right_arm_qpos_array,
+                right_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee("right_arm", 
+                                                                        start_right_arm_qpos, 
+                                                                        start_right_arm_ee_qpos, 
+                                                                        waypoints_dict, 
+                                                                        speed_ratio,
+                                                                        is_cartesian=True,
+                                                                        qpos_seed=right_qpos_seed,
+                                                                        cartesian_step=cartesian_step,
+                                                                        is_local=True)
+            else:
+                (res_right_arm, 
+                right_arm_qpos_array,
+                right_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee("right_arm", 
+                                                                        start_qpos, 
+                                                                        start_right_arm_ee_qpos, 
+                                                                        waypoints_dict, 
+                                                                        speed_ratio,
+                                                                        is_cartesian=True,
+                                                                        qpos_seed=right_qpos_seed,
+                                                                        cartesian_step=cartesian_step,
+                                                                        is_local=False)
             if not res_right_arm:
                 self.logger.error("Plan to right arm traj with ee failed.")
                 return False, None, None, None
@@ -1651,7 +1855,8 @@ class W1Manager:
                                 left_qpos_seed: np.ndarray = None,
                                 right_qpos_seed: np.ndarray = None,
                                 cartesian_step: float = 0.005,
-                                speed_ratio: float = 1.0) -> bool:
+                                speed_ratio: float = 1.0,
+                                is_local: bool = True) -> bool:
         """从当前位置规划各部件独立关节空间运动，arm执行笛卡尔空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
         - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
@@ -1674,6 +1879,8 @@ class W1Manager:
             cartesian_step (float, optional): cartesian sample step. Defaults to 0.005.
 
             speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0.
+
+            is_local (bool, optional): w.r.t. arm base frame or chassis frame. Defaults to True.
 
         Returns:
             bool
@@ -1703,7 +1910,8 @@ class W1Manager:
                                                                 left_qpos_seed,
                                                                 right_qpos_seed,
                                                                 cartesian_step,
-                                                                speed_ratio)
+                                                                speed_ratio,
+                                                                is_local)
         if not res:
             return False
 
