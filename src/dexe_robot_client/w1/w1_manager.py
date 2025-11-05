@@ -549,7 +549,6 @@ class W1Manager:
                 target_chassis_client = None
 
         # 检查target client
-        
         if not target_robot_client.is_connected(timeout_sec=0.1):
             self.logger.error(f"{target_robot_client.node_name} is not connected!")
             return False
@@ -1119,6 +1118,7 @@ class W1Manager:
                 streaming_finished = True
             else:
                 streaming_finished = False
+
             if not self.robot_client.send_streaming_command(qpos.tolist(), 
                                                             streaming_finished):
                 self.logger.critical("Streaming command send failed.")
