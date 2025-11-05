@@ -10,6 +10,7 @@ import time, threading
 import pathlib, json
 from copy import deepcopy
 import atexit
+from loop_rate_limiters import RateLimiter
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
@@ -631,7 +632,7 @@ class W1Manager:
         """控制end effector运动
 
         Args:
-            name (str): ["left_arm", "right_arm"]
+            name (str): ["left_arm_ee", "right_arm_ee"]
             qpos (np.ndarray): 期望位置 0~100
 
         Returns:
@@ -991,21 +992,21 @@ class W1Manager:
                             qpos_array: np.ndarray,
                             left_arm_ee_trigger_list: list = None,
                             right_arm_ee_trigger_list: list = None,
-                            reach_timeout: float = 1.0) -> bool:
+                            reach_timeout: float = 3.0) -> bool:
         """按10ms间隔执行关节轨迹
 
         Args:
             qpos_array (np.ndarray): 关节轨迹
             left_arm_ee_trigger_list (list, optional): 左末端执行器触发序列. Defaults to None.
             right_arm_ee_trigger_list (list, optional): 右末端执行器触发序列. Defaults to None.
-            reach_timeout (float, optional): 发送完指令后的到位检测timeout. Defaults to 2.0.
+            reach_timeout (float, optional): 发送完指令后的到位检测timeout. Defaults to 3.0.
 
         Returns:
             bool: 
         """
         # check enable
         if self.robot_client.status in (Status.Init, Status.Running, Status.Error):
-            self.logger.error(f"Robot client not in idle. ({self.robot_client.status})")
+            self.logger.error(f"Robot client not in idle before moving. (Current status: {self.robot_client.status})")
             return False
 
         # reset stop move flag
@@ -1022,37 +1023,56 @@ class W1Manager:
 
         count = 1
         stop_ee_thread = False
+        ee_thread_error = False
 
         # ee trigger
         def left_arm_ee_trigger():
-            nonlocal count, stop_ee_thread
-            left_arm_ee_trigger_list_cp = deepcopy(left_arm_ee_trigger_list)
+            nonlocal count, stop_ee_thread, ee_thread_error
+            left_arm_ee_trigger_list_cp = left_arm_ee_trigger_list.copy()
             left_arm_ee_trigger_list_cp.reverse()
             target_count, target_ee_qpos = left_arm_ee_trigger_list_cp.pop()
             cur_count = -1
+
             while not stop_ee_thread:
                 if count == target_count and count != cur_count:
                     self.left_ee_client.set_qpos(np.array(target_ee_qpos))
                     self.logger.debug(f"left_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if left_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = left_arm_ee_trigger_list_cp.pop()
+                    else:
+                        self.logger.debug(f"left_arm_ee completes trigger.")
+                        break
                     cur_count = count
                 time.sleep(self.TIME_STEP / 10)
 
+            if len(left_arm_ee_trigger_list_cp):
+                self.logger.error(f"left_arm_ee has {len(left_arm_ee_trigger_list_cp)} states haven't been triggered.")
+                self.logger.debug(f"current_count: {cur_count}, count: {count}, target_count: {target_count}")
+                ee_thread_error = True
+
         def right_arm_ee_trigger():
-            nonlocal count, stop_ee_thread
-            right_arm_ee_trigger_list_cp = deepcopy(right_arm_ee_trigger_list)
+            nonlocal count, stop_ee_thread, ee_thread_error
+            right_arm_ee_trigger_list_cp = right_arm_ee_trigger_list.copy()
             right_arm_ee_trigger_list_cp.reverse()
             target_count, target_ee_qpos = right_arm_ee_trigger_list_cp.pop()
             cur_count = -1
+
             while not stop_ee_thread:
                 if count == target_count and count != cur_count:
                     self.right_ee_client.set_qpos(np.array(target_ee_qpos))
                     self.logger.debug(f"right_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if right_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = right_arm_ee_trigger_list_cp.pop()
+                    else:
+                        self.logger.debug(f"right_arm_ee completes trigger.")
+                        break
                     cur_count = count
                 time.sleep(self.TIME_STEP / 10)
+
+            if len(right_arm_ee_trigger_list_cp):
+                self.logger.error(f"left_arm_ee has {len(right_arm_ee_trigger_list_cp)} states haven't been triggered.")
+                self.logger.debug(f"current_count: {cur_count}, count: {count}, target_count: {target_count}")
+                ee_thread_error = True
 
         left_arm_ee_trigger_thread = None
         if self._has_arm_ee_client("left_arm_ee", False) and left_arm_ee_trigger_list is not None:
@@ -1071,9 +1091,10 @@ class W1Manager:
         # streaming
         self.logger.info("Start streaming.")
         end_iter = qpos_array.shape[0] - 1
-        self.robot_client.start_joint_streaming_request(MotionGroup.WholeBody)
-        t0 = time.time()
         last_qpos = cur_qpos
+        self.robot_client.start_joint_streaming_request(MotionGroup.WholeBody)
+        rate = RateLimiter(frequency=1./self.TIME_STEP, warn=True)
+        t0 = time.time()
         for qpos in qpos_array:
             if self._stop_move_event.is_set():
                 self.robot_client.send_streaming_command(position = last_qpos.tolist(), 
@@ -1091,7 +1112,6 @@ class W1Manager:
                 streaming_finished = True
             else:
                 streaming_finished = False
-
             if not self.robot_client.send_streaming_command(qpos.tolist(), 
                                                             streaming_finished):
                 self.logger.critical("Streaming command send failed.")
@@ -1101,20 +1121,12 @@ class W1Manager:
                 if right_arm_ee_trigger_thread is not None:
                     right_arm_ee_trigger_thread.join()
                 return False
-            self.robot_client.wait_second(self.TIME_STEP)
+            
             count += 1
             last_qpos = qpos
-        if not self.robot_client.wait_request_finish(timeout_sec=0.5):
-            stop_ee_thread = True
-            if left_arm_ee_trigger_thread is not None:
-                left_arm_ee_trigger_thread.join()
-            if right_arm_ee_trigger_thread is not None:
-                right_arm_ee_trigger_thread.join()
-            return False
+            rate.sleep()
 
-        self.logger.info("Finish streaming. " +
-                        f"Ideal duration should be {(count-1) * self.TIME_STEP}s, " +
-                        f"and actual duration is {time.time() - t0}s.")
+        self.robot_client.wait_request_finish(timeout_sec=reach_timeout)
         
         stop_ee_thread = True
         if left_arm_ee_trigger_thread is not None:
@@ -1122,20 +1134,23 @@ class W1Manager:
         if right_arm_ee_trigger_thread is not None:
             right_arm_ee_trigger_thread.join()
 
-        # check reach within timeout TODO: 假设wait_request_finish生效，则不需要这里的到位检测了？
-        targt_qpos = qpos_array[-1]
-        t1 = time.time()
-        while time.time() - t1 < reach_timeout:
-            res, cur_qpos = self.get_current_qpos()
-            if not res: 
-                return False
-            if np.allclose(cur_qpos, targt_qpos, atol=np.deg2rad(1)):
-                return True
-            time.sleep(5*self.TIME_STEP)
+        self.logger.info("Finish streaming. " +
+                        f"Ideal duration should be {(count-1) * self.TIME_STEP}s, " +
+                        f"and actual duration is {time.time() - t0}s.")
 
-        self.logger.error(f"Current qpos does NOT reach the target qpos until {reach_timeout}s, " +
-                          f"qpos error(deg): {np.rad2deg(cur_qpos - targt_qpos)}.")
-        return False
+        # check reach qpos
+        targt_qpos = qpos_array[-1]
+        res, cur_qpos = self.get_current_qpos()
+        if not res: 
+            return False
+        if not np.allclose(cur_qpos, targt_qpos, atol=np.deg2rad(5)):
+            self.logger.error(f"Current qpos does NOT reach the target qpos until {reach_timeout}s, " +
+                    f"qpos error(deg): {np.rad2deg(cur_qpos - targt_qpos)}.")
+            return False
+        if not np.allclose(cur_qpos, targt_qpos, atol=np.deg2rad(0.5)):
+            self.logger.warning(f"Current qpos does NOT close to the target qpos until {reach_timeout}s, " +
+                            f"qpos error(deg): {np.rad2deg(cur_qpos - targt_qpos)}.")
+        return (True and (not ee_thread_error))
 
 
     ########## demo定制API ###########
@@ -1506,6 +1521,7 @@ class W1Manager:
         start_right_arm_qpos = start_qpos[self.w1_params.right_arm_index]
         
         self.logger.debug(f"plan_joint_full_body() input cur_qpos: {start_qpos}")
+        self.logger.debug(f"plan_joint_full_body() input cur_ee_qpos: {start_left_arm_ee_qpos}, {start_right_arm_ee_qpos}")
         self.logger.debug("plan_joint_full_body() input waypoints_dict:")
         self.logger.debug(waypoints_dict)
         self.logger.debug(f"plan_joint_full_body() input speed_ratio: {speed_ratio}")
@@ -1704,10 +1720,11 @@ class W1Manager:
         if right_qpos_seed is None:
             right_qpos_seed = start_right_arm_qpos
 
-        self.logger.debug(f"plan_joint_full_body() input cur_qpos: {start_qpos}")
-        self.logger.debug("plan_joint_full_body() input waypoints_dict:")
+        self.logger.debug(f"plan_linear_full_body() input cur_qpos: {start_qpos}")
+        self.logger.debug(f"plan_linear_full_body() input cur_ee_qpos: {start_left_arm_ee_qpos}, {start_right_arm_ee_qpos}")
+        self.logger.debug("plan_linear_full_body() input waypoints_dict:")
         self.logger.debug(waypoints_dict)
-        self.logger.debug(f"plan_joint_full_body() input speed_ratio: {speed_ratio}")
+        self.logger.debug(f"plan_linear_full_body() input speed_ratio: {speed_ratio}")
 
         # torso
         res_torso, torso_qpos_array = self._plan_to_waypoint("torso", 

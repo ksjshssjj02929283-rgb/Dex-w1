@@ -22,7 +22,8 @@ dependencies = [
     "pin>=2.7.0",
     "trimesh>=4.2.4",
     "open3d",
-    "pathfinding"
+    "pathfinding",
+    "loop_rate_limiters"
 ]
 
 [project.optional-dependencies]
