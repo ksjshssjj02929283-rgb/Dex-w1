@@ -5,6 +5,7 @@ from .fcl_checker import FCLChecker
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from .traj_coordination import Coordination
 from .planner_pinocchio import Planner_Pin
+from ...end_effector_client import EndEffectorType
 from ...common import get_logger
 import pinocchio
 import time
@@ -60,39 +61,15 @@ class OMPLPlanSingle:
         # self.pin_data = self.pin_model.createData()
         self.planner_pin = planner_pin
 
+        if fcl_checker.end_effector_type != planner_pin.ee_type:
+            raise ValueError(f"FCL Checker end effector type {fcl_checker.end_effector_type} does not match Planner Pinocchio end effector type {planner_pin.ee_type}")
+        else:
+            self.end_effector_type = fcl_checker.end_effector_type
         self.use_ee = use_ee
         
         self.traj_max_vel = 0.3
 
         self.logger = get_logger()
-
-
-    # def _get_Kinematics(self, body_qpos, arml_qpos, armr_qpos, head_qpos):
-    #     # NOTE: 
-    #     # q's order depends on urdf, currently is [body(4), left arm(7), right arm(7), head(2)]
-    #     # pinocchio will output 21 transformation matrices include universe as the first one
-    #     if body_qpos is None or head_qpos is None:
-    #         raise ValueError("body_qpos and head_qpos must be set before calling _get_Kinematics")
-    #     q = np.concatenate((body_qpos, arml_qpos, head_qpos, armr_qpos))
-    #     pinocchio.forwardKinematics(self.pin_model, self.pin_data, q)
-    #     pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
-    #     transform_chain = [oMi.homogeneous for oMi in self.pin_data.oMi]
-    #     left_transform_chain = transform_chain[5:12]  # left arm links
-    #     right_transform_chain = transform_chain[14:21]  # right arm links
-    #     if self.use_ee:
-    #         armlee_ID = self.pin_model.getFrameId("LEFT_EE")  
-    #         armree_ID = self.pin_model.getFrameId("RIGHT_EE")  
-    #         lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
-    #         ree_trans = self.pin_data.oMf[armree_ID].homogeneous
-    #         left_transform_chain.append(lee_trans)
-    #         right_transform_chain.append(ree_trans)
-        
-    #     body_transform_chain = transform_chain[1:5]
-    #     head_transform_chain = transform_chain[12:14]
-
-    #     return body_transform_chain, left_transform_chain, right_transform_chain, head_transform_chain
-
-
 
     def set_head_body(self, head_qpos, body_qpos):
         if head_qpos.shape[0] != 2:
@@ -102,16 +79,30 @@ class OMPLPlanSingle:
         self.head_qpos = head_qpos
         self.body_qpos = body_qpos
         if self.is_left:
-            # body, arml, armr, head = self._get_Kinematics(self.body_qpos, self.start_state, self.other_arm_qpos, self.head_qpos)
             real_qpos = np.concatenate((self.body_qpos, self.head_qpos, self.start_state, self.other_arm_qpos))
             torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
         else:
-            # body, arml, armr, head = self._get_Kinematics(self.body_qpos, self.other_arm_qpos, self.start_state, self.head_qpos)
             real_qpos = np.concatenate((self.body_qpos, self.head_qpos, self.other_arm_qpos, self.start_state))
             torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
         self.fcl_checker.set_head_body_transform(head_trans, torso_trans)
         
-
+    def set_end_effector_qpos(self, armlee_qpos: np.ndarray, armree_qpos: np.ndarray):
+        if self.use_ee:
+            if self.end_effector_type == EndEffectorType.BRAINCO_HAND:
+                if armlee_qpos.shape != (6, ) or armree_qpos.shape != (6, ):
+                    raise ValueError(f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+            if self.end_effector_type == EndEffectorType.PGC_GRIPPER:
+                if armlee_qpos.shape != (2, ) or armree_qpos.shape != (2, ):
+                    raise ValueError(f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+            # self.armlee_qpos = armlee_qpos
+            # self.armree_qpos = armree_qpos
+            if self.is_left:
+                self.end_effector_qpos = armlee_qpos
+                self.other_hand_qpos = armree_qpos
+            else:
+                self.end_effector_qpos = armree_qpos
+                self.other_hand_qpos = armree_qpos
+        
     def set_traj_max_vel(self, max_vel):
         if max_vel <= 0:
             raise ValueError(f"max_vel must be positive, got {max_vel}")
@@ -150,19 +141,36 @@ class OMPLPlanSingle:
         self.other_arm_qpos = other_arm_qpos
 
     def _is_state_valid(self, state):
-        if self.is_left:
-            lqpos = np.array([state[i] for i in range(self.space.getDimension())], dtype=np.float32)
-            rqpos = self.other_arm_qpos
-        else:
-            rqpos = np.array([state[i] for i in range(self.space.getDimension())], dtype=np.float32)
-            lqpos = self.other_arm_qpos
-        real_qpos = np.concatenate((self.body_qpos, self.head_qpos, lqpos, rqpos))
-        # body, arml, armr, head = self._get_Kinematics(self.body_qpos, arml_qpos=lqpos, armr_qpos=rqpos, head_qpos=self.head_qpos)
-        torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
-        transform = arml_trans + armr_trans
-        self.fcl_checker.update_arm_transform(transform)
+        if not self.use_ee:
+            if self.is_left:
+                lqpos = np.array([state[i] for i in range(self.space.getDimension())], dtype=np.float32)
+                rqpos = self.other_arm_qpos
+            else:
+                rqpos = np.array([state[i] for i in range(self.space.getDimension())], dtype=np.float32)
+                lqpos = self.other_arm_qpos
+            real_qpos = np.concatenate((self.body_qpos, self.head_qpos, lqpos, rqpos))
+            torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
+            transform = arml_trans + armr_trans
+            self.fcl_checker.update_arm_transform(transform)
 
-        return not self.fcl_checker.check_collision()
+            return not self.fcl_checker.check_collision()
+        else:
+            if self.is_left:
+                lqpos = np.array([state[i] for i in range(self.space.getDimension())], dtype=np.float32)
+                rqpos = self.other_arm_qpos
+                leeqpos = self.end_effector_qpos
+                reeqpos = self.other_hand_qpos
+            else:
+                rqpos = np.array([state[i] for i in range(self.space.getDimension())], dtype=np.float32)
+                lqpos = self.other_arm_qpos
+                reeqpos = self.end_effector_qpos
+                leeqpos = self.other_hand_qpos
+            real_qpos = np.concatenate((self.body_qpos, self.head_qpos, lqpos, rqpos))
+            torso_trans, head_trans, arml_trans, armr_trans, armlee_trans, armree_trans = self.planner_pin.get_Kinematics(real_qpos, leeqpos, reeqpos, compute_ee=True)
+            transform = arml_trans + armr_trans
+            self.fcl_checker.update_arm_transform(transform, armlee_trans, armree_trans)
+
+            return not self.fcl_checker.check_collision()
     
     def save_result_path(self, file_name):
         current_path = os.path.dirname(os.path.abspath(__file__))
@@ -218,6 +226,52 @@ class OMPLPlanSingle:
         res, pos_array, vel_array, acc_array, duration = traj_planner.plan(path)
         return pos_array, vel_array, acc_array, duration
 
+    def _interpolate_path(self, path: np.ndarray, resolution=0.005):
+        if self.is_left:
+            new_path = []
+            for i in range(path.shape[0] - 1):
+                real_qpos1 = np.concatenate((self.body_qpos, self.head_qpos, path[i], self.other_arm_qpos))
+                real_qpos2 = np.concatenate((self.body_qpos, self.head_qpos, path[i+1], self.other_arm_qpos))
+                _, _, arml_tf1, _, _, _ = self.planner_pin.get_Kinematics(real_qpos1, self.end_effector_qpos, self.other_hand_qpos, compute_ee=True)
+                _, _, arml_tf2, _, _, _ = self.planner_pin.get_Kinematics(real_qpos2, self.end_effector_qpos, self.other_hand_qpos, compute_ee=True)
+
+                distance = np.linalg.norm(arml_tf2[-1][:3,3] - arml_tf1[-1][:3,3])
+                interp_num = int(distance / resolution)
+                print(f"interpolate number of left arm is {interp_num}")
+
+                new_seg_path = path[i]
+                if interp_num > 1:
+                    for j in range(interp_num):
+                        ratio = j / interp_num
+                        new_qpos = (1 - ratio) * path[i] + ratio * path[i+1]
+                        new_seg_path = np.vstack((new_seg_path, new_qpos))
+                new_seg_path = np.vstack((new_seg_path, path[i+1]))
+
+                new_path.append(new_seg_path)
+        else:
+            new_path = []
+            for i in range(path.shape[0] - 1):
+                real_qpos1 = np.concatenate((self.body_qpos, self.head_qpos, self.other_arm_qpos, path[i]))
+                real_qpos2 = np.concatenate((self.body_qpos, self.head_qpos, self.other_arm_qpos, path[i+1]))
+                _, _, _, armr_tf1, _, _ = self.planner_pin.get_Kinematics(real_qpos1, self.other_hand_qpos, self.end_effector_qpos, compute_ee=True)
+                _, _, _, armr_tf2, _, _ = self.planner_pin.get_Kinematics(real_qpos2, self.other_hand_qpos, self.end_effector_qpos, compute_ee=True)
+
+                distance = np.linalg.norm(armr_tf2[-1][:3,3] - armr_tf1[-1][:3,3])
+                interp_num = int(distance / resolution)
+                print(f"interpolate number of right arm is {interp_num}")
+
+                new_seg_path = path[i]
+                if interp_num > 1:
+                    for j in range(interp_num):
+                        ratio = j / interp_num
+                        new_qpos = (1 - ratio) * path[i] + ratio * path[i+1]
+                        new_seg_path = np.vstack((new_seg_path, new_qpos))
+                new_seg_path = np.vstack((new_seg_path, path[i+1]))
+
+                new_path.append(new_seg_path)
+        return np.vstack(new_path)
+                
+
 
     def plan(self, planning_time=2.0):
         si = ob.SpaceInformation(self.space)
@@ -255,18 +309,55 @@ class OMPLPlanSingle:
             # path.interpolate(50)
 
             np_path = self._np_path(path)
+
+            # interpolate path
+            # np_path = self._interpolate_path(np_path, resolution=0.005)
+            # print(np_path.shape)
+
             self.result_path = np_path
 
             total_time = time.time() - start_time
             self.logger.info(f"Finish find a path with {path.getStateCount()} waypoints in {total_time:.6f} seconds")
             result_traj, result_vel, result_acc, duration = self.gen_trajectory(np_path, max_v=self.traj_max_vel)
+
+            # The following code is for test toppra trajectory collision
+
+            # if self.is_left:
+            #     for qpos in np_path:
+            #         real_qpos = np.concatenate((self.body_qpos, self.head_qpos, qpos, self.other_arm_qpos))
+            #         torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self.planner_pin.get_Kinematics(real_qpos, self.end_effector_qpos, self.other_hand_qpos, compute_ee=True)
+            #         transform = arml_tf + armr_tf
+            #         self.fcl_checker.update_arm_transform(transform, armlee_tf, armree_tf)
+            #         if self.fcl_checker.check_collision():
+            #             self.logger.warning(f"Left arm Path collides after trajectory generation")
+            #     for qpos in result_traj:
+            #         real_qpos = np.concatenate((self.body_qpos, self.head_qpos, qpos, self.other_arm_qpos))
+            #         torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self.planner_pin.get_Kinematics(real_qpos, self.end_effector_qpos, self.other_hand_qpos, compute_ee=True)
+            #         transform = arml_tf + armr_tf
+            #         self.fcl_checker.update_arm_transform(transform, armlee_tf, armree_tf)
+            #         if self.fcl_checker.check_collision():
+            #             self.logger.warning(f"Left arm Trajectory collides after trajectory generation")
+            # else:
+            #     for qpos in np_path:
+            #         real_qpos = np.concatenate((self.body_qpos, self.head_qpos, self.other_arm_qpos, qpos))
+            #         torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self.planner_pin.get_Kinematics(real_qpos, self.other_hand_qpos, self.end_effector_qpos, compute_ee=True)
+            #         transform = arml_tf + armr_tf
+            #         self.fcl_checker.update_arm_transform(transform, armlee_tf, armree_tf)
+            #         if self.fcl_checker.check_collision():
+            #             self.logger.warning(f"Right arm Path collides after trajectory generation")
+            #     for qpos in result_traj:
+            #         real_qpos = np.concatenate((self.body_qpos, self.head_qpos, self.other_arm_qpos, qpos))
+            #         torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self.planner_pin.get_Kinematics(real_qpos, self.other_hand_qpos, self.end_effector_qpos, compute_ee=True)
+            #         transform = arml_tf + armr_tf
+            #         self.fcl_checker.update_arm_transform(transform, armlee_tf, armree_tf)
+            #         if self.fcl_checker.check_collision():
+            #             self.logger.warning(f"Right arm Trajectory collides after trajectory generation")
             self.result_traj = result_traj
             return np_path, self.result_traj, total_time
         else:
             self.logger.warning(f"Failed to find a path for {self.which_arm} arm")
             self.result_path = None
             return None, None, None
-        
 
 class OMPLPlanCentralized:
     def __init__(self, space_dimension, arml_bounds, armr_bounds, arml_start, armr_start, arml_goal, armr_goal, fcl_checker: FCLChecker, planner_pin: Planner_Pin, use_ee: bool = False):
@@ -299,40 +390,18 @@ class OMPLPlanCentralized:
         self.head_qpos = None
         self.body_qpos = None
 
-        # self.pin_model = pinocchio.buildModelFromUrdf(urdf_path)
-        # self.pin_data = self.pin_model.createData()
         self.planner_pin = planner_pin
+
+        if fcl_checker.end_effector_type != planner_pin.ee_type:
+            raise ValueError(f"FCL Checker end effector type {fcl_checker.end_effector_type} does not match Planner Pinocchio end effector type {planner_pin.ee_type}")
+        else:
+            self.end_effector_type = fcl_checker.end_effector_type
 
         self.use_ee = use_ee
 
         self.traj_max_vel = 0.3
 
         self.logger = get_logger()
-
-    # def _get_Kinematics(self, body_qpos, arml_qpos, armr_qpos, head_qpos):
-    #     # NOTE: 
-    #     # q's order depends on urdf, currently is [body(4), left arm(7), right arm(7), head(2)]
-    #     # pinocchio will output 21 transformation matrices include universe as the first one
-    #     if body_qpos is None or head_qpos is None:
-    #         raise ValueError("body_qpos and head_qpos must be set before calling _get_Kinematics")
-    #     q = np.concatenate((body_qpos, arml_qpos, head_qpos, armr_qpos))
-    #     pinocchio.forwardKinematics(self.pin_model, self.pin_data, q)
-    #     pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
-    #     transform_chain = [oMi.homogeneous for oMi in self.pin_data.oMi]
-    #     left_transform_chain = transform_chain[5:12]  # left arm links
-    #     right_transform_chain = transform_chain[14:21]  # right arm links
-    #     if self.use_ee:
-    #         armlee_ID = self.pin_model.getFrameId("LEFT_EE")  
-    #         armree_ID = self.pin_model.getFrameId("RIGHT_EE")  
-    #         lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
-    #         ree_trans = self.pin_data.oMf[armree_ID].homogeneous
-    #         left_transform_chain.append(lee_trans)
-    #         right_transform_chain.append(ree_trans)
-
-    #     body_transform_chain = transform_chain[1:5]
-    #     head_transform_chain = transform_chain[12:14]
-
-    #     return body_transform_chain, left_transform_chain, right_transform_chain, head_transform_chain
 
     def set_traj_max_vel(self, max_vel):
         if max_vel <= 0:
@@ -350,9 +419,18 @@ class OMPLPlanCentralized:
                                     self.start_state[:int(self.space.getDimension()/2)], 
                                     self.start_state[int(self.space.getDimension()/2):]))
         torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
-        # body, arml, armr, head = self._get_Kinematics(self.body_qpos, self.start_state[:int(self.space.getDimension()/2)], 
-        #                                               self.start_state[int(self.space.getDimension()/2):], self.head_qpos)
         self.fcl_checker.set_head_body_transform(head_trans, torso_trans)
+
+    def set_end_effector_qpos(self, armlee_qpos: np.ndarray, armree_qpos: np.ndarray):
+        if self.use_ee:
+            if self.end_effector_type == EndEffectorType.BRAINCO_HAND:
+                if armlee_qpos.shape != (6, ) or armree_qpos.shape != (6, ):
+                    raise ValueError(f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+            if self.end_effector_type == EndEffectorType.PGC_GRIPPER:
+                if armlee_qpos.shape != (2, ) or armree_qpos.shape != (2, ):
+                    raise ValueError(f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+            self.armlee_qpos = armlee_qpos
+            self.armree_qpos = armree_qpos
 
     def set_start_goal(self, arml_start, armr_start, arml_goal, armr_goal):
         if arml_start.shape[0] != int(self.space.getDimension()/2):
@@ -368,16 +446,25 @@ class OMPLPlanCentralized:
         self.goal_state = np.concatenate((arml_goal, armr_goal))
 
     def _is_state_valid(self, state):
-        arml_qpos = np.array([state[i] for i in range(int(self.space.getDimension()/2))], dtype=np.float32)
-        armr_qpos = np.array([state[i] for i in range(int(self.space.getDimension()/2), self.space.getDimension())], dtype=np.float32)
-        real_qpos = np.concatenate((self.body_qpos, self.head_qpos, arml_qpos, armr_qpos))
-        torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
-        # body, arml, armr, head = self._get_Kinematics(self.body_qpos, arml_qpos=arml_qpos, armr_qpos=armr_qpos, head_qpos=self.head_qpos)
-        transform = arml_trans + armr_trans
-        self.fcl_checker.update_arm_transform(transform)
+        if not self.use_ee:
+            arml_qpos = np.array([state[i] for i in range(int(self.space.getDimension()/2))], dtype=np.float32)
+            armr_qpos = np.array([state[i] for i in range(int(self.space.getDimension()/2), self.space.getDimension())], dtype=np.float32)
+            real_qpos = np.concatenate((self.body_qpos, self.head_qpos, arml_qpos, armr_qpos))
+            torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
+            transform = arml_trans + armr_trans
+            self.fcl_checker.update_arm_transform(transform)
 
-        return not self.fcl_checker.check_collision()
-    
+            return not self.fcl_checker.check_collision()
+        else:
+            arml_qpos = np.array([state[i] for i in range(int(self.space.getDimension()/2))], dtype=np.float32)
+            armr_qpos = np.array([state[i] for i in range(int(self.space.getDimension()/2), self.space.getDimension())], dtype=np.float32)
+            real_qpos = np.concatenate((self.body_qpos, self.head_qpos, arml_qpos, armr_qpos))
+            torso_trans, head_trans, arml_trans, armr_trans, armlee_trans, armree_trans = self.planner_pin.get_Kinematics(real_qpos, self.armlee_qpos, self.armree_qpos, compute_ee=True)
+            transform = arml_trans, armr_trans
+            self.fcl_checker.update_arm_transform(transform, armlee_trans, armree_trans)
+
+            return not self.fcl_checker.check_collision()
+
     def save_result_path(self, file_name):
         current_path = os.path.dirname(os.path.abspath(__file__))
         saved_folder_path = os.path.join(current_path, "saved_path")
@@ -493,6 +580,11 @@ class OMPLPlanDecoupled:
         self.arml_goal = arml_goal
         self.armr_goal = armr_goal
 
+        if fcl_checker.end_effector_type != planner_pin.ee_type:
+            raise ValueError(f"FCL Checker end effector type {fcl_checker.end_effector_type} does not match Planner Pinocchio end effector type {planner_pin.ee_type}")
+        else:
+            self.end_effector_type = fcl_checker.end_effector_type
+
         self.head_qpos = None
         self.body_qpos = None
 
@@ -521,6 +613,19 @@ class OMPLPlanDecoupled:
         self.body_qpos = body_qpos
         self.arml_planner.set_head_body(head_qpos, body_qpos)
         self.armr_planner.set_head_body(head_qpos, body_qpos)
+
+    def set_end_effector_qpos(self, armlee_qpos: np.ndarray, armree_qpos: np.ndarray):
+        if self.use_ee:
+            if self.end_effector_type == EndEffectorType.BRAINCO_HAND:
+                if armlee_qpos.shape != (6, ) or armree_qpos.shape != (6, ):
+                    raise ValueError(f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+            if self.end_effector_type == EndEffectorType.PGC_GRIPPER:
+                if armlee_qpos.shape != (2, ) or armree_qpos.shape != (2, ):
+                    raise ValueError(f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+            self.armlee_qpos = armlee_qpos
+            self.armree_qpos = armree_qpos
+            self.arml_planner.set_end_effector_qpos(armlee_qpos, armree_qpos)
+            self.armr_planner.set_end_effector_qpos(armree_qpos, armree_qpos)
     
     def gen_trajectory(self, path, max_v, is_left=True):
         # path_waypoints = []
@@ -572,6 +677,7 @@ class OMPLPlanDecoupled:
 
         coordinator = Coordination(arml_trajectory, armr_trajectory, self.fcl_checker, self.planner_pin, coordination_res=0.1, traj_res=0.01, use_ee=self.use_ee)
         coordinator.set_head_body(self.head_qpos, self.body_qpos)
+        coordinator.set_end_effector_qpos(self.armlee_qpos, self.armree_qpos)
         # coordinated_left, coordinated_right = coordinator.Coordinate_Astar()
         coordinated_left, coordinated_right = coordinator.Coordinate_RRT()
         end_time = time.time()
