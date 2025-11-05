@@ -18,7 +18,7 @@ from robot_server_interfaces.msg import StreamingCommand
 
 from .data_structure import *
 from .robot_client import RobotClient
-from ..common import get_logger
+from ..common import get_logger, time_consuming
 
 
 class RobotClientRos2(Node, RobotClient):
@@ -83,6 +83,7 @@ class RobotClientRos2(Node, RobotClient):
         while time.time() - start_time < wait_second:
             time.sleep(0.001)
 
+    @time_consuming
     def wait_request_finish(
         self, request_id: Optional[int] = None, timeout_sec: int = 30
     ) -> bool:
