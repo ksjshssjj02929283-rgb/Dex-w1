@@ -15,7 +15,14 @@ HEAD_DIM = 2
 TORSO_DIM = 4
 
 
-class SinglePlanner:
+class HybridPlanner:
+    """
+    High-level motion planning interface for single arm or dual arm planning.
+
+    This class provides a unified planning API that integrates FCL for collision checking,
+        OMPL for sampling-based motion planning, and coordination algorithms for multi-arm
+        planning. It supports both single-arm and dual-arm motion and trajectory planning.
+    """
     arml_dim, armr_dim = None, None
     arml_bounds, armr_bounds = None, None
     ee_type = None
@@ -71,7 +78,7 @@ class SinglePlanner:
         if robot_type is not None:
             if robot_type not in RobotType:
                 raise ValueError(f"Unsupported robot type: {robot_type}. Please use one of {list(RobotType)}.")
-            cls.urdf_path = get_robot_urdf(robot_type)
+            cls.urdf_path = get_robot_urdf(robot_type, ee_type=ee_type)
             cls.robot_type = robot_type
         else:
             raise ValueError(f"Robot type must be specified. Please use  one of {list(RobotType)}.")
@@ -158,6 +165,18 @@ class SinglePlanner:
         self.head_qpos = head_qpos
         self.torso_qpos = torso_qpos
 
+    def set_end_effector_qpos(self, armlee_qpos: np.ndarray, armree_qpos: np.ndarray):
+        if self.use_ee:
+            if self.ee_type == EndEffectorType.BRAINCO_HAND:
+                if armlee_qpos.shape != (6, ) or armree_qpos.shape != (6, ):
+                    raise ValueError(f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+            if self.ee_type == EndEffectorType.PGC_GRIPPER:
+                if armlee_qpos.shape != (2, ) or armree_qpos.shape != (2, ):
+                    raise ValueError(f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+            self.armlee_qpos = armlee_qpos
+            self.armree_qpos = armree_qpos
+
+
     def set_ee_time(self, armlee_wait_time: np.ndarray, armree_wait_time: np.ndarray, 
                     armlee_exec_time: np.ndarray, armree_exec_time: np.ndarray):
         """
@@ -214,6 +233,7 @@ class SinglePlanner:
                                           which_arm='left', other_arm_qpos=self.armr_start,
                                           use_ee=self.use_ee)
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
+            ompl_planner.set_end_effector_qpos(self.armlee_qpos, self.armree_qpos)
             ompl_planner.set_traj_max_vel(self.left_traj_max_vel)
             left_path, left_trajectory, left_plan_time = ompl_planner.plan(planning_time=2.0)
             if left_path is not None:
@@ -228,6 +248,7 @@ class SinglePlanner:
                                           which_arm='right', other_arm_qpos=self.arml_start,
                                           use_ee=self.use_ee)
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
+            ompl_planner.set_end_effector_qpos(self.armlee_qpos, self.armree_qpos)
             ompl_planner.set_traj_max_vel(self.right_traj_max_vel)
             right_path, right_trajectory, right_plan_time = ompl_planner.plan(planning_time=2.0)
             if right_path is not None:
@@ -246,6 +267,7 @@ class SinglePlanner:
                                              use_ee=self.use_ee)
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
             ompl_planner.set_traj_max_vel(self.left_traj_max_vel, self.right_traj_max_vel)
+            ompl_planner.set_end_effector_qpos(self.armlee_qpos, self.armree_qpos)
             coordinated_left, coordinated_right, plan_time = ompl_planner.plan()
             if coordinated_left is not None and coordinated_right is not None:
                 return coordinated_left, coordinated_right, plan_time

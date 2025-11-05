@@ -1,3 +1,9 @@
+# ----------------------------------------------------------------------------
+# Copyright (c) 2021-2025 DexForce Technology Co., Ltd.
+#
+# All rights reserved.
+# ----------------------------------------------------------------------------
+
 import numpy as np
 import os
 import csv
@@ -18,6 +24,12 @@ import ompl.geometric as og
 from IPython import embed
 
 class ForwardMotionValidator(ob.MotionValidator):
+    """
+    This is a inherited class from ompl.base.MotionValidator, which overrides the checkMothon() function.
+    It will check the motion is towards the forward direction only and 
+    check the motion validity by sampling according to a fixed distance resolution or according to the relative percentage resolution.
+    """
+    
     def __init__(self, si):
         super().__init__(si)
         self.si = si  # 保留 SpaceInformation 对象以便需要 checkMotion()
@@ -69,9 +81,12 @@ class GridRRT:
         self.right_idx_chain = right_idx_chain
 
         self.fcl_checker = fcl_checker
-        # self.pin_model = pinocchio.buildModelFromUrdf(urdf_path)
-        # self.pin_data = self.pin_model.createData()
         self.planner_pin = planner_pin
+
+        if fcl_checker.end_effector_type != planner_pin.ee_type:
+            raise ValueError(f"FCL Checker end effector type {fcl_checker.end_effector_type} does not match Planner Pinocchio end effector type {planner_pin.ee_type}")
+        else:
+            self.end_effector_type = fcl_checker.end_effector_type
 
         self.flag_map = np.zeros((self.grid_map.shape[0], self.grid_map.shape[1]))
 
@@ -79,31 +94,6 @@ class GridRRT:
 
         self.logger = get_logger()
 
-    # def _get_Kinematics(self, body_qpos, arml_qpos, armr_qpos, head_qpos):
-    #     # NOTE: 
-    #     # q's order depends on urdf, currently is [body(4), left arm(7), right arm(7), head(2)]
-    #     # pinocchio will output 21 transformation matrices include universe as the first one
-    #     if body_qpos is None or head_qpos is None:
-    #         raise ValueError("body_qpos and head_qpos must be set before calling _get_Kinematics")
-    #     q = np.concatenate((body_qpos, arml_qpos, head_qpos, armr_qpos))
-    #     pinocchio.forwardKinematics(self.pin_model, self.pin_data, q)
-    #     pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
-    #     transform_chain = [oMi.homogeneous for oMi in self.pin_data.oMi]
-        
-    #     left_transform_chain = transform_chain[5:12]  # left arm links
-    #     right_transform_chain = transform_chain[14:21]  # right arm links
-    #     if self.use_ee:
-    #         armlee_ID = self.pin_model.getFrameId("LEFT_EE")  
-    #         armree_ID = self.pin_model.getFrameId("RIGHT_EE")  
-    #         lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
-    #         ree_trans = self.pin_data.oMf[armree_ID].homogeneous
-    #         left_transform_chain.append(lee_trans)
-    #         right_transform_chain.append(ree_trans)
-
-    #     body_transform_chain = transform_chain[1:5]
-    #     head_transform_chain = transform_chain[12:14]
-
-    #     return body_transform_chain, left_transform_chain, right_transform_chain, head_transform_chain
     
     def pos_to_idx(self, state):
         state = np.array([state[i] for i in range(2)], dtype=np.float64)
@@ -123,15 +113,30 @@ class GridRRT:
         temp_armr_qpos = np.zeros(armr_dim)
         real_qpos = np.concatenate((self.body_qpos, self.head_qpos, temp_arml_qpos, temp_armr_qpos))
         torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
-        # body, arml, armr, head = self._get_Kinematics(self.body_qpos, temp_arml_qpos, temp_armr_qpos, self.head_qpos)
         self.fcl_checker.set_head_body_transform(head_trans, torso_trans)
 
+    def set_end_effector_qpos(self, armlee_qpos: np.ndarray, armree_qpos: np.ndarray):
+        if self.use_ee:
+            if self.end_effector_type == EndEffectorType.BRAINCO_HAND:
+                if armlee_qpos.shape != (6, ) or armree_qpos.shape != (6, ):
+                    raise ValueError(f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+            if self.end_effector_type == EndEffectorType.PGC_GRIPPER:
+                if armlee_qpos.shape != (2, ) or armree_qpos.shape != (2, ):
+                    raise ValueError(f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+            self.armlee_qpos = armlee_qpos
+            self.armree_qpos = armree_qpos        
+
     def _update_fcl_transform(self, arml_qpos, armr_qpos):
-        real_qpos = np.concatenate((self.body_qpos, self.head_qpos, arml_qpos, armr_qpos))
-        torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
-        # body, arml, armr, head = self._get_Kinematics(self.body_qpos, arml_qpos, armr_qpos, self.head_qpos)
-        transform = arml_trans + armr_trans
-        self.fcl_checker.update_arm_transform(transform)
+        if not self.use_ee:
+            real_qpos = np.concatenate((self.body_qpos, self.head_qpos, arml_qpos, armr_qpos))
+            torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
+            transform = arml_trans + armr_trans
+            self.fcl_checker.update_arm_transform(transform)
+        else:
+            real_qpos = np.concatenate((self.body_qpos, self.head_qpos, arml_qpos, armr_qpos))
+            torso_trans, head_trans, arml_trans, armr_trans, armlee_trans, armree_trans = self.planner_pin.get_Kinematics(real_qpos, self.armlee_qpos, self.armree_qpos, compute_ee=True)
+            transform = arml_trans + armr_trans
+            self.fcl_checker.update_arm_transform(transform, armlee_trans, armree_trans)
 
     def _is_state_valid(self, state):
         x, y = self.pos_to_idx(state)
@@ -233,6 +238,11 @@ class Coordination:
         self.head_qpos = None
         self.body_qpos = None
 
+        if fcl_checker.end_effector_type != planner_pin.ee_type:
+            raise ValueError(f"FCL Checker end effector type {fcl_checker.end_effector_type} does not match Planner Pinocchio end effector type {planner_pin.ee_type}")
+        else:
+            self.end_effector_type = fcl_checker.end_effector_type
+
         self.idx_increment = int(coordination_res / traj_res)
         if self.left_traj.shape[0] % self.idx_increment != 0:
             self.len_vert = self.left_traj.shape[0] // self.idx_increment + 2
@@ -253,31 +263,6 @@ class Coordination:
         self.logger = get_logger()
         self.logger.info(f"Get original {self.left_traj.shape[0]} waypoints for left arm and {self.right_traj.shape[0]} waypoints for right arm")
         self.logger.info(f"Construct coordination space with {self.len_vert} * {self.len_hori}")
-
-    # def _get_Kinematics(self, body_qpos, arml_qpos, armr_qpos, head_qpos):
-    #     # NOTE: 
-    #     # q's order depends on urdf, currently is [body(4), left arm(7), right arm(7), head(2)]
-    #     # pinocchio will output 21 transformation matrices include universe as the first one
-    #     if body_qpos is None or head_qpos is None:
-    #         raise ValueError("body_qpos and head_qpos must be set before calling _get_Kinematics")
-    #     q = np.concatenate((body_qpos, arml_qpos, head_qpos, armr_qpos))
-    #     pinocchio.forwardKinematics(self.pin_model, self.pin_data, q)
-    #     pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
-    #     transform_chain = [oMi.homogeneous for oMi in self.pin_data.oMi]
-    #     left_transform_chain = transform_chain[5:12]  # left arm links
-    #     right_transform_chain = transform_chain[14:21]  # right arm links
-    #     if self.use_ee:
-    #         armlee_ID = self.pin_model.getFrameId("LEFT_EE")  
-    #         armree_ID = self.pin_model.getFrameId("RIGHT_EE")  
-    #         lee_trans = self.pin_data.oMf[armlee_ID].homogeneous
-    #         ree_trans = self.pin_data.oMf[armree_ID].homogeneous
-    #         left_transform_chain.append(lee_trans)
-    #         right_transform_chain.append(ree_trans)
-
-    #     body_transform_chain = transform_chain[1:5]
-    #     head_transform_chain = transform_chain[12:14]
-
-    #     return body_transform_chain, left_transform_chain, right_transform_chain, head_transform_chain
     
     def set_head_body(self, head_qpos, body_qpos):
         if head_qpos.shape[0] != 2:
@@ -292,15 +277,30 @@ class Coordination:
         temp_armr_qpos = np.zeros(armr_dim)
         real_qpos = np.concatenate((self.body_qpos, self.head_qpos, temp_arml_qpos, temp_armr_qpos))
         torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
-        # body, arml, armr, head = self._get_Kinematics(self.body_qpos, temp_arml_qpos, temp_armr_qpos, self.head_qpos)
         self.fcl_checker.set_head_body_transform(head_trans, torso_trans)
 
+    def set_end_effector_qpos(self, armlee_qpos: np.ndarray, armree_qpos: np.ndarray):
+        if self.use_ee:
+            if self.end_effector_type == EndEffectorType.BRAINCO_HAND:
+                if armlee_qpos.shape != (6, ) or armree_qpos.shape != (6, ):
+                    raise ValueError(f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+            if self.end_effector_type == EndEffectorType.PGC_GRIPPER:
+                if armlee_qpos.shape != (2, ) or armree_qpos.shape != (2, ):
+                    raise ValueError(f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+            self.armlee_qpos = armlee_qpos
+            self.armree_qpos = armree_qpos
+
     def _update_fcl_transform(self, arml_qpos, armr_qpos):
-        real_qpos = np.concatenate((self.body_qpos, self.head_qpos, arml_qpos, armr_qpos))
-        torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
-        # body, arml, armr, head = self._get_Kinematics(self.body_qpos, arml_qpos, armr_qpos, self.head_qpos)
-        transform = arml_trans + armr_trans
-        self.fcl_checker.update_arm_transform(transform)
+        if not self.use_ee:
+            real_qpos = np.concatenate((self.body_qpos, self.head_qpos, arml_qpos, armr_qpos))
+            torso_trans, head_trans, arml_trans, armr_trans = self.planner_pin.get_Kinematics(real_qpos)
+            transform = arml_trans + armr_trans
+            self.fcl_checker.update_arm_transform(transform)
+        else:
+            real_qpos = np.concatenate((self.body_qpos, self.head_qpos, arml_qpos, armr_qpos))
+            torso_trans, head_trans, arml_trans, armr_trans, armlee_trans, armree_trans = self.planner_pin.get_Kinematics(real_qpos, self.armlee_qpos, self.armree_qpos, compute_ee=True)
+            transform = arml_trans + armr_trans
+            self.fcl_checker.update_arm_transform(transform, armlee_trans, armree_trans)
 
     def _align_traj(self, left_traj, right_traj):
         if left_traj.shape[0] == right_traj.shape[0]:
@@ -315,8 +315,8 @@ class Coordination:
             insert_row = left_traj[-1, :].copy()
             for i in range(insert_num):
                 left_traj = np.append(left_traj, [insert_row], axis=0)
-        self.logger.info(f"Aligned left trajectory length: {left_traj.shape[0]}")
-        self.logger.info(f"Aligned right trajectory length: {right_traj.shape[0]}")
+        # self.logger.info(f"Aligned left trajectory length: {left_traj.shape[0]}")
+        # self.logger.info(f"Aligned right trajectory length: {right_traj.shape[0]}")
         return left_traj, right_traj  
     
     def set_identifier(self, left_identifier_list, right_identifier_list):
@@ -422,15 +422,15 @@ class Coordination:
         self.logger.info(f"Duration: {duration}")
         left_traj = self.left_traj.copy()
         right_traj = self.right_traj.copy()
-        self.logger.info(f"px {px}")
-        self.logger.info(f"py {py}")
+        # self.logger.info(f"px {px}")
+        # self.logger.info(f"py {py}")
         def modify_traj(left_traj, right_traj, px, py, duration):
             x_traj = []
             y_traj = []
             for i in range(len(duration)):
                 ratio_x = duration[i]/(px[i+1]-px[i])
                 ratio_y = duration[i]/(py[i+1]-py[i])
-                self.logger.info(f"ratio_x: {ratio_x}, ratio_y: {ratio_y}")
+                # self.logger.info(f"ratio_x: {ratio_x}, ratio_y: {ratio_y}")
                 x_start_idx = self.right_idx_chain[px[i]]
                 x_end_idx = self.right_idx_chain[px[i+1]]
                 x_len = x_end_idx - x_start_idx
@@ -450,8 +450,8 @@ class Coordination:
                             x_end_idx += 1
                         time_orig = np.linspace(0, x_len, x_len)
                         time_target = np.linspace(0, x_len, int(self.idx_increment*duration[i]))
-                        self.logger.info(time_orig)
-                        self.logger.info(time_target)
+                        # self.logger.info(time_orig)
+                        # self.logger.info(time_target)
                         # self.logger.info(f"right_traj: {right_traj}")
                         # self.logger.info(f"right_traj[x_start_idx:x_end_idx,:]: {right_traj[x_start_idx:x_end_idx, :]}")
                         x_interpolated_traj = np.zeros((int(self.idx_increment*duration[i]),7))
@@ -489,8 +489,8 @@ class Coordination:
             y_traj = np.insert(y_traj, -1, left_traj[self.left_idx_chain[-1], :], axis=0)
             return y_traj, x_traj
         modified_left, modified_right = modify_traj(left_traj, right_traj, px, py, duration)
-        self.logger.info(f"Modified left trajectory length: {modified_left.shape[0]}")
-        self.logger.info(f"Modified right trajectory length: {modified_right.shape[0]}")
+        # self.logger.info(f"Modified left trajectory length: {modified_left.shape[0]}")
+        # self.logger.info(f"Modified right trajectory length: {modified_right.shape[0]}")
             
         return modified_left, modified_right
 
@@ -501,6 +501,7 @@ class Coordination:
         """
         ompl_planner = GridRRT(self.grid_map, self.left_traj, self.right_traj, self.left_idx_chain, self.right_idx_chain, self.fcl_checker, self.planner_pin, self.use_ee)
         ompl_planner.set_head_body(self.head_qpos, self.body_qpos)
+        ompl_planner.set_end_effector_qpos(self.armlee_qpos, self.armree_qpos)
         path, planning_time, original_path = ompl_planner.plan(planning_time=1.0)
         new_grid_map = ompl_planner.get_grid_map()
         flag_map = ompl_planner.get_flag_map()
