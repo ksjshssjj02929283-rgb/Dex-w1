@@ -110,8 +110,8 @@ class HybridPlanner:
         
     def _init_fcl_checker(self, robot_type: RobotType, ee_type: EndEffectorType):
         self.fcl_checker = FCLChecker(robot_type, ee_type)
-        # self.fcl_checker.create_robot_obj()
-        # self.fcl_checker.create_robot_manager()
+        self.fcl_checker.enable_visualize()
+
         if self.env_json_path is not None:
             self.fcl_checker.load_env_json(self.env_json_path)
 

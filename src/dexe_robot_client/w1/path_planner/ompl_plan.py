@@ -303,10 +303,18 @@ class OMPLPlanSingle:
         if solved:
             self.logger.info(f"Successfully found a RRT path with {pdef.getSolutionPath().getStateCount()} waypoints and post-pocessing it now")
             path = pdef.getSolutionPath()
-            path_simplifier = og.PathSimplifier(si)
+
+            simp_start_time = time.time()
+            simp_si = ob.SpaceInformation(self.space)
+            simp_si.setStateValidityChecker(ob.StateValidityCheckerFn(self._is_state_valid))
+            simp_si.setStateValidityCheckingResolution(0.0005)
+            simp_si.setup()
+
+            path_simplifier = og.PathSimplifier(simp_si)
             path_simplifier.reduceVertices(path)
+            self.logger.info(f"Simplification consuming time {time.time() - simp_start_time:.6f} seconds")
             # Interpolate is only used for path visualize, if there is a trajectory generation, it is not needed
-            # path.interpolate(50)
+            path.interpolate(50)
 
             np_path = self._np_path(path)
 
@@ -318,7 +326,10 @@ class OMPLPlanSingle:
 
             total_time = time.time() - start_time
             self.logger.info(f"Finish find a path with {path.getStateCount()} waypoints in {total_time:.6f} seconds")
+            toppra_start_time = time.time()
             result_traj, result_vel, result_acc, duration = self.gen_trajectory(np_path, max_v=self.traj_max_vel)
+            self.logger.info(f"Toppra consuming time {time.time() - toppra_start_time:.6f} seconds")
+            # result_traj = np_path
 
             # The following code is for test toppra trajectory collision
 
@@ -329,6 +340,9 @@ class OMPLPlanSingle:
             #         transform = arml_tf + armr_tf
             #         self.fcl_checker.update_arm_transform(transform, armlee_tf, armree_tf)
             #         if self.fcl_checker.check_collision():
+            #             self.fcl_checker.update_vis_transform(transforms = torso_tf + head_tf + arml_tf + armr_tf,
+            #                                                   armlee_transforms=armlee_tf,
+            #                                                   armree_transforms=armree_tf)
             #             self.logger.warning(f"Left arm Path collides after trajectory generation")
             #     for qpos in result_traj:
             #         real_qpos = np.concatenate((self.body_qpos, self.head_qpos, qpos, self.other_arm_qpos))
@@ -336,6 +350,9 @@ class OMPLPlanSingle:
             #         transform = arml_tf + armr_tf
             #         self.fcl_checker.update_arm_transform(transform, armlee_tf, armree_tf)
             #         if self.fcl_checker.check_collision():
+            #             self.fcl_checker.update_vis_transform(transforms = torso_tf + head_tf + arml_tf + armr_tf,
+            #                                                   armlee_transforms=armlee_tf,
+            #                                                   armree_transforms=armree_tf)
             #             self.logger.warning(f"Left arm Trajectory collides after trajectory generation")
             # else:
             #     for qpos in np_path:
@@ -344,6 +361,9 @@ class OMPLPlanSingle:
             #         transform = arml_tf + armr_tf
             #         self.fcl_checker.update_arm_transform(transform, armlee_tf, armree_tf)
             #         if self.fcl_checker.check_collision():
+            #             self.fcl_checker.update_vis_transform(transforms = torso_tf + head_tf + arml_tf + armr_tf,
+            #                                                   armlee_transforms=armlee_tf,
+            #                                                   armree_transforms=armree_tf)
             #             self.logger.warning(f"Right arm Path collides after trajectory generation")
             #     for qpos in result_traj:
             #         real_qpos = np.concatenate((self.body_qpos, self.head_qpos, self.other_arm_qpos, qpos))
@@ -351,6 +371,9 @@ class OMPLPlanSingle:
             #         transform = arml_tf + armr_tf
             #         self.fcl_checker.update_arm_transform(transform, armlee_tf, armree_tf)
             #         if self.fcl_checker.check_collision():
+            #             self.fcl_checker.update_vis_transform(transforms = torso_tf + head_tf + arml_tf + armr_tf,
+            #                                                   armlee_transforms=armlee_tf,
+            #                                                   armree_transforms=armree_tf)
             #             self.logger.warning(f"Right arm Trajectory collides after trajectory generation")
             self.result_traj = result_traj
             return np_path, self.result_traj, total_time
