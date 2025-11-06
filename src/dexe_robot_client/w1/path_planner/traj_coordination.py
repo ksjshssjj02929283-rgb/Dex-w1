@@ -187,7 +187,7 @@ class GridRRT:
         start_time = time.time()
         solved = planner.solve(planning_time)
         end_time = time.time()
-        self.logger.info(f"Planning time: {end_time - start_time:.6f} seconds")
+        # self.logger.info(f"Planning time: {end_time - start_time:.6f} seconds")
         RRT_time = end_time - start_time
         if end_time - start_time > planning_time:
             # raise RuntimeError(f"Warning: Planning took longer than the specified time limit of {planning_time} seconds.")
@@ -197,7 +197,7 @@ class GridRRT:
             return path, total_time, original_path
             
         if solved:
-            self.logger.info(f"Successfully found a path with {pdef.getSolutionPath().getStateCount()} states.")
+            # self.logger.info(f"Successfully found a path with {pdef.getSolutionPath().getStateCount()} states.")
             path = pdef.getSolutionPath()
             original_path = []
             for i in range(path.getStateCount()):
@@ -209,7 +209,7 @@ class GridRRT:
             path_simplifier.reduceVertices(path)
             end_time = time.time()
             Simplify_time = end_time - start_time
-            self.logger.info(f"Path simplification time: {end_time - start_time:.6f} seconds")
+            # self.logger.info(f"Path simplification time: {end_time - start_time:.6f} seconds")
             # path_simplifier.smoothBSpline(path) 
             # path.interpolate(50)
             total_time = RRT_time + Simplify_time
@@ -252,7 +252,6 @@ class Coordination:
             self.len_hori = self.right_traj.shape[0] // self.idx_increment + 2
         else:
             self.len_hori = self.right_traj.shape[0] // self.idx_increment + 1
-        
         self.left_idx_chain = np.arange(0, self.left_traj.shape[0], self.idx_increment)
         self.left_idx_chain = np.append(self.left_idx_chain, self.left_traj.shape[0]-1)
         self.right_idx_chain = np.arange(0, self.right_traj.shape[0], self.idx_increment)
@@ -261,8 +260,8 @@ class Coordination:
         self.grid_map = np.ones((self.len_vert, self.len_hori), dtype=np.int8)
 
         self.logger = get_logger()
-        self.logger.info(f"Get original {self.left_traj.shape[0]} waypoints for left arm and {self.right_traj.shape[0]} waypoints for right arm")
-        self.logger.info(f"Construct coordination space with {self.len_vert} * {self.len_hori}")
+        # self.logger.info(f"Get original {self.left_traj.shape[0]} waypoints for left arm and {self.right_traj.shape[0]} waypoints for right arm")
+        # self.logger.info(f"Construct coordination space with {self.len_vert} * {self.len_hori}")
     
     def set_head_body(self, head_qpos, body_qpos):
         if head_qpos.shape[0] != 2:
@@ -419,7 +418,7 @@ class Coordination:
             py_T = py[i+1] - py[i]
             T = np.maximum(px_T, py_T)
             duration[i] = T
-        self.logger.info(f"Duration: {duration}")
+        # self.logger.info(f"Duration: {duration}")
         left_traj = self.left_traj.copy()
         right_traj = self.right_traj.copy()
         # self.logger.info(f"px {px}")
@@ -427,6 +426,8 @@ class Coordination:
         def modify_traj(left_traj, right_traj, px, py, duration):
             x_traj = []
             y_traj = []
+            x_traj.append(np.atleast_2d(right_traj[0, :]))
+            y_traj.append(np.atleast_2d(left_traj[0, :]))
             for i in range(len(duration)):
                 ratio_x = duration[i]/(px[i+1]-px[i])
                 ratio_y = duration[i]/(py[i+1]-py[i])
@@ -444,7 +445,7 @@ class Coordination:
                     else:
                         # time_orig = np.linspace(0, 1, x_len)
                         # time_target = np.linspace(0, 1, int(self.idx_increment*duration[i]))
-                        self.logger.info(f"x_len: {x_len}")
+                        # self.logger.info(f"x_len: {x_len}")
                         if x_len == 1:
                             x_len = 2
                             x_end_idx += 1
@@ -499,6 +500,7 @@ class Coordination:
         This method use RRT Connect method based on OMPL to find a path in the coordination space.(Hard to do obstacle expansion)
         During the sampling process, it will check the sample grid is occupied or not, which will save the planning time.
         """
+        start_time = time.time()
         ompl_planner = GridRRT(self.grid_map, self.left_traj, self.right_traj, self.left_idx_chain, self.right_idx_chain, self.fcl_checker, self.planner_pin, self.use_ee)
         ompl_planner.set_head_body(self.head_qpos, self.body_qpos)
         ompl_planner.set_end_effector_qpos(self.armlee_qpos, self.armree_qpos)
@@ -521,6 +523,7 @@ class Coordination:
 
         modified_left, modified_right = self._tune_velocity(px, py)
         aligned_left, aligned_right = self._align_traj(modified_left, modified_right)
+        self.logger.info(f"The coordinated consuming time is {time.time() - start_time:.6f} seconds")
 
         return aligned_left, aligned_right
     
