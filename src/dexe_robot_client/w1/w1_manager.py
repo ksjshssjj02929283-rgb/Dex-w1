@@ -14,7 +14,7 @@ from loop_rate_limiters import RateLimiter
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
-from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, generate_w1_urdf
+from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, generate_w1_urdf, download_w1_urdf, download_environment
 from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..navigation_client import ChassisClient
 from ..robot_client import RobotClientRos2 as RobotClient
@@ -30,7 +30,6 @@ from .path_planner.utils.robot_type import *
 from .path_planner.hybrid_planner import HybridPlanner
 
 from dexe_rp import DexforceW1Kinematics, SRSConfig
-
 
 class W1Manager:
     _instance = None
@@ -82,6 +81,20 @@ class W1Manager:
         self.w1_params = W1Params(self._arm_type, 
                                   self._w1_version, 
                                   self._end_effector_type)
+        
+        # # for visual
+        # if not generate_w1_urdf(arm_type, w1_version, end_effector_type)[1]:
+        #     raise ValueError(f"Found URDF failed.")
+
+        # # for collision check
+        # if self._end_effector_type is not None:
+        #     if not generate_w1_urdf(arm_type, w1_version, None)[1]:
+        #         raise ValueError(f"Found URDF failed.")
+
+        # download specific urdf
+        res, file_path = download_w1_urdf(arm_type, w1_version, end_effector_type)
+        if self._end_effector_type is not None:
+            res, file_path = download_w1_urdf(arm_type, w1_version, None)
 
         # 在主线程中正常退出时自动调用
         atexit.register(self._destroy_clients)
@@ -98,14 +111,8 @@ class W1Manager:
                 raise RuntimeError("Set sim mode failed")
             raise RuntimeError("Set real mode failed")
 
-        # for visual
-        if not generate_w1_urdf(arm_type, w1_version, end_effector_type)[1]:
-            raise ValueError(f"Found URDF failed.")
 
-        # for collision check
-        if self._end_effector_type is not None:
-            if not generate_w1_urdf(arm_type, w1_version, None)[1]:
-                raise ValueError(f"Found URDF failed.")
+
         # initialize fcl checker and pinocchio model and planner
         self._init_fcl_checker(arm_type=arm_type, w1_version=w1_version, end_effector_type=end_effector_type)
         self._init_pinocchio(arm_type=arm_type, w1_version=w1_version, end_effector_type=end_effector_type)
@@ -2324,7 +2331,6 @@ class W1Manager:
                     self.fcl_checker.update_vis_transform(transforms=torso_tf + head_tf + arml_tf + armr_tf,
                                                   armlee_transforms=armlee_tf,
                                                   armree_transforms=armree_tf)
-                    
                     self.logger.warning("It will occur collision for this dual arm moving trajectory")
                     break
                     # return False

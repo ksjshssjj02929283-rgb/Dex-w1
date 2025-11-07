@@ -80,7 +80,8 @@ task_dict3 = {
                 [0.5,  [45, 49, 50, 50, 50, 50], 0.5]
                 ],
             "right_arm": [
-                [290.03, 222.24, 56.36, -147.74, 7.29, 7.37]
+                # [290.03, 222.24, 56.36, -147.74, 7.29, 7.37]
+                [297.78, 305.9, 25.68, -150.84, 11.48, -6.06]
                 ],
             "right_arm_speed_ratio": [1.],
             "right_arm_ee": [
@@ -251,7 +252,7 @@ if __name__ == "__main__":
     # 左手放胶囊，右手放杯子
     print("左手放胶囊，右手放杯子")
     test_single_task(task_dict=task_dict3, load_env=False)
-    # input("Press Enter to continue to next test...")    
+    input("Press Enter to continue to next test...")    
     # 准备下压把手
     print("准备下压把手")
     test_single_task(task_dict=task_dict4, load_env=False)
