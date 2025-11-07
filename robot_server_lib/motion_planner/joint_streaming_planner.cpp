@@ -30,7 +30,8 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
         output_joint_cmd.velocity.setZero();
         output_joint_cmd.acceleration.setZero();
         output_joint_cmd.torque_feedforward.setZero();
-        return ComputeCommandStatus::TaskOngoing;
+        auto time_interval = (time_meta.current_time.time_in_ns() - request_start_time_.time_in_ns()) * 1e-9;
+        return time_interval < StreamingCommandTimeout ? ComputeCommandStatus::TaskOngoing : ComputeCommandStatus::TaskFinished;
     }
 
     const StreamingCommand &latest_cmd = runtime_.latest_cmd.value();
@@ -70,6 +71,9 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     runtime_.streaming_finished = false;
     runtime_.latest_cmd = std::nullopt;
 
+    // 记录请求开始时间（用于判断没有收到任何流式命令时的超时）
+    request_start_time_ = TimePointSystem::Now();
+    
     return true;
 }
 

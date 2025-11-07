@@ -23,6 +23,7 @@ class JointStreamingPlanner : public MotionPlannerBase
         bool streaming_finished{false};
         std::optional<StreamingCommand> latest_cmd;
     } runtime_;
+    TimePointSystem request_start_time_{TimePointSystem::Invalid()};
 };
 
 }  // namespace robot_server_lib

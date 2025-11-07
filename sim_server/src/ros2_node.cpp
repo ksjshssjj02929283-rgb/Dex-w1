@@ -153,8 +153,8 @@ void Ros2Node::InitRobotServer()
                     std::this_thread::sleep_for(std::chrono::microseconds(torque_ctrl_dt_micro - duration_micro));
                 }
             }
-        });
 #endif
+        });
 
     manager_thread_ = std::thread(
         [this]() -> void
