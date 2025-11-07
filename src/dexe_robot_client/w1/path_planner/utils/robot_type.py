@@ -2,7 +2,7 @@ from enum import Enum, auto
 import os
 import pathlib
 import numpy as np
-from ....common.config import ASSETS_DIR, DATA_DIR
+from ....common.config import ASSETS_DIR, DATA_DIR, MODEL_DIR, ENVIRONMENT_DIR
 from ....end_effector_client import EndEffectorType 
 
 SINGLE_ARM_DIM = 7
@@ -26,18 +26,18 @@ BRAINCO_RIGHT_LIMITS = np.array([
     [1.5708, 0.8727, 1.309, 2.0944, 1.309, 2.0944, 1.309, 2.0944, 1.309, 2.0944]
 ])
 
-ANTH_MODEL_DIR = ASSETS_DIR / "W1_V2_A"
-INDU_MODEL_DIR = ASSETS_DIR / "W1_V2_I"
+ANTH_MODEL_DIR = MODEL_DIR / "W1_V2_A"
+INDU_MODEL_DIR = MODEL_DIR / "W1_V2_I"
 ANTH_COLLISION_DIR = ANTH_MODEL_DIR / "Collision"
 INDU_COLLISION_DIR = INDU_MODEL_DIR / "Collision"
 
-ANTH_BRAINCO_MODEL_DIR = ASSETS_DIR / "W1_V2_A_BRAINCO"
-INDU_BRAINCO_MODEL_DIR = ASSETS_DIR / "W1_V2_I_BRAINCO"
+ANTH_BRAINCO_MODEL_DIR = MODEL_DIR / "W1_V2_A_BRAINCO"
+INDU_BRAINCO_MODEL_DIR = MODEL_DIR / "W1_V2_I_BRAINCO"
 ANTH_BRAINCO_COLLISION_DIR = ANTH_BRAINCO_MODEL_DIR / "Collision"
 INDU_BRAINCO_COLLISION_DIR = INDU_BRAINCO_MODEL_DIR / "Collision" 
 
-ANTH_PGC_MODEL_DIR = ASSETS_DIR / "W1_V2_A_PGC"
-INDU_PGC_MODEL_DIR = ASSETS_DIR / "W1_V2_I_PGC"
+ANTH_PGC_MODEL_DIR = MODEL_DIR / "W1_V2_A_PGC"
+INDU_PGC_MODEL_DIR = MODEL_DIR / "W1_V2_I_PGC"
 ANTH_PGC_COLLISION_DIR = ANTH_PGC_MODEL_DIR / "Collision"
 INDU_PGC_COLLISION_DIR = INDU_PGC_MODEL_DIR / "Collision"
 
@@ -122,14 +122,11 @@ class RobotEE(Enum):
     Please put the end effector mesh folder under the /assets
     """
 
-    # PGC_GRIPPER = os.path.join(ASSETS_DIR, "PGC")
-    # BRAINCO_HAND = os.path.join(ASSETS_DIR, "Brainco")
+    BRAINCO_LEFT_HAND = os.path.join(MODEL_DIR, "simplified_brainco", "left_hand")
+    BRAINCO_RIGHT_HAND = os.path.join(MODEL_DIR, "simplified_brainco", "right_hand")
 
-    BRAINCO_LEFT_HAND = os.path.join(ASSETS_DIR, "simplified_brainco", "left_hand")
-    BRAINCO_RIGHT_HAND = os.path.join(ASSETS_DIR, "simplified_brainco", "right_hand")
-
-    PGC_LEFT_HAND = os.path.join(ASSETS_DIR, "simplified_pgc", "left_hand")
-    PGC_RIGHT_HAND = os.path.join(ASSETS_DIR, "simplified_pgc", "right_hand")
+    PGC_LEFT_HAND = os.path.join(MODEL_DIR, "simplified_pgc", "left_hand")
+    PGC_RIGHT_HAND = os.path.join(MODEL_DIR, "simplified_pgc", "right_hand")
 
 
 
