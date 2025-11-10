@@ -56,7 +56,13 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
     {
         return ComputeCommandStatus::TaskOngoing;
     }
-    const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
+    if (!command_finished_time_.is_valid())
+    {
+        command_finished_time_ = TimePointSystem::Now();
+    }
+    // 检查是否已经静止, 如果静止或者超时则任务完成, 否则继续保持最后的命令
+    const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold) ||
+                               ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > StreamingCommandTimeout);
     return robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
 }
 
@@ -71,8 +77,9 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     runtime_.streaming_finished = false;
     runtime_.latest_cmd = std::nullopt;
 
-    // 记录请求开始时间（用于判断没有收到任何流式命令时的超时）
+    // 记录请求开始时间（用于判断没有收到任何流式命令时的超时）, 重置命令完成时间
     request_start_time_ = TimePointSystem::Now();
+    command_finished_time_ = TimePointSystem::Invalid();
     
     return true;
 }
