@@ -32,6 +32,7 @@ class JointStreamingPlanner : public MotionPlannerBase
     } runtime_;
 
     TimePointSystem request_start_time_{TimePointSystem::Invalid()};
+    TimePointSystem command_finished_time_{TimePointSystem::Invalid()};
     bool no_ruckig_mode_ = false;
 };
 

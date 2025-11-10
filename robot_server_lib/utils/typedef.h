@@ -23,7 +23,7 @@ constexpr int publish_dt_micro = 10000;   // 100 hz
 constexpr double torque_ctrl_dt = double(torque_ctrl_dt_micro) / 1e6;
 constexpr double manager_dt = double(manager_dt_micro) / 1e6;
 constexpr double simulation_dt = double(simulation_dt_micro) / 1e6;
-constexpr double IdleVelocityThreshold = 5e-3;   // 静止状态的速度阈值
+constexpr double IdleVelocityThreshold = 0.05 / 180 * M_PI;   // 静止状态的速度阈值
 constexpr double PositionThreshold = 1e-6;       // 位置误差容忍度
 constexpr double StreamingCommandTimeout = 1.5;  // 流式命令超时1.5秒
 

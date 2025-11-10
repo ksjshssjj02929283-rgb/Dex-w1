@@ -69,9 +69,14 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
         }
-        // 需同时满足streaming_finished为true且机器人速度小于阈值，才能结束本次streaming
-        return runtime_.streaming_finished && (measurement.velocity.norm() < IdleVelocityThreshold)? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
-    }
+        if (!command_finished_time_.is_valid())
+        {
+            command_finished_time_ = TimePointSystem::Now();
+        }
+        const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold) ||
+                    ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > StreamingCommandTimeout);
+        // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
+        return runtime_.streaming_finished && robot_stopped? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;    }
 
     // 检测输入是否更新
     bool target_updated = true;
@@ -119,8 +124,14 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
         }
+        if (!command_finished_time_.is_valid())
+        {
+            command_finished_time_ = TimePointSystem::Now();
+        }
+        const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold) ||
+                    ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > StreamingCommandTimeout);
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
-        return runtime_.streaming_finished && (measurement.velocity.norm() < IdleVelocityThreshold)? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
+        return runtime_.streaming_finished && robot_stopped? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
     }
     else
     {
@@ -163,6 +174,10 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     // 记录请求开始时间（用于判断没有收到任何流式命令时的超时）
     request_start_time_ = TimePointSystem::Now();
 
+    // 记录请求开始时间（用于判断没有收到任何流式命令时的超时）, 重置命令完成时间
+    request_start_time_ = TimePointSystem::Now();
+    command_finished_time_ = TimePointSystem::Invalid();
+    
     return true;
 }
 
