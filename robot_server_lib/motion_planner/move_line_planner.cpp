@@ -101,7 +101,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
         Eigen::VectorXd q_start;
         utils::GetArmFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
         assert(q_start.size() == ndof_primary_ + ndof_secondary_);
-        PoseQuaternion pose_start = kinematics_ptr_->GetFK(q_start.head(ndof_primary_), robot_property_.tcp_frame);
+        PoseQuaternion pose_start = kinematics_primary_ptr_->GetFK(q_start.head(ndof_primary_), robot_property_.tcp_frame);
         PoseQuaternion pose_start_secondary = kinematics_secondary_ptr_->GetFK(q_start.tail(ndof_secondary_), robot_property_.tcp_frame_secondary);
         PoseQuaternion pose_target = utils::VectorXdToPoseQuaternion(move_request.value.head(7));
         PoseQuaternion pose_target_secondary = utils::VectorXdToPoseQuaternion(move_request.value.tail(7));
@@ -117,7 +117,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
         Eigen::VectorXd q_start;
         utils::GetArmFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
         assert(q_start.size() == ndof_primary_);
-        PoseQuaternion pose_start = kinematics_ptr_->GetFK(q_start, robot_property_.tcp_frame);
+        PoseQuaternion pose_start = kinematics_primary_ptr_->GetFK(q_start, robot_property_.tcp_frame);
         PoseQuaternion pose_target = utils::VectorXdToPoseQuaternion(move_request.value);
         LOG_INFO << "Primary arm motion plan: start: " << pose_start.ToString() << ", target: " << pose_target.ToString();
         line_primary_.emplace(CalcLineGeometry(pose_start, pose_target));
@@ -206,7 +206,7 @@ bool MoveLinePlanner::ComputeOutputJoint(JointPositionDof &q_ndof)
         Eigen::VectorXd q_primary;
         utils::GetArmFromWholeBody(this->robot_model_, q_ndof, q_primary, MotionGroup::Primary);
         assert(q_primary.size() == ndof_primary_);
-        if (!kinematics_ptr_->GetIK(pose_cmd, q_primary, robot_property_.tcp_frame))
+        if (!kinematics_primary_ptr_->GetIK(pose_cmd, q_primary, robot_property_.tcp_frame))
         {
             LOG_CRIT << "Inverse Kinematics failed for target pose: " << pose_cmd.ToString();
             return false;

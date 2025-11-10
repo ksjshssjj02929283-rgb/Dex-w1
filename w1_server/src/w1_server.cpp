@@ -34,6 +34,8 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     diff_chassis_control_subscriber_ = this->create_subscription<geometry_msgs::msg::Twist>(
         "/control/cmd_vel", 10, std::bind(&RobotServer::DiffChassisControlCallback, this, std::placeholders::_1));
 
+    force_subscriber_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
+        "force_array", rclcpp::QoS(10), std::bind(&RobotServer::ForceArrayCallback, this, std::placeholders::_1));
     // 参数初始化
     InitParamConfig();
 
@@ -41,10 +43,24 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
 
     // 初始化力传感器
-    primary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");
-    secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB2");
+    primary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB0");
+    secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");
 
     this->Run();
+}
+
+void RobotServer::ForceArrayCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg)
+{
+    // msg->data 是 std::vector<double>
+    // 示例：若期望 3 维力数据
+    if (msg->data.size() < 3)
+    {
+        RCLCPP_WARN(this->get_logger(), "Force array size %zu < 3", msg->data.size());
+        return;
+    }
+    // 使用数据，例如拷贝前 3 个
+    for (size_t i = 0; i < 3; ++i) sensor_force_[i] = msg->data[i];
+    RCLCPP_INFO(this->get_logger(), "Received force array: [%f, %f, %f]", sensor_force_[0], sensor_force_[1], sensor_force_[2]);
 }
 
 void RobotServer::InitParamConfig()
@@ -106,7 +122,6 @@ void RobotServer::InitParamConfig()
         }
     }
 
-    // 读取配置参数（严格使用 *_Nm，不回退旧键名）
     const ptree& torque_node = *torque_opt;
     auto read_array = [&](const char* key, double out[kNumJoints]) -> bool
     {
@@ -152,6 +167,9 @@ void RobotServer::TorqueControlThreadFunc()
         primary_sensor_->Read(sensor_data_primary);
         secondary_sensor_->Read(sensor_data_secondary);
 
+        // 叠加手动输入的力数据
+        sensor_data_primary.head<3>() += sensor_force_;
+
         // 读取机器人反馈数据
         RobotFeedback feedback_data{};
         bool ret = feedback_shm_instance.PeekLatest(&feedback_data);
@@ -162,6 +180,7 @@ void RobotServer::TorqueControlThreadFunc()
             // 关节反馈数据写入测量数据
             JointRawMeasurement raw_measurement{};
             raw_measurement.sensor_wrench = utils::GetSensorWrench(sensor_data_primary, sensor_data_secondary);
+
             for (int i = 0; i < ndof_robot; ++i)
             {
                 raw_measurement.position[i] = feedback_data.position[i];
@@ -195,13 +214,14 @@ void RobotServer::TorqueControlThreadFunc()
             auto run_mode = planner_cmd.robot_property.run_mode;
             for (int i = 0; i < ndof_robot; ++i)
             {
-                robot_control_.position[i] = planner_cmd.cmd.position[i];
-                robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
-                robot_control_.torque_feedforward[i] = torque_cmd.torque[i];
                 switch (run_mode)
                 {
                 case RunMode::Position:
+                case RunMode::Impedance:
                     // 更新关节力矩限制
+                    robot_control_.position[i] = planner_cmd.cmd.compliance_position[i];
+                    robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
+                    robot_control_.torque_feedforward[i] = torque_cmd.torque[i];
                     robot_control_.positive_torque_limit[i] =
                         std::clamp(torque_cmd.torque[i] + torque_limit_.positive_limit_Nm[i] * safe_level, 0.1 * torque_limit_.positive_limit_Nm[i],
                                    torque_limit_.positive_limit_Nm[i]);
@@ -210,6 +230,9 @@ void RobotServer::TorqueControlThreadFunc()
                                    torque_limit_.negative_limit_Nm[i]);
                     break;
                 case RunMode::Drag:
+                    robot_control_.position[i] = planner_cmd.cmd.position[i];
+                    robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
+                    robot_control_.torque_feedforward[i] = torque_cmd.torque[i];
                     // 位置等于反馈位置
                     if (manager_buffers_.joint_measurement->PeekLatest(&manager_measurement))
                     {
@@ -239,6 +262,10 @@ void RobotServer::TorqueControlThreadFunc()
                 // 更新外部力矩
                 robot_control_.torque_external[i] = torque_cmd.torque_external[i];
             }
+            // if (loop_counter % 3000 == 0) // Debug output
+            // {
+            //     std::cout << "torque_cmd.torque[6..12]: " << torque_cmd.torque.segment(6, 7).transpose() << std::endl;
+            // }
             // robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT |
             // CTRLWORD_MOTOR_CST_MODE;
             robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT;

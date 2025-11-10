@@ -23,7 +23,7 @@ bool IdlePlanner::ResetForNewTrajectory(const PlannerRequest &request, const Joi
     Eigen::VectorXd q_idle;
     utils::GetArmFromWholeBody(this->robot_model_, idle_position_, q_idle, MotionGroup::BothArms);
     // 获取起点
-    PoseQuaternion pose_idle = kinematics_ptr_->GetFK(q_idle.head(ndof_primary_), robot_property_.tcp_frame);
+    PoseQuaternion pose_idle = kinematics_primary_ptr_->GetFK(q_idle.head(ndof_primary_), robot_property_.tcp_frame);
     PoseQuaternion pose_idle_secondary = kinematics_secondary_ptr_->GetFK(q_idle.tail(ndof_secondary_), robot_property_.tcp_frame_secondary);
 
     std::stringstream ss;

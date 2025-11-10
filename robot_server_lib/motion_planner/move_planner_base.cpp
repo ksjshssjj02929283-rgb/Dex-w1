@@ -11,21 +11,23 @@ MotionPlannerBase::MotionPlannerBase(RobotModel robot_model)
     // Initialize kinematics for both arms
     if (robot_model_.params_ptr->left_arm_name == "W1LeftArmIndustrial")
     {
-        kinematics_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmIndustrial());
+        bool is_left = true;
+        bool is_anthropmorphic = false;
+        kinematics_primary_ptr_ = std::make_shared<kinematics::SRSKinematics>(is_left, is_anthropmorphic);
     }
     if (robot_model_.params_ptr->left_arm_name == "W1LeftArmAnthropomorphic")
     {
-        kinematics_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1LeftArmAnthropomorphic());
+        kinematics_primary_ptr_ = std::make_shared<kinematics::SRSKinematics>(true, true);
     }
     if (robot_model_.params_ptr->right_arm_name == "W1RightArmIndustrial")
     {
-        kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmIndustrial());
+        kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(false, false);
     }
     if (robot_model_.params_ptr->right_arm_name == "W1RightArmAnthropomorphic")
     {
-        kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(kinematics::W1RightArmAnthropomorphic());
+        kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(false, true);
     }
-    assert(kinematics_ptr_ && kinematics_secondary_ptr_);
+    assert(kinematics_primary_ptr_ && kinematics_secondary_ptr_);
 }
 
 void MotionPlannerBase::SetRobotProperty(const RobotProperty &property) { robot_property_ = property; }

@@ -13,9 +13,10 @@
 #include <thread>
 #include <vector>
 
-#include "robot_server_lib/typedef.h"
+#include "typedef.h"
 
-using namespace robot_server_lib;
+namespace robot_server_lib
+{
 
 class ForceSensorReader
 {
@@ -285,3 +286,5 @@ class ForceSensorReader
     bool sensor_ready_ = false;
     std::array<double, 6> zero_frame_;
 };
+
+}  // namespace robot_server_lib

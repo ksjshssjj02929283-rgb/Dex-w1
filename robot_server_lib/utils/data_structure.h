@@ -20,7 +20,7 @@ enum for various states and command types
 #include <vector>
 
 #include "bounded_queue.h"
-#include "dynamics_utility.h"
+#include "dynamics_utils.h"
 #include "single_rw_latest_queue.h"
 #include "time_utility.h"
 #include "typedef.h"
@@ -35,17 +35,17 @@ robot state and request data structure class
 
 struct JointMeasurement
 {
-    VectorDof position;  // 关节位置
-    VectorDof velocity;  // 关节速度
-    VectorDof effort;    // 关节力矩
-
-    VectorDof q_desired_pre;  // 预期关节位置
+    VectorDof position;                          // 关节位置
+    VectorDof velocity;                          // 关节速度
+    VectorDof effort;                            // 关节力矩
+    VectorDof q_desired_pre;                     // 预期关节位置
+    Vector12d sensor_wrench{Vector12d::Zero()};  // 六维力传感器数据
 
     std::string ToString() const
     {
         std::stringstream ss;
         ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Effort: " << effort.transpose()
-           << ", Previous Q Desired: " << q_desired_pre.transpose();
+           << ", Previous Q Desired: " << q_desired_pre.transpose() << ", Sensor_wrench: " << sensor_wrench.transpose();
         return ss.str();
     }
 };
@@ -72,13 +72,14 @@ struct JointCommand
     VectorDof position;
     VectorDof velocity;
     VectorDof acceleration;
+    VectorDof compliance_position;
     VectorDof torque_feedforward;
 
     std::string ToString() const
     {
         std::stringstream ss;
         ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Acceleration: " << acceleration.transpose()
-           << ", Torque Feedforward: " << torque_feedforward.transpose();
+           << ", Compliance Position: " << compliance_position.transpose() << ", Torque Feedforward: " << torque_feedforward.transpose();
         return ss.str();
     }
 };
@@ -94,6 +95,7 @@ struct PoseQuaternion
         position = mat.block<3, 1>(0, 3);
         orientation = Eigen::Quaterniond(mat.block<3, 3>(0, 0));
     }
+    explicit PoseQuaternion(const Eigen::Vector3d &pos, const Eigen::Quaterniond &ori) : position(pos), orientation(ori) {}
 
     std::string ToString() const
     {
@@ -108,6 +110,22 @@ struct PoseQuaternion
         Eigen::VectorXd vec(7);
         vec << position, orientation.w(), orientation.x(), orientation.y(), orientation.z();
         return vec;
+    }
+
+    // 组合两个位姿：等价于 4x4 变换矩阵相乘 (T = T1 * T2)
+    PoseQuaternion operator*(const PoseQuaternion &other) const
+    {
+        PoseQuaternion res;
+        res.orientation = orientation * other.orientation;
+        res.position = position + orientation * other.position;
+        return res;
+    }
+
+    PoseQuaternion &operator*=(const PoseQuaternion &other)
+    {
+        position = position + orientation * other.position;
+        orientation = orientation * other.orientation;
+        return *this;
     }
 };
 
@@ -144,6 +162,7 @@ struct MoveRequest
     std::optional<ReferenceFrame> reference_frame;
     std::optional<double> speed;
     std::optional<double> blend_tolerance;
+    std::optional<bool> optional_mode;
 };
 
 using PlannerData = std::variant<MoveRequest, PoseQuaternion, bool, double>;

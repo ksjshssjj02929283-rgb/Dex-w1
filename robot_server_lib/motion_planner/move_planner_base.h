@@ -46,7 +46,7 @@ class MotionPlannerBase
 
     void SetRobotProperty(const RobotProperty &property);
 
-    std::shared_ptr<kinematics::KinematicsBase> Kinematics() const { return kinematics_ptr_; }
+    std::shared_ptr<kinematics::KinematicsBase> KinematicsPrimary() const { return kinematics_primary_ptr_; }
     std::shared_ptr<kinematics::KinematicsBase> KinematicsSecondary() const { return kinematics_secondary_ptr_; }
 
     Int64 episode_index{-1};  // 记录当前的episode索引
@@ -56,11 +56,11 @@ class MotionPlannerBase
     RobotModel robot_model_;
     pinocchio::Data robot_data_;
     RobotProperty robot_property_;
-    std::shared_ptr<kinematics::KinematicsBase> kinematics_ptr_;
+    std::shared_ptr<kinematics::KinematicsBase> kinematics_primary_ptr_;
     std::shared_ptr<kinematics::KinematicsBase> kinematics_secondary_ptr_;
 
     TrajectoryBounds streaming_bounds_{1.0 * M_PI, 4.0 * M_PI, 16.0 * M_PI};  // trajectory bounds, unit: rad
-    TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI, 1.0 * M_PI};      // trajectory bounds, unit: rad
+    TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI, 1.0 * M_PI};       // trajectory bounds, unit: rad
 
     struct
     {

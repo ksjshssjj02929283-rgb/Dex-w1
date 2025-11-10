@@ -35,7 +35,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             runtime_.latest_cmd.emplace(cmd_buffer);
         }
     }
-    
+
     // 如果从startstreaming后没有收到任何流式命令，检查是否超时, 超时则结束任务
     if (!runtime_.latest_cmd.has_value())
     {
@@ -58,14 +58,29 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
     }
     runtime_.streaming_finished = latest_cmd.streaming_finished || is_timeout;
 
+    if(no_ruckig_mode_)
+    {
+        // 直接输出最新命令作为关节命令
+        for (auto i = 0; i < ndof_robot; i++)
+        {
+            // 如果超时则保持当前指令位置
+            output_joint_cmd.position[i] = is_timeout ? measurement.q_desired_pre[i] : latest_cmd.command[i];
+            output_joint_cmd.velocity[i] = 0.0;
+            output_joint_cmd.acceleration[i] = 0.0;
+            output_joint_cmd.torque_feedforward[i] = 0.0;
+        }
+        // 需同时满足streaming_finished为true且机器人速度小于阈值，才能结束本次streaming
+        return runtime_.streaming_finished && (measurement.velocity.norm() < IdleVelocityThreshold)? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
+    }
+
     // 检测输入是否更新
     bool target_updated = true;
     if (runtime_.previous_cmd.has_value())
     {
         target_updated = ((runtime_.previous_cmd.value().command - latest_cmd.command).norm()) > PositionThreshold;
     }
-    // 如果输入更新了则更新Ruckig输入
-    if (target_updated)
+    // 如果输入更新了且没有超时则更新Ruckig输入
+    if (target_updated && !is_timeout)
     {
         for (auto i = 0; i < ndof_robot; i++)
         {
@@ -105,8 +120,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             output_joint_cmd.torque_feedforward[i] = 0.0;
         }
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
-        const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
-        return robot_stopped && runtime_.streaming_finished ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
+        return runtime_.streaming_finished && (measurement.velocity.norm() < IdleVelocityThreshold)? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
     }
     else
     {
@@ -118,9 +132,20 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
 {
     assert(request.data.has_value());
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
+
+    // 解析MoveRequest
     auto move_request = std::get<MoveRequest>(request.data.value());
     SetMotionGroup(move_request.motion_group);
-    streaming_buffer_->Reset();
+
+    // 是否为无Ruckig模式
+    if(move_request.optional_mode.has_value())
+    {
+        no_ruckig_mode_ = (bool)move_request.optional_mode.value();
+    }
+    else
+    {
+        no_ruckig_mode_ = false;
+    }
 
     runtime_.request_id = request.request_id;
     runtime_.streaming_finished = false;

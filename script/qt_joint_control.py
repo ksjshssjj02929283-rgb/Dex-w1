@@ -61,12 +61,6 @@ class ROS2Node(Node):
             msg.negative_torque_limit.append(item['neg_torque_limit'])
         self.control_pub.publish(msg)
 
-        pos_msg = JointPositionControl()
-        pos_msg.name = msg.name
-        pos_msg.position = msg.position
-        self.position_control_pub.publish(pos_msg)
-
-
 class CustomTableWidget(QTableWidget):
     def __init__(self,send_data, parent=None):
         super().__init__( parent)

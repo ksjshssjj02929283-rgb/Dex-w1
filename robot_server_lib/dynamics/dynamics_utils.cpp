@@ -1,4 +1,4 @@
-#include "dynamics_utility.h"
+#include "dynamics_utils.h"
 
 namespace robot_server_lib
 {

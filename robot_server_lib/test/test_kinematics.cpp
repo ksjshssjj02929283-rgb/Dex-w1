@@ -9,9 +9,7 @@
 using namespace robot_server_lib;
 TEST(SRSKinematicsTest, Kinematics)
 {
-    auto params_left = kinematics::W1LeftArmIndustrial();
-
-    kinematics::SRSKinematics srs_kine_left(params_left);
+    kinematics::SRSKinematics srs_kine_left(true, false);
 
     Eigen::VectorXd q_in_left(7);
     q_in_left << -0.45, -0.65, 0.35, -1.5, -1, 1.1, -0.4;

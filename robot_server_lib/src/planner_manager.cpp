@@ -29,6 +29,8 @@ void PlannerManager::Initialize()
     move_line_planner_ = std::make_shared<MoveLinePlanner>(robot_model_, manager_dt, false);
     joint_streaming_planner_ = std::make_shared<JointStreamingPlanner>(robot_model_, manager_buffer_.streaming_command_latest_buffer, manager_dt);
     ee_pose_streaming_planner_ = std::make_shared<EEPoseStreamingPlanner>(robot_model_, manager_buffer_.streaming_command_latest_buffer, manager_dt);
+    compliance_ctrl_primary_ = std::make_shared<dynamics::CartesianComplianceControl>();
+    compliance_ctrl_secondary_ = std::make_shared<dynamics::CartesianComplianceControl>();
 }
 
 void PlannerManager::LoopOnce()
@@ -36,7 +38,6 @@ void PlannerManager::LoopOnce()
     auto &time_meta = runtime_data_.time_meta;
     auto &request = runtime_data_.planner_request;
     auto &measurement = runtime_data_.measurement;
-    auto &joint_cmd = runtime_data_.joint_cmd;
     runtime_data_.loop_counter++;
 
     // DEBUG下换行并输出episode信息 Print episode information
@@ -61,7 +62,7 @@ void PlannerManager::LoopOnce()
         PoseQuaternion ee_pose_primary, ee_pose_secondary;
         utils::GetArmFromWholeBody(this->robot_model_, measurement.position, measurement_primary, MotionGroup::Primary);
         utils::GetArmFromWholeBody(this->robot_model_, measurement.position, measurement_secondary, MotionGroup::Secondary);
-        ee_pose_primary = idle_planner_->Kinematics()->GetFK(measurement_primary, robot_property_.tcp_frame);
+        ee_pose_primary = idle_planner_->KinematicsPrimary()->GetFK(measurement_primary, robot_property_.tcp_frame);
         ee_pose_secondary = idle_planner_->KinematicsSecondary()->GetFK(measurement_secondary, robot_property_.tcp_frame_secondary);
         Eigen::VectorXd ee_pose(14);
         ee_pose << ee_pose_primary.ToVectorXd(), ee_pose_secondary.ToVectorXd();
@@ -111,19 +112,77 @@ void PlannerManager::LoopOnce()
     auto status(ComputeCommandStatus::Error);
     if (current_planner_ != nullptr)
     {
-        status = current_planner_->ComputeCommand(measurement, time_meta, joint_cmd);
+        status = current_planner_->ComputeCommand(measurement, time_meta, runtime_data_.joint_cmd);
+        Vector3d compliance_offset_primary, compliance_offset_secondary;
+        if (this->robot_property_.run_mode == RunMode::Impedance)
+        {
+            // 计算柔顺控制在base坐标系下的偏置 Calculate compliance control offset
+            compliance_offset_primary = compliance_ctrl_primary_->UpdatePosOffset(measurement.sensor_wrench.head<3>());
+            compliance_offset_secondary = compliance_ctrl_secondary_->UpdatePosOffset(measurement.sensor_wrench.segment<3>(6));
+        }
+        else
+        {
+            compliance_offset_primary = compliance_ctrl_primary_->UpdatePosOffset(Vector3d::Zero());
+            compliance_offset_secondary = compliance_ctrl_secondary_->UpdatePosOffset(Vector3d::Zero());
+        }
+
+        if (this->robot_property_.run_mode != RunMode::Impedance && compliance_offset_primary.norm() < PositionThreshold &&
+            compliance_offset_secondary.norm() < PositionThreshold)
+        {
+            runtime_data_.joint_cmd.compliance_position = runtime_data_.joint_cmd.position;
+        }
+        else
+        {
+            // 如果在柔顺控制模式下，或者有非零的柔顺偏置正在回弹中，则进行逆运动学求解 If in impedance mode, or there is non-zero compliance offset,
+            // perform IK 正解原生位置 FK, get FK original position
+            Eigen::VectorXd q_cmd_primary, q_cmd_secondary;
+            utils::GetArmFromWholeBody(this->robot_model_, runtime_data_.joint_cmd.position, q_cmd_primary, MotionGroup::Primary);
+            utils::GetArmFromWholeBody(this->robot_model_, runtime_data_.joint_cmd.position, q_cmd_secondary, MotionGroup::Secondary);
+            PoseQuaternion ee_pose_primary = idle_planner_->KinematicsPrimary()->GetFK(q_cmd_primary, robot_property_.tcp_frame);
+            PoseQuaternion ee_pose_secondary = idle_planner_->KinematicsSecondary()->GetFK(q_cmd_secondary, robot_property_.tcp_frame_secondary);
+
+            // 将柔顺控制偏置作用到原生末端位置上 Add the compliance control offset to the end-effector pose
+            auto ee_pose_before_primary = ee_pose_primary;
+            ee_pose_primary = ee_pose_primary * PoseQuaternion(compliance_offset_primary.head<3>(), Eigen::Quaterniond::Identity());
+            ee_pose_secondary = ee_pose_secondary * PoseQuaternion(compliance_offset_secondary.head<3>(), Eigen::Quaterniond::Identity());
+
+            // 根据新的末端位置求解逆运动学 Get IK based on the new end-effector position
+            if (idle_planner_->KinematicsPrimary()->GetIK(ee_pose_primary, q_cmd_primary, robot_property_.tcp_frame) &&
+                idle_planner_->KinematicsSecondary()->GetIK(ee_pose_secondary, q_cmd_secondary, robot_property_.tcp_frame_secondary))
+            {
+                // 映射回整体关节命令 Map back to whole-body joint command
+                utils::MapArmToWholeBody(this->robot_model_, q_cmd_primary, runtime_data_.joint_cmd.compliance_position, MotionGroup::Primary);
+                utils::MapArmToWholeBody(this->robot_model_, q_cmd_secondary, runtime_data_.joint_cmd.compliance_position, MotionGroup::Secondary);
+            }
+            else  // IK求解失败则保持原位置不变 If IK fails, keep previous position
+            {
+                if (runtime_data_.loop_counter % 1000 == 0)
+                    LOG_WARN << "Compliance control IK failed, keeping previous joint position.";
+            }
+        }
+        // // 打印调试信息 Print debug info
+        // if (runtime_data_.loop_counter % 500 == 0)
+        // {
+        //     std::ostringstream oss;
+        //     oss << "Primary Force: " << "[" << measurement.sensor_wrench[0] << ", " << measurement.sensor_wrench[1] << ", " <<
+        //     measurement.sensor_wrench[2] << "]";
+        //         // << "  Compliance Offset: " << compliance_offset_primary.transpose()
+        //         // << "  ee before: " << ee_pose_before_primary.position.transpose() << "  ee after: " << ee_pose_primary.position.transpose();
+        //     std::cout << oss.str() << std::endl;
+        //     LOG_INFO << oss.str();
+        // }
     }
 
     // 发布关节命令到缓冲区 publish the joint command to the buffer
     if (status != ComputeCommandStatus::Error)
     {
-        PlannerManagerCommand temp_planner_command{};
-        temp_planner_command.sequence_number = runtime_data_.loop_counter;
-        temp_planner_command.cmd = joint_cmd;
-        temp_planner_command.robot_property = robot_property_;
-        manager_buffer_.planner_manager_command->AppendNewElement(temp_planner_command);
+        PlannerManagerCommand planner_command{};
+        planner_command.sequence_number = runtime_data_.loop_counter;
+        planner_command.cmd = runtime_data_.joint_cmd;
+        planner_command.robot_property = robot_property_;
+        manager_buffer_.planner_manager_command->AppendNewElement(planner_command);
         if (Status::Running == manager_state_)
-            LOG_DEBUG << "Current Planner: " << typeid(*current_planner_).name() << " output: " << joint_cmd.ToString();
+            LOG_DEBUG << "Current Planner: " << typeid(*current_planner_).name() << " output: " << runtime_data_.joint_cmd.ToString();
     }
 
     // 根据规划器状态切换状态 Switch state based on the planner status
@@ -211,16 +270,11 @@ RequestResponse PlannerManager::OnRequestStateIdle()
         current_planner_->ResetForNewTrajectory(PlannerRequest{}, measurement, time_meta);
         current_planner_->episode_index = time_meta.episode_index;
     }
-    switch (request.type)
+    if (request.type == RequestType::Empty)
     {
-    case RequestType::Empty:
         return response;
-    case RequestType::TcpPrimary:
-    case RequestType::TcpSecondary:
-    case RequestType::SpeedRatio:
-    case RequestType::EnableDrag:
-    case RequestType::SafeLevel:
-    case RequestType::ClearError:
+    }
+    else if (request.type < RequestType::MoveJoint)  // 设置属性命令 Set property commands
     {
         SetProperty(request);
         response.re_run = true;
@@ -230,19 +284,11 @@ RequestResponse PlannerManager::OnRequestStateIdle()
         ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
         return response;
     }
-    // 其他为运动命令类型 Other types are motion tcp_frame_secondary_requests
-    case RequestType::MoveJoint:
-    case RequestType::MoveLine:
-    case RequestType::StartJointStreaming:
-    case RequestType::StartEEPoseStreaming:
+    else  // 运动命令 Motion commands
     {
         ChangeState(Status::Running);
         response.re_run = true;
-        response.request_consumed = false;
-        return response;
-    }
-    default:
-        ChangeState(Status::Error);
+        response.request_consumed = false;  // 不消费命令，交给Running状态处理 Do not consume the request, let the Running state handle it
         return response;
     }
 }
@@ -419,6 +465,17 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
         bool enable_drag = std::get<bool>(request.data.value());
         if (enable_drag)
             robot_property_.run_mode = RunMode::Drag;
+        else
+            robot_property_.run_mode = RunMode::Position;
+        std::cout << "Set run mode to " << ToString(robot_property_.run_mode) << std::endl;
+        return;
+    }
+    case RequestType::EnableImpedance:
+    {
+        assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
+        bool enable_impedance = std::get<bool>(request.data.value());
+        if (enable_impedance)
+            robot_property_.run_mode = RunMode::Impedance;
         else
             robot_property_.run_mode = RunMode::Position;
         std::cout << "Set run mode to " << ToString(robot_property_.run_mode) << std::endl;

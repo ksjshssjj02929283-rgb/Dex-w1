@@ -32,6 +32,7 @@ using VectorDof = Eigen::Matrix<double, ndof_robot, 1>;
 using JointPositionDof = VectorDof;  // 关节位置
 using Matrix3d = Eigen::Matrix<double, 3, 3>;
 using Matrix4d = Eigen::Matrix<double, 4, 4>;
+using Vector3d = Eigen::Matrix<double, 3, 1>;
 using Vector6d = Eigen::Matrix<double, 6, 1>;
 using Vector12d = Eigen::Matrix<double, 12, 1>;
 
@@ -62,6 +63,7 @@ enum class RequestType
     SpeedRatio,
     ClearError,
     EnableDrag,
+    EnableImpedance,
     SafeLevel,
 
     // Move Request
@@ -167,6 +169,8 @@ inline const char *ToString(RequestType type)
         return "SpeedRatio";
     case RequestType::EnableDrag:
         return "EnableDrag";
+    case RequestType::EnableImpedance:
+        return "EnableImpedance";
     case RequestType::SafeLevel:
         return "SafeLevel";
     case RequestType::ClearError:

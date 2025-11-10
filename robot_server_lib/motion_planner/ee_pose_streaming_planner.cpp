@@ -119,7 +119,6 @@ bool EEPoseStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
     auto move_request = std::get<MoveRequest>(request.data.value());
     SetMotionGroup(move_request.motion_group);
-    streaming_buffer_->Reset();
 
     runtime_.request_id = request.request_id;
     runtime_.streaming_finished = false;
@@ -156,7 +155,7 @@ bool EEPoseStreamingPlanner::ToJointStreamingCommand(StreamingCommand &cmd, cons
         Eigen::VectorXd q_primary = joint_cmd.head(ndof_primary_);
         Eigen::VectorXd q_secondary = joint_cmd.tail(ndof_secondary_);
 
-        if (!kinematics_ptr_->GetIK(pose_cmd_primary, q_primary, robot_property_.tcp_frame) ||
+        if (!kinematics_primary_ptr_->GetIK(pose_cmd_primary, q_primary, robot_property_.tcp_frame) ||
             !kinematics_secondary_ptr_->GetIK(pose_cmd_secondary, q_secondary, robot_property_.tcp_frame_secondary))
         {
             LOG_CRIT << "Inverse Kinematics failed";
@@ -172,7 +171,7 @@ bool EEPoseStreamingPlanner::ToJointStreamingCommand(StreamingCommand &cmd, cons
         assert(7 == cmd.command.size());
         auto pose_cmd = utils::VectorXdToPoseQuaternion(cmd.command);
         assert(joint_cmd.size() == ndof_primary_);
-        if (!kinematics_ptr_->GetIK(pose_cmd, joint_cmd, robot_property_.tcp_frame))
+        if (!kinematics_primary_ptr_->GetIK(pose_cmd, joint_cmd, robot_property_.tcp_frame))
         {
             LOG_CRIT << "Inverse Kinematics failed";
             return false;

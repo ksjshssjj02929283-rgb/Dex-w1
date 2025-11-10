@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <Eigen/Dense>
+#include <cmath>
+
 #include "utils.h"
 
 void PrintModelInfo(const pinocchio::Model& model, const std::string& tag)
@@ -27,4 +30,13 @@ TEST(PinocchioModelTest, Pinocchio)
 
     auto J = pinocchio::GetJacobiMatrix(*robot_model.left_arm_model_ptr, q);
     std::cout << std::fixed << std::setprecision(3) << "Jacobian at left ee_link (q = 0):\n" << J << std::endl;
+
+    Eigen::MatrixXd expected(6, 7);
+    expected << 0.000, 0.590, 0.000, -0.000, 0.000, -0.000, 0.066, -0.000, -0.000, -0.000, -0.330, 0.000, -0.066, -0.000, 0.000, 0.000, -0.000,
+        -0.000, 0.000, -0.000, 0.000, 0.000, 0.000, -0.000, 1.000, -0.000, 1.000, 0.000, 0.000, 1.000, -0.000, -0.000, -0.000, -0.000, 1.000, 1.000,
+        0.000, 1.000, 0.000, 1.000, 0.000, 0.000;
+
+    const double tol = 1e-3;
+    double max_abs_diff = (J - expected).cwiseAbs().maxCoeff();
+    EXPECT_LE(max_abs_diff, tol) << "Max abs diff = " << max_abs_diff << ", tolerance = " << tol;
 }

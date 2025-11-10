@@ -24,7 +24,7 @@ Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q)
         throw std::runtime_error("Frame 'ee_link' not found in model!");
     }
 
-    computeFrameJacobian(model, data, q, ee_frame_id, pinocchio::LOCAL, J);
+    computeFrameJacobian(model, data, q, ee_frame_id, pinocchio::LOCAL_WORLD_ALIGNED, J);
     return J;
 }
 

@@ -32,7 +32,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
 
 void RobotServer::RobotThreadFunc()
 {
-#if TORQUE_CONTROL
+#if false
     RCLCPP_INFO(this->get_logger(), "Torque control is enabled.");
     LOG_INFO << "Torque control is enabled.";
 

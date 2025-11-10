@@ -22,6 +22,8 @@ find_package(nlohmann_json REQUIRED)
 find_package(ruckig REQUIRED)
 find_package(pinocchio REQUIRED)
 find_package(robot_server_interfaces REQUIRED)
+find_package(fmt REQUIRED)
+find_package(spdlog REQUIRED)
 
 aux_source_directory(src LIB_SRCS)
 aux_source_directory(kinematics LIB_SRCS)
@@ -43,6 +45,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 
 target_link_libraries(${PROJECT_NAME}
+  DexeRP
+  fmt::fmt
+  spdlog::spdlog
   nlohmann_json::nlohmann_json
   pinocchio::pinocchio
   ruckig::ruckig

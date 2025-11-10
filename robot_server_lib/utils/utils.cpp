@@ -240,6 +240,11 @@ PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interf
         planner_request.type = RequestType::EnableDrag;
         planner_request.data = request->value == "1" ? true : false;
     }
+    else if (request->property_type == "EnableImpedance")
+    {
+        planner_request.type = RequestType::EnableImpedance;
+        planner_request.data = request->value == "1" ? true : false;
+    }
     else if (request->property_type == "SafeLevel")
     {
         planner_request.type = RequestType::SafeLevel;
@@ -363,6 +368,10 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
         {
             move_request.blend_tolerance.emplace(input_config_json["blend_tolerance"].get<double>());
         }
+        if (input_config_json.contains("optional_mode"))
+        {
+            move_request.optional_mode.emplace(input_config_json["optional_mode"].get<bool>());
+        }
     }
     planner_request.data = move_request;
     return planner_request;
@@ -370,10 +379,11 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
 
 Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary)
 {
-    constexpr double force_threshold = 5.0;
-    constexpr double torque_threshold = 0.5;
-    constexpr double force_max = 60.0;
-    constexpr double torque_max = 6.0;
+    // 最小力/力矩阈值(去除摩擦力), 和最大力/力矩值
+    constexpr double force_threshold = 5;
+    constexpr double torque_threshold = 0.1;
+    constexpr double force_max = 80.0;
+    constexpr double torque_max = 4.0;
 
     auto deadzone_saturate = [](double x, double th, double mx) noexcept -> double
     {

@@ -13,7 +13,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 find_package(PythonInterp 3.6 REQUIRED)
 set(PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}" CACHE FILEPATH "Python interpreter" FORCE)
-
 # Find dependencies.
 find_package(Eigen3 REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
@@ -69,6 +68,7 @@ ament_target_dependencies(${PROJECT_NAME}
 )
 
 target_link_libraries(${PROJECT_NAME}
+  DexeRP
   pinocchio::pinocchio
   ruckig::ruckig
 )

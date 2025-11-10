@@ -97,7 +97,7 @@ void RobotServerBase::TorqueControlThreadFunc()
 
 void RobotServerBase::PublishThreadFunc()
 {
-    JointMeasurement measurement;
+    JointRawMeasurement raw_measurement;
     Eigen::VectorXd ee_pose;
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok())
@@ -106,21 +106,22 @@ void RobotServerBase::PublishThreadFunc()
 
         // Publish /feedback/robot_server_state
         std_msgs::msg::String robot_server_state_msg;
-        if (is_robot_ready_ && this->manager_buffers_.joint_measurement->PeekLatest(&measurement) &&
+        if (is_robot_ready_ && this->robot_buffers_.joint_raw_measurement->PeekLatest(&raw_measurement) &&
             this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
         {
-            std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(measurement.position);
-            std::ostringstream joint_velocity_ss = utils::VectorToJsonArrayString(measurement.velocity);
-            std::ostringstream joint_torque_ss = utils::VectorToJsonArrayString(measurement.effort);
+            std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(raw_measurement.position);
+            std::ostringstream joint_velocity_ss = utils::VectorToJsonArrayString(raw_measurement.velocity);
+            std::ostringstream joint_torque_ss = utils::VectorToJsonArrayString(raw_measurement.effort);
+            std::ostringstream joint_sensor_wrench_ss = utils::VectorToJsonArrayString(raw_measurement.sensor_wrench);
             std::ostringstream ee_pose_ss = utils::VectorToJsonArrayString(ee_pose);
             uint64_t timestamp_ns = this->now().nanoseconds();
-            robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" +
-                                          ToString(this->manager_state_) + "\"" +
-                                          ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
-                                          ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
-                                          ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
-                                          ",\"ee_pose\":" + ee_pose_ss.str() + ",\"joint_position\":" + joint_position_ss.str() +
-                                          ",\"joint_velocity\":" + joint_velocity_ss.str() + ",\"joint_torque\":" + joint_torque_ss.str() + "}";
+            robot_server_state_msg.data =
+                std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" + ToString(this->manager_state_) + "\"" +
+                ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+                ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
+                ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) + ",\"ee_pose\":" + ee_pose_ss.str() +
+                ",\"force_sensor\":" + joint_sensor_wrench_ss.str() + ",\"joint_position\":" + joint_position_ss.str() +
+                ",\"joint_velocity\":" + joint_velocity_ss.str() + ",\"joint_torque\":" + joint_torque_ss.str() + "}";
         }
         else
         {
@@ -139,10 +140,13 @@ Int64 RobotServerBase::MakeNewRequestID(RequestType type)
     {
         if (this->latest_received_id_ > (std::max(this->latest_report_id_.finished.load(), this->latest_report_id_.error_drop.load())))
         {
-            RCLCPP_WARN(this->get_logger(), "Still existed previous move request, failed to queue start streaming request, latest_received_id_: %ld, latest_finished_id_: %ld, latest_errordrop_id_: %ld",
+            RCLCPP_WARN(this->get_logger(),
+                        "Still existed previous move request, failed to queue start streaming request, latest_received_id_: %ld, "
+                        "latest_finished_id_: %ld, latest_errordrop_id_: %ld",
                         this->latest_received_id_, this->latest_report_id_.finished.load(), this->latest_report_id_.error_drop.load());
-            LOG_CRIT << "Still existed previous move request, failed to queue start streaming request" << ", latest_received_id_: " << this->latest_received_id_
-                     << ", latest_finished_id_: " << this->latest_report_id_.finished.load() << ", latest_errordrop_id_: " << this->latest_report_id_.error_drop.load();
+            LOG_CRIT << "Still existed previous move request, failed to queue start streaming request"
+                     << ", latest_received_id_: " << this->latest_received_id_ << ", latest_finished_id_: " << this->latest_report_id_.finished.load()
+                     << ", latest_errordrop_id_: " << this->latest_report_id_.error_drop.load();
             return -1;
         }
     }

@@ -1,12 +1,13 @@
 #pragma once
 
 #include <geometry_msgs/msg/twist.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>  // 新增
 
 #include "chassis_interfaces/msg/chassis_whole_control.hpp"
-#include "force_sensor_reader.h"
 #include "joint_interfaces/msg/joint_control.hpp"
 #include "joint_interfaces/msg/joint_position_control.hpp"
 #include "joint_interfaces/msg/joint_velocity_torque_limit_feedback.hpp"
+#include "robot_server_lib/force_sensor_reader.h"
 #include "robot_server_lib/robot_server_base.h"
 #include "shared_memory_def.h"
 
@@ -43,6 +44,7 @@ class RobotServer : public RobotServerBase
     void PositionControlCallback(const JointPositionControlMsg::SharedPtr msg);
     void OmniChassisControlCallback(const ChassisWholeControlMsg::SharedPtr msg);
     void DiffChassisControlCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
+    void ForceArrayCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg);
 
     void PublishFeedback();
 
@@ -50,6 +52,7 @@ class RobotServer : public RobotServerBase
     rclcpp::Publisher<JointVelocityTorqueLimitFeedbackMsg>::SharedPtr velocity_torque_limit_feedback_publisher_;
     rclcpp::TimerBase::SharedPtr control_timer_;
     rclcpp::Subscription<JointControlMsg>::SharedPtr control_subscriber_;
+    rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr force_subscriber_;
     rclcpp::Subscription<JointPositionControlMsg>::SharedPtr position_control_subscriber_;
     rclcpp::Subscription<ChassisWholeControlMsg>::SharedPtr omni_chassis_control_subscriber_;
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr diff_chassis_control_subscriber_;
@@ -78,6 +81,8 @@ class RobotServer : public RobotServerBase
     Eigen::Vector<double, 6> sensor_filtered_ = Eigen::Vector<double, 6>::Zero();
     double sensor_lpf_alpha_ = 1.0;  // alpha: 越小越平滑（0..1）
     bool sensor_filter_initialized_ = false;
+
+    Vector3d sensor_force_;
 
     void InitParamConfig();  // 初始化/读写 torque_limit_ 的 JSON 配置
 };

@@ -5,7 +5,7 @@ namespace robot_server_lib
 
 TorqueControllerInvDynamic::TorqueControllerInvDynamic(RobotModel robot_model) : TorqueControllerBase(robot_model)
 {
-    this->parameters_.K_p = 50;
+    this->parameters_.K_p = 0;
     this->parameters_.K_v = 0;
 }
 
@@ -24,21 +24,19 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
     switch (state_)
     {
     case TorqueControllerState::Idle:
-        ddq_desired =
-            this->parameters_.K_p * (idle_q_ - feedback_q) + this->parameters_.K_v * (-feedback_dq) + torque_external / this->parameters_.M_d;
+        ddq_desired = this->parameters_.K_p * (idle_q_ - feedback_q) + this->parameters_.K_v * (-feedback_dq);
         output_cmd.torque = dynamics::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, ddq_desired,
                                                       robot_model_.params_ptr->joint_command_sequence_by_name);
         output_cmd.q_desired = idle_q_;
         break;
     case TorqueControllerState::Decelerating:
-        ddq_desired = this->parameters_.K_v * (-feedback_dq) + torque_external / this->parameters_.M_d;
+        ddq_desired = this->parameters_.K_v * (-feedback_dq);
         output_cmd.torque = dynamics::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, ddq_desired,
                                                       robot_model_.params_ptr->joint_command_sequence_by_name);
         output_cmd.q_desired = feedback_q;
         break;
     case TorqueControllerState::Operating:
-        ddq_desired = cmd_ddq + this->parameters_.K_p * (cmd_q - feedback_q) + this->parameters_.K_v * (cmd_dq - feedback_dq) +
-                      torque_external / this->parameters_.M_d;
+        ddq_desired = cmd_ddq + this->parameters_.K_p * (cmd_q - feedback_q) + this->parameters_.K_v * (cmd_dq - feedback_dq);
         output_cmd.torque = torque_feedforward + dynamics::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, ddq_desired,
                                                                            robot_model_.params_ptr->joint_command_sequence_by_name);
         output_cmd.q_desired = cmd_q;

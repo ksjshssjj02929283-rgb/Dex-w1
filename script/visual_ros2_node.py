@@ -46,7 +46,7 @@ class VisualRos2Node(Node):
 
     def parse_robot_cfg(self):
         # 读取 robot 部分
-        package_share_path = get_package_share_directory("sim_server")
+        package_share_path = get_package_share_directory("w1_server")
         robot_cfg_path = Path(package_share_path) / "robot.cfg"
         with open(robot_cfg_path, 'r') as f:
             cfg = json.load(f)

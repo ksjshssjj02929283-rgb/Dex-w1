@@ -49,7 +49,7 @@ std::ostringstream VectorToJsonArrayString(const VectorType &vec)
         double v = static_cast<double>(vec[i]);
         if (std::isfinite(v))
         {
-            ss << std::setprecision(15) << v;
+            ss << std::setprecision(5) << v;
         }
         else
         {

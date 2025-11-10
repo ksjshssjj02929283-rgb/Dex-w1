@@ -17,7 +17,7 @@ class JointStreamingPlanner : public MotionPlannerBase
 
    protected:
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer_;
-    const double controller_dt_{0.004}; // 控制周期，单位s
+    const double controller_dt_{0.004};  // 控制周期，单位s
     ruckig::Ruckig<ndof_robot> ruckig_otg_;
 
     struct
@@ -31,8 +31,8 @@ class JointStreamingPlanner : public MotionPlannerBase
         ruckig::OutputParameter<ndof_robot> output;
     } runtime_;
 
-   private:
     TimePointSystem request_start_time_{TimePointSystem::Invalid()};
+    bool no_ruckig_mode_ = false;
 };
 
 }  // namespace robot_server_lib

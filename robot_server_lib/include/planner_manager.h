@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cartesian_compliance_control.h"
 #include "motion_planner_include.h"
 #include "utils.h"
 
@@ -47,6 +48,9 @@ class PlannerManager
     std::shared_ptr<JointStreamingPlanner> joint_streaming_planner_{nullptr};
     std::shared_ptr<EEPoseStreamingPlanner> ee_pose_streaming_planner_{nullptr};
 
+    std::shared_ptr<dynamics::CartesianComplianceControl> compliance_ctrl_primary_{nullptr};
+    std::shared_ptr<dynamics::CartesianComplianceControl> compliance_ctrl_secondary_{nullptr};
+
     struct
     {
         // Timing maintained by the state machine
@@ -57,6 +61,8 @@ class PlannerManager
         PlannerRequest planner_request{};
         JointMeasurement measurement{};
         JointCommand joint_cmd{};
+        Eigen::VectorXd joint_position_primary;
+        Eigen::VectorXd joint_position_secondary;
         Int64 latest_processing_request_id{-1};
         RequestType latest_processing_request_type{RequestType::Empty};
     } runtime_data_;

@@ -82,6 +82,7 @@ void TorqueControllerManager::LoopOnce()
         manager_measurement.velocity = runtime_data_.raw_measurement.velocity;
         manager_measurement.effort = runtime_data_.raw_measurement.effort;
         manager_measurement.q_desired_pre = runtime_data_.output_cmd.q_desired;
+        manager_measurement.sensor_wrench = runtime_data_.raw_measurement.sensor_wrench;
         manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
         robot_buffers_.torque_controller_command->AppendNewElement(runtime_data_.output_cmd);
     }
