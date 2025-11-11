@@ -6,6 +6,7 @@ from copy import deepcopy
 
 from .fcl_checker import FCLChecker
 from .ompl_plan import OMPLPlanSingle, OMPLPlanCentralized, OMPLPlanDecoupled
+from .traj_coordination import Coordination
 from .utils.robot_type import RobotType, RobotURDF, RobotCollision, get_robot_urdf, get_robot_mesh_path
 from .planner_pinocchio import Planner_Pin
 from ...end_effector_client import EndEffectorType 
@@ -213,7 +214,40 @@ class HybridPlanner:
         if which_arm == "right":    
             self.fcl_checker.detach_object_armr(obj_name=obj_name, armr7_transform=arm7_transform)
 
-    
+    def transform_obstacle(self, name: str, new_center: np.ndarray, new_quaternion: np.ndarray):
+        """
+        Transform an existing obstacle in the FCL environment.\
+        
+        Args:
+            name (str): The name of the obstacle to be transformed
+            new_center (np.ndarray): The new center position of the obstacle (shape: (3,))
+            new_quaternion (np.ndarray): The new orientation of the obstacle as a quaternion (shape: (4,))
+        """
+
+        res = self.fcl_checker.transform_obstacle(name=name, new_center=new_center, new_quaternion=new_quaternion)
+        return res
+
+    def disable_obstacle(self, name: str):
+        """
+        Disable an existing obstacle in the FCL environment.\
+        
+        Args:
+            name (str): The name of the obstacle to be disabled
+        """
+
+        res = self.fcl_checker.disable_obstacle(name=name)
+        return res
+
+    def enable_obstacle(self, name: str):
+        """
+        Enable an existing obstacle in the FCL environment.\
+        
+        Args:
+            name (str): The name of the obstacle to be enabled
+        """
+
+        res = self.fcl_checker.enable_obstacle(name=name)
+        return res
 
     def plan(self):
         """
@@ -278,3 +312,49 @@ class HybridPlanner:
         if not is_arml_plan and not is_armr_plan:
             self.logger.info("No planning needed, both arms are already at their goal positions.")
             return None, None, 0.0
+        
+    def coordinate_trajectories_with_EE(self, left_traj_list: list[np.ndarray], right_traj_list: list[np.ndarray],
+                                        left_ee_trigger_list: list[tuple[int, np.ndarray]], right_ee_trigger_list: list[tuple[int, np.ndarray]]):
+        """
+        Connect multiple trajectories for single arm individually with end effector time consideration 
+            and return the coordinated dual arm trajectories with connected trajectories.
+
+        Args:
+            left_traj_list (list[np.ndarray]): A list of left arm trajectories to be connected
+            right_traj_list (list[np.ndarray]): A list of right arm trajectories to be connected
+            left_ee_triger_list (list[tuple[int, np.ndarray]]): A list of tuples for left arm end effector trigger points.
+                                                                Each tuple contains (index in trajectory, end effector qpos)
+            right_ee_triger_list (list[tuple[int, np.ndarray]]): A list of tuples for right arm end effector trigger points.
+                                                                 Each tuple contains (index in trajectory,
+
+        """
+
+        if len(left_traj_list) != len(left_ee_trigger_list):
+            raise ValueError(f"Count of left arm trajectories {len(left_traj_list)} does not match count of left arm ee trigger points {len(left_ee_trigger_list)}")
+        if len(right_traj_list) != len(right_ee_trigger_list):
+            raise ValueError(f"Count of right arm trajectories {len(right_traj_list)} does not match count of right arm ee trigger points {len(right_ee_trigger_list)}")
+
+        arml_trajectory = np.vstack(left_traj_list)
+        armr_trajectory = np.vstack(right_traj_list)
+        left_traj_cnt, right_traj_cnt = 0, 0
+        left_ee_identifier_list, right_ee_identifier_list = [], []
+        for i in range(len(left_ee_trigger_list)):
+            left_ee_identifier_list.append((left_traj_cnt + left_ee_trigger_list[i][0], np.asarray(left_ee_trigger_list[i][1])))
+            left_traj_cnt += left_traj_list[i].shape[0]
+        for i in range(len(right_ee_trigger_list)):
+            right_ee_identifier_list.append((right_traj_cnt + right_ee_trigger_list[i][0], np.asarray(right_ee_trigger_list[i][1])))
+            right_traj_cnt += right_traj_list[i].shape[0]
+        coordinator = Coordination(left_traj=arml_trajectory, right_traj=armr_trajectory,
+                                   fcl_checker=self.fcl_checker,
+                                   planner_pin=self.planner_pin,
+                                   coordination_res=0.1, traj_res=0.01,
+                                   use_ee=self.use_ee)
+        coordinator.set_head_body(self.head_qpos, self.torso_qpos)
+        coordinator.set_ee_identifier(armlee_start_qpos=self.armlee_qpos, armree_start_qpos=self.armree_qpos,
+                                      left_identifier_list=left_ee_identifier_list, right_identifier_list=right_ee_identifier_list)
+        coordinated_left, coordinated_right, coordinated_left_ee, coordinated_right_ee = coordinator.Coordinate_RRT_with_EE()
+
+        return coordinated_left, coordinated_right, coordinated_left_ee, coordinated_right_ee
+        
+
+        

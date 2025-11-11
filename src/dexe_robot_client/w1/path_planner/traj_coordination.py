@@ -218,6 +218,124 @@ class GridRRT:
             self.logger.warning("Failed to find a path.")
             return None
 
+    def set_ee_identifier(self, armlee_start_qpos: np.ndarray, armree_start_qpos: np.ndarray,
+                           left_identifier_list: list[tuple[int, np.ndarray]], right_identifier_list: list[tuple[int, np.ndarray]]):
+        if len(left_identifier_list) == 0 or left_identifier_list is None:
+            raise ValueError("left_identifier_list must be a non-empty list")
+        if len(right_identifier_list) == 0 or right_identifier_list is None:
+            raise ValueError("right_identifier_list must be a non-empty list")
+        
+        self.armlee_start_qpos, self.armree_start_qpos = armlee_start_qpos, armree_start_qpos
+        
+        self.left_ee_trigger, self.right_ee_trigger = [], []
+        self.left_ee_qpos_list, self.right_ee_qpos_list = [], []
+        for idx, ee_qpos in left_identifier_list:
+            self.left_ee_trigger.append(idx)
+            self.left_ee_qpos_list.append(ee_qpos)
+        for idx, ee_qpos in right_identifier_list:
+            self.right_ee_trigger.append(idx)
+            self.right_ee_qpos_list.append(ee_qpos)
+
+    def _find_ee_qpos(self, index: int, which_arm: str):
+        # NOTE: The count of connected trajectories won't be very large, so use linear search instead of binary search
+        if which_arm == "left":
+            for i in range(len(self.left_ee_trigger)):
+                if index <= self.left_ee_trigger[i]:
+                    if i == 0:
+                        return self.armlee_start_qpos
+                    else:
+                        return self.left_ee_qpos_list[i-1]
+            return self.left_ee_qpos_list[-1]
+        elif which_arm == "right":
+            for i in range(len(self.right_ee_trigger)):
+                if index <= self.right_ee_trigger[i]:
+                    if i == 0:
+                        return self.armree_start_qpos
+                    else:
+                        return self.right_ee_qpos_list[i-1]
+            return self.right_ee_qpos_list[-1]
+        else:
+            raise ValueError(f"which_arm must be 'left' or 'right', got {which_arm}")
+
+    def _is_state_valid_with_ee(self, state):
+        x, y = self.pos_to_idx(state)
+        cur_left_ee_qpos = self._find_ee_qpos(self.left_idx_chain[x], "left")
+        cur_right_ee_qpos = self._find_ee_qpos(self.right_idx_chain[y], "right")
+        if self.flag_map[x,y] == 0:
+            self.flag_map[x,y] = 1
+            left_qpos = self.left_traj[self.left_idx_chain[x], :]
+            right_qpos = self.right_traj[self.right_idx_chain[y], :]
+            real_qpos = np.concatenate((self.body_qpos, self.head_qpos, left_qpos, right_qpos))
+            torso_trans, head_trans, arml_trans, armr_trans, armlee_trans, armree_trans = self.planner_pin.get_Kinematics(real_qpos, cur_left_ee_qpos, cur_right_ee_qpos, compute_ee=True)
+            transform = arml_trans + armr_trans
+            self.fcl_checker.update_arm_transform(transform, armlee_trans, armree_trans)
+            is_collide = self.fcl_checker.check_collision_between_arms()
+            if is_collide:
+                self.grid_map[x,y] = 0
+                return False
+            else:
+                return True
+        else:
+            if self.grid_map[x,y] == 0:
+                return False
+            else:
+                return True
+            
+    def plan_with_ee(self, planning_time = 1.0):
+        si = ob.SpaceInformation(self.space)
+        si.setStateValidityCheckingResolution(0.1)
+        si.setStateValidityChecker(ob.StateValidityCheckerFn(self._is_state_valid_with_ee))
+        motion_validator = ForwardMotionValidator(si)
+        si.setMotionValidator(motion_validator)
+        si.setup()
+
+        pdef = ob.ProblemDefinition(si)
+        si_start = si.allocState()
+        si_goal = si.allocState()
+        for i in range(self.space.getDimension()):
+            si_start[i] = int(self.start_state[i])
+            si_goal[i] = int(self.goal_state[i])
+        pdef.setStartAndGoalStates(si_start, si_goal)
+
+        planner = og.RRTConnect(si)
+        planner.setRange(5)
+        planner.setProblemDefinition(pdef)
+        planner.setup()
+
+        start_time = time.time()
+        solved = planner.solve(planning_time)
+        end_time = time.time()
+        # self.logger.info(f"Planning time: {end_time - start_time:.6f} seconds")
+        RRT_time = end_time - start_time
+        if end_time - start_time > planning_time:
+            # raise RuntimeError(f"Warning: Planning took longer than the specified time limit of {planning_time} seconds.")
+            self.logger.warning(f"Warning: Planning took longer than the specified time limit of {planning_time} seconds.")
+            self.logger.info("Replanning...")
+            path, total_time, original_path = self.plan(planning_time=planning_time)
+            return path, total_time, original_path
+            
+        if solved:
+            # self.logger.info(f"Successfully found a path with {pdef.getSolutionPath().getStateCount()} states.")
+            path = pdef.getSolutionPath()
+            original_path = []
+            for i in range(path.getStateCount()):
+                state = path.getState(i)
+                original_path.append((state[0], state[1]))
+            # si.setStateValidityCheckingResolution(0.005)
+            start_time = time.time()
+            path_simplifier = og.PathSimplifier(si)
+            path_simplifier.reduceVertices(path)
+            end_time = time.time()
+            Simplify_time = end_time - start_time
+            # self.logger.info(f"Path simplification time: {end_time - start_time:.6f} seconds")
+            # path_simplifier.smoothBSpline(path) 
+            # path.interpolate(50)
+            total_time = RRT_time + Simplify_time
+            return path, total_time, original_path
+        else:
+            self.logger.warning("Failed to find a path.")
+            return None
+
 class Coordination:
     def __init__(self, left_traj, right_traj, fcl_checker: FCLChecker, planner_pin: Planner_Pin, coordination_res=0.1, traj_res=0.01, use_ee: bool = False):
         # coordination_res: resolution of coordination map, unit: s
@@ -317,31 +435,6 @@ class Coordination:
         # self.logger.info(f"Aligned left trajectory length: {left_traj.shape[0]}")
         # self.logger.info(f"Aligned right trajectory length: {right_traj.shape[0]}")
         return left_traj, right_traj  
-    
-    def set_identifier(self, left_identifier_list, right_identifier_list):
-        """
-        This function is used to set the identifier list for dual arms
-        (which is used for two joint-trajectories including ee waiting trajectories) to coordinate
-
-        Args:
-            left_identifier_list (list(tuple)): the element in the list is tuple(traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx)
-            right_identifier_list (list(tuple)): the element in the list is tuple(traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx)
-
-        Notes:
-            - The length of the identifier list is the same as the count of trajectories for each arm 
-        """
-        if len(left_identifier_list) == 0 or left_identifier_list is None:
-            raise ValueError("left_identifier_list must be a non-empty list")
-        if len(right_identifier_list) == 0 or right_identifier_list is None:
-            raise ValueError("right_identifier_list must be a non-empty list")
-        
-        self.left_identifier_list = left_identifier_list
-        self.right_identifier_list = right_identifier_list
-        self.left_ee_trigger, self.right_ee_trigger = [], []
-        for i in range(len(self.left_identifier_list)):
-            self.left_ee_trigger.append(self.left_identifier_list[i][2])
-        for i in range(len(self.right_identifier_list)):
-            self.right_ee_trigger.append(self.right_identifier_list[i][2])
 
     def Coordinate_Astar(self):
         """
@@ -526,36 +619,33 @@ class Coordination:
         self.logger.info(f"The coordinated consuming time is {time.time() - start_time:.6f} seconds")
 
         return aligned_left, aligned_right
-    
-    # def _find_traj_idx(self, left_traj_idx = None, right_traj_idx = None):
-    #     """
-    #     This function is used to find the coordination point is in which trajectory segment
-    #     Args:
-    #         left_traj_idx (int): the index of the left arm trajectory
-    #         right_traj_idx (int): the index of the right arm trajectory
-        
-    #     Returns:
-    #         left_segment_idx (int): the index of the left arm trajectory segment in the identifier list
-    #         left_segment (tuple): the trajectory segment tuple(traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) for left arm
-    #         right_segment_idx (int): the index of the right arm trajectory segment in the identifier list
-    #         right_segment (tuple): the trajectory segment tuple(traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) for right arm
-    #     """
-    #     if left_traj_idx is None and right_traj_idx is None:
-    #         return -1, -1
-    #     left_traj_segment_idx, right_traj_segment_idx = -1, -1
-        
-    #     for i, (traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) in enumerate(self.left_identifier_list):
-    #         if left_traj_idx >= traj_start_idx and left_traj_idx <= traj_end_idx:
-    #             left_traj_segment_idx = i
-    #             # if left_traj_idx >= 
-    #             break
-    #     for j, (traj_start_idx, ee_pre_start_idx, ee_start_idx, traj_end_idx) in enumerate(self.right_identifier_list):
-    #         if right_traj_idx >= traj_start_idx and right_traj_idx <= traj_end_idx:
-    #             right_traj_segment_idx = j
-    #             break
-    #     return left_traj_segment_idx, right_traj_segment_idx
             
-    def build_index_map(orig_spans, new_spans):
+    def set_ee_identifier(self, armlee_start_qpos: np.ndarray, armree_start_qpos: np.ndarray, left_identifier_list: list[tuple[int, np.ndarray]], right_identifier_list: list[tuple[int, np.ndarray]]):
+        """
+        This function is used to set the end effector identifier list for dual arms
+        (which is used for two joint-trajectories including ee waiting trajectories) to coordinate
+
+        Args:
+            left_identifier_list (list[tuple[int, np.ndarray]]): a list of tuple(action start index, ee qpos)
+            right_identifier_list (list[tuple[int, np.ndarray]]): a list of tuple(action start index, ee qpos)
+
+        Notes:
+            - The index identifiers are based on the connected joint-trajectory including ee waiting time consumption
+        """
+
+        self.armlee_start_qpos, self.armree_start_qpos = armlee_start_qpos, armree_start_qpos
+        self.left_identifier_list, self.right_identifier_list = left_identifier_list, right_identifier_list
+
+        self.left_ee_trigger, self.right_ee_trigger = [], []
+        self.left_ee_qpos_list, self.right_ee_qpos_list = [], []
+        for idx, ee_qpos in left_identifier_list:
+            self.left_ee_trigger.append(idx)
+            self.left_ee_qpos_list.append(ee_qpos)
+        for idx, ee_qpos in right_identifier_list:
+            self.right_ee_trigger.append(idx)
+            self.right_ee_qpos_list.append(ee_qpos)
+
+    def _build_index_map(self, orig_spans, new_spans):
         """
         orig_spans/new_spans: [(os, oe), ...] / [(ns, ne), ...]，半开区间
         返回: old2new 映射字典
@@ -577,7 +667,8 @@ class Coordination:
                 new_idx = ns + new_local
                 old2new[old] = new_idx
         return old2new
-                    
+    
+
 
     def _tune_velocity_with_EE(self, px, py):
         px = np.floor(np.array(px) + 0.5).astype(int)
@@ -589,20 +680,19 @@ class Coordination:
             py_T = py[i+1] - py[i]
             T = np.maximum(px_T, py_T)
             duration[i] = T
-        self.logger.info(f"Duration: {duration}")
         left_traj = self.left_traj.copy()
         right_traj = self.right_traj.copy()
-        self.logger.info(f"px {px}")
-        self.logger.info(f"py {py}")
+
         def modify_traj(left_traj, right_traj, px, py, duration):
             x_traj, y_traj = [], []
+            x_traj.append(np.atleast_2d(right_traj[0, :]))
+            y_traj.append(np.atleast_2d(left_traj[0, :]))
             x_orig_duration, y_orig_duration = [], []
             x_new_duration, y_new_duration = [], []
             for i in range(len(duration)):
-                # TODO: if one arm is purely waiting, px[i+1]-px[i] will be 0 which will cause a fault at duration[i]/(px[i+1]-px[i])
                 ratio_x = duration[i]/(px[i+1]-px[i])
                 ratio_y = duration[i]/(py[i+1]-py[i])
-                self.logger.info(f"ratio_x: {ratio_x}, ratio_y: {ratio_y}")
+
                 x_start_idx = self.right_idx_chain[px[i]]
                 x_end_idx = self.right_idx_chain[px[i+1]]
                 x_len = x_end_idx - x_start_idx
@@ -614,35 +704,23 @@ class Coordination:
                         insert_row = right_traj[x_start_idx,:]
                         x_interpolated_traj = np.tile(insert_row, (int(self.idx_increment*duration[i]),1))
                     else:
-                        # time_orig = np.linspace(0, 1, x_len)
-                        # time_target = np.linspace(0, 1, int(self.idx_increment*duration[i]))
-                        self.logger.info(f"x_len: {x_len}")
                         if x_len == 1:
                             x_len = 2
                             x_end_idx += 1
                         time_orig = np.linspace(0, x_len, x_len)
                         time_target = np.linspace(0, x_len, int(self.idx_increment*duration[i]))
-                        self.logger.info(time_orig)
-                        self.logger.info(time_target)
-                        # self.logger.info(f"right_traj: {right_traj}")
-                        # self.logger.info(f"right_traj[x_start_idx:x_end_idx,:]: {right_traj[x_start_idx:x_end_idx, :]}")
                         x_interpolated_traj = np.zeros((int(self.idx_increment*duration[i]),7))
                         for dim in range(7):
                             interp_func = interp1d(time_orig, right_traj[x_start_idx:x_end_idx, dim], kind="linear")
                             x_interpolated_traj[:, dim] = interp_func(time_target)
-                        # TODO: find the trajectory segment and check if there is an ee waiting part
-
                 else:
                     x_interpolated_traj = right_traj[x_start_idx:x_end_idx,:]
-
 
                 if not np.isclose(ratio_y, 1.0):
                     if y_len == 0:
                         insert_row = left_traj[y_start_idx, :]
                         y_interpolated_traj = np.tile(insert_row, (int(self.idx_increment*duration[i]),1))
                     else:
-                        # time_orig = np.linspace(0, 1, y_len)
-                        # time_target = np.linspace(0, 1, int(self.idx_increment*duration[i]))
                         if y_len == 1:
                             y_len = 2
                             y_end_idx += 1
@@ -662,8 +740,8 @@ class Coordination:
                 x_traj.append(x_interpolated_traj)
                 y_traj.append(y_interpolated_traj)
 
-            left_old2new = self.build_index_map(y_orig_duration, y_new_duration)
-            right_old2new = self.build_index_map(x_orig_duration, x_new_duration)
+            left_old2new = self._build_index_map(y_orig_duration, y_new_duration)
+            right_old2new = self._build_index_map(x_orig_duration, x_new_duration)
             left_ee_trigger_new = [left_old2new[idx] for idx in self.left_ee_trigger if idx in left_old2new]
             right_ee_trigger_new = [right_old2new[idx] for idx in self.right_ee_trigger if idx in right_old2new]
             self.logger.info(f"left_ee_trigger_new: {left_ee_trigger_new}")
@@ -678,8 +756,11 @@ class Coordination:
         self.logger.info(f"Modified left trajectory length: {modified_left.shape[0]}")
         self.logger.info(f"Modified right trajectory length: {modified_right.shape[0]}")
         
-        self.modified_left_ee_trigger = modified_left_ee_trigger
-        self.modified_right_ee_trigger = modified_right_ee_trigger
+        self.modified_left_ee_trigger, self.modified_right_ee_trigger = [], []
+        for i in range(len(modified_left_ee_trigger)):
+            self.modified_left_ee_trigger.append((modified_left_ee_trigger[i], self.left_ee_qpos_list[i]))
+        for i in range(len(modified_right_ee_trigger)):
+            self.modified_right_ee_trigger.append((modified_right_ee_trigger[i], self.right_ee_qpos_list[i]))
 
         return modified_left, modified_right
 
@@ -687,9 +768,11 @@ class Coordination:
         ompl_planner = GridRRT(self.grid_map, self.left_traj, self.right_traj, self.left_idx_chain, self.right_idx_chain,
                                self.fcl_checker, self.planner_pin, self.use_ee)
         ompl_planner.set_head_body(self.head_qpos, self.body_qpos)
-        path, planning_time, original_path = ompl_planner.plan(planning_time=2.0)
-        new_grid_map = ompl_planner.get_grid_map()
-        flag_map = ompl_planner.get_flag_map()
+        ompl_planner.set_ee_identifier(self.armlee_start_qpos, self.armree_start_qpos,
+                                       self.left_identifier_list, self.right_identifier_list)
+        path, planning_time, original_path = ompl_planner.plan_with_ee(planning_time=2.0)
+        # new_grid_map = ompl_planner.get_grid_map()
+        # flag_map = ompl_planner.get_flag_map()
 
         px, py, ori_px, ori_py = [], [], [], []
         for i in range(len(original_path)):
