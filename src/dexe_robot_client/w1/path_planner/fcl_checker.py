@@ -58,6 +58,7 @@ class FCLChecker:
         self.grasp_objects_manager = fcl.DynamicAABBTreeCollisionManager()
 
         self.grasp_objects_dict = {}
+        self.obstacles_dict = {}
 
 
         self.use_ee = False
@@ -82,6 +83,8 @@ class FCLChecker:
         self._create_robot_manager()
 
         self.visualize = False
+
+        # self.temp_obstacle = []
 
     def _obj2fcl(self, obj_path):
         """
@@ -179,7 +182,7 @@ class FCLChecker:
         self.body_manager.update()
         
 
-    def add_cube_obstacle(self, center: np.ndarray, size: np.ndarray, quaternion: np.ndarray = np.array([1, 0, 0, 0])):
+    def add_cube_obstacle(self, center: np.ndarray, size: np.ndarray, quaternion: np.ndarray = np.array([1, 0, 0, 0]), name: str = None):
         """
         Add a cube obstacle to the FCL environment
 
@@ -191,6 +194,11 @@ class FCLChecker:
         Notes:
             - The center and quaternion are based on the robot base link frame.
         """
+
+        if name in self.obstacles_dict:
+            self.logger.error(f"Adding Obstacle failed: obstacle with name {name} already exists")
+            return False
+
         box = fcl.Box(size[0], size[1], size[2])
         q_scipy = np.array([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
         rot_mat = R.from_quat(q_scipy).as_matrix()
@@ -200,6 +208,8 @@ class FCLChecker:
         self.obstacles.append(fcl_obj)
         self.obstacle_manager.registerObject(fcl_obj)
         self.obstacle_manager.setup()
+
+        self.obstacles_dict[name] = fcl_obj
 
         # for visualize
         if self.visualize:
@@ -211,7 +221,7 @@ class FCLChecker:
             self.obstacle_mesh_list.append(vis_box)
 
 
-    def add_sphere_obstacle(self, center: np.ndarray, radius: float, quaternion: np.ndarray = np.array([1, 0, 0, 0])):
+    def add_sphere_obstacle(self, center: np.ndarray, radius: float, quaternion: np.ndarray = np.array([1, 0, 0, 0]), name: str = None):
         """
         Add a sphere obstacle to the FCL environment
 
@@ -223,6 +233,11 @@ class FCLChecker:
         Notes:
             - The center and quaternion are based on the robot base link frame.
         """
+
+        if name in self.obstacles_dict:
+            self.logger.error(f"Adding Obstacle failed: obstacle with name {name} already exists")
+            return False
+
         sphere = fcl.Sphere(radius)
         q_scipy = np.array([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
         rot_mat = R.from_quat(q_scipy).as_matrix()
@@ -233,6 +248,8 @@ class FCLChecker:
         self.obstacle_manager.registerObject(fcl_obj)
         self.obstacle_manager.setup()
 
+        self.obstacles_dict[name] = fcl_obj
+
         # for visualize
         if self.visualize:
             vis_trans = np.eye(4)
@@ -242,7 +259,7 @@ class FCLChecker:
             vis_sphere.apply_transform(vis_trans)
             self.obstacle_mesh_list.append(vis_sphere)
 
-    def add_mesh_obstacle(self, mesh_path: str, center: np.ndarray, quaternion: np.ndarray = np.array([1, 0, 0, 0])):
+    def add_mesh_obstacle(self, mesh_path: str, center: np.ndarray, quaternion: np.ndarray = np.array([1, 0, 0, 0]), name: str = None):
         """
         Add a mesh obstacle to the FCL environment
 
@@ -254,6 +271,11 @@ class FCLChecker:
         Notes:
             - The center and quaternion are based on the robot base link frame.
         """
+
+        if name in self.obstacles_dict:
+            self.logger.error(f"Adding Obstacle failed: obstacle with name {name} already exists")
+            return False
+
         mesh = trimesh.load(mesh_path, force='mesh')
         vertices = np.asarray(mesh.vertices, dtype=np.float64)
         triangles = np.asarray(mesh.faces, dtype=np.int32)
@@ -273,14 +295,86 @@ class FCLChecker:
         self.obstacle_manager.registerObject(fcl_obj)
         self.obstacle_manager.setup()
 
+        self.obstacles_dict[name] = fcl_obj
+
         # for visualize
         if self.visualize:
             vis_trans = np.eye(4)
             vis_trans[:3, 3] = center
             vis_trans[:3, :3] = rot_mat
             vis_mesh = deepcopy(mesh)
+            # self.temp_obstacle.append(deepcopy(mesh))
             vis_mesh.apply_transform(vis_trans)
             self.obstacle_mesh_list.append(vis_mesh)
+            
+
+
+    def transform_obstacle(self, name: str, new_center: np.ndarray, new_quaternion: np.ndarray):
+        """
+        Transform an existing obstacle to a new position and orientation
+
+        Args:
+            name (str): The name of the obstacle to be transformed
+            new_center (nd.array, shape=(3, )): The new center position of the obstacle
+            new_quaternion (nd.array, shape=(4, )): The new orientation of the obstacle in (w, x, y, z) format
+
+        Notes:
+            - The new center and quaternion are based on the robot base link frame.
+        """
+
+        if name not in self.obstacles_dict:
+            self.logger.error(f"The obstacle with name {name} does not exist")
+            return False
+        fcl_obj = self.obstacles_dict[name]
+        q_scipy = np.array([new_quaternion[1], new_quaternion[2], new_quaternion[3], new_quaternion[0]])
+        rot_mat = R.from_quat(q_scipy).as_matrix()
+        translation = new_center.reshape(3, 1).astype(np.float64)
+        fcl_transform = fcl.Transform(rot_mat, translation)
+        fcl_obj.setTransform(fcl_transform)
+
+        self.obstacle_manager.update()
+
+        # if self.visualize:
+        #     vis_trans = np.eye(4)
+        #     vis_trans[:3, 3] = new_center
+        #     vis_trans[:3, :3] = rot_mat
+        #     vis_mesh = deepcopy(self.temp_obstacle[-1])
+        #     vis_mesh.apply_transform(vis_trans)
+        #     self.obstacle_mesh_list.append(vis_mesh)
+
+        return True
+
+    def disable_obstacle(self, name: str):
+        """
+        Disable an exsiting obstacle from collision checking
+
+        Args:
+            name (str): The name of the obstacle to be disabled
+        """
+
+        if name not in self.obstacles_dict:
+            self.logger.error(f"The obstacle with name {name} does not exist")
+            return False
+        fcl_obj = self.obstacles_dict[name]
+        self.obstacle_manager.unregisterObject(fcl_obj)
+        self.obstacle_manager.setup()
+        return True
+
+    def enable_obstacle(self, name: str):
+        """
+        Enable an exsiting obstacle for collision checking
+
+        Args:
+            name (str): The name of the obstacle to be enabled
+        """
+        if name not in self.obstacles_dict:
+            self.logger.error(f"The obstacle with name {name} does not exist")
+            return False
+        fcl_obj = self.obstacles_dict[name]
+        self.obstacle_manager.registerObject(fcl_obj)
+        self.obstacle_manager.setup()
+        return True
+
 
     def _save_point_cloud(self, point_cloud):
         """ Save the point cloud used to visualized in dexsim """
@@ -405,6 +499,8 @@ class FCLChecker:
         self.grasp_objects_dict.clear()
         self.grasp_objects_dict.update(temp_grasp_objects_dict)
 
+        self.obstacles_dict.clear()
+
 
 
         with open(json_path, 'r') as f:
@@ -414,24 +510,27 @@ class FCLChecker:
         if obstacle_cfg is not None:
             for obj in obstacle_cfg:
                 if obj["shape"]["shape_type"] == "box":
+                    name = obj["name"]
                     center = np.array(obj["pose"])[:3]
                     size = np.array(obj["shape"]["raw_data"])
                     quaternion = np.array(obj["pose"])[3:]
-                    self.add_cube_obstacle(center, size, quaternion)
+                    self.add_cube_obstacle(center, size, quaternion, name)
                     self.logger.info(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with size: {size} and name: {obj['name']}")
                 if obj["shape"]["shape_type"] == "sphere":
+                    name = obj["name"]
                     center = np.array(obj["pose"])[:3]
                     radius = obj["shape"]["raw_data"][0]
                     quaternion = np.array(obj["pose"])[3:]
-                    self.add_sphere_obstacle(center, radius, quaternion)
+                    self.add_sphere_obstacle(center, radius, quaternion, name)
                     self.logger.info(f"Successfully add a {obj['shape']['shape_type']} obstacle at center: {center}, with radius: {radius} and name: {obj['name']}")
                 if obj["shape"]["shape_type"] == "mesh":
+                    name = obj["name"]
                     obj_mesh_path = obj["shape"]["raw_data"]
                     if not os.path.exists(obj_mesh_path):
                         raise ValueError(f"Obstacle mesh path {obj_mesh_path} does not exist.")
                     center = np.array(obj["pose"])[:3]
                     quaternion = np.array(obj["pose"])[3:]
-                    self.add_mesh_obstacle(obj_mesh_path, center, quaternion)
+                    self.add_mesh_obstacle(obj_mesh_path, center, quaternion, name)
                     self.logger.info(f"Successfully add a {obj['shape']['shape_type']} obstacle with mesh path: {obj_mesh_path} at center: {center} and name: {obj['name']}")
 
         # Load environment grasp objects

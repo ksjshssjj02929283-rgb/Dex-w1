@@ -9,8 +9,7 @@ from scipy.spatial.transform import Rotation as R
 from IPython import embed
 from dexe_robot_client.common.config import DATA_DIR
 
-# 回原点
-print("回原点")
+# 回原点 + 左手抓胶囊，右手拿杯子 + 左手放胶囊，右手放杯子 + 准备下压把手
 task_dict1 = {
             "torso": [
                 [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
@@ -21,129 +20,40 @@ task_dict1 = {
                 ],
             "head_speed_ratio": [1.],
             "left_arm": [
-                [-77.08, 260.39, 328.83, 91.77, 86.44, 170.82]
-                ],
-            "left_arm_speed_ratio": [1.],
-            "left_arm_ee": [
-                [0, [0, 0, 0, 0, 0, 0], 0]
-                ],
-            "right_arm": [
-                [101.45, 242.18, 331.16, 64.6, -89.06, -149.32]
-                ],
-            "right_arm_speed_ratio": [1.],
-            "right_arm_ee": [
-                [0, [0, 0, 0, 0, 0, 0], 0]
-                ]
-            }
-
-# 左手抓胶囊，右手拿杯子
-task_dict2 = {
-            "torso": [
-                [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
-                ],
-            "torso_speed_ratio": [1.],
-            "head": [
-                [0.0, -0.6632251157578453]
-                ],
-            "head_speed_ratio": [1.],
-            "left_arm": [
-                [-244.76, 300.23, 293.88, -175.98, 62.95, -61.24]
-                ],
-            "left_arm_speed_ratio": [1.],
-            "left_arm_ee": [
-                [0.5, [45, 49, 50, 50, 50, 50], 0.5]
-                ],
-            "right_arm": [
-                [276.97, 299.58, 310.68, -92.38, -17.4, 5.32]
-                ],
-            "right_arm_speed_ratio": [1.],
-            "right_arm_ee": [
-                [0.5, [100, 50, 40, 40, 40, 40], 0.5]
-                ]
-            }
-
-# 左手放胶囊，右手放杯子
-task_dict3 = {
-            "torso": [
-                [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
-                ],
-            "torso_speed_ratio": [1.],
-            "head": [
-                [0.0, -0.6632251157578453]
-                ],
-            "head_speed_ratio": [1.],
-            "left_arm": [
-                [-17.02, 374.27, -4.97, -153.92, 2.8, -95.08]
-                ],
-            "left_arm_speed_ratio": [1.],
-            "left_arm_ee": [
-                [0.5,  [45, 49, 50, 50, 50, 50], 0.5]
-                ],
-            "right_arm": [
-                # [290.03, 222.24, 56.36, -147.74, 7.29, 7.37]
-                [297.78, 305.9, 25.68, -150.84, 11.48, -6.06]
-                ],
-            "right_arm_speed_ratio": [1.],
-            "right_arm_ee": [
-                [0.5, [100, 50, 40, 40, 40, 40], 0.5]
-                ]
-            }
-
-# 准备下压把手
-task_dict4 = {
-            "torso": [
-                [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
-                ],
-            "torso_speed_ratio": [1.],
-            "head": [
-                [0.0, -0.6632251157578453]
-                ],
-            "head_speed_ratio": [1.],
-            "left_arm": [
-                [-17.02, 374.27, -4.97, -153.92, 2.8, -95.08]
-                ],
-            "left_arm_speed_ratio": [1.],
-            "left_arm_ee": [
-                [0.5,  [0, 0, 0, 0, 0, 0], 0.5]
-                ],
-            "right_arm": [
-                [290.03, 222.24, 56.36, -147.74, 7.29, 7.37]
-                ],
-            "right_arm_speed_ratio": [1.],
-            "right_arm_ee": [
-                [0.5, [0, 0, 0, 0, 0, 0], 0.5]
-                ]
-            }
-
-
-task_dict5 = {
-            "torso": [
-                [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
-                ],
-            "torso_speed_ratio": [1.],
-            "head": [
-                [0.0, -0.6632251157578453]
-                ],
-            "head_speed_ratio": [1.],
-            "left_arm": [
+                [-77.08, 260.39, 328.83, 91.77, 86.44, 170.82],
+                [-244.76, 300.23, 293.88, -175.98, 62.95, -61.24],
+                [-17.02, 374.27, -4.97, -153.92, 2.8, -95.08],
+                [-17.02, 374.27, -4.97, -153.92, 2.8, -95.08],
                 [17.76, 458.95, 53.88, -131.85, 11.79, -81.07]
                 ],
-            "left_arm_speed_ratio": [1.],
+            "left_arm_speed_ratio": [1., 1., 1., 1., 1.],
             "left_arm_ee": [
+                [0, [0, 0, 0, 0, 0, 0], 2],
+                [0.5, [45, 49, 50, 50, 50, 50], 0.5],
+                [0.5,  [45, 49, 50, 50, 50, 50], 0.5],
+                [0.5,  [0, 0, 0, 0, 0, 0], 0.5],
                 [0.5,  [0, 0, 0, 0, 0, 0], 0.5]
                 ],
             "right_arm": [
+                [101.45, 242.18, 331.16, 64.6, -89.06, -149.32],
+                [276.97, 299.58, 310.68, -92.38, -17.4, 5.32],
+                [297.78, 305.9, 25.68, -150.84, 11.48, -6.06],
+                [290.03, 222.24, 56.36, -147.74, 7.29, 7.37],
                 [3.76, 413.07, 82.77, -116.84, 11.57, 38.77]
                 ],
-            "right_arm_speed_ratio": [1.],
+            "right_arm_speed_ratio": [1., 1., 1., 1., 1.],
             "right_arm_ee": [
+                [0, [0, 0, 0, 0, 0, 0], 2],
+                [0.5, [100, 50, 40, 40, 40, 40], 0.5],
+                [0.5, [100, 50, 40, 40, 40, 40], 0.5],
+                [0.5, [0, 0, 0, 0, 0, 0], 0.5],
                 [0.5, [0, 0, 0, 0, 0, 0], 0.5]
                 ]
             }
 
 # 调用move_joint
 # 下压把手
-task_dict6 = {
+task_dict2 = {
             "torso": [
                 [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
                 ],
@@ -170,7 +80,7 @@ task_dict6 = {
 
 # 重载把手下压环境
 # 准备拿咖啡
-task_dict7 = {
+task_dict3 = {
             "torso": [
                 [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
                 ],
@@ -199,11 +109,11 @@ task_dict7 = {
 
 
 
-def test_single_task(task_dict=None, load_env = True, fcl_env_path = None, planner_env_path = None):
+def test_multiple_task(task_dict=None, load_env = True, fcl_env_path = None, planner_env_path = None):
     if load_env:
         w1_manager.load_fcl_environment(fcl_env_path)
         w1_manager.load_planner_environment(planner_env_path)
-    w1_manager.move_dual_arm_single_task(task_dict=task_dict,
+    w1_manager.move_dual_arm_multiple_task(task_dict=task_dict,
                                         speed_ratio=1)
 
 def move_linear_full_body(task_dict=None):
@@ -241,36 +151,17 @@ if __name__ == "__main__":
     planner_downward_env_path = f"{DATA_DIR}/environment/expanded_coffee_demo_downward.json"
     planner_upward_env_path = f"{DATA_DIR}/environment/expanded_coffee_demo_upward.json"
     
+
     # 回原点
-    print("回原点， 加载把手上提的环境")
-    test_single_task(task_dict=task_dict1, load_env=True, fcl_env_path=fcl_upward_env_path, planner_env_path=planner_upward_env_path)
-    # input("Press Enter to continue to next test...")
-    # 左手抓胶囊，右手拿杯子
-    print("左手抓胶囊，右手拿杯子")
-    test_single_task(task_dict=task_dict2, load_env=False)
-    # input("Press Enter to continue to next test...")
-    # 左手放胶囊，右手放杯子
-    print("左手放胶囊，右手放杯子")
-    test_single_task(task_dict=task_dict3, load_env=False)
-    input("Press Enter to continue to next test...")    
-    # 准备下压把手
-    print("准备下压把手")
-    test_single_task(task_dict=task_dict4, load_env=False)
-    # input("Press Enter to continue to next test...")
-    test_single_task(task_dict=task_dict5, load_env=False)
-    # input("Press Enter to continue to next test...")
-    # 下压把手  
-    print("下压把手， 调用move_joint_full_body")  
-    move_linear_full_body(task_dict=task_dict6)
-    # input("Press Enter to continue to next test...")
+    print("回原点 + 左手抓胶囊，右手拿杯子 + 左手放胶囊，右手放杯子 + 准备下压把手， 加载把手上提的环境")
+    test_multiple_task(task_dict=task_dict1, load_env=True, fcl_env_path=fcl_upward_env_path, planner_env_path=planner_upward_env_path)
+    # 下压把手
+    print("下压把手")
+    move_linear_full_body(task_dict=task_dict2)
     # 重载把手下压环境
     # 准备拿咖啡
-    # print("准备拿咖啡, 重载把手下压环境")   
-    test_single_task(task_dict=task_dict7, load_env=True, fcl_env_path=fcl_downward_env_path, planner_env_path=planner_downward_env_path)
-    # input("Press Enter to continue to next test...")
-
-       
-
+    print("重载把手下压环境， 准备拿咖啡")
+    test_multiple_task(task_dict=task_dict3, load_env=True, fcl_env_path=fcl_downward_env_path, planner_env_path=planner_downward_env_path)
 
     embed()
 
