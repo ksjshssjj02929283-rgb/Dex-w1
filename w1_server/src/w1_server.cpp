@@ -186,6 +186,16 @@ void RobotServer::TorqueControlThreadFunc()
                 raw_measurement.position[i] = feedback_data.position[i];
                 raw_measurement.velocity[i] = feedback_data.velocity[i];
                 raw_measurement.effort[i] = feedback_data.torque[i];
+                // 检测力矩限制是否达到阈值
+                if (feedback_data.torque[i] >= robot_control_.positive_torque_limit[i] * 0.9 ||
+                    feedback_data.torque[i] <= -robot_control_.negative_torque_limit[i] * 0.9)
+                {
+                    is_torque_limit_reached_[i] = true;
+                }
+                else
+                {
+                    is_torque_limit_reached_[i] = false;
+                }
                 raw_measurement.time_point = TimePointSystem::Now();
             }
             this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
@@ -236,7 +246,7 @@ void RobotServer::TorqueControlThreadFunc()
                     // 位置等于反馈位置
                     if (manager_buffers_.joint_measurement->PeekLatest(&manager_measurement))
                     {
-                        if (i >= first_arm_joint_index_)
+                        if (i >= first_arm_joint_index_ && is_torque_limit_reached_[i])
                         {
                             manager_measurement.q_desired_pre[i] = feedback_data.position[i];
                         }
@@ -292,7 +302,7 @@ void RobotServer::PublishFeedback()
     {
         for (int i = 0; i < ndof_robot; ++i)
         {
-            feedback_msg.name[i] = ecat_joint_name[i];
+            feedback_msg.name[i] = ecat_joint_name_[i];
             feedback_msg.position[i] = raw_measurement.position[i];
             feedback_msg.velocity[i] = raw_measurement.velocity[i];
             feedback_msg.effort[i] = raw_measurement.effort[i];
@@ -313,7 +323,7 @@ void RobotServer::PublishFeedback()
 
     for (int i = 0; i < ndof_robot; ++i)
     {
-        limit_msg.name[i] = ecat_joint_name[i];
+        limit_msg.name[i] = ecat_joint_name_[i];
         limit_msg.positive_velocity_limit[i] = robot_control_.positive_velocity_limit[i];
         limit_msg.negative_velocity_limit[i] = robot_control_.negative_velocity_limit[i];
         limit_msg.positive_torque_limit[i] = robot_control_.positive_torque_limit[i];
@@ -347,7 +357,7 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg)
     {
         for (int j = 0; j < ndof_robot; ++j)
         {
-            if (ecat_joint_name[j] == msg->name[i])
+            if (ecat_joint_name_[j] == msg->name[i])
             {
                 robot_control_.positive_velocity_limit[j] = msg->positive_velocity_limit[i];
                 robot_control_.negative_velocity_limit[j] = msg->negative_velocity_limit[i];
@@ -356,8 +366,8 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg)
                 if (std::abs(robot_control_temp.position[j] - msg->position[i]) > position_diff_threshold_ && position_valid)
                 {
                     RCLCPP_WARN(this->get_logger(), "Control command for joint %s rejected: position difference %.4f exceeds threshold %.4f",
-                                ecat_joint_name[j].c_str(), std::abs(robot_control_temp.position[j] - msg->position[i]), position_diff_threshold_);
-                    LOG_CRIT << "Control command for joint " << ecat_joint_name[j] << " rejected: position difference "
+                                ecat_joint_name_[j].c_str(), std::abs(robot_control_temp.position[j] - msg->position[i]), position_diff_threshold_);
+                    LOG_CRIT << "Control command for joint " << ecat_joint_name_[j] << " rejected: position difference "
                              << std::abs(robot_control_temp.position[j] - msg->position[i]) << " exceeds threshold " << position_diff_threshold_;
                     position_valid = false;
                 }
@@ -398,13 +408,13 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
     {
         for (int j = 0; j < ndof_robot; ++j)
         {
-            if (ecat_joint_name[j] == msg->name[i])
+            if (ecat_joint_name_[j] == msg->name[i])
             {
                 if (std::abs(robot_control_temp.position[j] - msg->position[i]) > position_diff_threshold_ && position_valid)
                 {
                     RCLCPP_WARN(this->get_logger(), "Control command for joint %s rejected: position difference %.4f exceeds threshold %.4f",
-                                ecat_joint_name[j].c_str(), std::abs(robot_control_temp.position[j] - msg->position[i]), position_diff_threshold_);
-                    LOG_CRIT << "Control command for joint " << ecat_joint_name[j] << " rejected: position difference "
+                                ecat_joint_name_[j].c_str(), std::abs(robot_control_temp.position[j] - msg->position[i]), position_diff_threshold_);
+                    LOG_CRIT << "Control command for joint " << ecat_joint_name_[j] << " rejected: position difference "
                              << std::abs(robot_control_temp.position[j] - msg->position[i]) << " exceeds threshold " << position_diff_threshold_;
                     position_valid = false;
                 }

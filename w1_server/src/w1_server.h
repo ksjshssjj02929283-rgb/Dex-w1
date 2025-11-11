@@ -59,14 +59,15 @@ class RobotServer : public RobotServerBase
 
     Int64 streaming_request_id_{-1};
     RobotControl robot_control_;
-    const std::string ecat_joint_name[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",    "NECK2",   "LEFT_J1",
+    bool is_torque_limit_reached_[ndof_robot] = {false}; // 达到力矩限制标志位
+    const std::string ecat_joint_name_[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",    "NECK2",   "LEFT_J1",
                                                      "LEFT_J2",  "LEFT_J3",  "LEFT_J4",  "LEFT_J5",  "LEFT_J6",  "LEFT_J7", "RIGHT_J1",
                                                      "RIGHT_J2", "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
     struct
     {
-        double positive_limit_Nm[20]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0,
+        double positive_limit_Nm[ndof_robot]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0,
                                      10.0,  10.0,  10.0,  25.0,  25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
-        double negative_limit_Nm[20]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0,
+        double negative_limit_Nm[ndof_robot]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0,
                                      10.0,  10.0,  10.0,  25.0,  25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
     } torque_limit_;  // 关节力矩限制参数默认值, 单位: Nm
 
