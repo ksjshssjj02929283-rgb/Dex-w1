@@ -70,19 +70,15 @@ class RobotServer : public RobotServerBase
                                      10.0,  10.0,  10.0,  25.0,  25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
     } torque_limit_;  // 关节力矩限制参数默认值, 单位: Nm
 
-    const int first_arm_joint_index_ = 6;  // 左臂第一个关节在整体关节数组中的索引
-    std::shared_ptr<ForceSensorReader> primary_sensor_;
-    bool primary_sensor_ready_ = false;
+    const int first_arm_joint_index_ = 6;           // 左臂第一个关节在整体关节数组中的索引
+    const double position_diff_threshold_ = 0.175;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
 
-    std::shared_ptr<ForceSensorReader> secondary_sensor_;
-    bool secondary_sensor_ready_ = false;
-
-    // 低通滤波状态与参数（用于传感器数据）
-    Eigen::Vector<double, 6> sensor_filtered_ = Eigen::Vector<double, 6>::Zero();
-    double sensor_lpf_alpha_ = 1.0;  // alpha: 越小越平滑（0..1）
-    bool sensor_filter_initialized_ = false;
-
+    // 力传感器相关
     Vector3d sensor_force_;
+    std::shared_ptr<ForceSensorReader> primary_sensor_;
+    std::shared_ptr<ForceSensorReader> secondary_sensor_;
+    bool primary_sensor_ready_ = false;
+    bool secondary_sensor_ready_ = false;
 
     void InitParamConfig();  // 初始化/读写 torque_limit_ 的 JSON 配置
 };

@@ -58,7 +58,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
     }
     runtime_.streaming_finished = latest_cmd.streaming_finished || is_timeout;
 
-    if(no_ruckig_mode_)
+    if (no_ruckig_mode_)
     {
         // 直接输出最新命令作为关节命令
         for (auto i = 0; i < ndof_robot; i++)
@@ -74,9 +74,10 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             command_finished_time_ = TimePointSystem::Now();
         }
         const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold) ||
-                    ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > StreamingCommandTimeout);
+                                   ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > StreamingCommandTimeout);
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
-        return runtime_.streaming_finished && robot_stopped? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;    }
+        return runtime_.streaming_finished && robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
+    }
 
     // 检测输入是否更新
     bool target_updated = true;
@@ -129,9 +130,9 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             command_finished_time_ = TimePointSystem::Now();
         }
         const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold) ||
-                    ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > StreamingCommandTimeout);
+                                   ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > StreamingCommandTimeout);
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
-        return runtime_.streaming_finished && robot_stopped? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
+        return runtime_.streaming_finished && robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
     }
     else
     {
@@ -149,7 +150,7 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     SetMotionGroup(move_request.motion_group);
 
     // 是否为无Ruckig模式
-    if(move_request.optional_mode.has_value())
+    if (move_request.optional_mode.has_value())
     {
         no_ruckig_mode_ = (bool)move_request.optional_mode.value();
     }
@@ -177,7 +178,7 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     // 记录请求开始时间（用于判断没有收到任何流式命令时的超时）, 重置命令完成时间
     request_start_time_ = TimePointSystem::Now();
     command_finished_time_ = TimePointSystem::Invalid();
-    
+
     return true;
 }
 

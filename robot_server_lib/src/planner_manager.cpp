@@ -350,6 +350,11 @@ RequestResponse PlannerManager::OnRequestStateRunning()
     }
     }
     current_planner_->episode_index = time_meta.episode_index;
+    // 如果进入Running时为拖动模式, 强制将拖拽模式切换为位置模式 Force switch drag mode to position mode
+    if (robot_property_.run_mode == RunMode::Drag)
+    {
+        robot_property_.run_mode = RunMode::Position;
+    }
     current_planner_->SetRobotProperty(robot_property_);
     current_planner_->ResetForNewTrajectory(request, measurement, time_meta);
     response.re_run = false;

@@ -99,6 +99,7 @@ void RobotServerBase::PublishThreadFunc()
 {
     JointRawMeasurement raw_measurement;
     Eigen::VectorXd ee_pose;
+    PlannerManagerCommand planner_cmd{};
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok())
     {
@@ -106,8 +107,9 @@ void RobotServerBase::PublishThreadFunc()
 
         // Publish /feedback/robot_server_state
         std_msgs::msg::String robot_server_state_msg;
-        if (is_robot_ready_ && this->robot_buffers_.joint_raw_measurement->PeekLatest(&raw_measurement) &&
-            this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose))
+        if (this->robot_buffers_.joint_raw_measurement->PeekLatest(&raw_measurement) &&
+            this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose) &&
+            this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd))  // just to ensure there is at least one command
         {
             std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(raw_measurement.position);
             std::ostringstream joint_velocity_ss = utils::VectorToJsonArrayString(raw_measurement.velocity);
@@ -115,13 +117,14 @@ void RobotServerBase::PublishThreadFunc()
             std::ostringstream joint_sensor_wrench_ss = utils::VectorToJsonArrayString(raw_measurement.sensor_wrench);
             std::ostringstream ee_pose_ss = utils::VectorToJsonArrayString(ee_pose);
             uint64_t timestamp_ns = this->now().nanoseconds();
-            robot_server_state_msg.data =
-                std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" + ToString(this->manager_state_) + "\"" +
-                ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
-                ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
-                ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) + ",\"ee_pose\":" + ee_pose_ss.str() +
-                ",\"force_sensor\":" + joint_sensor_wrench_ss.str() + ",\"joint_position\":" + joint_position_ss.str() +
-                ",\"joint_velocity\":" + joint_velocity_ss.str() + ",\"joint_torque\":" + joint_torque_ss.str() + "}";
+            robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" +
+                                          ToString(this->manager_state_) + "\"" + ",\"run_mode\":\"" + ToString(planner_cmd.robot_property.run_mode) +
+                                          "\"" + ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+                                          ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
+                                          ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
+                                          ",\"ee_pose\":" + ee_pose_ss.str() + ",\"force_sensor\":" + joint_sensor_wrench_ss.str() +
+                                          ",\"joint_position\":" + joint_position_ss.str() + ",\"joint_velocity\":" + joint_velocity_ss.str() +
+                                          ",\"joint_torque\":" + joint_torque_ss.str() + "}";
         }
         else
         {
@@ -149,6 +152,14 @@ Int64 RobotServerBase::MakeNewRequestID(RequestType type)
                      << ", latest_errordrop_id_: " << this->latest_report_id_.error_drop.load();
             return -1;
         }
+    }
+    if (type == RequestType::EnableDrag && this->manager_state_ == Status::Running)
+    {
+        RCLCPP_WARN(this->get_logger(), "Cannot change to Drag mode during Running state, request type: %s, manager state: %s", ToString(type),
+                    ToString(this->manager_state_));
+        LOG_CRIT << "Cannot change to Drag mode during Running state, request type: " << ToString(type)
+                 << ", manager state: " << ToString(this->manager_state_);
+        return -1;
     }
     return ++this->latest_received_id_;
 }
@@ -190,8 +201,6 @@ void RobotServerBase::MoveRobotCallback(const std::shared_ptr<rclcpp_action::Ser
 
 void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::SharedPtr streaming_msg)
 {
-    RCLCPP_INFO(this->get_logger(), "Request_id = %ld, streaming command Received, data size = %zu, streaming_finished = %s",
-                streaming_msg->request_id, streaming_msg->position.size(), streaming_msg->streaming_finished ? "true" : "false");
     std::ostringstream ss;
     for (const auto &v : streaming_msg->position)
     {
@@ -199,6 +208,8 @@ void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::Shared
     }
     if (streaming_msg->streaming_finished)
     {
+        RCLCPP_INFO(this->get_logger(), "Request_id = %ld, streaming command Received, data size = %zu, streaming_finished = %s",
+                    streaming_msg->request_id, streaming_msg->position.size(), streaming_msg->streaming_finished ? "true" : "false");
         LOG_INFO << "Request_id = " << streaming_msg->request_id << " Streaming, "
                  << "data size = " << streaming_msg->position.size() << ", "
                  << "streaming_finished = "

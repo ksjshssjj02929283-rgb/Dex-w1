@@ -342,70 +342,97 @@ Int64 RobotServer::StartStreaming(PlannerRequest planner_request)
 void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg)
 {
     auto robot_control_temp = robot_control_;
+    bool position_valid = true;
     for (size_t i = 0; i < msg->name.size(); ++i)
     {
         for (int j = 0; j < ndof_robot; ++j)
         {
             if (ecat_joint_name[j] == msg->name[i])
             {
-                robot_control_temp.position[j] = msg->position[i];
                 robot_control_.positive_velocity_limit[j] = msg->positive_velocity_limit[i];
                 robot_control_.negative_velocity_limit[j] = msg->negative_velocity_limit[i];
                 robot_control_.positive_torque_limit[j] = msg->positive_torque_limit[i];
                 robot_control_.negative_torque_limit[j] = msg->negative_torque_limit[i];
+                if (std::abs(robot_control_temp.position[j] - msg->position[i]) > position_diff_threshold_ && position_valid)
+                {
+                    RCLCPP_WARN(this->get_logger(), "Control command for joint %s rejected: position difference %.4f exceeds threshold %.4f",
+                                ecat_joint_name[j].c_str(), std::abs(robot_control_temp.position[j] - msg->position[i]), position_diff_threshold_);
+                    LOG_CRIT << "Control command for joint " << ecat_joint_name[j] << " rejected: position difference "
+                             << std::abs(robot_control_temp.position[j] - msg->position[i]) << " exceeds threshold " << position_diff_threshold_;
+                    position_valid = false;
+                }
+                robot_control_temp.position[j] = msg->position[i];
+
                 break;
             }
         }
     }
-    if (manager_state_ == Status::Idle)
+    // 仅当所有位置命令均有效时才启动或发送流式命令
+    if (position_valid)
     {
-        PlannerRequest planner_request;
-        planner_request.type = RequestType::StartJointStreaming;
-        MoveRequest move_request;
-        move_request.motion_group = MotionGroup::WholeBody;
-        planner_request.data = move_request;
-        streaming_request_id_ = StartStreaming(planner_request);
-    }
-    if (streaming_request_id_ != -1)
-    {
-        StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
-        streaming_msg->request_id = streaming_request_id_;
-        streaming_msg->streaming_finished = false;
-        streaming_msg->position = std::vector<float>(robot_control_temp.position, robot_control_temp.position + ndof_robot);
-        this->StreamingCommandCallback(streaming_msg);
+        if (manager_state_ == Status::Idle)
+        {
+            PlannerRequest planner_request;
+            planner_request.type = RequestType::StartJointStreaming;
+            MoveRequest move_request;
+            move_request.motion_group = MotionGroup::WholeBody;
+            planner_request.data = move_request;
+            streaming_request_id_ = StartStreaming(planner_request);
+        }
+        if (streaming_request_id_ != -1)
+        {
+            StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
+            streaming_msg->request_id = streaming_request_id_;
+            streaming_msg->streaming_finished = false;
+            streaming_msg->position = std::vector<float>(robot_control_temp.position, robot_control_temp.position + ndof_robot);
+            this->StreamingCommandCallback(streaming_msg);
+        }
     }
 }
 
 void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedPtr msg)
 {
     auto robot_control_temp = robot_control_;
+    bool position_valid = true;
     for (size_t i = 0; i < msg->name.size(); ++i)
     {
         for (int j = 0; j < ndof_robot; ++j)
         {
             if (ecat_joint_name[j] == msg->name[i])
             {
+                if (std::abs(robot_control_temp.position[j] - msg->position[i]) > position_diff_threshold_ && position_valid)
+                {
+                    RCLCPP_WARN(this->get_logger(), "Control command for joint %s rejected: position difference %.4f exceeds threshold %.4f",
+                                ecat_joint_name[j].c_str(), std::abs(robot_control_temp.position[j] - msg->position[i]), position_diff_threshold_);
+                    LOG_CRIT << "Control command for joint " << ecat_joint_name[j] << " rejected: position difference "
+                             << std::abs(robot_control_temp.position[j] - msg->position[i]) << " exceeds threshold " << position_diff_threshold_;
+                    position_valid = false;
+                }
                 robot_control_temp.position[j] = msg->position[i];
                 break;
             }
         }
     }
-    if (manager_state_ == Status::Idle)
+    // 所有关节位置均有效才发送
+    if (position_valid)
     {
-        PlannerRequest planner_request;
-        planner_request.type = RequestType::StartJointStreaming;
-        MoveRequest move_request;
-        move_request.motion_group = MotionGroup::WholeBody;
-        planner_request.data = move_request;
-        streaming_request_id_ = StartStreaming(planner_request);
-    }
-    if (streaming_request_id_ != -1)
-    {
-        StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
-        streaming_msg->request_id = streaming_request_id_;
-        streaming_msg->streaming_finished = false;
-        streaming_msg->position = std::vector<float>(robot_control_temp.position, robot_control_temp.position + ndof_robot);
-        this->StreamingCommandCallback(streaming_msg);
+        if (manager_state_ == Status::Idle)
+        {
+            PlannerRequest planner_request;
+            planner_request.type = RequestType::StartJointStreaming;
+            MoveRequest move_request;
+            move_request.motion_group = MotionGroup::WholeBody;
+            planner_request.data = move_request;
+            streaming_request_id_ = StartStreaming(planner_request);
+        }
+        if (streaming_request_id_ != -1)
+        {
+            StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
+            streaming_msg->request_id = streaming_request_id_;
+            streaming_msg->streaming_finished = false;
+            streaming_msg->position = std::vector<float>(robot_control_temp.position, robot_control_temp.position + ndof_robot);
+            this->StreamingCommandCallback(streaming_msg);
+        }
     }
 }
 
