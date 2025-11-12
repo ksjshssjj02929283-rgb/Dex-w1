@@ -198,21 +198,27 @@ class HybridPlanner:
         self.left_traj_max_vel = left_max_vel
         self.right_traj_max_vel = right_max_vel
 
-    def attach_object(self, obj_name: str, which_arm: str, flange_T_object: np.ndarray = None):
+    def attach_object(self, obj_name: str, which_arm: str, arm7_T_object: np.ndarray = None):
         if which_arm not in ['left', 'right']:
-            raise ValueError("which_arm must be either 'left' or 'right'.")
+            self.logger.error("which_arm must be either 'left' or 'right'.")
+            return False
         if which_arm == "left":
-            self.fcl_checker.attach_object_arml(obj_name=obj_name, flange_T_object=flange_T_object)
+            res_attach = self.fcl_checker.attach_object_arml(obj_name=obj_name, arml7_T_object=arm7_T_object)
+            return res_attach
         if which_arm == "right":
-            self.fcl_checker.attach_object_armr(obj_name=obj_name, flange_T_object=flange_T_object)
-
+            res_attach = self.fcl_checker.attach_object_armr(obj_name=obj_name, armr7_T_object=arm7_T_object)
+            return res_attach
+        
     def detach_object(self, obj_name: str, which_arm: str, arm7_transform: np.ndarray):
         if which_arm not in ['left', 'right']:
-            raise ValueError("which_arm must be either 'left' or 'right'.")
+            self.logger.error("which_arm must be either 'left' or 'right'.")
+            return False
         if which_arm == "left":
-            self.fcl_checker.detach_object_arml(obj_name=obj_name, arml7_transform=arm7_transform)
+            res_detach = self.fcl_checker.detach_object_arml(obj_name=obj_name, arml7_transform=arm7_transform)
+            return res_detach
         if which_arm == "right":    
-            self.fcl_checker.detach_object_armr(obj_name=obj_name, armr7_transform=arm7_transform)
+            res_detach = self.fcl_checker.detach_object_armr(obj_name=obj_name, armr7_transform=arm7_transform)
+            return res_detach
 
     def transform_obstacle(self, name: str, new_center: np.ndarray, new_quaternion: np.ndarray):
         """

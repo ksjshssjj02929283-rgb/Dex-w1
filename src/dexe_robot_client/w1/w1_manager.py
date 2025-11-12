@@ -2078,6 +2078,98 @@ class W1Manager:
         return self.move_linear_full_body(waypoints_dict={f"{name}": [xpos_to_user_pose(target_xpos)]},
                                         speed_ratio=speed_ratio)
     
+    def attach_object(self, obj_name: str, which_arm: str, arm7_T_object: np.ndarray = None):
+        """
+        Attach grasp object to the arm flange in collision checker and planner
+
+        Args:
+            obj_name (str): object name
+            which_arm (str): "left" or "right"
+            arm7_T_object (np.ndarray, optional, shape=(4, 4)): transformation from object to arm link 7 frame. Defaults to None.
+
+        Returns:
+            bool: True if success, False otherwise
+        """
+
+        if arm7_T_object is None:
+            res, rotation, translation = self.hybrid_planner.fcl_checker.get_grasp_object_pose(name=obj_name)
+            if not res:
+                self.logger.error(f"Attach object failed, cannot get obstacle pose: {obj_name}")
+                return False
+            else:
+                object_tf = np.eye(4)
+                object_tf[:3, :3] = rotation
+                object_tf[:3, 3] = translation
+            res, current_qpos = self.get_current_qpos()
+            if not res:
+                self.logger.error("Attach object failed, cannot get current qpos")
+                return False
+            torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
+            if which_arm == "left":
+                arm7_T_object = np.linalg.inv(arml_tf[-1]) @ object_tf
+                res_fcl = self.fcl_checker.attach_object_arml(obj_name=obj_name, arml7_T_object=arm7_T_object)
+                res_planner = self.hybrid_planner.attach_object(obj_name=obj_name, which_arm=which_arm, arm7_T_object=arm7_T_object)
+                return res_fcl and res_planner
+            elif which_arm == "right":
+                arm7_T_object = np.linalg.inv(armr_tf[-1]) @ object_tf
+                res_fcl = self.fcl_checker.attach_object_armr(obj_name=obj_name, armr7_T_object=arm7_T_object)
+                res_planner = self.hybrid_planner.attach_object(obj_name=obj_name, which_arm=which_arm, arm7_T_object=arm7_T_object)
+                return res_fcl and res_planner
+            else:
+                self.logger.error(f"Attach object failed, invalid which_arm: {which_arm}")
+                return False
+        else:
+            if arm7_T_object.shape != (4, 4):
+                self.logger.error(f"Attach object failed, invalid arm7_T_object shape: {arm7_T_object.shape}")
+                return False
+            if which_arm == "left":
+                res_fcl = self.fcl_checker.attach_object_arml(obj_name=obj_name, arml7_T_object=arm7_T_object)
+                res_planner = self.hybrid_planner.attach_object(obj_name=obj_name, which_arm=which_arm, arm7_T_object=arm7_T_object)
+                return res_fcl and res_planner
+            elif which_arm == "right":
+                res_fcl = self.fcl_checker.attach_object_armr(obj_name=obj_name, armr7_T_object=arm7_T_object)
+                res_planner = self.hybrid_planner.attach_object(obj_name=obj_name, which_arm=which_arm, arm7_T_object=arm7_T_object)
+                return res_fcl and res_planner
+            else:
+                self.logger.error(f"Attach object failed, invalid which_arm: {which_arm}")
+                return False
+            
+    def detach_object(self, obj_name: str, which_arm: str, arm7_transform: np.ndarray = None):
+        if arm7_transform is None:
+            res, current_qpos = self.get_current_qpos()
+            if not res:
+                self.logger.error("Detach object failed, cannot get current qpos")
+                return False
+            torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
+            if which_arm == "left":
+                arm7_transform = arml_tf[-1]
+                res_fcl = self.fcl_checker.detach_object_arml(obj_name=obj_name, arml7_transform=arm7_transform)
+                res_planner = self.hybrid_planner.detach_object(obj_name=obj_name, which_arm=which_arm, arm7_transform=arm7_transform)
+                return res_fcl and res_planner
+            elif which_arm == "right":
+                arm7_transform = armr_tf[-1]
+                res_fcl = self.fcl_checker.detach_object_armr(obj_name=obj_name, armr7_transform=arm7_transform)
+                res_planner = self.hybrid_planner.detach_object(obj_name=obj_name, which_arm=which_arm, arm7_transform=arm7_transform)
+                return res_fcl and res_planner
+            else:
+                self.logger.error(f"Detach object failed, invalid which_arm: {which_arm}")
+                return False
+        else:
+            if arm7_transform.shape != (4, 4):
+                self.logger.error(f"Detach object failed, invalid arm7_transform shape: {arm7_transform.shape}")
+                return False
+            if which_arm == "left":
+                res_fcl = self.fcl_checker.detach_object_arml(obj_name=obj_name, arml7_transform=arm7_transform)
+                res_planner = self.hybrid_planner.detach_object(obj_name=obj_name, which_arm=which_arm, arm7_transform=arm7_transform)
+                return res_fcl and res_planner
+            elif which_arm == "right":
+                res_fcl = self.fcl_checker.detach_object_armr(obj_name=obj_name, armr7_transform=arm7_transform)
+                res_planner = self.hybrid_planner.detach_object(obj_name=obj_name, which_arm=which_arm, arm7_transform=arm7_transform)
+                return res_fcl and res_planner
+            else:
+                self.logger.error(f"Detach object failed, invalid which_arm: {which_arm}")
+                return False
+
     def transform_obstacle(self, name: str, new_center: np.ndarray, new_quaternion: np.ndarray):
         """Transform obstacle in collision checker
 
@@ -2165,10 +2257,10 @@ class W1Manager:
                 target_torso_qpos = torso_qpos_array[i]
                 real_qpos = np.concatenate((target_torso_qpos, cur_head_qpos, cur_arml_qpos, cur_armr_qpos))
                 if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
-                    torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(real_qpos, cur_armlee_qpos, cur_armree_qpos, compute_ee=True)
-                    self.fcl_checker.update_vis_transform(transforms=torso_tf + head_tf + arml_tf + armr_tf,
-                                                  armlee_transforms=armlee_tf,
-                                                  armree_transforms=armree_tf)
+                    # torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(real_qpos, cur_armlee_qpos, cur_armree_qpos, compute_ee=True)
+                    # self.fcl_checker.update_vis_transform(transforms=torso_tf + head_tf + arml_tf + armr_tf,
+                    #                               armlee_transforms=armlee_tf,
+                    #                               armree_transforms=armree_tf)
                     self.logger.warning("It will occur collision for this torso moving trajectory")
                     return False
                 
@@ -2793,10 +2885,10 @@ class W1Manager:
                 target_torso_qpos = torso_qpos_array[i]
                 real_qpos = np.concatenate((target_torso_qpos, cur_head_qpos, cur_arml_qpos, cur_armr_qpos))
                 if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
-                    torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(real_qpos, cur_armlee_qpos, cur_armree_qpos, compute_ee=True)
-                    self.fcl_checker.update_vis_transform(transforms=torso_tf + head_tf + arml_tf + armr_tf,
-                                                  armlee_transforms=armlee_tf,
-                                                  armree_transforms=armree_tf)
+                    # torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(real_qpos, cur_armlee_qpos, cur_armree_qpos, compute_ee=True)
+                    # self.fcl_checker.update_vis_transform(transforms=torso_tf + head_tf + arml_tf + armr_tf,
+                    #                               armlee_transforms=armlee_tf,
+                    #                               armree_transforms=armree_tf)
                     self.logger.warning("It will occur collision for this torso moving trajectory")
                     return False
                 

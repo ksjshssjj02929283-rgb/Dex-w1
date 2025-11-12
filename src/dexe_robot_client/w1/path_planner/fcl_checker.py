@@ -307,7 +307,45 @@ class FCLChecker:
             vis_mesh.apply_transform(vis_trans)
             self.obstacle_mesh_list.append(vis_mesh)
             
+    def get_obstacle_pose(self, name: str) -> tuple[bool, np.ndarray, np.ndarray]:
+        """
+        Get a specific obstacle's pose
 
+        Args:
+            name (str): The name of the obstacle or the grasp object
+
+        Return:
+            success (bool): Whether the obstacle exists
+            rotation (nd.array, shape=(3, 3)): The rotation matrix of the obstacle based on the robot base link frame
+            translation (nd.array, shape=(3, 3)): The translation vector of the obstacle based on the robot base link frame
+        """
+        if name not in self.obstacles_dict:
+            self.logger.error(f"The obstacle with name {name} does not exist")
+            return False, None, None
+        fcl_obj = self.obstacles_dict[name]
+        rotation = fcl_obj.getRotation()
+        translation = fcl_obj.getTranslation()
+        return True, rotation, translation
+    
+    def get_grasp_object_pose(self, name: str) -> tuple[bool, np.ndarray, np.ndarray]:
+        """
+        Get a specific grasp object's pose
+
+        Args:
+            name (str): The name of the obstacle or the grasp object
+
+        Return:
+            success (bool): Whether the grasp object exists
+            rotation (nd.array, shape=(3, 3)): The rotation matrix of the grasp object based on the robot base link frame
+            translation (nd.array, shape=(3, 3)): The translation vector of the grasp object based on the robot base link frame
+        """
+        if name not in self.grasp_objects_dict:
+            self.logger.error(f"The grasp object with name {name} does not exist")
+            return False, None, None
+        fcl_obj = self.grasp_objects_dict[name]
+        rotation = fcl_obj.getRotation()
+        translation = fcl_obj.getTranslation()
+        return True, rotation, translation
 
     def transform_obstacle(self, name: str, new_center: np.ndarray, new_quaternion: np.ndarray):
         """
@@ -625,24 +663,27 @@ class FCLChecker:
         self.grasp_objects_manager.registerObject(fcl_obj)
         self.grasp_objects_manager.setup()
 
-    def attach_object_arml(self, obj_name: str = None, flange_T_object: np.ndarray = None):
+    def attach_object_arml(self, obj_name: str = None, arml7_T_object: np.ndarray = None):
         """
         Attach a grasp object to the left arm flange for collision checking
 
         Args:
             obj_name (str): The unique name of the grasp object to be attached
-            flange_T_object (nd.array, shape=(4, 4)): The transformation matrix from objects to left arm flange
+            arml7_T_object (nd.array, shape=(4, 4)): The transformation matrix from objects to left arm flange
         """
         if obj_name is None or obj_name not in self.grasp_objects_dict:
-            raise ValueError(f"Object with name {obj_name} does not exist in grasp objects.")
-        if flange_T_object is None or flange_T_object.shape != (4, 4):
-            raise ValueError("Flange to object transformation must be a 4x4 matrix.")
+            self.logger.error(f"Object with name {obj_name} does not exist in grasp objects.")
+            return False
+        if arml7_T_object is None or arml7_T_object.shape != (4, 4):
+            self.logger.error("Flange to object transformation must be a 4x4 matrix.")
+            return False
 
         fcl_obj = self.grasp_objects_dict[obj_name]
         if self.arml_attached:
-            raise ValueError("Left arm already attached to an object. Please detach first.")
+            self.logger.error("Left arm already attached to an object. Please detach first.")
+            return False
         self.arml_attached = True
-        self.arml7_T_object = flange_T_object
+        self.arml7_T_object = arml7_T_object
         self.arml_grasp_obj_name = obj_name
 
         self.arml_links.append(fcl_obj)
@@ -651,7 +692,8 @@ class FCLChecker:
         self.arml_manager.setup()
         self.grasp_objects_manager.update()
 
-        self.logger.debug(f"After attaching object, left arm manager has {len(self.arml_manager.getObjects())} objects, grasp objects manager has {len(self.grasp_objects_manager.getObjects())} objects.")
+        self.logger.info(f"After attaching object, left arm manager has {len(self.arml_manager.getObjects())} objects, grasp objects manager has {len(self.grasp_objects_manager.getObjects())} objects.")
+        return True
 
     def detach_object_arml(self, obj_name: str = None, arml7_transform: np.ndarray = None):
         """
@@ -659,16 +701,19 @@ class FCLChecker:
 
         Args:
             - obj_name (str): The unique name of the grasp object to be detached
-            - arml7_transform (nd.array, shape=(4, 4)): The transformation matrix of left arm flange in robot base link frame
+            - arml7_transform (np.ndarray, shape=(4, 4)): The transformation matrix of left arm flange in robot base link frame
         """
         if obj_name is None or obj_name not in self.grasp_objects_dict:
-            raise ValueError(f"Object with name {obj_name} does not exist in grasp objects.")
+            self.logger.error(f"Object with name {obj_name} does not exist in grasp objects.")
+            return False
         if arml7_transform is not None and arml7_transform.shape != (4, 4):
-            raise ValueError("Arml7 transform must be a 4x4 matrix.")
+            self.logger.error("Arml7 transform must be a 4x4 matrix.")
+            return False
 
         fcl_obj = self.grasp_objects_dict[obj_name]
         if not self.arml_attached:
-            raise ValueError("Left arm is not attached to any object.")
+            self.logger.error("Left arm is not attached to any object.")
+            return False
 
         world_transform = arml7_transform @ self.arml7_T_object
         rotation = world_transform[:3, :3].astype(np.float64)
@@ -686,24 +731,30 @@ class FCLChecker:
         self.grasp_objects_manager.setup()
         self.arml_manager.update()
 
-    def attach_object_armr(self, obj_name: str = None, flange_T_object: np.ndarray = None):
+        self.logger.info(f"After detaching object, left arm manager has {len(self.arml_manager.getObjects())} objects, grasp objects manager has {len(self.grasp_objects_manager.getObjects())} objects.")
+        return True
+
+    def attach_object_armr(self, obj_name: str = None, armr7_T_object: np.ndarray = None):
         """
         Attach a grasp object to the right arm flange for collision checking
 
         Args:
             obj_name (str): The unique name of the grasp object to be attached
-            flange_T_object (nd.array, shape=(4, 4)): The transformation matrix from objects to right arm flange
+            armr7_T_object (nd.array, shape=(4, 4)): The transformation matrix from objects to right arm flange
         """
         if obj_name is None or obj_name not in self.grasp_objects_dict:
-            raise ValueError(f"Object with name {obj_name} does not exist in grasp objects.")
-        if flange_T_object is None or flange_T_object.shape != (4, 4):
-            raise ValueError("Flange to object transformation must be a 4x4 matrix.")
+            self.logger.error(f"Object with name {obj_name} does not exist in grasp objects.")
+            return False
+        if armr7_T_object is None or armr7_T_object.shape != (4, 4):
+            self.logger.error("Flange to object transformation must be a 4x4 matrix.")
+            return False
 
         fcl_obj = self.grasp_objects_dict[obj_name]
         if self.armr_attached:
-            raise ValueError("Right arm already attached to an object. Please detach first.")
+            self.logger.error("Right arm already attached to an object. Please detach first.")
+            return False
         self.armr_attached = True
-        self.armr7_T_object = flange_T_object
+        self.armr7_T_object = armr7_T_object
         self.armr_grasp_obj_name = obj_name
 
         self.armr_links.append(fcl_obj)
@@ -711,6 +762,9 @@ class FCLChecker:
         self.armr_manager.registerObject(fcl_obj)
         self.armr_manager.setup()
         self.grasp_objects_manager.update()
+
+        self.logger.info(f"After attaching object, right arm manager has {len(self.armr_manager.getObjects())} objects, grasp objects manager has {len(self.grasp_objects_manager.getObjects())} objects.")
+        return True
 
     def detach_object_armr(self, obj_name: str=None, armr7_transform: np.ndarray = None):
         """
@@ -721,13 +775,16 @@ class FCLChecker:
             - arml7_transform (nd.array, shape=(4, 4)): The transformation matrix of right arm flange in robot base link frame
         """
         if obj_name is None or obj_name not in self.grasp_objects_dict:
-            raise ValueError(f"Object with name {obj_name} does not exist in grasp objects.")
+            self.logger.error(f"Object with name {obj_name} does not exist in grasp objects.")
+            return False
         if armr7_transform is not None and armr7_transform.shape != (4, 4):
-            raise ValueError("Armr7 transform must be a 4x4 matrix.")
+            self.logger.error("Armr7 transform must be a 4x4 matrix.")
+            return False
 
         fcl_obj = self.grasp_objects_dict[obj_name]
         if not self.armr_attached:
-            raise ValueError("Right arm is not attached to any object.")
+            self.logger.error("Right arm is not attached to any object.")
+            return False
 
         world_transform = armr7_transform @ self.armr7_T_object
         rotation = world_transform[:3, :3].astype(np.float64)
@@ -745,6 +802,8 @@ class FCLChecker:
         self.grasp_objects_manager.setup()
         self.armr_manager.update()
 
+        self.logger.info(f"After detaching object, right arm manager has {len(self.armr_manager.getObjects())} objects, grasp objects manager has {len(self.grasp_objects_manager.getObjects())} objects.")
+        return True
 
     def update_arm_transform(self, arm_transforms: list[np.ndarray] = None, left_ee_transform: list[np.ndarray] = None, right_ee_transform: list[np.ndarray] = None):
         """
@@ -767,21 +826,22 @@ class FCLChecker:
                                        R_middle_dist, R_middle_prox, R_ring_dist, R_ring_prox, R_thumb_dist, R_thumb_prox]
         """
         if self.arml_attached or self.armr_attached:
-            # 传入的仍然是一个长度为16的list
             if self.arml_attached:
-                left_transforms = arm_transforms[:len(self.arml_links)-1]
-
+                arml_dof = len(self.arml_links) - 1
+                left_transforms = arm_transforms[:arml_dof]
                 grasp_object_transform = left_transforms[-1] @ self.arml7_T_object
                 left_transforms.append(grasp_object_transform)
             else:
-                left_transforms = arm_transforms[:len(self.arml_links)]
+                arml_dof = len(self.arml_links)
+                left_transforms = arm_transforms[:arml_dof]
             if self.armr_attached:
-                right_transforms = arm_transforms[len(self.arml_links)-1:]
+                armr_dof = len(self.armr_links) - 1
+                right_transforms = arm_transforms[arml_dof:]
                 grasp_object_transform = right_transforms[-1] @ self.armr7_T_object
                 right_transforms.append(grasp_object_transform)
-                left_transforms = arm_transforms[:len(self.arml_links)]
             else:
-                right_transforms = arm_transforms[len(self.armr_links):]
+                armr_dof = len(self.armr_links)
+                right_transforms = arm_transforms[arml_dof:]
             if len(left_transforms) != len(self.arml_links) or len(right_transforms) != len(self.armr_links):
                 raise ValueError(f"Expected {len(self.arml_links)} left arm transforms and {len(self.armr_links)} right arm transforms, got {len(left_transforms)} and {len(right_transforms)}")
         else:
@@ -1168,9 +1228,6 @@ class FCLChecker:
         else:
             tf = transforms + armlee_transforms + armree_transforms
         vis_mesh = deepcopy(self.robot_mesh_list)
-        print(len(vis_mesh))
-        # if len(vis_mesh) == 24:
-        #     new_tf = tf[6:14] + [tf[13]] + tf[14:22] + [tf[21]] + tf[4:6] + tf[:4]
         for i, mesh in enumerate(vis_mesh):
             mesh.apply_transform(tf[i])
         scene = trimesh.Scene()
@@ -1178,8 +1235,16 @@ class FCLChecker:
             scene.add_geometry(mesh)
         for mesh in self.obstacle_mesh_list:
             scene.add_geometry(mesh)
+
+        if self.arml_attached:
+            grasp_vis_mesh = deepcopy(self.grasp_object_mesh_list)
+            for i, mesh in enumerate(grasp_vis_mesh):
+                mesh.apply_transform(transforms[12] @ self.arml7_T_object)
+            for mesh in grasp_vis_mesh:
+                scene.add_geometry(mesh)
         for mesh in self.grasp_object_mesh_list:
             scene.add_geometry(mesh)
+            
         scene.show()
         # embed()
 

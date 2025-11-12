@@ -13,7 +13,7 @@ from rclpy.node import Node
 from std_msgs.msg import String, Float64MultiArray, Float64
 
 from ..common import (get_logger, 
-                      generate_w1_urdf,
+                      generate_w1_urdf, download_w1_urdf, download_environment,
                       W1Version, W1ArmType,
                       get_robot_sim2real_idx, get_robot_real2sim_idx,
                       get_ee_sim2real_idx, get_ee_real2sim_idx)
@@ -28,7 +28,8 @@ class DexsimServer:
         self.logger = get_logger()
         self._end_effector_type = end_effector_type
 
-        res, file_path = generate_w1_urdf(arm_type, w1_version, end_effector_type)
+        # res, file_path = generate_w1_urdf(arm_type, w1_version, end_effector_type)
+        res, file_path = download_w1_urdf(arm_type, w1_version, end_effector_type)
         if not res:
             raise ValueError(f"Found URDF failed.")
         self._urdf_path = file_path
