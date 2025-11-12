@@ -161,7 +161,7 @@ class Planner_Pin:
         return mimic_qpos
     
     def get_complete_brainco_qpos(self, armlee_qpos: np.ndarray, armree_qpos: np.ndarray):
-        arml_thumb_cmc, arml_thumb_mcp = armlee_qpos[0], armlee_qpos[1]
+        arml_thumb_cmc, arml_thumb_mcp = armlee_qpos[1], armlee_qpos[0]
         arml_index_mcp = armlee_qpos[2]
         arml_index_pip = self._compute_mimic_qpos(arml_index_mcp, 1.2, 0.1937, 0.0, 2.0944)
         arml_middle_mcp = armlee_qpos[3] 
@@ -171,7 +171,7 @@ class Planner_Pin:
         arml_little_mcp = armlee_qpos[5]
         arml_little_pip = self._compute_mimic_qpos(arml_little_mcp, 1.2, 0.2025, 0, 2.0944)
 
-        armr_thumb_cmc, armr_thumb_mcp = armree_qpos[0], armree_qpos[1]
+        armr_thumb_cmc, armr_thumb_mcp = armree_qpos[1], armree_qpos[0]
         armr_index_mcp = armree_qpos[2]
         armr_index_pip = self._compute_mimic_qpos(armr_index_mcp, 1.2, 0.1937, 0.0, 2.0944)
         armr_middle_mcp = armree_qpos[3]

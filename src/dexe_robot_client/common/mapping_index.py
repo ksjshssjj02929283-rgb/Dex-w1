@@ -342,16 +342,16 @@ class RightPGCGripperIdx(Enum):
     RIGHT_FINGER1_JOINT = auto()
 
 class LeftBrainCoHandIdx(Enum):
-    LEFT_THUMBCMC = auto()
     LEFT_THUMBMCP = auto()
+    LEFT_THUMBCMC = auto()
     LEFT_INDEXMCP = auto()
     LEFT_MIDDLEMCP = auto()
     LEFT_RINGMCP = auto()
     LEFT_LITTLEMCP = auto()
 
 class RightBrainCoHandIdx(Enum):
-    RIGHT_THUMBCMC = auto()
     RIGHT_THUMBMCP = auto()
+    RIGHT_THUMBCMC = auto()
     RIGHT_INDEXMCP = auto()
     RIGHT_MIDDLEMCP = auto()
     RIGHT_RINGMCP = auto()
