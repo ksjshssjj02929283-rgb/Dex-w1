@@ -16,7 +16,7 @@ set(PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}" CACHE FILEPATH "Python interpreter"
 # Find dependencies.
 find_package(Eigen3 REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
-find_package(ruckig REQUIRED) 
+find_package(ruckig REQUIRED)
 
 # Ros 2 dependencies.
 find_package(ament_index_cpp REQUIRED)
@@ -28,6 +28,9 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(pinocchio REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 
 # Other Ros2 packages
 find_package(chassis_interfaces REQUIRED)
@@ -58,8 +61,11 @@ ament_target_dependencies(${PROJECT_NAME}
   std_srvs
   geometry_msgs
   sensor_msgs
-  ament_index_cpp 
-  Eigen3 
+  nav_msgs
+  tf2_ros
+  tf2_geometry_msgs
+  ament_index_cpp
+  Eigen3
   eigen3_cmake_module
   chassis_interfaces
   joint_interfaces
