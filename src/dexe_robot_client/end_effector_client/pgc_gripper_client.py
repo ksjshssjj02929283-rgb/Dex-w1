@@ -10,7 +10,6 @@ import numpy as np
 from copy import deepcopy
 from std_msgs.msg import Float64, Int32
 from .end_effector_client import EndEffectorClient
-from ..common import get_logger
 
 
 class PGCGripperClient(EndEffectorClient):
@@ -18,7 +17,6 @@ class PGCGripperClient(EndEffectorClient):
                  is_left: bool,
                  is_sim: bool = False,
                  timeout_sec: float = 3.0):
-        self.logger = get_logger()
         if is_left:
             self._name = "left"
         else:
@@ -38,7 +36,7 @@ class PGCGripperClient(EndEffectorClient):
         if is_sim:
             self.create_subscription(
                 Float64, f"/feedback_sim/gripper/{self._name}", 
-                self._qpos_callback, 10
+                self._feedback_callback, 10
             )
             # self.create_subscription(
             #     Int32, f"/feedback_sim/gripper/{self._name}/grip_state",
@@ -47,7 +45,7 @@ class PGCGripperClient(EndEffectorClient):
         else:
             self.create_subscription(
                 Float64, f"/feedback/gripper/{self._name}", 
-                self._qpos_callback, 10
+                self._feedback_callback, 10
             )
             # self.create_subscription(
             #     Int32, f"/feedback/gripper/{self._name}/grip_state",
@@ -91,7 +89,7 @@ class PGCGripperClient(EndEffectorClient):
     #         self._qpos_time = None
     #     return True, temp
 
-    def set_qpos(self, qpos: np.ndarray | float) -> bool:
+    def set_pos(self, qpos: np.ndarray | float) -> bool:
         if isinstance(qpos, (int, float)):
             qpos_ = np.array([float(qpos)])
         else:
@@ -99,7 +97,7 @@ class PGCGripperClient(EndEffectorClient):
 
         if not self._check_dim(qpos_):
             return False
-        qpos_clip = np.clip(qpos_, self.qpos_lb, self.qpos_ub)
+        qpos_clip = np.clip(qpos_, self.pos_lb, self.pos_ub)
         
         msg = Float64()
         msg.data = qpos_clip[0]
