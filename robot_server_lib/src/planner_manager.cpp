@@ -37,6 +37,7 @@ void PlannerManager::LoopOnce()
 {
     auto &time_meta = runtime_data_.time_meta;
     auto &request = runtime_data_.planner_request;
+    auto &emergency_request = runtime_data_.emergency_request;
     auto &measurement = runtime_data_.measurement;
     runtime_data_.loop_counter++;
 
@@ -69,25 +70,36 @@ void PlannerManager::LoopOnce()
         manager_buffer_.ee_pose_measurement->AppendNewElement(ee_pose);
     }
 
-    // 如果内部缓存没有指令则尝试从队列中获取新命令, 有指令则跳过获取, 继续执行缓存指令
-    // if there is no internal request, try to get a new request from the queue
-    if (request.request_id < 0)
+    // 尝试处理紧急队列 request Try to process emergency queue
+    if (emergency_request.request_id < 0)
     {
-        if (!manager_buffer_.request_queue->DeQueue(&request))
+        if (!manager_buffer_.emergency_request_queue->DeQueue(&emergency_request))
         {
-            request.type = RequestType::Empty;  // 设置为空命令 Set to empty request
+            emergency_request.type = RequestType::Empty;  // 设置为空命令 Set to empty request
         }
         else
         {
-            LOG_INFO << "New request received with request ID: " << request.request_id << " Type: " << ToString(request.type);
+            switch (emergency_request.type)
+            {
+            case RequestType::StopMove:
+                LOG_INFO << "New emergency request received with request ID: " << emergency_request.request_id
+                         << " Type: " << ToString(emergency_request.type);
+                runtime_data_.terminated_request_id = emergency_request.request_id;
+                ReportRequestStatus(emergency_request.request_id, emergency_request.type, RequestStatus::Executed, manager_state_);
+                ConsumeRequest(&request);  // 清除当前缓存请求 Clear cached request
+                ConsumeRequest(&emergency_request);
+                break;
+            default:
+                LOG_WARN << "Unknown emergency request type received: " << ToString(emergency_request.type);
+                ConsumeRequest(&emergency_request);
+                break;
+            }
         }
     }
 
     // 处理新命令和测量值 Process the new request and measurement
-    RequestResponse response = OnRequest();
-    if (response.request_consumed)
-        ConsumeRequest();  // 如果命令被消费则重置命令ID If the request is consumed, reset the
-                           // request ID
+    RequestResponse response;
+    response.re_run = true;
 
     // 如果设置属性或Idle状态下接受新命令则重新运行 rerun if set property or accept new request in
     // Idle status
@@ -96,7 +108,18 @@ void PlannerManager::LoopOnce()
         // 如果没有新命令则尝试获取新命令 Peek new request if empty
         if (request.request_id < 0)
         {
-            if (!manager_buffer_.request_queue->DeQueue(&request))
+            if (manager_buffer_.request_queue->DeQueue(&request))
+            {
+                if (request.request_id < runtime_data_.terminated_request_id)
+                {
+                    ConsumeRequest(&request);  // 丢弃stop之前的指令 Discard outdated request
+                }
+                else
+                {
+                    LOG_INFO << "New request received with request ID: " << request.request_id << " Type: " << ToString(request.type);
+                }
+            }
+            else
             {
                 request.type = RequestType::Empty;  // 设置为空命令 Set to empty request
             }
@@ -105,14 +128,21 @@ void PlannerManager::LoopOnce()
         // 如果命令被消费则重置命令ID, 没被消费则不会再次获取指令 If the request is consumed, reset
         // the request ID
         if (response.request_consumed)
-            ConsumeRequest();
+            ConsumeRequest(&request);
     }
 
     // 更新关节命令基于当前规划器 Update the joint command based on the current planner
     auto status(ComputeCommandStatus::Error);
     if (current_planner_ != nullptr)
     {
-        status = current_planner_->ComputeCommand(measurement, time_meta, runtime_data_.joint_cmd);
+        if (runtime_data_.latest_processing_request_id < runtime_data_.terminated_request_id)
+        {
+            status = current_planner_->ComputeStopCommand(measurement, time_meta, runtime_data_.joint_cmd);
+        }
+        else
+        {
+            status = current_planner_->ComputeCommand(measurement, time_meta, runtime_data_.joint_cmd);
+        }
         Vector3d compliance_offset_primary, compliance_offset_secondary;
         if (this->robot_property_.run_mode == RunMode::Impedance)
         {
@@ -156,21 +186,10 @@ void PlannerManager::LoopOnce()
             }
             else  // IK求解失败则保持原位置不变 If IK fails, keep previous position
             {
-                if (runtime_data_.loop_counter % 1000 == 0)
+                if (runtime_data_.loop_counter % 5000 == 0)
                     LOG_WARN << "Compliance control IK failed, keeping previous joint position.";
             }
         }
-        // // 打印调试信息 Print debug info
-        // if (runtime_data_.loop_counter % 500 == 0)
-        // {
-        //     std::ostringstream oss;
-        //     oss << "Primary Force: " << "[" << measurement.sensor_wrench[0] << ", " << measurement.sensor_wrench[1] << ", " <<
-        //     measurement.sensor_wrench[2] << "]";
-        //         // << "  Compliance Offset: " << compliance_offset_primary.transpose()
-        //         // << "  ee before: " << ee_pose_before_primary.position.transpose() << "  ee after: " << ee_pose_primary.position.transpose();
-        //     std::cout << oss.str() << std::endl;
-        //     LOG_INFO << oss.str();
-        // }
     }
 
     // 发布关节命令到缓冲区 publish the joint command to the buffer
@@ -188,6 +207,8 @@ void PlannerManager::LoopOnce()
     // 根据规划器状态切换状态 Switch state based on the planner status
     switch (status)
     {
+    case ComputeCommandStatus::TaskOngoing:
+        return;
     case ComputeCommandStatus::TaskFinished:
         ReportRequestStatus(runtime_data_.latest_processing_request_id, runtime_data_.latest_processing_request_type, RequestStatus::Executed,
                             manager_state_);
@@ -502,5 +523,11 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
     default:
         assert(false);
     }
+}
+
+void PlannerManager::ConsumeRequest(PlannerRequest *request)
+{
+    request->request_id = -1;            // Reset request ID
+    request->type = RequestType::Empty;  // Reset request type
 }
 }  // namespace robot_server_lib

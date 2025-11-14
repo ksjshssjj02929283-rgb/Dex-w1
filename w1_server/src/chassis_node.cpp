@@ -125,7 +125,7 @@ void ChassisNode::IntegrateImuOnce(const sensor_msgs::msg::Imu &imu)
     {
         // 时间戳异常或超时：仅更新 prev，不进行积分
         prev_imu_ = curr_imu_;
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "IMU dt=%.3f s, skipping integration", dt);
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "IMU dt=%.3f s, skipping integration", dt);
         return;
     }
 
@@ -161,7 +161,7 @@ void ChassisNode::onTimer()
     const auto &chassis_data = feedback_data.chassis_feedback;
     if (use_imu_yaw_ && !is_imu_inited_)
     {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "Waiting for chassis initialized ...");
+        // RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Waiting for chassis initialized ...");
         return;
     }
 
@@ -174,7 +174,7 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data)
     bool valid_data = (chassis_data.timestamp > 0);
     if (!valid_data)
     {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "Waiting for valid chassis data ...");
+        // RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Waiting for valid chassis data ...");
         return;
     }
 
@@ -196,7 +196,7 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data)
         // 时间戳异常或超时：不积分，只更新时间基
         prev_chassis_data_ = curr_chassis_data_;
         curr_chassis_data_.reset();
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Chassis data dt=%.3f s, skipping integration", dt);
+        // RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Chassis data dt=%.3f s, skipping integration", dt);
         return;
     }
 

@@ -48,8 +48,8 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
 
     // 初始化力传感器
-    primary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB0");
-    secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");
+    // primary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB0");
+    // secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");
 
     this->Run();
 }
@@ -169,8 +169,14 @@ void RobotServer::TorqueControlThreadFunc()
         // 读取力传感器数据
         Vector6d sensor_data_primary = Vector6d::Zero();
         Vector6d sensor_data_secondary = Vector6d::Zero();
-        primary_sensor_->Read(sensor_data_primary);
-        secondary_sensor_->Read(sensor_data_secondary);
+        if (primary_sensor_)
+        {
+            primary_sensor_->Read(sensor_data_primary);
+        }
+        if (secondary_sensor_)
+        {
+            secondary_sensor_->Read(sensor_data_secondary);
+        }
 
         // 叠加手动输入的力数据
         sensor_data_primary.head<3>() += sensor_force_;

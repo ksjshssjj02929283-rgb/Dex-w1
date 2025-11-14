@@ -4,11 +4,9 @@ namespace robot_server_lib
 {
 
 MoveJointPlanner::MoveJointPlanner(RobotModel robot_model, double controller_dt, bool wait_trajectory_upon_finish)
-    : MotionPlannerBase(robot_model),
-      controller_dt_(controller_dt),
-      ruckig_otg_(controller_dt),
-      wait_trajectory_upon_finish_(wait_trajectory_upon_finish)
+    : MotionPlannerBase(robot_model), ruckig_otg_(controller_dt), wait_trajectory_upon_finish_(wait_trajectory_upon_finish)
 {
+    controller_dt_ = controller_dt;
     for (int i = 0; i < ndof_robot; ++i)
     {
         runtime_.input.max_velocity[i] = joint_bounds_.max_velocity;

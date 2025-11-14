@@ -102,8 +102,9 @@ enum class RequestStatus
     ErrorDrop = 0,
     Executed = 1,
     Queued = 2,
+    Stoped = 3,
 
-    Unknown = 3
+    Unknown = 4
 };
 
 inline const char *ToString(Status s)
@@ -150,6 +151,8 @@ inline const char *ToString(RequestStatus s)
         return "Executed";
     case RequestStatus::Queued:
         return "Queued";
+    case RequestStatus::Stoped:
+        return "Stoped";
     default:
         return "Unknown";
     }
@@ -183,6 +186,8 @@ inline const char *ToString(RequestType type)
         return "StartJointStreaming";
     case RequestType::StartEEPoseStreaming:
         return "StartEEPoseStreaming";
+    case RequestType::StopMove:
+        return "StopMove";
     default:
         return "Unknown";
     }

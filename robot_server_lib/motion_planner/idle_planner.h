@@ -12,6 +12,7 @@ class IdlePlanner : public MotionPlannerBase
     ~IdlePlanner() override;
 
     ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) override;
+    ComputeCommandStatus ComputeStopCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) override;
     bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) override;
 
    protected:

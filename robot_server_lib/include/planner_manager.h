@@ -59,17 +59,19 @@ class PlannerManager
 
         // buffers
         PlannerRequest planner_request{};
+        PlannerRequest emergency_request{};
         JointMeasurement measurement{};
         JointCommand joint_cmd{};
         Eigen::VectorXd joint_position_primary;
         Eigen::VectorXd joint_position_secondary;
         Int64 latest_processing_request_id{-1};
+        Int64 terminated_request_id{-1};
         RequestType latest_processing_request_type{RequestType::Empty};
     } runtime_data_;
 
     void Initialize();
     void ChangeState(Status new_state);
-    void SetProperty(const PlannerRequest &request);
+    void SetProperty(const PlannerRequest& request);
 
     RequestResponse OnRequest();
     // Process the request based on the current status
@@ -78,11 +80,7 @@ class PlannerManager
     RequestResponse OnRequestStateRunning();
     RequestResponse OnRequestStateError();
 
-    void ConsumeRequest()
-    {
-        runtime_data_.planner_request.request_id = -1;            // Reset request ID
-        runtime_data_.planner_request.type = RequestType::Empty;  // Reset request type
-    }
+    void ConsumeRequest(PlannerRequest* request);
 };
 
 }  // namespace robot_server_lib

@@ -17,7 +17,6 @@ class MoveJointPlanner : public MotionPlannerBase
 
    protected:
     const bool wait_trajectory_upon_finish_;
-    const double controller_dt_{0.01};
     ruckig::Ruckig<ndof_robot> ruckig_otg_;
     struct
     {

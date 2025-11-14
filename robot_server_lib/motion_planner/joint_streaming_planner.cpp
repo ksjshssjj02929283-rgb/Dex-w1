@@ -7,8 +7,9 @@ namespace robot_server_lib
 
 JointStreamingPlanner::JointStreamingPlanner(RobotModel robot_model, std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer,
                                              double controller_dt)
-    : MotionPlannerBase(robot_model), streaming_buffer_(streaming_buffer), controller_dt_(controller_dt), ruckig_otg_(controller_dt_)
+    : MotionPlannerBase(robot_model), streaming_buffer_(streaming_buffer), ruckig_otg_(controller_dt_)
 {
+    controller_dt_ = controller_dt;
     for (auto i = 0; i < ndof_robot; i++)
     {
         runtime_.input.max_velocity[i] = streaming_bounds_.max_velocity;

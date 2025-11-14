@@ -299,6 +299,11 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
     {
         planner_request.type = RequestType::StartEEPoseStreaming;
     }
+    else if (input_request->type == "StopMove")
+    {
+        planner_request.type = RequestType::StopMove;
+        return planner_request;
+    }
     else
     {
         planner_request.type = RequestType::Unknown;

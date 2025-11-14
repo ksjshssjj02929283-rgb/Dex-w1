@@ -16,6 +16,15 @@ ComputeCommandStatus IdlePlanner::ComputeCommand(const JointMeasurement &measure
     return ComputeCommandStatus::TaskOngoing;
 }
 
+ComputeCommandStatus IdlePlanner::ComputeStopCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd)
+{
+    joint_cmd.position = idle_position_ = measurement.q_desired_pre;
+    joint_cmd.velocity.setZero();
+    joint_cmd.acceleration.setZero();
+    joint_cmd.torque_feedforward.setZero();
+    return ComputeCommandStatus::TaskOngoing;
+}
+
 bool IdlePlanner::ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta)
 {
     idle_position_ = measurement.q_desired_pre;

@@ -42,6 +42,8 @@ class MotionPlannerBase
     // Compute the next joint command in current episode
     virtual ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) = 0;
 
+    virtual ComputeCommandStatus ComputeStopCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd);
+
     virtual bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) = 0;
 
     void SetRobotProperty(const RobotProperty &property);
@@ -72,6 +74,7 @@ class MotionPlannerBase
 
     int ndof_primary_{7};
     int ndof_secondary_{7};
+    double controller_dt_{0.004};  // 控制周期，单位s
 };
 
 }  // namespace robot_server_lib

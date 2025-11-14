@@ -169,14 +169,6 @@ void RobotServerBase::MoveRobotCallback(const std::shared_ptr<rclcpp_action::Ser
     PlannerRequest planner_request = utils::ParseMoveRequest(request_handle);
     auto request_id = MakeNewRequestID(planner_request.type);
 
-    // Check if in Drag mode
-    PlannerManagerCommand planner_cmd{};
-    if (this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) && planner_cmd.robot_property.run_mode == RunMode::Drag)
-    {
-        RCLCPP_WARN(this->get_logger(), "In Drag mode, cannot accept new move robot request");
-        LOG_CRIT << "In Drag mode, cannot accept new move robot request";
-        request_id = -1;
-    }
     // Publish feedback with request id
     auto feedback = std::make_shared<MoveRobot::Feedback>();
     feedback->request_id = request_id;
@@ -189,8 +181,15 @@ void RobotServerBase::MoveRobotCallback(const std::shared_ptr<rclcpp_action::Ser
         return;
     }
     planner_request.request_id = request_id;
-    this->manager_buffers_.request_queue->EnQueue(planner_request);
-    this->request_handle_queue_.EnQueue(request_handle);
+    if (planner_request.type >= RequestType::StopMove)
+    {
+        this->manager_buffers_.emergency_request_queue->EnQueue(planner_request);
+    }
+    else
+    {
+        this->manager_buffers_.request_queue->EnQueue(planner_request);
+        this->request_handle_queue_.EnQueue(request_handle);
+    }
 
     RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, arm = %s", planner_request.request_id, request_handle->get_goal()->type.c_str(),
                 request_handle->get_goal()->motion_group.c_str());

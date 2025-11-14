@@ -17,7 +17,6 @@ class JointStreamingPlanner : public MotionPlannerBase
 
    protected:
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer_;
-    const double controller_dt_{0.004};  // 控制周期，单位s
     ruckig::Ruckig<ndof_robot> ruckig_otg_;
 
     struct
