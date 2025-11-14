@@ -653,7 +653,7 @@ class W1Manager:
             return False
         if not self._check_qpos_dimension(name, qpos_):
             return False
-        return self._get_arm_ee_client(name).set_qpos(qpos_)
+        return self._get_arm_ee_client(name).set_pos(qpos_)
 
     def set_home_qpos(self, 
                       home_qpos: np.ndarray, 
@@ -718,7 +718,7 @@ class W1Manager:
         if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name, False):
                 return False, None
-            return self._get_arm_ee_client(name).get_qpos()
+            return self._get_arm_ee_client(name).get_pos()
         
         robot_info = self.robot_client.get_info()
         if robot_info.joint_position is None:
@@ -1050,7 +1050,7 @@ class W1Manager:
 
             while not stop_ee_thread:
                 if count == target_count and count != cur_count:
-                    self.left_ee_client.set_qpos(np.array(target_ee_qpos))
+                    self.left_ee_client.set_pos(np.array(target_ee_qpos))
                     self.logger.debug(f"left_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if left_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = left_arm_ee_trigger_list_cp.pop()
@@ -1074,7 +1074,7 @@ class W1Manager:
 
             while not stop_ee_thread:
                 if count == target_count and count != cur_count:
-                    self.right_ee_client.set_qpos(np.array(target_ee_qpos))
+                    self.right_ee_client.set_pos(np.array(target_ee_qpos))
                     self.logger.debug(f"right_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if right_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = right_arm_ee_trigger_list_cp.pop()
