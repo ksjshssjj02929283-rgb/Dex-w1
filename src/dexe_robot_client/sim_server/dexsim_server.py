@@ -186,7 +186,7 @@ class DexsimServer:
         self._articulation.set_current_qpos(self._cur_qpos)
 
     def _subscriber_left_ee_callback(self, msg):
-        raw_qpos = np.array(msg.data)
+        raw_qpos = np.array(msg.position)
         qpos = self.left_ee_joint_limits[:,0] + raw_qpos/100. * \
             (self.left_ee_joint_limits[:,1] - self.left_ee_joint_limits[:,0])
         # with self._lock:
@@ -196,7 +196,7 @@ class DexsimServer:
             self._cur_qpos[self.left_ee_sim2real_index] = qpos
 
     def _subscriber_right_ee_callback(self, msg):
-        raw_qpos = np.array(msg.data)
+        raw_qpos = np.array(msg.position)
         qpos = self.right_ee_joint_limits[:,0] + raw_qpos/100. * \
             (self.right_ee_joint_limits[:,1] - self.right_ee_joint_limits[:,0])
         # with self._lock:
