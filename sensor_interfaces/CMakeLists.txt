@@ -15,7 +15,7 @@ find_package(geometry_msgs REQUIRED)
 set(MSG_FILES
   "msg/RGBD.msg"
 )
-set(SRV_FILES 
+set(SRV_FILES
   "srv/Control.srv")
 
 # Generate interfaces
