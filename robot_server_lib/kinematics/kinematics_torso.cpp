@@ -37,8 +37,11 @@ PoseQuaternion TorsoKinematics::GetFK(const Eigen::VectorXd& q, const pinocchio:
 
 PoseQuaternion TorsoKinematics::GetTorsoPose(const Eigen::VectorXd& XZRY)
 {
-    LOG_CRIT << "GetTorsoPose: output q size must be 3";
-    assert(XZRY.size() == 3 && "TorsoKinematics: XZRY size must be 3");
+    if (XZRY.size() != 3)
+    {
+        LOG_CRIT << "GetTorsoPose: input XZRY size must be 3";
+        assert(XZRY.size() == 3 && "TorsoKinematics: input XZRY size must be 3");
+    }
     PoseQuaternion out{};
 
     const double x = XZRY[0];

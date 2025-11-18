@@ -1,9 +1,21 @@
 #pragma once
+
 #include <sstream>
 #include <vector>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
+
+#define CTRLWORD_MOTOR_SWITCH_ON (1U << 0)
+#define CTRLWORD_MOTOR_ENABLE (1U << 1)
+#define CTRLWORD_MOTOR_QUICK_STOP (1u << 2)
+#define CTRLWORD_MOTOR_CLEAR_FAULT (1U << 3)
+#define CTRLWORD_MOTOR_CST_MODE (1U << 4)
+
+#define STATUSWORD_MOTOR_READY (1U << 0)
+#define STATUSWORD_MOTOR_ENABLED (1U << 1)
+#define STATUSWORD_MOTOR_FAULT (1U << 2)
+#define STATUSWORD_MOTOR_QUICK_STOP (1U << 3)
 
 namespace robot_server_lib
 {
@@ -56,6 +68,36 @@ std::ostringstream MotorStatusToJsonArrayString(const VectorType &vec, int start
             ss << ",";
     }
     ss << "]";
+    return ss;
+}
+
+inline std::ostringstream RobotStatuswordToJsonString(const int &status_word)
+{
+    std::ostringstream ss;
+    switch (status_word)
+    {
+        case 0:
+            ss << "\"NOT_READY\"";
+            break;
+        case 1:
+            ss << "\"READY_NOT_ENABLE\"";
+            break;
+        case 2:
+            ss << "\"ENABLED\"";
+            break;
+        case 3:
+            ss << "\"READY_AND_ENABLED\"";
+            break;
+        case 4:
+            ss << "\"MOTOR_FAULT\"";
+            break;
+        case 8:
+            ss << "\"MOTOR_QUICK_STOP\"";
+            break;
+        default:
+            ss << status_word;
+            break;
+    }
     return ss;
 }
 

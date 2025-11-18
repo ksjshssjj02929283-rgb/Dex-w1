@@ -215,7 +215,7 @@ void RobotServer::TorqueControlThreadFunc()
         else
         {
             this->robot_buffers_.joint_raw_measurement->Reset();
-            if (loop_counter % 1 == 0)
+            if (loop_counter % 3000 == 0)
             {
                 RCLCPP_WARN(this->get_logger(), "Robot is not ready, shm status: %d, statusword: %d, please check Connection, OP or Error state.", ret, robot_feedback_.robot_status_word);
                 LOG_CRIT << "Robot is not ready, shm status: " << ret << ", statusword: " << robot_feedback_.robot_status_word
@@ -312,6 +312,7 @@ void RobotServer::PublishThreadFunc()
 
         // Publish /feedback/robot_server_state
         std_msgs::msg::String robot_server_state_msg;
+        std::ostringstream robot_statusword_ss = utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word);
         std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(robot_feedback_.position, 0, ndof_robot);
         std::ostringstream joint_velocity_ss = utils::VectorToJsonArrayString(robot_feedback_.velocity, 0, ndof_robot);
         std::ostringstream joint_torque_ss = utils::VectorToJsonArrayString(robot_feedback_.torque, 0, ndof_robot);
@@ -319,16 +320,20 @@ void RobotServer::PublishThreadFunc()
         std::ostringstream motor_status_ss = utils::MotorStatusToJsonArrayString(robot_feedback_.al_status, 0, ndof_robot);
         std::ostringstream motor_temperature_ss = utils::VectorToJsonArrayString(robot_feedback_.motor_temperature, 0, ndof_robot);
         std::ostringstream motor_error_code_ss = utils::MotorErrorcodeToJsonArrayString(robot_feedback_.motor_error_code, 0, ndof_robot);
+        std::ostringstream torque_limit_negative_ss = utils::VectorToJsonArrayString(robot_control_.negative_torque_limit, 6, ndof_robot);
+        std::ostringstream torque_limit_positive_ss = utils::VectorToJsonArrayString(robot_control_.positive_torque_limit, 6, ndof_robot);
 
-        robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" +
-                                      ToString(this->manager_state_) + "\"" + ",\"run_mode\":\"" + ToString(robot_property_.run_mode) + "\"" +
+        robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ", \"status\":\"" +
+                                      ToString(this->manager_state_) + "\", \"robot_statusword\":" + robot_statusword_ss.str() + ", \"run_mode\":\"" + ToString(robot_property_.run_mode) + "\"" +
                                       ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
                                       ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
                                       ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
                                       ",\"motor_status\":" + motor_status_ss.str() + ",\"motor_temperature\":" + motor_temperature_ss.str() +
                                       ",\"motor_error_code\":" + motor_error_code_ss.str() + ",\"joint_position\":" + joint_position_ss.str() +
                                       ",\"joint_velocity\":" + joint_velocity_ss.str() + ",\"joint_torque\":" + joint_torque_ss.str() +
-                                      ",\"force_sensor\":" + joint_sensor_wrench_ss.str();
+                                      ",\"force_sensor\":" + joint_sensor_wrench_ss.str() + ",\"torque_limit_negative\":" + torque_limit_negative_ss.str() +
+                                      ",\"torque_limit_positive\":" + torque_limit_positive_ss.str();
+
         if (this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose) &&
             this->manager_buffers_.torso_pose_measurement->PeekLatest(&torso_X_Z_RY))
         {

@@ -108,6 +108,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
         LOG_INFO << "Secondary arm motion plan: start: " << pose_start_secondary.ToString() << ", target: " << pose_target_secondary.ToString();
         line_primary_.emplace(CalcLineGeometry(pose_start, pose_target));
         line_secondary_.emplace(CalcLineGeometry(pose_start_secondary, pose_target_secondary));
+        line_torso_ = std::nullopt;
         break;
     }
     case MotionGroup::Primary:
@@ -121,6 +122,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
         LOG_INFO << "Primary arm motion plan: start: " << pose_start.ToString() << ", target: " << pose_target.ToString();
         line_primary_.emplace(CalcLineGeometry(pose_start, pose_target));
         line_secondary_ = std::nullopt;
+        line_torso_ = std::nullopt;
         break;
     }
     case MotionGroup::Secondary:
@@ -134,6 +136,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
         LOG_INFO << "Secondary arm motion plan: start: " << pose_start.ToString() << ", target: " << pose_target.ToString();
         line_primary_ = std::nullopt;
         line_secondary_.emplace(CalcLineGeometry(pose_start, pose_target));
+        line_torso_ = std::nullopt;
         break;
     }
     case MotionGroup::Torso:
@@ -142,12 +145,12 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
         Eigen::VectorXd q_start;
         utils::GetJointFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
         assert(q_start.size() == ndof_torso_);
-        PoseQuaternion pose_start = kinematics_torso_ptr_->GetFK(q_start, robot_property_.tcp_frame_secondary);
+        PoseQuaternion pose_start = kinematics_torso_ptr_->GetFK(q_start);
         PoseQuaternion pose_target = kinematics_torso_ptr_->GetTorsoPose(move_request.value);
         line_primary_ = std::nullopt;
         line_secondary_ = std::nullopt;
         line_torso_.emplace(CalcLineGeometry(pose_start, pose_target));
-        LOG_INFO << "Torso motion plan: start: " << pose_start.ToString() << ", target: " << pose_target.ToString()
+        LOG_INFO << "Torso motion plan: q_start: " << q_start << ", start pos: " << pose_start.ToString() << ", target: " << pose_target.ToString()
                  << ", direction: " << line_torso_->direction.transpose() << ", length: " << line_torso_->length
                  << ", slerp_angle: " << line_torso_->slerp_angle;
         break;
@@ -192,7 +195,7 @@ LineGeometry MoveLinePlanner::CalcLineGeometry(const PoseQuaternion &pose_start,
 
 void MoveLinePlanner::ConfigRuckig()
 {
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < ruckig_dof_; i++)
     {
         runtime_.input.current_position[i] = 0.0;
         runtime_.input.current_velocity[i] = 0.0;

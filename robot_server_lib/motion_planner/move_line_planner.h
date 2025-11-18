@@ -45,16 +45,17 @@ class MoveLinePlanner : public MotionPlannerBase
     PoseQuaternion ComputeOutputPose(LineGeometry line, double ruckig_trans_position, double ruckig_rot_position);
 
     const bool wait_trajectory_upon_finish_;
-
+    static constexpr int ruckig_dof_ = 6;    
+    
     // cache
     std::optional<LineGeometry> line_primary_;
     std::optional<LineGeometry> line_secondary_;
     std::optional<LineGeometry> line_torso_;
-    ruckig::Ruckig<6> ruckig_otg_;
+    ruckig::Ruckig<ruckig_dof_> ruckig_otg_;
     struct
     {
-        ruckig::InputParameter<6> input;
-        ruckig::OutputParameter<6> output;
+        ruckig::InputParameter<ruckig_dof_> input;
+        ruckig::OutputParameter<ruckig_dof_> output;
     } runtime_;
 };
 
