@@ -31,7 +31,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
         if (received && cmd_buffer.request_id == runtime_.request_id)
         {
             JointPositionDof target_ndof = measurement.q_desired_pre;
-            utils::MapArmToWholeBody(this->robot_model_, cmd_buffer.command, target_ndof, this->motion_group_);
+            utils::MapJointToWholeBody(this->robot_model_, cmd_buffer.command, target_ndof, this->motion_group_);
             cmd_buffer.command = target_ndof;
             runtime_.latest_cmd.emplace(cmd_buffer);
         }

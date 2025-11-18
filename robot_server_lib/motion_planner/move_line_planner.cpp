@@ -7,13 +7,13 @@ MoveLinePlanner::MoveLinePlanner(RobotModel robot_model, double controller_dt, b
     : MotionPlannerBase(robot_model), ruckig_otg_(controller_dt), wait_trajectory_upon_finish_(wait_trajectory_upon_finish)
 {
     controller_dt_ = controller_dt;
-    for (int idx : {Trans, TransSecondary})
+    for (int idx : {Trans, TransSecondary, TransTorso})
     {
         runtime_.input.max_velocity[idx] = cartesian_bounds_.translation.max_velocity;
         runtime_.input.max_acceleration[idx] = cartesian_bounds_.translation.max_acceleration;
         runtime_.input.max_jerk[idx] = cartesian_bounds_.translation.max_jerk;
     }
-    for (int idx : {Rot, RotSecondary})
+    for (int idx : {Rot, RotSecondary, RotTorso})
     {
         runtime_.input.max_velocity[idx] = cartesian_bounds_.rotation.max_velocity;
         runtime_.input.max_acceleration[idx] = cartesian_bounds_.rotation.max_acceleration;
@@ -66,6 +66,7 @@ ComputeCommandStatus MoveLinePlanner::ComputeCommand(const JointMeasurement &mea
         }
     };
     default:
+        LOG_CRIT << "MoveLine: Ruckig OTG returned: " << static_cast<int>(status);
         return ComputeCommandStatus::Error;
     }
 }
@@ -81,12 +82,12 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
     {
         speed_ratio = speed_ratio * std::clamp(move_request.speed.value(), 0.01, 1.0);
     }
-    for (int idx : {Trans, TransSecondary})
+    for (int idx : {Trans, TransSecondary, TransTorso})
     {
         runtime_.input.max_velocity[idx] = cartesian_bounds_.translation.max_velocity * speed_ratio;
         runtime_.input.max_acceleration[idx] = cartesian_bounds_.translation.max_acceleration * speed_ratio;
     }
-    for (int idx : {Rot, RotSecondary})
+    for (int idx : {Rot, RotSecondary, RotTorso})
     {
         runtime_.input.max_velocity[idx] = cartesian_bounds_.rotation.max_velocity * speed_ratio;
         runtime_.input.max_acceleration[idx] = cartesian_bounds_.rotation.max_acceleration * speed_ratio;
@@ -97,7 +98,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
     {
         assert(14 == move_request.value.size());
         Eigen::VectorXd q_start;
-        utils::GetArmFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
+        utils::GetJointFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
         assert(q_start.size() == ndof_primary_ + ndof_secondary_);
         PoseQuaternion pose_start = kinematics_primary_ptr_->GetFK(q_start.head(ndof_primary_), robot_property_.tcp_frame);
         PoseQuaternion pose_start_secondary = kinematics_secondary_ptr_->GetFK(q_start.tail(ndof_secondary_), robot_property_.tcp_frame_secondary);
@@ -113,7 +114,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
     {
         assert(7 == move_request.value.size());
         Eigen::VectorXd q_start;
-        utils::GetArmFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
+        utils::GetJointFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
         assert(q_start.size() == ndof_primary_);
         PoseQuaternion pose_start = kinematics_primary_ptr_->GetFK(q_start, robot_property_.tcp_frame);
         PoseQuaternion pose_target = utils::VectorXdToPoseQuaternion(move_request.value);
@@ -126,7 +127,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
     {
         assert(7 == move_request.value.size());
         Eigen::VectorXd q_start;
-        utils::GetArmFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
+        utils::GetJointFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
         assert(q_start.size() == ndof_secondary_);
         PoseQuaternion pose_start = kinematics_secondary_ptr_->GetFK(q_start, robot_property_.tcp_frame_secondary);
         PoseQuaternion pose_target = utils::VectorXdToPoseQuaternion(move_request.value);
@@ -135,11 +136,27 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request, const
         line_secondary_.emplace(CalcLineGeometry(pose_start, pose_target));
         break;
     }
+    case MotionGroup::Torso:
+    {
+        assert(3 == move_request.value.size());
+        Eigen::VectorXd q_start;
+        utils::GetJointFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
+        assert(q_start.size() == ndof_torso_);
+        PoseQuaternion pose_start = kinematics_torso_ptr_->GetFK(q_start, robot_property_.tcp_frame_secondary);
+        PoseQuaternion pose_target = kinematics_torso_ptr_->GetTorsoPose(move_request.value);
+        line_primary_ = std::nullopt;
+        line_secondary_ = std::nullopt;
+        line_torso_.emplace(CalcLineGeometry(pose_start, pose_target));
+        LOG_INFO << "Torso motion plan: start: " << pose_start.ToString() << ", target: " << pose_target.ToString()
+                 << ", direction: " << line_torso_->direction.transpose() << ", length: " << line_torso_->length
+                 << ", slerp_angle: " << line_torso_->slerp_angle;
+        break;
+    }
     default:
         assert(false && "Unknown MotionGroup type");
         break;
     }
-    InitializeRuckig();
+    ConfigRuckig();
     return true;
 }
 
@@ -173,7 +190,7 @@ LineGeometry MoveLinePlanner::CalcLineGeometry(const PoseQuaternion &pose_start,
     return line;
 }
 
-void MoveLinePlanner::InitializeRuckig()
+void MoveLinePlanner::ConfigRuckig()
 {
     for (int i = 0; i < 4; i++)
     {
@@ -194,6 +211,11 @@ void MoveLinePlanner::InitializeRuckig()
         runtime_.input.target_position[TransSecondary] = line_secondary_->length;
         runtime_.input.target_position[RotSecondary] = line_secondary_->slerp_angle;
     }
+    if (line_torso_.has_value())
+    {
+        runtime_.input.target_position[TransTorso] = line_torso_->length;
+        runtime_.input.target_position[RotTorso] = line_torso_->slerp_angle;
+    }
 }
 
 bool MoveLinePlanner::ComputeOutputJoint(JointPositionDof &q_ndof)
@@ -202,28 +224,42 @@ bool MoveLinePlanner::ComputeOutputJoint(JointPositionDof &q_ndof)
     {
         PoseQuaternion pose_cmd = ComputeOutputPose(*line_primary_, runtime_.output.new_position[Trans], runtime_.output.new_position[Rot]);
         Eigen::VectorXd q_primary;
-        utils::GetArmFromWholeBody(this->robot_model_, q_ndof, q_primary, MotionGroup::Primary);
+        utils::GetJointFromWholeBody(this->robot_model_, q_ndof, q_primary, MotionGroup::Primary);
         assert(q_primary.size() == ndof_primary_);
         if (!kinematics_primary_ptr_->GetIK(pose_cmd, q_primary, robot_property_.tcp_frame))
         {
             LOG_CRIT << "Inverse Kinematics failed for target pose: " << pose_cmd.ToString();
             return false;
         }
-        utils::MapArmToWholeBody(this->robot_model_, q_primary, q_ndof, MotionGroup::Primary);
+        utils::MapJointToWholeBody(this->robot_model_, q_primary, q_ndof, MotionGroup::Primary);
     }
     if (line_secondary_.has_value())
     {
         PoseQuaternion pose_cmd_secondary =
             ComputeOutputPose(*line_secondary_, runtime_.output.new_position[TransSecondary], runtime_.output.new_position[RotSecondary]);
         Eigen::VectorXd q_secondary;
-        utils::GetArmFromWholeBody(this->robot_model_, q_ndof, q_secondary, MotionGroup::Secondary);
+        utils::GetJointFromWholeBody(this->robot_model_, q_ndof, q_secondary, MotionGroup::Secondary);
         assert(q_secondary.size() == ndof_secondary_);
         if (!kinematics_secondary_ptr_->GetIK(pose_cmd_secondary, q_secondary, robot_property_.tcp_frame_secondary))
         {
             LOG_CRIT << "Inverse Kinematics failed for target pose: " << pose_cmd_secondary.ToString();
             return false;
         }
-        utils::MapArmToWholeBody(this->robot_model_, q_secondary, q_ndof, MotionGroup::Secondary);
+        utils::MapJointToWholeBody(this->robot_model_, q_secondary, q_ndof, MotionGroup::Secondary);
+    }
+    if (line_torso_.has_value())
+    {
+        PoseQuaternion pose_cmd_torso =
+            ComputeOutputPose(*line_torso_, runtime_.output.new_position[TransTorso], runtime_.output.new_position[RotTorso]);
+        Eigen::VectorXd q_torso;
+        utils::GetJointFromWholeBody(this->robot_model_, q_ndof, q_torso, MotionGroup::Torso);
+        assert(q_torso.size() == ndof_torso_);
+        if (!kinematics_torso_ptr_->GetIK(pose_cmd_torso, q_torso))
+        {
+            LOG_CRIT << "Inverse Kinematics failed for target pose: " << pose_cmd_torso.ToString();
+            return false;
+        }
+        utils::MapJointToWholeBody(this->robot_model_, q_torso, q_ndof, MotionGroup::Torso);
     }
     return true;
 }

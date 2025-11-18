@@ -27,7 +27,8 @@ MotionPlannerBase::MotionPlannerBase(RobotModel robot_model)
     {
         kinematics_secondary_ptr_ = std::make_shared<kinematics::SRSKinematics>(false, true);
     }
-    assert(kinematics_primary_ptr_ && kinematics_secondary_ptr_);
+    kinematics_torso_ptr_ = std::make_shared<kinematics::TorsoKinematics>();
+    assert(kinematics_primary_ptr_ && kinematics_secondary_ptr_ && kinematics_torso_ptr_);
 }
 
 ComputeCommandStatus MotionPlannerBase::ComputeStopCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta,

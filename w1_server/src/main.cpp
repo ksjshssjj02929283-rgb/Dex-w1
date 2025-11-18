@@ -23,6 +23,7 @@ static void setup_realtime()
     if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0)
     {
         std::cerr << "sched_setscheduler failed: " << std::strerror(errno) << std::endl;
+        assert(false && "sched_setscheduler failed, please run setcap!");
     }
 }
 

@@ -91,7 +91,7 @@ class MoveLineTest : public rclcpp::Node
 int main(int argc, char** argv)
 {
     rclcpp::init(argc, argv);
-    const bool is_sim = true;  // 设置为 true 以连接仿真机器人，false 以连接真实机器人
+    const bool is_sim = false;  // 设置为 true 以连接仿真机器人，false 以连接真实机器人
     auto node = std::make_shared<MoveLineTest>(is_sim);
     std::thread spin_thread([node]() { rclcpp::spin(node); });
 
@@ -102,9 +102,10 @@ int main(int argc, char** argv)
     };
 
     std::vector<float> target_ee_pose_right_arm = {0.13096, 0.38542, 0.29215, 0.16263, 0.092544, 0.56692, 0.80224};
+    std::vector<float> target_torso = {0.0, 1.0, 0.0};  // 躯干位置 x z ry
 
-    node->MoveLine("Primary", target_ee_pose_left_arm);  // motion_group: Primary or Secondary 对应左臂和右臂
-    node->MoveLine("Secondary", target_ee_pose_right_arm);
+    node->MoveLine("Torso", target_torso);  // motion_group: Primary or Secondary 对应左臂和右臂
+    // node->MoveLine("Secondary", target_ee_pose_right_arm);
 
     return 0;
 }

@@ -39,7 +39,9 @@ class RobotServer : public RobotServerBase
 
    private:
     void TorqueControlThreadFunc() override;
+    void PublishThreadFunc() override;
     Int64 StartStreaming(const PlannerRequest planner_request);
+    void InitParamConfig();  // 初始化/读写 torque_limit_ 的 JSON 配置
 
     void ControlCallback(const JointControlMsg::SharedPtr msg);
     void PositionControlCallback(const JointPositionControlMsg::SharedPtr msg);
@@ -62,6 +64,8 @@ class RobotServer : public RobotServerBase
 
     Int64 streaming_request_id_{-1};
     RobotControl robot_control_;
+    RobotFeedback robot_feedback_;
+    RobotProperty robot_property_;
     bool is_torque_limit_reached_[ndof_robot] = {false};  // 达到力矩限制标志位
     const std::string ecat_joint_name_[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",    "NECK2",   "LEFT_J1",
                                                       "LEFT_J2",  "LEFT_J3",  "LEFT_J4",  "LEFT_J5",  "LEFT_J6",  "LEFT_J7", "RIGHT_J1",
@@ -75,17 +79,16 @@ class RobotServer : public RobotServerBase
     } torque_limit_;  // 关节力矩限制参数默认值, 单位: Nm
 
     const int first_arm_joint_index_ = 6;           // 左臂第一个关节在整体关节数组中的索引
-    const double position_diff_threshold_ = 0.175;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
+    const double position_diff_threshold_ = 0.525;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
     const double DiffChassisWidth = 0.4390;
 
     // 力传感器相关
     Vector3d sensor_force_;
+    Vector12d sensor_wrench_;
     std::shared_ptr<ForceSensorReader> primary_sensor_;
     std::shared_ptr<ForceSensorReader> secondary_sensor_;
     bool primary_sensor_ready_ = false;
     bool secondary_sensor_ready_ = false;
-
-    void InitParamConfig();  // 初始化/读写 torque_limit_ 的 JSON 配置
 };
 
 }  // namespace robot_server_lib

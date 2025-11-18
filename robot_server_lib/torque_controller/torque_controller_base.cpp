@@ -14,8 +14,8 @@ VectorDof TorqueControllerBase::GetJointExternalTorque(const Eigen::VectorXd &se
     Eigen::VectorXd torque_arm;
     assert(sensor_wrench.size() == 12);
     Eigen::VectorXd q_desired_arm_secondary;
-    utils::GetArmFromWholeBody(this->robot_model_, q_desired, q_desired_arm, MotionGroup::Primary);
-    utils::GetArmFromWholeBody(this->robot_model_, q_desired, q_desired_arm_secondary, MotionGroup::Secondary);
+    utils::GetJointFromWholeBody(this->robot_model_, q_desired, q_desired_arm, MotionGroup::Primary);
+    utils::GetJointFromWholeBody(this->robot_model_, q_desired, q_desired_arm_secondary, MotionGroup::Secondary);
 
     auto J_left = pinocchio::GetJacobiMatrix(*this->robot_model_.left_arm_model_ptr, q_desired_arm);
     auto J_right = pinocchio::GetJacobiMatrix(*this->robot_model_.right_arm_model_ptr, q_desired_arm_secondary);
@@ -23,7 +23,7 @@ VectorDof TorqueControllerBase::GetJointExternalTorque(const Eigen::VectorXd &se
     torque_arm.resize(q_desired_arm.size() + q_desired_arm_secondary.size());
     torque_arm << J_left.transpose() * sensor_wrench.head(6), J_right.transpose() * sensor_wrench.tail(6);
 
-    utils::MapArmToWholeBody(this->robot_model_, torque_arm, torque_ndof, MotionGroup::BothArms);
+    utils::MapJointToWholeBody(this->robot_model_, torque_arm, torque_ndof, MotionGroup::BothArms);
 
     return torque_ndof;
 }

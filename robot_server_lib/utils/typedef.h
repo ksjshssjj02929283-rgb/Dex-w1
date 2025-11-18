@@ -85,6 +85,7 @@ enum class MotionGroup
     Secondary,
     BothArms,
     WholeBody,
+    Torso,
 
     Unknown
 };
@@ -136,6 +137,8 @@ inline const char *ToString(MotionGroup s)
         return "BothArm";
     case MotionGroup::WholeBody:
         return "WholeBody";
+    case MotionGroup::Torso:
+        return "Torso";
     default:
         return "Unknown";
     }

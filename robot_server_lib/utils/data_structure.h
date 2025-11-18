@@ -195,6 +195,7 @@ struct PlannerManagerBuffers
 {
     std::shared_ptr<SingleWriterLatestBuffer<JointMeasurement>> joint_measurement;
     std::shared_ptr<SingleWriterLatestBuffer<Eigen::VectorXd>> ee_pose_measurement;
+    std::shared_ptr<SingleWriterLatestBuffer<Eigen::VectorXd>> torso_pose_measurement;
     std::shared_ptr<SingleWriterLatestBuffer<PlannerManagerCommand>> planner_manager_command;
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_command_latest_buffer;
     std::shared_ptr<BoundedQueue<PlannerRequest>> request_queue;
@@ -207,6 +208,7 @@ struct PlannerManagerBuffers
     {
         joint_measurement = std::make_shared<SingleWriterLatestBuffer<JointMeasurement>>();
         ee_pose_measurement = std::make_shared<SingleWriterLatestBuffer<Eigen::VectorXd>>();
+        torso_pose_measurement = std::make_shared<SingleWriterLatestBuffer<Eigen::VectorXd>>();
         planner_manager_command = std::make_shared<SingleWriterLatestBuffer<PlannerManagerCommand>>();
         streaming_command_latest_buffer = std::make_shared<SingleWriterLatestBuffer<StreamingCommand>>();
         request_queue = std::make_shared<BoundedQueue<PlannerRequest>>(32);
@@ -241,6 +243,7 @@ struct RobotParams
     std::vector<std::string> joint_command_sequence_by_name;  // 关节指令顺序
     Eigen::VectorXd joints_primary;
     Eigen::VectorXd joints_secondary;
+    Eigen::VectorXd joints_torso;
 };
 
 struct RobotModel

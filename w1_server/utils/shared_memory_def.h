@@ -24,6 +24,9 @@ struct RobotFeedback
 {
     uint64_t cnt = 0;
     uint16_t robot_status_word = 0x0000;
+    uint8_t al_status[MAX_JOINT_NUM] = {0};
+    uint16_t motor_error_code[MAX_JOINT_NUM] = {0};
+    uint8_t motor_temperature[MAX_JOINT_NUM] = {0};
     uint16_t robot_error_code = 0x0000;
     // 关节反馈
     double position[MAX_JOINT_NUM] = {0};

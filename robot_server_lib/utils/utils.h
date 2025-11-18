@@ -1,6 +1,7 @@
 #include <cmath>    // 新增：std::isfinite
 #include <iomanip>  // 新增：std::setprecision
 #include <memory>
+#include <type_traits>
 
 /**
  * @file utils.h
@@ -39,6 +40,57 @@ PoseQuaternion VectorXdToPoseQuaternion(const Eigen::VectorXd &vec);
 
 PoseQuaternion StringToPoseQuaternion(const std::string &str);
 
+template <typename T>
+inline std::size_t GetContainerSize(const T &c)
+{
+    return static_cast<std::size_t>(c.size());
+}
+
+template <typename T, std::size_t N>
+inline std::size_t GetContainerSize(const T (&)[N])
+{
+    return N;
+}
+
+template <typename VectorType>
+std::ostringstream VectorToJsonArrayString(const VectorType &vec, int start_index, int end_index)
+{
+    int total_size = static_cast<int>(GetContainerSize(vec));
+    if (start_index < 0)
+        start_index = 0;
+    if (end_index < 0 || end_index > total_size)
+        end_index = total_size;
+    if (start_index > end_index)
+        start_index = end_index;
+
+    std::ostringstream ss;
+    ss << "[";
+    for (int i = start_index; i < end_index; ++i)
+    {
+        using ElemT = std::decay_t<decltype(vec[i])>;
+        if constexpr (std::is_integral_v<ElemT>)
+        {
+            ss << static_cast<long long>(vec[i]);
+        }
+        else
+        {
+            double v = static_cast<double>(vec[i]);
+            if (std::isfinite(v))
+            {
+                ss << std::fixed << std::setprecision(4) << v;
+            }
+            else
+            {
+                ss << "null";
+            }
+        }
+        if (i < end_index - 1)
+            ss << ",";
+    }
+    ss << "]";
+    return ss;
+}
+
 template <typename VectorType>
 std::ostringstream VectorToJsonArrayString(const VectorType &vec)
 {
@@ -46,14 +98,22 @@ std::ostringstream VectorToJsonArrayString(const VectorType &vec)
     ss << "[";
     for (int i = 0; i < vec.size(); ++i)
     {
-        double v = static_cast<double>(vec[i]);
-        if (std::isfinite(v))
+        using ElemT = std::decay_t<decltype(vec[i])>;
+        if constexpr (std::is_integral_v<ElemT>)
         {
-            ss << std::setprecision(5) << v;
+            ss << static_cast<long long>(vec[i]);
         }
         else
         {
-            ss << "null";
+            double v = static_cast<double>(vec[i]);
+            if (std::isfinite(v))
+            {
+                ss << std::fixed << std::setprecision(4) << v;
+            }
+            else
+            {
+                ss << "null";
+            }
         }
         if (i != vec.size() - 1)
             ss << ",";
@@ -66,9 +126,9 @@ PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interf
 StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interfaces::msg::StreamingCommand> msg);
 PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> action_handle);
 
-bool MapArmToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group);
+bool MapJointToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group);
 
-bool GetArmFromWholeBody(const RobotModel &robot_model, const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group);
+bool GetJointFromWholeBody(const RobotModel &robot_model, const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group);
 
 Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary);
 }  // namespace utils

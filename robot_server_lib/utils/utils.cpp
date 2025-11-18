@@ -58,6 +58,7 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path)
 
     parse_joints_maps("joints_primary", params.joints_primary);
     parse_joints_maps("joints_secondary", params.joints_secondary);
+    parse_joints_maps("joints_torso", params.joints_torso);
 
     if (config_json.contains("joint_command_sequence_by_name"))
     {
@@ -122,7 +123,7 @@ PoseQuaternion StringToPoseQuaternion(const std::string &str)
     return pose;
 }
 
-bool MapArmToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group)
+bool MapJointToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group)
 {
     Eigen::VectorXd joints_map;
     switch (motion_group)
@@ -146,6 +147,11 @@ bool MapArmToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, 
     case MotionGroup::WholeBody:
     {
         joints_map = Eigen::VectorXd::LinSpaced(ndof_robot, 0, ndof_robot - 1);
+        break;
+    }
+    case MotionGroup::Torso:
+    {
+        joints_map = robot_model.params_ptr->joints_torso;
         break;
     }
     case MotionGroup::Unknown:
@@ -166,7 +172,7 @@ bool MapArmToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, 
     return true;
 }
 
-bool GetArmFromWholeBody(const RobotModel &robot_model, const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group)
+bool GetJointFromWholeBody(const RobotModel &robot_model, const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group)
 {
     Eigen::VectorXd joints_map;
     switch (motion_group)
@@ -190,6 +196,11 @@ bool GetArmFromWholeBody(const RobotModel &robot_model, const JointPositionDof &
     case MotionGroup::WholeBody:
     {
         joints_map = Eigen::VectorXd::LinSpaced(ndof_robot, 0, ndof_robot - 1);
+        break;
+    }
+    case MotionGroup::Torso:
+    {
+        joints_map = robot_model.params_ptr->joints_torso;
         break;
     }
     case MotionGroup::Unknown:
@@ -326,6 +337,10 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
     else if (input_request->motion_group == "WholeBody")
     {
         move_request.motion_group = MotionGroup::WholeBody;
+    }
+    else if (input_request->motion_group == "Torso")
+    {
+        move_request.motion_group = MotionGroup::Torso;
     }
     else
     {

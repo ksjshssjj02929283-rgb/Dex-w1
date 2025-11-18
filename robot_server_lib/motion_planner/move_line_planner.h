@@ -10,7 +10,9 @@ enum
     Trans = 0,
     Rot = 1,
     TransSecondary = 2,
-    RotSecondary = 3
+    RotSecondary = 3,
+    TransTorso = 4,
+    RotTorso = 5
 };
 
 struct LineGeometry
@@ -36,7 +38,7 @@ class MoveLinePlanner : public MotionPlannerBase
    protected:
     LineGeometry CalcLineGeometry(const PoseQuaternion &pose_start, const PoseQuaternion &pose_end);
 
-    void InitializeRuckig();
+    void ConfigRuckig();
 
     bool ComputeOutputJoint(JointPositionDof &q_ndof);
 
@@ -47,11 +49,12 @@ class MoveLinePlanner : public MotionPlannerBase
     // cache
     std::optional<LineGeometry> line_primary_;
     std::optional<LineGeometry> line_secondary_;
-    ruckig::Ruckig<4> ruckig_otg_;
+    std::optional<LineGeometry> line_torso_;
+    ruckig::Ruckig<6> ruckig_otg_;
     struct
     {
-        ruckig::InputParameter<4> input;
-        ruckig::OutputParameter<4> output;
+        ruckig::InputParameter<6> input;
+        ruckig::OutputParameter<6> output;
     } runtime_;
 };
 

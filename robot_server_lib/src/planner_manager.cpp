@@ -59,15 +59,23 @@ void PlannerManager::LoopOnce()
     {
         time_meta.measurement_time = TimePointSystem::Now();
 
-        Eigen::VectorXd measurement_primary, measurement_secondary;
-        PoseQuaternion ee_pose_primary, ee_pose_secondary;
-        utils::GetArmFromWholeBody(this->robot_model_, measurement.position, measurement_primary, MotionGroup::Primary);
-        utils::GetArmFromWholeBody(this->robot_model_, measurement.position, measurement_secondary, MotionGroup::Secondary);
+        Eigen::VectorXd measurement_primary, measurement_secondary, measurement_torso;
+        PoseQuaternion ee_pose_primary, ee_pose_secondary, torso_pose;
+        utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_primary, MotionGroup::Primary);
+        utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_secondary, MotionGroup::Secondary);
+        utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_torso, MotionGroup::Torso);
         ee_pose_primary = idle_planner_->KinematicsPrimary()->GetFK(measurement_primary, robot_property_.tcp_frame);
         ee_pose_secondary = idle_planner_->KinematicsSecondary()->GetFK(measurement_secondary, robot_property_.tcp_frame_secondary);
+        torso_pose = idle_planner_->KinematicsTorso()->GetFK(measurement_torso);
+        // 计算手臂末端位姿并存储 Compute end-effector pose and store
         Eigen::VectorXd ee_pose(14);
         ee_pose << ee_pose_primary.ToVectorXd(), ee_pose_secondary.ToVectorXd();
+        ee_pose = (ee_pose.array() * 1e4).round() / 1e4;  // 精确到小数点后四位
         manager_buffer_.ee_pose_measurement->AppendNewElement(ee_pose);
+        // 计算躯干末端位姿并存储 Compute torso pose and store
+        Eigen::VectorXd torso_X_Z_RY(3);
+        torso_X_Z_RY << torso_pose.position[0], torso_pose.position[2], measurement_torso[0] + measurement_torso[1] + measurement_torso[2];
+        manager_buffer_.torso_pose_measurement->AppendNewElement(torso_X_Z_RY);
     }
 
     // 尝试处理紧急队列 request Try to process emergency queue
@@ -166,8 +174,8 @@ void PlannerManager::LoopOnce()
             // 如果在柔顺控制模式下，或者有非零的柔顺偏置正在回弹中，则进行逆运动学求解 If in impedance mode, or there is non-zero compliance offset,
             // perform IK 正解原生位置 FK, get FK original position
             Eigen::VectorXd q_cmd_primary, q_cmd_secondary;
-            utils::GetArmFromWholeBody(this->robot_model_, runtime_data_.joint_cmd.position, q_cmd_primary, MotionGroup::Primary);
-            utils::GetArmFromWholeBody(this->robot_model_, runtime_data_.joint_cmd.position, q_cmd_secondary, MotionGroup::Secondary);
+            utils::GetJointFromWholeBody(this->robot_model_, runtime_data_.joint_cmd.position, q_cmd_primary, MotionGroup::Primary);
+            utils::GetJointFromWholeBody(this->robot_model_, runtime_data_.joint_cmd.position, q_cmd_secondary, MotionGroup::Secondary);
             PoseQuaternion ee_pose_primary = idle_planner_->KinematicsPrimary()->GetFK(q_cmd_primary, robot_property_.tcp_frame);
             PoseQuaternion ee_pose_secondary = idle_planner_->KinematicsSecondary()->GetFK(q_cmd_secondary, robot_property_.tcp_frame_secondary);
 
@@ -181,8 +189,8 @@ void PlannerManager::LoopOnce()
                 idle_planner_->KinematicsSecondary()->GetIK(ee_pose_secondary, q_cmd_secondary, robot_property_.tcp_frame_secondary))
             {
                 // 映射回整体关节命令 Map back to whole-body joint command
-                utils::MapArmToWholeBody(this->robot_model_, q_cmd_primary, runtime_data_.joint_cmd.compliance_position, MotionGroup::Primary);
-                utils::MapArmToWholeBody(this->robot_model_, q_cmd_secondary, runtime_data_.joint_cmd.compliance_position, MotionGroup::Secondary);
+                utils::MapJointToWholeBody(this->robot_model_, q_cmd_primary, runtime_data_.joint_cmd.compliance_position, MotionGroup::Primary);
+                utils::MapJointToWholeBody(this->robot_model_, q_cmd_secondary, runtime_data_.joint_cmd.compliance_position, MotionGroup::Secondary);
             }
             else  // IK求解失败则保持原位置不变 If IK fails, keep previous position
             {

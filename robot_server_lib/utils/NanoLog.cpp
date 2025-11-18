@@ -571,9 +571,30 @@ class FileWriter
 
     void open_fresh_base_file()
     {
+        std::string path = make_path(0);
+        std::error_code ec;
+
+        // 若已有基文件，则根据大小决定追加或轮转
+        if (std::filesystem::exists(path, ec) && !ec)
+        {
+            auto size = std::filesystem::file_size(path, ec);
+            if (!ec && size < m_log_file_roll_size_bytes)
+            {
+                // 追加到已有文件，继续记录
+                m_bytes_written = static_cast<std::streamoff>(size);
+                m_os.reset(new std::ofstream());
+                m_os->open(path, std::ofstream::out | std::ofstream::app);
+                return;
+            }
+            // 已超过滚动阈值：先轮转，再打开新的基文件
+            rotate_files_and_open_base();
+            return;
+        }
+
+        // 不存在则新建（截断以确保是空文件）
         m_bytes_written = 0;
         m_os.reset(new std::ofstream());
-        m_os->open(make_path(0), std::ofstream::out | std::ofstream::trunc);
+        m_os->open(path, std::ofstream::out | std::ofstream::trunc);
     }
 
     void rotate_files_and_open_base()
