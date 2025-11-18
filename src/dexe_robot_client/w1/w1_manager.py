@@ -2135,6 +2135,17 @@ class W1Manager:
                 return False
             
     def detach_object(self, obj_name: str, which_arm: str, arm7_transform: np.ndarray = None):
+        """
+        Detach grasp object from the arm flange in collision checker and planner
+
+        Args:
+            obj_name (str): object name
+            which_arm (str): "left" or "right"
+            arm7_transform (np.ndarray, optional, shape=(4, 4)): transformation of arm 7 link based on the robot base link. Defaults to None.
+
+        Returns:
+            bool: True if success, False otherwise
+        """
         if arm7_transform is None:
             res, current_qpos = self.get_current_qpos()
             if not res:
