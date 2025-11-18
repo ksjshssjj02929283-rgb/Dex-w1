@@ -1,15 +1,13 @@
-#include <cmath>    // 新增：std::isfinite
-#include <iomanip>  // 新增：std::setprecision
-#include <memory>
-#include <type_traits>
-
 /**
  * @file utils.h
  * @brief 通用工具函数
  * @copyright Copyright (C) 2025 DexForce Technology Co., Ltd. All Rights Reserved.
  */
 #pragma once
-
+#include <cmath>
+#include <iomanip>
+#include <memory>
+#include <type_traits>
 #include <algorithm>
 #include <filesystem>
 #include <fstream>

@@ -11,6 +11,7 @@
 #include "robot_server_lib/force_sensor_reader.h"
 #include "robot_server_lib/robot_server_base.h"
 #include "shared_memory_def.h"
+#include "w1_utils.h"
 
 #define CTRLWORD_MOTOR_SWITCH_ON (1U << 0)
 #define CTRLWORD_MOTOR_ENABLE (1U << 1)

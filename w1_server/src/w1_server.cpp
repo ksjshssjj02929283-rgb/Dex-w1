@@ -183,7 +183,9 @@ void RobotServer::TorqueControlThreadFunc()
 
         // 读取机器人反馈数据
         bool ret = feedback_shm_instance.PeekLatest(&robot_feedback_);
-        this->is_robot_ready_ = ret && (robot_feedback_.robot_status_word & STATUSWORD_MOTOR_READY);
+        bool motor_ready = robot_feedback_.robot_status_word & STATUSWORD_MOTOR_READY;
+        bool motor_enabled = robot_feedback_.robot_status_word & STATUSWORD_MOTOR_ENABLED;
+        this->is_robot_ready_ = ret && motor_ready;
         robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT;
         if (this->is_robot_ready_)
         {
@@ -213,10 +215,11 @@ void RobotServer::TorqueControlThreadFunc()
         else
         {
             this->robot_buffers_.joint_raw_measurement->Reset();
-            if (loop_counter % 3000 == 0)
+            if (loop_counter % 1 == 0)
             {
-                RCLCPP_WARN(this->get_logger(), "Robot is not ready, please check Connection, OP or Error state.");
-                LOG_CRIT << "Robot is not ready, please check Connection, OP or Error state.";
+                RCLCPP_WARN(this->get_logger(), "Robot is not ready, shm status: %d, statusword: %d, please check Connection, OP or Error state.", ret, robot_feedback_.robot_status_word);
+                LOG_CRIT << "Robot is not ready, shm status: " << ret << ", statusword: " << robot_feedback_.robot_status_word
+                         << ", please check Connection, OP or Error state.";
             }
         }
 
@@ -313,9 +316,9 @@ void RobotServer::PublishThreadFunc()
         std::ostringstream joint_velocity_ss = utils::VectorToJsonArrayString(robot_feedback_.velocity, 0, ndof_robot);
         std::ostringstream joint_torque_ss = utils::VectorToJsonArrayString(robot_feedback_.torque, 0, ndof_robot);
         std::ostringstream joint_sensor_wrench_ss = utils::VectorToJsonArrayString(sensor_wrench_);
-        std::ostringstream motor_status_ss = utils::VectorToJsonArrayString(robot_feedback_.al_status, 0, ndof_robot);
-        std::ostringstream motor_temperature_ss = utils::VectorToJsonArrayString(robot_feedback_.motor_error_code, 0, ndof_robot);
-        std::ostringstream motor_error_code_ss = utils::VectorToJsonArrayString(robot_feedback_.motor_temperature, 0, ndof_robot);
+        std::ostringstream motor_status_ss = utils::MotorStatusToJsonArrayString(robot_feedback_.al_status, 0, ndof_robot);
+        std::ostringstream motor_temperature_ss = utils::VectorToJsonArrayString(robot_feedback_.motor_temperature, 0, ndof_robot);
+        std::ostringstream motor_error_code_ss = utils::MotorErrorcodeToJsonArrayString(robot_feedback_.motor_error_code, 0, ndof_robot);
 
         robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" +
                                       ToString(this->manager_state_) + "\"" + ",\"run_mode\":\"" + ToString(robot_property_.run_mode) + "\"" +
