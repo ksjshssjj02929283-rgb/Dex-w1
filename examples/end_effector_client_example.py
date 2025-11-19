@@ -33,8 +33,8 @@ def main(is_sim = True,
     ros_thread.start()
 
     try:
-        get_logger().info(f"left qpos: {left_node.get_qpos()[1]}")
-        get_logger().info(f"right qpos: {right_node.get_qpos()[1]}")
+        get_logger().info(f"left qpos: {left_node.get_pos()[1]}")
+        get_logger().info(f"right qpos: {right_node.get_pos()[1]}")
         embed(banner1 = "Interactive debugging here")
     finally:
         if rclpy.ok():

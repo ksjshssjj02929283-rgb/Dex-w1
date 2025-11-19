@@ -76,11 +76,6 @@ def arm_angle_motion():
     qpos_array[:,6:13] = np.array(left_qpos_list)
     qpos_array[:,13:20] = np.array(right_qpos_list)
 
-    # check collision
-    if w1_manager._check_traj_collision(qpos_array):
-        get_logger().error("Trajectory is collision, do not executed!")
-        return
-
     # execute
     w1_manager.execute_joint_traj(qpos_array)
 

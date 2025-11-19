@@ -5,45 +5,209 @@ from dexe_robot_client.common import W1Version, W1ArmType
 from dexe_robot_client.w1 import W1Manager
 from dexe_robot_client.w1.path_planner.utils.robot_type import *
 from dexe_robot_client.common.mapping_index import *
+from scipy.spatial.transform import Rotation as R
 from IPython import embed
+from dexe_robot_client.common.config import DATA_DIR
 
-def test_single_task(task_dict=None):
+# 回原点
+print("回原点")
+task_dict1 = {
+            "torso": [
+                [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
+                ],
+            "torso_speed_ratio": [1.],
+            "head": [
+                [0.0, -0.6632251157578453]
+                ],
+            "head_speed_ratio": [1.],
+            "left_arm": [
+                [-77.08, 260.39, 328.83, 91.77, 86.44, 170.82]
+                ],
+            "left_arm_speed_ratio": [1.],
+            "left_arm_ee": [
+                [0, [0, 0, 0, 0, 0, 0], 0]
+                ],
+            "right_arm": [
+                [101.45, 242.18, 331.16, 64.6, -89.06, -149.32]
+                ],
+            "right_arm_speed_ratio": [1.],
+            "right_arm_ee": [
+                [0, [0, 0, 0, 0, 0, 0], 0]
+                ]
+            }
 
+# 左手抓胶囊，右手拿杯子
+task_dict2 = {
+            "torso": [
+                [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
+                ],
+            "torso_speed_ratio": [1.],
+            "head": [
+                [0.0, -0.6632251157578453]
+                ],
+            "head_speed_ratio": [1.],
+            "left_arm": [
+                [-244.76, 300.23, 293.88, -175.98, 62.95, -61.24]
+                ],
+            "left_arm_speed_ratio": [1.],
+            "left_arm_ee": [
+                [0.5, [45, 49, 50, 50, 50, 50], 0.5]
+                ],
+            "right_arm": [
+                [276.97, 299.58, 310.68, -92.38, -17.4, 5.32]
+                ],
+            "right_arm_speed_ratio": [1.],
+            "right_arm_ee": [
+                [0.5, [100, 50, 40, 40, 40, 40], 0.5]
+                ]
+            }
+
+# 左手放胶囊，右手放杯子
+task_dict3 = {
+            "torso": [
+                [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
+                ],
+            "torso_speed_ratio": [1.],
+            "head": [
+                [0.0, -0.6632251157578453]
+                ],
+            "head_speed_ratio": [1.],
+            "left_arm": [
+                [-17.02, 374.27, -4.97, -153.92, 2.8, -95.08]
+                ],
+            "left_arm_speed_ratio": [1.],
+            "left_arm_ee": [
+                [0.5,  [45, 49, 50, 50, 50, 50], 0.5]
+                ],
+            "right_arm": [
+                # [290.03, 222.24, 56.36, -147.74, 7.29, 7.37]
+                [297.78, 305.9, 25.68, -150.84, 11.48, -6.06]
+                ],
+            "right_arm_speed_ratio": [1.],
+            "right_arm_ee": [
+                [0.5, [100, 50, 40, 40, 40, 40], 0.5]
+                ]
+            }
+
+# 准备下压把手
+task_dict4 = {
+            "torso": [
+                [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
+                ],
+            "torso_speed_ratio": [1.],
+            "head": [
+                [0.0, -0.6632251157578453]
+                ],
+            "head_speed_ratio": [1.],
+            "left_arm": [
+                [-17.02, 374.27, -4.97, -153.92, 2.8, -95.08]
+                ],
+            "left_arm_speed_ratio": [1.],
+            "left_arm_ee": [
+                [0.5,  [0, 0, 0, 0, 0, 0], 0.5]
+                ],
+            "right_arm": [
+                [290.03, 222.24, 56.36, -147.74, 7.29, 7.37]
+                ],
+            "right_arm_speed_ratio": [1.],
+            "right_arm_ee": [
+                [0.5, [0, 0, 0, 0, 0, 0], 0.5]
+                ]
+            }
+
+
+task_dict5 = {
+            "torso": [
+                [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
+                ],
+            "torso_speed_ratio": [1.],
+            "head": [
+                [0.0, -0.6632251157578453]
+                ],
+            "head_speed_ratio": [1.],
+            "left_arm": [
+                [17.76, 458.95, 53.88, -131.85, 11.79, -81.07]
+                ],
+            "left_arm_speed_ratio": [1.],
+            "left_arm_ee": [
+                [0.5,  [0, 0, 0, 0, 0, 0], 0.5]
+                ],
+            "right_arm": [
+                [3.76, 413.07, 82.77, -116.84, 11.57, 38.77]
+                ],
+            "right_arm_speed_ratio": [1.],
+            "right_arm_ee": [
+                [0.5, [0, 0, 0, 0, 0, 0], 0.5]
+                ]
+            }
+
+# 调用move_joint
+# 下压把手
+task_dict6 = {
+            "torso": [
+                [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
+                ],
+            "torso_speed_ratio": [1.],
+            "head": [
+                [0.0, -0.6632251157578453]
+                ],
+            "head_speed_ratio": [1.],
+            "left_arm": [
+                [-80.93, 280.19, 145.98, 176.0, 25.61, -109.19]
+                ],
+            "left_arm_speed_ratio": [1.],
+            "left_arm_ee": [
+                [0.5,  [0, 0, 0, 0, 0, 0], 0.5]
+                ],
+            "right_arm": [
+                [127.57, 265.49, 134.9, -150.2, -9.96, 64.87]
+                ],
+            "right_arm_speed_ratio": [1.],
+            "right_arm_ee": [
+                [0.5, [0, 0, 0, 0, 0, 0], 0.5]
+                ]
+            }
+
+# 重载把手下压环境
+# 准备拿咖啡
+task_dict7 = {
+            "torso": [
+                [0.5410520681182421, -1.2217304763960306, 0.7853981633974483, 0.03490658503988659]
+                ],
+            "torso_speed_ratio": [1.],
+            "head": [
+                [0.0, -0.6632251157578453]
+                ],
+            "head_speed_ratio": [1.],
+            "left_arm": [
+                [-207.26, 303.41, 227.94, -158.3, 33.16, -53.16]
+                ],
+            "left_arm_speed_ratio": [1.],
+            "left_arm_ee": [
+                [0.5,  [0, 0, 0, 0, 0, 0], 0.5]
+                ],
+            "right_arm": [
+                [302.75, 211.49, 115.47, -136.26, 3.46, 3.21]
+                ],
+            "right_arm_speed_ratio": [1.],
+            "right_arm_ee": [
+                [0.5, [0, 0, 0, 0, 0, 0], 0.5]
+                ]
+            }
+
+
+
+
+
+def test_single_task(task_dict=None, load_env = True, fcl_env_path = None, planner_env_path = None):
+    if load_env:
+        w1_manager.load_fcl_environment(fcl_env_path)
+        w1_manager.load_planner_environment(planner_env_path)
     w1_manager.move_dual_arm_single_task(task_dict=task_dict,
                                         speed_ratio=1)
-    # embed()
-    
 
-def test_single_arm():
-    torso_waypoint = [[0.7854, -1.5708,  0.7853, -0.]]
-    head_waypoint = [[0.5, 0.3]]
-    left_arm_waypoint = [[-176.73, 190.87, 72.72, -174.17, 16.13, -98.1],
-                         [-174.093, 337.351, 396.462, 72.72, 75.11, -170.8]]
-    left_arm_ee_state = [[0.5, [0., 50., 50., 50., 50., 50.], 0.5],
-                         [0.5, [0., 50., 50., 50., 50., 50.], 0.5]]
-    # right_arm_waypoint = [[217.868, 215.12, 216.22, -169.87, 45.22, -64.85],
-    #                       [187.136, 244.01, 228.763, -170.73, 44.71, -61.5]]
-    # right_arm_ee_state = [[0.5, [100., 100., 0., 0., 100., 100.], 0.5],
-    #                       [0.5, [0., 50., 50., 50., 50., 50.], 0.5]]
-
-    right_arm_waypoint = []
-    right_arm_ee_state = []
-    
-    w1_manager.move_single_arm(task_dict={
-                                        "torso": torso_waypoint,
-                                        "torso_speed_ratio": [1.],
-                                        "head": head_waypoint,
-                                        "head_speed_ratio": [1.],
-                                        "left_arm": left_arm_waypoint,
-                                        "left_arm_speed_ratio": [1., 1.],
-                                        "left_arm_ee": left_arm_ee_state,
-                                        "right_arm": right_arm_waypoint,
-                                        "right_arm_speed_ratio": [1., 1.],
-                                        "right_arm_ee": right_arm_ee_state},
-                                        speed_ratio=1)
-    
-
-
+def move_linear_full_body(task_dict=None):
+    w1_manager.move_linear_full_body(waypoints_dict=task_dict, speed_ratio=1)
 
 if __name__ == "__main__":
     robot_type = RobotType.W1V02_1
@@ -57,116 +221,66 @@ if __name__ == "__main__":
         raise RuntimeError("Failed to connect to W1 robot.")
     
     w1_manager.set_tcp("left_arm", np.eye(4))
-    w1_manager.set_tcp("right_arm", np.array([[-1,0,0,0],
-                                              [0,-1,0,0],
-                                              [0,0,1,0],
-                                              [0,0,0,1]]))
+    right_tcp_xpos = np.eye(4)
+    right_tcp_xpos[:3, :3] = R.from_rotvec([0.0, 0.0, 180.], degrees=True).as_matrix()
+    w1_manager.set_tcp("right_arm", xpos=right_tcp_xpos)
 
 
-    print("load w1 manager done")
-    w1_manager.set_home_qpos(np.array([0, 0, 0, 0, 0.0, 0.0, 
-                                      0.218, -0.718, 0.563, -2.083, 1.125, -0.501, 0.393, 
-                                      -0.51, 0.851, -0.291, 1.821, 1.187, -0.104, 0.946]),
-                            save_to_file=False)
+    # w1_manager.set_home_qpos(np.array([0, 0, 0, 0, 0.0, 0.0, 
+    #                                   0.218, -0.718, 0.563, -2.083, 1.125, -0.501, 0.393, 
+    #                                   -0.51, 0.851, -0.291, 1.821, 1.187, -0.104, 0.946]),
+    #                         save_to_file=False)
     
-    w1_manager.set_ee_qpos("left_arm_ee", np.array([0.]*6))
-    w1_manager.set_ee_qpos("right_arm_ee", np.array([0.]*6))
-    w1_manager.go_home(1) 
+    # w1_manager.set_ee_qpos("left_arm_ee", np.array([0.]*6))
+    # w1_manager.set_ee_qpos("right_arm_ee", np.array([0.]*6))
+    # w1_manager.go_home(1) 
 
+
+    fcl_downward_env_path = f"{DATA_DIR}/environment/coffee_demo_downward.json"
+    fcl_upward_env_path = f"{DATA_DIR}/environment/coffee_demo_upward.json"
+    planner_downward_env_path = f"{DATA_DIR}/environment/expanded_coffee_demo_downward.json"
+    planner_upward_env_path = f"{DATA_DIR}/environment/expanded_coffee_demo_upward.json"
+    
+
+    # 回原点
+    print("回原点， 加载把手上提的环境")
+    test_single_task(task_dict=task_dict1, load_env=True, fcl_env_path=fcl_upward_env_path, planner_env_path=planner_upward_env_path)
     # input("Press Enter to continue to next test...")
-    test_single_arm()
+    # 左手抓胶囊，右手拿杯子
+    print("左手抓胶囊，右手拿杯子")
+    test_single_task(task_dict=task_dict2, load_env=False)
+    # input("Press Enter to continue to next test...")
+    # 左手放胶囊，右手放杯子
+    print("左手放胶囊，右手放杯子")
+    # w1_manager.disable_specific_obstacle(name="coffee_machine")
+    test_single_task(task_dict=task_dict3, load_env=False)
+    # input("Press Enter to continue to next test...")    
+    # 准备下压把手
+    print("准备下压把手")
+    # w1_manager.enable_specific_obstacle(name="coffee_machine")
+    # input("Press Enter to continue to next test...")
+    test_single_task(task_dict=task_dict4, load_env=False)
+    # input("Press Enter to continue to next test...")
+    test_single_task(task_dict=task_dict5, load_env=False)
+    # input("Press Enter to continue to next test...")
+    # 下压把手  
+    print("下压把手， 调用move_joint_full_body")  
+    w1_manager.disable_specific_obstacle(name="coffee_machine")
+    move_linear_full_body(task_dict=task_dict6)
+    # test_single_task(task_dict=task_dict6, load_env=False)
+    input("Press Enter to continue to next test...")
+    # input("Press Enter to continue to next test...")
+    # 重载把手下压环境
+    # 准备拿咖啡
+    # print("准备拿咖啡, 重载把手下压环境")   
+    test_single_task(task_dict=task_dict7, load_env=True, fcl_env_path=fcl_downward_env_path, planner_env_path=planner_downward_env_path)
+    # input("Press Enter to continue to next test...")
+
+    print(f"---------collision count: {w1_manager.collision_cnt}---------")
+
+       
 
 
-    task_dict1 = {
-                "torso": [np.deg2rad([31, -70, 45, 2]).tolist()],
-                "torso_speed_ratio": [1.],
-                "head": [np.deg2rad([-5, -25]).tolist()],
-                "head_speed_ratio": [1.],
-                "left_arm": [[-252.768, 320.528, 260.741, 54.061, 84.122, 172.988]],
-                "left_arm_speed_ratio": [1., 1.],
-                "left_arm_ee": [[0.5, [39, 98, 60, 57, 98, 99], 0.5]],
-                "right_arm": [[330.246, 97.433, 256.061, -166.055, 57.545, -57.878]],
-                "right_arm_speed_ratio": [1., 1.],
-                "right_arm_ee": [[0.5, [0, 0, 0, 0, 0, 0], 0.5]]
-                }
-    
-    task_dict2 = {
-                "torso": [np.deg2rad([31, -70, 45, 2]).tolist()],
-                "torso_speed_ratio": [1.],
-                "head": [np.deg2rad([-5, -25]).tolist()],
-                "head_speed_ratio": [1.],
-                "left_arm": [[-115.077, 325.576, 103.792, -159.673, 42.378, -29.296]],
-                "left_arm_speed_ratio": [1., 1.],
-                "left_arm_ee": [[0.5, [54, 98, 75, 75, 98, 99], 0.5]],
-                "right_arm": [[330.246, 97.433, 256.061, -166.055, 57.545, -57.878]],
-                "right_arm_speed_ratio": [1., 1.],
-                "right_arm_ee": [[0.5, [0, 0, 0, 0, 0, 0], 0.5]]
-                }
-    
-    task_dict3 = {
-                "torso": [np.deg2rad([31, -70, 45, 2]).tolist()],
-                "torso_speed_ratio": [1.],
-                "head": [np.deg2rad([0, -15]).tolist()],
-                "head_speed_ratio": [1.],
-                "left_arm": [[92.089, 321.906, 56.05, -129.055, 54.999, -47.585]],
-                "left_arm_speed_ratio": [1., 1.],
-                "left_arm_ee": [[0.5, [54, 98, 75, 75, 98, 99], 0.5]],
-                "right_arm": [[110.044, 219.781, 247.63, -116.803, -0.39, 25.13]],
-                "right_arm_speed_ratio": [1., 1.],
-                "right_arm_ee": [[0.5, [0, 0, 0, 0, 0, 0], 0.5]]
-                }
-    
-    task_dict4 = {
-                "torso": [np.deg2rad([38, -80, 50, -10]).tolist()],
-                "torso_speed_ratio": [1.],
-                "head": [np.deg2rad([10, -20]).tolist()],
-                "head_speed_ratio": [1.],
-                "left_arm": [[-263.866, 210.769, 300.563, -62.048, 3.9, 4.359]],
-                "left_arm_speed_ratio": [1., 1.],
-                "left_arm_ee": [[0.5, [0, 99, 54, 54, 45, 37], 0.5]],
-                "right_arm": [[-96.409, 321.062, 217.857, -127.961, -36.509, 69.083]],
-                "right_arm_speed_ratio": [1., 1.],
-                "right_arm_ee": [[0.5, [0, 0, 0, 0, 0, 0], 0.5]]
-                }
-    
-    task_dict5 = {
-                "torso": [np.deg2rad([36, -80, 50, -45]).tolist()],
-                "torso_speed_ratio": [1.],
-                "head": [np.deg2rad([0, -15]).tolist()],
-                "head_speed_ratio": [1.],
-                "left_arm": [[-302.766, 243.229, 190.295, -85.607, 4.906, 7.884]],
-                "left_arm_speed_ratio": [1., 1.],
-                "left_arm_ee": [[0.5, [0, 99, 52, 54, 51, 48], 0.5]],
-                "right_arm": [[84.635, 349.314, 0.621, -167.908, -44.333, 92.44]],
-                "right_arm_speed_ratio": [1., 1.],
-                "right_arm_ee": [[0.5, [0, 0, 0, 0, 0, 0], 0.5]]
-                }
-    
-    task_dict6 = {
-                "torso": [np.deg2rad([36, -80, 50, -45]).tolist()],
-                "torso_speed_ratio": [1.],
-                "head": [np.deg2rad([0, -15]).tolist()],
-                "head_speed_ratio": [1.],
-                "left_arm": [[-277.643, 260.611, 120.996, -72.456, -0.784, -8.71]],
-                "left_arm_speed_ratio": [1., 1.],
-                "left_arm_ee": [[0.5, [0, 99, 0, 0, 0, 0], 0.5]],
-                "right_arm": [[180.632, 222.18, 257.174, -134.501, -30.037, -3.081]],
-                "right_arm_speed_ratio": [1., 1.],
-                "right_arm_ee": [[0.5, [0, 0, 0, 0, 0, 0], 0.5]]
-                }
-    
-    test_single_task(task_dict=task_dict1)
-    input("Press Enter to continue to next test...")
-    test_single_task(task_dict=task_dict2)
-    input("Press Enter to continue to next test...")
-    test_single_task(task_dict=task_dict3)
-    input("Press Enter to continue to next test...")    
-    test_single_task(task_dict=task_dict4)
-    input("Press Enter to continue to next test...")
-    test_single_task(task_dict=task_dict5)
-    input("Press Enter to continue to next test...")
-    test_single_task(task_dict=task_dict6)
-    input("Press Enter to exit...")
     embed()
 
     

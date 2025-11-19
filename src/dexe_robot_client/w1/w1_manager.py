@@ -14,7 +14,7 @@ from loop_rate_limiters import RateLimiter
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
-from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, generate_w1_urdf
+from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, generate_w1_urdf, download_w1_urdf, download_environment
 from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..navigation_client import ChassisClient
 from ..robot_client import RobotClientRos2 as RobotClient
@@ -27,10 +27,9 @@ from .path_planner.fcl_checker import FCLChecker
 from .path_planner.planner_pinocchio import Planner_Pin
 from ..common.mapping_index import *
 from .path_planner.utils.robot_type import *
-from .path_planner.single_planner import SinglePlanner
+from .path_planner.hybrid_planner import HybridPlanner
 
 from dexe_rp import DexforceW1Kinematics, SRSConfig
-
 
 class W1Manager:
     _instance = None
@@ -82,6 +81,20 @@ class W1Manager:
         self.w1_params = W1Params(self._arm_type, 
                                   self._w1_version, 
                                   self._end_effector_type)
+        
+        # # for visual
+        # if not generate_w1_urdf(arm_type, w1_version, end_effector_type)[1]:
+        #     raise ValueError(f"Found URDF failed.")
+
+        # # for collision check
+        # if self._end_effector_type is not None:
+        #     if not generate_w1_urdf(arm_type, w1_version, None)[1]:
+        #         raise ValueError(f"Found URDF failed.")
+
+        # download specific urdf
+        res, file_path = download_w1_urdf(arm_type, w1_version, end_effector_type)
+        if self._end_effector_type is not None:
+            res, file_path = download_w1_urdf(arm_type, w1_version, None)
 
         # 在主线程中正常退出时自动调用
         atexit.register(self._destroy_clients)
@@ -98,14 +111,8 @@ class W1Manager:
                 raise RuntimeError("Set sim mode failed")
             raise RuntimeError("Set real mode failed")
 
-        # for visual
-        if not generate_w1_urdf(arm_type, w1_version, end_effector_type)[1]:
-            raise ValueError(f"Found URDF failed.")
 
-        # for collision check
-        if self._end_effector_type is not None:
-            if not generate_w1_urdf(arm_type, w1_version, None)[1]:
-                raise ValueError(f"Found URDF failed.")
+
         # initialize fcl checker and pinocchio model and planner
         self._init_fcl_checker(arm_type=arm_type, w1_version=w1_version, end_effector_type=end_effector_type)
         self._init_pinocchio(arm_type=arm_type, w1_version=w1_version, end_effector_type=end_effector_type)
@@ -114,6 +121,8 @@ class W1Manager:
  
         self._stop_move_event = threading.Event()
         self._stop_move_event.clear()
+
+        self.collision_cnt = 0
 
 
     def _init_fcl_checker(self, arm_type: W1ArmType, w1_version: W1Version = W1Version.V2, end_effector_type: EndEffectorType = None):
@@ -126,6 +135,7 @@ class W1Manager:
                 raise ValueError(f"Not supported arm type: {arm_type} for fcl checker")
                 return
             self.fcl_checker = FCLChecker(fcl_robot_type, end_effector_type)
+            self.fcl_checker.enable_visualize()
         else:
             raise ValueError(f"Not supported w1 version: {w1_version} for fcl checker")
         
@@ -173,10 +183,10 @@ class W1Manager:
             else:
                 raise ValueError(f"Not supported arm type: {arm_type} for planner")
                 return
-            SinglePlanner.set_arms_cfg(SINGLE_ARM_DIM, SINGLE_ARM_DIM, LARM_BOUND, RARM_BOUND)
-            SinglePlanner.set_robot_cfg(robot_type=planner_robot_type, ee_type=end_effector_type)
-            # SinglePlanner.set_env_json(get_env_json_path())
-            self.siso_planner = SinglePlanner()
+            HybridPlanner.set_arms_cfg(SINGLE_ARM_DIM, SINGLE_ARM_DIM, LARM_BOUND, RARM_BOUND)
+            HybridPlanner.set_robot_cfg(robot_type=planner_robot_type, ee_type=end_effector_type)
+            # HybridPlanner.set_env_json(get_env_json_path())
+            self.hybrid_planner = HybridPlanner()
 
     def load_planner_environment(self, file_path: str = None):
         """
@@ -186,7 +196,8 @@ class W1Manager:
             env_json_path = get_env_json_path()
         else:
             env_json_path = file_path
-        self.siso_planner.set_env_json(env_json_path)
+        self.hybrid_planner.set_env_json(env_json_path)
+        self.hybrid_planner.update_fcl_env(env_json_path)
 
     def _init_clients(self):
         if not rclpy.ok():
@@ -642,7 +653,7 @@ class W1Manager:
             return False
         if not self._check_qpos_dimension(name, qpos_):
             return False
-        return self._get_arm_ee_client(name).set_qpos(qpos_)
+        return self._get_arm_ee_client(name).set_pos(qpos_)
 
     def set_home_qpos(self, 
                       home_qpos: np.ndarray, 
@@ -707,7 +718,7 @@ class W1Manager:
         if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name, False):
                 return False, None
-            return self._get_arm_ee_client(name).get_qpos()
+            return self._get_arm_ee_client(name).get_pos()
         
         robot_info = self.robot_client.get_info()
         if robot_info.joint_position is None:
@@ -831,14 +842,19 @@ class W1Manager:
         self.logger.info("Stop move by user!")
         return True
 
-    def check_collision(self, qpos: np.ndarray) -> bool:
+    def check_collision(self, qpos: np.ndarray, armlee_qpos: np.ndarray = None, armree_qpos: np.ndarray = None) -> bool:
         """检查qpos状态是否碰撞"""
         if not self._check_qpos_dimension("full_body", qpos):
             return True
-        torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(qpos)
+        if armlee_qpos is not None and not self._check_qpos_dimension("left_arm_ee", armlee_qpos):
+            return True
+        if armree_qpos is not None and not self._check_qpos_dimension("right_arm_ee", armree_qpos):
+            return True
+        
+        torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(qpos, left_ee_qpos=armlee_qpos, right_ee_qpos=armree_qpos, compute_ee=True)
         self.fcl_checker.set_head_body_transform(head_transforms=head_tf, 
                                                         body_transforms=torso_tf)
-        self.fcl_checker.update_arm_transform(arml_tf + armr_tf)
+        self.fcl_checker.update_arm_transform(arml_tf + armr_tf, armlee_tf, armree_tf)
         return self.fcl_checker.check_collision()
 
     def _check_traj_collision(self, 
@@ -1034,7 +1050,7 @@ class W1Manager:
 
             while not stop_ee_thread:
                 if count == target_count and count != cur_count:
-                    self.left_ee_client.set_qpos(np.array(target_ee_qpos))
+                    self.left_ee_client.set_pos(np.array(target_ee_qpos))
                     self.logger.debug(f"left_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if left_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = left_arm_ee_trigger_list_cp.pop()
@@ -1058,7 +1074,7 @@ class W1Manager:
 
             while not stop_ee_thread:
                 if count == target_count and count != cur_count:
-                    self.right_ee_client.set_qpos(np.array(target_ee_qpos))
+                    self.right_ee_client.set_pos(np.array(target_ee_qpos))
                     self.logger.debug(f"right_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if right_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = right_arm_ee_trigger_list_cp.pop()
@@ -2062,6 +2078,145 @@ class W1Manager:
         return self.move_linear_full_body(waypoints_dict={f"{name}": [xpos_to_user_pose(target_xpos)]},
                                         speed_ratio=speed_ratio)
     
+    def attach_object(self, obj_name: str, which_arm: str, arm7_T_object: np.ndarray = None):
+        """
+        Attach grasp object to the arm flange in collision checker and planner
+
+        Args:
+            obj_name (str): object name
+            which_arm (str): "left" or "right"
+            arm7_T_object (np.ndarray, optional, shape=(4, 4)): transformation from object to arm link 7 frame. Defaults to None.
+
+        Returns:
+            bool: True if success, False otherwise
+        """
+
+        if arm7_T_object is None:
+            res, rotation, translation = self.hybrid_planner.fcl_checker.get_grasp_object_pose(name=obj_name)
+            if not res:
+                self.logger.error(f"Attach object failed, cannot get obstacle pose: {obj_name}")
+                return False
+            else:
+                object_tf = np.eye(4)
+                object_tf[:3, :3] = rotation
+                object_tf[:3, 3] = translation
+            res, current_qpos = self.get_current_qpos()
+            if not res:
+                self.logger.error("Attach object failed, cannot get current qpos")
+                return False
+            torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
+            if which_arm == "left":
+                arm7_T_object = np.linalg.inv(arml_tf[-1]) @ object_tf
+                res_fcl = self.fcl_checker.attach_object_arml(obj_name=obj_name, arml7_T_object=arm7_T_object)
+                res_planner = self.hybrid_planner.attach_object(obj_name=obj_name, which_arm=which_arm, arm7_T_object=arm7_T_object)
+                return res_fcl and res_planner
+            elif which_arm == "right":
+                arm7_T_object = np.linalg.inv(armr_tf[-1]) @ object_tf
+                res_fcl = self.fcl_checker.attach_object_armr(obj_name=obj_name, armr7_T_object=arm7_T_object)
+                res_planner = self.hybrid_planner.attach_object(obj_name=obj_name, which_arm=which_arm, arm7_T_object=arm7_T_object)
+                return res_fcl and res_planner
+            else:
+                self.logger.error(f"Attach object failed, invalid which_arm: {which_arm}")
+                return False
+        else:
+            if arm7_T_object.shape != (4, 4):
+                self.logger.error(f"Attach object failed, invalid arm7_T_object shape: {arm7_T_object.shape}")
+                return False
+            if which_arm == "left":
+                res_fcl = self.fcl_checker.attach_object_arml(obj_name=obj_name, arml7_T_object=arm7_T_object)
+                res_planner = self.hybrid_planner.attach_object(obj_name=obj_name, which_arm=which_arm, arm7_T_object=arm7_T_object)
+                return res_fcl and res_planner
+            elif which_arm == "right":
+                res_fcl = self.fcl_checker.attach_object_armr(obj_name=obj_name, armr7_T_object=arm7_T_object)
+                res_planner = self.hybrid_planner.attach_object(obj_name=obj_name, which_arm=which_arm, arm7_T_object=arm7_T_object)
+                return res_fcl and res_planner
+            else:
+                self.logger.error(f"Attach object failed, invalid which_arm: {which_arm}")
+                return False
+            
+    def detach_object(self, obj_name: str, which_arm: str, arm7_transform: np.ndarray = None):
+        """
+        Detach grasp object from the arm flange in collision checker and planner
+
+        Args:
+            obj_name (str): object name
+            which_arm (str): "left" or "right"
+            arm7_transform (np.ndarray, optional, shape=(4, 4)): transformation of arm 7 link based on the robot base link. Defaults to None.
+
+        Returns:
+            bool: True if success, False otherwise
+        """
+        if arm7_transform is None:
+            res, current_qpos = self.get_current_qpos()
+            if not res:
+                self.logger.error("Detach object failed, cannot get current qpos")
+                return False
+            torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
+            if which_arm == "left":
+                arm7_transform = arml_tf[-1]
+                res_fcl = self.fcl_checker.detach_object_arml(obj_name=obj_name, arml7_transform=arm7_transform)
+                res_planner = self.hybrid_planner.detach_object(obj_name=obj_name, which_arm=which_arm, arm7_transform=arm7_transform)
+                return res_fcl and res_planner
+            elif which_arm == "right":
+                arm7_transform = armr_tf[-1]
+                res_fcl = self.fcl_checker.detach_object_armr(obj_name=obj_name, armr7_transform=arm7_transform)
+                res_planner = self.hybrid_planner.detach_object(obj_name=obj_name, which_arm=which_arm, arm7_transform=arm7_transform)
+                return res_fcl and res_planner
+            else:
+                self.logger.error(f"Detach object failed, invalid which_arm: {which_arm}")
+                return False
+        else:
+            if arm7_transform.shape != (4, 4):
+                self.logger.error(f"Detach object failed, invalid arm7_transform shape: {arm7_transform.shape}")
+                return False
+            if which_arm == "left":
+                res_fcl = self.fcl_checker.detach_object_arml(obj_name=obj_name, arml7_transform=arm7_transform)
+                res_planner = self.hybrid_planner.detach_object(obj_name=obj_name, which_arm=which_arm, arm7_transform=arm7_transform)
+                return res_fcl and res_planner
+            elif which_arm == "right":
+                res_fcl = self.fcl_checker.detach_object_armr(obj_name=obj_name, armr7_transform=arm7_transform)
+                res_planner = self.hybrid_planner.detach_object(obj_name=obj_name, which_arm=which_arm, arm7_transform=arm7_transform)
+                return res_fcl and res_planner
+            else:
+                self.logger.error(f"Detach object failed, invalid which_arm: {which_arm}")
+                return False
+
+    def transform_obstacle(self, name: str, new_center: np.ndarray, new_quaternion: np.ndarray):
+        """Transform obstacle in collision checker
+
+        Args:
+            name (str): obstacle name
+            new_center (np.ndarray): new center position
+            new_quaternion (np.ndarray): new orientation quaternion
+        """
+        res_fcl = self.fcl_checker.transform_obstacle(name, new_center, new_quaternion)
+        res_planner = self.hybrid_planner.transform_obstacle(name, new_center, new_quaternion)
+
+        return res_fcl, res_planner
+
+    def disable_specific_obstacle(self, name: str):
+        """Disable specific obstacle in collision checker
+
+        Args:
+            name (str): obstacle name
+        """
+        res_fcl = self.fcl_checker.disable_obstacle(name)
+        res_planner = self.hybrid_planner.disable_obstacle(name)
+
+        return res_fcl, res_planner
+
+
+    def enable_specific_obstacle(self, name: str):
+        """Enable specific obstacle in collision checker
+
+        Args:
+            name (str): obstacle name
+        """
+        res_fcl = self.fcl_checker.enable_obstacle(name)
+        res_planner = self.hybrid_planner.enable_obstacle(name)
+
+        return res_fcl, res_planner
+
     def move_dual_arm_single_task(self,
                          task_dict: dict,
                          speed_ratio: float = 1.0) -> bool:
@@ -2073,36 +2228,50 @@ class W1Manager:
                               "torso": [torso_target_qpos], "troso_speed_ratio": [torso_speed],
                               "head": [head_target_qpos], "head_speed_ratio": [head_speed],
                               "left_arm": [left_arm_target_qpos], "left_arm_speed_ratio": [left_arm_speed],
-                              "left_arm_ee": [[0., left_arm_ee_qpos, 0.5]], 
+                              "left_arm_ee": [[float., left_arm_ee_qpos, float]], 
                               "right_arm": [right_arm_target_qpos], "right_arm_speed_ratio": [right_arm_speed],
-                              "right_arm_ee": [[0., right_arm_ee_qpos, 0.5]]
+                              "right_arm_ee": [[float., right_arm_ee_qpos, float]]
                               }
             speed_ratio (float, optional): a ratio to scale the default joint velocity. Defaults to 1.0.
             
         Notes:
             - It will execute the moving of torso and head first, then execute the moving of left and right arms including the end effectors.
         """
-        current_qpos = self.get_current_qpos()
-        current_qpos = current_qpos[1]
+        res, current_qpos = self.get_current_qpos()
+        if not res:
+            self.logger.error("Function: move_dual_arm_single_task(), failed to get current qpos")
+            return False
         
-        cur_torso_qpos = current_qpos[self.real_torso_idx[0]:self.real_torso_idx[1]+1]
-        cur_head_qpos = current_qpos[self.real_head_idx[0]:self.real_head_idx[1]+1]
-        cur_arml_qpos = current_qpos[self.real_arml_idx[0]:self.real_arml_idx[1]+1]
-        cur_armr_qpos = current_qpos[self.real_armr_idx[0]:self.real_armr_idx[1]+1]
+        cur_torso_qpos = current_qpos[self.real_torso_idx]
+        cur_head_qpos = current_qpos[self.real_head_idx]
+        cur_arml_qpos = current_qpos[self.real_arml_idx]
+        cur_armr_qpos = current_qpos[self.real_armr_idx]
 
-        # self.logger("Current torso qpos: ", cur_torso_qpos)
+        res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+        if not res:
+            self.logger.error("Get current left arm ee qpos failed.")
+            return False
+        res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+        if not res:
+            self.logger.error("Get current right arm ee qpos failed.")
+            return False
+
         res_torso, torso_qpos_array = self._plan_to_waypoint("torso",
                                                              cur_torso_qpos,
                                                              waypoints_dict=task_dict,
                                                              speed_ratio=speed_ratio)
-        
         if not res_torso:
+            self.logger.error("Function: move_dual_arm_single_task(), failed to plan torso traj")
             return False
         else:
             for i in range(torso_qpos_array.shape[0]):
                 target_torso_qpos = torso_qpos_array[i]
                 real_qpos = np.concatenate((target_torso_qpos, cur_head_qpos, cur_arml_qpos, cur_armr_qpos))
-                if self.check_collision(real_qpos):
+                if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
+                    # torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(real_qpos, cur_armlee_qpos, cur_armree_qpos, compute_ee=True)
+                    # self.fcl_checker.update_vis_transform(transforms=torso_tf + head_tf + arml_tf + armr_tf,
+                    #                               armlee_transforms=armlee_tf,
+                    #                               armree_transforms=armree_tf)
                     self.logger.warning("It will occur collision for this torso moving trajectory")
                     return False
                 
@@ -2111,28 +2280,45 @@ class W1Manager:
                                                            waypoints_dict=task_dict,
                                                            speed_ratio=speed_ratio)
         if not res_head:
+            self.logger.error("Function: move_dual_arm_single_task(), failed to plan head traj")
             return False
         else:
             for i in range(head_qpos_array.shape[0]):
                 target_head_qpos = head_qpos_array[i]
                 real_qpos = np.concatenate((cur_torso_qpos, target_head_qpos, cur_arml_qpos, cur_armr_qpos))
-                if self.check_collision(real_qpos):
+                if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
                     self.logger.waring("It will occur collision for this head moving trajectory")
                     return False
         
         res_align, move_torso_head_traj = self._qpos_align(torso_qpos_array, head_qpos_array, cur_arml_qpos, cur_armr_qpos)
+        if not res_align:
+            self.logger.error("Function: move_dual_arm_single_task(), failed to align torso and head traj")
+            return False
+        
         res_execute = self.execute_joint_traj(qpos_array=move_torso_head_traj,
                                     left_arm_ee_trigger_list=None,
                                     right_arm_ee_trigger_list=None)
         if not res_execute:
+            self.logger.error("Execute torso and head moving traj failed.")
             return False
 
-        current_qpos = self.get_current_qpos()
-        current_qpos = current_qpos[1]
-        cur_torso_qpos = current_qpos[self.real_torso_idx[0]:self.real_torso_idx[1]+1]
-        cur_head_qpos = current_qpos[self.real_head_idx[0]:self.real_head_idx[1]+1]
-        cur_arml_qpos = current_qpos[self.real_arml_idx[0]:self.real_arml_idx[1]+1]
-        cur_armr_qpos = current_qpos[self.real_armr_idx[0]:self.real_armr_idx[1]+1]
+        res, current_qpos = self.get_current_qpos()
+        if not res:
+            self.logger.error("Function: move_dual_arm_single_task(), failed to get current qpos")
+            return False
+        cur_torso_qpos = current_qpos[self.real_torso_idx]
+        cur_head_qpos = current_qpos[self.real_head_idx]
+        cur_arml_qpos = current_qpos[self.real_arml_idx]
+        cur_armr_qpos = current_qpos[self.real_armr_idx]
+
+        res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+        if not res:
+            self.logger.error("Get current left arm ee qpos failed.")
+            return False
+        res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+        if not res:
+            self.logger.error("Get current right arm ee qpos failed.")
+            return False
 
         arml_kine = self._get_arm_kine("left_arm")
         target_arml_pose = task_dict.get("left_arm")
@@ -2160,7 +2346,7 @@ class W1Manager:
                     continue
                 else:
                     real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, arml_ik_qpos, cur_armr_qpos))
-                    if self.check_collision(real_qpos):
+                    if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
                         self.logger.warning("It will occur collision for this left arm ik solution, try to find another one")
                         left_ref_psi += 5./180.*np.pi
                         continue
@@ -2196,7 +2382,7 @@ class W1Manager:
                     continue
                 else:
                     real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_ik_qpos))
-                    if self.check_collision(real_qpos):
+                    if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
                         self.logger.warning("It will occur collision for this right arm ik solution, try to find another one")
                         right_ref_psi += 5./180.*np.pi
                         continue
@@ -2207,11 +2393,12 @@ class W1Manager:
         else:
             target_armr_qpos = cur_armr_qpos
 
-        self.siso_planner.set_head_torso(head_qpos=cur_head_qpos, torso_qpos=cur_torso_qpos)
-        self.siso_planner.set_start_goal(arml_start=cur_arml_qpos, armr_start=cur_armr_qpos,
+        self.hybrid_planner.set_head_torso(head_qpos=cur_head_qpos, torso_qpos=cur_torso_qpos)
+        self.hybrid_planner.set_end_effector_qpos(armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos)
+        self.hybrid_planner.set_start_goal(arml_start=cur_arml_qpos, armr_start=cur_armr_qpos,
                                          arml_goal=target_arml_qpos, armr_goal=target_armr_qpos)
-        self.siso_planner.set_traj_max_vel(left_max_vel=arml_speed_ratio*0.3, right_max_vel=armr_speed_ratio*0.3)
-        arml_traj, armr_traj, planning_time = self.siso_planner.plan()
+        self.hybrid_planner.set_traj_max_vel(left_max_vel=arml_speed_ratio*0.3, right_max_vel=armr_speed_ratio*0.3)
+        arml_traj, armr_traj, planning_time = self.hybrid_planner.plan()
 
         self.logger.info(f"Finish Planning, time consumption: {planning_time}, with left arm traj shape: {None if arml_traj is None else arml_traj.shape}, right arm traj shape: {None if armr_traj is None else armr_traj.shape}")
 
@@ -2263,10 +2450,27 @@ class W1Manager:
             else: 
                 armree_trigger = None 
 
-            arml_traj = np.vstack([arml_traj, np.tile(arml_traj[-1, :], (int(arml_pre_insert+arml_post_insert), 1))])
-            armr_traj = np.vstack([armr_traj, np.tile(armr_traj[-1, :], (int(armr_pre_insert+armr_post_insert), 1))])
+            arml_traj = np.vstack([arml_traj, np.tile(arml_traj[-1, :], (max(1, int(arml_pre_insert+arml_post_insert)), 1))])
+            armr_traj = np.vstack([armr_traj, np.tile(armr_traj[-1, :], (max(1, int(armr_pre_insert+armr_post_insert)), 1))])
 
             res_align, move_arml_armr_traj = self._qpos_align(cur_torso_qpos, cur_head_qpos, arml_traj, armr_traj)
+
+            # # check trajectory collision
+            if lee_target is None:
+                lee_target = cur_armlee_qpos
+            if ree_target is None:
+                ree_target = cur_armree_qpos
+            for qpos in move_arml_armr_traj:
+                if self.check_collision(qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
+                    # torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(qpos, cur_armlee_qpos, cur_armree_qpos, compute_ee=True)
+                    # self.fcl_checker.update_vis_transform(transforms=torso_tf + head_tf + arml_tf + armr_tf,
+                    #                               armlee_transforms=armlee_tf,
+                    #                               armree_transforms=armree_tf)
+                    self.logger.warning("It will occur collision for this dual arm moving trajectory")
+                    self.collision_cnt += 1
+                    break
+                    # return False
+
             return self.execute_joint_traj(qpos_array=move_arml_armr_traj,
                                         left_arm_ee_trigger_list=armlee_trigger,
                                         right_arm_ee_trigger_list=armree_trigger)
@@ -2282,9 +2486,26 @@ class W1Manager:
                 armree_trigger = None 
 
             self.logger.info(armlee_trigger, armree_trigger)
-            arml_traj = np.vstack([arml_traj, np.tile(arml_traj[-1, :], (int(arml_pre_insert+arml_post_insert), 1))])
+            arml_traj = np.vstack([arml_traj, np.tile(arml_traj[-1, :], (max(1, int(arml_pre_insert+arml_post_insert)), 1))])
 
             res_align, move_arml_armr_traj = self._qpos_align(cur_torso_qpos, cur_head_qpos, arml_traj, cur_armr_qpos)
+
+            # check trajectory collision
+            if lee_target is None:
+                lee_target = cur_armlee_qpos
+            if ree_target is None:
+                ree_target = cur_armree_qpos
+            for qpos in move_arml_armr_traj:
+                if self.check_collision(qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
+                    # torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(qpos, cur_armlee_qpos, cur_armree_qpos, compute_ee=True)
+                    # self.fcl_checker.update_vis_transform(transforms=torso_tf + head_tf + arml_tf + armr_tf,
+                    #                               armlee_transforms=armlee_tf,
+                    #                               armree_transforms=armree_tf)
+                    self.logger.warning("It will occur collision for this dual arm moving trajectory")
+                    self.collision_cnt += 1
+                    break
+                    # return False
+
             return self.execute_joint_traj(qpos_array=move_arml_armr_traj,
                                         left_arm_ee_trigger_list=armlee_trigger,
                                         right_arm_ee_trigger_list=armree_trigger)
@@ -2299,9 +2520,26 @@ class W1Manager:
             else: 
                 armree_trigger = None 
 
-            armr_traj = np.vstack([armr_traj, np.tile(armr_traj[-1, :], (int(armr_pre_insert+armr_post_insert), 1))])
+            armr_traj = np.vstack([armr_traj, np.tile(armr_traj[-1, :], (max(1, int(armr_pre_insert+armr_post_insert)), 1))])
 
             res_align, move_arml_armr_traj = self._qpos_align(cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_traj)
+
+            # check trajectory collision
+            if lee_target is None:
+                lee_target = cur_armlee_qpos
+            if ree_target is None:
+                ree_target = cur_armree_qpos
+            for qpos in move_arml_armr_traj:
+                if self.check_collision(qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
+                    # torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(qpos, cur_armlee_qpos, cur_armree_qpos, compute_ee=True)
+                    # self.fcl_checker.update_vis_transform(transforms=torso_tf + head_tf + arml_tf + armr_tf,
+                    #                               armlee_transforms=armlee_tf,
+                    #                               armree_transforms=armree_tf)
+                    self.logger.warning("It will occur collision for this dual arm moving trajectory")
+                    self.collision_cnt += 1
+                    break
+                    # return False
+
             return self.execute_joint_traj(qpos_array=move_arml_armr_traj,
                                         left_arm_ee_trigger_list=armlee_trigger,
                                         right_arm_ee_trigger_list=armree_trigger)
@@ -2316,10 +2554,27 @@ class W1Manager:
             else:
                 armree_trigger = None
 
-            arml_traj = np.tile(cur_arml_qpos, (arml_pre_insert+arml_post_insert, 1))
-            armr_traj = np.tile(cur_armr_qpos, (armr_pre_insert+armr_post_insert, 1))
+            arml_traj = np.tile(cur_arml_qpos, (max(1, int(arml_pre_insert+arml_post_insert)), 1))
+            armr_traj = np.tile(cur_armr_qpos, (max(1, int(armr_pre_insert+armr_post_insert)), 1))
 
             res_align, move_arml_armr_traj = self._qpos_align(cur_torso_qpos, cur_head_qpos, arml_traj, armr_traj)
+
+            # check trajectory collision
+            if lee_target is None:
+                lee_target = cur_armlee_qpos
+            if ree_target is None:
+                ree_target = cur_armree_qpos
+            for qpos in move_arml_armr_traj:
+                if self.check_collision(qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
+                    # torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(qpos, cur_armlee_qpos, cur_armree_qpos, compute_ee=True)
+                    # self.fcl_checker.update_vis_transform(transforms=torso_tf + head_tf + arml_tf + armr_tf,
+                    #                               armlee_transforms=armlee_tf,
+                    #                               armree_transforms=armree_tf)
+                    self.logger.warning("It will occur collision for this dual arm moving trajectory")
+                    self.collision_cnt += 1
+                    break
+                    # return False
+
             return self.execute_joint_traj(qpos_array=move_arml_armr_traj,
                                         left_arm_ee_trigger_list=armlee_trigger,
                                         right_arm_ee_trigger_list=armree_trigger)           
@@ -2350,12 +2605,23 @@ class W1Manager:
             self.logger.info("The input task_dict should only have one arm's target, the other arm's target should be None or []")
             return False
         
-        current_qpos = self.get_current_qpos()
-        current_qpos = current_qpos[1]
-        cur_torso_qpos = current_qpos[self.real_torso_idx[0]:self.real_torso_idx[1]+1]
-        cur_head_qpos = current_qpos[self.real_head_idx[0]:self.real_head_idx[1]+1]
-        cur_arml_qpos = current_qpos[self.real_arml_idx[0]:self.real_arml_idx[1]+1]
-        cur_armr_qpos = current_qpos[self.real_armr_idx[0]:self.real_armr_idx[1]+1]
+        res, current_qpos = self.get_current_qpos()
+        if not res:
+            self.logger.error("Function: move_single_arm(), failed to get current qpos")
+            return False
+        cur_torso_qpos = current_qpos[self.real_torso_idx]
+        cur_head_qpos = current_qpos[self.real_head_idx]
+        cur_arml_qpos = current_qpos[self.real_arml_idx]
+        cur_armr_qpos = current_qpos[self.real_armr_idx]
+
+        res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+        if not res:
+            self.logger.error("Get current left arm ee qpos failed.")
+            return False
+        res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+        if not res:
+            self.logger.error("Get current right arm ee qpos failed.")
+            return False
 
         res_torso, torso_qpos_array = self._plan_to_waypoint("torso",
                                                              cur_torso_qpos,
@@ -2367,7 +2633,7 @@ class W1Manager:
             for i in range(torso_qpos_array.shape[0]):
                 target_torso_qpos = torso_qpos_array[i]
                 real_qpos = np.concatenate((target_torso_qpos, cur_head_qpos, cur_arml_qpos, cur_armr_qpos))
-                if self.check_collision(real_qpos):
+                if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
                     self.logger.warning("It will occur collision for this torso moving trajectory")
                     return False
                 
@@ -2381,7 +2647,7 @@ class W1Manager:
             for i in range(head_qpos_array.shape[0]):
                 target_head_qpos = head_qpos_array[i]
                 real_qpos = np.concatenate((cur_torso_qpos, target_head_qpos, cur_arml_qpos, cur_armr_qpos))
-                if self.check_collision(real_qpos):
+                if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
                     self.logger.info("It will occur collision for this head moving trajectory")
                     return False
         res_align, move_torso_head_traj = self._qpos_align(torso_qpos_array, head_qpos_array, cur_arml_qpos, cur_armr_qpos)
@@ -2390,8 +2656,6 @@ class W1Manager:
                                 right_arm_ee_trigger_list=None
                                 )
         
-        
-
         if arml_target_list is not None and arml_target_list != []:
             lee_target_list = task_dict.get("left_arm_ee")
             if len(arml_target_list) != len(lee_target_list):
@@ -2409,12 +2673,23 @@ class W1Manager:
 
             for i in range(len(arml_target_list)):
 
-                current_qpos = self.get_current_qpos()
-                current_qpos = current_qpos[1]
-                cur_torso_qpos = current_qpos[self.real_torso_idx[0]:self.real_torso_idx[1]+1]
-                cur_head_qpos = current_qpos[self.real_head_idx[0]:self.real_head_idx[1]+1]
-                cur_arml_qpos = current_qpos[self.real_arml_idx[0]:self.real_arml_idx[1]+1]
-                cur_armr_qpos = current_qpos[self.real_armr_idx[0]:self.real_armr_idx[1]+1]
+                res, current_qpos = self.get_current_qpos()
+                if not res:
+                    self.logger.error("Function: move_single_arm(), failed to get current qpos")
+                    return False
+                cur_torso_qpos = current_qpos[self.real_torso_idx]
+                cur_head_qpos = current_qpos[self.real_head_idx]
+                cur_arml_qpos = current_qpos[self.real_arml_idx]
+                cur_armr_qpos = current_qpos[self.real_armr_idx]
+
+                res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+                if not res:
+                    self.logger.error("Get current left arm ee qpos failed.")
+                    return False
+                res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+                if not res:
+                    self.logger.error("Get current right arm ee qpos failed.")
+                    return False
 
                 arml_trigger = []
                 target_arml_pose = arml_target_list[i]
@@ -2431,7 +2706,7 @@ class W1Manager:
                             continue
                         else:
                             real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, arml_ik_qpos, cur_armr_qpos))
-                            if self.check_collision(real_qpos):
+                            if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
                                 self.logger.warning("It will occur collision for this left arm ik solution, try to find another one")
                                 left_ref_psi += 5./180.*np.pi
                                 continue
@@ -2443,11 +2718,12 @@ class W1Manager:
                     self.logger.warning("invalid left arm target input")
                     return False    
 
-                self.siso_planner.set_head_torso(head_qpos=cur_head_qpos, torso_qpos=cur_torso_qpos)
-                self.siso_planner.set_start_goal(arml_start=cur_arml_qpos, armr_start=cur_armr_qpos,
+                self.hybrid_planner.set_head_torso(head_qpos=cur_head_qpos, torso_qpos=cur_torso_qpos)
+                self.hybrid_planner.set_end_effector_qpos(armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos)
+                self.hybrid_planner.set_start_goal(arml_start=cur_arml_qpos, armr_start=cur_armr_qpos,
                                                  arml_goal=target_arml_qpos, armr_goal=cur_armr_qpos)
-                self.siso_planner.set_traj_max_vel(left_max_vel=arml_speed_ratio*0.3, right_max_vel=0.3)
-                arml_traj, armr_traj, planning_time = self.siso_planner.plan()
+                self.hybrid_planner.set_traj_max_vel(left_max_vel=arml_speed_ratio*0.3, right_max_vel=0.3)
+                arml_traj, armr_traj, planning_time = self.hybrid_planner.plan()
 
                 if arml_traj is None:
                     arml_traj = np.array([cur_arml_qpos])
@@ -2460,7 +2736,7 @@ class W1Manager:
                 arml_post_insert = lee_post_time/self.TIME_STEP
 
                 arml_trigger.append((arml_traj.shape[0]+arml_pre_insert, lee_target))
-                arml_traj = np.vstack([arml_traj, np.tile(arml_traj[-1, :], (int(arml_pre_insert+arml_post_insert), 1))])
+                arml_traj = np.vstack([arml_traj, np.tile(arml_traj[-1, :], (max(1, int(arml_pre_insert+arml_post_insert)), 1))])
                 res_align, move_arml_armr_traj = self._qpos_align(cur_torso_qpos, cur_head_qpos, arml_traj, cur_armr_qpos)
                 self.execute_joint_traj(qpos_array=move_arml_armr_traj,
                                         left_arm_ee_trigger_list=arml_trigger,
@@ -2482,12 +2758,23 @@ class W1Manager:
                 armr_speed_ratio_list = [speed_ratio]*len(armr_target_list)
 
             for i in range(len(armr_target_list)):
-                current_qpos = self.get_current_qpos()
-                current_qpos = current_qpos[1]
-                cur_torso_qpos = current_qpos[self.real_torso_idx[0]:self.real_torso_idx[1]+1]
-                cur_head_qpos = current_qpos[self.real_head_idx[0]:self.real_head_idx[1]+1]
-                cur_arml_qpos = current_qpos[self.real_arml_idx[0]:self.real_arml_idx[1]+1]
-                cur_armr_qpos = current_qpos[self.real_armr_idx[0]:self.real_armr_idx[1]+1]
+                res, current_qpos = self.get_current_qpos()
+                if not res:
+                    self.logger.error("Function: move_single_arm(), failed to get current qpos")
+                    return False
+                cur_torso_qpos = current_qpos[self.real_torso_idx]
+                cur_head_qpos = current_qpos[self.real_head_idx]
+                cur_arml_qpos = current_qpos[self.real_arml_idx]
+                cur_armr_qpos = current_qpos[self.real_armr_idx]
+
+                res, cur_arml_qpos = self.get_current_qpos("left_arm_ee")
+                if not res:
+                    self.logger.error("Get current left arm ee qpos failed.")
+                    return False
+                res, cur_armr_qpos = self.get_current_qpos("right_arm_ee")
+                if not res:
+                    self.logger.error("Get current right arm ee qpos failed.")
+                    return False
 
                 armr_trigger = []
                 target_armr_pose = armr_target_list[i]
@@ -2505,7 +2792,7 @@ class W1Manager:
                             continue
                         else:
                             real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_ik_qpos))
-                            if self.check_collision(real_qpos):
+                            if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
                                 self.logger.warning("It will occur collision for this right arm ik solution, try to find another one")
                                 right_ref_psi += 5./180.*np.pi
                                 continue
@@ -2517,11 +2804,12 @@ class W1Manager:
                     self.logger.warning("invalid right arm target")
                     return False    
 
-                self.siso_planner.set_head_torso(head_qpos=cur_head_qpos, torso_qpos=cur_torso_qpos)
-                self.siso_planner.set_start_goal(arml_start=cur_arml_qpos, armr_start=cur_armr_qpos,
+                self.hybrid_planner.set_head_torso(head_qpos=cur_head_qpos, torso_qpos=cur_torso_qpos)
+                self.hybrid_planner.set_end_effector_qpos(armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos)
+                self.hybrid_planner.set_start_goal(arml_start=cur_arml_qpos, armr_start=cur_armr_qpos,
                                                  arml_goal=cur_arml_qpos, armr_goal=target_armr_qpos)
-                self.siso_planner.set_traj_max_vel(left_max_vel=0.3, right_max_vel=armr_speed_ratio*0.3)
-                arml_traj, armr_traj, planning_time = self.siso_planner.plan()  
+                self.hybrid_planner.set_traj_max_vel(left_max_vel=0.3, right_max_vel=armr_speed_ratio*0.3)
+                arml_traj, armr_traj, planning_time = self.hybrid_planner.plan()  
 
                 if armr_traj is None:
                     armr_traj = np.array([cur_armr_qpos])
@@ -2532,9 +2820,444 @@ class W1Manager:
                 armr_pre_insert = ree_pre_time/self.TIME_STEP   
                 armr_post_insert = ree_post_time/self.TIME_STEP
                 armr_trigger.append((armr_traj.shape[0]+armr_pre_insert, ree_target))
-                armr_traj = np.vstack([armr_traj, np.tile(armr_traj[-1, :], (int(armr_pre_insert+armr_post_insert), 1))])
+                armr_traj = np.vstack([armr_traj, np.tile(armr_traj[-1, :], (max(1, int(armr_pre_insert+armr_post_insert)), 1))])
                 res_align, move_arml_armr_traj = self._qpos_align(cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_traj)
                 return self.execute_joint_traj(qpos_array=move_arml_armr_traj,
                                             left_arm_ee_trigger_list=None,
                                             right_arm_ee_trigger_list=armr_trigger)
-      
+            
+    def move_dual_arm_multiple_task(self,
+                                    task_dict: list,
+                                    speed_ratio: float = 1.0):
+        """
+        This function is used to execute multiple dual arm tasks sequentially
+
+        Args:
+            task_dict (dict): {
+                              "torso": [torso_target_qpos], "troso_speed_ratio": [torso_speed],
+                              "head": [head_target_qpos], "head_speed_ratio": [head_speed],
+                              "left_arm": [left_arm_target_qpos1, left_arm_target_qpos2,], 
+                              "left_arm_speed_ratio": [left_arm_speed1, left_arm_speed2,],
+                              "left_arm_ee": [[float., left_arm_ee_qpos1, float], [float., left_arm_ee_qpos2, float],],
+                              "left_use_collision_check": [bool, bool,]
+                              "right_arm": [right_arm_target_qpos1, right_arm_target_qpos2,], 
+                              "right_arm_speed_ratio": [right_arm_speed1, right_arm_speed2,],
+                              "right_arm_ee": [[float., right_arm_ee_qpos1, float], [float., right_arm_ee_qpos2, float],],
+                              "right_use_collision_check": [bool, bool,]
+                              }
+            speed_ratio (float, optional): a ratio to scale the default joint velocity. Defaults to 1.0.
+
+        Note:
+            - "left_use_collision_check" and "right_use_collision_check" are parameters to specify whether use a planning method with collision
+                or use move line for the specifc task. Default is True.
+        """
+        target_arml_pose_list = task_dict.get("left_arm")
+        target_armr_pose_list = task_dict.get("right_arm")
+        target_armlee_qpos_list = task_dict.get("left_arm_ee")
+        target_armree_qpos_list = task_dict.get("right_arm_ee")
+        arml_speed_ratio_list = task_dict.get("left_arm_speed_ratio")
+        armr_speed_ratio_list = task_dict.get("right_arm_speed_ratio")
+        arml_use_collision_check_list = task_dict.get("left_use_collision_check")
+        armr_use_collision_check_list = task_dict.get("right_use_collision_check")
+
+        if target_arml_pose_list is None or target_arml_pose_list == []:
+            self.logger.error("The left arm target in task_dict is invalid.")
+            return False
+        if target_armr_pose_list is None or target_armr_pose_list == []:
+            self.logger.error("The right arm target in task_dict is invalid.")
+            return False
+        if target_armlee_qpos_list is None or len(target_armlee_qpos_list) != len(target_arml_pose_list):
+            self.logger.error("The left arm ee target in task_dict is invalid.")
+            return False
+        if target_armree_qpos_list is None or len(target_armree_qpos_list) != len(target_armr_pose_list):
+            self.logger.error("The right arm ee target in task_dict is invalid.")
+            return False
+        if arml_speed_ratio_list is not None and arml_speed_ratio_list != []:
+            if len(arml_speed_ratio_list) != len(target_arml_pose_list):
+                self.logger.error("The length of left_arm and left_arm_speed_ratio in task_dict should be the same")
+                return False
+        if armr_speed_ratio_list is not None and armr_speed_ratio_list != []:
+            if len(armr_speed_ratio_list) != len(target_armr_pose_list):
+                self.logger.error("The length of right_arm and right_arm_speed_ratio in task_dict should be the same")
+                return False
+        if arml_use_collision_check_list is not None and arml_use_collision_check_list != []:
+            if len(arml_use_collision_check_list) != len(target_arml_pose_list):
+                self.logger.error("The length of left_arm and left_use_collision_check in task_dict should be the same")
+                return False
+        if armr_use_collision_check_list is not None and armr_use_collision_check_list != []:
+            if len(armr_use_collision_check_list) != len(target_armr_pose_list):
+                self.logger.error("The length of right_arm and right_use_collision_check in task_dict should be the same")
+                return False
+
+        # Execute torso and head movement first
+        res, current_qpos = self.get_current_qpos()
+        if not res:
+            self.logger.error("Function: move_dual_arm_multiple_task(), failed to get current qpos")
+            return False
+        
+        cur_torso_qpos = current_qpos[self.real_torso_idx]
+        cur_head_qpos = current_qpos[self.real_head_idx]
+        cur_arml_qpos = current_qpos[self.real_arml_idx]
+        cur_armr_qpos = current_qpos[self.real_armr_idx]
+
+        res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+        if not res:
+            self.logger.error("Get current left arm ee qpos failed.")
+            return False
+        res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+        if not res:
+            self.logger.error("Get current right arm ee qpos failed.")
+            return False
+
+        res_torso, torso_qpos_array = self._plan_to_waypoint("torso",
+                                                             cur_torso_qpos,
+                                                             waypoints_dict=task_dict,
+                                                             speed_ratio=speed_ratio)
+        if not res_torso:
+            self.logger.error("Function: move_dual_arm_multiple_task(), failed to plan torso traj")
+            return False
+        else:
+            for i in range(torso_qpos_array.shape[0]):
+                target_torso_qpos = torso_qpos_array[i]
+                real_qpos = np.concatenate((target_torso_qpos, cur_head_qpos, cur_arml_qpos, cur_armr_qpos))
+                if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
+                    # torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(real_qpos, cur_armlee_qpos, cur_armree_qpos, compute_ee=True)
+                    # self.fcl_checker.update_vis_transform(transforms=torso_tf + head_tf + arml_tf + armr_tf,
+                    #                               armlee_transforms=armlee_tf,
+                    #                               armree_transforms=armree_tf)
+                    self.logger.warning("It will occur collision for this torso moving trajectory")
+                    return False
+                
+        res_head, head_qpos_array = self._plan_to_waypoint("head",
+                                                           cur_head_qpos,
+                                                           waypoints_dict=task_dict,
+                                                           speed_ratio=speed_ratio)
+        if not res_head:
+            self.logger.error("Function: move_dual_arm_multiple_task(), failed to plan head traj")
+            return False
+        else:
+            for i in range(head_qpos_array.shape[0]):
+                target_head_qpos = head_qpos_array[i]
+                real_qpos = np.concatenate((cur_torso_qpos, target_head_qpos, cur_arml_qpos, cur_armr_qpos))
+                if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
+                    self.logger.waring("It will occur collision for this head moving trajectory")
+                    return False
+        
+        res_align, move_torso_head_traj = self._qpos_align(torso_qpos_array, head_qpos_array, cur_arml_qpos, cur_armr_qpos)
+        if not res_align:
+            self.logger.error("Function: move_dual_arm_multiple_task(), failed to align torso and head traj")
+            return False
+        
+        res_execute = self.execute_joint_traj(qpos_array=move_torso_head_traj,
+                                    left_arm_ee_trigger_list=None,
+                                    right_arm_ee_trigger_list=None)
+        if not res_execute:
+            self.logger.error("Execute torso and head moving traj failed.")
+            return False
+
+        # Execute dual arm tasks
+        arml_kine = self._get_arm_kine("left_arm")
+        if arml_speed_ratio_list is not None and arml_speed_ratio_list != []:
+            for i in range(len(arml_speed_ratio_list)):
+                if arml_speed_ratio_list[i] is None:
+                    arml_speed_ratio_list[i] = speed_ratio
+        else:
+            arml_speed_ratio_list = [speed_ratio]*len(target_arml_pose_list)
+
+        if arml_use_collision_check_list is not None and arml_use_collision_check_list != []:
+            for i in range(len(arml_use_collision_check_list)):
+                if arml_use_collision_check_list[i] is None:
+                    arml_use_collision_check_list[i] = True
+        else:
+            arml_use_collision_check_list = [True] * len(target_arml_pose_list)
+
+        arml_traj_list = []
+        armlee_trigger_list = []
+        for i in range(len(target_arml_pose_list)):
+            if arml_use_collision_check_list[i]:
+                res, current_qpos = self.get_current_qpos()
+                if not res:
+                    self.logger.error("Function: move_dual_arm_multiple_task(), failed to get current qpos")
+                    return False
+                cur_torso_qpos = current_qpos[self.real_torso_idx]
+                cur_head_qpos = current_qpos[self.real_head_idx]
+                if i == 0:
+                    cur_arml_qpos = current_qpos[self.real_arml_idx]
+                else:
+                    cur_arml_qpos = arml_traj_list[-1][-1, :]
+                cur_armr_qpos = current_qpos[self.real_armr_idx]
+
+                if i == 0:
+                    res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+                    if not res:
+                        self.logger.error("Get current left arm ee qpos failed.")
+                        return False
+                else:
+                    cur_armlee_qpos = np.asarray(armlee_trigger_list[-1][1])
+                res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+                if not res:
+                    self.logger.error("Get current right arm ee qpos failed.")
+                    return False
+
+                target_arml_pose = target_arml_pose_list[i]
+                arml_speed_ratio = arml_speed_ratio_list[i]
+                left_ref_psi = arml_kine.calc_arm_angle(cur_arml_qpos)[1]
+                left_qpos_seed = cur_arml_qpos
+                if target_arml_pose is not None and target_arml_pose != []:
+                    target_arml_xpos = user_pose_to_xpos(target_arml_pose[:3], target_arml_pose[3:])
+                    while True:
+                        srs_cfg = SRSConfig(left_qpos_seed, left_ref_psi)
+                        res_ik, arml_ik_qpos = arml_kine.get_ik(target_arml_xpos, srs_cfg)
+                        if not res_ik:
+                            left_ref_psi += 5./180.*np.pi
+                            continue
+                        else:
+                            real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, arml_ik_qpos, cur_armr_qpos))
+                            if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
+                                self.logger.warning("It will occur collision for this left arm ik solution, try to find another one")
+                                left_ref_psi += 5./180.*np.pi
+                                continue
+                            else:
+                                target_arml_qpos = arml_ik_qpos
+                                self.logger.info(f"Successfully solve ik for left arm with qpos: {target_arml_qpos}")
+                                break
+                else:
+                    self.logger.warning("invalid left arm target input")
+                    return False    
+
+                self.hybrid_planner.set_head_torso(head_qpos=cur_head_qpos, torso_qpos=cur_torso_qpos)
+                self.hybrid_planner.set_end_effector_qpos(armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos)
+                self.hybrid_planner.set_start_goal(arml_start=cur_arml_qpos, armr_start=cur_armr_qpos,
+                                                    arml_goal=target_arml_qpos, armr_goal=cur_armr_qpos)
+                self.hybrid_planner.set_traj_max_vel(left_max_vel=arml_speed_ratio*0.3, right_max_vel=0.3)
+                arml_traj, armr_traj, planning_time = self.hybrid_planner.plan()
+
+                if arml_traj is None:
+                    arml_traj = np.array([cur_arml_qpos])
+
+                lee_pre_time = target_armlee_qpos_list[i][0]
+                lee_post_time = target_armlee_qpos_list[i][2]
+                lee_target = target_armlee_qpos_list[i][1]
+
+                arml_pre_insert = lee_pre_time/self.TIME_STEP
+                arml_post_insert = lee_post_time/self.TIME_STEP
+
+                armlee_trigger_list.append((arml_traj.shape[0]+arml_pre_insert, lee_target))
+                arml_traj = np.vstack([arml_traj, np.tile(arml_traj[-1, :], (max(1, int(arml_pre_insert+arml_post_insert)), 1))])
+                arml_traj_list.append(arml_traj)
+            else:
+                res, current_qpos = self.get_current_qpos()
+                if not res:
+                    self.logger.error("Function: move_dual_arm_multiple_task(), failed to get current qpos")
+                    return False
+                cur_torso_qpos = current_qpos[self.real_torso_idx]
+                cur_head_qpos = current_qpos[self.real_head_idx]
+                if i == 0:
+                    cur_arml_qpos = current_qpos[self.real_arml_idx]
+                else:
+                    cur_arml_qpos = arml_traj_list[-1][-1, :]
+                cur_armr_qpos = current_qpos[self.real_armr_idx]
+
+                if i == 0:
+                    res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+                    if not res:
+                        self.logger.error("Get current left arm ee qpos failed.")
+                        return False
+                else:
+                    cur_armlee_qpos = np.asarray(armlee_trigger_list[-1][1])
+                res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+                if not res:
+                    self.logger.error("Get current right arm ee qpos failed.")
+                    return False
+                
+                cur_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, cur_arml_qpos, cur_armr_qpos))
+                waypoint_dict = {
+                    "torso": [cur_torso_qpos.tolist()],
+                    "torso_speed_ratio": [speed_ratio],
+                    "head": [cur_head_qpos.tolist()],
+                    "head_speed_ratio": [speed_ratio],
+                    "left_arm": [target_arml_pose_list[i]],
+                    "left_arm_speed_ratio": [arml_speed_ratio_list[i]],
+                    "left_arm_ee": [target_armlee_qpos_list[i]],
+                    "right_arm": [target_armr_pose_list[0]],
+                    "right_arm_speed_ratio": [speed_ratio],
+                    "right_arm_ee": [[0.0, cur_armree_qpos.tolist(), 0.0]]
+                }
+                (res,
+                 total_qpos_array,
+                 left_arm_ee_trigger_list,
+                 right_arm_ee_trigger_list) = self.plan_linear_full_body(cur_qpos,
+                                                                         cur_armlee_qpos,
+                                                                         cur_armree_qpos,
+                                                                         waypoint_dict
+                                                                         )
+                if not res:
+                    self.logger.error("Function: move_dual_arm_multiple_task(), linear planning for left arm failed.")
+                    return False
+                arml_traj = total_qpos_array[:, self.real_arml_idx]
+                arml_traj_list.append(arml_traj)
+                armlee_trigger_list.append(left_arm_ee_trigger_list[0])        
+
+
+        armr_kine = self._get_arm_kine("right_arm")
+        if armr_speed_ratio_list is not None and armr_speed_ratio_list != []:
+            for i in range(len(armr_speed_ratio_list)):
+                if armr_speed_ratio_list[i] is None:
+                    armr_speed_ratio_list[i] = speed_ratio
+        else:
+            armr_speed_ratio_list = [speed_ratio]*len(target_armr_pose_list)
+
+        if armr_use_collision_check_list is not None and armr_use_collision_check_list != []:
+            for i in range(len(armr_use_collision_check_list)):
+                if armr_use_collision_check_list[i] is None:
+                    armr_use_collision_check_list[i] = True
+        else:
+            armr_use_collision_check_list = [True] * len(target_armr_pose_list)
+
+        armr_traj_list = []
+        armree_trigger_list = []
+        for i in range(len(target_armr_pose_list)):
+            if armr_use_collision_check_list[i]:
+                res, current_qpos = self.get_current_qpos()
+                if not res:
+                    self.logger.error("Function: move_dual_arm_multiple_task(), failed to get current qpos")
+                    return False
+                cur_torso_qpos = current_qpos[self.real_torso_idx]
+                cur_head_qpos = current_qpos[self.real_head_idx]
+                cur_arml_qpos = current_qpos[self.real_arml_idx]
+                if i == 0:
+                    cur_armr_qpos = current_qpos[self.real_armr_idx]
+                else:
+                    cur_armr_qpos = armr_traj_list[-1][-1, :]
+
+                res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+                if not res:
+                    self.logger.error("Get current left arm ee qpos failed.")
+                    return False
+                if i == 0:
+                    res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+                    if not res:
+                        self.logger.error("Get current right arm ee qpos failed.")
+                        return False
+                else:
+                    cur_armree_qpos = np.asarray(armree_trigger_list[-1][1])
+
+                target_armr_pose = target_armr_pose_list[i]
+                armr_speed_ratio = armr_speed_ratio_list[i]
+
+                right_ref_psi = armr_kine.calc_arm_angle(cur_armr_qpos)[1]
+                right_qpos_seed = cur_armr_qpos
+                if target_armr_pose is not None and target_armr_pose != []:
+                    target_armr_xpos = user_pose_to_xpos(target_armr_pose[:3], target_armr_pose[3:])
+                    while True:
+                        srs_cfg = SRSConfig(right_qpos_seed, right_ref_psi)
+                        res_ik, armr_ik_qpos = armr_kine.get_ik(target_armr_xpos, srs_cfg)
+                        if not res_ik:
+                            right_ref_psi += 5./180.*np.pi
+                            continue
+                        else:
+                            real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_ik_qpos))
+                            if self.check_collision(real_qpos, armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos):
+                                self.logger.warning("It will occur collision for this right arm ik solution, try to find another one")
+                                right_ref_psi += 5./180.*np.pi
+                                continue
+                            else:
+                                target_armr_qpos = armr_ik_qpos
+                                self.logger.info(f"Successfully solve ik for right arm with qpos: {target_armr_qpos}")
+                                break
+                else:
+                    self.logger.warning("invalid right arm target")
+                    return False
+                
+                self.hybrid_planner.set_head_torso(head_qpos=cur_head_qpos, torso_qpos=cur_torso_qpos)
+                self.hybrid_planner.set_end_effector_qpos(armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos)
+                self.hybrid_planner.set_start_goal(arml_start=cur_arml_qpos, armr_start=cur_armr_qpos,
+                                                arml_goal=cur_arml_qpos, armr_goal=target_armr_qpos)
+                self.hybrid_planner.set_traj_max_vel(left_max_vel=0.3, right_max_vel=armr_speed_ratio*0.3)
+                arml_traj, armr_traj, planning_time = self.hybrid_planner.plan()
+
+                if armr_traj is None:
+                    armr_traj = np.array([cur_armr_qpos])
+                
+                ree_pre_time = target_armree_qpos_list[i][0]
+                ree_post_time = target_armree_qpos_list[i][2]   
+                ree_target = target_armree_qpos_list[i][1]
+
+                armr_pre_insert = ree_pre_time/self.TIME_STEP
+                armr_post_insert = ree_post_time/self.TIME_STEP
+
+                armree_trigger_list.append((armr_traj.shape[0] + armr_pre_insert, ree_target))
+                armr_traj = np.vstack([armr_traj, np.tile(armr_traj[-1, :], (max(1, int(armr_pre_insert+armr_post_insert)), 1))])
+                armr_traj_list.append(armr_traj)
+            else:
+                res, current_qpos = self.get_current_qpos()
+                if not res:
+                    self.logger.error("Function: move_dual_arm_multiple_task(), failed to get current qpos")
+                    return False
+                cur_torso_qpos = current_qpos[self.real_torso_idx]
+                cur_head_qpos = current_qpos[self.real_head_idx]
+                cur_arml_qpos = current_qpos[self.real_arml_idx]
+                if i == 0:
+                    cur_armr_qpos = current_qpos[self.real_armr_idx]
+                else:
+                    cur_armr_qpos = armr_traj_list[-1][-1, :]
+
+                res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+                if not res:
+                    self.logger.error("Get current left arm ee qpos failed.")
+                    return False
+                if i == 0:
+                    res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+                    if not res:
+                        self.logger.error("Get current right arm ee qpos failed.")
+                        return False
+                else:
+                    cur_armree_qpos = np.asarray(armree_trigger_list[-1][1])
+                
+                cur_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos, cur_arml_qpos, cur_armr_qpos))
+                waypoint_dict = {
+                    "torso": [cur_torso_qpos.tolist()],
+                    "torso_speed_ratio": [speed_ratio],
+                    "head": [cur_head_qpos.tolist()],
+                    "head_speed_ratio": [speed_ratio],
+                    "left_arm": [target_arml_pose_list[0]],
+                    "left_arm_speed_ratio": [speed_ratio],
+                    "left_arm_ee": [[0.0, cur_armlee_qpos.tolist(), 0.0]],
+                    "right_arm": [target_armr_pose_list[i]],
+                    "right_arm_speed_ratio": [armr_speed_ratio_list[i]],
+                    "right_arm_ee": [target_armree_qpos_list[i]]
+                }
+                (res,
+                 total_qpos_array,
+                 left_arm_ee_trigger_list,
+                 right_arm_ee_trigger_list) = self.plan_linear_full_body(cur_qpos,
+                                                                         cur_armlee_qpos,
+                                                                         cur_armree_qpos,
+                                                                         waypoint_dict
+                                                                         )
+                if not res:
+                    self.logger.error("Function: move_dual_arm_multiple_task(), linear planning for right arm failed.")
+                    return False
+                
+                armr_traj = total_qpos_array[:, self.real_armr_idx]
+                armr_traj_list.append(armr_traj)
+                armree_trigger_list.append(right_arm_ee_trigger_list[0])
+
+        coordinated_left, coordinated_right, coordinated_left_ee, coordinated_right_ee = \
+                    self.hybrid_planner.coordinate_trajectories_with_EE(left_traj_list=arml_traj_list,
+                                                                        right_traj_list=armr_traj_list,
+                                                                        left_ee_trigger_list=armlee_trigger_list,
+                                                                        right_ee_trigger_list=armree_trigger_list)
+        
+        res, current_qpos = self.get_current_qpos()
+        if not res:
+            self.logger.error("Function: move_dual_arm_multiple_task(), failed to get current qpos")
+            return False
+        cur_torso_qpos = current_qpos[self.real_torso_idx]
+        cur_head_qpos = current_qpos[self.real_head_idx]
+
+        res, move_arml_armr_traj = self._qpos_align(cur_torso_qpos, cur_head_qpos, coordinated_left, coordinated_right)
+
+        return self.execute_joint_traj(qpos_array=move_arml_armr_traj,
+                                       left_arm_ee_trigger_list=coordinated_left_ee,
+                                       right_arm_ee_trigger_list=coordinated_right_ee)
