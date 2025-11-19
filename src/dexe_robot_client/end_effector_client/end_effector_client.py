@@ -12,8 +12,8 @@ from abc import ABC, abstractmethod
 import rclpy
 from rclpy.node import Node
 from end_effector_interfaces.msg import (
-    JointControl,
-    JointControlMode
+    EEJointControl,
+    EEJointControlMode
 )
 
 from ..common import get_logger
@@ -114,8 +114,8 @@ class EndEffectorClient(ABC, Node):
         if not self._check_dim(np.array(pos)):
             return False
         
-        msg = JointControl()
-        msg.mode = JointControlMode.POSITION
+        msg = EEJointControl()
+        msg.mode = EEJointControlMode.POSITION
         msg.name = self.joint_name
         msg.value = np.clip(pos, self.pos_lb, self.pos_ub).tolist()
         self._control_publisher.publish(msg)
@@ -127,8 +127,8 @@ class EndEffectorClient(ABC, Node):
         if not self._check_dim(np.array(vel)):
             return False
         
-        msg = JointControl()
-        msg.mode = JointControlMode.VELOCITY
+        msg = EEJointControl()
+        msg.mode = EEJointControlMode.VELOCITY
         msg.name = self.joint_name
         msg.value = np.clip(vel, self.vel_lb, self.vel_ub).tolist()
         self._control_publisher.publish(msg)
@@ -140,8 +140,8 @@ class EndEffectorClient(ABC, Node):
         if not self._check_dim(np.array(current)):
             return False
         
-        msg = JointControl()
-        msg.mode = JointControlMode.CURRENT
+        msg = EEJointControl()
+        msg.mode = EEJointControlMode.CURRENT
         msg.name = self.joint_name
         msg.value = np.clip(current, self.current_lb, self.current_ub).tolist()
         self._control_publisher.publish(msg)
