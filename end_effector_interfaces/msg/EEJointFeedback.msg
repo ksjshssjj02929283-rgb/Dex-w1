@@ -16,5 +16,5 @@ float64[] current
 # 关节力/扭矩
 float64[] force
 
-# 关节状态 JointState
+# 关节状态 EEJointState
 uint8[] state
