@@ -39,6 +39,7 @@ find_package(robot_server_interfaces REQUIRED)
 find_package(robot_server_lib REQUIRED)
 
 aux_source_directory(src LIB_SRCS)
+aux_source_directory(utils LIB_SRCS)
 
 add_executable(${PROJECT_NAME} ${LIB_SRCS})
 

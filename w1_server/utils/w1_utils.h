@@ -1,8 +1,8 @@
 #pragma once
 
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <vector>
-#include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 
@@ -43,21 +43,21 @@ std::ostringstream MotorStatusToJsonArrayString(const VectorType &vec, int start
             auto data = static_cast<long>(vec[i]);
             switch (data)
             {
-                case 1:
-                    ss << "\"INIT\"";
-                    break;
-                case 2:
-                    ss << "\"PREOP\"";
-                    break;
-                case 4:
-                    ss << "\"SAFEOP\"";
-                    break;
-                case 8:
-                    ss << "\"OP\"";
-                    break;
-                default:
-                    ss << data;
-                    break;
+            case 1:
+                ss << "\"INIT\"";
+                break;
+            case 2:
+                ss << "\"PREOP\"";
+                break;
+            case 4:
+                ss << "\"SAFEOP\"";
+                break;
+            case 8:
+                ss << "\"OP\"";
+                break;
+            default:
+                ss << data;
+                break;
             }
         }
         else
@@ -76,27 +76,27 @@ inline std::ostringstream RobotStatuswordToJsonString(const int &status_word)
     std::ostringstream ss;
     switch (status_word)
     {
-        case 0:
-            ss << "\"NOT_READY\"";
-            break;
-        case 1:
-            ss << "\"READY_NOT_ENABLE\"";
-            break;
-        case 2:
-            ss << "\"ENABLED\"";
-            break;
-        case 3:
-            ss << "\"READY_AND_ENABLED\"";
-            break;
-        case 4:
-            ss << "\"MOTOR_FAULT\"";
-            break;
-        case 8:
-            ss << "\"MOTOR_QUICK_STOP\"";
-            break;
-        default:
-            ss << status_word;
-            break;
+    case 0:
+        ss << "\"NOT_READY\"";
+        break;
+    case 1:
+        ss << "\"READY_NOT_ENABLE\"";
+        break;
+    case 2:
+        ss << "\"ENABLED\"";
+        break;
+    case 3:
+        ss << "\"READY_AND_ENABLED\"";
+        break;
+    case 4:
+        ss << "\"MOTOR_FAULT\"";
+        break;
+    case 8:
+        ss << "\"MOTOR_QUICK_STOP\"";
+        break;
+    default:
+        ss << status_word;
+        break;
     }
     return ss;
 }
@@ -122,18 +122,18 @@ std::ostringstream MotorErrorcodeToJsonArrayString(const VectorType &vec, int st
             auto data = static_cast<long>(vec[i]);
             switch (data)
             {
-                case 33792:
-                    ss << 10;
-                    break;
-                case 34048:
-                    ss << 20;
-                    break;
-                case 40960:
-                    ss << 30;
-                    break;
-                default:
-                    ss << data;
-                    break;
+            case 33792:
+                ss << 10;
+                break;
+            case 34048:
+                ss << 20;
+                break;
+            case 40960:
+                ss << 30;
+                break;
+            default:
+                ss << data;
+                break;
             }
         }
         else
@@ -147,5 +147,5 @@ std::ostringstream MotorErrorcodeToJsonArrayString(const VectorType &vec, int st
     return ss;
 }
 
-} // namespace utils
-} // namespace robot_server_lib
+}  // namespace utils
+}  // namespace robot_server_lib

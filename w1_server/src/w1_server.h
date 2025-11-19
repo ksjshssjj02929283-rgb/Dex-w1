@@ -3,6 +3,7 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>  // 新增
 
+#include "butterworth_filter.h"
 #include "chassis_interfaces/msg/chassis_motor_control.hpp"
 #include "chassis_interfaces/msg/chassis_whole_control.hpp"
 #include "joint_interfaces/msg/joint_control.hpp"
@@ -71,6 +72,7 @@ class RobotServer : public RobotServerBase
     const int first_arm_joint_index_ = 6;           // 左臂第一个关节在整体关节数组中的索引
     const double position_diff_threshold_ = 0.525;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
     const double DiffChassisWidth = 0.4390;
+    std::shared_ptr<ButterworthFilter> butterworth_filter_[ndof_robot];
 
     // 力传感器相关
     Vector3d sensor_force_;

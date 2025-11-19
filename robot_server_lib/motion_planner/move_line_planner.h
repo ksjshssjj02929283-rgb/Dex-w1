@@ -45,8 +45,8 @@ class MoveLinePlanner : public MotionPlannerBase
     PoseQuaternion ComputeOutputPose(LineGeometry line, double ruckig_trans_position, double ruckig_rot_position);
 
     const bool wait_trajectory_upon_finish_;
-    static constexpr int ruckig_dof_ = 6;    
-    
+    static constexpr int ruckig_dof_ = 6;
+
     // cache
     std::optional<LineGeometry> line_primary_;
     std::optional<LineGeometry> line_secondary_;
