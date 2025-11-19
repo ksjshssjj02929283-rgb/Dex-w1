@@ -10,8 +10,8 @@ import threading
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String, Float64MultiArray, Float64
-from end_effector_interfaces.msg import JointControl, JointFeedback
+from std_msgs.msg import String
+from end_effector_interfaces.msg import EEJointFeedback
 
 
 from ..common import (get_logger, 
@@ -69,26 +69,26 @@ class DexsimServer:
             self._right_ee_node = Node("right_ee_node")
             if self._end_effector_type == EndEffectorType.BRAINCO_HAND:
                 self._sub_left_ee = self._left_ee_node.create_subscription(
-                                            JointFeedback, 
+                                            EEJointFeedback, 
                                             ee_topics[self._end_effector_type]["left"], 
                                             self._subscriber_left_ee_callback,
                                             10)
                 
                 self._sub_right_ee = self._right_ee_node.create_subscription(
-                                            JointFeedback, 
+                                            EEJointFeedback, 
                                             ee_topics[self._end_effector_type]["right"], 
                                             self._subscriber_right_ee_callback,
                                             10)
                 
             elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
                 self._sub_left_ee = self._left_ee_node.create_subscription(
-                                            Float64, 
+                                            EEJointFeedback, 
                                             ee_topics[self._end_effector_type]["left"], 
                                             self._subscriber_left_ee_callback,
                                             10)
                 
                 self._sub_right_ee = self._right_ee_node.create_subscription(
-                                            Float64, 
+                                            EEJointFeedback, 
                                             ee_topics[self._end_effector_type]["right"], 
                                             self._subscriber_right_ee_callback,
                                             10)         

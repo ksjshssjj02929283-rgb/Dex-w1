@@ -5,7 +5,7 @@
 # ----------------------------------------------------------------------------
 
 import numpy as np
-from end_effector_interfaces.msg import JointControl, JointFeedback
+from end_effector_interfaces.msg import EEJointControl, EEJointFeedback
 from .end_effector_client import EndEffectorClient
 
 
@@ -28,23 +28,23 @@ class PGCGripperClient(EndEffectorClient):
     def _init_subscriber(self, is_sim: bool):
         if is_sim:
             self.create_subscription(
-                JointFeedback, f"/feedback_sim/gripper/{self._name}", 
+                EEJointFeedback, f"/feedback_sim/gripper/{self._name}", 
                 self._feedback_callback, 10
             )
         else:
             self.create_subscription(
-                JointFeedback, f"/feedback/gripper/{self._name}", 
+                EEJointFeedback, f"/feedback/gripper/{self._name}", 
                 self._feedback_callback, 10
             )
 
     def _init_publisher(self, is_sim: bool):
         if is_sim:
             self._control_publisher = self.create_publisher(
-                JointControl, f"/control_sim/gripper/{self._name}", 10
+                EEJointControl, f"/control_sim/gripper/{self._name}", 10
             )
         else:
             self._control_publisher = self.create_publisher(
-                JointControl, f"/control/gripper/{self._name}", 10
+                EEJointControl, f"/control/gripper/{self._name}", 10
             )
 
     def set_pos(self, pos) -> bool:
