@@ -13,9 +13,7 @@ import rclpy
 from rclpy.node import Node
 from end_effector_interfaces.msg import (
     JointControl,
-    JointControlMode,
-    JointFeedback,
-    JointState
+    JointControlMode
 )
 
 from ..common import get_logger
@@ -113,7 +111,7 @@ class EndEffectorClient(ABC, Node):
 
     # pos in [0,100]
     def set_pos(self, pos: np.ndarray) -> bool:
-        if not self._check_dim(pos):
+        if not self._check_dim(np.array(pos)):
             return False
         
         msg = JointControl()
@@ -121,12 +119,12 @@ class EndEffectorClient(ABC, Node):
         msg.name = self.joint_name
         msg.value = np.clip(pos, self.pos_lb, self.pos_ub).tolist()
         self._control_publisher.publish(msg)
-        self.logger.debug(f"{self.node_name} set pos: {msg.value}")
+        self.logger.debug(f"{self.node_name} set pos: {list(msg.value)}")
         return True
 
     # vel in [-100,100]
     def set_vel(self, vel: np.ndarray) -> bool:
-        if not self._check_dim(vel):
+        if not self._check_dim(np.array(vel)):
             return False
         
         msg = JointControl()
@@ -134,12 +132,12 @@ class EndEffectorClient(ABC, Node):
         msg.name = self.joint_name
         msg.value = np.clip(vel, self.vel_lb, self.vel_ub).tolist()
         self._control_publisher.publish(msg)
-        self.logger.debug(f"{self.node_name} set pos: {msg.value}")
+        self.logger.debug(f"{self.node_name} set vel: {list(msg.value)}")
         return True
 
     # current in [-100,100]
     def set_current(self, current: np.ndarray) -> bool:
-        if not self._check_dim(current):
+        if not self._check_dim(np.array(current)):
             return False
         
         msg = JointControl()
@@ -147,7 +145,7 @@ class EndEffectorClient(ABC, Node):
         msg.name = self.joint_name
         msg.value = np.clip(current, self.current_lb, self.current_ub).tolist()
         self._control_publisher.publish(msg)
-        self.logger.debug(f"{self.node_name} set pos: {msg.value}")
+        self.logger.debug(f"{self.node_name} set current: {list(msg.value)}")
         return True
 
     def get_pos(self) -> tuple[bool, np.ndarray]:
