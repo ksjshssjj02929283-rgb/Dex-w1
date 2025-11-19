@@ -10,10 +10,12 @@ import threading
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String, Float64MultiArray, Float64
+from std_msgs.msg import String
+from end_effector_interfaces.msg import EEJointFeedback
+
 
 from ..common import (get_logger, 
-                      generate_w1_urdf,
+                      generate_w1_urdf, download_w1_urdf, download_environment,
                       W1Version, W1ArmType,
                       get_robot_sim2real_idx, get_robot_real2sim_idx,
                       get_ee_sim2real_idx, get_ee_real2sim_idx)
@@ -28,7 +30,8 @@ class DexsimServer:
         self.logger = get_logger()
         self._end_effector_type = end_effector_type
 
-        res, file_path = generate_w1_urdf(arm_type, w1_version, end_effector_type)
+        # res, file_path = generate_w1_urdf(arm_type, w1_version, end_effector_type)
+        res, file_path = download_w1_urdf(arm_type, w1_version, end_effector_type)
         if not res:
             raise ValueError(f"Found URDF failed.")
         self._urdf_path = file_path
@@ -66,26 +69,26 @@ class DexsimServer:
             self._right_ee_node = Node("right_ee_node")
             if self._end_effector_type == EndEffectorType.BRAINCO_HAND:
                 self._sub_left_ee = self._left_ee_node.create_subscription(
-                                            Float64MultiArray, 
+                                            EEJointFeedback, 
                                             ee_topics[self._end_effector_type]["left"], 
                                             self._subscriber_left_ee_callback,
                                             10)
                 
                 self._sub_right_ee = self._right_ee_node.create_subscription(
-                                            Float64MultiArray, 
+                                            EEJointFeedback, 
                                             ee_topics[self._end_effector_type]["right"], 
                                             self._subscriber_right_ee_callback,
                                             10)
                 
             elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
                 self._sub_left_ee = self._left_ee_node.create_subscription(
-                                            Float64, 
+                                            EEJointFeedback, 
                                             ee_topics[self._end_effector_type]["left"], 
                                             self._subscriber_left_ee_callback,
                                             10)
                 
                 self._sub_right_ee = self._right_ee_node.create_subscription(
-                                            Float64, 
+                                            EEJointFeedback, 
                                             ee_topics[self._end_effector_type]["right"], 
                                             self._subscriber_right_ee_callback,
                                             10)         
@@ -185,7 +188,7 @@ class DexsimServer:
         self._articulation.set_current_qpos(self._cur_qpos)
 
     def _subscriber_left_ee_callback(self, msg):
-        raw_qpos = np.array(msg.data)
+        raw_qpos = np.array(msg.position)
         qpos = self.left_ee_joint_limits[:,0] + raw_qpos/100. * \
             (self.left_ee_joint_limits[:,1] - self.left_ee_joint_limits[:,0])
         # with self._lock:
@@ -195,7 +198,7 @@ class DexsimServer:
             self._cur_qpos[self.left_ee_sim2real_index] = qpos
 
     def _subscriber_right_ee_callback(self, msg):
-        raw_qpos = np.array(msg.data)
+        raw_qpos = np.array(msg.position)
         qpos = self.right_ee_joint_limits[:,0] + raw_qpos/100. * \
             (self.right_ee_joint_limits[:,1] - self.right_ee_joint_limits[:,0])
         # with self._lock:

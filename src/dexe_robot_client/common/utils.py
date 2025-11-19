@@ -12,7 +12,7 @@ import time
 import numpy as np
 from functools import wraps
 from .logger import get_logger
-from .config import DOWNLOAD_DIR, ASSETS_DIR
+from .config import DOWNLOAD_DIR, ASSETS_DIR, MODEL_DIR, ENVIRONMENT_DIR, URL_PREFIX
 from .robot_type import W1ArmType, W1Version
 from ..end_effector_client import EndEffectorType
 
@@ -48,8 +48,8 @@ def unzip_file(filename,
         return True
 
     with zipfile.ZipFile(src_path, 'r') as zip_ref:
-        zip_ref.extractall(dest_path)
-    get_logger().info(f"File unzip from {src_path} to {dest_path}")
+        zip_ref.extractall(unzip_path)
+    get_logger().info(f"File unzip from {src_path} to {unzip_path}")
     return True
 
 
@@ -167,4 +167,79 @@ def generate_w1_urdf(arm_type: W1ArmType,
         logger.error(f"Generate W1 URDF failed: {e}")
         return False, None
     
+    return True, str(file_path)
+
+
+def download_w1_urdf(arm_type: W1ArmType, 
+                    w1_version: W1Version = W1Version.V2,
+                    end_effector_type: EndEffectorType = None) -> tuple[bool, str]:
+    logger = get_logger()
+    
+    name = "W1"
+
+    if w1_version != W1Version.V2:
+        logger.error(f"{w1_version.name} are not support.")
+        return False, None
+    
+    name += "_V2"
+    if arm_type == W1ArmType.ANTHROPOMORPHIC:
+        name += "_A"
+    elif arm_type == W1ArmType.INDUSTRIAL:
+        name += "_I"
+    else:
+        logger.error(f"{arm_type.name} are not support.")
+        return False, None
+
+    if end_effector_type is None:
+        pass
+    elif end_effector_type == EndEffectorType.BRAINCO_HAND:
+        name += "_BRAINCO"
+        end_effector_folder_path = MODEL_DIR / "simplified_brainco"
+        if not end_effector_folder_path.exists():
+            end_effector_url = os.path.join(URL_PREFIX, "Model", "simplified_brainco.zip")
+            download_file(url=end_effector_url, dest_path=DOWNLOAD_DIR)
+            file_name = "simplified_brainco.zip"
+            unzip_file(filename=file_name, zip_path=DOWNLOAD_DIR, unzip_path=MODEL_DIR)
+
+    elif end_effector_type == EndEffectorType.PGC_GRIPPER:
+        name += "_PGC"
+        end_effector_folder_path = MODEL_DIR / "simplified_pgc"
+        if not end_effector_folder_path.exists():
+            end_effector_url = os.path.join(URL_PREFIX, "Model", "simplified_pgc.zip")
+            download_file(url=end_effector_url, dest_path=DOWNLOAD_DIR)
+            file_name = "simplified_pgc.zip"
+            unzip_file(filename=file_name, zip_path=DOWNLOAD_DIR, unzip_path=MODEL_DIR)
+    else:
+        logger.error(f"{end_effector_type.name} are not support.")
+        return False, None
+    
+    file_path = MODEL_DIR / name / f"{name}.urdf"
+    if file_path.exists():
+        logger.info(f"File already exists: {file_path}, skipping download.")
+        return True, str(file_path)
+    
+    model_url = os.path.join(URL_PREFIX, "Model", f"{name}.zip")
+    
+    download_file(url=model_url, dest_path=DOWNLOAD_DIR)
+    file_name = f"{name}.zip"
+    unzip_file(filename=file_name, zip_path=DOWNLOAD_DIR, unzip_path=MODEL_DIR)
+
+    return True, str(file_path)
+
+def download_environment(env_name: str) -> tuple[bool, str]:
+    """
+    Download environment file from NAS to dexe_robot_client_data/assets/Environment
+    """
+    logger = get_logger()
+    
+    file_path = ENVIRONMENT_DIR / env_name
+    if file_path.exists():
+        logger.info(f"File already exists: {file_path}, skipping download.")
+        return True, str(file_path)
+    
+    env_url = os.path.join(URL_PREFIX, "Environment", f"{env_name}.zip")
+    download_file(url=env_url, dest_path=DOWNLOAD_DIR)
+    file_name = f"{env_name}.zip"
+    unzip_file(filename=file_name, zip_path=DOWNLOAD_DIR, unzip_path=ENVIRONMENT_DIR)
+
     return True, str(file_path)
