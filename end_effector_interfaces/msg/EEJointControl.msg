@@ -1,7 +1,7 @@
 # header
 std_msgs/Header header
 
-# 关节控制模式 JointControlMode
+# 关节控制模式 EEJointControlMode
 uint8 mode
 
 # 关节名称
