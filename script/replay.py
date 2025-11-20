@@ -2,9 +2,11 @@ import sys
 import rclpy
 from rclpy.node import Node
 from joint_interfaces.msg import JointPositionControl
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Float64MultiArray, String
 import json
 import time
+import threading
+from rclpy.executors import MultiThreadedExecutor
 
 # record_file示例
 # {
@@ -67,7 +69,7 @@ joint_keys = [
 ]
 
 finger_keys = ["LEFT_HAND_THUMB1", "LEFT_HAND_THUMB2", "LEFT_HAND_INDEX", "LEFT_HAND_MIDDLE", "LEFT_HAND_RING", "LEFT_HAND_PINKY",
-                    "RIGHT_HAND_THUMB1", "RIGHT_HAND_THUMB2", "RIGHT_HAND_INDEX", "RIGHT_HAND_MIDDLE", "RIGHT_HAND_RING", "RIGHT_HAND_PINKY"]  
+                    "RIGHT_HAND_THUMB1", "RIGHT_HAND_THUMB2", "RIGHT_HAND_INDEX", "RIGHT_HAND_MIDDLE", "RIGHT_HAND_RING", "RIGHT_HAND_PINKY"]
 
 # 读取运行参数
 def read_args():
@@ -98,6 +100,11 @@ def send_recorded_data(node, left_hand_node, right_hand_node, recorded_data):
     record_start_time = None
 
     for frame in frames:
+        # 状态检测：若为 Init 则停止
+        if getattr(node, "server_status", None) == "Init":
+            node.get_logger().warn("检测到机器人状态 Not All Enable, 停止下发并退出。")
+            break
+
         timestamp = frame.get("timestamp", 0) #单位是秒
         if record_start_time is None:
             record_start_time = timestamp
@@ -143,6 +150,15 @@ def send_hand_qpos(hand_node, hand_qpos):
     msg.data = hand_qpos
     hand_node.publisher.publish(msg)
 
+def robot_state_callback(node):
+    def _cb(msg: String):
+        try:
+            data = json.loads(msg.data)
+            node.server_status = data.get("status")
+        except Exception as e:
+            node.get_logger().error(f"解析/feedback/robot_server_state失败: {e}")
+    return _cb
+
 # 主函数
 def main(args=None):
     rclpy.init(args=args)
@@ -150,6 +166,13 @@ def main(args=None):
     # 创建节点
     node = Node("replay_node")
     node.publisher = node.create_publisher(JointPositionControl, "/control/joint_position", 10)
+    node.server_status = None
+    node.create_subscription(String, "/feedback/robot_server_state", robot_state_callback(node), 10)
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+    ros_thread = threading.Thread(target=executor.spin, daemon=True)
+    ros_thread.start()
+
     left_hand_node = Node("left_hand_node")
     right_hand_node = Node("right_hand_node")
     left_hand_node.publisher = left_hand_node.create_publisher(Float64MultiArray, "/set_brainco_left_hand_qpos", 10)
