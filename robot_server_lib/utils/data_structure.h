@@ -135,7 +135,8 @@ struct RobotProperty
     pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     RunMode run_mode{RunMode::Position};
     double global_speed_ratio{0.5};
-    double safe_level{0.7};
+    double safe_level{0.5};
+    bool clear_error_flag{false};
 };
 
 struct PlannerManagerCommand

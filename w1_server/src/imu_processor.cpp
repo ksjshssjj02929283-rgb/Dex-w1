@@ -178,13 +178,13 @@ bool ImuProcessor::ComputeImuBias()
     if (acc_std.maxCoeff() > acc_excite_threshold_ || gyr_std.maxCoeff() > gyro_excite_threshold_ || std::abs(gyr_avg.x()) > gyr_mean_thresh ||
         std::abs(gyr_avg.y()) > gyr_mean_thresh || std::abs(gyr_avg.z()) > gyr_mean_thresh || acc_mag_bias > acc_mag_bias_thresh)
     {
-        RCLCPP_WARN(rclcpp::get_logger("ImuProcessor"),
-                    "IMU not static enough for bias init. "
-                    "acc_std=[%.6f, %.6f, %.6f], gyr_std=[%.6f, %.6f, %.6f], |g_est|-g_preset=%.6f, gyr_avg=[%.6f, %.6f, %.6f]",
-                    acc_std.x(), acc_std.y(), acc_std.z(), gyr_std.x(), gyr_std.y(), gyr_std.z(), acc_mag_bias, gyr_avg.x(), gyr_avg.y(),
-                    gyr_avg.z());
+        LOG_WARN << "IMU not static enough for bias init. "
+                 << "acc_std=[" << acc_std.x() << ", " << acc_std.y() << ", " << acc_std.z() << "], "
+                 << "gyr_std=[" << gyr_std.x() << ", " << gyr_std.y() << ", " << gyr_std.z() << "], "
+                 << "|g_est|-g_preset=" << acc_mag_bias << ", "
+                 << "gyr_avg=[" << gyr_avg.x() << ", " << gyr_avg.y() << ", " << gyr_avg.z() << "]";
         // TODO: 这里默认IMU是100hz，可以改成用时间戳计算
-        RCLCPP_WARN(rclcpp::get_logger("ImuProcessor"), "Reinitialize IMU after %.1f seconds of static.", max_buff_size_ / 100.0);
+        LOG_WARN << "Reinitialize IMU after " << (max_buff_size_ / 100.0) << " seconds of static.";
         is_need_initialize_ = true;
         imu_data_buff_.clear();  // 清空数据，重新积累
         return false;
@@ -241,15 +241,12 @@ bool ImuProcessor::ComputeImuBias()
     Eigen::Vector3d gravity_estimated_vec(0.0, 0.0, g_estimated);
     acc_bias_ = acc_avg - R_GtoI_ * gravity_estimated_vec;
 
-    RCLCPP_WARN(rclcpp::get_logger("ImuProcessor"),
-                "Compute imu bias success. "
-                "acc_std=[%.6f, %.6f, %.6f], "
-                "gyr_std=[%.6f, %.6f, %.6f], "
-                "acc_bias=[%.6f, %.6f, %.6f], "
-                "gyro_bias=[%.6f, %.6f, %.6f], "
-                "g_estimated=%.4f m/s²",
-                acc_std.x(), acc_std.y(), acc_std.z(), gyr_std.x(), gyr_std.y(), gyr_std.z(), acc_bias_.x(), acc_bias_.y(), acc_bias_.z(),
-                gyro_bias_.x(), gyro_bias_.y(), gyro_bias_.z(), g_estimated);
+    LOG_WARN << "Compute imu bias success. "
+             << "acc_std=[" << acc_std.x() << ", " << acc_std.y() << ", " << acc_std.z() << "], "
+             << "gyr_std=[" << gyr_std.x() << ", " << gyr_std.y() << ", " << gyr_std.z() << "], "
+             << "acc_bias=[" << acc_bias_.x() << ", " << acc_bias_.y() << ", " << acc_bias_.z() << "], "
+             << "gyro_bias=[" << gyro_bias_.x() << ", " << gyro_bias_.y() << ", " << gyro_bias_.z() << "], "
+             << "g_estimated=" << g_estimated << " m/s²";
     return true;
 }
 

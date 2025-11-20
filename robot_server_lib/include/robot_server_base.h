@@ -27,12 +27,12 @@ class RobotServerBase : public rclcpp::Node
     virtual void ManagerThreadFunc();
     virtual void TorqueControlThreadFunc();
     virtual void PublishThreadFunc();
+    virtual void SetPropertyCallback(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request>,
+                             std::shared_ptr<robot_server_interfaces::srv::SetProperty::Response>);
 
     void Run();
     Int64 MakeNewRequestID(RequestType type);
     void StreamingCommandCallback(const robot_server_interfaces::msg::StreamingCommand::SharedPtr msg);
-    void SetPropertyCallback(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request>,
-                             std::shared_ptr<robot_server_interfaces::srv::SetProperty::Response>);
 
     void MoveRobotCallback(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>);
     void ReportRequestStatus(Int64 request_id, RequestType request_type, RequestStatus request_status, Status manager_state);

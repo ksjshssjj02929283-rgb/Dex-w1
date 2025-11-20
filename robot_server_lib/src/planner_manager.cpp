@@ -208,6 +208,7 @@ void PlannerManager::LoopOnce()
         planner_command.cmd = runtime_data_.joint_cmd;
         planner_command.robot_property = robot_property_;
         manager_buffer_.planner_manager_command->AppendNewElement(planner_command);
+        robot_property_.clear_error_flag = false;  // 发送后清错flag清零
         if (Status::Running == manager_state_)
             LOG_DEBUG << "Current Planner: " << typeid(*current_planner_).name() << " output: " << runtime_data_.joint_cmd.ToString();
     }
@@ -414,6 +415,7 @@ RequestResponse PlannerManager::OnRequestStateError()
         //清除错误状态 Clear error state
         response.re_run = true;
         response.request_consumed = true;
+        robot_property_.clear_error_flag = true;
         ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
         ChangeState(Status::Idle);
         return response;
@@ -526,6 +528,8 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
     case RequestType::ClearError:
     {
         assert(!request.data.has_value());
+        robot_property_.clear_error_flag = true;
+        std::cout << "Set clear error flag to true" << std::endl;
         return;
     }
     default:

@@ -22,6 +22,7 @@ using JointPositionControlMsg = joint_interfaces::msg::JointPositionControl;
 using ChassisWholeControlMsg = chassis_interfaces::msg::ChassisWholeControl;
 using ChassisMotorControlMsg = chassis_interfaces::msg::ChassisMotorControl;
 using JointVelocityTorqueLimitFeedbackMsg = joint_interfaces::msg::JointVelocityTorqueLimitFeedback;
+using SetProperty = robot_server_interfaces::srv::SetProperty;
 
 class RobotServer : public RobotServerBase
 {
@@ -31,6 +32,8 @@ class RobotServer : public RobotServerBase
    private:
     void TorqueControlThreadFunc() override;
     void PublishThreadFunc() override;
+    void SetPropertyCallback(const std::shared_ptr<SetProperty::Request>,
+                             std::shared_ptr<SetProperty::Response>) override;
     Int64 StartStreaming(const PlannerRequest planner_request);
     void InitParamConfig();  // 初始化/读写 torque_limit_ 的 JSON 配置
 
@@ -69,8 +72,9 @@ class RobotServer : public RobotServerBase
                                              10.0,  10.0,  10.0,  25.0,  25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
     } torque_limit_;  // 关节力矩限制参数默认值, 单位: Nm
 
+    bool use_ruckig_ = true;                     // /control/joint接口是否使用 Ruckig 进行轨迹规划
     const int first_arm_joint_index_ = 6;           // 左臂第一个关节在整体关节数组中的索引
-    const double position_diff_threshold_ = 0.525;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
+    const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
     const double DiffChassisWidth = 0.4390;
     std::shared_ptr<ButterworthFilter> butterworth_filter_[ndof_robot];
 

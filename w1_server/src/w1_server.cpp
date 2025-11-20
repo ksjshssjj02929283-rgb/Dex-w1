@@ -95,10 +95,11 @@ void RobotServer::InitParamConfig()
     if (!std::filesystem::exists(config_path))
     {
         ptree root;
-        ptree torque_node;
-        torque_node.add_child("positive_limit_Nm", array_to_pt(torque_limit_.positive_limit_Nm, kNumJoints));
-        torque_node.add_child("negative_limit_Nm", array_to_pt(torque_limit_.negative_limit_Nm, kNumJoints));
-        root.add_child("torque_limit", torque_node);
+        ptree json_node;
+        json_node.add_child("positive_limit_Nm", array_to_pt(torque_limit_.positive_limit_Nm, kNumJoints));
+        json_node.add_child("negative_limit_Nm", array_to_pt(torque_limit_.negative_limit_Nm, kNumJoints));
+        json_node.put("use_ruckig", this->use_ruckig_);  // 新增 use_ruckig
+        root.add_child("torque_limit", json_node);
 
         boost::property_tree::write_json(config_path.string(), root);
         RCLCPP_INFO(this->get_logger(), "Created default config.json at: %s", config_path.string().c_str());
@@ -116,10 +117,11 @@ void RobotServer::InitParamConfig()
         RCLCPP_WARN(this->get_logger(), "config.json has no 'torque_limit' section, writing defaults.");
         LOG_CRIT << "config.json has no 'torque_limit' section, writing defaults.";
 
-        ptree torque_node;
-        torque_node.add_child("positive_limit_Nm", array_to_pt(torque_limit_.positive_limit_Nm, kNumJoints));
-        torque_node.add_child("negative_limit_Nm", array_to_pt(torque_limit_.negative_limit_Nm, kNumJoints));
-        root.put_child("torque_limit", torque_node);
+        ptree json_node;
+        json_node.add_child("positive_limit_Nm", array_to_pt(torque_limit_.positive_limit_Nm, kNumJoints));
+        json_node.add_child("negative_limit_Nm", array_to_pt(torque_limit_.negative_limit_Nm, kNumJoints));
+        json_node.put("use_ruckig", this->use_ruckig_);  // 写入默认 use_ruckig
+        root.put_child("torque_limit", json_node);
         boost::property_tree::write_json(config_path.string(), root);
 
         torque_opt = root.get_child_optional("torque_limit");
@@ -131,10 +133,10 @@ void RobotServer::InitParamConfig()
         }
     }
 
-    const ptree& torque_node = *torque_opt;
+    const ptree& json_node = *torque_opt;
     auto read_array = [&](const char* key, double out[kNumJoints]) -> bool
     {
-        auto child_opt = torque_node.get_child_optional(key);
+        auto child_opt = json_node.get_child_optional(key);
         if (!child_opt)
             return false;
         const ptree& arr = *child_opt;
@@ -151,8 +153,26 @@ void RobotServer::InitParamConfig()
     read_array("positive_limit_Nm", torque_limit_.positive_limit_Nm);
     read_array("negative_limit_Nm", torque_limit_.negative_limit_Nm);
 
-    RCLCPP_INFO(this->get_logger(), "Loaded config.json from: %s", config_path.string().c_str());
-    LOG_INFO << "Loaded config.json from: " << config_path;
+    // 读取 use_ruckig，若不存在则写入默认值
+    auto use_ruckig_opt = json_node.get_optional<bool>("use_ruckig");
+    if (use_ruckig_opt)
+    {
+        this->use_ruckig_ = use_ruckig_opt.get();
+    }
+    else
+    {
+        RCLCPP_WARN(this->get_logger(), "torque_limit.use_ruckig missing, writing default: %d", this->use_ruckig_);
+        LOG_CRIT << "torque_limit.use_ruckig missing, writing default: " << this->use_ruckig_;
+        // 追加写回
+        ptree root_new = root;
+        ptree torque_node_new = json_node;
+        torque_node_new.put("use_ruckig", this->use_ruckig_);
+        root_new.put_child("torque_limit", torque_node_new);
+        boost::property_tree::write_json(config_path.string(), root_new);
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Loaded config.json from: %s (use_ruckig=%s)", config_path.string().c_str(), this->use_ruckig_ ? "true" : "false");
+    LOG_INFO << "Loaded config.json from: " << config_path << ", use_ruckig=" << this->use_ruckig_;
 }
 
 void RobotServer::TorqueControlThreadFunc()
@@ -163,8 +183,8 @@ void RobotServer::TorqueControlThreadFunc()
     auto& control_shm_instance = ControlSharedMemory::GetInstance();
 
     Int64 loop_counter = 0;
+    this->is_robot_ready_ = false;
     auto next_cycle_time_point = std::chrono::steady_clock::now();
-
     while (rclcpp::ok())
     {
         loop_counter++;
@@ -185,12 +205,10 @@ void RobotServer::TorqueControlThreadFunc()
         // 叠加手动输入的力数据
         sensor_data_primary.head<3>() += sensor_force_;
 
-        // 读取机器人反馈数据
+
         bool ret = feedback_shm_instance.PeekLatest(&robot_feedback_);
-        bool motor_ready = robot_feedback_.robot_status_word & STATUSWORD_MOTOR_READY;
-        bool motor_enabled = robot_feedback_.robot_status_word & STATUSWORD_MOTOR_ENABLED;
-        this->is_robot_ready_ = ret && motor_ready;
-        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_CLEAR_FAULT;
+
+        // 机器人使能后才能写入measurement
         if (this->is_robot_ready_)
         {
             // 关节反馈数据写入测量数据
@@ -221,10 +239,9 @@ void RobotServer::TorqueControlThreadFunc()
             this->robot_buffers_.joint_raw_measurement->Reset();
             if (loop_counter % 3000 == 0)
             {
-                RCLCPP_WARN(this->get_logger(), "Robot is not ready, shm status: %d, statusword: %d, please check Connection, OP or Error state.",
+                RCLCPP_WARN(this->get_logger(), "Robot is not ready, shm status: %d, statusword: %d",
                             ret, robot_feedback_.robot_status_word);
-                LOG_CRIT << "Robot is not ready, shm status: " << ret << ", statusword: " << robot_feedback_.robot_status_word
-                         << ", please check Connection, OP or Error state.";
+                LOG_CRIT << "Robot is not ready, shm status: " << ret << ", statusword: " << robot_feedback_.robot_status_word;
             }
         }
 
@@ -234,9 +251,11 @@ void RobotServer::TorqueControlThreadFunc()
         // 获取并写入控制数据: 关节位置, 速度, 关节力矩限制, 外部力矩
         PlannerManagerCommand planner_cmd{};
         TorqueCtrlCommand torque_cmd{};
+        bool is_cmd_valid = false;
         if (this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) &&
             this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd))
         {
+            is_cmd_valid = true;
             JointMeasurement manager_measurement{};
             robot_property_ = planner_cmd.robot_property;
             for (int i = 0; i < ndof_robot; ++i)
@@ -294,11 +313,53 @@ void RobotServer::TorqueControlThreadFunc()
             // {
             //     std::cout << "torque_cmd.torque[6..12]: " << torque_cmd.torque.segment(6, 7).transpose() << std::endl;
             // }
-            // robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT |
-            // CTRLWORD_MOTOR_CST_MODE;
-            robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON | CTRLWORD_MOTOR_ENABLE | CTRLWORD_MOTOR_CLEAR_FAULT;
         }
+        // 根据状态写入机器人控制字
+        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
+        this->is_robot_ready_ = false;
+        static bool inited_ = false;
+        if(ret)
+        {
+            switch(robot_feedback_.robot_status_word)
+            {
+                case STATUSWORD_MOTOR_NOT_READY:
+                    break;
+                case STATUSWORD_MOTOR_READY:
+                    this->is_robot_ready_ = true;
+                    if (is_cmd_valid)
+                    {
+                        robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+                    }
+                    break;
+                case STATUSWORD_MOTOR_ENABLED:
+                    inited_ = true;
+                    this->is_robot_ready_ = true;
+                    robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+                    break;
+                case STATUSWORD_MOTOR_FAULT:
+                    if (!inited_ || robot_property_.clear_error_flag)
+                    {
+                        robot_control_.robot_control_word |= CTRLWORD_MOTOR_CLEAR_FAULT;
+                    }
+                    for (int i = 0; i < ndof_robot; i++)
+                    {
+                        robot_control_.position[i] = robot_feedback_.position[i];
+                        robot_control_.velocity[i] = robot_feedback_.velocity[i];
+                        robot_control_.acceleration[i] = 0.0;
+                        robot_control_.torque_feedforward[i] = 0.0;
+                        robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
+                        robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
+                        robot_control_.torque_external[i] = 0.0;
+                    }
+                    break;
+                case STATUSWORD_MOTOR_QUICK_STOP:
+                    break;
+                default:
+                    break;
+            }
+            robot_property_.clear_error_flag = false; // 每周期重置error_flag
 
+        }
         control_shm_instance.AppendNewElement(robot_control_);
         std::this_thread::sleep_until(next_cycle_time_point);
     }
@@ -319,23 +380,26 @@ void RobotServer::PublishThreadFunc()
         // Publish /feedback/robot_server_state
         std_msgs::msg::String robot_server_state_msg;
         std::ostringstream robot_statusword_ss = utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word);
+        std::ostringstream robot_controlword_ss = utils::RobotControlwordToJsonString(robot_control_.robot_control_word);
         std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(robot_feedback_.position, 0, ndof_robot);
         std::ostringstream joint_velocity_ss = utils::VectorToJsonArrayString(robot_feedback_.velocity, 0, ndof_robot);
         std::ostringstream joint_torque_ss = utils::VectorToJsonArrayString(robot_feedback_.torque, 0, ndof_robot);
         std::ostringstream joint_sensor_wrench_ss = utils::VectorToJsonArrayString(sensor_wrench_);
         std::ostringstream motor_status_ss = utils::MotorStatusToJsonArrayString(robot_feedback_.al_status, 0, ndof_robot);
-        std::ostringstream motor_temperature_ss = utils::VectorToJsonArrayString(robot_feedback_.motor_temperature, 0, ndof_robot);
         std::ostringstream motor_error_code_ss = utils::MotorErrorcodeToJsonArrayString(robot_feedback_.motor_error_code, 0, ndof_robot);
+        std::ostringstream motor_temperature_ss = utils::VectorToJsonArrayString(robot_feedback_.motor_temperature, 0, ndof_robot);
+        std::ostringstream joint_position_control_ss = utils::VectorToJsonArrayString(robot_control_.position, 0, ndof_robot);
         std::ostringstream torque_limit_negative_ss = utils::VectorToJsonArrayString(robot_control_.negative_torque_limit, 6, ndof_robot);
         std::ostringstream torque_limit_positive_ss = utils::VectorToJsonArrayString(robot_control_.positive_torque_limit, 6, ndof_robot);
 
         robot_server_state_msg.data =
             std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ", \"status\":\"" + ToString(this->manager_state_) +
-            "\", \"robot_statusword\":" + robot_statusword_ss.str() + ", \"run_mode\":\"" + ToString(robot_property_.run_mode) + "\"" +
+            "\", \"robot_statusword\":" + robot_statusword_ss.str() + ", \"robot_controlword\":" + robot_controlword_ss.str() + ", \"run_mode\":\"" + ToString(robot_property_.run_mode) + "\"" +
             ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
             ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
             ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) + ",\"motor_status\":" + motor_status_ss.str() +
-            ",\"motor_temperature\":" + motor_temperature_ss.str() + ",\"motor_error_code\":" + motor_error_code_ss.str() +
+            ",\"motor_error_code\":" + motor_error_code_ss.str() + ",\"motor_temperature\":" + motor_temperature_ss.str() + 
+            ",\"joint_position_cmd\":" + joint_position_control_ss.str() + 
             ",\"joint_position\":" + joint_position_ss.str() + ",\"joint_velocity\":" + joint_velocity_ss.str() +
             ",\"joint_torque\":" + joint_torque_ss.str() + ",\"force_sensor\":" + joint_sensor_wrench_ss.str() +
             ",\"torque_limit_negative\":" + torque_limit_negative_ss.str() + ",\"torque_limit_positive\":" + torque_limit_positive_ss.str();
@@ -403,6 +467,22 @@ void RobotServer::PublishFeedback()
     velocity_torque_limit_feedback_publisher_->publish(limit_msg);
 }
 
+void RobotServer::SetPropertyCallback(const std::shared_ptr<SetProperty::Request> request, std::shared_ptr<SetProperty::Response> response)
+{
+    PlannerRequest planner_request = utils::ParseSetPropertyRequest(request);
+    planner_request.request_id = MakeNewRequestID(planner_request.type);
+    this->manager_buffers_.request_queue->EnQueue(planner_request);
+    response->request_id = planner_request.request_id;
+    if (planner_request.type == RequestType::ClearError)
+    {
+        robot_property_.clear_error_flag = true;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, value: %s", planner_request.request_id, request->property_type.c_str(),
+                request->value.c_str());
+    LOG_INFO << "Request_id = " << planner_request.request_id << ", Received, type = " << request->property_type << ", value = " << request->value;
+}
+
 Int64 RobotServer::StartStreaming(PlannerRequest planner_request)
 {
     auto request_id = MakeNewRequestID(planner_request.type);
@@ -456,7 +536,7 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg)
             planner_request.type = RequestType::StartJointStreaming;
             MoveRequest move_request;
             move_request.motion_group = MotionGroup::WholeBody;
-            // move_request.optional_mode = true; // true: no ruckig 模式, false: ruckig 模式
+            move_request.optional_mode = use_ruckig_? false : true; // true: no ruckig 模式, false: ruckig 模式
             planner_request.data = move_request;
             streaming_request_id_ = StartStreaming(planner_request);
         }
@@ -503,7 +583,7 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
             planner_request.type = RequestType::StartJointStreaming;
             MoveRequest move_request;
             move_request.motion_group = MotionGroup::WholeBody;
-            // move_request.optional_mode = true;  // true: no ruckig 模式, false: ruckig 模式
+            move_request.optional_mode = use_ruckig_? false : true; // true: no ruckig 模式, false: ruckig 模式
             planner_request.data = move_request;
             streaming_request_id_ = StartStreaming(planner_request);
         }

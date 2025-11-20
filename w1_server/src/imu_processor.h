@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include "robot_server_lib/NanoLog.hpp"
 
 #include "sensor_msgs/msg/imu.hpp"
 

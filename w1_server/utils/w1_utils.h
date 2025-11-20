@@ -12,6 +12,7 @@ using json = nlohmann::json;
 #define CTRLWORD_MOTOR_CLEAR_FAULT (1U << 3)
 #define CTRLWORD_MOTOR_CST_MODE (1U << 4)
 
+#define STATUSWORD_MOTOR_NOT_READY (0)
 #define STATUSWORD_MOTOR_READY (1U << 0)
 #define STATUSWORD_MOTOR_ENABLED (1U << 1)
 #define STATUSWORD_MOTOR_FAULT (1U << 2)
@@ -85,9 +86,6 @@ inline std::ostringstream RobotStatuswordToJsonString(const int &status_word)
     case 2:
         ss << "\"ENABLED\"";
         break;
-    case 3:
-        ss << "\"READY_AND_ENABLED\"";
-        break;
     case 4:
         ss << "\"MOTOR_FAULT\"";
         break;
@@ -96,6 +94,18 @@ inline std::ostringstream RobotStatuswordToJsonString(const int &status_word)
         break;
     default:
         ss << status_word;
+        break;
+    }
+    return ss;
+}
+
+inline std::ostringstream RobotControlwordToJsonString(const int &control_word)
+{
+    std::ostringstream ss;
+    switch (control_word)
+    {
+    default:
+        ss << control_word;
         break;
     }
     return ss;
@@ -122,15 +132,6 @@ std::ostringstream MotorErrorcodeToJsonArrayString(const VectorType &vec, int st
             auto data = static_cast<long>(vec[i]);
             switch (data)
             {
-            case 33792:
-                ss << 10;
-                break;
-            case 34048:
-                ss << 20;
-                break;
-            case 40960:
-                ss << 30;
-                break;
             default:
                 ss << data;
                 break;
