@@ -141,11 +141,14 @@ class OMPLPlanSingle:
         self.other_arm_qpos = other_arm_qpos
 
     def _is_state_valid(self, state):
+        robot_name = "whole_body"
         if not self.use_ee:
             if self.is_left:
+                robot_name = "left_arm"
                 lqpos = np.array([state[i] for i in range(self.space.getDimension())], dtype=np.float32)
                 rqpos = self.other_arm_qpos
             else:
+                robot_name = "right_arm"
                 rqpos = np.array([state[i] for i in range(self.space.getDimension())], dtype=np.float32)
                 lqpos = self.other_arm_qpos
             real_qpos = np.concatenate((self.body_qpos, self.head_qpos, lqpos, rqpos))
@@ -153,14 +156,16 @@ class OMPLPlanSingle:
             transform = arml_trans + armr_trans
             self.fcl_checker.update_arm_transform(transform)
 
-            return not self.fcl_checker.check_collision()
+            return not self.fcl_checker.check_collision(robot_name=robot_name)
         else:
             if self.is_left:
+                robot_name = "left_arm"
                 lqpos = np.array([state[i] for i in range(self.space.getDimension())], dtype=np.float32)
                 rqpos = self.other_arm_qpos
                 leeqpos = self.end_effector_qpos
                 reeqpos = self.other_hand_qpos
             else:
+                robot_name = "right_arm"
                 rqpos = np.array([state[i] for i in range(self.space.getDimension())], dtype=np.float32)
                 lqpos = self.other_arm_qpos
                 reeqpos = self.end_effector_qpos
@@ -170,7 +175,7 @@ class OMPLPlanSingle:
             transform = arml_trans + armr_trans
             self.fcl_checker.update_arm_transform(transform, armlee_trans, armree_trans)
 
-            return not self.fcl_checker.check_collision()
+            return not self.fcl_checker.check_collision(robot_name=robot_name)
     
     def save_result_path(self, file_name):
         current_path = os.path.dirname(os.path.abspath(__file__))
