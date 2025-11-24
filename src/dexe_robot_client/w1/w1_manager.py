@@ -14,7 +14,7 @@ from loop_rate_limiters import RateLimiter
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
-from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, generate_w1_urdf, download_w1_urdf, download_environment
+from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, download_w1_urdf
 from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..navigation_client import ChassisClient
 from ..robot_client import RobotClientRos2 as RobotClient
@@ -363,8 +363,8 @@ class W1Manager:
         # qpos = np.atleast_2d(qpos)
         if np.any(qpos < qpos_lb) or np.any(qpos > qpos_ub):
             invalid_idx = np.where((qpos < qpos_lb) | (qpos > qpos_ub))[0][0]
-            self.logger.error(f"{name} {invalid_idx}th qpos({qpos.tolist()}) " + \
-                              f"excceeded limits([{qpos_lb[invalid_idx-1]}, {qpos_ub[invalid_idx-1]}]).")
+            self.logger.error(f"{name} {invalid_idx+1}th qpos({qpos.tolist()}) " + \
+                              f"excceeded limits([{qpos_lb[invalid_idx]}, {qpos_ub[invalid_idx]}]).")
             return False
         return True
     
@@ -819,18 +819,11 @@ class W1Manager:
         Returns:
             bool: 
         """
-        target_qpos = deepcopy(self.w1_params.home_qpos)
-        target_torso_qpos = target_qpos[self.w1_params.torso_index]
-        target_head_qpos = target_qpos[self.w1_params.head_index]
-        target_left_arm_qpos = target_qpos[self.w1_params.left_arm_index]
-        target_right_arm_qpos = target_qpos[self.w1_params.right_arm_index]
-
-        waypoint_dict = {"torso": [target_torso_qpos.tolist()],
-                         "head": [target_head_qpos.tolist()],
-                         "left_arm": [target_left_arm_qpos.tolist()],
-                         "right_arm": [target_right_arm_qpos.tolist()]}
-
-        return self.move_joint_full_body(waypoint_dict, max(0.1, min(speed_ratio, 1.0)))
+        request_id = self.robot_client.move_joint_sync(self.w1_params.home_qpos, MotionGroup.WholeBody, speed=speed_ratio)
+        if request_id == -1:
+            self.logger.error("Go home failed!")
+            return False
+        return True
 
     def stop_move(self) -> bool:
         """停止发送streaming指令
@@ -1061,7 +1054,10 @@ class W1Manager:
                 time.sleep(self.TIME_STEP / 10)
 
             if len(left_arm_ee_trigger_list_cp):
-                self.logger.error(f"left_arm_ee has {len(left_arm_ee_trigger_list_cp)} states haven't been triggered.")
+                if self._stop_move_event.is_set():
+                    self.logger.error(f"left_arm_ee has {len(left_arm_ee_trigger_list_cp)} states haven't been triggered.")
+                else:
+                    self.logger.warning(f"left_arm_ee has {len(left_arm_ee_trigger_list_cp)} states haven't been triggered.")
                 self.logger.debug(f"current_count: {cur_count}, count: {count}, target_count: {target_count}")
                 ee_thread_error = True
 
@@ -1085,7 +1081,10 @@ class W1Manager:
                 time.sleep(self.TIME_STEP / 10)
 
             if len(right_arm_ee_trigger_list_cp):
-                self.logger.error(f"left_arm_ee has {len(right_arm_ee_trigger_list_cp)} states haven't been triggered.")
+                if self._stop_move_event.is_set():
+                    self.logger.error(f"right_arm_ee has {len(right_arm_ee_trigger_list_cp)} states haven't been triggered.")
+                else:
+                    self.logger.warning(f"right_arm_ee has {len(right_arm_ee_trigger_list_cp)} states haven't been triggered.")
                 self.logger.debug(f"current_count: {cur_count}, count: {count}, target_count: {target_count}")
                 ee_thread_error = True
 
