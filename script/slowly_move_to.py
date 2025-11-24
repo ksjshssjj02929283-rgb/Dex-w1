@@ -46,17 +46,17 @@ class JointTrajectoryPublisher(Node):
         super().__init__('joint_trajectory_publisher')
         self.subscription = self.create_subscription(
             JointState,
-            '/feedback/joint_sim',
+            '/feedback/joint',
             self.joint_state_callback,
             10)
         self.robot_state_subscription = self.create_subscription(
             String,
-            '/feedback/robot_server_state_sim',
+            '/feedback/robot_server_state',
             self.robot_state_callback,
             10)
         self.publisher = self.create_publisher(
             JointPositionControl,
-            '/control/joint_position_sim',
+            '/control/joint_position',
             10)
         self.json_file = json_file
         self.status = None

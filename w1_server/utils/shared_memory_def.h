@@ -48,8 +48,8 @@ struct RobotControl
     double torque_external[MAX_JOINT_NUM] = {0};
     double positive_velocity_limit[MAX_JOINT_NUM] = {0};
     double negative_velocity_limit[MAX_JOINT_NUM] = {0};
-    double positive_torque_limit[MAX_JOINT_NUM] = {0};
-    double negative_torque_limit[MAX_JOINT_NUM] = {0};
+    double positive_torque_limit[MAX_JOINT_NUM] = {25.0};
+    double negative_torque_limit[MAX_JOINT_NUM] = {25.0};
     int chassis_mode = 0;  //底盘控制模式. 0：全向整车控制，1：差速，2：全向电机控制
     // 全向整车控制
     int chassis_whole_mode = 0;

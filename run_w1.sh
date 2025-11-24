@@ -18,7 +18,7 @@ kill_process "sim_server"
 kill_process "w1_server"
 
 # 启动sim_server和仿真可视化
-taskset -c 5 /bin/python3 script/visual_ros2_node.py &
+# taskset -c 5 /bin/python3 script/visual_ros2_node.py &
 taskset -c 5 ros2 run sim_server sim_server > /dev/null 2>&1 &
 taskset -c 6 script/set_max_position_following_error_window.sh > /dev/null 2>&1 &
 taskset -c 6 ros2 run w1_server w1_server

@@ -207,7 +207,66 @@ void RobotServer::TorqueControlThreadFunc()
 
 
         bool ret = feedback_shm_instance.PeekLatest(&robot_feedback_);
+        // 根据状态写入机器人控制字
+        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
+        this->is_robot_ready_ = false;
+        static bool inited_ = false;
+        static int enabled_streak_cycles = 0; // 连续处于 ENABLE 状态的计数器
+        static int16_t last_status_word_ = -1;
+        if(ret)
+        {
+            // 如果状态字发生变化了则打印
+            if (robot_feedback_.robot_status_word != last_status_word_)
+            {
+                RCLCPP_INFO(this->get_logger(), "Robot status word changed: %s", utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
+                last_status_word_ = robot_feedback_.robot_status_word;
+            }
+            switch(robot_feedback_.robot_status_word)
+            {
+                case STATUSWORD_MOTOR_READY:
+                    enabled_streak_cycles = 0;
+                    this->is_robot_ready_ = true;
+                    robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+                    break;
+                case STATUSWORD_MOTOR_ENABLED:
+                    this->is_robot_ready_ = true;
+                    robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+                    if(!inited_)
+                    {
+                        for (int i = 0; i < ndof_robot; i++)
+                        {
+                            robot_control_.position[i] = robot_feedback_.position[i];
+                            robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
+                            robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
+                        }
+                    }
+                    enabled_streak_cycles++;
+                    if (enabled_streak_cycles >= 100)
+                    {
+                        inited_ = true;
+                    }
+                    break;
+                case STATUSWORD_MOTOR_NOT_READY:
+                case STATUSWORD_MOTOR_FAULT:
+                case STATUSWORD_MOTOR_QUICK_STOP:
+                    enabled_streak_cycles = 0;
+                    for (int i = 0; i < ndof_robot; i++)
+                    {
+                        robot_control_.position[i] = robot_feedback_.position[i];
+                        robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
+                        robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
+                    }
+                default:
+                    enabled_streak_cycles = 0;
+                    break;
+            }
+            if (!inited_ || robot_property_.clear_error_flag)
+            {
+                robot_control_.robot_control_word |= CTRLWORD_MOTOR_CLEAR_FAULT;
+            }
+            robot_property_.clear_error_flag = false; // 每周期重置error_flag
 
+        }
         // 机器人使能后才能写入measurement
         if (this->is_robot_ready_)
         {
@@ -251,11 +310,9 @@ void RobotServer::TorqueControlThreadFunc()
         // 获取并写入控制数据: 关节位置, 速度, 关节力矩限制, 外部力矩
         PlannerManagerCommand planner_cmd{};
         TorqueCtrlCommand torque_cmd{};
-        bool is_cmd_valid = false;
         if (this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) &&
             this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd))
         {
-            is_cmd_valid = true;
             JointMeasurement manager_measurement{};
             robot_property_ = planner_cmd.robot_property;
             for (int i = 0; i < ndof_robot; ++i)
@@ -313,52 +370,6 @@ void RobotServer::TorqueControlThreadFunc()
             // {
             //     std::cout << "torque_cmd.torque[6..12]: " << torque_cmd.torque.segment(6, 7).transpose() << std::endl;
             // }
-        }
-        // 根据状态写入机器人控制字
-        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
-        this->is_robot_ready_ = false;
-        static bool inited_ = false;
-        if(ret)
-        {
-            switch(robot_feedback_.robot_status_word)
-            {
-                case STATUSWORD_MOTOR_NOT_READY:
-                    break;
-                case STATUSWORD_MOTOR_READY:
-                    this->is_robot_ready_ = true;
-                    if (is_cmd_valid)
-                    {
-                        robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
-                    }
-                    break;
-                case STATUSWORD_MOTOR_ENABLED:
-                    inited_ = true;
-                    this->is_robot_ready_ = true;
-                    robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
-                    break;
-                case STATUSWORD_MOTOR_FAULT:
-                    if (!inited_ || robot_property_.clear_error_flag)
-                    {
-                        robot_control_.robot_control_word |= CTRLWORD_MOTOR_CLEAR_FAULT;
-                    }
-                    for (int i = 0; i < ndof_robot; i++)
-                    {
-                        robot_control_.position[i] = robot_feedback_.position[i];
-                        robot_control_.velocity[i] = robot_feedback_.velocity[i];
-                        robot_control_.acceleration[i] = 0.0;
-                        robot_control_.torque_feedforward[i] = 0.0;
-                        robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
-                        robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
-                        robot_control_.torque_external[i] = 0.0;
-                    }
-                    break;
-                case STATUSWORD_MOTOR_QUICK_STOP:
-                    break;
-                default:
-                    break;
-            }
-            robot_property_.clear_error_flag = false; // 每周期重置error_flag
-
         }
         control_shm_instance.AppendNewElement(robot_control_);
         std::this_thread::sleep_until(next_cycle_time_point);

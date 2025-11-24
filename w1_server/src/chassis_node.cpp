@@ -77,7 +77,7 @@ void ChassisNode::ImuMsgCallback(const sensor_msgs::msg::Imu::SharedPtr msg)
     if (!refined_imu.has_value())
     {
         is_imu_inited_ = false;
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "IMU is not initialized ...");
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "IMU is not initialized ...");
         return;
     }
 
