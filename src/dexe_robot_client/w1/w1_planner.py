@@ -2395,7 +2395,36 @@ class W1Planner:
         _, idx = np.unique(coords, axis=0, return_index=True)
         return points[idx]
 
-    
+    def augment_pointcloud(self, pointcloud: np.ndarray, step: float = 0.02, max_range: float = 0.2) -> np.ndarray:
+        """
+        Augment pointcloud by extending points along the ray from origin to each point
+        
+        Args:
+            pointcloud (nd.array, shape=(N, 3)): original pointcloud
+            step (float): step size for augmentation
+            max_range (float): maximum range for augmentation
+
+        """
+        start_time = time.time()
+        center = np.zeros((1, 3))
+        vectors = pointcloud - center
+        distances = np.linalg.norm(vectors, axis=1)
+        directions = vectors / (distances[:, np.newaxis] + 1e-8)
+
+        augmented_points = []
+        for i in range(pointcloud.shape[0]):
+            num_steps = int((max_range - distances[i]) / step)
+            for j in range(1, num_steps + 1):
+                new_point = pointcloud[i] + directions[i] * step * j
+                augmented_points.append(new_point)
+        if len(augmented_points) > 0:
+            augmented_points = np.array(augmented_points)
+            combined_pointcloud = np.vstack((pointcloud, augmented_points))
+        else:
+            combined_pointcloud = pointcloud
+
+        self.logger.debug(f"Pointcloud augmentation time: {time.time()-start_time:.6f}s, original points: {pointcloud.shape[0]}, augmented points: {combined_pointcloud.shape[0]}")
+        return combined_pointcloud
 
     def numpy_to_pointcloud2(self, points: np.ndarray, frame_id="base_link") -> PointCloud2:
         """
@@ -2445,6 +2474,8 @@ class W1Planner:
 
         planner_pcd = current_pcd
         planner_pcd = self._voxel_down_sample_numpy(planner_pcd, voxel_size=0.01)
+        planner_pcd = self.augment_pointcloud(planner_pcd, step=0.02, max_range=0.2)
+        planner_pcd = self._voxel_down_sample_numpy(planner_pcd, voxel_size=0.01)
 
         res, waist_T_neck2 = self._get_waist_T_neck2()
 
@@ -2455,26 +2486,26 @@ class W1Planner:
 
         # Visulaize for the filtered pcd
 
-        # current_qpos = self.get_current_qpos()[1]
-        # cur_arml_qpos = current_qpos[self.real_arml_idx[0]:self.real_arml_idx[1]+1]
+        current_qpos = self.get_current_qpos()[1]
+        cur_arml_qpos = current_qpos[self.real_arml_idx[0]:self.real_arml_idx[1]+1]
 
-        # # filtered_planner_pcd = self.vamp_planner.vamp_module.filter_self_from_pointcloud(planner_pcd,
-        # #                                                                 0.01,
-        # #                                                                 cur_arml_qpos,
-        # #                                                                 self.vamp_planner.env)
+        # filtered_planner_pcd = self.vamp_planner.vamp_module.filter_self_from_pointcloud(planner_pcd,
+        #                                                                 0.01,
+        #                                                                 cur_arml_qpos,
+        #                                                                 self.vamp_planner.env)
 
-        # filtered_planner_pcd = deepcopy(planner_pcd)
-        # filtered_planner_pcd = self.radius_outlier_removal(filtered_planner_pcd, radius=0.03, min_neighbors=15)
+        filtered_planner_pcd = deepcopy(planner_pcd)
+        filtered_planner_pcd = self.radius_outlier_removal(filtered_planner_pcd, radius=0.03, min_neighbors=15)
 
-        # self.logger.debug(f"planner pcd length: {planner_pcd.shape[0]} filtered pcd length: {len(filtered_planner_pcd)}")
+        self.logger.debug(f"planner pcd length: {planner_pcd.shape[0]} filtered pcd length: {len(filtered_planner_pcd)}")
         
-        # rviz_planner_pcd = np.asarray(deepcopy(filtered_planner_pcd))
-        # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
-        # base_link_T_waist = torso_tf[-1]
-        # rviz_pcd = np.hstack([rviz_planner_pcd, np.ones((rviz_planner_pcd.shape[0], 1))])
-        # rviz_pcd = (base_link_T_waist @ rviz_pcd.T).T[:, :3]
-        # rviz_pcd = self.numpy_to_pointcloud2(rviz_pcd, frame_id="base_link")
-        # self.pcd_env_publisher.publish(rviz_pcd)
+        rviz_planner_pcd = np.asarray(deepcopy(filtered_planner_pcd))
+        torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
+        base_link_T_waist = torso_tf[-1]
+        rviz_pcd = np.hstack([rviz_planner_pcd, np.ones((rviz_planner_pcd.shape[0], 1))])
+        rviz_pcd = (base_link_T_waist @ rviz_pcd.T).T[:, :3]
+        rviz_pcd = self.numpy_to_pointcloud2(rviz_pcd, frame_id="base_link")
+        self.pcd_env_publisher.publish(rviz_pcd)
 
 
         return True, planner_pcd, get_pcd_time
@@ -2966,6 +2997,7 @@ class W1Planner:
                 marker.color.b = 0.0
 
                 ma.markers.append(marker)
+            
             self.torso_collision_publisher.publish(ma)
 
         start_time = time.time()

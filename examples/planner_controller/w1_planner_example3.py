@@ -32,7 +32,7 @@ def test_w1_planner():
                           0.4, -0.77,
                           -1.37, -0.3, 1.39, -0.74, 0.0, 0.0, 0.0,
                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-    # init_qpos[6:13] = np.array([-1.37, -1.5, 1.39, -0.97, 0.0, 0.0, 0.0])
+    init_qpos[6:13] = np.array([-1.37, -1.5, 1.39, -0.97, 0.0, 0.0, 0.0])
 
     w1_planner.set_home_qpos(init_qpos, save_to_file=False)
     w1_planner.go_home(1)
@@ -68,30 +68,30 @@ def test_w1_planner():
     # cam_neck2_extrinsics[:3, 3] = [0.027, -0.0975, 0]  # 平移部分
 
     # realsense d455
-    # angles = [-0.1, np.pi/2-0.1, -0.05]  
-    # rot = R.from_euler('zyz', angles)
-    # rotation_matrix = rot.as_matrix()
-
-    # cam_neck2_extrinsics = np.eye(4)
-    # cam_neck2_extrinsics[:3, :3] = rotation_matrix
-    # cam_neck2_extrinsics[:3, 3] = [0.01, -0.1605, 0.02]
-
-    # realsense d405
-    angles = [-0.2, np.pi/2-0.1 - 0.0, 0.05]  
+    angles = [-0.1, np.pi/2-0.1, -0.05]  
     rot = R.from_euler('zyz', angles)
     rotation_matrix = rot.as_matrix()
 
     cam_neck2_extrinsics = np.eye(4)
     cam_neck2_extrinsics[:3, :3] = rotation_matrix
-    cam_neck2_extrinsics[:3, 3] = [0.01, -0.1605 - 0.04, 0.02]
+    cam_neck2_extrinsics[:3, 3] = [0.01, -0.1605, 0.02]
+
+    # realsense d405
+    # angles = [-0.2, np.pi/2-0.1 - 0.0, 0.05]  
+    # rot = R.from_euler('zyz', angles)
+    # rotation_matrix = rot.as_matrix()
+
+    # cam_neck2_extrinsics = np.eye(4)
+    # cam_neck2_extrinsics[:3, :3] = rotation_matrix
+    # cam_neck2_extrinsics[:3, 3] = [0.01, -0.1605 - 0.04, 0.02]
 
     w1_planner.init_dynamic_planner(robot_type=RobotType.W1V02_1, 
                                     end_effector_type=None, 
                                     cam_arml_extrinsics=cam_arml_extrinsics,
                                     cam_armr_extrinsics=cam_armr_extrinsics)
     w1_planner.set_cam_neck2_extrinsics(cam_neck2_extrinsics)
-    # while True:
-    #     pcd = w1_planner._reload_environment()
+    while True:
+        pcd = w1_planner._reload_environment()
 
 
     # arml_target_qpos1 = np.array([-np.pi / 2, -1.38, np.pi / 2, -np.pi / 4, -np.pi / 2, np.pi / 5, 0.0])

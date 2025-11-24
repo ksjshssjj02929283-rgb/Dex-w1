@@ -32,7 +32,7 @@ class VampPlanner:
         if is_left_arm:
             self.arm = "w1_left_arm_manu_with_torso4"
         else:
-            self.arm = "w1_right_arm_manu"
+            self.arm = "w1_right_arm_manu_with_torso4"
         self.planner_name = "rrtc"
         self.sampler_name = "halton"
         self.skip_rng_iterations = 0
