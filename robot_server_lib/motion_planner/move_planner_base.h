@@ -32,6 +32,8 @@ enum class ComputeCommandStatus
     // The same controller ComputeCommand would NOT be invoked
     // without the next ResetForNewEpisode
     TaskFinished = 3,
+    // The stop command has finished
+    TaskStopped = 4
 };
 
 class MotionPlannerBase

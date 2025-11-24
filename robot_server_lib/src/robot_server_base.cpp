@@ -204,16 +204,10 @@ void RobotServerBase::MoveRobotCallback(const std::shared_ptr<rclcpp_action::Ser
         return;
     }
     planner_request.request_id = request_id;
-    if (planner_request.type >= RequestType::StopMove)
-    {
-        this->manager_buffers_.emergency_request_queue->EnQueue(planner_request);
-    }
-    else
-    {
-        this->manager_buffers_.request_queue->EnQueue(planner_request);
-        this->request_handle_queue_.EnQueue(request_handle);
-    }
+    planner_request.type >= RequestType::StopMove ? this->manager_buffers_.emergency_request_queue->EnQueue(planner_request)
+                                                  : this->manager_buffers_.request_queue->EnQueue(planner_request);
 
+    this->request_handle_queue_.EnQueue(request_handle);
     RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, arm = %s", planner_request.request_id, request_handle->get_goal()->type.c_str(),
                 request_handle->get_goal()->motion_group.c_str());
 
@@ -285,11 +279,29 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id, RequestType request_
                 result_msg->success = true;
                 handle_temp->succeed(result_msg);
             }
+            else
+            {
+                RCLCPP_WARN(this->get_logger(), "Request id = %ld, request_type = %s No matching action goal found in the queue.", request_id,
+                            ToString(request_type));
+            }
         }
         break;
     case RequestStatus::PhaseFinished:
         utils::SetMax(this->latest_report_id_.finished, request_id);
-        LOG_INFO << "Request id = " << request_id << " Phase Finished.";
+        break;
+    case RequestStatus::Stopped:
+        utils::SetMax(this->latest_report_id_.finished, request_id);
+        if (request_type >= RequestType::MoveJoint)
+        {
+            std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> handle_temp;
+            if (this->request_handle_queue_.DeQueue(&handle_temp))
+            {
+                auto result_msg = std::make_shared<MoveRobot::Result>();
+                result_msg->request_id = request_id;
+                result_msg->success = true;
+                handle_temp->succeed(result_msg);
+            }
+        }
         break;
     case RequestStatus::ErrorDrop:
         utils::SetMax(this->latest_report_id_.error_drop, request_id);

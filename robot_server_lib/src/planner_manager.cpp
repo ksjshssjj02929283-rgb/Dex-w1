@@ -94,9 +94,30 @@ void PlannerManager::LoopOnce()
                 LOG_INFO << "New emergency request received with request ID: " << emergency_request.request_id
                          << " Type: " << ToString(emergency_request.type);
                 runtime_data_.terminated_request_id = emergency_request.request_id;
-                ReportRequestStatus(emergency_request.request_id, emergency_request.type, RequestStatus::Executed, manager_state_);
-                ConsumeRequest(&request);  // 清除当前缓存请求 Clear cached request
+                if (Status::Running != manager_state_)
+                {
+                    runtime_data_.latest_processing_request_id = emergency_request.request_id;
+                    runtime_data_.latest_processing_request_type = emergency_request.type;
+                    runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+                    ReportRequestStatus(emergency_request.request_id, emergency_request.type, RequestStatus::Executed, manager_state_);
+                    ConsumeRequest(&emergency_request);
+                    break;
+                }
+
+                // 清除当前处理中的的请求 Clear the currently processing request
+                ReportRequestStatus(runtime_data_.latest_processing_request_id, runtime_data_.latest_processing_request_type, RequestStatus::Stopped,
+                                    manager_state_);
+                // 改写当前处理的请求ID和类型 Update the currently processing request ID and type
+                runtime_data_.latest_processing_request_id = emergency_request.request_id;
+                runtime_data_.latest_processing_request_type = emergency_request.type;
+                runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
                 ConsumeRequest(&emergency_request);
+                // 清除当前缓存请求 Clear cached request
+                if (request.type != RequestType::Empty)
+                {
+                    ReportRequestStatus(request.request_id, request.type, RequestStatus::Stopped, manager_state_);
+                    ConsumeRequest(&request);  // 清除当前缓存请求 Clear cached request
+                }
                 break;
             default:
                 LOG_WARN << "Unknown emergency request type received: " << ToString(emergency_request.type);
@@ -121,6 +142,7 @@ void PlannerManager::LoopOnce()
             {
                 if (request.request_id < runtime_data_.terminated_request_id)
                 {
+                    ReportRequestStatus(request.request_id, request.type, RequestStatus::Stopped, manager_state_);
                     ConsumeRequest(&request);  // 丢弃stop之前的指令 Discard outdated request
                 }
                 else
@@ -144,7 +166,7 @@ void PlannerManager::LoopOnce()
     auto status(ComputeCommandStatus::Error);
     if (current_planner_ != nullptr)
     {
-        if (runtime_data_.latest_processing_request_id < runtime_data_.terminated_request_id)
+        if (runtime_data_.latest_processing_request_type == RequestType::StopMove)
         {
             status = current_planner_->ComputeStopCommand(measurement, time_meta, runtime_data_.joint_cmd);
         }
@@ -219,8 +241,15 @@ void PlannerManager::LoopOnce()
     {
     case ComputeCommandStatus::TaskOngoing:
         return;
+    case ComputeCommandStatus::TaskStopped:
+        LOG_INFO << "StopMove request finished.";
+        ReportRequestStatus(runtime_data_.latest_processing_request_id, runtime_data_.latest_processing_request_type, RequestStatus::Executed,
+                            manager_state_);
+        ChangeState(Status::Idle);
+        return;
     case ComputeCommandStatus::PhaseFinished:
-        ReportRequestStatus(++runtime_data_.last_finished_request_id, runtime_data_.latest_processing_request_type, RequestStatus::PhaseFinished,
+        runtime_data_.last_finished_request_id++;
+        ReportRequestStatus(runtime_data_.last_finished_request_id, runtime_data_.latest_processing_request_type, RequestStatus::PhaseFinished,
                             manager_state_);
         return;
     case ComputeCommandStatus::TaskFinished:
@@ -265,6 +294,7 @@ RequestResponse PlannerManager::OnRequestStateInit()
         manager_buffer_.planner_manager_command->Reset();  // 重置命令缓冲区 Reset the command buffer
         if (request.type != RequestType::Empty)
         {
+            runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
             ReportRequestStatus(request.request_id, request.type, RequestStatus::ErrorDrop, manager_state_);
             response.request_consumed = true;
         }
@@ -318,6 +348,7 @@ RequestResponse PlannerManager::OnRequestStateIdle()
         response.request_consumed = true;
         runtime_data_.latest_processing_request_id = request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
         runtime_data_.latest_processing_request_type = request.type;
+        runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
         ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
         return response;
     }
@@ -339,6 +370,7 @@ RequestResponse PlannerManager::OnRequestStateRunning()
     if (time_meta.measurement_time.is_invalid())  // 如果measurement_time无效则说明测量数据错误, 不能继续运行
     {
         ChangeState(Status::Init);
+        runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
         ReportRequestStatus(runtime_data_.latest_processing_request_id, runtime_data_.latest_processing_request_type, RequestStatus::ErrorDrop,
                             manager_state_);
         LOG_CRIT << "Measurement time invalid in Running state, changing to Init state.";
@@ -428,6 +460,9 @@ RequestResponse PlannerManager::OnRequestStateError()
         response.re_run = true;
         response.request_consumed = true;
         robot_property_.clear_error_flag = true;
+        runtime_data_.latest_processing_request_id = request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
+        runtime_data_.latest_processing_request_type = request.type;
+        runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
         ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
         ChangeState(Status::Idle);
         return response;
@@ -438,6 +473,9 @@ RequestResponse PlannerManager::OnRequestStateError()
         return response;
     }
     // 忽略其他命令 Ignore other requests
+    runtime_data_.latest_processing_request_id = request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
+    runtime_data_.latest_processing_request_type = request.type;
+    runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
     ReportRequestStatus(request.request_id, request.type, RequestStatus::ErrorDrop, manager_state_);
     // 其他情况保持在Error状态 Other cases remain in Error state
     response.request_consumed = true;
@@ -515,7 +553,7 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
             robot_property_.run_mode = RunMode::Drag;
         else
             robot_property_.run_mode = RunMode::Position;
-        std::cout << "Set run mode to " << ToString(robot_property_.run_mode) << std::endl;
+        LOG_INFO << "Set run mode to " << ToString(robot_property_.run_mode);
         return;
     }
     case RequestType::EnableImpedance:
@@ -526,7 +564,7 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
             robot_property_.run_mode = RunMode::Impedance;
         else
             robot_property_.run_mode = RunMode::Position;
-        std::cout << "Set run mode to " << ToString(robot_property_.run_mode) << std::endl;
+        LOG_INFO << "Set run mode to " << ToString(robot_property_.run_mode);
         return;
     }
     case RequestType::SafeLevel:
@@ -534,14 +572,14 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
         assert(request.data.has_value() && std::holds_alternative<double>(request.data.value()));
         double safe_level = std::get<double>(request.data.value());
         robot_property_.safe_level = std::clamp(safe_level, 0.1, 1.0);
-        std::cout << "Set safe level to " << robot_property_.safe_level << std::endl;
+        LOG_INFO << "Set safe level to " << robot_property_.safe_level;
         return;
     }
     case RequestType::ClearError:
     {
         assert(!request.data.has_value());
         robot_property_.clear_error_flag = true;
-        std::cout << "Set clear error flag to true" << std::endl;
+        LOG_INFO << "Set clear error flag to true";
         return;
     }
     default:

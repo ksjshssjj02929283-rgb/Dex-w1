@@ -105,7 +105,7 @@ enum class RequestStatus
     Executed = 1,
     PhaseFinished = 2,
     Queued = 3,
-    Stoped = 4,
+    Stopped = 4,
 
     Unknown = 4
 };
@@ -158,8 +158,8 @@ inline const char *ToString(RequestStatus s)
         return "Queued";
     case RequestStatus::PhaseFinished:
         return "PhaseFinished";
-    case RequestStatus::Stoped:
-        return "Stoped";
+    case RequestStatus::Stopped:
+        return "Stopped";
     default:
         return "Unknown";
     }
