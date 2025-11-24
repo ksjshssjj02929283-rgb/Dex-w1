@@ -171,7 +171,8 @@ void RobotServer::InitParamConfig()
         boost::property_tree::write_json(config_path.string(), root_new);
     }
 
-    RCLCPP_INFO(this->get_logger(), "Loaded config.json from: %s (use_ruckig=%s)", config_path.string().c_str(), this->use_ruckig_ ? "true" : "false");
+    RCLCPP_INFO(this->get_logger(), "Loaded config.json from: %s (use_ruckig=%s)", config_path.string().c_str(),
+                this->use_ruckig_ ? "true" : "false");
     LOG_INFO << "Loaded config.json from: " << config_path << ", use_ruckig=" << this->use_ruckig_;
 }
 
@@ -205,67 +206,68 @@ void RobotServer::TorqueControlThreadFunc()
         // 叠加手动输入的力数据
         sensor_data_primary.head<3>() += sensor_force_;
 
-
         bool ret = feedback_shm_instance.PeekLatest(&robot_feedback_);
         // 根据状态写入机器人控制字
         robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
         this->is_robot_ready_ = false;
         static bool inited_ = false;
-        static int enabled_streak_cycles = 0; // 连续处于 ENABLE 状态的计数器
+        static int enabled_streak_cycles = 0;  // 连续处于 ENABLE 状态的计数器
         static int16_t last_status_word_ = -1;
-        if(ret)
+        if (ret)
         {
             // 如果状态字发生变化了则打印
             if (robot_feedback_.robot_status_word != last_status_word_)
             {
-                RCLCPP_INFO(this->get_logger(), "Robot status word changed: %s", utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
+                RCLCPP_INFO(this->get_logger(), "Robot status word changed: %s",
+                            utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
+                LOG_INFO << "Robot status word changed: " << utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str();
                 last_status_word_ = robot_feedback_.robot_status_word;
             }
-            switch(robot_feedback_.robot_status_word)
+            switch (robot_feedback_.robot_status_word)
             {
-                case STATUSWORD_MOTOR_READY:
-                    enabled_streak_cycles = 0;
-                    this->is_robot_ready_ = true;
-                    robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
-                    break;
-                case STATUSWORD_MOTOR_ENABLED:
-                    this->is_robot_ready_ = true;
-                    robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
-                    if(!inited_)
-                    {
-                        for (int i = 0; i < ndof_robot; i++)
-                        {
-                            robot_control_.position[i] = robot_feedback_.position[i];
-                            robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
-                            robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
-                        }
-                    }
-                    enabled_streak_cycles++;
-                    if (enabled_streak_cycles >= 100)
-                    {
-                        inited_ = true;
-                    }
-                    break;
-                case STATUSWORD_MOTOR_NOT_READY:
-                case STATUSWORD_MOTOR_FAULT:
-                case STATUSWORD_MOTOR_QUICK_STOP:
-                    enabled_streak_cycles = 0;
+            case STATUSWORD_MOTOR_READY:
+                enabled_streak_cycles = 0;
+                this->is_robot_ready_ = true;
+                robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+                break;
+            case STATUSWORD_MOTOR_ENABLED:
+                this->is_robot_ready_ = true;
+                robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+                if (!inited_)
+                {
                     for (int i = 0; i < ndof_robot; i++)
                     {
                         robot_control_.position[i] = robot_feedback_.position[i];
                         robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
                         robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
                     }
-                default:
-                    enabled_streak_cycles = 0;
-                    break;
+                }
+                enabled_streak_cycles++;
+                if (enabled_streak_cycles >= 100)
+                {
+                    inited_ = true;
+                }
+                break;
+            case STATUSWORD_MOTOR_NOT_READY:
+            case STATUSWORD_MOTOR_FAULT:
+            case STATUSWORD_MOTOR_QUICK_STOP:
+                enabled_streak_cycles = 0;
+                for (int i = 0; i < ndof_robot; i++)
+                {
+                    robot_control_.position[i] = robot_feedback_.position[i];
+                    robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
+                    robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
+                }
+                break;
+            default:
+                enabled_streak_cycles = 0;
+                break;
             }
             if (!inited_ || robot_property_.clear_error_flag)
             {
                 robot_control_.robot_control_word |= CTRLWORD_MOTOR_CLEAR_FAULT;
             }
-            robot_property_.clear_error_flag = false; // 每周期重置error_flag
-
+            robot_property_.clear_error_flag = false;  // 每周期重置error_flag
         }
         // 机器人使能后才能写入measurement
         if (this->is_robot_ready_)
@@ -298,8 +300,7 @@ void RobotServer::TorqueControlThreadFunc()
             this->robot_buffers_.joint_raw_measurement->Reset();
             if (loop_counter % 3000 == 0)
             {
-                RCLCPP_WARN(this->get_logger(), "Robot is not ready, shm status: %d, statusword: %d",
-                            ret, robot_feedback_.robot_status_word);
+                RCLCPP_WARN(this->get_logger(), "Robot is not ready, shm status: %d, statusword: %d", ret, robot_feedback_.robot_status_word);
                 LOG_CRIT << "Robot is not ready, shm status: " << ret << ", statusword: " << robot_feedback_.robot_status_word;
             }
         }
@@ -405,15 +406,15 @@ void RobotServer::PublishThreadFunc()
 
         robot_server_state_msg.data =
             std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ", \"status\":\"" + ToString(this->manager_state_) +
-            "\", \"robot_statusword\":" + robot_statusword_ss.str() + ", \"robot_controlword\":" + robot_controlword_ss.str() + ", \"run_mode\":\"" + ToString(robot_property_.run_mode) + "\"" +
-            ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+            "\", \"robot_statusword\":" + robot_statusword_ss.str() + ", \"robot_controlword\":" + robot_controlword_ss.str() + ", \"run_mode\":\"" +
+            ToString(robot_property_.run_mode) + "\"" + ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
             ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
             ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) + ",\"motor_status\":" + motor_status_ss.str() +
             ",\"motor_error_code\":" + motor_error_code_ss.str() + ",\"motor_temperature\":" + motor_temperature_ss.str() +
-            ",\"joint_position_cmd\":" + joint_position_control_ss.str() +
-            ",\"joint_position\":" + joint_position_ss.str() + ",\"joint_velocity\":" + joint_velocity_ss.str() +
-            ",\"joint_torque\":" + joint_torque_ss.str() + ",\"force_sensor\":" + joint_sensor_wrench_ss.str() +
-            ",\"torque_limit_negative\":" + torque_limit_negative_ss.str() + ",\"torque_limit_positive\":" + torque_limit_positive_ss.str();
+            ",\"joint_position_cmd\":" + joint_position_control_ss.str() + ",\"joint_position\":" + joint_position_ss.str() +
+            ",\"joint_velocity\":" + joint_velocity_ss.str() + ",\"joint_torque\":" + joint_torque_ss.str() +
+            ",\"force_sensor\":" + joint_sensor_wrench_ss.str() + ",\"torque_limit_negative\":" + torque_limit_negative_ss.str() +
+            ",\"torque_limit_positive\":" + torque_limit_positive_ss.str();
 
         if (this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose) &&
             this->manager_buffers_.torso_pose_measurement->PeekLatest(&torso_X_Z_RY))
@@ -543,7 +544,7 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg)
             planner_request.type = RequestType::StartJointStreaming;
             MoveRequest move_request;
             move_request.motion_group = MotionGroup::WholeBody;
-            move_request.optional_mode = use_ruckig_? false : true; // true: no ruckig 模式, false: ruckig 模式
+            move_request.optional_mode = use_ruckig_ ? false : true;  // true: no ruckig 模式, false: ruckig 模式
             planner_request.data = move_request;
             streaming_request_id_ = StartStreaming(planner_request);
         }
@@ -590,7 +591,7 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
             planner_request.type = RequestType::StartJointStreaming;
             MoveRequest move_request;
             move_request.motion_group = MotionGroup::WholeBody;
-            move_request.optional_mode = use_ruckig_? false : true; // true: no ruckig 模式, false: ruckig 模式
+            move_request.optional_mode = use_ruckig_ ? false : true;  // true: no ruckig 模式, false: ruckig 模式
             planner_request.data = move_request;
             streaming_request_id_ = StartStreaming(planner_request);
         }

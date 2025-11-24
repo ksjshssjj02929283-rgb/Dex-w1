@@ -28,7 +28,7 @@ class RobotServerBase : public rclcpp::Node
     virtual void TorqueControlThreadFunc();
     virtual void PublishThreadFunc();
     virtual void SetPropertyCallback(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request>,
-                             std::shared_ptr<robot_server_interfaces::srv::SetProperty::Response>);
+                                     std::shared_ptr<robot_server_interfaces::srv::SetProperty::Response>);
 
     void Run();
     Int64 MakeNewRequestID(const PlannerRequest &planner_request);

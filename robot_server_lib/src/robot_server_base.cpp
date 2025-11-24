@@ -139,7 +139,7 @@ void RobotServerBase::PublishThreadFunc()
 
 Int64 RobotServerBase::MakeNewRequestID(const PlannerRequest &planner_request)
 {
-    const RequestType& type = planner_request.type;
+    const RequestType &type = planner_request.type;
     if (type == RequestType::StartJointStreaming || type == RequestType::StartEEPoseStreaming)
     {
         if (this->latest_received_id_ > (std::max(this->latest_report_id_.finished.load(), this->latest_report_id_.error_drop.load())))
@@ -156,7 +156,7 @@ Int64 RobotServerBase::MakeNewRequestID(const PlannerRequest &planner_request)
     }
     if (type == RequestType::MoveTraj)
     {
-        if(!std::holds_alternative<MoveRequest>(planner_request.data.value()))
+        if (!std::holds_alternative<MoveRequest>(planner_request.data.value()))
         {
             RCLCPP_WARN(this->get_logger(), "Invalid MoveTraj request data, failed to queue move traj request");
             LOG_CRIT << "Invalid MoveTraj request data, failed to queue move traj request";

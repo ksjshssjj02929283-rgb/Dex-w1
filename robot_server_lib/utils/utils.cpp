@@ -284,7 +284,7 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
     {
         planner_request.type = RequestType::MoveLine;
     }
-    else if (input_request->type ==  "MoveTraj")
+    else if (input_request->type == "MoveTraj")
     {
         planner_request.type = RequestType::MoveTraj;
     }

@@ -191,7 +191,7 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg)
         planner_request.type = RequestType::StartJointStreaming;
         MoveRequest move_request;
         move_request.motion_group = MotionGroup::WholeBody;
-        move_request.optional_mode = true; // true: no ruckig 模式, false: ruckig 模式
+        move_request.optional_mode = true;  // true: no ruckig 模式, false: ruckig 模式
         planner_request.data = move_request;
         streaming_request_id_ = StartStreaming(planner_request);
     }
@@ -231,7 +231,7 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
         planner_request.type = RequestType::StartJointStreaming;
         MoveRequest move_request;
         move_request.motion_group = MotionGroup::WholeBody;
-        move_request.optional_mode = true; // true: no ruckig 模式, false: ruckig 模式
+        move_request.optional_mode = true;  // true: no ruckig 模式, false: ruckig 模式
         planner_request.data = move_request;
         streaming_request_id_ = StartStreaming(planner_request);
     }
