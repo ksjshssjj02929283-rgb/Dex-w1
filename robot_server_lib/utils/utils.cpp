@@ -224,7 +224,7 @@ bool GetJointFromWholeBody(const RobotModel &robot_model, const JointPositionDof
 PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request)
 {
     PlannerRequest planner_request;
-
+    // 解析请求类型 Parse request type
     if (request->property_type == "TcpPrimary")
     {
         planner_request.type = RequestType::TcpPrimary;
@@ -269,31 +269,13 @@ PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interf
     return planner_request;
 }
 
-StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interfaces::msg::StreamingCommand> msg)
-{
-    StreamingCommand streaming_command;
-
-    streaming_command.request_id = msg->request_id;
-    streaming_command.streaming_finished = msg->streaming_finished;
-    streaming_command.received_time = TimePointSystem::Now();
-    if (msg->position.size() > 0)
-    {
-        streaming_command.command.resize(msg->position.size());
-        for (size_t i = 0; i < msg->position.size(); ++i)
-        {
-            streaming_command.command[i] = msg->position[i];
-        }
-    }
-    return streaming_command;
-}
-
 // 解析MoveRobot动作的命令
 PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> action_handle)
 {
     const auto &input_request = action_handle->get_goal();
 
     PlannerRequest planner_request;
-    // type/motion_group 转换为枚举
+    // 解析请求类型 Parse request type
     if (input_request->type == "MoveJoint")
     {
         planner_request.type = RequestType::MoveJoint;
@@ -301,6 +283,10 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
     else if (input_request->type == "MoveLine")
     {
         planner_request.type = RequestType::MoveLine;
+    }
+    else if (input_request->type ==  "MoveTraj")
+    {
+        planner_request.type = RequestType::MoveTraj;
     }
     else if (input_request->type == "StartJointStreaming")
     {
@@ -322,6 +308,7 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
     }
 
     MoveRequest move_request;
+    // 解析motion_group Parse motion group
     if (input_request->motion_group == "Primary")
     {
         move_request.motion_group = MotionGroup::Primary;
@@ -347,6 +334,7 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
         move_request.motion_group = MotionGroup::Unknown;
     }
 
+    // 解析目标位置 Parse target position
     Eigen::VectorXd value;
     if (input_request->target.size() > 0)
     {
@@ -358,6 +346,7 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
         move_request.value = value;
     }
 
+    // 解析配置参数 Parse configuration parameters
     json input_config_json;
     if (!input_request->config.empty())
     {
@@ -383,7 +372,6 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
         {
             move_request.speed.emplace(input_config_json["speed"].get<double>());
         }
-
         if (input_config_json.contains("blend_tolerance"))
         {
             move_request.blend_tolerance.emplace(input_config_json["blend_tolerance"].get<double>());
@@ -392,9 +380,40 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
         {
             move_request.optional_mode.emplace(input_config_json["optional_mode"].get<bool>());
         }
+        if (input_config_json.contains("interval"))
+        {
+            move_request.interval.emplace(input_config_json["interval"].get<double>());
+        }
+        if (input_config_json.contains("endpoint_index"))
+        {
+            std::vector<int> endpoint_index;
+            for (const auto &item : input_config_json["endpoint_index"])
+            {
+                endpoint_index.push_back(item.get<int>());
+            }
+            move_request.endpoint_index.emplace(endpoint_index);
+        }
     }
     planner_request.data = move_request;
     return planner_request;
+}
+
+StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interfaces::msg::StreamingCommand> msg)
+{
+    StreamingCommand streaming_command;
+
+    streaming_command.request_id = msg->request_id;
+    streaming_command.streaming_finished = msg->streaming_finished;
+    streaming_command.received_time = TimePointSystem::Now();
+    if (msg->position.size() > 0)
+    {
+        streaming_command.command.resize(msg->position.size());
+        for (size_t i = 0; i < msg->position.size(); ++i)
+        {
+            streaming_command.command[i] = msg->position[i];
+        }
+    }
+    return streaming_command;
 }
 
 Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary)

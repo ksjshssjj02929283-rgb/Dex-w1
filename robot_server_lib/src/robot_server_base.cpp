@@ -137,8 +137,9 @@ void RobotServerBase::PublishThreadFunc()
     }
 }
 
-Int64 RobotServerBase::MakeNewRequestID(RequestType type)
+Int64 RobotServerBase::MakeNewRequestID(const PlannerRequest &planner_request)
 {
+    const RequestType& type = planner_request.type;
     if (type == RequestType::StartJointStreaming || type == RequestType::StartEEPoseStreaming)
     {
         if (this->latest_received_id_ > (std::max(this->latest_report_id_.finished.load(), this->latest_report_id_.error_drop.load())))
@@ -150,6 +151,28 @@ Int64 RobotServerBase::MakeNewRequestID(RequestType type)
             LOG_CRIT << "Still existed previous move request, failed to queue start streaming request"
                      << ", latest_received_id_: " << this->latest_received_id_ << ", latest_finished_id_: " << this->latest_report_id_.finished.load()
                      << ", latest_errordrop_id_: " << this->latest_report_id_.error_drop.load();
+            return -1;
+        }
+    }
+    if (type == RequestType::MoveTraj)
+    {
+        if(!std::holds_alternative<MoveRequest>(planner_request.data.value()))
+        {
+            RCLCPP_WARN(this->get_logger(), "Invalid MoveTraj request data, failed to queue move traj request");
+            LOG_CRIT << "Invalid MoveTraj request data, failed to queue move traj request";
+            return -1;
+        }
+        auto move_request = std::get<MoveRequest>(planner_request.data.value());
+        if (move_request.interval.has_value() && move_request.endpoint_index.has_value())
+        {
+            std::vector<int> endpoint_index = move_request.endpoint_index.value();
+            this->latest_received_id_ += endpoint_index.size();
+            return this->latest_received_id_;
+        }
+        else
+        {
+            RCLCPP_WARN(this->get_logger(), "MoveTraj request missing interval or endpoint_index, failed to queue move traj request");
+            LOG_CRIT << "MoveTraj request missing interval or endpoint_index, failed to queue move traj request";
             return -1;
         }
     }
@@ -167,7 +190,7 @@ Int64 RobotServerBase::MakeNewRequestID(RequestType type)
 void RobotServerBase::MoveRobotCallback(const std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> request_handle)
 {
     PlannerRequest planner_request = utils::ParseMoveRequest(request_handle);
-    auto request_id = MakeNewRequestID(planner_request.type);
+    auto request_id = MakeNewRequestID(planner_request);
 
     // Publish feedback with request id
     auto feedback = std::make_shared<MoveRobot::Feedback>();
@@ -222,7 +245,7 @@ void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::Shared
 void RobotServerBase::SetPropertyCallback(const std::shared_ptr<SetProperty::Request> request, std::shared_ptr<SetProperty::Response> response)
 {
     PlannerRequest planner_request = utils::ParseSetPropertyRequest(request);
-    planner_request.request_id = MakeNewRequestID(planner_request.type);
+    planner_request.request_id = MakeNewRequestID(planner_request);
     this->manager_buffers_.request_queue->EnQueue(planner_request);
     response->request_id = planner_request.request_id;
 
@@ -263,6 +286,10 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id, RequestType request_
                 handle_temp->succeed(result_msg);
             }
         }
+        break;
+    case RequestStatus::PhaseFinished:
+        utils::SetMax(this->latest_report_id_.finished, request_id);
+        LOG_INFO << "Request id = " << request_id << " Phase Finished.";
         break;
     case RequestStatus::ErrorDrop:
         utils::SetMax(this->latest_report_id_.error_drop, request_id);

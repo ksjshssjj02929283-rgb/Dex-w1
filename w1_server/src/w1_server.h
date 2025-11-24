@@ -49,8 +49,8 @@ class RobotServer : public RobotServerBase
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;
     rclcpp::Publisher<JointVelocityTorqueLimitFeedbackMsg>::SharedPtr velocity_torque_limit_feedback_publisher_;
     rclcpp::TimerBase::SharedPtr control_timer_;
-    rclcpp::Subscription<JointControlMsg>::SharedPtr control_subscriber_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr force_subscriber_;
+    rclcpp::Subscription<JointControlMsg>::SharedPtr control_subscriber_;
     rclcpp::Subscription<JointPositionControlMsg>::SharedPtr position_control_subscriber_;
     rclcpp::Subscription<ChassisWholeControlMsg>::SharedPtr omni_chassis_control_subscriber_;
     rclcpp::Subscription<ChassisMotorControlMsg>::SharedPtr omni_chassis_motor_control_subscriber_;

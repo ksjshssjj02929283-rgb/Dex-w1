@@ -17,5 +17,5 @@ kill_process "visual_ros2_node.py"
 kill_process "sim_server"
 
 # 启动sim_server和仿真可视化
-/bin/python3 python/visual_ros2_node.py &
+/bin/python3 script/visual_ros2_node.py &
 ros2 run sim_server sim_server

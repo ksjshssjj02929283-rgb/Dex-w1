@@ -13,6 +13,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 find_package(PythonInterp 3.6 REQUIRED)
 set(PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}" CACHE FILEPATH "Python interpreter" FORCE)
+add_compile_definitions(BOOST_BIND_GLOBAL_PLACEHOLDERS)
 # Find dependencies.
 find_package(Eigen3 REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)

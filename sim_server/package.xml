@@ -23,6 +23,7 @@
   <depend>robot_server_lib</depend>
 
   <build_depend>robot_server_interfaces</build_depend>
+  <build_depend>joint_interfaces</build_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

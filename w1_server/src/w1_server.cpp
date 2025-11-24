@@ -398,8 +398,8 @@ void RobotServer::PublishThreadFunc()
             ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
             ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
             ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) + ",\"motor_status\":" + motor_status_ss.str() +
-            ",\"motor_error_code\":" + motor_error_code_ss.str() + ",\"motor_temperature\":" + motor_temperature_ss.str() + 
-            ",\"joint_position_cmd\":" + joint_position_control_ss.str() + 
+            ",\"motor_error_code\":" + motor_error_code_ss.str() + ",\"motor_temperature\":" + motor_temperature_ss.str() +
+            ",\"joint_position_cmd\":" + joint_position_control_ss.str() +
             ",\"joint_position\":" + joint_position_ss.str() + ",\"joint_velocity\":" + joint_velocity_ss.str() +
             ",\"joint_torque\":" + joint_torque_ss.str() + ",\"force_sensor\":" + joint_sensor_wrench_ss.str() +
             ",\"torque_limit_negative\":" + torque_limit_negative_ss.str() + ",\"torque_limit_positive\":" + torque_limit_positive_ss.str();
@@ -431,19 +431,15 @@ void RobotServer::PublishFeedback()
     feedback_msg.velocity.resize(ndof_robot);
     feedback_msg.effort.resize(ndof_robot);
 
-    JointRawMeasurement raw_measurement{};
-    if (this->robot_buffers_.joint_raw_measurement->PeekLatest(&raw_measurement))
+    for (int i = 0; i < ndof_robot; ++i)
     {
-        for (int i = 0; i < ndof_robot; ++i)
-        {
-            feedback_msg.name[i] = ecat_joint_name_[i];
-            feedback_msg.position[i] = raw_measurement.position[i];
-            feedback_msg.velocity[i] = raw_measurement.velocity[i];
-            feedback_msg.effort[i] = raw_measurement.effort[i];
-        }
-
-        feedback_publisher_->publish(feedback_msg);
+        feedback_msg.name[i] = ecat_joint_name_[i];
+        feedback_msg.position[i] = robot_feedback_.position[i];
+        feedback_msg.velocity[i] = robot_feedback_.velocity[i];
+        feedback_msg.effort[i] = robot_feedback_.torque[i];
     }
+
+    feedback_publisher_->publish(feedback_msg);
 
     // 发布关节速度和力矩限制反馈
     joint_interfaces::msg::JointVelocityTorqueLimitFeedback limit_msg;
@@ -470,7 +466,7 @@ void RobotServer::PublishFeedback()
 void RobotServer::SetPropertyCallback(const std::shared_ptr<SetProperty::Request> request, std::shared_ptr<SetProperty::Response> response)
 {
     PlannerRequest planner_request = utils::ParseSetPropertyRequest(request);
-    planner_request.request_id = MakeNewRequestID(planner_request.type);
+    planner_request.request_id = MakeNewRequestID(planner_request);
     this->manager_buffers_.request_queue->EnQueue(planner_request);
     response->request_id = planner_request.request_id;
     if (planner_request.type == RequestType::ClearError)
@@ -485,7 +481,7 @@ void RobotServer::SetPropertyCallback(const std::shared_ptr<SetProperty::Request
 
 Int64 RobotServer::StartStreaming(PlannerRequest planner_request)
 {
-    auto request_id = MakeNewRequestID(planner_request.type);
+    auto request_id = MakeNewRequestID(planner_request);
 
     if (request_id < 0)
     {

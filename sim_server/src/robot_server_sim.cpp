@@ -8,6 +8,14 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     // 创建publisher
     this->feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint_sim", 10);
 
+    // 创建 /control/joint 订阅器
+    control_subscriber_ =
+        this->create_subscription<JointControlMsg>("/control/joint_sim", 10, std::bind(&RobotServer::ControlCallback, this, std::placeholders::_1));
+
+    // 创建 /control/joint_position 订阅器
+    position_control_subscriber_ = this->create_subscription<JointPositionControlMsg>(
+        "/control/joint_position_sim", 10, std::bind(&RobotServer::PositionControlCallback, this, std::placeholders::_1));
+
     // 创建 /feedback/robot_server_state 仿真专用订阅器用于与真实机器人关节同步, 部署到真实机器人时不需要
     this->robot_server_state_real_subscriber_ = this->create_subscription<std_msgs::msg::String>(
         "/feedback/robot_server_state", 10,
@@ -131,13 +139,109 @@ void RobotServer::PublishFeedback()
     {
         for (int i = 0; i < ndof_robot; ++i)
         {
-            feedback_msg.name[i] = this->robot_model_.params_ptr->joint_command_sequence_by_name[i];
+            feedback_msg.name[i] = ecat_joint_name_[i];
             feedback_msg.position[i] = raw_measurement.position[i];
             feedback_msg.velocity[i] = raw_measurement.velocity[i];
             feedback_msg.effort[i] = raw_measurement.effort[i];
         }
 
         feedback_publisher_->publish(feedback_msg);
+    }
+}
+
+Int64 RobotServer::StartStreaming(PlannerRequest planner_request)
+{
+    auto request_id = MakeNewRequestID(planner_request);
+
+    if (request_id < 0)
+    {
+        return request_id;
+    }
+    planner_request.request_id = request_id;
+    this->manager_buffers_.request_queue->EnQueue(planner_request);
+
+    RCLCPP_INFO(this->get_logger(), "Request_id = %ld, StartJointStreaming Received", planner_request.request_id);
+    LOG_INFO << "Request_id = " << planner_request.request_id << ", Received, type = StartJointStreaming";
+    return request_id;
+}
+
+void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg)
+{
+    PlannerManagerCommand q_cmd{};
+    if (!this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
+    {
+        LOG_CRIT << "ControlCallback: Failed to peek latest planner_manager_command, robot not ready";
+        return;
+    }
+    auto robot_control_temp = q_cmd.cmd;
+    for (size_t i = 0; i < msg->name.size(); ++i)
+    {
+        for (int j = 0; j < ndof_robot; ++j)
+        {
+            if (ecat_joint_name_[j] == msg->name[i])
+            {
+                robot_control_temp.position[j] = msg->position[i];
+                break;
+            }
+        }
+    }
+    if (manager_state_ == Status::Idle)
+    {
+        PlannerRequest planner_request;
+        planner_request.type = RequestType::StartJointStreaming;
+        MoveRequest move_request;
+        move_request.motion_group = MotionGroup::WholeBody;
+        move_request.optional_mode = true; // true: no ruckig 模式, false: ruckig 模式
+        planner_request.data = move_request;
+        streaming_request_id_ = StartStreaming(planner_request);
+    }
+    if (streaming_request_id_ != -1)
+    {
+        StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
+        streaming_msg->request_id = streaming_request_id_;
+        streaming_msg->streaming_finished = false;
+        streaming_msg->position = std::vector<float>(robot_control_temp.position.begin(), robot_control_temp.position.end());
+        this->StreamingCommandCallback(streaming_msg);
+    }
+}
+
+void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedPtr msg)
+{
+    PlannerManagerCommand q_cmd{};
+    if (!this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
+    {
+        LOG_CRIT << "ControlCallback: Failed to peek latest planner_manager_command, robot not ready";
+        return;
+    }
+    auto robot_control_temp = q_cmd.cmd;
+    for (size_t i = 0; i < msg->name.size(); ++i)
+    {
+        for (int j = 0; j < ndof_robot; ++j)
+        {
+            if (ecat_joint_name_[j] == msg->name[i])
+            {
+                robot_control_temp.position[j] = msg->position[i];
+                break;
+            }
+        }
+    }
+    if (manager_state_ == Status::Idle)
+    {
+        PlannerRequest planner_request;
+        planner_request.type = RequestType::StartJointStreaming;
+        MoveRequest move_request;
+        move_request.motion_group = MotionGroup::WholeBody;
+        move_request.optional_mode = true; // true: no ruckig 模式, false: ruckig 模式
+        planner_request.data = move_request;
+        streaming_request_id_ = StartStreaming(planner_request);
+    }
+    if (streaming_request_id_ != -1)
+    {
+        StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
+        streaming_msg->request_id = streaming_request_id_;
+        streaming_msg->streaming_finished = false;
+        streaming_msg->position = std::vector<float>(robot_control_temp.position.begin(), robot_control_temp.position.end());
+        this->StreamingCommandCallback(streaming_msg);
     }
 }
 }  // namespace robot_server_lib

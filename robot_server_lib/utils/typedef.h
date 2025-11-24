@@ -69,6 +69,7 @@ enum class RequestType
     // Move Request
     MoveJoint,
     MoveLine,
+    MoveTraj,
     StartJointStreaming,
     StartEEPoseStreaming,
 
@@ -102,8 +103,9 @@ enum class RequestStatus
 {
     ErrorDrop = 0,
     Executed = 1,
-    Queued = 2,
-    Stoped = 3,
+    PhaseFinished = 2,
+    Queued = 3,
+    Stoped = 4,
 
     Unknown = 4
 };
@@ -154,6 +156,8 @@ inline const char *ToString(RequestStatus s)
         return "Executed";
     case RequestStatus::Queued:
         return "Queued";
+    case RequestStatus::PhaseFinished:
+        return "PhaseFinished";
     case RequestStatus::Stoped:
         return "Stoped";
     default:
@@ -185,6 +189,8 @@ inline const char *ToString(RequestType type)
         return "MoveJoint";
     case RequestType::MoveLine:
         return "MoveLine";
+    case RequestType::MoveTraj:
+        return "MoveTraj";
     case RequestType::StartJointStreaming:
         return "StartJointStreaming";
     case RequestType::StartEEPoseStreaming:

@@ -25,8 +25,9 @@ void PlannerManager::Initialize()
     time_meta.episode_start_time = time_meta.current_time;
 
     idle_planner_ = std::make_shared<IdlePlanner>(robot_model_);
-    move_joint_planner_ = std::make_shared<MoveJointPlanner>(robot_model_, manager_dt, false);
-    move_line_planner_ = std::make_shared<MoveLinePlanner>(robot_model_, manager_dt, false);
+    move_joint_planner_ = std::make_shared<MoveJointPlanner>(robot_model_, manager_dt, true);
+    move_line_planner_ = std::make_shared<MoveLinePlanner>(robot_model_, manager_dt, true);
+    move_traj_planner_ = std::make_shared<MoveTrajPlanner>(robot_model_, manager_dt, true);
     joint_streaming_planner_ = std::make_shared<JointStreamingPlanner>(robot_model_, manager_buffer_.streaming_command_latest_buffer, manager_dt);
     ee_pose_streaming_planner_ = std::make_shared<EEPoseStreamingPlanner>(robot_model_, manager_buffer_.streaming_command_latest_buffer, manager_dt);
     compliance_ctrl_primary_ = std::make_shared<dynamics::CartesianComplianceControl>();
@@ -218,7 +219,12 @@ void PlannerManager::LoopOnce()
     {
     case ComputeCommandStatus::TaskOngoing:
         return;
+    case ComputeCommandStatus::PhaseFinished:
+        ReportRequestStatus(++runtime_data_.last_finished_request_id, runtime_data_.latest_processing_request_type, RequestStatus::PhaseFinished,
+                            manager_state_);
+        return;
     case ComputeCommandStatus::TaskFinished:
+        runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
         ReportRequestStatus(runtime_data_.latest_processing_request_id, runtime_data_.latest_processing_request_type, RequestStatus::Executed,
                             manager_state_);
         ChangeState(Status::Idle);
@@ -230,6 +236,7 @@ void PlannerManager::LoopOnce()
         }
         else
         {
+            runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
             ReportRequestStatus(runtime_data_.latest_processing_request_id, runtime_data_.latest_processing_request_type, RequestStatus::ErrorDrop,
                                 manager_state_);
             ChangeState(Status::Error);
@@ -362,6 +369,11 @@ RequestResponse PlannerManager::OnRequestStateRunning()
     case RequestType::MoveLine:
     {
         current_planner_ = move_line_planner_;
+        break;
+    }
+    case RequestType::MoveTraj:
+    {
+        current_planner_ = move_traj_planner_;
         break;
     }
     case RequestType::StartJointStreaming:

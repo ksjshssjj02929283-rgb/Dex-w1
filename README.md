@@ -2,6 +2,8 @@
 
 > **项目分为两个部分：通用库部分 `robot_server_lib`，和仿真部署实现 `sim_server`。同时 `sim_server` 也是一个模板，可以参考它的实现快速部署到其他机器人上。**
 
+## 新架构需使用分支dev_w1
+
 ## 依赖库安装
 
 ```bash
@@ -11,51 +13,59 @@ curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo te
 # 安装依赖库
 sudo apt update
 sudo apt install nlohmann-json3-dev ros-humble-ruckig ros-humble-pinocchio
+
 # 底盘相关依赖库
 sudo apt install ros-humble-nav-msgs ros-humble-tf2-ros ros-humble-tf2-geometry-msgs
-# 代码格式
+
+# Ros接口库
+git clone git@69.235.177.182:dexembodied/dexe_interfaces.git #需要dexe_interfaces main分支, 放在dexe_robot_server同级目录下即可, 无需手动编译
+
+# dexRP机器人规划库
+git clone git@69.235.177.182:dexembodied/dexe_robot_planning.git #需要dexe_robot_planning接口包, 需要手动安装
+cd dexe_robot_planning
+git checkout dev # 切换dev分支
+pip install conan  # 安装conan包管理工具
+./scripts/build.sh  # 运行编译脚本
+cd build && sudo make install # 安装编译好的库
+
+# 代码格式(可选)
 sudo apt install clang-format
-# 可视化
+
+# 可视化(可选)
 pip install meshcat
 ```
 
 > **注意**：如已通过源码编译安装，无需再安装 ROS 版本，否则会链接冲突。
 
-### 如果需要ruckig 源码编译安装:
-
-> **注意**：ruckig源码需要checkout到0.15.3版本，再之后的版本需要11.4以上的编译器，可能会导致编译失败
-
-```bash
-git clone https://github.com/pantor/ruckig.git
-cd ruckig
-git checkout v0.15.3
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
-sudo make install
-```
-
-> **安装问题排查**：如遇包找不到，请检查 `/etc/apt/source.list.d/ros2.list`，源需为：  
+> **安装问题排查**：如遇包找不到，请检查 `/etc/apt/source.list.d/ros2.list`，源需为：
 > `deb [arch=arm64 trusted=yes] http://packages.ros.org/ros2/ubuntu jammy main`
-
----
-
-## 快速部署
-
-需要dexe_interfaces接口包, source /dexe_interfaces/install/setup.bash
-
-dexe_interfaces gitlab: http://69.235.177.182:8081/dexembodied/dexe_interfaces
-
-如有已部署的包如w1_control也放在同级目录下
-
----
 
 ## 编译项目
 
 ```bash
-colcon build
+./dexe_robot_server/build.sh
 ```
 
+## 运行项目
+
+运行部署的包, 运行以下可开启仿真及可视化
+
+```bash
+./dexe_robot_server/run_sim.sh
+# 仿真下如果需要运行类似slowly_move_to.py脚本需手动把真机话题都加上_sim后缀修改为仿真的, 如/feedback/joint -> /feedback/joint_sim
+```
+
+如运行真机w1 server则需运行
+```bash
+./dexe_robot_server/run_w1.sh
+```
+
+运行测试
+```bash
+./dexe_robot_server/test.sh
+```
+
+## 以下为可配置项, 非特殊需要可以保持默认
 ### 编译可配置项
 
 **可视化仿真：**
@@ -79,22 +89,6 @@ colcon build --cmake-args -DBUILD_TESTING=OFF
 默认关闭，如需开启则
 ```bash
 colcon build --cmake-args -DENABLE_TORQUE_CONTROL_SIMULATION=ON
-```
-
-
-### 运行项目
-
-运行部署的包, 运行以下可开启仿真及可视化
-
-```bash
-./dexe_robot_server/run_sim.sh
-```
-
-如运行w1则需运行 w1_control/run.sh 会同步启动仿真
-
-运行测试
-```bash
-./dexe_robot_server/test.sh
 ```
 
 ---

@@ -164,6 +164,8 @@ struct MoveRequest
     std::optional<double> speed;
     std::optional<double> blend_tolerance;
     std::optional<bool> optional_mode;
+    std::optional<std::vector<int>> endpoint_index;
+    std::optional<double> interval;
 };
 
 using PlannerData = std::variant<MoveRequest, PoseQuaternion, bool, double>;

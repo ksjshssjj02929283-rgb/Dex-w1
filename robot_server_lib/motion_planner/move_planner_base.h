@@ -26,10 +26,12 @@ enum class ComputeCommandStatus
     // in the next control loop
     TaskOngoing = 1,
 
+    // The current phase of the task is finished
+    PhaseFinished = 2,
     // It is guaranteed that once TaskFinished has been returned
     // The same controller ComputeCommand would NOT be invoked
     // without the next ResetForNewEpisode
-    TaskFinished = 2
+    TaskFinished = 3,
 };
 
 class MotionPlannerBase

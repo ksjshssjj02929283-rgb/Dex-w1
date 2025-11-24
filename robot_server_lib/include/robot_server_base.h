@@ -31,7 +31,7 @@ class RobotServerBase : public rclcpp::Node
                              std::shared_ptr<robot_server_interfaces::srv::SetProperty::Response>);
 
     void Run();
-    Int64 MakeNewRequestID(RequestType type);
+    Int64 MakeNewRequestID(const PlannerRequest &planner_request);
     void StreamingCommandCallback(const robot_server_interfaces::msg::StreamingCommand::SharedPtr msg);
 
     void MoveRobotCallback(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>);

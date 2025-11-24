@@ -18,7 +18,7 @@ set(PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}" CACHE FILEPATH "Python interpreter"
 # Find dependencies.
 find_package(Eigen3 REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
-find_package(ruckig REQUIRED) 
+find_package(ruckig REQUIRED)
 
 # Ros 2 dependencies.
 find_package(ament_index_cpp REQUIRED)
@@ -33,6 +33,7 @@ find_package(pinocchio REQUIRED)
 
 # Other Ros2 packages
 find_package(robot_server_interfaces REQUIRED)
+find_package(joint_interfaces REQUIRED)
 find_package(robot_server_lib REQUIRED)
 
 aux_source_directory(src LIB_SRCS)
@@ -57,10 +58,11 @@ ament_target_dependencies(${PROJECT_NAME}
   std_srvs
   geometry_msgs
   sensor_msgs
-  ament_index_cpp 
-  Eigen3 
+  ament_index_cpp
+  Eigen3
   eigen3_cmake_module
   robot_server_interfaces
+  joint_interfaces
   robot_server_lib
 )
 
