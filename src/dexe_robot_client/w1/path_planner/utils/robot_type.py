@@ -40,6 +40,9 @@ BRAINCO_RIGHT_LIMITS = np.array([[
 ], [1.5708, 0.8727, 1.309, 2.0944, 1.309, 2.0944, 1.309, 2.0944, 1.309,
     2.0944]])
 
+PGC_LEFT_LIMITS = np.array([[0.0, 0.0], [0.025, 0.025]])
+PGC_RIGHT_LIMITS = np.array([[0.0, 0.0], [0.025, 0.025]])
+
 ANTH_MODEL_DIR = MODEL_DIR / "W1_V2_A"
 INDU_MODEL_DIR = MODEL_DIR / "W1_V2_I"
 ANTH_COLLISION_DIR = ANTH_MODEL_DIR / "Collision"
@@ -99,11 +102,11 @@ PGC_RIGHT_LINK_NAMES = [
     "base_link.obj", "finger1_Link_acd.obj", "finger2_Link_acd.obj"
 ]
 
-END_EFFECTOR_JOINT_NAMES = ["LEFT_EE", "RIGHT_EE"]
-BRAINCO_EE_JOINT_NAMES = [
+FLANGE_JOINT_NAMES = ["LEFT_EE", "RIGHT_EE"]
+BRAINCO_BASE_JOINT_NAMES = [
     "LEFT_ARM_TO_LEFT_HAND_CONNECTOR", "RIGHT_ARM_TO_RIGHT_HAND_CONNECTOR"
 ]
-PGC_EE_JOINT_NAMES = [
+PGC_BASE_JOINT_NAMES = [
     "LEFT_ARM_TO_LEFT_HAND_CONNECTOR", "RIGHT_ARM_TO_RIGHT_HAND_CONNECTOR"
 ]
 
@@ -302,6 +305,17 @@ def get_ee_full_path(robot_type: RobotType, ee_type: EndEffectorType):
             raise ValueError(
                 f"Unsupported robot type: {robot_type}. Please use W1V02_1 or W1V02_2."
             )
+    elif ee_type == EndEffectorType.PGC_GRIPPER:
+        if robot_type == RobotType.W1V02_1:
+            return [RobotEE.PGC_LEFT_HAND.value + "/" + name for name in PGC_LEFT_LINK_NAMES], \
+                     [RobotEE.PGC_RIGHT_HAND.value + "/" + name for name in PGC_RIGHT_LINK_NAMES]
+        if robot_type == RobotType.W1V02_2:
+            return [RobotEE.PGC_LEFT_HAND.value + "/" + name for name in PGC_LEFT_LINK_NAMES], \
+                     [RobotEE.PGC_RIGHT_HAND.value + "/" + name for name in PGC_RIGHT_LINK_NAMES]
+        if robot_type is None or not isinstance(robot_type, RobotType):
+            raise ValueError(
+                f"Unsupported robot type: {robot_type}. Please use W1V02_1 or W1V02_2."
+            )
     else:
         raise ValueError(
             f"Unsupported end effector type: {ee_type}. Please use PGC_GRIPPER or BRAINCO_HAND."
@@ -321,8 +335,8 @@ def get_ee_joint_names(ee_type: EndEffectorType = None):
     Get the names of the end effector joints which will be used in Pinocchio Forward Kinematics
     """
     if ee_type is None:
-        return END_EFFECTOR_JOINT_NAMES[0], END_EFFECTOR_JOINT_NAMES[1]
+        return FLANGE_JOINT_NAMES[0], FLANGE_JOINT_NAMES[1]
     if ee_type == EndEffectorType.BRAINCO_HAND:
-        return BRAINCO_EE_JOINT_NAMES[0], BRAINCO_EE_JOINT_NAMES[1]
+        return BRAINCO_BASE_JOINT_NAMES[0], BRAINCO_BASE_JOINT_NAMES[1]
     elif ee_type == EndEffectorType.PGC_GRIPPER:
-        return PGC_EE_JOINT_NAMES[0], PGC_EE_JOINT_NAMES[1]
+        return PGC_BASE_JOINT_NAMES[0], PGC_BASE_JOINT_NAMES[1]
