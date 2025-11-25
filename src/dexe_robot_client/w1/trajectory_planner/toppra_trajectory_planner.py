@@ -10,31 +10,39 @@ import toppra as ta
 import toppra.constraint as constraint
 from ...common import get_logger
 
+
 class ToppraTrajectoryPlanner:
-    def __init__(self, dofs: int, vel_limits: np.ndarray, acc_limits: np.ndarray):
+
+    def __init__(self, dofs: int, vel_limits: np.ndarray,
+                 acc_limits: np.ndarray):
         self.logger = get_logger()
         self.dofs = dofs
         # default constraints
         self.vel_limits = np.array([[-v, v] for v in vel_limits])
         self.acc_limits = np.array([[-a, a] for a in acc_limits])
         if self.vel_limits.shape[0] != self.dofs:
-            raise ValueError(f"Vel limits dimension mismatch, {self.vel_limits.shape[0]} != {self.dofs}.")
+            raise ValueError(
+                f"Vel limits dimension mismatch, {self.vel_limits.shape[0]} != {self.dofs}."
+            )
         if self.acc_limits.shape[0] != self.dofs:
-            raise ValueError(f"Acc limits dimension mismatch, {self.acc_limits.shape[0]} != {self.dofs}.")
+            raise ValueError(
+                f"Acc limits dimension mismatch, {self.acc_limits.shape[0]} != {self.dofs}."
+            )
 
-    def plan(self, 
-             qpos_array: np.ndarray, 
-             qvel_limits_array: np.ndarray = None, 
-             time_step: float = 0.01) -> tuple[bool, np.ndarray, np.ndarray, np.ndarray, float]:
+    def plan(
+        self,
+        qpos_array: np.ndarray,
+        qvel_limits_array: np.ndarray = None,
+        time_step: float = 0.01
+    ) -> tuple[bool, np.ndarray, np.ndarray, np.ndarray, float]:
         if qpos_array.shape[0] == 2 and \
             np.allclose(qpos_array[0], qpos_array[1], atol=np.deg2rad(0.1)):
             self.logger.debug(f"Only two same waypoints, do not plan.")
-            return (True, 
-                    qpos_array, 
-                    np.array([[0.]*self.dofs, [0.]*self.dofs]), 
-                    np.array([[0.]*self.dofs, [0.]*self.dofs]), 
-                    2*time_step)
-        
+            return (True, qpos_array,
+                    np.array([[0.] * self.dofs, [0.] * self.dofs]),
+                    np.array([[0.] * self.dofs,
+                              [0.] * self.dofs]), 2 * time_step)
+
         # Create spline interpolation
         ss = np.linspace(0, 1, qpos_array.shape[0])
         path = ta.SplineInterpolator(ss, qpos_array)
@@ -42,31 +50,33 @@ class ToppraTrajectoryPlanner:
         # Set constraints
         if qvel_limits_array is not None:
             if qvel_limits_array.shape != qpos_array.shape:
-                self.logger.error(f"qpos and qvel_limits dimension mismatch, {qvel_limits_array.shape} != {qpos_array.shape}.")
+                self.logger.error(
+                    f"qpos and qvel_limits dimension mismatch, {qvel_limits_array.shape} != {qpos_array.shape}."
+                )
                 return False, None, None, None, None
-            
+
             qvel_bound_list = []
             for qvel_limits in qvel_limits_array:
                 qvel_bound = np.array([[-v, v] for v in qvel_limits])
                 qvel_bound_list.append(qvel_bound)
-            
+
             def vlim_func(s):
                 idx = bisect.bisect_right(ss, s)
                 if idx >= len(ss):
                     idx = len(ss) - 1
                 return qvel_bound_list[idx]
-            
+
             pc_vel = constraint.JointVelocityConstraintVarying(vlim_func)
         else:
             pc_vel = constraint.JointVelocityConstraint(self.vel_limits)
-       
+
         pc_acc = constraint.JointAccelerationConstraint(self.acc_limits)
-        
+
         # Create TOPPRA instance
         instance = ta.algorithm.TOPPRA(
             [pc_vel, pc_acc],
             path,
-            parametrizer="ParametrizeConstAccel", # 会导致加速度锯齿状，但强约束保证
+            parametrizer="ParametrizeConstAccel",  # 会导致加速度锯齿状，但强约束保证
             gridpt_min_nb_points=max(100, 15 * qpos_array.shape[0]),
         )
 
@@ -94,21 +104,26 @@ class ToppraTrajectoryPlanner:
 
         acc_valid = np.all((acc_array >= _acc_limits[:, 0]) & \
                            (acc_array <= _acc_limits[:, 1]))
-        
+
         if not acc_valid:
-            self.logger.error(f"Failed to plan trajectory that satisfied acceleration constraint.")
+            self.logger.error(
+                f"Failed to plan trajectory that satisfied acceleration constraint."
+            )
             acc_exceed_info = []
             min_acc = np.min(acc_array, axis=0)
             max_acc = np.max(acc_array, axis=0)
             for i in range(self.dofs):
                 exceed_ratio = 0.
                 if min_acc[i] < self.acc_limits[i, 0]:
-                    exceed_ratio = (min_acc[i] - self.acc_limits[i, 0]) / self.acc_limits[i, 0]
+                    exceed_ratio = (min_acc[i] - self.acc_limits[i, 0]
+                                   ) / self.acc_limits[i, 0]
                 if max_acc[i] > self.acc_limits[i, 1]:
-                    temp = (max_acc[i] - self.acc_limits[i, 1]) / self.acc_limits[i, 1]
+                    temp = (max_acc[i] -
+                            self.acc_limits[i, 1]) / self.acc_limits[i, 1]
                     if temp > exceed_ratio:
                         exceed_ratio = temp
                 acc_exceed_info.append(exceed_ratio * 100)
-            self.logger.error(f"Acc exceeding limit result: {acc_exceed_info} %.")
+            self.logger.error(
+                f"Acc exceeding limit result: {acc_exceed_info} %.")
 
         return acc_valid

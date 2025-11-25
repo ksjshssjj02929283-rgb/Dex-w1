@@ -7,22 +7,24 @@
 import numpy as np
 from copy import deepcopy
 import threading
-from dexe_robot_client.common import W1Version, W1ArmType, time_consuming 
+from dexe_robot_client.common import W1Version, W1ArmType, time_consuming
 from dexe_robot_client.w1 import W1Manager
 
 
-def main(use_parallel = False):
+def main(use_parallel=False):
     """利用plan和execute异步示例"""
     w1_manager = W1Manager(is_sim=True,
-                        arm_type=W1ArmType.ANTHROPOMORPHIC, 
-                        w1_version=W1Version.V2, 
-                        end_effector_type=None)
+                           arm_type=W1ArmType.ANTHROPOMORPHIC,
+                           w1_version=W1Version.V2,
+                           end_effector_type=None)
     if not w1_manager.connect() and not w1_manager.is_enabled():
         return
-    w1_manager.set_home_qpos(np.array([0.7854, -1.5708, 0.7854, 0.0, 0.0, 0.0,  
-                                       0.0068, -0.9103, 0.0235, -1.9158, 0.1378, 0.1401, 0.0072, 
-                                       -0.0068, 0.9103,  0.0235,  1.9158, 0.1378, 0.1401, 0.0072]),
-                            save_to_file=False)
+    w1_manager.set_home_qpos(np.array([
+        0.7854, -1.5708, 0.7854, 0.0, 0.0, 0.0, 0.0068, -0.9103, 0.0235,
+        -1.9158, 0.1378, 0.1401, 0.0072, -0.0068, 0.9103, 0.0235, 1.9158,
+        0.1378, 0.1401, 0.0072
+    ]),
+                             save_to_file=False)
     w1_manager.go_home(1.)
 
     cur_l_pose = w1_manager.get_current_pose("left_arm")[1]
@@ -41,8 +43,8 @@ def main(use_parallel = False):
     @time_consuming
     def plan_then_move():
         for waypoint in left_arm_waypoints:
-            res = w1_manager.move_linear_full_body(waypoints_dict = {"left_arm": [waypoint]}, 
-                                                   cartesian_step = 0.0005)
+            res = w1_manager.move_linear_full_body(
+                waypoints_dict={"left_arm": [waypoint]}, cartesian_step=0.0005)
             if not res:
                 return
 
@@ -50,13 +52,13 @@ def main(use_parallel = False):
     def plan_and_move():
         plan_res = {}
         plan_finished_event = threading.Event()
-        
+
         def plan_step(start_qpos, waypoints_dict, plan_res):
-            res = w1_manager.plan_linear_full_body(start_qpos, 
-                                                    None, 
-                                                    None, 
-                                                    waypoints_dict, 
-                                                    cartesian_step=0.0005)
+            res = w1_manager.plan_linear_full_body(start_qpos,
+                                                   None,
+                                                   None,
+                                                   waypoints_dict,
+                                                   cartesian_step=0.0005)
             plan_res["res"] = res
             plan_finished_event.set()
 
@@ -65,8 +67,10 @@ def main(use_parallel = False):
             return
         start_qpos = cur_qpos
         # 规划
-        threading.Thread(target=plan_step, 
-                            args=(start_qpos, {"left_arm": [left_arm_waypoints[0]]}, plan_res)).start()
+        threading.Thread(target=plan_step,
+                         args=(start_qpos, {
+                             "left_arm": [left_arm_waypoints[0]]
+                         }, plan_res)).start()
 
         for waypoint in left_arm_waypoints[1:]:
             # 等待规划完成
@@ -78,8 +82,10 @@ def main(use_parallel = False):
             start_qpos = total_qpos_array[-1]
 
             # 下一步 规划
-            threading.Thread(target=plan_step, 
-                             args=(start_qpos, {"left_arm": [waypoint]}, plan_res)).start()
+            threading.Thread(target=plan_step,
+                             args=(start_qpos, {
+                                 "left_arm": [waypoint]
+                             }, plan_res)).start()
 
             # 当前步 执行
             w1_manager.execute_joint_traj(total_qpos_array)

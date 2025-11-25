@@ -10,12 +10,10 @@ from dexe_robot_client.common import W1Version, W1ArmType, get_logger
 from dexe_robot_client.w1 import W1Params, SRSKinematics
 
 
-def check_kine(is_left: bool = True, 
+def check_kine(is_left: bool = True,
                arm_type: W1ArmType = W1ArmType.ANTHROPOMORPHIC):
-    w1_params = W1Params(arm_type, 
-                        W1Version.V2, 
-                        None)
-    
+    w1_params = W1Params(arm_type, W1Version.V2, None)
+
     if is_left:
         kine_params = w1_params._left_arm_kine_params
         get_logger().info(f"\n\nCheck kine: left {arm_type.name}")
@@ -24,9 +22,9 @@ def check_kine(is_left: bool = True,
         get_logger().info(f"\n\nCheck kine: right {arm_type.name}")
 
     srs_kine = SRSKinematics(kine_params)
-    
-    lower_bound = kine_params.qpos_limits[:,0]
-    upper_bound = kine_params.qpos_limits[:,1]
+
+    lower_bound = kine_params.qpos_limits[:, 0]
+    upper_bound = kine_params.qpos_limits[:, 1]
     qpos = np.random.uniform(lower_bound, upper_bound)
 
     # 测试运动学求解耗时
@@ -66,7 +64,7 @@ def check_kine(is_left: bool = True,
 
 
 if __name__ == "__main__":
-    check_kine(is_left = True, arm_type = W1ArmType.ANTHROPOMORPHIC)
-    check_kine(is_left = False, arm_type = W1ArmType.ANTHROPOMORPHIC)
-    check_kine(is_left = True, arm_type = W1ArmType.INDUSTRIAL)
-    check_kine(is_left = False, arm_type = W1ArmType.INDUSTRIAL)
+    check_kine(is_left=True, arm_type=W1ArmType.ANTHROPOMORPHIC)
+    check_kine(is_left=False, arm_type=W1ArmType.ANTHROPOMORPHIC)
+    check_kine(is_left=True, arm_type=W1ArmType.INDUSTRIAL)
+    check_kine(is_left=False, arm_type=W1ArmType.INDUSTRIAL)

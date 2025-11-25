@@ -6,7 +6,6 @@
 
 from dexe_robot_client.common import get_logger
 
-
 if __name__ == "__main__":
     rcs_logger = get_logger()  # 单例
 

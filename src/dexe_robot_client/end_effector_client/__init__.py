@@ -10,8 +10,6 @@ from .pgc_gripper_client import PGCGripperClient
 from .end_effector_factory import create_end_effector_client
 
 __all__ = [
-    "EndEffectorType",
-    "BrainCoHandClient",
-    "PGCGripperClient",
+    "EndEffectorType", "BrainCoHandClient", "PGCGripperClient",
     "create_end_effector_client"
 ]
