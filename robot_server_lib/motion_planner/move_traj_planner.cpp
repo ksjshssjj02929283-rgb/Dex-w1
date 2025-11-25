@@ -111,16 +111,6 @@ bool MoveTrajPlanner::ResetForNewTrajectory(const PlannerRequest &request, const
     auto move_request = std::get<MoveRequest>(request.data.value());
     SetMotionGroup(move_request.motion_group);
 
-    if (move_request.interval.has_value() && move_request.endpoint_index.has_value())
-    {
-        runtime_.interval = move_request.interval.value();
-        runtime_.endpoint_index = move_request.endpoint_index.value();
-    }
-    else
-    {
-        return false;
-    }
-
     switch (motion_group_)
     {
     case MotionGroup::Primary:
@@ -157,6 +147,23 @@ bool MoveTrajPlanner::ResetForNewTrajectory(const PlannerRequest &request, const
     if (user_npoints <= 0)
     {
         LOG_CRIT << "MoveTrajPlanner::ResetForNewTrajectory: empty user trajectory points";
+        return false;
+    }
+
+    if (move_request.interval.has_value())
+    {
+        runtime_.interval = move_request.interval.value();
+        if (move_request.endpoint_index.has_value())
+        {
+            runtime_.endpoint_index = move_request.endpoint_index.value();
+        }
+        else
+        {
+            runtime_.endpoint_index.push_back(user_npoints);  // 默认整个轨迹为一个阶段
+        }
+    }
+    else
+    {
         return false;
     }
 

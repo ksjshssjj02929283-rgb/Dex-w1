@@ -548,7 +548,7 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg)
             planner_request.data = move_request;
             streaming_request_id_ = StartStreaming(planner_request);
         }
-        if (streaming_request_id_ != -1)
+        if (streaming_request_id_ > -1)
         {
             StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
             streaming_msg->request_id = streaming_request_id_;

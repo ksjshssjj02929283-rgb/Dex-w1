@@ -163,10 +163,17 @@ Int64 RobotServerBase::MakeNewRequestID(const PlannerRequest &planner_request)
             return -1;
         }
         auto move_request = std::get<MoveRequest>(planner_request.data.value());
-        if (move_request.interval.has_value() && move_request.endpoint_index.has_value())
+        if (move_request.interval.has_value())
         {
-            std::vector<int> endpoint_index = move_request.endpoint_index.value();
-            this->latest_received_id_ += endpoint_index.size();
+            if (move_request.endpoint_index.has_value())
+            {
+                std::vector<int> endpoint_index = move_request.endpoint_index.value();
+                this->latest_received_id_ += endpoint_index.size();
+            }
+            else
+            {
+                this->latest_received_id_++;
+            }
             return this->latest_received_id_;
         }
         else
@@ -278,11 +285,6 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id, RequestType request_
                 result_msg->request_id = request_id;
                 result_msg->success = true;
                 handle_temp->succeed(result_msg);
-            }
-            else
-            {
-                RCLCPP_WARN(this->get_logger(), "Request id = %ld, request_type = %s No matching action goal found in the queue.", request_id,
-                            ToString(request_type));
             }
         }
         break;
