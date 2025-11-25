@@ -14,16 +14,15 @@ from dexe_robot_client.end_effector_client import create_end_effector_client, En
 from dexe_robot_client.common import get_logger
 
 
-def main(is_sim = True, 
-         end_effector_type = EndEffectorType.BRAINCO_HAND):
+def main(is_sim=True, end_effector_type=EndEffectorType.BRAINCO_HAND):
     rclpy.init()
 
-    left_node = create_end_effector_client(is_left = True,
-                                           is_sim = is_sim,
-                                           end_effector_type = end_effector_type)
-    right_node = create_end_effector_client(is_left = False,
-                                           is_sim = is_sim,
-                                           end_effector_type = end_effector_type)
+    left_node = create_end_effector_client(is_left=True,
+                                           is_sim=is_sim,
+                                           end_effector_type=end_effector_type)
+    right_node = create_end_effector_client(is_left=False,
+                                            is_sim=is_sim,
+                                            end_effector_type=end_effector_type)
 
     executor = MultiThreadedExecutor()
     executor.add_node(left_node)
@@ -35,7 +34,7 @@ def main(is_sim = True,
     try:
         get_logger().info(f"left qpos: {left_node.get_pos()[1]}")
         get_logger().info(f"right qpos: {right_node.get_pos()[1]}")
-        embed(banner1 = "Interactive debugging here")
+        embed(banner1="Interactive debugging here")
     finally:
         if rclpy.ok():
             rclpy.shutdown()
@@ -46,7 +45,6 @@ def main(is_sim = True,
 
 
 if __name__ == "__main__":
-    main(is_sim = True, 
-         end_effector_type = EndEffectorType.BRAINCO_HAND)
-    # main(is_sim = True, 
+    main(is_sim=True, end_effector_type=EndEffectorType.BRAINCO_HAND)
+    # main(is_sim = True,
     #      end_effector_type = EndEffectorType.PGC_GRIPPER)

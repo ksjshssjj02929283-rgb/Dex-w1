@@ -8,6 +8,7 @@ from .data_structure import *
 
 
 class RobotClient(ABC):
+
     def __init__(self, is_sim: bool = False):
         self.is_sim = is_sim
         self.latest_sent_id = -1
@@ -27,16 +28,19 @@ class RobotClient(ABC):
     User interfaces - setting/getting parameters, mode or state
     用户接口 - 设置/获取机器人参数, 模式或状态
     ----------------------------------------------------------------------------"""
+
     def get_info(self) -> RobotInfo:
         """Get robot state information.
         获取机器人状态信息
         Returns:
             RobotState: 机器人状态集合
         """
-        return RobotInfo(
-            status=self.status, joint_position=self.joint_position, joint_velocity=self.joint_velocity,
-            actual_arm_torque=self.actual_arm_torque, command_arm_torque=self.command_arm_torque, ee_pose=self.ee_pose
-        )
+        return RobotInfo(status=self.status,
+                         joint_position=self.joint_position,
+                         joint_velocity=self.joint_velocity,
+                         actual_arm_torque=self.actual_arm_torque,
+                         command_arm_torque=self.command_arm_torque,
+                         ee_pose=self.ee_pose)
 
     def set_tcp(
         self,
@@ -57,7 +61,8 @@ class RobotClient(ABC):
         if arm == MotionGroup.Primary:
             return self.send_set_property_request(PropertyType.TcpPrimary, tcp)
         elif arm == MotionGroup.SecondaryArm:
-            return self.send_set_property_request(PropertyType.TcpSecondary, tcp)
+            return self.send_set_property_request(PropertyType.TcpSecondary,
+                                                  tcp)
         return -1
 
     def set_global_speed(self, ratio: float) -> int:
@@ -86,7 +91,8 @@ class RobotClient(ABC):
         Returns:
             - int: request id 指令号, 可用于等待对应运动指令完成等
         """
-        return self.send_set_property_request(PropertyType.EnableDrag, set_enable)
+        return self.send_set_property_request(PropertyType.EnableDrag,
+                                              set_enable)
 
     def set_safe_level(self, safe_level: float) -> int:
         """async interface - setting robot safe level
@@ -97,7 +103,8 @@ class RobotClient(ABC):
         Returns:
             - int: request id 指令号, 可用于等待对应运动指令完成等
         """
-        return self.send_set_property_request(PropertyType.SafeLevel, safe_level)
+        return self.send_set_property_request(PropertyType.SafeLevel,
+                                              safe_level)
 
     """ ---------------------------------------------------------------------------
     User interfaces - Move requests
@@ -235,9 +242,8 @@ class RobotClient(ABC):
         """
         self.wait_request_finish()
 
-        request = MoveRequest(
-            type=MotionType.StartJointStreaming, motion_group=motion_group
-        )
+        request = MoveRequest(type=MotionType.StartJointStreaming,
+                              motion_group=motion_group)
         return self.send_move_robot_request(request)
 
     def start_ee_pose_streaming_request(
@@ -251,9 +257,8 @@ class RobotClient(ABC):
         """
         self.wait_request_finish()
 
-        request = MoveRequest(
-            type=MotionType.StartEEPoseStreaming, motion_group=motion_group
-        )
+        request = MoveRequest(type=MotionType.StartEEPoseStreaming,
+                              motion_group=motion_group)
         return self.send_move_robot_request(request)
 
     def send_streaming_command(
@@ -310,7 +315,8 @@ class RobotClient(ABC):
         )
         return move_joint_request
 
-    def send_move_request_list(self, request_list: list[MoveRequest]) -> list[int]:
+    def send_move_request_list(self,
+                               request_list: list[MoveRequest]) -> list[int]:
         """async interface - execute request list
         异步接口 - 执行请求队列
         Args:
@@ -328,6 +334,7 @@ class RobotClient(ABC):
     Low-level abstract interfaces, need to be implemented by derived classes
     底层抽象接口, 需由派生类实现
     ----------------------------------------------------------------------------"""
+
     @abstractmethod
     def connect_robot(self, timeout_sec: float = 0.5, ip: str = None) -> bool:
         """Connect to the robot.
@@ -349,7 +356,9 @@ class RobotClient(ABC):
         pass
 
     @abstractmethod
-    def wait_request_finish(self, request_id: int, timeout: float = 20.0) -> bool:
+    def wait_request_finish(self,
+                            request_id: int,
+                            timeout: float = 20.0) -> bool:
         """sync interface - wait for move request to finish
         同步接口 - 等待运动请求完成
         Args:
@@ -387,9 +396,9 @@ class RobotClient(ABC):
         pass
 
     @abstractmethod
-    def send_streaming_command(
-        self, position: np.ndarray, streaming_finished: bool = False
-    ) -> bool:
+    def send_streaming_command(self,
+                               position: np.ndarray,
+                               streaming_finished: bool = False) -> bool:
         """async interface - send streaming control point, need to start streaming mode first
         异步接口 - 发送流控制点位, 需先调用start_streaming_request
         Args:
@@ -399,7 +408,6 @@ class RobotClient(ABC):
             bool: true - send success, false - send fail
         """
         pass
-
 
     @abstractmethod
     def close_client(self):

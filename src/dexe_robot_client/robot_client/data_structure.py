@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from typing import Optional, Union
 # from geometry_msgs.msg import Pose
 # from sensor_msgs.msg import JointState
-
 """----------------------------------------------------------------------------
 enum for various states and request types
 机器人状态类和指令类枚举
