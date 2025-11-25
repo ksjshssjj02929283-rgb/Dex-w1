@@ -87,6 +87,22 @@ class NanoLogLine
         return *this;
     }
 
+    // std::vector<int>
+    NanoLogLine &operator<<(const std::vector<int> &vec)
+    {
+        (*this) << "[";
+        for (size_t i = 0; i < vec.size(); ++i)
+        {
+            (*this) << static_cast<int32_t>(vec[i]);
+            if (i != vec.size() - 1)
+            {
+                (*this) << ", ";
+            }
+        }
+        (*this) << "]";
+        return *this;
+    }
+
     template <typename Derived>
     NanoLogLine &operator<<(const Eigen::EigenBase<Derived> &expr)
     {

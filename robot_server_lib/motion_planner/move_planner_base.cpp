@@ -54,7 +54,7 @@ ComputeCommandStatus MotionPlannerBase::ComputeStopCommand(const JointMeasuremen
         joint_cmd.velocity[i] = output_velocity[i];
         joint_cmd.position[i] += joint_cmd.velocity[i] * controller_dt_;
     }
-    const bool robot_stopped = stop_finished && (measurement.velocity.norm() < IdleVelocityThreshold);
+    const bool robot_stopped = stop_finished && (measurement.velocity.norm() < IdleVelocityThreshold * 2);
     return robot_stopped ? ComputeCommandStatus::TaskStopped : ComputeCommandStatus::TaskOngoing;
 }
 

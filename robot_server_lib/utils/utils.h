@@ -10,6 +10,7 @@
 #include <fstream>
 #include <geometry_msgs/msg/wrench_stamped.hpp>
 #include <iomanip>
+#include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -129,5 +130,22 @@ bool MapJointToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q
 bool GetJointFromWholeBody(const RobotModel &robot_model, const JointPositionDof &q_ndof, Eigen::VectorXd &q, const MotionGroup &motion_group);
 
 Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary);
+
+// 浮点数近似相等判断 (绝对+相对容差)
+inline bool FloatEqual(double a, double b, double tol = 1e-9) noexcept
+{
+    if (a == b) return true;
+    double diff = std::abs(a - b);
+    double scale = std::max(std::abs(a), std::abs(b));
+    return diff <= tol || diff <= tol * scale;
+}
+
+// 三向比较: -1 (<), 0 (≈), 1 (>)
+inline int FloatCompare(double a, double b, double tol = 1e-9) noexcept
+{
+    double diff = a - b;
+    if (std::abs(diff) <= tol) return 0;
+    return diff < 0 ? -1 : 1;
+}
 }  // namespace utils
 }  // namespace robot_server_lib
