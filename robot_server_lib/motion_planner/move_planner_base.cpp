@@ -36,6 +36,7 @@ ComputeCommandStatus MotionPlannerBase::ComputeStopCommand(const JointMeasuremen
 {
     bool stop_finished = true;
     auto output_velocity = joint_cmd.velocity;
+    bool robot_stopped = true;
     for (auto i = 0; i < ndof_robot; i++)
     {
         if (output_velocity[i] > 0.0 && output_velocity[i] > streaming_bounds_.max_acceleration * controller_dt_)
@@ -53,9 +54,18 @@ ComputeCommandStatus MotionPlannerBase::ComputeStopCommand(const JointMeasuremen
         }
         joint_cmd.velocity[i] = output_velocity[i];
         joint_cmd.position[i] += joint_cmd.velocity[i] * controller_dt_;
+        robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
     }
-    const bool robot_stopped = stop_finished && (measurement.velocity.norm() < IdleVelocityThreshold * 2);
-    return robot_stopped ? ComputeCommandStatus::TaskStopped : ComputeCommandStatus::TaskOngoing;
+    robot_stopped = stop_finished && robot_stopped;
+    if(robot_stopped)
+    {
+        LOG_INFO << "ComputeStopCommand: Robot stopped, velocity: " << measurement.velocity.transpose();
+        return ComputeCommandStatus::TaskStopped;
+    }
+    else
+    {
+        return ComputeCommandStatus::TaskOngoing;
+    }
 }
 
 void MotionPlannerBase::SetRobotProperty(const RobotProperty &property) { robot_property_ = property; }

@@ -97,16 +97,25 @@ ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasureme
     }
     else if (status == ruckig::Finished)
     {
+        bool robot_stopped = true;
         for (auto i = 0; i < ndof_robot; i++)
         {
             output_joint_cmd.position[i] = runtime_.output.new_position[i];
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
+            robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
         }
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
-        const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
-        return robot_stopped && runtime_.streaming_finished ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
+        if (runtime_.streaming_finished && robot_stopped)
+        {
+            LOG_INFO << "EEPoseStreamingPlanner: TaskFinished, measurement velocity: " << measurement.velocity.transpose();
+            return ComputeCommandStatus::TaskFinished;
+        }
+        else
+        {
+            return ComputeCommandStatus::TaskOngoing;
+        }    
     }
     else
     {

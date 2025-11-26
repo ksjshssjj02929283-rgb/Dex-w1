@@ -22,9 +22,22 @@ ComputeCommandStatus MoveTrajPlanner::ComputeCommand(const JointMeasurement &mea
     ComputeCommandStatus ret = GetInterpolatedPosition(output_joint_cmd, runtime_.timepoint);
     if (wait_trajectory_upon_finish_)
     {
-        if (ret == ComputeCommandStatus::TaskFinished && measurement.velocity.norm() < IdleVelocityThreshold)
+        bool robot_stopped = true;
+        for (auto i = 0; i < ndof_robot; i++)
         {
-            return ComputeCommandStatus::TaskFinished;
+            robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
+        }
+        if (ret == ComputeCommandStatus::TaskFinished)
+        {
+            if (robot_stopped)
+            {
+                LOG_INFO << "MoveTrajPlanner: TaskFinished, measurement velocity: " << measurement.velocity.transpose();
+                return ComputeCommandStatus::TaskFinished;
+            }
+            else
+            {
+                return ComputeCommandStatus::TaskOngoing;
+            }
         }
     }
     return ret;

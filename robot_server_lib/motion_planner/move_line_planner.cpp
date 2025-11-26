@@ -48,17 +48,26 @@ ComputeCommandStatus MoveLinePlanner::ComputeCommand(const JointMeasurement &mea
     };
     case ruckig::Finished:
     {
+        bool robot_stopped = true;
         for (auto i = 0; i < ndof_robot; i++)
         {
             joint_cmd.position[i] = q_ndof[i];
             joint_cmd.velocity[i] = 0.0;
             joint_cmd.acceleration[i] = 0.0;
             joint_cmd.torque_feedforward[i] = 0.0;
+            robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
         }
         if (wait_trajectory_upon_finish_)
         {
-            const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
-            return robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
+            if (robot_stopped)
+            {
+                LOG_INFO << "MoveLinePlanner: TaskFinished, measurement velocity: " << measurement.velocity.transpose();
+                return ComputeCommandStatus::TaskFinished;
+            }
+            else
+            {
+                return ComputeCommandStatus::TaskOngoing;
+            }
         }
         else
         {
@@ -66,7 +75,7 @@ ComputeCommandStatus MoveLinePlanner::ComputeCommand(const JointMeasurement &mea
         }
     };
     default:
-        LOG_CRIT << "MoveLine: Ruckig OTG returned: " << static_cast<int>(status);
+        LOG_CRIT << "MoveLinePlanner: Ruckig OTG returned: " << static_cast<int>(status);
         return ComputeCommandStatus::Error;
     }
 }

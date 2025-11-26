@@ -36,17 +36,26 @@ ComputeCommandStatus MoveJointPlanner::ComputeCommand(const JointMeasurement &me
     }
     case ruckig::Finished:
     {
+        bool robot_stopped = true;
         for (auto i = 0; i < ndof_robot; i++)
         {
             joint_cmd.position[i] = runtime_.output.new_position[i];
             joint_cmd.velocity[i] = 0;
             joint_cmd.acceleration[i] = 0;
             joint_cmd.torque_feedforward[i] = 0;
+            robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
         }
         if (wait_trajectory_upon_finish_)
         {
-            const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold);
-            return robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
+            if (robot_stopped)
+            {
+                LOG_INFO << "MoveJointPlanner: TaskFinished, measurement velocity: " << measurement.velocity.transpose();
+                return ComputeCommandStatus::TaskFinished;
+            }
+            else
+            {
+                return ComputeCommandStatus::TaskOngoing;
+            }
         }
         else
         {

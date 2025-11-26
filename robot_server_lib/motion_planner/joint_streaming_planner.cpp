@@ -60,6 +60,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
     if (no_ruckig_mode_)
     {
         // 直接输出最新命令作为关节命令
+        bool robot_stopped = true;
         for (auto i = 0; i < ndof_robot; i++)
         {
             // 如果超时则保持当前指令位置
@@ -67,13 +68,13 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
+            robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
         }
         if (!command_finished_time_.is_valid())
         {
             command_finished_time_ = TimePointSystem::Now();
         }
-        const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold) ||
-                                   ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > StreamingCommandTimeout);
+        robot_stopped = robot_stopped || ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > StreamingCommandTimeout);
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
         return runtime_.streaming_finished && robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
     }
@@ -117,21 +118,30 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
     }
     else if (status == ruckig::Finished)
     {
+        bool robot_stopped = true;
         for (auto i = 0; i < ndof_robot; i++)
         {
             output_joint_cmd.position[i] = runtime_.output.new_position[i];
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
+            robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
         }
         if (!command_finished_time_.is_valid())
         {
             command_finished_time_ = TimePointSystem::Now();
         }
-        const bool robot_stopped = (measurement.velocity.norm() < IdleVelocityThreshold) ||
-                                   ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > StreamingCommandTimeout);
+        robot_stopped = robot_stopped || ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > StreamingCommandTimeout);
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
-        return runtime_.streaming_finished && robot_stopped ? ComputeCommandStatus::TaskFinished : ComputeCommandStatus::TaskOngoing;
+        if (runtime_.streaming_finished && robot_stopped)
+        {
+            LOG_INFO << "JointStreamingPlanner: TaskFinished, measurement velocity: " << measurement.velocity.transpose();
+            return ComputeCommandStatus::TaskFinished;
+        }
+        else
+        {
+            return ComputeCommandStatus::TaskOngoing;
+        }
     }
     else
     {
