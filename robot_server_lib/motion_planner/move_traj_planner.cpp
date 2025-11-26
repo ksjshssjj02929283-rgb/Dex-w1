@@ -31,7 +31,8 @@ ComputeCommandStatus MoveTrajPlanner::ComputeCommand(const JointMeasurement &mea
         {
             if (robot_stopped)
             {
-                LOG_INFO << "MoveTrajPlanner: TaskFinished, measurement velocity: " << measurement.velocity.transpose();
+                LOG_INFO << "MoveTrajPlanner: Reached the end of trajectory at time " << runtime_.total_duration << "s, point index "
+                 << (runtime_.traj_npoints - 1) << " measurement velocity: " << measurement.velocity.transpose();
                 return ComputeCommandStatus::TaskFinished;
             }
             else
@@ -75,8 +76,6 @@ ComputeCommandStatus MoveTrajPlanner::GetInterpolatedPosition(JointCommand &join
         utils::MapJointToWholeBody(this->robot_model_, position, joint_cmd.position, this->motion_group_);
         utils::MapJointToWholeBody(this->robot_model_, velocity, joint_cmd.velocity, this->motion_group_);
         utils::MapJointToWholeBody(this->robot_model_, acceleration, joint_cmd.acceleration, this->motion_group_);
-        LOG_INFO << "MoveTrajPlanner: Reached the end of trajectory at time " << runtime_.total_duration << "s, point index "
-                 << (runtime_.traj_npoints - 1);
         return ComputeCommandStatus::TaskFinished;
     }
 
