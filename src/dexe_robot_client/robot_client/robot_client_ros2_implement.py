@@ -81,11 +81,10 @@ class RobotClientRos2(Node, RobotClient):
         while time.time() - start_time < wait_second:
             time.sleep(0.001)
 
-    @time_consuming
     def wait_request_finish(self,
                             request_id: Optional[int] = None,
                             timeout_sec: int = 30) -> bool:
-        if not request_id:
+        if request_id is None:
             request_id = self.latest_sent_id
         if not self.connect_robot():
             self.logger.error(f"No connection to robot")
@@ -141,7 +140,7 @@ class RobotClientRos2(Node, RobotClient):
                 return self.latest_sent_id
         if future.result() is not None:
             self.logger.info(
-                f"Property request id: {future.result().request_id} accepted, {type}"
+                f"Property request id: {future.result().request_id} finished, {type}"
             )
             self.latest_sent_id = future.result().request_id
             return self.latest_sent_id
@@ -154,8 +153,9 @@ class RobotClientRos2(Node, RobotClient):
             return False
         # 配置目标
         goal_msg = MoveRobot.Goal()
-        goal_msg.motion_group = request.motion_group.name
         goal_msg.type = request.type.name
+        if request.motion_group is not None:
+            goal_msg.motion_group = request.motion_group.name
 
         if self.status == Status.Error:
             self.logger.error(
@@ -217,7 +217,7 @@ class RobotClientRos2(Node, RobotClient):
             target_str = (str(np.round(request.value, 4))
                           if request.value is not None else "None")
             self.logger.info(
-                f"Movement request_id: {self.latest_sent_id} {request.motion_group.name} {request.type.name} accepted, target: {target_str}"
+                f"Movement request_id: {self.latest_sent_id} {request.type.name} {request.motion_group.name if request.motion_group is not None else ''} accepted, target: {target_str}"
             )
             self._move_request_id_returned = False
             return self.latest_sent_id
@@ -273,7 +273,7 @@ class RobotClientRos2(Node, RobotClient):
             )
         else:
             self.logger.error(
-                f"Movement request_id: {result.request_id} failed, please check and clear error"
+                f"Movement request_id: {result.request_id} failed, result.success: {result.success}"
             )
 
     """ ---------------------------------------------------------------------------
@@ -325,21 +325,67 @@ class RobotClientRos2(Node, RobotClient):
     def _subscriber_robot_server_state_callback(self, msg):
         state = json.loads(msg.data)
         self._last_msg_time = self.get_clock().now().nanoseconds / 1e9
+
+        # status
         if "status" in state:
-            self.status = Status[state["status"]]
+            try:
+                self.status = Status[state["status"]]
+            except Exception:
+                self.logger.warning(
+                    f"Unknown status received: {state.get('status')}")
+
+        # basic robot words / mode
+        if "robot_statusword" in state:
+            self.robot_statusword = state["robot_statusword"]
+        if "robot_controlword" in state:
+            self.robot_controlword = state["robot_controlword"]
+        if "run_mode" in state:
+            self.run_mode = state["run_mode"]
+
+        # request ids
         if "latest_queued_id" in state:
             self.latest_queued_id = state["latest_queued_id"]
         if "latest_finished_id" in state:
             self.latest_finished_id = state["latest_finished_id"]
         if "latest_errordrop_id" in state:
             self.latest_errordrop_id = state["latest_errordrop_id"]
+
+        # joints
+        if "joint_position_cmd" in state:
+            self.joint_position_cmd = [
+                float(x) for x in state["joint_position_cmd"]
+            ]
         if "joint_position" in state:
-            self.joint_position = state["joint_position"]
+            self.joint_position = [float(x) for x in state["joint_position"]]
         if "joint_velocity" in state:
-            self.joint_velocity = state["joint_velocity"]
+            self.joint_velocity = [float(x) for x in state["joint_velocity"]]
+        if "joint_torque" in state:
+            self.joint_torque = [float(x) for x in state["joint_torque"]]
+
+        # motors / sensors
+        if "motor_status" in state:
+            self.motor_status = state["motor_status"]
+        if "motor_error_code" in state:
+            self.motor_error_code = state["motor_error_code"]
+        if "motor_temperature" in state:
+            self.motor_temperature = state["motor_temperature"]
+        if "force_sensor" in state:
+            self.force_sensor = [float(x) for x in state["force_sensor"]]
+
+        # torque limits
+        if "torque_limit_negative" in state:
+            self.torque_limit_negative = [
+                float(x) for x in state["torque_limit_negative"]
+            ]
+        if "torque_limit_positive" in state:
+            self.torque_limit_positive = [
+                float(x) for x in state["torque_limit_positive"]
+            ]
+
+        # poses
         if "ee_pose" in state:
-            self.ee_pose = state["ee_pose"]
-        if "actual_arm_torque" in state:
-            self.actual_arm_torque = state["actual_arm_torque"]
-        if "command_arm_torque" in state:
-            self.command_arm_torque = state["command_arm_torque"]
+            self.ee_pose = [float(x) for x in state["ee_pose"]]
+        if "torso_pose_X_Z_RY" in state:
+            self.torso_pose_X_Z_RY = [
+                float(x) for x in state["torso_pose_X_Z_RY"]
+            ]
