@@ -425,7 +425,7 @@ void RobotServer::PublishThreadFunc()
         }
         else
         {
-            robot_server_state_msg.data += ",\"ee_pose\":\"no valid data\", \"torso_pose_X_Z_RY\":\"no valid data\"}";
+            robot_server_state_msg.data += ",\"ee_pose\":\"\", \"torso_pose_X_Z_RY\":\"\"}";
         }
         this->robot_server_state_publisher_->publish(robot_server_state_msg);
         std::this_thread::sleep_until(next_cycle_time_point);
