@@ -11,17 +11,33 @@ class RobotClient(ABC):
 
     def __init__(self, is_sim: bool = False):
         self.is_sim = is_sim
+
+        self.status = None
+        self.robot_statusword = None
+        self.robot_controlword = None
+        self.run_mode = None
+
         self.latest_sent_id = -1
         self.latest_queued_id = -1
         self.latest_finished_id = -1
         self.latest_errordrop_id = -1
 
-        self.status = None
+        self.joint_position_cmd = list[float]()
         self.joint_position = list[float]()
         self.joint_velocity = list[float]()
-        self.actual_arm_torque = list[float]()
-        self.command_arm_torque = list[float]()
+        self.joint_torque = list[float]()
+
+        self.motor_status = list[int]()
+        self.motor_error_code = list[int]()
+        self.motor_temperature = list[int]()
+        self.force_sensor = list[float]()
+
+        self.torque_limit_negative = list[float]()
+        self.torque_limit_positive = list[float]()
+
         self.ee_pose = list[float]()
+        self.torso_pose_X_Z_RY = list[float]()
+
         self._move_request_id_returned = False
 
     """---------------------------------------------------------------------------
@@ -35,12 +51,28 @@ class RobotClient(ABC):
         Returns:
             RobotState: 机器人状态集合
         """
-        return RobotInfo(status=self.status,
-                         joint_position=self.joint_position,
-                         joint_velocity=self.joint_velocity,
-                         actual_arm_torque=self.actual_arm_torque,
-                         command_arm_torque=self.command_arm_torque,
-                         ee_pose=self.ee_pose)
+        return RobotInfo(
+            status=self.status,
+            robot_statusword=self.robot_statusword,
+            robot_controlword=self.robot_controlword,
+            run_mode=self.run_mode,
+            latest_sent_id=self.latest_sent_id,
+            latest_queued_id=self.latest_queued_id,
+            latest_finished_id=self.latest_finished_id,
+            latest_errordrop_id=self.latest_errordrop_id,
+            joint_position_cmd=self.joint_position_cmd,
+            joint_position=self.joint_position,
+            joint_velocity=self.joint_velocity,
+            joint_torque=self.joint_torque,
+            motor_status=self.motor_status,
+            motor_error_code=self.motor_error_code,
+            motor_temperature=self.motor_temperature,
+            force_sensor=self.force_sensor,
+            torque_limit_negative=self.torque_limit_negative,
+            torque_limit_positive=self.torque_limit_positive,
+            ee_pose=self.ee_pose,
+            torso_pose_X_Z_RY=self.torso_pose_X_Z_RY,
+        )
 
     def set_tcp(
         self,
@@ -98,7 +130,7 @@ class RobotClient(ABC):
         """async interface - setting robot safe level
         异步接口 - 设置机器人安全级别, 仅真实机器人生效
         Args:
-            - safe_level: float: 安全级别, 取值范围 [0.1, 1], 默认为0.5, 
+            - safe_level: float: 安全级别, 取值范围 [0.1, 1], 默认为0.5,
                 值越小机械臂柔性越大, 0.1时机械臂柔性最大, 1.0时机械臂刚性最大, 刚性越大运动跟踪性能越好, 但碰撞时容易造成机械臂损坏
         Returns:
             - int: request id 指令号, 可用于等待对应运动指令完成等
@@ -106,10 +138,41 @@ class RobotClient(ABC):
         return self.send_set_property_request(PropertyType.SafeLevel,
                                               safe_level)
 
+    def set_impedance_mode(self, set_enable: bool) -> int:
+        """async interface - setting robot impedance mode
+        异步接口 - 开关机器人阻抗模式, 开启后机器人处于阻抗控制状态, 仅真实机器人生效
+        Args:
+            - set_enable: bool: 是否开启阻抗模式, True: 开启阻抗模式, False: 关闭阻抗模式
+        Returns:
+            - int: request id 指令号, 可用于等待对应运动指令完成等
+        """
+        return self.send_set_property_request(PropertyType.EnableImpedance,
+                                              set_enable)
+
+    def set_impedance_mode(self, set_enable: bool) -> int:
+        """async interface - setting robot impedance mode
+        异步接口 - 开关机器人阻抗模式, 开启后机器人处于阻抗控制状态, 仅真实机器人生效
+        Args:
+            - set_enable: bool: 是否开启阻抗模式, True: 开启阻抗模式, False: 关闭阻抗模式
+        Returns:
+            - int: request id 指令号, 可用于等待对应运动指令完成等
+        """
+        return self.send_set_property_request(PropertyType.EnableImpedance,
+                                              set_enable)
+
     """ ---------------------------------------------------------------------------
     User interfaces - Move requests
     用户接口 - 运动指令
     ----------------------------------------------------------------------------"""
+
+    def stop_move(self) -> int:
+        """async interface - stop robot move
+        异步接口 - 停止机器人运动, 会立即停止机器人当前运动并清除运动队列中未执行的运动指令
+        Returns:
+            - int: request id 指令号, 可用于等待对应运动指令完成等
+        """
+        stop_move_request = MoveRequest(type=MotionType.StopMove)
+        return self.send_move_robot_request(stop_move_request)
 
     def move_joint_async(
         self,
@@ -220,6 +283,68 @@ class RobotClient(ABC):
             motion_group=motion_group,
             motion_target=motion_target,
             reference_frame=reference_frame,
+            speed=speed,
+            kwargs=kwargs,
+        )
+        self.wait_request_finish(request_id)
+        return request_id
+
+    def move_traj_async(
+        self,
+        motion_target: list[float],
+        motion_group: MotionGroup,
+        interval: float,
+        endpoint_index: list[int] = None,
+        **kwargs,
+    ) -> int:
+        """async interface - joint move to target joint angles
+        异步接口 - 多点位轨迹运动, 每运动到指定的endpoint_index会更新self.latest_finished_id, 如果机器人为双臂时默认设置MotionGroup.Primary为左臂运动
+        Args:
+        - target:
+            - 平铺多个点位的关节角度list[float]: [j1, j2, ..., j1, j2, ...], 数据长度为点位数乘以指定的motion_group关节数
+
+        - arm: 可选项:
+            - MotionGroup.PrimaryArm: 机器人为双臂时左臂运动, target长度要与左臂关节数一致
+            - MotionGroup.SecondaryArm: 机器人为双臂时右臂运动, target长度要与右臂关节数一致
+            - MotionGroup.BothArms: 机器人为双臂时双臂运动, target长度要与双臂关节数相加一致, 左臂在前右臂在后:
+                [j1_left, j2_left, ..., jn_left, j1_right, j2_right, ..., jn_right]
+            - MotionGroup.Torso: 仅躯干运动, target长度要与躯干关节数一致
+            - MotionGroup.WholeBody: 机器人为双臂时全身运动(包括腿和头), target长度要与全身关节数一致
+
+        - endpoint_index: 轨迹点中指定每段末尾的点位id, 如[4, 9]表示第4个点和第9个点为对应段的终点, 会在运行到这些点位时更新self.latest_finished_id
+
+        - interval: 轨迹点时间间隔, 单位秒
+
+        - kwargs: 可选参数
+            - blend_tolerance: 平滑容忍度, 单位m
+
+        Returns:
+            int: request id 本次move_traj结束指令号, 可用于等待对应运动指令完成等, -1时为请求被拒绝
+        """
+        move_joint_request = self.make_move_request(
+            motion_type=MotionType.MoveTraj,
+            motion_group=motion_group,
+            motion_target=motion_target,
+            endpoint_index=endpoint_index,
+            interval=interval,
+            kwargs=kwargs,
+        )
+
+        return self.send_move_robot_request(move_joint_request)
+
+    def move_joint_sync(
+        self,
+        motion_target: list[float],
+        motion_group: MotionGroup = MotionGroup.Primary,
+        speed: float = 1.0,
+        **kwargs,
+    ) -> int:
+        """sync interface - joint move to target joint angles
+        同步接口 - move_joint_async的同步版本接口, 会等待此request完成后再返回
+        """
+        request_id = self.move_joint_async(
+            motion_target=motion_target,
+            motion_group=motion_group,
             speed=speed,
             kwargs=kwargs,
         )

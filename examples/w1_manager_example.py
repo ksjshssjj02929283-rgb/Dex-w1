@@ -26,10 +26,10 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
     if not w1_manager.connect() and not w1_manager.is_enabled():
         return
 
-    w1_manager.set_home_qpos(np.deg2rad([
-        45, -90, 45, 0, 0, 0, 5, -45, -5, -90, 0, -15, 0, -5, 45, 5, 90, 0, 15,
-        0
-    ]),
+    # yapf: disable
+    w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
+                                         5, -45, -5, -90, 0, -15, 0,
+                                         -5, 45, 5, 90, 0, 15, 0]),
                              save_to_file=False)
 
     w1_manager.set_ee_qpos("left_arm_ee", np.array([0.] * 6))
@@ -59,6 +59,7 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
                            [0., [0., 0., 0., 0., 0., 0.], 0.5],
                            [0., [0., 50., 50., 50., 50., 50.], 0.5],
                            [0., [0., 0., 0., 0., 0., 0.], 0.]]
+    # yapf: enable
 
     if move_with_ee:
         w1_manager.move_joint_full_body(waypoints_dict={
@@ -103,10 +104,10 @@ def move_full_body_example2(move_with_ee: bool,
     w1_manager.set_tcp("left_arm", np.eye(4))
     w1_manager.set_tcp("right_arm", np.eye(4))
 
-    w1_manager.set_home_qpos(np.deg2rad([
-        45, -90, 45, 0, 0, 0, 5, -45, -5, -90, 0, -15, 0, -5, 45, 5, 90, 0, 15,
-        0
-    ]),
+    # yapf: disable
+    w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
+                                         5, -45, -5, -90, 0, -15, 0,
+                                         -5, 45, 5, 90, 0, 15, 0]),
                              save_to_file=False)
 
     w1_manager.set_ee_qpos("left_arm_ee", np.array([0.] * 6))
@@ -162,6 +163,7 @@ def move_full_body_example2(move_with_ee: bool,
                            [0., [0., 0., 0., 0., 0., 0.], 0.5],
                            [0., [0., 50, 50, 50, 50, 50], 0.5],
                            [0., [0., 0., 0., 0., 0., 0.], 0.]]
+    # yapf: enable
 
     if move_with_ee:
         w1_manager.move_linear_full_body(waypoints_dict={
@@ -183,4 +185,4 @@ def move_full_body_example2(move_with_ee: bool,
 
 if __name__ == "__main__":
     # move_full_body_example1(move_with_ee = True, is_sim = True)
-    move_full_body_example2(move_with_ee=False, is_sim=True, is_local=False)
+    move_full_body_example2(move_with_ee=True, is_sim=True, is_local=False)

@@ -11,14 +11,26 @@ from rclpy.executors import MultiThreadedExecutor
 from dexe_robot_client.robot_client import RobotClientRos2 as RobotClient
 from dexe_robot_client.robot_client import MotionGroup
 
-joint_industrial_left0 = [-0.45, -0.65, 0.35, -1.5, -1, 0.5, 0.5]
-joint_industrial_right0 = [0.45, 0.65, -0.35, 1.5, 1, -0.5, -0.5]
+joint_left0 = [-0.45, -0.65, 0.35, -1.5, -1, 0.5, 0.5]
+joint_right0 = [0.45, 0.65, -0.35, 1.5, 1, -0.5, -0.5]
 
 # pose采用四元数格式[x, y, z, qw, qx, qy, qz]
-pose_industrial_left0 = [
-    -0.331, 0.3854, 0.2922, 0.8022, -0.5669, -0.0925, 0.1626
+pose_left0 = [-0.331, 0.3854, 0.2922, 0.8022, -0.5669, -0.0925, 0.1626]
+pose_right0 = [0.331, 0.3854, 0.2922, 0.1626, 0.0925, 0.5669, 0.8022]
+
+# yapf: disable
+target_traj = [
+    -0.50, -0.65, 0.35, -1.5, -1, 0.5, 0.5, 0.50, 0.65, -0.35, 1.5, 1, -0.5, -0.5,
+    -0.55, -0.65, 0.35, -1.5, -1, 0.5, 0.5, 0.55, 0.65, -0.35, 1.5, 1, -0.5, -0.5,
+    -0.60, -0.65, 0.35, -1.5, -1, 0.5, 0.5, 0.60, 0.65, -0.35, 1.5, 1, -0.5, -0.5,
+    -0.65, -0.65, 0.35, -1.5, -1, 0.5, 0.5, 0.65, 0.65, -0.35, 1.5, 1, -0.5, -0.5,
+    -0.70, -0.65, 0.35, -1.5, -1, 0.5, 0.5, 0.70, 0.65, -0.35, 1.5, 1, -0.5, -0.5,
+    -0.75, -0.65, 0.35, -1.5, -1, 0.5, 0.5, 0.75, 0.65, -0.35, 1.5, 1, -0.5, -0.5,
+    -0.80, -0.65, 0.35, -1.5, -1, 0.5, 0.5, 0.80, 0.65, -0.35, 1.5, 1, -0.5, -0.5,
+    -0.85, -0.65, 0.35, -1.5, -1, 0.5, 0.5, 0.85, 0.65, -0.35, 1.5, 1, -0.5, -0.5,
+    -0.90, -0.65, 0.35, -1.5, -1, 0.5, 0.5, 0.90, 0.65, -0.35, 1.5, 1, -0.5, -0.5,
 ]
-pose_industrial_right0 = [0.331, 0.3854, 0.2922, 0.1626, 0.0925, 0.5669, 0.8022]
+# yapf: enable
 
 
 def main(is_sim=True):
@@ -62,9 +74,19 @@ def main(is_sim=True):
     print(f"Current ee_pose: {client.get_info().ee_pose}")
     """设置全局速度"""
     client.set_global_speed(0.5)
-    """move joint/line接口示例"""
-    client.move_joint_sync(joint_industrial_left0 + joint_industrial_right0,
-                           MotionGroup.BothArms)
+    """move joint接口示例"""
+    client.move_joint_sync(joint_left0 + joint_right0, MotionGroup.BothArms)
+    """move traj接口示例"""
+    endpoint_index = [2, 5, 7, 9]
+    end_id = client.move_traj_async(target_traj,
+                                    MotionGroup.BothArms,
+                                    interval=0.5,
+                                    endpoint_index=endpoint_index)
+    for latest_finished_id in range(end_id - endpoint_index.__len__() + 1,
+                                    end_id + 1):
+        client.wait_request_finish(request_id=latest_finished_id)
+        print(f"Finished traj segment id: {latest_finished_id}")
+    """move_line接口示例"""
     ee_pose = client.get_info().ee_pose
     ee_pose[0] -= 0.15
     ee_pose[7] += 0.15
@@ -88,11 +110,12 @@ def main(is_sim=True):
         client.wait_second(0.01)
     client.send_streaming_command(ee_pose, streaming_finished=True)
     """其他接口示例"""
+    client.stop_move()  # 停止运动且清空当前队列中的运动命令
     client.set_tcp([0, 0, 0.0, 1, 0, 0, 0])  # 设置工具坐标系
     client.clear_error()  # 清除错误
-    client.wait_request_finish()  # 等待已发送的运动请求完成
     # client.set_safe_level(0.2) # 设置安全级别 范围[0.1, 1], 值越大机械臂刚度越大, 开机默认为1.0, 仅真实机器人生效
     # client.set_drag_mode(True) # 设置拖拽模式, 开启后可以拖拽关节到任意位置并保持姿态, 仅真实机器人生效
+    client.wait_request_finish()  # 等待已发送的运动请求完成
 
     # 安全退出：先关闭 executor，再释放资源
     if rclpy.ok():
@@ -107,4 +130,4 @@ def main(is_sim=True):
 
 
 if __name__ == "__main__":
-    main(is_sim=True)
+    main(is_sim=False)
