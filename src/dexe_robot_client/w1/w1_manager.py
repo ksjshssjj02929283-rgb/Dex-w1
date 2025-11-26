@@ -3673,6 +3673,16 @@ class W1Manager:
                 armr_traj_list.append(armr_traj)
                 armree_trigger_list.append(right_arm_ee_trigger_list[0])
 
+        res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+        if not res:
+            self.logger.error("Get current left arm ee qpos failed.")
+            return False
+        res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+        if not res:
+            self.logger.error("Get current right arm ee qpos failed.")
+            return False
+        self.hybrid_planner.set_end_effector_qpos(armlee_qpos=cur_armlee_qpos,
+                                                  armree_qpos=cur_armree_qpos)
         coordinated_left, coordinated_right, coordinated_left_ee, coordinated_right_ee = \
                     self.hybrid_planner.coordinate_trajectories_with_EE(left_traj_list=arml_traj_list,
                                                                         right_traj_list=armr_traj_list,
