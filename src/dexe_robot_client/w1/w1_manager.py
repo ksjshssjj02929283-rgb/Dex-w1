@@ -472,6 +472,9 @@ class W1Manager:
     def connect(self, timeout_sec: float = 0.5) -> bool:
         """连接client(sim/real)
 
+        Args:
+            timeout_sec (float, optional): 等待连接超时时间. Defaults to 0.5.
+
         Returns:
             bool: 
         """
@@ -479,6 +482,9 @@ class W1Manager:
 
     def is_connected(self, timeout_sec: float = 0.1) -> bool:
         """检查所有client是否处于连接状态
+
+        Args:
+            timeout_sec (float, optional): 等待连接超时时间. Defaults to 0.5.
 
         Returns:
             bool: 
@@ -901,17 +907,26 @@ class W1Manager:
             return False
         return True
 
-    def stop_move(self) -> bool:
+    def stop_move(self, timeout_sec: float = 3.0) -> bool:
         """停止发送streaming指令
+
+        Args:
+            timeout_sec (float, optional): 等待停止超时时间. Defaults to 3.0.
 
         Returns:
             bool: 
         """
+        self.logger.info("Stop move by user!")
         self._stop_move_event.set()
         if self.robot_client.stop_move() == -1:
             self.logger.error("Stop move by user failed!")
             return False
-        self.logger.info("Stop move by user!")
+        t0 = time.time()
+        while self.robot_client.status != Status.Idle:
+            if time.time() - t0 > timeout_sec:
+                self.logger.error("Stop move wait timeout!")
+                return False
+            time.sleep(2 * self.TIME_STEP)
         return True
 
     def check_collision(self,
@@ -1130,50 +1145,62 @@ class W1Manager:
             return False
 
         # ee trigger
-        count = 0
-        stop_ee_thread = False
+        move_finished_event = threading.Event()
+        move_finished_event.clear()
+
         ee_thread_error = False
+        global_count = 0
 
         def ee_trigger(ee_client, ee_trigger_list, ee_name):
-            nonlocal count, stop_ee_thread, ee_thread_error
+            nonlocal ee_thread_error
             ee_trigger_list_ = [
                 [cnt, ee_qpos, False] for cnt, ee_qpos in ee_trigger_list
             ]
-            triggered_finished = False
             rate = RateLimiter(frequency=5. / self.TIME_STEP, warn=True)
-            while not stop_ee_thread:
+            while True:
+                # BUG: 避免在循环中途被修改；但可能跳过了中间的count导致漏触发；用queue处理？
+                local_count = global_count
                 for item in ee_trigger_list_:
                     target_count, target_ee_qpos, triggered = item
-                    if count == target_count and not triggered:
+                    if local_count == target_count and not triggered:
                         ee_client.set_pos(np.array(target_ee_qpos))
                         item[2] = True
                         self.logger.debug(
                             f"{ee_name} has triggered: {target_count} {target_ee_qpos}."
                         )
-                if all(item[2] for item in ee_trigger_list_):
-                    triggered_finished = True
-                    self.logger.debug(f"{ee_name} completes trigger.")
+
+                # 异常退出
+                if self._stop_move_event.is_set():
                     break
-                # time.sleep(self.TIME_STEP / 10)
+                # 正常退出，遍历完所有count
+                if move_finished_event.is_set(
+                ) and local_count == qpos_array.shape[0]:
+                    break
+                # 最后一个触发了就退出循环
+                if ee_trigger_list_[-1][2]:
+                    break
                 rate.sleep()
 
-            if not triggered_finished:
-                not_triggered_counts = [
-                    cnt for cnt, _, trig in ee_trigger_list_ if not trig
-                ]
-                if self._stop_move_event.is_set():
-                    self.logger.warning(
-                        f"{ee_name} {not_triggered_counts} haven't been triggered."
-                    )
-                else:
-                    self.logger.error(
-                        f"{ee_name} {not_triggered_counts} haven't been triggered."
-                    )
-                ee_thread_error = True
+            # 全部触发，执行正常
+            if all(item[2] for item in ee_trigger_list_):
+                self.logger.debug(f"{ee_name} completes trigger.")
+                return
+
+            not_triggered_counts = [
+                cnt for cnt, _, trig in ee_trigger_list_ if not trig
+            ]
+            # 被stop_move中断了
+            if self._stop_move_event.is_set():
+                self.logger.warning(
+                    f"{ee_name} {not_triggered_counts} haven't been triggered.")
+                return
+            # 中途漏了触发
+            self.logger.error(
+                f"{ee_name} {not_triggered_counts} haven't been triggered.")
+            ee_thread_error = True
 
         def stop_ee_trigger_threads():
-            nonlocal stop_ee_thread, left_arm_ee_thread, right_arm_ee_thread
-            stop_ee_thread = True
+            self._stop_move_event.set()
             if left_arm_ee_thread is not None:
                 left_arm_ee_thread.join()
             if right_arm_ee_thread is not None:
@@ -1220,20 +1247,26 @@ class W1Manager:
             stop_ee_trigger_threads()
             return False
 
-        last_finished_id = self.robot_client.latest_finished_id
+        # wait move traj finished
+        last_finished_id = end_id - len(endpoint_index)
         for next_finished_id in range(last_finished_id + 1, end_id + 1):
             if self._stop_move_event.is_set():
                 self.logger.info(f"Stop moving")
                 stop_ee_trigger_threads()
                 return False
             self.robot_client.wait_request_finish(request_id=next_finished_id)
-            count = endpoint_index.pop(0)
+            global_count = endpoint_index.pop(0)
+
+        move_finished_event.set()
+        if left_arm_ee_thread is not None:
+            left_arm_ee_thread.join()
+        if right_arm_ee_thread is not None:
+            right_arm_ee_thread.join()
+
         self.logger.info(
             "Finish moving. " +
             f"Ideal duration should be {(qpos_array.shape[0]-1) * self.TIME_STEP}s, "
             + f"and actual duration is {time.time() - t0}s.")
-        time.sleep(0.05)  # NOTE: 防止最后一个点作为触发点时来不及触发
-        stop_ee_trigger_threads()
 
         # check reach qpos
         targt_qpos = qpos_array[-1]

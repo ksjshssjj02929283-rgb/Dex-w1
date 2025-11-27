@@ -23,7 +23,7 @@ class EndEffectorClient(ABC, Node):
                  dof: int,
                  joint_name: list[str],
                  is_sim: bool = False,
-                 timeout_sec: float = 3.0):
+                 timeout_sec: float = 1.0):
         if is_sim:
             self.node_name = name + "_sim"
         else:

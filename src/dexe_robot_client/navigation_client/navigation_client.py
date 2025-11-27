@@ -15,7 +15,7 @@ class NavigationClient(ABC, Node):
     def __init__(self,
                  name: str,
                  is_sim: bool = False,
-                 timeout_sec: float = 30.0):
+                 timeout_sec: float = 1.0):
         self.logger = get_logger()
         if is_sim:
             self.node_name = name + "_sim"
@@ -31,6 +31,7 @@ class NavigationClient(ABC, Node):
         self._get_pos_subscriber = None
 
         self._init_subscriber(is_sim)
+        self.spin_once(timeout_sec=timeout_sec)
         self._init_publisher(is_sim)
         self.create_timer(0.1, self._check_connection_status)
 

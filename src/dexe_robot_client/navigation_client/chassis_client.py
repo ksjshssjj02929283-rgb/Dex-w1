@@ -5,7 +5,7 @@ from geometry_msgs.msg import PoseStamped
 
 class ChassisClient(NavigationClient):
 
-    def __init__(self, is_sim: bool = False, timeout_sec: float = 30.0):
+    def __init__(self, is_sim: bool = False, timeout_sec: float = 1.0):
         self.logger = get_logger()
         node_name = "chassis_navigation"
         super().__init__(node_name, is_sim, timeout_sec)
