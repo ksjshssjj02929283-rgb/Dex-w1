@@ -14,7 +14,7 @@ class PGCGripperClient(EndEffectorClient):
     def __init__(self,
                  is_left: bool,
                  is_sim: bool = False,
-                 timeout_sec: float = 3.0):
+                 timeout_sec: float = 1.0):
         if is_left:
             self._name = "left"
         else:

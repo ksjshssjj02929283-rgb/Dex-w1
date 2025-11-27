@@ -24,7 +24,7 @@ from ..common import get_logger, time_consuming
 class RobotClientRos2(Node, RobotClient):
     """ros2 client universal interfaces"""
 
-    def __init__(self, is_sim: bool = False, timeout_sec: float = 3.0):
+    def __init__(self, is_sim: bool = False, timeout_sec: float = 1.0):
         self.logger = get_logger()
         if is_sim:
             self.node_name = "robot_client_sim"
@@ -36,7 +36,7 @@ class RobotClientRos2(Node, RobotClient):
         self._connection_timeout = 1.0
 
         self._init_subscriber()
-        rclpy.spin_once(self, timeout_sec=1.)
+        rclpy.spin_once(self, timeout_sec=timeout_sec)
         self._init_publisher()
         self._init_service_client()
         self._init_action_client()
