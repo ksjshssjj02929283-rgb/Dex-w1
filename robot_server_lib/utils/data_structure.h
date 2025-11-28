@@ -168,7 +168,7 @@ struct MoveRequest
     std::optional<double> interval;
 };
 
-using PlannerData = std::variant<MoveRequest, PoseQuaternion, bool, double>;
+using PlannerData = std::variant<MoveRequest, PoseQuaternion, Vector3d, bool, double>;
 
 struct PlannerRequest
 {

@@ -567,6 +567,33 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
         LOG_INFO << "Set run mode to " << ToString(robot_property_.run_mode);
         return;
     }
+    case RequestType::ImpedanceMass:
+    {
+        assert(request.data.has_value() && std::holds_alternative<Vector3d>(request.data.value()));
+        Vector3d mass = std::get<Vector3d>(request.data.value());
+        compliance_ctrl_primary_->SetMass(mass);
+        compliance_ctrl_secondary_->SetMass(mass);
+        LOG_INFO << "Set impedance mass to " << mass.transpose();
+        return;
+    }
+    case RequestType::ImpedanceDamping:
+    {
+        assert(request.data.has_value() && std::holds_alternative<Vector3d>(request.data.value()));
+        Vector3d damping = std::get<Vector3d>(request.data.value());
+        compliance_ctrl_primary_->SetDamping(damping);
+        compliance_ctrl_secondary_->SetDamping(damping);
+        LOG_INFO << "Set impedance damping to " << damping.transpose();
+        return;
+    }
+    case RequestType::ImpedanceStiffness:
+    {
+        assert(request.data.has_value() && std::holds_alternative<Vector3d>(request.data.value()));
+        Vector3d stiffness = std::get<Vector3d>(request.data.value());
+        compliance_ctrl_primary_->SetStiffness(stiffness);
+        compliance_ctrl_secondary_->SetStiffness(stiffness);
+        LOG_INFO << "Set impedance stiffness to " << stiffness.transpose();
+        return;
+    }
     case RequestType::SafeLevel:
     {
         assert(request.data.has_value() && std::holds_alternative<double>(request.data.value()));

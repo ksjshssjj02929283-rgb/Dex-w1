@@ -403,27 +403,39 @@ void RobotServer::PublishThreadFunc()
         std::ostringstream torque_limit_positive_ss = utils::VectorToJsonArrayString(robot_control_.positive_torque_limit, 6, ndof_robot);
         robot_server_state_msg_ = std_msgs::msg::String();
         robot_server_state_msg_.data =
-            std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ", \"status\":\"" + ToString(this->manager_state_) +
-            "\", \"robot_statusword\":" + robot_statusword_ss.str() + ", \"robot_controlword\":" + robot_controlword_ss.str() + ", \"run_mode\":\"" +
-            ToString(robot_property_.run_mode) + "\"" + ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
-            ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
-            ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) + ",\"motor_status\":" + motor_status_ss.str() +
-            ",\"motor_error_code\":" + motor_error_code_ss.str() + ",\"motor_temperature\":" + motor_temperature_ss.str() +
-            ",\"joint_position_cmd\":" + joint_position_control_ss.str() + ",\"joint_position\":" + joint_position_ss.str() +
-            ",\"joint_velocity\":" + joint_velocity_ss.str() + ",\"joint_torque\":" + joint_torque_ss.str() +
-            ",\"force_sensor\":" + joint_sensor_wrench_ss.str() + ",\"torque_limit_negative\":" + torque_limit_negative_ss.str() +
-            ",\"torque_limit_positive\":" + torque_limit_positive_ss.str();
+            std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
+            ",\n  \"status\":\"" + ToString(this->manager_state_) + "\"" +
+            ", \"robot_statusword\":" + robot_statusword_ss.str() +
+            ", \"robot_controlword\":" + robot_controlword_ss.str() +
+            ", \"run_mode\":\"" + ToString(robot_property_.run_mode) + "\"" +
+            ",\n  \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+            ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
+            ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
+            ",\n  \"motor_status\":" + motor_status_ss.str() +
+            ",\n  \"motor_error_code\":" + motor_error_code_ss.str() +
+            ",\n  \"motor_temperature\":" + motor_temperature_ss.str() +
+            ",\n  \"joint_position_cmd\":" + joint_position_control_ss.str() +
+            ",\n  \"joint_position\":" + joint_position_ss.str() +
+            ",\n  \"joint_velocity\":" + joint_velocity_ss.str() +
+            ",\n  \"joint_torque\":" + joint_torque_ss.str() +
+            ",\n  \"force_sensor\":" + joint_sensor_wrench_ss.str() +
+            ",\n  \"torque_limit_negative\":" + torque_limit_negative_ss.str() +
+            ",\n  \"torque_limit_positive\":" + torque_limit_positive_ss.str();
 
         if (this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose) &&
             this->manager_buffers_.torso_pose_measurement->PeekLatest(&torso_X_Z_RY))
         {
             std::ostringstream ee_pose_ss = utils::VectorToJsonArrayString(ee_pose);
             std::ostringstream torso_X_Z_RY_ss = utils::VectorToJsonArrayString(torso_X_Z_RY);
-            robot_server_state_msg_.data += ",\"ee_pose\":" + ee_pose_ss.str() + ",\"torso_pose_X_Z_RY\":" + torso_X_Z_RY_ss.str() + "}";
+            robot_server_state_msg_.data +=
+                ",\n  \"ee_pose\":" + ee_pose_ss.str() +
+                ",\n  \"torso_pose_X_Z_RY\":" + torso_X_Z_RY_ss.str() +
+                "\n}";
         }
         else
         {
-            robot_server_state_msg_.data += ",\"ee_pose\":\"\", \"torso_pose_X_Z_RY\":\"\"}";
+            robot_server_state_msg_.data +=
+                ",\n  \"ee_pose\":\"\", \n  \"torso_pose_X_Z_RY\":\"\"\n}";
         }
         this->robot_server_state_publisher_->publish(robot_server_state_msg_);
         std::this_thread::sleep_until(next_cycle_time_point);

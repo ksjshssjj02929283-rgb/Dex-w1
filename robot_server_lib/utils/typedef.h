@@ -62,10 +62,12 @@ enum class RequestType
     TcpSecondary,
     SpeedRatio,
     ClearError,
+    SafeLevel,
     EnableDrag,
     EnableImpedance,
-    SafeLevel,
-
+    ImpedanceMass,
+    ImpedanceDamping,
+    ImpedanceStiffness,
     // Move Request
     MoveJoint,
     MoveLine,
@@ -181,6 +183,12 @@ inline const char *ToString(RequestType type)
         return "EnableDrag";
     case RequestType::EnableImpedance:
         return "EnableImpedance";
+    case RequestType::ImpedanceMass:
+        return "ImpedanceMass";
+    case RequestType::ImpedanceDamping:
+        return "ImpedanceDamping";
+    case RequestType::ImpedanceStiffness:
+        return "ImpedanceStiffness";
     case RequestType::SafeLevel:
         return "SafeLevel";
     case RequestType::ClearError:

@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-
+#include "NanoLog.hpp"
 #include "dynamics_utils.h"
 
 namespace robot_server_lib
@@ -57,9 +57,44 @@ class CartesianComplianceControl
         return pos_offset_;
     }
 
-    void setMass(const Vector3d& M) { M_ = M; }
-    void setDamping(const Vector3d& B) { B_ = B; }
-    void setStiffness(const Vector3d& K) { K_ = K; }
+    void SetMass(const Vector3d& M) 
+    {
+        M_ = M;
+        for (auto& b : B_)
+        {
+            double min_damping = 2.0 * std::sqrt(M_[&b - &B_[0]] * K_[&b - &K_[0]]);
+            if (b < min_damping)
+            {
+                b = min_damping;
+            }
+        }
+        LOG_INFO << "CartesianComplianceControl: Set mass to [" << M_.transpose() << "], updated damping to [" << B_.transpose() << "], stiffness: [" << K_.transpose() << "]";
+    }
+    void SetDamping(const Vector3d& B) 
+    { 
+        B_ = B; 
+        for (auto& b : B_)
+        {
+            double min_damping = 2.0 * std::sqrt(M_[&b - &B_[0]] * K_[&b - &K_[0]]);
+            if (b < min_damping)
+            {
+                b = min_damping;
+                LOG_INFO << "CartesianComplianceControl: Updated damping to min critical damping: " << b;
+            }
+        }
+        LOG_INFO << "CartesianComplianceControl: Set damping to [" << B_.transpose() << "], mass: [" << M_.transpose() << "], stiffness: [" << K_.transpose() << "]";
+    }
+    void SetStiffness(const Vector3d& K) 
+    { 
+        K_ = K; 
+        for (auto& b : B_)
+        {
+            double min_damping = 2.0 * std::sqrt(M_[&b - &B_[0]] * K_[&b - &K_[0]]);
+            if (b < min_damping)
+                b = min_damping;
+        }
+        LOG_INFO << "CartesianComplianceControl: Set stiffness to [" << K_.transpose() << "], updated damping to [" << B_.transpose() << "], mass: [" << M_.transpose() << "]";
+    }
 
     // 设置输出限制（非正数表示不限制）
     void setMaxPosition(const Vector3d& max_pos) { max_pos_ = max_pos; }
@@ -79,9 +114,9 @@ class CartesianComplianceControl
 
    private:
     double control_dt_ = 0.001;              // 控制周期 (s)
-    Vector3d M_ = {10.0, 10.0, 10.0};        // 质量 (kg)
-    Vector3d B_ = {200.0, 200.0, 200.0};     // 阻尼 (N·s/m)
-    Vector3d K_ = {1000.0, 1000.0, 1000.0};  // 刚度 (N/m)
+    Vector3d M_ = {2, 2, 2};        // 质量 (kg)
+    Vector3d B_ = {100.0, 100.0, 60.0};     // 阻尼 (N·s/m)
+    Vector3d K_ = {500.0, 500.0, 200.0};  // 刚度 (N/m)
 
     // 限制（默认不限制：设置为非正数表示关闭）
     Vector3d max_pos_ = {0.1, 0.1, 0.1};

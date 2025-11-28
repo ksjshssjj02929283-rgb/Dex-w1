@@ -39,6 +39,8 @@ PoseQuaternion VectorXdToPoseQuaternion(const Eigen::VectorXd &vec);
 
 PoseQuaternion StringToPoseQuaternion(const std::string &str);
 
+Vector3d StringToVector3d(const std::string &str);
+
 template <typename T>
 inline std::size_t GetContainerSize(const T &c)
 {

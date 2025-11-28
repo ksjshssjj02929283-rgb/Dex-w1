@@ -109,18 +109,25 @@ PoseQuaternion StringToPoseQuaternion(const std::string &str)
     int idx = 0;
     while (std::getline(ss, item, ',') && idx < 7)
     {
-        try
-        {
-            values[idx++] = std::stod(item);
-        }
-        catch (...)
-        {
-        }
+        values[idx++] = std::stod(item);
     }
     pose.position = Eigen::Vector3d(values[0], values[1], values[2]);
     pose.orientation = Eigen::Quaterniond(values[3], values[4], values[5], values[6]);
     pose.orientation.normalize();
     return pose;
+}
+
+Vector3d StringToVector3d(const std::string &str)
+{
+    std::stringstream ss(str);
+    std::string item;
+    Vector3d values;
+    int idx = 0;
+    while (std::getline(ss, item, ',') && idx < 3)
+    {
+        values[idx++] = std::stod(item);
+    }
+    return values;
 }
 
 bool MapJointToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group)
@@ -246,6 +253,11 @@ PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interf
         planner_request.type = RequestType::ClearError;
         planner_request.data = std::nullopt;  // Clear error request does not require additional data
     }
+    else if (request->property_type == "SafeLevel")
+    {
+        planner_request.type = RequestType::SafeLevel;
+        planner_request.data = std::clamp(std::stod(request->value), 0.1, 1.0);
+    }
     else if (request->property_type == "EnableDrag")
     {
         planner_request.type = RequestType::EnableDrag;
@@ -256,10 +268,20 @@ PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interf
         planner_request.type = RequestType::EnableImpedance;
         planner_request.data = request->value == "1" ? true : false;
     }
-    else if (request->property_type == "SafeLevel")
+    else if (request->property_type == "ImpedanceMass")
     {
-        planner_request.type = RequestType::SafeLevel;
-        planner_request.data = std::clamp(std::stod(request->value), 0.1, 1.0);
+        planner_request.type = RequestType::ImpedanceMass;
+        planner_request.data = utils::StringToVector3d(request->value);
+    }
+    else if (request->property_type == "ImpedanceDamping")
+    {
+        planner_request.type = RequestType::ImpedanceDamping;
+        planner_request.data = utils::StringToVector3d(request->value);
+    }
+    else if (request->property_type == "ImpedanceStiffness")
+    {
+        planner_request.type = RequestType::ImpedanceStiffness;
+        planner_request.data = utils::StringToVector3d(request->value);
     }
     else
     {
@@ -419,7 +441,7 @@ StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interf
 Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary)
 {
     // 最小力/力矩阈值(去除摩擦力), 和最大力/力矩值
-    constexpr double force_threshold = 5;
+    constexpr double force_threshold = 2;
     constexpr double torque_threshold = 0.1;
     constexpr double force_max = 80.0;
     constexpr double torque_max = 4.0;
