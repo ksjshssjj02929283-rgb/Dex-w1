@@ -59,6 +59,7 @@ class RobotServer : public RobotServerBase
     RobotControl robot_control_;
     RobotFeedback robot_feedback_;
     RobotProperty robot_property_;
+    std_msgs::msg::String robot_server_state_msg_;
     bool is_torque_limit_reached_[ndof_robot] = {false};  // 达到力矩限制标志位
     const std::string ecat_joint_name_[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",    "NECK2",   "LEFT_J1",
                                                       "LEFT_J2",  "LEFT_J3",  "LEFT_J4",  "LEFT_J5",  "LEFT_J6",  "LEFT_J7", "RIGHT_J1",

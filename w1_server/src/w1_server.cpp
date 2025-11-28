@@ -52,7 +52,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
         butterworth_filter_[i] = std::make_shared<ButterworthFilter>();
     }
     // 初始化力传感器
-    // primary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB0");
+    // primary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB2");
     // secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");
 
     this->Run();
@@ -218,9 +218,8 @@ void RobotServer::TorqueControlThreadFunc()
             // 如果状态字发生变化了则打印
             if (robot_feedback_.robot_status_word != last_status_word_)
             {
-                RCLCPP_INFO(this->get_logger(), "Robot status word changed: %s",
-                            utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
-                LOG_INFO << "Robot status word changed: " << utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str();
+                RCLCPP_INFO(this->get_logger(), "Robot status word changed: %s", utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
+                LOG_INFO << "Robot status word changed to " << robot_feedback_.robot_status_word << ", robot_server_state:" << robot_server_state_msg_.data.c_str();
                 last_status_word_ = robot_feedback_.robot_status_word;
             }
             switch (robot_feedback_.robot_status_word)
@@ -300,8 +299,9 @@ void RobotServer::TorqueControlThreadFunc()
             this->robot_buffers_.joint_raw_measurement->Reset();
             if (loop_counter % 3000 == 0)
             {
-                RCLCPP_WARN(this->get_logger(), "Robot is not ready, shm status: %d, statusword: %d", ret, robot_feedback_.robot_status_word);
-                LOG_CRIT << "Robot is not ready, shm status: " << ret << ", statusword: " << robot_feedback_.robot_status_word;
+                RCLCPP_WARN(this->get_logger(), "Robot is not ready, shm status: %d, statusword: %s", ret,
+                            utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
+                LOG_CRIT << "Robot is not ready, shm status: " << ret << ", statusword: " << robot_feedback_.robot_status_word << ", robot_server_state: " << robot_server_state_msg_.data.c_str();
             }
         }
 
@@ -388,9 +388,7 @@ void RobotServer::PublishThreadFunc()
     {
         next_cycle_time_point += std::chrono::microseconds(publish_dt_micro);
         uint64_t timestamp_ns = this->now().nanoseconds();
-
         // Publish /feedback/robot_server_state
-        std_msgs::msg::String robot_server_state_msg;
         std::ostringstream robot_statusword_ss = utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word);
         std::ostringstream robot_controlword_ss = utils::RobotControlwordToJsonString(robot_control_.robot_control_word);
         std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(robot_feedback_.position, 0, ndof_robot);
@@ -403,8 +401,8 @@ void RobotServer::PublishThreadFunc()
         std::ostringstream joint_position_control_ss = utils::VectorToJsonArrayString(robot_control_.position, 0, ndof_robot);
         std::ostringstream torque_limit_negative_ss = utils::VectorToJsonArrayString(robot_control_.negative_torque_limit, 6, ndof_robot);
         std::ostringstream torque_limit_positive_ss = utils::VectorToJsonArrayString(robot_control_.positive_torque_limit, 6, ndof_robot);
-
-        robot_server_state_msg.data =
+        robot_server_state_msg_ = std_msgs::msg::String();
+        robot_server_state_msg_.data =
             std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ", \"status\":\"" + ToString(this->manager_state_) +
             "\", \"robot_statusword\":" + robot_statusword_ss.str() + ", \"robot_controlword\":" + robot_controlword_ss.str() + ", \"run_mode\":\"" +
             ToString(robot_property_.run_mode) + "\"" + ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
@@ -421,13 +419,13 @@ void RobotServer::PublishThreadFunc()
         {
             std::ostringstream ee_pose_ss = utils::VectorToJsonArrayString(ee_pose);
             std::ostringstream torso_X_Z_RY_ss = utils::VectorToJsonArrayString(torso_X_Z_RY);
-            robot_server_state_msg.data += ",\"ee_pose\":" + ee_pose_ss.str() + ",\"torso_pose_X_Z_RY\":" + torso_X_Z_RY_ss.str() + "}";
+            robot_server_state_msg_.data += ",\"ee_pose\":" + ee_pose_ss.str() + ",\"torso_pose_X_Z_RY\":" + torso_X_Z_RY_ss.str() + "}";
         }
         else
         {
-            robot_server_state_msg.data += ",\"ee_pose\":\"\", \"torso_pose_X_Z_RY\":\"\"}";
+            robot_server_state_msg_.data += ",\"ee_pose\":\"\", \"torso_pose_X_Z_RY\":\"\"}";
         }
-        this->robot_server_state_publisher_->publish(robot_server_state_msg);
+        this->robot_server_state_publisher_->publish(robot_server_state_msg_);
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }
