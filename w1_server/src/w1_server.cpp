@@ -227,7 +227,19 @@ void RobotServer::TorqueControlThreadFunc()
             case STATUSWORD_MOTOR_READY:
                 enabled_streak_cycles = 0;
                 this->is_robot_ready_ = true;
-                robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+                if (is_cmd_valid_)
+                {
+                    robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+                }
+                else
+                {
+                    for (int i = 0; i < ndof_robot; i++)
+                    {
+                        robot_control_.position[i] = robot_feedback_.position[i];
+                        robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
+                        robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
+                    }
+                }
                 break;
             case STATUSWORD_MOTOR_ENABLED:
                 this->is_robot_ready_ = true;
@@ -311,9 +323,11 @@ void RobotServer::TorqueControlThreadFunc()
         // 获取并写入控制数据: 关节位置, 速度, 关节力矩限制, 外部力矩
         PlannerManagerCommand planner_cmd{};
         TorqueCtrlCommand torque_cmd{};
+        is_cmd_valid_ = false;
         if (this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) &&
             this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd))
         {
+            is_cmd_valid_ = true;
             JointMeasurement manager_measurement{};
             robot_property_ = planner_cmd.robot_property;
             for (int i = 0; i < ndof_robot; ++i)

@@ -56,6 +56,7 @@ class RobotServer : public RobotServerBase
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr diff_chassis_control_subscriber_;
 
     Int64 streaming_request_id_{-1};
+    bool is_cmd_valid_{false};
     RobotControl robot_control_;
     RobotFeedback robot_feedback_;
     RobotProperty robot_property_;
