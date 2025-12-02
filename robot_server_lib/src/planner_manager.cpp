@@ -59,8 +59,8 @@ void PlannerManager::LoopOnce()
                                 manager_state_);
             ChangeState(Status::Error);
         }
-        PublishPlannerInfo();
     }
+    PublishPlannerInfo();
 
 
     // 尝试处理紧急队列 request Try to process emergency queue
@@ -237,7 +237,19 @@ RequestResponse PlannerManager::OnRequestStateInit()
     if (time_meta.measurement_time.is_invalid())
     {
         manager_buffer_.planner_manager_command->Reset();  // 重置命令缓冲区 Reset the command buffer
-        if (request.type != RequestType::Empty)
+        if (request.type == RequestType::ClearError)
+        {
+            //清除错误状态 Clear error state
+            response.re_run = true;
+            response.request_consumed = true;
+            robot_property_.clear_error_flag = true;
+            robot_property_.error_code = ErrorCode::NoError; // 尝试清除错误码 Clear error code
+            runtime_data_.latest_processing_request_id = request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
+            runtime_data_.latest_processing_request_type = request.type;
+            runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+            ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
+        }
+        else if (request.type != RequestType::Empty)
         {
             runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
             ReportRequestStatus(request.request_id, request.type, RequestStatus::ErrorDrop, manager_state_);

@@ -142,6 +142,7 @@ void RobotServer::InitParamConfig()
                 config_path.string().c_str(),
                 this->use_ruckig_ ? "true" : "false",
                 this->enable_debug_log_ ? "true" : "false");
+    LOG_INFO << "";
     LOG_INFO << "Loaded w1_config.json from: " << config_path
              << ", use_ruckig=" << this->use_ruckig_
              << ", enable_debug_log=" << this->enable_debug_log_;
@@ -177,16 +178,7 @@ void RobotServer::TorqueControlThreadFunc()
         // 叠加手动输入的力数据
         sensor_data_primary.head<3>() += sensor_force_;
 
-        bool ret = feedback_shm_instance.PeekLatest(&robot_feedback_);
-        if (manager_state_ == Status::Running)
-        {
-            LOG_DEBUG << "{ \"joint_position\": " << utils::VectorToJsonArrayString(robot_feedback_.position, 6, ndof_robot).str()
-                    << ", \"joint_velocity\": " << utils::VectorToJsonArrayString(robot_feedback_.velocity, 6, ndof_robot).str()
-                    << ", \"joint_torque\":" << utils::VectorToJsonArrayString(robot_feedback_.torque, 6, ndof_robot).str()
-                    << ", \"joint_position_cmd\": " << utils::VectorToJsonArrayString(robot_control_.position, 6, ndof_robot).str()
-                    << ", \"joint_torque_feedforward\": " << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str()
-                    << "}";
-        }
+        bool ret = feedback_shm_instance.PeekLatest(&robot_feedback_) && robot_feedback_.cnt > 0;
         // 根据状态写入机器人控制字
         robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
         this->is_robot_ready_ = false;
@@ -195,17 +187,19 @@ void RobotServer::TorqueControlThreadFunc()
         static int16_t last_status_word_ = -1;
         if (ret)
         {
-            // 如果状态字发生变化了则打印
-            if (robot_feedback_.robot_status_word != last_status_word_)
+            if (manager_state_ == Status::Running)
             {
-                RCLCPP_INFO(this->get_logger(), "Robot status word changed: %s", utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
-                LOG_INFO << "";
-                LOG_INFO << "Robot status word changed to " << robot_feedback_.robot_status_word << ", robot_server_state:" << robot_server_state_msg_.data.c_str();
-                last_status_word_ = robot_feedback_.robot_status_word;
+                LOG_DEBUG << "{ \"joint_position\": " << utils::VectorToJsonArrayString(robot_feedback_.position, 6, ndof_robot).str()
+                        << ", \"joint_velocity\": " << utils::VectorToJsonArrayString(robot_feedback_.velocity, 6, ndof_robot).str()
+                        << ", \"joint_torque\":" << utils::VectorToJsonArrayString(robot_feedback_.torque, 6, ndof_robot).str()
+                        << ", \"joint_position_cmd\": " << utils::VectorToJsonArrayString(robot_control_.position, 6, ndof_robot).str()
+                        << ", \"joint_torque_feedforward\": " << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str()
+                        << "}";
             }
             switch (robot_feedback_.robot_status_word)
             {
             case STATUSWORD_MOTOR_READY:
+                // ready状态is_robot_ready_置为true, 可以写入measurement, 生成cmd后再使能电机
                 enabled_streak_cycles = 0;
                 this->is_robot_ready_ = true;
                 if (is_cmd_valid_)
@@ -260,7 +254,8 @@ void RobotServer::TorqueControlThreadFunc()
                 robot_control_.robot_control_word |= CTRLWORD_MOTOR_CLEAR_FAULT;
             }
         }
-        // 机器人使能后才能写入measurement
+
+        // 如果机器人就绪，则写入测量数据
         if (this->is_robot_ready_)
         {
             // 关节反馈数据写入测量数据
@@ -293,7 +288,7 @@ void RobotServer::TorqueControlThreadFunc()
             {
                 RCLCPP_WARN(this->get_logger(), "Robot is not ready, shm status: %d, statusword: %s", ret,
                             utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
-                LOG_CRIT << "Robot is not ready, shm status: " << ret << ", statusword: " << robot_feedback_.robot_status_word << ", robot_server_state: " << robot_server_state_msg_.data.c_str();
+                LOG_CRIT << "Robot is not ready, shm status: " << ret << ", statusword: " << robot_feedback_.robot_status_word;
             }
         }
 
@@ -304,8 +299,8 @@ void RobotServer::TorqueControlThreadFunc()
         PlannerManagerCommand planner_cmd{};
         TorqueCtrlCommand torque_cmd{};
         is_cmd_valid_ = false;
+        this->manager_buffers_.planner_manager_info->PeekLatest(&planner_info_);
         if (this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) &&
-            this->manager_buffers_.planner_manager_info->PeekLatest(&planner_info_) &&
             this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd))
         {
             is_cmd_valid_ = true;
@@ -362,6 +357,14 @@ void RobotServer::TorqueControlThreadFunc()
                 robot_control_.torque_external[i] = torque_cmd.torque_external[i];
             }
         }
+        // 如果状态字发生变化了则打印
+        if (robot_feedback_.robot_status_word != last_status_word_)
+        {
+            RCLCPP_INFO(this->get_logger(), "Robot status word changed: %s", utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
+            LOG_INFO << "";
+            LOG_INFO << "Robot status word changed to " << robot_feedback_.robot_status_word << ", robot_server_state:" << GetRobotServerStateMsg().data.c_str();
+            last_status_word_ = robot_feedback_.robot_status_word;
+        }
         control_shm_instance.AppendNewElement(robot_control_);
         std::this_thread::sleep_until(next_cycle_time_point);
     }
@@ -377,35 +380,40 @@ void RobotServer::PublishThreadFunc()
     while (rclcpp::ok())
     {
         next_cycle_time_point += std::chrono::microseconds(publish_dt_micro);
-        uint64_t timestamp_ns = this->now().nanoseconds();
         // Publish /feedback/robot_server_state
-        robot_server_state_msg_ = std_msgs::msg::String();
-        robot_server_state_msg_.data =
-            std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
-            ", \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
-            ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
-            ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
-            ",\n  \"status\":\"" + ToString(this->manager_state_) + "\"" +
-            ", \"server_error_code\":\"" + ToString(this->planner_info_.robot_property.error_code) + "\"" +
-            ", \"run_mode\":\"" + ToString(this->planner_info_.robot_property.run_mode) + "\"" +
-            ",\n  \"robot_statusword\":" + utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str() +
-            ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
-            ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(robot_feedback_.al_status, 0, ndof_robot).str() +
-            ",\n  \"motor_error_code\":" + utils::MotorErrorcodeToJsonArrayString(robot_feedback_.motor_error_code, 0, ndof_robot).str() +
-            ",\n  \"motor_temperature\":" + utils::VectorToJsonArrayString(robot_feedback_.motor_temperature, 0, ndof_robot).str() +
-            ",\n  \"joint_position_cmd\":" + utils::VectorToJsonArrayString(robot_control_.position, 0, ndof_robot).str() +
-            ",\n  \"joint_position\":" + utils::VectorToJsonArrayString(robot_feedback_.position, 0, ndof_robot).str() +
-            ",\n  \"joint_velocity\":" + utils::VectorToJsonArrayString(robot_feedback_.velocity, 0, ndof_robot).str() +
-            ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(robot_feedback_.torque, 0, ndof_robot).str() +
-            ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
-            ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(robot_control_.negative_torque_limit, 6, ndof_robot).str() +
-            ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(robot_control_.positive_torque_limit, 6, ndof_robot).str() +
-            ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(planner_info_.ee_pose_measurement).str() +
-            ",\n  \"torso_pose_X_Z_RY\":" + utils::VectorToJsonArrayString(planner_info_.torso_pose_measurement).str() + "}";
 
-        this->robot_server_state_publisher_->publish(robot_server_state_msg_);
+        this->robot_server_state_publisher_->publish(GetRobotServerStateMsg());
         std::this_thread::sleep_until(next_cycle_time_point);
     }
+}
+
+std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
+{
+    auto robot_server_state_msg = std_msgs::msg::String();
+    uint64_t timestamp_ns = this->now().nanoseconds();
+    robot_server_state_msg.data =
+        std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
+        ", \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+        ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
+        ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
+        ",\n  \"status\":\"" + ToString(this->manager_state_) + "\"" +
+        ", \"server_error_code\":\"" + ToString(this->planner_info_.robot_property.error_code) + "\"" +
+        ", \"run_mode\":\"" + ToString(this->planner_info_.robot_property.run_mode) + "\"" +
+        ",\n  \"robot_statusword\":" + utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str() +
+        ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
+        ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(robot_feedback_.al_status, 0, ndof_robot).str() +
+        ",\n  \"motor_error_code\":" + utils::MotorErrorcodeToJsonArrayString(robot_feedback_.motor_error_code, 0, ndof_robot).str() +
+        ",\n  \"motor_temperature\":" + utils::VectorToJsonArrayString(robot_feedback_.motor_temperature, 0, ndof_robot).str() +
+        ",\n  \"joint_position_cmd\":" + utils::VectorToJsonArrayString(robot_control_.position, 0, ndof_robot).str() +
+        ",\n  \"joint_position\":" + utils::VectorToJsonArrayString(robot_feedback_.position, 0, ndof_robot).str() +
+        ",\n  \"joint_velocity\":" + utils::VectorToJsonArrayString(robot_feedback_.velocity, 0, ndof_robot).str() +
+        ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(robot_feedback_.torque, 0, ndof_robot).str() +
+        ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
+        ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(robot_control_.negative_torque_limit, 6, ndof_robot).str() +
+        ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(robot_control_.positive_torque_limit, 6, ndof_robot).str() +
+        ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(planner_info_.ee_pose_measurement).str() +
+        ",\n  \"torso_pose_X_Z_RY\":" + utils::VectorToJsonArrayString(planner_info_.torso_pose_measurement).str() + "}";
+    return robot_server_state_msg;
 }
 
 void RobotServer::PublishFeedback()

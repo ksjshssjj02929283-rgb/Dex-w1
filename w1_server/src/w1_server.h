@@ -42,8 +42,8 @@ class RobotServer : public RobotServerBase
     void OmniChassisMotorControlCallback(const ChassisMotorControlMsg::SharedPtr msg);
     void DiffChassisControlCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
     void ForceArrayCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg);
-
     void PublishFeedback();
+    std_msgs::msg::String GetRobotServerStateMsg();
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;
     rclcpp::Publisher<JointVelocityTorqueLimitFeedbackMsg>::SharedPtr velocity_torque_limit_feedback_publisher_;
@@ -60,7 +60,6 @@ class RobotServer : public RobotServerBase
     RobotControl robot_control_;
     RobotFeedback robot_feedback_;
     PlannerManagerInfo planner_info_;
-    std_msgs::msg::String robot_server_state_msg_;
     bool is_torque_limit_reached_[ndof_robot] = {false};  // 达到力矩限制标志位
     const std::string ecat_joint_name_[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",    "NECK2",   "LEFT_J1",
                                                       "LEFT_J2",  "LEFT_J3",  "LEFT_J4",  "LEFT_J5",  "LEFT_J6",  "LEFT_J7", "RIGHT_J1",
