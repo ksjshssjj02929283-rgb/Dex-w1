@@ -179,8 +179,6 @@ void PlannerManager::LoopOnce()
         planner_command.sequence_number = runtime_data_.loop_counter;
         planner_command.cmd = runtime_data_.joint_cmd;
         manager_buffer_.planner_manager_command->AppendNewElement(planner_command);
-        if (Status::Running == manager_state_)
-            LOG_DEBUG << "Current Planner: " << typeid(*current_planner_).name() << " output: " << runtime_data_.joint_cmd.ToString();
     }
 
     // 根据规划器状态切换状态机和报告轨迹信息 Switch state based on the planner status

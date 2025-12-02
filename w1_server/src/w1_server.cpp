@@ -1,10 +1,9 @@
 #include "w1_server.h"
 
-#include <boost/property_tree/json_parser.hpp>
-#include <boost/property_tree/ptree.hpp>
 #include <cstdlib>
 #include <filesystem>
 #include <system_error>
+#include <nlohmann/json.hpp>
 
 namespace robot_server_lib
 {
@@ -43,7 +42,10 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
 
     // 参数初始化
     InitParamConfig();
-
+    if(enable_debug_log_)
+    {
+        nanolog::set_log_level(nanolog::LogLevel::DEBUG);
+    }
     // 创建定时器，定时发布feedback 定时器回调函数
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
 
@@ -76,104 +78,73 @@ void RobotServer::InitParamConfig()
 {
     auto config_path = server_data_dir_ / "w1_config.json";
 
-    using boost::property_tree::ptree;
-    constexpr std::size_t kNumJoints = ndof_robot;
+    const std::set<std::string> kAllowedRootKeys{"use_ruckig", "enable_debug_log"};
 
-    auto array_to_pt = [](const double* a, std::size_t n)
-    {
-        ptree arr;
-        for (std::size_t i = 0; i < n; ++i)
-        {
-            ptree v;
-            v.put("", a[i]);
-            arr.push_back(std::make_pair("", v));
-        }
-        return arr;
-    };
-
-    // 配置文件不存在则创建文件并写入默认配置
+    nlohmann::json root;
+    // 若文件不存在则创建默认配置
     if (!std::filesystem::exists(config_path))
     {
-        ptree root;
-        ptree json_node;
-        json_node.add_child("positive_limit_Nm", array_to_pt(torque_limit_.positive_limit_Nm, kNumJoints));
-        json_node.add_child("negative_limit_Nm", array_to_pt(torque_limit_.negative_limit_Nm, kNumJoints));
-        json_node.put("use_ruckig", this->use_ruckig_);  // 新增 use_ruckig
-        root.add_child("torque_limit", json_node);
+        root["use_ruckig"] = this->use_ruckig_;
+        root["enable_debug_log"] = this->enable_debug_log_;
 
-        boost::property_tree::write_json(config_path.string(), root);
-        RCLCPP_INFO(this->get_logger(), "Created default config.json at: %s", config_path.string().c_str());
-        LOG_INFO << "Created default config.json at: " << config_path;
+        std::ofstream ofs(config_path);
+        ofs << root.dump(2);
+        RCLCPP_INFO(this->get_logger(), "Created default w1_config.json at: %s", config_path.string().c_str());
         return;
     }
-
-    // 配置文件存在则读取；缺少 torque_limit 时写入默认
-    ptree root;
-    boost::property_tree::read_json(config_path.string(), root);
-
-    auto torque_opt = root.get_child_optional("torque_limit");
-    if (!torque_opt)
+    else
     {
-        RCLCPP_WARN(this->get_logger(), "config.json has no 'torque_limit' section, writing defaults.");
-        LOG_CRIT << "config.json has no 'torque_limit' section, writing defaults.";
-
-        ptree json_node;
-        json_node.add_child("positive_limit_Nm", array_to_pt(torque_limit_.positive_limit_Nm, kNumJoints));
-        json_node.add_child("negative_limit_Nm", array_to_pt(torque_limit_.negative_limit_Nm, kNumJoints));
-        json_node.put("use_ruckig", this->use_ruckig_);  // 写入默认 use_ruckig
-        root.put_child("torque_limit", json_node);
-        boost::property_tree::write_json(config_path.string(), root);
-
-        torque_opt = root.get_child_optional("torque_limit");
-        if (!torque_opt)
-        {
-            RCLCPP_ERROR(this->get_logger(), "Failed to get 'torque_limit' after writing defaults.");
-            LOG_CRIT << "Failed to get 'torque_limit' after writing defaults.";
+        std::ifstream ifs(config_path);
+        try {
+            root = nlohmann::json::parse(ifs);
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to parse json: %s", e.what());
             return;
         }
     }
 
-    const ptree& json_node = *torque_opt;
-    auto read_array = [&](const char* key, double out[kNumJoints]) -> bool
-    {
-        auto child_opt = json_node.get_child_optional(key);
-        if (!child_opt)
-            return false;
-        const ptree& arr = *child_opt;
-        if (static_cast<std::size_t>(std::distance(arr.begin(), arr.end())) != kNumJoints)
-            return false;
-        std::size_t idx = 0;
-        for (const auto& kv : arr)
-        {
-            out[idx++] = kv.second.get_value<double>();
+    bool need_rewrite = false;
+
+    // 清理未定义根字段
+    for (auto it = root.begin(); it != root.end(); ++it) {
+        if (!kAllowedRootKeys.count(it.key())) {
+            need_rewrite = true;
+            break;
         }
-        return true;
-    };
-
-    read_array("positive_limit_Nm", torque_limit_.positive_limit_Nm);
-    read_array("negative_limit_Nm", torque_limit_.negative_limit_Nm);
-
-    // 读取 use_ruckig，若不存在则写入默认值
-    auto use_ruckig_opt = json_node.get_optional<bool>("use_ruckig");
-    if (use_ruckig_opt)
-    {
-        this->use_ruckig_ = use_ruckig_opt.get();
-    }
-    else
-    {
-        RCLCPP_WARN(this->get_logger(), "torque_limit.use_ruckig missing, writing default: %d", this->use_ruckig_);
-        LOG_CRIT << "torque_limit.use_ruckig missing, writing default: " << this->use_ruckig_;
-        // 追加写回
-        ptree root_new = root;
-        ptree torque_node_new = json_node;
-        torque_node_new.put("use_ruckig", this->use_ruckig_);
-        root_new.put_child("torque_limit", torque_node_new);
-        boost::property_tree::write_json(config_path.string(), root_new);
     }
 
-    RCLCPP_INFO(this->get_logger(), "Loaded config.json from: %s (use_ruckig=%s)", config_path.string().c_str(),
-                this->use_ruckig_ ? "true" : "false");
-    LOG_INFO << "Loaded config.json from: " << config_path << ", use_ruckig=" << this->use_ruckig_;
+    // 若缺失则补默认
+    if (!root.contains("use_ruckig")) {
+        root["use_ruckig"] = this->use_ruckig_;
+        need_rewrite = true;
+    }
+    if (!root.contains("enable_debug_log")) {
+        root["enable_debug_log"] = this->enable_debug_log_;
+        need_rewrite = true;
+    }
+
+    // 同步布尔值
+    this->use_ruckig_ = root.value("use_ruckig", this->use_ruckig_);
+    this->enable_debug_log_ = root.value("enable_debug_log", this->enable_debug_log_);
+
+    // 构建干净配置
+    nlohmann::json root_clean;
+    root_clean["use_ruckig"] = this->use_ruckig_;
+    root_clean["enable_debug_log"] = this->enable_debug_log_;
+
+    // 如果发现未定义字段或缺失字段，则回写干净配置
+    if (need_rewrite) {
+        std::ofstream ofs(config_path);
+        ofs << root_clean.dump(2);
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (use_ruckig=%s, enable_debug_log=%s)",
+                config_path.string().c_str(),
+                this->use_ruckig_ ? "true" : "false",
+                this->enable_debug_log_ ? "true" : "false");
+    LOG_INFO << "Loaded w1_config.json from: " << config_path
+             << ", use_ruckig=" << this->use_ruckig_
+             << ", enable_debug_log=" << this->enable_debug_log_;
 }
 
 void RobotServer::TorqueControlThreadFunc()
@@ -207,6 +178,15 @@ void RobotServer::TorqueControlThreadFunc()
         sensor_data_primary.head<3>() += sensor_force_;
 
         bool ret = feedback_shm_instance.PeekLatest(&robot_feedback_);
+        if (manager_state_ == Status::Running)
+        {
+            LOG_DEBUG << "{ \"joint_position\": " << utils::VectorToJsonArrayString(robot_feedback_.position, 6, ndof_robot).str()
+                    << ", \"joint_velocity\": " << utils::VectorToJsonArrayString(robot_feedback_.velocity, 6, ndof_robot).str()
+                    << ", \"joint_torque\":" << utils::VectorToJsonArrayString(robot_feedback_.torque, 6, ndof_robot).str()
+                    << ", \"joint_position_cmd\": " << utils::VectorToJsonArrayString(robot_control_.position, 6, ndof_robot).str()
+                    << ", \"joint_torque_feedforward\": " << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str()
+                    << "}";
+        }
         // 根据状态写入机器人控制字
         robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
         this->is_robot_ready_ = false;
