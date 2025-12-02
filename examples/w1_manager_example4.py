@@ -7,6 +7,7 @@
 import numpy as np
 from copy import deepcopy
 import threading
+from dexe_robot_client.end_effector_client import EndEffectorType
 from dexe_robot_client.common import W1Version, W1ArmType, time_consuming
 from dexe_robot_client.w1 import W1Manager
 
@@ -16,16 +17,18 @@ def main(use_parallel=False):
     w1_manager = W1Manager(is_sim=True,
                            arm_type=W1ArmType.ANTHROPOMORPHIC,
                            w1_version=W1Version.V2,
-                           end_effector_type=None)
+                           end_effector_type=EndEffectorType.BRAINCO_HAND)
     if not w1_manager.connect() and not w1_manager.is_enabled():
         return
-    w1_manager.set_home_qpos(np.array([
-        0.7854, -1.5708, 0.7854, 0.0, 0.0, 0.0, 0.0068, -0.9103, 0.0235,
-        -1.9158, 0.1378, 0.1401, 0.0072, -0.0068, 0.9103, 0.0235, 1.9158,
-        0.1378, 0.1401, 0.0072
-    ]),
-                             save_to_file=False)
+    # yapf: disable
+    w1_manager.set_home_qpos(np.array([0.7854, -1.5708, 0.7854, 0.0, 0.0, 0.0,
+                                       0.0068, -0.9103, 0.0235, -1.9158, 0.1378, 0.1401, 0.0072,
+                                         -0.0068, 0.9103, 0.0235, 1.9158, 0.1378, 0.1401, 0.0072]),
+                            save_to_file=False)
+    # yapf: enable
     w1_manager.go_home(1.)
+    w1_manager.set_ee_qpos("left_arm_ee", np.array([0] * 6))
+    w1_manager.set_ee_qpos("right_arm_ee", np.array([0] * 6))
 
     cur_l_pose = w1_manager.get_current_pose("left_arm")[1]
     l_pose1 = deepcopy(cur_l_pose)
@@ -33,68 +36,78 @@ def main(use_parallel=False):
     l_pose1[2] += -150
     l_pose2 = deepcopy(l_pose1)
     l_pose2[2] += 150
-    l_pose3 = deepcopy(l_pose2)
-    l_pose3[0] += 200
-    l_pose3[2] += -150
-    l_pose4 = deepcopy(l_pose3)
-    l_pose4[2] += 150
-    left_arm_waypoints = [l_pose1, l_pose2, l_pose3, l_pose4]
+    left_arm_waypoints = [l_pose1, l_pose2]
+    left_arm_ee_list = [[0., [0., 50., 50., 50., 50., 50.], 0.5],
+                        [0., [100., 100., 0., 0., 100., 100.], 0.5]]
 
     @time_consuming
     def plan_then_move():
-        for waypoint in left_arm_waypoints:
-            res = w1_manager.move_linear_full_body(
-                waypoints_dict={"left_arm": [waypoint]}, cartesian_step=0.0005)
-            if not res:
-                return
+        for i in range(3):
+            res = w1_manager.move_linear_full_body(waypoints_dict={
+                "left_arm": left_arm_waypoints,
+                "left_arm_ee": left_arm_ee_list
+            },
+                                                   cartesian_step=0.0005)
 
     @time_consuming
     def plan_and_move():
         plan_res = {}
         plan_finished_event = threading.Event()
 
-        def plan_step(start_qpos, waypoints_dict, plan_res):
+        def plan_step(start_qpos, waypoints_dict, start_l_ee_qpos,
+                      start_r_ee_qpos, plan_res):
             res = w1_manager.plan_linear_full_body(start_qpos,
-                                                   None,
-                                                   None,
+                                                   start_l_ee_qpos,
+                                                   start_r_ee_qpos,
                                                    waypoints_dict,
                                                    cartesian_step=0.0005)
             plan_res["res"] = res
             plan_finished_event.set()
 
-        res, cur_qpos = w1_manager.get_current_qpos()
-        if not res:
-            return
-        start_qpos = cur_qpos
+        start_qpos = w1_manager.get_current_qpos()[1]
+        start_l_ee_qpos = w1_manager.get_current_qpos("left_arm_ee")[1]
+        start_r_ee_qpos = w1_manager.get_current_qpos("right_arm_ee")[1]
+
         # 规划
         threading.Thread(target=plan_step,
                          args=(start_qpos, {
-                             "left_arm": [left_arm_waypoints[0]]
-                         }, plan_res)).start()
+                             "left_arm": left_arm_waypoints,
+                             "left_arm_ee": left_arm_ee_list
+                         }, start_l_ee_qpos, start_r_ee_qpos, plan_res),
+                         daemon=True).start()
 
-        for waypoint in left_arm_waypoints[1:]:
+        for i in range(2):
             # 等待规划完成
             plan_finished_event.wait()
             plan_finished_event.clear()
-            res, total_qpos_array, _, _ = plan_res["res"]
+            res, total_qpos_array, left_arm_ee_trigger_list, right_arm_ee_trigger_list = plan_res[
+                "res"]
             if not res:
                 return
             start_qpos = total_qpos_array[-1]
-
+            start_l_ee_qpos = np.array(left_arm_ee_trigger_list[-1][1])
+            if right_arm_ee_trigger_list is not None:
+                start_r_ee_qpos = np.array(right_arm_ee_trigger_list[-1][1])
             # 下一步 规划
             threading.Thread(target=plan_step,
                              args=(start_qpos, {
-                                 "left_arm": [waypoint]
-                             }, plan_res)).start()
+                                 "left_arm": left_arm_waypoints,
+                                 "left_arm_ee": left_arm_ee_list
+                             }, start_l_ee_qpos, start_r_ee_qpos, plan_res),
+                             daemon=True).start()
 
             # 当前步 执行
-            w1_manager.execute_joint_traj(total_qpos_array)
+            w1_manager.execute_joint_traj(total_qpos_array,
+                                          left_arm_ee_trigger_list,
+                                          right_arm_ee_trigger_list)
 
         # 最后一步 执行
         plan_finished_event.wait()
         res, total_qpos_array, _, _ = plan_res["res"]
         if res:
-            w1_manager.execute_joint_traj(total_qpos_array)
+            w1_manager.execute_joint_traj(total_qpos_array,
+                                          left_arm_ee_trigger_list,
+                                          right_arm_ee_trigger_list)
 
     if use_parallel:
         plan_and_move()
@@ -107,7 +120,7 @@ if __name__ == "__main__":
         execute_joint_traj()里只有time.sleep的时候CPU才会空闲
         让出给子线程进行并行计算
         然而execute_joint_traj()在频发收发streaming指令，python中并行提升不大
-        
+
         当execute_joint_traj()不采用streaming模式，而是move_traj模式，python中并行提升大
         """
     main(use_parallel=True)
