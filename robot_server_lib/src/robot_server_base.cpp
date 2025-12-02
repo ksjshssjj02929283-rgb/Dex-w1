@@ -98,8 +98,8 @@ void RobotServerBase::TorqueControlThreadFunc()
 void RobotServerBase::PublishThreadFunc()
 {
     JointRawMeasurement raw_measurement;
-    Eigen::VectorXd ee_pose;
     PlannerManagerCommand planner_cmd{};
+    PlannerManagerInfo planner_info{};
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok())
     {
@@ -108,17 +108,17 @@ void RobotServerBase::PublishThreadFunc()
         // Publish /feedback/robot_server_state
         std_msgs::msg::String robot_server_state_msg;
         if (this->robot_buffers_.joint_raw_measurement->PeekLatest(&raw_measurement) &&
-            this->manager_buffers_.ee_pose_measurement->PeekLatest(&ee_pose) &&
+            this->manager_buffers_.planner_manager_info->PeekLatest(&planner_info) &&
             this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd))  // just to ensure there is at least one command
         {
             std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(raw_measurement.position);
             std::ostringstream joint_velocity_ss = utils::VectorToJsonArrayString(raw_measurement.velocity);
             std::ostringstream joint_torque_ss = utils::VectorToJsonArrayString(raw_measurement.effort);
             std::ostringstream joint_sensor_wrench_ss = utils::VectorToJsonArrayString(raw_measurement.sensor_wrench);
-            std::ostringstream ee_pose_ss = utils::VectorToJsonArrayString(ee_pose);
+            std::ostringstream ee_pose_ss = utils::VectorToJsonArrayString(planner_info.ee_pose_measurement);
             uint64_t timestamp_ns = this->now().nanoseconds();
             robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" +
-                                          ToString(this->manager_state_) + "\"" + ",\"run_mode\":\"" + ToString(planner_cmd.robot_property.run_mode) +
+                                          ToString(this->manager_state_) + "\"" + ",\"run_mode\":\"" + ToString(planner_info.robot_property.run_mode) +
                                           "\"" + ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
                                           ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
                                           ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +

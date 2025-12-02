@@ -43,7 +43,7 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path)
             std::filesystem::path(package_share_path) / "robot_models" / params.right_arm_name / (params.right_arm_name + ".urdf");
     }
 
-    auto parse_joints_maps = [&](const std::string &key, Eigen::VectorXd &dst)
+    auto parse_array = [&](const std::string &key, Eigen::VectorXd &dst)
     {
         if (config_json.contains(key))
         {
@@ -51,14 +51,18 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path)
             dst = Eigen::VectorXd::Zero(arr.size());
             for (size_t i = 0; i < arr.size(); ++i)
             {
-                dst[i] = arr[i].get<int>();
+                dst[i] = arr[i].get<double>();
             }
         }
     };
 
-    parse_joints_maps("joints_primary", params.joints_primary);
-    parse_joints_maps("joints_secondary", params.joints_secondary);
-    parse_joints_maps("joints_torso", params.joints_torso);
+    parse_array("joints_primary", params.joints_primary);
+    parse_array("joints_secondary", params.joints_secondary);
+    parse_array("joints_torso", params.joints_torso);
+    parse_array("joint_max_velocity_limit_positive", params.joint_max_velocity_limit_positive);
+    parse_array("joint_max_velocity_limit_negative", params.joint_max_velocity_limit_negative);
+    parse_array("joint_max_torque_limit_positive", params.joint_max_torque_limit_positive);
+    parse_array("joint_max_torque_limit_negative", params.joint_max_torque_limit_negative);
 
     if (config_json.contains("joint_command_sequence_by_name"))
     {

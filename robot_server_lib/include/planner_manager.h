@@ -2,6 +2,7 @@
 
 #include "cartesian_compliance_control.h"
 #include "motion_planner_include.h"
+#include "safety_check.h"
 #include "utils.h"
 
 namespace robot_server_lib
@@ -82,7 +83,9 @@ class PlannerManager
     RequestResponse OnRequestStateRunning();
     RequestResponse OnRequestStateError();
 
+    void OnEmergencyRequest();
     void ConsumeRequest(PlannerRequest* request);
+    void PublishPlannerInfo();
 };
 
 }  // namespace robot_server_lib

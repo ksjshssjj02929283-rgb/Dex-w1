@@ -84,6 +84,24 @@ struct JointCommand
     }
 };
 
+struct RobotProperty
+{
+    pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
+    pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
+    RunMode run_mode{RunMode::Position};
+    double global_speed_ratio{0.5};
+    double safe_level{0.5};
+    bool clear_error_flag{false};
+    ErrorCode error_code{ErrorCode::NoError};
+};
+
+struct PlannerManagerInfo
+{
+    Eigen::VectorXd ee_pose_measurement;
+    Eigen::VectorXd torso_pose_measurement;
+    RobotProperty robot_property;
+};
+
 struct PoseQuaternion
 {
     Eigen::Vector3d position{Eigen::Vector3d::Zero()};
@@ -129,21 +147,10 @@ struct PoseQuaternion
     }
 };
 
-struct RobotProperty
-{
-    pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
-    pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
-    RunMode run_mode{RunMode::Position};
-    double global_speed_ratio{0.5};
-    double safe_level{0.5};
-    bool clear_error_flag{false};
-};
-
 struct PlannerManagerCommand
 {
     std::int64_t sequence_number{-1};
     JointCommand cmd;
-    RobotProperty robot_property;
 };
 
 struct TorqueCtrlCommand
@@ -197,8 +204,7 @@ struct TimeMetaInfo
 struct PlannerManagerBuffers
 {
     std::shared_ptr<SingleWriterLatestBuffer<JointMeasurement>> joint_measurement;
-    std::shared_ptr<SingleWriterLatestBuffer<Eigen::VectorXd>> ee_pose_measurement;
-    std::shared_ptr<SingleWriterLatestBuffer<Eigen::VectorXd>> torso_pose_measurement;
+    std::shared_ptr<SingleWriterLatestBuffer<PlannerManagerInfo>> planner_manager_info;
     std::shared_ptr<SingleWriterLatestBuffer<PlannerManagerCommand>> planner_manager_command;
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_command_latest_buffer;
     std::shared_ptr<BoundedQueue<PlannerRequest>> request_queue;
@@ -210,8 +216,7 @@ struct PlannerManagerBuffers
     void Initialize()
     {
         joint_measurement = std::make_shared<SingleWriterLatestBuffer<JointMeasurement>>();
-        ee_pose_measurement = std::make_shared<SingleWriterLatestBuffer<Eigen::VectorXd>>();
-        torso_pose_measurement = std::make_shared<SingleWriterLatestBuffer<Eigen::VectorXd>>();
+        planner_manager_info = std::make_shared<SingleWriterLatestBuffer<PlannerManagerInfo>>();
         planner_manager_command = std::make_shared<SingleWriterLatestBuffer<PlannerManagerCommand>>();
         streaming_command_latest_buffer = std::make_shared<SingleWriterLatestBuffer<StreamingCommand>>();
         request_queue = std::make_shared<BoundedQueue<PlannerRequest>>(32);
@@ -244,6 +249,10 @@ struct RobotParams
     std::string left_arm_name;
     std::string right_arm_name;
     std::vector<std::string> joint_command_sequence_by_name;  // 关节指令顺序
+    Eigen::VectorXd joint_max_velocity_limit_positive;      // 关节正向最大速度限制
+    Eigen::VectorXd joint_max_velocity_limit_negative;      // 关节负向最大速度限制
+    Eigen::VectorXd joint_max_torque_limit_positive;        // 关节正向最大力矩限制
+    Eigen::VectorXd joint_max_torque_limit_negative;        // 关节负向最大力矩限制
     Eigen::VectorXd joints_primary;
     Eigen::VectorXd joints_secondary;
     Eigen::VectorXd joints_torso;

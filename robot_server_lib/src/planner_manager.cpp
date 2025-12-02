@@ -42,14 +42,6 @@ void PlannerManager::LoopOnce()
     auto &measurement = runtime_data_.measurement;
     runtime_data_.loop_counter++;
 
-    // DEBUG下换行并输出episode信息 Print episode information
-    if (Status::Running == manager_state_)
-    {
-        LOG_DEBUG << "";
-        LOG_DEBUG << "Loop counter: " << runtime_data_.loop_counter << " Episode " << time_meta.episode_index
-                  << " current state: " << ToString(manager_state_);
-    }
-
     // 尝试获取最新的关节测量值 Try to peek the latest joint measurement
     time_meta.current_time = TimePointSystem::Now();
     if (!manager_buffer_.joint_measurement->PeekLatest(&measurement))
@@ -59,25 +51,17 @@ void PlannerManager::LoopOnce()
     else
     {
         time_meta.measurement_time = TimePointSystem::Now();
-
-        Eigen::VectorXd measurement_primary, measurement_secondary, measurement_torso;
-        PoseQuaternion ee_pose_primary, ee_pose_secondary, torso_pose;
-        utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_primary, MotionGroup::Primary);
-        utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_secondary, MotionGroup::Secondary);
-        utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_torso, MotionGroup::Torso);
-        ee_pose_primary = idle_planner_->KinematicsPrimary()->GetFK(measurement_primary, robot_property_.tcp_frame);
-        ee_pose_secondary = idle_planner_->KinematicsSecondary()->GetFK(measurement_secondary, robot_property_.tcp_frame_secondary);
-        torso_pose = idle_planner_->KinematicsTorso()->GetFK(measurement_torso);
-        // 计算手臂末端位姿并存储 Compute end-effector pose and store
-        Eigen::VectorXd ee_pose(14);
-        ee_pose << ee_pose_primary.ToVectorXd(), ee_pose_secondary.ToVectorXd();
-        ee_pose = (ee_pose.array() * 1e4).round() / 1e4;  // 精确到小数点后四位
-        manager_buffer_.ee_pose_measurement->AppendNewElement(ee_pose);
-        // 计算躯干末端位姿并存储 Compute torso pose and store
-        Eigen::VectorXd torso_X_Z_RY(3);
-        torso_X_Z_RY << torso_pose.position[0], torso_pose.position[2], measurement_torso[0] + measurement_torso[1] + measurement_torso[2];
-        manager_buffer_.torso_pose_measurement->AppendNewElement(torso_X_Z_RY);
+        // 安全及错误检测 Safety check
+        if(!CheckMeasurementSafety(measurement, *robot_model_.params_ptr, robot_property_.error_code) && manager_state_ != Status::Error)
+        {
+            runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+            ReportRequestStatus(runtime_data_.latest_processing_request_id, runtime_data_.latest_processing_request_type, RequestStatus::ErrorDrop,
+                                manager_state_);
+            ChangeState(Status::Error);
+        }
+        PublishPlannerInfo();
     }
+
 
     // 尝试处理紧急队列 request Try to process emergency queue
     if (emergency_request.request_id < 0)
@@ -88,42 +72,7 @@ void PlannerManager::LoopOnce()
         }
         else
         {
-            switch (emergency_request.type)
-            {
-            case RequestType::StopMove:
-                LOG_INFO << "New emergency request received with request ID: " << emergency_request.request_id
-                         << " Type: " << ToString(emergency_request.type);
-                runtime_data_.terminated_request_id = emergency_request.request_id;
-                if (Status::Running != manager_state_)
-                {
-                    runtime_data_.latest_processing_request_id = emergency_request.request_id;
-                    runtime_data_.latest_processing_request_type = emergency_request.type;
-                    runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
-                    ReportRequestStatus(emergency_request.request_id, emergency_request.type, RequestStatus::Executed, manager_state_);
-                    ConsumeRequest(&emergency_request);
-                    break;
-                }
-
-                // 清除当前处理中的的请求 Clear the currently processing request
-                ReportRequestStatus(runtime_data_.latest_processing_request_id, runtime_data_.latest_processing_request_type, RequestStatus::Stopped,
-                                    manager_state_);
-                // 改写当前处理的请求ID和类型 Update the currently processing request ID and type
-                runtime_data_.latest_processing_request_id = emergency_request.request_id;
-                runtime_data_.latest_processing_request_type = emergency_request.type;
-                runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
-                ConsumeRequest(&emergency_request);
-                // 清除当前缓存请求 Clear cached request
-                if (request.type != RequestType::Empty)
-                {
-                    ReportRequestStatus(request.request_id, request.type, RequestStatus::Stopped, manager_state_);
-                    ConsumeRequest(&request);  // 清除当前缓存请求 Clear cached request
-                }
-                break;
-            default:
-                LOG_WARN << "Unknown emergency request type received: " << ToString(emergency_request.type);
-                ConsumeRequest(&emergency_request);
-                break;
-            }
+            OnEmergencyRequest();
         }
     }
 
@@ -131,7 +80,7 @@ void PlannerManager::LoopOnce()
     RequestResponse response;
     response.re_run = true;
 
-    // 如果设置属性或Idle状态下接受新命令则重新运行 rerun if set property or accept new request in
+    // 根据状态机处理指令, 如果设置属性或Idle状态下接受新命令则重新运行 rerun if set property or accept new request in
     // Idle status
     while (response.re_run)
     {
@@ -229,14 +178,12 @@ void PlannerManager::LoopOnce()
         PlannerManagerCommand planner_command{};
         planner_command.sequence_number = runtime_data_.loop_counter;
         planner_command.cmd = runtime_data_.joint_cmd;
-        planner_command.robot_property = robot_property_;
         manager_buffer_.planner_manager_command->AppendNewElement(planner_command);
-        robot_property_.clear_error_flag = false;  // 发送后清错flag清零
         if (Status::Running == manager_state_)
             LOG_DEBUG << "Current Planner: " << typeid(*current_planner_).name() << " output: " << runtime_data_.joint_cmd.ToString();
     }
 
-    // 根据规划器状态切换状态 Switch state based on the planner status
+    // 根据规划器状态切换状态机和报告轨迹信息 Switch state based on the planner status
     switch (status)
     {
     case ComputeCommandStatus::TaskOngoing:
@@ -460,6 +407,7 @@ RequestResponse PlannerManager::OnRequestStateError()
         response.re_run = true;
         response.request_consumed = true;
         robot_property_.clear_error_flag = true;
+        robot_property_.error_code = ErrorCode::NoError; // 尝试清除错误码 Clear error code
         runtime_data_.latest_processing_request_id = request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
         runtime_data_.latest_processing_request_type = request.type;
         runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
@@ -606,7 +554,8 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
     {
         assert(!request.data.has_value());
         robot_property_.clear_error_flag = true;
-        LOG_INFO << "Set clear error flag to true";
+        robot_property_.error_code = ErrorCode::NoError; // 尝试清除错误码 Clear error code
+        LOG_INFO << "Set clear error flag to true, error code reset to: " << ToString(robot_property_.error_code);
         return;
     }
     default:
@@ -619,4 +568,76 @@ void PlannerManager::ConsumeRequest(PlannerRequest *request)
     request->request_id = -1;            // Reset request ID
     request->type = RequestType::Empty;  // Reset request type
 }
-}  // namespace robot_server_lib
+
+void PlannerManager::OnEmergencyRequest()
+{
+    auto &request = runtime_data_.planner_request;
+    auto &emergency_request = runtime_data_.emergency_request;
+    switch (emergency_request.type)
+    {
+    case RequestType::StopMove:
+        LOG_INFO << "New emergency request received with request ID: " << emergency_request.request_id
+                    << " Type: " << ToString(emergency_request.type);
+        runtime_data_.terminated_request_id = emergency_request.request_id;
+        if (Status::Running != manager_state_)
+        {
+            runtime_data_.latest_processing_request_id = emergency_request.request_id;
+            runtime_data_.latest_processing_request_type = emergency_request.type;
+            runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+            ReportRequestStatus(emergency_request.request_id, emergency_request.type, RequestStatus::Executed, manager_state_);
+            ConsumeRequest(&emergency_request);
+            break;
+        }
+
+        // 清除当前处理中的的请求 Clear the currently processing request
+        ReportRequestStatus(runtime_data_.latest_processing_request_id, runtime_data_.latest_processing_request_type, RequestStatus::Stopped,
+                            manager_state_);
+        // 改写当前处理的请求ID和类型 Update the currently processing request ID and type
+        runtime_data_.latest_processing_request_id = emergency_request.request_id;
+        runtime_data_.latest_processing_request_type = emergency_request.type;
+        runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+        ConsumeRequest(&emergency_request);
+        // 清除当前缓存请求 Clear cached request
+        if (request.type != RequestType::Empty)
+        {
+            ReportRequestStatus(request.request_id, request.type, RequestStatus::Stopped, manager_state_);
+            ConsumeRequest(&request);  // 清除当前缓存请求 Clear cached request
+        }
+        break;
+    default:
+        LOG_WARN << "Unknown emergency request type received: " << ToString(emergency_request.type);
+        ConsumeRequest(&emergency_request);
+        break;
+    }
+}
+
+void PlannerManager::PublishPlannerInfo()
+{
+    PlannerManagerInfo info{};
+    auto &measurement = runtime_data_.measurement;
+    Eigen::VectorXd measurement_primary, measurement_secondary, measurement_torso;
+    PoseQuaternion ee_pose_primary, ee_pose_secondary, torso_pose;
+    utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_primary, MotionGroup::Primary);
+    utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_secondary, MotionGroup::Secondary);
+    utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_torso, MotionGroup::Torso);
+    if (this->manager_state_ == Status::Idle || this->manager_state_ == Status::Running)
+    {
+        ee_pose_primary = idle_planner_->KinematicsPrimary()->GetFK(measurement_primary, robot_property_.tcp_frame);
+        ee_pose_secondary = idle_planner_->KinematicsSecondary()->GetFK(measurement_secondary, robot_property_.tcp_frame_secondary);
+        torso_pose = idle_planner_->KinematicsTorso()->GetFK(measurement_torso);
+    }
+    // 计算手臂末端位姿并存储 Compute end-effector pose and store
+    Eigen::VectorXd ee_pose(14);
+    ee_pose << ee_pose_primary.ToVectorXd(), ee_pose_secondary.ToVectorXd();
+    ee_pose = (ee_pose.array() * 1e4).round() / 1e4;  // 精确到小数点后四位
+    info.ee_pose_measurement = ee_pose;
+    // 计算躯干末端位姿并存储 Compute torso pose and store
+    Eigen::VectorXd torso_X_Z_RY(3);
+    torso_X_Z_RY << torso_pose.position[0], torso_pose.position[2], measurement_torso[0] + measurement_torso[1] + measurement_torso[2];
+    info.torso_pose_measurement = torso_X_Z_RY;
+    // 记录当前property Record current property
+    info.robot_property = robot_property_;
+    manager_buffer_.planner_manager_info->AppendNewElement(info);
+    robot_property_.clear_error_flag = false;  // 每周期重置error_flag
+}
+} // namespace robot_server_lib

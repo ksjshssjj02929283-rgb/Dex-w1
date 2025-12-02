@@ -10,6 +10,9 @@
 #include <cmath>
 #include <system_error>
 #include <vector>
+#include <type_traits>
+#include <string_view>
+#include <magic_enum.hpp>
 
 namespace robot_server_lib
 {
@@ -51,6 +54,15 @@ enum class Status
     Idle,
     Running,
     Error
+};
+
+enum class ErrorCode
+{
+    NoError,
+    InvalidRequest,
+    VelocityOverLimit,
+    TorqueOverLimit,
+    IKFailed
 };
 
 enum class RequestType
@@ -103,141 +115,20 @@ enum class ReferenceFrame
 
 enum class RequestStatus
 {
-    ErrorDrop = 0,
-    Executed = 1,
-    PhaseFinished = 2,
-    Queued = 3,
-    Stopped = 4,
+    ErrorDrop,
+    Executed,
+    PhaseFinished,
+    Queued,
+    Stopped,
 
-    Unknown = 4
+    Unknown
 };
 
-inline const char *ToString(Status s)
+template <typename E, typename = std::enable_if_t<std::is_enum_v<E>>>
+inline const char *ToString(E e)
 {
-    switch (s)
-    {
-    case Status::Init:
-        return "Init";
-    case Status::Idle:
-        return "Idle";
-    case Status::Running:
-        return "Running";
-    case Status::Error:
-        return "Error";
-    default:
-        return "Unknown";
-    }
-}
-
-inline const char *ToString(MotionGroup s)
-{
-    switch (s)
-    {
-    case MotionGroup::Primary:
-        return "Primary";
-    case MotionGroup::Secondary:
-        return "Secondary";
-    case MotionGroup::BothArms:
-        return "BothArm";
-    case MotionGroup::WholeBody:
-        return "WholeBody";
-    case MotionGroup::Torso:
-        return "Torso";
-    default:
-        return "Unknown";
-    }
-}
-
-inline const char *ToString(RequestStatus s)
-{
-    switch (s)
-    {
-    case RequestStatus::ErrorDrop:
-        return "ErrorDrop";
-    case RequestStatus::Executed:
-        return "Executed";
-    case RequestStatus::Queued:
-        return "Queued";
-    case RequestStatus::PhaseFinished:
-        return "PhaseFinished";
-    case RequestStatus::Stopped:
-        return "Stopped";
-    default:
-        return "Unknown";
-    }
-}
-
-inline const char *ToString(RequestType type)
-{
-    switch (type)
-    {
-    case RequestType::Empty:
-        return "Empty";
-    case RequestType::TcpPrimary:
-        return "TcpPrimary";
-    case RequestType::TcpSecondary:
-        return "TcpSecondary";
-    case RequestType::SpeedRatio:
-        return "SpeedRatio";
-    case RequestType::EnableDrag:
-        return "EnableDrag";
-    case RequestType::EnableImpedance:
-        return "EnableImpedance";
-    case RequestType::ImpedanceMass:
-        return "ImpedanceMass";
-    case RequestType::ImpedanceDamping:
-        return "ImpedanceDamping";
-    case RequestType::ImpedanceStiffness:
-        return "ImpedanceStiffness";
-    case RequestType::SafeLevel:
-        return "SafeLevel";
-    case RequestType::ClearError:
-        return "ClearError";
-    case RequestType::MoveJoint:
-        return "MoveJoint";
-    case RequestType::MoveLine:
-        return "MoveLine";
-    case RequestType::MoveTraj:
-        return "MoveTraj";
-    case RequestType::StartJointStreaming:
-        return "StartJointStreaming";
-    case RequestType::StartEEPoseStreaming:
-        return "StartEEPoseStreaming";
-    case RequestType::StopMove:
-        return "StopMove";
-    default:
-        return "Unknown";
-    }
-}
-
-inline const char *ToString(RunMode mode)
-{
-    switch (mode)
-    {
-    case RunMode::Position:
-        return "Position";
-    case RunMode::Impedance:
-        return "Impedance";
-    case RunMode::Drag:
-        return "Drag";
-    case RunMode::Teleoperate:
-        return "Teleoperate";
-    default:
-        return "Unknown";
-    }
-}
-
-inline const char *ToString(ReferenceFrame frame)
-{
-    switch (frame)
-    {
-    case ReferenceFrame::ArmBase:
-        return "ArmBase";
-    case ReferenceFrame::WorldBase:
-        return "WorldBase";
-    default:
-        return "Unknown";
-    }
+    auto sv = magic_enum::enum_name(e);
+    return sv.empty() ? "Unknown" : sv.data();
 }
 
 }  // namespace robot_server_lib
