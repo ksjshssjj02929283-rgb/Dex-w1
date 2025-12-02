@@ -156,6 +156,7 @@ struct PlannerManagerCommand
 struct TorqueCtrlCommand
 {
     VectorDof torque;
+    VectorDof torque_feedforward;
     VectorDof torque_external;
     VectorDof q_desired;
 };

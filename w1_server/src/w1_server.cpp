@@ -335,18 +335,18 @@ void RobotServer::TorqueControlThreadFunc()
                     // 更新关节力矩限制
                     robot_control_.position[i] = planner_cmd.cmd.compliance_position[i];
                     robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
-                    robot_control_.torque_feedforward[i] = torque_cmd.torque[i];
+                    robot_control_.torque_feedforward[i] = torque_cmd.torque_feedforward[i];
                     robot_control_.positive_torque_limit[i] =
-                        std::clamp(torque_cmd.torque[i] + torque_limit_.positive_limit_Nm[i] * planner_info_.robot_property.safe_level,
+                        std::clamp(torque_cmd.torque_feedforward[i] + torque_limit_.positive_limit_Nm[i] * planner_info_.robot_property.safe_level,
                                    0.1 * torque_limit_.positive_limit_Nm[i], torque_limit_.positive_limit_Nm[i]);
                     robot_control_.negative_torque_limit[i] =
-                        std::clamp(-torque_cmd.torque[i] + torque_limit_.negative_limit_Nm[i] * planner_info_.robot_property.safe_level,
+                        std::clamp(-torque_cmd.torque_feedforward[i] + torque_limit_.negative_limit_Nm[i] * planner_info_.robot_property.safe_level,
                                    0.1 * torque_limit_.negative_limit_Nm[i], torque_limit_.negative_limit_Nm[i]);
                     break;
                 case RunMode::Drag:
                     robot_control_.position[i] = planner_cmd.cmd.position[i];
                     robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
-                    robot_control_.torque_feedforward[i] = torque_cmd.torque[i];
+                    robot_control_.torque_feedforward[i] = torque_cmd.torque_feedforward[i];
                     // 位置等于反馈位置
                     if (manager_buffers_.joint_measurement->PeekLatest(&manager_measurement))
                     {
@@ -357,15 +357,15 @@ void RobotServer::TorqueControlThreadFunc()
                         manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
                     }
                     // 更新关节力矩限制
-                    if (torque_cmd.torque[i] >= 0)
+                    if (torque_cmd.torque_feedforward[i] >= 0)
                     {
-                        robot_control_.positive_torque_limit[i] = std::clamp(torque_cmd.torque[i], 0.0, torque_limit_.positive_limit_Nm[i]);
+                        robot_control_.positive_torque_limit[i] = std::clamp(torque_cmd.torque_feedforward[i], 0.0, torque_limit_.positive_limit_Nm[i]);
                         robot_control_.negative_torque_limit[i] = 0.0;
                     }
                     else
                     {
                         robot_control_.positive_torque_limit[i] = 0.0;
-                        robot_control_.negative_torque_limit[i] = std::clamp(-torque_cmd.torque[i], 0.0, torque_limit_.negative_limit_Nm[i]);
+                        robot_control_.negative_torque_limit[i] = std::clamp(-torque_cmd.torque_feedforward[i], 0.0, torque_limit_.negative_limit_Nm[i]);
                     }
                     break;
                 default:
