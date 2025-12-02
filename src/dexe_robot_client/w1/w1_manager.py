@@ -7,11 +7,13 @@
 import numpy as np
 
 np.set_printoptions(precision=4, suppress=True)
-import time, threading
-import pathlib, json
-from copy import deepcopy
+import time
+import threading
+import pathlib
+import json
 import atexit
-from loop_rate_limiters import RateLimiter
+from queue import Queue, Empty
+from copy import deepcopy
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
@@ -521,10 +523,11 @@ class W1Manager:
             bool: 
         """
         if not self.robot_client.is_connected(0.5):
-            self.logger.info(f"{self.robot_client.node_name} is not connected!")
+            self.logger.error(
+                f"{self.robot_client.node_name} is not connected!")
             return False
         if self.robot_client.status == Status.Init:
-            self.logger.info(f"{self.robot_client.node_name} is not enabled!")
+            self.logger.error(f"{self.robot_client.node_name} is not enabled!")
             return False
         return True
 
@@ -1145,46 +1148,43 @@ class W1Manager:
             return False
 
         # ee trigger
-        move_finished_event = threading.Event()
-        move_finished_event.clear()
-
         ee_thread_error = False
-        global_count = 0
 
-        def ee_trigger(ee_client, ee_trigger_list, ee_name):
+        def ee_trigger(ee_client, ee_trigger_list, count_queue, ee_name):
             nonlocal ee_thread_error
             ee_trigger_list_ = [
                 [cnt, ee_qpos, False] for cnt, ee_qpos in ee_trigger_list
             ]
-            rate = RateLimiter(frequency=5. / self.TIME_STEP, warn=True)
+            idx = 0
             while True:
-                # BUG: 避免在循环中途被修改；但可能跳过了中间的count导致漏触发；用queue处理？
-                local_count = global_count
-                for item in ee_trigger_list_:
-                    target_count, target_ee_qpos, triggered = item
-                    if local_count == target_count and not triggered:
-                        ee_client.set_pos(np.array(target_ee_qpos))
-                        item[2] = True
-                        self.logger.debug(
-                            f"{ee_name} has triggered: {target_count} {target_ee_qpos}."
-                        )
-
+                # 触发完正常退出
+                if idx >= len(ee_trigger_list):
+                    break
                 # 异常退出
                 if self._stop_move_event.is_set():
                     break
-                # 正常退出，遍历完所有count
-                if move_finished_event.is_set(
-                ) and local_count == qpos_array.shape[0]:
-                    break
-                # 最后一个触发了就退出循环
-                if ee_trigger_list_[-1][2]:
-                    break
-                rate.sleep()
 
-            # 全部触发，执行正常
-            if all(item[2] for item in ee_trigger_list_):
-                self.logger.debug(f"{ee_name} completes trigger.")
-                return
+                try:
+                    local_count = count_queue.get(timeout=self.TIME_STEP / 5.)
+                except Empty:
+                    continue
+
+                target_count, target_ee_qpos, _ = ee_trigger_list_[idx]
+                if local_count < target_count:
+                    continue
+                elif local_count == target_count:
+                    ee_client.set_pos(np.array(target_ee_qpos))
+                    ee_trigger_list_[idx][2] = True
+                    self.logger.debug(
+                        f"{ee_name} has triggered: {target_count} {target_ee_qpos}."
+                    )
+                    idx += 1
+                else:  # local_count > target_count
+                    # 漏了触发
+                    self.logger.error(
+                        f"{ee_name} {target_count} haven't been triggered.")
+                    ee_thread_error = True
+                    return
 
             not_triggered_counts = [
                 cnt for cnt, _, trig in ee_trigger_list_ if not trig
@@ -1194,10 +1194,13 @@ class W1Manager:
                 self.logger.warning(
                     f"{ee_name} {not_triggered_counts} haven't been triggered.")
                 return
-            # 中途漏了触发
-            self.logger.error(
-                f"{ee_name} {not_triggered_counts} haven't been triggered.")
-            ee_thread_error = True
+            # 全部触发，执行正常
+            if len(not_triggered_counts) == 0:
+                self.logger.debug(f"{ee_name} completes trigger.")
+            else:
+                self.logger.error(
+                    f"{ee_name} {not_triggered_counts} haven't been triggered.")
+                ee_thread_error = True
 
         def stop_ee_trigger_threads():
             self._stop_move_event.set()
@@ -1207,23 +1210,25 @@ class W1Manager:
                 right_arm_ee_thread.join()
 
         left_arm_ee_thread = None
+        left_count_queue = Queue()
         if self._has_arm_ee_client(
                 "left_arm_ee", False) and left_arm_ee_trigger_list is not None:
             left_arm_ee_thread = threading.Thread(
                 target=ee_trigger,
                 args=(self.left_ee_client, left_arm_ee_trigger_list,
-                      "left_arm_ee"),
+                      left_count_queue, "left_arm_ee"),
                 daemon=True)
             left_arm_ee_thread.start()
 
         right_arm_ee_thread = None
+        right_count_queue = Queue()
         if self._has_arm_ee_client(
                 "right_arm_ee",
                 False) and right_arm_ee_trigger_list is not None:
             right_arm_ee_thread = threading.Thread(
                 target=ee_trigger,
                 args=(self.right_ee_client, right_arm_ee_trigger_list,
-                      "right_arm_ee"),
+                      right_count_queue, "right_arm_ee"),
                 daemon=True)
             right_arm_ee_thread.start()
 
@@ -1256,8 +1261,9 @@ class W1Manager:
                 return False
             self.robot_client.wait_request_finish(request_id=next_finished_id)
             global_count = endpoint_index.pop(0)
+            left_count_queue.put(global_count)
+            right_count_queue.put(global_count)
 
-        move_finished_event.set()
         if left_arm_ee_thread is not None:
             left_arm_ee_thread.join()
         if right_arm_ee_thread is not None:

@@ -21,8 +21,7 @@ dependencies = [
     "toppra==0.6.3",
     "trimesh>=4.2.4",
     "open3d",
-    "pathfinding",
-    "loop_rate_limiters"
+    "pathfinding"
 ]
 
 [project.optional-dependencies]
