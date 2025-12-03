@@ -3,12 +3,13 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <vector>
+#include <bitset>
 
 using json = nlohmann::json;
 
 #define CTRLWORD_MOTOR_SWITCH_ON (1U << 0)
 #define CTRLWORD_MOTOR_ENABLE (1U << 1)
-#define CTRLWORD_MOTOR_QUICK_STOP (1u << 2)
+#define CTRLWORD_MOTOR_QUICK_STOP (1U << 2)
 #define CTRLWORD_MOTOR_CLEAR_FAULT (1U << 3)
 #define CTRLWORD_MOTOR_CST_MODE (1U << 4)
 
@@ -105,7 +106,7 @@ inline std::ostringstream RobotControlwordToJsonString(const int &control_word)
     switch (control_word)
     {
     default:
-        ss << control_word;
+        ss << std::bitset<8>(control_word & 0xFF);
         break;
     }
     return ss;

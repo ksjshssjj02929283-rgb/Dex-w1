@@ -65,7 +65,7 @@ void RobotServerBase::Run()
     this->manager_thread_ = std::thread(&RobotServerBase::ManagerThreadFunc, this);
     this->publish_thread_ = std::thread(&RobotServerBase::PublishThreadFunc, this);
     RCLCPP_INFO(this->get_logger(), "Initialized successfully.");
-    LOG_INFO << "Initialized successfully.";
+    LOG_INFO << "--------------------------------Robot Server Initialized Successfully--------------------------------";
 }
 
 void RobotServerBase::ManagerThreadFunc()

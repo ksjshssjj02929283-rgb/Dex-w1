@@ -78,14 +78,15 @@ void RobotServer::InitParamConfig()
 {
     auto config_path = server_data_dir_ / "w1_config.json";
 
-    const std::set<std::string> kAllowedRootKeys{"use_ruckig", "enable_debug_log"};
+    const std::set<std::string> kAllowedRootKeys{"enable_debug_log", "enable_ruckig", "enable_cst_mode"};
 
     nlohmann::json root;
     // 若文件不存在则创建默认配置
     if (!std::filesystem::exists(config_path))
     {
-        root["use_ruckig"] = this->use_ruckig_;
         root["enable_debug_log"] = this->enable_debug_log_;
+        root["enable_ruckig"] = this->enable_ruckig_;
+        root["enable_cst_mode"] = this->enable_cst_mode_;
 
         std::ofstream ofs(config_path);
         ofs << root.dump(2);
@@ -114,23 +115,29 @@ void RobotServer::InitParamConfig()
     }
 
     // 若缺失则补默认
-    if (!root.contains("use_ruckig")) {
-        root["use_ruckig"] = this->use_ruckig_;
-        need_rewrite = true;
-    }
     if (!root.contains("enable_debug_log")) {
         root["enable_debug_log"] = this->enable_debug_log_;
         need_rewrite = true;
     }
+    if (!root.contains("enable_ruckig")) {
+        root["enable_ruckig"] = this->enable_ruckig_;
+        need_rewrite = true;
+    }
+    if (!root.contains("enable_cst_mode")) {
+        root["enable_cst_mode"] = this->enable_cst_mode_;
+        need_rewrite = true;
+    }
 
     // 同步布尔值
-    this->use_ruckig_ = root.value("use_ruckig", this->use_ruckig_);
     this->enable_debug_log_ = root.value("enable_debug_log", this->enable_debug_log_);
+    this->enable_ruckig_ = root.value("enable_ruckig", this->enable_ruckig_);
+    this->enable_cst_mode_ = root.value("enable_cst_mode", this->enable_cst_mode_);
 
     // 构建干净配置
     nlohmann::json root_clean;
-    root_clean["use_ruckig"] = this->use_ruckig_;
     root_clean["enable_debug_log"] = this->enable_debug_log_;
+    root_clean["enable_ruckig"] = this->enable_ruckig_;
+    root_clean["enable_cst_mode"] = this->enable_cst_mode_;
 
     // 如果发现未定义字段或缺失字段，则回写干净配置
     if (need_rewrite) {
@@ -138,14 +145,16 @@ void RobotServer::InitParamConfig()
         ofs << root_clean.dump(2);
     }
 
-    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (use_ruckig=%s, enable_debug_log=%s)",
+    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_debug_log=%s, enable_cst_mode=%s)",
                 config_path.string().c_str(),
-                this->use_ruckig_ ? "true" : "false",
-                this->enable_debug_log_ ? "true" : "false");
+                this->enable_debug_log_ ? "true" : "false",
+                this->enable_ruckig_ ? "true" : "false",
+                this->enable_cst_mode_ ? "true" : "false");
     LOG_INFO << "";
     LOG_INFO << "Loaded w1_config.json from: " << config_path
-             << ", use_ruckig=" << this->use_ruckig_
-             << ", enable_debug_log=" << this->enable_debug_log_;
+             << ", enable_debug_log=" << this->enable_debug_log_
+             << ", enable_ruckig=" << this->enable_ruckig_
+             << ", enable_cst_mode=" << this->enable_cst_mode_;
 }
 
 void RobotServer::TorqueControlThreadFunc()
@@ -205,6 +214,10 @@ void RobotServer::TorqueControlThreadFunc()
                 if (is_cmd_valid_)
                 {
                     robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+                    if (enable_cst_mode_)
+                    {
+                        robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
+                    }
                 }
                 else
                 {
@@ -219,6 +232,10 @@ void RobotServer::TorqueControlThreadFunc()
             case STATUSWORD_MOTOR_ENABLED:
                 this->is_robot_ready_ = true;
                 robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+                if (enable_cst_mode_)
+                {
+                    robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
+                }
                 if (!inited_)
                 {
                     for (int i = 0; i < ndof_robot; i++)
@@ -524,7 +541,7 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg)
             planner_request.type = RequestType::StartJointStreaming;
             MoveRequest move_request;
             move_request.motion_group = MotionGroup::WholeBody;
-            move_request.optional_mode = use_ruckig_ ? false : true;  // true: no ruckig 模式, false: ruckig 模式
+            move_request.optional_mode = enable_ruckig_ ? false : true;  // true: no ruckig 模式, false: ruckig 模式
             planner_request.data = move_request;
             streaming_request_id_ = StartStreaming(planner_request);
         }
@@ -571,7 +588,7 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
             planner_request.type = RequestType::StartJointStreaming;
             MoveRequest move_request;
             move_request.motion_group = MotionGroup::WholeBody;
-            move_request.optional_mode = use_ruckig_ ? false : true;  // true: no ruckig 模式, false: ruckig 模式
+            move_request.optional_mode = enable_ruckig_ ? false : true;  // true: no ruckig 模式, false: ruckig 模式
             planner_request.data = move_request;
             streaming_request_id_ = StartStreaming(planner_request);
         }
