@@ -8,11 +8,11 @@
 #include <Eigen/Dense>
 #include <array>
 #include <cmath>
-#include <system_error>
-#include <vector>
-#include <type_traits>
-#include <string_view>
 #include <magic_enum.hpp>
+#include <string_view>
+#include <system_error>
+#include <type_traits>
+#include <vector>
 
 namespace robot_server_lib
 {

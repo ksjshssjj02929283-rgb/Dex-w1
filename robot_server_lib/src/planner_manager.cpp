@@ -52,7 +52,7 @@ void PlannerManager::LoopOnce()
     {
         time_meta.measurement_time = TimePointSystem::Now();
         // 安全及错误检测 Safety check
-        if(!CheckMeasurementSafety(measurement, *robot_model_.params_ptr, robot_property_.error_code) && manager_state_ != Status::Error)
+        if (!CheckMeasurementSafety(measurement, *robot_model_.params_ptr, robot_property_.error_code) && manager_state_ != Status::Error)
         {
             runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
             ReportRequestStatus(runtime_data_.latest_processing_request_id, runtime_data_.latest_processing_request_type, RequestStatus::ErrorDrop,
@@ -61,7 +61,6 @@ void PlannerManager::LoopOnce()
         }
     }
     PublishPlannerInfo();
-
 
     // 尝试处理紧急队列 request Try to process emergency queue
     if (emergency_request.request_id < 0)
@@ -243,7 +242,7 @@ RequestResponse PlannerManager::OnRequestStateInit()
             response.re_run = true;
             response.request_consumed = true;
             robot_property_.clear_error_flag = true;
-            robot_property_.error_code = ErrorCode::NoError; // 尝试清除错误码 Clear error code
+            robot_property_.error_code = ErrorCode::NoError;                  // 尝试清除错误码 Clear error code
             runtime_data_.latest_processing_request_id = request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
             runtime_data_.latest_processing_request_type = request.type;
             runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
@@ -417,7 +416,7 @@ RequestResponse PlannerManager::OnRequestStateError()
         response.re_run = true;
         response.request_consumed = true;
         robot_property_.clear_error_flag = true;
-        robot_property_.error_code = ErrorCode::NoError; // 尝试清除错误码 Clear error code
+        robot_property_.error_code = ErrorCode::NoError;                  // 尝试清除错误码 Clear error code
         runtime_data_.latest_processing_request_id = request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
         runtime_data_.latest_processing_request_type = request.type;
         runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
@@ -564,7 +563,7 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
     {
         assert(!request.data.has_value());
         robot_property_.clear_error_flag = true;
-        robot_property_.error_code = ErrorCode::NoError; // 尝试清除错误码 Clear error code
+        robot_property_.error_code = ErrorCode::NoError;  // 尝试清除错误码 Clear error code
         LOG_INFO << "Set clear error flag to true, error code reset to: " << ToString(robot_property_.error_code);
         return;
     }
@@ -587,7 +586,7 @@ void PlannerManager::OnEmergencyRequest()
     {
     case RequestType::StopMove:
         LOG_INFO << "New emergency request received with request ID: " << emergency_request.request_id
-                    << " Type: " << ToString(emergency_request.type);
+                 << " Type: " << ToString(emergency_request.type);
         runtime_data_.terminated_request_id = emergency_request.request_id;
         if (Status::Running != manager_state_)
         {
@@ -650,4 +649,4 @@ void PlannerManager::PublishPlannerInfo()
     manager_buffer_.planner_manager_info->AppendNewElement(info);
     robot_property_.clear_error_flag = false;  // 每周期重置error_flag
 }
-} // namespace robot_server_lib
+}  // namespace robot_server_lib

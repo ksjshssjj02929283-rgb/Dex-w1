@@ -290,7 +290,7 @@
   <link name="armlee">
     <inertial> 
       <origin xyz="0 0 0.048" rpy="0 0 0"/>  
-      <mass value="0.7"/>  
+      <mass value="0.5"/>  
       <inertia ixx="1E-05" ixy="1E-11" ixz="1E-06" iyy="1E-05" iyz="1E-08" izz="1E-05"/> 
     </inertial>  
   </link>  
@@ -455,7 +455,7 @@
   <link name="armree">
     <inertial> 
       <origin xyz="0 0 0.048" rpy="0 0 0"/>  
-      <mass value="0.7"/>  
+      <mass value="0.5"/>  
       <inertia ixx="1E-05" ixy="1E-11" ixz="1E-06" iyy="1E-05" iyz="1E-08" izz="1E-05"/> 
     </inertial>  
   </link>

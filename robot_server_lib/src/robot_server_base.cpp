@@ -117,14 +117,14 @@ void RobotServerBase::PublishThreadFunc()
             std::ostringstream joint_sensor_wrench_ss = utils::VectorToJsonArrayString(raw_measurement.sensor_wrench);
             std::ostringstream ee_pose_ss = utils::VectorToJsonArrayString(planner_info.ee_pose_measurement);
             uint64_t timestamp_ns = this->now().nanoseconds();
-            robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" +
-                                          ToString(this->manager_state_) + "\"" + ",\"run_mode\":\"" + ToString(planner_info.robot_property.run_mode) +
-                                          "\"" + ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
-                                          ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
-                                          ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
-                                          ",\"ee_pose\":" + ee_pose_ss.str() + ",\"force_sensor\":" + joint_sensor_wrench_ss.str() +
-                                          ",\"joint_position\":" + joint_position_ss.str() + ",\"joint_velocity\":" + joint_velocity_ss.str() +
-                                          ",\"joint_torque\":" + joint_torque_ss.str() + "}";
+            robot_server_state_msg.data =
+                std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" + ToString(this->manager_state_) + "\"" +
+                ",\"run_mode\":\"" + ToString(planner_info.robot_property.run_mode) + "\"" +
+                ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+                ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
+                ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) + ",\"ee_pose\":" + ee_pose_ss.str() +
+                ",\"force_sensor\":" + joint_sensor_wrench_ss.str() + ",\"joint_position\":" + joint_position_ss.str() +
+                ",\"joint_velocity\":" + joint_velocity_ss.str() + ",\"joint_torque\":" + joint_torque_ss.str() + "}";
         }
         else
         {

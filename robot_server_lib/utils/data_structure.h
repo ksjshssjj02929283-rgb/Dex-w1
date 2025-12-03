@@ -249,10 +249,10 @@ struct RobotParams
     std::string left_arm_name;
     std::string right_arm_name;
     std::vector<std::string> joint_command_sequence_by_name;  // 关节指令顺序
-    Eigen::VectorXd joint_max_velocity_limit_positive;      // 关节正向最大速度限制
-    Eigen::VectorXd joint_max_velocity_limit_negative;      // 关节负向最大速度限制
-    Eigen::VectorXd joint_max_torque_limit_positive;        // 关节正向最大力矩限制
-    Eigen::VectorXd joint_max_torque_limit_negative;        // 关节负向最大力矩限制
+    Eigen::VectorXd joint_max_velocity_limit_positive;        // 关节正向最大速度限制
+    Eigen::VectorXd joint_max_velocity_limit_negative;        // 关节负向最大速度限制
+    Eigen::VectorXd joint_max_torque_limit_positive;          // 关节正向最大力矩限制
+    Eigen::VectorXd joint_max_torque_limit_negative;          // 关节负向最大力矩限制
     Eigen::VectorXd joints_primary;
     Eigen::VectorXd joints_secondary;
     Eigen::VectorXd joints_torso;

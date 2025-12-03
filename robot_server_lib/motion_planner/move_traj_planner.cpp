@@ -32,7 +32,7 @@ ComputeCommandStatus MoveTrajPlanner::ComputeCommand(const JointMeasurement &mea
             if (robot_stopped)
             {
                 LOG_INFO << "MoveTrajPlanner: Reached the end of trajectory at time " << runtime_.total_duration << "s, point index "
-                 << (runtime_.traj_npoints - 1) << " measurement velocity: " << measurement.velocity.transpose();
+                         << (runtime_.traj_npoints - 1) << " measurement velocity: " << measurement.velocity.transpose();
                 return ComputeCommandStatus::TaskFinished;
             }
             else
@@ -153,8 +153,7 @@ bool MoveTrajPlanner::ResetForNewTrajectory(const PlannerRequest &request, const
 
     if (move_request.value.size() % runtime_.traj_dof != 0)
     {
-        LOG_CRIT << "MoveTrajPlanner: target size " << move_request.value.size() << " is not multiple of traj_dof "
-                 << runtime_.traj_dof;
+        LOG_CRIT << "MoveTrajPlanner: target size " << move_request.value.size() << " is not multiple of traj_dof " << runtime_.traj_dof;
         return false;
     }
 
@@ -180,8 +179,8 @@ bool MoveTrajPlanner::ResetForNewTrajectory(const PlannerRequest &request, const
         // 校验传的最后一个index是否等于点位数
         if (!runtime_.endpoint_index.empty() && runtime_.endpoint_index.back() != user_npoints)
         {
-            LOG_CRIT << "MoveTrajPlanner: endpoint_index's last index " << runtime_.endpoint_index.back()
-                     << " is not equal to user_npoints " << user_npoints;
+            LOG_CRIT << "MoveTrajPlanner: endpoint_index's last index " << runtime_.endpoint_index.back() << " is not equal to user_npoints "
+                     << user_npoints;
             return false;
         }
     }
@@ -200,9 +199,9 @@ bool MoveTrajPlanner::ResetForNewTrajectory(const PlannerRequest &request, const
     {
         runtime_.target_traj.emplace_back(move_request.value.segment(i * runtime_.traj_dof, runtime_.traj_dof));
     }
-    LOG_INFO << "MoveTrajPlanner: New trajectory loaded: traj_dof = " << runtime_.traj_dof
-              << ", traj_npoints = " << user_npoints << ", interval = " << runtime_.interval
-              << ", endpoint_index = " << runtime_.endpoint_index << ", total_duration = " << runtime_.total_duration << "s";
+    LOG_INFO << "MoveTrajPlanner: New trajectory loaded: traj_dof = " << runtime_.traj_dof << ", traj_npoints = " << user_npoints
+             << ", interval = " << runtime_.interval << ", endpoint_index = " << runtime_.endpoint_index
+             << ", total_duration = " << runtime_.total_duration << "s";
 
     return true;
 }

@@ -2,8 +2,8 @@
 
 #include <cstdlib>
 #include <filesystem>
-#include <system_error>
 #include <nlohmann/json.hpp>
+#include <system_error>
 
 namespace robot_server_lib
 {
@@ -42,7 +42,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
 
     // 参数初始化
     InitParamConfig();
-    if(enable_debug_log_)
+    if (enable_debug_log_)
     {
         nanolog::set_log_level(nanolog::LogLevel::DEBUG);
     }
@@ -96,9 +96,12 @@ void RobotServer::InitParamConfig()
     else
     {
         std::ifstream ifs(config_path);
-        try {
+        try
+        {
             root = nlohmann::json::parse(ifs);
-        } catch (const std::exception& e) {
+        }
+        catch (const std::exception& e)
+        {
             RCLCPP_ERROR(this->get_logger(), "Failed to parse json: %s", e.what());
             return;
         }
@@ -107,23 +110,28 @@ void RobotServer::InitParamConfig()
     bool need_rewrite = false;
 
     // 清理未定义根字段
-    for (auto it = root.begin(); it != root.end(); ++it) {
-        if (!kAllowedRootKeys.count(it.key())) {
+    for (auto it = root.begin(); it != root.end(); ++it)
+    {
+        if (!kAllowedRootKeys.count(it.key()))
+        {
             need_rewrite = true;
             break;
         }
     }
 
     // 若缺失则补默认
-    if (!root.contains("enable_debug_log")) {
+    if (!root.contains("enable_debug_log"))
+    {
         root["enable_debug_log"] = this->enable_debug_log_;
         need_rewrite = true;
     }
-    if (!root.contains("enable_ruckig")) {
+    if (!root.contains("enable_ruckig"))
+    {
         root["enable_ruckig"] = this->enable_ruckig_;
         need_rewrite = true;
     }
-    if (!root.contains("enable_cst_mode")) {
+    if (!root.contains("enable_cst_mode"))
+    {
         root["enable_cst_mode"] = this->enable_cst_mode_;
         need_rewrite = true;
     }
@@ -140,21 +148,18 @@ void RobotServer::InitParamConfig()
     root_clean["enable_cst_mode"] = this->enable_cst_mode_;
 
     // 如果发现未定义字段或缺失字段，则回写干净配置
-    if (need_rewrite) {
+    if (need_rewrite)
+    {
         std::ofstream ofs(config_path);
         ofs << root_clean.dump(2);
     }
 
     RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_debug_log=%s, enable_cst_mode=%s)",
-                config_path.string().c_str(),
-                this->enable_debug_log_ ? "true" : "false",
-                this->enable_ruckig_ ? "true" : "false",
+                config_path.string().c_str(), this->enable_debug_log_ ? "true" : "false", this->enable_ruckig_ ? "true" : "false",
                 this->enable_cst_mode_ ? "true" : "false");
     LOG_INFO << "";
-    LOG_INFO << "Loaded w1_config.json from: " << config_path
-             << ", enable_debug_log=" << this->enable_debug_log_
-             << ", enable_ruckig=" << this->enable_ruckig_
-             << ", enable_cst_mode=" << this->enable_cst_mode_;
+    LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_debug_log=" << this->enable_debug_log_
+             << ", enable_ruckig=" << this->enable_ruckig_ << ", enable_cst_mode=" << this->enable_cst_mode_;
 }
 
 void RobotServer::TorqueControlThreadFunc()
@@ -193,17 +198,16 @@ void RobotServer::TorqueControlThreadFunc()
         this->is_robot_ready_ = false;
         static bool inited_ = false;
         static int enabled_streak_cycles = 0;  // 连续处于 ENABLE 状态的计数器
-        static int16_t last_status_word_ = -1;
         if (ret)
         {
             if (manager_state_ == Status::Running)
             {
                 LOG_DEBUG << "{ \"joint_position\": " << utils::VectorToJsonArrayString(robot_feedback_.position, 6, ndof_robot).str()
-                        << ", \"joint_velocity\": " << utils::VectorToJsonArrayString(robot_feedback_.velocity, 6, ndof_robot).str()
-                        << ", \"joint_torque\":" << utils::VectorToJsonArrayString(robot_feedback_.torque, 6, ndof_robot).str()
-                        << ", \"joint_position_cmd\": " << utils::VectorToJsonArrayString(robot_control_.position, 6, ndof_robot).str()
-                        << ", \"joint_torque_feedforward\": " << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str()
-                        << "}";
+                          << ", \"joint_velocity\": " << utils::VectorToJsonArrayString(robot_feedback_.velocity, 6, ndof_robot).str()
+                          << ", \"joint_torque\":" << utils::VectorToJsonArrayString(robot_feedback_.torque, 6, ndof_robot).str()
+                          << ", \"joint_position_cmd\": " << utils::VectorToJsonArrayString(robot_control_.position, 6, ndof_robot).str()
+                          << ", \"joint_torque_feedforward\": "
+                          << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str() << "}";
             }
             switch (robot_feedback_.robot_status_word)
             {
@@ -375,12 +379,19 @@ void RobotServer::TorqueControlThreadFunc()
             }
         }
         // 如果状态字发生变化了则打印
-        if (robot_feedback_.robot_status_word != last_status_word_)
+        static int16_t last_status_word_ = -1;
+        static int16_t last_control_word_ = -1;
+        if (robot_feedback_.robot_status_word != last_status_word_ || robot_control_.robot_control_word != last_control_word_)
         {
-            RCLCPP_INFO(this->get_logger(), "Robot status word changed: %s", utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
+            RCLCPP_INFO(this->get_logger(), "Status word changed to: %s, control word changed to %s",
+                        utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str(),
+                        utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str().c_str());
             LOG_INFO << "";
-            LOG_INFO << "Robot status word changed to " << robot_feedback_.robot_status_word << ", robot_server_state:" << GetRobotServerStateMsg().data.c_str();
+            LOG_INFO << "Status word changed to " << utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str()
+                     << ", control word changed to " << utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str()
+                     << ", robot_server_state:" << GetRobotServerStateMsg().data.c_str();
             last_status_word_ = robot_feedback_.robot_status_word;
+            last_control_word_ = robot_control_.robot_control_word;
         }
         control_shm_instance.AppendNewElement(robot_control_);
         std::this_thread::sleep_until(next_cycle_time_point);
@@ -412,10 +423,9 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
         ", \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
         ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
-        ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
-        ",\n  \"status\":\"" + ToString(this->manager_state_) + "\"" +
-        ", \"server_error_code\":\"" + ToString(this->planner_info_.robot_property.error_code) + "\"" +
-        ", \"run_mode\":\"" + ToString(this->planner_info_.robot_property.run_mode) + "\"" +
+        ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) + ",\n  \"status\":\"" + ToString(this->manager_state_) +
+        "\"" + ", \"server_error_code\":\"" + ToString(this->planner_info_.robot_property.error_code) + "\"" + ", \"run_mode\":\"" +
+        ToString(this->planner_info_.robot_property.run_mode) + "\"" +
         ",\n  \"robot_statusword\":" + utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str() +
         ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
         ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(robot_feedback_.al_status, 0, ndof_robot).str() +

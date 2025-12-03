@@ -115,7 +115,7 @@ ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasureme
         else
         {
             return ComputeCommandStatus::TaskOngoing;
-        }    
+        }
     }
     else
     {

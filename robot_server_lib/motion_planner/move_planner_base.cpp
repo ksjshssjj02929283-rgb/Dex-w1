@@ -57,7 +57,7 @@ ComputeCommandStatus MotionPlannerBase::ComputeStopCommand(const JointMeasuremen
         robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
     }
     robot_stopped = stop_finished && robot_stopped;
-    if(robot_stopped)
+    if (robot_stopped)
     {
         LOG_INFO << "ComputeStopCommand: Robot stopped, velocity: " << measurement.velocity.transpose();
         return ComputeCommandStatus::TaskStopped;

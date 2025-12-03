@@ -1,9 +1,9 @@
 #pragma once
 
+#include <bitset>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <vector>
-#include <bitset>
 
 using json = nlohmann::json;
 
@@ -103,12 +103,35 @@ inline std::ostringstream RobotStatuswordToJsonString(const int &status_word)
 inline std::ostringstream RobotControlwordToJsonString(const int &control_word)
 {
     std::ostringstream ss;
-    switch (control_word)
+    std::vector<std::string> flags;
+
+    if (control_word & CTRLWORD_MOTOR_SWITCH_ON)
+        flags.push_back("\"MOTOR_SWITCH_ON\"");
+    if (control_word & CTRLWORD_MOTOR_ENABLE)
+        flags.push_back("\"MOTOR_ENABLE\"");
+    if (control_word & CTRLWORD_MOTOR_QUICK_STOP)
+        flags.push_back("\"MOTOR_QUICK_STOP\"");
+    if (control_word & CTRLWORD_MOTOR_CLEAR_FAULT)
+        flags.push_back("\"MOTOR_CLEAR_FAULT\"");
+    if (control_word & CTRLWORD_MOTOR_CST_MODE)
+        flags.push_back("\"MOTOR_CST_MODE\"");
+
+    if (!flags.empty())
     {
-    default:
-        ss << std::bitset<8>(control_word & 0xFF);
-        break;
+        ss << "[";
+        for (size_t i = 0; i < flags.size(); ++i)
+        {
+            if (i > 0)
+                ss << ",";
+            ss << flags[i];
+        }
+        ss << "]";
     }
+    else
+    {
+        ss << control_word;
+    }
+
     return ss;
 }
 

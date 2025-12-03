@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+
 #include "NanoLog.hpp"
 #include "dynamics_utils.h"
 
@@ -57,7 +58,7 @@ class CartesianComplianceControl
         return pos_offset_;
     }
 
-    void SetMass(const Vector3d& M) 
+    void SetMass(const Vector3d& M)
     {
         M_ = M;
         for (auto& b : B_)
@@ -68,11 +69,12 @@ class CartesianComplianceControl
                 b = min_damping;
             }
         }
-        LOG_INFO << "CartesianComplianceControl: Set mass to [" << M_.transpose() << "], updated damping to [" << B_.transpose() << "], stiffness: [" << K_.transpose() << "]";
+        LOG_INFO << "CartesianComplianceControl: Set mass to [" << M_.transpose() << "], updated damping to [" << B_.transpose() << "], stiffness: ["
+                 << K_.transpose() << "]";
     }
-    void SetDamping(const Vector3d& B) 
-    { 
-        B_ = B; 
+    void SetDamping(const Vector3d& B)
+    {
+        B_ = B;
         for (auto& b : B_)
         {
             double min_damping = 2.0 * std::sqrt(M_[&b - &B_[0]] * K_[&b - &K_[0]]);
@@ -82,18 +84,20 @@ class CartesianComplianceControl
                 LOG_INFO << "CartesianComplianceControl: Updated damping to min critical damping: " << b;
             }
         }
-        LOG_INFO << "CartesianComplianceControl: Set damping to [" << B_.transpose() << "], mass: [" << M_.transpose() << "], stiffness: [" << K_.transpose() << "]";
+        LOG_INFO << "CartesianComplianceControl: Set damping to [" << B_.transpose() << "], mass: [" << M_.transpose() << "], stiffness: ["
+                 << K_.transpose() << "]";
     }
-    void SetStiffness(const Vector3d& K) 
-    { 
-        K_ = K; 
+    void SetStiffness(const Vector3d& K)
+    {
+        K_ = K;
         for (auto& b : B_)
         {
             double min_damping = 2.0 * std::sqrt(M_[&b - &B_[0]] * K_[&b - &K_[0]]);
             if (b < min_damping)
                 b = min_damping;
         }
-        LOG_INFO << "CartesianComplianceControl: Set stiffness to [" << K_.transpose() << "], updated damping to [" << B_.transpose() << "], mass: [" << M_.transpose() << "]";
+        LOG_INFO << "CartesianComplianceControl: Set stiffness to [" << K_.transpose() << "], updated damping to [" << B_.transpose() << "], mass: ["
+                 << M_.transpose() << "]";
     }
 
     // 设置输出限制（非正数表示不限制）
@@ -113,9 +117,9 @@ class CartesianComplianceControl
     }
 
    private:
-    double control_dt_ = 0.001;              // 控制周期 (s)
-    Vector3d M_ = {2, 2, 2};        // 质量 (kg)
-    Vector3d B_ = {100.0, 100.0, 60.0};     // 阻尼 (N·s/m)
+    double control_dt_ = 0.001;           // 控制周期 (s)
+    Vector3d M_ = {2, 2, 2};              // 质量 (kg)
+    Vector3d B_ = {100.0, 100.0, 60.0};   // 阻尼 (N·s/m)
     Vector3d K_ = {500.0, 500.0, 200.0};  // 刚度 (N/m)
 
     // 限制（默认不限制：设置为非正数表示关闭）
