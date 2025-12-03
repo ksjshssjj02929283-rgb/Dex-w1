@@ -12,6 +12,7 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ChangeSystemMode.msg"
   "msg/SystemMode.msg"
+  "msg/SystemCommand.msg"
 )
 
 ament_package()
