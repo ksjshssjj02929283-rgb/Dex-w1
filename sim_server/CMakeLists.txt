@@ -2,8 +2,13 @@ cmake_minimum_required(VERSION 3.15)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Release)
-set(CMAKE_C_COMPILER_LAUNCHER ccache)
-set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
+
+# 如果系统安装了 ccache 则启用，否则保持不启用
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+endif()
 
 project(sim_server)
 
