@@ -78,14 +78,14 @@ class W1Planner:
                                   self._w1_version, 
                                   self._end_effector_type)
         
-        # for visual
-        if not generate_w1_urdf(arm_type, w1_version, end_effector_type)[1]:
-            raise ValueError(f"Found URDF failed.")
+        # # for visual
+        # if not generate_w1_urdf(arm_type, w1_version, end_effector_type)[1]:
+        #     raise ValueError(f"Found URDF failed.")
 
-        # for collision check
-        if self._end_effector_type is not None:
-            if not generate_w1_urdf(arm_type, w1_version, None)[1]:
-                raise ValueError(f"Found URDF failed.")
+        # # for collision check
+        # if self._end_effector_type is not None:
+        #     if not generate_w1_urdf(arm_type, w1_version, None)[1]:
+        #         raise ValueError(f"Found URDF failed.")
 
         if not rclpy.ok():
             rclpy.init()
@@ -284,7 +284,7 @@ class W1Planner:
                 return
             SinglePlanner.set_arms_cfg(SINGLE_ARM_DIM, SINGLE_ARM_DIM, LARM_BOUND, RARM_BOUND)
             SinglePlanner.set_robot_cfg(robot_type=planner_robot_type, ee_type=end_effector_type)
-            SinglePlanner.set_env_json(get_env_json_path())
+            # SinglePlanner.set_env_json(get_env_json_path())
             self.siso_planner = SinglePlanner()
 
     def _get_arm_kine(self, name: str):
@@ -342,8 +342,8 @@ class W1Planner:
         # qpos = np.atleast_2d(qpos)
         if np.any(qpos < qpos_lb) or np.any(qpos > qpos_ub):
             invalid_idx = np.where((qpos < qpos_lb) | (qpos > qpos_ub))[0][0]
-            self.logger.error(f"{name} {invalid_idx}th qpos({qpos.tolist()}) " + \
-                              f"excceeded limits([{qpos_lb[invalid_idx-1]}, {qpos_ub[invalid_idx-1]}]).")
+            self.logger.error(f"{name} {invalid_idx+1}th qpos({qpos.tolist()}) " + \
+                              f"excceeded limits([{qpos_lb[invalid_idx]}, {qpos_ub[invalid_idx]}]).")
             return False
         return True
     
@@ -2229,10 +2229,10 @@ class W1Planner:
                              cam_arml_extrinsics: np.ndarray = None,
                              cam_armr_extrinsics: np.ndarray = None
                              ):
-        if cam_arml_extrinsics is None or cam_arml_extrinsics.shape != (4,4):
-            raise ValueError("Invalid camera to left arm extrinsics input, it should be a 4x4 numpy array")
-        if cam_armr_extrinsics is None or cam_armr_extrinsics.shape != (4,4):
-            raise ValueError("Invalid camera to right arm extrinsics input, it should be a 4x4 numpy array")
+        # if cam_arml_extrinsics is None or cam_arml_extrinsics.shape != (4,4):
+        #     raise ValueError("Invalid camera to left arm extrinsics input, it should be a 4x4 numpy array")
+        # if cam_armr_extrinsics is None or cam_armr_extrinsics.shape != (4,4):
+        #     raise ValueError("Invalid camera to right arm extrinsics input, it should be a 4x4 numpy array")
 
         self.cam_arml_extrinsics = cam_arml_extrinsics
         self.cam_armr_extrinsics = cam_armr_extrinsics
@@ -2405,25 +2405,38 @@ class W1Planner:
             max_range (float): maximum range for augmentation
 
         """
-        start_time = time.time()
+        # start_time = time.time()
+        # center = np.zeros((1, 3))
+        # vectors = pointcloud - center
+        # distances = np.linalg.norm(vectors, axis=1)
+        # directions = vectors / (distances[:, np.newaxis] + 1e-8)
+
+        # augmented_points = []
+        # for i in range(pointcloud.shape[0]):
+        #     num_steps = int((max_range) / step)
+        #     for j in range(1, num_steps + 1):
+        #         new_point = pointcloud[i] + directions[i] * step * j
+        #         augmented_points.append(new_point)
+        # if len(augmented_points) > 0:
+        #     augmented_points = np.array(augmented_points)
+        #     combined_pointcloud = np.vstack((pointcloud, augmented_points))
+        # else:
+        #     combined_pointcloud = pointcloud
+
+        # self.logger.debug(f"Pointcloud augmentation time: {time.time()-start_time:.6f}s, original points: {pointcloud.shape[0]}, augmented points: {combined_pointcloud.shape[0]}")
+        
         center = np.zeros((1, 3))
         vectors = pointcloud - center
-        distances = np.linalg.norm(vectors, axis=1)
-        directions = vectors / (distances[:, np.newaxis] + 1e-8)
+        distances = np.linalg.norm(vectors, axis=1, keepdims=True)
+        directions = vectors / (distances + 1e-8)
 
-        augmented_points = []
-        for i in range(pointcloud.shape[0]):
-            num_steps = int((max_range - distances[i]) / step)
-            for j in range(1, num_steps + 1):
-                new_point = pointcloud[i] + directions[i] * step * j
-                augmented_points.append(new_point)
-        if len(augmented_points) > 0:
-            augmented_points = np.array(augmented_points)
-            combined_pointcloud = np.vstack((pointcloud, augmented_points))
-        else:
-            combined_pointcloud = pointcloud
+        num_steps = int(max_range / step)
+        scales = step * np.arange(1, num_steps +1, dtype=vectors.dtype)
+        new_points = vectors[:, None, :] + directions[:, None, :] * scales[None, :, None]
+        new_points = new_points.reshape(-1, 3)
+        combined_pointcloud = np.vstack((pointcloud, new_points))
 
-        self.logger.debug(f"Pointcloud augmentation time: {time.time()-start_time:.6f}s, original points: {pointcloud.shape[0]}, augmented points: {combined_pointcloud.shape[0]}")
+
         return combined_pointcloud
 
     def numpy_to_pointcloud2(self, points: np.ndarray, frame_id="base_link") -> PointCloud2:
@@ -2456,13 +2469,15 @@ class W1Planner:
         return filtered_points
 
     def _reload_environment(self):
-        # current_pcd = self.camera_node.get_pcd_numpy()[1]
+        start_time = time.time()
         res, current_pcd, get_pcd_time = self.camera_node.get_pcd_numpy()
+        # self.time_dict["original pcd"] = current_pcd.shape[0] if current_pcd is not None else 0
+        # self.time_dict["reading pcd msg"] = time.time() - start_time
         # self.logger.debug(f"Get pcd time stamp: {get_pcd_time:.6f}s")
         if current_pcd is None or current_pcd.shape[0] == 0:
             self.logger.warning("No point cloud data from camera")
             return False, None, None
-
+        start_time = time.time()
         mask = (
             (current_pcd[:,0] >= -2) & (current_pcd[:,0] <= 2) &
             (current_pcd[:,1] >= -2) & (current_pcd[:,1] <= 2) &
@@ -2470,42 +2485,68 @@ class W1Planner:
         )
         current_pcd = current_pcd[mask]
 
-        # start_time = time.time()
-
+        # self.time_dict["ROI crop"] = time.time() - start_time
+        start_time = time.time()
         planner_pcd = current_pcd
         planner_pcd = self._voxel_down_sample_numpy(planner_pcd, voxel_size=0.01)
-        planner_pcd = self.augment_pointcloud(planner_pcd, step=0.02, max_range=0.2)
-        planner_pcd = self._voxel_down_sample_numpy(planner_pcd, voxel_size=0.01)
+        # self.time_dict["downsample1"] = time.time() - start_time
+        # planner_pcd = self.augment_pointcloud(planner_pcd, 0.02, 0.2)
+        # planner_pcd = self._voxel_down_sample_numpy(planner_pcd, voxel_size=0.01)
 
         res, waist_T_neck2 = self._get_waist_T_neck2()
-
+        start_time = time.time()
         planner_pcd_h = np.hstack([planner_pcd, np.ones((planner_pcd.shape[0], 1))])
         planner_pcd = (waist_T_neck2 @ self.cam_neck2_extrinsics @ planner_pcd_h.T).T[:, :3]
+        # self.time_dict["pose transform"] = time.time() - start_time
         
         # print(f"process planner pcd time: {time.time()-start_time}")
 
-        # Visulaize for the filtered pcd
+        # # Visulaize for the filtered pcd
 
-        current_qpos = self.get_current_qpos()[1]
-        cur_arml_qpos = current_qpos[self.real_arml_idx[0]:self.real_arml_idx[1]+1]
+        # current_qpos = self.get_current_qpos()[1]
+        # cur_arml_qpos = current_qpos[self.real_arml_idx[0]:self.real_arml_idx[1]+1]
 
-        # filtered_planner_pcd = self.vamp_planner.vamp_module.filter_self_from_pointcloud(planner_pcd,
-        #                                                                 0.01,
-        #                                                                 cur_arml_qpos,
-        #                                                                 self.vamp_planner.env)
+        # self.arml_vamp_planner.reset_env()
+        # tf = np.eye(4, dtype=np.float32)
+        # tf[:3, 3] = np.array([0, 0, 0.2])
+        # attachment = vamp.Attachment(tf)
+        # attachment.add_spheres([vamp.Sphere([0, 0, 0], 0.2)])
+        # attachment.set_ee_pose(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
+        # self.arml_vamp_planner.env.attach(attachment)
 
-        filtered_planner_pcd = deepcopy(planner_pcd)
-        filtered_planner_pcd = self.radius_outlier_removal(filtered_planner_pcd, radius=0.03, min_neighbors=15)
+        # # self.arml_vamp_planner.env.set_attachment_pose(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
+        # # attachment.set_ee_pose(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
+        # # print(attachment.posed_spheres[0].position)
+        # # print(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
+        # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
+        # base_link_T_waist = torso_tf[-1]
+        # base_link_T_left_ee = arml_tf[-1]
+        # waist_T_left_ee = np.linalg.inv(base_link_T_waist) @ base_link_T_left_ee
+        # # print(waist_T_left_ee)
+        # # self.arml_vamp_planner.env.add_sphere(vamp.Sphere(waist_T_left_ee[:3, 3], 0.1))
 
-        self.logger.debug(f"planner pcd length: {planner_pcd.shape[0]} filtered pcd length: {len(filtered_planner_pcd)}")
+        # # embed()
         
-        rviz_planner_pcd = np.asarray(deepcopy(filtered_planner_pcd))
-        torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
-        base_link_T_waist = torso_tf[-1]
-        rviz_pcd = np.hstack([rviz_planner_pcd, np.ones((rviz_planner_pcd.shape[0], 1))])
-        rviz_pcd = (base_link_T_waist @ rviz_pcd.T).T[:, :3]
-        rviz_pcd = self.numpy_to_pointcloud2(rviz_pcd, frame_id="base_link")
-        self.pcd_env_publisher.publish(rviz_pcd)
+
+        # # self.arml_vamp_planner.env.add_sphere(vamp.Sphere([0,0,0.2], 0.5))
+
+        # filtered_planner_pcd = self.arml_vamp_planner.vamp_module.filter_self_from_pointcloud(planner_pcd,
+        #                                                                 0.02,
+        #                                                                 cur_arml_qpos,
+        #                                                                 self.arml_vamp_planner.env)
+
+        # # filtered_planner_pcd = deepcopy(planner_pcd)
+        # # filtered_planner_pcd = self.radius_outlier_removal(filtered_planner_pcd, radius=0.03, min_neighbors=15)
+
+        # # self.logger.debug(f"planner pcd length: {planner_pcd.shape[0]} filtered pcd length: {len(filtered_planner_pcd)}")
+        
+        # rviz_planner_pcd = np.asarray(deepcopy(filtered_planner_pcd))
+        # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
+        # base_link_T_waist = torso_tf[-1]
+        # rviz_pcd = np.hstack([rviz_planner_pcd, np.ones((rviz_planner_pcd.shape[0], 1))])
+        # rviz_pcd = (base_link_T_waist @ rviz_pcd.T).T[:, :3]
+        # rviz_pcd = self.numpy_to_pointcloud2(rviz_pcd, frame_id="base_link")
+        # self.pcd_env_publisher.publish(rviz_pcd)
 
 
         return True, planner_pcd, get_pcd_time
@@ -2765,7 +2806,8 @@ class W1Planner:
             if not self.arml_vamp_planner.vamp_module.validate(qpos.tolist(), self.arml_vamp_planner.env):
                 self.logger.warning("Left arm trajectory invalid")
                 return False
-        self.logger.info(f"average checking time: {(time.time()-start_time) / len(last_arml_traj):.8f}s with trajectory length {len(last_arml_traj)}")
+        # self.logger.info(f"average checking time: {(time.time()-start_time) / len(last_arml_traj):.8f}s with trajectory length {len(last_arml_traj)}")
+        self.time_dict["average checking time"] = (time.time()-start_time) / len(last_arml_traj)
         for qpos in last_armr_traj:
             if not self.armr_vamp_planner.vamp_module.validate(qpos.tolist(), self.armr_vamp_planner.env):
                 self.logger.warning("Right arm trajectory invalid")
@@ -2774,6 +2816,7 @@ class W1Planner:
         return True
 
     def plan_keep_checking(self, update_frequency: float = 5.0):
+        self.time_dict_list = []
         if self.dynamic_arml_target_qpos is None or self.dynamic_armr_target_qpos is None:
             self.logger.error("Target qpos not set, please set it using set_dynamic_start_target_qpos function")
             return False, None
@@ -2789,6 +2832,7 @@ class W1Planner:
         self.pcd_buffer = deque(maxlen=6)
 
         while True:
+            self.time_dict = {}
             if total_time < (1.0 / update_frequency):
                 time.sleep((1.0 / update_frequency)-total_time)
             total_start_time = time.time()
@@ -2803,18 +2847,43 @@ class W1Planner:
 
             arml_start = cur_arml_qpos
             armr_start = cur_armr_qpos
+            start_time = time.time()
             sync_res, sync_arml_qpos, sync_arml_vel, sync_armr_qpos, sync_armr_vel = \
                                     self._sync_pcd_and_stream(get_pcd_time, get_stream_time, cur_stream_history)   
             if sync_res:
                 # self.logger.info("Successfully sync pcd and streaming qpos")
                 cur_arml_qpos = sync_arml_qpos
                 cur_armr_qpos = sync_armr_qpos
-            
+            self.time_dict["sync pcd and feedback"] = time.time() - start_time
+            start_time = time.time()
             self.arml_vamp_planner.reset_env()
             self.armr_vamp_planner.reset_env()
             self.add_torso_collision_to_env()
+            self.time_dict["reset env & add torso"] = time.time() - start_time
+
+            # test attachment
+            tf = np.identity(4)
+            tf[:3, 3] = np.array([0, 0, 0.136])
+
+            arml_attachment = vamp.Attachment(tf)
+            arml_attachment.add_spheres([vamp.Sphere([-0.05, 0, 0], 0.05)])
+            arml_attachment.add_spheres([vamp.Sphere([0, 0, 0], 0.05)])
+            arml_attachment.add_spheres([vamp.Sphere([0.05, 0, 0], 0.05)])
+            arml_attachment.add_spheres([vamp.Sphere([0.1, 0, 0], 0.05)])
+            arml_attachment.add_spheres([vamp.Sphere([0.15, 0, 0], 0.05)])
+            arml_attachment.set_ee_pose(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
+            self.arml_vamp_planner.env.attach(arml_attachment)
+            
+
+            # armr_attachment = vamp.Attachment(tf)
+            # armr_attachment.add_spheres([vamp.Sphere([0, 0, 0], 0.2)])
+            # self.armr_vamp_planner.env.attach(armr_attachment)
+            # armr_attachment.set_ee_pose(self.armr_vamp_planner.vamp_module.eefk(cur_armr_qpos))
+
+            # self.arml_vamp_planner.env.set_attachment_pose(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
 
 
+            start_time = time.time()
             if planner_pcd is not None and planner_pcd.shape[0] != 0:
                 if sync_arml_vel is not None and sync_armr_vel is not None:
                     arml_filter_radius = max(0.02, 0.02 + 0.01 * np.linalg.norm(sync_arml_vel))
@@ -2838,28 +2907,38 @@ class W1Planner:
                                                                                             cur_armr_qpos,
                                                                                             self.armr_vamp_planner.env)
                 
-
+                self.time_dict["filter self"] = time.time() - start_time
+                start_time = time.time()
                 arml_planner_pcd = self.radius_outlier_removal(np.asarray(arml_planner_pcd), radius=0.03, min_neighbors=25).tolist()
                 armr_planner_pcd = self.radius_outlier_removal(np.asarray(armr_planner_pcd), radius=0.03, min_neighbors=25).tolist()
+                self.time_dict["remove noise"] = time.time() - start_time
+
+                # augment_start_time = time.time()
+                # arml_planner_pcd = self.augment_pointcloud(np.asarray(arml_planner_pcd), step=0.05, max_range=0.2)
+                # armr_planner_pcd = self.augment_pointcloud(np.asarray(armr_planner_pcd), step=0.05, max_range=0.2)
+                # arml_planner_pcd = self._voxel_down_sample_numpy(arml_planner_pcd, voxel_size=0.01).tolist()
+                # armr_planner_pcd = self._voxel_down_sample_numpy(armr_planner_pcd, voxel_size=0.01).tolist()
+                # self.logger.info(f"After downsample and augmentation, pointcloud points: {len(arml_planner_pcd)} and {len(armr_planner_pcd)}")
+                # self.logger.info(f"Aumentation time: {time.time() - augment_start_time}")
 
                 # self.pcd_buffer.append(np.asarray(arml_planner_pcd))
                 # arml_planner_pcd = self._merge_pcd(np.asarray(arml_planner_pcd)).tolist()
 
-                self.logger.info(f"get pcd and filter self time {time.time()-total_start_time}")
+                # self.logger.info(f"get pcd and filter self time {time.time()-total_start_time}")
                 self.arml_vamp_planner.add_pcd(point_cloud=arml_planner_pcd, pcd_radius=0.02)
                 self.armr_vamp_planner.add_pcd(point_cloud=armr_planner_pcd, pcd_radius=0.02)
                 
-                vis_pcd = deepcopy(arml_planner_pcd)
+                # vis_pcd = deepcopy(arml_planner_pcd)
 
-                if vis_pcd is not None and len(vis_pcd) != 0:
-                    current_qpos = self.get_current_qpos()[1]
-                    rviz_planner_pcd = np.asarray(deepcopy(vis_pcd))
-                    torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
-                    base_link_T_waist = torso_tf[-1]
-                    rviz_pcd = np.hstack([rviz_planner_pcd, np.ones((rviz_planner_pcd.shape[0], 1))])
-                    rviz_pcd = (base_link_T_waist @ rviz_pcd.T).T[:, :3]
-                    rviz_pcd = self.numpy_to_pointcloud2(rviz_pcd, frame_id="base_link")
-                    self.pcd_env_publisher.publish(rviz_pcd)
+                # if vis_pcd is not None and len(vis_pcd) != 0:
+                #     current_qpos = self.get_current_qpos()[1]
+                #     rviz_planner_pcd = np.asarray(deepcopy(vis_pcd))
+                #     torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
+                #     base_link_T_waist = torso_tf[-1]
+                #     rviz_pcd = np.hstack([rviz_planner_pcd, np.ones((rviz_planner_pcd.shape[0], 1))])
+                #     rviz_pcd = (base_link_T_waist @ rviz_pcd.T).T[:, :3]
+                #     rviz_pcd = self.numpy_to_pointcloud2(rviz_pcd, frame_id="base_link")
+                #     self.pcd_env_publisher.publish(rviz_pcd)
 
             # if not self._check_start_goal_validity():
             #     self.logger.warning("Start or goal qpos is invalid, replan later")
@@ -2880,12 +2959,14 @@ class W1Planner:
             else:
                 self.arml_vamp_planner.set_start_goal(start=arml_start, goal=self.dynamic_arml_target_qpos)
                 self.armr_vamp_planner.set_start_goal(start=armr_start, goal=self.dynamic_armr_target_qpos)
-            
+
+            self.time_dict["Result left pcd"] = len(arml_planner_pcd)
             checking_start_time = time.time()
             last_traj_validity = self.check_traj_validity(last_arml_trajectory, last_armr_trajectory)
             checking_time = time.time() - checking_start_time
+            self.time_dict["Total trajectory checking time"] = checking_time
             total_time = time.time() - total_start_time
-            self.logger.info(f"Trajectory validity checking time: {checking_time}s, validity: {last_traj_validity}")
+            # self.logger.info(f"Trajectory validity checking time: {checking_time}s, validity: {last_traj_validity}")
             if not last_traj_validity:
                 self.planner_client.publish_trajectory(trajectory=None)
                 planning_start_time = time.time()
@@ -2912,17 +2993,19 @@ class W1Planner:
 
 
                     self.planner_client.publish_trajectory(trajectory=full_traj)
-                    self.logger.info(f"Total planning cost time: {time.time() - planning_start_time}s")
+                    # self.logger.info(f"Total planning cost time: {time.time() - planning_start_time}s")
                     # self.logger.info("Planning succeeded, publishing trajectory")
 
                     total_time = time.time() - total_start_time
-                    self.logger.info(f"Total replan(include obtaining data) cost time: {total_time}s")
+                    # self.logger.info(f"Total replan(include obtaining data) cost time: {total_time}s")
                 else:
                     self.logger.warning("Planning failed, no trajectory to publish")
                     total_time = time.time() - total_start_time
                     self.planner_client.publish_trajectory(trajectory=None)
                     last_arml_trajectory = None
                     last_armr_trajectory = None
+            # self.print_time_consuming(self.time_dict)
+            self.time_dict_list.append(self.time_dict)
         self.planner_client.publish_trajectory(trajectory=None)
 
 
@@ -3025,6 +3108,13 @@ class W1Planner:
         #     self.arml_vamp_planner.env.add_sphere(vamp.Sphere(center_in_waist[:3].tolist(), radius))
         #     self.armr_vamp_planner.env.add_sphere(vamp.Sphere(center_in_waist[:3].tolist(), radius))
 
-    
+    def print_time_consuming(self, time_dict):
+        print("┌─────────────────────────────┬──────────────┐")
+        print("│ Task                        │ Time (s)     │")
+        print("├─────────────────────────────┼──────────────┤")
+        for k, v in time_dict.items():
+            print(f"│ {k:<25} │ {v:>10.6f} │")
+        print("└─────────────────────────────┴──────────────┘")
+        pass
 
     

@@ -48,13 +48,13 @@ if __name__ == "__main__":
             print("Camera connected!")
             break
 
-    angles = [-0.2, np.pi/2-0.1 - 0.0, 0.05]  
+    angles = [-0.1, np.pi/2-0.1, -0.05 - 0.1]  
     rot = R.from_euler('zyz', angles)
     rotation_matrix = rot.as_matrix()
 
     cam_neck2_extrinsics = np.eye(4)
     cam_neck2_extrinsics[:3, :3] = rotation_matrix
-    cam_neck2_extrinsics[:3, 3] = [0.01, -0.1605 - 0.04, 0.02]
+    cam_neck2_extrinsics[:3, 3] = [0.01 - 0.01, -0.1605, 0.02 - 0.01]
 
     base_link_T_neck2 = np.array([
         [ 0.3381, -0.8701, -0.3587,  0.208 ],

@@ -8,6 +8,15 @@ from IPython import embed
 import time
 from scipy.spatial.transform import Rotation as R
 
+def print_time_consuming(time_dict):
+    print("┌─────────────────────────────┬──────────────┐")
+    print("│ Task                        │ Time (s)     │")
+    print("├─────────────────────────────┼──────────────┤")
+    for k, v in time_dict.items():
+        print(f"│ {k:<25} │ {v:>10.6f} │")
+    print("└─────────────────────────────┴──────────────┘")
+    pass
+
 def test_w1_planner():
     w1_planner = W1Planner(
         is_sim=False,
@@ -19,6 +28,8 @@ def test_w1_planner():
 
     if not w1_planner.connect():
         return
+    
+    w1_planner._pin_kine.use_ee = True
     # init_qpos = np.deg2rad([45, -90, 45, 2, 
     #                                      0, -35,
     #                                      0, 0, 0, 0, 0, 0, 0,
@@ -28,11 +39,21 @@ def test_w1_planner():
     # init_qpos[6:13] = np.array([-np.pi / 2, -1.38, np.pi / 2, -np.pi / 4, -np.pi / 2, np.pi / 5, 0.0])
     # init_qpos[13:20] = np.array([np.pi / 2, 1.38, -np.pi / 2, np.pi / 4, np.pi / 2, -np.pi / 5, 0.0])
 
+    # Previous test initial qpos
+    # init_qpos = np.array([0.77, -1.56, 1.19, 0.0,
+    #                       0.4, -0.77,
+    #                       -1.37, -0.3, 1.39, -0.74, 0.0, 0.0, 0.0,
+    #                       0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    # # init_qpos[6:13] = np.array([-1.37, -1.5, 1.39, -0.97, 0.0, 0.0, 0.0])
+    # # init_qpos[6:13] = np.array([-1.37, -1, 1.39, -0.97, 0.0, 0.0, 0.0])
+
+    # New test initial qpos
     init_qpos = np.array([0.77, -1.56, 1.19, 0.0,
                           0.4, -0.77,
-                          -1.37, -0.3, 1.39, -0.74, 0.0, 0.0, 0.0,
+                           -1.4316, -0.768 ,  1.5469, -0.0814, -1.6173, -0.4734,  0.1073,
                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-    init_qpos[6:13] = np.array([-1.37, -1.5, 1.39, -0.97, 0.0, 0.0, 0.0])
+    # init_qpos[6:13] = np.array([-1.4316, -1.3 ,  1.5469, -0.0814, -1.6173, -0.4734,  0.1073])
+    embed()
 
     w1_planner.set_home_qpos(init_qpos, save_to_file=False)
     w1_planner.go_home(1)
@@ -85,13 +106,23 @@ def test_w1_planner():
     # cam_neck2_extrinsics[:3, :3] = rotation_matrix
     # cam_neck2_extrinsics[:3, 3] = [0.01, -0.1605 - 0.04, 0.02]
 
+    # realsense d555
+    # angles = [-0.1, np.pi/2-0.1, -0.05 + 0.05]  
+    # rot = R.from_euler('zyz', angles)
+    # rotation_matrix = rot.as_matrix()
+
+    # cam_neck2_extrinsics = np.eye(4)
+    # cam_neck2_extrinsics[:3, :3] = rotation_matrix
+    # cam_neck2_extrinsics[:3, 3] = [0.01, -0.1605, 0.02]
+
     w1_planner.init_dynamic_planner(robot_type=RobotType.W1V02_1, 
                                     end_effector_type=None, 
                                     cam_arml_extrinsics=cam_arml_extrinsics,
                                     cam_armr_extrinsics=cam_armr_extrinsics)
     w1_planner.set_cam_neck2_extrinsics(cam_neck2_extrinsics)
-    while True:
-        pcd = w1_planner._reload_environment()
+
+    # while True:
+    #     pcd = w1_planner._reload_environment()
 
 
     # arml_target_qpos1 = np.array([-np.pi / 2, -1.38, np.pi / 2, -np.pi / 4, -np.pi / 2, np.pi / 5, 0.0])
@@ -99,11 +130,12 @@ def test_w1_planner():
     # arml_target_qpos2 = np.array([-np.pi / 2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     # armr_target_qpos2 = np.array([np.pi / 2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
-    arml_target_qpos1 = np.array([-1.37, -1.5, 1.39, -0.97, 0.0, 0.0, 0.0])
-    # armr_target_qpos1 = np.array([0.75, 1.43, -1.07, 0.7, 0.0, 0.0, 0.0])
+    # arml_target_qpos1 = np.array([-1.37, -1.5, 1.39, -0.97, 0.0, 0.0, 0.0])
+    arml_target_qpos1 = np.array([-1.4472, -1.5006,  1.547 , -0.5221, -1.6174, -0.4889,  0.0975])
     armr_target_qpos1 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
-    arml_target_qpos2 = np.array([-1.37, -0.3, 1.39, -0.74, 0.0, 0.0, 0.0])
+    # arml_target_qpos2 = np.array([-1.37, -0.3, 1.39, -0.74, 0.0, 0.0, 0.0])
+    arml_target_qpos2 = np.array([-1.4316, -0.768 ,  1.5469, -0.0814, -1.6173, -0.4734,  0.1073])
     armr_target_qpos2 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
     # input("press Enter to continue")
@@ -126,6 +158,25 @@ def test_w1_planner():
         w1_planner.plan_keep_checking(update_frequency=5)
         cnt += 1
         # input("Press Enter to continue...")
+        # total_pcd_time = 0
+        # one_pcd_check = []
+        # for time_dict in w1_planner.time_dict_list:
+        #     # print_time_consuming(w1_planner.time_dict_list[i])
+        #     temp_pcd_time = time_dict["reading pcd msg"] + time_dict["ROI crop"] + time_dict["downsample1"] + time_dict["pose transform"] + \
+        #                     time_dict["sync pcd and feedback"] + time_dict["reset env & add torso"] + time_dict["filter self"] + time_dict["remove noise"]
+        #     total_pcd_time += temp_pcd_time
+        #     temp_average_checking_time = time_dict.get("average checking time", None)
+        #     if temp_average_checking_time is not None:
+        #         temp_one_pcd_check = temp_average_checking_time / time_dict["Result left pcd"]
+        #         one_pcd_check.append(temp_one_pcd_check)
+        # total_one_pcd_check = 0
+        # for i in range(len(one_pcd_check)):
+        #     total_one_pcd_check += one_pcd_check[i]
+        
+        # print("-----------------------------------")
+        # print(f"Average pcd processing time {total_pcd_time / len(w1_planner.time_dict_list)}")
+        # print(f"Average one pcd checking time {total_one_pcd_check / len(one_pcd_check)}")
+        # print("-----------------------------------")
         time.sleep(2.0)
         print("Next task planning...")
 
