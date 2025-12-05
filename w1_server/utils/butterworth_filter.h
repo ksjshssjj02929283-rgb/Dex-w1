@@ -15,6 +15,7 @@ class ButterworthFilter
    public:
     ButterworthFilter();
     double Apply(double input);
+    void Reset();
 
    private:
     BiquadFilter filter_;

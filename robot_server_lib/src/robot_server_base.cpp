@@ -73,7 +73,6 @@ void RobotServerBase::ManagerThreadFunc()
     PlannerManager planner_manager(this->robot_model_, this->manager_buffers_,
                                    std::bind(&RobotServerBase::ReportRequestStatus, this, std::placeholders::_1, std::placeholders::_2,
                                              std::placeholders::_3, std::placeholders::_4));
-    PlannerManagerCommand q_cmd{};
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok())
     {

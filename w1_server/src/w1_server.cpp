@@ -197,7 +197,6 @@ void RobotServer::TorqueControlThreadFunc()
         robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
         this->is_robot_ready_ = false;
         static bool inited_ = false;
-        static int enabled_streak_cycles = 0;  // 连续处于 ENABLE 状态的计数器
         if (ret)
         {
             if (manager_state_ == Status::Running)
@@ -213,8 +212,8 @@ void RobotServer::TorqueControlThreadFunc()
             {
             case STATUSWORD_MOTOR_READY:
                 // ready状态is_robot_ready_置为true, 可以写入measurement, 生成cmd后再使能电机
-                enabled_streak_cycles = 0;
                 this->is_robot_ready_ = true;
+                inited_ = true;
                 if (is_cmd_valid_)
                 {
                     robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
@@ -235,39 +234,23 @@ void RobotServer::TorqueControlThreadFunc()
                 break;
             case STATUSWORD_MOTOR_ENABLED:
                 this->is_robot_ready_ = true;
+                inited_ = true;
                 robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
                 if (enable_cst_mode_)
                 {
                     robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
                 }
-                if (!inited_)
-                {
-                    for (int i = 0; i < ndof_robot; i++)
-                    {
-                        robot_control_.position[i] = robot_feedback_.position[i];
-                        robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
-                        robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
-                    }
-                }
-                enabled_streak_cycles++;
-                if (enabled_streak_cycles >= 100)
-                {
-                    inited_ = true;
-                }
                 break;
             case STATUSWORD_MOTOR_NOT_READY:
             case STATUSWORD_MOTOR_FAULT:
             case STATUSWORD_MOTOR_QUICK_STOP:
-                enabled_streak_cycles = 0;
+            default:
                 for (int i = 0; i < ndof_robot; i++)
                 {
                     robot_control_.position[i] = robot_feedback_.position[i];
                     robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
                     robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
                 }
-                break;
-            default:
-                enabled_streak_cycles = 0;
                 break;
             }
             if (!inited_ || planner_info_.robot_property.clear_error_flag)
@@ -376,6 +359,18 @@ void RobotServer::TorqueControlThreadFunc()
                 robot_control_.position[i] = butterworth_filter_[i]->Apply(robot_control_.position[i]);
                 // 更新外部力矩
                 robot_control_.torque_external[i] = torque_cmd.torque_external[i];
+            }
+        }
+        else
+        {
+            for (int i = 0; i < ndof_robot; ++i)
+            {
+                this->butterworth_filter_[i]->Reset(); // 重置滤波器状态
+            }
+            if (loop_counter % 3000 == 0)
+            {
+                RCLCPP_WARN(this->get_logger(), "Planner command not valid");
+                LOG_CRIT << "Planner command not valid";
             }
         }
         // 如果状态字发生变化了则打印

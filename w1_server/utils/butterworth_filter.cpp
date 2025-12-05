@@ -39,3 +39,12 @@ double ButterworthFilter::Apply(double input)
     outputHistory_[0] = y;
     return y;
 }
+
+void ButterworthFilter::Reset()
+{
+    if (!initialized_)
+        return;
+    initialized_ = false;
+    inputHistory_.fill(0.0);
+    outputHistory_.fill(0.0);
+}

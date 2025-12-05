@@ -82,7 +82,7 @@ inline std::ostringstream RobotStatuswordToJsonString(const int &status_word)
         ss << "\"NOT_READY\"";
         break;
     case 1:
-        ss << "\"READY_NOT_ENABLE\"";
+        ss << "\"READY\"";
         break;
     case 2:
         ss << "\"ENABLED\"";

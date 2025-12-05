@@ -1,6 +1,9 @@
 # 切换到脚本所在目录
 cd "$(dirname "$0")"
 
+SUDO_PASS=123456
+echo "$SUDO_PASS" | sudo -S setcap 'cap_sys_nice=eip cap_ipc_lock=ep' ../install/w1_server/lib/w1_server/w1_server
+
 source ../install/setup.bash
 
 # Function to kill process by name
