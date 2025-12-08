@@ -9,7 +9,7 @@ from .ompl_plan import OMPLPlanSingle, OMPLPlanCentralized, OMPLPlanDecoupled
 from .traj_coordination import Coordination
 from .utils.robot_type import RobotType, RobotURDF, RobotCollision, get_robot_urdf, get_robot_mesh_path
 from .planner_pinocchio import Planner_Pin
-from ...end_effector_client import EndEffectorType 
+from ...end_effector_client import EndEffectorType
 from ...common import get_logger
 
 HEAD_DIM = 2
@@ -33,7 +33,8 @@ class HybridPlanner:
     robot_type = None
 
     @classmethod
-    def set_arms_cfg(cls, arml_dim: int, armr_dim: int, arml_bounds: np.ndarray, armr_bounds: np.ndarray):
+    def set_arms_cfg(cls, arml_dim: int, armr_dim: int, arml_bounds: np.ndarray,
+                     armr_bounds: np.ndarray):
         """
         Set the configuration for the arms, including dimensions and bounds.
 
@@ -50,15 +51,21 @@ class HybridPlanner:
         cls.arml_dim = arml_dim
         cls.armr_dim = armr_dim
         if arml_bounds.shape[1] != arml_dim or arml_bounds.shape[0] != 2:
-            raise ValueError(f"Left arm bounds should be of shape (2, {arml_dim}) but got {arml_bounds.shape}.")
+            raise ValueError(
+                f"Left arm bounds should be of shape (2, {arml_dim}) but got {arml_bounds.shape}."
+            )
         if armr_bounds.shape[1] != armr_dim or armr_bounds.shape[0] != 2:
-            raise ValueError(f"Right arm bounds should be of shape (2, {armr_dim}) but got {armr_bounds.shape}.")
+            raise ValueError(
+                f"Right arm bounds should be of shape (2, {armr_dim}) but got {armr_bounds.shape}."
+            )
 
         cls.arml_bounds = arml_bounds
         cls.armr_bounds = armr_bounds
 
     @classmethod
-    def set_robot_cfg(cls, robot_type: RobotType = None, ee_type: EndEffectorType = None):
+    def set_robot_cfg(cls,
+                      robot_type: RobotType = None,
+                      ee_type: EndEffectorType = None):
         """
         Set the configuration for the robot, including the robot type and end effector type.
 
@@ -75,14 +82,18 @@ class HybridPlanner:
         else:
             cls.ee_type = None
             cls.use_ee = False
-        
+
         if robot_type is not None:
             if robot_type not in RobotType:
-                raise ValueError(f"Unsupported robot type: {robot_type}. Please use one of {list(RobotType)}.")
+                raise ValueError(
+                    f"Unsupported robot type: {robot_type}. Please use one of {list(RobotType)}."
+                )
             cls.urdf_path = get_robot_urdf(robot_type, ee_type=ee_type)
             cls.robot_type = robot_type
         else:
-            raise ValueError(f"Robot type must be specified. Please use  one of {list(RobotType)}.")
+            raise ValueError(
+                f"Robot type must be specified. Please use  one of {list(RobotType)}."
+            )
 
     @classmethod
     def set_env_json(cls, env_json_path: str):
@@ -108,18 +119,21 @@ class HybridPlanner:
 
         self.logger = get_logger()
 
-        
-    def _init_fcl_checker(self, robot_type: RobotType, ee_type: EndEffectorType):
+    def _init_fcl_checker(self, robot_type: RobotType,
+                          ee_type: EndEffectorType):
         self.fcl_checker = FCLChecker(robot_type, ee_type)
         self.fcl_checker.enable_visualize()
 
         if self.env_json_path is not None:
             self.fcl_checker.load_env_json(self.env_json_path)
 
-    def _init_planner_pinocchio(self, robot_type: RobotType, ee_type: EndEffectorType):
+    def _init_planner_pinocchio(self, robot_type: RobotType,
+                                ee_type: EndEffectorType):
         self.planner_pin = Planner_Pin(robot_type, ee_type)
 
-    def set_arm_bounds(self, arml_bounds: np.ndarray = None, armr_bounds: np.ndarray = None):
+    def set_arm_bounds(self,
+                       arml_bounds: np.ndarray = None,
+                       armr_bounds: np.ndarray = None):
         """
         This function is used to update the arm bounds after the class instance is created.
 
@@ -132,18 +146,24 @@ class HybridPlanner:
             - The bounds are in radians for joint angles.
         """
         if arml_bounds is not None:
-            if arml_bounds.shape[1] != self.arml_dim or arml_bounds.shape[0] != 2:
-                raise ValueError(f"Left arm bounds should be of shape (2, {self.arml_dim}) but got {arml_bounds.shape}.")
+            if arml_bounds.shape[1] != self.arml_dim or arml_bounds.shape[
+                    0] != 2:
+                raise ValueError(
+                    f"Left arm bounds should be of shape (2, {self.arml_dim}) but got {arml_bounds.shape}."
+                )
             self.arml_bounds = arml_bounds
         if armr_bounds is not None:
-            if armr_bounds.shape[1] != self.armr_dim or armr_bounds.shape[0] != 2:
-                raise ValueError(f"Right arm bounds should be of shape (2, {self.armr_dim}) but got {armr_bounds.shape}.")
+            if armr_bounds.shape[1] != self.armr_dim or armr_bounds.shape[
+                    0] != 2:
+                raise ValueError(
+                    f"Right arm bounds should be of shape (2, {self.armr_dim}) but got {armr_bounds.shape}."
+                )
             self.armr_bounds = armr_bounds
 
     def update_fcl_env(self, env_json_path: str):
         self.fcl_checker.load_env_json(env_json_path)
 
-    def set_start_goal(self, arml_start: np.ndarray, armr_start: np.ndarray, 
+    def set_start_goal(self, arml_start: np.ndarray, armr_start: np.ndarray,
                        arml_goal: np.ndarray, armr_goal: np.ndarray):
         """
         Set the start and goal configurations for the left and right arms.
@@ -160,26 +180,35 @@ class HybridPlanner:
     def set_head_torso(self, head_qpos: np.ndarray, torso_qpos: np.ndarray):
 
         if head_qpos.shape[0] != HEAD_DIM:
-            raise ValueError(f"Head position should be of shape ({HEAD_DIM},) but got {head_qpos.shape}.")
+            raise ValueError(
+                f"Head position should be of shape ({HEAD_DIM},) but got {head_qpos.shape}."
+            )
         if torso_qpos.shape[0] != TORSO_DIM:
-            raise ValueError(f"Torso position should be of shape ({TORSO_DIM},) but got {torso_qpos.shape}.")
+            raise ValueError(
+                f"Torso position should be of shape ({TORSO_DIM},) but got {torso_qpos.shape}."
+            )
         self.head_qpos = head_qpos
         self.torso_qpos = torso_qpos
 
-    def set_end_effector_qpos(self, armlee_qpos: np.ndarray, armree_qpos: np.ndarray):
+    def set_end_effector_qpos(self, armlee_qpos: np.ndarray,
+                              armree_qpos: np.ndarray):
         if self.use_ee:
             if self.ee_type == EndEffectorType.BRAINCO_HAND:
-                if armlee_qpos.shape != (6, ) or armree_qpos.shape != (6, ):
-                    raise ValueError(f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+                if armlee_qpos.shape != (6,) or armree_qpos.shape != (6,):
+                    raise ValueError(
+                        f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                    )
             if self.ee_type == EndEffectorType.PGC_GRIPPER:
-                if armlee_qpos.shape != (2, ) or armree_qpos.shape != (2, ):
-                    raise ValueError(f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}")
+                if armlee_qpos.shape != (2,) or armree_qpos.shape != (2,):
+                    raise ValueError(
+                        f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                    )
             self.armlee_qpos = armlee_qpos
             self.armree_qpos = armree_qpos
 
-
-    def set_ee_time(self, armlee_wait_time: np.ndarray, armree_wait_time: np.ndarray, 
-                    armlee_exec_time: np.ndarray, armree_exec_time: np.ndarray):
+    def set_ee_time(self, armlee_wait_time: np.ndarray,
+                    armree_wait_time: np.ndarray, armlee_exec_time: np.ndarray,
+                    armree_exec_time: np.ndarray):
         """
         Set the time periods for arms
 
@@ -194,33 +223,44 @@ class HybridPlanner:
 
     def set_traj_max_vel(self, left_max_vel, right_max_vel):
         if left_max_vel <= 0 or right_max_vel <= 0:
-            raise ValueError(f"max_vel must be positive, got left_max_vel: {left_max_vel}, right_max_vel: {right_max_vel}")
+            raise ValueError(
+                f"max_vel must be positive, got left_max_vel: {left_max_vel}, right_max_vel: {right_max_vel}"
+            )
         self.left_traj_max_vel = left_max_vel
         self.right_traj_max_vel = right_max_vel
 
-    def attach_object(self, obj_name: str, which_arm: str, arm7_T_object: np.ndarray = None):
+    def attach_object(self,
+                      obj_name: str,
+                      which_arm: str,
+                      arm7_T_object: np.ndarray = None):
         if which_arm not in ['left', 'right']:
             self.logger.error("which_arm must be either 'left' or 'right'.")
             return False
         if which_arm == "left":
-            res_attach = self.fcl_checker.attach_object_arml(obj_name=obj_name, arml7_T_object=arm7_T_object)
+            res_attach = self.fcl_checker.attach_object_arml(
+                obj_name=obj_name, arml7_T_object=arm7_T_object)
             return res_attach
         if which_arm == "right":
-            res_attach = self.fcl_checker.attach_object_armr(obj_name=obj_name, armr7_T_object=arm7_T_object)
+            res_attach = self.fcl_checker.attach_object_armr(
+                obj_name=obj_name, armr7_T_object=arm7_T_object)
             return res_attach
-        
-    def detach_object(self, obj_name: str, which_arm: str, arm7_transform: np.ndarray):
+
+    def detach_object(self, obj_name: str, which_arm: str,
+                      arm7_transform: np.ndarray):
         if which_arm not in ['left', 'right']:
             self.logger.error("which_arm must be either 'left' or 'right'.")
             return False
         if which_arm == "left":
-            res_detach = self.fcl_checker.detach_object_arml(obj_name=obj_name, arml7_transform=arm7_transform)
+            res_detach = self.fcl_checker.detach_object_arml(
+                obj_name=obj_name, arml7_transform=arm7_transform)
             return res_detach
-        if which_arm == "right":    
-            res_detach = self.fcl_checker.detach_object_armr(obj_name=obj_name, armr7_transform=arm7_transform)
+        if which_arm == "right":
+            res_detach = self.fcl_checker.detach_object_armr(
+                obj_name=obj_name, armr7_transform=arm7_transform)
             return res_detach
 
-    def transform_obstacle(self, name: str, new_center: np.ndarray, new_quaternion: np.ndarray):
+    def transform_obstacle(self, name: str, new_center: np.ndarray,
+                           new_quaternion: np.ndarray):
         """
         Transform an existing obstacle in the FCL environment.\
         
@@ -230,7 +270,9 @@ class HybridPlanner:
             new_quaternion (np.ndarray): The new orientation of the obstacle as a quaternion (shape: (4,))
         """
 
-        res = self.fcl_checker.transform_obstacle(name=name, new_center=new_center, new_quaternion=new_quaternion)
+        res = self.fcl_checker.transform_obstacle(name=name,
+                                                  new_center=new_center,
+                                                  new_quaternion=new_quaternion)
         return res
 
     def disable_obstacle(self, name: str):
@@ -264,63 +306,96 @@ class HybridPlanner:
             right_trajectory (np.ndarray): Planned trajectory for the right arm, shape (N, armr_dim)
             plan_time (float): Total time taken for the planning process
         """
-        is_arml_plan = True if np.max(np.abs(self.arml_goal - self.arml_start)) > 1e-4 else False
-        is_armr_plan = True if np.max(np.abs(self.armr_goal - self.armr_start)) > 1e-4 else False
+        is_arml_plan = True if np.max(np.abs(self.arml_goal -
+                                             self.arml_start)) > 1e-4 else False
+        is_armr_plan = True if np.max(np.abs(self.armr_goal -
+                                             self.armr_start)) > 1e-4 else False
         if is_arml_plan and not is_armr_plan:
-            self.logger.info("----------------using Left arm Single Planner----------------")
-            ompl_planner = OMPLPlanSingle(self.arml_dim, self.arml_bounds, self.arml_start, self.arml_goal,
-                                          self.fcl_checker, planner_pin=self.planner_pin,
-                                          which_arm='left', other_arm_qpos=self.armr_start,
+            self.logger.info(
+                "----------------using Left arm Single Planner----------------")
+            ompl_planner = OMPLPlanSingle(self.arml_dim,
+                                          self.arml_bounds,
+                                          self.arml_start,
+                                          self.arml_goal,
+                                          self.fcl_checker,
+                                          planner_pin=self.planner_pin,
+                                          which_arm='left',
+                                          other_arm_qpos=self.armr_start,
                                           use_ee=self.use_ee)
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
-            ompl_planner.set_end_effector_qpos(self.armlee_qpos, self.armree_qpos)
+            ompl_planner.set_end_effector_qpos(self.armlee_qpos,
+                                               self.armree_qpos)
             ompl_planner.set_traj_max_vel(self.left_traj_max_vel)
-            left_path, left_trajectory, left_plan_time = ompl_planner.plan(planning_time=2.0)
+            left_path, left_trajectory, left_plan_time = ompl_planner.plan(
+                planning_time=2.0)
             if left_path is not None:
                 return left_trajectory, None, left_plan_time
             else:
                 return None, None, None
-            
+
         if is_armr_plan and not is_arml_plan:
-            self.logger.info("----------------using Right arm Single Planner----------------")
-            ompl_planner = OMPLPlanSingle(self.armr_dim, self.armr_bounds, self.armr_start, self.armr_goal,
-                                          self.fcl_checker, planner_pin=self.planner_pin,
-                                          which_arm='right', other_arm_qpos=self.arml_start,
+            self.logger.info(
+                "----------------using Right arm Single Planner----------------"
+            )
+            ompl_planner = OMPLPlanSingle(self.armr_dim,
+                                          self.armr_bounds,
+                                          self.armr_start,
+                                          self.armr_goal,
+                                          self.fcl_checker,
+                                          planner_pin=self.planner_pin,
+                                          which_arm='right',
+                                          other_arm_qpos=self.arml_start,
                                           use_ee=self.use_ee)
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
-            ompl_planner.set_end_effector_qpos(self.armlee_qpos, self.armree_qpos)
+            ompl_planner.set_end_effector_qpos(self.armlee_qpos,
+                                               self.armree_qpos)
             ompl_planner.set_traj_max_vel(self.right_traj_max_vel)
-            right_path, right_trajectory, right_plan_time = ompl_planner.plan(planning_time=2.0)
+            right_path, right_trajectory, right_plan_time = ompl_planner.plan(
+                planning_time=2.0)
             if right_path is not None:
                 return None, right_trajectory, right_plan_time
             else:
                 return None, None, None
-            
+
         if is_arml_plan and is_armr_plan:
-            self.logger.info("----------------using Decoupled Planner----------------")
-            ompl_planner = OMPLPlanDecoupled(self.arml_dim, self.armr_dim, 
-                                             self.arml_bounds, self.armr_bounds,
-                                             self.arml_start, self.armr_start,
-                                             self.arml_goal, self.armr_goal,
+            self.logger.info(
+                "----------------using Decoupled Planner----------------")
+            ompl_planner = OMPLPlanDecoupled(self.arml_dim,
+                                             self.armr_dim,
+                                             self.arml_bounds,
+                                             self.armr_bounds,
+                                             self.arml_start,
+                                             self.armr_start,
+                                             self.arml_goal,
+                                             self.armr_goal,
                                              self.fcl_checker,
                                              planner_pin=self.planner_pin,
                                              use_ee=self.use_ee)
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
-            ompl_planner.set_traj_max_vel(self.left_traj_max_vel, self.right_traj_max_vel)
-            ompl_planner.set_end_effector_qpos(self.armlee_qpos, self.armree_qpos)
+            ompl_planner.set_traj_max_vel(self.left_traj_max_vel,
+                                          self.right_traj_max_vel)
+            ompl_planner.set_end_effector_qpos(self.armlee_qpos,
+                                               self.armree_qpos)
             coordinated_left, coordinated_right, plan_time = ompl_planner.plan()
             if coordinated_left is not None and coordinated_right is not None:
                 return coordinated_left, coordinated_right, plan_time
             else:
-                self.logger.warning("Failed to find a trajectory for dual arm Decoupled planning")
+                self.logger.warning(
+                    "Failed to find a trajectory for dual arm Decoupled planning"
+                )
                 return None, None, None
-            
+
         if not is_arml_plan and not is_armr_plan:
-            self.logger.info("No planning needed, both arms are already at their goal positions.")
+            self.logger.info(
+                "No planning needed, both arms are already at their goal positions."
+            )
             return None, None, 0.0
-        
-    def coordinate_trajectories_with_EE(self, left_traj_list: list[np.ndarray], right_traj_list: list[np.ndarray],
-                                        left_ee_trigger_list: list[tuple[int, np.ndarray]], right_ee_trigger_list: list[tuple[int, np.ndarray]]):
+
+    def coordinate_trajectories_with_EE(
+            self, left_traj_list: list[np.ndarray],
+            right_traj_list: list[np.ndarray],
+            left_ee_trigger_list: list[tuple[int, np.ndarray]],
+            right_ee_trigger_list: list[tuple[int, np.ndarray]]):
         """
         Connect multiple trajectories for single arm individually with end effector time consideration 
             and return the coordinated dual arm trajectories with connected trajectories.
@@ -336,31 +411,42 @@ class HybridPlanner:
         """
 
         if len(left_traj_list) != len(left_ee_trigger_list):
-            raise ValueError(f"Count of left arm trajectories {len(left_traj_list)} does not match count of left arm ee trigger points {len(left_ee_trigger_list)}")
+            raise ValueError(
+                f"Count of left arm trajectories {len(left_traj_list)} does not match count of left arm ee trigger points {len(left_ee_trigger_list)}"
+            )
         if len(right_traj_list) != len(right_ee_trigger_list):
-            raise ValueError(f"Count of right arm trajectories {len(right_traj_list)} does not match count of right arm ee trigger points {len(right_ee_trigger_list)}")
+            raise ValueError(
+                f"Count of right arm trajectories {len(right_traj_list)} does not match count of right arm ee trigger points {len(right_ee_trigger_list)}"
+            )
 
         arml_trajectory = np.vstack(left_traj_list)
         armr_trajectory = np.vstack(right_traj_list)
         left_traj_cnt, right_traj_cnt = 0, 0
         left_ee_identifier_list, right_ee_identifier_list = [], []
         for i in range(len(left_ee_trigger_list)):
-            left_ee_identifier_list.append((left_traj_cnt + left_ee_trigger_list[i][0], np.asarray(left_ee_trigger_list[i][1])))
+            left_ee_identifier_list.append(
+                (left_traj_cnt + left_ee_trigger_list[i][0],
+                 np.asarray(left_ee_trigger_list[i][1])))
             left_traj_cnt += left_traj_list[i].shape[0]
         for i in range(len(right_ee_trigger_list)):
-            right_ee_identifier_list.append((right_traj_cnt + right_ee_trigger_list[i][0], np.asarray(right_ee_trigger_list[i][1])))
+            right_ee_identifier_list.append(
+                (right_traj_cnt + right_ee_trigger_list[i][0],
+                 np.asarray(right_ee_trigger_list[i][1])))
             right_traj_cnt += right_traj_list[i].shape[0]
-        coordinator = Coordination(left_traj=arml_trajectory, right_traj=armr_trajectory,
+        coordinator = Coordination(left_traj=arml_trajectory,
+                                   right_traj=armr_trajectory,
                                    fcl_checker=self.fcl_checker,
                                    planner_pin=self.planner_pin,
-                                   coordination_res=0.1, traj_res=0.01,
+                                   coordination_res=0.1,
+                                   traj_res=0.01,
                                    use_ee=self.use_ee)
         coordinator.set_head_body(self.head_qpos, self.torso_qpos)
-        coordinator.set_ee_identifier(armlee_start_qpos=self.armlee_qpos, armree_start_qpos=self.armree_qpos,
-                                      left_identifier_list=left_ee_identifier_list, right_identifier_list=right_ee_identifier_list)
-        coordinated_left, coordinated_right, coordinated_left_ee, coordinated_right_ee = coordinator.Coordinate_RRT_with_EE()
+        coordinator.set_ee_identifier(
+            armlee_start_qpos=self.armlee_qpos,
+            armree_start_qpos=self.armree_qpos,
+            left_identifier_list=left_ee_identifier_list,
+            right_identifier_list=right_ee_identifier_list)
+        coordinated_left, coordinated_right, coordinated_left_ee, coordinated_right_ee = coordinator.Coordinate_RRT_with_EE(
+        )
 
         return coordinated_left, coordinated_right, coordinated_left_ee, coordinated_right_ee
-        
-
-        

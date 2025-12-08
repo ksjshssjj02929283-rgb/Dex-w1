@@ -8,9 +8,6 @@ import numpy as np
 from enum import Enum, auto
 from dataclasses import dataclass
 from typing import Optional, Union
-# from geometry_msgs.msg import Pose
-# from sensor_msgs.msg import JointState
-
 """----------------------------------------------------------------------------
 enum for various states and request types
 机器人状态类和指令类枚举
@@ -48,9 +45,12 @@ class PropertyType(Enum):
 class MotionType(Enum):
     MoveJoint = auto()
     MoveLine = auto()
+    MoveTraj = auto()
 
     StartJointStreaming = auto()
     StartEEPoseStreaming = auto()
+
+    StopMove = auto()
 
 
 class MotionGroup(Enum):
@@ -58,6 +58,7 @@ class MotionGroup(Enum):
     Secondary = auto()
     BothArms = auto()
     WholeBody = auto()
+    Torso = auto()
 
 
 class ReferenceFrame(Enum):
@@ -78,13 +79,31 @@ robot state and requests data structure class
 @dataclass
 class RobotInfo:
     """robot info 机器人状态集合"""
-
     status: Status
+    robot_statusword: int
+    robot_controlword: int
+    run_mode: RunMode
+
+    latest_sent_id: int
+    latest_queued_id: int
+    latest_finished_id: int
+    latest_errordrop_id: int
+
+    joint_position_cmd: list[float]
     joint_position: list[float]
     joint_velocity: list[float]
-    actual_arm_torque: list[float]
-    command_arm_torque: list[float]
+    joint_torque: list[float]
+
+    motor_status: list[int]
+    motor_error_code: list[int]
+    motor_temperature: list[int]
+    force_sensor: list[float]
+
+    torque_limit_negative: list[float]
+    torque_limit_positive: list[float]
+
     ee_pose: list[float]
+    torso_pose_X_Z_RY: list[float]
 
 
 @dataclass
@@ -92,7 +111,7 @@ class MoveRequest:
     """move request 移动指令"""
 
     type: MotionType
-    motion_group: MotionGroup
+    motion_group: Optional[MotionGroup] = None
     value: Optional[Union[list[float], np.ndarray]] = None  # 目标位置
 
     reference_frame: Optional[ReferenceFrame] = None  # 参考坐标系

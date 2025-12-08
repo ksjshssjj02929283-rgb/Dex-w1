@@ -11,6 +11,7 @@ class W1ArmType(Enum):
     INDUSTRIAL = auto()
     ANTHROPOMORPHIC = auto()
 
+
 class W1Version(Enum):
     V1 = auto()
     V2 = auto()

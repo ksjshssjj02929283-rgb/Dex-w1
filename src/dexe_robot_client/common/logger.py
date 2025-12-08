@@ -13,6 +13,7 @@ from datetime import datetime
 from pprint import pformat
 from .config import LOG_DIR, PACKAGE_NAME
 
+
 def get_logger() -> logging.Logger:
     return Logger.get_instance()
 
@@ -27,10 +28,12 @@ LEVEL_COLORS = {
 
 
 class Logger:
+
     class PrettyFilter(logging.Filter):
-        def __init__(self,  
-                     indent: int = 2, 
-                     width: int = 100, 
+
+        def __init__(self,
+                     indent: int = 2,
+                     width: int = 100,
                      sort_dicts: bool = False):
             super().__init__()
             self.indent = indent
@@ -39,7 +42,10 @@ class Logger:
             self._pretty_types = (dict, list, tuple, set)
 
         def _pp(self, obj):
-            return pformat(obj, indent=self.indent, width=self.width, sort_dicts=self.sort_dicts)
+            return pformat(obj,
+                           indent=self.indent,
+                           width=self.width,
+                           sort_dicts=self.sort_dicts)
 
         def filter(self, record: logging.LogRecord) -> bool:
             if isinstance(record.msg, self._pretty_types):
@@ -49,6 +55,7 @@ class Logger:
             return True
 
     class BaseMicroSecondFormatter:
+
         def formatTime(self, record, datefmt=None):
             dt = datetime.fromtimestamp(record.created)
             if datefmt:
@@ -56,9 +63,8 @@ class Logger:
             else:
                 return dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    class MicroSecondColoredFormatter(
-        BaseMicroSecondFormatter, colorlog.ColoredFormatter
-    ):
+    class MicroSecondColoredFormatter(BaseMicroSecondFormatter,
+                                      colorlog.ColoredFormatter):
         pass
 
     class MicroSecondFormatter(BaseMicroSecondFormatter, logging.Formatter):
@@ -78,13 +84,13 @@ class Logger:
                     cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self, 
+    def __init__(self,
                  log_file_path="",
                  name="root",
                  console_level: int = logging.DEBUG,
                  file_level: int = logging.DEBUG,
-                 pretty_in_console = True,
-                 pretty_in_file = True):
+                 pretty_in_console=True,
+                 pretty_in_file=True):
         if hasattr(self, "_initialized") and self._initialized:
             return
         self._initialized = True
@@ -109,12 +115,10 @@ class Logger:
                 "[%(asctime)s] [%(log_color)s%(levelname)s%(light_white)s] [%(filename)s-%(lineno)d]: %(message)s",
                 datefmt="%Y-%m-%d %H:%M:%S",
                 log_colors=LEVEL_COLORS,
-            )
-        )
+            ))
         if pretty_in_console:
             self.console_handler.addFilter(
-                self.PrettyFilter(indent=2, width=100, sort_dicts=False)
-            )
+                self.PrettyFilter(indent=2, width=100, sort_dicts=False))
 
         self.file_handler = logging.handlers.RotatingFileHandler(
             filename=self._log_file_path,
@@ -127,12 +131,10 @@ class Logger:
             self.MicroSecondFormatter(
                 "[%(asctime)s] [%(levelname)s] [%(filename)s-%(lineno)d]: %(message)s",
                 datefmt="%Y-%m-%d %H:%M:%S",
-            )
-        )
+            ))
         if pretty_in_file:
             self.file_handler.addFilter(
-                self.PrettyFilter(indent=2, width=100, sort_dicts=False)
-            )
+                self.PrettyFilter(indent=2, width=100, sort_dicts=False))
 
         self._logger.addHandler(self.console_handler)
         self._logger.addHandler(self.file_handler)
