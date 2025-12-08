@@ -20,10 +20,10 @@ enum for various states and command types
 #include <vector>
 
 #include "bounded_queue.h"
-#include "dynamics_utils.h"
 #include "single_rw_latest_queue.h"
 #include "time_utility.h"
 #include "typedef.h"
+#include "pinocchio_api.h"
 
 namespace robot_server_lib
 {
@@ -257,6 +257,8 @@ struct RobotParams
     Eigen::VectorXd joints_primary;
     Eigen::VectorXd joints_secondary;
     Eigen::VectorXd joints_torso;
+    std::optional<Eigen::VectorXd> dynamics_base_parameters_primary;    // 动力学基参数矩阵(非方阵)
+    std::optional<Eigen::VectorXd> dynamics_base_parameters_secondary;  // 动力学基参数矩阵(非方阵)
 };
 
 struct RobotModel

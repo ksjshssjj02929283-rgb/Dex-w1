@@ -5,6 +5,7 @@
 // ----------------------------------------------------------------------------
 #pragma once
 #include "utils.h"
+#include "dynamics_base.h"
 
 namespace robot_server_lib
 {

@@ -1,5 +1,6 @@
 #pragma once
 #include "torque_controller_base.h"
+#include "dynamics_base.h"
 
 namespace robot_server_lib
 {

@@ -5,6 +5,7 @@
 #include "kinematics_include.h"
 #include "ruckig/ruckig.hpp"
 #include "utils.h"
+#include "dynamics_base.h"
 
 namespace robot_server_lib
 {

@@ -288,7 +288,7 @@ void RobotServer::TorqueControlThreadFunc()
         else
         {
             this->robot_buffers_.joint_raw_measurement->Reset();
-            if (loop_counter % 3000 == 0)
+            if (loop_counter % 5000 == 0)
             {
                 RCLCPP_WARN(this->get_logger(), "Robot is not ready, shm status: %d, statusword: %s", ret,
                             utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());

@@ -5,7 +5,7 @@
 #include <cmath>
 
 #include "NanoLog.hpp"
-#include "dynamics_utils.h"
+#include "dynamics_base.h"
 
 namespace robot_server_lib
 {

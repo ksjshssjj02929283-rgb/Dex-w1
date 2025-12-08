@@ -201,7 +201,10 @@ bool MoveTrajPlanner::ResetForNewTrajectory(const PlannerRequest &request, const
     }
     LOG_INFO << "MoveTrajPlanner: New trajectory loaded: traj_dof = " << runtime_.traj_dof << ", traj_npoints = " << user_npoints
              << ", interval = " << runtime_.interval << ", endpoint_index = " << runtime_.endpoint_index
-             << ", total_duration = " << runtime_.total_duration << "s";
+             << ", total_duration = " << runtime_.total_duration << "s"
+             << "\ncurrent posision:   " << q_start.transpose()
+             << "\nfirst target point: " << runtime_.target_traj[1].transpose()
+             << "\nend target point:   " << runtime_.target_traj.back().transpose();
 
     return true;
 }
