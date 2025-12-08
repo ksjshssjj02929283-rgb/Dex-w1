@@ -6,6 +6,4 @@
 
 from .dexsim_server import DexsimServer
 
-__all__ = [
-    "DexsimServer"
-]
+__all__ = ["DexsimServer"]
