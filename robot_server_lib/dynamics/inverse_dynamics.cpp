@@ -1,23 +1,48 @@
-#include "dynamics_utils.h"
+#include "inverse_dynamics.h"
 
 namespace robot_server_lib
 {
 namespace dynamics
 {
 
-Eigen::VectorXd InverseDynamics(const pinocchio::Model& model, pinocchio::Data& data, const Eigen::VectorXd& q, const Eigen::VectorXd& dq,
-                                const Eigen::VectorXd& ddq, const std::vector<std::string>& joint_command_sequence_by_name)
+Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq,
+                                const VectorDof& ddq)
 {
+    const auto& model = *robot_model.model_ptr;
+    const auto& joint_command_sequence_by_name = robot_model.params_ptr->joint_command_sequence_by_name;
     // 将输入数据映射到URDF顺序
     Eigen::VectorXd q_urdf = MapToUrdfOrder(model, q, joint_command_sequence_by_name);
     Eigen::VectorXd dq_urdf = MapToUrdfOrder(model, dq, joint_command_sequence_by_name);
     Eigen::VectorXd ddq_urdf = MapToUrdfOrder(model, ddq, joint_command_sequence_by_name);
-
     // 计算逆动力学
     auto tau_urdf = pinocchio::rnea(model, data, q_urdf, dq_urdf, ddq_urdf);
+    VectorDof tau = MapToParamOrder(model, tau_urdf, joint_command_sequence_by_name); // 将结果映射回joint_command_sequence_by_name顺序
 
-    // 将结果映射回joint_command_sequence_by_name顺序
-    auto tau = MapToParamOrder(model, tau_urdf, joint_command_sequence_by_name);
+    // 如果提供了动力学最小参数集矩阵，则进行替换
+    const auto& dyn_base_params_primary = robot_model.params_ptr->dyn_base_params_primary;
+    const auto& dyn_base_params_secondary = robot_model.params_ptr->dyn_base_params_secondary;
+    if (dyn_base_params_primary.has_value())
+    {
+        // 计算重力方向在arm base坐标系下的表示
+        int first_joint_id = robot_model.params_ptr->joints_primary[0];
+        auto first_joint_name = robot_model.params_ptr->joint_command_sequence_by_name[first_joint_id];
+        int arm_base_id = robot_model.model_ptr->getFrameId(first_joint_name) - 1;
+        auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, data, q_urdf, arm_base_id);
+        Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
+        Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Primary);
+        utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Primary);
+    }
+    if (dyn_base_params_secondary.has_value())
+    {
+        // 计算重力方向在arm base坐标系下的表示
+        int first_joint_id = robot_model.params_ptr->joints_secondary[0];
+        auto first_joint_name = robot_model.params_ptr->joint_command_sequence_by_name[first_joint_id];
+        int arm_base_id = robot_model.model_ptr->getFrameId(first_joint_name) - 1;
+        auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, data, q_urdf, arm_base_id);
+        Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
+        Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Secondary);
+        utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Secondary);
+    }
     return tau;
 }
 
@@ -82,6 +107,5 @@ Eigen::VectorXd MapToParamOrder(const pinocchio::Model& model, const Eigen::Vect
 
     return output;
 }
-
 }  // namespace dynamics
 }  // namespace robot_server_lib

@@ -1,12 +1,14 @@
 import argparse
 import json
 import re
+import sys
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 
 
 def parse_line(line):
@@ -60,6 +62,12 @@ def parse_line(line):
 
 
 def main():
+    if len(sys.argv) >= 2:
+        m = re.fullmatch(r"-?\d+(\.\d+)?", sys.argv[1])
+        if m:
+            sec = abs(float(sys.argv[1]))
+            sys.argv[1] = f"--seconds={sec}"
+
     parser = argparse.ArgumentParser(description="Plot last N points from robot_server log.")
     parser.add_argument(
         "--path",
@@ -70,8 +78,14 @@ def main():
     parser.add_argument(
         "--n",
         type=int,
-        default=10000,
-        help="Number of valid points to keep from the end (default: 10000).",
+        default=5000,
+        help="Maximum number of valid points to keep while reading (legacy, default: 5000).",
+    )
+    parser.add_argument(
+        "--seconds",
+        type=float,
+        default=2.0,
+        help="Time window in seconds to plot from the end (default: 2.0).",
     )
     args = parser.parse_args()
 
@@ -80,7 +94,7 @@ def main():
         print(f"Log file not found: {log_path}")
         return
 
-    # 用 deque 仅保留最后 N 条“有效”样本
+    # 用 deque 限制读取时的最大样本数，最终按时间窗口过滤
     samples = deque(maxlen=args.n)
 
     with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -95,7 +109,21 @@ def main():
         print("No valid samples found.")
         return
 
-    # 组装为时间序列（长度 = 样本条数）
+    # 按时间窗口过滤：以最后一条样本为基准，保留最近 args.seconds 秒的样本
+    last_ts = samples[-1][0]
+    cutoff = last_ts - timedelta(seconds=abs(args.seconds))
+    filtered = deque()
+    for ts, d in samples:
+        if ts >= cutoff:
+            filtered.append((ts, d))
+
+    if not filtered:
+        print(f"No samples found within the last {args.seconds} seconds.")
+        return
+
+    samples = filtered
+
+    # 组装为时间序列（长度 = 样本条数），以保留样本的第一个时间为基点
     times = np.array([(s[0] - samples[0][0]).total_seconds() for s in samples], dtype=float)
     n = len(samples)
 
@@ -114,101 +142,183 @@ def main():
     tor = build_array("joint_torque")
     tor_ff = build_array("joint_torque_feedforward")
 
-    # 单位换算：位置相关从弧度转为角度
-    pos_deg = np.rad2deg(pos)
-    pos_cmd_deg = np.rad2deg(pos_cmd)
+    # 将位置从弧度转换为度（便于展示）
+    pos_deg = np.degrees(pos)
+    pos_cmd_deg = np.degrees(pos_cmd)
 
-    # 误差（仅在双方都有数据时才会得到数值，否则为 NaN）
+    # 误差（仅在双方都有数据时才会得到数值，否则为 NaN），单位为度
     pos_err_deg = pos_cmd_deg - pos_deg
     tor_err = tor_ff - tor
+    # 速度，原始为 rad/s -> 转为 deg/s 以便显示
+    vel = build_array("joint_velocity")
+    vel_deg = np.degrees(vel)
 
-    # 移除：每两个关节在一张大图的函数与调用
-    def arm_side_and_idx(j):
-        if j < 7:
-            return "Left Arm", j + 1
-        else:
-            return "Right Arm", j - 6
-
-    # 每个手臂分两张图：前3关节与后4关节；每张图布局为“每关节一列（4行）”
-    def plot_group(arm_name, joint_indices):
-        rows = 4                    # position, torque, pos_error, tor_error
-        cols = len(joint_indices)   # 每个关节一列
-        fig, axes = plt.subplots(rows, cols, figsize=(3.4 * cols, 2.6 * rows), sharex=True)
-        if cols == 1:
-            axes = np.array([[axes[r]] for r in range(rows)])  # 统一二维索引
-        fig.suptitle(arm_name)
-
-        # 行标题
-        row_titles = ["position", "torque", "pos error", "tor error"]
+    # 设置matplotlib参数以最大化显示
+    plt.rcParams['figure.max_open_warning'] = 100  # 允许更多图形
+    plt.rcParams['figure.autolayout'] = False  # 手动调整布局
+    
+    # 每个手臂一张大图，每张图包含7个关节（每个关节一列，4行）
+    def plot_arm(arm_name, joint_indices, arm_side):
+        rows = 4  # position, torque, pos_error, tor_error
+        cols = len(joint_indices)  # 7个关节
+        # 将整张大图分辨率设置为 1920x1080 像素（每张大图）
+        # figsize 单位为英寸，dpi*figsize = 像素。这里使用 dpi=100 -> figsize=(19.2, 10.8)
+        fig, axes = plt.subplots(rows, cols, figsize=(19.2, 10.8), dpi=100, sharex=True)
+        
+        # 将所有坐标轴刻度格式化为小数点后3位
+        for ax in axes.flatten():
+            ax.xaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
+            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
+        # 最大化显示
+        mng = plt.get_current_fig_manager()
+        try:
+            mng.window.state('zoomed')  # Windows
+        except:
+            try:
+                mng.window.showMaximized()  # Linux
+            except:
+                try:
+                    mng.frame.Maximize(True)  # macOS
+                except:
+                    pass
 
         for ci, j in enumerate(joint_indices):
-            arm_side, arm_idx = arm_side_and_idx(j)
-            col_title = f"{arm_side} J{arm_idx}"
+            joint_num = ci + 1
+            col_title = f"{arm_side} J{joint_num}"
 
             # 1) position（度）
             ax = axes[0, ci]
-            ax.plot(times, pos_deg[:, j], label="position (deg)", color="tab:blue", linewidth=1.0)
+            ax.plot(times, pos_deg[:, j], label="position (deg)", color="tab:blue", linewidth=1.2)
             if np.isfinite(pos_cmd_deg[:, j]).any():
-                ax.plot(times, pos_cmd_deg[:, j], label="position_cmd (deg)", color="tab:green", linewidth=1.0, linestyle="--")
-            ax.grid(True, alpha=0.3)
-            ax.set_title(col_title)
+                ax.plot(times, pos_cmd_deg[:, j], label="position_cmd (deg)", 
+                       color="tab:green", linewidth=1.2, linestyle="--")
+            ax.grid(True, alpha=0.3, linestyle=':')
+            ax.set_title(col_title, fontsize=12)
             if ci == 0:
-                ax.set_ylabel("position [deg]")
-                ax.legend(loc="best", fontsize=8)
+                ax.set_ylabel("Position [rad]", fontsize=11)
+                ax.legend(loc="best", fontsize=9)
             else:
-                # 仅首列显示图例，其他列去掉图例以减少重复
+                pass  # 仅首列显示图例
+            # 强制 position 纵轴范围至少为 0.1（对已有数据有效）
+            try:
+                p_vals = np.hstack([
+                    pos_deg[:, j][np.isfinite(pos_deg[:, j])],
+                    pos_cmd_deg[:, j][np.isfinite(pos_cmd_deg[:, j])]
+                ])
+                if p_vals.size > 0:
+                    pmin = p_vals.min()
+                    pmax = p_vals.max()
+                    prank = pmax - pmin
+                    # 最小范围以度为单位
+                    min_range = 0.4
+                    if prank < min_range:
+                        center = 0.5 * (pmax + pmin)
+                        half = 0.5 * min_range
+                        ax.set_ylim(center - half, center + half)
+            except Exception:
                 pass
 
             # 2) torque
             ax = axes[1, ci]
-            ax.plot(times, tor[:, j], label="torque", color="tab:red", linewidth=1.0)
+            ax.plot(times, tor[:, j], label="torque", color="tab:red", linewidth=1.2)
             if np.isfinite(tor_ff[:, j]).any():
-                ax.plot(times, tor_ff[:, j], label="torque_cmd", color="tab:orange", linewidth=1.0, linestyle="--")
-            ax.grid(True, alpha=0.3)
+                ax.plot(times, tor_ff[:, j], label="torque_cmd", 
+                       color="tab:orange", linewidth=1.2, linestyle="--")
+            ax.grid(True, alpha=0.3, linestyle=':')
             if ci == 0:
-                ax.set_ylabel("torque [Nm]")
-                ax.legend(loc="best", fontsize=8)
+                ax.set_ylabel("Torque [Nm]", fontsize=11)
+                ax.legend(loc="best", fontsize=9)
+            # 强制 torque 纵轴范围至少为 1.0（对已有数据有效）
+            try:
+                t_vals = np.hstack([
+                    tor[:, j][np.isfinite(tor[:, j])],
+                    tor_ff[:, j][np.isfinite(tor_ff[:, j])]
+                ])
+                if t_vals.size > 0:
+                    tmin = t_vals.min()
+                    tmax = t_vals.max()
+                    trange = tmax - tmin
+                    min_trange = 0.4
+                    if trange < min_trange:
+                        center = 0.5 * (tmax + tmin)
+                        half = 0.5 * min_trange
+                        ax.set_ylim(center - half, center + half)
+            except Exception:
+                pass
 
             # 3) position error（度）
             ax = axes[2, ci]
             if np.isfinite(pos_err_deg[:, j]).any():
-                ax.plot(times, pos_err_deg[:, j], label="pos_error (deg)", color="tab:purple", linewidth=1.0)
+                ax.plot(times, pos_err_deg[:, j], label="pos_error (deg)", 
+                       color="tab:purple", linewidth=1.2)
                 if ci == 0:
-                    ax.legend(loc="best", fontsize=8)
+                    ax.legend(loc="best", fontsize=9)
             else:
-                ax.text(0.5, 0.5, "No position error data", transform=ax.transAxes, ha="center", va="center", alpha=0.6)
-            ax.grid(True, alpha=0.3)
+                ax.text(0.5, 0.5, "No position error data", 
+                       transform=ax.transAxes, ha="center", va="center", 
+                       alpha=0.6, fontsize=10)
+            # 新增：强制 position error 纵轴范围至少为 0.1 度
+            try:
+                pe_vals = pos_err_deg[:, j][np.isfinite(pos_err_deg[:, j])]
+                if pe_vals.size > 0:
+                    pmin = pe_vals.min()
+                    pmax = pe_vals.max()
+                    prank = pmax - pmin
+                    min_perr_range = 0.04
+                    if prank < min_perr_range:
+                        center = 0.5 * (pmax + pmin)
+                        half = 0.5 * min_perr_range
+                        ax.set_ylim(center - half, center + half)
+            except Exception:
+                pass
+            ax.grid(True, alpha=0.3, linestyle=':')
             if ci == 0:
-                ax.set_ylabel("pos error [deg]")
+                ax.set_ylabel("Pos Error [deg]", fontsize=11)
 
-            # 4) torque error
+            # 4) velocity（deg/s）  — 用速度替换力矩偏差图，单位改为度/秒
             ax = axes[3, ci]
-            if np.isfinite(tor_err[:, j]).any():
-                ax.plot(times, tor_err[:, j], label="tor_error (ff - tor)", color="tab:brown", linewidth=1.0)
+            if np.isfinite(vel_deg[:, j]).any():
+                ax.plot(times, vel_deg[:, j], label="velocity (deg/s)", 
+                       color="tab:brown", linewidth=1.2)
                 if ci == 0:
-                    ax.legend(loc="best", fontsize=8)
+                    ax.legend(loc="best", fontsize=9)
             else:
-                ax.text(0.5, 0.5, "No torque error data", transform=ax.transAxes, ha="center", va="center", alpha=0.6)
-            ax.grid(True, alpha=0.3)
-            ax.set_xlabel("time [s]")
+                ax.text(0.5, 0.5, "No velocity data", 
+                       transform=ax.transAxes, ha="center", va="center", 
+                       alpha=0.6, fontsize=10)
+            ax.grid(True, alpha=0.3, linestyle=':')
+            ax.set_xlabel("Time [s]", fontsize=11)
+            # 强制 velocity 纵轴范围至少为 0.02 rad/s（对已有数据有效）
+            try:
+                v_vals = vel_deg[:, j][np.isfinite(vel_deg[:, j])]
+                if v_vals.size > 0:
+                    vmin = v_vals.min()
+                    vmax = v_vals.max()
+                    vrange = vmax - vmin
+                    # 保持当前数值门限不变（单位现在为 deg/s）
+                    min_vrange = 0.4
+                    if vrange < min_vrange:
+                        center = 0.5 * (vmax + vmin)
+                        half = 0.5 * min_vrange
+                        ax.set_ylim(center - half, center + half)
+            except Exception:
+                pass
             if ci == 0:
-                ax.set_ylabel("tor error [Nm]")
+                ax.set_ylabel("Velocity [deg/s]", fontsize=11)
 
-        fig.tight_layout(rect=[0, 0.03, 1, 0.97])
+        # 调整布局，为标题留出更多空间，并进一步增大子图间的水平/垂直间距
+        fig.subplots_adjust(top=0.96, bottom=0.03, left=0.05, right=0.96,
+                     hspace=0.1, wspace=0.4)
         return fig
 
-    # 左臂：关节索引 0-6 -> 前3(0,1,2)，后4(3,4,5,6)
-    left_front3 = [0, 1, 2]
-    left_back4 = [3, 4, 5, 6]
-    # 右臂：关节索引 7-13 -> 前3(7,8,9)，后4(10,11,12,13)
-    right_front3 = [7, 8, 9]
-    right_back4 = [10, 11, 12, 13]
+    # 左臂：关节索引 0-6
+    left_joints = list(range(7))
+    # 右臂：关节索引 7-13
+    right_joints = list(range(7, 14))
 
     figs = []
-    figs.append(plot_group("Left Arm (J1-J3)", left_front3))
-    figs.append(plot_group("Left Arm (J4-J7)", left_back4))
-    figs.append(plot_group("Right Arm (J1-J3)", right_front3))
-    figs.append(plot_group("Right Arm (J4-J7)", right_back4))
+    figs.append(plot_arm("Left Arm", left_joints, "Left"))
+    figs.append(plot_arm("Right Arm", right_joints, "Right"))
 
     # 一次性显示
     plt.show()

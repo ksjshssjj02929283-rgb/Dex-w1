@@ -17,6 +17,9 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
     RCLCPP_INFO(this->get_logger(), "Logs directory: %s",
                 ((server_data_dir_ / "logs").string() + "/robot_server" + interface_suffix + ".txt").c_str());
 
+    LOG_INFO << "";
+    LOG_INFO << "---------------------------------------Robot Server Initializing---------------------------------------";
+
     this->robot_server_state_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state" + interface_suffix, 10);
 
     // 创建subscriber
@@ -65,7 +68,7 @@ void RobotServerBase::Run()
     this->manager_thread_ = std::thread(&RobotServerBase::ManagerThreadFunc, this);
     this->publish_thread_ = std::thread(&RobotServerBase::PublishThreadFunc, this);
     RCLCPP_INFO(this->get_logger(), "Initialized successfully.");
-    LOG_INFO << "--------------------------------Robot Server Initialized Successfully--------------------------------";
+    LOG_INFO << "Robot Server Initialized Successfully";
 }
 
 void RobotServerBase::ManagerThreadFunc()
@@ -139,7 +142,7 @@ void RobotServerBase::PublishThreadFunc()
 Int64 RobotServerBase::MakeNewRequestID(const PlannerRequest &planner_request)
 {
     const RequestType &type = planner_request.type;
-    if (type == RequestType::StartJointStreaming || type == RequestType::StartEEPoseStreaming)
+    if (type == RequestType::StartJointStreaming || type == RequestType::StartEEPoseStreaming || type == RequestType::StartEEVelocityStreaming)
     {
         if (this->latest_received_id_ > (std::max(this->latest_report_id_.finished.load(), this->latest_report_id_.error_drop.load())))
         {
@@ -214,11 +217,12 @@ void RobotServerBase::MoveRobotCallback(const std::shared_ptr<rclcpp_action::Ser
                                                   : this->manager_buffers_.request_queue->EnQueue(planner_request);
 
     this->request_handle_queue_.EnQueue(request_handle);
-    RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, arm = %s", planner_request.request_id, request_handle->get_goal()->type.c_str(),
-                request_handle->get_goal()->motion_group.c_str());
+    RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, arm = %s, is emergency request: %s", planner_request.request_id, request_handle->get_goal()->type.c_str(),
+                request_handle->get_goal()->motion_group.c_str(), planner_request.type >= RequestType::StopMove ? "true" : "false");
 
     LOG_INFO << "Request_id = " << planner_request.request_id << ", Received, type = " << request_handle->get_goal()->type
-             << ", arm = " << request_handle->get_goal()->motion_group;
+             << ", arm = " << request_handle->get_goal()->motion_group << ", is emergency request: "
+             << (planner_request.type >= RequestType::StopMove ? "true" : "false");
 }
 
 void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::SharedPtr streaming_msg)

@@ -5,7 +5,7 @@
 #include <cmath>
 
 #include "NanoLog.hpp"
-#include "dynamics_utils.h"
+#include "inverse_dynamics.h"
 
 namespace robot_server_lib
 {
@@ -14,13 +14,13 @@ namespace dynamics
 
 // 6方向笛卡尔柔顺控制 [x, y, z]
 // 无模型导纳：M * x_dd + B * x_d + K * x = F
-class CartesianComplianceControl
+class CartesianAdmittanceController
 {
    public:
-    CartesianComplianceControl() = default;
+    CartesianAdmittanceController() = default;
 
     // 初始化参数（质量、阻尼、刚度，6轴可分别指定）
-    CartesianComplianceControl(const Vector3d& M, const Vector3d& B, const Vector3d& K, double control_dt = 0.001)
+    CartesianAdmittanceController(const Vector3d& M, const Vector3d& B, const Vector3d& K, double control_dt = 0.001)
         : M_(M), B_(B), K_(K), control_dt_(control_dt)
     {
     }
@@ -69,7 +69,7 @@ class CartesianComplianceControl
                 b = min_damping;
             }
         }
-        LOG_INFO << "CartesianComplianceControl: Set mass to [" << M_.transpose() << "], updated damping to [" << B_.transpose() << "], stiffness: ["
+        LOG_INFO << "CartesianAdmittanceController: Set mass to [" << M_.transpose() << "], updated damping to [" << B_.transpose() << "], stiffness: ["
                  << K_.transpose() << "]";
     }
     void SetDamping(const Vector3d& B)
@@ -81,10 +81,10 @@ class CartesianComplianceControl
             if (b < min_damping)
             {
                 b = min_damping;
-                LOG_INFO << "CartesianComplianceControl: Updated damping to min critical damping: " << b;
+                LOG_INFO << "CartesianAdmittanceController: Updated damping to min critical damping: " << b;
             }
         }
-        LOG_INFO << "CartesianComplianceControl: Set damping to [" << B_.transpose() << "], mass: [" << M_.transpose() << "], stiffness: ["
+        LOG_INFO << "CartesianAdmittanceController: Set damping to [" << B_.transpose() << "], mass: [" << M_.transpose() << "], stiffness: ["
                  << K_.transpose() << "]";
     }
     void SetStiffness(const Vector3d& K)
@@ -96,7 +96,7 @@ class CartesianComplianceControl
             if (b < min_damping)
                 b = min_damping;
         }
-        LOG_INFO << "CartesianComplianceControl: Set stiffness to [" << K_.transpose() << "], updated damping to [" << B_.transpose() << "], mass: ["
+        LOG_INFO << "CartesianAdmittanceController: Set stiffness to [" << K_.transpose() << "], updated damping to [" << B_.transpose() << "], mass: ["
                  << M_.transpose() << "]";
     }
 

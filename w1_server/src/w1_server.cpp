@@ -10,6 +10,8 @@ namespace robot_server_lib
 
 RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : RobotServerBase(robot_cfg_path, is_sim)
 {
+	LOG_INFO << "w1_server version: " << W1_SERVER_VERSION;
+    
     // 创建 /feedback/joint 发布器
     feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint", 10);
 
@@ -40,12 +42,13 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     force_subscriber_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
         "force_array", rclcpp::QoS(10), std::bind(&RobotServer::ForceArrayCallback, this, std::placeholders::_1));
 
+    // 创建 /control/debug 订阅器
+    debug_subscriber_ = this->create_subscription<std_msgs::msg::String>(
+        "/control/debug", 10, std::bind(&RobotServer::DebugCallback, this, std::placeholders::_1));
+
     // 参数初始化
     InitParamConfig();
-    if (enable_debug_log_)
-    {
-        nanolog::set_log_level(nanolog::LogLevel::DEBUG);
-    }
+
     // 创建定时器，定时发布feedback 定时器回调函数
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
 
@@ -78,13 +81,12 @@ void RobotServer::InitParamConfig()
 {
     auto config_path = server_data_dir_ / "w1_config.json";
 
-    const std::set<std::string> kAllowedRootKeys{"enable_debug_log", "enable_ruckig", "enable_cst_mode"};
+    const std::set<std::string> kAllowedRootKeys{"enable_ruckig", "enable_cst_mode"};
 
     nlohmann::json root;
     // 若文件不存在则创建默认配置
     if (!std::filesystem::exists(config_path))
     {
-        root["enable_debug_log"] = this->enable_debug_log_;
         root["enable_ruckig"] = this->enable_ruckig_;
         root["enable_cst_mode"] = this->enable_cst_mode_;
 
@@ -119,12 +121,6 @@ void RobotServer::InitParamConfig()
         }
     }
 
-    // 若缺失则补默认
-    if (!root.contains("enable_debug_log"))
-    {
-        root["enable_debug_log"] = this->enable_debug_log_;
-        need_rewrite = true;
-    }
     if (!root.contains("enable_ruckig"))
     {
         root["enable_ruckig"] = this->enable_ruckig_;
@@ -137,13 +133,11 @@ void RobotServer::InitParamConfig()
     }
 
     // 同步布尔值
-    this->enable_debug_log_ = root.value("enable_debug_log", this->enable_debug_log_);
     this->enable_ruckig_ = root.value("enable_ruckig", this->enable_ruckig_);
     this->enable_cst_mode_ = root.value("enable_cst_mode", this->enable_cst_mode_);
 
     // 构建干净配置
     nlohmann::json root_clean;
-    root_clean["enable_debug_log"] = this->enable_debug_log_;
     root_clean["enable_ruckig"] = this->enable_ruckig_;
     root_clean["enable_cst_mode"] = this->enable_cst_mode_;
 
@@ -154,12 +148,10 @@ void RobotServer::InitParamConfig()
         ofs << root_clean.dump(2);
     }
 
-    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_debug_log=%s, enable_cst_mode=%s)",
-                config_path.string().c_str(), this->enable_debug_log_ ? "true" : "false", this->enable_ruckig_ ? "true" : "false",
+    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_cst_mode=%s)",
+                config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
                 this->enable_cst_mode_ ? "true" : "false");
-    LOG_INFO << "";
-    LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_debug_log=" << this->enable_debug_log_
-             << ", enable_ruckig=" << this->enable_ruckig_ << ", enable_cst_mode=" << this->enable_cst_mode_;
+    LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_ << ", enable_cst_mode=" << this->enable_cst_mode_;
 }
 
 void RobotServer::TorqueControlThreadFunc()
@@ -194,71 +186,22 @@ void RobotServer::TorqueControlThreadFunc()
 
         bool ret = feedback_shm_instance.PeekLatest(&robot_feedback_) && robot_feedback_.cnt > 0;
         // 根据状态写入机器人控制字
-        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
         this->is_robot_ready_ = false;
-        static bool inited_ = false;
+        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
         if (ret)
         {
-            if (manager_state_ == Status::Running)
-            {
-                LOG_DEBUG << "{ \"joint_position\": " << utils::VectorToJsonArrayString(robot_feedback_.position, 6, ndof_robot).str()
-                          << ", \"joint_velocity\": " << utils::VectorToJsonArrayString(robot_feedback_.velocity, 6, ndof_robot).str()
-                          << ", \"joint_torque\":" << utils::VectorToJsonArrayString(robot_feedback_.torque, 6, ndof_robot).str()
-                          << ", \"joint_position_cmd\": " << utils::VectorToJsonArrayString(robot_control_.position, 6, ndof_robot).str()
-                          << ", \"joint_torque_feedforward\": "
-                          << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str() << "}";
-            }
-            switch (robot_feedback_.robot_status_word)
-            {
-            case STATUSWORD_MOTOR_READY:
-                // ready状态is_robot_ready_置为true, 可以写入measurement, 生成cmd后再使能电机
-                this->is_robot_ready_ = true;
-                inited_ = true;
-                if (is_cmd_valid_)
-                {
-                    robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
-                    if (enable_cst_mode_)
-                    {
-                        robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
-                    }
-                }
-                else
-                {
-                    for (int i = 0; i < ndof_robot; i++)
-                    {
-                        robot_control_.position[i] = robot_feedback_.position[i];
-                        robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
-                        robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
-                    }
-                }
-                break;
-            case STATUSWORD_MOTOR_ENABLED:
-                this->is_robot_ready_ = true;
-                inited_ = true;
-                robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
-                if (enable_cst_mode_)
-                {
-                    robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
-                }
-                break;
-            case STATUSWORD_MOTOR_NOT_READY:
-            case STATUSWORD_MOTOR_FAULT:
-            case STATUSWORD_MOTOR_QUICK_STOP:
-            default:
-                for (int i = 0; i < ndof_robot; i++)
-                {
-                    robot_control_.position[i] = robot_feedback_.position[i];
-                    robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
-                    robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
-                }
-                break;
-            }
-            if (!inited_ || planner_info_.robot_property.clear_error_flag)
-            {
-                robot_control_.robot_control_word |= CTRLWORD_MOTOR_CLEAR_FAULT;
-            }
+            this->SwitchControlWord();
         }
-
+        // 如果开启了记录, 则在日志中记录数据
+        if (this->enable_record_ && manager_state_ == Status::Running && loop_counter % 4 == 0)
+        {
+            LOG_INFO << "{ \"joint_position\": " << utils::VectorToJsonArrayString(robot_feedback_.position, 6, ndof_robot).str()
+                    << ", \"joint_velocity\": " << utils::VectorToJsonArrayString(robot_feedback_.velocity, 6, ndof_robot).str()
+                    << ", \"joint_torque\":" << utils::VectorToJsonArrayString(robot_feedback_.torque, 6, ndof_robot).str()
+                    << ", \"joint_position_cmd\": " << utils::VectorToJsonArrayString(robot_control_.position, 6, ndof_robot).str()
+                    << ", \"joint_torque_feedforward\": "
+                    << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str() << "}";
+        }
         // 如果机器人就绪，则写入测量数据
         if (this->is_robot_ready_)
         {
@@ -288,7 +231,7 @@ void RobotServer::TorqueControlThreadFunc()
         else
         {
             this->robot_buffers_.joint_raw_measurement->Reset();
-            if (loop_counter % 3000 == 0)
+            if (loop_counter % 5000 == 0)
             {
                 RCLCPP_WARN(this->get_logger(), "Robot is not ready, shm status: %d, statusword: %s", ret,
                             utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
@@ -316,7 +259,7 @@ void RobotServer::TorqueControlThreadFunc()
                 case RunMode::Position:
                 case RunMode::Impedance:
                     // 更新关节力矩限制
-                    robot_control_.position[i] = planner_cmd.cmd.compliance_position[i];
+                    robot_control_.position[i] = planner_cmd.cmd.position[i];
                     robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
                     robot_control_.torque_feedforward[i] = torque_cmd.torque_feedforward[i];
                     robot_control_.positive_torque_limit[i] =
@@ -367,11 +310,6 @@ void RobotServer::TorqueControlThreadFunc()
             {
                 this->butterworth_filter_[i]->Reset(); // 重置滤波器状态
             }
-            if (loop_counter % 3000 == 0)
-            {
-                RCLCPP_WARN(this->get_logger(), "Planner command not valid");
-                LOG_CRIT << "Planner command not valid";
-            }
         }
         // 如果状态字发生变化了则打印
         static int16_t last_status_word_ = -1;
@@ -390,6 +328,73 @@ void RobotServer::TorqueControlThreadFunc()
         }
         control_shm_instance.AppendNewElement(robot_control_);
         std::this_thread::sleep_until(next_cycle_time_point);
+    }
+}
+
+void RobotServer::SwitchControlWord()
+{
+    static bool inited = false;
+    switch (robot_feedback_.robot_status_word)
+    {
+    case STATUSWORD_MOTOR_READY:
+        // ready状态is_robot_ready_置为true, 可以写入measurement, 生成cmd后再使能电机
+        this->is_robot_ready_ = true;
+        inited = true;
+        if (this->is_cmd_valid_)
+        {
+            this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+            if (this->enable_cst_mode_)
+            {
+                this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
+            }
+        }
+        else
+        {
+            for (int i = 0; i < ndof_robot; i++)
+            {
+                this->robot_control_.position[i] = this->robot_feedback_.position[i];
+                this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
+                this->robot_control_.negative_torque_limit[i] = this->torque_limit_.negative_limit_Nm[i];
+            }
+        }
+        break;
+    case STATUSWORD_MOTOR_ENABLED:
+        this->is_robot_ready_ = true;
+        inited = true;
+        this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+        if (this->is_cmd_valid_)
+        {
+            if (this->enable_cst_mode_)
+            {
+                this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
+            }
+        }
+        else
+        {
+            for (int i = 0; i < ndof_robot; i++)
+            {
+                this->robot_control_.position[i] = this->robot_feedback_.position[i];
+                this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
+                this->robot_control_.negative_torque_limit[i] = this->torque_limit_.negative_limit_Nm[i];
+            }
+        }
+        break;
+    case STATUSWORD_MOTOR_NOT_READY:
+    case STATUSWORD_MOTOR_FAULT:
+    case STATUSWORD_MOTOR_QUICK_STOP:
+    default:
+        for (int i = 0; i < ndof_robot; i++)
+        {
+            this->robot_control_.position[i] = this->robot_feedback_.position[i];
+            this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
+            this->robot_control_.negative_torque_limit[i] = this->torque_limit_.negative_limit_Nm[i];
+        }
+        break;
+    }
+
+    if (!inited || planner_info_.robot_property.clear_error_flag)
+    {
+        this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CLEAR_FAULT;
     }
 }
 
@@ -431,6 +436,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_velocity\":" + utils::VectorToJsonArrayString(robot_feedback_.velocity, 0, ndof_robot).str() +
         ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(robot_feedback_.torque, 0, ndof_robot).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
+        ",\n  \"joint_torque_feedforward\":" + utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str() +
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(robot_control_.negative_torque_limit, 6, ndof_robot).str() +
         ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(robot_control_.positive_torque_limit, 6, ndof_robot).str() +
         ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(planner_info_.ee_pose_measurement).str() +
@@ -605,6 +611,48 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
             streaming_msg->position = std::vector<float>(robot_control_temp.position, robot_control_temp.position + ndof_robot);
             this->StreamingCommandCallback(streaming_msg);
         }
+    }
+}
+
+void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg)
+{
+    RCLCPP_INFO(this->get_logger(), "/control/debug message received: %s", msg->data.c_str());
+    LOG_INFO << "/control/debug message received: " << msg->data;
+
+    try
+    {
+        auto parse_json = [](const nlohmann::json &obj, const char *key) -> bool
+        {   
+            if (!obj.contains(key)) 
+                return false;   
+            const auto &v = obj[key];   
+            if (v.is_boolean()) 
+            {   
+                return v.get<bool>();
+            }   
+            if (v.is_number_integer()) 
+            {   
+                return v.get<int>();
+            }   
+            return false;
+        };
+
+        if (parse_json(nlohmann::json::parse(msg->data), "enable_record"))
+        {
+            this->enable_record_ = true;
+            RCLCPP_INFO(this->get_logger(), "enable_record_ set to true");
+            LOG_INFO << "enable_record_ set to true";
+        }
+        else
+        {
+            this->enable_record_ = false;
+            RCLCPP_INFO(this->get_logger(), "enable_record_ set to false");
+            LOG_INFO << "enable_record_ set to false";
+        }
+    }
+    catch (const std::exception &e)
+    {
+        RCLCPP_WARN(this->get_logger(), "Failed to parse /control/debug JSON: %s", e.what());
     }
 }
 

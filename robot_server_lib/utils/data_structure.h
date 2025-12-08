@@ -20,10 +20,10 @@ enum for various states and command types
 #include <vector>
 
 #include "bounded_queue.h"
-#include "dynamics_utils.h"
 #include "single_rw_latest_queue.h"
 #include "time_utility.h"
 #include "typedef.h"
+#include "pinocchio_api.h"
 
 namespace robot_server_lib
 {
@@ -72,14 +72,14 @@ struct JointCommand
     VectorDof position;
     VectorDof velocity;
     VectorDof acceleration;
-    VectorDof compliance_position;
+    VectorDof admittance_position;
     VectorDof torque_feedforward;
 
     std::string ToString() const
     {
         std::stringstream ss;
         ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Acceleration: " << acceleration.transpose()
-           << ", Compliance Position: " << compliance_position.transpose() << ", Torque Feedforward: " << torque_feedforward.transpose();
+           << ", Compliance Position: " << admittance_position.transpose() << ", Torque Feedforward: " << torque_feedforward.transpose();
         return ss.str();
     }
 };
@@ -176,7 +176,7 @@ struct MoveRequest
     std::optional<double> interval;
 };
 
-using PlannerData = std::variant<MoveRequest, PoseQuaternion, Vector3d, bool, double>;
+using PlannerData = std::variant<MoveRequest, PoseQuaternion, Vector3d, Vector6d, bool, double>;
 
 struct PlannerRequest
 {
@@ -257,14 +257,16 @@ struct RobotParams
     Eigen::VectorXd joints_primary;
     Eigen::VectorXd joints_secondary;
     Eigen::VectorXd joints_torso;
+    std::optional<Eigen::VectorXd> dyn_base_params_primary;    // 动力学基参数矩阵(非方阵)
+    std::optional<Eigen::VectorXd> dyn_base_params_secondary;  // 动力学基参数矩阵(非方阵)
 };
 
 struct RobotModel
 {
-    std::shared_ptr<const pinocchio::Model> model_ptr;
     std::shared_ptr<const RobotParams> params_ptr;
-    std::shared_ptr<const pinocchio::Model> left_arm_model_ptr;
-    std::shared_ptr<const pinocchio::Model> right_arm_model_ptr;
+    std::shared_ptr<const pinocchio::Model> model_ptr;
+    std::shared_ptr<const pinocchio::Model> primary_arm_model_ptr;
+    std::shared_ptr<const pinocchio::Model> secondary_arm_model_ptr;
 
     RobotModel() = default;
     ~RobotModel() = default;

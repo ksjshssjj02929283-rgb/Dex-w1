@@ -5,6 +5,7 @@ namespace robot_server_lib
 
 TorqueControllerInvDynamic::TorqueControllerInvDynamic(RobotModel robot_model) : TorqueControllerBase(robot_model)
 {
+    impedance_ctrl_primary_ = std::make_shared<dynamics::CartesianImpedanceController>(robot_model_, MotionGroup::Primary);
 }
 
 bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd,
@@ -15,36 +16,35 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
     VectorDof cmd_q = input_cmd.cmd.position;
     VectorDof cmd_dq = input_cmd.cmd.velocity;
     VectorDof cmd_ddq = input_cmd.cmd.acceleration;
-    VectorDof torque_feedforward = input_cmd.cmd.torque_feedforward;
-    VectorDof ddq_desired{};
+    VectorDof torque_ff = input_cmd.cmd.torque_feedforward;
     VectorDof torque_external = this->GetJointExternalTorque(raw_measurement.sensor_wrench, feedback_q);
     output_cmd.torque_external = torque_external;
+    VectorDof ddq_desired = VectorDof::Zero();
+    VectorDof q_error = VectorDof::Zero();
+    VectorDof dq_error = VectorDof::Zero();
     switch (state_)
     {
     case TorqueControllerState::Idle:
         ddq_desired = this->parameters_.K_p * (idle_q_ - feedback_q) + this->parameters_.K_v * (-feedback_dq);
-        output_cmd.torque = dynamics::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, ddq_desired,
-                                                    robot_model_.params_ptr->joint_command_sequence_by_name);
-        output_cmd.torque_feedforward = dynamics::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, VectorDof{},
-                                                    robot_model_.params_ptr->joint_command_sequence_by_name);
+        output_cmd.torque_feedforward = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, VectorDof::Zero());
+        output_cmd.torque = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, ddq_desired);
         output_cmd.q_desired = idle_q_;
         break;
     case TorqueControllerState::Decelerating:
         ddq_desired = this->parameters_.K_v * (-feedback_dq);
-        output_cmd.torque = dynamics::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, ddq_desired,
-                                                    robot_model_.params_ptr->joint_command_sequence_by_name);
-        output_cmd.torque_feedforward = dynamics::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, VectorDof{},
-                                                    robot_model_.params_ptr->joint_command_sequence_by_name);
+        output_cmd.torque_feedforward = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, VectorDof::Zero());
+        output_cmd.torque = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, ddq_desired);
         output_cmd.q_desired = feedback_q;
         break;
     case TorqueControllerState::Operating:
-        ddq_desired = cmd_ddq + this->parameters_.K_p * (cmd_q - feedback_q) + this->parameters_.K_v * (cmd_dq - feedback_dq);
-        output_cmd.torque = torque_feedforward + dynamics::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, ddq_desired,
-                                                    robot_model_.params_ptr->joint_command_sequence_by_name);
-        output_cmd.torque_feedforward = dynamics::InverseDynamics(*robot_model_.model_ptr, robot_data_, feedback_q, feedback_dq, cmd_ddq,
-                                                    robot_model_.params_ptr->joint_command_sequence_by_name);
+    {
+        q_error = cmd_q - feedback_q;
+        dq_error = cmd_dq - feedback_dq;
+        ddq_desired = cmd_ddq + this->parameters_.K_p * q_error + this->parameters_.K_v * dq_error;
+        output_cmd.torque_feedforward = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, VectorDof::Zero()) + torque_ff;  // 补偿重力, 科氏力, 摩擦力
+        output_cmd.torque = output_cmd.torque_feedforward;
         output_cmd.q_desired = cmd_q;
-        break;
+    }
     default:
         break;
     }

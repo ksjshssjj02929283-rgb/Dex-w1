@@ -20,7 +20,7 @@ namespace robot_server_lib
 constexpr int ndof_robot = 20;
 constexpr int torque_ctrl_dt_micro = 1000;  // 1kHz
 constexpr int manager_dt_micro = 4 * torque_ctrl_dt_micro;
-constexpr int simulation_dt_micro = 500;  // 2Khz
+constexpr int simulation_dt_micro = torque_ctrl_dt_micro;
 constexpr int publish_dt_micro = 10000;   // 100 hz
 
 constexpr double torque_ctrl_dt = double(torque_ctrl_dt_micro) / 1e6;
@@ -35,6 +35,7 @@ using VectorDof = Eigen::Matrix<double, ndof_robot, 1>;
 using JointPositionDof = VectorDof;  // 关节位置
 using Matrix3d = Eigen::Matrix<double, 3, 3>;
 using Matrix4d = Eigen::Matrix<double, 4, 4>;
+using Matrix6d = Eigen::Matrix<double, 6, 6>;
 using Vector3d = Eigen::Matrix<double, 3, 1>;
 using Vector6d = Eigen::Matrix<double, 6, 1>;
 using Vector12d = Eigen::Matrix<double, 12, 1>;
@@ -78,7 +79,6 @@ enum class RequestType
     EnableDrag,
     EnableImpedance,
     ImpedanceMass,
-    ImpedanceDamping,
     ImpedanceStiffness,
     // Move Request
     MoveJoint,
@@ -86,7 +86,7 @@ enum class RequestType
     MoveTraj,
     StartJointStreaming,
     StartEEPoseStreaming,
-
+    StartEEVelocityStreaming,
     // Emergency Request
     StopMove,
     ResetToInit,
@@ -109,7 +109,7 @@ enum class ReferenceFrame
 {
     ArmBase,    // arm base frame
     WorldBase,  // world base frame
-
+    EEFrame,     // end-effector frame
     Unknown
 };
 

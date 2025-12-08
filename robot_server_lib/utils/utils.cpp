@@ -64,6 +64,30 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path)
     parse_array("joint_max_torque_limit_positive", params.joint_max_torque_limit_positive);
     parse_array("joint_max_torque_limit_negative", params.joint_max_torque_limit_negative);
 
+    // 解度析动力学基参数矩阵
+    if (config_json.contains("dyn_base_params_primary"))
+    {
+        Eigen::VectorXd dyn_base_params_primary;
+        parse_array("dyn_base_params_primary", dyn_base_params_primary);
+        params.dyn_base_params_primary = dyn_base_params_primary;
+    }
+    else
+    {
+        std::cout << "No dyn_base_params_primary in robot.cfg, use dafault dynamic model\n";
+        LOG_INFO << "No dyn_base_params_primary in robot.cfg, use dafault dynamic model";
+    }
+    if (config_json.contains("dyn_base_params_secondary"))
+    {
+        Eigen::VectorXd dyn_base_params_secondary;
+        parse_array("dyn_base_params_secondary", dyn_base_params_secondary);
+        params.dyn_base_params_secondary = dyn_base_params_secondary;
+    }
+    else
+    {
+        std::cout << "No dyn_base_params_secondary in robot.cfg, use dafault dynamic model\n";
+        LOG_INFO << "No dyn_base_params_secondary in robot.cfg, use dafault dynamic model";
+    }
+
     if (config_json.contains("joint_command_sequence_by_name"))
     {
         auto arr = config_json["joint_command_sequence_by_name"];
@@ -80,8 +104,8 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path)
     pinocchio::urdf::buildModel(params.right_arm_urdf_path, right_arm_model);
 
     robot_model.model_ptr = std::make_shared<pinocchio::Model>(model);
-    robot_model.left_arm_model_ptr = std::make_shared<pinocchio::Model>(left_arm_model);
-    robot_model.right_arm_model_ptr = std::make_shared<pinocchio::Model>(right_arm_model);
+    robot_model.primary_arm_model_ptr = std::make_shared<pinocchio::Model>(left_arm_model);
+    robot_model.secondary_arm_model_ptr = std::make_shared<pinocchio::Model>(right_arm_model);
     robot_model.params_ptr = std::make_shared<RobotParams>(params);
 
     return robot_model;
@@ -128,6 +152,19 @@ Vector3d StringToVector3d(const std::string &str)
     Vector3d values;
     int idx = 0;
     while (std::getline(ss, item, ',') && idx < 3)
+    {
+        values[idx++] = std::stod(item);
+    }
+    return values;
+}
+
+Vector6d StringToVector6d(const std::string &str)
+{
+    std::stringstream ss(str);
+    std::string item;
+    Vector6d values;
+    int idx = 0;
+    while (std::getline(ss, item, ',') && idx < 6)
     {
         values[idx++] = std::stod(item);
     }
@@ -277,15 +314,10 @@ PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interf
         planner_request.type = RequestType::ImpedanceMass;
         planner_request.data = utils::StringToVector3d(request->value);
     }
-    else if (request->property_type == "ImpedanceDamping")
-    {
-        planner_request.type = RequestType::ImpedanceDamping;
-        planner_request.data = utils::StringToVector3d(request->value);
-    }
     else if (request->property_type == "ImpedanceStiffness")
     {
         planner_request.type = RequestType::ImpedanceStiffness;
-        planner_request.data = utils::StringToVector3d(request->value);
+        planner_request.data = utils::StringToVector6d(request->value);
     }
     else
     {
@@ -321,6 +353,10 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
     else if (input_request->type == "StartEEPoseStreaming")
     {
         planner_request.type = RequestType::StartEEPoseStreaming;
+    }
+    else if (input_request->type == "StartEEVelocityStreaming")
+    {
+        planner_request.type = RequestType::StartEEVelocityStreaming;
     }
     else if (input_request->type == "StopMove")
     {
@@ -380,13 +416,17 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
 
         if (input_config_json.contains("reference_frame"))
         {
-            if (input_request->motion_group == "ArmBase")
+            if (input_config_json["reference_frame"] == "ArmBase")
             {
                 move_request.reference_frame.emplace(ReferenceFrame::ArmBase);
             }
-            else if (input_request->motion_group == "WorldBase")
+            else if (input_config_json["reference_frame"] == "WorldBase")
             {
                 move_request.reference_frame.emplace(ReferenceFrame::WorldBase);
+            }
+            else if (input_config_json["reference_frame"] == "EEFrame")
+            {
+                move_request.reference_frame.emplace(ReferenceFrame::EEFrame);
             }
             else
             {
