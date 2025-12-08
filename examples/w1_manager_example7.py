@@ -171,6 +171,14 @@ if __name__ == "__main__":
     if not w1_manager.connect() and not w1_manager.is_enabled():
         raise RuntimeError("Failed to connect to W1 robot.")
 
+    # yapf: disable
+    w1_manager.set_home_qpos(np.deg2rad([0, 0, 0, 0, 0, 0,
+                                        5, -20, -5, -30, 0, -15, 0,
+                                        -5, 20, 5, 30, 0, 15, 0]),
+                            save_to_file=False)
+    # yapf: enable
+    w1_manager.go_home(1.)
+
     w1_manager.set_tcp("left_arm", np.eye(4))
     right_tcp_xpos = np.eye(4)
     right_tcp_xpos[:3, :3] = R.from_rotvec([0.0, 0.0, 180.],

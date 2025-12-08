@@ -21,9 +21,9 @@ def main(use_parallel=False):
     if not w1_manager.connect() and not w1_manager.is_enabled():
         return
     # yapf: disable
-    w1_manager.set_home_qpos(np.array([0.7854, -1.5708, 0.7854, 0.0, 0.0, 0.0,
-                                       0.0068, -0.9103, 0.0235, -1.9158, 0.1378, 0.1401, 0.0072,
-                                         -0.0068, 0.9103, 0.0235, 1.9158, 0.1378, 0.1401, 0.0072]),
+    w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
+                                        5, -45, -5, -90, 0, -15, 0,
+                                        -5, 45, 5, 90, 0, 15, 0]),
                             save_to_file=False)
     # yapf: enable
     w1_manager.go_home(1.)
@@ -32,10 +32,10 @@ def main(use_parallel=False):
 
     cur_l_pose = w1_manager.get_current_pose("left_arm")[1]
     l_pose1 = deepcopy(cur_l_pose)
-    l_pose1[0] += -200
-    l_pose1[2] += -150
+    l_pose1[0] += -150
+    l_pose1[2] += -100
     l_pose2 = deepcopy(l_pose1)
-    l_pose2[2] += 150
+    l_pose2[2] += 100
     left_arm_waypoints = [l_pose1, l_pose2]
     left_arm_ee_list = [[0., [0., 50., 50., 50., 50., 50.], 0.5],
                         [0., [100., 100., 0., 0., 100., 100.], 0.5]]

@@ -99,6 +99,28 @@ class EndEffectorClient(ABC, Node):
         #     f"\nstate: {self._cur_msg.state.tolist()}"
         # )
 
+    def _is_outdated(self) -> bool:
+        if self._last_msg_time is None:
+            return True
+        cur_time = self.get_clock().now().nanoseconds / 1e9
+        if cur_time - self._last_msg_time > 0.1:
+            self.logger.warning(f"{self.node_name}: data is outdated.")
+            return True
+        return False
+
+    def _feedback_callback(self, msg):
+        with self._read_lock:
+            self._cur_msg = copy.deepcopy(msg)
+            self._last_msg_time = self.get_clock().now().nanoseconds / 1e9
+
+        # self.logger.debug(f"{self.node_name}:\n{self._cur_msg.name}"
+        #     f"\npos: {self._cur_msg.position.tolist()}"
+        #     f"\nvel: {self._cur_msg.velocity.tolist()}"
+        #     f"\ncur: {self._cur_msg.current.tolist()}"
+        #     f"\nforce: {self._cur_msg.force.tolist()}"
+        #     f"\nstate: {self._cur_msg.state.tolist()}"
+        # )
+
     def is_connected(self, timeout_sec: float = 0.1):
         start_time = time.time()
         while time.time() - start_time < timeout_sec:

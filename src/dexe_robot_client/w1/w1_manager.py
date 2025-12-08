@@ -2573,6 +2573,7 @@ class W1Manager:
             arml_speed_ratio = speed_ratio
 
         left_ref_psi = arml_kine.calc_arm_angle(cur_arml_qpos)[1]
+        init_left_ref_psi = left_ref_psi
         left_qpos_seed = cur_arml_qpos
 
         if target_arml_pose is not None and target_arml_pose != []:
@@ -2580,6 +2581,11 @@ class W1Manager:
                                                  target_arml_pose[0][3:])
 
             while True:
+                if left_ref_psi - init_left_ref_psi > 2 * np.pi:
+                    self.logger.error(
+                        "Cannot find valid ik solution for left arm target pose in move_dual_arm_single_task"
+                    )
+                    return False
                 srs_cfg = SRSConfig(left_qpos_seed, left_ref_psi)
                 res, arml_ik_qpos = arml_kine.get_ik(target_arml_xpos, srs_cfg)
                 if not res:
@@ -2618,12 +2624,18 @@ class W1Manager:
             armr_speed_ratio = speed_ratio
 
         right_ref_psi = armr_kine.calc_arm_angle(cur_armr_qpos)[1]
+        init_right_ref_psi = right_ref_psi
         right_qpos_seed = cur_armr_qpos
 
         if target_armr_pose is not None and target_armr_pose != []:
             target_armr_xpos = user_pose_to_xpos(target_armr_pose[0][:3],
                                                  target_armr_pose[0][3:])
             while True:
+                if right_ref_psi - init_right_ref_psi > 2 * np.pi:
+                    self.logger.error(
+                        "Cannot find valid ik solution for right arm target pose in move_dual_arm_single_task"
+                    )
+                    return False
                 srs_cfg = SRSConfig(right_qpos_seed, right_ref_psi)
                 res, armr_ik_qpos = armr_kine.get_ik(target_armr_xpos, srs_cfg)
                 if not res:
@@ -3025,11 +3037,17 @@ class W1Manager:
                 target_arml_pose = arml_target_list[i]
                 arml_speed_ratio = arml_speed_ratio_list[i]
                 left_ref_psi = arml_kine.calc_arm_angle(cur_arml_qpos)[1]
+                init_left_ref_psi = left_ref_psi
                 left_qpos_seed = cur_arml_qpos
                 if target_arml_pose is not None and target_arml_pose != []:
                     target_arml_xpos = user_pose_to_xpos(
                         target_arml_pose[:3], target_arml_pose[3:])
                     while True:
+                        if left_ref_psi - init_left_ref_psi > 2 * np.pi:
+                            self.logger.error(
+                                "Cannot find valid ik solution for left arm target pose in move_single_arm"
+                            )
+                            return False
                         srs_cfg = SRSConfig(left_qpos_seed, left_ref_psi)
                         res_ik, arml_ik_qpos = arml_kine.get_ik(
                             target_arml_xpos, srs_cfg)
@@ -3138,11 +3156,17 @@ class W1Manager:
                 armr_speed_ratio = armr_speed_ratio_list[i]
 
                 right_ref_psi = armr_kine.calc_arm_angle(cur_armr_qpos)[1]
+                init_right_ref_psi = right_ref_psi
                 right_qpos_seed = cur_armr_qpos
                 if target_armr_pose is not None and target_armr_pose != []:
                     target_armr_xpos = user_pose_to_xpos(
                         target_armr_pose[:3], target_armr_pose[3:])
                     while True:
+                        if right_ref_psi - init_right_ref_psi > 2 * np.pi:
+                            self.logger.error(
+                                "Cannot find valid ik solution for right arm target pose in move_single_arm"
+                            )
+                            return False
                         srs_cfg = SRSConfig(right_qpos_seed, right_ref_psi)
                         res_ik, armr_ik_qpos = armr_kine.get_ik(
                             target_armr_xpos, srs_cfg)
@@ -3424,11 +3448,17 @@ class W1Manager:
                 target_arml_pose = target_arml_pose_list[i]
                 arml_speed_ratio = arml_speed_ratio_list[i]
                 left_ref_psi = arml_kine.calc_arm_angle(cur_arml_qpos)[1]
+                init_left_ref_psi = left_ref_psi
                 left_qpos_seed = cur_arml_qpos
                 if target_arml_pose is not None and target_arml_pose != []:
                     target_arml_xpos = user_pose_to_xpos(
                         target_arml_pose[:3], target_arml_pose[3:])
                     while True:
+                        if left_ref_psi - init_left_ref_psi > 2 * np.pi:
+                            self.logger.error(
+                                "Left arm ik solution not found in move_dual_arm_multiple_task."
+                            )
+                            return False
                         srs_cfg = SRSConfig(left_qpos_seed, left_ref_psi)
                         res_ik, arml_ik_qpos = arml_kine.get_ik(
                             target_arml_xpos, srs_cfg)
@@ -3592,11 +3622,17 @@ class W1Manager:
                 armr_speed_ratio = armr_speed_ratio_list[i]
 
                 right_ref_psi = armr_kine.calc_arm_angle(cur_armr_qpos)[1]
+                init_right_ref_psi = right_ref_psi
                 right_qpos_seed = cur_armr_qpos
                 if target_armr_pose is not None and target_armr_pose != []:
                     target_armr_xpos = user_pose_to_xpos(
                         target_armr_pose[:3], target_armr_pose[3:])
                     while True:
+                        if right_ref_psi - init_right_ref_psi > 2 * np.pi:
+                            self.logger.error(
+                                "Right arm ik solution not found in move_dual_arm_multiple_task."
+                            )
+                            return False
                         srs_cfg = SRSConfig(right_qpos_seed, right_ref_psi)
                         res_ik, armr_ik_qpos = armr_kine.get_ik(
                             target_armr_xpos, srs_cfg)

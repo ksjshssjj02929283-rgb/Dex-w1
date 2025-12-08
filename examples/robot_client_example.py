@@ -130,4 +130,4 @@ def main(is_sim=True):
 
 
 if __name__ == "__main__":
-    main(is_sim=False)
+    main(is_sim=True)
