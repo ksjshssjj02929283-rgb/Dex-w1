@@ -16,9 +16,10 @@ TEST(InverseDynamikTest, InverseDyn)
     const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot.cfg";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
-
+    VectorDof q  = VectorDof::Zero();
+    VectorDof dq = VectorDof::Zero();
+    VectorDof ddq = VectorDof::Zero();
     pinocchio::Data data(*robot_model.model_ptr);
-    VectorDof dq = Eigen::VectorXd::Constant(ndof_robot, 0.1);
-    auto tau = dynamics::InverseDynamics(robot_model, data, VectorDof{}, dq, VectorDof{});
-    std::cout << "Torque at left ee_link (q = 0): " << tau.segment(6, 7).transpose() << std::endl;
+    auto tau = dynamics::InverseDynamics(robot_model, data, q, dq, ddq);
+    std::cout << "Torque at left ee_link (q = 0): " << tau.transpose() << std::endl;
 }

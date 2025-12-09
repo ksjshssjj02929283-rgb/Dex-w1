@@ -47,26 +47,18 @@ TEST(PinocchioModelTest, Pinocchio)
 
     pinocchio::Data data(*robot_model.model_ptr);
     VectorDof q1 = VectorDof{};
-    // q1[0] = 0.1;
     pinocchio::forwardKinematics(*robot_model.model_ptr, data, q1);
-    {
-    int frame_id = robot_model.model_ptr->getFrameId("armlbase");
-    std::cout << "Frame ID for armlbase: " << frame_id << std::endl;
-    auto pose = data.oMi[frame_id];
-    std::cout << "Pose of armlbase at q=0.1:\n" << pose << std::endl;
-    }
+    pinocchio::updateFramePlacements(*robot_model.model_ptr, data);
 
+    for (int fid = 0; fid < robot_model.model_ptr->nframes; ++fid)
     {
-    int frame_id = robot_model.model_ptr->getFrameId("armlbasej");
-    std::cout << "Frame ID for armlbasej: " << frame_id << std::endl;
-    auto pose = data.oMi[frame_id];
-    std::cout << "Pose of armlbasej at q=0.1:\n" << pose << std::endl;
-    }
+        const auto &frame = robot_model.model_ptr->frames[fid];
+        const auto &pose  = data.oMf[fid];  // world->frame pose
+        std::cout << "Frame " << fid << " (" << frame.name << ") pose:\n" << pose << std::endl;
 
-    {
-    int frame_id = robot_model.model_ptr->getFrameId("arml1j");
-    std::cout << "Frame ID for arml1j: " << frame_id << std::endl;
-    auto pose = data.oMi[frame_id];
-    std::cout << "Pose of arml1j at q=0.1:\n" << pose << std::endl;
+        Eigen::Vector3d g_world(0.0, 0.0, -9.81);
+        Eigen::Vector3d g_local = pose.rotation().transpose() * g_world;
+        std::cout << "Gravity in frame " << fid << " (" << frame.name << ") : "
+                  << g_local.transpose() << std::endl;
     }
 }

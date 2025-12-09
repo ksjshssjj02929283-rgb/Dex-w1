@@ -27,16 +27,13 @@ Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q)
     return J;
 }
 
-SE3 GetFkByFrameName(const Model& model, Data& data, const Eigen::VectorXd &q_in, std::string link_name)
+SE3 GetFkByFrameName(const Model& model, Data& data, const Eigen::VectorXd &q_in, std::string frame_name)
 {
     forwardKinematics(model, data, q_in);
-    int frame_id = model.getFrameId(link_name);
-    if (frame_id == -1)
-    {
-        assert(false && "Frame not found in model!");
-    }
-    // std::cout << "Frame ID for " << link_name << ": " << frame_id << std::endl;
-    return data.oMi[frame_id];
+    updateFramePlacements(model, data);
+
+    const FrameIndex frame_id = model.getFrameId(frame_name);
+    return data.oMf[frame_id];
 }
 
 }  // namespace pinocchio

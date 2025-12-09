@@ -36,10 +36,8 @@ Eigen::VectorXd MapToUrdfOrder(const pinocchio::Model& model, const Eigen::Vecto
 Eigen::VectorXd MapToParamOrder(const pinocchio::Model& model, const Eigen::VectorXd& input,
                                 const std::vector<std::string>& joint_command_sequence_by_name);
 
-// 计算逆动力学回归矩阵主臂
-Eigen::MatrixXd InvDynamicRegressorPrimary(bool is_anthropmorphic, const Vector3d& gravity_acc,  const Eigen::VectorXd& q, const Eigen::VectorXd& dq, const Eigen::VectorXd& ddq);
+// 由符号计算生成的逆动力学计算函数
+Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, MotionGroup motion_group);
 
-// 计算逆动力学回归矩阵副臂
-Eigen::MatrixXd InvDynamicRegressorSecondary(bool is_anthropmorphic, const Vector3d& gravity_acc, const Eigen::VectorXd& q, const Eigen::VectorXd& dq, const Eigen::VectorXd& ddq);
 }  // namespace dynamics
 }  // namespace robot_server_lib

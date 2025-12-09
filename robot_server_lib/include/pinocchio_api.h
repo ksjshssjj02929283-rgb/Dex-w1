@@ -15,6 +15,6 @@ namespace pinocchio
 // 计算雅可比矩阵接口
 Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q);
 
-pinocchio::SE3 GetFkByFrameName(const Model& model, Data& data, const Eigen::VectorXd &q_in, std::string link_name);
+pinocchio::SE3 GetFkByFrameName(const Model& model, Data& data, const Eigen::VectorXd &q_in, std::string frame_name);
 
 }  // namespace pinocchio
