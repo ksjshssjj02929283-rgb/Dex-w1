@@ -1253,13 +1253,16 @@ class W1Manager:
             return False
 
         # wait move traj finished
+        traj_duration = (qpos_array.shape[0] - 1) * self.TIME_STEP
         last_finished_id = end_id - len(endpoint_index)
         for next_finished_id in range(last_finished_id + 1, end_id + 1):
             if self._stop_move_event.is_set():
                 self.logger.info(f"Stop moving")
                 stop_ee_trigger_threads()
                 return False
-            self.robot_client.wait_request_finish(request_id=next_finished_id)
+            self.robot_client.wait_request_finish(request_id=next_finished_id,
+                                                  timeout_sec=max(
+                                                      30., traj_duration + 2.))
             global_count = endpoint_index.pop(0)
             left_count_queue.put(global_count)
             right_count_queue.put(global_count)
@@ -1269,10 +1272,9 @@ class W1Manager:
         if right_arm_ee_thread is not None:
             right_arm_ee_thread.join()
 
-        self.logger.info(
-            "Finish moving. " +
-            f"Ideal duration should be {(qpos_array.shape[0]-1) * self.TIME_STEP}s, "
-            + f"and actual duration is {time.time() - t0}s.")
+        self.logger.info("Finish moving. " +
+                         f"Ideal duration should be {traj_duration}s, " +
+                         f"and actual duration is {time.time() - t0}s.")
 
         # check reach qpos
         targt_qpos = qpos_array[-1]
