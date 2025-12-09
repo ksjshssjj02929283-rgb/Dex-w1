@@ -22,25 +22,30 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, pinocchio::Data& 
     auto tau_urdf = pinocchio::rnea(model, data, q_urdf, dq_urdf, ddq_urdf);
     VectorDof tau = MapToParamOrder(model, tau_urdf, joint_command_sequence_by_name); // 将结果映射回joint_command_sequence_by_name顺序
 
+    bool is_anthropmorphic = true;
+    if (robot_model.params_ptr->left_arm_name == "W1LeftArmIndustrial")
+    {
+        is_anthropmorphic = false;
+    }
     // 如果提供了动力学最小参数集矩阵，则进行替换
     if (dynamics_base_parameters_primary.has_value())
     {
-        Eigen::VectorXd inertia_term_tau = InvDynamicsInertiaTerm(robot_model, data, q, dq, ddq, MotionGroup::Primary);
-        Eigen::VectorXd coriolis_term_tau = InvDynamicsCoriolisTerm(robot_model, data, q, dq, MotionGroup::Primary);
-        Eigen::VectorXd gravity_term_tau = InvDynamicsGravityTerm(robot_model, data, q, MotionGroup::Primary);
+        Eigen::VectorXd inertia_term_tau = InvDynamicsInertiaTerm(robot_model, data, q, dq, ddq, MotionGroup::Primary, is_anthropmorphic);
+        Eigen::VectorXd coriolis_term_tau = InvDynamicsCoriolisTerm(robot_model, data, q, dq, MotionGroup::Primary, is_anthropmorphic);
+        Eigen::VectorXd gravity_term_tau = InvDynamicsGravityTerm(robot_model, data, q, MotionGroup::Primary, is_anthropmorphic);
         utils::MapJointToWholeBody(robot_model, inertia_term_tau + coriolis_term_tau + gravity_term_tau, tau, MotionGroup::Primary);
     }
     if (dynamics_base_parameters_secondary.has_value())
     {
-        Eigen::VectorXd inertia_term_tau = InvDynamicsInertiaTerm(robot_model, data, q, dq, ddq, MotionGroup::Secondary);
-        Eigen::VectorXd gravity_term_tau = InvDynamicsGravityTerm(robot_model, data, q, MotionGroup::Secondary);
-        Eigen::VectorXd coriolis_term_tau = InvDynamicsCoriolisTerm(robot_model, data, q, dq, MotionGroup::Secondary);
+        Eigen::VectorXd inertia_term_tau = InvDynamicsInertiaTerm(robot_model, data, q, dq, ddq, MotionGroup::Secondary, is_anthropmorphic);
+        Eigen::VectorXd gravity_term_tau = InvDynamicsGravityTerm(robot_model, data, q, MotionGroup::Secondary, is_anthropmorphic);
+        Eigen::VectorXd coriolis_term_tau = InvDynamicsCoriolisTerm(robot_model, data, q, dq, MotionGroup::Secondary, is_anthropmorphic);
         utils::MapJointToWholeBody(robot_model, inertia_term_tau + coriolis_term_tau + gravity_term_tau, tau, MotionGroup::Secondary);
     }
     return tau;
 }
 
-Eigen::VectorXd InvDynamicsInertiaTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, MotionGroup motion_group)
+Eigen::VectorXd InvDynamicsInertiaTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, MotionGroup motion_group, bool is_anthropmorphic)
 {
     Eigen::VectorXd q_arm, dq_arm, ddq_arm, inertia_term_tau, dynamics_base_parameters;
     Eigen::MatrixXd invdyn_regressor_matrix, invdyn_regressor_matrix_without_inertia;
@@ -58,8 +63,8 @@ Eigen::VectorXd InvDynamicsInertiaTerm(const RobotModel& robot_model, pinocchio:
         auto pose = pinocchio::GetFkByFrameName(*robot_model.model_ptr, data, q, first_joint_name);
         Vector3d gravity_acc_armbase = pose.rotation().transpose() * gravity_acc_world;
         dynamics_base_parameters = robot_model.params_ptr->dynamics_base_parameters_primary.value();
-        invdyn_regressor_matrix = InvDynamicRegressorPrimary(gravity_acc_armbase, q_arm, dq_arm, ddq_arm);
-        invdyn_regressor_matrix_without_inertia = InvDynamicRegressorPrimary(gravity_acc_armbase, q_arm, dq_arm, Eigen::VectorXd::Zero(q_arm.size()));
+        invdyn_regressor_matrix = InvDynamicRegressorPrimary(is_anthropmorphic, gravity_acc_armbase, q_arm, dq_arm, ddq_arm);
+        invdyn_regressor_matrix_without_inertia = InvDynamicRegressorPrimary(is_anthropmorphic, gravity_acc_armbase, q_arm, dq_arm, Eigen::VectorXd::Zero(q_arm.size()));
     }
     else
     {
@@ -69,15 +74,15 @@ Eigen::VectorXd InvDynamicsInertiaTerm(const RobotModel& robot_model, pinocchio:
         auto pose = pinocchio::GetFkByFrameName(*robot_model.model_ptr, data, q, first_joint_name);
         Vector3d gravity_acc_armbase = pose.rotation().transpose() * gravity_acc_world;
         dynamics_base_parameters = robot_model.params_ptr->dynamics_base_parameters_secondary.value();
-        invdyn_regressor_matrix = InvDynamicRegressorSecondary(gravity_acc_armbase, q_arm, dq_arm, ddq_arm);
-        invdyn_regressor_matrix_without_inertia = InvDynamicRegressorSecondary(gravity_acc_armbase, q_arm, dq_arm, Eigen::VectorXd::Zero(q_arm.size()));
+        invdyn_regressor_matrix = InvDynamicRegressorSecondary(is_anthropmorphic, gravity_acc_armbase, q_arm, dq_arm, ddq_arm);
+        invdyn_regressor_matrix_without_inertia = InvDynamicRegressorSecondary(is_anthropmorphic, gravity_acc_armbase, q_arm, dq_arm, Eigen::VectorXd::Zero(q_arm.size()));
     }
     // 计算回归矩阵
     inertia_term_tau = invdyn_regressor_matrix * dynamics_base_parameters - invdyn_regressor_matrix_without_inertia * dynamics_base_parameters;
     return inertia_term_tau;
 }
 
-Eigen::VectorXd InvDynamicsCoriolisTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, MotionGroup motion_group)
+Eigen::VectorXd InvDynamicsCoriolisTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, MotionGroup motion_group, bool is_anthropmorphic)
 {
     Eigen::VectorXd q_arm, dq_arm, coriolis_term_tau, dynamics_base_parameters;
     Eigen::MatrixXd invdyn_regressor_matrix, invdyn_regressor_matrix_without_gravity;
@@ -94,7 +99,7 @@ Eigen::VectorXd InvDynamicsCoriolisTerm(const RobotModel& robot_model, pinocchio
         auto pose = pinocchio::GetFkByFrameName(*robot_model.model_ptr, data, q, first_joint_name);
         Vector3d gravity_acc_armbase = pose.rotation().transpose() * gravity_acc_world;
         dynamics_base_parameters = robot_model.params_ptr->dynamics_base_parameters_primary.value();
-        invdyn_regressor_matrix = InvDynamicRegressorPrimary(gravity_acc_armbase, q_arm, dq_arm, Eigen::VectorXd::Zero(q_arm.size()));
+        invdyn_regressor_matrix = InvDynamicRegressorPrimary(is_anthropmorphic, gravity_acc_armbase, q_arm, dq_arm, Eigen::VectorXd::Zero(q_arm.size()));
     }
     else
     {
@@ -104,14 +109,14 @@ Eigen::VectorXd InvDynamicsCoriolisTerm(const RobotModel& robot_model, pinocchio
         auto pose = pinocchio::GetFkByFrameName(*robot_model.model_ptr, data, q, first_joint_name);
         Vector3d gravity_acc_armbase = pose.rotation().transpose() * gravity_acc_world;
         dynamics_base_parameters = robot_model.params_ptr->dynamics_base_parameters_secondary.value();
-        invdyn_regressor_matrix = InvDynamicRegressorSecondary(gravity_acc_armbase, q_arm, dq_arm, Eigen::VectorXd::Zero(q_arm.size()));
+        invdyn_regressor_matrix = InvDynamicRegressorSecondary(is_anthropmorphic, gravity_acc_armbase, q_arm, dq_arm, Eigen::VectorXd::Zero(q_arm.size()));
     }
     // 计算回归矩阵
-    coriolis_term_tau = invdyn_regressor_matrix * dynamics_base_parameters - InvDynamicsGravityTerm(robot_model, data, q, motion_group);
+    coriolis_term_tau = invdyn_regressor_matrix * dynamics_base_parameters - InvDynamicsGravityTerm(robot_model, data, q, motion_group, is_anthropmorphic);
     return coriolis_term_tau;
 }
 
-Eigen::VectorXd InvDynamicsGravityTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, MotionGroup motion_group)
+Eigen::VectorXd InvDynamicsGravityTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, MotionGroup motion_group, bool is_anthropmorphic)
 {
     Eigen::VectorXd q_arm, gravity_term_tau, dynamics_base_parameters;
     Eigen::MatrixXd invdyn_regressor_matrix;
@@ -127,7 +132,7 @@ Eigen::VectorXd InvDynamicsGravityTerm(const RobotModel& robot_model, pinocchio:
         auto pose = pinocchio::GetFkByFrameName(*robot_model.model_ptr, data, q, first_joint_name);
         Vector3d gravity_acc_armbase = pose.rotation().transpose() * gravity_acc_world;
         dynamics_base_parameters = robot_model.params_ptr->dynamics_base_parameters_primary.value();
-        invdyn_regressor_matrix = InvDynamicRegressorPrimary(gravity_acc_armbase, q_arm, Eigen::VectorXd::Zero(q_arm.size()), Eigen::VectorXd::Zero(q_arm.size()));
+        invdyn_regressor_matrix = InvDynamicRegressorPrimary(is_anthropmorphic, gravity_acc_armbase, q_arm, Eigen::VectorXd::Zero(q_arm.size()), Eigen::VectorXd::Zero(q_arm.size()));
     }
     else
     {
@@ -137,7 +142,7 @@ Eigen::VectorXd InvDynamicsGravityTerm(const RobotModel& robot_model, pinocchio:
         auto pose = pinocchio::GetFkByFrameName(*robot_model.model_ptr, data, q, first_joint_name);
         Vector3d gravity_acc_armbase = pose.rotation().transpose() * gravity_acc_world;
         dynamics_base_parameters = robot_model.params_ptr->dynamics_base_parameters_secondary.value();
-        invdyn_regressor_matrix = InvDynamicRegressorSecondary(gravity_acc_armbase, q_arm, Eigen::VectorXd::Zero(q_arm.size()), Eigen::VectorXd::Zero(q_arm.size()));
+        invdyn_regressor_matrix = InvDynamicRegressorSecondary(is_anthropmorphic, gravity_acc_armbase, q_arm, Eigen::VectorXd::Zero(q_arm.size()), Eigen::VectorXd::Zero(q_arm.size()));
     }
     gravity_term_tau = invdyn_regressor_matrix * dynamics_base_parameters;
     return gravity_term_tau;
@@ -205,7 +210,7 @@ Eigen::VectorXd MapToParamOrder(const pinocchio::Model& model, const Eigen::Vect
     return output;
 }
 
-Eigen::MatrixXd InvDynamicRegressorPrimary(const Vector3d& gravity_acc, const Eigen::VectorXd& q, const Eigen::VectorXd& dq, const Eigen::VectorXd& ddq)
+Eigen::MatrixXd InvDynamicRegressorPrimary(bool is_anthropmorphic, const Vector3d& gravity_acc, const Eigen::VectorXd& q, const Eigen::VectorXd& dq, const Eigen::VectorXd& ddq)
 {
     Eigen::VectorXd Y_out = Eigen::VectorXd::Zero(497);
     // 由sympybotics生成的回归矩阵代码
@@ -1149,15 +1154,20 @@ Eigen::MatrixXd InvDynamicRegressorPrimary(const Vector3d& gravity_acc, const Ei
     Y_out[496] = 1;
 
     Eigen::VectorXd q_offset(7);
-    q_offset << 0.0, 0.0, -M_PI/2.0, 0.0, 0.0, -M_PI/2.0, 0.0;
-    Eigen::VectorXd q_with_offset = q + q_offset;
+    if (is_anthropmorphic)
+    {
+        q_offset << 0.0, 0.0, -M_PI/2.0, 0.0, 0.0, -M_PI/2.0, 0.0;
+    }
+    else
+    {
+        q_offset << 0.0, 0.0, -M_PI/2.0, 0.0, 0.0, 0.0, 0.0;
+    }
     Eigen::MatrixXd Y_out_mat;
     Y_out_mat = Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(Y_out.data(), q.size(), 497 / q.size());
-    LOG_INFO << "InvDynamicRegressorPrimary: Output size: [" << Y_out_mat.rows() << ", " << Y_out_mat.cols() << "]";
     return Y_out_mat;
 }
 
-Eigen::MatrixXd InvDynamicRegressorSecondary(const Vector3d& gravity_acc, const Eigen::VectorXd& q, const Eigen::VectorXd& dq, const Eigen::VectorXd& ddq)
+Eigen::MatrixXd InvDynamicRegressorSecondary(bool is_anthropmorphic, const Vector3d& gravity_acc, const Eigen::VectorXd& q, const Eigen::VectorXd& dq, const Eigen::VectorXd& ddq)
 {
     return Eigen::MatrixXd{};
 }

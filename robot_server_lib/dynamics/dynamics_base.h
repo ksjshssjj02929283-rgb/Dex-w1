@@ -16,13 +16,13 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, pinocchio::Data& 
                                 const VectorDof& ddq);
 
 // 计算惯性力项的逆动力学
-Eigen::VectorXd InvDynamicsInertiaTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, MotionGroup motion_group);
+Eigen::VectorXd InvDynamicsInertiaTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, MotionGroup motion_group, bool is_anthropmorphic);
 
 // 计算科氏力项的逆动力学
-Eigen::VectorXd InvDynamicsCoriolisTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, MotionGroup motion_group);
+Eigen::VectorXd InvDynamicsCoriolisTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, MotionGroup motion_group, bool is_anthropmorphic);
 
 // 计算重力项的逆动力学
-Eigen::VectorXd InvDynamicsGravityTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, MotionGroup motion_group);
+Eigen::VectorXd InvDynamicsGravityTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, MotionGroup motion_group, bool is_anthropmorphic);
 
 // 计算正动力学
 Eigen::VectorXd ForwardDynamics(const pinocchio::Model& model, pinocchio::Data& data, const Eigen::VectorXd& q, const Eigen::VectorXd& dq,
@@ -36,8 +36,10 @@ Eigen::VectorXd MapToUrdfOrder(const pinocchio::Model& model, const Eigen::Vecto
 Eigen::VectorXd MapToParamOrder(const pinocchio::Model& model, const Eigen::VectorXd& input,
                                 const std::vector<std::string>& joint_command_sequence_by_name);
 
-Eigen::MatrixXd InvDynamicRegressorPrimary(const Vector3d& gravity_acc, const Eigen::VectorXd& q, const Eigen::VectorXd& dq, const Eigen::VectorXd& ddq);
+// 计算逆动力学回归矩阵主臂
+Eigen::MatrixXd InvDynamicRegressorPrimary(bool is_anthropmorphic, const Vector3d& gravity_acc,  const Eigen::VectorXd& q, const Eigen::VectorXd& dq, const Eigen::VectorXd& ddq);
 
-Eigen::MatrixXd InvDynamicRegressorSecondary(const Vector3d& gravity_acc, const Eigen::VectorXd& q, const Eigen::VectorXd& dq, const Eigen::VectorXd& ddq);
+// 计算逆动力学回归矩阵副臂
+Eigen::MatrixXd InvDynamicRegressorSecondary(bool is_anthropmorphic, const Vector3d& gravity_acc, const Eigen::VectorXd& q, const Eigen::VectorXd& dq, const Eigen::VectorXd& ddq);
 }  // namespace dynamics
 }  // namespace robot_server_lib
