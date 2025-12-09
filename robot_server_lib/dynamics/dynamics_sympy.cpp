@@ -33,12 +33,12 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, pinocchio::Dat
     if (motion_group == MotionGroup::Primary)
     {
         // 计算arm base坐标系下的重力方向和获取动力学最小参数集
-        assert(robot_model.params_ptr->dynamics_base_parameters_primary.has_value() && "Dynamics base parameters for primary arm not provided.");
+        assert(robot_model.params_ptr->dyn_base_params_primary.has_value() && "Dynamics base parameters for primary arm not provided.");
         int first_joint_id = robot_model.params_ptr->joints_primary[0];
         auto first_joint_name = robot_model.params_ptr->joint_command_sequence_by_name[first_joint_id];
         auto pose = pinocchio::GetFkByFrameName(*robot_model.model_ptr, data, q, first_joint_name);
         gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
-        dyn_base_params = robot_model.params_ptr->dynamics_base_parameters_primary.value();
+        dyn_base_params = robot_model.params_ptr->dyn_base_params_primary.value();
         // 根据不同构型设置不同的 q_offset
         if (is_anth)
         {
@@ -52,12 +52,12 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, pinocchio::Dat
     else
     {
         // 计算arm base坐标系下的重力方向和获取动力学最小参数集
-        assert(robot_model.params_ptr->dynamics_base_parameters_secondary.has_value() && "Dynamics base parameters for secondary arm not provided.");
+        assert(robot_model.params_ptr->dyn_base_params_secondary.has_value() && "Dynamics base parameters for secondary arm not provided.");
         int first_joint_id = robot_model.params_ptr->joints_secondary[0];
         auto first_joint_name = robot_model.params_ptr->joint_command_sequence_by_name[first_joint_id];
         auto pose = pinocchio::GetFkByFrameName(*robot_model.model_ptr, data, q, first_joint_name);
         gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
-        dyn_base_params = robot_model.params_ptr->dynamics_base_parameters_secondary.value();
+        dyn_base_params = robot_model.params_ptr->dyn_base_params_secondary.value();
         // 根据不同构型设置不同的 q_offset
         if (is_anth)
         {

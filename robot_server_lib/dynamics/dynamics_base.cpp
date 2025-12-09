@@ -10,8 +10,8 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, pinocchio::Data& 
 {
     const auto& model = *robot_model.model_ptr;
     const auto& joint_command_sequence_by_name = robot_model.params_ptr->joint_command_sequence_by_name;
-    const auto& dynamics_base_parameters_primary = robot_model.params_ptr->dynamics_base_parameters_primary;
-    const auto& dynamics_base_parameters_secondary = robot_model.params_ptr->dynamics_base_parameters_secondary;
+    const auto& dyn_base_params_primary = robot_model.params_ptr->dyn_base_params_primary;
+    const auto& dyn_base_params_secondary = robot_model.params_ptr->dyn_base_params_secondary;
     // 将输入数据映射到URDF顺序
     Eigen::VectorXd q_urdf = MapToUrdfOrder(model, q, joint_command_sequence_by_name);
     Eigen::VectorXd dq_urdf = MapToUrdfOrder(model, dq, joint_command_sequence_by_name);
@@ -20,12 +20,12 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, pinocchio::Data& 
     auto tau_urdf = pinocchio::rnea(model, data, q_urdf, dq_urdf, ddq_urdf);
     VectorDof tau = MapToParamOrder(model, tau_urdf, joint_command_sequence_by_name); // 将结果映射回joint_command_sequence_by_name顺序
     // 如果提供了动力学最小参数集矩阵，则进行替换
-    if (dynamics_base_parameters_primary.has_value())
+    if (dyn_base_params_primary.has_value())
     {
         Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, data, q, dq, ddq, MotionGroup::Primary);
         utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Primary);
     }
-    if (dynamics_base_parameters_secondary.has_value())
+    if (dyn_base_params_secondary.has_value())
     {
         Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, data, q, dq, ddq, MotionGroup::Secondary);
         utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Secondary);

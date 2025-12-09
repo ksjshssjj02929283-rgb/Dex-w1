@@ -65,19 +65,19 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path)
     parse_array("joint_max_torque_limit_negative", params.joint_max_torque_limit_negative);
 
     // 解度析动力学基参数矩阵
-    if (config_json.contains("dynamics_base_parameters_primary"))
+    if (config_json.contains("dyn_base_params_primary"))
     {
-        Eigen::VectorXd dynamics_base_parameters_primary;
-        parse_array("dynamics_base_parameters_primary", dynamics_base_parameters_primary);
-        params.dynamics_base_parameters_primary = dynamics_base_parameters_primary;
-        LOG_INFO << "Loaded dynamics_base_parameters_primary with size: " << dynamics_base_parameters_primary.size();
+        Eigen::VectorXd dyn_base_params_primary;
+        parse_array("dyn_base_params_primary", dyn_base_params_primary);
+        params.dyn_base_params_primary = dyn_base_params_primary;
+        LOG_INFO << "Loaded dyn_base_params_primary with size: " << dyn_base_params_primary.size();
     }
-    if (config_json.contains("dynamics_base_parameters_secondary"))
+    if (config_json.contains("dyn_base_params_secondary"))
     {
-        Eigen::VectorXd dynamics_base_parameters_secondary;
-        parse_array("dynamics_base_parameters_secondary", dynamics_base_parameters_secondary);
-        params.dynamics_base_parameters_secondary = dynamics_base_parameters_secondary;
-        LOG_INFO << "Loaded dynamics_base_parameters_secondary with size: " << dynamics_base_parameters_secondary.size();
+        Eigen::VectorXd dyn_base_params_secondary;
+        parse_array("dyn_base_params_secondary", dyn_base_params_secondary);
+        params.dyn_base_params_secondary = dyn_base_params_secondary;
+        LOG_INFO << "Loaded dyn_base_params_secondary with size: " << dyn_base_params_secondary.size();
     }
 
     if (config_json.contains("joint_command_sequence_by_name"))

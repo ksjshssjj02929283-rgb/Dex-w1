@@ -257,8 +257,8 @@ struct RobotParams
     Eigen::VectorXd joints_primary;
     Eigen::VectorXd joints_secondary;
     Eigen::VectorXd joints_torso;
-    std::optional<Eigen::VectorXd> dynamics_base_parameters_primary;    // 动力学基参数矩阵(非方阵)
-    std::optional<Eigen::VectorXd> dynamics_base_parameters_secondary;  // 动力学基参数矩阵(非方阵)
+    std::optional<Eigen::VectorXd> dyn_base_params_primary;    // 动力学基参数矩阵(非方阵)
+    std::optional<Eigen::VectorXd> dyn_base_params_secondary;  // 动力学基参数矩阵(非方阵)
 };
 
 struct RobotModel
