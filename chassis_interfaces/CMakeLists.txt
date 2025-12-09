@@ -16,9 +16,14 @@ set(MSG_FILES
   "msg/ChassisMotorControl.msg"
 )
 
+set(SRV_FILES
+  "srv/SaveMap.srv"
+)
+
 # Generate interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${MSG_FILES}
+  ${SRV_FILES}
   DEPENDENCIES std_msgs
 )
 
