@@ -1,8 +1,8 @@
 #pragma once
 
-#include "pinocchio_api.h"
 #include "NanoLog.hpp"
 #include "data_structure.h"
+#include "pinocchio_api.h"
 #include "utils.h"
 
 // 动力学相关的工具函数
@@ -12,17 +12,7 @@ namespace dynamics
 {
 
 // 计算逆动力学
-Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq,
-                                const VectorDof& ddq);
-
-// 计算惯性力项的逆动力学
-Eigen::VectorXd InvDynamicsInertiaTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, MotionGroup motion_group, bool is_anthropmorphic);
-
-// 计算科氏力项的逆动力学
-Eigen::VectorXd InvDynamicsCoriolisTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, MotionGroup motion_group, bool is_anthropmorphic);
-
-// 计算重力项的逆动力学
-Eigen::VectorXd InvDynamicsGravityTerm(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, MotionGroup motion_group, bool is_anthropmorphic);
+Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq);
 
 // 计算正动力学
 Eigen::VectorXd ForwardDynamics(const pinocchio::Model& model, pinocchio::Data& data, const Eigen::VectorXd& q, const Eigen::VectorXd& dq,
@@ -37,7 +27,8 @@ Eigen::VectorXd MapToParamOrder(const pinocchio::Model& model, const Eigen::Vect
                                 const std::vector<std::string>& joint_command_sequence_by_name);
 
 // 由符号计算生成的逆动力学计算函数
-Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, MotionGroup motion_group);
+Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq,
+                                   const VectorDof& ddq, MotionGroup motion_group);
 
 }  // namespace dynamics
 }  // namespace robot_server_lib
