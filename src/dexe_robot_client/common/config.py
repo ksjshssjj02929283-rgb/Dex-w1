@@ -14,7 +14,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 ASSETS_DIR = DATA_DIR / "assets"
 ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 
-LOG_DIR = DATA_DIR / "logs"
+LOG_DIR = pathlib.Path.home() / "log"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 DOWNLOAD_DIR = DATA_DIR / "downloads"
