@@ -22,42 +22,14 @@ DEFAULT_DT = 0.01
 DEFAULT_NDOF = 7
 
 class DynParamIdentifier(Node):
-    def __init__(self,
-                 traj='traj1',
-                 sim_check=False,
-                 real_capture=False,
-                 plot_records=False,
-                 is_anth=False,
-                 is_left=False):
+    def __init__(self, traj='traj1', sim_check=False, real_capture=False, plot_records=False, is_anth=False, is_left=False):
         super().__init__('qt_dyn_params_ident')
-        self.subscription = self.create_subscription(
-            JointState,
-            '/feedback/joint',
-            self._joint_state_callback,
-            10)
-        self.robot_state_subscription = self.create_subscription(
-            String,
-            '/feedback/robot_server_state',
-            self._robot_state_callback,
-            10)
-        self.subscription = self.create_subscription(
-            JointState,
-            '/feedback/joint_sim',
-            self._joint_state_callback_sim,
-            10)
-        self.robot_state_subscription_sim = self.create_subscription(
-            String,
-            '/feedback/robot_server_state_sim',
-            self._robot_state_callback_sim,
-            10)
-        self.joint_publisher = self.create_publisher(
-            JointPositionControl,
-            '/control/joint_position',
-            10)
-        self.joint_publisher_sim = self.create_publisher(
-            JointPositionControl,
-            '/control/joint_position_sim',
-            10)
+        self.subscription = self.create_subscription(JointState, '/feedback/joint', self._joint_state_callback, 10)
+        self.robot_state_subscription = self.create_subscription(String, '/feedback/robot_server_state', self._robot_state_callback, 10)
+        self.subscription = self.create_subscription(JointState, '/feedback/joint_sim', self._joint_state_callback_sim, 10)
+        self.robot_state_subscription_sim = self.create_subscription( String, '/feedback/robot_server_state_sim', self._robot_state_callback_sim, 10)
+        self.joint_publisher = self.create_publisher(JointPositionControl, '/control/joint_position', 10)
+        self.joint_publisher_sim = self.create_publisher(JointPositionControl, '/control/joint_position_sim', 10)
         self.traj = traj
         self.sim_check = sim_check
         self.real_capture = real_capture
