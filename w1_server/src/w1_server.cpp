@@ -614,6 +614,7 @@ void RobotServer::OmniChassisControlCallback(const ChassisWholeControlMsg::Share
     robot_control_.chassis_whole_mode = msg->mode;
     robot_control_.chassis_velocity = msg->speed;
     robot_control_.chassis_direction = msg->direction;
+    robot_control_.chassis_cnt++;
     RCLCPP_DEBUG(this->get_logger(), "Omni chassis control: mode=%ld, speed=%.2f, direction=%.2f", msg->mode, msg->speed, msg->direction);
 }
 
@@ -626,6 +627,7 @@ void RobotServer::OmniChassisMotorControlCallback(const ChassisMotorControlMsg::
         robot_control_.chassis_motor_velocity[i] = msg->speed[i];
         robot_control_.chassis_motor_direction[i] = msg->position[i];
     }
+    robot_control_.chassis_cnt++;
     robot_control_.chassis_estop = msg->estop;
     robot_control_.chassis_neutral = msg->neutral;
     RCLCPP_DEBUG(this->get_logger(), "Omni chassis motor control: estop=%ld, neutral=%ld", msg->estop, msg->neutral);
@@ -636,6 +638,7 @@ void RobotServer::DiffChassisControlCallback(const geometry_msgs::msg::Twist::Sh
     robot_control_.chassis_mode = 1;  // 设置为差速模式
     robot_control_.chassis_right_velocity = msg->linear.x + msg->angular.z * DiffChassisWidth * 0.5;
     robot_control_.chassis_left_velocity = msg->linear.x - msg->angular.z * DiffChassisWidth * 0.5;
+    robot_control_.chassis_cnt++;
     RCLCPP_DEBUG(this->get_logger(), "Diff chassis control: linear.x=%.2f, angular.z=%.2f => left=%.2f, right=%.2f", msg->linear.x, msg->angular.z,
                  robot_control_.chassis_left_velocity, robot_control_.chassis_right_velocity);
 }
