@@ -10,6 +10,7 @@ from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from joint_interfaces.msg import JointPositionControl
 from std_msgs.msg import Header, String
+from sensor_msgs.msg import JointState
 import numpy as np
 import matplotlib
 matplotlib.use('Qt5Agg')
@@ -29,6 +30,16 @@ class DynParamIdentifier(Node):
                  is_anth=False,
                  is_left=False):
         super().__init__('qt_dyn_params_ident')
+        self.subscription = self.create_subscription(
+            JointState,
+            '/feedback/joint',
+            self._joint_state_callback,
+            10)
+        self.subscription = self.create_subscription(
+            JointState,
+            '/feedback/joint_sim',
+            self._joint_state_callback_sim,
+            10)
         self.robot_state_subscription = self.create_subscription(
             String,
             '/feedback/robot_server_state',
@@ -47,10 +58,6 @@ class DynParamIdentifier(Node):
             JointPositionControl,
             '/control/joint_position_sim',
             10)
-        executor = MultiThreadedExecutor()
-        executor.add_node(self)
-        ros_thread = threading.Thread(target=executor.spin, daemon=True)
-        ros_thread.start()
         self.traj = traj
         self.sim_check = sim_check
         self.real_capture = real_capture
@@ -59,12 +66,14 @@ class DynParamIdentifier(Node):
         self.is_left = is_left
         # 初始化状态变量
         self.status = None
+        self.joint_name = None
         self.status_sim = None
         self.joint_position = None
         self.joint_position_sim = None
         self.joint_torque = None
         self.joint_torque_sim = None
         self.dt = DEFAULT_DT
+        self.rate = self.create_rate(1/self.dt)
         self.ndof = DEFAULT_NDOF
         self.movej_started = False
         # 设置路径
@@ -82,57 +91,35 @@ class DynParamIdentifier(Node):
                   self.proc_dir, self.sdpa_dir, self.solution_dir):
             d.mkdir(parents=True, exist_ok=True)
         self.traj_path = os.path.join(self.traj_dir, f"{self.traj}.dat")
-        rclpy.spin_once(self, timeout_sec=1.0)
-
-    def interp_and_movej(self, is_sim: bool, target_position: list, max_speed=0.1):
-        if self.movej_started:
-            return
-        if is_sim:
-            self.get_logger().info("开始在仿真中插值移动到目标位置...")
-            if self.joint_position_sim is None:
-                self.get_logger().error("当前关节位置未知，无法移动。")
-                return
-            joint_position = self.joint_position_sim
-        else:
-            self.get_logger().info("开始在真机中插值移动到目标位置...")
-            if self.joint_position is None:
-                self.get_logger().error("当前关节位置未知，无法移动。")
-                return
-            joint_position = self.joint_position
-        self.get_logger().info(f"当前是否仿真: {is_sim}, 当前关节位置: {joint_position}")
-        self.get_logger().info(f"目标关节位置: {target_position}")
-        max_distance = max([abs(tp - cp) for tp, cp in zip(target_position, joint_position)])
-        total_points = int(max_distance / max_speed)
-        positions = np.linspace(
-            np.array(joint_position),
-            np.array(target_position),
-            total_points
-        )
-        self.movej_started = True
-        self.get_logger().info(f"开始插值发送，共 {total_points} 点，间隔 {self.dt}s")
-        for step in range(total_points):
-            if self.status == "Init":
-                self.get_logger().warn("检测到机器人未在是Enable状态, 停止发送指令")
-                break
-            msg = JointPositionControl()
-            msg.header = Header()
-            msg.header.stamp = self.get_clock().now().to_msg()
-            msg.position = positions[step].tolist()
-            if is_sim:
-                self.get_logger().debug(f"(Sim) 发布第{step+1}/{total_points}个位置: {msg}")
-                self.joint_publisher_sim.publish(msg)
-            else:
-                self.joint_publisher.publish(msg)
-                self.get_logger().debug(f"发布第{step+1}/{total_points}个位置: {msg}")
-            time.sleep(self.dt)
-        self.movej_started = False
+        rclpy.spin_once(self, timeout_sec=0.1)  # 让订阅生效
 
     def run_sim(self):
         """
         在仿真中测试轨迹的可行性。
         """
-        target_position = [0.0] * 20
-        self.interp_and_movej(is_sim=True, target_position=target_position, max_speed=0.1)
+        with open(self.traj_path, 'r' ) as file:
+            q_ref = np.loadtxt(file)
+        if self.is_left:
+            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
+            self.interp_and_movej(is_sim=True, target_position=target_position)
+            self.get_logger().info(f"开始仿真轨迹执行, 当前qpos: {target_position}")
+            for i in range(q_ref.shape[0]):
+                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[i, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
+                self._joint_publisher(is_sim=True, target_position=target_position)
+                self.rate.sleep()
+        else:
+            q_ref = -q_ref  # 右臂角度相反
+            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]]
+            self.interp_and_movej(is_sim=True, target_position=target_position)
+            self.get_logger().info(f"开始仿真轨迹执行, 当前qpos: {target_position}")
+            for i in range(q_ref.shape[0]):
+                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[i, :]]
+                if i < 2:
+                    self.get_logger().info(f"仿真轨迹点 {i}: {target_position}")
+                self._joint_publisher(is_sim=True, target_position=target_position)
+                self.rate.sleep()
+        time.sleep(1.5)  # 发送结束后等待1.5s
+        self.get_logger().info("仿真轨迹执行完成。")
 
     def run_real_capture(self, rec_filename=None):
         """
@@ -158,6 +145,76 @@ class DynParamIdentifier(Node):
         rec_path = os.path.join(self.rec_dir, rec_filename)
         exe_in_real(self.is_left, str(self.traj_path), rec_path, 1.0 / self.dt if self.dt != 0 else 100.0)
         return rec_path
+
+    def interp_and_movej(self, is_sim: bool, target_position: list, max_speed=0.3):
+        if self.movej_started:
+            self.get_logger().warn("已有插值移动在进行中，忽略新的移动请求")
+            return False
+        if is_sim:
+            if self.joint_position_sim is None:
+                self.get_logger().error("当前关节位置未知，无法移动。")
+                return False
+            self.get_logger().info("开始在仿真中插值移动到目标位置...")
+            joint_position = self.joint_position_sim
+        else:
+            if self.joint_position is None:
+                self.get_logger().error("当前关节位置未知，无法移动。")
+                return False
+            self.get_logger().info("开始在真机中插值移动到目标位置...")
+            joint_position = self.joint_position
+
+        self.get_logger().info(f"当前是否仿真: {is_sim}, 当前关节位置: {joint_position}, 目标关节位置: {target_position}")
+        max_distance = max([abs(tp - cp) for tp, cp in zip(target_position, joint_position)])
+        total_points = max(2, math.ceil(max_distance / max_speed / self.dt))
+        interp_positions = np.linspace(np.array(joint_position), np.array(target_position), total_points)
+        self.movej_started = True
+        self.get_logger().info(f"开始插值发送，共 {total_points} 点，轨迹时长 {total_points * self.dt} 秒")
+
+        aborted = False
+        try:
+            for step in range(total_points):
+                ret = self._joint_publisher(is_sim, interp_positions[step].tolist())
+                aborted = not ret
+                if aborted:
+                    self.get_logger().warn("插值移动过程中被中止。")
+                    break
+                self.rate.sleep()
+            time.sleep(1.5)  # 发送结束后等待1.5s
+        finally:
+            self.movej_started = False
+
+        if aborted:
+            return False
+        self.get_logger().info("插值移动完成。")
+        return True
+
+    def _joint_publisher(self, is_sim: bool, target_position: list):
+        if (is_sim and self.status_sim == "Init") or ((not is_sim) and self.status == "Init"):
+            self.get_logger().warn("检测到机器人未处于Enable状态, 停止发送指令")
+            return False
+        if self.joint_name is None:
+            self.get_logger().error("当前关节名称未知，无法移动。")
+            return False
+        if is_sim:
+            if self.joint_position_sim is None:
+                self.get_logger().error("当前关节位置未知，无法移动。")
+                return False
+            publisher = self.joint_publisher_sim
+            joint_name = self.joint_name
+        else:
+            if self.joint_position is None:
+                self.get_logger().error("当前关节位置未知，无法移动。")
+                return False
+            publisher = self.joint_publisher
+            joint_name = self.joint_name
+
+        msg = JointPositionControl()
+        msg.header = Header()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.position = target_position
+        msg.name = joint_name
+        publisher.publish(msg)
+        return True
 
     def plot_records_to_axes(self, ax_handles, rec_filename=None):
         """
@@ -201,6 +258,14 @@ class DynParamIdentifier(Node):
             ax2.tick_params(axis='y', labelcolor='tab:red')
             ax1.legend(loc='upper right', fontsize='small')
 
+    def _joint_state_callback(self, msg):
+        self.joint_name = msg.name
+        self.get_logger().debug(f"接收到关节状态消息: {self.joint_name}")
+
+    def _joint_state_callback_sim(self, msg):
+        self.joint_name = msg.name
+        self.get_logger().debug(f"(Sim) 接收到关节状态消息: {self.joint_name}")
+
     def _robot_state_callback(self, msg):
         state = json.loads(msg.data)
         if "status" in state:
@@ -217,7 +282,7 @@ class DynParamIdentifier(Node):
             self.status_sim = state["status"]
         if "joint_position" in state:
             self.joint_position_sim = [float(x) for x in state["joint_position"]]
-            self.get_logger().debug(f"(Sim) 当前关节位置: {self.joint_position}")
+            self.get_logger().debug(f"(Sim) 当前关节位置: {self.joint_position_sim}")
         if "joint_torque" in state:
             self.joint_torque_sim = [float(x) for x in state["joint_torque"]]
 
@@ -234,6 +299,9 @@ class DynParamIdentifier(Node):
 
 
 class DynParamGUI(QtWidgets.QMainWindow):
+    # 新增：跨线程日志信号
+    log_signal = QtCore.pyqtSignal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("动力学参数辨识")
@@ -292,14 +360,29 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
         self.dyn = DynParamIdentifier()
 
+        # 保存 executor 和线程句柄，便于关闭时清理
+        self.executor = MultiThreadedExecutor()
+        self.executor.add_node(self.dyn)
+        self.ros_thread = threading.Thread(target=self.executor.spin, daemon=True)
+        self.ros_thread.start()
+
+        # 连接信号：将跨线程日志消息串行化到主线程 UI
+        self.log_signal.connect(self._append_log)
+
         # 连接信号
         self.btn_run_sim.clicked.connect(self.on_run_sim)
         self.btn_run_real.clicked.connect(self.on_run_real)
         self.btn_show_plot.clicked.connect(self.on_show_plot)
 
+    # 修改：log 只发信号，不直接动 UI（线程安全）
     def log_msg(self, msg):
-        self.log.append(msg)
+        self.log_signal.emit(msg)
         print(msg)
+
+    # 新增：在主线程更新 QTextEdit，避免跨线程崩溃
+    @QtCore.pyqtSlot(str)
+    def _append_log(self, msg):
+        self.log.append(msg)
 
     def update_params_from_ui(self):
         self.dyn.traj = self.traj_edit.text().strip() or "traj1"
@@ -329,7 +412,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
     def _thread_run_sim(self):
         try:
             self.dyn.run_sim()
-            self.log_msg("仿真运行完成。")
+            self.log_msg("仿真运行结束。")
         except Exception as e:
             self.log_msg("仿真出错: " + str(e))
         finally:
@@ -403,6 +486,26 @@ class DynParamGUI(QtWidgets.QMainWindow):
         except Exception:
             # 忽略任何重布局错误，保持 UI 可用
             pass
+
+    # 新增：优雅关闭，减少退出时潜在崩溃
+    def closeEvent(self, event):
+        try:
+            # 尝试移除节点和关闭 rclpy
+            try:
+                self.executor.remove_node(self.dyn)
+            except Exception:
+                pass
+            try:
+                rclpy.shutdown()
+            except Exception:
+                pass
+            try:
+                if self.ros_thread and self.ros_thread.is_alive():
+                    self.ros_thread.join(timeout=0.5)
+            except Exception:
+                pass
+        finally:
+            super().closeEvent(event)
 
 
 def main():
