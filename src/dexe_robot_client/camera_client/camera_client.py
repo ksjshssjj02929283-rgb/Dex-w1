@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 import rclpy
 from rclpy.node import Node
 from sensor_msgs_py import point_cloud2
+import open3d as o3d
 
 from ..common import get_logger
 
@@ -69,12 +70,19 @@ class CameraClient(ABC, Node):
             # print(f"point cloud shape: {points[:, 0:3].shape}")
         return True, points[:, 0:3], self.point_cloud.header.stamp.sec + self.point_cloud.header.stamp.nanosec*1e-9
 
+    def save_pcd(self, filename: str):
+        success, points, _ = self.get_pcd_numpy()
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        o3d.io.write_point_cloud(filename, pcd)
+
     def _point_cloud_callback(self, msg):
         with self._pcd_lock:
             self.point_cloud = msg
             self._last_msg_time = self.get_clock().now().nanoseconds / 1e9
             # self.logger.debug(f"pcd msg time stamp: {msg.header.stamp.sec + msg.header.stamp.nanosec*1e-9}")
             # self.logger.debug(f"Received new point cloud time stamp: {self._last_msg_time}")
+            # self.logger.debug(f"difference time: {self._last_msg_time - (msg.header.stamp.sec + msg.header.stamp.nanosec*1e-9)}")
 
 
     def spin_once(self, timeout_sec: float = 0.1):

@@ -49,7 +49,7 @@ class W1Manager:
                 arm_type: W1ArmType, 
                 w1_version: W1Version = W1Version.V2,
                 end_effector_type: EndEffectorType = None, 
-                use_rlia: bool = True):
+                use_rlia: bool = False):
         self.logger = get_logger()
 
         self.TIME_STEP = 0.01 # 100Hz
@@ -122,7 +122,7 @@ class W1Manager:
                 return
             self.fcl_checker = FCLChecker(fcl_robot_type, end_effector_type)
             env_json_path = get_env_json_path()
-            self.fcl_checker.load_env_json(env_json_path)
+            # self.fcl_checker.load_env_json(env_json_path)
         else:
             raise ValueError(f"Not supported w1 version: {w1_version} for fcl checker")
     
@@ -157,7 +157,7 @@ class W1Manager:
                 return
             SinglePlanner.set_arms_cfg(SINGLE_ARM_DIM, SINGLE_ARM_DIM, LARM_BOUND, RARM_BOUND)
             SinglePlanner.set_robot_cfg(robot_type=planner_robot_type, ee_type=end_effector_type)
-            SinglePlanner.set_env_json(get_env_json_path())
+            # SinglePlanner.set_env_json(get_env_json_path())
             self.siso_planner = SinglePlanner()
 
 
@@ -579,7 +579,7 @@ class W1Manager:
             return False
         if not self._check_qpos_dimension(name, qpos_):
             return False
-        return self._get_arm_ee_client(name).set_qpos(qpos_)
+        return self._get_arm_ee_client(name).set_pos(qpos_)
 
     def set_home_qpos(self, 
                       home_qpos: np.ndarray, 
@@ -644,7 +644,7 @@ class W1Manager:
         if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name, False):
                 return False, None
-            return self._get_arm_ee_client(name).get_qpos()
+            return self._get_arm_ee_client(name).get_pos()
         
         robot_info = self.robot_client.get_info()
         if robot_info.joint_position is None:
@@ -946,7 +946,7 @@ class W1Manager:
             cur_count = -1
             while not stop_ee_thread:
                 if count == target_count and count != cur_count:
-                    self.left_ee_client.set_qpos(np.array(target_ee_qpos))
+                    self.left_ee_client.set_pos(np.array(target_ee_qpos))
                     self.logger.debug(f"left_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if left_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = left_arm_ee_trigger_list_cp.pop()
@@ -961,7 +961,7 @@ class W1Manager:
             cur_count = -1
             while not stop_ee_thread:
                 if count == target_count and count != cur_count:
-                    self.right_ee_client.set_qpos(np.array(target_ee_qpos))
+                    self.right_ee_client.set_pos(np.array(target_ee_qpos))
                     self.logger.debug(f"right_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if right_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = right_arm_ee_trigger_list_cp.pop()

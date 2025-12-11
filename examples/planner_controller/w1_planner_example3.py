@@ -48,15 +48,18 @@ def test_w1_planner():
     # # init_qpos[6:13] = np.array([-1.37, -1, 1.39, -0.97, 0.0, 0.0, 0.0])
 
     # New test initial qpos
-    init_qpos = np.array([0.77, -1.56, 1.19, 0.0,
-                          0.4, -0.77,
-                           -1.4316, -0.768 ,  1.5469, -0.0814, -1.6173, -0.4734,  0.1073,
-                          0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    init_qpos = np.array([0.785, -1.57, 0.785, 0.0,
+                          0.0, -0.77,
+                          -1.247, -1.573, 0.933, -0.419, -0.007, -0.436, 0.01,
+                          1.533, 1.276, -2.031, 0.593, 0.882, 0.613, -0.233])
     # init_qpos[6:13] = np.array([-1.4316, -1.3 ,  1.5469, -0.0814, -1.6173, -0.4734,  0.1073])
-    embed()
+    init_qpos[13:] = np.array([1.533, 0.643, -2.031, 0.578, 0.882, 0.603, -0.234])
 
     w1_planner.set_home_qpos(init_qpos, save_to_file=False)
     w1_planner.go_home(1)
+
+    # embed()
+
 
     # print(f"base_link_T_neck2:\n{w1_planner._get_base_link_T_neck2()}")
     # print(f"waist_T_neck2:\n{w1_planner._get_waist_T_neck2()}")
@@ -89,13 +92,13 @@ def test_w1_planner():
     # cam_neck2_extrinsics[:3, 3] = [0.027, -0.0975, 0]  # 平移部分
 
     # realsense d455
-    angles = [-0.1, np.pi/2-0.1, -0.05]  
-    rot = R.from_euler('zyz', angles)
-    rotation_matrix = rot.as_matrix()
+    # angles = [-0.1, np.pi/2-0.1, -0.05]  
+    # rot = R.from_euler('zyz', angles)
+    # rotation_matrix = rot.as_matrix()
 
-    cam_neck2_extrinsics = np.eye(4)
-    cam_neck2_extrinsics[:3, :3] = rotation_matrix
-    cam_neck2_extrinsics[:3, 3] = [0.01, -0.1605, 0.02]
+    # cam_neck2_extrinsics = np.eye(4)
+    # cam_neck2_extrinsics[:3, :3] = rotation_matrix
+    # cam_neck2_extrinsics[:3, 3] = [0.01, -0.1605, 0.02]
 
     # realsense d405
     # angles = [-0.2, np.pi/2-0.1 - 0.0, 0.05]  
@@ -107,19 +110,19 @@ def test_w1_planner():
     # cam_neck2_extrinsics[:3, 3] = [0.01, -0.1605 - 0.04, 0.02]
 
     # realsense d555
-    # angles = [-0.1, np.pi/2-0.1, -0.05 + 0.05]  
-    # rot = R.from_euler('zyz', angles)
-    # rotation_matrix = rot.as_matrix()
+    angles = [-2.0899999999999994, -0.020000000000000025, -1.6500000000000012]  
+    rot = R.from_euler('xyz', angles)
+    rotation_matrix = rot.as_matrix()
 
-    # cam_neck2_extrinsics = np.eye(4)
-    # cam_neck2_extrinsics[:3, :3] = rotation_matrix
-    # cam_neck2_extrinsics[:3, 3] = [0.01, -0.1605, 0.02]
+    cam_base_link_extrinsics = np.eye(4)
+    cam_base_link_extrinsics[:3, :3] = rotation_matrix
+    cam_base_link_extrinsics[:3, 3] = [0.01200000000000007, 0.07399999999999998, 1.5259999999999996]
 
     w1_planner.init_dynamic_planner(robot_type=RobotType.W1V02_1, 
                                     end_effector_type=None, 
                                     cam_arml_extrinsics=cam_arml_extrinsics,
                                     cam_armr_extrinsics=cam_armr_extrinsics)
-    w1_planner.set_cam_neck2_extrinsics(cam_neck2_extrinsics)
+    w1_planner.set_cam_base_link_extrinsics(cam_base_link_extrinsics)
 
     # while True:
     #     pcd = w1_planner._reload_environment()
@@ -131,12 +134,13 @@ def test_w1_planner():
     # armr_target_qpos2 = np.array([np.pi / 2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
     # arml_target_qpos1 = np.array([-1.37, -1.5, 1.39, -0.97, 0.0, 0.0, 0.0])
-    arml_target_qpos1 = np.array([-1.4472, -1.5006,  1.547 , -0.5221, -1.6174, -0.4889,  0.0975])
-    armr_target_qpos1 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    arml_target_qpos1 = np.array([-1.247, -0.16, 0.933, -0.419, -0.008, -0.436, 0.01])
+    armr_target_qpos1 = np.array([1.533, 0.643, -2.031, 0.578, 0.882, 0.603, -0.234])
 
     # arml_target_qpos2 = np.array([-1.37, -0.3, 1.39, -0.74, 0.0, 0.0, 0.0])
-    arml_target_qpos2 = np.array([-1.4316, -0.768 ,  1.5469, -0.0814, -1.6173, -0.4734,  0.1073])
-    armr_target_qpos2 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    arml_target_qpos2 = np.array([-1.247, -1.573, 0.933, -0.419, -0.007, -0.436, 0.01])
+    armr_target_qpos2 = np.array([1.533, 1.276, -2.031, 0.593, 0.882, 0.613, -0.233])
+    armr_target_qpos2 = np.array([1.533, 0.643, -2.031, 0.578, 0.882, 0.603, -0.234])
 
     # input("press Enter to continue")
     cnt = 0

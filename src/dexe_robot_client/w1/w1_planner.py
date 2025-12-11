@@ -2271,6 +2271,8 @@ class W1Planner:
 
         # self.add_torso_collision_to_env()
         self.first_init_torso_collision = True
+        self.armlee_attached = False
+        self.armree_attached = False
 
     def _init_camera(self):
         if not rclpy.ok():
@@ -2316,6 +2318,9 @@ class W1Planner:
     def set_cam_neck2_extrinsics(self, cam_neck2_extrinsics):
         self.cam_neck2_extrinsics = cam_neck2_extrinsics
 
+    def set_cam_base_link_extrinsics(self, cam_base_link_extrinsics):
+        self.cam_base_link_extrinsics = cam_base_link_extrinsics
+
     def _get_base_link_T_arm_base(self):
         current_qpos = self.get_current_qpos()[1]
         cur_arml_base_tf, cur_armr_base_tf = self._pin_kine.get_arm_base_tf(real_qpos=current_qpos)
@@ -2342,6 +2347,14 @@ class W1Planner:
         base_link_T_neck2 = head_tf[-1]
         waist_T_neck2 = np.linalg.inv(base_link_T_waist) @ base_link_T_neck2
         return True, waist_T_neck2
+
+    def _get_waist_T_base_link(self):
+        current_qpos = self.get_current_qpos()[1]
+        torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
+        base_link_T_waist = torso_tf[-1]
+        waist_T_base_link = np.linalg.inv(base_link_T_waist)
+        return True, waist_T_base_link
+
 
     def _get_base_link_T_waist(self):
         current_qpos = self.get_current_qpos()[1]
@@ -2391,8 +2404,14 @@ class W1Planner:
         return True, current_arml_qpos, current_arml_vel, current_armr_qpos, current_armr_vel, get_streaming_time, current_streaming_history
     
     def _voxel_down_sample_numpy(self, points, voxel_size):
-        coords = np.floor(points / voxel_size).astype(np.int32)
-        _, idx = np.unique(coords, axis=0, return_index=True)
+        coords = np.floor(points / voxel_size).astype(np.int64)
+        # _, idx = np.unique(coords, axis=0, return_index=True)
+        keys = (
+        (coords[:, 0] << 42) +
+        (coords[:, 1] << 21) +
+        coords[:, 2]
+        )
+        _, idx = np.unique(keys, return_index=True)
         return points[idx]
 
     def augment_pointcloud(self, pointcloud: np.ndarray, step: float = 0.02, max_range: float = 0.2) -> np.ndarray:
@@ -2471,8 +2490,8 @@ class W1Planner:
     def _reload_environment(self):
         start_time = time.time()
         res, current_pcd, get_pcd_time = self.camera_node.get_pcd_numpy()
-        # self.time_dict["original pcd"] = current_pcd.shape[0] if current_pcd is not None else 0
-        # self.time_dict["reading pcd msg"] = time.time() - start_time
+        self.time_dict["original pcd"] = current_pcd.shape[0] if current_pcd is not None else 0
+        self.time_dict["reading pcd msg"] = time.time() - start_time
         # self.logger.debug(f"Get pcd time stamp: {get_pcd_time:.6f}s")
         if current_pcd is None or current_pcd.shape[0] == 0:
             self.logger.warning("No point cloud data from camera")
@@ -2485,19 +2504,23 @@ class W1Planner:
         )
         current_pcd = current_pcd[mask]
 
-        # self.time_dict["ROI crop"] = time.time() - start_time
+        self.time_dict["ROI crop"] = time.time() - start_time
         start_time = time.time()
         planner_pcd = current_pcd
         planner_pcd = self._voxel_down_sample_numpy(planner_pcd, voxel_size=0.01)
-        # self.time_dict["downsample1"] = time.time() - start_time
+        self.time_dict["downsample1"] = time.time() - start_time
+        # self.logger.debug(f"downsampled time: {time.time() - start_time}")
         # planner_pcd = self.augment_pointcloud(planner_pcd, 0.02, 0.2)
         # planner_pcd = self._voxel_down_sample_numpy(planner_pcd, voxel_size=0.01)
 
-        res, waist_T_neck2 = self._get_waist_T_neck2()
+        # res, waist_T_neck2 = self._get_waist_T_neck2()
+        res, waist_T_base_link = self._get_waist_T_base_link()
         start_time = time.time()
         planner_pcd_h = np.hstack([planner_pcd, np.ones((planner_pcd.shape[0], 1))])
-        planner_pcd = (waist_T_neck2 @ self.cam_neck2_extrinsics @ planner_pcd_h.T).T[:, :3]
-        # self.time_dict["pose transform"] = time.time() - start_time
+        # planner_pcd = (waist_T_neck2 @ self.cam_neck2_extrinsics @ planner_pcd_h.T).T[:, :3]
+        planner_pcd = (waist_T_base_link @ self.cam_base_link_extrinsics @ planner_pcd_h.T).T[:, :3]
+
+        self.time_dict["pose transform"] = time.time() - start_time
         
         # print(f"process planner pcd time: {time.time()-start_time}")
 
@@ -2506,22 +2529,22 @@ class W1Planner:
         # current_qpos = self.get_current_qpos()[1]
         # cur_arml_qpos = current_qpos[self.real_arml_idx[0]:self.real_arml_idx[1]+1]
 
-        # self.arml_vamp_planner.reset_env()
-        # tf = np.eye(4, dtype=np.float32)
-        # tf[:3, 3] = np.array([0, 0, 0.2])
-        # attachment = vamp.Attachment(tf)
-        # attachment.add_spheres([vamp.Sphere([0, 0, 0], 0.2)])
-        # attachment.set_ee_pose(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
-        # self.arml_vamp_planner.env.attach(attachment)
+        # # self.arml_vamp_planner.reset_env()
+        # # tf = np.eye(4, dtype=np.float32)
+        # # tf[:3, 3] = np.array([0, 0, 0.2])
+        # # attachment = vamp.Attachment(tf)
+        # # attachment.add_spheres([vamp.Sphere([0, 0, 0], 0.2)])
+        # # attachment.set_ee_pose(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
+        # # self.arml_vamp_planner.env.attach(attachment)
 
         # # self.arml_vamp_planner.env.set_attachment_pose(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
         # # attachment.set_ee_pose(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
         # # print(attachment.posed_spheres[0].position)
         # # print(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
-        # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
-        # base_link_T_waist = torso_tf[-1]
-        # base_link_T_left_ee = arml_tf[-1]
-        # waist_T_left_ee = np.linalg.inv(base_link_T_waist) @ base_link_T_left_ee
+        # # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
+        # # base_link_T_waist = torso_tf[-1]
+        # # base_link_T_left_ee = arml_tf[-1]
+        # # waist_T_left_ee = np.linalg.inv(base_link_T_waist) @ base_link_T_left_ee
         # # print(waist_T_left_ee)
         # # self.arml_vamp_planner.env.add_sphere(vamp.Sphere(waist_T_left_ee[:3, 3], 0.1))
 
@@ -2802,8 +2825,11 @@ class W1Planner:
         last_arml_traj = last_arml_traj[::2]
         last_armr_traj = last_armr_traj[::2]
         start_time = time.time()
+        qpos_cnt = 0
         for qpos in last_arml_traj:
+            qpos_cnt += 1
             if not self.arml_vamp_planner.vamp_module.validate(qpos.tolist(), self.arml_vamp_planner.env):
+                print(f"---Collision at step {qpos_cnt-1}---")
                 self.logger.warning("Left arm trajectory invalid")
                 return False
         # self.logger.info(f"average checking time: {(time.time()-start_time) / len(last_arml_traj):.8f}s with trajectory length {len(last_arml_traj)}")
@@ -2858,21 +2884,41 @@ class W1Planner:
             start_time = time.time()
             self.arml_vamp_planner.reset_env()
             self.armr_vamp_planner.reset_env()
+            cur_qpos = self.get_current_qpos()[1]
+            self.arml_vamp_planner.set_head_body_qpos(head_qpos=cur_qpos[4:6], body_qpos=cur_qpos[:4])
+            self.armr_vamp_planner.set_head_body_qpos(head_qpos=cur_qpos[4:6], body_qpos=cur_qpos[:4])
             self.add_torso_collision_to_env()
+            self.arml_vamp_planner.add_cuboid(np.array([0.6, 0, 0.72]), np.array([0.0, 0.0, 0.0]), np.array([0.3, 0.6, 0.02]))
+            self.armr_vamp_planner.add_cuboid(np.array([0.6, 0, 0.72]), np.array([0.0, 0.0, 0.0]), np.array([0.3, 0.6, 0.02]))
             self.time_dict["reset env & add torso"] = time.time() - start_time
 
             # test attachment
-            tf = np.identity(4)
-            tf[:3, 3] = np.array([0, 0, 0.136])
+            if self.armlee_attached:
+                arml_attachment = vamp.Attachment(self.arml_attachment_tf)
+                for sphere in self.arml_attachment_spheres:
+                    arml_attachment.add_spheres([vamp.Sphere(sphere[0], sphere[1])])
+                arml_attachment.set_ee_pose(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
+                self.arml_vamp_planner.env.attach(arml_attachment)
 
-            arml_attachment = vamp.Attachment(tf)
-            arml_attachment.add_spheres([vamp.Sphere([-0.05, 0, 0], 0.05)])
-            arml_attachment.add_spheres([vamp.Sphere([0, 0, 0], 0.05)])
-            arml_attachment.add_spheres([vamp.Sphere([0.05, 0, 0], 0.05)])
-            arml_attachment.add_spheres([vamp.Sphere([0.1, 0, 0], 0.05)])
-            arml_attachment.add_spheres([vamp.Sphere([0.15, 0, 0], 0.05)])
-            arml_attachment.set_ee_pose(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
-            self.arml_vamp_planner.env.attach(arml_attachment)
+            if self.armree_attached:
+                armr_attachment = vamp.Attachment(self.armr_attachment_tf)
+                for sphere in self.armr_attachment_spheres:
+                    armr_attachment.add_spheres([vamp.Sphere(sphere[0], sphere[1])])
+                armr_attachment.set_ee_pose(self.armr_vamp_planner.vamp_module.eefk(cur_armr_qpos))
+                self.armr_vamp_planner.env.attach(armr_attachment)
+            # tf = np.identity(4)
+            # tf[:3, 3] = np.array([0, 0, 0.106])
+
+            # arml_attachment = vamp.Attachment(tf)
+            # arml_attachment.add_spheres([vamp.Sphere([0.05, 0.0, 0], 0.035)])
+            # arml_attachment.add_spheres([vamp.Sphere([0.025, 0.0, 0], 0.035)])
+            # arml_attachment.add_spheres([vamp.Sphere([0, 0.0, 0], 0.035)])
+            # arml_attachment.add_spheres([vamp.Sphere([-0.05, 0.0, 0], 0.035)])
+            # arml_attachment.add_spheres([vamp.Sphere([-0.075, 0.0, 0], 0.035)])
+            # arml_attachment.add_spheres([vamp.Sphere([-0.1, 0.0, 0], 0.035)])
+            # # arml_attachment.add_spheres([vamp.Sphere([0.15, 0.045, 0], 0.05)])
+            # arml_attachment.set_ee_pose(self.arml_vamp_planner.vamp_module.eefk(cur_arml_qpos))
+            # self.arml_vamp_planner.env.attach(arml_attachment)
             
 
             # armr_attachment = vamp.Attachment(tf)
@@ -2928,17 +2974,17 @@ class W1Planner:
                 self.arml_vamp_planner.add_pcd(point_cloud=arml_planner_pcd, pcd_radius=0.02)
                 self.armr_vamp_planner.add_pcd(point_cloud=armr_planner_pcd, pcd_radius=0.02)
                 
-                # vis_pcd = deepcopy(arml_planner_pcd)
+                vis_pcd = deepcopy(armr_planner_pcd)
 
-                # if vis_pcd is not None and len(vis_pcd) != 0:
-                #     current_qpos = self.get_current_qpos()[1]
-                #     rviz_planner_pcd = np.asarray(deepcopy(vis_pcd))
-                #     torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
-                #     base_link_T_waist = torso_tf[-1]
-                #     rviz_pcd = np.hstack([rviz_planner_pcd, np.ones((rviz_planner_pcd.shape[0], 1))])
-                #     rviz_pcd = (base_link_T_waist @ rviz_pcd.T).T[:, :3]
-                #     rviz_pcd = self.numpy_to_pointcloud2(rviz_pcd, frame_id="base_link")
-                #     self.pcd_env_publisher.publish(rviz_pcd)
+                if vis_pcd is not None and len(vis_pcd) != 0:
+                    current_qpos = self.get_current_qpos()[1]
+                    rviz_planner_pcd = np.asarray(deepcopy(vis_pcd))
+                    torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=current_qpos)
+                    base_link_T_waist = torso_tf[-1]
+                    rviz_pcd = np.hstack([rviz_planner_pcd, np.ones((rviz_planner_pcd.shape[0], 1))])
+                    rviz_pcd = (base_link_T_waist @ rviz_pcd.T).T[:, :3]
+                    rviz_pcd = self.numpy_to_pointcloud2(rviz_pcd, frame_id="base_link")
+                    self.pcd_env_publisher.publish(rviz_pcd)
 
             # if not self._check_start_goal_validity():
             #     self.logger.warning("Start or goal qpos is invalid, replan later")
@@ -2946,19 +2992,11 @@ class W1Planner:
             #     continue
 
             if np.allclose(arml_start, self.dynamic_arml_target_qpos, rtol=1e-03, atol=1e-03) \
-                and np.allclose(armr_start, self.dynamic_armr_target_qpos, rtol=1e-03, atol=1e-03): # FIXME: need to tune the threshold
-                self.logger.info("Current qpos is close to target qpos, no need to plan")
-                self.planner_client.publish_trajectory(trajectory=None)
-                self.planner_client.stop_dynamic_moving_publisher.publish(String(data="stop"))
-                break
-
-            if is_first_plan:
-                is_first_plan = False
-                self.arml_vamp_planner.set_start_goal(start=self.dynamic_arml_start_qpos, goal=self.dynamic_arml_target_qpos)
-                self.armr_vamp_planner.set_start_goal(start=self.dynamic_armr_start_qpos, goal=self.dynamic_armr_target_qpos)
-            else:
-                self.arml_vamp_planner.set_start_goal(start=arml_start, goal=self.dynamic_arml_target_qpos)
-                self.armr_vamp_planner.set_start_goal(start=armr_start, goal=self.dynamic_armr_target_qpos)
+                    and np.allclose(armr_start, self.dynamic_armr_target_qpos, rtol=1e-03, atol=1e-03): # FIXME: need to tune the threshold
+                    self.logger.info("Current qpos is close to target qpos, no need to plan")
+                    self.planner_client.publish_trajectory(trajectory=None)
+                    self.planner_client.stop_dynamic_moving_publisher.publish(String(data="stop"))
+                    break
 
             self.time_dict["Result left pcd"] = len(arml_planner_pcd)
             checking_start_time = time.time()
@@ -2969,6 +3007,18 @@ class W1Planner:
             # self.logger.info(f"Trajectory validity checking time: {checking_time}s, validity: {last_traj_validity}")
             if not last_traj_validity:
                 self.planner_client.publish_trajectory(trajectory=None)
+                res, cur_arml_qpos, cur_arml_vel, cur_armr_qpos, cur_armr_vel, get_stream_time, cur_stream_history = self._get_qpos_from_topic()
+                arml_start = cur_arml_qpos
+                armr_start = cur_armr_qpos
+                
+                if is_first_plan:
+                    is_first_plan = False
+                    self.arml_vamp_planner.set_start_goal(start=self.dynamic_arml_start_qpos, goal=self.dynamic_arml_target_qpos)
+                    self.armr_vamp_planner.set_start_goal(start=self.dynamic_armr_start_qpos, goal=self.dynamic_armr_target_qpos)
+                else:
+                    self.arml_vamp_planner.set_start_goal(start=arml_start, goal=self.dynamic_arml_target_qpos)
+                    self.armr_vamp_planner.set_start_goal(start=armr_start, goal=self.dynamic_armr_target_qpos)
+                
                 planning_start_time = time.time()
                 arml_result = self.arml_vamp_planner.plan()
                 armr_result = self.armr_vamp_planner.plan()
@@ -3008,6 +3058,36 @@ class W1Planner:
             self.time_dict_list.append(self.time_dict)
         self.planner_client.publish_trajectory(trajectory=None)
 
+    # The following functions are for armlee and armree attachment
+    def attach_left_arm(self, attachment_frame_tf: np.ndarray, spheres: list):
+        """
+        Args:
+            attachment_frame (np.ndarray, shape=(4,4)): left_ee_frame_T_attachment_frame
+            spheres (list): list of tuples, each tuple is (center: list of float (3,), radius: float)
+        """
+        self.armlee_attached = True
+        self.arml_attachment_tf = attachment_frame_tf
+        self.arml_attachment_spheres = spheres
+
+    def attach_right_arm(self, attachment_frame_tf: np.ndarray, spheres: list):
+        """
+        Args:
+            attachment_frame (np.ndarray, shape=(4,4)): right_ee_frame_T_attachment_frame
+            spheres (list): list of tuples, each tuple is (center: list of float (3,), radius: float)
+        """
+        self.armree_attached = True
+        self.armr_attachment_tf = attachment_frame_tf
+        self.armr_attachment_spheres = spheres
+
+    def detach_left_arm(self):
+        self.armlee_attached = False
+        self.arml_attachment_tf = None
+        self.arml_attachment_spheres = []
+
+    def detach_right_arm(self):
+        self.armree_attached = False
+        self.armr_attachment_tf = None
+        self.armr_attachment_spheres = []
 
     # The following functions are for torso 1 2 3 collision checking(still testing)
     def _compute_waist_T_torso(self):
@@ -3050,7 +3130,7 @@ class W1Planner:
         if self.first_init_torso_collision:
             self._init_torso_collision()
             res, self.waist_T_ankle, self.waist_T_knee, self.waist_T_buttock = self._compute_waist_T_torso()
-            input("press Enter to publish the torso collision markers...")
+            # input("press Enter to publish the torso collision markers...")
             res, cur_qpos = self.get_current_qpos()
             torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=cur_qpos)
             ma = MarkerArray()

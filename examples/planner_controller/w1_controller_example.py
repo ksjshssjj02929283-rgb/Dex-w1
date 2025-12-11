@@ -12,7 +12,7 @@ def test_w1_controller():
         is_sim=False,
         arm_type=W1ArmType.ANTHROPOMORPHIC,
         w1_version=W1Version.V2,
-        end_effector_type=None
+        end_effector_type=EndEffectorType.BRAINCO_HAND
     )
 
     time.sleep(1000000)

@@ -585,7 +585,7 @@ class W1Controller:
             return False
         # if not self._check_qpos_dimension(name, qpos_):
         #     return False
-        return self._get_arm_ee_client(name).set_qpos(qpos_)
+        return self._get_arm_ee_client(name).set_pos(qpos_)
     
     def set_ee_qpos_callback(self, request, response):
         """
@@ -825,7 +825,7 @@ class W1Controller:
             cur_count = -1
             while not stop_ee_thread:
                 if count == target_count and count != cur_count:
-                    self.left_ee_client.set_qpos(np.array(target_ee_qpos))
+                    self.left_ee_client.set_pos(np.array(target_ee_qpos))
                     self.logger.debug(f"left_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if left_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = left_arm_ee_trigger_list_cp.pop()
@@ -840,7 +840,7 @@ class W1Controller:
             cur_count = -1
             while not stop_ee_thread:
                 if count == target_count and count != cur_count:
-                    self.right_ee_client.set_qpos(np.array(target_ee_qpos))
+                    self.right_ee_client.set_pos(np.array(target_ee_qpos))
                     self.logger.debug(f"right_arm_ee has triggered: {target_count} {target_ee_qpos}.")
                     if right_arm_ee_trigger_list_cp:
                         target_count, target_ee_qpos = right_arm_ee_trigger_list_cp.pop()

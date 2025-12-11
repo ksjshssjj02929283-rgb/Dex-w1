@@ -12,6 +12,7 @@ from ..end_effector_client import EndEffectorType
 from robot_server_interfaces.msg import StreamingCommand
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from collections import deque
+from end_effector_interfaces.msg import EEJointControl, EEJointFeedback
 
 from ..common import get_logger
 
@@ -52,7 +53,7 @@ class PlannerClient(ABC, Node):
         self.is_first_streaming = True
         self.streaming_dt = 0.01  # 100Hz
         
-        self.streaming_history = deque(maxlen=50) # buffer to store the last 20 streaming points
+        self.streaming_history = deque(maxlen=100) # buffer to store the last 20 streaming points
 
         self._connection_timeout = 1.0
 
@@ -119,6 +120,7 @@ class PlannerClient(ABC, Node):
         self.stop_dynamic_moving_publisher = self.create_publisher(
             String, '/dexe_robot_client/stop_dynamic_moving', 1
         )
+
     def _init_subscriber(self):
         if self.is_sim: 
             self.create_subscription(
@@ -135,26 +137,26 @@ class PlannerClient(ABC, Node):
             )
             if self.ee_type == EndEffectorType.BRAINCO_HAND:
                 self.create_subscription(
-                    Float64MultiArray,
+                    EEJointFeedback,
                     "/feedback_sim/hand/left",
                     self._left_end_effector_state_callback,
                     rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
                 )
                 self.create_subscription(
-                    Float64MultiArray,
+                    EEJointFeedback,
                     "/feedback_sim/hand/right",
                     self._right_end_effector_state_callback,
                     rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
                 )
             elif self.ee_type == EndEffectorType.PGC_GRIPPER:
                 self.create_subscription(
-                    Float64,
+                    EEJointFeedback,
                     "/feedback_sim/gripper/left",
                     self._left_end_effector_state_callback,
                     rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
                 ) 
                 self.create_subscription(
-                    Float64,
+                    EEJointFeedback,
                     "/feedback_sim/gripper/right",
                     self._right_end_effector_state_callback,
                     rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
@@ -174,26 +176,26 @@ class PlannerClient(ABC, Node):
             )
             if self.ee_type == EndEffectorType.BRAINCO_HAND:
                 self.create_subscription(
-                    Float64MultiArray,
+                    EEJointFeedback,
                     "/feedback/hand/left",
                     self._left_end_effector_state_callback,
                     rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
                 )
                 self.create_subscription(
-                    Float64MultiArray,
+                    EEJointFeedback,
                     "/feedback/hand/right",
                     self._right_end_effector_state_callback,
                     rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
                 )
             elif self.ee_type == EndEffectorType.PGC_GRIPPER:
                 self.create_subscription(
-                    Float64,
+                    EEJointFeedback,
                     "/feedback/gripper/left",
                     self._left_end_effector_state_callback,
                     rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
                 ) 
                 self.create_subscription(
-                    Float64,
+                    EEJointFeedback,
                     "/feedback/gripper/right",
                     self._right_end_effector_state_callback,
                     rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
@@ -211,12 +213,12 @@ class PlannerClient(ABC, Node):
 
     def _left_end_effector_state_callback(self, msg):
         with self._armlee_state_lock:
-            self.armlee_state = np.array(msg.data)
+            self.armlee_state = np.array(msg.position)
             self._armlee_last_msg_time = self.get_clock().now().nanoseconds / 1e9
 
     def _right_end_effector_state_callback(self, msg):
         with self._armree_state_lock:
-            self.armree_state = np.array(msg.data)
+            self.armree_state = np.array(msg.position)
             self._armree_last_msg_time = self.get_clock().now().nanoseconds / 1e9
 
     def _streaming_cmd_callback(self, msg):

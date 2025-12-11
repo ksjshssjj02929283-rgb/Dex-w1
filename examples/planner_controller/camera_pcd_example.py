@@ -52,28 +52,28 @@ if __name__ == "__main__":
     rot = R.from_euler('zyz', angles)
     rotation_matrix = rot.as_matrix()
 
-    cam_neck2_extrinsics = np.eye(4)
-    cam_neck2_extrinsics[:3, :3] = rotation_matrix
-    cam_neck2_extrinsics[:3, 3] = [0.01 - 0.01, -0.1605, 0.02 - 0.01]
+    cam_base_link_extrinsics = np.eye(4)
+    cam_base_link_extrinsics[:3, :3] = rotation_matrix
+    cam_base_link_extrinsics[:3, 3] = [0.01 - 0.01, -0.1605, 0.02 - 0.01]
 
-    base_link_T_neck2 = np.array([
-        [ 0.3381, -0.8701, -0.3587,  0.208 ],
-       [ 0.2795, -0.2711,  0.9211,  0.    ],
-       [-0.8986, -0.4116,  0.1516,  1.2791],
-       [ 0.    ,  0.    ,  0.    ,  1.    ]
-    ])
-    waist_T_neck2 = np.array([
-        [ 0.6613, -0.6412, -0.3894,  0.    ],
-       [ 0.2795, -0.2711,  0.9211,  0.    ],
-       [-0.6961, -0.7179,  0.    ,  0.389 ],
-       [ 0.    ,  0.    ,  0.    ,  1.    ]
-    ])
-    base_link_T_waist = np.array([
-        [ 0.9211,  0.    ,  0.3893,  0.0566],
-       [-0.    ,  1.    , -0.    ,  0.    ],
-       [-0.3893, -0.    ,  0.9211,  0.9207],
-       [ 0.    ,  0.    ,  0.    ,  1.    ]
-    ])
+    # base_link_T_neck2 = np.array([
+    #     [ 0.3381, -0.8701, -0.3587,  0.208 ],
+    #    [ 0.2795, -0.2711,  0.9211,  0.    ],
+    #    [-0.8986, -0.4116,  0.1516,  1.2791],
+    #    [ 0.    ,  0.    ,  0.    ,  1.    ]
+    # ])
+    # waist_T_neck2 = np.array([
+    #     [ 0.6613, -0.6412, -0.3894,  0.    ],
+    #    [ 0.2795, -0.2711,  0.9211,  0.    ],
+    #    [-0.6961, -0.7179,  0.    ,  0.389 ],
+    #    [ 0.    ,  0.    ,  0.    ,  1.    ]
+    # ])
+    # base_link_T_waist = np.array([
+    #     [ 0.9211,  0.    ,  0.3893,  0.0566],
+    #    [-0.    ,  1.    , -0.    ,  0.    ],
+    #    [-0.3893, -0.    ,  0.9211,  0.9207],
+    #    [ 0.    ,  0.    ,  0.    ,  1.    ]
+    # ])
 
     while True:
         start_time = time.time()
@@ -92,8 +92,8 @@ if __name__ == "__main__":
         point_cloud = point_cloud[mask]
 
         point_cloud_h = np.hstack((point_cloud, np.ones((point_cloud.shape[0], 1))))
-        point_cloud_in_base_link1 = (base_link_T_waist @ waist_T_neck2 @ cam_neck2_extrinsics @ point_cloud_h.T).T[:, :3]
-        point_cloud_in_base_link2 = (base_link_T_neck2 @ cam_neck2_extrinsics @ point_cloud_h.T).T[:, :3]
+        point_cloud_in_base_link1 = (cam_base_link_extrinsics @ point_cloud_h.T).T[:, :3]
+        # point_cloud_in_base_link2 = (base_link_T_neck2 @ cam_neck2_extrinsics @ point_cloud_h.T).T[:, :3]
 
         pcd_msg = numpy_to_pointcloud2(point_cloud_in_base_link1, frame_id="base_link")
         # print(f"processing time: {time.time() - start_time:.6f}s")

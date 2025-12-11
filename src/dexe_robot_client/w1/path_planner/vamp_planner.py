@@ -56,12 +56,14 @@ class VampPlanner:
         if head_qpos is None or body_qpos is None:
             raise ValueError("Head or body qpos is None")
         
-        head_qpos = np.atleast_2d(head_qpos)
-        body_qpos = np.atleast_2d(body_qpos)
-        if head_qpos.shape[1] != 2 or body_qpos.shape[1] != 4:
+        # head_qpos = np.atleast_2d(head_qpos)
+        # body_qpos = np.atleast_2d(body_qpos)
+        if head_qpos.shape[0] != 2 or body_qpos.shape[0] != 4:
             raise ValueError("Invalid head or body qpos shape")
         
         arml_qpos, armr_qpos = np.zeros(7), np.zeros(7)
+        # arml_qpos = np.atleast_2d(arml_qpos)
+        # armr_qpos = np.atleast_2d(armr_qpos)
         full_qpos = np.concatenate([body_qpos, head_qpos, arml_qpos, armr_qpos])
         torso_trans, head_trans, _, _ = self.planner_pin.get_Kinematics(real_qpos=full_qpos)
 
