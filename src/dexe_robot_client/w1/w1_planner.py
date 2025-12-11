@@ -3089,7 +3089,7 @@ class W1Planner:
         self.armr_attachment_tf = None
         self.armr_attachment_spheres = []
 
-    # The following functions are for torso 1 2 3 collision checking(still testing)
+    # The following functions are for torso 1 2 3 collision checking
     def _compute_waist_T_torso(self):
         res, cur_qpos = self.get_current_qpos()
         torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(real_qpos=cur_qpos)

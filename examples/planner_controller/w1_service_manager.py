@@ -154,8 +154,10 @@ def main():
         sys.exit(1)
     elif args.real:
         is_sim = False
+    elif args.sim:
+        is_sim = True
     else:
-        is_sim = True  # 默认仿真模式
+        is_sim = False
     
     # 转换参数
     arm_type = W1ArmType.ANTHROPOMORPHIC  # 暂时只支持这一种
@@ -171,24 +173,6 @@ def main():
     )
     
     manager.run()
-
-
-def simple_example():
-    """简单使用示例"""
-    manager = W1ServiceManager(is_sim=True)
-    manager.run()
-
-
-def context_example():
-    """使用上下文管理器的示例"""
-    manager = W1ServiceManager(is_sim=True)
-    
-    # 使用上下文管理器确保正确清理
-    with manager.service_context() as w1_controller:
-        print("Services are running in context...")
-        # 在这里可以执行其他操作
-        input("Press Enter to shutdown...")
-        # 上下文退出时会自动关闭服务
 
 
 if __name__ == "__main__":
