@@ -38,8 +38,8 @@ class FCLChecker:
             )
         self.arml_full_path = get_arml_full_path(robot_type)
         self.armr_full_path = get_armr_full_path(robot_type)
-        self.head_full_path = get_head_full_path()
-        self.torso_full_path = get_torso_full_path()
+        self.head_full_path = get_head_full_path(robot_type)
+        self.torso_full_path = get_torso_full_path(robot_type)
 
         self.logger = get_logger()
         # Containers for fcl objects
