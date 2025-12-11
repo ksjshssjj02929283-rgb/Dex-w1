@@ -260,19 +260,37 @@ def get_armr_full_path(robot_type: RobotType = None):
     return armr_full_path
 
 
-def get_head_full_path():
-    head_full_path = [
-        RobotCollision.W1V02_ANTHROPOMORPHIC_HEAD.value + "/" + name
-        for name in HEAD_LINK_NAMES
-    ]
+def get_head_full_path(robot_type: RobotType = None):
+    if robot_type is None:
+        raise ValueError(
+            "Robot type must be specified for getting head full path.")
+    if robot_type == RobotType.W1V02_1:
+        head_full_path = [
+            RobotCollision.W1V02_ANTHROPOMORPHIC_HEAD.value + "/" + name
+            for name in HEAD_LINK_NAMES
+        ]
+    elif robot_type == RobotType.W1V02_2:
+        head_full_path = [
+            RobotCollision.W1V02_INDUSTRIAL_HEAD.value + "/" + name
+            for name in HEAD_LINK_NAMES
+        ]
     return head_full_path
 
 
-def get_torso_full_path():
-    torso_full_path = [
-        RobotCollision.W1V02_ANTHROPOMORPHIC_TORSO.value + "/" + name
-        for name in TORSO_LINK_NAMES
-    ]
+def get_torso_full_path(robot_type: RobotType = None):
+    if robot_type is None:
+        raise ValueError(
+            "Robot type must be specified for getting torso full path.")
+    if robot_type == RobotType.W1V02_1:
+        torso_full_path = [
+            RobotCollision.W1V02_ANTHROPOMORPHIC_TORSO.value + "/" + name
+            for name in TORSO_LINK_NAMES
+        ]
+    elif robot_type == RobotType.W1V02_2:
+        torso_full_path = [
+            RobotCollision.W1V02_INDUSTRIAL_TORSO.value + "/" + name
+            for name in TORSO_LINK_NAMES
+        ]
     return torso_full_path
 
 
