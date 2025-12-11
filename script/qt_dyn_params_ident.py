@@ -35,15 +35,15 @@ class DynParamIdentifier(Node):
             '/feedback/joint',
             self._joint_state_callback,
             10)
-        self.subscription = self.create_subscription(
-            JointState,
-            '/feedback/joint_sim',
-            self._joint_state_callback_sim,
-            10)
         self.robot_state_subscription = self.create_subscription(
             String,
             '/feedback/robot_server_state',
             self._robot_state_callback,
+            10)
+        self.subscription = self.create_subscription(
+            JointState,
+            '/feedback/joint_sim',
+            self._joint_state_callback_sim,
             10)
         self.robot_state_subscription_sim = self.create_subscription(
             String,
@@ -65,15 +65,14 @@ class DynParamIdentifier(Node):
         self.is_anth = is_anth
         self.is_left = is_left
         # 初始化状态变量
-        self.status = None
         self.joint_name = None
-        self.status_sim = None
+        self.status = None
         self.joint_position = None
-        self.joint_position_sim = None
         self.joint_torque = None
+        self.status_sim = None
+        self.joint_position_sim = None
         self.joint_torque_sim = None
         self.dt = DEFAULT_DT
-        self.rate = self.create_rate(1/self.dt)
         self.ndof = DEFAULT_NDOF
         self.movej_started = False
         # 设置路径
@@ -91,7 +90,43 @@ class DynParamIdentifier(Node):
                   self.proc_dir, self.sdpa_dir, self.solution_dir):
             d.mkdir(parents=True, exist_ok=True)
         self.traj_path = os.path.join(self.traj_dir, f"{self.traj}.dat")
+        # 创建定时器检查连接状态
+        self._last_msg_time = None
+        self._last_msg_time_sim = None
         rclpy.spin_once(self, timeout_sec=0.1)  # 让订阅生效
+        self.create_timer(0.1, self._check_connection_status)
+
+    def _check_connection_status(self, timeout_sec: float = 0.5):
+        """定时检查消息是否超时"""
+        cur_time = self.get_clock().now().nanoseconds / 1e9
+        if self._last_msg_time_sim is not None:
+            if (cur_time - self._last_msg_time_sim) > timeout_sec:
+                self.status_sim = None
+                self.joint_position_sim = None
+                self.joint_torque_sim = None
+                self._last_msg_time_sim = None
+        if self._last_msg_time is not None:
+            if (cur_time - self._last_msg_time) > timeout_sec:
+                self.status = None
+                self.joint_position = None
+                self.joint_torque = None
+                self._last_msg_time = None
+
+    def is_sim_connected(self, timeout_sec: float = 0.5):
+        start_time = time.time()
+        while time.time() - start_time < timeout_sec:
+            if self._last_msg_time_sim is not None:
+                return True
+            time.sleep(0.01)
+        return False
+
+    def is_real_connected(self, timeout_sec: float = 0.5):
+        start_time = time.time()
+        while time.time() - start_time < timeout_sec:
+            if self._last_msg_time is not None:
+                return True
+            time.sleep(0.01)
+        return False
 
     def run_sim(self):
         """
@@ -102,24 +137,25 @@ class DynParamIdentifier(Node):
         if self.is_left:
             target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
             self.interp_and_movej(is_sim=True, target_position=target_position)
-            self.get_logger().info(f"开始仿真轨迹执行, 当前qpos: {target_position}")
+            self.get_logger().info(f"开始执行仿真轨迹, 当前qpos: {target_position}")
             for i in range(q_ref.shape[0]):
                 target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[i, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
                 self._joint_publisher(is_sim=True, target_position=target_position)
-                self.rate.sleep()
+                time.sleep(self.dt)
         else:
             q_ref = -q_ref  # 右臂角度相反
             target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]]
             self.interp_and_movej(is_sim=True, target_position=target_position)
-            self.get_logger().info(f"开始仿真轨迹执行, 当前qpos: {target_position}")
+            self.get_logger().info(f"开始执行仿真轨迹, 当前qpos: {target_position}")
             for i in range(q_ref.shape[0]):
                 target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[i, :]]
-                if i < 2:
-                    self.get_logger().info(f"仿真轨迹点 {i}: {target_position}")
                 self._joint_publisher(is_sim=True, target_position=target_position)
-                self.rate.sleep()
+                time.sleep(self.dt)
         time.sleep(1.5)  # 发送结束后等待1.5s
-        self.get_logger().info("仿真轨迹执行完成。")
+        self.get_logger().info("仿真轨迹执行完成, 返回初始姿态。")
+        # 返回初始姿态
+        target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
+        self.interp_and_movej(is_sim=True, target_position=target_position)
 
     def run_real_capture(self, rec_filename=None):
         """
@@ -148,44 +184,35 @@ class DynParamIdentifier(Node):
 
     def interp_and_movej(self, is_sim: bool, target_position: list, max_speed=0.3):
         if self.movej_started:
-            self.get_logger().warn("已有插值移动在进行中，忽略新的移动请求")
+            self.get_logger().warn("已有插值movej移动在进行中，忽略新的移动请求")
             return False
         if is_sim:
-            if self.joint_position_sim is None:
-                self.get_logger().error("当前关节位置未知，无法移动。")
-                return False
-            self.get_logger().info("开始在仿真中插值移动到目标位置...")
+            self.is_sim_connected()
             joint_position = self.joint_position_sim
         else:
-            if self.joint_position is None:
-                self.get_logger().error("当前关节位置未知，无法移动。")
-                return False
-            self.get_logger().info("开始在真机中插值移动到目标位置...")
+            self.is_real_connected()
             joint_position = self.joint_position
 
-        self.get_logger().info(f"当前是否仿真: {is_sim}, 当前关节位置: {joint_position}, 目标关节位置: {target_position}")
+        if joint_position is None:
+            self.get_logger().warn("当前关节位置未知，无法进行插值movej移动。")
+            return False
+
         max_distance = max([abs(tp - cp) for tp, cp in zip(target_position, joint_position)])
         total_points = max(2, math.ceil(max_distance / max_speed / self.dt))
         interp_positions = np.linspace(np.array(joint_position), np.array(target_position), total_points)
         self.movej_started = True
-        self.get_logger().info(f"开始插值发送，共 {total_points} 点，轨迹时长 {total_points * self.dt} 秒")
+        self.get_logger().info(f"当前是否仿真: {is_sim}, 当前关节位置: {joint_position}, 目标关节位置: {target_position}，共 {total_points} 点，轨迹时长 {total_points * self.dt} 秒")
 
-        aborted = False
-        try:
-            for step in range(total_points):
-                ret = self._joint_publisher(is_sim, interp_positions[step].tolist())
-                aborted = not ret
-                if aborted:
-                    self.get_logger().warn("插值移动过程中被中止。")
-                    break
-                self.rate.sleep()
-            time.sleep(1.5)  # 发送结束后等待1.5s
-        finally:
-            self.movej_started = False
-
-        if aborted:
-            return False
-        self.get_logger().info("插值移动完成。")
+        for step in range(total_points):
+            ret = self._joint_publisher(is_sim, interp_positions[step].tolist())
+            if not ret:
+                self.get_logger().warn("插值movej移动过程中被中止。")
+                self.movej_started = False
+                return False
+            time.sleep(self.dt)
+        self.movej_started = False
+        time.sleep(1.5)  # 发送结束后等待1.5s
+        self.get_logger().info("插值movej移动完成。")
         return True
 
     def _joint_publisher(self, is_sim: bool, target_position: list):
@@ -196,15 +223,11 @@ class DynParamIdentifier(Node):
             self.get_logger().error("当前关节名称未知，无法移动。")
             return False
         if is_sim:
-            if self.joint_position_sim is None:
-                self.get_logger().error("当前关节位置未知，无法移动。")
-                return False
+            self.is_sim_connected()
             publisher = self.joint_publisher_sim
             joint_name = self.joint_name
         else:
-            if self.joint_position is None:
-                self.get_logger().error("当前关节位置未知，无法移动。")
-                return False
+            self.is_real_connected()
             publisher = self.joint_publisher
             joint_name = self.joint_name
 
@@ -259,14 +282,12 @@ class DynParamIdentifier(Node):
             ax1.legend(loc='upper right', fontsize='small')
 
     def _joint_state_callback(self, msg):
+        self._last_msg_time = self.get_clock().now().nanoseconds / 1e9
         self.joint_name = msg.name
         self.get_logger().debug(f"接收到关节状态消息: {self.joint_name}")
 
-    def _joint_state_callback_sim(self, msg):
-        self.joint_name = msg.name
-        self.get_logger().debug(f"(Sim) 接收到关节状态消息: {self.joint_name}")
-
     def _robot_state_callback(self, msg):
+        self._last_msg_time = self.get_clock().now().nanoseconds / 1e9
         state = json.loads(msg.data)
         if "status" in state:
             self.status = state["status"]
@@ -276,7 +297,13 @@ class DynParamIdentifier(Node):
         if "joint_torque" in state:
             self.joint_torque = [float(x) for x in state["joint_torque"]]
 
+    def _joint_state_callback_sim(self, msg):
+        self._last_msg_time_sim = self.get_clock().now().nanoseconds / 1e9
+        self.joint_name = msg.name
+        self.get_logger().debug(f"(Sim) 接收到关节状态消息: {self.joint_name}")
+
     def _robot_state_callback_sim(self, msg):
+        self._last_msg_time_sim = self.get_clock().now().nanoseconds / 1e9
         state = json.loads(msg.data)
         if "status" in state:
             self.status_sim = state["status"]
