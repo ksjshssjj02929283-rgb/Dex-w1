@@ -162,20 +162,6 @@ class DynParamIdentifier(Node):
         在真机上执行并记录：会调用 data.trajectory_exe.exe_in_real。
         rec_filename: 可选，记录文件名（不含路径），默认 rbtlog_{traj}.dat
         """
-        try:
-            from data.trajectory_exe import exe_in_real
-        except Exception as e:
-            raise RuntimeError("无法导入 data.trajectory_exe.exe_in_real: " + str(e))
-
-        try:
-            import rclpy
-            try:
-                rclpy.shutdown()
-            except Exception:
-                pass
-        except Exception:
-            pass
-
         if rec_filename is None:
             rec_filename = f"rbtlog_{self.traj}.dat"
         rec_path = os.path.join(self.rec_dir, rec_filename)
@@ -372,28 +358,20 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.log.setReadOnly(True)
         ctrl_layout.addRow("日志:", self.log)
 
-        # 右侧用于绘图的区域（滚动 + 多子图）
         plot_widget = QtWidgets.QWidget()
         plot_layout = QtWidgets.QVBoxLayout(plot_widget)
         main_layout.addWidget(plot_widget, 1)
 
-        # 使用 constrained_layout 以便自动避免子图重叠
         self.figure = Figure(figsize=(8, 6), constrained_layout=True)
         self.canvas = FigureCanvas(self.figure)
         plot_layout.addWidget(self.canvas)
-
-        # 当窗口大小改变时重新布局（避免标签和标题互相覆盖）
         self.canvas.mpl_connect('resize_event', self._on_resize)
-
         self.dyn = DynParamIdentifier()
-
-        # 保存 executor 和线程句柄，便于关闭时清理
         self.executor = MultiThreadedExecutor()
         self.executor.add_node(self.dyn)
         self.ros_thread = threading.Thread(target=self.executor.spin, daemon=True)
         self.ros_thread.start()
 
-        # 连接信号：将跨线程日志消息串行化到主线程 UI
         self.log_signal.connect(self._append_log)
 
         # 连接信号
@@ -401,12 +379,10 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_run_real.clicked.connect(self.on_run_real)
         self.btn_show_plot.clicked.connect(self.on_show_plot)
 
-    # 修改：log 只发信号，不直接动 UI（线程安全）
     def log_msg(self, msg):
         self.log_signal.emit(msg)
         print(msg)
 
-    # 新增：在主线程更新 QTextEdit，避免跨线程崩溃
     @QtCore.pyqtSlot(str)
     def _append_log(self, msg):
         self.log.append(msg)
@@ -429,9 +405,13 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_run_real.setDisabled(disabled)
         self.btn_show_plot.setDisabled(disabled)
 
+    @QtCore.pyqtSlot()
+    def enable_buttons(self):
+        self.disable_buttons(False)
+
     def on_run_sim(self):
         self.update_params_from_ui()
-        self.log_msg("准备运行仿真...")
+        self.log_msg("开始运行仿真...")
         self.disable_buttons(True)
         t = threading.Thread(target=self._thread_run_sim, daemon=True)
         t.start()
@@ -443,11 +423,14 @@ class DynParamGUI(QtWidgets.QMainWindow):
         except Exception as e:
             self.log_msg("仿真出错: " + str(e))
         finally:
-            QtCore.QTimer.singleShot(0, lambda: self.disable_buttons(False))
+            try:
+                QtCore.QMetaObject.invokeMethod(self, "enable_buttons", QtCore.Qt.QueuedConnection)
+            except Exception:
+                pass
 
     def on_run_real(self):
         self.update_params_from_ui()
-        self.log_msg("准备运行真机采集...")
+        self.log_msg("开始进行真机采集...")
         self.disable_buttons(True)
         t = threading.Thread(target=self._thread_run_real, daemon=True)
         t.start()
@@ -459,7 +442,10 @@ class DynParamGUI(QtWidgets.QMainWindow):
         except Exception as e:
             self.log_msg("真机采集出错: " + str(e))
         finally:
-            QtCore.QTimer.singleShot(0, lambda: self.disable_buttons(False))
+            try:
+                QtCore.QMetaObject.invokeMethod(self, "enable_buttons", QtCore.Qt.QueuedConnection)
+            except Exception:
+                pass
 
     def on_show_plot(self):
         self.update_params_from_ui()
@@ -474,7 +460,10 @@ class DynParamGUI(QtWidgets.QMainWindow):
             QtCore.QMetaObject.invokeMethod(self, "_plot_on_canvas", QtCore.Qt.QueuedConnection)
         except Exception as e:
             self.log_msg("绘图出错: " + str(e))
-            QtCore.QTimer.singleShot(0, lambda: self.disable_buttons(False))
+            try:
+                QtCore.QMetaObject.invokeMethod(self, "enable_buttons", QtCore.Qt.QueuedConnection)
+            except Exception:
+                pass
 
     @QtCore.pyqtSlot()
     def _plot_on_canvas(self):
