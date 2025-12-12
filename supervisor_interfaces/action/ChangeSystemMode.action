@@ -1,0 +1,12 @@
+# Goal
+SystemMode target_mode
+
+---
+# Result
+bool success
+string message
+
+---
+# Feedback
+float32 progress
+string status
