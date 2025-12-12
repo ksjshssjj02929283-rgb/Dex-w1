@@ -48,13 +48,13 @@ def test_w1_planner():
 
 
     # realsense d455
-    angles = [-2.159999999999998, -0.010000000000000024, -1.5700000000000012]  
-    rot = R.from_euler('xyz', angles)
-    rotation_matrix = rot.as_matrix()
+    # angles = [-2.159999999999998, -0.010000000000000024, -1.5700000000000012]  
+    # rot = R.from_euler('xyz', angles)
+    # rotation_matrix = rot.as_matrix()
 
-    cam_base_link_extrinsics = np.eye(4)
-    cam_base_link_extrinsics[:3, :3] = rotation_matrix
-    cam_base_link_extrinsics[:3, 3] = [0.01800000000000007, 0.04799999999999996, 1.5439999999999996]
+    # cam_base_link_extrinsics = np.eye(4)
+    # cam_base_link_extrinsics[:3, :3] = rotation_matrix
+    # cam_base_link_extrinsics[:3, 3] = [0.01800000000000007, 0.04799999999999996, 1.5439999999999996]
 
     cam_base_link_extrinsics = np.array([
                     [-0.0174, -0.5884,  0.8084,  0.0439],
