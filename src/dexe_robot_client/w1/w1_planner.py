@@ -165,6 +165,11 @@ class W1Planner:
         while not self.start_moving_client.wait_for_service(timeout_sec=1.0):
             self.logger.warning("start_moving service not available, waiting again...")
 
+        self.set_ee_pose_with_time_client = self.service_node.create_client(ClientService,
+                                                                            "set_ee_pose_with_time")
+        while not self.set_ee_pose_with_time_client.wait_for_service(timeout_sec=1.0):
+            self.logger.warning("set_ee_pose_with_time service not available, waiting again...")
+
 
         self.logger.info("Connected to controller service.")
 
@@ -511,6 +516,23 @@ class W1Planner:
         req = ClientService.Request()
         req.request = json.dumps({"name": name, "qpos": qpos.tolist()})
         future = self.set_ee_qpos_client.call_async(req)
+        rclpy.spin_until_future_complete(self.service_node, future)
+        res = json.loads(future.result().response)["is_set"]
+        return res
+    
+    def set_ee_pose_with_time(self, name: str, ee_task: list) -> bool:
+        """
+        Control end effector movement with pre-waited time and post-waited time
+
+        Args:
+            name (str): "left_arm_ee" or "right_arm_ee"
+            ee_task (list): [pre_time: float, ee_pose: list (6,), post_time: float]
+        """
+        if not self._check_qpos_dimension(name, np.array(ee_task[1])):
+            return False
+        req = ClientService.Request()
+        req.request = json.dumps({"name": name, "ee_task": ee_task})
+        future = self.set_ee_pose_with_time_client.call_async(req)
         rclpy.spin_until_future_complete(self.service_node, future)
         res = json.loads(future.result().response)["is_set"]
         return res

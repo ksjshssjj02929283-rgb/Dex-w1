@@ -148,6 +148,9 @@ class W1Controller:
         self.start_moving_server = self.service_node.create_service(ClientService,
                                                                     "start_moving",
                                                                     self.start_moving_callback)
+        self.set_ee_pose_with_time_server = self.service_node.create_service(ClientService,
+                                                                             "set_ee_pose_with_time",
+                                                                             self.set_ee_pose_with_time_callback)
         
         self.service_executor.add_node(self.service_node)
         self._service_thread = threading.Thread(target=self.service_executor.spin, 
@@ -618,6 +621,55 @@ class W1Controller:
             )
         return response
     
+    def set_ee_pose_with_time(self, name: str, ee_task: list) -> bool:
+        """
+        Control end effector movement with pre-waited time and post-waited time
+
+        Args:
+            name (str): "left_arm_ee" or "right_arm_ee"
+            ee_task (list): [pre_time: float, ee_pose: list (6,), post_time: float]
+        """
+        pre_wait_time, ee_pose, post_wait_time = ee_task[0], ee_task[1], ee_task[2]
+        ee_pose_ = np.array(ee_pose)
+        if not self._has_arm_ee_client(name, False):
+            return False
+        time.sleep(pre_wait_time)
+        res = self._get_arm_ee_client(name).set_pos(ee_pose_)
+        if not res:
+            return False
+        time.sleep(post_wait_time)
+        return True
+    
+    def set_ee_pose_with_time_callback(self, request, response):
+        """
+        This function is a service callback of function set_ee_pose_with_time()
+
+        Note:
+            -ee_pose in the request should be list, remember before sending the request, convert
+            np.ndarray to list.
+        """
+        data = json.loads(request.request)
+        if "name" in data and "ee_task" in data:
+            name = data["name"]
+            ee_task = data["ee_task"]
+            self.logger.info(f"Set {name} ee_pose_with_time: {ee_task}")
+            result = self.set_ee_pose_with_time(name, ee_task)
+            response.response = json.dumps(
+                {
+                    "success": True,
+                    "is_set": result
+                }
+            )
+        else:
+            self.logger.error(f"Set ee_pose_with_time failed, no name or ee_task in request")
+            response.response = json.dumps(
+                {
+                    "success": False,
+                    "is_set": False
+                }
+            )
+        return response
+
     def get_current_qpos(self, name: str = "full_body") -> tuple[bool, np.ndarray]:
         """获取特定部件(支持ee)的当前关节位置
 
