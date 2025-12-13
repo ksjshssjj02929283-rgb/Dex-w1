@@ -21,10 +21,27 @@ from ament_index_python.packages import get_package_share_directory
 
 DEFAULT_DT = 0.01
 DEFAULT_NDOF = 7
+DEFAULT_WF = 0.12 * np.pi # 轨迹基频
+DEFAULT_L = 3             # 轨迹谐波数
+
+def read_data(dof, h, rbtlogfile, trajreffile ):
+    rbtlog = np.loadtxt(rbtlogfile)
+    t = np.array(rbtlog[:,0])
+    q = np.array(rbtlog[:,1:dof+1])
+    tau = np.array(rbtlog[:,dof+1:dof*2+1])
+    trajref = np.loadtxt(trajreffile)
+    reft = np.array([ h*i for i in range(trajref.shape[0]) ])
+    return t, q, tau, reft, trajref
+
+def skew(v):
+  return sympy.Matrix( [ [     0, -v[2],  v[1] ],
+                         [  v[2],     0, -v[0] ],
+                         [ -v[1],  v[0],     0 ] ] )
 
 class DynParamIdentifier(Node):
-    def __init__(self, traj='traj1', is_left=False):
+    def __init__(self, traj='traj1', is_left=False, logger_callable=None):
         super().__init__('qt_dyn_params_ident')
+        self.log_msg = logger_callable
         self.subscription = self.create_subscription(JointState, '/feedback/joint', self._joint_state_callback, 10)
         self.robot_state_subscription = self.create_subscription(String, '/feedback/robot_server_state', self._robot_state_callback, 10)
         self.subscription = self.create_subscription(JointState, '/feedback/joint_sim', self._joint_state_callback_sim, 10)
@@ -34,10 +51,6 @@ class DynParamIdentifier(Node):
         self.traj = traj
         self.robot_cfg_path = Path(get_package_share_directory("w1_server")) / "robot.cfg"
         self.is_left = is_left
-        with open(self.robot_cfg_path, 'r', encoding='utf-8') as f:
-            cfg = json.load(f)
-        robot_name = cfg.get("robot_name", "")
-        self.is_anth = (robot_name == "W1Anthropomorphic")
         # 初始化状态变量
         self.joint_name = None
         self.timestamp = None
@@ -51,26 +64,23 @@ class DynParamIdentifier(Node):
         self.ndof = DEFAULT_NDOF
         self.movej_started = False
         self._stop_flag = threading.Event()
-        self.project_root = Path(__file__).resolve().parent
-        robot_type = 'w1_anth' if self.is_anth else 'w1_indst'
-        self.traj_dir = self.project_root / 'dyn_params_ident_data' / 'trajectories'
-        self.rec_dir = self.project_root / 'dyn_params_ident_data' / 'recdata' / robot_type #/ arm_type
-        self.cad_dir = self.project_root / 'dyn_params_ident_data' / 'robotparams' / robot_type #/ arm_type
-        self.model_dir = self.project_root / 'dyn_params_ident_data' / 'tmp' / 'robotmodels' / robot_type
-        self.proc_dir = self.project_root / 'dyn_params_ident_data' / 'tmp' / 'procdata' / robot_type
-        self.sdpa_dir = self.project_root / 'dyn_params_ident_data' / 'tmp' / 'sdpa_dat' / robot_type
-        self.solution_dir = self.project_root / 'dyn_params_ident_data' / 'tmp' / 'solutions' / robot_type
-        for d in (self.traj_dir, self.rec_dir, self.cad_dir, self.model_dir,
-                  self.proc_dir, self.sdpa_dir, self.solution_dir):
-            d.mkdir(parents=True, exist_ok=True)
+        with open(self.robot_cfg_path, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+        robot_name = cfg.get("robot_name", "")
+        robot_type = 'w1_anth' if robot_name == "W1Anthropomorphic" else 'w1_indst'
+        self.robot_name = robot_name
+        project_root = Path(__file__).resolve().parent
+        self.traj_dir = project_root / 'dyn_params_ident_data' / 'trajectories'
+        self.rec_dir = project_root / 'dyn_params_ident_data' / 'recdata' / robot_type
         self.traj_path = os.path.join(self.traj_dir, f"{self.traj}.dat")
         # 创建定时器检查连接状态
         self._last_msg_time = None
         self._last_msg_time_sim = None
         rclpy.spin_once(self, timeout_sec=0.1)  # 让订阅生效
         self.create_timer(0.1, self._check_connection_status)
-        self._gui_logger = None
-        self.log_msg(f"检测到机器人类型为: {robot_name}, 初始化并连接成功")
+        # 创建calculator
+        self.calculator_left = DynParamCalculator(robot_type=robot_type, is_left=self.is_left, logger=self.log_msg)
+        self.calculator_right = DynParamCalculator(robot_type=robot_type, is_left=not self.is_left, logger=self.log_msg)
 
     def _sleep_until(self, target_time):
         """精确睡眠到指定单调时钟时间，避免累计漂移。"""
@@ -84,22 +94,6 @@ class DynParamIdentifier(Node):
     def _fixed_rate_next(self, last_time, dt):
         """基于无漂移的固定频率调度，返回下一目标时间。"""
         return last_time + dt
-
-    def set_gui_logger(self, logger_callable):
-        """由 GUI 注入一个可调用，用于在 Qt 窗口显示日志。
-        例如传入 DynParamGUI.log_msg。
-        """
-        self._gui_logger = logger_callable
-
-    def log_msg(self, msg: str):
-        """统一的日志输出接口，供节点内部调用。
-        在无 GUI 环境下使用节点 logger 与标准输出，避免属性缺失错误。
-        """
-        try:
-            if self._gui_logger is not None:
-                self._gui_logger(str(msg))
-        except Exception:
-            pass
 
     def _check_connection_status(self, timeout_sec: float = 0.5):
         """定时检查消息是否超时"""
@@ -185,7 +179,7 @@ class DynParamIdentifier(Node):
         orig_is_left = self.is_left
         orig_traj = self.traj
 
-        traj_list = ["traj1", "traj2", "traj3"]
+        traj_list = ["traj1", "traj2"]
         left_dir = os.path.join(self.rec_dir, "left")
         right_dir = os.path.join(self.rec_dir, "right")
         os.makedirs(left_dir, exist_ok=True)
@@ -193,22 +187,22 @@ class DynParamIdentifier(Node):
 
         # 先左臂
         self.is_left = True
-        for tname in traj_list:
+        for traj_name in traj_list:
             if self._stop_flag.is_set():
                 self.log_msg("收到停止指令，终止剩余真机采集。")
                 break
-            self.traj = tname
+            self.traj = traj_name
             self.traj_path = os.path.join(self.traj_dir, f"{self.traj}.dat")
             rec_path = os.path.join(left_dir, f"rbtlog_{self.traj}.dat")
             self._run_real_capture_once(self.traj_path, rec_path)
         # 再右臂
         if not self._stop_flag.is_set():
             self.is_left = False
-            for tname in traj_list:
+            for traj_name in traj_list:
                 if self._stop_flag.is_set():
                     self.log_msg("收到停止指令，终止剩余真机采集。")
                     break
-                self.traj = tname
+                self.traj = traj_name
                 self.traj_path = os.path.join(self.traj_dir, f"{self.traj}.dat")
                 rec_path = os.path.join(right_dir, f"rbtlog_{self.traj}.dat")
                 self._run_real_capture_once(self.traj_path, rec_path)
@@ -355,7 +349,7 @@ class DynParamIdentifier(Node):
         rec_path = os.path.join(self.rec_dir, side_dir, rec_filename)
         traj_path = os.path.join(self.traj_dir, f"{self.traj}.dat")
 
-        t_raw, q_raw, tau_raw, t_ref, q_ref = self._read_data(self.ndof, self.dt, rec_path, traj_path)
+        t_raw, q_raw, tau_raw, t_ref, q_ref = read_data(self.ndof, self.dt, rec_path, traj_path)
         n_joints = q_raw.shape[1]
 
         # 统一取样长度
@@ -374,14 +368,14 @@ class DynParamIdentifier(Node):
             ax1 = ax_handles[j]
             ax1.clear()
             ref_series = q_ref_cut[:, j] if self.is_left else -q_ref_cut[:, j]
-            ax1.plot(t_ref_cut, ref_series, label='Reference q', color='tab:red', linewidth=1)
+            ax1.plot(t_ref_cut, ref_series, label='Reference q', color='tab:blue', linewidth=1)
             ax1.plot(t_raw_cut, q_raw_cut[:, j], label='Measured q', color='tab:green', alpha=0.8, linewidth=1)
             ax1.set_title(f'Joint {j+1}')
             ax1.grid(True, linestyle='--', alpha=0.5)
             ax1.set_xlabel('Time (s)')
             ax1.set_ylabel('Angle (rad)', color='tab:blue')
             ax2 = ax1.twinx()
-            ax2.plot(t_raw_cut, tau_cut[:, j], label='Measured τ (Nm)', color='tab:blue', linewidth=1)
+            ax2.plot(t_raw_cut, tau_cut[:, j], label='Measured τ (Nm)', color='tab:red', linewidth=1)
             ax2.set_ylabel('Torque (Nm)', color='tab:red')
             ax1.tick_params(axis='y', labelcolor='tab:blue')
             ax2.tick_params(axis='y', labelcolor='tab:red')
@@ -417,15 +411,417 @@ class DynParamIdentifier(Node):
         if "joint_torque" in state:
             self.joint_torque_sim = [float(x) for x in state["joint_torque"]]
 
-    def _read_data(self, dof, h, rbtlogfile, trajreffile ):
-        rbtlog = np.loadtxt(rbtlogfile)
-        s = rbtlog.shape[0]
-        t = np.array(rbtlog[:,0])
-        q = np.array(rbtlog[:,1:dof+1])
-        tau = np.array(rbtlog[:,dof+1:dof*2+1])
-        trajref = np.loadtxt(trajreffile)
-        reft = np.array([ h*i for i in range(trajref.shape[0]) ])
-        return t, q, tau, reft, trajref
+import sympy, sympybotics, scipy.signal, lmi_sdp, subprocess
+from sympy import BlockMatrix, Matrix, eye, Identity
+from lmi_sdp import LMI_PD, LMI
+from sympybotics.dynident.regression import mrepl
+
+class DynParamCalculator:
+    """
+    动力学参数辨识计算类, 通过读取采集的轨迹计算最小辨识集动力学参数。
+    """
+    def __init__(self, robot_type, is_left, logger):
+        self.log_msg = logger
+        project_root = Path(__file__).resolve().parent
+        self.traj_dir = project_root / 'dyn_params_ident_data' / 'trajectories'
+        self.rec_dir = project_root / 'dyn_params_ident_data' / 'recdata' / robot_type
+        # 处理数据直接缓存于内存（self.proc_data），不使用磁盘目录
+        self.is_anth = (robot_type == 'w1_anth')
+        self.is_left = is_left
+        self.robot_type = robot_type
+        self.ndof = DEFAULT_NDOF
+        self.dt = DEFAULT_DT
+        self.wf = DEFAULT_WF
+        self.L = DEFAULT_L
+        # 内存缓存：处理数据与辨识结果
+        self.proc_data = {}
+        self.solutions = {}
+
+    def calc_dyn_params(self):
+        # 创建机器人模型并计算基础参数集
+        self.rbt = self.create_robot_model(self.robot_type)
+        self.process_and_cache_data()
+        delta = self.rbt.dyn.dynparms
+        beta = self.rbt.dyn.baseparms
+        n_beta = self.rbt.dyn.n_base
+        beta_symbs = sympy.Matrix([sympy.Symbol('beta'+str(i+1),real=True) for i in range(n_beta)])
+        delta_d = (self.rbt.dyn.Pd.T * delta)
+        Pb = self.rbt.dyn.Pb
+        varchange_dict = dict(zip(Pb.T * delta ,  beta_symbs - ( beta - Pb.T * delta )))
+        I = Identity
+        S = skew
+        D_inertia_blocks = []
+        for i in range(self.rbt.dof):
+            L = self.rbt.rbtdef.L[i]
+            l = self.rbt.rbtdef.l[i]
+            m = self.rbt.rbtdef.m[i]
+            Di = BlockMatrix([[L,    S(l).T],
+                            [S(l), I(3)*m]])
+            D_inertia_blocks.append(Di.as_explicit())
+        D_other_blocks = []
+        for i in range(self.rbt.dof):
+            if self.rbt.rbtdef.driveinertiamodel == 'simplified':
+                D_other_blocks.append( Matrix([self.rbt.rbtdef.Ia[i]]) )
+            if 'viscous' in self.rbt.rbtdef.frictionmodel:
+                D_other_blocks.append( Matrix([self.rbt.rbtdef.fv[i]]) )
+            if 'Coulomb' in self.rbt.rbtdef.frictionmodel:
+                D_other_blocks.append( Matrix([self.rbt.rbtdef.fc[i]]) )
+        D_blocks = D_inertia_blocks + D_other_blocks
+        varchange_dict = dict(zip(Pb.T*delta ,  beta_symbs - ( beta - Pb.T*delta )))
+        DB_blocks = [mrepl(Di, varchange_dict) for Di in D_blocks]
+        DB_LMIs = list(map(LMI_PD, DB_blocks))
+        DB_LMIs[0]
+        epsilon_safemargin = 1e-6
+        DB_LMIs_marg = list(map(lambda lm: LMI(lm, epsilon_safemargin*eye(lm.shape[0])) , DB_blocks))
+
+        # 最小二乘回归 OLS Regression
+        ident_traj = 'traj1'
+        regr_mats = self.proc_data[ident_traj]
+        W = np.matrix(regr_mats['W'])
+        omega = np.matrix(regr_mats['omega'])
+        R1 = np.matrix(regr_mats['R1'])
+        rho1 = np.matrix(regr_mats['rho1'])
+
+        np.linalg.cond(W)
+        beta_ols = (R1.T * R1).I * R1.T * rho1
+        self.solutions[f"{ident_traj}_beta_ols"] = np.matrix(beta_ols)
+        rho2_norm_sqr = np.linalg.norm(omega - W * beta_ols)**2
+
+        # 基参数可行性修正 Base Parameter Feasibility Correction (BPFC)
+        u = sympy.Symbol('u')
+        U_beta = BlockMatrix([[Matrix([u]),       (beta_ols - beta_symbs).T],
+                        [beta_ols - beta_symbs,                 I(n_beta)]])
+        U_beta = U_beta.as_explicit()
+        lmis_ols_bpfc = [LMI(U_beta)] + DB_LMIs_marg
+        variables_ols_bpfc = [u] + list(beta_symbs) + list(delta_d)
+        objf_ols_bpfc = u
+        sol_ols_bpfc = self.dsdp5(objf_ols_bpfc, lmis_ols_bpfc, variables_ols_bpfc)
+        u_prime = sol_ols_bpfc[0,0]
+        beta_prime = sol_ols_bpfc[1:1+n_beta]
+        delta_d_prime = sol_ols_bpfc[1+n_beta:]
+        print(u_prime)
+
+        dict_subs = dict(zip(beta_symbs, beta_prime.flatten().tolist()[0]))
+        dict_subs.update(dict(zip(delta_d, delta_d_prime.flatten().tolist()[0])))
+
+        test = 'Solution Double Check: ok'
+        for i, DBi in enumerate(DB_blocks):
+            m = np.matrix(mrepl(DBi, dict_subs)).astype(float)
+            for v in np.linalg.eigvals( m ):
+                if v <= 0.0:
+                    print(i, v)
+                    test = 'Solution Double Check: fail'
+        self.solutions[f"{ident_traj}_beta_prime"] = np.matrix(beta_prime)
+        print(test)
+
+        u = sympy.Symbol('u')
+        U_rho = BlockMatrix([[Matrix([u - rho2_norm_sqr]), (rho1 - R1*beta_symbs).T],
+                            [rho1 - R1*beta_symbs,                       I(n_beta)]])
+        U_rho = U_rho.as_explicit()
+        lmis_fbpe_ols = [LMI(U_rho)] + DB_LMIs_marg
+        variables_fbpe_ols = [u] + list(beta_symbs) + list(delta_d)
+        objf_fbpe_ols = u
+        sol_fbpe_ols = self.dsdp5(objf_fbpe_ols, lmis_fbpe_ols, variables_fbpe_ols)
+        beta_star = np.matrix(sol_fbpe_ols[1:1+n_beta])
+        delta_d_star = np.matrix(sol_fbpe_ols[1+n_beta:])
+        dict_subs = dict(zip(beta_symbs, beta_star.flatten().tolist()[0]))
+        dict_subs.update(dict(zip(delta_d, delta_d_star.flatten().tolist()[0])))
+        test = 'ok'
+        for DBi in DB_blocks:
+            m = np.matrix(mrepl(DBi, dict_subs)).astype(float)
+            for v in np.linalg.eigvals( m ):
+                if v <= 0.0:
+                    print(v)
+                    test = 'fail'
+        print(f"test: {test}")
+
+        self.solutions[f"{ident_traj}_beta_star"] = np.matrix(beta_star)
+
+        # 质心位置约束
+        link_cuboid_hulls = [
+        [[ -0.1 , +0.06 ],[ -0.08 , +0.08 ],[ -0.0 , +0.16 ]],
+        [[ -0.0 , +0.16 ],[ -0.08 , +0.08 ],[ -0.08 , +0.08 ]],
+        [[ -0.11 , +0.05 ],[ -0.06 , +0.1 ],[ 0.02 , +0.18 ]],
+        [[ -0.0 , +0.16 ],[ -0.08 , +0.08 ],[ -0.08 , +0.08 ]],
+        [[ -0.08 , +0.08 ],[ -0.1 , +0.06 ],[ -0.04 , +0.12 ]],
+        [[ -0.08 , +0.08 ],[ -0.08 , +0.08 ],[ -0.08 , +0.08 ]],
+        [[ -0.04 , +0.12 ],[ -0.04 , +0.04 ],[ -0.0 , +0.16 ]],
+        ]
+
+        robotmaxmass = 27.0
+        D_add_blocks = []
+        for i in range(self.rbt.dof):
+            l = self.rbt.rbtdef.l[i]
+            m = self.rbt.rbtdef.m[i]
+            link_cuboid_hull = link_cuboid_hulls[i]
+            for j in range(3):
+                D_add_blocks.append( Matrix( [[  l[j] - m*link_cuboid_hull[j][0] ]] ) )
+                D_add_blocks.append( Matrix( [[ -l[j] + m*link_cuboid_hull[j][1] ]] ) )
+        # Variable Change and LMI Definition
+        D_add_blocks.append(Matrix([robotmaxmass - sum(self.rbt.rbtdef.m)]))
+        DB_add_blocks = [ mrepl(Di, varchange_dict) for Di in D_add_blocks ]
+        DB_add_LMIs = list(map(LMI_PD, DB_add_blocks))
+        DB_add_LMIs_marg = list(map(lambda lm: LMI(lm, epsilon_safemargin*eye(lm.shape[0])) , DB_add_blocks))
+        DB_add_LMIs_marg[0]
+        DB_add_LMIs_marg[-1]
+
+        dict_subs = {sym: float(val) for sym, val in zip(beta_symbs, beta_star)}
+        dict_subs = {sym: float(val) for sym, val in zip(beta_symbs, beta_star)}
+        lmis_fbpe_ols_add = [LMI(U_rho)] + DB_LMIs_marg + DB_add_LMIs_marg
+        variables_fbpe_ols_add = [u] + list(beta_symbs) + list(delta_d)
+        objf_fbpe_ols_add = u
+        sol_fbpe_ols_add = self.dsdp5(objf_fbpe_ols_add, lmis_fbpe_ols_add, variables_fbpe_ols_add)
+        beta_starextra = np.matrix(sol_fbpe_ols_add[1:1+n_beta])
+        delta_d_starextra = np.matrix(sol_fbpe_ols_add[1+n_beta:])
+        dict_subs = dict(zip(beta_symbs, beta_starextra.flatten().tolist()[0]))
+        dict_subs.update(dict(zip(delta_d, delta_d_starextra.flatten().tolist()[0])))
+        test = 'ok'
+        for DBi in (DB_blocks + DB_add_blocks):
+                m = np.matrix(mrepl(DBi, dict_subs)).astype(float)
+                for v in np.linalg.eigvals( m ):
+                    if v <= 0.0: test = 'fail'
+        print(test)
+        self.solutions[f"{ident_traj}_beta_starextra"] = np.matrix(beta_starextra)
+
+        beta_ols = np.matrix(self.solutions[f"{ident_traj}_beta_ols"]).copy()
+        self.test_mass_matrix_psd(beta_ols)
+        beta_starextra = np.matrix(self.solutions[f"{ident_traj}_beta_starextra"]).copy()
+        self.test_mass_matrix_psd(beta_starextra)
+
+    def get_regr_validatation(self, betaname='beta_starextra'):
+        # 使用内存缓存的数据与解进行验证（默认 traj2 验证，参数来自 traj1）
+        traj_proc = self.proc_data.get('traj2')
+        if traj_proc is None:
+            raise RuntimeError('未找到处理数据，请先执行计算动力学参数。')
+        W = np.matrix(traj_proc['W'])
+        t = traj_proc['t']
+        tau_raw = np.matrix(traj_proc['tau'])
+        beta_key = f"traj1_{betaname}"
+        if beta_key not in self.solutions:
+            raise RuntimeError('未找到辨识结果，请先执行计算动力学参数。')
+        beta_solution = np.matrix(self.solutions[beta_key]).copy()
+        omega_pred = W * beta_solution
+        tau_pred = omega_pred.reshape(int(omega_pred.shape[0] / tau_raw.shape[1]), tau_raw.shape[1])
+        total = tau_raw.shape[0]
+        return t[:total], tau_raw[:total, :], tau_pred[:total, :]
+
+    def create_robot_model(self, robot_type):
+        # 构建机器人模型, 并计算基础参数集
+        rbtdef = sympybotics.RobotDef(f"{robot_type}",
+                   [("-pi/2", 0, 0.1025, "q"),
+                    ("pi/2",  0, 0.0,    "q"),
+                    ("-pi/2", 0, 0.26,   "q"),
+                    ("pi/2",  0, 0.0,    "q"),
+                    ("-pi/2", 0, 0.264,  "q"),
+                    ("pi/2",  0, 0.0,    "q"),
+                    (0,       0, 0.0,    "q")],
+                    dh_convention="standard")
+        rbtdef.frictionmodel = {'Coulomb', 'viscous', 'offset'}
+        rbtdef.driveinertiamodel = 'simplified'
+        rbtdef.gravityacc = sympy.Matrix([-9.81, 0.0, 0.0]) if self.is_left else sympy.Matrix([9.81, 0.0, 0.0])
+        rbt = sympybotics.RobotDynCode(rbtdef, verbose=True)
+        rbt.calc_base_parms()
+        return rbt
+
+    def process_and_cache_data(self):
+        for traj in ['traj1', 'traj2']:
+            t_raw, q_raw, tau_raw, t, q, dq, ddq, tau, W, omega, Q1, R1, rho1 = self.process_regression_data(traj)
+            self.proc_data[traj] = {
+                't_raw': t_raw, 'q_raw': q_raw, 'tau_raw': tau_raw,
+                't': t, 'q': q, 'dq': dq, 'ddq': ddq, 'tau': tau,
+                'W': W, 'omega': omega, 'Q1': Q1, 'R1': R1, 'rho1': rho1
+            }
+        self.log_msg("所有轨迹数据处理完成并保存。")
+
+    def get_actual_q(self, q_raw):
+        if self.is_left:
+            if self.is_anth:
+                joint_offset = np.array([0.0, 0.0, -np.pi/2.0, 0.0, 0.0, -np.pi/2.0, 0.0])
+            else:
+                joint_offset = np.array([0.0, 0.0, -np.pi/2.0, 0.0, 0.0, 0.0, 0.0])
+        else:
+            if self.is_anth:
+                joint_offset = np.array([0.0, 0.0, np.pi/2.0, 0.0, 0.0, np.pi/2.0, 0.0])
+            else:
+                joint_offset =  np.array([0.0, 0.0, np.pi/2.0, 0.0, 0.0, 0.0, 0.0])
+        return q_raw + joint_offset
+
+    def process_regression_data(self, traj):
+        # 数据滤波, 差分和回归数据生成
+        fc_mult = 10
+        fc = fc_mult * (self.wf / (2 * np.pi) * self.L )
+        si = int(3/self.dt)
+        sf = -int(1/self.dt)
+        # 使用 Path / 拼接，并在 read_data 时转成 str
+        rec_filename = f"rbtlog_{traj}.dat"
+        sub_dir = "left" if self.is_left else "right"
+        rec_path = os.path.join(self.rec_dir, sub_dir, rec_filename)
+        traj_path = os.path.join(self.traj_dir, f"{traj}.dat")
+        t_raw, q_raw, tau_raw, t_ref, q_ref = read_data(self.ndof, self.dt, rec_path, traj_path)
+
+        q_raw = self.get_actual_q(q_raw) # 从实际的 q 得到原始的 q (对应DH参数)
+        q, dq, ddq, tau = self.diff_and_filt_data(
+            dof=self.ndof, h=self.dt, q_raw=q_raw, tau_raw=tau_raw,
+            fc_q=fc, fc_dq=fc, fc_ddq=fc, fc_tau=float('Inf')
+        )
+        t_raw = t_raw[si:sf]; q_raw = q_raw[si:sf]; tau_raw = tau_raw[si:sf]
+        q = q[si:sf]; dq = dq[si:sf]; ddq = ddq[si:sf]; tau = tau[si:sf]
+        t_raw = t_raw - t_raw[0]
+        t = np.array(range(q.shape[0])) * self.dt
+        W, omega, Q1, R1, rho1 = self.gen_regr_matrices(self.rbt, q, dq, ddq, tau)
+        return t_raw, q_raw, tau_raw, t, q, dq, ddq, tau, W, omega, Q1, R1, rho1
+
+    # 惯性矩阵M(q)正定性测试: M(q)理论上应为对称正定矩阵，否则对应的动能不满足正定性，模型物理不可行, 因此需要验证辨识结果对应的质量矩阵是否为正定矩阵）
+    def test_mass_matrix_psd(self, beta_solution):
+        K = self.rbt.dyn.Pb.T + self.rbt.dyn.Kd * self.rbt.dyn.Pd.T
+        A = np.matrix(K).astype(float)
+        b = np.matrix(beta_solution).astype(float)
+        x = np.linalg.pinv(A) * b
+        d_test = x
+        M_func_def = sympybotics.robotcodegen.robot_code_to_func( 'python', self.rbt.M_code, 'M', 'M_func', self.rbt.rbtdef)
+        exec(M_func_def, globals())
+        global sin, cos
+        from math import sin, cos
+        ntests = 10000
+        ok = 0
+        nok = 0
+        for i in range(ntests):
+            q_test = np.random.rand(self.rbt.dof)
+            M_out = M_func( np.array(d_test).flatten().tolist(), q_test)
+            M = np.matrix(M_out).reshape((self.rbt.dof,self.rbt.dof))
+            try:
+                c = np.linalg.cholesky(M)
+            except:
+                nok += 1
+                continue
+            ok += 1
+        print('ok     %8i  %3i%%'%(ok, 100.0*ok/ntests))
+        print('not ok %8i  %3i%%'%(nok, 100.0*nok/ntests))
+        if nok > 0 :
+            print('\nNot PSD -> Not feasible!')
+        else:
+            print('\nSeems feasible.')
+
+    def dsdp5(self, objf, lmis, variables):
+        # 生成 SDPA 稀疏格式输入
+        sdpadat = lmi_sdp.to_sdpa_sparse(objf, lmis, variables)
+        import tempfile
+        epsilon_sdptol = 1e-7
+        # 使用临时目录，避免在项目目录中持久化文件
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sdpa_in = os.path.join(tmpdir, 'sdp.dat-s')
+            dsdp_out = os.path.join(tmpdir, 'dsdp5.out')
+            with open(sdpa_in, 'w') as f:
+                f.write(sdpadat)
+            cmd = ['dsdp5', os.path.basename(sdpa_in), '-save', os.path.basename(dsdp_out), '-gaptol', str(epsilon_sdptol)]
+            proc = subprocess.run(
+                cmd,
+                cwd=tmpdir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                check=True
+            )
+            self.log_msg(proc.stdout.strip())
+            with open(dsdp_out, 'r') as f:
+                first_line = f.readline().strip()
+        sol = [float(v) for v in first_line.split()]
+        return np.matrix(sol).T
+
+    def gen_regr_matrices(self, rbt, q, dq, ddq, tau):
+        local_dict = {}
+        exec(sympybotics.robot_code_to_func('python', rbt.H_code, 'H', 'regressor_func', rbt.rbtdef), globals(), local_dict)
+        regressor_func = local_dict['regressor_func']
+        global sin, cos, sign
+        sin = np.sin
+        cos = np.cos
+        sign = np.sign
+        H_S, omega = self.regr_matrices(rbt.dof, rbt.dyn.n_dynparms, q, dq, ddq, tau, regressor_func)
+        W = np.matrix(H_S[:, rbt.dyn.base_idxs])
+        Q1, R1 = np.linalg.qr(W)
+        rho1 = Q1.T * omega
+        del H_S
+        return W, omega, Q1, R1, rho1
+
+    def regr_matrices(self, dof, parm_num, q, dq, ddq, tau, regr_func):
+        sn = q.shape[0]
+        # 向量化构造 H_S，每次调用返回 (dof, parm_num)，再堆叠
+        blocks = [np.array(regr_func(q[i], dq[i], ddq[i])).reshape(dof, parm_num) for i in range(sn)]
+        H_S = np.matrix(np.vstack(blocks))
+        tau_S = np.matrix(tau.reshape(dof * sn, 1))
+        return H_S, tau_S
+
+    def diff_and_filt_data(self, dof, h, q_raw, tau_raw, fc_q, fc_dq, fc_ddq, fc_tau):
+        q = np.zeros_like(q_raw)
+        dq = np.zeros_like(q_raw)
+        ddq = np.zeros_like(q_raw)
+        tau = np.zeros_like(tau_raw)
+        wc_q = fc_q * 2 * math.pi * h
+        wc_dq = fc_dq * 2 * math.pi * h
+        wc_ddq = fc_ddq * 2 * math.pi * h
+        wc_tau = fc_tau * 2 * math.pi * h
+
+        for i in range(dof):
+            q_i = q_raw[:, i]
+            q[:, i] = self.butter_filtfilt(3, wc_q, q_i)
+            dq_raw_i = self.central_diff(q_i, h, 2)
+            dq[:, i] = self.butter_filtfilt(3, wc_dq, dq_raw_i)
+            ddq_raw_i = self.central_diff(dq_raw_i, h, 2)
+            ddq[:, i] = self.butter_filtfilt(3, wc_ddq, ddq_raw_i)
+            tau[:, i] = self.butter_filtfilt(3, wc_tau, tau_raw[:, i])
+        return q, dq, ddq, tau
+
+    def butter_filtfilt(self, N, Wn, signal):
+        # 安全处理非有限/不可转换的截止频率：直接不滤波
+        try:
+            if Wn is None:
+                return signal[:]
+            Wn_val = float(Wn)
+            if not np.isfinite(Wn_val):
+                return signal[:]
+            if not (0.0 < Wn_val < 1.0):
+                return signal[:]
+        except Exception:
+            return signal[:]
+
+        b, a = scipy.signal.butter(N, Wn_val)
+        return scipy.signal.filtfilt(b, a, signal, method='pad')
+
+    def filtfilt(self, b,a,x):
+        ntaps=max(len(a),len(b))
+        edge=ntaps*3
+        if x.ndim != 1:
+            raise ValueError("Filiflit is only accepting 1 dimension arrays.")
+        if x.size < edge:
+            raise ValueError("Input vector needs to be bigger than 3 * max(len(a),len(b).")
+        if len(a) < ntaps:
+            a=np.r_[a,np.zeros(len(b)-len(a))]
+        if len(b) < ntaps:
+            b=np.r_[b,np.zeros(len(a)-len(b))]
+        zi=scipy.signal.lfilter_zi(b,a)
+        s=np.r_[2*x[0]-x[edge:1:-1],x,2*x[-1]-x[-1:-edge:-1]]
+        (y,zf)=scipy.signal.lfilter(b,a,s,-1,zi*s[0])
+        (y,zf)=scipy.signal.lfilter(b,a,np.flipud(y),-1,zi*y[-1])
+        return np.flipud(y[edge-1:-edge+1])
+
+    def central_diff(self, array, div, n = 2 ):
+        size = len( array )
+        diff = np.zeros_like( array )
+        if n == 1:
+            diff[0] = ( array[1] - array[0]  ) / div
+            for i in range(1,size-1):
+                diff[i] = ( array[i+1] - array[i-1]  ) / (2*div)
+            diff[size-1] = ( array[size-1] - array[size-2]  ) / div
+        elif n == 2:
+            diff[0] = ( array[1] - array[0]  ) / div
+            diff[1] = ( array[2] - array[0]  ) / (2*div)
+            for i in range(2,size-2):
+                diff[i] = ( - array[i+2] + 8*array[i+1] - 8*array[i-1] + array[i-2] ) / (12*div)
+            diff[size-2] = ( array[size-1] - array[size-3]  ) / (2*div)
+            diff[size-1] = ( array[size-1] - array[size-2]  ) / div
+        else:
+            raise Exception('use n = 1 or 2')
+        return diff
 
 
 class DynParamGUI(QtWidgets.QMainWindow):
@@ -435,13 +831,10 @@ class DynParamGUI(QtWidgets.QMainWindow):
         super().__init__(parent)
         self.setWindowTitle("动力学参数辨识")
         self.resize(1400, 900)
-        # 记录原始全局字体，用于日志保持不变
         original_font = QtWidgets.QApplication.font()
-        # 全局进一步减小字体（除日志外）
         small_font = QtWidgets.QApplication.font()
         small_font.setPointSize(max(8, small_font.pointSize() - 3))
         QtWidgets.QApplication.setFont(small_font)
-        # 保存以便后续日志控件恢复
         self._original_app_font = original_font
 
         # 中央 widget 和布局
@@ -458,12 +851,11 @@ class DynParamGUI(QtWidgets.QMainWindow):
         ctrl_layout = QtWidgets.QVBoxLayout(ctrl_widget)
         ctrl_layout.setContentsMargins(0, 0, 0, 0)
         ctrl_layout.setSpacing(10)
-        top_layout.addWidget(ctrl_widget, 0)
+        # 左右区域改为使用水平分割器，以便可拉伸
 
         self.traj_combo = QtWidgets.QComboBox()
-        self.traj_combo.addItems(["轨迹1", "轨迹2", "轨迹3"])
+        self.traj_combo.addItems(["轨迹1", "轨迹2"])
         self.traj_combo.setCurrentText("轨迹1")
-        # 新增：臂侧下拉框（左臂/右臂）
         self.arm_combo = QtWidgets.QComboBox()
         self.arm_combo.addItems(["左臂", "右臂"])
         self.arm_combo.setCurrentText("左臂")
@@ -471,11 +863,10 @@ class DynParamGUI(QtWidgets.QMainWindow):
         app_pt = QtWidgets.QApplication.font().pointSize()
         cf = self.arm_combo.font(); cf.setPointSize(app_pt); self.arm_combo.setFont(cf)
         tf = self.traj_combo.font(); tf.setPointSize(app_pt); self.traj_combo.setFont(tf)
-        # 下拉列表视图也统一字体
         arm_view = QtWidgets.QListView(); arm_view.setFont(cf); self.arm_combo.setView(arm_view)
         traj_view = QtWidgets.QListView(); traj_view.setFont(tf); self.traj_combo.setView(traj_view)
 
-        check_group = QtWidgets.QGroupBox("单段轨迹检查与图示")
+        check_group = QtWidgets.QGroupBox("仿真中轨迹检查")
         check_vbox = QtWidgets.QVBoxLayout(check_group)
         check_vbox.setContentsMargins(8, 8, 8, 8)
         check_vbox.setSpacing(8)
@@ -489,30 +880,30 @@ class DynParamGUI(QtWidgets.QMainWindow):
         # 操作按钮（仿真与图示）
         self.btn_run_sim = QtWidgets.QPushButton("运行仿真")
         self.btn_show_plot = QtWidgets.QPushButton("图示已采集轨迹")
+        self.btn_show_regression = QtWidgets.QPushButton("图示辨识结果")
         btn_h = max(self.btn_run_sim.sizeHint().height(), self.btn_show_plot.sizeHint().height())
         self.arm_combo.setFixedHeight(btn_h)
         self.traj_combo.setFixedHeight(btn_h)
-        # 让下拉项高度也更协调
         self.arm_combo.setStyleSheet(f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}")
         self.traj_combo.setStyleSheet(f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}")
         check_vbox.addWidget(self.btn_run_sim)
-        check_vbox.addWidget(self.btn_show_plot)
         ctrl_layout.addWidget(check_group)
 
-        # 选择后立刻更新
         self.traj_combo.currentTextChanged.connect(self.update_params_from_ui)
         self.arm_combo.currentTextChanged.connect(self.update_params_from_ui)
-
-        # 拉伸，将真机采集与停止组推至面板底部
         ctrl_layout.addStretch(1)
         # 底部模块：真机采集与控制
-        bottom_group = QtWidgets.QGroupBox("真机采集与控制")
+        bottom_group = QtWidgets.QGroupBox("真机轨迹采集")
         bottom_vbox = QtWidgets.QVBoxLayout(bottom_group)
         bottom_vbox.setContentsMargins(8, 8, 8, 8)
         bottom_vbox.setSpacing(8)
         self.btn_run_real = QtWidgets.QPushButton("真机采集所有轨迹")
+        self.btn_calc_params = QtWidgets.QPushButton("计算动力学参数")
+        self.btn_write_params = QtWidgets.QPushButton("写入辨识参数")
         self.btn_stop = QtWidgets.QPushButton("停止运动")
         bottom_vbox.addWidget(self.btn_run_real)
+        bottom_vbox.addWidget(self.btn_calc_params)
+        bottom_vbox.addWidget(self.btn_write_params)
         bottom_vbox.addWidget(self.btn_stop)
         ctrl_layout.addWidget(bottom_group)
 
@@ -536,18 +927,46 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
         plot_widget = QtWidgets.QWidget()
         plot_layout = QtWidgets.QVBoxLayout(plot_widget)
-        top_layout.addWidget(plot_widget, 1)
+        # 使用水平分割器容纳左侧控制与右侧绘图
+        hsplitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        hsplitter.addWidget(ctrl_widget)
+        hsplitter.addWidget(plot_widget)
+        # 默认让左侧控制区域更宽一些，同时支持左右拖拽
+        hsplitter.setSizes([400, 600])
+        hsplitter.setStretchFactor(0, 0)
+        hsplitter.setStretchFactor(1, 1)
+        top_layout.addWidget(hsplitter)
 
-        self.figure = Figure(figsize=(8, 6), constrained_layout=True)
-        self.canvas = FigureCanvas(self.figure)
-        plot_layout.addWidget(self.canvas)
-        self.canvas.mpl_connect('resize_event', self._on_resize)
-        self.dyn = DynParamIdentifier()
-        # 将 GUI 日志函数注入节点，统一在窗口显示日志
-        try:
-            self.dyn.set_gui_logger(self.log_msg)
-        except Exception:
-            pass
+        # 第三部分：轨迹采集及计算结果
+        result_group = QtWidgets.QGroupBox("轨迹采集及计算结果")
+        result_vbox = QtWidgets.QVBoxLayout(result_group)
+        result_vbox.setContentsMargins(8, 8, 8, 8)
+        result_vbox.setSpacing(8)
+        result_vbox.addWidget(self.btn_show_plot)
+        result_vbox.addWidget(self.btn_show_regression)
+        ctrl_layout.addWidget(result_group)
+
+        # 绘图区域改为分页：左臂/右臂两个标签页
+        self.tabs = QtWidgets.QTabWidget()
+        self.tab_left = QtWidgets.QWidget()
+        self.tab_right = QtWidgets.QWidget()
+        self.tabs.addTab(self.tab_left, "左臂")
+        self.tabs.addTab(self.tab_right, "右臂")
+
+        self.left_fig = Figure(figsize=(8, 6), constrained_layout=True)
+        self.left_canvas = FigureCanvas(self.left_fig)
+        self.right_fig = Figure(figsize=(8, 6), constrained_layout=True)
+        self.right_canvas = FigureCanvas(self.right_fig)
+
+        left_layout = QtWidgets.QVBoxLayout(self.tab_left)
+        right_layout = QtWidgets.QVBoxLayout(self.tab_right)
+        left_layout.addWidget(self.left_canvas)
+        right_layout.addWidget(self.right_canvas)
+        plot_layout.addWidget(self.tabs)
+
+        self.left_canvas.mpl_connect('resize_event', self._on_resize)
+        self.right_canvas.mpl_connect('resize_event', self._on_resize)
+        self.dyn = DynParamIdentifier(logger_callable=self.log_msg)
         self.executor = MultiThreadedExecutor()
         self.executor.add_node(self.dyn)
         self.ros_thread = threading.Thread(target=self.executor.spin, daemon=True)
@@ -559,8 +978,24 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_run_sim.clicked.connect(self.on_run_sim)
         self.btn_run_real.clicked.connect(self.on_run_real)
         self.btn_show_plot.clicked.connect(self.on_show_plot)
+        self.btn_calc_params.clicked.connect(self.on_calc_params)
+        self.btn_write_params.clicked.connect(self.on_write_params)
         # 新增：停止按钮连接
         self.btn_stop.clicked.connect(self.on_stop_clicked)
+        # 新增：图示辨识结果按钮
+        self.btn_show_regression.clicked.connect(self.on_show_regression)
+
+        # 在左侧控制面板最上方显示机器人名称供确认
+        try:
+            self.robot_label = QtWidgets.QLabel(f"机器人名称：{self.dyn.robot_name}")
+            lf = self.robot_label.font(); lf.setBold(True); self.robot_label.setFont(lf)
+            ctrl_layout.insertWidget(0, self.robot_label)
+        except Exception:
+            pass
+
+        # 初始禁用写入按钮，待完成参数计算后启用
+        self._params_calculated = False
+        self.btn_write_params.setDisabled(True)
 
     def log_msg(self, msg):
         self.log_signal.emit(msg)
@@ -573,7 +1008,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
     def update_params_from_ui(self):
         # 从下拉框读取轨迹名与臂侧（显示名 -> 内部值映射）
         traj_text = self.traj_combo.currentText().strip()
-        traj_map = {"轨迹1": "traj1", "轨迹2": "traj2", "轨迹3": "traj3"}
+        traj_map = {"轨迹1": "traj1", "轨迹2": "traj2"}
         self.dyn.traj = traj_map.get(traj_text, "traj1")
         self.dyn.is_left = (self.arm_combo.currentText() == "左臂")
         self.dyn.traj_path = os.path.join(self.dyn.traj_dir, f"{self.dyn.traj}.dat")
@@ -582,7 +1017,9 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_run_sim.setDisabled(disabled)
         self.btn_run_real.setDisabled(disabled)
         self.btn_show_plot.setDisabled(disabled)
-        # 停止按钮在执行期间应可用
+        self.btn_calc_params.setDisabled(disabled)
+        self.traj_combo.setDisabled(disabled)
+        # self.arm_combo.setDisabled(disabled)
         self.btn_stop.setDisabled(False if disabled else False)
 
     @QtCore.pyqtSlot()
@@ -610,7 +1047,36 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def on_run_real(self):
         self.update_params_from_ui()
-        self.log_msg("开始进行真机采集, 轨迹范围较大, 请注意安全并离开机器人手臂运动范围! 左右臂各采集3段轨迹, 共6段, 采集时间预计7分钟")
+        # 弹窗确认
+        msg = (
+            "将执行真机采集：\n\n"
+            "- 左右臂各采集2段轨迹（辨识+验证）\n"
+            "- 轨迹范围较大，请注意安全并离开机器人手臂运动范围!\n"
+            "- 预计用时约5分钟\n\n"
+            "是否确认开始？"
+        )
+        # 使用自定义中文文字按钮，纯文字无图标
+        mbox = QtWidgets.QMessageBox(self)
+        # 纯文字按钮：不显示图标
+        mbox.setIcon(QtWidgets.QMessageBox.NoIcon)
+        mbox.setWindowTitle("确认开始真机采集")
+        mbox.setText(msg)
+        # 置顶并应用程序级模态，避免被遮挡并阻塞交互
+        mbox.setWindowModality(QtCore.Qt.ApplicationModal)
+        mbox.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+        # 紧凑文字按钮样式
+        mbox.setStyleSheet(
+            "QMessageBox QPushButton {padding: 4px 12px; font-size: 20px;}"
+            "QMessageBox QLabel {font-size: 22px;}"
+        )
+        btn_confirm = mbox.addButton("确认", QtWidgets.QMessageBox.YesRole)
+        btn_cancel = mbox.addButton("取消", QtWidgets.QMessageBox.NoRole)
+        mbox.setDefaultButton(btn_cancel)
+        mbox.exec_()
+        if mbox.clickedButton() is not btn_confirm:
+            self.log_msg("已取消真机采集。")
+            return
+        self.log_msg("开始进行真机采集, 请注意安全!")
         self.disable_buttons(True)
         t = threading.Thread(target=self._thread_run_real, daemon=True)
         t.start()
@@ -645,45 +1111,254 @@ class DynParamGUI(QtWidgets.QMainWindow):
             except Exception:
                 pass
 
+    def on_show_regression(self):
+        self.update_params_from_ui()
+        self.log_msg("准备图示辨识结果")
+        self.disable_buttons(True)
+        t = threading.Thread(target=self._thread_show_regression, daemon=True)
+        t.start()
+
+    def _thread_show_regression(self):
+        try:
+            QtCore.QMetaObject.invokeMethod(self, "_plot_regression_on_canvas", QtCore.Qt.QueuedConnection)
+        except Exception as e:
+            self.log_msg("辨识结果绘图出错: " + str(e))
+            try:
+                QtCore.QMetaObject.invokeMethod(self, "enable_buttons", QtCore.Qt.QueuedConnection)
+            except Exception:
+                pass
+
+    def on_calc_params(self):
+        self.update_params_from_ui()
+        self.log_msg("开始计算动力学参数...")
+        self.disable_buttons(True)
+        t = threading.Thread(target=self._thread_calc_params, daemon=True)
+        t.start()
+
+    def _thread_calc_params(self):
+        try:
+            self.dyn.calculator_left.calc_dyn_params()
+            self.log_msg("左臂动力学参数计算完成。")
+            self.dyn.calculator_right.calc_dyn_params()
+            self.log_msg("右臂动力学参数计算完成。")
+            self.log_msg("动力学参数计算全部完成。")
+            # 计算完成，启用写入按钮
+            self._params_calculated = True
+            try:
+                self.btn_write_params.setDisabled(False)
+            except Exception:
+                pass
+        except Exception as e:
+            self.log_msg("动力学参数计算出错: " + str(e))
+        finally:
+            try:
+                QtCore.QMetaObject.invokeMethod(self, "enable_buttons", QtCore.Qt.QueuedConnection)
+            except Exception:
+                pass
+
+    def _get_current_beta(self, is_left: bool):
+        try:
+            calc = self.dyn.calculator_left if is_left else self.dyn.calculator_right
+            # 默认取 beta_starextra 作为最终参数
+            key = "traj1_beta_starextra"
+            if key not in calc.solutions:
+                # 退化为 beta_star 或 beta_ols
+                fallback_keys = ["traj1_beta_star", "traj1_beta_ols"]
+                for fk in fallback_keys:
+                    if fk in calc.solutions:
+                        key = fk
+                        break
+            beta = np.matrix(calc.solutions[key]).copy()
+            beta_list = np.asarray(beta).flatten().tolist()
+            return beta_list
+        except Exception as e:
+            raise RuntimeError(f"未找到辨识参数，请先计算动力学参数。错误: {e}")
+
+    def on_write_params(self):
+        try:
+            # 未完成计算则不允许写入
+            if not getattr(self, '_params_calculated', False):
+                self.log_msg("请先完成动力学参数计算后再写入。")
+                return
+
+            # 获取左右臂参数
+            beta_left = self._get_current_beta(True)
+            beta_right = self._get_current_beta(False)
+            # 强制要求71维，避免不一致
+            if len(beta_left) != 71 or len(beta_right) != 71:
+                raise ValueError(f"参数长度错误：左臂{len(beta_left)}维，右臂{len(beta_right)}维。需均为71维。")
+
+            # 构造确认弹窗（中文纯文字，无图标，置顶模态）
+            msg = (
+                "将写入左右臂辨识参数到机器人配置文件 robot.cfg：\n\n"
+                f"- 左臂字段：dyn_base_params_primary（维度 {len(beta_left)}）\n"
+                f"- 右臂字段：dyn_base_params_secondary（维度 {len(beta_right)}）\n\n"
+                "是否确认写入？"
+            )
+            mbox = QtWidgets.QMessageBox(self)
+            mbox.setIcon(QtWidgets.QMessageBox.NoIcon)
+            mbox.setWindowTitle("确认写入辨识参数")
+            mbox.setText(msg)
+            mbox.setWindowModality(QtCore.Qt.ApplicationModal)
+            mbox.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+            mbox.setStyleSheet(
+                "QMessageBox QPushButton {padding: 4px 12px; font-size: 20px;}"
+                "QMessageBox QLabel {font-size: 24px;}"
+            )
+            btn_confirm = mbox.addButton("确认", QtWidgets.QMessageBox.YesRole)
+            btn_cancel = mbox.addButton("取消", QtWidgets.QMessageBox.NoRole)
+            mbox.setDefaultButton(btn_cancel)
+            mbox.exec_()
+            if mbox.clickedButton() is not btn_confirm:
+                self.log_msg("已取消写入。")
+                return
+
+            # 读取配置并写入两臂
+            cfg_path = str(self.dyn.robot_cfg_path)
+            with open(cfg_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+            cfg["dyn_base_params_primary"] = beta_left
+            cfg["dyn_base_params_secondary"] = beta_right
+            with open(cfg_path, 'w', encoding='utf-8') as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=4)
+            self.log_msg(f"已写入左右臂辨识参数到机器人配置文件{cfg_path}, 重启服务后配置生效.")
+        except Exception as e:
+            self.log_msg("写入辨识参数出错: " + str(e))
+
     @QtCore.pyqtSlot()
     def _plot_on_canvas(self):
         try:
-            self.figure.clear()
+            # 同时绘制左/右臂两张图，无需再次点击
             ndof = self.dyn.ndof
             cols = 3
             rows = math.ceil(ndof / cols)
-            axes = []
-            for j in range(rows * cols):
-                ax = self.figure.add_subplot(rows, cols, j + 1)
-                axes.append(ax)
+
+            # 左臂
             try:
-                self.dyn.plot_records_to_axes(ax_handles=axes)
-                for k in range(len(axes)):
+                self.dyn.is_left = True
+                self.left_fig.clear()
+                axes_left = [self.left_fig.add_subplot(rows, cols, j + 1) for j in range(rows * cols)]
+                self.dyn.plot_records_to_axes(ax_handles=axes_left)
+                for k in range(len(axes_left)):
                     if k >= ndof:
-                        axes[k].set_visible(False)
+                        axes_left[k].set_visible(False)
                 try:
-                    self.figure.tight_layout()
+                    self.left_fig.tight_layout()
                 except Exception:
                     pass
-                self.canvas.draw()
-                self.log_msg("绘图完成。")
+                self.left_canvas.draw()
             except Exception as e:
-                self.log_msg("绘图过程中错误: " + str(e) + "，请检查已采集数据是否存在, 未采集请先进行真机采集。")
+                self.log_msg("左臂绘图错误: " + str(e))
+
+            # 右臂
+            try:
+                self.dyn.is_left = False
+                self.right_fig.clear()
+                axes_right = [self.right_fig.add_subplot(rows, cols, j + 1) for j in range(rows * cols)]
+                self.dyn.plot_records_to_axes(ax_handles=axes_right)
+                for k in range(len(axes_right)):
+                    if k >= ndof:
+                        axes_right[k].set_visible(False)
+                try:
+                    self.right_fig.tight_layout()
+                except Exception:
+                    pass
+                self.right_canvas.draw()
+            except Exception as e:
+                self.log_msg("右臂绘图错误: " + str(e))
+
+            self.log_msg("轨迹图绘制完成。")
+        finally:
+            self.disable_buttons(False)
+
+    @QtCore.pyqtSlot()
+    def _plot_regression_on_canvas(self):
+        try:
+            # 同时绘制左右臂辨识结果，无需再次点击
+            ndof = self.dyn.ndof
+            cols = 3
+            rows = math.ceil(ndof / cols)
+
+            # 左臂辨识
+            try:
+                self.left_fig.clear()
+                axes_left = [self.left_fig.add_subplot(rows, cols, j + 1) for j in range(rows * cols)]
+                calc_left = self.dyn.calculator_left
+                tL, tau_raw_L, tau_pred_L = calc_left.get_regr_validatation(betaname='beta_starextra')
+                totalL = tau_raw_L.shape[0]
+                for i in range(min(ndof, tau_raw_L.shape[1])):
+                    ax = axes_left[i]
+                    ax.clear()
+                    ax.plot(tL[:totalL], np.asarray(tau_raw_L[:, i]).flatten()[:totalL], label="Measured torque", color='tab:red', linewidth=1)
+                    ax.plot(tL[:totalL], np.asarray(tau_pred_L[:, i]).flatten()[:totalL], label="Estimated torque", color='tab:blue', linewidth=1)
+                    ax.set_title(f"Joint {i+1}")
+                    ax.set_xlabel("Time (s)")
+                    ax.set_ylabel("Torque (Nm)")
+                    ax.grid(True, linestyle='--', alpha=0.4)
+                    ax.legend(loc='upper right', fontsize='small')
+                for k in range(len(axes_left)):
+                    if k >= ndof:
+                        axes_left[k].set_visible(False)
+                try:
+                    self.left_fig.tight_layout()
+                except Exception:
+                    pass
+                self.left_canvas.draw()
+            except Exception as e:
+                self.log_msg("左臂辨识绘图错误: " + str(e) + "。请先计算动力学参数并确保数据存在。")
+
+            # 右臂辨识
+            try:
+                self.right_fig.clear()
+                axes_right = [self.right_fig.add_subplot(rows, cols, j + 1) for j in range(rows * cols)]
+                calc_right = self.dyn.calculator_right
+                tR, tau_raw_R, tau_pred_R = calc_right.get_regr_validatation(betaname='beta_starextra')
+                totalR = tau_raw_R.shape[0]
+                for i in range(min(ndof, tau_raw_R.shape[1])):
+                    ax = axes_right[i]
+                    ax.clear()
+                    ax.plot(tR[:totalR], np.asarray(tau_raw_R[:, i]).flatten()[:totalR], label="Measured torque", color='tab:red', linewidth=1)
+                    ax.plot(tR[:totalR], np.asarray(tau_pred_R[:, i]).flatten()[:totalR], label="Estimated torque", color='tab:blue', linewidth=1)
+                    ax.set_title(f"Joint {i+1}")
+                    ax.set_xlabel("Time (s)")
+                    ax.set_ylabel("Torque (Nm)")
+                    ax.grid(True, linestyle='--', alpha=0.4)
+                    ax.legend(loc='upper right', fontsize='small')
+                for k in range(len(axes_right)):
+                    if k >= ndof:
+                        axes_right[k].set_visible(False)
+                try:
+                    self.right_fig.tight_layout()
+                except Exception:
+                    pass
+                self.right_canvas.draw()
+            except Exception as e:
+                self.log_msg("右臂辨识绘图错误: " + str(e) + "。请先计算动力学参数并确保数据存在。")
+
+            self.log_msg("辨识结果图绘制完成。")
         finally:
             self.disable_buttons(False)
 
     @QtCore.pyqtSlot()
     def _on_resize(self, event):
         try:
-            self.figure.tight_layout()
-            self.canvas.draw_idle()
+            # 分别调整两个图的布局并请求重绘
+            try:
+                self.left_fig.tight_layout()
+                self.left_canvas.draw_idle()
+            except Exception:
+                pass
+            try:
+                self.right_fig.tight_layout()
+                self.right_canvas.draw_idle()
+            except Exception:
+                pass
         except Exception:
-            # 忽略任何重布局错误，保持 UI 可用
             pass
 
     def on_stop_clicked(self):
         try:
-            self.log_msg("收到停止指令，正在请求停止...")
+            self.log_msg("收到停止指令，正在请求停止")
             self.dyn._stop_move()
         except Exception as e:
             self.log_msg("停止流程出错: " + str(e))
