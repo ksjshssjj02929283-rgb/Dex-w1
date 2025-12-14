@@ -15,6 +15,15 @@ import numpy as np
 import matplotlib
 matplotlib.use('Qt5Agg')
 from PyQt5 import QtWidgets, QtCore
+try:
+    from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings, QWebEnginePage
+except Exception:
+    QWebEngineView = None
+    QWebEnginePage = None
+try:
+    from PyQt5.QtWebEngineWidgets import QWebEngineView
+except Exception:
+    QWebEngineView = None
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from ament_index_python.packages import get_package_share_directory
@@ -23,6 +32,24 @@ DEFAULT_DT = 0.01
 DEFAULT_NDOF = 7
 DEFAULT_WF = 0.12 * np.pi # 轨迹基频
 DEFAULT_L = 3             # 轨迹谐波数
+
+# 自定义页面：捕捉WebGL相关控制台错误以触发外部浏览器回退
+if QWebEngineView is not None and QWebEnginePage is not None:
+    class MeshcatPage(QWebEnginePage):
+        webglError = QtCore.pyqtSignal(str)
+
+        def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
+            try:
+                # 捕捉Meshcat/THREE在受限环境下的WebGL错误输出
+                if (
+                    "Error creating WebGL context" in message
+                    or "Uncaught Error: Error creating WebGL context" in message
+                ):
+                    self.webglError.emit(message)
+            except Exception:
+                pass
+            # 调用父类以保留默认行为
+            super().javaScriptConsoleMessage(level, message, lineNumber, sourceID)
 
 def read_data(dof, h, rbtlogfile, trajreffile ):
     rbtlog = np.loadtxt(rbtlogfile)
@@ -946,12 +973,14 @@ class DynParamGUI(QtWidgets.QMainWindow):
         result_vbox.addWidget(self.btn_show_regression)
         ctrl_layout.addWidget(result_group)
 
-        # 绘图区域改为分页：左臂/右臂两个标签页
+        # 绘图与可视化区域改为分页：左臂/右臂/可视化
         self.tabs = QtWidgets.QTabWidget()
         self.tab_left = QtWidgets.QWidget()
         self.tab_right = QtWidgets.QWidget()
+        self.tab_visual = QtWidgets.QWidget()
         self.tabs.addTab(self.tab_left, "左臂")
         self.tabs.addTab(self.tab_right, "右臂")
+        self.tabs.addTab(self.tab_visual, "可视化")
 
         self.left_fig = Figure(figsize=(8, 6), constrained_layout=True)
         self.left_canvas = FigureCanvas(self.left_fig)
@@ -960,8 +989,39 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
         left_layout = QtWidgets.QVBoxLayout(self.tab_left)
         right_layout = QtWidgets.QVBoxLayout(self.tab_right)
+        visual_layout = QtWidgets.QVBoxLayout(self.tab_visual)
         left_layout.addWidget(self.left_canvas)
         right_layout.addWidget(self.right_canvas)
+        # 可视化页：嵌入 Meshcat 网页（隐藏地址框，仅保留按钮）
+        if QWebEngineView is not None:
+            self.webview = QWebEngineView()
+            # 使用自定义页面以捕捉WebGL错误并触发外部浏览器回退
+            try:
+                page = MeshcatPage(self.webview)
+                page.webglError.connect(self._handle_webgl_error)
+                self.webview.setPage(page)
+            except Exception:
+                pass
+            # 初始不设定固定地址，待节点启动后读取
+            self.meshcat_url = None
+            self.btn_open_meshcat = QtWidgets.QPushButton("打开可视化")
+            visual_top = QtWidgets.QWidget()
+            vtop_layout = QtWidgets.QHBoxLayout(visual_top)
+            vtop_layout.setContentsMargins(0,0,0,0)
+            vtop_layout.addWidget(self.btn_open_meshcat)
+            visual_layout.addWidget(visual_top)
+            visual_layout.addWidget(self.webview)
+            # 点击“打开可视化”时自动尝试启动节点并打开视图
+            self.btn_open_meshcat.clicked.connect(self._start_visual_node)
+            try:
+                QWebEngineSettings.defaultSettings().setAttribute(QWebEngineSettings.WebGLEnabled, True)
+                QWebEngineSettings.defaultSettings().setAttribute(QWebEngineSettings.Accelerated2dCanvasEnabled, True)
+            except Exception:
+                pass
+            self.webview.loadFinished.connect(self._on_webview_load_finished)
+        else:
+            tip = QtWidgets.QLabel("未安装 QtWebEngine，无法嵌入 Meshcat 浏览器视图。请安装 PyQtWebEngine 后重试。")
+            visual_layout.addWidget(tip)
         plot_layout.addWidget(self.tabs)
 
         self.left_canvas.mpl_connect('resize_event', self._on_resize)
@@ -984,6 +1044,19 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_stop.clicked.connect(self.on_stop_clicked)
         # 新增：图示辨识结果按钮
         self.btn_show_regression.clicked.connect(self.on_show_regression)
+        # 可视化页事件
+        if QWebEngineView is not None:
+            self.tabs.currentChanged.connect(self._on_tab_changed)
+        # 可视化子进程句柄
+        self._visual_proc = None
+        # 外部浏览器打开防抖标志（避免多次打开同一地址）
+        self._external_opened = False
+        # 标志：由“切换到可视化页”触发的加载不自动外部打开
+        self._suppress_external_fallback = False
+        # 标志：已触发过WebGL失败回退，避免重复日志
+        self._fallback_triggered = False
+        # 记录上一次检测到的Meshcat地址，避免重复日志
+        self._last_detected_url = None
 
         # 在左侧控制面板最上方显示机器人名称供确认
         try:
@@ -1044,6 +1117,149 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 QtCore.QMetaObject.invokeMethod(self, "enable_buttons", QtCore.Qt.QueuedConnection)
             except Exception:
                 pass
+
+    def _open_meshcat_url(self):
+        try:
+            url = (self.meshcat_url or "").strip()
+            if not url:
+                return
+            self.webview.load(QtCore.QUrl(url))
+
+        except Exception as e:
+            self.log_msg("打开Meshcat地址失败: " + str(e))
+            self._open_external_browser()
+
+    def _on_webview_load_finished(self, ok: bool):
+        try:
+            if not ok:
+                if getattr(self, "_suppress_external_fallback", False):
+                    self._suppress_external_fallback = False
+                else:
+                    self.log_msg("嵌入式Web视图加载失败，使用外部浏览器打开。")
+                    self._open_external_browser()
+            else:
+                # 页面加载成功但可能存在WebGL不可用的情况，主动检测
+                try:
+                    js = (
+                        "(function(){\n"
+                        "  try{\n"
+                        "    var c=document.createElement('canvas');\n"
+                        "    var gl=c.getContext('webgl')||c.getContext('experimental-webgl');\n"
+                        "    return !!gl;\n"
+                        "  }catch(e){return false;}\n"
+                        "})()"
+                    )
+                    self.webview.page().runJavaScript(js, self._on_webgl_check_result)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _on_webgl_check_result(self, result):
+        try:
+            if result is False:
+                if getattr(self, "_suppress_external_fallback", False):
+                    self._suppress_external_fallback = False
+                else:
+                    if not self._fallback_triggered:
+                        self._fallback_triggered = True
+                        self.log_msg("检测到WebGL不可用，使用外部浏览器打开。")
+                        self._open_external_browser()
+            else:
+                # 成功则清除抑制标志
+                if getattr(self, "_suppress_external_fallback", False):
+                    self._suppress_external_fallback = False
+        except Exception:
+            pass
+
+    def _handle_webgl_error(self, msg: str):
+        try:
+            if getattr(self, "_suppress_external_fallback", False):
+                self._suppress_external_fallback = False
+            else:
+                if not self._fallback_triggered:
+                    self._fallback_triggered = True
+                    self.log_msg("检测到WebGL错误，使用外部浏览器打开。")
+                    self._open_external_browser()
+        except Exception:
+            pass
+
+    def _on_tab_changed(self, idx):
+        # 切换到可视化页时，若未加载过则尝试加载默认地址
+        try:
+            if QWebEngineView is None:
+                return
+            if self.tabs.widget(idx) is self.tab_visual:
+                if self.webview.url().isEmpty():
+                    # 设置抑制标志，仅本次加载生效
+                    self._suppress_external_fallback = True
+                    self._open_meshcat_url()
+        except Exception:
+            pass
+
+    def _start_visual_node(self):
+        try:
+            # 每次点击按钮都允许重新在外部浏览器打开
+            self._external_opened = False
+            # 若已在运行则不重复启动
+            if self._visual_proc and (self._visual_proc.poll() is None):
+                self.log_msg("可视化节点已在运行。")
+                # 节点已运行时也尝试打开可视化视图
+                self._open_meshcat_url()
+                return
+            import subprocess, sys
+            script_path = os.path.join(os.path.dirname(__file__), 'visual_ros2_node.py')
+            self._visual_proc = subprocess.Popen([sys.executable, '-u', script_path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            self.log_msg("启动可视化节点成功, 正在打开可视化显示...")
+            # 异步读取子进程输出，捕捉Meshcat地址
+            t = threading.Thread(target=self._read_visual_stdout, daemon=True)
+            t.start()
+        except Exception as e:
+            self.log_msg("启动可视化节点失败: " + str(e))
+
+    def _read_visual_stdout(self):
+        try:
+            import re
+            if not self._visual_proc or not self._visual_proc.stdout:
+                return
+            while True:
+                line = self._visual_proc.stdout.readline()
+                self.log_msg(line.strip())
+                if not line:
+                    break
+                l = line.strip()
+                # 通用meshcat提示行
+                if ("http://" in l or "https://" in l) and "/static/" in l:
+                    m = re.search(r"(https?://[^\s]+/static/)", l)
+                    if m:
+                        url = m.group(1)
+                        if url != self._last_detected_url:
+                            self.meshcat_url = url
+                            self._last_detected_url = url
+                            self.log_msg(f"检测到可视化地址: {url}")
+                        try:
+                            QtCore.QTimer.singleShot(0, self._open_meshcat_url)
+                        except Exception:
+                            pass
+            self.log_msg("可视化节点输出结束。")
+        except Exception as e:
+            self.log_msg("读取可视化节点输出失败: " + str(e))
+
+    def _open_external_browser(self):
+        try:
+            # 防抖：若已打开过则不再重复打开
+            if getattr(self, "_external_opened", False):
+                # 避免重复日志刷屏
+                return
+            import webbrowser
+            url = (self.meshcat_url or "").strip()
+            if not url:
+                return
+            webbrowser.open(url)
+            self._external_opened = True
+            self.log_msg(f"已在外部浏览器打开: {url}")
+        except Exception as e:
+            self.log_msg("外部浏览器打开失败: " + str(e))
 
     def on_run_real(self):
         self.update_params_from_ui()
@@ -1384,11 +1600,38 @@ class DynParamGUI(QtWidgets.QMainWindow):
                     self.ros_thread.join(timeout=0.5)
             except Exception:
                 pass
+            # 结束可视化子进程
+            try:
+                if hasattr(self, '_visual_proc') and self._visual_proc:
+                    if self._visual_proc.poll() is None:
+                        self.log_msg("正在结束可视化节点...")
+                        # 尝试发送终止信号
+                        try:
+                            self._visual_proc.terminate()
+                        except Exception:
+                            pass
+                        # 等待一段时间，若仍未结束则强制杀掉
+                        try:
+                            self._visual_proc.wait(timeout=2.0)
+                        except Exception:
+                            try:
+                                self._visual_proc.kill()
+                            except Exception:
+                                pass
+                        self.log_msg("可视化节点已结束。")
+            except Exception:
+                pass
         finally:
             super().closeEvent(event)
 
 
 def main():
+    # 解决嵌入Meshcat时 WebGL 被阻止/不可用问题：启用软件渲染或忽略GPU黑名单
+    try:
+        os.environ.setdefault('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-gpu --use-gl=swiftshader --ignore-gpu-blocklist')
+        os.environ.setdefault('LIBGL_ALWAYS_SOFTWARE', '1')
+    except Exception:
+        pass
     rclpy.init()
     app = QtWidgets.QApplication(sys.argv)
     win = DynParamGUI()
