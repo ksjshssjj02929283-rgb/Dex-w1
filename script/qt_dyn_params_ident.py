@@ -832,12 +832,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("动力学参数辨识")
-        self.resize(1400, 900)
-        original_font = QtWidgets.QApplication.font()
-        small_font = QtWidgets.QApplication.font()
-        small_font.setPointSize(max(8, small_font.pointSize() - 3))
-        QtWidgets.QApplication.setFont(small_font)
-        self._original_app_font = original_font
+        self.resize(1920, 1080)
 
         # 中央 widget 和布局
         central = QtWidgets.QWidget()
@@ -867,7 +862,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         arm_view = QtWidgets.QListView(); arm_view.setFont(cf); self.arm_combo.setView(arm_view)
         traj_view = QtWidgets.QListView(); traj_view.setFont(tf); self.traj_combo.setView(traj_view)
 
-        # 上部模块：轨迹仿真检查
+        # 第一部分：轨迹仿真检查
         check_group = QtWidgets.QGroupBox("轨迹仿真检查")
         check_vbox = QtWidgets.QVBoxLayout(check_group)
         check_vbox.setContentsMargins(8, 8, 8, 8)
@@ -887,15 +882,12 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.sim_speed_combo = QtWidgets.QComboBox()
         self.sim_speed_combo.addItems(["x1倍速", "x2倍速"])
         self.sim_speed_combo.setCurrentText("x1倍速")
-        # 使宽度尽可能窄但完整显示文字
-        try:
-            self.sim_speed_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
-            fm = self.sim_speed_combo.fontMetrics()
-            max_text = max(["x1倍速", "x2倍速"], key=lambda s: fm.width(s))
-            width = fm.width(max_text) + 48  # 预留左右内边距与下拉箭头
-            self.sim_speed_combo.setFixedWidth(width)
-        except Exception:
-            pass
+        self.sim_speed_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        fm = self.sim_speed_combo.fontMetrics()
+        max_text = max(["x1倍速", "x2倍速"], key=lambda s: fm.width(s))
+        width = fm.width(max_text) + 36  # 预留左右内边距与下拉箭头
+        self.sim_speed_combo.setFixedWidth(width)
+
         self.btn_show_plot = QtWidgets.QPushButton("图示已采集轨迹")
         self.btn_show_regression = QtWidgets.QPushButton("图示参数验证结果")
         btn_h = max(self.btn_run_sim.sizeHint().height(), self.btn_show_plot.sizeHint().height())
@@ -904,11 +896,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.arm_combo.setStyleSheet(f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}")
         self.traj_combo.setStyleSheet(f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}")
         # 仿真倍速下拉框与按钮高度一致
-        try:
-            self.sim_speed_combo.setFixedHeight(btn_h)
-            self.sim_speed_combo.setStyleSheet(f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}")
-        except Exception:
-            pass
+        self.sim_speed_combo.setFixedHeight(btn_h)
+        self.sim_speed_combo.setStyleSheet(f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}")
         check_vbox.addWidget(self.btn_open_meshcat)
         check_vbox.addWidget(self.btn_show_reference)
         # 将“运行仿真”与倍速下拉框放在同一行
@@ -920,13 +909,11 @@ class DynParamGUI(QtWidgets.QMainWindow):
         sim_row_layout.addWidget(self.sim_speed_combo)
         check_vbox.addWidget(sim_row)
         ctrl_layout.addWidget(check_group)
-
         self.traj_combo.currentTextChanged.connect(self.update_params_from_ui)
         self.arm_combo.currentTextChanged.connect(self.update_params_from_ui)
         # 停止按钮（左栏最下方，不在真机模块中）
         self.btn_stop = QtWidgets.QPushButton("停止运行")
         ctrl_layout.addStretch(1)
-
         # 第二部分：真机采集与控制
         bottom_group = QtWidgets.QGroupBox("轨迹真机采集")
         bottom_vbox = QtWidgets.QVBoxLayout(bottom_group)
@@ -940,7 +927,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
         bottom_vbox.addWidget(self.btn_show_plot)
         ctrl_layout.addWidget(bottom_group)
         ctrl_layout.addStretch(1)
-
         # 第三部分：轨迹采集及计算结果
         result_group = QtWidgets.QGroupBox("计算参数与写入")
         result_vbox = QtWidgets.QVBoxLayout(result_group)
@@ -951,7 +937,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
         result_vbox.addWidget(self.btn_write_params)
         ctrl_layout.addWidget(result_group)
         ctrl_layout.addStretch(1)
-
         # 第四部分：停止按钮
         stop_group = QtWidgets.QGroupBox("停止运动与计算")
         stop_vbox = QtWidgets.QVBoxLayout(stop_group)
@@ -966,12 +951,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.log = QtWidgets.QTextEdit()
         self.log.setReadOnly(True)
         self.log.setMinimumHeight(120)
-        try:
-            lf = self.log.font()
-            lf.setPointSize(max(8, lf.pointSize() - 2))
-            self.log.setFont(lf)
-        except Exception:
-            pass
         # 使用垂直分割器，允许用户拖动调整上部与日志的高度
         splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         splitter.addWidget(top_container)
@@ -987,7 +966,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         hsplitter.addWidget(ctrl_widget)
         hsplitter.addWidget(plot_widget)
         # 默认让左侧控制区域更宽一些，同时支持左右拖拽
-        hsplitter.setSizes([400, 600])
+        hsplitter.setSizes([350, 650])
         hsplitter.setStretchFactor(0, 0)
         hsplitter.setStretchFactor(1, 1)
         top_layout.addWidget(hsplitter)
@@ -1525,16 +1504,16 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def on_show_reference(self):
         try:
-            self.update_params_from_ui()
-            self.log_msg("准备图示待采集轨迹(Reference q)...")
-            self.disable_buttons(True)
             t = threading.Thread(target=self._thread_show_reference, daemon=True)
             t.start()
         except Exception as e:
             self.log_msg("参考轨迹绘图启动出错: " + str(e))
 
     def _thread_show_reference(self):
+        self.log_msg("正在绘图待采集轨迹(Reference q)...")
         try:
+            self.update_params_from_ui()
+            self.disable_buttons(True)
             QtCore.QMetaObject.invokeMethod(self, "_plot_reference_on_canvas", QtCore.Qt.QueuedConnection)
         except Exception as e:
             self.log_msg("参考轨迹绘图出错: " + str(e))
@@ -1681,17 +1660,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 pass
         finally:
             super().closeEvent(event)
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        # 窗口显示后再延时绘制参考轨迹，避免首屏黑屏
-        try:
-            if not getattr(self, "_did_initial_ref_plot", False):
-                self._did_initial_ref_plot = True
-                QtCore.QTimer.singleShot(200, self._plot_reference_on_canvas)
-        except Exception:
-            pass
-
 
 def main():
     rclpy.init()
