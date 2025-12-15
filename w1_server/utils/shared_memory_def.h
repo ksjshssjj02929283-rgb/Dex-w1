@@ -63,6 +63,7 @@ struct RobotControl
     double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};  //底盘电机控制方向
     int chassis_estop = 0;
     int chassis_neutral = 0;
+    uint64_t chassis_cnt = 0;
 };
 
 inline void decodeTwoUint32FromUint64(std::uint64_t v, std::uint32_t& latest, std::uint32_t& reader)
