@@ -21,7 +21,7 @@ python3 -m pip install --user --upgrade pip setuptools wheel matplotlib ipython 
 
 ```bash
 sudo apt install dsdp
-
+sudo apt install python3-pyqt5 python3-pyqt5.qtwebengine python3-pyqt5.sip
 # 2to3 -w support_funcs/
 ```
 

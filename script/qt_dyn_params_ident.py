@@ -15,15 +15,8 @@ import numpy as np
 import matplotlib
 matplotlib.use('Qt5Agg')
 from PyQt5 import QtWidgets, QtCore
-try:
-    from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings, QWebEnginePage
-except Exception:
-    QWebEngineView = None
-    QWebEnginePage = None
-try:
-    from PyQt5.QtWebEngineWidgets import QWebEngineView
-except Exception:
-    QWebEngineView = None
+from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings, QWebEnginePage
+
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from ament_index_python.packages import get_package_share_directory
