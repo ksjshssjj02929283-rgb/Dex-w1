@@ -15,15 +15,6 @@ import numpy as np
 import matplotlib
 matplotlib.use('Qt5Agg')
 from PyQt5 import QtWidgets, QtCore
-try:
-    from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings, QWebEnginePage
-except Exception:
-    QWebEngineView = None
-    QWebEnginePage = None
-try:
-    from PyQt5.QtWebEngineWidgets import QWebEngineView
-except Exception:
-    QWebEngineView = None
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from ament_index_python.packages import get_package_share_directory
@@ -32,24 +23,6 @@ DEFAULT_DT = 0.01
 DEFAULT_NDOF = 7
 DEFAULT_WF = 0.12 * np.pi # 轨迹基频
 DEFAULT_L = 3             # 轨迹谐波数
-
-# 自定义页面：捕捉WebGL相关控制台错误以触发外部浏览器回退
-if QWebEngineView is not None and QWebEnginePage is not None:
-    class MeshcatPage(QWebEnginePage):
-        webglError = QtCore.pyqtSignal(str)
-
-        def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
-            try:
-                # 捕捉Meshcat/THREE在受限环境下的WebGL错误输出
-                if (
-                    "Error creating WebGL context" in message
-                    or "Uncaught Error: Error creating WebGL context" in message
-                ):
-                    self.webglError.emit(message)
-            except Exception:
-                pass
-            # 调用父类以保留默认行为
-            super().javaScriptConsoleMessage(level, message, lineNumber, sourceID)
 
 def read_data(dof, h, rbtlogfile, trajreffile ):
     rbtlog = np.loadtxt(rbtlogfile)
@@ -162,6 +135,8 @@ class DynParamIdentifier(Node):
         self._stop_flag.clear()
         with open(traj_path, 'r' ) as file:
             q_ref = np.loadtxt(file)
+        # 使用GUI设置的仿真步长覆盖（仅调度用）
+        local_dt = getattr(self, '_sim_dt_override', self.dt)
         if self.is_left:
             # 运动到第一个点
             target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
@@ -174,7 +149,7 @@ class DynParamIdentifier(Node):
                     break
                 target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[i, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
                 self._joint_publisher(is_sim=True, target_position=target_position)
-                next_t = self._fixed_rate_next(next_t, self.dt)
+                next_t = self._fixed_rate_next(next_t, local_dt)
                 self._sleep_until(next_t)
         else:
             q_ref = -q_ref  # 右臂角度相反
@@ -189,7 +164,7 @@ class DynParamIdentifier(Node):
                     break
                 target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[i, :]]
                 self._joint_publisher(is_sim=True, target_position=target_position)
-                next_t = self._fixed_rate_next(next_t, self.dt)
+                next_t = self._fixed_rate_next(next_t, local_dt)
                 self._sleep_until(next_t)
         if not self._stop_flag.is_set():
             time.sleep(1)  # 发送结束后等待1s
@@ -295,7 +270,7 @@ class DynParamIdentifier(Node):
             time.sleep(1)  # 发送结束后等待1s
             self.log_msg(f"本段轨迹采集完成, 数据已保存到 {rec_path}")
 
-    def move_joint(self, is_sim: bool, target_position: list, max_speed=0.3):
+    def move_joint(self, is_sim: bool, target_position: list, max_speed=0.5):
         if self.movej_started:
             self.log_msg("已有插值movej移动在进行中，忽略新的移动请求")
             return False
@@ -452,7 +427,6 @@ class DynParamCalculator:
         project_root = Path(__file__).resolve().parent
         self.traj_dir = project_root / 'dyn_params_ident_data' / 'trajectories'
         self.rec_dir = project_root / 'dyn_params_ident_data' / 'recdata' / robot_type
-        # 处理数据直接缓存于内存（self.proc_data），不使用磁盘目录
         self.is_anth = (robot_type == 'w1_anth')
         self.is_left = is_left
         self.robot_type = robot_type
@@ -460,13 +434,14 @@ class DynParamCalculator:
         self.dt = DEFAULT_DT
         self.wf = DEFAULT_WF
         self.L = DEFAULT_L
-        # 内存缓存：处理数据与辨识结果
         self.proc_data = {}
         self.solutions = {}
+        self.rbt = None
 
     def calc_dyn_params(self):
         # 创建机器人模型并计算基础参数集
-        self.rbt = self.create_robot_model(self.robot_type)
+        if self.rbt is None:
+            self.rbt = self.create_robot_model(self.robot_type)
         self.process_and_cache_data()
         delta = self.rbt.dyn.dynparms
         beta = self.rbt.dyn.baseparms
@@ -878,7 +853,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
         ctrl_layout = QtWidgets.QVBoxLayout(ctrl_widget)
         ctrl_layout.setContentsMargins(0, 0, 0, 0)
         ctrl_layout.setSpacing(10)
-        # 左右区域改为使用水平分割器，以便可拉伸
 
         self.traj_combo = QtWidgets.QComboBox()
         self.traj_combo.addItems(["轨迹1", "轨迹2"])
@@ -893,7 +867,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         arm_view = QtWidgets.QListView(); arm_view.setFont(cf); self.arm_combo.setView(arm_view)
         traj_view = QtWidgets.QListView(); traj_view.setFont(tf); self.traj_combo.setView(traj_view)
 
-        check_group = QtWidgets.QGroupBox("仿真中轨迹检查")
+        # 上部模块：轨迹仿真检查
+        check_group = QtWidgets.QGroupBox("轨迹仿真检查")
         check_vbox = QtWidgets.QVBoxLayout(check_group)
         check_vbox.setContentsMargins(8, 8, 8, 8)
         check_vbox.setSpacing(8)
@@ -904,35 +879,88 @@ class DynParamGUI(QtWidgets.QMainWindow):
         combo_row_layout.addWidget(self.arm_combo)
         combo_row_layout.addWidget(self.traj_combo)
         check_vbox.addWidget(combo_row)
-        # 操作按钮（仿真与图示）
-        self.btn_run_sim = QtWidgets.QPushButton("运行仿真")
+        # 操作按钮（可视化与仿真）
+        self.btn_open_meshcat = QtWidgets.QPushButton("打开可视化")
+        self.btn_run_sim = QtWidgets.QPushButton("仿真运行待采集轨迹")
+        self.btn_show_reference = QtWidgets.QPushButton("图示待采集轨迹")
+        # 仿真倍速选择（与运行按钮同一行）
+        self.sim_speed_combo = QtWidgets.QComboBox()
+        self.sim_speed_combo.addItems(["x1倍速", "x2倍速"])
+        self.sim_speed_combo.setCurrentText("x1倍速")
+        # 使宽度尽可能窄但完整显示文字
+        try:
+            self.sim_speed_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+            fm = self.sim_speed_combo.fontMetrics()
+            max_text = max(["x1倍速", "x2倍速"], key=lambda s: fm.width(s))
+            width = fm.width(max_text) + 48  # 预留左右内边距与下拉箭头
+            self.sim_speed_combo.setFixedWidth(width)
+        except Exception:
+            pass
         self.btn_show_plot = QtWidgets.QPushButton("图示已采集轨迹")
-        self.btn_show_regression = QtWidgets.QPushButton("图示辨识结果")
+        self.btn_show_regression = QtWidgets.QPushButton("图示参数验证结果")
         btn_h = max(self.btn_run_sim.sizeHint().height(), self.btn_show_plot.sizeHint().height())
         self.arm_combo.setFixedHeight(btn_h)
         self.traj_combo.setFixedHeight(btn_h)
         self.arm_combo.setStyleSheet(f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}")
         self.traj_combo.setStyleSheet(f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}")
-        check_vbox.addWidget(self.btn_run_sim)
+        # 仿真倍速下拉框与按钮高度一致
+        try:
+            self.sim_speed_combo.setFixedHeight(btn_h)
+            self.sim_speed_combo.setStyleSheet(f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}")
+        except Exception:
+            pass
+        check_vbox.addWidget(self.btn_open_meshcat)
+        check_vbox.addWidget(self.btn_show_reference)
+        # 将“运行仿真”与倍速下拉框放在同一行
+        sim_row = QtWidgets.QWidget()
+        sim_row_layout = QtWidgets.QHBoxLayout(sim_row)
+        sim_row_layout.setContentsMargins(0, 0, 0, 0)
+        sim_row_layout.setSpacing(8)
+        sim_row_layout.addWidget(self.btn_run_sim)
+        sim_row_layout.addWidget(self.sim_speed_combo)
+        check_vbox.addWidget(sim_row)
         ctrl_layout.addWidget(check_group)
 
         self.traj_combo.currentTextChanged.connect(self.update_params_from_ui)
         self.arm_combo.currentTextChanged.connect(self.update_params_from_ui)
+        # 停止按钮（左栏最下方，不在真机模块中）
+        self.btn_stop = QtWidgets.QPushButton("停止运行")
         ctrl_layout.addStretch(1)
-        # 底部模块：真机采集与控制
-        bottom_group = QtWidgets.QGroupBox("真机轨迹采集")
+
+        # 第二部分：真机采集与控制
+        bottom_group = QtWidgets.QGroupBox("轨迹真机采集")
         bottom_vbox = QtWidgets.QVBoxLayout(bottom_group)
         bottom_vbox.setContentsMargins(8, 8, 8, 8)
         bottom_vbox.setSpacing(8)
-        self.btn_run_real = QtWidgets.QPushButton("真机采集所有轨迹")
+        self.btn_run_real = QtWidgets.QPushButton("真机采集轨迹")
         self.btn_calc_params = QtWidgets.QPushButton("计算动力学参数")
         self.btn_write_params = QtWidgets.QPushButton("写入辨识参数")
-        self.btn_stop = QtWidgets.QPushButton("停止运动")
         bottom_vbox.addWidget(self.btn_run_real)
-        bottom_vbox.addWidget(self.btn_calc_params)
-        bottom_vbox.addWidget(self.btn_write_params)
-        bottom_vbox.addWidget(self.btn_stop)
+        # 图示已采集轨迹放在真机采集所有轨迹下方
+        bottom_vbox.addWidget(self.btn_show_plot)
         ctrl_layout.addWidget(bottom_group)
+        ctrl_layout.addStretch(1)
+
+        # 第三部分：轨迹采集及计算结果
+        result_group = QtWidgets.QGroupBox("计算参数与写入")
+        result_vbox = QtWidgets.QVBoxLayout(result_group)
+        result_vbox.setContentsMargins(8, 8, 8, 8)
+        result_vbox.setSpacing(8)
+        result_vbox.addWidget(self.btn_calc_params)
+        result_vbox.addWidget(self.btn_show_regression)
+        result_vbox.addWidget(self.btn_write_params)
+        ctrl_layout.addWidget(result_group)
+        ctrl_layout.addStretch(1)
+
+        # 第四部分：停止按钮
+        stop_group = QtWidgets.QGroupBox("停止运动与计算")
+        stop_vbox = QtWidgets.QVBoxLayout(stop_group)
+        stop_vbox.setContentsMargins(8, 8, 8, 8)
+        stop_vbox.setSpacing(8)
+        stop_vbox.addWidget(self.btn_stop)
+        ctrl_layout.addWidget(stop_group)
+        ctrl_layout.addStretch(1)
+        ctrl_layout.addStretch(1)
 
         # 底部整行日志显示窗口（可拖动调整高度）
         self.log = QtWidgets.QTextEdit()
@@ -964,23 +992,12 @@ class DynParamGUI(QtWidgets.QMainWindow):
         hsplitter.setStretchFactor(1, 1)
         top_layout.addWidget(hsplitter)
 
-        # 第三部分：轨迹采集及计算结果
-        result_group = QtWidgets.QGroupBox("轨迹采集及计算结果")
-        result_vbox = QtWidgets.QVBoxLayout(result_group)
-        result_vbox.setContentsMargins(8, 8, 8, 8)
-        result_vbox.setSpacing(8)
-        result_vbox.addWidget(self.btn_show_plot)
-        result_vbox.addWidget(self.btn_show_regression)
-        ctrl_layout.addWidget(result_group)
-
-        # 绘图与可视化区域改为分页：左臂/右臂/可视化
+        # 绘图区域分页：左臂/右臂（移除可视化页）
         self.tabs = QtWidgets.QTabWidget()
         self.tab_left = QtWidgets.QWidget()
         self.tab_right = QtWidgets.QWidget()
-        self.tab_visual = QtWidgets.QWidget()
         self.tabs.addTab(self.tab_left, "左臂")
         self.tabs.addTab(self.tab_right, "右臂")
-        self.tabs.addTab(self.tab_visual, "可视化")
 
         self.left_fig = Figure(figsize=(8, 6), constrained_layout=True)
         self.left_canvas = FigureCanvas(self.left_fig)
@@ -989,39 +1006,10 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
         left_layout = QtWidgets.QVBoxLayout(self.tab_left)
         right_layout = QtWidgets.QVBoxLayout(self.tab_right)
-        visual_layout = QtWidgets.QVBoxLayout(self.tab_visual)
         left_layout.addWidget(self.left_canvas)
         right_layout.addWidget(self.right_canvas)
-        # 可视化页：嵌入 Meshcat 网页（隐藏地址框，仅保留按钮）
-        if QWebEngineView is not None:
-            self.webview = QWebEngineView()
-            # 使用自定义页面以捕捉WebGL错误并触发外部浏览器回退
-            try:
-                page = MeshcatPage(self.webview)
-                page.webglError.connect(self._handle_webgl_error)
-                self.webview.setPage(page)
-            except Exception:
-                pass
-            # 初始不设定固定地址，待节点启动后读取
-            self.meshcat_url = None
-            self.btn_open_meshcat = QtWidgets.QPushButton("打开可视化")
-            visual_top = QtWidgets.QWidget()
-            vtop_layout = QtWidgets.QHBoxLayout(visual_top)
-            vtop_layout.setContentsMargins(0,0,0,0)
-            vtop_layout.addWidget(self.btn_open_meshcat)
-            visual_layout.addWidget(visual_top)
-            visual_layout.addWidget(self.webview)
-            # 点击“打开可视化”时自动尝试启动节点并打开视图
-            self.btn_open_meshcat.clicked.connect(self._start_visual_node)
-            try:
-                QWebEngineSettings.defaultSettings().setAttribute(QWebEngineSettings.WebGLEnabled, True)
-                QWebEngineSettings.defaultSettings().setAttribute(QWebEngineSettings.Accelerated2dCanvasEnabled, True)
-            except Exception:
-                pass
-            self.webview.loadFinished.connect(self._on_webview_load_finished)
-        else:
-            tip = QtWidgets.QLabel("未安装 QtWebEngine，无法嵌入 Meshcat 浏览器视图。请安装 PyQtWebEngine 后重试。")
-            visual_layout.addWidget(tip)
+        # 初始化可视化地址（不嵌入，仅外部浏览器）
+        self.meshcat_url = None
         plot_layout.addWidget(self.tabs)
 
         self.left_canvas.mpl_connect('resize_event', self._on_resize)
@@ -1035,18 +1023,19 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.log_signal.connect(self._append_log)
 
         # 连接信号
+        self.btn_open_meshcat.clicked.connect(self._start_visual_node)
         self.btn_run_sim.clicked.connect(self.on_run_sim)
         self.btn_run_real.clicked.connect(self.on_run_real)
+        self.btn_show_reference.clicked.connect(self.on_show_reference)
         self.btn_show_plot.clicked.connect(self.on_show_plot)
         self.btn_calc_params.clicked.connect(self.on_calc_params)
         self.btn_write_params.clicked.connect(self.on_write_params)
+        # 倍速选择变化
+        self.sim_speed_combo.currentTextChanged.connect(self._on_sim_speed_changed)
         # 新增：停止按钮连接
         self.btn_stop.clicked.connect(self.on_stop_clicked)
         # 新增：图示辨识结果按钮
         self.btn_show_regression.clicked.connect(self.on_show_regression)
-        # 可视化页事件
-        if QWebEngineView is not None:
-            self.tabs.currentChanged.connect(self._on_tab_changed)
         # 可视化子进程句柄
         self._visual_proc = None
         # 外部浏览器打开防抖标志（避免多次打开同一地址）
@@ -1058,17 +1047,25 @@ class DynParamGUI(QtWidgets.QMainWindow):
         # 记录上一次检测到的Meshcat地址，避免重复日志
         self._last_detected_url = None
 
-        # 在左侧控制面板最上方显示机器人名称供确认
         try:
-            self.robot_label = QtWidgets.QLabel(f"机器人名称：{self.dyn.robot_name}")
+            robot_type = "灵巧手" if self.dyn.robot_name == "W1Anthropomorphic" else "二指夹"
+            self.robot_label = QtWidgets.QLabel(f"机器人类型：{self.dyn.robot_name} - {robot_type}")
             lf = self.robot_label.font(); lf.setBold(True); self.robot_label.setFont(lf)
             ctrl_layout.insertWidget(0, self.robot_label)
         except Exception:
             pass
 
-        # 初始禁用写入按钮，待完成参数计算后启用
+        # 初始状态与禁用策略
         self._params_calculated = False
+        self._captured_finished = False
+        self._cancel_requested = False
+        # 初始禁用：计算/图示/辨识/写入
+        self.btn_calc_params.setDisabled(True)
+        self.btn_show_plot.setDisabled(True)
+        self.btn_show_regression.setDisabled(True)
         self.btn_write_params.setDisabled(True)
+        # 初始化后不立即绘图，避免首屏黑屏；改为窗口显示后再绘
+        self._did_initial_ref_plot = False
 
     def log_msg(self, msg):
         self.log_signal.emit(msg)
@@ -1087,13 +1084,28 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.dyn.traj_path = os.path.join(self.dyn.traj_dir, f"{self.dyn.traj}.dat")
 
     def disable_buttons(self, disabled=True):
-        self.btn_run_sim.setDisabled(disabled)
-        self.btn_run_real.setDisabled(disabled)
-        self.btn_show_plot.setDisabled(disabled)
-        self.btn_calc_params.setDisabled(disabled)
-        self.traj_combo.setDisabled(disabled)
-        # self.arm_combo.setDisabled(disabled)
-        self.btn_stop.setDisabled(False if disabled else False)
+        # 除停止按钮外均禁用/启用；部分按钮受状态标志控制
+        try:
+            self.btn_run_sim.setDisabled(disabled)
+            self.btn_run_real.setDisabled(disabled)
+            # 可视化始终可用
+            self.btn_open_meshcat.setDisabled(False)
+            # 待采集参考轨迹：仅随操作禁用，不受采集/计算状态限制
+            self.btn_show_reference.setDisabled(disabled)
+            # 仿真倍速选择在运行/计算时也禁用
+            self.sim_speed_combo.setDisabled(disabled)
+            # 根据采集完成状态决定是否可用
+            self.btn_show_plot.setDisabled(True if disabled else (not self._captured_finished))
+            self.btn_calc_params.setDisabled(True if disabled else (not self._captured_finished))
+            # 根据计算完成状态决定是否可用
+            self.btn_show_regression.setDisabled(True if disabled else (not self._params_calculated))
+            self.btn_write_params.setDisabled(True if disabled else (not self._params_calculated))
+            self.traj_combo.setDisabled(disabled)
+            self.arm_combo.setDisabled(disabled)
+            # 停止按钮始终可用
+            self.btn_stop.setDisabled(False)
+        except Exception:
+            pass
 
     @QtCore.pyqtSlot()
     def enable_buttons(self):
@@ -1102,6 +1114,11 @@ class DynParamGUI(QtWidgets.QMainWindow):
     def on_run_sim(self):
         self.update_params_from_ui()
         self.log_msg("开始运行仿真...")
+        # 根据倍速系数调整仿真步长（仅影响调度，不改数据本身）
+        try:
+            self.dyn._sim_dt_override = float(self.dyn.dt) / max(1.0, float(getattr(self, '_sim_speed_mult', 1.0)))
+        except Exception:
+            self.dyn._sim_dt_override = self.dyn.dt
         self.disable_buttons(True)
         t = threading.Thread(target=self._thread_run_sim, daemon=True)
         t.start()
@@ -1118,84 +1135,23 @@ class DynParamGUI(QtWidgets.QMainWindow):
             except Exception:
                 pass
 
+    def _on_sim_speed_changed(self, text: str):
+        try:
+            mapping = {"x1倍速": 1.0, "x2倍速": 2.0}
+            self._sim_speed_mult = mapping.get(text, 1.0)
+            self.log_msg(f"仿真速度系数设置为 {self._sim_speed_mult}x")
+        except Exception:
+            self._sim_speed_mult = 1.0
+
     def _open_meshcat_url(self):
         try:
             url = (self.meshcat_url or "").strip()
             if not url:
                 return
-            self.webview.load(QtCore.QUrl(url))
-
+            # 仅使用外部浏览器打开
+            self._open_external_browser()
         except Exception as e:
             self.log_msg("打开Meshcat地址失败: " + str(e))
-            self._open_external_browser()
-
-    def _on_webview_load_finished(self, ok: bool):
-        try:
-            if not ok:
-                if getattr(self, "_suppress_external_fallback", False):
-                    self._suppress_external_fallback = False
-                else:
-                    self.log_msg("嵌入式Web视图加载失败，使用外部浏览器打开。")
-                    self._open_external_browser()
-            else:
-                # 页面加载成功但可能存在WebGL不可用的情况，主动检测
-                try:
-                    js = (
-                        "(function(){\n"
-                        "  try{\n"
-                        "    var c=document.createElement('canvas');\n"
-                        "    var gl=c.getContext('webgl')||c.getContext('experimental-webgl');\n"
-                        "    return !!gl;\n"
-                        "  }catch(e){return false;}\n"
-                        "})()"
-                    )
-                    self.webview.page().runJavaScript(js, self._on_webgl_check_result)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-    def _on_webgl_check_result(self, result):
-        try:
-            if result is False:
-                if getattr(self, "_suppress_external_fallback", False):
-                    self._suppress_external_fallback = False
-                else:
-                    if not self._fallback_triggered:
-                        self._fallback_triggered = True
-                        self.log_msg("检测到WebGL不可用，使用外部浏览器打开。")
-                        self._open_external_browser()
-            else:
-                # 成功则清除抑制标志
-                if getattr(self, "_suppress_external_fallback", False):
-                    self._suppress_external_fallback = False
-        except Exception:
-            pass
-
-    def _handle_webgl_error(self, msg: str):
-        try:
-            if getattr(self, "_suppress_external_fallback", False):
-                self._suppress_external_fallback = False
-            else:
-                if not self._fallback_triggered:
-                    self._fallback_triggered = True
-                    self.log_msg("检测到WebGL错误，使用外部浏览器打开。")
-                    self._open_external_browser()
-        except Exception:
-            pass
-
-    def _on_tab_changed(self, idx):
-        # 切换到可视化页时，若未加载过则尝试加载默认地址
-        try:
-            if QWebEngineView is None:
-                return
-            if self.tabs.widget(idx) is self.tab_visual:
-                if self.webview.url().isEmpty():
-                    # 设置抑制标志，仅本次加载生效
-                    self._suppress_external_fallback = True
-                    self._open_meshcat_url()
-        except Exception:
-            pass
 
     def _start_visual_node(self):
         try:
@@ -1218,6 +1174,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.log_msg("启动可视化节点失败: " + str(e))
 
     def _read_visual_stdout(self):
+        # 读取可视化子进程的标准输出，捕捉Meshcat地址
         try:
             import re
             if not self._visual_proc or not self._visual_proc.stdout:
@@ -1236,16 +1193,15 @@ class DynParamGUI(QtWidgets.QMainWindow):
                         if url != self._last_detected_url:
                             self.meshcat_url = url
                             self._last_detected_url = url
-                            self.log_msg(f"检测到可视化地址: {url}")
                         try:
                             QtCore.QTimer.singleShot(0, self._open_meshcat_url)
                         except Exception:
                             pass
-            self.log_msg("可视化节点输出结束。")
         except Exception as e:
             self.log_msg("读取可视化节点输出失败: " + str(e))
 
     def _open_external_browser(self):
+        # 使用系统默认浏览器打开Meshcat地址
         try:
             # 防抖：若已打开过则不再重复打开
             if getattr(self, "_external_opened", False):
@@ -1301,6 +1257,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         try:
             self.dyn.run_real_capture()
             self.log_msg(f"真机采集结束")
+            self._captured_finished = True
+            self._plot_records_on_canvas()
         except Exception as e:
             self.log_msg("真机采集出错: " + str(e))
         finally:
@@ -1348,6 +1306,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.update_params_from_ui()
         self.log_msg("开始计算动力学参数...")
         self.disable_buttons(True)
+        self._cancel_requested = False
         t = threading.Thread(target=self._thread_calc_params, daemon=True)
         t.start()
 
@@ -1355,6 +1314,9 @@ class DynParamGUI(QtWidgets.QMainWindow):
         try:
             self.dyn.calculator_left.calc_dyn_params()
             self.log_msg("左臂动力学参数计算完成。")
+            if getattr(self, '_cancel_requested', False):
+                self.log_msg("已停止后续计算。")
+                return
             self.dyn.calculator_right.calc_dyn_params()
             self.log_msg("右臂动力学参数计算完成。")
             self.log_msg("动力学参数计算全部完成。")
@@ -1362,8 +1324,10 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self._params_calculated = True
             try:
                 self.btn_write_params.setDisabled(False)
+                self.btn_show_regression.setDisabled(False)
             except Exception:
                 pass
+            self._plot_regression_on_canvas()
         except Exception as e:
             self.log_msg("动力学参数计算出错: " + str(e))
         finally:
@@ -1442,7 +1406,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.log_msg("写入辨识参数出错: " + str(e))
 
     @QtCore.pyqtSlot()
-    def _plot_on_canvas(self):
+    def _plot_records_on_canvas(self):
         try:
             # 同时绘制左/右臂两张图，无需再次点击
             ndof = self.dyn.ndof
@@ -1486,6 +1450,99 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.log_msg("轨迹图绘制完成。")
         finally:
             self.disable_buttons(False)
+
+    @QtCore.pyqtSlot()
+    def _plot_reference_on_canvas(self):
+        try:
+            ndof = self.dyn.ndof
+            cols = 3
+            rows = math.ceil(ndof / cols)
+
+            # 加载参考轨迹
+            traj_path = self.dyn.traj_path
+            try:
+                q_ref = np.loadtxt(traj_path)
+            except Exception as e:
+                self.log_msg("加载参考轨迹失败: " + str(e))
+                return
+            if q_ref.ndim == 1:
+                q_ref = q_ref.reshape(-1, 1)
+            t_ref = np.array([self.dyn.dt * i for i in range(q_ref.shape[0])])
+
+            # 左臂参考
+            try:
+                self.left_fig.clear()
+                axes_left = [self.left_fig.add_subplot(rows, cols, j + 1) for j in range(rows * cols)]
+                for i in range(min(ndof, q_ref.shape[1])):
+                    ax = axes_left[i]
+                    ax.clear()
+                    series = q_ref[:, i]
+                    ax.plot(t_ref, series, label="Reference q", color='tab:blue', linewidth=1)
+                    ax.set_title(f"Joint {i+1}")
+                    ax.set_xlabel("Time (s)")
+                    ax.set_ylabel("Angle (rad)")
+                    ax.grid(True, linestyle='--', alpha=0.4)
+                    ax.legend(loc='upper right', fontsize='small')
+                for k in range(len(axes_left)):
+                    if k >= ndof:
+                        axes_left[k].set_visible(False)
+                try:
+                    self.left_fig.tight_layout()
+                except Exception:
+                    pass
+                self.left_canvas.draw()
+            except Exception:
+                pass
+
+            # 右臂参考（按现有逻辑，右臂取反显示）
+            try:
+                self.right_fig.clear()
+                axes_right = [self.right_fig.add_subplot(rows, cols, j + 1) for j in range(rows * cols)]
+                for i in range(min(ndof, q_ref.shape[1])):
+                    ax = axes_right[i]
+                    ax.clear()
+                    series = -q_ref[:, i]
+                    ax.plot(t_ref, series, label="Reference q", color='tab:blue', linewidth=1)
+                    ax.set_title(f"Joint {i+1}")
+                    ax.set_xlabel("Time (s)")
+                    ax.set_ylabel("Angle (rad)")
+                    ax.grid(True, linestyle='--', alpha=0.4)
+                    ax.legend(loc='upper right', fontsize='small')
+                for k in range(len(axes_right)):
+                    if k >= ndof:
+                        axes_right[k].set_visible(False)
+                try:
+                    self.right_fig.tight_layout()
+                except Exception:
+                    pass
+                self.right_canvas.draw()
+            except Exception:
+                pass
+
+            self.log_msg("已绘制待采集参考轨迹。")
+        except Exception as e:
+            self.log_msg("待采集参考轨迹绘制出错: " + str(e))
+
+    def on_show_reference(self):
+        try:
+            self.update_params_from_ui()
+            self.log_msg("准备图示待采集轨迹(Reference q)...")
+            self.disable_buttons(True)
+            t = threading.Thread(target=self._thread_show_reference, daemon=True)
+            t.start()
+        except Exception as e:
+            self.log_msg("参考轨迹绘图启动出错: " + str(e))
+
+    def _thread_show_reference(self):
+        try:
+            QtCore.QMetaObject.invokeMethod(self, "_plot_reference_on_canvas", QtCore.Qt.QueuedConnection)
+        except Exception as e:
+            self.log_msg("参考轨迹绘图出错: " + str(e))
+        finally:
+            try:
+                QtCore.QMetaObject.invokeMethod(self, "enable_buttons", QtCore.Qt.QueuedConnection)
+            except Exception:
+                pass
 
     @QtCore.pyqtSlot()
     def _plot_regression_on_canvas(self):
@@ -1574,7 +1631,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def on_stop_clicked(self):
         try:
-            self.log_msg("收到停止指令，正在请求停止")
+            self.log_msg("收到停止指令，正在请求停止所有运动与计算")
+            self._cancel_requested = True
             self.dyn._stop_move()
         except Exception as e:
             self.log_msg("停止流程出错: " + str(e))
@@ -1624,14 +1682,18 @@ class DynParamGUI(QtWidgets.QMainWindow):
         finally:
             super().closeEvent(event)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        # 窗口显示后再延时绘制参考轨迹，避免首屏黑屏
+        try:
+            if not getattr(self, "_did_initial_ref_plot", False):
+                self._did_initial_ref_plot = True
+                QtCore.QTimer.singleShot(200, self._plot_reference_on_canvas)
+        except Exception:
+            pass
+
 
 def main():
-    # 解决嵌入Meshcat时 WebGL 被阻止/不可用问题：启用软件渲染或忽略GPU黑名单
-    try:
-        os.environ.setdefault('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-gpu --use-gl=swiftshader --ignore-gpu-blocklist')
-        os.environ.setdefault('LIBGL_ALWAYS_SOFTWARE', '1')
-    except Exception:
-        pass
     rclpy.init()
     app = QtWidgets.QApplication(sys.argv)
     win = DynParamGUI()
