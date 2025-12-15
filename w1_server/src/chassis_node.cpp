@@ -23,10 +23,15 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("cha
     // IMU初始化参数 (根据IMU等级调整)
     // 工业级IMU推荐值：
     imu_max_buff_size_ = this->declare_parameter<int>("imu_max_buff_size", 500);               // 样本数量 (100Hz时需静止5秒)
-    acc_excite_threshold_ = this->declare_parameter<double>("acc_excite_threshold", 0.02);     // 加速度标准差阈值 (m/s²)
-    gyro_excite_threshold_ = this->declare_parameter<double>("gyro_excite_threshold", 0.002);  // 角速度标准差阈值 (rad/s ≈ 0.11°/s)
+    acc_excite_threshold_ = this->declare_parameter<double>("acc_excite_threshold", 0.04);     // 加速度标准差阈值 (m/s²)
+    gyro_excite_threshold_ = this->declare_parameter<double>("gyro_excite_threshold", 0.004);  // 角速度标准差阈值 (rad/s ≈ 0.22°/s)
     imu_reinit_duration_ = this->declare_parameter<double>("imu_reinit_duration", 3600.0);     // 重新初始化间隔 (s)
     gravity_magnitude_ = this->declare_parameter<double>("gravity_magnitude", 9.7887);         // 当地重力加速度 (m/s²)
+
+    // 死区参数
+    speed_deadzone_ = this->declare_parameter<double>("speed_deadzone", 1e-3);  // 线速度死区 (m/s)
+    omega_deadzone_ = this->declare_parameter<double>("omega_deadzone", 0.008);  // 角速度死区 (rad/s)
+    imu_timeout_ = this->declare_parameter<double>("imu_timeout", 0.1);         // IMU超时时间 (s)
 
     imu_processor_ = std::make_unique<ImuProcessor>();
 
@@ -110,6 +115,9 @@ void ChassisNode::IntegrateImuOnce(const sensor_msgs::msg::Imu &imu)
     // 更新当前 IMU（用于速度发布）
     curr_imu_ = std::make_shared<sensor_msgs::msg::Imu>(imu);
 
+    // 更新 IMU 时间戳
+    last_imu_time_ = imu.header.stamp;
+
     // 第一次：仅缓存，不积分
     if (!prev_imu_)
     {
@@ -150,6 +158,28 @@ void ChassisNode::IntegrateImuOnce(const sensor_msgs::msg::Imu &imu)
     }
 
     prev_imu_ = curr_imu_;
+}
+
+// 检查 IMU 是否可用
+bool ChassisNode::IsImuAvailable(const rclcpp::Time &curr_time)
+{
+    if (!use_imu_yaw_ || curr_imu_ == nullptr)
+    {
+        return false;
+    }
+
+    // 使用 nanoseconds 进行时间差计算，避免不同时间源的问题
+    const int64_t time_diff_ns = curr_time.nanoseconds() - last_imu_time_.nanoseconds();
+    const double time_since_last_imu = time_diff_ns / 1e9;
+    const bool imu_timeout = (time_since_last_imu > imu_timeout_);
+
+    if (imu_timeout)
+    {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "IMU timeout (%.3f s > %.3f s), falling back to encoder",
+                             time_since_last_imu, imu_timeout_);
+    }
+
+    return !imu_timeout;
 }
 
 // 主循环：消费反馈（如果有），按时间积分后发布
@@ -196,24 +226,44 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data)
         // 时间戳异常或超时：不积分，只更新时间基
         prev_chassis_data_ = curr_chassis_data_;
         curr_chassis_data_.reset();
-        // RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Chassis data dt=%.3f s, skipping integration", dt);
         return;
     }
 
+    // 获取轮速数据
     const double v_l = curr_chassis_data_->left_velocity;
     const double v_r = curr_chassis_data_->right_velocity;
     const double v_l_prev = prev_chassis_data_->left_velocity;
     const double v_r_prev = prev_chassis_data_->right_velocity;
 
-    // 死区阈值
-    constexpr double speed_deadzone = 5e-3;  // m/s
-
-    // 计算平均线速度（梯形法）
+    // 预先计算平均线速度和角速度（梯形积分）
     const double speed_avg = 0.5 * (0.5 * (v_l + v_r) + 0.5 * (v_l_prev + v_r_prev));
+    const double omega_enc = (v_r - v_l) / wheel_track_;
+    const double omega_enc_prev = (v_r_prev - v_l_prev) / wheel_track_;
+    const double omega_enc_avg = 0.5 * (omega_enc + omega_enc_prev);
 
-    // 判断是否在静止状态（轮速接近 0）
-    const bool is_stopped = (std::abs(v_l) < speed_deadzone && std::abs(v_r) < speed_deadzone && std::abs(v_l_prev) < speed_deadzone &&
-                             std::abs(v_r_prev) < speed_deadzone);
+    // 检查 IMU 可用性
+    const bool imu_available = IsImuAvailable(curr_time);
+
+    // 判断是否静止（线速度 AND 角速度都接近 0）
+    const bool linear_stopped = (std::abs(v_l) < speed_deadzone_ && std::abs(v_r) < speed_deadzone_ && std::abs(v_l_prev) < speed_deadzone_ &&
+                                 std::abs(v_r_prev) < speed_deadzone_);
+
+    // 根据 IMU 可用性判断角速度是否静止
+    bool angular_stopped = false;
+    if (imu_available)
+    {
+        // 使用 IMU 角速度判断
+        std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
+        const double omega_imu = curr_imu_->angular_velocity.z;
+        angular_stopped = (std::abs(omega_imu) < omega_deadzone_);
+    }
+    else
+    {
+        // 使用编码器角速度判断（需要检查当前和前一帧）
+        angular_stopped = (std::abs(omega_enc) < omega_deadzone_ && std::abs(omega_enc_prev) < omega_deadzone_);
+    }
+
+    const bool is_stopped = linear_stopped && angular_stopped;
 
     // 更新停止状态标志（用于 IMU 回调判断）
     {
@@ -221,20 +271,18 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data)
         is_stopped_ = is_stopped;
     }
 
-    // 计算角度增量（如果使用编码器或 IMU 不可用）
-    double delta_theta = 0.0;
+    // 记录积分前的角度
     double theta_start = 0.0;
-
     {
         std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
-        theta_start = odom_theta_;  // 记录积分前的角度
+        theta_start = odom_theta_;
     }
 
-    if (!is_stopped && (!use_imu_yaw_ || curr_imu_ == nullptr))
+    // 更新航向角（运动中且 IMU 不可用时使用编码器）
+    if (!is_stopped && !imu_available)
     {
-        // 运动中且不使用 IMU，或 IMU 不可用时，使用编码器角速度
-        const double omega_enc = ((v_r + v_r_prev) - (v_l + v_l_prev)) / (2.0 * wheel_track_);
-        delta_theta = omega_enc * dt;
+        // 运动中且不使用 IMU，或 IMU 不可用/超时时，使用编码器角速度
+        const double delta_theta = omega_enc_avg * dt;
 
         std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
         odom_theta_ += delta_theta;
@@ -242,51 +290,50 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data)
 
         RCLCPP_DEBUG(this->get_logger(), "Using encoder yaw: %.3f deg", odom_theta_ * 180.0 / M_PI);
     }
-    // else: 如果使用 IMU，角度已经在 IntegrateImuOnce 中更新了
+    // else: 如果使用 IMU，角度已经在 IntegrateImuOnce 中更新了；静止时不积分
 
-    // 计算位移（使用积分期间的中间角度）
+    // 获取积分后的角度
     double theta_end = 0.0;
     {
         std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
         theta_end = odom_theta_;
     }
 
+    // 计算位移（使用积分期间的中间角度）
     const double theta_mid = std::atan2(std::sin(0.5 * (theta_start + theta_end)), std::cos(0.5 * (theta_start + theta_end)));
+    const double delta_s = speed_avg * dt;
 
-    const double dis_l = 0.5 * (v_l + v_l_prev) * dt;
-    const double dis_r = 0.5 * (v_r + v_r_prev) * dt;
-    const double delta_s = 0.5 * (dis_l + dis_r);
-
-    // 更新位置（应用 odom_factor）
+    // 更新位置
     odom_x_ += delta_s * std::cos(theta_mid) * odom_factor_;
     odom_y_ += delta_s * std::sin(theta_mid) * odom_factor_;
 
     // 更新速度（用于发布）
     speed_v_ = speed_avg * odom_factor_;
-
-    constexpr double omega_deadzone = 5e-3;  // rad/s
+    
     if (is_stopped)
     {
+        // 静止状态：角速度置零
         omega_r_ = 0.0;
     }
     else
     {
-        if (use_imu_yaw_ && curr_imu_ != nullptr)
+        // 运动状态：根据 IMU 可用性选择角速度源
+        if (imu_available)
         {
+            // 使用 IMU 角速度
             std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
             omega_r_ = curr_imu_->angular_velocity.z * imu_factor_;
-            if (std::abs(omega_r_) < omega_deadzone)
-            {
-                omega_r_ = 0.0;
-            }
         }
         else
         {
-            omega_r_ = (v_r - v_l) / wheel_track_;
-            if (std::abs(omega_r_) < omega_deadzone)
-            {
-                omega_r_ = 0.0;
-            }
+            // 使用编码器角速度
+            omega_r_ = omega_enc;
+        }
+        
+        // 应用死区
+        if (std::abs(omega_r_) < omega_deadzone_)
+        {
+            omega_r_ = 0.0;
         }
     }
 
@@ -410,6 +457,21 @@ rcl_interfaces::msg::SetParametersResult ChassisNode::parametersCallback(const s
         {
             use_imu_yaw_ = changed_parameter.as_bool();
             RCLCPP_INFO(this->get_logger(), "Updated use_imu_yaw: %s", use_imu_yaw_ ? "true" : "false");
+        }
+        else if (changed_parameter.get_name() == "speed_deadzone")
+        {
+            speed_deadzone_ = changed_parameter.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated speed_deadzone: %.5f m/s", speed_deadzone_);
+        }
+        else if (changed_parameter.get_name() == "omega_deadzone")
+        {
+            omega_deadzone_ = changed_parameter.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated omega_deadzone: %.5f rad/s", omega_deadzone_);
+        }
+        else if (changed_parameter.get_name() == "imu_timeout")
+        {
+            imu_timeout_ = changed_parameter.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated imu_timeout: %.3f s", imu_timeout_);
         }
     }
     ResetOdometry();  // 参数变更后重置里程计
