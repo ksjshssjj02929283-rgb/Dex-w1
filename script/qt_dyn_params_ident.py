@@ -546,12 +546,12 @@ class DynParamCalculator:
             m = self.rbt.rbtdef.m[i]
             link_cuboid_hull = link_cuboid_hulls[i]
             for j in range(3):
-                D_add_blocks.append( Matrix( [[  l[j] - m*link_cuboid_hull[j][0] ]] ) )
-                D_add_blocks.append( Matrix( [[ -l[j] + m*link_cuboid_hull[j][1] ]] ) )
+                D_add_blocks.append( Matrix( [[  l[j] - m*link_cuboid_hull[j][0]]]))
+                D_add_blocks.append( Matrix( [[ -l[j] + m*link_cuboid_hull[j][1]]]))
         # Variable Change and LMI Definition
         D_add_blocks.append(Matrix([robotmaxmass - sum(self.rbt.rbtdef.m)]))
-        DB_add_blocks = [ mrepl(Di, varchange_dict) for Di in D_add_blocks ]
-        DB_add_LMIs_marg = list(map(lambda lm: LMI(lm, epsilon_safemargin*eye(lm.shape[0])) , DB_add_blocks))
+        DB_add_blocks = [mrepl(Di, varchange_dict) for Di in D_add_blocks]
+        DB_add_LMIs_marg = list(map(lambda lm: LMI(lm, epsilon_safemargin*eye(lm.shape[0])), DB_add_blocks))
 
         u = sympy.Symbol('u')
         U_rho = BlockMatrix([[Matrix([u - rho2_norm_sqr]), (rho1 - R1*beta_symbs).T],
@@ -565,15 +565,14 @@ class DynParamCalculator:
         delta_d_starextra = np.matrix(sol_fbpe_ols_add[1+n_beta:])
         dict_subs = dict(zip(beta_symbs, beta_starextra.flatten().tolist()[0]))
         dict_subs.update(dict(zip(delta_d, delta_d_starextra.flatten().tolist()[0])))
-        test = 'ok'
         for DBi in (DB_blocks + DB_add_blocks):
-                m = np.matrix(mrepl(DBi, dict_subs)).astype(float)
-                for v in np.linalg.eigvals( m ):
-                    if v <= 0.0: test = 'fail'
-        print(test)
+            m = np.matrix(mrepl(DBi, dict_subs)).astype(float)
+            for v in np.linalg.eigvals(m):
+                if v <= 0.0:
+                    return False
         self.solutions_beta_starextra = np.matrix(beta_starextra)
         # 验证beta_starextra解
-        self.test_mass_matrix_psd(self.solutions_beta_starextra)
+        return self.test_mass_matrix_psd(self.solutions_beta_starextra)
 
     def get_regr_validatation(self):
         # 使用内存缓存的数据与解进行验证（默认 traj2 验证，参数来自 traj1）
@@ -601,7 +600,7 @@ class DynParamCalculator:
                     ("pi/2",  0, 0.0,    "q"),
                     (0,       0, 0.0,    "q")],
                     dh_convention="standard")
-        rbtdef.frictionmodel = {'Coulomb', 'viscous', 'offset'}
+        rbtdef.frictionmodel = {'Coulomb', 'viscous'}
         rbtdef.driveinertiamodel = 'simplified'
         rbtdef.gravityacc = sympy.Matrix([-9.81, 0.0, 0.0]) if self.is_left else sympy.Matrix([9.81, 0.0, 0.0])
         rbt = sympybotics.RobotDynCode(rbtdef, verbose=True)
@@ -628,7 +627,7 @@ class DynParamCalculator:
             if self.is_anth:
                 joint_offset = np.array([0.0, 0.0, np.pi/2.0, 0.0, 0.0, np.pi/2.0, 0.0])
             else:
-                joint_offset =  np.array([0.0, 0.0, np.pi/2.0, 0.0, 0.0, 0.0, 0.0])
+                joint_offset = np.array([0.0, 0.0, np.pi/2.0, 0.0, 0.0, 0.0, 0.0])
         return q_raw + joint_offset
 
     def process_regression_data(self, traj):
@@ -658,6 +657,7 @@ class DynParamCalculator:
 
     # 惯性矩阵M(q)正定性测试: M(q)理论上应为对称正定矩阵，否则对应的动能不满足正定性，模型物理不可行, 因此需要验证辨识结果对应的质量矩阵是否为正定矩阵）
     def test_mass_matrix_psd(self, beta_solution):
+        self.log_msg("开始进行惯性矩阵正定性测试...")
         K = self.rbt.dyn.Pb.T + self.rbt.dyn.Kd * self.rbt.dyn.Pd.T
         A = np.matrix(K).astype(float)
         b = np.matrix(beta_solution).astype(float)
@@ -683,9 +683,12 @@ class DynParamCalculator:
         print('ok     %8i  %3i%%'%(ok, 100.0*ok/ntests))
         print('not ok %8i  %3i%%'%(nok, 100.0*nok/ntests))
         if nok > 0 :
-            print('\nNot PSD -> Not feasible!')
+            self.log_msg("惯性矩阵正定性测试未通过，存在不正定情况！请检查辨识数据及结果。")
+            return False
         else:
-            print('\nSeems feasible.')
+            self.log_msg("惯性矩阵正定性测试通过。")
+        return True
+
 
     def dsdp5(self, objf, lmis, variables):
         # 生成 SDPA 稀疏格式输入
@@ -1266,13 +1269,17 @@ class DynParamGUI(QtWidgets.QMainWindow):
     def _thread_calc_params(self):
         try:
             self.log_msg("开始计算左臂动力学参数...")
-            self.dyn.calculator_left.calc_dyn_params()
+            if not self.dyn.calculator_left.calc_dyn_params():
+                self.log_msg("左臂动力学参数计算失败。")
+                return
             self.log_msg("左臂动力学参数计算完成。")
             if getattr(self, '_cancel_requested', False):
                 self.log_msg("已停止后续计算。")
                 return
             self.log_msg("开始计算右臂动力学参数...")
-            self.dyn.calculator_right.calc_dyn_params()
+            if not self.dyn.calculator_right.calc_dyn_params():
+                self.log_msg("右臂动力学参数计算失败。")
+                return
             self.log_msg("右臂动力学参数计算完成。")
             self.log_msg("动力学参数计算全部完成。")
             # 计算完成，启用写入按钮
@@ -1312,9 +1319,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
             # 获取左右臂参数
             beta_left = self._get_current_beta(True)
             beta_right = self._get_current_beta(False)
-            # 强制要求71维，避免不一致
-            if len(beta_left) != 71 or len(beta_right) != 71:
-                raise ValueError(f"参数长度错误：左臂{len(beta_left)}维，右臂{len(beta_right)}维。需均为71维。")
 
             # 构造确认弹窗（中文纯文字，无图标，置顶模态）
             msg = (
