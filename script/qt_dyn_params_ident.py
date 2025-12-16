@@ -9,6 +9,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from joint_interfaces.msg import JointPositionControl
+from robot_server_interfaces.srv import SetProperty
 from std_msgs.msg import Header, String
 from sensor_msgs.msg import JointState
 import numpy as np
@@ -42,12 +43,13 @@ class DynParamIdentifier(Node):
     def __init__(self, traj='traj1', is_left=False, logger_callable=None):
         super().__init__('qt_dyn_params_ident')
         self.log_msg = logger_callable
+        self.joint_publisher = self.create_publisher(JointPositionControl, '/control/joint_position', 10)
         self.subscription = self.create_subscription(JointState, '/feedback/joint', self._joint_state_callback, 10)
         self.robot_state_subscription = self.create_subscription(String, '/feedback/robot_server_state', self._robot_state_callback, 10)
-        self.subscription = self.create_subscription(JointState, '/feedback/joint_sim', self._joint_state_callback_sim, 10)
-        self.robot_state_subscription_sim = self.create_subscription( String, '/feedback/robot_server_state_sim', self._robot_state_callback_sim, 10)
-        self.joint_publisher = self.create_publisher(JointPositionControl, '/control/joint_position', 10)
+        self.set_property_srv = self.create_client(SetProperty, '/control/set_property')
         self.joint_publisher_sim = self.create_publisher(JointPositionControl, '/control/joint_position_sim', 10)
+        self.subscription_sim = self.create_subscription(JointState, '/feedback/joint_sim', self._joint_state_callback_sim, 10)
+        self.robot_state_subscription_sim = self.create_subscription( String, '/feedback/robot_server_state_sim', self._robot_state_callback_sim, 10)
         self.traj = traj
         self.robot_cfg_path = Path(get_package_share_directory("w1_server")) / "robot.cfg"
         self.is_left = is_left
@@ -81,6 +83,8 @@ class DynParamIdentifier(Node):
         # 创建calculator
         self.calculator_left = DynParamCalculator(robot_type=robot_type, is_left=self.is_left, logger=self.log_msg)
         self.calculator_right = DynParamCalculator(robot_type=robot_type, is_left=not self.is_left, logger=self.log_msg)
+        # 先设置安全等级为最高
+        self.set_safe_level(1.0)
 
     def _sleep_until(self, target_time):
         """精确睡眠到指定单调时钟时间，避免累计漂移。"""
@@ -127,6 +131,17 @@ class DynParamIdentifier(Node):
                 return True
             time.sleep(0.01)
         return False
+
+    def set_safe_level(self, value: float):
+        """
+        设置 SafeLevel 属性
+        :param node: rclpy 的 Node 实例
+        :param value: 安全等级值（float 或 str）
+        """
+        req = SetProperty.Request()
+        req.property_type = 'SafeLevel'
+        req.value = str(value)
+        self.set_property_srv.call_async(req)
 
     def run_traj_sim(self, traj_path):
         """
@@ -179,7 +194,7 @@ class DynParamIdentifier(Node):
 
     def run_real_capture(self):
         """
-        在真机上依次执行左臂三段轨迹 + 右臂三段轨迹，并记录轨迹数据。
+        在真机上依次执行左臂两段轨迹 + 右臂两段轨迹，并记录轨迹数据。
         """
         self._stop_flag.clear()
         orig_is_left = self.is_left
