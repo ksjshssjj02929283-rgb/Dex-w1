@@ -22,9 +22,9 @@ Eigen::VectorXd _InvDynamikBySymbol(const Eigen::VectorXd& q, const Eigen::Vecto
     return tau_out;
 }
 
-Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, MotionGroup motion_group)
+Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq,
+                                    const VectorDof& ddq, const Vector3d& gravity_acc_armbase, MotionGroup motion_group)
 {
-    Vector3d gravity_acc_armbase;
     Eigen::VectorXd dyn_base_params(71), q_offset(7), q_arm(7), dq_arm(7), ddq_arm(7);
     bool is_anth = robot_model.params_ptr->robot_name == "W1Anthropomorphic" ? true : false;
     utils::GetJointFromWholeBody(robot_model, q, q_arm, motion_group);
@@ -34,10 +34,6 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, pinocchio::Dat
     {
         // 计算arm base坐标系下的重力方向和获取动力学最小参数集
         assert(robot_model.params_ptr->dyn_base_params_primary.has_value() && "Dynamics base parameters for primary arm not provided.");
-        int first_joint_id = robot_model.params_ptr->joints_primary[0];
-        auto first_joint_name = robot_model.params_ptr->joint_command_sequence_by_name[first_joint_id];
-        auto pose = pinocchio::GetFkByFrameName(*robot_model.model_ptr, data, q, first_joint_name);
-        gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
         dyn_base_params = robot_model.params_ptr->dyn_base_params_primary.value();
         // 根据不同构型设置不同的 q_offset
         if (is_anth)
@@ -48,15 +44,12 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, pinocchio::Dat
         {
             q_offset << 0.0, 0.0, -M_PI/2.0, 0.0, 0.0, 0.0, 0.0;
         }
+        q_arm = q_arm + q_offset;
     }
     else
     {
         // 计算arm base坐标系下的重力方向和获取动力学最小参数集
         assert(robot_model.params_ptr->dyn_base_params_secondary.has_value() && "Dynamics base parameters for secondary arm not provided.");
-        int first_joint_id = robot_model.params_ptr->joints_secondary[0];
-        auto first_joint_name = robot_model.params_ptr->joint_command_sequence_by_name[first_joint_id];
-        auto pose = pinocchio::GetFkByFrameName(*robot_model.model_ptr, data, q, first_joint_name);
-        gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
         dyn_base_params = robot_model.params_ptr->dyn_base_params_secondary.value();
         // 根据不同构型设置不同的 q_offset
         if (is_anth)
@@ -67,8 +60,9 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, pinocchio::Dat
         {
             q_offset << 0.0, 0.0, M_PI/2.0, 0.0, 0.0, 0.0, 0.0;
         }
+        q_arm = q_arm + q_offset;
     }
-    return _InvDynamikBySymbol(q_arm + q_offset, dq_arm, ddq_arm, gravity_acc_armbase, dyn_base_params);
+    return _InvDynamikBySymbol(q_arm, dq_arm, ddq_arm, gravity_acc_armbase, dyn_base_params);
 }
 }  // namespace dynamics
 }  // namespace robot_server_lib

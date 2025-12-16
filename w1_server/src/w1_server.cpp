@@ -157,7 +157,6 @@ void RobotServer::InitParamConfig()
     RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_debug_log=%s, enable_cst_mode=%s)",
                 config_path.string().c_str(), this->enable_debug_log_ ? "true" : "false", this->enable_ruckig_ ? "true" : "false",
                 this->enable_cst_mode_ ? "true" : "false");
-    LOG_INFO << "";
     LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_debug_log=" << this->enable_debug_log_
              << ", enable_ruckig=" << this->enable_ruckig_ << ", enable_cst_mode=" << this->enable_cst_mode_;
 }
@@ -367,11 +366,6 @@ void RobotServer::TorqueControlThreadFunc()
             {
                 this->butterworth_filter_[i]->Reset(); // 重置滤波器状态
             }
-            if (loop_counter % 3000 == 0)
-            {
-                RCLCPP_WARN(this->get_logger(), "Planner command not valid");
-                LOG_CRIT << "Planner command not valid";
-            }
         }
         // 如果状态字发生变化了则打印
         static int16_t last_status_word_ = -1;
@@ -431,6 +425,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_velocity\":" + utils::VectorToJsonArrayString(robot_feedback_.velocity, 0, ndof_robot).str() +
         ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(robot_feedback_.torque, 0, ndof_robot).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
+        ",\n  \"joint_torque_feedforward\":" + utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str() +
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(robot_control_.negative_torque_limit, 6, ndof_robot).str() +
         ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(robot_control_.positive_torque_limit, 6, ndof_robot).str() +
         ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(planner_info_.ee_pose_measurement).str() +

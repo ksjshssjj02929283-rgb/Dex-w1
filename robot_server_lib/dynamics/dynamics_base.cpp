@@ -22,12 +22,24 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, pinocchio::Data& 
     // 如果提供了动力学最小参数集矩阵，则进行替换
     if (dyn_base_params_primary.has_value())
     {
-        Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, data, q, dq, ddq, MotionGroup::Primary);
+        // 计算重力方向在arm base坐标系下的表示
+        int first_joint_id = robot_model.params_ptr->joints_primary[0];
+        auto first_joint_name = robot_model.params_ptr->joint_command_sequence_by_name[first_joint_id];
+        int arm_base_id = robot_model.model_ptr->getFrameId(first_joint_name) - 1;
+        auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, data, q_urdf, arm_base_id);
+        Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
+        Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Primary);
         utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Primary);
     }
     if (dyn_base_params_secondary.has_value())
     {
-        Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, data, q, dq, ddq, MotionGroup::Secondary);
+        // 计算重力方向在arm base坐标系下的表示
+        int first_joint_id = robot_model.params_ptr->joints_secondary[0];
+        auto first_joint_name = robot_model.params_ptr->joint_command_sequence_by_name[first_joint_id];
+        int arm_base_id = robot_model.model_ptr->getFrameId(first_joint_name) - 1;
+        auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, data, q_urdf, arm_base_id);
+        Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
+        Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Secondary);
         utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Secondary);
     }
     return tau;

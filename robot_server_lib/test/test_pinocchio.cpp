@@ -46,7 +46,8 @@ TEST(PinocchioModelTest, Pinocchio)
     EXPECT_LE(max_abs_diff, tol) << "Max abs diff = " << max_abs_diff << ", tolerance = " << tol;
 
     pinocchio::Data data(*robot_model.model_ptr);
-    VectorDof q1 = VectorDof{};
+    Eigen::VectorXd q1(robot_model.model_ptr->nq);
+    q1 << 0.5, -1.0, 0.5, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5, 0.0, 0.0;
     pinocchio::forwardKinematics(*robot_model.model_ptr, data, q1);
     pinocchio::updateFramePlacements(*robot_model.model_ptr, data);
 

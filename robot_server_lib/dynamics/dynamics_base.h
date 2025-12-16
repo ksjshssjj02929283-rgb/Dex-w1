@@ -27,8 +27,8 @@ Eigen::VectorXd MapToParamOrder(const pinocchio::Model& model, const Eigen::Vect
                                 const std::vector<std::string>& joint_command_sequence_by_name);
 
 // 由符号计算生成的逆动力学计算函数
-Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq,
-                                   const VectorDof& ddq, MotionGroup motion_group);
+Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq,
+                                   const VectorDof& ddq, const Vector3d& gravity_acc_armbase, MotionGroup motion_group);
 
 }  // namespace dynamics
 }  // namespace robot_server_lib

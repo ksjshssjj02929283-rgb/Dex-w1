@@ -191,6 +191,7 @@ class DynParamIdentifier(Node):
             # 返回初始姿态
             target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
             self.move_joint(is_sim=True, target_position=target_position)
+        return True
 
     def run_real_capture(self):
         """
@@ -241,6 +242,7 @@ class DynParamIdentifier(Node):
             if not ret:
                 return False
             self.log_msg("已返回初始姿态")
+        return True
 
     def _run_real_capture_once(self, traj_path, rec_path):
         with open(traj_path, 'r' ) as file:
@@ -248,6 +250,7 @@ class DynParamIdentifier(Node):
         rec = np.zeros((q_ref.shape[0], 1 + 7 + 7))
         if self.is_left:
             # 运动到第一个点
+            self.log_msg("正在运动到左臂轨迹起始点...")
             target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
             ret = self.move_joint(is_sim=False, target_position=target_position)
             if not ret:
@@ -272,6 +275,7 @@ class DynParamIdentifier(Node):
         else:
             q_ref = -q_ref  # 右臂角度相反
             # 运动到第一个点
+            self.log_msg("正在运动到右臂轨迹起始点...")
             target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]]
             ret = self.move_joint(is_sim=False, target_position=target_position)
             if not ret:
@@ -298,6 +302,7 @@ class DynParamIdentifier(Node):
             np.savetxt(rec_path, rec, fmt="%.6f")
             time.sleep(1)  # 发送结束后等待1s
             self.log_msg(f"本段轨迹采集完成, 数据已保存到 {rec_path}")
+            return True
 
     def move_joint(self, is_sim: bool, target_position: list, max_speed=0.5):
         if self.movej_started:
@@ -305,10 +310,14 @@ class DynParamIdentifier(Node):
             return False
         self._stop_flag.clear()
         if is_sim:
-            self.is_sim_connected()
+            if not self.is_sim_connected():
+                self.log_msg("仿真server连接失败，无法发送指令。")
+                return False
             joint_position = self.joint_position_sim
         else:
-            self.is_real_connected()
+            if not self.is_real_connected():
+                self.log_msg("真机server连接失败，无法发送指令。")
+                return False
             joint_position = self.joint_position
 
         if joint_position is None:
@@ -319,7 +328,7 @@ class DynParamIdentifier(Node):
         total_points = max(2, math.ceil(max_distance / max_speed / self.dt))
         interp_positions = np.linspace(np.array(joint_position), np.array(target_position), total_points)
         self.movej_started = True
-        self.log_msg(f"执行move_joint, 当前是否仿真: {is_sim}, 当前关节位置: {joint_position}, 目标关节位置: {target_position}，共 {total_points} 点，轨迹时长 {total_points * self.dt} 秒")
+        self.log_msg(f"执行插值movej, 当前是否仿真: {is_sim}，轨迹时长 {total_points * self.dt} 秒")
 
         next_t = time.monotonic()
         for step in range(total_points):
@@ -338,13 +347,6 @@ class DynParamIdentifier(Node):
         time.sleep(1)  # 发送结束后等待1s
         self.log_msg("插值movej移动完成。")
         return True
-
-    def _stop_move(self):
-        """
-        停止当前所有轨迹下发。
-        """
-        self._stop_flag.set()
-        self.log_msg("已请求停止当前轨迹下发。")
 
     def _joint_publisher(self, is_sim: bool, target_position: list):
         if (is_sim and (self.status_sim in ("Init", "Error"))) or ((not is_sim) and (self.status in ("Init", "Error"))):
@@ -373,6 +375,13 @@ class DynParamIdentifier(Node):
         msg.name = joint_name
         publisher.publish(msg)
         return True
+    
+    def _stop_move(self):
+        """
+        停止当前所有轨迹下发。
+        """
+        self._stop_flag.set()
+        self.log_msg("已请求停止当前轨迹下发。")
 
     def plot_records_to_axes(self, ax_handles):
         """
@@ -1186,11 +1195,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
         # 置顶并应用程序级模态，避免被遮挡并阻塞交互
         mbox.setWindowModality(QtCore.Qt.ApplicationModal)
         mbox.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
-        # 紧凑文字按钮样式
-        mbox.setStyleSheet(
-            "QMessageBox QPushButton {padding: 4px 12px; font-size: 20px;}"
-            "QMessageBox QLabel {font-size: 22px;}"
-        )
         btn_confirm = mbox.addButton("确认", QtWidgets.QMessageBox.YesRole)
         btn_cancel = mbox.addButton("取消", QtWidgets.QMessageBox.NoRole)
         mbox.setDefaultButton(btn_cancel)

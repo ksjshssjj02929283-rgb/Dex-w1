@@ -27,12 +27,11 @@ Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q)
     return J;
 }
 
-SE3 GetFkByFrameName(const Model& model, Data& data, const Eigen::VectorXd &q_in, std::string frame_name)
+SE3 GetFkByFrameId(const Model& model, Data& data, const Eigen::VectorXd &q_urdf_in, int frame_id)
 {
-    forwardKinematics(model, data, q_in);
+    forwardKinematics(model, data, q_urdf_in);
     updateFramePlacements(model, data);
 
-    const FrameIndex frame_id = model.getFrameId(frame_name);
     return data.oMf[frame_id];
 }
 

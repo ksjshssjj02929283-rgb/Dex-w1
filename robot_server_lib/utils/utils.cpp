@@ -7,6 +7,8 @@ namespace utils
 
 RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path)
 {
+    LOG_INFO << "";
+    LOG_INFO << "---------------------------------------Robot Server Initializing---------------------------------------";
     json config_json;
     RobotParams params;
     RobotModel robot_model;
@@ -72,12 +74,20 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path)
         params.dyn_base_params_primary = dyn_base_params_primary;
         LOG_INFO << "Loaded dyn_base_params_primary with size: " << dyn_base_params_primary.size();
     }
+    else
+    {
+        LOG_INFO << "No dyn_base_params_primary in robot.cfg, use dafault dynamic model";
+    }
     if (config_json.contains("dyn_base_params_secondary"))
     {
         Eigen::VectorXd dyn_base_params_secondary;
         parse_array("dyn_base_params_secondary", dyn_base_params_secondary);
         params.dyn_base_params_secondary = dyn_base_params_secondary;
         LOG_INFO << "Loaded dyn_base_params_secondary with size: " << dyn_base_params_secondary.size();
+    }
+    else
+    {
+        LOG_INFO << "No dyn_base_params_secondary in robot.cfg, use dafault dynamic model";
     }
 
     if (config_json.contains("joint_command_sequence_by_name"))
