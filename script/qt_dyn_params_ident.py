@@ -140,30 +140,34 @@ class DynParamIdentifier(Node):
         if self.is_left:
             # 运动到第一个点
             target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
-            self.move_joint(is_sim=True, target_position=target_position)
+            if not self.move_joint(is_sim=True, target_position=target_position):
+                return False
             self.log_msg(f"开始执行左臂仿真轨迹: {self.traj} 当前qpos: {target_position}")
             next_t = time.monotonic()
             for i in range(q_ref.shape[0]):
                 if self._stop_flag.is_set():
                     self.log_msg("仿真停止指令收到，提前结束。")
-                    break
+                    return False
                 target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[i, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
-                self._joint_publisher(is_sim=True, target_position=target_position)
+                if not self._joint_publisher(is_sim=True, target_position=target_position):
+                    return False
                 next_t = self._fixed_rate_next(next_t, local_dt)
                 self._sleep_until(next_t)
         else:
             q_ref = -q_ref  # 右臂角度相反
             # 运动到第一个点
             target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]]
-            self.move_joint(is_sim=True, target_position=target_position)
+            if not self.move_joint(is_sim=True, target_position=target_position):
+                return False
             self.log_msg(f"开始执行右臂仿真轨迹: {self.traj}, 当前qpos: {target_position}")
             next_t = time.monotonic()
             for i in range(q_ref.shape[0]):
                 if self._stop_flag.is_set():
                     self.log_msg("仿真停止指令收到，提前结束。")
-                    break
+                    return False
                 target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[i, :]]
-                self._joint_publisher(is_sim=True, target_position=target_position)
+                if not self._joint_publisher(is_sim=True, target_position=target_position):
+                    return False
                 next_t = self._fixed_rate_next(next_t, local_dt)
                 self._sleep_until(next_t)
         if not self._stop_flag.is_set():
@@ -192,22 +196,24 @@ class DynParamIdentifier(Node):
         for traj_name in traj_list:
             if self._stop_flag.is_set():
                 self.log_msg("收到停止指令，终止剩余真机采集。")
-                break
+                return False
             self.traj = traj_name
             self.traj_path = os.path.join(self.traj_dir, f"{self.traj}.dat")
             rec_path = os.path.join(left_dir, f"rbtlog_{self.traj}.dat")
-            self._run_real_capture_once(self.traj_path, rec_path)
+            if not self._run_real_capture_once(self.traj_path, rec_path):
+                return False
         # 再右臂
         if not self._stop_flag.is_set():
             self.is_left = False
             for traj_name in traj_list:
                 if self._stop_flag.is_set():
                     self.log_msg("收到停止指令，终止剩余真机采集。")
-                    break
+                    return False
                 self.traj = traj_name
                 self.traj_path = os.path.join(self.traj_dir, f"{self.traj}.dat")
                 rec_path = os.path.join(right_dir, f"rbtlog_{self.traj}.dat")
-                self._run_real_capture_once(self.traj_path, rec_path)
+                if not self._run_real_capture_once(self.traj_path, rec_path):
+                    return False
         # 恢复初始状态
         self.is_left = orig_is_left
         self.traj = orig_traj
@@ -216,7 +222,9 @@ class DynParamIdentifier(Node):
             time.sleep(1)  # 发送结束后等待1s
             self.log_msg("所有轨迹采集完成, 返回初始姿态。")
             target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
-            self.move_joint(is_sim=False, target_position=target_position)
+            ret = self.move_joint(is_sim=False, target_position=target_position)
+            if not ret:
+                return False
             self.log_msg("已返回初始姿态")
 
     def _run_real_capture_once(self, traj_path, rec_path):
@@ -226,16 +234,19 @@ class DynParamIdentifier(Node):
         if self.is_left:
             # 运动到第一个点
             target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
-            self.move_joint(is_sim=False, target_position=target_position)
+            ret = self.move_joint(is_sim=False, target_position=target_position)
+            if not ret:
+                return False
             self.log_msg(f"开始执行左臂真机采集: {self.traj}")
             time0 = self.timestamp
             next_t = time.monotonic()
             for i in range(q_ref.shape[0]):
                 if self._stop_flag.is_set():
                     self.log_msg("收到停止指令，终止当前段采集。")
-                    break
+                    return False
                 target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[i, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
-                self._joint_publisher(is_sim=False, target_position=target_position)
+                if not self._joint_publisher(is_sim=False, target_position=target_position):
+                    return False
                 rec[i, :] = np.concatenate([
                     np.array([float(self.timestamp - time0) * 1e-9]),
                     np.array(self.joint_position[6:13]),
@@ -247,16 +258,19 @@ class DynParamIdentifier(Node):
             q_ref = -q_ref  # 右臂角度相反
             # 运动到第一个点
             target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]]
-            self.move_joint(is_sim=False, target_position=target_position)
+            ret = self.move_joint(is_sim=False, target_position=target_position)
+            if not ret:
+                return False
             self.log_msg(f"开始执行右臂真机采集: {self.traj}")
             time0 = self.timestamp
             next_t = time.monotonic()
             for i in range(q_ref.shape[0]):
                 if self._stop_flag.is_set():
                     self.log_msg("收到停止指令，终止当前段采集。")
-                    break
+                    return False
                 target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[i, :]]
-                self._joint_publisher(is_sim=False, target_position=target_position)
+                if not self._joint_publisher(is_sim=False, target_position=target_position):
+                    return False
                 rec[i, :] = np.concatenate([
                     np.array([float(self.timestamp - time0) * 1e-9]),
                     np.array(self.joint_position[13:20]),
@@ -325,11 +339,15 @@ class DynParamIdentifier(Node):
             self.log_msg("当前关节名称未知，无法移动。")
             return False
         if is_sim:
-            self.is_sim_connected()
+            if not self.is_sim_connected():
+                self.log_msg("仿真server连接失败，无法发送指令。")
+                return False
             publisher = self.joint_publisher_sim
             joint_name = self.joint_name
         else:
-            self.is_real_connected()
+            if not self.is_real_connected():
+                self.log_msg("真机server连接失败，无法发送指令。")
+                return False
             publisher = self.joint_publisher
             joint_name = self.joint_name
 
@@ -1104,7 +1122,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def _thread_run_sim(self):
         try:
-            self.dyn.run_traj_sim(self.dyn.traj_path)
+            if not self.dyn.run_traj_sim(self.dyn.traj_path):
+                return
             self.log_msg("仿真运行结束。")
         except Exception as e:
             self.log_msg("仿真出错: " + str(e))
@@ -1234,10 +1253,10 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def _thread_run_real(self):
         try:
-            self.dyn.run_real_capture()
-            self.log_msg(f"真机采集结束")
-            self._captured_finished = True
-            self._plot_records_on_canvas()
+            if self.dyn.run_real_capture():
+                self.log_msg(f"真机采集结束")
+                self._captured_finished = True
+                self._plot_records_on_canvas()
         except Exception as e:
             self.log_msg("真机采集出错: " + str(e))
         finally:
@@ -1426,7 +1445,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
             except Exception as e:
                 self.log_msg("右臂绘图错误: " + str(e))
 
-            self.log_msg("轨迹图绘制完成。")
+            self.log_msg("轨迹图绘制完成.")
         finally:
             self.disable_buttons(False)
 
