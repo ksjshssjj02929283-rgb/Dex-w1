@@ -18,6 +18,8 @@ set(MSG_FILES
 
 set(SRV_FILES
   "srv/SaveMap.srv"
+  "srv/StartDetection.srv"
+  "srv/StopDetection.srv"
 )
 
 # Generate interfaces
