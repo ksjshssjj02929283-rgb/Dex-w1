@@ -448,7 +448,7 @@ class DynParamIdentifier(Node):
 
 import sympy, sympybotics, scipy.signal, lmi_sdp, subprocess
 from sympy import BlockMatrix, Matrix, eye, Identity
-from lmi_sdp import LMI_PD, LMI
+from lmi_sdp import LMI
 from sympybotics.dynident.regression import mrepl
 
 class DynParamCalculator:
@@ -468,14 +468,18 @@ class DynParamCalculator:
         self.wf = DEFAULT_WF
         self.L = DEFAULT_L
         self.proc_data = {}
-        self.solutions = {}
+        self.solutions_beta_starextra = None
         self.rbt = None
 
     def calc_dyn_params(self):
         # 创建机器人模型并计算基础参数集
         if self.rbt is None:
+            self.log_msg("正在进行机器人建模...")
             self.rbt = self.create_robot_model(self.robot_type)
+            self.log_msg("机器人建模完毕")
+        self.log_msg("开始处理轨迹数据...")
         self.process_and_cache_data()
+        self.log_msg("轨迹数据处理完毕, 开始计算参数...")
         delta = self.rbt.dyn.dynparms
         beta = self.rbt.dyn.baseparms
         n_beta = self.rbt.dyn.n_base
@@ -504,73 +508,16 @@ class DynParamCalculator:
         D_blocks = D_inertia_blocks + D_other_blocks
         varchange_dict = dict(zip(Pb.T*delta ,  beta_symbs - ( beta - Pb.T*delta )))
         DB_blocks = [mrepl(Di, varchange_dict) for Di in D_blocks]
-        DB_LMIs = list(map(LMI_PD, DB_blocks))
-        DB_LMIs[0]
         epsilon_safemargin = 1e-6
         DB_LMIs_marg = list(map(lambda lm: LMI(lm, epsilon_safemargin*eye(lm.shape[0])) , DB_blocks))
 
-        # 最小二乘回归 OLS Regression
         ident_traj = 'traj1'
         regr_mats = self.proc_data[ident_traj]
         W = np.matrix(regr_mats['W'])
         omega = np.matrix(regr_mats['omega'])
         R1 = np.matrix(regr_mats['R1'])
         rho1 = np.matrix(regr_mats['rho1'])
-
-        np.linalg.cond(W)
-        beta_ols = (R1.T * R1).I * R1.T * rho1
-        self.solutions[f"{ident_traj}_beta_ols"] = np.matrix(beta_ols)
-        rho2_norm_sqr = np.linalg.norm(omega - W * beta_ols)**2
-
-        # 基参数可行性修正 Base Parameter Feasibility Correction (BPFC)
-        u = sympy.Symbol('u')
-        U_beta = BlockMatrix([[Matrix([u]),       (beta_ols - beta_symbs).T],
-                        [beta_ols - beta_symbs,                 I(n_beta)]])
-        U_beta = U_beta.as_explicit()
-        lmis_ols_bpfc = [LMI(U_beta)] + DB_LMIs_marg
-        variables_ols_bpfc = [u] + list(beta_symbs) + list(delta_d)
-        objf_ols_bpfc = u
-        sol_ols_bpfc = self.dsdp5(objf_ols_bpfc, lmis_ols_bpfc, variables_ols_bpfc)
-        u_prime = sol_ols_bpfc[0,0]
-        beta_prime = sol_ols_bpfc[1:1+n_beta]
-        delta_d_prime = sol_ols_bpfc[1+n_beta:]
-        print(u_prime)
-
-        dict_subs = dict(zip(beta_symbs, beta_prime.flatten().tolist()[0]))
-        dict_subs.update(dict(zip(delta_d, delta_d_prime.flatten().tolist()[0])))
-
-        test = 'Solution Double Check: ok'
-        for i, DBi in enumerate(DB_blocks):
-            m = np.matrix(mrepl(DBi, dict_subs)).astype(float)
-            for v in np.linalg.eigvals( m ):
-                if v <= 0.0:
-                    print(i, v)
-                    test = 'Solution Double Check: fail'
-        self.solutions[f"{ident_traj}_beta_prime"] = np.matrix(beta_prime)
-        print(test)
-
-        u = sympy.Symbol('u')
-        U_rho = BlockMatrix([[Matrix([u - rho2_norm_sqr]), (rho1 - R1*beta_symbs).T],
-                            [rho1 - R1*beta_symbs,                       I(n_beta)]])
-        U_rho = U_rho.as_explicit()
-        lmis_fbpe_ols = [LMI(U_rho)] + DB_LMIs_marg
-        variables_fbpe_ols = [u] + list(beta_symbs) + list(delta_d)
-        objf_fbpe_ols = u
-        sol_fbpe_ols = self.dsdp5(objf_fbpe_ols, lmis_fbpe_ols, variables_fbpe_ols)
-        beta_star = np.matrix(sol_fbpe_ols[1:1+n_beta])
-        delta_d_star = np.matrix(sol_fbpe_ols[1+n_beta:])
-        dict_subs = dict(zip(beta_symbs, beta_star.flatten().tolist()[0]))
-        dict_subs.update(dict(zip(delta_d, delta_d_star.flatten().tolist()[0])))
-        test = 'ok'
-        for DBi in DB_blocks:
-            m = np.matrix(mrepl(DBi, dict_subs)).astype(float)
-            for v in np.linalg.eigvals( m ):
-                if v <= 0.0:
-                    print(v)
-                    test = 'fail'
-        print(f"test: {test}")
-
-        self.solutions[f"{ident_traj}_beta_star"] = np.matrix(beta_star)
+        rho2_norm_sqr = np.linalg.norm(omega - W * ((R1.T * R1).I * R1.T * rho1))**2
 
         # 质心位置约束
         link_cuboid_hulls = [
@@ -595,13 +542,12 @@ class DynParamCalculator:
         # Variable Change and LMI Definition
         D_add_blocks.append(Matrix([robotmaxmass - sum(self.rbt.rbtdef.m)]))
         DB_add_blocks = [ mrepl(Di, varchange_dict) for Di in D_add_blocks ]
-        DB_add_LMIs = list(map(LMI_PD, DB_add_blocks))
         DB_add_LMIs_marg = list(map(lambda lm: LMI(lm, epsilon_safemargin*eye(lm.shape[0])) , DB_add_blocks))
-        DB_add_LMIs_marg[0]
-        DB_add_LMIs_marg[-1]
 
-        dict_subs = {sym: float(val) for sym, val in zip(beta_symbs, beta_star)}
-        dict_subs = {sym: float(val) for sym, val in zip(beta_symbs, beta_star)}
+        u = sympy.Symbol('u')
+        U_rho = BlockMatrix([[Matrix([u - rho2_norm_sqr]), (rho1 - R1*beta_symbs).T],
+                            [rho1 - R1*beta_symbs,                       I(n_beta)]])
+        U_rho = U_rho.as_explicit()
         lmis_fbpe_ols_add = [LMI(U_rho)] + DB_LMIs_marg + DB_add_LMIs_marg
         variables_fbpe_ols_add = [u] + list(beta_symbs) + list(delta_d)
         objf_fbpe_ols_add = u
@@ -616,14 +562,11 @@ class DynParamCalculator:
                 for v in np.linalg.eigvals( m ):
                     if v <= 0.0: test = 'fail'
         print(test)
-        self.solutions[f"{ident_traj}_beta_starextra"] = np.matrix(beta_starextra)
+        self.solutions_beta_starextra = np.matrix(beta_starextra)
+        # 验证beta_starextra解
+        self.test_mass_matrix_psd(self.solutions_beta_starextra)
 
-        beta_ols = np.matrix(self.solutions[f"{ident_traj}_beta_ols"]).copy()
-        self.test_mass_matrix_psd(beta_ols)
-        beta_starextra = np.matrix(self.solutions[f"{ident_traj}_beta_starextra"]).copy()
-        self.test_mass_matrix_psd(beta_starextra)
-
-    def get_regr_validatation(self, betaname='beta_starextra'):
+    def get_regr_validatation(self):
         # 使用内存缓存的数据与解进行验证（默认 traj2 验证，参数来自 traj1）
         traj_proc = self.proc_data.get('traj2')
         if traj_proc is None:
@@ -631,11 +574,9 @@ class DynParamCalculator:
         W = np.matrix(traj_proc['W'])
         t = traj_proc['t']
         tau_raw = np.matrix(traj_proc['tau'])
-        beta_key = f"traj1_{betaname}"
-        if beta_key not in self.solutions:
+        if self.solutions_beta_starextra is None:
             raise RuntimeError('未找到辨识结果，请先执行计算动力学参数。')
-        beta_solution = np.matrix(self.solutions[beta_key]).copy()
-        omega_pred = W * beta_solution
+        omega_pred = W * np.matrix(self.solutions_beta_starextra)
         tau_pred = omega_pred.reshape(int(omega_pred.shape[0] / tau_raw.shape[1]), tau_raw.shape[1])
         total = tau_raw.shape[0]
         return t[:total], tau_raw[:total, :], tau_pred[:total, :]
@@ -757,7 +698,6 @@ class DynParamCalculator:
                 text=True,
                 check=True
             )
-            self.log_msg(proc.stdout.strip())
             with open(dsdp_out, 'r') as f:
                 first_line = f.readline().strip()
         sol = [float(v) for v in first_line.split()]
@@ -775,7 +715,6 @@ class DynParamCalculator:
         W = np.matrix(H_S[:, rbt.dyn.base_idxs])
         Q1, R1 = np.linalg.qr(W)
         rho1 = Q1.T * omega
-        del H_S
         return W, omega, Q1, R1, rho1
 
     def regr_matrices(self, dof, parm_num, q, dq, ddq, tau, regr_func):
@@ -1071,12 +1010,10 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self._params_calculated = False
         self._captured_finished = False
         self._cancel_requested = False
-        # 初始禁用：计算/图示/辨识/写入
         self.btn_calc_params.setDisabled(True)
         self.btn_show_plot.setDisabled(True)
         self.btn_show_regression.setDisabled(True)
         self.btn_write_params.setDisabled(True)
-        # 初始化后不立即绘图，避免首屏黑屏；改为窗口显示后再绘
         self._did_initial_ref_plot = False
 
     def log_msg(self, msg):
@@ -1317,7 +1254,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def on_calc_params(self):
         self.update_params_from_ui()
-        self.log_msg("开始计算动力学参数...")
         self.disable_buttons(True)
         self._cancel_requested = False
         t = threading.Thread(target=self._thread_calc_params, daemon=True)
@@ -1325,11 +1261,13 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def _thread_calc_params(self):
         try:
+            self.log_msg("开始计算左臂动力学参数...")
             self.dyn.calculator_left.calc_dyn_params()
             self.log_msg("左臂动力学参数计算完成。")
             if getattr(self, '_cancel_requested', False):
                 self.log_msg("已停止后续计算。")
                 return
+            self.log_msg("开始计算右臂动力学参数...")
             self.dyn.calculator_right.calc_dyn_params()
             self.log_msg("右臂动力学参数计算完成。")
             self.log_msg("动力学参数计算全部完成。")
@@ -1352,16 +1290,9 @@ class DynParamGUI(QtWidgets.QMainWindow):
     def _get_current_beta(self, is_left: bool):
         try:
             calc = self.dyn.calculator_left if is_left else self.dyn.calculator_right
-            # 默认取 beta_starextra 作为最终参数
-            key = "traj1_beta_starextra"
-            if key not in calc.solutions:
-                # 退化为 beta_star 或 beta_ols
-                fallback_keys = ["traj1_beta_star", "traj1_beta_ols"]
-                for fk in fallback_keys:
-                    if fk in calc.solutions:
-                        key = fk
-                        break
-            beta = np.matrix(calc.solutions[key]).copy()
+            if calc.solutions_beta_starextra is None:
+                raise RuntimeError("未找到辨识参数，请先计算动力学参数。")
+            beta = np.matrix(calc.solutions_beta_starextra).copy()
             beta_list = np.asarray(beta).flatten().tolist()
             return beta_list
         except Exception as e:
@@ -1384,8 +1315,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
             # 构造确认弹窗（中文纯文字，无图标，置顶模态）
             msg = (
                 "将写入左右臂辨识参数到机器人配置文件 robot.cfg：\n\n"
-                f"- 左臂字段：dyn_base_params_primary（维度 {len(beta_left)}）\n"
-                f"- 右臂字段：dyn_base_params_secondary（维度 {len(beta_right)}）\n\n"
+                f"- 左臂字段：dyn_base_params_primary（{len(beta_left)}维）\n"
+                f"- 右臂字段：dyn_base_params_secondary（{len(beta_right)}维）\n\n"
                 "是否确认写入？"
             )
             mbox = QtWidgets.QMessageBox(self)
@@ -1394,10 +1325,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
             mbox.setText(msg)
             mbox.setWindowModality(QtCore.Qt.ApplicationModal)
             mbox.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
-            mbox.setStyleSheet(
-                "QMessageBox QPushButton {padding: 4px 12px; font-size: 20px;}"
-                "QMessageBox QLabel {font-size: 24px;}"
-            )
             btn_confirm = mbox.addButton("确认", QtWidgets.QMessageBox.YesRole)
             btn_cancel = mbox.addButton("取消", QtWidgets.QMessageBox.NoRole)
             mbox.setDefaultButton(btn_cancel)
@@ -1570,7 +1497,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 self.left_fig.clear()
                 axes_left = [self.left_fig.add_subplot(rows, cols, j + 1) for j in range(rows * cols)]
                 calc_left = self.dyn.calculator_left
-                tL, tau_raw_L, tau_pred_L = calc_left.get_regr_validatation(betaname='beta_starextra')
+                tL, tau_raw_L, tau_pred_L = calc_left.get_regr_validatation()
                 totalL = tau_raw_L.shape[0]
                 for i in range(min(ndof, tau_raw_L.shape[1])):
                     ax = axes_left[i]
@@ -1598,7 +1525,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 self.right_fig.clear()
                 axes_right = [self.right_fig.add_subplot(rows, cols, j + 1) for j in range(rows * cols)]
                 calc_right = self.dyn.calculator_right
-                tR, tau_raw_R, tau_pred_R = calc_right.get_regr_validatation(betaname='beta_starextra')
+                tR, tau_raw_R, tau_pred_R = calc_right.get_regr_validatation()
                 totalR = tau_raw_R.shape[0]
                 for i in range(min(ndof, tau_raw_R.shape[1])):
                     ax = axes_right[i]
