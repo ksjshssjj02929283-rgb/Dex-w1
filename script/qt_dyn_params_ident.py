@@ -556,7 +556,7 @@ class DynParamCalculator:
         if self.rbt is None:
             self.log_msg("正在进行机器人建模...")
             self.rbt = self.create_robot_model(self.robot_type)
-            self.log_msg("机器人建模完毕")
+            self.log_msg(f"机器人建模完毕, 最小参数辨识集: {self.rbt.dyn.baseparms}")
         self.log_msg("开始处理轨迹数据...")
         self.process_and_cache_data()
         self.log_msg("轨迹数据处理完毕, 开始计算参数...")
@@ -690,7 +690,7 @@ class DynParamCalculator:
             ],
             dh_convention="standard",
         )
-        rbtdef.frictionmodel = {"Coulomb", "viscous"}
+        rbtdef.frictionmodel = {"Coulomb", "viscous", "offset"}
         rbtdef.driveinertiamodel = "simplified"
         rbtdef.gravityacc = (
             sympy.Matrix([-9.81, 0.0, 0.0])
@@ -1194,7 +1194,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self._params_calculated = False
         self._captured_finished = False
         self._cancel_requested = False
-        self.btn_calc_params.setDisabled(True)
+        # self.btn_calc_params.setDisabled(True)
         self.btn_show_plot.setDisabled(True)
         self.btn_show_regression.setDisabled(True)
         self.btn_write_params.setDisabled(True)
