@@ -2,6 +2,7 @@ import os
 import sys
 import math
 import time
+from datetime import datetime
 import json
 import threading
 from pathlib import Path
@@ -428,7 +429,6 @@ class DynParamIdentifier(Node):
         停止当前所有轨迹下发。
         """
         self._stop_flag.set()
-        self.log_msg("已请求停止当前轨迹下发。")
 
     def plot_records_to_axes(self, ax_handles):
         """
@@ -566,7 +566,7 @@ class DynParamCalculator:
             ],
             dh_convention="standard",
         )
-        self.rbtdef_num.frictionmodel = {"Coulomb", "viscous"}
+        self.rbtdef_num.frictionmodel = {"Coulomb", "viscous", "offset"}
         self.rbtdef_num.driveinertiamodel = "simplified"
         self.rbtdef_num.gravityacc = (
             sympy.Matrix([-9.81, 0.0, 0.0])
@@ -1259,8 +1259,10 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self._did_initial_ref_plot = False
 
     def log_msg(self, msg):
-        self.log_signal.emit(msg)
-        print(msg)
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        formatted = f"[{ts}] {msg}"
+        self.log_signal.emit(formatted)
+        print(formatted)
 
     @QtCore.pyqtSlot(str)
     def _append_log(self, msg):

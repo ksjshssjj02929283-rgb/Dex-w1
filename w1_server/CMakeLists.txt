@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.15)
+
+project(w1_server)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Release)
+set(W1_SERVER_VERSION "0.3.0")
 
 # 如果系统安装了 ccache 则启用，否则保持不启用
 find_program(CCACHE_PROGRAM ccache)
@@ -10,24 +14,35 @@ if(CCACHE_PROGRAM)
   set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
 endif()
 
-project(w1_server)
-
 option(ENABLE_TORQUE_CONTROL_SIMULATION "Enable torque control" OFF)
 
 # Python interpreter setup
 set(PYTHON_EXECUTABLE "/usr/bin/python3")
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic -Wno-psabi -Wno-reorder -Wno-dev -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable)
+  add_compile_options(
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wno-psabi
+    -Wno-reorder
+    -Wno-dev
+    -Wno-unused-parameter
+    -Wno-unused-variable
+    -Wno-unused-but-set-variable
+  )
 endif()
+
 find_package(PythonInterp 3.6 REQUIRED)
 set(PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}" CACHE FILEPATH "Python interpreter" FORCE)
+
 add_compile_definitions(BOOST_BIND_GLOBAL_PLACEHOLDERS)
-# Find dependencies.
+
+# Find dependencies
 find_package(Eigen3 REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
 find_package(ruckig REQUIRED)
 
-# Ros 2 dependencies.
+# ROS 2 dependencies
 find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
@@ -41,7 +56,7 @@ find_package(nav_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 
-# Other Ros2 packages
+# Other ROS 2 packages
 find_package(chassis_interfaces REQUIRED)
 find_package(joint_interfaces REQUIRED)
 find_package(robot_server_interfaces REQUIRED)
@@ -51,6 +66,8 @@ aux_source_directory(src LIB_SRCS)
 aux_source_directory(utils LIB_SRCS)
 
 add_executable(${PROJECT_NAME} ${LIB_SRCS})
+
+target_compile_definitions(${PROJECT_NAME} PRIVATE "W1_SERVER_VERSION=\"${W1_SERVER_VERSION}\"")
 
 if(ENABLE_TORQUE_CONTROL_SIMULATION)
   target_compile_definitions(${PROJECT_NAME} PRIVATE TORQUE_CONTROL=1)
@@ -89,12 +106,28 @@ target_link_libraries(${PROJECT_NAME}
   ruckig::ruckig
 )
 
-install(TARGETS ${PROJECT_NAME}
+install(
+  TARGETS ${PROJECT_NAME}
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(
-  FILES robot.cfg
-  DESTINATION share/${PROJECT_NAME}
+# robot.cfg：如果目标已存在则跳过安装
+set(ROBOT_CFG_INSTALL_PATH
+    "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/robot.cfg"
 )
+
+if(EXISTS "${ROBOT_CFG_INSTALL_PATH}")
+  message(STATUS
+    "[${PROJECT_NAME}] robot.cfg already exists at install destination, skipping install."
+  )
+else()
+  message(STATUS
+    "[${PROJECT_NAME}] robot.cfg not found at install destination, will be installed."
+  )
+  install(
+    FILES robot.cfg
+    DESTINATION share/${PROJECT_NAME}
+  )
+endif()
+
 ament_package()

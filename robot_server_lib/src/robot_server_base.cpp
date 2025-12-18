@@ -17,6 +17,9 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
     RCLCPP_INFO(this->get_logger(), "Logs directory: %s",
                 ((server_data_dir_ / "logs").string() + "/robot_server" + interface_suffix + ".txt").c_str());
 
+    LOG_INFO << "";
+    LOG_INFO << "---------------------------------------Robot Server Initializing---------------------------------------";
+
     this->robot_server_state_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state" + interface_suffix, 10);
 
     // 创建subscriber

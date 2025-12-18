@@ -10,6 +10,8 @@ namespace robot_server_lib
 
 RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : RobotServerBase(robot_cfg_path, is_sim)
 {
+	LOG_INFO << "w1_server version: " << W1_SERVER_VERSION;
+    
     // 创建 /feedback/joint 发布器
     feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint", 10);
 
@@ -195,10 +197,9 @@ void RobotServer::TorqueControlThreadFunc()
         // 根据状态写入机器人控制字
         robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
         this->is_robot_ready_ = false;
-        static bool inited_ = false;
         if (ret)
         {
-            if (manager_state_ == Status::Running)
+            if ((manager_state_ == Status::Running || manager_state_ == Status::Idle) && loop_counter % 4 == 0)
             {
                 LOG_DEBUG << "{ \"joint_position\": " << utils::VectorToJsonArrayString(robot_feedback_.position, 6, ndof_robot).str()
                           << ", \"joint_velocity\": " << utils::VectorToJsonArrayString(robot_feedback_.velocity, 6, ndof_robot).str()
@@ -207,55 +208,8 @@ void RobotServer::TorqueControlThreadFunc()
                           << ", \"joint_torque_feedforward\": "
                           << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str() << "}";
             }
-            switch (robot_feedback_.robot_status_word)
-            {
-            case STATUSWORD_MOTOR_READY:
-                // ready状态is_robot_ready_置为true, 可以写入measurement, 生成cmd后再使能电机
-                this->is_robot_ready_ = true;
-                inited_ = true;
-                if (is_cmd_valid_)
-                {
-                    robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
-                    if (enable_cst_mode_)
-                    {
-                        robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
-                    }
-                }
-                else
-                {
-                    for (int i = 0; i < ndof_robot; i++)
-                    {
-                        robot_control_.position[i] = robot_feedback_.position[i];
-                        robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
-                        robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
-                    }
-                }
-                break;
-            case STATUSWORD_MOTOR_ENABLED:
-                this->is_robot_ready_ = true;
-                inited_ = true;
-                robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
-                if (enable_cst_mode_)
-                {
-                    robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
-                }
-                break;
-            case STATUSWORD_MOTOR_NOT_READY:
-            case STATUSWORD_MOTOR_FAULT:
-            case STATUSWORD_MOTOR_QUICK_STOP:
-            default:
-                for (int i = 0; i < ndof_robot; i++)
-                {
-                    robot_control_.position[i] = robot_feedback_.position[i];
-                    robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
-                    robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
-                }
-                break;
-            }
-            if (!inited_ || planner_info_.robot_property.clear_error_flag)
-            {
-                robot_control_.robot_control_word |= CTRLWORD_MOTOR_CLEAR_FAULT;
-            }
+            // 根据反馈状态字处理控制字
+            this->SwitchControlWord();
         }
 
         // 如果机器人就绪，则写入测量数据
@@ -384,6 +338,73 @@ void RobotServer::TorqueControlThreadFunc()
         }
         control_shm_instance.AppendNewElement(robot_control_);
         std::this_thread::sleep_until(next_cycle_time_point);
+    }
+}
+
+void RobotServer::SwitchControlWord()
+{
+    static bool inited = false;
+    switch (robot_feedback_.robot_status_word)
+    {
+    case STATUSWORD_MOTOR_READY:
+        // ready状态is_robot_ready_置为true, 可以写入measurement, 生成cmd后再使能电机
+        this->is_robot_ready_ = true;
+        inited = true;
+        if (this->is_cmd_valid_)
+        {
+            this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+            if (this->enable_cst_mode_)
+            {
+                this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
+            }
+        }
+        else
+        {
+            for (int i = 0; i < ndof_robot; i++)
+            {
+                this->robot_control_.position[i] = this->robot_feedback_.position[i];
+                this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
+                this->robot_control_.negative_torque_limit[i] = this->torque_limit_.negative_limit_Nm[i];
+            }
+        }
+        break;
+    case STATUSWORD_MOTOR_ENABLED:
+        this->is_robot_ready_ = true;
+        inited = true;
+        this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
+        if (this->is_cmd_valid_)
+        {
+            if (this->enable_cst_mode_)
+            {
+                this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
+            }
+        }
+        else
+        {
+            for (int i = 0; i < ndof_robot; i++)
+            {
+                this->robot_control_.position[i] = this->robot_feedback_.position[i];
+                this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
+                this->robot_control_.negative_torque_limit[i] = this->torque_limit_.negative_limit_Nm[i];
+            }
+        }
+        break;
+    case STATUSWORD_MOTOR_NOT_READY:
+    case STATUSWORD_MOTOR_FAULT:
+    case STATUSWORD_MOTOR_QUICK_STOP:
+    default:
+        for (int i = 0; i < ndof_robot; i++)
+        {
+            this->robot_control_.position[i] = this->robot_feedback_.position[i];
+            this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
+            this->robot_control_.negative_torque_limit[i] = this->torque_limit_.negative_limit_Nm[i];
+        }
+        break;
+    }
+
+    if (!inited || planner_info_.robot_property.clear_error_flag)
+    {
+        this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CLEAR_FAULT;
     }
 }
 

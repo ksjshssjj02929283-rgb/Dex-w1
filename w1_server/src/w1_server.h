@@ -35,6 +35,7 @@ class RobotServer : public RobotServerBase
     void SetPropertyCallback(const std::shared_ptr<SetProperty::Request>, std::shared_ptr<SetProperty::Response>) override;
     Int64 StartStreaming(const PlannerRequest planner_request);
     void InitParamConfig();  // 初始化/读写 torque_limit_ 的 JSON 配置
+    void SwitchControlWord();
 
     void ControlCallback(const JointControlMsg::SharedPtr msg);
     void PositionControlCallback(const JointPositionControlMsg::SharedPtr msg);

@@ -71,8 +71,8 @@ def main():
     parser.add_argument(
         "--n",
         type=int,
-        default=1000,  # 修改为1000个点
-        help="Number of valid points to keep from the end (default: 1000).",
+        default=500,
+        help="Number of valid points to keep from the end (default: 500).",
     )
     args = parser.parse_args()
 
