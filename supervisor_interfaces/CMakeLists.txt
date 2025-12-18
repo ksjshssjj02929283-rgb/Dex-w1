@@ -10,8 +10,9 @@ find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/SystemMode.msg"
   "msg/SystemCommand.msg"
+  "msg/SystemMode.msg"
+  "msg/SystemStatus.msg"
   "action/ChangeSystemMode.action"
 )
 
