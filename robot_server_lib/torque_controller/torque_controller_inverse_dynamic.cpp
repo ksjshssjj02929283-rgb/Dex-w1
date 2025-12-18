@@ -16,9 +16,11 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
     VectorDof cmd_dq = input_cmd.cmd.velocity;
     VectorDof cmd_ddq = input_cmd.cmd.acceleration;
     VectorDof torque_feedforward = input_cmd.cmd.torque_feedforward;
-    VectorDof ddq_desired{};
     VectorDof torque_external = this->GetJointExternalTorque(raw_measurement.sensor_wrench, feedback_q);
     output_cmd.torque_external = torque_external;
+    VectorDof ddq_desired = VectorDof::Zero();
+    VectorDof q_error = VectorDof::Zero();
+    VectorDof dq_error = VectorDof::Zero();
     switch (state_)
     {
     case TorqueControllerState::Idle:
@@ -34,11 +36,12 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
         output_cmd.q_desired = feedback_q;
         break;
     case TorqueControllerState::Operating:
-        ddq_desired = cmd_ddq + this->parameters_.K_p * (cmd_q - feedback_q) + this->parameters_.K_v * (cmd_dq - feedback_dq);
+        q_error = cmd_q - feedback_q;
+        dq_error = cmd_dq - feedback_dq;
+        ddq_desired = cmd_ddq + this->parameters_.K_p * q_error + this->parameters_.K_v * dq_error;
         output_cmd.torque = torque_feedforward + dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, ddq_desired);
         output_cmd.torque_feedforward = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, VectorDof::Zero());
         output_cmd.q_desired = cmd_q;
-        break;
     default:
         break;
     }

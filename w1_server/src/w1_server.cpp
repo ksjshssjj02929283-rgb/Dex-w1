@@ -193,14 +193,14 @@ void RobotServer::TorqueControlThreadFunc()
             this->SwitchControlWord();
         }
         // 如果开启了记录, 则在日志中记录数据
-        if (this->enable_record_ && (manager_state_ == Status::Running || manager_state_ == Status::Idle) && loop_counter % 4 == 0)
+        if (this->enable_record_ && manager_state_ == Status::Running && loop_counter % 4 == 0)
         {
             LOG_INFO << "{ \"joint_position\": " << utils::VectorToJsonArrayString(robot_feedback_.position, 6, ndof_robot).str()
-                        << ", \"joint_velocity\": " << utils::VectorToJsonArrayString(robot_feedback_.velocity, 6, ndof_robot).str()
-                        << ", \"joint_torque\":" << utils::VectorToJsonArrayString(robot_feedback_.torque, 6, ndof_robot).str()
-                        << ", \"joint_position_cmd\": " << utils::VectorToJsonArrayString(robot_control_.position, 6, ndof_robot).str()
-                        << ", \"joint_torque_feedforward\": "
-                        << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str() << "}";
+                    << ", \"joint_velocity\": " << utils::VectorToJsonArrayString(robot_feedback_.velocity, 6, ndof_robot).str()
+                    << ", \"joint_torque\":" << utils::VectorToJsonArrayString(robot_feedback_.torque, 6, ndof_robot).str()
+                    << ", \"joint_position_cmd\": " << utils::VectorToJsonArrayString(robot_control_.position, 6, ndof_robot).str()
+                    << ", \"joint_torque_feedforward\": "
+                    << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str() << "}";
         }
         // 如果机器人就绪，则写入测量数据
         if (this->is_robot_ready_)
