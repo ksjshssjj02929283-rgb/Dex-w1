@@ -1,8 +1,9 @@
 import argparse
 import json
 import re
+import sys
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -61,6 +62,12 @@ def parse_line(line):
 
 
 def main():
+    if len(sys.argv) >= 2:
+        m = re.fullmatch(r"-?\d+(\.\d+)?", sys.argv[1])
+        if m:
+            sec = abs(float(sys.argv[1]))
+            sys.argv[1] = f"--seconds={sec}"
+
     parser = argparse.ArgumentParser(description="Plot last N points from robot_server log.")
     parser.add_argument(
         "--path",
@@ -71,8 +78,14 @@ def main():
     parser.add_argument(
         "--n",
         type=int,
-        default=500,
-        help="Number of valid points to keep from the end (default: 500).",
+        default=5000,
+        help="Maximum number of valid points to keep while reading (legacy, default: 5000).",
+    )
+    parser.add_argument(
+        "--seconds",
+        type=float,
+        default=2.0,
+        help="Time window in seconds to plot from the end (default: 2.0).",
     )
     args = parser.parse_args()
 
@@ -81,7 +94,7 @@ def main():
         print(f"Log file not found: {log_path}")
         return
 
-    # 用 deque 仅保留最后 N 条"有效"样本
+    # 用 deque 限制读取时的最大样本数，最终按时间窗口过滤
     samples = deque(maxlen=args.n)
 
     with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -96,7 +109,21 @@ def main():
         print("No valid samples found.")
         return
 
-    # 组装为时间序列（长度 = 样本条数）
+    # 按时间窗口过滤：以最后一条样本为基准，保留最近 args.seconds 秒的样本
+    last_ts = samples[-1][0]
+    cutoff = last_ts - timedelta(seconds=abs(args.seconds))
+    filtered = deque()
+    for ts, d in samples:
+        if ts >= cutoff:
+            filtered.append((ts, d))
+
+    if not filtered:
+        print(f"No samples found within the last {args.seconds} seconds.")
+        return
+
+    samples = filtered
+
+    # 组装为时间序列（长度 = 样本条数），以保留样本的第一个时间为基点
     times = np.array([(s[0] - samples[0][0]).total_seconds() for s in samples], dtype=float)
     n = len(samples)
 
@@ -183,7 +210,7 @@ def main():
                     pmax = p_vals.max()
                     prank = pmax - pmin
                     # 最小范围以度为单位
-                    min_range = 0.2
+                    min_range = 0.4
                     if prank < min_range:
                         center = 0.5 * (pmax + pmin)
                         half = 0.5 * min_range
@@ -211,7 +238,7 @@ def main():
                     tmin = t_vals.min()
                     tmax = t_vals.max()
                     trange = tmax - tmin
-                    min_trange = 0.2
+                    min_trange = 0.4
                     if trange < min_trange:
                         center = 0.5 * (tmax + tmin)
                         half = 0.5 * min_trange
@@ -230,6 +257,20 @@ def main():
                 ax.text(0.5, 0.5, "No position error data", 
                        transform=ax.transAxes, ha="center", va="center", 
                        alpha=0.6, fontsize=10)
+            # 新增：强制 position error 纵轴范围至少为 0.1 度
+            try:
+                pe_vals = pos_err_deg[:, j][np.isfinite(pos_err_deg[:, j])]
+                if pe_vals.size > 0:
+                    pmin = pe_vals.min()
+                    pmax = pe_vals.max()
+                    prank = pmax - pmin
+                    min_perr_range = 0.04
+                    if prank < min_perr_range:
+                        center = 0.5 * (pmax + pmin)
+                        half = 0.5 * min_perr_range
+                        ax.set_ylim(center - half, center + half)
+            except Exception:
+                pass
             ax.grid(True, alpha=0.3, linestyle=':')
             if ci == 0:
                 ax.set_ylabel("Pos Error [deg]", fontsize=11)
@@ -255,7 +296,7 @@ def main():
                     vmax = v_vals.max()
                     vrange = vmax - vmin
                     # 保持当前数值门限不变（单位现在为 deg/s）
-                    min_vrange = 0.2
+                    min_vrange = 0.4
                     if vrange < min_vrange:
                         center = 0.5 * (vmax + vmin)
                         half = 0.5 * min_vrange

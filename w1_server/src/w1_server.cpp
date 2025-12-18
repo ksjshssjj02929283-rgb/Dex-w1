@@ -42,12 +42,13 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     force_subscriber_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
         "force_array", rclcpp::QoS(10), std::bind(&RobotServer::ForceArrayCallback, this, std::placeholders::_1));
 
+    // 创建 /control/debug 订阅器
+    debug_subscriber_ = this->create_subscription<std_msgs::msg::String>(
+        "/control/debug", 10, std::bind(&RobotServer::DebugCallback, this, std::placeholders::_1));
+
     // 参数初始化
     InitParamConfig();
-    if (enable_debug_log_)
-    {
-        nanolog::set_log_level(nanolog::LogLevel::DEBUG);
-    }
+
     // 创建定时器，定时发布feedback 定时器回调函数
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
 
@@ -80,13 +81,12 @@ void RobotServer::InitParamConfig()
 {
     auto config_path = server_data_dir_ / "w1_config.json";
 
-    const std::set<std::string> kAllowedRootKeys{"enable_debug_log", "enable_ruckig", "enable_cst_mode"};
+    const std::set<std::string> kAllowedRootKeys{"enable_ruckig", "enable_cst_mode"};
 
     nlohmann::json root;
     // 若文件不存在则创建默认配置
     if (!std::filesystem::exists(config_path))
     {
-        root["enable_debug_log"] = this->enable_debug_log_;
         root["enable_ruckig"] = this->enable_ruckig_;
         root["enable_cst_mode"] = this->enable_cst_mode_;
 
@@ -121,12 +121,6 @@ void RobotServer::InitParamConfig()
         }
     }
 
-    // 若缺失则补默认
-    if (!root.contains("enable_debug_log"))
-    {
-        root["enable_debug_log"] = this->enable_debug_log_;
-        need_rewrite = true;
-    }
     if (!root.contains("enable_ruckig"))
     {
         root["enable_ruckig"] = this->enable_ruckig_;
@@ -139,13 +133,11 @@ void RobotServer::InitParamConfig()
     }
 
     // 同步布尔值
-    this->enable_debug_log_ = root.value("enable_debug_log", this->enable_debug_log_);
     this->enable_ruckig_ = root.value("enable_ruckig", this->enable_ruckig_);
     this->enable_cst_mode_ = root.value("enable_cst_mode", this->enable_cst_mode_);
 
     // 构建干净配置
     nlohmann::json root_clean;
-    root_clean["enable_debug_log"] = this->enable_debug_log_;
     root_clean["enable_ruckig"] = this->enable_ruckig_;
     root_clean["enable_cst_mode"] = this->enable_cst_mode_;
 
@@ -156,11 +148,10 @@ void RobotServer::InitParamConfig()
         ofs << root_clean.dump(2);
     }
 
-    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_debug_log=%s, enable_cst_mode=%s)",
-                config_path.string().c_str(), this->enable_debug_log_ ? "true" : "false", this->enable_ruckig_ ? "true" : "false",
+    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_cst_mode=%s)",
+                config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
                 this->enable_cst_mode_ ? "true" : "false");
-    LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_debug_log=" << this->enable_debug_log_
-             << ", enable_ruckig=" << this->enable_ruckig_ << ", enable_cst_mode=" << this->enable_cst_mode_;
+    LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_ << ", enable_cst_mode=" << this->enable_cst_mode_;
 }
 
 void RobotServer::TorqueControlThreadFunc()
@@ -195,23 +186,22 @@ void RobotServer::TorqueControlThreadFunc()
 
         bool ret = feedback_shm_instance.PeekLatest(&robot_feedback_) && robot_feedback_.cnt > 0;
         // 根据状态写入机器人控制字
-        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
         this->is_robot_ready_ = false;
+        robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
         if (ret)
         {
-            if ((manager_state_ == Status::Running || manager_state_ == Status::Idle) && loop_counter % 4 == 0)
-            {
-                LOG_DEBUG << "{ \"joint_position\": " << utils::VectorToJsonArrayString(robot_feedback_.position, 6, ndof_robot).str()
-                          << ", \"joint_velocity\": " << utils::VectorToJsonArrayString(robot_feedback_.velocity, 6, ndof_robot).str()
-                          << ", \"joint_torque\":" << utils::VectorToJsonArrayString(robot_feedback_.torque, 6, ndof_robot).str()
-                          << ", \"joint_position_cmd\": " << utils::VectorToJsonArrayString(robot_control_.position, 6, ndof_robot).str()
-                          << ", \"joint_torque_feedforward\": "
-                          << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str() << "}";
-            }
-            // 根据反馈状态字处理控制字
             this->SwitchControlWord();
         }
-
+        // 如果开启了记录, 则在日志中记录数据
+        if (this->enable_record_ && (manager_state_ == Status::Running || manager_state_ == Status::Idle) && loop_counter % 4 == 0)
+        {
+            LOG_INFO << "{ \"joint_position\": " << utils::VectorToJsonArrayString(robot_feedback_.position, 6, ndof_robot).str()
+                        << ", \"joint_velocity\": " << utils::VectorToJsonArrayString(robot_feedback_.velocity, 6, ndof_robot).str()
+                        << ", \"joint_torque\":" << utils::VectorToJsonArrayString(robot_feedback_.torque, 6, ndof_robot).str()
+                        << ", \"joint_position_cmd\": " << utils::VectorToJsonArrayString(robot_control_.position, 6, ndof_robot).str()
+                        << ", \"joint_torque_feedforward\": "
+                        << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, 6, ndof_robot).str() << "}";
+        }
         // 如果机器人就绪，则写入测量数据
         if (this->is_robot_ready_)
         {
@@ -621,6 +611,48 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
             streaming_msg->position = std::vector<float>(robot_control_temp.position, robot_control_temp.position + ndof_robot);
             this->StreamingCommandCallback(streaming_msg);
         }
+    }
+}
+
+void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg)
+{
+    RCLCPP_INFO(this->get_logger(), "/control/debug message received: %s", msg->data.c_str());
+    LOG_INFO << "/control/debug message received: " << msg->data;
+
+    try
+    {
+        auto parse_json = [](const nlohmann::json &obj, const char *key) -> bool
+        {   
+            if (!obj.contains(key)) 
+                return false;   
+            const auto &v = obj[key];   
+            if (v.is_boolean()) 
+            {   
+                return v.get<bool>();
+            }   
+            if (v.is_number_integer()) 
+            {   
+                return v.get<int>();
+            }   
+            return false;
+        };
+
+        if (parse_json(nlohmann::json::parse(msg->data), "enable_record"))
+        {
+            this->enable_record_ = true;
+            RCLCPP_INFO(this->get_logger(), "enable_record_ set to true");
+            LOG_INFO << "enable_record_ set to true";
+        }
+        else
+        {
+            this->enable_record_ = false;
+            RCLCPP_INFO(this->get_logger(), "enable_record_ set to false");
+            LOG_INFO << "enable_record_ set to false";
+        }
+    }
+    catch (const std::exception &e)
+    {
+        RCLCPP_WARN(this->get_logger(), "Failed to parse /control/debug JSON: %s", e.what());
     }
 }
 

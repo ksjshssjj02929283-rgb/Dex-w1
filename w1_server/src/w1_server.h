@@ -43,6 +43,7 @@ class RobotServer : public RobotServerBase
     void OmniChassisMotorControlCallback(const ChassisMotorControlMsg::SharedPtr msg);
     void DiffChassisControlCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
     void ForceArrayCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg);
+    void DebugCallback(const std_msgs::msg::String::SharedPtr msg);
     void PublishFeedback();
     std_msgs::msg::String GetRobotServerStateMsg();
 
@@ -50,6 +51,7 @@ class RobotServer : public RobotServerBase
     rclcpp::Publisher<JointVelocityTorqueLimitFeedbackMsg>::SharedPtr velocity_torque_limit_feedback_publisher_;
     rclcpp::TimerBase::SharedPtr control_timer_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr force_subscriber_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr debug_subscriber_;
     rclcpp::Subscription<JointControlMsg>::SharedPtr control_subscriber_;
     rclcpp::Subscription<JointPositionControlMsg>::SharedPtr position_control_subscriber_;
     rclcpp::Subscription<ChassisWholeControlMsg>::SharedPtr omni_chassis_control_subscriber_;
@@ -74,7 +76,7 @@ class RobotServer : public RobotServerBase
     } torque_limit_;  // 关节力矩限制参数默认值, 单位: Nm
 
     bool enable_ruckig_ = true;                     // /control/joint接口是否使用 Ruckig 进行轨迹规划
-    bool enable_debug_log_ = false;                 // 是否启用调试日志
+    bool enable_record_ = false;                 // 是否启用调试日志
     bool enable_cst_mode_ = false;                  // 是否启用 CST 力矩控制模式
     const int first_arm_joint_index_ = 6;           // 左臂第一个关节在整体关节数组中的索引
     const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
