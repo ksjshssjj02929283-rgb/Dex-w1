@@ -299,11 +299,11 @@ class W1Manager:
             self.logger.error(f"Ros2 node destroy failed: {e}.")
 
     def _init_kine_solver(self):
-        ik_nearst_weight = np.array([2., 2., 2., 1., 1., 1., 1.])
+        ik_nearest_weight = np.array([2., 2., 2., 1., 1., 1., 1.])
         self.kine = DexforceW1Kinematics(
             self._arm_type == W1ArmType.ANTHROPOMORPHIC)
-        self.kine.left_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
-        self.kine.right_arm_kine.set_ik_nearst_weight(ik_nearst_weight)
+        self.kine.left_arm_kine.set_ik_nearest_weight(ik_nearest_weight)
+        self.kine.right_arm_kine.set_ik_nearest_weight(ik_nearest_weight)
         self.kine.set_user_qpos_limits(self.w1_params.qpos_lb,
                                        self.w1_params.qpos_ub)
 
@@ -500,6 +500,7 @@ class W1Manager:
                 self.logger.info(
                     f"{self.left_ee_client.node_name} is not connected!")
                 res = False
+        if self._has_arm_ee_client("right_arm_ee", False):
             if not self.right_ee_client.is_connected(timeout_sec):
                 self.logger.info(
                     f"{self.right_ee_client.node_name} is not connected!")
@@ -513,11 +514,10 @@ class W1Manager:
     def enable(self, timeout_sec: float = 0.5) -> bool:
         self.logger.warning(
             "Not implemented (Currently it will automatically OP).")
-        # TODO: self.robot_client.enable(timeout_sec)
         return True
 
     def is_enabled(self) -> bool:
-        """检查robot是否处于OP状态
+        """检查robot是否处于使能状态
 
         Returns:
             bool: 
@@ -527,7 +527,9 @@ class W1Manager:
                 f"{self.robot_client.node_name} is not connected!")
             return False
         if self.robot_client.status == Status.Init:
-            self.logger.error(f"{self.robot_client.node_name} is not enabled!")
+            self.logger.error(
+                f"{self.robot_client.node_name} is not enabled, robot status: {self.robot_client.robot_statusword}."
+            )
             return False
         return True
 
@@ -619,11 +621,6 @@ class W1Manager:
             self.logger.error(
                 f"{target_robot_client.node_name} is not connected!")
             return False
-        if target_robot_client.status not in [Status.Init, Status.Idle]:
-            self.logger.error(
-                f"{target_robot_client.node_name} status: {target_robot_client.status}, can not switch mode!"
-            )
-            return False
 
         if self._end_effector_type is not None:
             if not target_left_ee_client.is_connected():
@@ -646,11 +643,6 @@ class W1Manager:
             self.logger.error(
                 f"{self.robot_client.node_name} is not connected!")
             return False
-        if self.robot_client.status not in [Status.Init, Status.Idle]:
-            self.logger.error(
-                f"{self.robot_client.node_name} status: {self.robot_client.status}, can not switch mode!"
-            )
-            return False
 
         if self._end_effector_type is not None:
             if not self.left_ee_client.is_connected():
@@ -662,19 +654,13 @@ class W1Manager:
                     f"{self.right_ee_client.node_name} is not connected!")
                 return False
 
-        if self._use_nav and target_chassis_client is not None and not target_chassis_client.is_connected(
-        ):
-            self.logger.error(
-                f"{self.chassis_client.node_name} is not connected!")
-            return False
-
         self.robot_client = target_robot_client
         if self._end_effector_type is not None:
             self.left_ee_client = target_left_ee_client
             self.right_ee_client = target_right_ee_client
-        self._is_sim = enable_sim
         if self._use_nav and target_chassis_client is not None:
             self.chassis_client = target_chassis_client
+        self._is_sim = enable_sim
         self.logger.info(f"W1 manager set to {target_name} mode.")
         return True
 
@@ -911,7 +897,7 @@ class W1Manager:
         return True
 
     def stop_move(self, timeout_sec: float = 3.0) -> bool:
-        """停止发送streaming指令
+        """停止运动
 
         Args:
             timeout_sec (float, optional): 等待停止超时时间. Defaults to 3.0.
@@ -1070,8 +1056,8 @@ class W1Manager:
         qpos_list = []
         cur_qseed = qpos_seed
         for cur_xpos in xpos_sample_array:
-            res_ik, cur_qpos = arm_kine.get_nearst_ik(xpos=cur_xpos,
-                                                      qpos_seed=cur_qseed)
+            res_ik, cur_qpos = arm_kine.get_nearest_ik(xpos=cur_xpos,
+                                                       qpos_seed=cur_qseed)
             if not res_ik:
                 self.logger.error(
                     f"{name} solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}."

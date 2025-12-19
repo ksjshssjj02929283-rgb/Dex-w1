@@ -97,10 +97,10 @@ class RealRobotIdx_PGC(Enum):
     RIGHT_J5 = auto()
     RIGHT_J6 = auto()
     RIGHT_J7 = auto()
-    LEFT_FINGER1_JOINT = auto()
-    LEFT_FINGER2_JOINT = auto()
-    RIGHT_FINGER1_JOINT = auto()
-    RIGHT_FINGER2_JOINT = auto()
+    LEFT_FINGER1 = auto()
+    LEFT_FINGER2 = auto()
+    RIGHT_FINGER1 = auto()
+    RIGHT_FINGER2 = auto()
 
 
 def get_robot_sim2real_idx(articulation) -> List[int]:
@@ -288,9 +288,9 @@ def get_real_idx(end_effector_type: EndEffectorType = None):
 
     if end_effector_type == EndEffectorType.PGC_GRIPPER:
         left_finger1_idx, left_finger2_idx = real_dict[
-            "LEFT_FINGER1_JOINT"], real_dict["LEFT_FINGER2_JOINT"]
+            "LEFT_FINGER1"], real_dict["LEFT_FINGER2"]
         right_finger1_idx, right_finger2_idx = real_dict[
-            "RIGHT_FINGER1_JOINT"], real_dict["RIGHT_FINGER2_JOINT"]
+            "RIGHT_FINGER1"], real_dict["RIGHT_FINGER2"]
         left_hand_idx = [left_finger1_idx, left_finger2_idx]
         right_hand_idx = [right_finger1_idx, right_finger2_idx]
 
@@ -381,10 +381,10 @@ def get_pin_idx(urdf_path):
 
         return torso_idx, head_idx, left_arm_idx, right_arm_idx, left_hand_idx, right_hand_idx
     if pin_model.njoints - 1 == 24:
-        left_finger1_idx, left_finger2_idx = pin_dict[
-            "LEFT_FINGER1_JOINT"], pin_dict["LEFT_FINGER2_JOINT"]
+        left_finger1_idx, left_finger2_idx = pin_dict["LEFT_FINGER1"], pin_dict[
+            "LEFT_FINGER2"]
         right_finger1_idx, right_finger2_idx = pin_dict[
-            "RIGHT_FINGER1_JOINT"], pin_dict["RIGHT_FINGER2_JOINT"]
+            "RIGHT_FINGER1"], pin_dict["RIGHT_FINGER2"]
         left_hand_idx = [left_finger1_idx, left_finger2_idx]
         right_hand_idx = [right_finger1_idx, right_finger2_idx]
 
