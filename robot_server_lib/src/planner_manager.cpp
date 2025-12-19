@@ -30,8 +30,8 @@ void PlannerManager::Initialize()
     move_traj_planner_ = std::make_shared<MoveTrajPlanner>(robot_model_, manager_dt, true);
     joint_streaming_planner_ = std::make_shared<JointStreamingPlanner>(robot_model_, manager_buffer_.streaming_command_latest_buffer, manager_dt);
     ee_pose_streaming_planner_ = std::make_shared<EEPoseStreamingPlanner>(robot_model_, manager_buffer_.streaming_command_latest_buffer, manager_dt);
-    compliance_ctrl_primary_ = std::make_shared<dynamics::CartesianComplianceControl>();
-    compliance_ctrl_secondary_ = std::make_shared<dynamics::CartesianComplianceControl>();
+    admittance_ctrl_primary_ = std::make_shared<dynamics::CartesianAdmittanceController>();
+    admittance_ctrl_secondary_ = std::make_shared<dynamics::CartesianAdmittanceController>();
 }
 
 void PlannerManager::LoopOnce()
@@ -122,21 +122,21 @@ void PlannerManager::LoopOnce()
         {
             status = current_planner_->ComputeCommand(measurement, time_meta, runtime_data_.joint_cmd);
         }
-        Vector3d compliance_offset_primary, compliance_offset_secondary;
+        Vector3d admittance_offset_primary, admittance_offset_secondary;
         if (this->robot_property_.run_mode == RunMode::Impedance)
         {
             // 计算柔顺控制在base坐标系下的偏置 Calculate compliance control offset
-            compliance_offset_primary = compliance_ctrl_primary_->UpdatePosOffset(measurement.sensor_wrench.head<3>());
-            compliance_offset_secondary = compliance_ctrl_secondary_->UpdatePosOffset(measurement.sensor_wrench.segment<3>(6));
+            admittance_offset_primary = admittance_ctrl_primary_->UpdatePosOffset(measurement.sensor_wrench.head<3>());
+            admittance_offset_secondary = admittance_ctrl_secondary_->UpdatePosOffset(measurement.sensor_wrench.segment<3>(6));
         }
         else
         {
-            compliance_offset_primary = compliance_ctrl_primary_->UpdatePosOffset(Vector3d::Zero());
-            compliance_offset_secondary = compliance_ctrl_secondary_->UpdatePosOffset(Vector3d::Zero());
+            admittance_offset_primary = admittance_ctrl_primary_->UpdatePosOffset(Vector3d::Zero());
+            admittance_offset_secondary = admittance_ctrl_secondary_->UpdatePosOffset(Vector3d::Zero());
         }
 
-        if (this->robot_property_.run_mode != RunMode::Impedance && compliance_offset_primary.norm() < PositionThreshold &&
-            compliance_offset_secondary.norm() < PositionThreshold)
+        if (this->robot_property_.run_mode != RunMode::Impedance && admittance_offset_primary.norm() < PositionThreshold &&
+            admittance_offset_secondary.norm() < PositionThreshold)
         {
             runtime_data_.joint_cmd.compliance_position = runtime_data_.joint_cmd.position;
         }
@@ -152,8 +152,8 @@ void PlannerManager::LoopOnce()
 
             // 将柔顺控制偏置作用到原生末端位置上 Add the compliance control offset to the end-effector pose
             auto ee_pose_before_primary = ee_pose_primary;
-            ee_pose_primary = ee_pose_primary * PoseQuaternion(compliance_offset_primary.head<3>(), Eigen::Quaterniond::Identity());
-            ee_pose_secondary = ee_pose_secondary * PoseQuaternion(compliance_offset_secondary.head<3>(), Eigen::Quaterniond::Identity());
+            ee_pose_primary = ee_pose_primary * PoseQuaternion(admittance_offset_primary.head<3>(), Eigen::Quaterniond::Identity());
+            ee_pose_secondary = ee_pose_secondary * PoseQuaternion(admittance_offset_secondary.head<3>(), Eigen::Quaterniond::Identity());
 
             // 根据新的末端位置求解逆运动学 Get IK based on the new end-effector position
             if (idle_planner_->KinematicsPrimary()->GetIK(ee_pose_primary, q_cmd_primary, robot_property_.tcp_frame) &&
@@ -528,8 +528,8 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
     {
         assert(request.data.has_value() && std::holds_alternative<Vector3d>(request.data.value()));
         Vector3d mass = std::get<Vector3d>(request.data.value());
-        compliance_ctrl_primary_->SetMass(mass);
-        compliance_ctrl_secondary_->SetMass(mass);
+        admittance_ctrl_primary_->SetMass(mass);
+        admittance_ctrl_secondary_->SetMass(mass);
         LOG_INFO << "Set impedance mass to " << mass.transpose();
         return;
     }
@@ -537,8 +537,8 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
     {
         assert(request.data.has_value() && std::holds_alternative<Vector3d>(request.data.value()));
         Vector3d damping = std::get<Vector3d>(request.data.value());
-        compliance_ctrl_primary_->SetDamping(damping);
-        compliance_ctrl_secondary_->SetDamping(damping);
+        admittance_ctrl_primary_->SetDamping(damping);
+        admittance_ctrl_secondary_->SetDamping(damping);
         LOG_INFO << "Set impedance damping to " << damping.transpose();
         return;
     }
@@ -546,8 +546,8 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
     {
         assert(request.data.has_value() && std::holds_alternative<Vector3d>(request.data.value()));
         Vector3d stiffness = std::get<Vector3d>(request.data.value());
-        compliance_ctrl_primary_->SetStiffness(stiffness);
-        compliance_ctrl_secondary_->SetStiffness(stiffness);
+        admittance_ctrl_primary_->SetStiffness(stiffness);
+        admittance_ctrl_secondary_->SetStiffness(stiffness);
         LOG_INFO << "Set impedance stiffness to " << stiffness.transpose();
         return;
     }

@@ -13,6 +13,16 @@ void PrintModelInfo(const Model& model)
     }
 }
 
+SE3 GetFK(const Model& model, const Eigen::VectorXd &q)
+{
+    SE3 pose;
+    Data data(model);
+    int frame_id = model.getFrameId("ee_link");
+    forwardKinematics(model, data, q);
+    updateFramePlacements(model, data);
+    return data.oMf[frame_id];
+}
+
 Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q)
 {
     Eigen::MatrixXd J(6, model.nv);

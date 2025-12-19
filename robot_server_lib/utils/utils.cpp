@@ -104,8 +104,8 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path)
     pinocchio::urdf::buildModel(params.right_arm_urdf_path, right_arm_model);
 
     robot_model.model_ptr = std::make_shared<pinocchio::Model>(model);
-    robot_model.left_arm_model_ptr = std::make_shared<pinocchio::Model>(left_arm_model);
-    robot_model.right_arm_model_ptr = std::make_shared<pinocchio::Model>(right_arm_model);
+    robot_model.primary_arm_model_ptr = std::make_shared<pinocchio::Model>(left_arm_model);
+    robot_model.secondary_arm_model_ptr = std::make_shared<pinocchio::Model>(right_arm_model);
     robot_model.params_ptr = std::make_shared<RobotParams>(params);
 
     return robot_model;

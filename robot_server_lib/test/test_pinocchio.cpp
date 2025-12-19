@@ -27,13 +27,13 @@ TEST(PinocchioModelTest, Pinocchio)
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot.cfg";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 
-    PrintModelInfo(*robot_model.left_arm_model_ptr, "Left Arm Model");
-    PrintModelInfo(*robot_model.right_arm_model_ptr, "Right Arm Model");
+    PrintModelInfo(*robot_model.primary_arm_model_ptr, "Left Arm Model");
+    PrintModelInfo(*robot_model.secondary_arm_model_ptr, "Right Arm Model");
 
     // 计算7个关节全0时的Jacobi矩阵
-    Eigen::VectorXd q = Eigen::VectorXd::Zero(robot_model.left_arm_model_ptr->nv);
+    Eigen::VectorXd q = Eigen::VectorXd::Zero(robot_model.primary_arm_model_ptr->nv);
 
-    auto J = pinocchio::GetJacobiMatrix(*robot_model.left_arm_model_ptr, q);
+    auto J = pinocchio::GetJacobiMatrix(*robot_model.primary_arm_model_ptr, q);
     std::cout << std::fixed << std::setprecision(3) << "Jacobian at left ee_link (q = 0):\n" << J << std::endl;
 
     Eigen::MatrixXd expected(6, 7);

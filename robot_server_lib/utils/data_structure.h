@@ -263,10 +263,10 @@ struct RobotParams
 
 struct RobotModel
 {
-    std::shared_ptr<const pinocchio::Model> model_ptr;
     std::shared_ptr<const RobotParams> params_ptr;
-    std::shared_ptr<const pinocchio::Model> left_arm_model_ptr;
-    std::shared_ptr<const pinocchio::Model> right_arm_model_ptr;
+    std::shared_ptr<const pinocchio::Model> model_ptr;
+    std::shared_ptr<const pinocchio::Model> primary_arm_model_ptr;
+    std::shared_ptr<const pinocchio::Model> secondary_arm_model_ptr;
 
     RobotModel() = default;
     ~RobotModel() = default;
