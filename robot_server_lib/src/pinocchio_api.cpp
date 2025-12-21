@@ -13,14 +13,15 @@ void PrintModelInfo(const Model& model)
     }
 }
 
-SE3 GetFK(const Model& model, const Eigen::VectorXd &q)
+Eigen::Matrix4d GetFK(const Model& model, const Eigen::VectorXd &q)
 {
     SE3 pose;
     Data data(model);
     int frame_id = model.getFrameId("ee_link");
     forwardKinematics(model, data, q);
     updateFramePlacements(model, data);
-    return data.oMf[frame_id];
+    pose = data.oMf[frame_id];
+    return pose.toHomogeneousMatrix();
 }
 
 Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q)
@@ -43,6 +44,21 @@ SE3 GetFkByFrameId(const Model& model, Data& data, const Eigen::VectorXd &q_urdf
     updateFramePlacements(model, data);
 
     return data.oMf[frame_id];
+}
+
+void PseudoInverse(const Eigen::MatrixXd& M_, Eigen::MatrixXd& M_pinv_, bool damped)
+{
+    double lambda_ = damped ? 0.2 : 0.0;
+
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(M_, Eigen::ComputeFullU | Eigen::ComputeFullV);
+    Eigen::JacobiSVD<Eigen::MatrixXd>::SingularValuesType sing_vals_ = svd.singularValues();
+    Eigen::MatrixXd S_ = M_;  // copying the dimensions of M_, its content is not needed.
+    S_.setZero();
+
+    for (int i = 0; i < sing_vals_.size(); i++)
+        S_(i, i) = (sing_vals_(i)) / (sing_vals_(i) * sing_vals_(i) + lambda_ * lambda_);
+
+    M_pinv_ = Eigen::MatrixXd(svd.matrixV() * S_.transpose() * svd.matrixU().transpose());
 }
 
 }  // namespace pinocchio

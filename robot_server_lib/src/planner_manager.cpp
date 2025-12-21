@@ -138,7 +138,7 @@ void PlannerManager::LoopOnce()
         if (this->robot_property_.run_mode != RunMode::Impedance && admittance_offset_primary.norm() < PositionThreshold &&
             admittance_offset_secondary.norm() < PositionThreshold)
         {
-            runtime_data_.joint_cmd.compliance_position = runtime_data_.joint_cmd.position;
+            runtime_data_.joint_cmd.admittance_position = runtime_data_.joint_cmd.position;
         }
         else
         {
@@ -160,8 +160,8 @@ void PlannerManager::LoopOnce()
                 idle_planner_->KinematicsSecondary()->GetIK(ee_pose_secondary, q_cmd_secondary, robot_property_.tcp_frame_secondary))
             {
                 // 映射回整体关节命令 Map back to whole-body joint command
-                utils::MapJointToWholeBody(this->robot_model_, q_cmd_primary, runtime_data_.joint_cmd.compliance_position, MotionGroup::Primary);
-                utils::MapJointToWholeBody(this->robot_model_, q_cmd_secondary, runtime_data_.joint_cmd.compliance_position, MotionGroup::Secondary);
+                utils::MapJointToWholeBody(this->robot_model_, q_cmd_primary, runtime_data_.joint_cmd.admittance_position, MotionGroup::Primary);
+                utils::MapJointToWholeBody(this->robot_model_, q_cmd_secondary, runtime_data_.joint_cmd.admittance_position, MotionGroup::Secondary);
             }
             else  // IK求解失败则保持原位置不变 If IK fails, keep previous position
             {

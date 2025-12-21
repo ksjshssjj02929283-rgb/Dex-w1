@@ -1,4 +1,4 @@
-#include "dynamics_base.h"
+#include "inverse_dynamics.h"
 
 namespace robot_server_lib
 {

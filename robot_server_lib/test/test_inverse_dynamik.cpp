@@ -3,7 +3,7 @@
 #include <Eigen/Dense>
 #include <cmath>
 #include "utils.h"
-#include "dynamics_base.h"
+#include "inverse_dynamics.h"
 
 using namespace robot_server_lib;
 TEST(InverseDynamikTest, InverseDyn)

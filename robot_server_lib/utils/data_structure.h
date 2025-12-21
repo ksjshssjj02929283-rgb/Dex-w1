@@ -72,14 +72,14 @@ struct JointCommand
     VectorDof position;
     VectorDof velocity;
     VectorDof acceleration;
-    VectorDof compliance_position;
+    VectorDof admittance_position;
     VectorDof torque_feedforward;
 
     std::string ToString() const
     {
         std::stringstream ss;
         ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Acceleration: " << acceleration.transpose()
-           << ", Compliance Position: " << compliance_position.transpose() << ", Torque Feedforward: " << torque_feedforward.transpose();
+           << ", Compliance Position: " << admittance_position.transpose() << ", Torque Feedforward: " << torque_feedforward.transpose();
         return ss.str();
     }
 };

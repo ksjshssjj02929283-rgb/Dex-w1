@@ -259,7 +259,7 @@ void RobotServer::TorqueControlThreadFunc()
                 case RunMode::Position:
                 case RunMode::Impedance:
                     // 更新关节力矩限制
-                    robot_control_.position[i] = planner_cmd.cmd.compliance_position[i];
+                    robot_control_.position[i] = planner_cmd.cmd.admittance_position[i];
                     robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
                     robot_control_.torque_feedforward[i] = torque_cmd.torque_feedforward[i];
                     robot_control_.positive_torque_limit[i] =

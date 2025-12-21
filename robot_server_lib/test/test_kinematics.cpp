@@ -12,7 +12,7 @@ TEST(SRSKinematicsTest, Kinematics)
     kinematics::SRSKinematics srs_kine_left(true, false);
 
     Eigen::VectorXd q_in_left(7);
-    q_in_left << -0.45, -0.65, 0.35, -1.5, -1, 1.1, -0.4;
+    q_in_left << 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5;
     auto pose = srs_kine_left.GetFK(q_in_left);
     std::cout << "Left: Forward Kinematics Left Pose_out: " << pose.ToString() << std::endl;
     bool success = false;
