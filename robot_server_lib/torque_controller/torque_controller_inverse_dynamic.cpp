@@ -41,8 +41,7 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
         dq_error = cmd_dq - feedback_dq;
         ddq_desired = cmd_ddq + this->parameters_.K_p * q_error + this->parameters_.K_v * dq_error;
         output_cmd.torque = torque_feedforward + dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, ddq_desired);
-        VectorDof inverse_dyn_tau = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, ddq_desired);
-        output_cmd.torque_feedforward = inverse_dyn_tau;
+        output_cmd.torque_feedforward = torque_feedforward + dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, VectorDof::Zero());
         output_cmd.q_desired = cmd_q;
     }
     default:

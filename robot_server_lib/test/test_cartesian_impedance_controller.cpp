@@ -35,5 +35,5 @@ TEST(CartesianImpedanceControllerTest, TestCartesianImpedanceController)
     feedback_q << 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5;
     feedback_dq << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
     cmd_q << 0.51, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5;
-    impedance_controller.UpdateCommand(feedback_q, feedback_dq, cmd_q, tau_command);
+    impedance_controller.UpdateTorqueCommand(feedback_q, feedback_dq, cmd_q, tau_command);
 }

@@ -19,7 +19,7 @@ public:
 
     // 初始化参数
     CartesianImpedanceController(const RobotModel &robot_model, MotionGroup motion_group, double control_dt = 0.001);
-    bool UpdateCommand(const Eigen::VectorXd &feedback_q, const Eigen::VectorXd &feedback_dq, const Eigen::VectorXd &cmd_q, Eigen::VectorXd &tau_command);
+    bool UpdateTorqueCommand(const Eigen::VectorXd &feedback_q, const Eigen::VectorXd &feedback_dq, const Eigen::VectorXd &cmd_q, Eigen::VectorXd &tau_command);
 
     Eigen::VectorXd SaturateTorqueRate(const Eigen::VectorXd& tau_target, const Eigen::VectorXd& tau);
 
@@ -33,9 +33,11 @@ private:
     pinocchio::Model pinocchio_model_;
     MotionGroup motion_group_;
     int ndof_;
+
     // 运行时变量
     Vector6d cartesian_error_ = Vector6d::Zero();
     Vector6d cartesian_error_integral_ = Vector6d::Zero();
+    Eigen::VectorXd tau_command_;  // 上一周期力矩指令
 
     // 控制参数
     double control_dt_ = 0.001;                               // 控制周期 (s)

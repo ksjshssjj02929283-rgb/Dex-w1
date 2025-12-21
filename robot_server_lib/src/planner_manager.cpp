@@ -32,6 +32,9 @@ void PlannerManager::Initialize()
     ee_pose_streaming_planner_ = std::make_shared<EEPoseStreamingPlanner>(robot_model_, manager_buffer_.streaming_command_latest_buffer, manager_dt);
     admittance_ctrl_primary_ = std::make_shared<dynamics::CartesianAdmittanceController>();
     admittance_ctrl_secondary_ = std::make_shared<dynamics::CartesianAdmittanceController>();
+
+    impedance_ctrl_primary_ = std::make_shared<dynamics::CartesianImpedanceController>(robot_model_, MotionGroup::Primary, manager_dt);
+    impedance_ctrl_secondary_ = std::make_shared<dynamics::CartesianImpedanceController>(robot_model_, MotionGroup::Secondary, manager_dt);
 }
 
 void PlannerManager::LoopOnce()
@@ -114,61 +117,27 @@ void PlannerManager::LoopOnce()
     auto status(ComputeCommandStatus::Error);
     if (current_planner_ != nullptr)
     {
-        if (runtime_data_.latest_processing_request_type == RequestType::StopMove)
+        if (this->runtime_data_.latest_processing_request_type == RequestType::StopMove)
         {
-            status = current_planner_->ComputeStopCommand(measurement, time_meta, runtime_data_.joint_cmd);
+            status = current_planner_->ComputeStopCommand(measurement, time_meta, this->runtime_data_.joint_cmd);
         }
         else
         {
-            status = current_planner_->ComputeCommand(measurement, time_meta, runtime_data_.joint_cmd);
+            status = current_planner_->ComputeCommand(measurement, time_meta, this->runtime_data_.joint_cmd);
         }
-        Vector3d admittance_offset_primary, admittance_offset_secondary;
-        if (this->robot_property_.run_mode == RunMode::Impedance)
-        {
-            // 计算柔顺控制在base坐标系下的偏置 Calculate compliance control offset
-            admittance_offset_primary = admittance_ctrl_primary_->UpdatePosOffset(measurement.sensor_wrench.head<3>());
-            admittance_offset_secondary = admittance_ctrl_secondary_->UpdatePosOffset(measurement.sensor_wrench.segment<3>(6));
-        }
-        else
-        {
-            admittance_offset_primary = admittance_ctrl_primary_->UpdatePosOffset(Vector3d::Zero());
-            admittance_offset_secondary = admittance_ctrl_secondary_->UpdatePosOffset(Vector3d::Zero());
-        }
-
-        if (this->robot_property_.run_mode != RunMode::Impedance && admittance_offset_primary.norm() < PositionThreshold &&
-            admittance_offset_secondary.norm() < PositionThreshold)
-        {
-            runtime_data_.joint_cmd.admittance_position = runtime_data_.joint_cmd.position;
-        }
-        else
-        {
-            // 如果在柔顺控制模式下，或者有非零的柔顺偏置正在回弹中，则进行逆运动学求解 If in impedance mode, or there is non-zero compliance offset,
-            // perform IK 正解原生位置 FK, get FK original position
-            Eigen::VectorXd q_cmd_primary, q_cmd_secondary;
-            utils::GetJointFromWholeBody(this->robot_model_, runtime_data_.joint_cmd.position, q_cmd_primary, MotionGroup::Primary);
-            utils::GetJointFromWholeBody(this->robot_model_, runtime_data_.joint_cmd.position, q_cmd_secondary, MotionGroup::Secondary);
-            PoseQuaternion ee_pose_primary = idle_planner_->KinematicsPrimary()->GetFK(q_cmd_primary, robot_property_.tcp_frame);
-            PoseQuaternion ee_pose_secondary = idle_planner_->KinematicsSecondary()->GetFK(q_cmd_secondary, robot_property_.tcp_frame_secondary);
-
-            // 将柔顺控制偏置作用到原生末端位置上 Add the compliance control offset to the end-effector pose
-            auto ee_pose_before_primary = ee_pose_primary;
-            ee_pose_primary = ee_pose_primary * PoseQuaternion(admittance_offset_primary.head<3>(), Eigen::Quaterniond::Identity());
-            ee_pose_secondary = ee_pose_secondary * PoseQuaternion(admittance_offset_secondary.head<3>(), Eigen::Quaterniond::Identity());
-
-            // 根据新的末端位置求解逆运动学 Get IK based on the new end-effector position
-            if (idle_planner_->KinematicsPrimary()->GetIK(ee_pose_primary, q_cmd_primary, robot_property_.tcp_frame) &&
-                idle_planner_->KinematicsSecondary()->GetIK(ee_pose_secondary, q_cmd_secondary, robot_property_.tcp_frame_secondary))
-            {
-                // 映射回整体关节命令 Map back to whole-body joint command
-                utils::MapJointToWholeBody(this->robot_model_, q_cmd_primary, runtime_data_.joint_cmd.admittance_position, MotionGroup::Primary);
-                utils::MapJointToWholeBody(this->robot_model_, q_cmd_secondary, runtime_data_.joint_cmd.admittance_position, MotionGroup::Secondary);
-            }
-            else  // IK求解失败则保持原位置不变 If IK fails, keep previous position
-            {
-                if (runtime_data_.loop_counter % 5000 == 0)
-                    LOG_WARN << "Compliance control IK failed, keeping previous joint position.";
-            }
-        }
+        // 计算双臂数据 Compute dual-arm data
+        Eigen::VectorXd tau_feedforward_primary, tau_feedforward_secondary;
+        Eigen::VectorXd q_cmd_primary, q_cmd_secondary, q_feedback_primary, q_feedback_secondary, dq_feedback_primary, dq_feedback_secondary;
+        utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_primary, MotionGroup::Primary);
+        utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_secondary, MotionGroup::Secondary);
+        utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_primary, MotionGroup::Primary);
+        utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_secondary, MotionGroup::Secondary);
+        utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_primary, MotionGroup::Primary);
+        utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_secondary, MotionGroup::Secondary);
+        auto ret_pri = impedance_ctrl_primary_->UpdateTorqueCommand(q_feedback_primary, dq_feedback_primary, q_cmd_primary, tau_feedforward_primary);
+        auto ret_sec = impedance_ctrl_secondary_->UpdateTorqueCommand(q_feedback_secondary, dq_feedback_secondary, q_cmd_secondary, tau_feedforward_secondary);
+        utils::MapJointToWholeBody(this->robot_model_, tau_feedforward_primary, this->runtime_data_.joint_cmd.torque_feedforward, MotionGroup::Primary);
+        utils::MapJointToWholeBody(this->robot_model_, tau_feedforward_secondary, this->runtime_data_.joint_cmd.torque_feedforward, MotionGroup::Secondary);
     }
 
     // 发布关节命令到缓冲区 publish the joint command to the buffer
@@ -533,22 +502,22 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
         LOG_INFO << "Set impedance mass to " << mass.transpose();
         return;
     }
-    case RequestType::ImpedanceDamping:
-    {
-        assert(request.data.has_value() && std::holds_alternative<Vector3d>(request.data.value()));
-        Vector3d damping = std::get<Vector3d>(request.data.value());
-        admittance_ctrl_primary_->SetDamping(damping);
-        admittance_ctrl_secondary_->SetDamping(damping);
-        LOG_INFO << "Set impedance damping to " << damping.transpose();
-        return;
-    }
     case RequestType::ImpedanceStiffness:
     {
-        assert(request.data.has_value() && std::holds_alternative<Vector3d>(request.data.value()));
-        Vector3d stiffness = std::get<Vector3d>(request.data.value());
-        admittance_ctrl_primary_->SetStiffness(stiffness);
-        admittance_ctrl_secondary_->SetStiffness(stiffness);
+        assert(request.data.has_value() && std::holds_alternative<Vector6d>(request.data.value()));
+        auto stiffness = std::get<Vector6d>(request.data.value());
+        impedance_ctrl_primary_->SetStiffness(stiffness);
+        impedance_ctrl_secondary_->SetStiffness(stiffness);
         LOG_INFO << "Set impedance stiffness to " << stiffness.transpose();
+        return;
+    }
+    case RequestType::ImpedanceDamping:
+    {
+        assert(request.data.has_value() && std::holds_alternative<Vector6d>(request.data.value()));
+        auto damping = std::get<Vector6d>(request.data.value());
+        impedance_ctrl_primary_->SetDamping(damping);
+        impedance_ctrl_secondary_->SetDamping(damping);
+        LOG_INFO << "Set impedance damping to " << damping.transpose();
         return;
     }
     case RequestType::SafeLevel:

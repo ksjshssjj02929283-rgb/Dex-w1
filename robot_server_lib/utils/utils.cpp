@@ -158,6 +158,19 @@ Vector3d StringToVector3d(const std::string &str)
     return values;
 }
 
+Vector6d StringToVector6d(const std::string &str)
+{
+    std::stringstream ss(str);
+    std::string item;
+    Vector6d values;
+    int idx = 0;
+    while (std::getline(ss, item, ',') && idx < 6)
+    {
+        values[idx++] = std::stod(item);
+    }
+    return values;
+}
+
 bool MapJointToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group)
 {
     Eigen::VectorXd joints_map;
@@ -304,12 +317,12 @@ PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interf
     else if (request->property_type == "ImpedanceDamping")
     {
         planner_request.type = RequestType::ImpedanceDamping;
-        planner_request.data = utils::StringToVector3d(request->value);
+        planner_request.data = utils::StringToVector6d(request->value);
     }
     else if (request->property_type == "ImpedanceStiffness")
     {
         planner_request.type = RequestType::ImpedanceStiffness;
-        planner_request.data = utils::StringToVector3d(request->value);
+        planner_request.data = utils::StringToVector6d(request->value);
     }
     else
     {
