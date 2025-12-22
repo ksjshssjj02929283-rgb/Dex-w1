@@ -22,6 +22,7 @@ CartesianImpedanceController::CartesianImpedanceController(const RobotModel &rob
 	}
 	this->q_nullspace_.setZero(this->ndof_);
 	this->tau_command_.setZero(this->ndof_);
+	nullspace_damp_ = 2.0 * sqrt(this->nullspace_stiff_);
 }
 
 bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &feedback_q, const Eigen::VectorXd &feedback_dq, const Eigen::VectorXd &cmd_q, Eigen::VectorXd &tau_command)
@@ -58,12 +59,12 @@ bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &fe
 	q_nullspace_err << this->q_nullspace_ - feedback_q;
 	q_nullspace_err.head(1) << q_nullspace_err.head(1) * this->nullspace_stiff_;
 	dq_nullspace_err << Eigen::VectorXd::Zero(this->ndof_) - feedback_dq;
-	dq_nullspace_err.head(1) << dq_nullspace_err.head(1) * 2.0 * sqrt(this->nullspace_stiff_);
+	dq_nullspace_err.head(1) << dq_nullspace_err.head(1) * this->nullspace_damp_;
 	Eigen::MatrixXd jacobian_transpose_pinv;
 	pinocchio::PseudoInverse(jacobian.transpose(), jacobian_transpose_pinv);
 
 	tau_nullspace << (Eigen::MatrixXd::Identity(this->ndof_, this->ndof_) - jacobian.transpose() * jacobian_transpose_pinv) *
-									(this->nullspace_stiff_ * q_nullspace_err + (2.0 * sqrt(this->nullspace_stiff_)) * dq_nullspace_err);
+									(this->nullspace_stiff_ * q_nullspace_err + this->nullspace_damp_ * dq_nullspace_err);
 
 	this->tau_command_ = this->SaturateTorqueRate(tau_task + tau_nullspace, this->tau_command_);
 	tau_command = this->tau_command_;

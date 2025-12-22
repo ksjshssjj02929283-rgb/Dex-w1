@@ -46,9 +46,10 @@ private:
     Vector3d rot_clip_min_ = {-0.05, -0.05, -0.05};             // 旋转限幅, 单位rad
     Matrix6d cart_stiff_ = Vector6d{100, 100, 100, 0, 0, 0}.asDiagonal();     // 刚度
     Matrix6d cart_damp_ = Vector6d{20, 20, 20, 0, 0, 0}.asDiagonal();       // 阻尼
-    Matrix6d Ki_ = Vector6d{1, 1, 1, 0, 0, 0}.asDiagonal();                      // 积分增益
+    Matrix6d Ki_ = Vector6d{10, 10, 10, 0, 0, 0}.asDiagonal();                      // 积分增益
     Eigen::VectorXd q_nullspace_;                             // 零空间目标位置
-    double nullspace_stiff_ = 5;                       // 零空间刚度
+    double nullspace_stiff_ = 10;                            // 零空间刚度
+    double nullspace_damp_;                                 // 零空间阻尼
     double delta_tau_max_ = 1;                              // 最大力矩变化率限制
 
 };
