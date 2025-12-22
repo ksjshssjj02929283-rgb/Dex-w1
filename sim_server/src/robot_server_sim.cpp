@@ -40,14 +40,14 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
 
 void RobotServer::RobotThreadFunc()
 {
-#if false
+#if true
     RCLCPP_INFO(this->get_logger(), "Torque control is enabled.");
     LOG_INFO << "Torque control is enabled.";
 
     pinocchio::Data robot_data(*this->robot_model_.model_ptr);
     TorqueCtrlCommand torque_cmd{};
     JointRawMeasurement raw_measurement{};
-    raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
+    raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, 1.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
     raw_measurement.velocity.setZero();
     raw_measurement.effort.setZero();
     raw_measurement.sensor_wrench = Eigen::VectorXd::Zero(12);
@@ -58,17 +58,20 @@ void RobotServer::RobotThreadFunc()
     while (rclcpp::ok())
     {
         next_cycle_time_point += std::chrono::microseconds(simulation_dt_micro);
-        if (!this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd))
+        PlannerManagerCommand q_cmd{};
+        if (this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd) && this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd)
+            && (manager_state_ == Status::Idle || manager_state_ == Status::Running))  // 有指令了才进行正动力学仿真
         {
-            torque_cmd.torque.setZero();
+            VectorDof ddq = dynamics::ForwardDynamics(*this->robot_model_.model_ptr, robot_data, raw_measurement.position, raw_measurement.velocity,
+                                                    torque_cmd.torque, this->robot_model_.params_ptr->joint_command_sequence_by_name);
+            raw_measurement.position += simulation_dt * raw_measurement.velocity;
+            raw_measurement.position.segment(0, 13) = q_cmd.cmd.position.segment(0, 13);  // 保持躯干和头部由位置控制器控制
+            raw_measurement.velocity += simulation_dt * ddq;
+            raw_measurement.velocity.segment(0, 13) = q_cmd.cmd.velocity.segment(0, 13);  // 保持躯干和头部由位置控制器控制
+            raw_measurement.effort = torque_cmd.torque;
+            raw_measurement.time_point = TimePointSystem::Now();
+            this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
         }
-        VectorDof ddq = dynamics::ForwardDynamics(*this->robot_model_.model_ptr, robot_data, raw_measurement.position, raw_measurement.velocity,
-                                                  torque_cmd.torque, this->robot_model_.params_ptr->joint_command_sequence_by_name);
-        raw_measurement.position += simulation_dt * raw_measurement.velocity;
-        raw_measurement.velocity += simulation_dt * ddq;
-        raw_measurement.effort = torque_cmd.torque;
-        raw_measurement.time_point = TimePointSystem::Now();
-        this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 #else

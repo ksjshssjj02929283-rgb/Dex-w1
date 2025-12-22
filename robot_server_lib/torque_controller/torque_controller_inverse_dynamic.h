@@ -1,6 +1,7 @@
 #pragma once
 #include "torque_controller_base.h"
 #include "inverse_dynamics.h"
+#include "cartesian_impedance_controller.h"
 
 namespace robot_server_lib
 {
@@ -14,6 +15,7 @@ class TorqueControllerInvDynamic : public TorqueControllerBase
 
    protected:
     VectorDof idle_q_;
+    std::shared_ptr<dynamics::CartesianImpedanceController> impedance_ctrl_secondary_{nullptr};
 };
 
 }  // namespace robot_server_lib

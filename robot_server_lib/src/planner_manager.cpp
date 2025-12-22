@@ -33,8 +33,8 @@ void PlannerManager::Initialize()
     admittance_ctrl_primary_ = std::make_shared<dynamics::CartesianAdmittanceController>();
     admittance_ctrl_secondary_ = std::make_shared<dynamics::CartesianAdmittanceController>();
 
-    impedance_ctrl_primary_ = std::make_shared<dynamics::CartesianImpedanceController>(robot_model_, MotionGroup::Primary, manager_dt);
-    impedance_ctrl_secondary_ = std::make_shared<dynamics::CartesianImpedanceController>(robot_model_, MotionGroup::Secondary, manager_dt);
+    impedance_ctrl_primary_ = std::make_shared<dynamics::CartesianImpedanceController>(robot_model_, MotionGroup::Primary);
+    impedance_ctrl_secondary_ = std::make_shared<dynamics::CartesianImpedanceController>(robot_model_, MotionGroup::Secondary);
 }
 
 void PlannerManager::LoopOnce()
@@ -126,18 +126,18 @@ void PlannerManager::LoopOnce()
             status = current_planner_->ComputeCommand(measurement, time_meta, this->runtime_data_.joint_cmd);
         }
         // 计算双臂数据 Compute dual-arm data
-        Eigen::VectorXd tau_feedforward_primary, tau_feedforward_secondary;
-        Eigen::VectorXd q_cmd_primary, q_cmd_secondary, q_feedback_primary, q_feedback_secondary, dq_feedback_primary, dq_feedback_secondary;
-        utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_primary, MotionGroup::Primary);
-        utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_secondary, MotionGroup::Secondary);
-        utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_primary, MotionGroup::Primary);
-        utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_secondary, MotionGroup::Secondary);
-        utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_primary, MotionGroup::Primary);
-        utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_secondary, MotionGroup::Secondary);
-        auto ret_pri = impedance_ctrl_primary_->UpdateTorqueCommand(q_feedback_primary, dq_feedback_primary, q_cmd_primary, tau_feedforward_primary);
-        auto ret_sec = impedance_ctrl_secondary_->UpdateTorqueCommand(q_feedback_secondary, dq_feedback_secondary, q_cmd_secondary, tau_feedforward_secondary);
-        utils::MapJointToWholeBody(this->robot_model_, tau_feedforward_primary, this->runtime_data_.joint_cmd.torque_feedforward, MotionGroup::Primary);
-        utils::MapJointToWholeBody(this->robot_model_, tau_feedforward_secondary, this->runtime_data_.joint_cmd.torque_feedforward, MotionGroup::Secondary);
+        // Eigen::VectorXd tau_ff_pri, q_cmd_primary, q_feedback_primary, dq_feedback_primary;
+        // utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_primary, MotionGroup::Primary);
+        // utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_primary, MotionGroup::Primary);
+        // utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_primary, MotionGroup::Primary);
+        // auto ret_pri = impedance_ctrl_primary_->UpdateTorqueCommand(q_feedback_primary, dq_feedback_primary, q_cmd_primary, tau_ff_pri);
+        // utils::MapJointToWholeBody(this->robot_model_, tau_ff_pri, this->runtime_data_.joint_cmd.torque_feedforward, MotionGroup::Primary);
+        // Eigen::VectorXd tau_ff_sec, q_cmd_secondary, q_feedback_secondary, dq_feedback_secondary;
+        // utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_secondary, MotionGroup::Secondary);
+        // utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_secondary, MotionGroup::Secondary);
+        // utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_secondary, MotionGroup::Secondary);
+        // auto ret_sec = impedance_ctrl_secondary_->UpdateTorqueCommand(q_feedback_secondary, dq_feedback_secondary, q_cmd_secondary, tau_ff_sec);
+        // utils::MapJointToWholeBody(this->robot_model_, tau_ff_sec, this->runtime_data_.joint_cmd.torque_feedforward, MotionGroup::Secondary);
     }
 
     // 发布关节命令到缓冲区 publish the joint command to the buffer

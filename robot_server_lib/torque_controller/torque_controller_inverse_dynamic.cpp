@@ -5,6 +5,7 @@ namespace robot_server_lib
 
 TorqueControllerInvDynamic::TorqueControllerInvDynamic(RobotModel robot_model) : TorqueControllerBase(robot_model)
 {
+    impedance_ctrl_secondary_ = std::make_shared<dynamics::CartesianImpedanceController>(robot_model_, MotionGroup::Secondary);
 }
 
 bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd,
@@ -40,7 +41,15 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
         q_error = cmd_q - feedback_q;
         dq_error = cmd_dq - feedback_dq;
         ddq_desired = cmd_ddq + this->parameters_.K_p * q_error + this->parameters_.K_v * dq_error;
-        output_cmd.torque = torque_feedforward + dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, ddq_desired);
+
+        Eigen::VectorXd tau_ff_sec, q_cmd_secondary, q_feedback_secondary, dq_feedback_secondary;
+        utils::GetJointFromWholeBody(this->robot_model_, cmd_q, q_cmd_secondary, MotionGroup::Secondary);
+        utils::GetJointFromWholeBody(this->robot_model_, feedback_q, q_feedback_secondary, MotionGroup::Secondary);
+        utils::GetJointFromWholeBody(this->robot_model_, feedback_dq, dq_feedback_secondary, MotionGroup::Secondary);
+        impedance_ctrl_secondary_->UpdateTorqueCommand(q_feedback_secondary, dq_feedback_secondary, q_cmd_secondary, tau_ff_sec);
+        utils::MapJointToWholeBody(this->robot_model_, tau_ff_sec, torque_feedforward, MotionGroup::Secondary);
+
+        output_cmd.torque = torque_feedforward * 1.0 + dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, ddq_desired * 0.0);
         output_cmd.torque_feedforward = torque_feedforward + dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, VectorDof::Zero());
         output_cmd.q_desired = cmd_q;
     }
