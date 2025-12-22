@@ -1,5 +1,6 @@
 # Goal
 SystemMode target_mode
+bool startup
 
 ---
 # Result
