@@ -51,15 +51,15 @@ TEST(PinocchioModelTest, Pinocchio)
     pinocchio::forwardKinematics(*robot_model.model_ptr, data, q1);
     pinocchio::updateFramePlacements(*robot_model.model_ptr, data);
 
-    for (int fid = 0; fid < robot_model.model_ptr->nframes; ++fid)
-    {
-        const auto &frame = robot_model.model_ptr->frames[fid];
-        const auto &pose  = data.oMf[fid];  // world->frame pose
-        std::cout << "Frame " << fid << " (" << frame.name << ") pose:\n" << pose << std::endl;
+    // for (int fid = 0; fid < robot_model.model_ptr->nframes; ++fid)
+    // {
+    //     const auto &frame = robot_model.model_ptr->frames[fid];
+    //     const auto &pose  = data.oMf[fid];  // world->frame pose
+    //     std::cout << "Frame " << fid << " (" << frame.name << ") pose:\n" << pose << std::endl;
 
-        Eigen::Vector3d g_world(0.0, 0.0, -9.81);
-        Eigen::Vector3d g_local = pose.rotation().transpose() * g_world;
-        std::cout << "Gravity in frame " << fid << " (" << frame.name << ") : "
-                  << g_local.transpose() << std::endl;
-    }
+    //     Eigen::Vector3d g_world(0.0, 0.0, -9.81);
+    //     Eigen::Vector3d g_local = pose.rotation().transpose() * g_world;
+    //     std::cout << "Gravity in frame " << fid << " (" << frame.name << ") : "
+    //               << g_local.transpose() << std::endl;
+    // }
 }

@@ -511,15 +511,6 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
         LOG_INFO << "Set impedance stiffness to " << stiffness.transpose();
         return;
     }
-    case RequestType::ImpedanceDamping:
-    {
-        assert(request.data.has_value() && std::holds_alternative<Vector6d>(request.data.value()));
-        auto damping = std::get<Vector6d>(request.data.value());
-        impedance_ctrl_primary_->SetDamping(damping);
-        impedance_ctrl_secondary_->SetDamping(damping);
-        LOG_INFO << "Set impedance damping to " << damping.transpose();
-        return;
-    }
     case RequestType::SafeLevel:
     {
         assert(request.data.has_value() && std::holds_alternative<double>(request.data.value()));

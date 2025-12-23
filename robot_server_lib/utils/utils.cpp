@@ -314,11 +314,6 @@ PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interf
         planner_request.type = RequestType::ImpedanceMass;
         planner_request.data = utils::StringToVector3d(request->value);
     }
-    else if (request->property_type == "ImpedanceDamping")
-    {
-        planner_request.type = RequestType::ImpedanceDamping;
-        planner_request.data = utils::StringToVector6d(request->value);
-    }
     else if (request->property_type == "ImpedanceStiffness")
     {
         planner_request.type = RequestType::ImpedanceStiffness;
