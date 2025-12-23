@@ -22,8 +22,7 @@ CartesianImpedanceController::CartesianImpedanceController(const RobotModel &rob
 	}
 	this->q_nullspace_.setZero(this->ndof_);
 	this->tau_command_.setZero(this->ndof_);
-	// damping_ = 2.0 * this->stiffness_.array().sqrt().matrix();
-	nullspace_damp_ = 2.0 * sqrt(this->nullspace_stiff_);
+	damping_ = 2.0 * this->stiffness_.array().sqrt().matrix();
 }
 
 bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &feedback_q, const Eigen::VectorXd &feedback_dq, const Eigen::VectorXd &cmd_q, Eigen::VectorXd &tau_command)
@@ -49,8 +48,8 @@ bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &fe
 	pose_err.tail<3>() = feedback_transform.linear() * pose_err.tail<3>();  // 旋转误差末端坐标系 -> World base
 	pose_err.tail<3>() = pose_err.tail<3>().cwiseMin(this->rot_clip_max_).cwiseMax(-this->rot_clip_max_);
 	// 积分误差累加与限幅
-	this->pose_err_intg_.head(3) << (this->pose_err_intg_.head(3) + pose_err.head(3)).cwiseMin(0.1).cwiseMax(-0.1);
-	this->pose_err_intg_.tail(3) << (this->pose_err_intg_.tail(3) + pose_err.tail(3)).cwiseMin(0.3).cwiseMax(-0.3);
+	this->pose_err_intg_.head(3) << (this->pose_err_intg_.head(3) + pose_err.head(3)).cwiseMin(3.0 * trans_clip_max_).cwiseMax(-3.0 * trans_clip_max_);
+	this->pose_err_intg_.tail(3) << (this->pose_err_intg_.tail(3) + pose_err.tail(3)).cwiseMin(3.0 * rot_clip_max_).cwiseMax(- 3.0 * rot_clip_max_);
 
 	// vel error计算并限制幅度
 	vel_err << Eigen::VectorXd::Zero(6) - jacobian * feedback_dq;
@@ -65,11 +64,11 @@ bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &fe
 	this->q_nullspace_ = cmd_q;
 	q_nullspace_err << this->q_nullspace_ - feedback_q;
 	q_nullspace_err.head(1) << q_nullspace_err.head(1) * this->nullspace_stiff_;
-	q_nullspace_err = q_nullspace_err.cwiseMin(this->nullspace_clip_max_).cwiseMax(-this->nullspace_clip_max_);
+	// q_nullspace_err = q_nullspace_err.cwiseMin(this->nullspace_clip_max_).cwiseMax(-this->nullspace_clip_max_);
 
 	dq_nullspace_err << Eigen::VectorXd::Zero(this->ndof_) - feedback_dq;
 	dq_nullspace_err.head(1) << dq_nullspace_err.head(1) * this->nullspace_damp_;
-	dq_nullspace_err = dq_nullspace_err.cwiseMin(this->nullspace_clip_max_).cwiseMax(-this->nullspace_clip_max_);
+	// dq_nullspace_err = dq_nullspace_err.cwiseMin(this->nullspace_clip_max_).cwiseMax(-this->nullspace_clip_max_);
 
 	Eigen::MatrixXd jacobian_transpose_pinv;
 	pinocchio::PseudoInverse(jacobian.transpose(), jacobian_transpose_pinv);

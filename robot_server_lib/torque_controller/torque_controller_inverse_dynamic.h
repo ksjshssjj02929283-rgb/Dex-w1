@@ -15,7 +15,7 @@ class TorqueControllerInvDynamic : public TorqueControllerBase
 
    protected:
     VectorDof idle_q_;
-    std::shared_ptr<dynamics::CartesianImpedanceController> impedance_ctrl_secondary_{nullptr};
+    std::shared_ptr<dynamics::CartesianImpedanceController> impedance_ctrl_primary_{nullptr};
 };
 
 }  // namespace robot_server_lib
