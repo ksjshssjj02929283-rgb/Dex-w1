@@ -661,6 +661,8 @@ class W1Manager:
         if self._use_nav and target_chassis_client is not None:
             self.chassis_client = target_chassis_client
         self._is_sim = enable_sim
+        if self._use_nav and target_chassis_client is not None:
+            self.chassis_client = target_chassis_client
         self.logger.info(f"W1 manager set to {target_name} mode.")
         return True
 
@@ -898,6 +900,9 @@ class W1Manager:
 
     def stop_move(self, timeout_sec: float = 3.0) -> bool:
         """停止运动
+
+        Args:
+            timeout_sec (float, optional): 等待停止超时时间. Defaults to 3.0.
 
         Args:
             timeout_sec (float, optional): 等待停止超时时间. Defaults to 3.0.
