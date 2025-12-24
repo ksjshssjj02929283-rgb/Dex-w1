@@ -16,7 +16,7 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
     VectorDof cmd_q = input_cmd.cmd.position;
     VectorDof cmd_dq = input_cmd.cmd.velocity;
     VectorDof cmd_ddq = input_cmd.cmd.acceleration;
-    VectorDof torque_feedforward = input_cmd.cmd.torque_feedforward;
+    VectorDof torque_ff = input_cmd.cmd.torque_feedforward;
     VectorDof torque_external = this->GetJointExternalTorque(raw_measurement.sensor_wrench, feedback_q);
     output_cmd.torque_external = torque_external;
     VectorDof ddq_desired = VectorDof::Zero();
@@ -26,31 +26,23 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
     {
     case TorqueControllerState::Idle:
         ddq_desired = this->parameters_.K_p * (idle_q_ - feedback_q) + this->parameters_.K_v * (-feedback_dq);
+        output_cmd.torque_feedforward = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, VectorDof::Zero());
         output_cmd.torque = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, ddq_desired);
-        output_cmd.torque_feedforward = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, VectorDof::Zero(), VectorDof::Zero());
         output_cmd.q_desired = idle_q_;
         break;
     case TorqueControllerState::Decelerating:
         ddq_desired = this->parameters_.K_v * (-feedback_dq);
+        output_cmd.torque_feedforward = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, VectorDof::Zero());
         output_cmd.torque = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, ddq_desired);
-        output_cmd.torque_feedforward = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, VectorDof::Zero(), VectorDof::Zero());
         output_cmd.q_desired = feedback_q;
         break;
     case TorqueControllerState::Operating:
     {
         q_error = cmd_q - feedback_q;
         dq_error = cmd_dq - feedback_dq;
-        ddq_desired = 5.0 * dq_error;
-
-        Eigen::VectorXd tau_ff_arm, q_cmd_arm, q_feedback_arm, dq_feedback_arm;
-        utils::GetJointFromWholeBody(this->robot_model_, cmd_q, q_cmd_arm, MotionGroup::Primary);
-        utils::GetJointFromWholeBody(this->robot_model_, feedback_q, q_feedback_arm, MotionGroup::Primary);
-        utils::GetJointFromWholeBody(this->robot_model_, feedback_dq, dq_feedback_arm, MotionGroup::Primary);
-        impedance_ctrl_primary_->UpdateTorqueCommand(q_feedback_arm, dq_feedback_arm, q_cmd_arm, tau_ff_arm);
-        utils::MapJointToWholeBody(this->robot_model_, tau_ff_arm, torque_feedforward, MotionGroup::Primary);
-
-        output_cmd.torque = torque_feedforward + dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, VectorDof::Zero());
-        output_cmd.torque_feedforward = output_cmd.torque;
+        ddq_desired = cmd_ddq + this->parameters_.K_p * q_error + this->parameters_.K_v * dq_error;
+        output_cmd.torque_feedforward = dynamics::InverseDynamics(robot_model_, robot_data_, feedback_q, feedback_dq, VectorDof::Zero()) + torque_ff;  // 补偿重力, 科氏力, 摩擦力
+        output_cmd.torque = output_cmd.torque_feedforward;
         output_cmd.q_desired = cmd_q;
     }
     default:

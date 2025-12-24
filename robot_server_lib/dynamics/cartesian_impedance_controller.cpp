@@ -83,38 +83,38 @@ bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &fe
 	tau_command = this->tau_command_;
 
 	// debug log
-	{
-		std::stringstream ss_tau_command, ss_tau_task, ss_stiff_term, ss_cart_damp, ss_jacobian, ss_tau_nullspace, 
-				ss_cart_err, ss_cart_vel_err, ss_q_err, ss_dq, ss_pose_err_intg, ss_intg_term;
-		ss_tau_command << std::fixed << std::setprecision(5) << tau_command.transpose();
-		ss_stiff_term << std::fixed << std::setprecision(5) << stiffness_term.transpose();
-		ss_cart_damp << std::fixed << std::setprecision(5) << damping_term.transpose();
-		ss_tau_task << std::fixed << std::setprecision(5) << tau_task.transpose();
-		ss_tau_nullspace << std::fixed << std::setprecision(5) << tau_nullspace.transpose();
-		ss_jacobian << std::fixed << std::setprecision(5) << jacobian;
-		ss_q_err << std::fixed << std::setprecision(5) << q_nullspace_err.transpose();
-		ss_dq << std::fixed << std::setprecision(5) << feedback_dq.transpose();
-		ss_cart_err << std::fixed << std::setprecision(5) << pose_err.transpose();
-		ss_cart_vel_err << std::fixed << std::setprecision(5) << vel_err.transpose();
-		ss_pose_err_intg << std::fixed << std::setprecision(5) << this->pose_err_intg_.transpose();
-		ss_intg_term << std::fixed << std::setprecision(5) << intg_term.transpose();
-		static int print_counter = 0;
-		if (++print_counter >= 10) 
-		{
-			print_counter = 0;
-			LOG_INFO << "tau_nullspace: " << ss_tau_nullspace.str()
-					<< ", tau_command: " << ss_tau_command.str()
-					<< ", q_err: " << ss_q_err.str()
-					<< ", dq: " << ss_dq.str()
-					<< ", pose_err: " << ss_cart_err.str()
-					<< ", stiff_term: " << ss_stiff_term.str()
-					<< ", pose_err_intg: " << ss_pose_err_intg.str()
-					<< ", intg_term: " << ss_intg_term.str()
-					<< ", vel_err: " << ss_cart_vel_err.str()
-					<< ", damp_term: " << ss_cart_damp.str()
-					<< ", tau_task: " << ss_tau_task.str();
-		}
-	}
+	// {
+	// 	std::stringstream ss_tau_command, ss_tau_task, ss_stiff_term, ss_cart_damp, ss_jacobian, ss_tau_nullspace, 
+	// 			ss_cart_err, ss_cart_vel_err, ss_q_err, ss_dq, ss_pose_err_intg, ss_intg_term;
+	// 	ss_tau_command << std::fixed << std::setprecision(5) << tau_command.transpose();
+	// 	ss_stiff_term << std::fixed << std::setprecision(5) << stiffness_term.transpose();
+	// 	ss_cart_damp << std::fixed << std::setprecision(5) << damping_term.transpose();
+	// 	ss_tau_task << std::fixed << std::setprecision(5) << tau_task.transpose();
+	// 	ss_tau_nullspace << std::fixed << std::setprecision(5) << tau_nullspace.transpose();
+	// 	ss_jacobian << std::fixed << std::setprecision(5) << jacobian;
+	// 	ss_q_err << std::fixed << std::setprecision(5) << q_nullspace_err.transpose();
+	// 	ss_dq << std::fixed << std::setprecision(5) << feedback_dq.transpose();
+	// 	ss_cart_err << std::fixed << std::setprecision(5) << pose_err.transpose();
+	// 	ss_cart_vel_err << std::fixed << std::setprecision(5) << vel_err.transpose();
+	// 	ss_pose_err_intg << std::fixed << std::setprecision(5) << this->pose_err_intg_.transpose();
+	// 	ss_intg_term << std::fixed << std::setprecision(5) << intg_term.transpose();
+	// 	static int print_counter = 0;
+	// 	if (++print_counter >= 10) 
+	// 	{
+	// 		print_counter = 0;
+	// 		LOG_INFO << "tau_nullspace: " << ss_tau_nullspace.str()
+	// 				<< ", tau_command: " << ss_tau_command.str()
+	// 				<< ", q_err: " << ss_q_err.str()
+	// 				<< ", dq: " << ss_dq.str()
+	// 				<< ", pose_err: " << ss_cart_err.str()
+	// 				<< ", stiff_term: " << ss_stiff_term.str()
+	// 				<< ", pose_err_intg: " << ss_pose_err_intg.str()
+	// 				<< ", intg_term: " << ss_intg_term.str()
+	// 				<< ", vel_err: " << ss_cart_vel_err.str()
+	// 				<< ", damp_term: " << ss_cart_damp.str()
+	// 				<< ", tau_task: " << ss_tau_task.str();
+	// 	}
+	// }
 	return true;
 }
 

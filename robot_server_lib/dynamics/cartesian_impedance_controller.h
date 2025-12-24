@@ -42,7 +42,7 @@ private:
     Vector3d rot_intg_clip_max_ = trans_clip_max_ * 2;
 
 
-    Vector6d stiffness_vector_ = {150, 150, 150, 1, 1, 1};     // 刚度
+    Vector6d stiffness_vector_ = {150, 150, 150, 1.5, 1.5, 1.5};     // 刚度
     Vector6d damping_vector_;                // 阻尼根据刚度自动适配
 
     Matrix6d Ki_ = Vector6d{3, 3, 3, 0.3, 0.3, 0.3}.asDiagonal();                      // 积分增益
