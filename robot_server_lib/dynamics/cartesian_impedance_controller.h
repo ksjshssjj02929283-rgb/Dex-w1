@@ -37,16 +37,15 @@ private:
 
     // 控制参数
     Vector3d trans_clip_max_ = {0.2, 0.2, 0.2};                 // 位置限幅, 单位m
-    Vector3d rot_clip_max_ = {0.2, 0.2, 0.2};                // 旋转限幅, 单位rad
-    Vector3d trans_intg_clip_max_ = trans_clip_max_ * 3;
-    Vector3d rot_intg_clip_max_ = trans_clip_max_ * 3;
+    Vector3d rot_clip_max_ = {0.4, 0.4, 0.4};                // 旋转限幅, 单位rad
+    Vector3d trans_intg_clip_max_ = trans_clip_max_ * 2;
+    Vector3d rot_intg_clip_max_ = trans_clip_max_ * 2;
 
-    Vector6d vel_clip_max_ = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};          // 速度限幅, 单位m/s和rad/s
 
-    Vector6d stiffness_vector_ = {300, 300, 300, 30, 30, 30};     // 刚度
+    Vector6d stiffness_vector_ = {150, 150, 150, 1, 1, 1};     // 刚度
     Vector6d damping_vector_;                // 阻尼根据刚度自动适配
 
-    Matrix6d Ki_ = Vector6d{3, 3, 3, 0.5, 0.5, 0.5}.asDiagonal();                      // 积分增益
+    Matrix6d Ki_ = Vector6d{3, 3, 3, 0.3, 0.3, 0.3}.asDiagonal();                      // 积分增益
 
     Eigen::VectorXd q_nullspace_;                             // 零空间目标位置
     double nullspace_stiff_ = 5;                            // 零空间刚度

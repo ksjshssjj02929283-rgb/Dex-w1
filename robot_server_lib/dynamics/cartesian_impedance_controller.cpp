@@ -23,7 +23,7 @@ CartesianImpedanceController::CartesianImpedanceController(const RobotModel &rob
 	this->q_nullspace_.setZero(this->ndof_);
 	this->tau_command_.setZero(this->ndof_);
 	this->damping_vector_.head<3>() = 2.0 * this->stiffness_vector_.head<3>().array().sqrt().matrix();
-	this->damping_vector_.tail<3>() = 0.4 * this->stiffness_vector_.tail<3>().array().sqrt().matrix();
+	this->damping_vector_.tail<3>() = 0.1 * this->stiffness_vector_.tail<3>().array().sqrt().matrix();
 }
 
 bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &feedback_q, const Eigen::VectorXd &feedback_dq, const Eigen::VectorXd &cmd_q, Eigen::VectorXd &tau_command)
@@ -57,22 +57,20 @@ bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &fe
 
 	// vel error计算并限制幅度
 	vel_err << Eigen::VectorXd::Zero(6) - jacobian * feedback_dq;
-	vel_err = vel_err.cwiseMin(this->vel_clip_max_).cwiseMax(-this->vel_clip_max_);
 
 	auto stiffness_term = stiffness * pose_err;
 	auto damping_term = damping * vel_err;
-	tau_task << jacobian.transpose() * (stiffness_term + damping_term + this->Ki_ * this->pose_err_intg_);
+	auto intg_term = this->Ki_ * this->pose_err_intg_;
+	tau_task << jacobian.transpose() * (stiffness_term + damping_term + intg_term);
 	
 	// 零空间控制
 	Eigen::VectorXd q_nullspace_err(this->ndof_), dq_nullspace_err(this->ndof_);
 	this->q_nullspace_ = cmd_q;
 	q_nullspace_err << this->q_nullspace_ - feedback_q;
 	q_nullspace_err.head(1) << q_nullspace_err.head(1) * this->nullspace_stiff_;
-	// q_nullspace_err = q_nullspace_err.cwiseMin(this->nullspace_clip_max_).cwiseMax(-this->nullspace_clip_max_);
 
 	dq_nullspace_err << Eigen::VectorXd::Zero(this->ndof_) - feedback_dq;
 	dq_nullspace_err.head(1) << dq_nullspace_err.head(1) * this->nullspace_damp_;
-	// dq_nullspace_err = dq_nullspace_err.cwiseMin(this->nullspace_clip_max_).cwiseMax(-this->nullspace_clip_max_);
 
 	Eigen::MatrixXd jacobian_transpose_pinv;
 	pinocchio::PseudoInverse(jacobian.transpose(), jacobian_transpose_pinv);
@@ -86,7 +84,8 @@ bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &fe
 
 	// debug log
 	{
-		std::stringstream ss_tau_command, ss_tau_task, ss_stiff_term, ss_cart_damp, ss_jacobian, ss_tau_nullspace, ss_cart_err, ss_cart_vel_err, ss_q_err, ss_dq;
+		std::stringstream ss_tau_command, ss_tau_task, ss_stiff_term, ss_cart_damp, ss_jacobian, ss_tau_nullspace, 
+				ss_cart_err, ss_cart_vel_err, ss_q_err, ss_dq, ss_pose_err_intg, ss_intg_term;
 		ss_tau_command << std::fixed << std::setprecision(5) << tau_command.transpose();
 		ss_stiff_term << std::fixed << std::setprecision(5) << stiffness_term.transpose();
 		ss_cart_damp << std::fixed << std::setprecision(5) << damping_term.transpose();
@@ -97,6 +96,8 @@ bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &fe
 		ss_dq << std::fixed << std::setprecision(5) << feedback_dq.transpose();
 		ss_cart_err << std::fixed << std::setprecision(5) << pose_err.transpose();
 		ss_cart_vel_err << std::fixed << std::setprecision(5) << vel_err.transpose();
+		ss_pose_err_intg << std::fixed << std::setprecision(5) << this->pose_err_intg_.transpose();
+		ss_intg_term << std::fixed << std::setprecision(5) << intg_term.transpose();
 		static int print_counter = 0;
 		if (++print_counter >= 10) 
 		{
@@ -107,6 +108,8 @@ bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &fe
 					<< ", dq: " << ss_dq.str()
 					<< ", pose_err: " << ss_cart_err.str()
 					<< ", stiff_term: " << ss_stiff_term.str()
+					<< ", pose_err_intg: " << ss_pose_err_intg.str()
+					<< ", intg_term: " << ss_intg_term.str()
 					<< ", vel_err: " << ss_cart_vel_err.str()
 					<< ", damp_term: " << ss_cart_damp.str()
 					<< ", tau_task: " << ss_tau_task.str();
