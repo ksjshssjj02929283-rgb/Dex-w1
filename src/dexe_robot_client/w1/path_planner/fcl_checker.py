@@ -7,7 +7,6 @@
 import fcl
 import numpy as np
 import trimesh
-import open3d as o3d
 import time
 import os
 import json
@@ -453,16 +452,6 @@ class FCLChecker:
         self.obstacle_manager.setup()
         return True
 
-    def _save_point_cloud(self, point_cloud):
-        """ Save the point cloud used to visualized in dexsim """
-        current_path = os.path.dirname(os.path.abspath(__file__))
-        saved_folder_path = os.path.join(current_path, "maps")
-        if not os.path.exists(saved_folder_path):
-            os.makedirs(saved_folder_path)
-        saved_file_path = os.path.join(saved_folder_path,
-                                       "transformed_point_cloud.ply")
-        o3d.io.write_point_cloud(saved_file_path, point_cloud)
-
     def add_octomap_from_file(self,
                               ply_path: str,
                               extrinsics: np.ndarray,
@@ -481,17 +470,20 @@ class FCLChecker:
         # self.obstacles.clear()
         # self.obstacle_manager = fcl.DynamicAABBTreeCollisionManager()
 
-        point_cloud = o3d.io.read_point_cloud(ply_path)
+        point_cloud = trimesh.load(ply_path, process=False)
+        point_cloud = np.asarray(point_cloud.vertices)
         # Apply transformation to the base link frame
         base_link_T_camera = base_link_T_neck2 @ extrinsics
-        point_cloud.transform(base_link_T_camera)
+        point_cloud_h = np.hstack(
+            [point_cloud, np.ones((point_cloud.shape[0], 1))])
+        point_cloud = (base_link_T_camera @ point_cloud_h.T).T[:, :3]
         # Downsample the point cloud
-        point_cloud = point_cloud.voxel_down_sample(voxel_size=0.01)
+        coords = np.floor(point_cloud / 0.01).astype(np.int64)
+        keys = ((coords[:, 0] << 42) + (coords[:, 1] << 21) + coords[:, 2])
+        _, idx = np.unique(keys, return_index=True)
+        point_cloud = point_cloud[idx]
 
-        # save the point cloud
-        # self._save_point_cloud(point_cloud)
-
-        point_cloud_array = np.asarray(point_cloud.points)
+        point_cloud_array = np.asarray(point_cloud)
         octo_obj = fcl.OcTree(r=octo_res, points=point_cloud_array)
         fcl_octo_obj = fcl.CollisionObject(octo_obj)
         self.obstacles.append(fcl_octo_obj)
@@ -517,14 +509,17 @@ class FCLChecker:
         # self.obstacles.clear()
         # self.obstacle_manager = fcl.DynamicAABBTreeCollisionManager()
 
-        point_cloud_o3d = o3d.geometry.PointCloud()
-        point_cloud_o3d.points = o3d.utility.Vector3dVector(point_cloud)
-
         base_link_T_camera = base_link_T_neck2 @ extrinsics
-        point_cloud_o3d.transform(base_link_T_camera)
-        point_cloud_o3d = point_cloud_o3d.voxel_down_sample(voxel_size=0.01)
+        point_cloud_h = np.hstack(
+            [point_cloud, np.ones((point_cloud.shape[0], 1))])
+        point_cloud = (base_link_T_camera @ point_cloud_h.T).T[:, :3]
 
-        point_cloud_array = np.asarray(point_cloud_o3d.points)
+        coords = np.floor(point_cloud / 0.01).astype(np.int64)
+        keys = ((coords[:, 0] << 42) + (coords[:, 1] << 21) + coords[:, 2])
+        _, idx = np.unique(keys, return_index=True)
+        point_cloud = point_cloud[idx]
+
+        point_cloud_array = np.asarray(point_cloud)
         octo_obj = fcl.OcTree(r=octo_res, points=point_cloud_array)
         fcl_octo_obj = fcl.CollisionObject(octo_obj)
         self.obstacles.append(fcl_octo_obj)
