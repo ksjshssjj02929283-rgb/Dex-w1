@@ -22,12 +22,16 @@ CartesianImpedanceController::CartesianImpedanceController(const RobotModel &rob
 	}
 	this->q_nullspace_.setZero(this->ndof_);
 	this->tau_command_.setZero(this->ndof_);
-	damping_ = 2.0 * this->stiffness_.array().sqrt().matrix();
+	this->damping_vector_.head<3>() = 2.0 * this->stiffness_vector_.head<3>().array().sqrt().matrix();
+	this->damping_vector_.tail<3>() = 0.4 * this->stiffness_vector_.tail<3>().array().sqrt().matrix();
 }
 
 bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &feedback_q, const Eigen::VectorXd &feedback_dq, const Eigen::VectorXd &cmd_q, Eigen::VectorXd &tau_command)
 {
 	Eigen::VectorXd tau_task(this->ndof_), tau_nullspace(this->ndof_);
+	Matrix6d stiffness = this->stiffness_vector_.asDiagonal();
+	Matrix6d damping = this->damping_vector_.asDiagonal();
+
 	Eigen::Affine3d feedback_transform(pinocchio::GetFK(this->pinocchio_model_, feedback_q));
 	Vector3d feedback_trans(feedback_transform.translation());
 	Eigen::Quaterniond feedback_quat(feedback_transform.linear());
@@ -41,22 +45,22 @@ bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &fe
 	// pose error计算
 	Vector6d pose_err, vel_err;
 	pose_err.head<3>() = (cmd_trans - feedback_trans).cwiseMin(this->trans_clip_max_).cwiseMax(-this->trans_clip_max_);
-	feedback_quat.coeffs() = (cmd_quat.coeffs().dot(feedback_quat.coeffs()) < 0.0) ? -feedback_quat.coeffs() : feedback_quat.coeffs(); // 保证四元数同号
 	
 	Eigen::Quaterniond err_quat(feedback_quat.inverse() * cmd_quat);
+	feedback_quat.coeffs() = (cmd_quat.coeffs().dot(feedback_quat.coeffs()) < 0.0) ? -feedback_quat.coeffs() : feedback_quat.coeffs(); // 保证四元数同号
 	pose_err.tail<3>() << err_quat.x(), err_quat.y(), err_quat.z();
 	pose_err.tail<3>() = feedback_transform.linear() * pose_err.tail<3>();  // 旋转误差末端坐标系 -> World base
 	pose_err.tail<3>() = pose_err.tail<3>().cwiseMin(this->rot_clip_max_).cwiseMax(-this->rot_clip_max_);
 	// 积分误差累加与限幅
-	this->pose_err_intg_.head(3) << (this->pose_err_intg_.head(3) + pose_err.head(3)).cwiseMin(3.0 * trans_clip_max_).cwiseMax(-3.0 * trans_clip_max_);
-	this->pose_err_intg_.tail(3) << (this->pose_err_intg_.tail(3) + pose_err.tail(3)).cwiseMin(3.0 * rot_clip_max_).cwiseMax(- 3.0 * rot_clip_max_);
+	this->pose_err_intg_.head(3) << (this->pose_err_intg_.head(3) + pose_err.head(3)).cwiseMin(this->trans_intg_clip_max_).cwiseMax(-this->trans_intg_clip_max_);
+	this->pose_err_intg_.tail(3) << (this->pose_err_intg_.tail(3) + pose_err.tail(3)).cwiseMin(this->rot_intg_clip_max_).cwiseMax(-this->rot_intg_clip_max_);
 
 	// vel error计算并限制幅度
 	vel_err << Eigen::VectorXd::Zero(6) - jacobian * feedback_dq;
 	vel_err = vel_err.cwiseMin(this->vel_clip_max_).cwiseMax(-this->vel_clip_max_);
 
-	auto stiffness_term = this->stiffness_ * pose_err;
-	auto damping_term = this->damping_ * vel_err;
+	auto stiffness_term = stiffness * pose_err;
+	auto damping_term = damping * vel_err;
 	tau_task << jacobian.transpose() * (stiffness_term + damping_term + this->Ki_ * this->pose_err_intg_);
 	
 	// 零空间控制
@@ -121,11 +125,11 @@ Eigen::VectorXd CartesianImpedanceController::SaturateTorqueRate(const Eigen::Ve
 
 void CartesianImpedanceController::SetStiffness(const Vector6d& K)
 {
-	this->stiffness_ = K.asDiagonal();
-	this->damping_ = 2.0 * this->stiffness_.array().sqrt().matrix();
+	this->stiffness_vector_ = K;
+	this->damping_vector_ = 2.0 * this->stiffness_vector_.array().sqrt().matrix();
 	std::stringstream ss_stiff, ss_damp;
-	ss_stiff << std::fixed << std::setprecision(4) << this->stiffness_.diagonal().transpose();
-	ss_damp << std::fixed << std::setprecision(4) << this->damping_.diagonal().transpose();
+	ss_stiff << std::fixed << std::setprecision(4) << this->stiffness_vector_.transpose();
+	ss_damp << std::fixed << std::setprecision(4) << this->damping_vector_.transpose();
 	LOG_INFO << "CartesianImpedanceController: Set stiffness to [" << ss_stiff.str() << "], damping to [" << ss_damp.str() << "]";
 }
 
