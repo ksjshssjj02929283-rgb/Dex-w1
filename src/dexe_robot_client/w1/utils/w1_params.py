@@ -31,6 +31,8 @@ class W1Params:
             self.logger.info(f"No movable end effector.")
         elif self._end_effector_type == EndEffectorType.BRAINCO_HAND:
             self.arm_ee_dofs = 6
+        elif self._end_effector_type == EndEffectorType.LINKER_HAND:
+            self.arm_ee_dofs = 6
         elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
             self.arm_ee_dofs = 1
         else:

@@ -86,8 +86,10 @@ class W1Manager:
                                   self._end_effector_type)
 
         # download specific urdf
+        if end_effector_type == EndEffectorType.LINKER_HAND:
+            download_ee_type = None
         res, file_path = download_w1_urdf(arm_type, w1_version,
-                                          end_effector_type)
+                                          download_ee_type)
         if self._end_effector_type is not None:
             res, file_path = download_w1_urdf(arm_type, w1_version, None)
 
@@ -137,6 +139,8 @@ class W1Manager:
                 raise ValueError(
                     f"Not supported arm type: {arm_type} for fcl checker")
                 return
+            if end_effector_type == EndEffectorType.LINKER_HAND:
+                end_effector_type = None
             self.fcl_checker = FCLChecker(fcl_robot_type, end_effector_type)
             self.fcl_checker.enable_visualize()
         else:
@@ -172,6 +176,8 @@ class W1Manager:
             if end_effector_type is None or isinstance(end_effector_type,
                                                        EndEffectorType):
                 pin_ee_type = end_effector_type
+                if end_effector_type == EndEffectorType.LINKER_HAND:
+                    pin_ee_type = None
             else:
                 raise ValueError(
                     f"Not supported end_effector_type: {end_effector_type} for pinocchio model"
@@ -200,6 +206,8 @@ class W1Manager:
                 return
             HybridPlanner.set_arms_cfg(SINGLE_ARM_DIM, SINGLE_ARM_DIM,
                                        LARM_BOUND, RARM_BOUND)
+            if end_effector_type == EndEffectorType.LINKER_HAND:
+                end_effector_type = None
             HybridPlanner.set_robot_cfg(robot_type=planner_robot_type,
                                         ee_type=end_effector_type)
             # HybridPlanner.set_env_json(get_env_json_path())

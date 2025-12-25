@@ -46,5 +46,6 @@ def main(is_sim=True, end_effector_type=EndEffectorType.BRAINCO_HAND):
 
 if __name__ == "__main__":
     main(is_sim=True, end_effector_type=EndEffectorType.BRAINCO_HAND)
+    # main(is_sim=True, end_effector_type=EndEffectorType.LINKER_HAND)
     # main(is_sim = True,
     #      end_effector_type = EndEffectorType.PGC_GRIPPER)
