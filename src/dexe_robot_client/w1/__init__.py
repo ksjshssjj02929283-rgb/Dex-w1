@@ -5,7 +5,8 @@
 # ----------------------------------------------------------------------------
 
 from .path_planner.bezier_blend_path import interpolate_cartesian_path
-from .path_planner.blend_path import PathType, PathSegmentBase, PathSegRnBezier, PathRnBezier
+from .path_planner.blend_path_segment import PathSegmentBase, PathSegRnBezier, PathSegR3xSO3Bezier
+from .path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from .utils.w1_params import W1Params, W1ArmType, W1Version
 from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
@@ -16,7 +17,8 @@ from .path_planner.fcl_checker import FCLChecker
 
 __all__ = [
     "interpolate_cartesian_path", "PathType", "PathSegmentBase",
-    "PathSegRnBezier", "PathRnBezier", "ToppraTrajectoryPlanner", "W1Params",
-    "W1ArmType", "W1Version", "user_pose_to_xpos", "xpos_to_user_pose",
-    "W1Manager", "RobotType", "Planner_Pin", "FCLChecker"
+    "PathSegRnBezier", "PathSegR3xSO3Bezier", "PathRnBezier",
+    "PathR3xSO3Bezier", "ToppraTrajectoryPlanner", "W1Params", "W1ArmType",
+    "W1Version", "user_pose_to_xpos", "xpos_to_user_pose", "W1Manager",
+    "RobotType", "Planner_Pin", "FCLChecker"
 ]

@@ -81,7 +81,7 @@ def generate_calib_pose(
 if __name__ == "__main__":
     from dexe_robot_client.common import W1ArmType, W1Version
     from dexe_robot_client.end_effector_client.end_effector_type import EndEffectorType
-    from dexe_robot_client.w1 import W1Manager, PathRnBezier
+    from dexe_robot_client.w1 import W1Manager, PathRnBezier, PathType
 
     w1_manager = W1Manager(is_sim=True,
                            arm_type=W1ArmType.ANTHROPOMORPHIC,
@@ -117,7 +117,7 @@ if __name__ == "__main__":
         total_qpos.append(cur_qpos)
 
     path = PathRnBezier(waypoints=np.asarray(total_qpos))
-    if not path.calc_path():
+    if not path.calc_path(PathType.Bezier5thJoint, 0.005):
         exit(-3)
     sample_num = 100
     qpos_array = path.get_sample_by_num(sample_num)
