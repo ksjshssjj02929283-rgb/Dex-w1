@@ -86,12 +86,13 @@ class W1Manager:
                                   self._end_effector_type)
 
         # download specific urdf
-        if end_effector_type == EndEffectorType.LINKER_HAND:
+        if self._end_effector_type == EndEffectorType.LINKER_HAND:
             download_ee_type = None
+        else:
+            download_ee_type = end_effector_type
         res, file_path = download_w1_urdf(arm_type, w1_version,
                                           download_ee_type)
-        if self._end_effector_type is not None:
-            res, file_path = download_w1_urdf(arm_type, w1_version, None)
+        res, file_path = download_w1_urdf(arm_type, w1_version, None)
 
         # 在主线程中正常退出时自动调用
         atexit.register(self._destroy_clients)
