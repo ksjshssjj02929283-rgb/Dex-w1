@@ -10,6 +10,7 @@
 #include "imu_processor.h"
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
 #include "shared_memory_def.h"
+#include "chassis_interfaces/msg/chassis_motor_control.hpp"
 
 namespace chassis_node
 {
@@ -39,6 +40,10 @@ class ChassisNode : public rclcpp::Node
     void IntegrateOdomOnce(const ChassisFeedback &chassis_data);
 
     rcl_interfaces::msg::SetParametersResult parametersCallback(const std::vector<rclcpp::Parameter> &parameters);
+
+    //  发布全向底盘反馈信息
+    void PublishOmniMotorFeedback(const ChassisFeedback &chassis_data);
+
     // 发布里程计与 TF
     void PublishOdometry();
 
@@ -52,6 +57,7 @@ class ChassisNode : public rclcpp::Node
     // 发布器与 TF
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr refined_imu_pub_;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
+    rclcpp::Publisher<chassis_interfaces::msg::ChassisMotorControl>::SharedPtr omni_motor_pub_;
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
     rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr callback_handle_;

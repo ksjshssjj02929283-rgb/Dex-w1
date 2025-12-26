@@ -18,6 +18,10 @@ struct ChassisFeedback
     int64_t timestamp;
     double left_velocity;
     double right_velocity;
+    double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};   //底盘电机控制速度
+    double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};  //底盘电机控制方向
+    uint16_t status_word;
+    uint16_t error_code;
 };
 
 struct RobotFeedback

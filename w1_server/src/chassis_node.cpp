@@ -40,6 +40,7 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("cha
     // 发布器与 TF
     refined_imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("/imu/chassis/refined", rclcpp::SystemDefaultsQoS());
     odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/feedback/odom", rclcpp::SystemDefaultsQoS());
+    omni_motor_pub_ = this->create_publisher<chassis_interfaces::msg::ChassisMotorControl>("/feedback/omni_chassis_motor", 10);
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
     // 定时器（按频率发布；若你用纯事件驱动，也可不需要定时器）
@@ -159,12 +160,12 @@ void ChassisNode::onTimer()
     RobotFeedback feedback_data{};
     bool ret = feedback_shm_instance.PeekLatest(&feedback_data);
     const auto &chassis_data = feedback_data.chassis_feedback;
+    PublishOmniMotorFeedback(chassis_data);
     if (use_imu_yaw_ && !is_imu_inited_)
     {
         // RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Waiting for chassis initialized ...");
         return;
     }
-
     IntegrateOdomOnce(chassis_data);
     PublishOdometry();
 }
@@ -296,6 +297,21 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data)
     // 更新时间基
     prev_chassis_data_ = curr_chassis_data_;
     curr_chassis_data_.reset();
+}
+
+void ChassisNode::PublishOmniMotorFeedback(const ChassisFeedback &chassis_data)
+{
+    chassis_interfaces::msg::ChassisMotorControl motor_msg;
+    rclcpp::Time curr_time = rclcpp::Clock().now();
+    motor_msg.header.stamp = curr_time;
+    motor_msg.speed.resize(OMNI_MOTOR_NUM);
+    motor_msg.position.resize(OMNI_MOTOR_NUM);
+    for (size_t i = 0; i < OMNI_MOTOR_NUM; i++)
+    {
+        motor_msg.speed[i] = chassis_data.chassis_motor_velocity[i];
+        motor_msg.position[i] = chassis_data.chassis_motor_direction[i];
+    }
+    omni_motor_pub_->publish(motor_msg);
 }
 
 void ChassisNode::PublishOdometry()
