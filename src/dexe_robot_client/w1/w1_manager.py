@@ -16,13 +16,14 @@ from queue import Queue, Empty
 from copy import deepcopy
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
+import pinocchio as pin
 
 from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, download_w1_urdf
 from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..navigation_client import ChassisClient
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
-from .path_planner.bezier_blend_path import interpolate_cartesian_path
+from .path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm, EPSILON
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from .utils.w1_params import W1Params
 from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
@@ -983,12 +984,14 @@ class W1Manager:
             self,
             name: str,
             qpos_array: np.ndarray,
+            is_sparse: bool,
             qvel_limits_array: np.ndarray = None) -> tuple[bool, np.ndarray]:
         """对各部件进行关节轨迹规划，可指定路径点的各关节的速度约束;速度表示从上一点到当前点的最大关节速度
 
         Args:
             name (str): ["full_body", "torso", "head", "left_arm", "right_arm"]
             qpos_array (np.ndarray): 关节路径点  
+
             qvel_limits_array (np.ndarray, optional): 路径点关节速度约束，省略则按默认关节速度
 
         Returns:
@@ -998,6 +1001,38 @@ class W1Manager:
             return False, None
         if not self._check_qpos_limits(name, qpos_array):
             return False, None
+
+        step = weighted_norm(np.deg2rad([1.] * qpos_array[0].shape[0]))
+        if qpos_array.shape[0] == 2 and weighted_norm(qpos_array[1] -
+                                                      qpos_array[0]) < step:
+            return True, qpos_array
+
+        if is_sparse:
+            path = PathRnBezier(qpos_array)
+            if not path.calc_path():
+                return False, None
+            qpos_sample_array = path.get_sample_by_step(step)
+
+            # vel align
+            prefix_dist_list = [0.]
+            for idx in range(len(qpos_array) - 1):
+                dist = weighted_norm(qpos_array[idx + 1] - qpos_array[idx])
+                prefix_dist_list.append(prefix_dist_list[-1] + dist)
+
+            idx = 0
+            qvel_limits_list = [qvel_limits_array[0]]
+            cur_qpos = qpos_sample_array[0]
+            cur_dist = 0.
+            for qpos in qpos_sample_array[1:-1]:
+                cur_dist += weighted_norm(qpos - cur_qpos)
+                if cur_dist >= prefix_dist_list[idx]:
+                    idx += 1
+                qvel_limits_list.append(qvel_limits_array[idx])
+                cur_qpos = qpos
+            qvel_limits_list.append(qvel_limits_array[-1])
+
+            qpos_array = qpos_sample_array
+            qvel_limits_array = np.array(qvel_limits_list)
 
         dofs = self.w1_params.index_infos[name]["dofs"]
         index = self.w1_params.index_infos[name]["index"]
@@ -1035,18 +1070,16 @@ class W1Manager:
             return False, None
 
         # cartesian interpolation
+        path = PathR3xSO3Bezier(np.array(xpos_list))
+        if not path.calc_path():
+            return False, None
+        xpos_sample_array = path.get_sample_by_step(cartesian_step)
+
         prefix_dist_list = [0.]
         for idx in range(len(xpos_list) - 1):
             dist = np.linalg.norm(xpos_list[idx + 1][:3, 3] -
                                   xpos_list[idx][:3, 3])
             prefix_dist_list.append(prefix_dist_list[-1] + dist)
-        total_dist = prefix_dist_list[-1]
-        num_sample = max(2, int(np.ceil(total_dist / cartesian_step)))
-
-        res, xpos_sample_array = interpolate_cartesian_path(
-            xpos_list, 0.005, num_sample)
-        if not res:
-            return False, None
 
         # vel align
         # TODO: use ee vel rather than qvel
@@ -1058,7 +1091,8 @@ class W1Manager:
             cur_xpos = xpos_sample_array[0]
             cur_dist = 0.
             for xpos in xpos_sample_array[1:-1]:
-                cur_dist += np.linalg.norm(xpos[:3, 3] - cur_xpos[:3, 3])
+                dist = weighted_norm(xpos[:3, 3] - cur_xpos[:3, 3])
+                cur_dist += dist
                 if cur_dist >= prefix_dist_list[idx]:
                     idx += 1
                 qvel_limits_list_.append(qvel_limits_array[idx])
@@ -1085,7 +1119,7 @@ class W1Manager:
             qpos_list.append(cur_qpos)
             cur_qseed = cur_qpos
 
-        return self.plan_joint_traj(name, np.array(qpos_list),
+        return self.plan_joint_traj(name, np.array(qpos_list), False,
                                     qvel_limits_array_)
 
     def plan_arm_ee_trigger(self, arm_ee_state_list: list) -> tuple[bool, list]:
@@ -1508,6 +1542,7 @@ class W1Manager:
         else:
             qpos_raw_array_ = np.vstack([cur_qpos, pos_raw_array])
             res_plan, qpos_array = self.plan_joint_traj(name, qpos_raw_array_,
+                                                        True,
                                                         qvel_limits_array_)
             if not res_plan:
                 return False, None
@@ -1608,19 +1643,19 @@ class W1Manager:
             cur_qpos_seed = qpos_seed
 
         for start_idx, end_idx in segment_list:
-            seg_pos_list = pos_raw_array_[start_idx:end_idx + 1]
-            seg_qvel_limits_list = qvel_limits_array_[start_idx:end_idx + 1]
+            seg_pos_array = pos_raw_array_[start_idx:end_idx + 1]
+            seg_qvel_limits_array = qvel_limits_array_[start_idx:end_idx + 1]
             if is_cartesian:
                 seg_xpos_list = [
                     user_pose_to_xpos(pose[:3].tolist(), pose[3:].tolist())
-                    for pose in seg_pos_list
+                    for pose in seg_pos_array
                 ]
                 res_plan, seg_qpos_samples_array = self.plan_cartesian_traj(
-                    name, seg_xpos_list, cur_qpos_seed, seg_qvel_limits_list,
+                    name, seg_xpos_list, cur_qpos_seed, seg_qvel_limits_array,
                     cartesian_step)
             else:
                 res_plan, seg_qpos_samples_array = self.plan_joint_traj(
-                    name, seg_pos_list, seg_qvel_limits_list)
+                    name, seg_pos_array, True, seg_qvel_limits_array)
             if not res_plan:
                 return False, None, None
 
@@ -2153,9 +2188,30 @@ class W1Manager:
                 return False
             qpos_list.append(np.r_[qpos, cur_qpos[3]])
 
-        return self.move_joint_full_body(
-            waypoints_dict={f"torso": [qpos.tolist() for qpos in qpos_list]},
-            speed_ratio=speed_ratio)
+        speed_ratio_list = [speed_ratio] * len(qpos_list)
+        default_qvel = self.w1_params.default_qvel[
+            self.w1_params.index_infos["torso"]["index"]]
+        min_qvel = self.w1_params.min_qvel[self.w1_params.index_infos["torso"]
+                                           ["index"]]
+        max_qvel = self.w1_params.max_qvel[self.w1_params.index_infos["torso"]
+                                           ["index"]]
+        qvel_limits_array = np.clip(np.outer(speed_ratio_list, default_qvel),
+                                    min_qvel, max_qvel)
+
+        res_plan, torso_qpos_array = self.plan_joint_traj(
+            "torso", np.array(qpos_list), False, qvel_limits_array)
+        if not res_plan:
+            return False, None
+
+        # align
+        res_align, total_qpos_array = self._qpos_align(
+            torso_qpos_array, cur_qpos[self.w1_params.head_index],
+            cur_qpos[self.w1_params.left_arm_index],
+            cur_qpos[self.w1_params.right_arm_index])
+        if not res_align:
+            return False
+
+        return self.execute_joint_traj(total_qpos_array)
 
     def move_arm_linear(self,
                         name: str,
@@ -2227,20 +2283,74 @@ class W1Manager:
             res, T_chassis_ee = self.get_current_xpos(name, False)
             if not res:
                 return False
-            target_xpos[:3, :
-                        3] = T_armbase_ee[:3, :
-                                          3] @ T_chassis_ee[:3, :
-                                                            3].T @ delta_xpos[:
-                                                                              3, :
-                                                                              3] @ T_chassis_ee[:
-                                                                                                3, :
-                                                                                                3]
+            target_xpos[:3,:3] = T_armbase_ee[:3,:3] @ T_chassis_ee[:3,:3].T \
+                  @ delta_xpos[:3,:3] @ T_chassis_ee[:3,:3]
         else:
             target_xpos[:3, :3] = T_armbase_ee[:3, :3] @ delta_xpos[:3, :3]
 
-        return self.move_linear_full_body(
-            waypoints_dict={f"{name}": [xpos_to_user_pose(target_xpos)]},
-            speed_ratio=speed_ratio)
+        arm_kine = self._get_arm_kine(name)
+        if arm_kine is None:
+            return False
+
+        path = PathR3xSO3Bezier(np.array([T_armbase_ee, target_xpos]))
+        if not path.calc_path():
+            return False
+        xpos_sample_array = path.get_sample_by_step(0.005)
+
+        # solve ik
+        qpos_list = []
+        res, cur_qpos = self.get_current_qpos()
+        if not res:
+            return False
+        cur_qseed = cur_qpos[self.w1_params.index_infos[name]["index"]]
+        for cur_xpos in xpos_sample_array:
+            res_ik, qpos = arm_kine.get_nearest_ik(xpos=cur_xpos,
+                                                   qpos_seed=cur_qseed)
+            if not res_ik:
+                self.logger.error(
+                    f"{name} solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}."
+                )
+                return False
+            if not np.allclose(qpos, cur_qseed, atol=np.deg2rad(90)):
+                self.logger.error(f"{name} qpos traj is not continues\n" + \
+                                  f"cur_qpos(deg): {np.rad2deg(cur_qpos)}\n" + \
+                                  f"cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
+                return False
+            qpos_list.append(qpos)
+            cur_qseed = qpos
+
+        speed_ratio_list = [speed_ratio] * len(qpos_list)
+        default_qvel = self.w1_params.default_qvel[
+            self.w1_params.index_infos[name]["index"]]
+        min_qvel = self.w1_params.min_qvel[self.w1_params.index_infos[name]
+                                           ["index"]]
+        max_qvel = self.w1_params.max_qvel[self.w1_params.index_infos[name]
+                                           ["index"]]
+        qvel_limits_array = np.clip(np.outer(speed_ratio_list, default_qvel),
+                                    min_qvel, max_qvel)
+
+        res_plan, arm_qpos_array = self.plan_joint_traj(name,
+                                                        np.array(qpos_list),
+                                                        False,
+                                                        qvel_limits_array)
+        if not res_plan:
+            return False, None
+
+        # align
+        if name is "left_arm":
+            res_align, total_qpos_array = self._qpos_align(
+                cur_qpos[self.w1_params.torso_index],
+                cur_qpos[self.w1_params.head_index], arm_qpos_array,
+                cur_qpos[self.w1_params.right_arm_index])
+        else:
+            res_align, total_qpos_array = self._qpos_align(
+                cur_qpos[self.w1_params.torso_index],
+                cur_qpos[self.w1_params.head_index],
+                cur_qpos[self.w1_params.left_arm_index], arm_qpos_array)
+        if not res_align:
+            return False
+
+        return self.execute_joint_traj(total_qpos_array)
 
     def attach_object(self,
                       obj_name: str,

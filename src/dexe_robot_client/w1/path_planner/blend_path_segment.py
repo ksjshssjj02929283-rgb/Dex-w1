@@ -11,7 +11,8 @@ from abc import ABC, abstractmethod
 
 from ...common import get_logger
 
-SMALL = 1e-5
+SMALL = 1e-4
+EPSILON = 1e-8
 
 
 def weighted_norm(vec: np.ndarray, weights=None):
@@ -87,8 +88,14 @@ def calc_5th_bezier_SO3_control_points(
 
     temp0 = pin.log3(waypoints[0].T @ waypoints[1])
     temp1 = pin.log3(waypoints[1].T @ waypoints[2])
-    ts_normal = temp0 / weighted_norm(temp0, 2. * np.eye(3))
-    te_normal = temp1 / weighted_norm(temp1, 2. * np.eye(3))
+    if weighted_norm(temp0, 2. * np.eye(3)) < EPSILON:
+        ts_normal = temp0
+    else:
+        ts_normal = temp0 / weighted_norm(temp0, 2. * np.eye(3))
+    if weighted_norm(temp1, 2. * np.eye(3)) < EPSILON:
+        te_normal = temp1
+    else:
+        te_normal = temp1 / weighted_norm(temp1, 2. * np.eye(3))
     # 曲率很小时，用单位切线近似
     cs_normal = ts_normal
     ce_normal = te_normal
@@ -288,16 +295,28 @@ class PathSegSO3Bezier(PathSegmentBase):
 
     def get_tangent(self, s: float) -> np.ndarray:
         s_local = self._s_local(s)
+        if self._length < EPSILON:
+            return PathSegSO3Bezier.SO3_bezier_derivative(self._control_points,
+                                                          s_local,
+                                                          order=1)
         return PathSegSO3Bezier.SO3_bezier_derivative(
             self._control_points, s_local, order=1) / self._length
 
     def get_curvature(self, s: float) -> np.ndarray:
         s_local = self._s_local(s)
+        if self._length < EPSILON:
+            return PathSegSO3Bezier.SO3_bezier_derivative(self._control_points,
+                                                          s_local,
+                                                          order=2)
         return PathSegSO3Bezier.SO3_bezier_derivative(
             self._control_points, s_local, order=2) / (self._length**2)
 
     def get_torsion(self, s: float) -> np.ndarray:
         s_local = self._s_local(s)
+        if self._length < EPSILON:
+            return PathSegSO3Bezier.SO3_bezier_derivative(self._control_points,
+                                                          s_local,
+                                                          order=3)
         return PathSegSO3Bezier.SO3_bezier_derivative(
             self._control_points, s_local, order=3) / (self._length**3)
 
@@ -319,36 +338,65 @@ class PathSegR3xSO3Bezier(PathSegmentBase):
                                             s0_global)
         self._SO3_path_seg = PathSegSO3Bezier(self._SO3_control_points,
                                               SO3_length, s0_global)
-        super().__init__(self._R3_path_seg.get_length(), s0_global)
+        self._R3_major = True
+        length = self._R3_path_seg.get_length()
+        if length < EPSILON:
+            length = self._SO3_path_seg.get_length()
+            self._R3_major = False
+        super().__init__(length, s0_global)
 
     def get_config(self, s: float) -> np.ndarray:
         SE3 = np.eye(4)
-        SE3[:3, 3] = self._R3_path_seg.get_config(s)
-        s_SO3 = self._SO3_path_seg.get_s0(
-        ) + self._s_local(s) * self._SO3_path_seg.get_length()
+        if self._R3_major:
+            s_R3 = s
+            s_SO3 = self._SO3_path_seg.get_s0(
+            ) + self._s_local(s) * self._SO3_path_seg.get_length()
+        else:
+            s_R3 = self._R3_path_seg.get_s0(
+            ) + self._s_local(s) * self._R3_path_seg.get_length()
+            s_SO3 = s
+        SE3[:3, 3] = self._R3_path_seg.get_config(s_R3)
         SE3[:3, :3] = self._SO3_path_seg.get_config(s_SO3)
         return SE3
 
     def get_tangent(self, s: float) -> np.ndarray:
         SE3Tangent = np.zeros(6)
-        SE3Tangent[:3] = self._R3_path_seg.get_tangent(s)
-        s_SO3Tangent = self._SO3_path_seg.get_s0(
-        ) + self._s_local(s) * self._SO3_path_seg.get_length()
+        if self._R3_major:
+            s_R3Tangent = s
+            s_SO3Tangent = self._SO3_path_seg.get_s0(
+            ) + self._s_local(s) * self._SO3_path_seg.get_length()
+        else:
+            s_R3Tangent = self._R3_path_seg.get_s0(
+            ) + self._s_local(s) * self._R3_path_seg.get_length()
+            s_SO3Tangent = s
+        SE3Tangent[:3] = self._R3_path_seg.get_tangent(s_R3Tangent)
         SE3Tangent[3:] = self._SO3_path_seg.get_tangent(s_SO3Tangent)
         return SE3Tangent
 
     def get_curvature(self, s: float) -> np.ndarray:
         SE3Tangent = np.zeros(6)
-        SE3Tangent[:3] = self._R3_path_seg.get_curvature(s)
-        s_SO3Tangent = self._SO3_path_seg.get_s0(
-        ) + self._s_local(s) * self._SO3_path_seg.get_length()
+        if self._R3_major:
+            s_R3Tangent = s
+            s_SO3Tangent = self._SO3_path_seg.get_s0(
+            ) + self._s_local(s) * self._SO3_path_seg.get_length()
+        else:
+            s_R3Tangent = self._R3_path_seg.get_s0(
+            ) + self._s_local(s) * self._R3_path_seg.get_length()
+            s_SO3Tangent = s
+        SE3Tangent[:3] = self._R3_path_seg.get_curvature(s_R3Tangent)
         SE3Tangent[3:] = self._SO3_path_seg.get_curvature(s_SO3Tangent)
         return SE3Tangent
 
     def get_torsion(self, s: float) -> np.ndarray:
         SE3Tangent = np.zeros(6)
-        SE3Tangent[:3] = self._R3_path_seg.get_torsion(s)
-        s_SO3Tangent = self._SO3_path_seg.get_s0(
-        ) + self._s_local(s) * self._SO3_path_seg.get_length()
+        if self._R3_major:
+            s_R3Tangent = s
+            s_SO3Tangent = self._SO3_path_seg.get_s0(
+            ) + self._s_local(s) * self._SO3_path_seg.get_length()
+        else:
+            s_R3Tangent = self._R3_path_seg.get_s0(
+            ) + self._s_local(s) * self._R3_path_seg.get_length()
+            s_SO3Tangent = s
+        SE3Tangent[:3] = self._R3_path_seg.get_torsion(s_R3Tangent)
         SE3Tangent[3:] = self._SO3_path_seg.get_torsion(s_SO3Tangent)
         return SE3Tangent
