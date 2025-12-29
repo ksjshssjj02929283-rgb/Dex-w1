@@ -40,6 +40,7 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("cha
     // 发布器与 TF
     refined_imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("/imu/chassis/refined", rclcpp::SystemDefaultsQoS());
     odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/feedback/odom", rclcpp::SystemDefaultsQoS());
+    wheel_fb_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/feedback/wheel_velocity", rclcpp::SystemDefaultsQoS());
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
     // 定时器（按频率发布；若你用纯事件驱动，也可不需要定时器）
@@ -166,7 +167,21 @@ void ChassisNode::onTimer()
     }
 
     IntegrateOdomOnce(chassis_data);
+    PublishWheelFb(chassid_data);
     PublishOdometry();
+}
+
+void ChassisNode::PublishWheelFb(const ChassisFeedback &chassis_data)
+{
+    geometry_msgs::msg::Twist wheel_fb_msg;
+    wheel_fb_msg.linear.x = chassis_data.left_velocity;
+    wheel_fb_msg.linear.y = chassis_data.right_velocity;
+    wheel_fb_msg.linear.z = 0.5 * (chassis_data.left_velocity + chassis_data.right_velocity);
+
+    wheel_fb_msg.angular.z = (chassis_data.right_velocity - chassis_data.left_velocity) / (wheel_track_);
+
+    wheel_fb_pub_->publish(wheel_fb_msg);
+    
 }
 
 void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data)

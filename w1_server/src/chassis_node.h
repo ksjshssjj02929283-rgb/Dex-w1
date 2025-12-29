@@ -41,6 +41,8 @@ class ChassisNode : public rclcpp::Node
     rcl_interfaces::msg::SetParametersResult parametersCallback(const std::vector<rclcpp::Parameter> &parameters);
     // 发布里程计与 TF
     void PublishOdometry();
+    // 发布反馈轮速，仅用于测试PID
+    void PublishWheelFb(const ChassisFeedback &chassis_data);
 
    private:
     // 参数
@@ -52,6 +54,7 @@ class ChassisNode : public rclcpp::Node
     // 发布器与 TF
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr refined_imu_pub_;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr wheel_fb_pub_;
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
     rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr callback_handle_;
