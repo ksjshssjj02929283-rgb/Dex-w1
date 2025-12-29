@@ -346,8 +346,7 @@ class PathR3xSO3Bezier(PathBezier):
         for i in range(1, len(waypoints_1)):
             dist = weighted_norm(
                 pin.log6(
-                    np.linalg.inv(self._waypoints[i - 1])
-                    @ self._waypoints[i]).vector,
+                    np.linalg.inv(waypoints_1[i - 1]) @ waypoints_1[i]).vector,
                 np.diag([1., 1., 1., 2., 2., 2.]))
             if dist < 0.03:
                 self.logger.error("Dense waypoints are not supported!")
