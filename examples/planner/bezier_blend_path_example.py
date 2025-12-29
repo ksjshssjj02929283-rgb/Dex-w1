@@ -34,7 +34,7 @@ def R7_blend_path():
                           [0.09, -1.44, 0.27, -1.11, 0.05, -0.39, 0.06]])
 
     path = PathRnBezier(waypoints)
-    if not path.calc_path(PathType.Bezier5thJoint, 0.1):
+    if not path.calc_path(PathType.Bezier5thJoint, 0.05):
         exit(-1)
 
     from dexe_rp import DexforceW1Kinematics
@@ -164,5 +164,5 @@ def R3xSO3_blend_path():
 
 
 if __name__ == "__main__":
-    R7_blend_path()
-    # R3xSO3_blend_path()
+    # R7_blend_path()
+    R3xSO3_blend_path()
