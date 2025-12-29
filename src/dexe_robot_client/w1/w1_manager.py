@@ -1070,10 +1070,15 @@ class W1Manager:
             return False, None
 
         # cartesian interpolation
-        path = PathR3xSO3Bezier(np.array(xpos_list))
-        if not path.calc_path():
-            return False, None
-        xpos_sample_array = path.get_sample_by_step(cartesian_step)
+        if len(xpos_list) == 2 and weighted_norm(
+                pin.log6(np.linalg.inv(xpos_list[0])
+                         @ xpos_list[1]).vector) < cartesian_step:
+            xpos_sample_array = np.array(xpos_list)
+        else:
+            path = PathR3xSO3Bezier(np.array(xpos_list))
+            if not path.calc_path():
+                return False, None
+            xpos_sample_array = path.get_sample_by_step(cartesian_step)
 
         prefix_dist_list = [0.]
         for idx in range(len(xpos_list) - 1):
@@ -2337,7 +2342,7 @@ class W1Manager:
             return False, None
 
         # align
-        if name is "left_arm":
+        if name == "left_arm":
             res_align, total_qpos_array = self._qpos_align(
                 cur_qpos[self.w1_params.torso_index],
                 cur_qpos[self.w1_params.head_index], arm_qpos_array,
