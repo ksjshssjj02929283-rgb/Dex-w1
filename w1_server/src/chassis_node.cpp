@@ -167,7 +167,7 @@ void ChassisNode::onTimer()
     }
 
     IntegrateOdomOnce(chassis_data);
-    PublishWheelFb(chassid_data);
+    PublishWheelFb(chassis_data);
     PublishOdometry();
 }
 
