@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 
 from ...common import get_logger
 
-SMALL = 1e-4
+SMALL = 1e-3
 EPSILON = 1e-8
 
 
