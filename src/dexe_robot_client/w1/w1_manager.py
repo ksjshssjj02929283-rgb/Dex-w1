@@ -1485,7 +1485,8 @@ class W1Manager:
                           is_cartesian: bool = False,
                           qpos_seed: np.ndarray = None,
                           cartesian_step: float = None,
-                          is_local: bool = True) -> tuple[bool, np.ndarray]:
+                          is_local: bool = True,
+                          is_sparse: bool = True) -> tuple[bool, np.ndarray]:
         if not is_local:
             qpos_array = cur_qpos[self.w1_params.index_infos[name]["index"]]
         else:
@@ -1547,7 +1548,7 @@ class W1Manager:
         else:
             qpos_raw_array_ = np.vstack([cur_qpos, pos_raw_array])
             res_plan, qpos_array = self.plan_joint_traj(name, qpos_raw_array_,
-                                                        True,
+                                                        is_sparse,
                                                         qvel_limits_array_)
             if not res_plan:
                 return False, None
@@ -1564,7 +1565,8 @@ class W1Manager:
             is_cartesian: bool = False,
             qpos_seed: np.ndarray = None,
             cartesian_step: float = None,
-            is_local: bool = True) -> tuple[bool, np.ndarray, list]:
+            is_local: bool = True,
+            is_sparse: bool = True) -> tuple[bool, np.ndarray, list]:
         if not is_local:
             qpos_array = cur_qpos[self.w1_params.index_infos[name]["index"]]
         else:
@@ -1580,11 +1582,15 @@ class W1Manager:
 
         # without ee motion
         if arm_ee_state_list is None:
-            res, qpos_array = self._plan_to_waypoint(name, cur_qpos,
+            res, qpos_array = self._plan_to_waypoint(name,
+                                                     cur_qpos,
                                                      waypoints_dict,
-                                                     speed_ratio, is_cartesian,
-                                                     qpos_seed, cartesian_step,
-                                                     is_local)
+                                                     speed_ratio,
+                                                     is_cartesian,
+                                                     qpos_seed,
+                                                     cartesian_step,
+                                                     is_local,
+                                                     is_sparse=is_sparse)
             if not res:
                 return False, None, None
             return True, qpos_array, None
@@ -1660,7 +1666,7 @@ class W1Manager:
                     cartesian_step)
             else:
                 res_plan, seg_qpos_samples_array = self.plan_joint_traj(
-                    name, seg_pos_array, True, seg_qvel_limits_array)
+                    name, seg_pos_array, is_sparse, seg_qvel_limits_array)
             if not res_plan:
                 return False, None, None
 
@@ -1711,7 +1717,8 @@ class W1Manager:
             start_left_arm_ee_qpos: np.ndarray,
             start_right_arm_ee_qpos: np.ndarray,
             waypoints_dict: dict,
-            speed_ratio: float = 1.0) -> tuple[bool, np.ndarray, list, list]:
+            speed_ratio: float = 1.0,
+            is_sparse: bool = True) -> tuple[bool, np.ndarray, list, list]:
         """规划各部件独立关节空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
         - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
@@ -1733,7 +1740,8 @@ class W1Manager:
                                     "right_arm": [right_arm_qpos1,], "right_arm_speed_ratio": [right_arm_speed1], 
                                     "right_arm_ee": [[0.,right_arm_ee_qpos1,0.5],]}
 
-            speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0.
+            speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0,
+                        is_sparse (bool, optional): 输入路径点是否稀疏（点间距是否小于路径blend过渡阈值）.
 
         Returns:
             tuple[bool, np.ndarray, list, list]: 规划成功与否，全身关节轨迹，左末端执行器轨迹，右末端执行器轨迹
@@ -1758,14 +1766,21 @@ class W1Manager:
 
         # torso
         res_torso, torso_qpos_array = self._plan_to_waypoint(
-            "torso", start_torso_qpos, waypoints_dict, speed_ratio)
+            "torso",
+            start_torso_qpos,
+            waypoints_dict,
+            speed_ratio,
+            is_sparse=is_sparse)
         if not res_torso:
             self.logger.error("Plan to torso traj failed.")
             return False, None, None, None
 
         # head
-        res_head, head_qpos_array = self._plan_to_waypoint(
-            "head", start_head_qpos, waypoints_dict, speed_ratio)
+        res_head, head_qpos_array = self._plan_to_waypoint("head",
+                                                           start_head_qpos,
+                                                           waypoints_dict,
+                                                           speed_ratio,
+                                                           is_sparse=is_sparse)
         if not res_head:
             self.logger.error("Plan to head traj failed.")
             return False, None, None, None
@@ -1773,8 +1788,12 @@ class W1Manager:
         # left_arm
         left_arm_ee_trigger_list = None
         if not self._has_arm_ee_client("left_arm_ee", False):
-            (res_left_arm, left_arm_qpos_array) = self._plan_to_waypoint(
-                "left_arm", start_left_arm_qpos, waypoints_dict, speed_ratio)
+            (res_left_arm,
+             left_arm_qpos_array) = self._plan_to_waypoint("left_arm",
+                                                           start_left_arm_qpos,
+                                                           waypoints_dict,
+                                                           speed_ratio,
+                                                           is_sparse=is_sparse)
             if not res_left_arm:
                 self.logger.error("Plan to left arm traj failed.")
                 return False, None, None, None
@@ -1784,8 +1803,12 @@ class W1Manager:
                 return False, None, None, None
             (res_left_arm, left_arm_qpos_array,
              left_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee(
-                 "left_arm", start_left_arm_qpos, start_left_arm_ee_qpos,
-                 waypoints_dict, speed_ratio)
+                 "left_arm",
+                 start_left_arm_qpos,
+                 start_left_arm_ee_qpos,
+                 waypoints_dict,
+                 speed_ratio,
+                 is_sparse=is_sparse)
             if not res_left_arm:
                 self.logger.error("Plan to left arm traj with ee failed.")
                 return False, None, None, None
@@ -1794,7 +1817,11 @@ class W1Manager:
         right_arm_ee_trigger_list = None
         if not self._has_arm_ee_client("right_arm_ee", False):
             (res_right_arm, right_arm_qpos_array) = self._plan_to_waypoint(
-                "right_arm", start_right_arm_qpos, waypoints_dict, speed_ratio)
+                "right_arm",
+                start_right_arm_qpos,
+                waypoints_dict,
+                speed_ratio,
+                is_sparse=is_sparse)
             if not res_right_arm:
                 self.logger.error("Plan to right arm traj failed.")
                 return False, None, None, None
@@ -1804,8 +1831,12 @@ class W1Manager:
                 return False, None, None, None
             (res_right_arm, right_arm_qpos_array,
              right_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee(
-                 "right_arm", start_right_arm_qpos, start_right_arm_ee_qpos,
-                 waypoints_dict, speed_ratio)
+                 "right_arm",
+                 start_right_arm_qpos,
+                 start_right_arm_ee_qpos,
+                 waypoints_dict,
+                 speed_ratio,
+                 is_sparse=is_sparse)
             if not res_right_arm:
                 self.logger.error("Plan to right arm traj with ee failed.")
                 return False, None, None, None
@@ -1822,7 +1853,8 @@ class W1Manager:
 
     def move_joint_full_body(self,
                              waypoints_dict: dict,
-                             speed_ratio: float = 1.0) -> bool:
+                             speed_ratio: float = 1.0,
+                             is_sparse: bool = True) -> bool:
         """从当前位置规划并执行各部件独立关节空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
         - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
@@ -1838,7 +1870,8 @@ class W1Manager:
                                     "right_arm": [right_arm_qpos1,], "right_arm_speed_ratio": [right_arm_speed1], 
                                     "right_arm_ee": [[0.,right_arm_ee_qpos1,0.5],]}
 
-            speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0.
+            speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0,
+            is_sparse (bool, optional): 输入路径点是否稀疏（点间距是否小于路径blend过渡阈值）.
 
         Returns:
             bool
@@ -1861,7 +1894,7 @@ class W1Manager:
         (res, total_qpos_array, left_arm_ee_trigger_list,
          right_arm_ee_trigger_list) = self.plan_joint_full_body(
              cur_qpos, cur_left_arm_ee_qpos, cur_right_arm_ee_qpos,
-             waypoints_dict, speed_ratio)
+             waypoints_dict, speed_ratio, is_sparse)
         if not res:
             return False
 

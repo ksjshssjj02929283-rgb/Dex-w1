@@ -34,7 +34,7 @@ class PathBezier(ABC):
         self.is_init = False
 
     @abstractmethod
-    def _pre_process(self) -> tuple[bool, np.ndarray]:
+    def _pre_process(self, blend_tolerance) -> tuple[bool, np.ndarray]:
         pass
 
     @abstractmethod
@@ -99,6 +99,10 @@ class PathBezier(ABC):
             self.logger.error(f"Not init, call calc_path() first!")
             return None
         if step >= self.get_length():
+            if self.get_length() < SMALL:
+                return np.array(
+                    [self.get_config(0),
+                     self.get_config(self.get_length())])
             self.logger.error(f"step should < {self.get_length()}")
             return None
         if step <= 0.:
@@ -127,12 +131,16 @@ class PathRnBezier(PathBezier):
     def __init__(self, waypoints: np.ndarray):
         super().__init__(waypoints)
 
-    def _pre_process(self) -> tuple[bool, np.ndarray]:
+    def _pre_process(self, blend_tolerance) -> tuple[bool, np.ndarray]:
         if len(self._waypoints) < 2:
             self.logger.error("Num of waypoints should > 2!")
             return False, None
 
-        # Repeat waypoints
+        # P2P traj do not consider blend_tolerance
+        if len(self._waypoints) == 2:
+            return True, self._waypoints
+
+        # Merge repeat waypoints
         waypoints_1 = [self._waypoints[0]]
         for i in range(1, len(self._waypoints)):
             dist = weighted_norm(self._waypoints[i] - self._waypoints[i - 1])
@@ -144,16 +152,16 @@ class PathRnBezier(PathBezier):
                 "Num of waypoints without repeat points should > 2!")
             return False, None
 
-        # Dense waypoints
-        threshold = weighted_norm(np.deg2rad([1.] *
-                                             self._waypoints[0].shape[0]))
+        # Check dense waypoints
+        # threshold = weighted_norm(np.deg2rad([1.] *
+        #                                      self._waypoints[0].shape[0]))
         for i in range(1, len(waypoints_1)):
             dist = weighted_norm(waypoints_1[i] - waypoints_1[i - 1])
-            if dist < threshold:
+            if dist < blend_tolerance:
                 self.logger.error("Dense waypoints are not supported!")
                 return False, None
 
-        # Colinear waypoints
+        # Merge colinear waypoints
         waypoints_2 = [waypoints_1[0]]
         for i in range(1, len(waypoints_1) - 1):
             wp_pre = waypoints_2[-1]
@@ -185,11 +193,12 @@ class PathRnBezier(PathBezier):
         self.is_init = False
         self._path_seg_list: list[PathSegRnBezier] = []
 
-        res, waypoints = self._pre_process()
+        res, waypoints = self._pre_process(blend_tolerance)
         if not res:
             return False
 
         if blend_tolerance <= SMALL:
+            # Do not blend
             cur_length = 0.
             wp0 = waypoints[0]
             for wp1 in waypoints[1:]:
@@ -321,20 +330,30 @@ class PathR3xSO3Bezier(PathBezier):
     def __init__(self, waypoints: np.ndarray):
         super().__init__(waypoints)
 
-    def _pre_process(self) -> tuple[bool, np.ndarray]:
+    def _pre_process(self, blend_tolerance) -> tuple[bool, np.ndarray]:
         if len(self._waypoints) < 2:
             self.logger.error("Num of waypoints should > 2!")
             return False, None
 
-        # Repeat waypoints
+        # P2P traj do not consider blend_tolerance
+        if len(self._waypoints) == 2:
+            return True, self._waypoints
+
+        # Merge repeat waypoints
         waypoints_1 = [self._waypoints[0]]
+        threshold = weighted_norm(np.deg2rad([1.] * 3))
         for i in range(1, len(self._waypoints)):
-            dist = weighted_norm(
+            dist_R3 = weighted_norm(
                 pin.log6(
                     np.linalg.inv(self._waypoints[i - 1])
                     @ self._waypoints[i]).vector,
-                np.diag([1., 1., 1., 2., 2., 2.]))
-            if dist < SMALL:
+                np.diag([1., 1., 1., 0., 0., 0.]))
+            dist_SO3 = weighted_norm(
+                pin.log6(
+                    np.linalg.inv(self._waypoints[i - 1])
+                    @ self._waypoints[i]).vector,
+                np.diag([0., 0., 0., 2., 2., 2.]))
+            if dist_R3 < SMALL and dist_SO3 < threshold:
                 continue
             waypoints_1.append(self._waypoints[i])
         if len(waypoints_1) < 2:
@@ -342,17 +361,19 @@ class PathR3xSO3Bezier(PathBezier):
                 "Num of waypoints without repeat points should > 2!")
             return False, None
 
-        # Dense waypoints
+        # Check dense waypoints
         for i in range(1, len(waypoints_1)):
             dist = weighted_norm(
                 pin.log6(
                     np.linalg.inv(waypoints_1[i - 1]) @ waypoints_1[i]).vector,
                 np.diag([1., 1., 1., 2., 2., 2.]))
-            if dist < 0.03:
+            if dist < blend_tolerance:
                 self.logger.error("Dense waypoints are not supported!")
+                self.logger.error(
+                    f"Distance of 2 waypoint should > {blend_tolerance}.")
                 return False, None
 
-        # Colinear waypoints
+        # Merge colinear waypoints
         waypoints_2 = [waypoints_1[0]]
         for i in range(1, len(waypoints_1) - 1):
             wp_pre = waypoints_2[-1]
@@ -374,7 +395,6 @@ class PathR3xSO3Bezier(PathBezier):
                     continue
             waypoints_2.append(wp_cur)
         waypoints_2.append(waypoints_1[-1])
-
         return True, waypoints_2
 
     def calc_path(self,
@@ -391,11 +411,12 @@ class PathR3xSO3Bezier(PathBezier):
         self.is_init = False
         self._path_seg_list: list[PathSegR3xSO3Bezier] = []
 
-        res, waypoints = self._pre_process()
+        res, waypoints = self._pre_process(blend_tolerance)
         if not res:
             return False
 
         if blend_tolerance <= SMALL:
+            # Do not blend
             cur_length = 0.
             wp0 = waypoints[0]
             for wp1 in waypoints[1:]:
@@ -415,6 +436,7 @@ class PathR3xSO3Bezier(PathBezier):
                 dist = 4 * blend_tolerance / weighted_norm(wp2[:3, 3] -
                                                            wp0[:3, 3])
                 dist = min(min(dist, ls / 2.), le / 2.)
+                # TODO:如果R3_dist很小且小于blend_tolerance，但SO3_dist较大，该段不进行blend过渡
 
                 # linear part
                 linear_seg_wp0 = wp0
