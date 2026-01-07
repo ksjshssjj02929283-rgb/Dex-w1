@@ -14,7 +14,7 @@ from .blend_path_segment import (SMALL, EPSILON, weighted_norm,
                                  calc_5th_bezier_Rn_control_points,
                                  calc_5th_bezier_SO3_control_points,
                                  PathSegmentBase, PathSegRnBezier,
-                                 PathSegSO3Bezier, PathSegR3xSO3Bezier)
+                                 PathSegR3xSO3Bezier)
 
 
 class PathType(Enum):
@@ -29,12 +29,13 @@ class PathBezier(ABC):
     def __init__(self, waypoints: np.ndarray):
         self.logger = get_logger()
         self._waypoints = waypoints
+        self._processed_waypoints = None
         self._path_seg_list: list[PathSegmentBase] = []
         self._length = 0.
         self.is_init = False
 
     @abstractmethod
-    def _pre_process(self, blend_tolerance) -> tuple[bool, np.ndarray]:
+    def _pre_process(self, blend_tolerance) -> bool:
         pass
 
     @abstractmethod
@@ -45,6 +46,12 @@ class PathBezier(ABC):
 
     def get_waypoints(self) -> np.ndarray:
         return self._waypoints
+
+    def get_pocessed_waypoints(self) -> tuple[bool, np.ndarray]:
+        if not self.is_init:
+            self.logger.error(f"Not init, call calc_path() first!")
+            return False, None
+        return True, self._processed_waypoints
 
     def get_length(self) -> float:
         if not self.is_init:
@@ -131,14 +138,17 @@ class PathRnBezier(PathBezier):
     def __init__(self, waypoints: np.ndarray):
         super().__init__(waypoints)
 
-    def _pre_process(self, blend_tolerance) -> tuple[bool, np.ndarray]:
+    def _pre_process(self, blend_tolerance) -> bool:
+        self._processed_waypoints = None
+
         if len(self._waypoints) < 2:
             self.logger.error("Num of waypoints should > 2!")
-            return False, None
+            return False
 
         # P2P traj do not consider blend_tolerance
         if len(self._waypoints) == 2:
-            return True, self._waypoints
+            self._processed_waypoints = self._waypoints.copy()
+            return True
 
         # Merge repeat waypoints
         waypoints_1 = [self._waypoints[0]]
@@ -150,7 +160,7 @@ class PathRnBezier(PathBezier):
         if len(waypoints_1) < 2:
             self.logger.error(
                 "Num of waypoints without repeat points should > 2!")
-            return False, None
+            return False
 
         # Check dense waypoints
         # threshold = weighted_norm(np.deg2rad([1.] *
@@ -159,7 +169,7 @@ class PathRnBezier(PathBezier):
             dist = weighted_norm(waypoints_1[i] - waypoints_1[i - 1])
             if dist < blend_tolerance:
                 self.logger.error("Dense waypoints are not supported!")
-                return False, None
+                return False
 
         # Merge colinear waypoints
         waypoints_2 = [waypoints_1[0]]
@@ -175,11 +185,12 @@ class PathRnBezier(PathBezier):
                     continue
                 # else:
                 #     self.logger.error(f"Antiparallel are not supported! Please check waypoint[{i-1}:{i+2}]")
-                #     return False, None
+                #     return False
             waypoints_2.append(wp_cur)
         waypoints_2.append(waypoints_1[-1])
 
-        return True, waypoints_2
+        self._processed_waypoints = waypoints_2.copy()
+        return True
 
     def calc_path(self,
                   path_type: PathType = PathType.Bezier5thJoint,
@@ -193,10 +204,11 @@ class PathRnBezier(PathBezier):
         self.is_init = False
         self._path_seg_list: list[PathSegRnBezier] = []
 
-        res, waypoints = self._pre_process(blend_tolerance)
+        res = self._pre_process(blend_tolerance)
         if not res:
             return False
 
+        waypoints = self._processed_waypoints
         if blend_tolerance <= SMALL:
             # Do not blend
             cur_length = 0.
@@ -330,14 +342,15 @@ class PathR3xSO3Bezier(PathBezier):
     def __init__(self, waypoints: np.ndarray):
         super().__init__(waypoints)
 
-    def _pre_process(self, blend_tolerance) -> tuple[bool, np.ndarray]:
+    def _pre_process(self, blend_tolerance) -> bool:
         if len(self._waypoints) < 2:
             self.logger.error("Num of waypoints should > 2!")
-            return False, None
+            return False
 
         # P2P traj do not consider blend_tolerance
         if len(self._waypoints) == 2:
-            return True, self._waypoints
+            self._processed_waypoints = self._waypoints.copy()
+            return True
 
         # Merge repeat waypoints
         waypoints_1 = [self._waypoints[0]]
@@ -359,7 +372,7 @@ class PathR3xSO3Bezier(PathBezier):
         if len(waypoints_1) < 2:
             self.logger.error(
                 "Num of waypoints without repeat points should > 2!")
-            return False, None
+            return False
 
         # Check dense waypoints
         for i in range(1, len(waypoints_1)):
@@ -371,7 +384,7 @@ class PathR3xSO3Bezier(PathBezier):
                 self.logger.error("Dense waypoints are not supported!")
                 self.logger.error(
                     f"Distance of 2 waypoint should > {blend_tolerance}.")
-                return False, None
+                return False
 
         # Merge colinear waypoints
         waypoints_2 = [waypoints_1[0]]
@@ -389,13 +402,15 @@ class PathR3xSO3Bezier(PathBezier):
             if weighted_norm(v2_R3 - proj) <= SMALL:
                 if np.dot(v1_R3, v2_R3) < EPSILON:
                     self.logger.error("Antiparallel are not supported!")
-                    return False, None
+                    return False
                 if weighted_norm(v1_SO3) < SMALL and weighted_norm(
                         v2_SO3) < SMALL:
                     continue
             waypoints_2.append(wp_cur)
         waypoints_2.append(waypoints_1[-1])
-        return True, waypoints_2
+
+        self._processed_waypoints = waypoints_2.copy()
+        return True
 
     def calc_path(self,
                   path_type: PathType = PathType.Bezier5thCartesian,
@@ -411,10 +426,11 @@ class PathR3xSO3Bezier(PathBezier):
         self.is_init = False
         self._path_seg_list: list[PathSegR3xSO3Bezier] = []
 
-        res, waypoints = self._pre_process(blend_tolerance)
+        res = self._pre_process(blend_tolerance)
         if not res:
             return False
 
+        waypoints = self._processed_waypoints
         if blend_tolerance <= SMALL:
             # Do not blend
             cur_length = 0.
