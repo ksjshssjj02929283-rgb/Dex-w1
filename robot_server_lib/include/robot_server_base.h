@@ -10,6 +10,11 @@
 #include "rclcpp/rclcpp.hpp"
 #include "torque_controller_manager.h"
 
+#include <sched.h>
+#include <sys/mman.h>
+#include <sys/resource.h>
+#include <unistd.h>
+
 namespace robot_server_lib
 {
 using StreamingCommandMsg = robot_server_interfaces::msg::StreamingCommand;
@@ -36,6 +41,7 @@ class RobotServerBase : public rclcpp::Node
 
     void MoveRobotCallback(const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>);
     void ReportRequestStatus(Int64 request_id, RequestType request_type, RequestStatus request_status, Status manager_state);
+    void Setup_Realtime();
 
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_server_state_publisher_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_server_state_real_subscriber_;
@@ -48,6 +54,7 @@ class RobotServerBase : public rclcpp::Node
     std::thread torque_control_thread_;
     std::thread robot_thread_;
 
+    bool is_sim_{false};
     bool is_robot_ready_{true};
     RobotModel robot_model_;
     PlannerManagerBuffers manager_buffers_;

@@ -164,6 +164,10 @@ void RobotServer::InitParamConfig()
 
 void RobotServer::TorqueControlThreadFunc()
 {
+    if(!is_sim_)
+    {
+        Setup_Realtime();
+    }
     TorqueControllerManager torque_controller_manager(this->robot_model_, this->manager_buffers_, this->robot_buffers_);
     // 初始化共享内存
     auto& feedback_shm_instance = FeedbackSharedMemory::GetInstance();

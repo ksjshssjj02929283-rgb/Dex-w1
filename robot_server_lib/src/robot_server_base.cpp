@@ -5,9 +5,9 @@
 namespace robot_server_lib
 {
 
-RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_sim) : Node("robot_server")
+RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_sim) : Node("robot_server"), is_sim_(is_sim)
 {
-    std::string interface_suffix = (is_sim) ? "_sim" : "";
+    std::string interface_suffix = (is_sim_) ? "_sim" : "";
 
     // 初始化日志系统 Initialize the logging system, 固定路径为 ~/dexe_robot_server_data/logs
     std::filesystem::create_directories(server_data_dir_ / "logs");
@@ -323,4 +323,21 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id, RequestType request_
     }
 }
 
+void RobotServerBase::Setup_Realtime()
+{
+    // 锁内存，避免分页抖动
+    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
+    {
+        std::cerr << "mlockall failed: " << std::strerror(errno) << std::endl;
+    }
+    // 设置SCHED_FIFO实时调度
+    sched_param sp{};
+    sp.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0)
+    {
+        std::cerr << "sched_setscheduler failed: " << std::strerror(errno) << std::endl;
+        LOG_CRIT << "sched_setscheduler failed, please run setcap!";
+        assert(false && "sched_setscheduler failed, please run setcap!");
+    }
+}
 }  // namespace robot_server_lib
