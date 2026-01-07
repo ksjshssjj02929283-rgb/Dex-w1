@@ -9,7 +9,7 @@ using namespace DexeRP::Kinematics;
 // SRSKinematics 构造函数
 SRSKinematics::SRSKinematics(bool is_left, bool is_anthropmorphic) : KinematicsBase()
 {
-    W1V02KineParamsPtr w1_kine_params = std::make_shared<W1V02KineParams>(is_left, is_anthropmorphic);
+    std::shared_ptr<W1V02KineParams> w1_kine_params = std::make_shared<W1V02KineParams>(is_left, is_anthropmorphic);
     this->w1_kine_ = std::make_shared<DexeRP::Kinematics::SRSKinematics>(w1_kine_params);
 }
 
@@ -30,7 +30,7 @@ PoseQuaternion SRSKinematics::GetFK(const Eigen::VectorXd &q_in, const pinocchio
     w1_kine_->SetTCP(tcp);
 
     // 2) 把 q_in (column vector) 转为 DexeRP::VecXd (row vector alias)
-    DexeRP::VecXd q_row(q_in.size());
+    DexeRP::CVecXd q_row(q_in.size());
     for (int i = 0; i < q_in.size(); ++i)
     {
         q_row(i) = q_in(i);
@@ -107,8 +107,7 @@ bool SRSKinematics::GetIK(const PoseQuaternion &pose_in, Eigen::VectorXd &q_in_a
     auto [res_psi, psi] = w1_kine_->CalcArmAngle(qpos_seed);
     if (!res_psi)
         return false;
-    auto srs_cfg = std::make_shared<SRSConfig>(qpos_seed, psi);
-    bool res_ik = w1_kine_->GetIK(xpos, srs_cfg, qpos);
+    bool res_ik = w1_kine_->GetNearestIK(xpos, qpos_seed, qpos);
     if (!res_ik)
         return false;
 

@@ -70,6 +70,10 @@ void RobotServerBase::Run()
 
 void RobotServerBase::ManagerThreadFunc()
 {
+    if(!is_sim_)
+    {
+        Setup_Realtime();
+    }
     PlannerManager planner_manager(this->robot_model_, this->manager_buffers_,
                                    std::bind(&RobotServerBase::ReportRequestStatus, this, std::placeholders::_1, std::placeholders::_2,
                                              std::placeholders::_3, std::placeholders::_4));
@@ -84,6 +88,10 @@ void RobotServerBase::ManagerThreadFunc()
 
 void RobotServerBase::TorqueControlThreadFunc()
 {
+    if(!is_sim_)
+    {
+        Setup_Realtime();
+    }
     TorqueControllerManager torque_controller_manager(this->robot_model_, this->manager_buffers_, this->robot_buffers_);
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok())
