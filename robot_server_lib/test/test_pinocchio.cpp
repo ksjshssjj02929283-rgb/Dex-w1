@@ -18,9 +18,9 @@ void PrintModelInfo(const pinocchio::Model& model, const std::string& tag)
 using namespace robot_server_lib;
 TEST(PinocchioModelTest, Pinocchio)
 {
-    std::filesystem::path server_data_dir_ = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
-    std::filesystem::create_directories(server_data_dir_ / "logs");
-    nanolog::initialize(nanolog::GuaranteedLogger(), (server_data_dir_ / "logs/").string(), "robot_server", 20,
+    std::filesystem::path home_dir = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
+    std::filesystem::create_directories(home_dir / "log");
+    nanolog::initialize(nanolog::GuaranteedLogger(), (home_dir / "log/").string(), "robot_server", 10,
                         10);                          // 每个日志文件最大20MB，最多保留10个日志文件
     nanolog::set_log_level(nanolog::LogLevel::INFO);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
     const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
@@ -50,6 +50,9 @@ TEST(PinocchioModelTest, Pinocchio)
     q1 << 0.5, -1.0, 0.5, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5, 0.0, 0.0;
     pinocchio::forwardKinematics(*robot_model.model_ptr, data, q1);
     pinocchio::updateFramePlacements(*robot_model.model_ptr, data);
+
+    Eigen::MatrixXd M = pinocchio::GetInertiaMatrix(*robot_model.primary_arm_model_ptr, Eigen::VectorXd::Zero(robot_model.primary_arm_model_ptr->nv));
+    std::cout << "Inertia matrix at q1:\n" << M << std::endl;
 
     // for (int fid = 0; fid < robot_model.model_ptr->nframes; ++fid)
     // {

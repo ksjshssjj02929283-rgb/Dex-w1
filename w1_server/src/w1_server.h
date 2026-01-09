@@ -32,7 +32,6 @@ class RobotServer : public RobotServerBase
    private:
     void TorqueControlThreadFunc() override;
     void PublishThreadFunc() override;
-    void SetPropertyCallback(const std::shared_ptr<SetProperty::Request>, std::shared_ptr<SetProperty::Response>) override;
     Int64 StartStreaming(const PlannerRequest planner_request);
     void InitParamConfig();  // 初始化/读写 torque_limit_ 的 JSON 配置
     void SwitchControlWord();
@@ -62,7 +61,7 @@ class RobotServer : public RobotServerBase
     bool is_cmd_valid_{false};
     RobotControl robot_control_;
     RobotFeedback robot_feedback_;
-    PlannerManagerInfo planner_info_;
+    PlannerManagerInfo manager_info_;
     bool is_torque_limit_reached_[ndof_robot] = {false};  // 达到力矩限制标志位
     const std::string ecat_joint_name_[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",    "NECK2",   "LEFT_J1",
                                                       "LEFT_J2",  "LEFT_J3",  "LEFT_J4",  "LEFT_J5",  "LEFT_J6",  "LEFT_J7", "RIGHT_J1",

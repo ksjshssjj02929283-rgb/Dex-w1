@@ -1,6 +1,8 @@
 # 切换到包含所有包的根目录
 cd "$(dirname "$0")/.."
 
+rm -rf build/w1_server  # 清理w1_server的构建目录重新cmake以避免覆盖robot.cfg
+
 PACKAGES=$(find dexe_interfaces dexe_robot_server -name "package.xml" -exec sh -c 'dirname {} | xargs basename' \; | sort -u | tr '\n' ' ')
 colcon build --cmake-args -DENABLE_TORQUE_CONTROL_SIMULATION=ON --packages-select $PACKAGES
 

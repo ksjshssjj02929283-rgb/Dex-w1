@@ -1,4 +1,4 @@
-# 使用前安装环境 sudo apt install libspnav-dev libx11-dev spacenavd
+# 使用前安装环境 sudo apt install -y libspnav-dev libx11-dev spacenavd
 import argparse
 import ctypes
 import ctypes.util
@@ -284,19 +284,26 @@ def main(argv=None):
     # 解析自定义命令行参数（保留 ROS/rclpy 的其余参数）
     parser = argparse.ArgumentParser(add_help=False)
     group = parser.add_mutually_exclusive_group()
-    group.add_argument('--left', action='store_true', help='use left -> Primary motion group')
     group.add_argument('--right', action='store_true', help='use right -> Secondary motion group')
     parser.add_argument('--ee', action='store_true', help='use end-effector frame (ReferenceFrame.EEFrame)')
+    parser.add_argument('--armbase', action='store_true', help='use arm base frame (ReferenceFrame.ArmBase). Default is WorldBase.')
+    parser.add_argument('--real', action='store_true', help='use real robot (sets is_sim=False). Default is simulation.')
     known_args, remaining_args = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
 
-    # 选择 motion group：默认 Primary；--left 则使用 Primary
+    print(f"[spacenav] custom flags: {known_args}")
+    print("[spacenav] 如需控制真机在命令行传入 --real / 如需控制右臂在命令行传入 --right / 如需控制在末端坐标系下运动在命令行传入 --ee, 否则默认控制左臂在WorldBase坐标系下运动")
+
+    # 选择 motion group：默认 Primary；--right 则使用 Secondary
     if known_args.right:
         motion_group = MotionGroup.Secondary
     else:
         motion_group = MotionGroup.Primary
 
     # 选择 reference frame：默认为 ArmBase；--ee 则使用 EEFrame
-    reference_frame = ReferenceFrame.EEFrame if known_args.ee else ReferenceFrame.ArmBase
+    reference_frame = ReferenceFrame.EEFrame if known_args.ee else ReferenceFrame.ArmBase if known_args.armbase else ReferenceFrame.WorldBase
+
+    # 根据 --real 标志决定是否为模拟模式（默认为仿真）
+    is_sim = not known_args.real
 
     # 初始化 rclpy，传入剩余参数
     rclpy.init(args=remaining_args)
@@ -306,7 +313,7 @@ def main(argv=None):
     ros_thread = None
     try:
         sp_node = SpacenavNode()
-        client = RobotClient(is_sim=True)
+        client = RobotClient(is_sim=is_sim)
 
         executor.add_node(sp_node)
         executor.add_node(client)
@@ -314,10 +321,21 @@ def main(argv=None):
         gripper_topic = '/control/gripper/left' if motion_group == MotionGroup.Primary else '/control/gripper/right'
         gripper_pub = client.create_publisher(EEJointControl, gripper_topic, 10)
         prev_buttons = []
+        print_counter = 0
         def joy_callback(msg: Joy):
-            nonlocal prev_buttons
+            nonlocal prev_buttons, print_counter
             axes = list(msg.axes)
-            ee_velocity = np.array(axes[:6]) * 0.1
+            vals = np.array(axes[:6], dtype=float)
+            # 找到绝对值最大的分量索引，只保留该分量，其余设为 0
+            max_idx = int(np.argmax(np.abs(vals)))
+            ee_velocity = np.zeros(6, dtype=float)
+            ee_velocity[max_idx] = vals[max_idx] * 0.1 if max_idx < 3 else vals[max_idx] * 0.2
+
+            # 每 10 次回调打印一次
+            print_counter += 1
+            if print_counter % 10 == 0:
+                print(f"[spacenav] vel: {np.array2string(ee_velocity, formatter={'float_kind': lambda x: f'{x:.2f}'})}")
+
             client.send_streaming_command(ee_velocity, streaming_finished=False)
             buttons = list(msg.buttons)
             # ensure prev_buttons has enough length

@@ -189,7 +189,7 @@ class SharedMemory
 
 // 静态成员初始化
 template <typename T, std::uint64_t BufferCapacity, key_t SHM_KEY>
-std::atomic<int64_t> SharedMemory<T, BufferCapacity, SHM_KEY>::timeout_ms_{100};
+std::atomic<int64_t> SharedMemory<T, BufferCapacity, SHM_KEY>::timeout_ms_{10};
 
 // 反馈共享内存单例
 class FeedbackSharedMemory : public SharedMemory<RobotFeedback, 8, FEEDBACK_SHM_KEY>

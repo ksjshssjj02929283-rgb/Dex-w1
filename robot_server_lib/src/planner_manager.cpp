@@ -127,26 +127,26 @@ void PlannerManager::LoopOnce()
             status = current_planner_->ComputeCommand(measurement, time_meta, this->runtime_data_.joint_cmd);
         }
         // 如果提供了动力学参数, 则计算双臂前馈阻抗控制力 Compute the feedforward impedance control torque for both arms
-        const auto& dyn_base_params_primary = this->robot_model_.params_ptr->dyn_base_params_primary;
-        const auto& dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
-        if (dyn_base_params_primary.has_value())
-        {
-            Eigen::VectorXd tau_ff_pri, q_cmd_primary, q_feedback_primary, dq_feedback_primary;
-            utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_primary, MotionGroup::Primary);
-            utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_primary, MotionGroup::Primary);
-            utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_primary, MotionGroup::Primary);
-            auto ret_pri = impedance_ctrl_primary_->UpdateTorqueCommand(q_feedback_primary, dq_feedback_primary, q_cmd_primary, tau_ff_pri);
-            utils::MapJointToWholeBody(this->robot_model_, tau_ff_pri, this->runtime_data_.joint_cmd.torque_feedforward, MotionGroup::Primary);
-        }
-        if (dyn_base_params_secondary.has_value())
-        {
-            Eigen::VectorXd tau_ff_sec, q_cmd_secondary, q_feedback_secondary, dq_feedback_secondary;
-            utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_secondary, MotionGroup::Secondary);
-            utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_secondary, MotionGroup::Secondary);
-            utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_secondary, MotionGroup::Secondary);
-            auto ret_sec = impedance_ctrl_secondary_->UpdateTorqueCommand(q_feedback_secondary, dq_feedback_secondary, q_cmd_secondary, tau_ff_sec);
-            utils::MapJointToWholeBody(this->robot_model_, tau_ff_sec, this->runtime_data_.joint_cmd.torque_feedforward, MotionGroup::Secondary);
-        }
+        // const auto& dyn_base_params_primary = this->robot_model_.params_ptr->dyn_base_params_primary;
+        // const auto& dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
+        // if (dyn_base_params_primary.has_value())
+        // {
+        //     Eigen::VectorXd tau_ff_pri, q_cmd_primary, q_feedback_primary, dq_feedback_primary;
+        //     utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_primary, MotionGroup::Primary);
+        //     utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_primary, MotionGroup::Primary);
+        //     utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_primary, MotionGroup::Primary);
+        //     auto ret_pri = impedance_ctrl_primary_->UpdateTorqueCommand(q_feedback_primary, dq_feedback_primary, q_cmd_primary, tau_ff_pri);
+        //     utils::MapJointToWholeBody(this->robot_model_, tau_ff_pri, this->runtime_data_.joint_cmd.torque_feedforward, MotionGroup::Primary);
+        // }
+        // if (dyn_base_params_secondary.has_value())
+        // {
+        //     Eigen::VectorXd tau_ff_sec, q_cmd_secondary, q_feedback_secondary, dq_feedback_secondary;
+        //     utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_secondary, MotionGroup::Secondary);
+        //     utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_secondary, MotionGroup::Secondary);
+        //     utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_secondary, MotionGroup::Secondary);
+        //     auto ret_sec = impedance_ctrl_secondary_->UpdateTorqueCommand(q_feedback_secondary, dq_feedback_secondary, q_cmd_secondary, tau_ff_sec);
+        //     utils::MapJointToWholeBody(this->robot_model_, tau_ff_sec, this->runtime_data_.joint_cmd.torque_feedforward, MotionGroup::Secondary);
+        // }
     }
 
     // 发布关节命令到缓冲区 publish the joint command to the buffer
@@ -485,25 +485,62 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
         robot_property_.global_speed_ratio = std::get<double>(request.data.value());
         return;
     }
+    case RequestType::SwitchRunMode:
+    {
+        assert(request.data.has_value() && std::holds_alternative<int>(request.data.value()));
+        int mode = std::get<int>(request.data.value());
+        switch (mode)
+        {
+        case 0:
+            robot_property_.run_mode = RunMode::Position;
+            break;
+        case 1:
+            if (this->robot_model_.IsDynamicParamsAvailable())  // 无动力学参数不能开启力控
+            {
+                robot_property_.run_mode = RunMode::Torque;
+            }
+            else
+            {
+                LOG_WARN << "Dynamic parameters not available, cannot enable torque control.";
+            }
+            break;
+        // case 2:
+        //     if (this->robot_model_.IsDynamicParamsAvailable())  // 无动力学参数不能开启阻抗控制
+        //     {
+        //         robot_property_.run_mode = RunMode::CartesianImpedance;
+        //     }
+        //     else
+        //     {
+        //         LOG_WARN << "Dynamic parameters not available, cannot enable impedance control mode.";
+        //     }
+        //     break;
+        // case 3:
+        //     robot_property_.run_mode = RunMode::Drag; // 在server层处理开启哪种拖动模式 Handle which drag mode to enable at server layer
+        //     break;
+        default:
+            LOG_WARN << "Invalid run mode: " << mode << ", switch failed.";
+            break;
+        }
+        LOG_INFO << "Set run mode to " << ToString(robot_property_.run_mode);
+        return;
+    }
     case RequestType::EnableDrag:
     {
         assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
         bool enable_drag = std::get<bool>(request.data.value());
+        static auto previous_mode = robot_property_.run_mode;
         if (enable_drag)
+        {
+            if (robot_property_.run_mode != RunMode::Drag)
+            {
+                previous_mode = robot_property_.run_mode; // 保存之前的模式 Save the previous mode
+            }
             robot_property_.run_mode = RunMode::Drag;
+        }
         else
-            robot_property_.run_mode = RunMode::Position;
-        LOG_INFO << "Set run mode to " << ToString(robot_property_.run_mode);
-        return;
-    }
-    case RequestType::EnableImpedance:
-    {
-        assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
-        bool enable_impedance = std::get<bool>(request.data.value());
-        if (enable_impedance)
-            robot_property_.run_mode = RunMode::Impedance;
-        else
-            robot_property_.run_mode = RunMode::Position;
+        {
+            robot_property_.run_mode = previous_mode;
+        }
         LOG_INFO << "Set run mode to " << ToString(robot_property_.run_mode);
         return;
     }

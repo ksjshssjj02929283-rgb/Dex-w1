@@ -23,21 +23,17 @@ class TorqueControllerBase
 
     virtual bool ResetForNewEpisode(const JointRawMeasurement &raw_measurement, const TorqueControllerState &state) = 0;
 
-    VectorDof GetJointExternalTorque(const Eigen::VectorXd &sensor_wrench, const VectorDof &q_desired);
 
    protected:
     RobotModel robot_model_;
-    pinocchio::Data robot_data_;
-    pinocchio::Data robot_data_primary_;
-    pinocchio::Data robot_data_secondary_;
 
     TorqueControllerState state_{TorqueControllerState::Init};
     // Gain parameter
     struct
     {
-        double M_d = 0.05;
-        double K_p{400};
-        double K_v{40};
+        double M_d = 2.0;
+        double K_p{300};
+        double K_v = 2.0 * std::sqrt(K_p);
     } parameters_;
 };
 }  // namespace robot_server_lib

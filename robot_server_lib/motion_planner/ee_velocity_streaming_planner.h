@@ -28,7 +28,8 @@ public:
 private:
     pinocchio::Model pinocchio_model_;
     TimePointSystem request_start_time_{TimePointSystem::Invalid()};
-    ReferenceFrame reference_frame_{ReferenceFrame::ArmBase};
+    ReferenceFrame reference_frame_{ReferenceFrame::WorldBase};
+    int arm_base_id_{-1};
 };
 
 }  // namespace robot_server_lib

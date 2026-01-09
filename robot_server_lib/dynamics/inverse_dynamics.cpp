@@ -5,8 +5,7 @@ namespace robot_server_lib
 namespace dynamics
 {
 
-Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, pinocchio::Data& data, const VectorDof& q, const VectorDof& dq,
-                                const VectorDof& ddq)
+Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq)
 {
     const auto& model = *robot_model.model_ptr;
     const auto& joint_command_sequence_by_name = robot_model.params_ptr->joint_command_sequence_by_name;
@@ -15,6 +14,7 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, pinocchio::Data& 
     Eigen::VectorXd dq_urdf = MapToUrdfOrder(model, dq, joint_command_sequence_by_name);
     Eigen::VectorXd ddq_urdf = MapToUrdfOrder(model, ddq, joint_command_sequence_by_name);
     // 计算逆动力学
+    pinocchio::Data data(model);
     auto tau_urdf = pinocchio::rnea(model, data, q_urdf, dq_urdf, ddq_urdf);
     VectorDof tau = MapToParamOrder(model, tau_urdf, joint_command_sequence_by_name); // 将结果映射回joint_command_sequence_by_name顺序
 
@@ -27,7 +27,7 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, pinocchio::Data& 
         int first_joint_id = robot_model.params_ptr->joints_primary[0];
         auto first_joint_name = robot_model.params_ptr->joint_command_sequence_by_name[first_joint_id];
         int arm_base_id = robot_model.model_ptr->getFrameId(first_joint_name) - 1;
-        auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, data, q_urdf, arm_base_id);
+        auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, q_urdf, arm_base_id);
         Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
         Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Primary);
         utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Primary);
@@ -38,7 +38,7 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, pinocchio::Data& 
         int first_joint_id = robot_model.params_ptr->joints_secondary[0];
         auto first_joint_name = robot_model.params_ptr->joint_command_sequence_by_name[first_joint_id];
         int arm_base_id = robot_model.model_ptr->getFrameId(first_joint_name) - 1;
-        auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, data, q_urdf, arm_base_id);
+        auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, q_urdf, arm_base_id);
         Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
         Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Secondary);
         utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Secondary);
@@ -46,7 +46,7 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, pinocchio::Data& 
     return tau;
 }
 
-Eigen::VectorXd ForwardDynamics(const pinocchio::Model& model, pinocchio::Data& data, const Eigen::VectorXd& q, const Eigen::VectorXd& dq,
+Eigen::VectorXd ForwardDynamics(const pinocchio::Model& model, const Eigen::VectorXd& q, const Eigen::VectorXd& dq,
                                 const Eigen::VectorXd& torque_cmd, const std::vector<std::string>& joint_command_sequence_by_name)
 {
     // 将输入数据映射到URDF顺序
@@ -55,6 +55,7 @@ Eigen::VectorXd ForwardDynamics(const pinocchio::Model& model, pinocchio::Data& 
     Eigen::VectorXd torque_urdf = MapToUrdfOrder(model, torque_cmd, joint_command_sequence_by_name);
 
     // 计算正动力学
+    pinocchio::Data data(model);
     auto ddq_urdf = pinocchio::aba(model, data, q_urdf, dq_urdf, torque_urdf);
 
     // 将结果映射回joint_command_sequence_by_name顺序

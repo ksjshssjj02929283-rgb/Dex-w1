@@ -5,17 +5,19 @@
 namespace robot_server_lib
 {
 
-RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_sim) : Node("robot_server")
+RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_sim) : Node("robot_server"), is_sim_(is_sim)
 {
-    std::string interface_suffix = (is_sim) ? "_sim" : "";
+    std::string interface_suffix = (is_sim_) ? "_sim" : "";
 
-    // 初始化日志系统 Initialize the logging system, 固定路径为 ~/dexe_robot_server_data/logs
-    std::filesystem::create_directories(server_data_dir_ / "logs");
-    nanolog::initialize(nanolog::GuaranteedLogger(), (server_data_dir_ / "logs/").string(), "robot_server" + interface_suffix, 20,
+    // 初始化日志系统 Initialize the logging system, 固定路径为 ~/log
+    std::filesystem::create_directories(home_dir / "log");
+    nanolog::initialize(nanolog::GuaranteedLogger(), (home_dir / "log/").string(), "robot_server" + interface_suffix, 10,
                         10);                          // 每个日志文件最大20MB，最多保留10个日志文件
     nanolog::set_log_level(nanolog::LogLevel::INFO);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
     RCLCPP_INFO(this->get_logger(), "Logs directory: %s",
-                ((server_data_dir_ / "logs").string() + "/robot_server" + interface_suffix + ".txt").c_str());
+                ((home_dir / "log").string() + "/robot_server" + interface_suffix + ".txt").c_str());
+    LOG_INFO << "";
+    LOG_INFO << "---------------------------------------Robot Server Initializing---------------------------------------";
 
     LOG_INFO << "";
     LOG_INFO << "---------------------------------------Robot Server Initializing---------------------------------------";
@@ -73,6 +75,10 @@ void RobotServerBase::Run()
 
 void RobotServerBase::ManagerThreadFunc()
 {
+    if(!is_sim_)
+    {
+        Setup_Realtime();
+    }
     PlannerManager planner_manager(this->robot_model_, this->manager_buffers_,
                                    std::bind(&RobotServerBase::ReportRequestStatus, this, std::placeholders::_1, std::placeholders::_2,
                                              std::placeholders::_3, std::placeholders::_4));
@@ -87,6 +93,10 @@ void RobotServerBase::ManagerThreadFunc()
 
 void RobotServerBase::TorqueControlThreadFunc()
 {
+    if(!is_sim_)
+    {
+        Setup_Realtime();
+    }
     TorqueControllerManager torque_controller_manager(this->robot_model_, this->manager_buffers_, this->robot_buffers_);
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok())
@@ -249,6 +259,14 @@ void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::Shared
 void RobotServerBase::SetPropertyCallback(const std::shared_ptr<SetProperty::Request> request, std::shared_ptr<SetProperty::Response> response)
 {
     PlannerRequest planner_request = utils::ParseSetPropertyRequest(request);
+    if(planner_request.type == RequestType::Empty)
+    {
+        RCLCPP_WARN(this->get_logger(), "Failed to parse set property request, type: %s, value: %s", request->property_type.c_str(),
+                    request->value.c_str());
+        LOG_CRIT << "Failed to parse set property request, type: " << request->property_type << ", value: " << request->value;
+        response->request_id = -1;
+        return;
+    }
     planner_request.request_id = MakeNewRequestID(planner_request);
     this->manager_buffers_.request_queue->EnQueue(planner_request);
     response->request_id = planner_request.request_id;
@@ -324,6 +342,24 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id, RequestType request_
         break;
     default:
         break;
+    }
+}
+
+void RobotServerBase::Setup_Realtime()
+{
+    // 锁内存，避免分页抖动
+    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
+    {
+        std::cerr << "mlockall failed: " << std::strerror(errno) << std::endl;
+    }
+    // 设置SCHED_FIFO实时调度
+    sched_param sp{};
+    sp.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0)
+    {
+        std::cerr << "sched_setscheduler failed: " << std::strerror(errno) << std::endl;
+        LOG_CRIT << "sched_setscheduler failed, please run setcap!";
+        assert(false && "sched_setscheduler failed, please run setcap!");
     }
 }
 

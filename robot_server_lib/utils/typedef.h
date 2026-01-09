@@ -43,9 +43,9 @@ using Vector12d = Eigen::Matrix<double, 12, 1>;
 enum class RunMode
 {
     Position,     // position controls
-    Impedance,    // impedance control
+    Torque,       // torque control
+    CartesianImpedance,    // impedance control
     Drag,         // zero-stiff control
-    Teleoperate,  // teleoperate control
     Unknown
 };
 
@@ -76,8 +76,8 @@ enum class RequestType
     SpeedRatio,
     ClearError,
     SafeLevel,
+    SwitchRunMode,
     EnableDrag,
-    EnableImpedance,
     ImpedanceMass,
     ImpedanceStiffness,
     // Move Request

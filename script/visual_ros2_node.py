@@ -19,7 +19,7 @@ class VisualRos2Node(Node):
         self.joint_position = None
         self.ee_pose = None
         self.vis_sim = None
-        self.json_error_logged = False 
+        self.json_error_logged = False
         self._init_subscriber()
         self._init_visualization()
 

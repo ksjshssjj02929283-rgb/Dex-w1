@@ -24,22 +24,53 @@ Eigen::Matrix4d GetFK(const Model& model, const Eigen::VectorXd &q)
     return pose.toHomogeneousMatrix();
 }
 
-Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q)
+Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q, ReferenceFrame frame)
 {
-    Eigen::MatrixXd J(6, model.nv);
+    int nv = model.nv;
+    Eigen::MatrixXd J = Eigen::MatrixXd::Zero(6, nv);
 
     int ee_frame_id = model.getFrameId("ee_link");
     if (ee_frame_id == -1)
     {
         assert(false && "Frame 'ee_link' not found in model!");
+        return J;
     }
+
     Data data(model);
-    computeFrameJacobian(model, data, q, ee_frame_id, pinocchio::LOCAL_WORLD_ALIGNED, J);
+    forwardKinematics(model, data, q);
+    updateFramePlacements(model, data);
+    computeJointJacobians(model, data, q);
+
+    computeFrameJacobian(model, data, q, ee_frame_id, frame, J);
     return J;
 }
 
-SE3 GetFkByFrameId(const Model& model, Data& data, const Eigen::VectorXd &q_urdf_in, int frame_id)
+Eigen::MatrixXd GetJacobianMatrixDot(const Model& model, const Eigen::VectorXd& q, const Eigen::VectorXd& dq, ReferenceFrame frame)
 {
+    Data data(model);
+    int ee_frame_id = model.getFrameId("ee_link");
+    Eigen::MatrixXd J_dot(6, model.nv);
+    if (ee_frame_id == -1)
+    {
+        assert(false && "Frame 'ee_link' not found in model!");
+        return J_dot;
+    }
+
+    // 确保正向运动学、帧位姿与关节雅可比已更新
+    forwardKinematics(model, data, q);
+    updateFramePlacements(model, data);
+    computeJointJacobians(model, data, q);
+
+    // 计算雅可比的时间导数
+    computeJointJacobiansTimeVariation(model, data, q, dq);
+    getFrameJacobianTimeVariation(model, data, ee_frame_id, frame, J_dot);
+
+    return J_dot;
+}
+
+SE3 GetFkByFrameId(const Model& model, const Eigen::VectorXd &q_urdf_in, int frame_id)
+{
+    Data data(model);
     forwardKinematics(model, data, q_urdf_in);
     updateFramePlacements(model, data);
 
@@ -48,17 +79,55 @@ SE3 GetFkByFrameId(const Model& model, Data& data, const Eigen::VectorXd &q_urdf
 
 void PseudoInverse(const Eigen::MatrixXd& M_, Eigen::MatrixXd& M_pinv_, bool damped)
 {
-    double lambda_ = damped ? 0.2 : 0.0;
+    const double eps = std::numeric_limits<double>::epsilon();
 
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(M_, Eigen::ComputeFullU | Eigen::ComputeFullV);
-    Eigen::JacobiSVD<Eigen::MatrixXd>::SingularValuesType sing_vals_ = svd.singularValues();
-    Eigen::MatrixXd S_ = M_;  // copying the dimensions of M_, its content is not needed.
-    S_.setZero();
+    Eigen::VectorXd sing_vals = svd.singularValues();
 
-    for (int i = 0; i < sing_vals_.size(); i++)
-        S_(i, i) = (sing_vals_(i)) / (sing_vals_(i) * sing_vals_(i) + lambda_ * lambda_);
+    int m = static_cast<int>(M_.rows());
+    int n = static_cast<int>(M_.cols());
+    int k = static_cast<int>(sing_vals.size());
 
-    M_pinv_ = Eigen::MatrixXd(svd.matrixV() * S_.transpose() * svd.matrixU().transpose());
+    double max_s = (k > 0) ? sing_vals.maxCoeff() : 0.0;
+    double tol = std::max(m, n) * max_s * eps;
+
+    // adaptive damping parameter (can be tuned)
+    double lambda = damped ? (1e-3 * max_s + 1e-9) : 0.0;
+
+    // Construct S_pinv of size n x m
+    Eigen::MatrixXd S_pinv = Eigen::MatrixXd::Zero(n, m);
+
+    for (int i = 0; i < k; ++i)
+    {
+        double si = sing_vals(i);
+        double inv_si = 0.0;
+        if (damped)
+        {
+            // Tikhonov-regularized inverse of singular value:
+            // inv = s / (s^2 + lambda^2)
+            inv_si = si / (si * si + lambda * lambda);
+        }
+        else
+        {
+            // Moore-Penrose truncated inverse
+            if (si > tol)
+                inv_si = 1.0 / si;
+            else
+                inv_si = 0.0;
+        }
+        S_pinv(i, i) = inv_si;
+    }
+
+    // M_pinv = V * S_pinv * U^T
+    M_pinv_ = svd.matrixV() * S_pinv * svd.matrixU().transpose();
+}
+
+Eigen::MatrixXd GetInertiaMatrix(const Model& model, const Eigen::VectorXd& q)
+{
+    Data data(model);
+    crba(model, data, q);
+    data.M.triangularView<Eigen::StrictlyLower>() = data.M.transpose().triangularView<Eigen::StrictlyLower>();
+    return data.M;
 }
 
 }  // namespace pinocchio

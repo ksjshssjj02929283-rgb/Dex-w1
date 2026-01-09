@@ -272,57 +272,52 @@ bool GetJointFromWholeBody(const RobotModel &robot_model, const JointPositionDof
 PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request)
 {
     PlannerRequest planner_request;
-    // 解析请求类型 Parse request type
-    if (request->property_type == "TcpPrimary")
-    {
-        planner_request.type = RequestType::TcpPrimary;
-        planner_request.data = utils::StringToPoseQuaternion(request->value);
-    }
-    else if (request->property_type == "TcpSecondary")
-    {
-        planner_request.type = RequestType::TcpSecondary;
-        planner_request.data = utils::StringToPoseQuaternion(request->value);
-    }
-    else if (request->property_type == "SpeedRatio")
-    {
-        planner_request.type = RequestType::SpeedRatio;
-        double speed = std::clamp(std::stod(request->value), 0.01, 1.0);
-        planner_request.data = speed;
-    }
-    else if (request->property_type == "ClearError")
-    {
-        planner_request.type = RequestType::ClearError;
-        planner_request.data = std::nullopt;  // Clear error request does not require additional data
-    }
-    else if (request->property_type == "SafeLevel")
-    {
-        planner_request.type = RequestType::SafeLevel;
-        planner_request.data = std::clamp(std::stod(request->value), 0.1, 1.0);
-    }
-    else if (request->property_type == "EnableDrag")
-    {
-        planner_request.type = RequestType::EnableDrag;
-        planner_request.data = request->value == "1" ? true : false;
-    }
-    else if (request->property_type == "EnableImpedance")
-    {
-        planner_request.type = RequestType::EnableImpedance;
-        planner_request.data = request->value == "1" ? true : false;
-    }
-    else if (request->property_type == "ImpedanceMass")
-    {
-        planner_request.type = RequestType::ImpedanceMass;
-        planner_request.data = utils::StringToVector3d(request->value);
-    }
-    else if (request->property_type == "ImpedanceStiffness")
-    {
-        planner_request.type = RequestType::ImpedanceStiffness;
-        planner_request.data = utils::StringToVector6d(request->value);
-    }
-    else
+
+    const auto request_type = magic_enum::enum_cast<RequestType>(request->property_type);
+    if (!request_type.has_value())
     {
         planner_request.type = RequestType::Empty;
+        planner_request.data = std::nullopt;
         LOG_CRIT << "Parse property: type not defined: " << request->property_type;
+        return planner_request;
+    }
+
+    auto parse_bool = [](const std::string &v) { return v == "1" || v == "true" || v == "True"; };
+    auto parse_int = [](const std::string &v) { return std::stoi(v); };
+
+    planner_request.type = *request_type;
+    switch (planner_request.type)
+    {
+    case RequestType::TcpPrimary:
+    case RequestType::TcpSecondary:
+        planner_request.data = utils::StringToPoseQuaternion(request->value);
+        break;
+    case RequestType::SpeedRatio:
+        planner_request.data = std::clamp(std::stod(request->value), 0.01, 1.0);
+        break;
+    case RequestType::ClearError:
+        planner_request.data = std::nullopt;
+        break;
+    case RequestType::SafeLevel:
+        planner_request.data = std::clamp(std::stod(request->value), 0.1, 1.0);
+        break;
+    case RequestType::SwitchRunMode:
+        planner_request.data = parse_int(request->value);
+        break;
+    case RequestType::EnableDrag:
+        planner_request.data = parse_bool(request->value);
+        break;
+    case RequestType::ImpedanceMass:
+        planner_request.data = utils::StringToVector3d(request->value);
+        break;
+    case RequestType::ImpedanceStiffness:
+        planner_request.data = utils::StringToVector6d(request->value);
+        break;
+    default:
+        planner_request.type = RequestType::Empty;
+        planner_request.data = std::nullopt;
+        LOG_CRIT << "Parse property: type not supported: " << request->property_type;
+        break;
     }
     return planner_request;
 }
@@ -333,74 +328,33 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
     const auto &input_request = action_handle->get_goal();
 
     PlannerRequest planner_request;
-    // 解析请求类型 Parse request type
-    if (input_request->type == "MoveJoint")
-    {
-        planner_request.type = RequestType::MoveJoint;
-    }
-    else if (input_request->type == "MoveLine")
-    {
-        planner_request.type = RequestType::MoveLine;
-    }
-    else if (input_request->type == "MoveTraj")
-    {
-        planner_request.type = RequestType::MoveTraj;
-    }
-    else if (input_request->type == "StartJointStreaming")
-    {
-        planner_request.type = RequestType::StartJointStreaming;
-    }
-    else if (input_request->type == "StartEEPoseStreaming")
-    {
-        planner_request.type = RequestType::StartEEPoseStreaming;
-    }
-    else if (input_request->type == "StartEEVelocityStreaming")
-    {
-        planner_request.type = RequestType::StartEEVelocityStreaming;
-    }
-    else if (input_request->type == "StopMove")
-    {
-        planner_request.type = RequestType::StopMove;
-        return planner_request;
-    }
-    else
+
+    const auto request_type = magic_enum::enum_cast<RequestType>(input_request->type);
+    if (!request_type.has_value())
     {
         planner_request.type = RequestType::Unknown;
         return planner_request;
     }
 
-    MoveRequest move_request;
-    // 解析motion_group Parse motion group
-    if (input_request->motion_group == "Primary")
+    planner_request.type = *request_type;
+    if(planner_request.type == RequestType::StopMove)  // StopMove指令无data
     {
-        move_request.motion_group = MotionGroup::Primary;
-    }
-    else if (input_request->motion_group == "Secondary")
-    {
-        move_request.motion_group = MotionGroup::Secondary;
-    }
-    else if (input_request->motion_group == "BothArms")
-    {
-        move_request.motion_group = MotionGroup::BothArms;
-    }
-    else if (input_request->motion_group == "WholeBody")
-    {
-        move_request.motion_group = MotionGroup::WholeBody;
-    }
-    else if (input_request->motion_group == "Torso")
-    {
-        move_request.motion_group = MotionGroup::Torso;
-    }
-    else
-    {
-        move_request.motion_group = MotionGroup::Unknown;
+        return planner_request;
     }
 
+    MoveRequest move_request;
+    const auto motion_group = magic_enum::enum_cast<MotionGroup>(input_request->motion_group);
+    if (!motion_group.has_value())
+    {
+        planner_request.type = RequestType::Unknown;
+        LOG_CRIT << "Parse move request: unknown motion group: " << input_request->motion_group;
+    }
+    move_request.motion_group = *motion_group;
+
     // 解析目标位置 Parse target position
-    Eigen::VectorXd value;
     if (input_request->target.size() > 0)
     {
-        value.resize(input_request->target.size());
+        Eigen::VectorXd value = Eigen::VectorXd::Zero(input_request->target.size());
         for (size_t i = 0; i < input_request->target.size(); ++i)
         {
             value[i] = input_request->target[i];
@@ -409,55 +363,35 @@ PlannerRequest ParseMoveRequest(const std::shared_ptr<rclcpp_action::ServerGoalH
     }
 
     // 解析配置参数 Parse configuration parameters
-    json input_config_json;
     if (!input_request->config.empty())
     {
-        input_config_json = json::parse(input_request->config);
+        const auto input_config_json = json::parse(input_request->config);
 
+        auto set_double = [&](const char *key, std::optional<double> &dst)
+        {
+            if (input_config_json.contains(key))
+                dst.emplace(input_config_json[key].get<double>());
+        };
+        auto set_bool = [&](const char *key, std::optional<bool> &dst)
+        {
+            if (input_config_json.contains(key))
+                dst.emplace(input_config_json[key].get<bool>());
+        };
+        set_bool("optional_mode", move_request.optional_mode);
+        set_double("speed", move_request.speed);
+        set_double("blend_tolerance", move_request.blend_tolerance);
+        set_double("interval", move_request.interval);
         if (input_config_json.contains("reference_frame"))
         {
-            if (input_config_json["reference_frame"] == "ArmBase")
-            {
-                move_request.reference_frame.emplace(ReferenceFrame::ArmBase);
-            }
-            else if (input_config_json["reference_frame"] == "WorldBase")
-            {
-                move_request.reference_frame.emplace(ReferenceFrame::WorldBase);
-            }
-            else if (input_config_json["reference_frame"] == "EEFrame")
-            {
-                move_request.reference_frame.emplace(ReferenceFrame::EEFrame);
-            }
-            else
-            {
-                move_request.reference_frame.emplace(ReferenceFrame::Unknown);
-            }
-        }
-
-        if (input_config_json.contains("speed"))
-        {
-            move_request.speed.emplace(input_config_json["speed"].get<double>());
-        }
-        if (input_config_json.contains("blend_tolerance"))
-        {
-            move_request.blend_tolerance.emplace(input_config_json["blend_tolerance"].get<double>());
-        }
-        if (input_config_json.contains("optional_mode"))
-        {
-            move_request.optional_mode.emplace(input_config_json["optional_mode"].get<bool>());
-        }
-        if (input_config_json.contains("interval"))
-        {
-            move_request.interval.emplace(input_config_json["interval"].get<double>());
+            const auto ref = magic_enum::enum_cast<ReferenceFrame>(input_config_json["reference_frame"].get<std::string>());
+            move_request.reference_frame.emplace(ref.value_or(ReferenceFrame::Unknown));
         }
         if (input_config_json.contains("endpoint_index"))
         {
             std::vector<int> endpoint_index;
             for (const auto &item : input_config_json["endpoint_index"])
-            {
                 endpoint_index.push_back(item.get<int>());
-            }
-            move_request.endpoint_index.emplace(endpoint_index);
+            move_request.endpoint_index.emplace(std::move(endpoint_index));
         }
     }
     planner_request.data = move_request;

@@ -22,99 +22,151 @@ CartesianImpedanceController::CartesianImpedanceController(const RobotModel &rob
 	}
 	this->q_nullspace_.setZero(this->ndof_);
 	this->tau_command_.setZero(this->ndof_);
-	this->damping_vector_.head<3>() = 2.0 * this->stiffness_vector_.head<3>().array().sqrt().matrix();
-	this->damping_vector_.tail<3>() = 0.1 * this->stiffness_vector_.tail<3>().array().sqrt().matrix();
+	this->damping_vector_.head<3>() = 2.0 * (this->mass_vector_.head<3>().array() * this->stiffness_vector_.head<3>().array()).sqrt().matrix();
+	this->damping_vector_.tail<3>() = 2.0 * (this->mass_vector_.tail<3>().array() * this->stiffness_vector_.tail<3>().array()).sqrt().matrix();
 }
 
-bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &feedback_q, const Eigen::VectorXd &feedback_dq, const Eigen::VectorXd &cmd_q, Eigen::VectorXd &tau_command)
+bool CartesianImpedanceController::UpdateTorqueCommand(
+    const Eigen::VectorXd &feedback_q,
+    const Eigen::VectorXd &feedback_dq,
+    const Eigen::VectorXd &cmd_q,
+    const Eigen::VectorXd &cmd_dq,
+    Eigen::VectorXd &tau_command)
 {
-	Eigen::VectorXd tau_task(this->ndof_), tau_nullspace(this->ndof_);
-	Matrix6d stiffness = this->stiffness_vector_.asDiagonal();
-	Matrix6d damping = this->damping_vector_.asDiagonal();
+    Eigen::VectorXd tau_task(this->ndof_), tau_nullspace(this->ndof_);
+    tau_task.setZero();
+    tau_nullspace.setZero();
 
-	Eigen::Affine3d feedback_transform(pinocchio::GetFK(this->pinocchio_model_, feedback_q));
-	Vector3d feedback_trans(feedback_transform.translation());
-	Eigen::Quaterniond feedback_quat(feedback_transform.linear());
+    /* ================= FK ================= */
+    Eigen::Affine3d T_fb(pinocchio::GetFK(this->pinocchio_model_, feedback_q));
+    Eigen::Affine3d T_cmd(pinocchio::GetFK(this->pinocchio_model_, cmd_q));
 
-	Eigen::Affine3d cmd_transform(pinocchio::GetFK(this->pinocchio_model_, cmd_q));
-	Vector3d cmd_trans(cmd_transform.translation());
-	Eigen::Quaterniond cmd_quat(cmd_transform.linear());
-	Eigen::MatrixXd jacobian = pinocchio::GetJacobiMatrix(this->pinocchio_model_, feedback_q);
+    Vector3d p_fb = T_fb.translation();
+    Vector3d p_cmd = T_cmd.translation();
 
-	// tau_task计算
-	// pose error计算
-	Vector6d pose_err, vel_err;
-	pose_err.head<3>() = (cmd_trans - feedback_trans).cwiseMin(this->trans_clip_max_).cwiseMax(-this->trans_clip_max_);
+    Eigen::Quaterniond fb_quat(T_fb.linear());
+    Eigen::Quaterniond cmd_quat(T_cmd.linear());
 
-	Eigen::Quaterniond err_quat(feedback_quat.inverse() * cmd_quat);
-	feedback_quat.coeffs() = (cmd_quat.coeffs().dot(feedback_quat.coeffs()) < 0.0) ? -feedback_quat.coeffs() : feedback_quat.coeffs(); // 保证四元数同号
-	pose_err.tail<3>() << err_quat.x(), err_quat.y(), err_quat.z();
-	pose_err.tail<3>() = feedback_transform.linear() * pose_err.tail<3>();  // 旋转误差末端坐标系 -> World base
-	pose_err.tail<3>() = pose_err.tail<3>().cwiseMin(this->rot_clip_max_).cwiseMax(-this->rot_clip_max_);
-	// 积分误差累加与限幅
-	this->pose_err_intg_.head(3) << (this->pose_err_intg_.head(3) + pose_err.head(3)).cwiseMin(this->trans_intg_clip_max_).cwiseMax(-this->trans_intg_clip_max_);
-	this->pose_err_intg_.tail(3) << (this->pose_err_intg_.tail(3) + pose_err.tail(3)).cwiseMin(this->rot_intg_clip_max_).cwiseMax(-this->rot_intg_clip_max_);
+    /* ================= Pose Error ================= */
+    Vector3d err_p = (p_cmd - p_fb)
+                      .cwiseMin(this->trans_clip_max_)
+                      .cwiseMax(-this->trans_clip_max_);
 
-	// vel error计算并限制幅度
-	vel_err << Eigen::VectorXd::Zero(6) - jacobian * feedback_dq;
+	// 确保四元数符号一致以选取最短旋转（在计算 err_quat 之前）
+	if (cmd_quat.coeffs().dot(fb_quat.coeffs()) < 0.0)
+	    fb_quat.coeffs() = -fb_quat.coeffs();
+	Eigen::Quaterniond err_quat = fb_quat.inverse() * cmd_quat;
+    Eigen::AngleAxisd aa(err_quat);
+    Vector3d err_w = aa.axis() * aa.angle();
+	err_w = T_fb.linear() * err_w;
+    err_w = err_w.cwiseMin(this->rot_clip_max_)
+             .cwiseMax(-this->rot_clip_max_);
 
-	auto stiffness_term = stiffness * pose_err;
-	auto damping_term = damping * vel_err;
-	auto intg_term = this->Ki_ * this->pose_err_intg_;
-	tau_task << jacobian.transpose() * (stiffness_term + damping_term + intg_term);
+    /* ================= Jacobian ================= */
+    Eigen::MatrixXd J = pinocchio::GetJacobiMatrix(this->pinocchio_model_, feedback_q);
+    Eigen::MatrixXd J_cmd = pinocchio::GetJacobiMatrix(this->pinocchio_model_, cmd_q);
+    Eigen::MatrixXd J_dot = pinocchio::GetJacobianMatrixDot(this->pinocchio_model_, feedback_q, feedback_dq);
+	Vector6d v_cmd = J_cmd * cmd_dq;
 
-	// 零空间控制
-	Eigen::VectorXd q_nullspace_err(this->ndof_), dq_nullspace_err(this->ndof_);
+    /* ================= Velocity Error ================= */
+    Vector6d v_fb = J * feedback_dq;
+    Vector3d derr_p = -v_fb.head<3>();
+    Vector3d derr_w = -v_fb.tail<3>();
+
+    /* ================= Integral (translation only) ================= */
+    this->pose_err_intg_.head<3>() =
+        (this->pose_err_intg_.head<3>() + err_p)
+            .cwiseMin(this->trans_intg_clip_max_)
+            .cwiseMax(-this->trans_intg_clip_max_);
+
+    /* ================= CartesianImpedance force ================= */
+    Vector3d fp =
+        this->stiffness_vector_.head<3>().asDiagonal() * err_p +
+        this->damping_vector_.head<3>().asDiagonal() * derr_p +
+        this->Ki_vector_.head<3>().asDiagonal() * this->pose_err_intg_.head<3>();
+
+    Vector3d fw =
+        this->stiffness_vector_.tail<3>().asDiagonal() * err_w +
+        this->damping_vector_.tail<3>().asDiagonal() * derr_w;
+
+    /* ================= Inertia shaping ================= */
+	Vector6d F_impedance;
+    F_impedance << fp, fw;
+	Vector6d acc_task = this->mass_vector_.asDiagonal().inverse() * F_impedance;
+
+    Eigen::MatrixXd Mq = GetMassMatrixBySymbol(this->robot_model_, feedback_q, this->motion_group_);
+    Eigen::MatrixXd lambda = (J * Mq.inverse() * J.transpose()).inverse();  // 笛卡尔空间质量矩阵
+    F_impedance = lambda * (acc_task - J_dot * feedback_dq);
+
+    tau_task = J.transpose() * F_impedance;
+
+    /* ================= Nullspace ================= */
+    Eigen::MatrixXd J_T_pinv;
+    pinocchio::PseudoInverse(J.transpose(), J_T_pinv);
+
+    Eigen::MatrixXd Np =
+        Eigen::MatrixXd::Identity(this->ndof_, this->ndof_) -
+        J.transpose() * J_T_pinv;
+
 	this->q_nullspace_ = cmd_q;
-	q_nullspace_err << this->q_nullspace_ - feedback_q;
-	q_nullspace_err.head(1) << q_nullspace_err.head(1) * this->nullspace_stiff_;
+    Eigen::VectorXd q_err = this->q_nullspace_ - feedback_q;
+    Eigen::VectorXd dq_err = -feedback_dq;
+	q_err.head(1) << q_err.head(1) * this->nullspace_stiff_;
+	dq_err.head(1) << dq_err.head(1) * this->nullspace_damp_;
 
-	dq_nullspace_err << Eigen::VectorXd::Zero(this->ndof_) - feedback_dq;
-	dq_nullspace_err.head(1) << dq_nullspace_err.head(1) * this->nullspace_damp_;
+    tau_nullspace =
+        Np * (this->nullspace_stiff_ * q_err +
+              this->nullspace_damp_ * dq_err);
 
-	Eigen::MatrixXd jacobian_transpose_pinv;
-	pinocchio::PseudoInverse(jacobian.transpose(), jacobian_transpose_pinv);
+    /* ================= Output ================= */
+    this->tau_command_ =
+        this->SaturateTorqueRate(tau_task + tau_nullspace,
+                                 this->tau_command_);
 
-	tau_nullspace << (Eigen::MatrixXd::Identity(this->ndof_, this->ndof_) - jacobian.transpose() * jacobian_transpose_pinv) *
-									(this->nullspace_stiff_ * q_nullspace_err + this->nullspace_damp_ * dq_nullspace_err);
-
-	// 力矩变化率限幅与输出
-	this->tau_command_ = this->SaturateTorqueRate(tau_task + tau_nullspace, this->tau_command_);
-	tau_command = this->tau_command_;
+    tau_command = this->tau_command_;
 
 	// debug log
-	// {
-	// 	std::stringstream ss_tau_command, ss_tau_task, ss_stiff_term, ss_cart_damp, ss_jacobian, ss_tau_nullspace, 
-	// 			ss_cart_err, ss_cart_vel_err, ss_q_err, ss_dq, ss_pose_err_intg, ss_intg_term;
-	// 	ss_tau_command << std::fixed << std::setprecision(5) << tau_command.transpose();
-	// 	ss_stiff_term << std::fixed << std::setprecision(5) << stiffness_term.transpose();
-	// 	ss_cart_damp << std::fixed << std::setprecision(5) << damping_term.transpose();
-	// 	ss_tau_task << std::fixed << std::setprecision(5) << tau_task.transpose();
-	// 	ss_tau_nullspace << std::fixed << std::setprecision(5) << tau_nullspace.transpose();
-	// 	ss_jacobian << std::fixed << std::setprecision(5) << jacobian;
-	// 	ss_q_err << std::fixed << std::setprecision(5) << q_nullspace_err.transpose();
-	// 	ss_dq << std::fixed << std::setprecision(5) << feedback_dq.transpose();
-	// 	ss_cart_err << std::fixed << std::setprecision(5) << pose_err.transpose();
-	// 	ss_cart_vel_err << std::fixed << std::setprecision(5) << vel_err.transpose();
-	// 	ss_pose_err_intg << std::fixed << std::setprecision(5) << this->pose_err_intg_.transpose();
-	// 	ss_intg_term << std::fixed << std::setprecision(5) << intg_term.transpose();
-	// 	static int print_counter = 0;
-	// 	if (++print_counter >= 10)
-	// 	{
-	// 		print_counter = 0;
-	// 		LOG_INFO << "tau_nullspace: " << ss_tau_nullspace.str()
-	// 				<< ", tau_command: " << ss_tau_command.str()
-	// 				<< ", q_err: " << ss_q_err.str()
-	// 				<< ", dq: " << ss_dq.str()
-	// 				<< ", pose_err: " << ss_cart_err.str()
-	// 				<< ", stiff_term: " << ss_stiff_term.str()
-	// 				<< ", pose_err_intg: " << ss_pose_err_intg.str()
-	// 				<< ", intg_term: " << ss_intg_term.str()
-	// 				<< ", vel_err: " << ss_cart_vel_err.str()
-	// 				<< ", damp_term: " << ss_cart_damp.str()
-	// 				<< ", tau_task: " << ss_tau_task.str();
-	// 	}
-	// }
+    static int print_counter = 0;
+    if (++print_counter >= 4 && false)
+	{
+        print_counter = 0;
+
+        pinocchio_model_.gravity = pinocchio::Motion(
+            Eigen::Vector3d(9.81, 0.0, 0.0),      // 线性加速度（重力）
+            Eigen::Vector3d::Zero()                // 角加速度
+        );
+        pinocchio::Data data(pinocchio_model_);
+
+        // 补偿科氏力和重力
+        Eigen::VectorXd coriolis = pinocchio::rnea(pinocchio_model_, data, feedback_q, feedback_dq, Eigen::VectorXd::Zero(pinocchio_model_.nv));
+        auto ddq = pinocchio::aba(pinocchio_model_, data, feedback_q, feedback_dq, tau_task + coriolis);
+        // 计算雅可比矩阵的时间导数乘以速度项
+        Vector6d cart_acc = J * ddq + J_dot * feedback_dq;
+		std::stringstream ss_tau_command, ss_tau_task, ss_stiff_term, ss_cart_damp, ss_jacobian, ss_tau_nullspace, ss_acc_task,
+				ss_cart_err, ss_cart_vel_err, ss_q_err, ss_dq, ss_pose_err_intg, ss_F_imp, ss_acc_Jdot, ss_cmd_trans, ss_v_cmd, ss_acc;
+		ss_q_err << std::fixed << std::setprecision(3) << (cmd_q - feedback_q).transpose();
+		ss_tau_command << std::fixed << std::setprecision(3) << tau_command.transpose();
+		ss_tau_task << std::fixed << std::setprecision(3) << tau_task.transpose();
+		ss_tau_nullspace << std::fixed << std::setprecision(3) << tau_nullspace.transpose();
+		ss_dq << std::fixed << std::setprecision(4) << feedback_dq.transpose();
+		ss_cart_err << std::fixed << std::setprecision(4) << err_p.transpose() << " " << err_w.transpose();
+		ss_v_cmd << std::fixed << std::setprecision(2) << v_cmd.transpose();
+		ss_cart_vel_err << std::fixed << std::setprecision(4) << derr_p.transpose() << " " << derr_w.transpose();
+		ss_pose_err_intg << std::fixed << std::setprecision(2) << this->pose_err_intg_.transpose();
+        ss_acc_task << std::fixed << std::setprecision(4) << acc_task.transpose();
+		ss_F_imp << std::fixed << std::setprecision(4) << F_impedance.transpose();
+        ss_acc << std::fixed << std::setprecision(4) << cart_acc.transpose();
+
+        LOG_INFO << "v_cmd: " << ss_v_cmd.str()
+                << ", pose_err: " << ss_cart_err.str()
+                << ", vel_err: " << ss_cart_vel_err.str()
+                << ", acc_cart: " << ss_acc.str()
+                << ", F_imp: " << ss_F_imp.str()
+                << ", tau_task: " << ss_tau_task.str()
+                << ", tau_nullspace: " << ss_tau_nullspace.str()
+                << ", tau_command: " << ss_tau_command.str()
+                << ", dq: " << ss_dq.str();
+	}
 	return true;
 }
 
@@ -135,6 +187,5 @@ void CartesianImpedanceController::SetStiffness(const Vector6d& K)
 	ss_damp << std::fixed << std::setprecision(4) << this->damping_vector_.transpose();
 	LOG_INFO << "CartesianImpedanceController: Set stiffness to [" << ss_stiff.str() << "], damping to [" << ss_damp.str() << "]";
 }
-
 } // namespace dynamics
 } // namespace robot_server_lib

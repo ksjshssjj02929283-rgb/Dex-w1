@@ -43,7 +43,7 @@ def skew(v):
 
 
 class DynParamIdentifier(Node):
-    def __init__(self, traj="traj1", is_left=False, logger_callable=None):
+    def __init__(self, traj="traj1", logger_callable=None):
         super().__init__("qt_dyn_params_ident")
         self.log_msg = logger_callable
         self.joint_publisher = self.create_publisher(
@@ -72,7 +72,6 @@ class DynParamIdentifier(Node):
         self.robot_cfg_path = (
             Path(get_package_share_directory("w1_server")) / "robot.cfg"
         )
-        self.is_left = is_left
         # 初始化状态变量
         self.joint_name = None
         self.timestamp = None
@@ -102,13 +101,11 @@ class DynParamIdentifier(Node):
         self.create_timer(0.1, self._check_connection_status)
         # 创建calculator
         self.calculator_left = DynParamCalculator(
-            robot_type=robot_type, is_left=self.is_left, logger=self.log_msg
+            robot_type=robot_type, is_left=True, logger=self.log_msg
         )
         self.calculator_right = DynParamCalculator(
-            robot_type=robot_type, is_left=not self.is_left, logger=self.log_msg
+            robot_type=robot_type, is_left=False, logger=self.log_msg
         )
-        # 先设置安全等级为最高
-        self.set_safe_level(1.0)
 
     def _sleep_until(self, target_time):
         """精确睡眠到指定单调时钟时间，避免累计漂移。"""
@@ -229,6 +226,8 @@ class DynParamIdentifier(Node):
         """
         在真机上依次执行左臂两段轨迹 + 右臂两段轨迹，并记录轨迹数据。
         """
+        # 先设置安全等级为最高
+        self.set_safe_level(1.0)
         self._stop_flag.clear()
         orig_is_left = self.is_left
         orig_traj = self.traj
@@ -628,10 +627,9 @@ class DynParamCalculator:
 
     def calc_dyn_params(self):
         # 创建机器人模型并计算基础参数集
-        if self.rbt is None:
-            self.log_msg("正在进行机器人建模...")
-            self.rbt = self.create_robot_model(self.robot_type)
-            self.log_msg(f"机器人建模完毕, 最小参数辨识集: {self.rbt.dyn.baseparms}")
+        self.log_msg("正在进行机器人建模...")
+        self.rbt = self.create_robot_model(self.robot_type)
+        self.log_msg(f"机器人建模完毕, 最小参数辨识集: {self.rbt.dyn.baseparms}")
         self.log_msg("开始处理轨迹数据...")
         self.process_and_cache_data()
         self.log_msg("轨迹数据处理完毕, 开始计算参数...")
