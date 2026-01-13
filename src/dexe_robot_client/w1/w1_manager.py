@@ -16,13 +16,14 @@ from queue import Queue, Empty
 from copy import deepcopy
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
+import pinocchio as pin
 
 from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, download_w1_urdf
 from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..navigation_client import ChassisClient
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
-from .path_planner.bezier_blend_path import interpolate_cartesian_path
+from .path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm, EPSILON
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from .utils.w1_params import W1Params
 from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
@@ -86,10 +87,13 @@ class W1Manager:
                                   self._end_effector_type)
 
         # download specific urdf
+        if self._end_effector_type == EndEffectorType.LINKER_HAND:
+            download_ee_type = None
+        else:
+            download_ee_type = end_effector_type
         res, file_path = download_w1_urdf(arm_type, w1_version,
-                                          end_effector_type)
-        if self._end_effector_type is not None:
-            res, file_path = download_w1_urdf(arm_type, w1_version, None)
+                                          download_ee_type)
+        res, file_path = download_w1_urdf(arm_type, w1_version, None)
 
         # 在主线程中正常退出时自动调用
         atexit.register(self._destroy_clients)
@@ -137,6 +141,8 @@ class W1Manager:
                 raise ValueError(
                     f"Not supported arm type: {arm_type} for fcl checker")
                 return
+            if end_effector_type == EndEffectorType.LINKER_HAND:
+                end_effector_type = None
             self.fcl_checker = FCLChecker(fcl_robot_type, end_effector_type)
             self.fcl_checker.enable_visualize()
         else:
@@ -172,6 +178,8 @@ class W1Manager:
             if end_effector_type is None or isinstance(end_effector_type,
                                                        EndEffectorType):
                 pin_ee_type = end_effector_type
+                if end_effector_type == EndEffectorType.LINKER_HAND:
+                    pin_ee_type = None
             else:
                 raise ValueError(
                     f"Not supported end_effector_type: {end_effector_type} for pinocchio model"
@@ -200,6 +208,8 @@ class W1Manager:
                 return
             HybridPlanner.set_arms_cfg(SINGLE_ARM_DIM, SINGLE_ARM_DIM,
                                        LARM_BOUND, RARM_BOUND)
+            if end_effector_type == EndEffectorType.LINKER_HAND:
+                end_effector_type = None
             HybridPlanner.set_robot_cfg(robot_type=planner_robot_type,
                                         ee_type=end_effector_type)
             # HybridPlanner.set_env_json(get_env_json_path())
@@ -698,6 +708,62 @@ class W1Manager:
             return False, None
         return self._get_chassis_client().get_chassis_position()
 
+    def get_current_battery_percentage(self) -> tuple[bool, float]:
+        """获取当前电池电量百分比"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return False, None
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return False, None
+        return self._get_chassis_client().get_battery_percentage()
+
+    def get_nav_status(self) -> str:
+        """获取导航状态"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return "DISABLED"
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return "NOT_INITIALIZED"
+        return self._get_chassis_client().get_nav_state()
+
+    def get_control_status(self) -> str:
+        """获取底盘控制状态"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return "DISABLED"
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return "NOT_INITIALIZED"
+        return self._get_chassis_client().get_control_status()
+
+    def set_auto_charging(self) -> bool:
+        """调用回充服务"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return False
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return False
+        return self._get_chassis_client().set_chassis_auto_charging()
+
+    def cancel_chassis_motion(self) -> bool:
+        """统一取消底盘运动，同时调用取消导航和取消控制。"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return False
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return False
+
+        self.logger.info("Sending request to cancel navigation and control...")
+        nav_cancel_ok = self._get_chassis_client().cancel_chassis_nav2()
+        control_cancel_ok = self._get_chassis_client().cancel_chassis_control()
+
+        # 只要有一个成功，就认为取消指令已尽力发送
+        return nav_cancel_ok or control_cancel_ok
+
     def set_ee_qpos(self, name: str, qpos: np.ndarray) -> bool:
         """控制end effector运动
 
@@ -974,12 +1040,14 @@ class W1Manager:
             self,
             name: str,
             qpos_array: np.ndarray,
+            is_sparse: bool,
             qvel_limits_array: np.ndarray = None) -> tuple[bool, np.ndarray]:
         """对各部件进行关节轨迹规划，可指定路径点的各关节的速度约束;速度表示从上一点到当前点的最大关节速度
 
         Args:
             name (str): ["full_body", "torso", "head", "left_arm", "right_arm"]
             qpos_array (np.ndarray): 关节路径点  
+
             qvel_limits_array (np.ndarray, optional): 路径点关节速度约束，省略则按默认关节速度
 
         Returns:
@@ -989,6 +1057,38 @@ class W1Manager:
             return False, None
         if not self._check_qpos_limits(name, qpos_array):
             return False, None
+
+        step = weighted_norm(np.deg2rad([1.] * qpos_array[0].shape[0]))
+        if qpos_array.shape[0] == 2 and weighted_norm(qpos_array[1] -
+                                                      qpos_array[0]) < step:
+            return True, qpos_array
+
+        if is_sparse:
+            path = PathRnBezier(qpos_array)
+            if not path.calc_path():
+                return False, None
+            qpos_sample_array = path.get_sample_by_step(step)
+
+            # vel align
+            prefix_dist_list = [0.]
+            for idx in range(len(qpos_array) - 1):
+                dist = weighted_norm(qpos_array[idx + 1] - qpos_array[idx])
+                prefix_dist_list.append(prefix_dist_list[-1] + dist)
+
+            idx = 0
+            qvel_limits_list = [qvel_limits_array[0]]
+            cur_qpos = qpos_sample_array[0]
+            cur_dist = 0.
+            for qpos in qpos_sample_array[1:-1]:
+                cur_dist += weighted_norm(qpos - cur_qpos)
+                if cur_dist >= prefix_dist_list[idx]:
+                    idx += 1
+                qvel_limits_list.append(qvel_limits_array[idx])
+                cur_qpos = qpos
+            qvel_limits_list.append(qvel_limits_array[-1])
+
+            qpos_array = qpos_sample_array
+            qvel_limits_array = np.array(qvel_limits_list)
 
         dofs = self.w1_params.index_infos[name]["dofs"]
         index = self.w1_params.index_infos[name]["index"]
@@ -1026,18 +1126,21 @@ class W1Manager:
             return False, None
 
         # cartesian interpolation
+        if len(xpos_list) == 2 and weighted_norm(
+                pin.log6(np.linalg.inv(xpos_list[0])
+                         @ xpos_list[1]).vector) < cartesian_step:
+            xpos_sample_array = np.array(xpos_list)
+        else:
+            path = PathR3xSO3Bezier(np.array(xpos_list))
+            if not path.calc_path():
+                return False, None
+            xpos_sample_array = path.get_sample_by_step(cartesian_step)
+
         prefix_dist_list = [0.]
         for idx in range(len(xpos_list) - 1):
             dist = np.linalg.norm(xpos_list[idx + 1][:3, 3] -
                                   xpos_list[idx][:3, 3])
             prefix_dist_list.append(prefix_dist_list[-1] + dist)
-        total_dist = prefix_dist_list[-1]
-        num_sample = max(2, int(np.ceil(total_dist / cartesian_step)))
-
-        res, xpos_sample_array = interpolate_cartesian_path(
-            xpos_list, 0.005, num_sample)
-        if not res:
-            return False, None
 
         # vel align
         # TODO: use ee vel rather than qvel
@@ -1049,7 +1152,8 @@ class W1Manager:
             cur_xpos = xpos_sample_array[0]
             cur_dist = 0.
             for xpos in xpos_sample_array[1:-1]:
-                cur_dist += np.linalg.norm(xpos[:3, 3] - cur_xpos[:3, 3])
+                dist = weighted_norm(xpos[:3, 3] - cur_xpos[:3, 3])
+                cur_dist += dist
                 if cur_dist >= prefix_dist_list[idx]:
                     idx += 1
                 qvel_limits_list_.append(qvel_limits_array[idx])
@@ -1076,7 +1180,7 @@ class W1Manager:
             qpos_list.append(cur_qpos)
             cur_qseed = cur_qpos
 
-        return self.plan_joint_traj(name, np.array(qpos_list),
+        return self.plan_joint_traj(name, np.array(qpos_list), False,
                                     qvel_limits_array_)
 
     def plan_arm_ee_trigger(self, arm_ee_state_list: list) -> tuple[bool, list]:
@@ -1437,7 +1541,8 @@ class W1Manager:
                           is_cartesian: bool = False,
                           qpos_seed: np.ndarray = None,
                           cartesian_step: float = None,
-                          is_local: bool = True) -> tuple[bool, np.ndarray]:
+                          is_local: bool = True,
+                          is_sparse: bool = True) -> tuple[bool, np.ndarray]:
         if not is_local:
             qpos_array = cur_qpos[self.w1_params.index_infos[name]["index"]]
         else:
@@ -1499,6 +1604,7 @@ class W1Manager:
         else:
             qpos_raw_array_ = np.vstack([cur_qpos, pos_raw_array])
             res_plan, qpos_array = self.plan_joint_traj(name, qpos_raw_array_,
+                                                        is_sparse,
                                                         qvel_limits_array_)
             if not res_plan:
                 return False, None
@@ -1515,7 +1621,8 @@ class W1Manager:
             is_cartesian: bool = False,
             qpos_seed: np.ndarray = None,
             cartesian_step: float = None,
-            is_local: bool = True) -> tuple[bool, np.ndarray, list]:
+            is_local: bool = True,
+            is_sparse: bool = True) -> tuple[bool, np.ndarray, list]:
         if not is_local:
             qpos_array = cur_qpos[self.w1_params.index_infos[name]["index"]]
         else:
@@ -1531,11 +1638,15 @@ class W1Manager:
 
         # without ee motion
         if arm_ee_state_list is None:
-            res, qpos_array = self._plan_to_waypoint(name, cur_qpos,
+            res, qpos_array = self._plan_to_waypoint(name,
+                                                     cur_qpos,
                                                      waypoints_dict,
-                                                     speed_ratio, is_cartesian,
-                                                     qpos_seed, cartesian_step,
-                                                     is_local)
+                                                     speed_ratio,
+                                                     is_cartesian,
+                                                     qpos_seed,
+                                                     cartesian_step,
+                                                     is_local,
+                                                     is_sparse=is_sparse)
             if not res:
                 return False, None, None
             return True, qpos_array, None
@@ -1599,19 +1710,19 @@ class W1Manager:
             cur_qpos_seed = qpos_seed
 
         for start_idx, end_idx in segment_list:
-            seg_pos_list = pos_raw_array_[start_idx:end_idx + 1]
-            seg_qvel_limits_list = qvel_limits_array_[start_idx:end_idx + 1]
+            seg_pos_array = pos_raw_array_[start_idx:end_idx + 1]
+            seg_qvel_limits_array = qvel_limits_array_[start_idx:end_idx + 1]
             if is_cartesian:
                 seg_xpos_list = [
                     user_pose_to_xpos(pose[:3].tolist(), pose[3:].tolist())
-                    for pose in seg_pos_list
+                    for pose in seg_pos_array
                 ]
                 res_plan, seg_qpos_samples_array = self.plan_cartesian_traj(
-                    name, seg_xpos_list, cur_qpos_seed, seg_qvel_limits_list,
+                    name, seg_xpos_list, cur_qpos_seed, seg_qvel_limits_array,
                     cartesian_step)
             else:
                 res_plan, seg_qpos_samples_array = self.plan_joint_traj(
-                    name, seg_pos_list, seg_qvel_limits_list)
+                    name, seg_pos_array, is_sparse, seg_qvel_limits_array)
             if not res_plan:
                 return False, None, None
 
@@ -1662,7 +1773,8 @@ class W1Manager:
             start_left_arm_ee_qpos: np.ndarray,
             start_right_arm_ee_qpos: np.ndarray,
             waypoints_dict: dict,
-            speed_ratio: float = 1.0) -> tuple[bool, np.ndarray, list, list]:
+            speed_ratio: float = 1.0,
+            is_sparse: bool = True) -> tuple[bool, np.ndarray, list, list]:
         """规划各部件独立关节空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
         - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
@@ -1684,7 +1796,8 @@ class W1Manager:
                                     "right_arm": [right_arm_qpos1,], "right_arm_speed_ratio": [right_arm_speed1], 
                                     "right_arm_ee": [[0.,right_arm_ee_qpos1,0.5],]}
 
-            speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0.
+            speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0,
+                        is_sparse (bool, optional): 输入路径点是否稀疏（点间距是否小于路径blend过渡阈值）.
 
         Returns:
             tuple[bool, np.ndarray, list, list]: 规划成功与否，全身关节轨迹，左末端执行器轨迹，右末端执行器轨迹
@@ -1709,14 +1822,21 @@ class W1Manager:
 
         # torso
         res_torso, torso_qpos_array = self._plan_to_waypoint(
-            "torso", start_torso_qpos, waypoints_dict, speed_ratio)
+            "torso",
+            start_torso_qpos,
+            waypoints_dict,
+            speed_ratio,
+            is_sparse=is_sparse)
         if not res_torso:
             self.logger.error("Plan to torso traj failed.")
             return False, None, None, None
 
         # head
-        res_head, head_qpos_array = self._plan_to_waypoint(
-            "head", start_head_qpos, waypoints_dict, speed_ratio)
+        res_head, head_qpos_array = self._plan_to_waypoint("head",
+                                                           start_head_qpos,
+                                                           waypoints_dict,
+                                                           speed_ratio,
+                                                           is_sparse=is_sparse)
         if not res_head:
             self.logger.error("Plan to head traj failed.")
             return False, None, None, None
@@ -1724,8 +1844,12 @@ class W1Manager:
         # left_arm
         left_arm_ee_trigger_list = None
         if not self._has_arm_ee_client("left_arm_ee", False):
-            (res_left_arm, left_arm_qpos_array) = self._plan_to_waypoint(
-                "left_arm", start_left_arm_qpos, waypoints_dict, speed_ratio)
+            (res_left_arm,
+             left_arm_qpos_array) = self._plan_to_waypoint("left_arm",
+                                                           start_left_arm_qpos,
+                                                           waypoints_dict,
+                                                           speed_ratio,
+                                                           is_sparse=is_sparse)
             if not res_left_arm:
                 self.logger.error("Plan to left arm traj failed.")
                 return False, None, None, None
@@ -1735,8 +1859,12 @@ class W1Manager:
                 return False, None, None, None
             (res_left_arm, left_arm_qpos_array,
              left_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee(
-                 "left_arm", start_left_arm_qpos, start_left_arm_ee_qpos,
-                 waypoints_dict, speed_ratio)
+                 "left_arm",
+                 start_left_arm_qpos,
+                 start_left_arm_ee_qpos,
+                 waypoints_dict,
+                 speed_ratio,
+                 is_sparse=is_sparse)
             if not res_left_arm:
                 self.logger.error("Plan to left arm traj with ee failed.")
                 return False, None, None, None
@@ -1745,7 +1873,11 @@ class W1Manager:
         right_arm_ee_trigger_list = None
         if not self._has_arm_ee_client("right_arm_ee", False):
             (res_right_arm, right_arm_qpos_array) = self._plan_to_waypoint(
-                "right_arm", start_right_arm_qpos, waypoints_dict, speed_ratio)
+                "right_arm",
+                start_right_arm_qpos,
+                waypoints_dict,
+                speed_ratio,
+                is_sparse=is_sparse)
             if not res_right_arm:
                 self.logger.error("Plan to right arm traj failed.")
                 return False, None, None, None
@@ -1755,8 +1887,12 @@ class W1Manager:
                 return False, None, None, None
             (res_right_arm, right_arm_qpos_array,
              right_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee(
-                 "right_arm", start_right_arm_qpos, start_right_arm_ee_qpos,
-                 waypoints_dict, speed_ratio)
+                 "right_arm",
+                 start_right_arm_qpos,
+                 start_right_arm_ee_qpos,
+                 waypoints_dict,
+                 speed_ratio,
+                 is_sparse=is_sparse)
             if not res_right_arm:
                 self.logger.error("Plan to right arm traj with ee failed.")
                 return False, None, None, None
@@ -1773,7 +1909,8 @@ class W1Manager:
 
     def move_joint_full_body(self,
                              waypoints_dict: dict,
-                             speed_ratio: float = 1.0) -> bool:
+                             speed_ratio: float = 1.0,
+                             is_sparse: bool = True) -> bool:
         """从当前位置规划并执行各部件独立关节空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
         - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
@@ -1789,7 +1926,8 @@ class W1Manager:
                                     "right_arm": [right_arm_qpos1,], "right_arm_speed_ratio": [right_arm_speed1], 
                                     "right_arm_ee": [[0.,right_arm_ee_qpos1,0.5],]}
 
-            speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0.
+            speed_ratio (float, optional): 相对于默认关节速度的比率. Defaults to 1.0,
+            is_sparse (bool, optional): 输入路径点是否稀疏（点间距是否小于路径blend过渡阈值）.
 
         Returns:
             bool
@@ -1812,7 +1950,7 @@ class W1Manager:
         (res, total_qpos_array, left_arm_ee_trigger_list,
          right_arm_ee_trigger_list) = self.plan_joint_full_body(
              cur_qpos, cur_left_arm_ee_qpos, cur_right_arm_ee_qpos,
-             waypoints_dict, speed_ratio)
+             waypoints_dict, speed_ratio, is_sparse)
         if not res:
             return False
 
@@ -2144,9 +2282,30 @@ class W1Manager:
                 return False
             qpos_list.append(np.r_[qpos, cur_qpos[3]])
 
-        return self.move_joint_full_body(
-            waypoints_dict={f"torso": [qpos.tolist() for qpos in qpos_list]},
-            speed_ratio=speed_ratio)
+        speed_ratio_list = [speed_ratio] * len(qpos_list)
+        default_qvel = self.w1_params.default_qvel[
+            self.w1_params.index_infos["torso"]["index"]]
+        min_qvel = self.w1_params.min_qvel[self.w1_params.index_infos["torso"]
+                                           ["index"]]
+        max_qvel = self.w1_params.max_qvel[self.w1_params.index_infos["torso"]
+                                           ["index"]]
+        qvel_limits_array = np.clip(np.outer(speed_ratio_list, default_qvel),
+                                    min_qvel, max_qvel)
+
+        res_plan, torso_qpos_array = self.plan_joint_traj(
+            "torso", np.array(qpos_list), False, qvel_limits_array)
+        if not res_plan:
+            return False, None
+
+        # align
+        res_align, total_qpos_array = self._qpos_align(
+            torso_qpos_array, cur_qpos[self.w1_params.head_index],
+            cur_qpos[self.w1_params.left_arm_index],
+            cur_qpos[self.w1_params.right_arm_index])
+        if not res_align:
+            return False
+
+        return self.execute_joint_traj(total_qpos_array)
 
     def move_arm_linear(self,
                         name: str,
@@ -2218,20 +2377,74 @@ class W1Manager:
             res, T_chassis_ee = self.get_current_xpos(name, False)
             if not res:
                 return False
-            target_xpos[:3, :
-                        3] = T_armbase_ee[:3, :
-                                          3] @ T_chassis_ee[:3, :
-                                                            3].T @ delta_xpos[:
-                                                                              3, :
-                                                                              3] @ T_chassis_ee[:
-                                                                                                3, :
-                                                                                                3]
+            target_xpos[:3,:3] = T_armbase_ee[:3,:3] @ T_chassis_ee[:3,:3].T \
+                  @ delta_xpos[:3,:3] @ T_chassis_ee[:3,:3]
         else:
             target_xpos[:3, :3] = T_armbase_ee[:3, :3] @ delta_xpos[:3, :3]
 
-        return self.move_linear_full_body(
-            waypoints_dict={f"{name}": [xpos_to_user_pose(target_xpos)]},
-            speed_ratio=speed_ratio)
+        arm_kine = self._get_arm_kine(name)
+        if arm_kine is None:
+            return False
+
+        path = PathR3xSO3Bezier(np.array([T_armbase_ee, target_xpos]))
+        if not path.calc_path():
+            return False
+        xpos_sample_array = path.get_sample_by_step(0.005)
+
+        # solve ik
+        qpos_list = []
+        res, cur_qpos = self.get_current_qpos()
+        if not res:
+            return False
+        cur_qseed = cur_qpos[self.w1_params.index_infos[name]["index"]]
+        for cur_xpos in xpos_sample_array:
+            res_ik, qpos = arm_kine.get_nearest_ik(xpos=cur_xpos,
+                                                   qpos_seed=cur_qseed)
+            if not res_ik:
+                self.logger.error(
+                    f"{name} solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}."
+                )
+                return False
+            if not np.allclose(qpos, cur_qseed, atol=np.deg2rad(90)):
+                self.logger.error(f"{name} qpos traj is not continues\n" + \
+                                  f"cur_qpos(deg): {np.rad2deg(cur_qpos)}\n" + \
+                                  f"cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
+                return False
+            qpos_list.append(qpos)
+            cur_qseed = qpos
+
+        speed_ratio_list = [speed_ratio] * len(qpos_list)
+        default_qvel = self.w1_params.default_qvel[
+            self.w1_params.index_infos[name]["index"]]
+        min_qvel = self.w1_params.min_qvel[self.w1_params.index_infos[name]
+                                           ["index"]]
+        max_qvel = self.w1_params.max_qvel[self.w1_params.index_infos[name]
+                                           ["index"]]
+        qvel_limits_array = np.clip(np.outer(speed_ratio_list, default_qvel),
+                                    min_qvel, max_qvel)
+
+        res_plan, arm_qpos_array = self.plan_joint_traj(name,
+                                                        np.array(qpos_list),
+                                                        False,
+                                                        qvel_limits_array)
+        if not res_plan:
+            return False, None
+
+        # align
+        if name == "left_arm":
+            res_align, total_qpos_array = self._qpos_align(
+                cur_qpos[self.w1_params.torso_index],
+                cur_qpos[self.w1_params.head_index], arm_qpos_array,
+                cur_qpos[self.w1_params.right_arm_index])
+        else:
+            res_align, total_qpos_array = self._qpos_align(
+                cur_qpos[self.w1_params.torso_index],
+                cur_qpos[self.w1_params.head_index],
+                cur_qpos[self.w1_params.left_arm_index], arm_qpos_array)
+        if not res_align:
+            return False
+
+        return self.execute_joint_traj(total_qpos_array)
 
     def attach_object(self,
                       obj_name: str,

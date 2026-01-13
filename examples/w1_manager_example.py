@@ -32,9 +32,9 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
                                          5, -45, -5, -90, 0, -15, 0,
                                          -5, 45, 5, 90, 0, 15, 0]),
                              save_to_file=False)
-
-    w1_manager.set_ee_qpos("left_arm_ee", np.array([0.] * 6))
-    w1_manager.set_ee_qpos("right_arm_ee", np.array([0.] * 6))
+    if move_with_ee:
+        w1_manager.set_ee_qpos("left_arm_ee", np.array([0.] * 6))
+        w1_manager.set_ee_qpos("right_arm_ee", np.array([0.] * 6))
     w1_manager.go_home(0.5)
 
     torso_waypoints = [[0.7854, -1.5708, 0.7853, -0.],
@@ -110,9 +110,9 @@ def move_full_body_example2(move_with_ee: bool,
                                          5, -45, -5, -90, 0, -15, 0,
                                          -5, 45, 5, 90, 0, 15, 0]),
                              save_to_file=False)
-
-    w1_manager.set_ee_qpos("left_arm_ee", np.array([0.] * 6))
-    w1_manager.set_ee_qpos("right_arm_ee", np.array([0.] * 6))
+    if move_with_ee:
+        w1_manager.set_ee_qpos("left_arm_ee", np.array([0.] * 6))
+        w1_manager.set_ee_qpos("right_arm_ee", np.array([0.] * 6))
     w1_manager.go_home(0.5)
 
     cur_l_pose = w1_manager.get_current_pose("left_arm")[1]
