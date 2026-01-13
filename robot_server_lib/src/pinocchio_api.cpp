@@ -1,20 +1,16 @@
 #include "pinocchio_api.h"
 
-namespace pinocchio
-{
+namespace pinocchio {
 
-void PrintModelInfo(const Model& model)
-{
+void PrintModelInfo(const Model& model) {
     std::cout << "==== Model Info ====" << std::endl;
     std::cout << "Number of joints: " << model.nv << std::endl;
-    for (int idx = 1; idx <= model.nv; ++idx)
-    {
+    for (int idx = 1; idx <= model.nv; ++idx) {
         std::cout << "Joint " << idx << ": " << model.names[idx] << std::endl;
     }
 }
 
-Eigen::Matrix4d GetFK(const Model& model, const Eigen::VectorXd &q)
-{
+Eigen::Matrix4d GetFK(const Model& model, const Eigen::VectorXd& q) {
     SE3 pose;
     Data data(model);
     int frame_id = model.getFrameId("ee_link");
@@ -24,14 +20,12 @@ Eigen::Matrix4d GetFK(const Model& model, const Eigen::VectorXd &q)
     return pose.toHomogeneousMatrix();
 }
 
-Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q, ReferenceFrame frame)
-{
+Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q, ReferenceFrame frame) {
     int nv = model.nv;
     Eigen::MatrixXd J = Eigen::MatrixXd::Zero(6, nv);
 
     int ee_frame_id = model.getFrameId("ee_link");
-    if (ee_frame_id == -1)
-    {
+    if (ee_frame_id == -1) {
         assert(false && "Frame 'ee_link' not found in model!");
         return J;
     }
@@ -45,13 +39,14 @@ Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q, Re
     return J;
 }
 
-Eigen::MatrixXd GetJacobianMatrixDot(const Model& model, const Eigen::VectorXd& q, const Eigen::VectorXd& dq, ReferenceFrame frame)
-{
+Eigen::MatrixXd GetJacobianMatrixDot(const Model& model,
+                                     const Eigen::VectorXd& q,
+                                     const Eigen::VectorXd& dq,
+                                     ReferenceFrame frame) {
     Data data(model);
     int ee_frame_id = model.getFrameId("ee_link");
     Eigen::MatrixXd J_dot(6, model.nv);
-    if (ee_frame_id == -1)
-    {
+    if (ee_frame_id == -1) {
         assert(false && "Frame 'ee_link' not found in model!");
         return J_dot;
     }
@@ -68,8 +63,7 @@ Eigen::MatrixXd GetJacobianMatrixDot(const Model& model, const Eigen::VectorXd& 
     return J_dot;
 }
 
-SE3 GetFkByFrameId(const Model& model, const Eigen::VectorXd &q_urdf_in, int frame_id)
-{
+SE3 GetFkByFrameId(const Model& model, const Eigen::VectorXd& q_urdf_in, int frame_id) {
     Data data(model);
     forwardKinematics(model, data, q_urdf_in);
     updateFramePlacements(model, data);
@@ -77,8 +71,7 @@ SE3 GetFkByFrameId(const Model& model, const Eigen::VectorXd &q_urdf_in, int fra
     return data.oMf[frame_id];
 }
 
-void PseudoInverse(const Eigen::MatrixXd& M_, Eigen::MatrixXd& M_pinv_, bool damped)
-{
+void PseudoInverse(const Eigen::MatrixXd& M_, Eigen::MatrixXd& M_pinv_, bool damped) {
     const double eps = std::numeric_limits<double>::epsilon();
 
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(M_, Eigen::ComputeFullU | Eigen::ComputeFullV);
@@ -97,18 +90,14 @@ void PseudoInverse(const Eigen::MatrixXd& M_, Eigen::MatrixXd& M_pinv_, bool dam
     // Construct S_pinv of size n x m
     Eigen::MatrixXd S_pinv = Eigen::MatrixXd::Zero(n, m);
 
-    for (int i = 0; i < k; ++i)
-    {
+    for (int i = 0; i < k; ++i) {
         double si = sing_vals(i);
         double inv_si = 0.0;
-        if (damped)
-        {
+        if (damped) {
             // Tikhonov-regularized inverse of singular value:
             // inv = s / (s^2 + lambda^2)
             inv_si = si / (si * si + lambda * lambda);
-        }
-        else
-        {
+        } else {
             // Moore-Penrose truncated inverse
             if (si > tol)
                 inv_si = 1.0 / si;
@@ -122,8 +111,7 @@ void PseudoInverse(const Eigen::MatrixXd& M_, Eigen::MatrixXd& M_pinv_, bool dam
     M_pinv_ = svd.matrixV() * S_pinv * svd.matrixU().transpose();
 }
 
-Eigen::MatrixXd GetInertiaMatrix(const Model& model, const Eigen::VectorXd& q)
-{
+Eigen::MatrixXd GetInertiaMatrix(const Model& model, const Eigen::VectorXd& q) {
     Data data(model);
     crba(model, data, q);
     data.M.triangularView<Eigen::StrictlyLower>() = data.M.transpose().triangularView<Eigen::StrictlyLower>();

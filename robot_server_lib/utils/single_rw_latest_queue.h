@@ -10,13 +10,11 @@
 
 #include "encoding.h"
 
-namespace robot_server_lib
-{
+namespace robot_server_lib {
 
 template <typename T, std::uint64_t BufferCapacity = 8>
-class SingleReadWriteLatestQueue
-{
-   public:
+class SingleReadWriteLatestQueue {
+public:
     SingleReadWriteLatestQueue();
     ~SingleReadWriteLatestQueue() = default;
 
@@ -28,10 +26,9 @@ class SingleReadWriteLatestQueue
     // Reset the queue to initial state.
     void Reset();
 
-   private:
+private:
     // The element stored in the queue
-    struct QueueElement
-    {
+    struct QueueElement {
         T data;
         bool valid{false};  // Handle the case if no element has arrived yet
     };
@@ -71,9 +68,8 @@ class SingleReadWriteLatestQueue
 
 // SingleWriterLatestBuffer 是一个线程安全的缓冲区，允许一个写入者和多个读取者
 template <typename T, std::int64_t ConcurrentReadersHint = 3>
-class SingleWriterLatestBuffer
-{
-   public:
+class SingleWriterLatestBuffer {
+public:
     SingleWriterLatestBuffer() = default;
     ~SingleWriterLatestBuffer() = default;
     // 读取最新数据。它会读取 active_
@@ -85,7 +81,7 @@ class SingleWriterLatestBuffer
     // 重置缓冲区
     void Reset();
 
-   private:
+private:
     static constexpr std::int64_t kArrayCapacity = ConcurrentReadersHint + 1;
     static constexpr std::uint32_t kWriter = 0xFFFFFFFFu;
     std::array<T, kArrayCapacity> elements_{};
@@ -93,8 +89,7 @@ class SingleWriterLatestBuffer
     std::atomic_int64_t active_{-1};
 };
 template <typename T, std::uint64_t BufferCapacity>
-SingleReadWriteLatestQueue<T, BufferCapacity>::SingleReadWriteLatestQueue()
-{
+SingleReadWriteLatestQueue<T, BufferCapacity>::SingleReadWriteLatestQueue() {
     static_assert(BufferCapacity >= 2);
 }
 

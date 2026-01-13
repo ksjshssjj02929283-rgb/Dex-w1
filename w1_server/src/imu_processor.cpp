@@ -5,27 +5,26 @@
 #include <cmath>
 #include <rclcpp/rclcpp.hpp>
 
-namespace chassis_node
-{
+namespace chassis_node {
 ImuProcessor::ImuProcessor() {}
 
-void ImuProcessor::SetParam(const int max_buff_size, const double acc_excite_threshold, const double gyro_excite_threshold,
-                            const double reinit_duration)
-{
+void ImuProcessor::SetParam(const int max_buff_size,
+                            const double acc_excite_threshold,
+                            const double gyro_excite_threshold,
+                            const double reinit_duration) {
     max_buff_size_ = max_buff_size;
     acc_excite_threshold_ = acc_excite_threshold;
     gyro_excite_threshold_ = gyro_excite_threshold;
     reinit_duration_ = reinit_duration;
     RCLCPP_INFO(rclcpp::get_logger("ImuProcessor"),
-                "Set IMU processor param: max_buff_size=%d, acc_excite_threshold=%f, gyro_excite_threshold=%f, reinit_duration=%f", max_buff_size_,
-                acc_excite_threshold_, gyro_excite_threshold_, reinit_duration_);
+                "Set IMU processor param: max_buff_size=%d, acc_excite_threshold=%f, gyro_excite_threshold=%f, "
+                "reinit_duration=%f",
+                max_buff_size_, acc_excite_threshold_, gyro_excite_threshold_, reinit_duration_);
     is_first_initialized_ = false;  // 设置参数后需要重新初始化
 }
 
-bool ImuProcessor::SetGravityMagnitude(const double g)
-{
-    if (g <= 0.0)
-    {
+bool ImuProcessor::SetGravityMagnitude(const double g) {
+    if (g <= 0.0) {
         RCLCPP_WARN(rclcpp::get_logger("ImuProcessor"), "Invalid gravity magnitude: %f", g);
         return false;
     }
@@ -35,25 +34,20 @@ bool ImuProcessor::SetGravityMagnitude(const double g)
     return true;
 }
 
-bool ImuProcessor::InitImu()
-{
-    if (imu_data_buff_.empty())
-    {
+bool ImuProcessor::InitImu() {
+    if (imu_data_buff_.empty()) {
         return false;
     }
 
-    if (!CanComputeImuBias())
-    {
+    if (!CanComputeImuBias()) {
         return false;
     }
 
-    if (!ComputeImuBias())
-    {
+    if (!ComputeImuBias()) {
         return false;
     }
 
-    if (!is_first_initialized_)
-    {
+    if (!is_first_initialized_) {
         is_first_initialized_ = true;
     }
 
@@ -63,15 +57,14 @@ bool ImuProcessor::InitImu()
     return true;
 }
 
-std::optional<sensor_msgs::msg::Imu> ImuProcessor::GetRefinedImuData(const sensor_msgs::msg::Imu& imu_data)
-{
-    if (!is_first_initialized_)
-    {
+std::optional<sensor_msgs::msg::Imu> ImuProcessor::GetRefinedImuData(const sensor_msgs::msg::Imu& imu_data) {
+    if (!is_first_initialized_) {
         return std::nullopt;
     }
 
     // 1) 取出原始量测为 Eigen 向量
-    Eigen::Vector3d acc_raw(imu_data.linear_acceleration.x, imu_data.linear_acceleration.y, imu_data.linear_acceleration.z);
+    Eigen::Vector3d acc_raw(imu_data.linear_acceleration.x, imu_data.linear_acceleration.y,
+                            imu_data.linear_acceleration.z);
 
     Eigen::Vector3d gyr_raw(imu_data.angular_velocity.x, imu_data.angular_velocity.y, imu_data.angular_velocity.z);
 
@@ -109,24 +102,20 @@ std::optional<sensor_msgs::msg::Imu> ImuProcessor::GetRefinedImuData(const senso
     return res_imu;
 }
 
-bool ImuProcessor::CanComputeImuBias()
-{
-    if (imu_data_buff_.size() >= static_cast<size_t>(max_buff_size_))
-    {
+bool ImuProcessor::CanComputeImuBias() {
+    if (imu_data_buff_.size() >= static_cast<size_t>(max_buff_size_)) {
         return true;
     }
 
     return false;
 }
 
-bool ImuProcessor::ComputeImuBias()
-{
+bool ImuProcessor::ComputeImuBias() {
     // 快照副本，避免长时间持锁
     std::deque<sensor_msgs::msg::Imu> buf;
     {
         std::lock_guard<std::mutex> lk(buf_mutex_);
-        if (imu_data_buff_.size() < static_cast<size_t>(max_buff_size_))
-            return false;
+        if (imu_data_buff_.size() < static_cast<size_t>(max_buff_size_)) return false;
         buf.assign(imu_data_buff_.end() - max_buff_size_, imu_data_buff_.end());
     }
 
@@ -138,8 +127,7 @@ bool ImuProcessor::ComputeImuBias()
     std::vector<Eigen::Vector3d> gyr_samples;
     gyr_samples.reserve(N);
 
-    for (const auto& meas : buf)
-    {
+    for (const auto& meas : buf) {
         Eigen::Vector3d acc(meas.linear_acceleration.x, meas.linear_acceleration.y, meas.linear_acceleration.z);
         Eigen::Vector3d omega(meas.angular_velocity.x, meas.angular_velocity.y, meas.angular_velocity.z);
         acc_sum += acc;
@@ -151,11 +139,9 @@ bool ImuProcessor::ComputeImuBias()
     const Eigen::Vector3d gyr_avg = gyr_sum / double(N);
 
     // 标准差
-    auto compute_std = [](const std::vector<Eigen::Vector3d>& xs, const Eigen::Vector3d& mean) -> Eigen::Vector3d
-    {
+    auto compute_std = [](const std::vector<Eigen::Vector3d>& xs, const Eigen::Vector3d& mean) -> Eigen::Vector3d {
         Eigen::Vector3d v = Eigen::Vector3d::Zero();
-        for (const auto& x : xs)
-        {
+        for (const auto& x : xs) {
             Eigen::Vector3d d = x - mean;
             v += d.cwiseProduct(d);
         }
@@ -175,9 +161,9 @@ bool ImuProcessor::ComputeImuBias()
     const double acc_mag_bias_thresh = 0.2;  // m/s^2
 
     // 静止判据
-    if (acc_std.maxCoeff() > acc_excite_threshold_ || gyr_std.maxCoeff() > gyro_excite_threshold_ || std::abs(gyr_avg.x()) > gyr_mean_thresh ||
-        std::abs(gyr_avg.y()) > gyr_mean_thresh || std::abs(gyr_avg.z()) > gyr_mean_thresh || acc_mag_bias > acc_mag_bias_thresh)
-    {
+    if (acc_std.maxCoeff() > acc_excite_threshold_ || gyr_std.maxCoeff() > gyro_excite_threshold_ ||
+        std::abs(gyr_avg.x()) > gyr_mean_thresh || std::abs(gyr_avg.y()) > gyr_mean_thresh ||
+        std::abs(gyr_avg.z()) > gyr_mean_thresh || acc_mag_bias > acc_mag_bias_thresh) {
         LOG_WARN << "IMU not static enough for bias init. "
                  << "acc_std=[" << acc_std.x() << ", " << acc_std.y() << ", " << acc_std.z() << "], "
                  << "gyr_std=[" << gyr_std.x() << ", " << gyr_std.y() << ", " << gyr_std.z() << "], "
@@ -197,8 +183,9 @@ bool ImuProcessor::ComputeImuBias()
     // 2) 从实测数据中提取重力大小
     const double g_estimated = acc_avg.norm();  // 重估的重力大小
 
-    RCLCPP_INFO(rclcpp::get_logger("ImuProcessor"), "Gravity estimation: preset=%.4f m/s², estimated=%.4f m/s², diff=%.4f m/s²", g_preset,
-                g_estimated, std::abs(g_estimated - g_preset));
+    RCLCPP_INFO(rclcpp::get_logger("ImuProcessor"),
+                "Gravity estimation: preset=%.4f m/s², estimated=%.4f m/s², diff=%.4f m/s²", g_preset, g_estimated,
+                std::abs(g_estimated - g_preset));
 
     // 3) 构造稳健的正交基（用于定义世界坐标系）
 
@@ -220,8 +207,7 @@ bool ImuProcessor::ComputeImuBias()
 
     Eigen::JacobiSVD<Eigen::Matrix3d> svd(R, Eigen::ComputeFullU | Eigen::ComputeFullV);
     Eigen::Matrix3d Ro = svd.matrixU() * svd.matrixV().transpose();
-    if (Ro.determinant() < 0)
-    {
+    if (Ro.determinant() < 0) {
         Eigen::Matrix3d U = svd.matrixU();
         U.col(2) *= -1;
         Ro = U * svd.matrixV().transpose();
@@ -250,57 +236,47 @@ bool ImuProcessor::ComputeImuBias()
     return true;
 }
 
-void ImuProcessor::TrimImuData()
-{
-    while (imu_data_buff_.size() > static_cast<size_t>(max_buff_size_))
-    {
+void ImuProcessor::TrimImuData() {
+    while (imu_data_buff_.size() > static_cast<size_t>(max_buff_size_)) {
         imu_data_buff_.pop_front();
     }
 }
 
 // 将 builtin_interfaces::msg::Time 转为 double 秒
-inline double to_seconds(const builtin_interfaces::msg::Time& t)
-{
+inline double to_seconds(const builtin_interfaces::msg::Time& t) {
     // 注意 nanosec 的范围是 [0, 1e9)
     return static_cast<double>(t.sec) + static_cast<double>(t.nanosec) * 1e-9;
 }
 
 // 返回 a - b 的秒差
-inline double time_diff_seconds(const builtin_interfaces::msg::Time& a, const builtin_interfaces::msg::Time& b)
-{
+inline double time_diff_seconds(const builtin_interfaces::msg::Time& a, const builtin_interfaces::msg::Time& b) {
     // 直接用 double 秒做差
     return to_seconds(a) - to_seconds(b);
 }
 
-void ImuProcessor::AddImuData(const sensor_msgs::msg::Imu& imu_data)
-{
+void ImuProcessor::AddImuData(const sensor_msgs::msg::Imu& imu_data) {
     {
         std::unique_lock<std::mutex> lock(buf_mutex_);
 
         const auto& t_curr = imu_data.header.stamp;
 
         // 乱序/回拨检查：先判空再比较
-        if (!imu_data_buff_.empty())
-        {
+        if (!imu_data_buff_.empty()) {
             const auto& t_last = imu_data_buff_.back().header.stamp;
             const double buff_dt = time_diff_seconds(t_curr, t_last);  // t_curr - t_last
-            if (buff_dt < 0.0)
-            {
+            if (buff_dt < 0.0) {
                 // 回拨，直接丢弃
                 return;
             }
         }
 
         // 上电 5s 内不使用：以首帧时间为基准
-        if (is_need_initialize_)
-        {
-            if (!start_time_.has_value())
-            {
+        if (is_need_initialize_) {
+            if (!start_time_.has_value()) {
                 start_time_ = t_curr;  // 保存 stamp 值本身
             }
             const double dt = time_diff_seconds(t_curr, start_time_.value());
-            if (dt < 5.0)
-            {
+            if (dt < 5.0) {
                 return;
             }
         }
@@ -312,16 +288,13 @@ void ImuProcessor::AddImuData(const sensor_msgs::msg::Imu& imu_data)
     MaybeNeedInit();
 
     // 初始化IMU
-    if (is_need_initialize_)
-    {
+    if (is_need_initialize_) {
         InitImu();
     }
 }
 
-void ImuProcessor::MaybeNeedInit()
-{
-    if (!is_first_initialized_)
-    {
+void ImuProcessor::MaybeNeedInit() {
+    if (!is_first_initialized_) {
         is_need_initialize_ = true;
         return;
     }

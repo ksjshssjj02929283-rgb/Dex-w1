@@ -44,6 +44,7 @@ CPP_EXCLUDE_DIRS = [
     "build",
     ".git",
     "third_party",
+    "robot_server_lib/dynamics",
 ]
 
 

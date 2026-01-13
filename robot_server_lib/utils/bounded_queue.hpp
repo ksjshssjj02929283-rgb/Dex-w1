@@ -1,16 +1,12 @@
 #pragma once
 
-namespace robot_server_lib
-{
+namespace robot_server_lib {
 
 template <typename T>
-BoundedQueue<T>::BoundedQueue(std::uint64_t capacity) : ring_buffer_(capacity)
-{
-}
+BoundedQueue<T>::BoundedQueue(std::uint64_t capacity) : ring_buffer_(capacity) {}
 
 template <typename T>
-bool BoundedQueue<T>::EnQueue(const T &element)
-{
+bool BoundedQueue<T>::EnQueue(const T &element) {
     const auto buffer_capacity = capacity();
     std::uint64_t current_begin = 0;
     std::uint64_t new_reserve_end = 0;
@@ -19,8 +15,7 @@ bool BoundedQueue<T>::EnQueue(const T &element)
     std::uint64_t old_reserve_end = reserve_end_.load(std::memory_order_acquire);
 
     // First loop reserve the placement location at new_end
-    do
-    {
+    do {
         // Planned placement location
         new_reserve_end = old_reserve_end + 1;
         planned_placement = old_reserve_end % buffer_capacity;
@@ -40,13 +35,13 @@ bool BoundedQueue<T>::EnQueue(const T &element)
         // assert(current_size_include_reserved <= buffer_capacity);
 
         // If check passed, then ok to write in placement
-        if ((old_reserve_end >= current_begin) && (current_size_include_reserved == buffer_capacity))
-        {
+        if ((old_reserve_end >= current_begin) && (current_size_include_reserved == buffer_capacity)) {
             return false;
         }
 
         // Try update the end to reserve place
-    } while (!reserve_end_.compare_exchange_weak(old_reserve_end, new_reserve_end, std::memory_order_acq_rel, std::memory_order_relaxed));
+    } while (!reserve_end_.compare_exchange_weak(old_reserve_end, new_reserve_end, std::memory_order_acq_rel,
+                                                 std::memory_order_relaxed));
 
     // Place reserve ok
     ring_buffer_[planned_placement] = element;
@@ -54,8 +49,8 @@ bool BoundedQueue<T>::EnQueue(const T &element)
     // Copy done, try update commit to new end
     // Only perform update when old_commit is old_end
     std::uint64_t expected_old_commit = old_reserve_end;
-    while (!commit_end_.compare_exchange_weak(expected_old_commit, new_reserve_end, std::memory_order_acq_rel, std::memory_order_relaxed))
-    {
+    while (!commit_end_.compare_exchange_weak(expected_old_commit, new_reserve_end, std::memory_order_acq_rel,
+                                              std::memory_order_relaxed)) {
         assert(expected_old_commit <= old_reserve_end);  // This is weak
         expected_old_commit = old_reserve_end;
     }
@@ -65,8 +60,7 @@ bool BoundedQueue<T>::EnQueue(const T &element)
 }
 
 template <typename T>
-bool BoundedQueue<T>::DeQueue(T *element_output)
-{
+bool BoundedQueue<T>::DeQueue(T *element_output) {
     const std::uint64_t buffer_capacity = capacity();
     std::uint64_t new_begin = 0;
     std::uint64_t old_begin_place = 0;
@@ -74,8 +68,7 @@ bool BoundedQueue<T>::DeQueue(T *element_output)
     std::uint64_t old_begin = begin_.load(std::memory_order_acquire);
 
     // The loop
-    do
-    {
+    do {
         // This must be a valid place that we can get value
         // if the element size is not empty
         current_commit = commit_end_.load(std::memory_order_acquire);
@@ -85,15 +78,13 @@ bool BoundedQueue<T>::DeQueue(T *element_output)
         // current_size_commit_only = current_commit - old_begin;
         // assert(current_size_commit_only <= buffer_capacity);
         // Thus, we use this condition:
-        if (current_commit == old_begin)
-        {
+        if (current_commit == old_begin) {
             return false;
         }
 
         // Now we can retrieve the element in old_place
         old_begin_place = old_begin % buffer_capacity;
-        if (element_output != nullptr)
-        {
+        if (element_output != nullptr) {
             *element_output = ring_buffer_[old_begin_place];
         }
 
@@ -106,8 +97,7 @@ bool BoundedQueue<T>::DeQueue(T *element_output)
 }
 
 template <typename T>
-std::uint64_t BoundedQueue<T>::ElementSize()
-{
+std::uint64_t BoundedQueue<T>::ElementSize() {
     std::uint64_t begin = begin_.load();
     std::uint64_t commit_end = commit_end_.load();
     assert(commit_end >= begin);
@@ -115,8 +105,7 @@ std::uint64_t BoundedQueue<T>::ElementSize()
 }
 
 template <typename T>
-std::uint64_t BoundedQueue<T>::capacity() const
-{
+std::uint64_t BoundedQueue<T>::capacity() const {
     return ring_buffer_.size();
 }
 

@@ -1,33 +1,28 @@
 #include "robot_server_sim.h"
 
-namespace robot_server_lib
-{
+namespace robot_server_lib {
 
-RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : RobotServerBase(robot_cfg_path, is_sim)
-{
+RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : RobotServerBase(robot_cfg_path, is_sim) {
     // 创建publisher
     this->feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint_sim", 10);
 
     // 创建 /control/joint 订阅器
-    control_subscriber_ =
-        this->create_subscription<JointControlMsg>("/control/joint_sim", 10, std::bind(&RobotServer::ControlCallback, this, std::placeholders::_1));
+    control_subscriber_ = this->create_subscription<JointControlMsg>(
+        "/control/joint_sim", 10, std::bind(&RobotServer::ControlCallback, this, std::placeholders::_1));
 
     // 创建 /control/joint_position 订阅器
     position_control_subscriber_ = this->create_subscription<JointPositionControlMsg>(
-        "/control/joint_position_sim", 10, std::bind(&RobotServer::PositionControlCallback, this, std::placeholders::_1));
+        "/control/joint_position_sim", 10,
+        std::bind(&RobotServer::PositionControlCallback, this, std::placeholders::_1));
 
     // 创建 /feedback/robot_server_state 仿真专用订阅器用于与真实机器人关节同步, 部署到真实机器人时不需要
     this->robot_server_state_real_subscriber_ = this->create_subscription<std_msgs::msg::String>(
-        "/feedback/robot_server_state", 10,
-        [this](const std_msgs::msg::String::SharedPtr msg)
-        {
+        "/feedback/robot_server_state", 10, [this](const std_msgs::msg::String::SharedPtr msg) {
             auto json_msg = nlohmann::json::parse(msg->data);
-            if (json_msg.contains("joint_position"))
-            {
+            if (json_msg.contains("joint_position")) {
                 std::vector<double> joint_pos = json_msg["joint_position"].get<std::vector<double>>();
                 auto temp = Eigen::Map<robot_server_lib::VectorDof>(joint_pos.data(), joint_pos.size());
-                if (!this->real_robot_sync_.joint_position.isApprox(temp, 0.005))
-                {
+                if (!this->real_robot_sync_.joint_position.isApprox(temp, 0.005)) {
                     this->real_robot_sync_.joint_position = temp;
                     this->real_robot_sync_.is_updated = true;
                 }
@@ -38,8 +33,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
 }
 
-void RobotServer::RobotThreadFunc()
-{
+void RobotServer::RobotThreadFunc() {
 #if false
     RCLCPP_INFO(this->get_logger(), "Torque control is enabled.");
     LOG_INFO << "Torque control is enabled.";
@@ -79,17 +73,16 @@ void RobotServer::RobotThreadFunc()
 
     PlannerManagerCommand q_cmd{};
     JointRawMeasurement raw_measurement{};
-    raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
+    raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0,
+        1.0, 0.0, 0.5, 0.5;
     raw_measurement.velocity.setZero();
     raw_measurement.effort.setZero();
     raw_measurement.time_point = TimePointSystem::Now();
     this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
     auto next_cycle_time_point = std::chrono::steady_clock::now();
-    while (rclcpp::ok())
-    {
+    while (rclcpp::ok()) {
         next_cycle_time_point += std::chrono::microseconds(manager_dt_micro);
-        if (this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
-        {
+        if (this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd)) {
             // 更新关节测量数据
             raw_measurement.position = q_cmd.cmd.position;
             raw_measurement.velocity = q_cmd.cmd.velocity;
@@ -100,21 +93,18 @@ void RobotServer::RobotThreadFunc()
 #endif
 }
 
-void RobotServer::ManagerThreadFunc()
-{
+void RobotServer::ManagerThreadFunc() {
     PlannerManager planner_manager(this->robot_model_, this->manager_buffers_,
-                                   std::bind(&RobotServer::ReportRequestStatus, this, std::placeholders::_1, std::placeholders::_2,
-                                             std::placeholders::_3, std::placeholders::_4));
+                                   std::bind(&RobotServer::ReportRequestStatus, this, std::placeholders::_1,
+                                             std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
     PlannerManagerCommand q_cmd{};
     auto next_cycle_time_point = std::chrono::steady_clock::now();
-    while (rclcpp::ok())
-    {
+    while (rclcpp::ok()) {
         next_cycle_time_point += std::chrono::microseconds(manager_dt_micro);
-        if (is_robot_ready_)
-        {
+        if (is_robot_ready_) {
             planner_manager.LoopOnce();
-            if (this->real_robot_sync_.is_updated && this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
-            {
+            if (this->real_robot_sync_.is_updated &&
+                this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd)) {
                 q_cmd.cmd.position = this->real_robot_sync_.joint_position;
                 q_cmd.cmd.velocity.setZero();
                 this->real_robot_sync_.is_updated = false;
@@ -125,8 +115,7 @@ void RobotServer::ManagerThreadFunc()
     }
 }
 
-void RobotServer::PublishFeedback()
-{
+void RobotServer::PublishFeedback() {
     // 发布关节状态反馈
     sensor_msgs::msg::JointState feedback_msg;
     feedback_msg.header.stamp = this->get_clock()->now();
@@ -137,10 +126,8 @@ void RobotServer::PublishFeedback()
     feedback_msg.effort.resize(ndof_robot);
 
     JointRawMeasurement raw_measurement{};
-    if (this->robot_buffers_.joint_raw_measurement->PeekLatest(&raw_measurement))
-    {
-        for (int i = 0; i < ndof_robot; ++i)
-        {
+    if (this->robot_buffers_.joint_raw_measurement->PeekLatest(&raw_measurement)) {
+        for (int i = 0; i < ndof_robot; ++i) {
             feedback_msg.name[i] = ecat_joint_name_[i];
             feedback_msg.position[i] = raw_measurement.position[i];
             feedback_msg.velocity[i] = raw_measurement.velocity[i];
@@ -151,12 +138,10 @@ void RobotServer::PublishFeedback()
     }
 }
 
-Int64 RobotServer::StartStreaming(PlannerRequest planner_request)
-{
+Int64 RobotServer::StartStreaming(PlannerRequest planner_request) {
     auto request_id = MakeNewRequestID(planner_request);
 
-    if (request_id < 0)
-    {
+    if (request_id < 0) {
         return request_id;
     }
     planner_request.request_id = request_id;
@@ -167,28 +152,22 @@ Int64 RobotServer::StartStreaming(PlannerRequest planner_request)
     return request_id;
 }
 
-void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg)
-{
+void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
     PlannerManagerCommand q_cmd{};
-    if (!this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
-    {
+    if (!this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd)) {
         LOG_CRIT << "ControlCallback: Failed to peek latest planner_manager_command, robot not ready";
         return;
     }
     auto robot_control_temp = q_cmd.cmd;
-    for (size_t i = 0; i < msg->name.size(); ++i)
-    {
-        for (int j = 0; j < ndof_robot; ++j)
-        {
-            if (ecat_joint_name_[j] == msg->name[i])
-            {
+    for (size_t i = 0; i < msg->name.size(); ++i) {
+        for (int j = 0; j < ndof_robot; ++j) {
+            if (ecat_joint_name_[j] == msg->name[i]) {
                 robot_control_temp.position[j] = msg->position[i];
                 break;
             }
         }
     }
-    if (manager_state_ == Status::Idle)
-    {
+    if (manager_state_ == Status::Idle) {
         PlannerRequest planner_request;
         planner_request.type = RequestType::StartJointStreaming;
         MoveRequest move_request;
@@ -197,38 +176,32 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg)
         planner_request.data = move_request;
         streaming_request_id_ = StartStreaming(planner_request);
     }
-    if (streaming_request_id_ != -1)
-    {
+    if (streaming_request_id_ != -1) {
         StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
         streaming_msg->request_id = streaming_request_id_;
         streaming_msg->streaming_finished = false;
-        streaming_msg->position = std::vector<float>(robot_control_temp.position.begin(), robot_control_temp.position.end());
+        streaming_msg->position =
+            std::vector<float>(robot_control_temp.position.begin(), robot_control_temp.position.end());
         this->StreamingCommandCallback(streaming_msg);
     }
 }
 
-void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedPtr msg)
-{
+void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedPtr msg) {
     PlannerManagerCommand q_cmd{};
-    if (!this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd))
-    {
+    if (!this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd)) {
         LOG_CRIT << "ControlCallback: Failed to peek latest planner_manager_command, robot not ready";
         return;
     }
     auto robot_control_temp = q_cmd.cmd;
-    for (size_t i = 0; i < msg->name.size(); ++i)
-    {
-        for (int j = 0; j < ndof_robot; ++j)
-        {
-            if (ecat_joint_name_[j] == msg->name[i])
-            {
+    for (size_t i = 0; i < msg->name.size(); ++i) {
+        for (int j = 0; j < ndof_robot; ++j) {
+            if (ecat_joint_name_[j] == msg->name[i]) {
                 robot_control_temp.position[j] = msg->position[i];
                 break;
             }
         }
     }
-    if (manager_state_ == Status::Idle)
-    {
+    if (manager_state_ == Status::Idle) {
         PlannerRequest planner_request;
         planner_request.type = RequestType::StartJointStreaming;
         MoveRequest move_request;
@@ -237,12 +210,12 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
         planner_request.data = move_request;
         streaming_request_id_ = StartStreaming(planner_request);
     }
-    if (streaming_request_id_ != -1)
-    {
+    if (streaming_request_id_ != -1) {
         StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
         streaming_msg->request_id = streaming_request_id_;
         streaming_msg->streaming_finished = false;
-        streaming_msg->position = std::vector<float>(robot_control_temp.position.begin(), robot_control_temp.position.end());
+        streaming_msg->position =
+            std::vector<float>(robot_control_temp.position.begin(), robot_control_temp.position.end());
         this->StreamingCommandCallback(streaming_msg);
     }
 }

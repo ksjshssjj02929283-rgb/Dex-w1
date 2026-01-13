@@ -11,12 +11,10 @@
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
 #include "shared_memory_def.h"
 
-namespace chassis_node
-{
+namespace chassis_node {
 
-class ChassisNode : public rclcpp::Node
-{
-   public:
+class ChassisNode : public rclcpp::Node {
+public:
     explicit ChassisNode(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
     ~ChassisNode() override = default;
 
@@ -26,7 +24,7 @@ class ChassisNode : public rclcpp::Node
 
     void ResetOdometry();
 
-   private:
+private:
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
     void ImuMsgCallback(const sensor_msgs::msg::Imu::SharedPtr msg);
 
@@ -45,7 +43,7 @@ class ChassisNode : public rclcpp::Node
     // 辅助函数
     bool IsImuAvailable(const rclcpp::Time &curr_time);
 
-   private:
+private:
     // 参数
     double wheel_track_;      // 轮距 b (m)
     std::string odom_frame_;  // "odom"

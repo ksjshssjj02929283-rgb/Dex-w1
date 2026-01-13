@@ -1,14 +1,10 @@
 #include "kinematics_torso.h"
 
-namespace robot_server_lib
-{
-namespace kinematics
-{
+namespace robot_server_lib {
+namespace kinematics {
 
-PoseQuaternion TorsoKinematics::GetFK(const Eigen::VectorXd& q, const pinocchio::SE3& tcp_frame)
-{
-    if (q.size() != 3)
-    {
+PoseQuaternion TorsoKinematics::GetFK(const Eigen::VectorXd& q, const pinocchio::SE3& tcp_frame) {
+    if (q.size() != 3) {
         LOG_CRIT << "GetFK: input q size must be 3";
         assert(q.size() != 3 && "TorsoKinematics: input q size must be 3");
     }
@@ -35,10 +31,8 @@ PoseQuaternion TorsoKinematics::GetFK(const Eigen::VectorXd& q, const pinocchio:
     return out;
 }
 
-PoseQuaternion TorsoKinematics::GetTorsoPose(const Eigen::VectorXd& XZRY)
-{
-    if (XZRY.size() != 3)
-    {
+PoseQuaternion TorsoKinematics::GetTorsoPose(const Eigen::VectorXd& XZRY) {
+    if (XZRY.size() != 3) {
         LOG_CRIT << "GetTorsoPose: input XZRY size must be 3";
         assert(XZRY.size() == 3 && "TorsoKinematics: input XZRY size must be 3");
     }
@@ -58,10 +52,8 @@ PoseQuaternion TorsoKinematics::GetTorsoPose(const Eigen::VectorXd& XZRY)
     return out;
 }
 
-bool TorsoKinematics::GetIK(const PoseQuaternion& pose, Eigen::VectorXd& q_out, const pinocchio::SE3& tcp_frame)
-{
-    if (q_out.size() != 3)
-    {
+bool TorsoKinematics::GetIK(const PoseQuaternion& pose, Eigen::VectorXd& q_out, const pinocchio::SE3& tcp_frame) {
+    if (q_out.size() != 3) {
         LOG_CRIT << "TorsoKinematics GetIK: output q size must be 3";
         return false;
     }
@@ -78,8 +70,7 @@ bool TorsoKinematics::GetIK(const PoseQuaternion& pose, Eigen::VectorXd& q_out, 
 
     // 工作空间检查
     const double dist = std::sqrt(x * x + std::pow(z - l0_, 2));
-    if (dist > (l1_ + l2_ + l3_))
-    {
+    if (dist > (l1_ + l2_ + l3_)) {
         return false;
     }
 
@@ -99,10 +90,8 @@ bool TorsoKinematics::GetIK(const PoseQuaternion& pose, Eigen::VectorXd& q_out, 
 
     Eigen::Vector3d qsol(q1, q2, q3);
     // 限幅检查
-    if ((qsol.array() < qmin_.array()).any())
-        return false;
-    if ((qsol.array() > qmax_.array()).any())
-        return false;
+    if ((qsol.array() < qmin_.array()).any()) return false;
+    if ((qsol.array() > qmax_.array()).any()) return false;
 
     q_out.segment<3>(0) = qsol;
     return true;
