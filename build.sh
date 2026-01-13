@@ -1,6 +1,26 @@
 # 切换到包含所有包的根目录
 cd "$(dirname "$0")/.."
 
+source /opt/ros/humble/setup.bash
+
+# === 1. 检查 ROS 环境 ===
+if [ -z "$ROS_DISTRO" ]; then
+    echo "❌ 请先 source 对应ROS环境，例如："
+    echo "   source /opt/ros/humble/setup.bash"
+    exit 1
+fi
+echo "✅ ROS版本: $ROS_DISTRO"
+
+# === 2. 检查并更新 git 子模块 ===
+if [ -f "${WORKSPACE_DIR}/.gitmodules" ]; then
+    echo "🔄 检测到 .gitmodules，正在同步子模块..."
+    git submodule sync --recursive
+    git submodule update --init --recursive
+    echo "✅ 子模块已更新完成。"
+else
+    echo "ℹ️ 未检测到 .gitmodules，跳过子模块更新。"
+fi
+
 PACKAGES=$(find dexe_interfaces dexe_robot_server -name "package.xml" -exec sh -c 'dirname {} | xargs basename' \; | sort -u | tr '\n' ' ')
 colcon build --cmake-args -DENABLE_TORQUE_CONTROL_SIMULATION=ON --packages-select $PACKAGES
 
