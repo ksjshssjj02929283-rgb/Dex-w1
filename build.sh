@@ -1,6 +1,5 @@
 # 切换到包含所有包的根目录
 WORKSPACE_DIR=$(pwd)
-cd "$(dirname "$0")/.."
 
 source /opt/ros/humble/setup.bash
 
@@ -22,8 +21,9 @@ else
     echo "ℹ️ 未检测到 .gitmodules，跳过子模块更新。"
 fi
 
-PACKAGES=$(find dexe_interfaces dexe_robot_server -name "package.xml" -exec sh -c 'dirname {} | xargs basename' \; | sort -u | tr '\n' ' ')
-colcon build --cmake-args -DENABLE_TORQUE_CONTROL_SIMULATION=ON --packages-select $PACKAGES
+colcon
+#PACKAGES=$(find dexe_interfaces dexe_robot_server -name "package.xml" -exec sh -c 'dirname {} | xargs basename' \; | sort -u | tr '\n' ' ')
+#colcon build --cmake-args -DENABLE_TORQUE_CONTROL_SIMULATION=ON --packages-select $PACKAGES
 
 BIN=install/w1_server/lib/w1_server/w1_server
 if [ -f "$BIN" ]; then
