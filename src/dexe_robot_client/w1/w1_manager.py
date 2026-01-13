@@ -708,6 +708,62 @@ class W1Manager:
             return False, None
         return self._get_chassis_client().get_chassis_position()
 
+    def get_current_battery_percentage(self) -> tuple[bool, float]:
+        """获取当前电池电量百分比"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return False, None
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return False, None
+        return self._get_chassis_client().get_battery_percentage()
+
+    def get_nav_status(self) -> str:
+        """获取导航状态"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return "DISABLED"
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return "NOT_INITIALIZED"
+        return self._get_chassis_client().get_nav_state()
+
+    def get_control_status(self) -> str:
+        """获取底盘控制状态"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return "DISABLED"
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return "NOT_INITIALIZED"
+        return self._get_chassis_client().get_control_status()
+
+    def set_auto_charging(self) -> bool:
+        """调用回充服务"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return False
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return False
+        return self._get_chassis_client().set_chassis_auto_charging()
+
+    def cancel_chassis_motion(self) -> bool:
+        """统一取消底盘运动，同时调用取消导航和取消控制。"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return False
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return False
+
+        self.logger.info("Sending request to cancel navigation and control...")
+        nav_cancel_ok = self._get_chassis_client().cancel_chassis_nav2()
+        control_cancel_ok = self._get_chassis_client().cancel_chassis_control()
+
+        # 只要有一个成功，就认为取消指令已尽力发送
+        return nav_cancel_ok or control_cancel_ok
+
     def set_ee_qpos(self, name: str, qpos: np.ndarray) -> bool:
         """控制end effector运动
 
