@@ -1,4 +1,5 @@
 # 切换到包含所有包的根目录
+WORKSPACE_DIR=$(pwd)
 cd "$(dirname "$0")/.."
 
 source /opt/ros/humble/setup.bash
