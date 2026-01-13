@@ -37,6 +37,7 @@ PYTHON_EXCLUDE_DIRS = [
     "build",
     ".git",
     "third_party",
+    "script",
 ]
 
 CPP_EXCLUDE_DIRS = [
