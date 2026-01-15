@@ -1248,9 +1248,23 @@ class W1Manager:
         # solve ik
         qpos_list = []
         cur_qseed = qpos_seed
-        for cur_xpos in xpos_sample_array:
-            res_ik, cur_qpos = arm_kine.get_nearest_ik(xpos=cur_xpos,
-                                                       qpos_seed=cur_qseed)
+        for i, cur_xpos in enumerate(xpos_sample_array):
+            use_nearest = (i != 0)
+
+            if not use_nearest:
+                res, ref_psi = arm_kine.calc_arm_angle(cur_qseed)
+                if res:
+                    srs_cfg = SRSConfig(cur_qseed, ref_psi)
+                    res_ik, cur_qpos = arm_kine.get_ik(cur_xpos, srs_cfg)
+                    if not res_ik:
+                        use_nearest = True
+                else:
+                    use_nearest = True
+
+            if use_nearest:
+                res_ik, cur_qpos = arm_kine.get_nearest_ik(xpos=cur_xpos,
+                                                           qpos_seed=cur_qseed)
+
             if not res_ik:
                 self.logger.error(
                     f"{name} solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}."

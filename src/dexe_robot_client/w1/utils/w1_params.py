@@ -108,20 +108,21 @@ class W1Params:
         self.qpos_lb = np.r_[self.torso_lb, self.head_lb, self.left_arm_lb,
                              self.right_arm_lb]
 
+        # yapf: disable
         self.default_qvel = np.array([0.3] * self.full_body_dofs)
         self.min_qvel = np.array([0.05] * self.full_body_dofs)
-        self.max_qvel = np.array([1.0] * self.full_body_dofs)
-        self.max_qacc = np.array([
-            1., 1., 1., 1., 5., 5., 3., 3., 3., 5., 10., 10., 10., 3., 3., 3.,
-            5., 10., 10., 10.
-        ])
+        self.max_qvel = np.array([1., 1., 1., 1., 6.28, 6.28,
+                                  6.28, 6.28, 6.28, 6.28, 6.28, 6.28, 6.28,
+                                  6.28, 6.28, 6.28, 6.28, 6.28, 6.28, 6.28])
+        self.max_qacc = np.array([1., 1., 1., 1., 40., 40.,
+                                  10., 10., 10., 20., 40., 40., 40.,
+                                  10., 10., 10., 20., 40., 40., 40.])
 
-        self.home_qpos = np.deg2rad([
-            45, -90, 45, 0, 0, 0, 5, -45, -5, -90, 0, -15, 0, -5, 45, 5, 90, 0,
-            15, 0
-        ])
-
+        self.home_qpos = np.deg2rad([45, -90, 45, 0, 0, 0,
+                                     5, -45, -5, -90, 0, -15, 0,
+                                     -5, 45, 5, 90, 0, 15, 0])
         self.update_params()
+        # yapf: enable
 
     def update_params(self, file_path=DATA_DIR / "config.json") -> bool:
         if not file_path.exists() or file_path.stat().st_size == 0:
