@@ -1148,6 +1148,8 @@ class W1Manager:
             if not path.calc_path():
                 return False, None
             qpos_sample_array = path.get_sample_by_step(step)
+            if qpos_sample_array is None:
+                return False, None
 
             # vel align
             prefix_dist_list = [0.]
@@ -1215,6 +1217,8 @@ class W1Manager:
             if not path.calc_path():
                 return False, None
             xpos_sample_array = path.get_sample_by_step(cartesian_step)
+            if xpos_sample_array is None:
+                return False, None
 
         prefix_dist_list = [0.]
         for idx in range(len(xpos_list) - 1):
@@ -1234,7 +1238,7 @@ class W1Manager:
             for xpos in xpos_sample_array[1:-1]:
                 dist = weighted_norm(xpos[:3, 3] - cur_xpos[:3, 3])
                 cur_dist += dist
-                if cur_dist >= prefix_dist_list[idx]:
+                if cur_dist >= prefix_dist_list[idx] + 1e-6:
                     idx += 1
                 qvel_limits_list_.append(qvel_limits_array[idx])
                 cur_xpos = xpos
@@ -3086,6 +3090,8 @@ class W1Manager:
         if not path.calc_path():
             return False
         xpos_sample_array = path.get_sample_by_step(0.005)
+        if xpos_sample_array is None:
+            return False
 
         # solve ik
         qpos_list = []
