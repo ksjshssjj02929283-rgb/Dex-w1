@@ -8,6 +8,7 @@
 ### Fix
 
 ### Refactor
+- W1Manager对外API返回值从bool修改为StatusCode
 
 ### Improve
 - 优化路径、轨迹的碰撞检测器（仅作为checker，不参与路径生成）
