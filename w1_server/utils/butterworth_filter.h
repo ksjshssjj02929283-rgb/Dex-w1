@@ -4,20 +4,18 @@
 
 #define FILTER_ORDER 2
 
-struct BiquadFilter
-{
+struct BiquadFilter {
     std::array<double, FILTER_ORDER + 1> b;
     std::array<double, FILTER_ORDER + 1> a;
 };
 
-class ButterworthFilter
-{
-   public:
+class ButterworthFilter {
+public:
     ButterworthFilter();
     double Apply(double input);
     void Reset();
 
-   private:
+private:
     BiquadFilter filter_;
     std::array<double, FILTER_ORDER + 1> inputHistory_{};
     std::array<double, FILTER_ORDER + 1> outputHistory_{};

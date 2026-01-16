@@ -20,55 +20,50 @@ enum for various states and command types
 #include <vector>
 
 #include "bounded_queue.h"
+#include "pinocchio_api.h"
 #include "single_rw_latest_queue.h"
 #include "time_utility.h"
 #include "typedef.h"
-#include "pinocchio_api.h"
 
-namespace robot_server_lib
-{
+namespace robot_server_lib {
 
 /*-------------------------------------------------------------------------------
 robot state and request data structure class
 机器人状态和指令数据结构
 -------------------------------------------------------------------------------*/
 
-struct JointMeasurement
-{
+struct JointMeasurement {
     VectorDof position;                          // 关节位置
     VectorDof velocity;                          // 关节速度
     VectorDof effort;                            // 关节力矩
     VectorDof q_desired_pre;                     // 预期关节位置
     Vector12d sensor_wrench{Vector12d::Zero()};  // 六维力传感器数据
 
-    std::string ToString() const
-    {
+    std::string ToString() const {
         std::stringstream ss;
-        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Effort: " << effort.transpose()
-           << ", Previous Q Desired: " << q_desired_pre.transpose() << ", Sensor_wrench: " << sensor_wrench.transpose();
+        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose()
+           << ", Effort: " << effort.transpose() << ", Previous Q Desired: " << q_desired_pre.transpose()
+           << ", Sensor_wrench: " << sensor_wrench.transpose();
         return ss.str();
     }
 };
 
-struct JointRawMeasurement
-{
+struct JointRawMeasurement {
     VectorDof position;                          // 关节位置
     VectorDof velocity;                          // 关节速度
     VectorDof effort;                            // 关节力矩
     Vector12d sensor_wrench{Vector12d::Zero()};  // 六维力传感器数据
     TimePointSystem time_point;
 
-    std::string ToString() const
-    {
+    std::string ToString() const {
         std::stringstream ss;
-        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Effort: " << effort.transpose()
-           << ", Sensor Wrench: " << sensor_wrench.transpose();
+        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose()
+           << ", Effort: " << effort.transpose() << ", Sensor Wrench: " << sensor_wrench.transpose();
         return ss.str();
     }
 };
 
-struct JointCommand
-{
+struct JointCommand {
     VectorDof position;
     VectorDof velocity;
     VectorDof acceleration;
@@ -76,17 +71,17 @@ struct JointCommand
     VectorDof torque_feedforward;
     VectorDof joint_stiffness = VectorDof::Constant(400.0);
 
-    std::string ToString() const
-    {
+    std::string ToString() const {
         std::stringstream ss;
-        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose() << ", Acceleration: " << acceleration.transpose()
-           << ", Compliance Position: " << admittance_position.transpose() << ", Torque Feedforward: " << torque_feedforward.transpose();
+        ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose()
+           << ", Acceleration: " << acceleration.transpose()
+           << ", Compliance Position: " << admittance_position.transpose()
+           << ", Torque Feedforward: " << torque_feedforward.transpose();
         return ss.str();
     }
 };
 
-struct RobotProperty
-{
+struct RobotProperty {
     pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     RunMode run_mode{RunMode::Position};
@@ -97,66 +92,58 @@ struct RobotProperty
     ErrorCode error_code{ErrorCode::NoError};
 };
 
-struct PlannerManagerInfo
-{
+struct PlannerManagerInfo {
     Eigen::VectorXd ee_pose_measurement;
     Eigen::VectorXd torso_pose_measurement;
     RobotProperty robot_property;
 };
 
-struct PoseQuaternion
-{
+struct PoseQuaternion {
     Eigen::Vector3d position{Eigen::Vector3d::Zero()};
     Eigen::Quaterniond orientation{Eigen::Quaterniond::Identity()};
 
     PoseQuaternion() = default;
-    explicit PoseQuaternion(const Eigen::Matrix4d &mat)
-    {
+    explicit PoseQuaternion(const Eigen::Matrix4d &mat) {
         position = mat.block<3, 1>(0, 3);
         orientation = Eigen::Quaterniond(mat.block<3, 3>(0, 0));
     }
-    explicit PoseQuaternion(const Eigen::Vector3d &pos, const Eigen::Quaterniond &ori) : position(pos), orientation(ori) {}
+    explicit PoseQuaternion(const Eigen::Vector3d &pos, const Eigen::Quaterniond &ori)
+        : position(pos), orientation(ori) {}
 
-    std::string ToString() const
-    {
+    std::string ToString() const {
         std::stringstream ss;
-        ss << "Pose: (" << position.x() << ", " << position.y() << ", " << position.z() << ", " << orientation.w() << ", " << orientation.x() << ", "
-           << orientation.y() << ", " << orientation.z() << ")";
+        ss << "Pose: (" << position.x() << ", " << position.y() << ", " << position.z() << ", " << orientation.w()
+           << ", " << orientation.x() << ", " << orientation.y() << ", " << orientation.z() << ")";
         return ss.str();
     }
 
-    Eigen::VectorXd ToVectorXd() const
-    {
+    Eigen::VectorXd ToVectorXd() const {
         Eigen::VectorXd vec(7);
         vec << position, orientation.w(), orientation.x(), orientation.y(), orientation.z();
         return vec;
     }
 
     // 组合两个位姿：等价于 4x4 变换矩阵相乘 (T = T1 * T2)
-    PoseQuaternion operator*(const PoseQuaternion &other) const
-    {
+    PoseQuaternion operator*(const PoseQuaternion &other) const {
         PoseQuaternion res;
         res.orientation = orientation * other.orientation;
         res.position = position + orientation * other.position;
         return res;
     }
 
-    PoseQuaternion &operator*=(const PoseQuaternion &other)
-    {
+    PoseQuaternion &operator*=(const PoseQuaternion &other) {
         position = position + orientation * other.position;
         orientation = orientation * other.orientation;
         return *this;
     }
 };
 
-struct PlannerManagerCommand
-{
+struct PlannerManagerCommand {
     std::int64_t sequence_number{-1};
     JointCommand cmd;
 };
 
-struct TorqueCtrlCommand
-{
+struct TorqueCtrlCommand {
     VectorDof torque;              // 关节tracking力控模式下的力矩指令
     VectorDof torque_feedforward;  // 力矩前馈(抵消重力, 科氏力, 摩擦力)
     VectorDof torque_impedance;    // 笛卡尔阻抗控制模式下的力矩
@@ -164,8 +151,7 @@ struct TorqueCtrlCommand
 };
 
 // 移动指令
-struct MoveRequest
-{
+struct MoveRequest {
     MotionGroup motion_group;
     // 目标位置
     Eigen::VectorXd value;
@@ -180,23 +166,20 @@ struct MoveRequest
 
 using PlannerData = std::variant<MoveRequest, PoseQuaternion, Vector3d, Vector6d, Eigen::VectorXd, bool, int, double>;
 
-struct PlannerRequest
-{
+struct PlannerRequest {
     Int64 request_id{-1};
     RequestType type{RequestType::Empty};
     std::optional<PlannerData> data;  // start streaming指令无data
 };
 
-struct StreamingCommand
-{
+struct StreamingCommand {
     Int64 request_id{-1};
     bool streaming_finished{false};
     Eigen::VectorXd command;  // 用于存储流式数据
     TimePointSystem received_time{TimePointSystem::Invalid()};
 };
 
-struct TimeMetaInfo
-{
+struct TimeMetaInfo {
     TimePointSystem current_time{};
     TimePointSystem measurement_time{};
     Int64 episode_index{-1};
@@ -204,8 +187,7 @@ struct TimeMetaInfo
 };
 
 // 线程间通信数据结构
-struct PlannerManagerBuffers
-{
+struct PlannerManagerBuffers {
     std::shared_ptr<SingleWriterLatestBuffer<JointMeasurement>> joint_measurement;
     std::shared_ptr<SingleWriterLatestBuffer<PlannerManagerInfo>> planner_manager_info;
     std::shared_ptr<SingleWriterLatestBuffer<PlannerManagerCommand>> planner_manager_command;
@@ -216,8 +198,7 @@ struct PlannerManagerBuffers
     PlannerManagerBuffers() = default;
     ~PlannerManagerBuffers() = default;
 
-    void Initialize()
-    {
+    void Initialize() {
         joint_measurement = std::make_shared<SingleWriterLatestBuffer<JointMeasurement>>();
         planner_manager_info = std::make_shared<SingleWriterLatestBuffer<PlannerManagerInfo>>();
         planner_manager_command = std::make_shared<SingleWriterLatestBuffer<PlannerManagerCommand>>();
@@ -227,24 +208,21 @@ struct PlannerManagerBuffers
     }
 };
 
-struct TorqueControlBuffer
-{
+struct TorqueControlBuffer {
     std::shared_ptr<SingleWriterLatestBuffer<TorqueCtrlCommand>> torque_controller_command;
     std::shared_ptr<SingleWriterLatestBuffer<JointRawMeasurement>> joint_raw_measurement;
 
     TorqueControlBuffer() = default;
     ~TorqueControlBuffer() = default;
 
-    void Initialize()
-    {
+    void Initialize() {
         torque_controller_command = std::make_shared<SingleWriterLatestBuffer<TorqueCtrlCommand>>();
         joint_raw_measurement = std::make_shared<SingleWriterLatestBuffer<JointRawMeasurement>>();
     }
 };
 
 // 机器人配置文件参数
-struct RobotParams
-{
+struct RobotParams {
     std::filesystem::path urdf_path;
     std::filesystem::path left_arm_urdf_path;
     std::filesystem::path right_arm_urdf_path;
@@ -263,8 +241,7 @@ struct RobotParams
     std::optional<Eigen::VectorXd> dyn_base_params_secondary;  // 动力学基参数矩阵(非方阵)
 };
 
-struct RobotModel
-{
+struct RobotModel {
     std::shared_ptr<const RobotParams> params_ptr;
     std::shared_ptr<const pinocchio::Model> model_ptr;
     std::shared_ptr<const pinocchio::Model> primary_arm_model_ptr;
@@ -273,8 +250,7 @@ struct RobotModel
     RobotModel() = default;
     ~RobotModel() = default;
 
-    bool IsDynamicParamsAvailable() const
-    {
+    bool IsDynamicParamsAvailable() const {
         return params_ptr->dyn_base_params_primary.has_value() && params_ptr->dyn_base_params_secondary.has_value();
     }
 };

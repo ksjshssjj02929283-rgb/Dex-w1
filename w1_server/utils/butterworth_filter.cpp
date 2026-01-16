@@ -1,18 +1,14 @@
 #include "butterworth_filter.h"
 
-ButterworthFilter::ButterworthFilter()
-{
+ButterworthFilter::ButterworthFilter() {
     // 固定参数：3Hz 二阶 Butterworth
     filter_.b = {8.765554875401464e-05, 0.00017531109750802928, 8.765554875401464e-05};
     filter_.a = {1.0, -1.9733442497812987, 0.9736948719763148};
 }
 
-double ButterworthFilter::Apply(double input)
-{
-    if (!initialized_)
-    {
-        for (int i = 0; i <= FILTER_ORDER; ++i)
-        {
+double ButterworthFilter::Apply(double input) {
+    if (!initialized_) {
+        for (int i = 0; i <= FILTER_ORDER; ++i) {
             inputHistory_[i] = input;
             outputHistory_[i] = input;
         }
@@ -20,30 +16,25 @@ double ButterworthFilter::Apply(double input)
         return input;
     }
 
-    for (int i = FILTER_ORDER; i > 0; --i)
-    {
+    for (int i = FILTER_ORDER; i > 0; --i) {
         inputHistory_[i] = inputHistory_[i - 1];
         outputHistory_[i] = outputHistory_[i - 1];
     }
     inputHistory_[0] = input;
 
     double y = 0.0;
-    for (int i = 0; i <= FILTER_ORDER; ++i)
-    {
+    for (int i = 0; i <= FILTER_ORDER; ++i) {
         y += filter_.b[i] * inputHistory_[i];
     }
-    for (int i = 1; i <= FILTER_ORDER; ++i)
-    {
+    for (int i = 1; i <= FILTER_ORDER; ++i) {
         y -= filter_.a[i] * outputHistory_[i];
     }
     outputHistory_[0] = y;
     return y;
 }
 
-void ButterworthFilter::Reset()
-{
-    if (!initialized_)
-        return;
+void ButterworthFilter::Reset() {
+    if (!initialized_) return;
     initialized_ = false;
     inputHistory_.fill(0.0);
     outputHistory_.fill(0.0);

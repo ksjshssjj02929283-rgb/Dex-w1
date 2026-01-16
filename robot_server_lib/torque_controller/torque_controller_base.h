@@ -1,36 +1,27 @@
 #pragma once
 #include "utils.h"
 
-namespace robot_server_lib
-{
+namespace robot_server_lib {
 
-enum class TorqueControllerState
-{
-    Init,
-    Idle,
-    Decelerating,
-    Operating
-};
+enum class TorqueControllerState { Init, Idle, Decelerating, Operating };
 
-class TorqueControllerBase
-{
-   public:
+class TorqueControllerBase {
+public:
     TorqueControllerBase(RobotModel robot_model);
     virtual ~TorqueControllerBase();
 
-    virtual bool ComputeCommand(const JointRawMeasurement &raw_measurement, const PlannerManagerCommand &input_cmd,
+    virtual bool ComputeCommand(const JointRawMeasurement &raw_measurement,
+                                const PlannerManagerCommand &input_cmd,
                                 TorqueCtrlCommand &output_cmd) = 0;
 
     virtual bool ResetForNewEpisode(const JointRawMeasurement &raw_measurement, const TorqueControllerState &state) = 0;
 
-
-   protected:
+protected:
     RobotModel robot_model_;
 
     TorqueControllerState state_{TorqueControllerState::Init};
     // Gain parameter
-    struct
-    {
+    struct {
         double M_d = 2.0;
         VectorDof K_p = VectorDof::Constant(400.0);
         VectorDof K_v = 2.0 * K_p.cwiseSqrt();

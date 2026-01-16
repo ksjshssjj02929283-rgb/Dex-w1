@@ -14,8 +14,7 @@
 #include "shared_memory_def.h"
 #include "w1_utils.h"
 
-namespace robot_server_lib
-{
+namespace robot_server_lib {
 
 using JointControlMsg = joint_interfaces::msg::JointControl;
 using JointPositionControlMsg = joint_interfaces::msg::JointPositionControl;
@@ -24,12 +23,11 @@ using ChassisMotorControlMsg = chassis_interfaces::msg::ChassisMotorControl;
 using JointVelocityTorqueLimitFeedbackMsg = joint_interfaces::msg::JointVelocityTorqueLimitFeedback;
 using SetProperty = robot_server_interfaces::srv::SetProperty;
 
-class RobotServer : public RobotServerBase
-{
-   public:
+class RobotServer : public RobotServerBase {
+public:
     RobotServer(std::filesystem::path robot_cfg_path, bool is_sim);
 
-   private:
+private:
     void TorqueControlThreadFunc() override;
     void PublishThreadFunc() override;
     Int64 StartStreaming(const PlannerRequest planner_request);
@@ -63,21 +61,21 @@ class RobotServer : public RobotServerBase
     RobotFeedback robot_feedback_;
     PlannerManagerInfo manager_info_;
     bool is_torque_limit_reached_[ndof_robot] = {false};  // 达到力矩限制标志位
-    const std::string ecat_joint_name_[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",    "NECK2",   "LEFT_J1",
-                                                      "LEFT_J2",  "LEFT_J3",  "LEFT_J4",  "LEFT_J5",  "LEFT_J6",  "LEFT_J7", "RIGHT_J1",
-                                                      "RIGHT_J2", "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
-    struct
-    {
+    const std::string ecat_joint_name_[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",
+                                                      "NECK2",    "LEFT_J1",  "LEFT_J2",  "LEFT_J3",  "LEFT_J4",
+                                                      "LEFT_J5",  "LEFT_J6",  "LEFT_J7",  "RIGHT_J1", "RIGHT_J2",
+                                                      "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
+    struct {
         double positive_limit_Nm[ndof_robot]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0,
                                              10.0,  10.0,  10.0,  25.0,  25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
         double negative_limit_Nm[ndof_robot]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0,
                                              10.0,  10.0,  10.0,  25.0,  25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
     } torque_limit_;  // 关节力矩限制参数默认值, 单位: Nm
 
-    bool enable_ruckig_ = true;                     // /control/joint接口是否使用 Ruckig 进行轨迹规划
-    bool enable_record_ = false;                 // 是否启用调试日志
-    bool enable_cst_mode_ = false;                  // 是否启用 CST 力矩控制模式
-    const int first_arm_joint_index_ = 6;           // 左臂第一个关节在整体关节数组中的索引
+    bool enable_ruckig_ = true;            // /control/joint接口是否使用 Ruckig 进行轨迹规划
+    bool enable_record_ = false;           // 是否启用调试日志
+    bool enable_cst_mode_ = false;         // 是否启用 CST 力矩控制模式
+    const int first_arm_joint_index_ = 6;  // 左臂第一个关节在整体关节数组中的索引
     const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
     const double DiffChassisWidth = 0.4390;
     std::shared_ptr<ButterworthFilter> butterworth_filter_[ndof_robot];

@@ -12,27 +12,21 @@
 
 using namespace robot_server_lib;
 
-static std::string FindForceSensorPort()
-{
+static std::string FindForceSensorPort() {
     const char* env_port = std::getenv("FORCE_SENSOR_PORT");
-    if (env_port && access(env_port, F_OK) == 0)
-        return std::string(env_port);
+    if (env_port && access(env_port, F_OK) == 0) return std::string(env_port);
 
     // Try common serial device names
     std::vector<std::string> candidates = {"/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyUSB2"};
-    for (const auto& p : candidates)
-    {
-        if (access(p.c_str(), F_OK) == 0)
-            return p;
+    for (const auto& p : candidates) {
+        if (access(p.c_str(), F_OK) == 0) return p;
     }
     return {};
 }
 
-TEST(ForceSensorReaderTest, ReadForTenSeconds)
-{
+TEST(ForceSensorReaderTest, ReadForTenSeconds) {
     std::string port = FindForceSensorPort();
-    if (port.empty())
-    {
+    if (port.empty()) {
         GTEST_SKIP() << "No force sensor serial device found. Set FORCE_SENSOR_PORT or plug sensor.";
     }
 
@@ -42,17 +36,14 @@ TEST(ForceSensorReaderTest, ReadForTenSeconds)
     // Warm-up: wait up to 2s for sensor to become ready (zero calibration thread)
     auto warm_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
     bool ready = false;
-    while (std::chrono::steady_clock::now() < warm_deadline)
-    {
-        if (reader.Read(data))
-        {
+    while (std::chrono::steady_clock::now() < warm_deadline) {
+        if (reader.Read(data)) {
             ready = true;
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
-    if (!ready)
-    {
+    if (!ready) {
         // Continue anyway; measurement window may still see readiness.
     }
 
@@ -63,11 +54,9 @@ TEST(ForceSensorReaderTest, ReadForTenSeconds)
     size_t success_count = 0;
     size_t total_attempts = 0;
 
-    while (std::chrono::steady_clock::now() < end)
-    {
+    while (std::chrono::steady_clock::now() < end) {
         Vector6d v;
-        if (reader.Read(v))
-        {
+        if (reader.Read(v)) {
             ++success_count;
         }
         ++total_attempts;
@@ -78,8 +67,8 @@ TEST(ForceSensorReaderTest, ReadForTenSeconds)
     double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     double rate = success_count / elapsed;
 
-    std::cout << "[ForceSensorReaderTest] Port: " << port << ", success_count: " << success_count << ", attempts: " << total_attempts
-              << ", elapsed: " << elapsed << " s"
+    std::cout << "[ForceSensorReaderTest] Port: " << port << ", success_count: " << success_count
+              << ", attempts: " << total_attempts << ", elapsed: " << elapsed << " s"
               << ", success_rate: " << rate << " Hz" << std::endl;
 
     // Expect at least one successful reading in 10s if sensor is present

@@ -11,19 +11,16 @@
 #include "robot_server_lib/NanoLog.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 
-namespace chassis_node
-{
+namespace chassis_node {
 
-inline Eigen::Matrix<double, 3, 3> skew_x(const Eigen::Matrix<double, 3, 1>& w)
-{
+inline Eigen::Matrix<double, 3, 3> skew_x(const Eigen::Matrix<double, 3, 1>& w) {
     Eigen::Matrix<double, 3, 3> w_x;
     w_x << 0, -w(2), w(1), w(2), 0, -w(0), -w(1), w(0), 0;
     return w_x;
 }
 
-class ImuProcessor
-{
-   public:
+class ImuProcessor {
+public:
     ImuProcessor();
     ~ImuProcessor() = default;
 
@@ -36,16 +33,18 @@ class ImuProcessor
 
     std::optional<sensor_msgs::msg::Imu> GetRefinedImuData(const sensor_msgs::msg::Imu& imu_data);
 
-    void SetParam(const int max_buff_size = 1500, const double acc_excite_threshold = 0.015, const double gyro_excite_threshold = 0.002,
+    void SetParam(const int max_buff_size = 1500,
+                  const double acc_excite_threshold = 0.015,
+                  const double gyro_excite_threshold = 0.002,
                   const double reinit_duration = 3600.0);
     bool SetGravityMagnitude(const double g);
 
-   private:
+private:
     bool CanComputeImuBias();
     bool ComputeImuBias();
     void TrimImuData();
 
-   private:
+private:
     int max_buff_size_ = 1500;
     double acc_excite_threshold_ = 0.007;  // IMU激励阈值，用于判断IMU是否静止
     double gyro_excite_threshold_ = 0.002;

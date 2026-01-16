@@ -12,23 +12,23 @@
 
 #include "kinematics_base.h"
 
-namespace robot_server_lib
-{
-namespace kinematics
-{
+namespace robot_server_lib {
+namespace kinematics {
 
-class TorsoKinematics final : public KinematicsBase
-{
-   public:
+class TorsoKinematics final : public KinematicsBase {
+public:
     TorsoKinematics() = default;
 
-    PoseQuaternion GetFK(const Eigen::VectorXd& q_in, const pinocchio::SE3& tcp_frame = pinocchio::SE3::Identity()) override;
+    PoseQuaternion GetFK(const Eigen::VectorXd& q_in,
+                         const pinocchio::SE3& tcp_frame = pinocchio::SE3::Identity()) override;
 
-    bool GetIK(const PoseQuaternion& pose, Eigen::VectorXd& q_in_and_out, const pinocchio::SE3& tcp_frame = pinocchio::SE3::Identity()) override;
+    bool GetIK(const PoseQuaternion& pose,
+               Eigen::VectorXd& q_in_and_out,
+               const pinocchio::SE3& tcp_frame = pinocchio::SE3::Identity()) override;
 
     PoseQuaternion GetTorsoPose(const Eigen::VectorXd& XZRY);
 
-   private:
+private:
     double l0_ = 0.292;   // chassis -> ankle
     double l1_ = 0.34;    // ankle -> knee
     double l2_ = 0.34;    // knee -> buttock

@@ -2,23 +2,20 @@
 
 #include <optional>
 
+#include "inverse_dynamics.h"
 #include "kinematics_include.h"
 #include "ruckig/ruckig.hpp"
 #include "utils.h"
-#include "inverse_dynamics.h"
 
-namespace robot_server_lib
-{
+namespace robot_server_lib {
 
-struct TrajectoryBounds
-{
+struct TrajectoryBounds {
     double max_velocity{1.0};
     double max_acceleration{2.0};
     double max_jerk{100000.0};
 };
 
-enum class ComputeCommandStatus
-{
+enum class ComputeCommandStatus {
     // The request is invalid and it should NOT be used
     // The state would be switched into error state
     Error = 0,
@@ -37,19 +34,24 @@ enum class ComputeCommandStatus
     TaskStopped = 4
 };
 
-class MotionPlannerBase
-{
-   public:
+class MotionPlannerBase {
+public:
     explicit MotionPlannerBase(RobotModel robot_model);
 
     virtual ~MotionPlannerBase() = default;
 
     // Compute the next joint command in current episode
-    virtual ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd) = 0;
+    virtual ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
+                                                const TimeMetaInfo &time_meta,
+                                                JointCommand &joint_cmd) = 0;
 
-    virtual ComputeCommandStatus ComputeStopCommand(const JointMeasurement &measurement, const TimeMetaInfo &time_meta, JointCommand &joint_cmd);
+    virtual ComputeCommandStatus ComputeStopCommand(const JointMeasurement &measurement,
+                                                    const TimeMetaInfo &time_meta,
+                                                    JointCommand &joint_cmd);
 
-    virtual bool ResetForNewTrajectory(const PlannerRequest &request, const JointMeasurement &measurement, const TimeMetaInfo &time_meta) = 0;
+    virtual bool ResetForNewTrajectory(const PlannerRequest &request,
+                                       const JointMeasurement &measurement,
+                                       const TimeMetaInfo &time_meta) = 0;
 
     void SetRobotProperty(const RobotProperty &property);
 
@@ -59,7 +61,7 @@ class MotionPlannerBase
 
     Int64 episode_index{-1};  // 记录当前的episode索引
 
-   protected:
+protected:
     void SetMotionGroup(MotionGroup motion_group) { motion_group_ = motion_group; }
     RobotModel robot_model_;
     pinocchio::Data robot_data_;
@@ -71,8 +73,7 @@ class MotionPlannerBase
     TrajectoryBounds streaming_bounds_{1.0 * M_PI, 3.0 * M_PI, 50.0 * M_PI};  // trajectory bounds, unit: rad
     TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI, 1.0 * M_PI};       // trajectory bounds, unit: rad
 
-    struct
-    {
+    struct {
         TrajectoryBounds translation{0.25, 0.25, 0.25};                 // cartesian space translation bounds, unit: m
         TrajectoryBounds rotation{0.5 * M_PI, 0.5 * M_PI, 0.5 * M_PI};  // cartesian space rotation bounds, unit: rad
     } cartesian_bounds_;
