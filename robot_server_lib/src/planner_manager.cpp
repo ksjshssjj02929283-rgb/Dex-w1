@@ -126,6 +126,7 @@ void PlannerManager::LoopOnce()
         {
             status = current_planner_->ComputeCommand(measurement, time_meta, this->runtime_data_.joint_cmd);
         }
+        this->runtime_data_.joint_cmd.joint_stiffness = this->robot_property_.joint_stiffness;
         // 如果提供了动力学参数, 则计算双臂前馈阻抗控制力 Compute the feedforward impedance control torque for both arms
         // const auto& dyn_base_params_primary = this->robot_model_.params_ptr->dyn_base_params_primary;
         // const auto& dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
@@ -391,6 +392,7 @@ RequestResponse PlannerManager::OnRequestStateError()
     }
     // current_planner_ switch to nullptr
     current_planner_ = nullptr;
+    robot_property_.run_mode = RunMode::Position;  // 错误模式下强制切换为位置模式 In error mode, force to position mode
 
     // 处理错误状态，重置或清除错误 Handle error state, reset or clear errors
     if (request.type == RequestType::ClearError)
@@ -501,6 +503,7 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
             }
             else
             {
+                std::cout << "[WARN] Dynamic parameters not available, cannot enable torque control mode.\n";
                 LOG_WARN << "Dynamic parameters not available, cannot enable torque control.";
             }
             break;
@@ -521,6 +524,7 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
             LOG_WARN << "Invalid run mode: " << mode << ", switch failed.";
             break;
         }
+        std::cout << "[INFO] Set run mode to " << ToString(robot_property_.run_mode) << "\n";
         LOG_INFO << "Set run mode to " << ToString(robot_property_.run_mode);
         return;
     }
@@ -544,22 +548,43 @@ void PlannerManager::SetProperty(const PlannerRequest &request)
         LOG_INFO << "Set run mode to " << ToString(robot_property_.run_mode);
         return;
     }
-    case RequestType::ImpedanceMass:
+    case RequestType::JointStiffness:
     {
-        assert(request.data.has_value() && std::holds_alternative<Vector3d>(request.data.value()));
-        Vector3d mass = std::get<Vector3d>(request.data.value());
-        admittance_ctrl_primary_->SetMass(mass);
-        admittance_ctrl_secondary_->SetMass(mass);
-        LOG_INFO << "Set impedance mass to " << mass.transpose();
+        auto stiffness = std::get<Eigen::VectorXd>(request.data.value());
+        LOG_INFO << "Received joint stiffness command: " << stiffness.transpose();
+        auto ndof_arm = this->robot_model_.params_ptr->joints_primary.size() + this->robot_model_.params_ptr->joints_secondary.size();
+        if (stiffness.size() == 1)
+        {
+            robot_property_.joint_stiffness = Eigen::VectorXd::Constant(ndof_robot, stiffness[0]);
+        }
+        else
+        {
+            if (stiffness.size() == ndof_arm)
+            {
+                // 按顺序赋值给tail部分关节 Assign to the tail joints in order
+                robot_property_.joint_stiffness.tail(stiffness.size()) = stiffness;
+            }
+            else
+            {
+                std::stringstream ss;
+                    ss << "[WARN] Invalid joint stiffness size: " << stiffness.size()
+                    << ", expected size: " << ndof_arm
+                   << " or 1. Command ignored.\n";
+                std::cout << ss.str();
+                LOG_WARN << ss.str();
+            }
+        }
+        std::cout << "[INFO] Set joint stiffness to " << robot_property_.joint_stiffness.tail(ndof_arm).transpose() << "\n";
+        LOG_INFO << "Set joint stiffness to " << stiffness.tail(ndof_arm).transpose();
         return;
     }
-    case RequestType::ImpedanceStiffness:
+    case RequestType::CartStiffness:
     {
         assert(request.data.has_value() && std::holds_alternative<Vector6d>(request.data.value()));
         auto stiffness = std::get<Vector6d>(request.data.value());
         impedance_ctrl_primary_->SetStiffness(stiffness);
         impedance_ctrl_secondary_->SetStiffness(stiffness);
-        LOG_INFO << "Set impedance stiffness to " << stiffness.transpose();
+        LOG_INFO << "Set cartisian impedance stiffness to " << stiffness.transpose();
         return;
     }
     case RequestType::SafeLevel:

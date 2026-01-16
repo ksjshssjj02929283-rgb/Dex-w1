@@ -459,6 +459,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ", \"run_mode\":\"" + ToString(this->manager_info_.robot_property.run_mode) + "\"" +
         ", \"safe_level\":\"" + std::to_string(this->manager_info_.robot_property.safe_level) + "\"" +
         ", \"global_speed_ratio\":\"" + std::to_string(this->manager_info_.robot_property.global_speed_ratio) + "\"" +
+        ",\n  \"joint_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_stiffness, 6, ndof_robot).str() +
         ",\n  \"robot_statusword\":" + utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
         ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
         ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, 0, ndof_robot).str() +

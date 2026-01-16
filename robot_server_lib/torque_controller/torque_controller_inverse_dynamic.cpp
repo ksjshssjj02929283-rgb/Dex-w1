@@ -21,16 +21,18 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
     VectorDof ddq_desired = VectorDof::Zero();
     VectorDof q_error = VectorDof::Zero();
     VectorDof dq_error = VectorDof::Zero();
+    this->parameters_.K_p = input_cmd.cmd.joint_stiffness;
+    this->parameters_.K_v = 2.0 * this->parameters_.K_p.cwiseSqrt(); // 更新临界阻尼
     switch (state_)
     {
     case TorqueControllerState::Idle:
-        ddq_desired = this->parameters_.K_p * (idle_q_ - feedback_q) + this->parameters_.K_v * (-feedback_dq);
+        ddq_desired = this->parameters_.K_p.asDiagonal() * (idle_q_ - feedback_q) + this->parameters_.K_v.asDiagonal() * (-feedback_dq);
         output_cmd.torque_feedforward = dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
         output_cmd.torque = dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, ddq_desired);
         output_cmd.q_desired = idle_q_;
         break;
     case TorqueControllerState::Decelerating:
-        ddq_desired = this->parameters_.K_v * (-feedback_dq);
+        ddq_desired = this->parameters_.K_v.asDiagonal() * (-feedback_dq);
         output_cmd.torque_feedforward = dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
         output_cmd.torque = dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, ddq_desired);
         output_cmd.q_desired = feedback_q;
@@ -39,7 +41,7 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
     {
         q_error = cmd_q - feedback_q;
         dq_error = cmd_dq - feedback_dq;
-        ddq_desired = cmd_ddq + this->parameters_.K_p * q_error + this->parameters_.K_v * dq_error;
+        ddq_desired = cmd_ddq + this->parameters_.K_p.asDiagonal() * q_error + this->parameters_.K_v.asDiagonal() * dq_error;
         const auto& dyn_base_params_primary = this->robot_model_.params_ptr->dyn_base_params_primary;
         const auto& dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
         if (dyn_base_params_primary.has_value())

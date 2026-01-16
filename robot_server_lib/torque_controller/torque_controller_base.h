@@ -32,8 +32,8 @@ class TorqueControllerBase
     struct
     {
         double M_d = 2.0;
-        double K_p{300};
-        double K_v = 2.0 * std::sqrt(K_p);
+        VectorDof K_p = VectorDof::Constant(400.0);
+        VectorDof K_v = 2.0 * K_p.cwiseSqrt();
     } parameters_;
 };
 }  // namespace robot_server_lib

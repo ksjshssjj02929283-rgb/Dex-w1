@@ -78,8 +78,8 @@ enum class RequestType
     SafeLevel,
     SwitchRunMode,
     EnableDrag,
-    ImpedanceMass,
-    ImpedanceStiffness,
+    JointStiffness,
+    CartStiffness,
     // Move Request
     MoveJoint,
     MoveLine,

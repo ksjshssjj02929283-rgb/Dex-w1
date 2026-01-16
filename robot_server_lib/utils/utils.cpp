@@ -73,7 +73,7 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path)
     }
     else
     {
-        std::cout << "No dyn_base_params_primary in robot.cfg, use dafault dynamic model\n";
+        std::cout << "Use dafault dynamic model in urdf\n";
         LOG_INFO << "No dyn_base_params_primary in robot.cfg, use dafault dynamic model";
     }
     if (config_json.contains("dyn_base_params_secondary"))
@@ -84,7 +84,7 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path)
     }
     else
     {
-        std::cout << "No dyn_base_params_secondary in robot.cfg, use dafault dynamic model\n";
+        std::cout << "Use dafault dynamic model in urdf\n";
         LOG_INFO << "No dyn_base_params_secondary in robot.cfg, use dafault dynamic model";
     }
 
@@ -170,6 +170,25 @@ Vector6d StringToVector6d(const std::string &str)
     }
     return values;
 }
+
+Eigen::VectorXd StringToVectorXd(const std::string &str)
+{
+    // 根据逗号分隔字符串并转换为Eigen::VectorXd
+    std::stringstream ss(str);
+    std::string item;
+    std::vector<double> values;
+    while (std::getline(ss, item, ','))
+    {
+        values.push_back(std::stod(item));
+    }
+    Eigen::VectorXd vec(values.size());
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        vec[i] = values[i];
+    }
+    return vec;
+}
+
 
 bool MapJointToWholeBody(const RobotModel &robot_model, const Eigen::VectorXd &q, JointPositionDof &q_ndof, const MotionGroup &motion_group)
 {
@@ -307,10 +326,10 @@ PlannerRequest ParseSetPropertyRequest(const std::shared_ptr<robot_server_interf
     case RequestType::EnableDrag:
         planner_request.data = parse_bool(request->value);
         break;
-    case RequestType::ImpedanceMass:
-        planner_request.data = utils::StringToVector3d(request->value);
+    case RequestType::JointStiffness:
+        planner_request.data = utils::StringToVectorXd(request->value);
         break;
-    case RequestType::ImpedanceStiffness:
+    case RequestType::CartStiffness:
         planner_request.data = utils::StringToVector6d(request->value);
         break;
     default:

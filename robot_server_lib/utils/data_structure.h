@@ -74,6 +74,7 @@ struct JointCommand
     VectorDof acceleration;
     VectorDof admittance_position;
     VectorDof torque_feedforward;
+    VectorDof joint_stiffness = VectorDof::Constant(400.0);
 
     std::string ToString() const
     {
@@ -92,6 +93,7 @@ struct RobotProperty
     double global_speed_ratio{0.5};
     double safe_level{0.5};
     bool clear_error_flag{false};
+    VectorDof joint_stiffness = VectorDof::Constant(400.0);
     ErrorCode error_code{ErrorCode::NoError};
 };
 
@@ -176,7 +178,7 @@ struct MoveRequest
     std::optional<double> interval;
 };
 
-using PlannerData = std::variant<MoveRequest, PoseQuaternion, Vector3d, Vector6d, bool, int, double>;
+using PlannerData = std::variant<MoveRequest, PoseQuaternion, Vector3d, Vector6d, Eigen::VectorXd, bool, int, double>;
 
 struct PlannerRequest
 {
