@@ -1,7 +1,7 @@
 <?xml version="3.0"?>
 <package format="3">
-  <name>sim_server</name>
-  <version>1.0.1</version>
+  <name>L1_server</name>
+  <version>0.3.0</version>
   <description>W1 robot control messages</description>
   <maintainer email="zhangyinan@dexforce.com">Zhang Yinan</maintainer>
   <license>MIT</license>
@@ -12,7 +12,6 @@
   <depend>eigen</depend>
   <depend>eigen3_cmake_module</depend>
   <depend>pinocchio</depend>
-
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
   <depend>std_msgs</depend>

@@ -2,7 +2,7 @@
 cd "$(dirname "$0")"
 
 SUDO_PASS=123456
-echo "$SUDO_PASS" | sudo -S setcap 'cap_sys_nice=eip cap_ipc_lock=ep' ../install/w1_server/lib/w1_server/w1_server
+echo "$SUDO_PASS" | sudo -S setcap 'cap_sys_nice=eip cap_ipc_lock=ep' ../install/L1_server/lib/L1_server/L1_server
 
 source ../install/setup.bash
 
@@ -18,10 +18,10 @@ kill_process() {
 # 如果已经运行了则kill掉
 # kill_process "visual_ros2_node.py"
 kill_process "sim_server"
-kill_process "w1_server"
+kill_process "L1_server"
 
 # 启动sim_server和仿真可视化
 # taskset -c 5 /bin/python3 script/visual_ros2_node.py &
 taskset -c 5 ros2 run sim_server sim_server > /dev/null 2>&1 &
 taskset -c 6 script/set_max_position_following_error_window.sh > /dev/null 2>&1 &
-taskset -c 6 ros2 run w1_server w1_server
+taskset -c 6 ros2 run L1_server L1_server

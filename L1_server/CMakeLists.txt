@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(w1_server)
+project(L1_server)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Release)
-set(W1_SERVER_VERSION "0.3.0")
+set(L1_SERVER_VERSION "0.3.0")
 
 # 如果系统安装了 ccache 则启用，否则保持不启用
 find_program(CCACHE_PROGRAM ccache)
@@ -52,12 +52,8 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(pinocchio REQUIRED)
-find_package(nav_msgs REQUIRED)
-find_package(tf2_ros REQUIRED)
-find_package(tf2_geometry_msgs REQUIRED)
 
 # Other ROS 2 packages
-find_package(chassis_interfaces REQUIRED)
 find_package(joint_interfaces REQUIRED)
 find_package(robot_server_interfaces REQUIRED)
 find_package(robot_server_lib REQUIRED)
@@ -66,8 +62,6 @@ aux_source_directory(src LIB_SRCS)
 aux_source_directory(utils LIB_SRCS)
 
 add_executable(${PROJECT_NAME} ${LIB_SRCS})
-
-target_compile_definitions(${PROJECT_NAME} PRIVATE "W1_SERVER_VERSION=\"${W1_SERVER_VERSION}\"")
 
 if(ENABLE_TORQUE_CONTROL_SIMULATION)
   target_compile_definitions(${PROJECT_NAME} PRIVATE TORQUE_CONTROL=1)
@@ -88,13 +82,9 @@ ament_target_dependencies(${PROJECT_NAME}
   std_srvs
   geometry_msgs
   sensor_msgs
-  nav_msgs
-  tf2_ros
-  tf2_geometry_msgs
   ament_index_cpp
   Eigen3
   eigen3_cmake_module
-  chassis_interfaces
   joint_interfaces
   robot_server_interfaces
   robot_server_lib
