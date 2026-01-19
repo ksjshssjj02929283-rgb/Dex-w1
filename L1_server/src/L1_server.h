@@ -27,6 +27,7 @@ class RobotServer : public RobotServerBase
     void JointStatePublisher();
     void WriteFeedbackToControl();
     void DebugCallback(const std_msgs::msg::String::SharedPtr msg);
+    std::string GetRobotStatusString();
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr debug_subscriber_;
@@ -36,11 +37,12 @@ class RobotServer : public RobotServerBase
     RobotFeedback robot_feedback_;
 
     Int64 streaming_request_id_{-1};
-    const int ndof_body_ = 16;                    // 机器人上半身自由度
+    const int ndof_body_ = 18;                    // 机器人上半身自由度
     const int ndof_legs_ = 12;                      // 腿部自由度
 
-    double legs_stiffness_[12] = {250.0};
-    double legs_damping_[12] = {1.0};
+    double legs_stiffness_[12] = {25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0};
+    double legs_damping_[12]   = {10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0};
+
     bool clear_error_flag_{false};
 };
 

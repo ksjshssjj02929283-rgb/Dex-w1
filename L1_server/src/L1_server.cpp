@@ -103,6 +103,12 @@ void RobotServer::JointControlThreadFunc()
         if (loop_counter % 10 == 0)
         {
             this->JointStatePublisher();
+            if (loop_counter % 500 == 0)
+            {
+                std::cout << "leg control command: \n"
+                          << robot_control_.PrintLegControl() << std::endl;
+            }
+
         }
         // 如果机器人未就绪则重置反馈共享内存
         if (!this->is_robot_ready_)
@@ -119,12 +125,14 @@ void RobotServer::JointControlThreadFunc()
         static int16_t last_control_word_ = -1;
         if (robot_feedback_.robot_status_word != last_status_word_ || robot_control_.robot_control_word != last_control_word_)
         {
-            RCLCPP_INFO(this->get_logger(), "Status word changed to: %s, control word changed to %s",
+            RCLCPP_INFO(this->get_logger(), "Status word changed to: %s, control word changed to %s robot status: \n%s",
                         utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str(),
-                        utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str().c_str());
+                        utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str().c_str(),
+                        this->GetRobotStatusString().c_str());
             LOG_INFO << "";
             LOG_INFO << "Status word changed to " << utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str()
-                     << ", control word changed to " << utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str();
+                     << ", control word changed to " << utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str()
+                     << " robot status: " << this->GetRobotStatusString();
             last_status_word_ = robot_feedback_.robot_status_word;
             last_control_word_ = robot_control_.robot_control_word;
         }
@@ -138,16 +146,16 @@ void RobotServer::WriteFeedbackToControl()
     for (int i = 0; i < this->ndof_body_; ++i)
     {
         robot_control_.position[i] = robot_feedback_.position[i];
-        robot_control_.velocity[i] = robot_feedback_.velocity[i];
-        robot_control_.torque_feedforward[i] = robot_feedback_.torque[i];
+        robot_control_.velocity[i] = 0.0;
+        robot_control_.torque_feedforward[i] = 0.0;
     }
     for (int i = 0; i < this->ndof_legs_; ++i)
     {
         robot_control_.leg_control[i].joint_alias = robot_feedback_.leg_feedback_[i].joint_alias; // 关节ID初始化
         robot_control_.leg_control[i].joint_mode = 0; // 默认控制模式
         robot_control_.leg_control[i].joint_position = robot_feedback_.leg_feedback_[i].joint_position;
-        robot_control_.leg_control[i].joint_velocity = robot_feedback_.leg_feedback_[i].joint_velocity;
-        robot_control_.leg_control[i].joint_torque = robot_feedback_.leg_feedback_[i].joint_torque;
+        robot_control_.leg_control[i].joint_velocity = 0.0;
+        robot_control_.leg_control[i].joint_torque = 0.0;
         robot_control_.leg_control[i].joint_Kp = this->legs_stiffness_[i];  // 腿部刚度初始值
         robot_control_.leg_control[i].joint_Kd = this->legs_damping_[i];   // 腿部阻尼初始值
     }
@@ -209,6 +217,24 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg)
     {
         RCLCPP_WARN(this->get_logger(), "Failed to parse /control/debug JSON: %s", e.what());
     }
+}
+
+std::string RobotServer::GetRobotStatusString()
+{
+    uint64_t timestamp_ns = this->now().nanoseconds();
+    auto status_string =
+        std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
+        ",\n  \"robot_statusword\":" + utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
+        ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
+        ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, 0, ndof_body_ + ndof_legs_).str() +
+        ",\n  \"motor_error_code\":" + utils::MotorErrorcodeToJsonArrayString(this->robot_feedback_.motor_error_code, 0, ndof_body_ + ndof_legs_).str() +
+        ",\n  \"body_joint_position_cmd\":" + utils::VectorToJsonArrayString(robot_control_.position, 0, ndof_body_).str() +
+        ",\n  \"body_joint_position\":" + utils::VectorToJsonArrayString(this->robot_feedback_.position, 0, ndof_body_).str() +
+        ",\n  \"body_joint_velocity\":" + utils::VectorToJsonArrayString(this->robot_feedback_.velocity, 0, ndof_body_).str() +
+        ",\n  \"body_joint_torque\":" + utils::VectorToJsonArrayString(this->robot_feedback_.torque, 0, ndof_body_).str() +
+        ",\n  \"leg_control_cmd\":" + this->robot_control_.PrintLegControl() +
+        "\n}";
+    return status_string;
 }
 
 }  // namespace robot_server_lib

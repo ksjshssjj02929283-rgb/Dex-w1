@@ -7,6 +7,7 @@
 #include <cassert>
 #include <cstring>
 #include <iostream>
+#include <sstream>
 
 #define FEEDBACK_SHM_KEY 0x1000
 #define CONTROL_SHM_KEY 0x2000
@@ -85,6 +86,27 @@ struct RobotControl {
 
     // L1
     LegMotorControl leg_control[12] = {0};
+
+    std::string PrintLegControl() const {
+        std::ostringstream oss;
+
+        auto print_line = [&](const char* name, auto getter) {
+            oss << name;
+            for (int i = 0; i < 12; ++i) {
+                if (i) oss << ", ";
+                oss << getter(i);
+            }
+            oss << "\n";
+        };
+
+        print_line("pos:   ", [&](int i) { return leg_control[i].joint_position; });
+        print_line("vel:   ", [&](int i) { return leg_control[i].joint_velocity; });
+        print_line("torque:", [&](int i) { return leg_control[i].joint_torque; });
+        print_line("Kp:    ", [&](int i) { return leg_control[i].joint_Kp; });
+        print_line("Kd:    ", [&](int i) { return leg_control[i].joint_Kd; });
+
+        return oss.str();
+    }
 };
 
 inline void decodeTwoUint32FromUint64(std::uint64_t v, std::uint32_t& latest, std::uint32_t& reader) {
