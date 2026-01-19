@@ -17,12 +17,35 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     joint_command_subscriber_ = this->create_subscription<JointCommandMsg>(
         "/hardware/joint_command", 10, std::bind(&RobotServer::JointCommandCallback, this, std::placeholders::_1));
 
+    joint_position_control_subscriber_ = this->create_subscription<joint_interfaces::msg::JointPositionControl>(
+        "/hardware/joint_position_control", 10, std::bind(&RobotServer::JointPositionControlCallback, this, std::placeholders::_1));
+
     // 创建 /control/debug 订阅器
     debug_subscriber_ = this->create_subscription<std_msgs::msg::String>(
         "/control/debug", 10, std::bind(&RobotServer::DebugCallback, this, std::placeholders::_1));
 
     // 启动关节控制线程
     torque_control_thread_ = std::thread(&RobotServer::JointControlThreadFunc, this);
+}
+
+
+void RobotServer::JointPositionControlCallback(const joint_interfaces::msg::JointPositionControl::SharedPtr msg)
+{
+    auto robot_control_temp = robot_control_;
+    for (size_t i = 0; i < msg->name.size(); ++i) {
+        for (int j = 0; j < ndof_body_ + ndof_legs_; ++j) {
+            if (joint_name_[j] == msg->name[i]) {
+                if (j < ndof_body_) {
+                    robot_control_temp.position[j] = msg->position[i];
+                }
+                else {
+                    int leg_index = j - ndof_body_;
+                    robot_control_temp.leg_control[leg_index].joint_position = msg->position[i];
+                }
+            }
+        }
+    }
+    robot_control_ = robot_control_temp;
 }
 
 void RobotServer::JointCommandCallback(const JointCommandMsg::SharedPtr msg)
@@ -171,12 +194,14 @@ void RobotServer::JointStatePublisher()
     joint_state_msg.effort.resize(this->ndof_body_ + this->ndof_legs_);
     for (int i = 0; i < this->ndof_body_; ++i)
     {
+        joint_state_msg.name[i] = this->joint_name_[i];
         joint_state_msg.position[i] = robot_feedback_.position[i];
         joint_state_msg.velocity[i] = robot_feedback_.velocity[i];
         joint_state_msg.effort[i] = robot_feedback_.torque[i];
     }
     for (int i = 0; i < this->ndof_legs_; ++i)
     {
+        joint_state_msg.name[i + this->ndof_body_] = this->joint_name_[i + this->ndof_body_];
         joint_state_msg.position[i + this->ndof_body_] = robot_feedback_.leg_feedback_[i].joint_position;
         joint_state_msg.velocity[i + this->ndof_body_] = robot_feedback_.leg_feedback_[i].joint_velocity;
         joint_state_msg.effort[i + this->ndof_body_] = robot_feedback_.leg_feedback_[i].joint_torque;

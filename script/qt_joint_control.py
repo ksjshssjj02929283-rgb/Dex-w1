@@ -7,7 +7,7 @@ from PyQt5.QtCore import QTimer
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
-from joint_interfaces.msg import JointVelocityTorqueLimitFeedback, JointPositionControl
+from joint_interfaces.msg import JointPositionControl
 from PyQt5.QtCore import Qt
 import time  # 新增
 
@@ -101,8 +101,7 @@ class JointControlWidget(QWidget):
         self.motion_timer.start(10)  # 0.01s
 
     def init_tables(self):
-        headers_feedback = ["name", "position", "velocity", "torque",
-                            "pos_torque_limit", "neg_torque_limit"]
+        headers_feedback = ["name", "position", "velocity", "torque"]
         headers_control = ["name", "target_position", "target_velocity"]  # 新增列
         self.feedback_table.setColumnCount(len(headers_feedback))
         self.feedback_table.setHorizontalHeaderLabels(headers_feedback)
@@ -129,14 +128,11 @@ class JointControlWidget(QWidget):
         self.feedback_table.setRowCount(len(joint_data))
         for row, joint in enumerate(joint_data):
             name = joint['name']
-            limits = self.ros_node.velocity_torque_limits.get(name, {})
             values = [
                 name,
                 f"{joint.get('position', 0.0):.2f}",
                 f"{joint.get('velocity', 0.0):.2f}",
                 f"{joint.get('torque', 0.0):.2f}",
-                f"{limits.get('pos_torque_limit', 0.0):.2f}",
-                f"{limits.get('neg_torque_limit', 0.0):.2f}",
             ]
             for col, val in enumerate(values):
                 self.feedback_table.setItem(row, col, QTableWidgetItem(val))
@@ -290,10 +286,8 @@ class ROS2Node(Node):
         super().__init__('joint_control_gui')
         self.update_callback = update_callback
         self.joint_states = []
-        self.velocity_torque_limits = {}
-        self.create_subscription(JointState, '/feedback/joint', self.joint_state_callback, 10)
-        self.create_subscription(JointVelocityTorqueLimitFeedback, '/feedback/joint_velocity_torque_limit', self.limit_feedback_callback, 10)
-        self.position_control_pub = self.create_publisher(JointPositionControl, '/control/joint_position', 10)
+        self.create_subscription(JointState, '/hardware/joint_state', self.joint_state_callback, 10)
+        self.position_control_pub = self.create_publisher(JointPositionControl, '/hardware/joint_position_control', 10)
 
     def joint_state_callback(self, msg):
         self.joint_states = []
@@ -304,16 +298,6 @@ class ROS2Node(Node):
                 'velocity': msg.velocity[i] if i < len(msg.velocity) else 0.0,
                 'torque': msg.effort[i] if i < len(msg.effort) else 0.0,
             })
-        self.update_callback()
-
-    def limit_feedback_callback(self, msg):
-        for i, name in enumerate(msg.name):
-            self.velocity_torque_limits[name] = {
-                'pos_vel_limit': msg.positive_velocity_limit[i],
-                'neg_vel_limit': msg.negative_velocity_limit[i],
-                'pos_torque_limit': msg.positive_torque_limit[i],
-                'neg_torque_limit': msg.negative_torque_limit[i],
-            }
         self.update_callback()
 
     def publish_control(self, control_data):

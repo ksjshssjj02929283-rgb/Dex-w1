@@ -40,6 +40,26 @@ find_package(robot_server_interfaces REQUIRED)
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
 
+if(NOT TARGET DexeRP)
+  # robot_server_lib/  -> dexe_robot_server/ -> workspace/
+  set(DEXERP_WS_ROOT "${CMAKE_CURRENT_LIST_DIR}/../lib")
+  set(DEXERP_LOCAL_LIB "${DEXERP_WS_ROOT}/libDexeRP.so")
+
+  if(EXISTS "${DEXERP_LOCAL_LIB}")
+    add_library(DexeRP SHARED IMPORTED GLOBAL)
+    set_target_properties(DexeRP PROPERTIES IMPORTED_LOCATION "${DEXERP_LOCAL_LIB}")
+
+    # so that #include "dexe_rp/xxx.h" works
+    target_include_directories(DexeRP INTERFACE "${DEXERP_WS_ROOT}")
+
+    # install headers + .so into colcon install/ (deployment just ships install/)
+    install(FILES "${DEXERP_LOCAL_LIB}" DESTINATION lib)
+    install(DIRECTORY "${DEXERP_WS_ROOT}/dexe_rp" DESTINATION include)
+  else()
+    message(FATAL_ERROR "DexeRP not found: ${DEXERP_LOCAL_LIB} (and no system target DexeRP)")
+  endif()
+endif()
+
 aux_source_directory(src LIB_SRCS)
 aux_source_directory(kinematics LIB_SRCS)
 aux_source_directory(dynamics LIB_SRCS)

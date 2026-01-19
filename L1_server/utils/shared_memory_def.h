@@ -20,23 +20,23 @@ struct ChassisFeedback {
     double right_velocity;
 };
 struct LegMotorFeedback {
-    int joint_alias;             // ID
-    uint16_t joint_status_word;  // 状态字
-    uint16_t joint_error_code;   // 错误码
-    double joint_position;       // 位置
-    double joint_velocity;       // 速度
-    double joint_torque;         // 力矩
+    int joint_alias = 0;             // ID
+    uint16_t joint_status_word = 0;  // 状态字
+    uint16_t joint_error_code = 0;   // 错误码
+    double joint_position = 0;       // 位置
+    double joint_velocity = 0;       // 速度
+    double joint_torque = 0;         // 力矩
 };
 
 struct LegMotorControl {
-    int joint_alias;                  // 关节名 / ID
-    uint16_t joint_mode;              // 控制模式（默认 0）
-    double joint_position;            // 给定位置 (rad)
-    double joint_velocity;            // 给定速度 (rad/s)
-    double joint_torque;              // 给定力矩 (Nm)
-    double joint_torque_feedforward;  // 力矩前馈 (Nm)
-    double joint_Kp;                  // 刚度
-    double joint_Kd;                  // 阻尼
+    int joint_alias = 0;                  // 关节名 / ID
+    uint16_t joint_mode = 0;              // 控制模式（默认 0）
+    double joint_position = 0;            // 给定位置 (rad)
+    double joint_velocity = 0;            // 给定速度 (rad/s)
+    double joint_torque = 0;              // 给定力矩 (Nm)
+    double joint_torque_feedforward = 0;  // 力矩前馈 (Nm)
+    double joint_Kp = 0;                  // 刚度
+    double joint_Kd = 0;                  // 阻尼
 };
 
 struct RobotFeedback {
@@ -53,7 +53,7 @@ struct RobotFeedback {
     // 底盘反馈
     ChassisFeedback chassis_feedback;
     // L1
-    LegMotorFeedback leg_feedback_[12] = {0};
+    LegMotorFeedback leg_feedback_[12];
 };
 
 struct RobotControl {
@@ -85,7 +85,7 @@ struct RobotControl {
     uint64_t chassis_cnt = 0;
 
     // L1
-    LegMotorControl leg_control[12] = {0};
+    LegMotorControl leg_control[12];
 
     std::string PrintLegControl() const {
         std::ostringstream oss;
