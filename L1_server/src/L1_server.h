@@ -49,8 +49,8 @@ class RobotServer : public RobotServerBase
         "LEFT_LEG_J1",  "LEFT_LEG_J2",  "LEFT_LEG_J3",  "LEFT_LEG_J4", "LEFT_LEG_J5",  "LEFT_LEG_J6",
         "RIGHT_LEG_J1", "RIGHT_LEG_J2", "RIGHT_LEG_J3", "RIGHT_LEG_J4", "RIGHT_LEG_J5", "RIGHT_LEG_J6"};
 
-    double legs_stiffness_[12] = {25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0};
-    double legs_damping_[12]   = {10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0};
+    double legs_stiffness_[12] = {50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0};
+    double legs_damping_[12]   = {5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0};
 
     bool clear_error_flag_{false};
 };
