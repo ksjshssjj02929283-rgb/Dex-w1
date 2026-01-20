@@ -130,4 +130,24 @@ else()
   )
 endif()
 
+# chassis.cfg：临时增加底盘类型配置
+set(ROBOT_CFG_INSTALL_PATH
+    "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/chassis.cfg"
+)
+
+if(EXISTS "${ROBOT_CFG_INSTALL_PATH}")
+  message(STATUS
+    "[${PROJECT_NAME}] chassis.cfg already exists at install destination, skipping install."
+  )
+else()
+  message(STATUS
+    "[${PROJECT_NAME}] chassis.cfg not found at install destination, will be installed."
+  )
+  install(
+    FILES chassis.cfg
+    DESTINATION share/${PROJECT_NAME}
+  )
+endif()
+
+
 ament_package()

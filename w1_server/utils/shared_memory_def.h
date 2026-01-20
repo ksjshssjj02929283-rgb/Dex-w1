@@ -13,10 +13,18 @@
 #define MAX_JOINT_NUM 32
 #define OMNI_MOTOR_NUM 4
 
+// 全向底盘参数定义（单位：mm，角度：rad）
+#define CHASSIS_SIZE_L 460.0f  // 前后轮间距（wheelbase）
+#define CHASSIS_SIZE_W 345.0f  // 左右轮间距（track）
+
 struct ChassisFeedback {
     int64_t timestamp;
     double left_velocity;
     double right_velocity;
+    double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};   //底盘电机控制速度
+    double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};  //底盘电机控制方向
+    uint16_t status_word;
+    uint16_t error_code;
 };
 
 struct RobotFeedback {

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
+using json = nlohmann::json;
 namespace chassis_node {
 
 ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("chassis_node", options) {
@@ -32,6 +33,19 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("cha
     omega_deadzone_ = this->declare_parameter<double>("omega_deadzone", 0.008);  // 角速度死区 (rad/s)
     imu_timeout_ = this->declare_parameter<double>("imu_timeout", 0.1);          // IMU超时时间 (s)
 
+    // 模型配置文件路径 ==================
+    const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
+
+    const auto robot_cfg_path = std::filesystem::path(package_share_path) / "chassis.cfg";
+
+    // ================== 2. 加载配置 ==================
+    LoadChassisConfig(robot_cfg_path);
+
+    // 死区参数
+    speed_deadzone_ = this->declare_parameter<double>("speed_deadzone", 1e-3);   // 线速度死区 (m/s)
+    omega_deadzone_ = this->declare_parameter<double>("omega_deadzone", 0.008);  // 角速度死区 (rad/s)
+    imu_timeout_ = this->declare_parameter<double>("imu_timeout", 0.1);          // IMU超时时间 (s)
+
     imu_processor_ = std::make_unique<ImuProcessor>();
 
     imu_processor_->SetGravityMagnitude(gravity_magnitude_);
@@ -46,6 +60,8 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("cha
     refined_imu_pub_ =
         this->create_publisher<sensor_msgs::msg::Imu>("/imu/chassis/refined", rclcpp::SystemDefaultsQoS());
     odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/feedback/odom", rclcpp::SystemDefaultsQoS());
+    omni_motor_pub_ =
+        this->create_publisher<chassis_interfaces::msg::ChassisMotorControl>("/feedback/omni_chassis_motor", 10);
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
     // 定时器（按频率发布；若你用纯事件驱动，也可不需要定时器）
@@ -60,12 +76,51 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("cha
                 odom_rate_hz_, odom_frame_.c_str(), base_frame_.c_str());
 }
 
+void ChassisNode::LoadChassisConfig(const std::filesystem::path &cfg_path) {
+    if (!std::filesystem::exists(cfg_path)) {
+        RCLCPP_FATAL(this->get_logger(), "robot.cfg not found: %s", cfg_path.c_str());
+        throw std::runtime_error("robot.cfg not found");
+    }
+
+    std::ifstream ifs(cfg_path);
+    if (!ifs.is_open()) {
+        RCLCPP_FATAL(this->get_logger(), "Failed to open chassis cfg: %s", cfg_path.c_str());
+        throw std::runtime_error("failed to open chassis cfg");
+    }
+
+    json config_json;
+    try {
+        ifs >> config_json;
+    } catch (const json::parse_error &e) {
+        RCLCPP_FATAL(this->get_logger(), "JSON parse error in %s: %s", cfg_path.c_str(), e.what());
+        throw;
+    }
+
+    // ---------- robot_name ----------
+    if (!config_json.contains("robot_name")) {
+        RCLCPP_FATAL(this->get_logger(), "robot.cfg missing field: robot_name");
+        throw std::runtime_error("robot_name missing");
+    }
+
+    const std::string robot_name = config_json["robot_name"].get<std::string>();
+
+    if (robot_name == "omni") {
+        chassis_model_ = 1;
+    } else if (robot_name == "diff_drive") {
+        chassis_model_ = 0;
+    } else {
+        RCLCPP_FATAL(this->get_logger(), "Unknown robot_name: %s (expect omni / diff_drive)", robot_name.c_str());
+        throw std::runtime_error("unknown robot_name");
+    }
+}
+
 void ChassisNode::ResetOdometry() {
     std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
     odom_x_ = 0.0;
     odom_y_ = 0.0;
     odom_theta_ = 0.0;
     speed_v_ = 0.0;
+    speed_v_y_ = 0.0;
     omega_r_ = 0.0;
     is_stopped_ = true;
     prev_chassis_data_.reset();
@@ -114,6 +169,9 @@ void ChassisNode::IntegrateImuOnce(const sensor_msgs::msg::Imu &imu) {
 
     // 更新当前 IMU（用于速度发布）
     curr_imu_ = std::make_shared<sensor_msgs::msg::Imu>(imu);
+
+    // 更新 IMU 时间戳
+    last_imu_time_ = imu.header.stamp;
 
     // 更新 IMU 时间戳
     last_imu_time_ = imu.header.stamp;
@@ -182,12 +240,15 @@ void ChassisNode::onTimer() {
     RobotFeedback feedback_data{};
     bool ret = feedback_shm_instance.PeekLatest(&feedback_data);
     const auto &chassis_data = feedback_data.chassis_feedback;
+    PublishOmniMotorFeedback(chassis_data);
     if (use_imu_yaw_ && !is_imu_inited_) {
         // RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Waiting for chassis initialized ...");
         return;
     }
-
-    IntegrateOdomOnce(chassis_data);
+    if (chassis_model_ == 0)
+        IntegrateOdomOnce(chassis_data);
+    else
+        IntegrateOmniOdomOnce(chassis_data);
     PublishOdometry();
 }
 
@@ -218,11 +279,12 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data) {
     }
 
     // 获取轮速数据
-    const double v_l = curr_chassis_data_->left_velocity;
-    const double v_r = curr_chassis_data_->right_velocity;
-    const double v_l_prev = prev_chassis_data_->left_velocity;
-    const double v_r_prev = prev_chassis_data_->right_velocity;
+    const double v_l = curr_chassis_data_->left_velocity * 0.001 * DIFF_CHASSIS_WHEEL_D * M_PI / 60.0;
+    const double v_r = curr_chassis_data_->right_velocity * 0.001 * DIFF_CHASSIS_WHEEL_D * M_PI / 60.0;
+    const double v_l_prev = prev_chassis_data_->left_velocity * 0.001 * DIFF_CHASSIS_WHEEL_D * M_PI / 60.0;
+    const double v_r_prev = prev_chassis_data_->right_velocity * 0.001 * DIFF_CHASSIS_WHEEL_D * M_PI / 60.0;
 
+    // 预先计算平均线速度和角速度（梯形积分）
     // 预先计算平均线速度和角速度（梯形积分）
     const double speed_avg = 0.5 * (0.5 * (v_l + v_r) + 0.5 * (v_l_prev + v_r_prev));
     const double omega_enc = (v_r - v_l) / wheel_track_;
@@ -257,6 +319,7 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data) {
     }
 
     // 记录积分前的角度
+    // 记录积分前的角度
     double theta_start = 0.0;
     {
         std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
@@ -275,7 +338,9 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data) {
         RCLCPP_DEBUG(this->get_logger(), "Using encoder yaw: %.3f deg", odom_theta_ * 180.0 / M_PI);
     }
     // else: 如果使用 IMU，角度已经在 IntegrateImuOnce 中更新了；静止时不积分
+    // else: 如果使用 IMU，角度已经在 IntegrateImuOnce 中更新了；静止时不积分
 
+    // 获取积分后的角度
     // 获取积分后的角度
     double theta_end = 0.0;
     {
@@ -289,6 +354,7 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data) {
     const double delta_s = speed_avg * dt;
 
     // 更新位置
+    // 更新位置
     odom_x_ += delta_s * std::cos(theta_mid) * odom_factor_;
     odom_y_ += delta_s * std::sin(theta_mid) * odom_factor_;
 
@@ -296,6 +362,7 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data) {
     speed_v_ = speed_avg * odom_factor_;
 
     if (is_stopped) {
+        // 静止状态：角速度置零
         // 静止状态：角速度置零
         omega_r_ = 0.0;
     } else {
@@ -323,6 +390,197 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data) {
     curr_chassis_data_.reset();
 }
 
+void ChassisNode::PublishOmniMotorFeedback(const ChassisFeedback &chassis_data) {
+    chassis_interfaces::msg::ChassisMotorControl motor_msg;
+    rclcpp::Time curr_time = rclcpp::Clock().now();
+    motor_msg.header.stamp = curr_time;
+    motor_msg.speed.resize(OMNI_MOTOR_NUM);
+    motor_msg.position.resize(OMNI_MOTOR_NUM);
+    for (size_t i = 0; i < OMNI_MOTOR_NUM; i++) {
+        motor_msg.speed[i] = chassis_data.chassis_motor_velocity[i];
+        motor_msg.position[i] = chassis_data.chassis_motor_direction[i];
+    }
+    omni_motor_pub_->publish(motor_msg);
+}
+void ChassisNode::IntegrateOmniOdomOnce(const ChassisFeedback &chassis_data) {
+    bool valid_data = (chassis_data.timestamp > 0);
+    if (!valid_data) {
+        return;
+    }
+
+    // 车体几何参数（米）
+    constexpr double L = CHASSIS_SIZE_L * 0.001;  // m
+    constexpr double W = CHASSIS_SIZE_W * 0.001;  // m
+
+    curr_chassis_data_ = std::make_shared<ChassisFeedback>(chassis_data);
+
+    // 第一帧：只缓存，不积分
+    if (!prev_chassis_data_) {
+        prev_chassis_data_ = curr_chassis_data_;
+        return;
+    }
+
+    rclcpp::Time curr_time(curr_chassis_data_->timestamp, RCL_SYSTEM_TIME);
+    rclcpp::Time prev_time(prev_chassis_data_->timestamp, RCL_SYSTEM_TIME);
+    const double dt = (curr_time - prev_time).seconds();
+
+    if (dt <= 0.0 || dt > 0.5) {
+        prev_chassis_data_ = curr_chassis_data_;
+        curr_chassis_data_.reset();
+        return;
+    }
+
+    // ========= 1) 由四个舵轮速度/角度解算底盘速度（base_link坐标系） =========
+    // 说明：这里沿用你原来的速度标定（rpm -> m/s 的换算），后续建议改成参数。
+    double vx_i[4]{};
+    double vy_i[4]{};
+    double vx_i_prev[4]{};
+    double vy_i_prev[4]{};
+
+    for (int i = 0; i < 4; ++i) {
+        // 当前帧
+        double speed = curr_chassis_data_->chassis_motor_velocity[i];
+        double angle = curr_chassis_data_->chassis_motor_direction[i];
+        speed = speed * 0.001 * OMNI_CHASSIS_WHEEL_D * M_PI / 60.0;  // TODO: 改为参数
+        vx_i[i] = speed * std::cos(angle);
+        vy_i[i] = speed * std::sin(angle);
+
+        // 上一帧
+        double speed_prev = prev_chassis_data_->chassis_motor_velocity[i];
+        double angle_prev = prev_chassis_data_->chassis_motor_direction[i];
+        speed_prev = speed_prev * 0.001 * OMNI_CHASSIS_WHEEL_D * M_PI / 60.0;  // TODO: 改为参数
+        vx_i_prev[i] = speed_prev * std::cos(angle_prev);
+        vy_i_prev[i] = speed_prev * std::sin(angle_prev);
+    }
+
+    // 平移速度：四轮平均
+    const double vx = 0.25 * (vx_i[0] + vx_i[1] + vx_i[2] + vx_i[3]);
+    const double vy = 0.25 * (vy_i[0] + vy_i[1] + vy_i[2] + vy_i[3]);
+    const double vx_prev = 0.25 * (vx_i_prev[0] + vx_i_prev[1] + vx_i_prev[2] + vx_i_prev[3]);
+    const double vy_prev = 0.25 * (vy_i_prev[0] + vy_i_prev[1] + vy_i_prev[2] + vy_i_prev[3]);
+
+    // 角速度：前后 & 左右对称解算（与你原逻辑一致，只是加了上一帧做梯形积分）
+    const double vw_x = (vx_i[1] + vx_i[3] - vx_i[0] - vx_i[2]) / (2.0 * W);
+    const double vw_y = (vy_i[0] + vy_i[1] - vy_i[2] - vy_i[3]) / (2.0 * L);
+    const double vw = 0.5 * (vw_x + vw_y);
+
+    const double vw_x_prev = (vx_i_prev[1] + vx_i_prev[3] - vx_i_prev[0] - vx_i_prev[2]) / (2.0 * W);
+    const double vw_y_prev = (vy_i_prev[0] + vy_i_prev[1] - vy_i_prev[2] - vy_i_prev[3]) / (2.0 * L);
+    const double vw_prev = 0.5 * (vw_x_prev + vw_y_prev);
+
+    /* ===== 2. 静止判断（与差速一致：当前 + 上一帧） ===== */
+    const bool linear_stopped = std::abs(vx) < speed_deadzone_ && std::abs(vy) < speed_deadzone_ &&
+                                std::abs(vx_prev) < speed_deadzone_ && std::abs(vy_prev) < speed_deadzone_;
+
+    bool angular_stopped = false;
+    const bool imu_available = IsImuAvailable(curr_time);
+
+    if (imu_available) {
+        std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
+        angular_stopped = std::abs(curr_imu_->angular_velocity.z) < omega_deadzone_;
+    } else {
+        angular_stopped = std::abs(vw) < omega_deadzone_ && std::abs(vw_prev) < omega_deadzone_;
+    }
+
+    const bool is_stopped = linear_stopped && angular_stopped;
+
+    {
+        std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
+        is_stopped_ = is_stopped;
+    }
+
+    // ========= 3) 角度积分（优先IMU；否则用编码器角速度vw） =========
+    double theta_start = 0.0;
+    {
+        std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
+        theta_start = odom_theta_;
+    }
+
+    if (!is_stopped && !imu_available) {
+        // 运动中且不使用 IMU，或 IMU 不可用时，使用底盘解算角速度
+        const double omega_enc = 0.5 * (vw + vw_prev);  // 梯形法
+        const double delta_theta = omega_enc * dt;
+
+        std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
+        odom_theta_ += delta_theta;
+        odom_theta_ = std::atan2(std::sin(odom_theta_), std::cos(odom_theta_));
+    }
+
+    double theta_end = 0.0;
+    {
+        std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
+        theta_end = odom_theta_;
+    }
+
+    const double theta_mid =
+        std::atan2(std::sin(0.5 * (theta_start + theta_end)), std::cos(0.5 * (theta_start + theta_end)));
+
+    // ========= 4) 位置积分 =========
+    // 先在 base 坐标系对 vx,vy 做梯形积分得到 body 位移，再旋转到 odom 坐标系
+    const double dx_body = 0.5 * (vx + vx_prev) * dt;
+    const double dy_body = 0.5 * (vy + vy_prev) * dt;
+
+    const double c = std::cos(theta_mid);
+    const double s = std::sin(theta_mid);
+
+    const double dx_odom = dx_body * c - dy_body * s;
+    const double dy_odom = dx_body * s + dy_body * c;
+
+    odom_x_ += dx_odom * odom_factor_;
+    odom_y_ += dy_odom * odom_factor_;
+
+    // ========= 5) 更新速度（用于发布） =========
+    speed_v_ = vx * odom_factor_;
+    speed_v_y_ = vy * odom_factor_;
+
+    if (is_stopped) {
+        // 静止状态：角速度置零
+        omega_r_ = 0.0;
+    } else {
+        // 运动状态：根据 IMU 可用性选择角速度源
+        if (imu_available) {
+            // 使用 IMU 角速度
+            std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
+            omega_r_ = curr_imu_->angular_velocity.z * imu_factor_;
+        } else {
+            omega_r_ = vw;
+            if (std::abs(omega_r_) < omega_deadzone_) {
+                omega_r_ = 0.0;
+            }
+        }
+    }
+
+    // 更新时间基
+    prev_chassis_data_ = curr_chassis_data_;
+    curr_chassis_data_.reset();
+}
+
+void ChassisNode::PublishOmniMotorFeedback(const ChassisFeedback &chassis_data) {
+    chassis_interfaces::msg::ChassisMotorControl motor_msg;
+    rclcpp::Time curr_time = rclcpp::Clock().now();
+    motor_msg.header.stamp = curr_time;
+    motor_msg.speed.resize(OMNI_MOTOR_NUM);
+    motor_msg.position.resize(OMNI_MOTOR_NUM);
+    for (size_t i = 0; i < OMNI_MOTOR_NUM; i++) {
+        motor_msg.speed[i] = chassis_data.chassis_motor_velocity[i];
+        motor_msg.position[i] = chassis_data.chassis_motor_direction[i];
+    }
+    omni_motor_pub_->publish(motor_msg);
+}
+
+void ChassisNode::PublishOmniMotorFeedback(const ChassisFeedback &chassis_data) {
+    chassis_interfaces::msg::ChassisMotorControl motor_msg;
+    rclcpp::Time curr_time = rclcpp::Clock().now();
+    motor_msg.header.stamp = curr_time;
+    motor_msg.speed.resize(OMNI_MOTOR_NUM);
+    motor_msg.position.resize(OMNI_MOTOR_NUM);
+    for (size_t i = 0; i < OMNI_MOTOR_NUM; i++) {
+        motor_msg.speed[i] = chassis_data.chassis_motor_velocity[i];
+        motor_msg.position[i] = chassis_data.chassis_motor_direction[i];
+    }
+    omni_motor_pub_->publish(motor_msg);
+}
+
 void ChassisNode::PublishOdometry() {
     nav_msgs::msg::Odometry odom_msg;
     rclcpp::Time curr_time = rclcpp::Clock().now();
@@ -339,7 +597,7 @@ void ChassisNode::PublishOdometry() {
     odom_msg.pose.pose.orientation = tf2::toMsg(q);
 
     odom_msg.twist.twist.linear.x = speed_v_;
-    odom_msg.twist.twist.linear.y = 0.0;
+    odom_msg.twist.twist.linear.y = speed_v_y_;
     odom_msg.twist.twist.linear.z = 0.0;
     odom_msg.twist.twist.angular.x = 0.0;
     odom_msg.twist.twist.angular.y = 0.0;

@@ -134,9 +134,10 @@ void RobotServer::InitParamConfig() {
 
     RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_cst_mode=%s)",
                 config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
+    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_cst_mode=%s)",
+                config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
                 this->enable_cst_mode_ ? "true" : "false");
-    LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_
-             << ", enable_cst_mode=" << this->enable_cst_mode_;
+    LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_ << ", enable_cst_mode=" << this->enable_cst_mode_;
 }
 
 void RobotServer::TorqueControlThreadFunc() {
@@ -587,7 +588,6 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
         }
     }
 }
-
 void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
     RCLCPP_INFO(this->get_logger(), "/control/debug message received: %s", msg->data.c_str());
     LOG_INFO << "/control/debug message received: " << msg->data;
@@ -644,8 +644,14 @@ void RobotServer::OmniChassisMotorControlCallback(const ChassisMotorControlMsg::
 
 void RobotServer::DiffChassisControlCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
     robot_control_.chassis_mode = 1;  // 设置为差速模式
-    robot_control_.chassis_right_velocity = msg->linear.x + msg->angular.z * DiffChassisWidth * 0.5;
-    robot_control_.chassis_left_velocity = msg->linear.x - msg->angular.z * DiffChassisWidth * 0.5;
+    // robot_control_.chassis_right_velocity = msg->linear.x + msg->angular.z * DiffChassisWidth * 0.5;
+    // robot_control_.chassis_left_velocity = msg->linear.x - msg->angular.z * DiffChassisWidth * 0.5;
+    double chassis_right_velocity = msg->linear.x + msg->angular.z * DiffChassisWidth * 0.5;
+    double chassis_left_velocity = msg->linear.x - msg->angular.z * DiffChassisWidth * 0.5;
+
+    robot_control_.chassis_right_velocity = chassis_right_velocity * 60 / (M_PI * DiffChassisWheelD);
+    robot_control_.chassis_left_velocity = chassis_left_velocity * 60 / (M_PI * DiffChassisWheelD);
+
     robot_control_.chassis_cnt++;
     RCLCPP_DEBUG(this->get_logger(), "Diff chassis control: linear.x=%.2f, angular.z=%.2f => left=%.2f, right=%.2f",
                  msg->linear.x, msg->angular.z, robot_control_.chassis_left_velocity,
