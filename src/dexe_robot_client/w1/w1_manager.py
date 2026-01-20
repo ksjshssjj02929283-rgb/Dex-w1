@@ -1207,14 +1207,12 @@ class W1Manager:
             return StatusCode.NAME_MISMATCH, None
 
         # cartesian interpolation
-        if len(xpos_list) == 2 and weighted_norm(
-                pin.log6(np.linalg.inv(xpos_list[0])
-                         @ xpos_list[1]).vector) < cartesian_step:
+        path = PathR3xSO3Bezier(np.array(xpos_list))
+        if not path.calc_path():
+            return StatusCode.PLAN_PATH_FAIL, None
+        if len(xpos_list) == 2 and path.get_length() < cartesian_step:
             xpos_sample_array = np.array(xpos_list)
         else:
-            path = PathR3xSO3Bezier(np.array(xpos_list))
-            if not path.calc_path():
-                return StatusCode.PLAN_PATH_FAIL, None
             xpos_sample_array = path.get_sample_by_step(cartesian_step)
             if xpos_sample_array is None:
                 return StatusCode.PLAN_PATH_FAIL, None
