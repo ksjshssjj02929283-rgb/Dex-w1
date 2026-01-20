@@ -87,7 +87,7 @@ class Logger:
     def __init__(self,
                  log_file_path="",
                  name="root",
-                 console_level: int = logging.DEBUG,
+                 console_level: int = logging.INFO,
                  file_level: int = logging.DEBUG,
                  pretty_in_console=True,
                  pretty_in_file=True):

@@ -6,6 +6,7 @@
  - 支持双臂多个任务点一一对齐同步的MoveLine
  
 ### Fix
+- 修复 plan_cartesian_traj 的 bug
 
 ### Refactor
 - W1Manager对外API返回值从bool修改为StatusCode
