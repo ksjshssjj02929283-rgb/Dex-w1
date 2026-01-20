@@ -20,16 +20,6 @@ Eigen::Matrix4d GetFK(const Model& model, const Eigen::VectorXd& q) {
     return pose.toHomogeneousMatrix();
 }
 
-Eigen::Matrix4d GetFK(const Model& model, const Eigen::VectorXd& q) {
-    SE3 pose;
-    Data data(model);
-    int frame_id = model.getFrameId("ee_link");
-    forwardKinematics(model, data, q);
-    updateFramePlacements(model, data);
-    pose = data.oMf[frame_id];
-    return pose.toHomogeneousMatrix();
-}
-
 Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q, ReferenceFrame frame) {
     int nv = model.nv;
     Eigen::MatrixXd J = Eigen::MatrixXd::Zero(6, nv);

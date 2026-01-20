@@ -286,6 +286,9 @@ PlannerRequest ParseSetPropertyRequest(
         case RequestType::JointStiffness:
             planner_request.data = utils::StringToVectorXd(request->value);
             break;
+        case RequestType::JointDamping:
+            planner_request.data = utils::StringToVectorXd(request->value);
+            break;
         case RequestType::CartStiffness:
             planner_request.data = utils::StringToVector6d(request->value);
             break;

@@ -110,6 +110,7 @@ void PlannerManager::LoopOnce() {
             status = current_planner_->ComputeCommand(measurement, time_meta, this->runtime_data_.joint_cmd);
         }
         this->runtime_data_.joint_cmd.joint_stiffness = this->robot_property_.joint_stiffness;
+        this->runtime_data_.joint_cmd.joint_damping = this->robot_property_.joint_damping;
         // 如果提供了动力学参数, 则计算双臂前馈阻抗控制力 Compute the feedforward impedance control torque for both arms
         // const auto& dyn_base_params_primary = this->robot_model_.params_ptr->dyn_base_params_primary;
         // const auto& dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
@@ -519,6 +520,30 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
             std::cout << "[INFO] Set joint stiffness to " << robot_property_.joint_stiffness.tail(ndof_arm).transpose()
                       << "\n";
             LOG_INFO << "Set joint stiffness to " << stiffness.tail(ndof_arm).transpose();
+            return;
+        }
+        case RequestType::JointDamping: {
+            auto damping = std::get<Eigen::VectorXd>(request.data.value());
+            LOG_INFO << "Received joint damping command: " << damping.transpose();
+            auto ndof_arm = this->robot_model_.params_ptr->joints_primary.size() +
+                            this->robot_model_.params_ptr->joints_secondary.size();
+            if (damping.size() == 1) {
+                robot_property_.joint_damping = Eigen::VectorXd::Constant(ndof_robot, damping[0]);
+            } else {
+                if (damping.size() == ndof_arm) {
+                    // 按顺序赋值给tail部分关节 Assign to the tail joints in order
+                    robot_property_.joint_damping.tail(damping.size()) = damping;
+                } else {
+                    std::stringstream ss;
+                    ss << "[WARN] Invalid joint damping size: " << damping.size() << ", expected size: " << ndof_arm
+                       << " or 1. Command ignored.\n";
+                    std::cout << ss.str();
+                    LOG_WARN << ss.str();
+                }
+            }
+            std::cout << "[INFO] Set joint damping to " << robot_property_.joint_damping.tail(ndof_arm).transpose()
+                      << "\n";
+            LOG_INFO << "Set joint damping to " << damping.tail(ndof_arm).transpose();
             return;
         }
         case RequestType::CartStiffness: {

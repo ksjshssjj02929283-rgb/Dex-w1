@@ -76,13 +76,12 @@ void RobotServer::ForceArrayCallback(const std_msgs::msg::Float64MultiArray::Sha
 void RobotServer::InitParamConfig() {
     auto config_path = server_data_dir_ / "w1_config.json";
 
-    const std::set<std::string> kAllowedRootKeys{"enable_ruckig", "enable_cst_mode"};
+    const std::set<std::string> kAllowedRootKeys{"enable_ruckig"};
 
     nlohmann::json root;
     // 若文件不存在则创建默认配置
     if (!std::filesystem::exists(config_path)) {
         root["enable_ruckig"] = this->enable_ruckig_;
-        root["enable_cst_mode"] = this->enable_cst_mode_;
 
         std::ofstream ofs(config_path);
         ofs << root.dump(2);
@@ -112,19 +111,13 @@ void RobotServer::InitParamConfig() {
         root["enable_ruckig"] = this->enable_ruckig_;
         need_rewrite = true;
     }
-    if (!root.contains("enable_cst_mode")) {
-        root["enable_cst_mode"] = this->enable_cst_mode_;
-        need_rewrite = true;
-    }
 
     // 同步布尔值
     this->enable_ruckig_ = root.value("enable_ruckig", this->enable_ruckig_);
-    this->enable_cst_mode_ = root.value("enable_cst_mode", this->enable_cst_mode_);
 
     // 构建干净配置
     nlohmann::json root_clean;
     root_clean["enable_ruckig"] = this->enable_ruckig_;
-    root_clean["enable_cst_mode"] = this->enable_cst_mode_;
 
     // 如果发现未定义字段或缺失字段，则回写干净配置
     if (need_rewrite) {
@@ -132,12 +125,9 @@ void RobotServer::InitParamConfig() {
         ofs << root_clean.dump(2);
     }
 
-    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_cst_mode=%s)",
-                config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
-    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_cst_mode=%s)",
-                config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
-                this->enable_cst_mode_ ? "true" : "false");
-    LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_ << ", enable_cst_mode=" << this->enable_cst_mode_;
+    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s)", config_path.string().c_str(),
+                this->enable_ruckig_ ? "true" : "false");
+    LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_;
 }
 
 void RobotServer::TorqueControlThreadFunc() {
@@ -339,9 +329,6 @@ void RobotServer::SwitchControlWord() {
             inited = true;
             if (this->is_cmd_valid_) {
                 this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
-                if (this->enable_cst_mode_) {
-                    this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
-                }
             } else {
                 for (int i = 0; i < ndof_robot; i++) {
                     this->robot_control_.position[i] = this->robot_feedback_.position[i];
@@ -354,11 +341,7 @@ void RobotServer::SwitchControlWord() {
             this->is_robot_ready_ = true;
             inited = true;
             this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
-            if (this->is_cmd_valid_) {
-                if (this->enable_cst_mode_) {
-                    this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
-                }
-            } else {
+            if (!this->is_cmd_valid_) {
                 for (int i = 0; i < ndof_robot; i++) {
                     this->robot_control_.position[i] = this->robot_feedback_.position[i];
                     this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
@@ -398,47 +381,40 @@ void RobotServer::PublishThreadFunc() {
     }
 }
 
-std_msgs::msg::String RobotServer::GetRobotServerStateMsg() {
+// clang-format off
+std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
+{
     auto robot_server_state_msg = std_msgs::msg::String();
     uint64_t timestamp_ns = this->now().nanoseconds();
     robot_server_state_msg.data =
         std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
         ", \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
         ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
-        ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) + ",\n  \"status\":\"" +
-        ToString(this->manager_state_) + "\"" + ", \"server_error_code\":\"" +
-        ToString(this->manager_info_.robot_property.error_code) + "\"" + ", \"run_mode\":\"" +
-        ToString(this->manager_info_.robot_property.run_mode) + "\"" + ", \"safe_level\":\"" +
-        std::to_string(this->manager_info_.robot_property.safe_level) + "\"" + ", \"global_speed_ratio\":\"" +
-        std::to_string(this->manager_info_.robot_property.global_speed_ratio) + "\"" + ",\n  \"joint_stiffness\":" +
-        utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_stiffness, 6, ndof_robot).str() +
-        ",\n  \"robot_statusword\":" +
-        utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
+        ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) + ",\n  \"status\":\"" + ToString(this->manager_state_) + "\"" +
+        ", \"server_error_code\":\"" + ToString(this->manager_info_.robot_property.error_code) + "\"" +
+        ", \"run_mode\":\"" + ToString(this->manager_info_.robot_property.run_mode) + "\"" +
+        ", \"safe_level\":\"" + std::to_string(this->manager_info_.robot_property.safe_level) + "\"" +
+        ", \"global_speed_ratio\":\"" + std::to_string(this->manager_info_.robot_property.global_speed_ratio) + "\"" +
+        ",\n  \"joint_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_stiffness, 6, ndof_robot).str() +
+        ",\n  \"joint_damping\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_damping, 6, ndof_robot).str() +
+        ",\n  \"robot_statusword\":" + utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
         ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
-        ",\n  \"motor_status\":" +
-        utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, 0, ndof_robot).str() +
-        ",\n  \"motor_error_code\":" +
-        utils::MotorErrorcodeToJsonArrayString(this->robot_feedback_.motor_error_code, 0, ndof_robot).str() +
-        ",\n  \"motor_temperature\":" +
-        utils::VectorToJsonArrayString(this->robot_feedback_.motor_temperature, 0, ndof_robot).str() +
+        ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, 0, ndof_robot).str() +
+        ",\n  \"motor_error_code\":" + utils::MotorErrorcodeToJsonArrayString(this->robot_feedback_.motor_error_code, 0, ndof_robot).str() +
+        ",\n  \"motor_temperature\":" + utils::VectorToJsonArrayString(this->robot_feedback_.motor_temperature, 0, ndof_robot).str() +
         ",\n  \"joint_position_cmd\":" + utils::VectorToJsonArrayString(robot_control_.position, 0, ndof_robot).str() +
-        ",\n  \"joint_position\":" +
-        utils::VectorToJsonArrayString(this->robot_feedback_.position, 0, ndof_robot).str() +
-        ",\n  \"joint_velocity\":" +
-        utils::VectorToJsonArrayString(this->robot_feedback_.velocity, 0, ndof_robot).str() +
+        ",\n  \"joint_position\":" + utils::VectorToJsonArrayString(this->robot_feedback_.position, 0, ndof_robot).str() +
+        ",\n  \"joint_velocity\":" + utils::VectorToJsonArrayString(this->robot_feedback_.velocity, 0, ndof_robot).str() +
         ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(this->robot_feedback_.torque, 0, ndof_robot).str() +
-        ",\n  \"joint_torque_cmd\":" +
-        utils::VectorToJsonArrayString(this->robot_control_.torque_feedforward, 6, ndof_robot).str() +
+        ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(this->robot_control_.torque_feedforward, 6, ndof_robot).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
-        ",\n  \"torque_limit_negative\":" +
-        utils::VectorToJsonArrayString(this->robot_control_.negative_torque_limit, 6, ndof_robot).str() +
-        ",\n  \"torque_limit_positive\":" +
-        utils::VectorToJsonArrayString(this->robot_control_.positive_torque_limit, 6, ndof_robot).str() +
+        ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(this->robot_control_.negative_torque_limit, 6, ndof_robot).str() +
+        ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(this->robot_control_.positive_torque_limit, 6, ndof_robot).str() +
         ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_measurement).str() +
-        ",\n  \"torso_pose_X_Z_RY\":" +
-        utils::VectorToJsonArrayString(this->manager_info_.torso_pose_measurement).str() + "}";
+        ",\n  \"torso_pose_X_Z_RY\":" + utils::VectorToJsonArrayString(this->manager_info_.torso_pose_measurement).str() + "}";
     return robot_server_state_msg;
 }
+// clang-format on
 
 void RobotServer::PublishFeedback() {
     // 发布关节状态反馈

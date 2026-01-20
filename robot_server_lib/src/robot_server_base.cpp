@@ -78,9 +78,6 @@ void RobotServerBase::Run() {
 }
 
 void RobotServerBase::ManagerThreadFunc() {
-    if (!is_sim_) {
-        Setup_Realtime();
-    }
     PlannerManager planner_manager(this->robot_model_, this->manager_buffers_,
                                    std::bind(&RobotServerBase::ReportRequestStatus, this, std::placeholders::_1,
                                              std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));

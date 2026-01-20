@@ -63,6 +63,7 @@ enum class RequestType {
     SwitchRunMode,
     EnableDrag,
     JointStiffness,
+    JointDamping,
     CartStiffness,
     // Move Request
     MoveJoint,

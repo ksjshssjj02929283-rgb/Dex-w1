@@ -11,14 +11,19 @@ if [ -z "$ROS_DISTRO" ]; then
 fi
 echo "✅ ROS版本: $ROS_DISTRO"
 
-# === 2. 检查并更新 git 子模块 ===
-if [ -f "${WORKSPACE_DIR}/.gitmodules" ]; then
-    echo "🔄 检测到 .gitmodules，正在同步子模块..."
-    git submodule sync --recursive
-    git submodule update --init --recursive
-    echo "✅ 子模块已更新完成。"
+# 输出环境中已有的ROS包名字, 检查是否有robot_server_interfaces包
+if ros2 pkg list | grep -q "robot_server_interfaces"; then
+    echo "✅ 找到 robot_server_interfaces 包, 跳过dexe_interface包编译。"
 else
-    echo "ℹ️ 未检测到 .gitmodules，跳过子模块更新。"
+    echo "⚠️ 未找到 robot_server_interfaces 包, 需要重新编译 dexe_interface 包。"
+    if [ -f "${WORKSPACE_DIR}/.gitmodules" ]; then
+        echo "🔄 检测到 .gitmodules，正在同步子模块..."
+        git submodule sync --recursive
+        git submodule update --init --recursive
+        echo "✅ 子模块已更新完成。"
+    else
+        echo "ℹ️ 未检测到 .gitmodules，跳过子模块更新。"
+    fi
 fi
 
 cd "${WORKSPACE_DIR}/.."

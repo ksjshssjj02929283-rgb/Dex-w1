@@ -41,11 +41,6 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("cha
     // ================== 2. 加载配置 ==================
     LoadChassisConfig(robot_cfg_path);
 
-    // 死区参数
-    speed_deadzone_ = this->declare_parameter<double>("speed_deadzone", 1e-3);   // 线速度死区 (m/s)
-    omega_deadzone_ = this->declare_parameter<double>("omega_deadzone", 0.008);  // 角速度死区 (rad/s)
-    imu_timeout_ = this->declare_parameter<double>("imu_timeout", 0.1);          // IMU超时时间 (s)
-
     imu_processor_ = std::make_unique<ImuProcessor>();
 
     imu_processor_->SetGravityMagnitude(gravity_magnitude_);
@@ -553,32 +548,6 @@ void ChassisNode::IntegrateOmniOdomOnce(const ChassisFeedback &chassis_data) {
     // 更新时间基
     prev_chassis_data_ = curr_chassis_data_;
     curr_chassis_data_.reset();
-}
-
-void ChassisNode::PublishOmniMotorFeedback(const ChassisFeedback &chassis_data) {
-    chassis_interfaces::msg::ChassisMotorControl motor_msg;
-    rclcpp::Time curr_time = rclcpp::Clock().now();
-    motor_msg.header.stamp = curr_time;
-    motor_msg.speed.resize(OMNI_MOTOR_NUM);
-    motor_msg.position.resize(OMNI_MOTOR_NUM);
-    for (size_t i = 0; i < OMNI_MOTOR_NUM; i++) {
-        motor_msg.speed[i] = chassis_data.chassis_motor_velocity[i];
-        motor_msg.position[i] = chassis_data.chassis_motor_direction[i];
-    }
-    omni_motor_pub_->publish(motor_msg);
-}
-
-void ChassisNode::PublishOmniMotorFeedback(const ChassisFeedback &chassis_data) {
-    chassis_interfaces::msg::ChassisMotorControl motor_msg;
-    rclcpp::Time curr_time = rclcpp::Clock().now();
-    motor_msg.header.stamp = curr_time;
-    motor_msg.speed.resize(OMNI_MOTOR_NUM);
-    motor_msg.position.resize(OMNI_MOTOR_NUM);
-    for (size_t i = 0; i < OMNI_MOTOR_NUM; i++) {
-        motor_msg.speed[i] = chassis_data.chassis_motor_velocity[i];
-        motor_msg.position[i] = chassis_data.chassis_motor_direction[i];
-    }
-    omni_motor_pub_->publish(motor_msg);
 }
 
 void ChassisNode::PublishOdometry() {

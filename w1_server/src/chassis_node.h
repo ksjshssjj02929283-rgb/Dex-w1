@@ -56,9 +56,6 @@ private:
     // 读取机器人模型 差速/全向
     void LoadChassisConfig(const std::filesystem::path &cfg_path);
 
-    // 辅助函数
-    bool IsImuAvailable(const rclcpp::Time &curr_time);
-
 private:
     // 参数
     double wheel_track_;      // 轮距 b (m)
@@ -118,14 +115,6 @@ private:
     double gyro_excite_threshold_ = 0.002;
     double imu_reinit_duration_ = 3600.0;
     double gravity_magnitude_ = 9.7887;
-
-    // 死区参数
-    double speed_deadzone_ = 5e-3;  // m/s
-    double omega_deadzone_ = 5e-3;  // rad/s
-    double imu_timeout_ = 0.1;      // s
-
-    // IMU 超时检测
-    rclcpp::Time last_imu_time_{0, 0, RCL_ROS_TIME};
 
     // 死区参数
     double speed_deadzone_ = 5e-3;  // m/s

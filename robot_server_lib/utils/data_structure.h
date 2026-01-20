@@ -69,7 +69,8 @@ struct JointCommand {
     VectorDof acceleration;
     VectorDof admittance_position;
     VectorDof torque_feedforward;
-    VectorDof joint_stiffness = VectorDof::Constant(400.0);
+    VectorDof joint_stiffness = VectorDof::Constant(100.0);
+    VectorDof joint_damping = VectorDof::Constant(10.0);
 
     std::string ToString() const {
         std::stringstream ss;
@@ -88,7 +89,8 @@ struct RobotProperty {
     double global_speed_ratio{0.5};
     double safe_level{0.5};
     bool clear_error_flag{false};
-    VectorDof joint_stiffness = VectorDof::Constant(400.0);
+    VectorDof joint_stiffness = VectorDof::Constant(100.0);
+    VectorDof joint_damping = VectorDof::Constant(10.0);
     ErrorCode error_code{ErrorCode::NoError};
 };
 

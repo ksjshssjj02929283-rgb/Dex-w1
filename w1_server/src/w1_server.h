@@ -74,7 +74,6 @@ private:
 
     bool enable_ruckig_ = true;            // /control/joint接口是否使用 Ruckig 进行轨迹规划
     bool enable_record_ = false;           // 是否启用调试日志
-    bool enable_cst_mode_ = false;         // 是否启用 CST 力矩控制模式
     const int first_arm_joint_index_ = 6;  // 左臂第一个关节在整体关节数组中的索引
     const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
     const double DiffChassisWidth = 0.4390;
