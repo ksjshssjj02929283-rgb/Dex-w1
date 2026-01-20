@@ -88,13 +88,8 @@ class W1Manager:
         self.w1_params = W1Params(self._arm_type, self._w1_version,
                                   self._end_effector_type)
 
-        # download specific urdf
-        if self._end_effector_type == EndEffectorType.LINKER_HAND:
-            download_ee_type = None
-        else:
-            download_ee_type = end_effector_type
         res, file_path = download_w1_urdf(arm_type, w1_version,
-                                          download_ee_type)
+                                          end_effector_type)
         res, file_path = download_w1_urdf(arm_type, w1_version, None)
 
         # 在主线程中正常退出时自动调用
@@ -147,8 +142,6 @@ class W1Manager:
                 raise ValueError(
                     f"Not supported arm type: {arm_type} for fcl checker")
                 return
-            if end_effector_type == EndEffectorType.LINKER_HAND:
-                end_effector_type = None
             self.fcl_checker = FCLChecker(fcl_robot_type, end_effector_type)
             self.fcl_checker.enable_visualize()
         else:
@@ -174,8 +167,6 @@ class W1Manager:
             if end_effector_type is None or isinstance(end_effector_type,
                                                        EndEffectorType):
                 pin_ee_type = end_effector_type
-                if end_effector_type == EndEffectorType.LINKER_HAND:
-                    pin_ee_type = None
             else:
                 raise ValueError(
                     f"Not supported end_effector_type: {end_effector_type} for pinocchio model"
@@ -204,8 +195,6 @@ class W1Manager:
                 return
             HybridPlanner.set_arms_cfg(SINGLE_ARM_DIM, SINGLE_ARM_DIM,
                                        LARM_BOUND, RARM_BOUND)
-            if end_effector_type == EndEffectorType.LINKER_HAND:
-                end_effector_type = None
             HybridPlanner.set_robot_cfg(robot_type=planner_robot_type,
                                         ee_type=end_effector_type)
             # HybridPlanner.set_env_json(get_env_json_path())
@@ -2054,7 +2043,6 @@ class W1Manager:
                     sample_seg_list.append(post_blend_seg.get_config(s))
 
             left_xpos_sample_array.append(sample_seg_list)
-            # embed()
 
         for idx, (pre_blend_seg, linear_seg,
                   post_blend_seg) in enumerate(right_rearrange_seg_list):
@@ -2158,7 +2146,6 @@ class W1Manager:
             right_qvel_limits_list_.append(right_qvel_limits_array[-1])
         right_qvel_limits_array_ = np.array(right_qvel_limits_list_)
 
-        # embed()
         qvel_limits_array_ = np.hstack(
             [left_qvel_limits_array_, right_qvel_limits_array_])
 
@@ -4738,10 +4725,23 @@ class W1Manager:
                                                     coordinated_left,
                                                     coordinated_right)
 
+        return StatusCode.SUCCESS, move_arml_armr_traj, coordinated_left_ee, coordinated_right_ee
+
+    def move_dual_arm_multiple_task(self,
+                                    task_dict: list,
+                                    speed_ratio: float = 1.0):
+        res, move_arml_armr_traj, left_ee_trigger_list, right_ee_trigger_list = \
+            self.plan_dual_arm_multiple_task(task_dict=task_dict,
+                                             speed_ratio=speed_ratio)
+        if res.value < 0:
+            self.logger.error(
+                "Function: move_dual_arm_multiple_task(), failed to plan dual arm multiple task"
+            )
+            return res
         return self.execute_joint_traj(
             qpos_array=move_arml_armr_traj,
-            left_arm_ee_trigger_list=coordinated_left_ee,
-            right_arm_ee_trigger_list=coordinated_right_ee)
+            left_arm_ee_trigger_list=left_ee_trigger_list,
+            right_arm_ee_trigger_list=right_ee_trigger_list)
 
     def plan_linear_dual_arm_sync(self,
                                   task_dict: dict,
