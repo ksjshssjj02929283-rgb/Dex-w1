@@ -52,7 +52,7 @@ if __name__ == "__main__":
     w1_manager = W1Manager(is_sim=True,
                            arm_type=W1ArmType.ANTHROPOMORPHIC,
                            w1_version=W1Version.V2,
-                           end_effector_type=EndEffectorType.BRAINCO_HAND)
+                           end_effector_type=EndEffectorType.LINKER_HAND)
     if not w1_manager.connect() and not w1_manager.is_enabled():
         raise RuntimeError("Failed to connect to W1 robot.")
 
@@ -70,33 +70,33 @@ if __name__ == "__main__":
                              save_to_file=False)
     w1_manager.go_home(1.)
 
-    vis = W1Vis()
-    h_torso_text = vis.server.gui.add_text(label="Torso (rad)",
-                                           initial_value="[]")
-    h_head_text = vis.server.gui.add_text(label="Head (rad)",
-                                          initial_value="[]")
-    h_left_arm_text = vis.server.gui.add_text(label="Left arm (rad)",
-                                              initial_value="[]")
-    h_right_arm_text = vis.server.gui.add_text(label="Right arm (rad)",
-                                               initial_value="[]")
+    # vis = W1Vis()
+    # h_torso_text = vis.server.gui.add_text(label="Torso (rad)",
+    #                                        initial_value="[]")
+    # h_head_text = vis.server.gui.add_text(label="Head (rad)",
+    #                                       initial_value="[]")
+    # h_left_arm_text = vis.server.gui.add_text(label="Left arm (rad)",
+    #                                           initial_value="[]")
+    # h_right_arm_text = vis.server.gui.add_text(label="Right arm (rad)",
+    #                                            initial_value="[]")
 
-    init_qpos = np.array([
-        0.78539816, -1.57079633, 0.78539816, 0.03490659, 0., -0.76794487, -0.98,
-        -1.451, 1.622, -0.479, -1.453, -0.513, 0.33, 0.969, 1.416, -1.594,
-        0.559, 1.263, 0.53, -0.436
-    ])
-    vis.set_qpos("robot", init_qpos)
+    # init_qpos = np.array([
+    #     0.78539816, -1.57079633, 0.78539816, 0.03490659, 0., -0.76794487, -0.98,
+    #     -1.451, 1.622, -0.479, -1.453, -0.513, 0.33, 0.969, 1.416, -1.594,
+    #     0.559, 1.263, 0.53, -0.436
+    # ])
+    # vis.set_qpos("robot", init_qpos)
 
     test_move_linear_full_body(task_dict=task_dict1)
 
-    total_qpos_array = w1_manager.total_qpos_array
-    input("Press Enter to start visualization...")
-    idx = 0
-    rate = RateLimiter(frequency=100, warn=True)
-    while True:
-        if idx < len(total_qpos_array):
-            full_qpos = total_qpos_array[idx]
-            vis.set_qpos("robot", full_qpos)
-            idx += 1
-            # input("Press Enter to continue...")
-        rate.sleep()
+    # total_qpos_array = w1_manager.total_qpos_array
+    # input("Press Enter to start visualization...")
+    # idx = 0
+    # rate = RateLimiter(frequency=100, warn=True)
+    # while True:
+    #     if idx < len(total_qpos_array):
+    #         full_qpos = total_qpos_array[idx]
+    #         vis.set_qpos("robot", full_qpos)
+    #         idx += 1
+    #         # input("Press Enter to continue...")
+    #     rate.sleep()
