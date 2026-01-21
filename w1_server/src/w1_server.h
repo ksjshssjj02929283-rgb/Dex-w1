@@ -72,6 +72,9 @@ private:
                                              10.0,  10.0,  10.0,  25.0,  25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
     } torque_limit_;  // 关节力矩限制参数默认值, 单位: Nm
 
+    RunMode previous_mode_{RunMode::Position};
+    int switch_counter_ = 0;
+    const int max_switch_count_ = 200;     // 切换控制模式时的位置保持周期数
     bool enable_ruckig_ = true;            // /control/joint接口是否使用 Ruckig 进行轨迹规划
     bool enable_record_ = false;           // 是否启用调试日志
     const int first_arm_joint_index_ = 6;  // 左臂第一个关节在整体关节数组中的索引

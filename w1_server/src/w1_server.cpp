@@ -216,41 +216,72 @@ void RobotServer::TorqueControlThreadFunc() {
         // 获取并写入控制数据: 关节位置, 速度, 关节力矩限制, 外部力矩
         PlannerManagerCommand planner_cmd{};
         TorqueCtrlCommand torque_cmd{};
-        is_cmd_valid_ = false;
+        this->is_cmd_valid_ = false;
         this->manager_buffers_.planner_manager_info->PeekLatest(&this->manager_info_);
         if (this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) &&
             this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd)) {
-            is_cmd_valid_ = true;
+            this->is_cmd_valid_ = true;
             JointMeasurement manager_measurement{};
             for (int i = 0; i < ndof_robot; ++i) {
                 switch (this->manager_info_.robot_property.run_mode) {
                     case RunMode::Position:
-                        // 更新关节力矩限制
-                        this->robot_control_.position[i] = planner_cmd.cmd.position[i];
-                        this->robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
-                        this->robot_control_.torque_feedforward[i] = torque_cmd.torque_feedforward[i];
-                        this->robot_control_.positive_torque_limit[i] = std::clamp(
-                            torque_cmd.torque_feedforward[i] +
-                                torque_limit_.positive_limit_Nm[i] * this->manager_info_.robot_property.safe_level,
-                            0.1 * torque_limit_.positive_limit_Nm[i], torque_limit_.positive_limit_Nm[i]);
-                        this->robot_control_.negative_torque_limit[i] = std::clamp(
-                            -torque_cmd.torque_feedforward[i] +
-                                torque_limit_.negative_limit_Nm[i] * this->manager_info_.robot_property.safe_level,
-                            0.1 * torque_limit_.negative_limit_Nm[i], torque_limit_.negative_limit_Nm[i]);
+                        if ((previous_mode_ != RunMode::Position) && (switch_counter_ < max_switch_count_) &&
+                            this->robot_model_.IsDynamicParamsAvailable()) {
+                            // 切换之前执行位置保持
+                            if (i == 0) {
+                                switch_counter_++;
+                            }
+                            this->robot_control_.position[i] = planner_cmd.cmd.position[i];
+                            this->robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
+                            // 位置等于反馈位置
+                            if (manager_buffers_.joint_measurement->PeekLatest(&manager_measurement)) {
+                                if (i >= first_arm_joint_index_) {
+                                    manager_measurement.q_desired_pre[i] = robot_feedback_.position[i];
+                                    this->robot_control_.position[i] = robot_feedback_.position[i];
+                                }
+                                manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
+                            }
+                            this->robot_control_.torque_feedforward[i] = torque_cmd.torque_feedforward[i];
+                            this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
+                        } else {
+                            switch_counter_ = 0;
+                            previous_mode_ = RunMode::Position;
+                            // 更新关节力矩限制
+                            this->robot_control_.position[i] = planner_cmd.cmd.position[i];
+                            this->robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
+                            this->robot_control_.torque_feedforward[i] = torque_cmd.torque_feedforward[i];
+                            this->robot_control_.positive_torque_limit[i] = std::clamp(
+                                torque_cmd.torque_feedforward[i] +
+                                    torque_limit_.positive_limit_Nm[i] * this->manager_info_.robot_property.safe_level,
+                                0.1 * torque_limit_.positive_limit_Nm[i], torque_limit_.positive_limit_Nm[i]);
+                            this->robot_control_.negative_torque_limit[i] = std::clamp(
+                                -torque_cmd.torque_feedforward[i] +
+                                    torque_limit_.negative_limit_Nm[i] * this->manager_info_.robot_property.safe_level,
+                                0.1 * torque_limit_.negative_limit_Nm[i], torque_limit_.negative_limit_Nm[i]);
+                        }
                         break;
                     case RunMode::Torque:
+                        previous_mode_ = RunMode::Torque;
                         this->robot_control_.position[i] = planner_cmd.cmd.position[i];
                         this->robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
                         this->robot_control_.torque_feedforward[i] = torque_cmd.torque[i];
+                        this->robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
+                        this->robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
                         this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
                         break;
                     case RunMode::CartesianImpedance:
+                        previous_mode_ = RunMode::CartesianImpedance;
                         this->robot_control_.position[i] = planner_cmd.cmd.position[i];
                         this->robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
                         this->robot_control_.torque_feedforward[i] = torque_cmd.torque_impedance[i];
+                        this->robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
+                        this->robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
                         this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
                         break;
                     case RunMode::Drag:
+                        previous_mode_ = RunMode::Drag;
+                        this->robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
+                        this->robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
                         if (this->robot_model_.IsDynamicParamsAvailable()) {
                             this->robot_control_.position[i] = planner_cmd.cmd.position[i];
                             this->robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];

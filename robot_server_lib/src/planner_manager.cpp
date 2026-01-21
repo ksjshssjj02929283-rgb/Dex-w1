@@ -504,9 +504,24 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
             auto ndof_arm = this->robot_model_.params_ptr->joints_primary.size() +
                             this->robot_model_.params_ptr->joints_secondary.size();
             if (stiffness.size() == 1) {
+                if (stiffness[0] < -FloatZeroTol) {
+                    std::stringstream ss;
+                    ss << "[WARN] Invalid joint stiffness value: " << stiffness[0] << ", must >= 0. Command ignored.\n";
+                    std::cout << ss.str();
+                    LOG_WARN << ss.str();
+                    return;
+                }
                 robot_property_.joint_stiffness = Eigen::VectorXd::Constant(ndof_robot, stiffness[0]);
             } else {
                 if (stiffness.size() == ndof_arm) {
+                    if ((stiffness.array() < -FloatZeroTol).any()) {
+                        std::stringstream ss;
+                        ss << "[WARN] Invalid joint stiffness value in: " << stiffness.transpose()
+                           << ", all values must >= 0. Command ignored.\n";
+                        std::cout << ss.str();
+                        LOG_WARN << ss.str();
+                        return;
+                    }
                     // 按顺序赋值给tail部分关节 Assign to the tail joints in order
                     robot_property_.joint_stiffness.tail(stiffness.size()) = stiffness;
                 } else {
@@ -519,7 +534,7 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
             }
             std::cout << "[INFO] Set joint stiffness to " << robot_property_.joint_stiffness.tail(ndof_arm).transpose()
                       << "\n";
-            LOG_INFO << "Set joint stiffness to " << stiffness.tail(ndof_arm).transpose();
+            LOG_INFO << "Set joint stiffness to " << robot_property_.joint_stiffness.tail(ndof_arm).transpose();
             return;
         }
         case RequestType::JointDamping: {
@@ -528,9 +543,24 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
             auto ndof_arm = this->robot_model_.params_ptr->joints_primary.size() +
                             this->robot_model_.params_ptr->joints_secondary.size();
             if (damping.size() == 1) {
+                if (damping[0] < -FloatZeroTol) {
+                    std::stringstream ss;
+                    ss << "[WARN] Invalid joint damping value: " << damping[0] << ", must >= 0. Command ignored.\n";
+                    std::cout << ss.str();
+                    LOG_WARN << ss.str();
+                    return;
+                }
                 robot_property_.joint_damping = Eigen::VectorXd::Constant(ndof_robot, damping[0]);
             } else {
                 if (damping.size() == ndof_arm) {
+                    if ((damping.array() < -FloatZeroTol).any()) {
+                        std::stringstream ss;
+                        ss << "[WARN] Invalid joint damping value in: " << damping.transpose()
+                           << ", all values must >= 0. Command ignored.\n";
+                        std::cout << ss.str();
+                        LOG_WARN << ss.str();
+                        return;
+                    }
                     // 按顺序赋值给tail部分关节 Assign to the tail joints in order
                     robot_property_.joint_damping.tail(damping.size()) = damping;
                 } else {
@@ -543,7 +573,7 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
             }
             std::cout << "[INFO] Set joint damping to " << robot_property_.joint_damping.tail(ndof_arm).transpose()
                       << "\n";
-            LOG_INFO << "Set joint damping to " << damping.tail(ndof_arm).transpose();
+            LOG_INFO << "Set joint damping to " << robot_property_.joint_damping.tail(ndof_arm).transpose();
             return;
         }
         case RequestType::CartStiffness: {
