@@ -124,7 +124,8 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
         if (runtime_.streaming_finished && robot_stopped) {
             LOG_INFO << "JointStreamingPlanner: TaskFinished, measurement velocity: "
-                     << measurement.velocity.transpose();
+                     << measurement.velocity.transpose()
+                     << ", measurement position: " << measurement.position.transpose();
             return ComputeCommandStatus::TaskFinished;
         } else {
             return ComputeCommandStatus::TaskOngoing;

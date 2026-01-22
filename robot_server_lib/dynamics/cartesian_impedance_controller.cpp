@@ -22,8 +22,6 @@ CartesianImpedanceController::CartesianImpedanceController(const RobotModel &rob
 	}
 	this->q_nullspace_.setZero(this->ndof_);
 	this->tau_command_.setZero(this->ndof_);
-	this->damping_vector_.head<3>() = 2.0 * (this->mass_vector_.head<3>().array() * this->stiffness_vector_.head<3>().array()).sqrt().matrix();
-	this->damping_vector_.tail<3>() = 2.0 * (this->mass_vector_.tail<3>().array() * this->stiffness_vector_.tail<3>().array()).sqrt().matrix();
 }
 
 bool CartesianImpedanceController::UpdateTorqueCommand(
@@ -70,8 +68,8 @@ bool CartesianImpedanceController::UpdateTorqueCommand(
 
     /* ================= Velocity Error ================= */
     Vector6d v_fb = J * feedback_dq;
-    Vector3d derr_p = -v_fb.head<3>();
-    Vector3d derr_w = -v_fb.tail<3>();
+    Vector3d derr_p = v_cmd.head<3>() - v_fb.head<3>();
+    Vector3d derr_w = v_cmd.tail<3>() - v_fb.tail<3>();
 
     /* ================= Integral (translation only) ================= */
     this->pose_err_intg_.head<3>() =
@@ -80,24 +78,26 @@ bool CartesianImpedanceController::UpdateTorqueCommand(
             .cwiseMax(-this->trans_intg_clip_max_);
 
     /* ================= CartesianImpedance force ================= */
+    Vector6d damping_vector = this->cart_damping_ratio_.asDiagonal() * 1.6 * (this->mass_vector_.array() * this->stiffness_vector_.array()).sqrt().matrix();
     Vector3d fp =
         this->stiffness_vector_.head<3>().asDiagonal() * err_p +
-        this->damping_vector_.head<3>().asDiagonal() * derr_p +
+        damping_vector.head<3>().asDiagonal() * derr_p +
         this->Ki_vector_.head<3>().asDiagonal() * this->pose_err_intg_.head<3>();
 
     Vector3d fw =
         this->stiffness_vector_.tail<3>().asDiagonal() * err_w +
-        this->damping_vector_.tail<3>().asDiagonal() * derr_w;
+        damping_vector.tail<3>().asDiagonal() * derr_w;
 
     /* ================= Inertia shaping ================= */
 	Vector6d F_impedance;
     F_impedance << fp, fw;
 	Vector6d acc_task = this->mass_vector_.asDiagonal().inverse() * F_impedance;
 
-    Eigen::MatrixXd Mq = GetMassMatrixBySymbol(this->robot_model_, feedback_q, this->motion_group_);
-    Eigen::MatrixXd lambda = (J * Mq.inverse() * J.transpose()).inverse();  // 笛卡尔空间质量矩阵
-    F_impedance = lambda * (acc_task - J_dot * feedback_dq);
+    this->Mq_ = GetMassMatrixBySymbol(this->robot_model_, feedback_q, this->motion_group_);
 
+    Eigen::MatrixXd lambda;
+    pinocchio::PseudoInverse(J * this->Mq_.inverse() * J.transpose(), lambda);  // 笛卡尔空间质量矩阵
+    F_impedance = lambda * (acc_task - J_dot * feedback_dq);
     tau_task = J.transpose() * F_impedance;
 
     /* ================= Nullspace ================= */
@@ -122,28 +122,15 @@ bool CartesianImpedanceController::UpdateTorqueCommand(
     this->tau_command_ =
         this->SaturateTorqueRate(tau_task + tau_nullspace,
                                  this->tau_command_);
-
     tau_command = this->tau_command_;
 
 	// debug log
     static int print_counter = 0;
-    if (++print_counter >= 4 && false)
+    if (++print_counter >= 10 && this->motion_group_ == MotionGroup::Primary && false)
 	{
         print_counter = 0;
-
-        pinocchio_model_.gravity = pinocchio::Motion(
-            Eigen::Vector3d(9.81, 0.0, 0.0),      // 线性加速度（重力）
-            Eigen::Vector3d::Zero()                // 角加速度
-        );
-        pinocchio::Data data(pinocchio_model_);
-
-        // 补偿科氏力和重力
-        Eigen::VectorXd coriolis = pinocchio::rnea(pinocchio_model_, data, feedback_q, feedback_dq, Eigen::VectorXd::Zero(pinocchio_model_.nv));
-        auto ddq = pinocchio::aba(pinocchio_model_, data, feedback_q, feedback_dq, tau_task + coriolis);
-        // 计算雅可比矩阵的时间导数乘以速度项
-        Vector6d cart_acc = J * ddq + J_dot * feedback_dq;
-		std::stringstream ss_tau_command, ss_tau_task, ss_stiff_term, ss_cart_damp, ss_jacobian, ss_tau_nullspace, ss_acc_task,
-				ss_cart_err, ss_cart_vel_err, ss_q_err, ss_dq, ss_pose_err_intg, ss_F_imp, ss_acc_Jdot, ss_cmd_trans, ss_v_cmd, ss_acc;
+		std::stringstream ss_tau_command, ss_tau_task, ss_stiff_term, ss_cart_damp, ss_jacobian, ss_tau_nullspace, ss_acc_task, ss_lambda,
+				ss_cart_err, ss_cart_vel_err, ss_q_err, ss_dq, ss_pose_err_intg, ss_F_imp, ss_acc_Jdot, ss_cmd_trans, ss_v_cmd, ss_acc, ss_Mq;
 		ss_q_err << std::fixed << std::setprecision(3) << (cmd_q - feedback_q).transpose();
 		ss_tau_command << std::fixed << std::setprecision(3) << tau_command.transpose();
 		ss_tau_task << std::fixed << std::setprecision(3) << tau_task.transpose();
@@ -155,12 +142,14 @@ bool CartesianImpedanceController::UpdateTorqueCommand(
 		ss_pose_err_intg << std::fixed << std::setprecision(2) << this->pose_err_intg_.transpose();
         ss_acc_task << std::fixed << std::setprecision(4) << acc_task.transpose();
 		ss_F_imp << std::fixed << std::setprecision(4) << F_impedance.transpose();
-        ss_acc << std::fixed << std::setprecision(4) << cart_acc.transpose();
+        ss_Mq << std::fixed << std::setprecision(4) << this->Mq_.diagonal().transpose();
+        ss_lambda << std::fixed << std::setprecision(4) << lambda.diagonal().transpose();
 
         LOG_INFO << "v_cmd: " << ss_v_cmd.str()
                 << ", pose_err: " << ss_cart_err.str()
                 << ", vel_err: " << ss_cart_vel_err.str()
-                << ", acc_cart: " << ss_acc.str()
+                << ", acc_task: " << ss_acc_task.str()
+                << ", lambda: " << ss_lambda.str()
                 << ", F_imp: " << ss_F_imp.str()
                 << ", tau_task: " << ss_tau_task.str()
                 << ", tau_nullspace: " << ss_tau_nullspace.str()
@@ -181,11 +170,17 @@ Eigen::VectorXd CartesianImpedanceController::SaturateTorqueRate(const Eigen::Ve
 void CartesianImpedanceController::SetStiffness(const Vector6d& K)
 {
 	this->stiffness_vector_ = K;
-	this->damping_vector_ = 2.0 * this->stiffness_vector_.array().sqrt().matrix();
-	std::stringstream ss_stiff, ss_damp;
+	std::stringstream ss_stiff;
 	ss_stiff << std::fixed << std::setprecision(4) << this->stiffness_vector_.transpose();
-	ss_damp << std::fixed << std::setprecision(4) << this->damping_vector_.transpose();
-	LOG_INFO << "CartesianImpedanceController: Set stiffness to [" << ss_stiff.str() << "], damping to [" << ss_damp.str() << "]";
+	LOG_INFO << "CartesianImpedanceController: Set stiffness to [" << ss_stiff.str() << "]";
+}
+
+void CartesianImpedanceController::SetDampingRatio(const Vector6d& D_ratio)
+{
+    this->cart_damping_ratio_ = D_ratio;
+    std::stringstream ss_damp;
+    ss_damp << std::fixed << std::setprecision(4) << this->cart_damping_ratio_.transpose();
+    LOG_INFO << "CartesianImpedanceController: Set cartesian damping ratio to [" << ss_damp.str() << "]";
 }
 } // namespace dynamics
 } // namespace robot_server_lib

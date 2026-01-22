@@ -31,7 +31,7 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDo
                                    const VectorDof& ddq, const Vector3d& gravity_acc_armbase, MotionGroup motion_group);
 
 // 由符号计算生成的质量矩阵计算函数
-Eigen::MatrixXd GetMassMatrixBySymbol(const RobotModel& robot_model, const VectorDof& q, MotionGroup motion_group);
+Eigen::MatrixXd GetMassMatrixBySymbol(const RobotModel& robot_model, const Eigen::VectorXd& q_arm, MotionGroup motion_group);
 
 }  // namespace dynamics
 }  // namespace robot_server_lib

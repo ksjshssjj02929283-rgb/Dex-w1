@@ -43,8 +43,9 @@ using Vector12d = Eigen::Matrix<double, 12, 1>;
 enum class RunMode {
     Position,            // position controls
     Torque,              // torque control
-    CartesianImpedance,  // impedance control
     Drag,                // zero-stiff control
+    CartesianImpedance,  // impedance control
+    DragImpedance,       // mixed drag and impedance control
     Unknown
 };
 
@@ -66,6 +67,7 @@ enum class RequestType {
     JointStiffness,
     JointDamping,
     CartStiffness,
+    CartDampingRatio,
     // Move Request
     MoveJoint,
     MoveLine,

@@ -112,30 +112,39 @@ void PlannerManager::LoopOnce() {
         this->runtime_data_.joint_cmd.joint_stiffness = this->robot_property_.joint_stiffness;
         this->runtime_data_.joint_cmd.joint_damping = this->robot_property_.joint_damping;
         // 如果提供了动力学参数, 则计算双臂前馈阻抗控制力 Compute the feedforward impedance control torque for both arms
-        // const auto& dyn_base_params_primary = this->robot_model_.params_ptr->dyn_base_params_primary;
-        // const auto& dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
-        // if (dyn_base_params_primary.has_value())
-        // {
-        //     Eigen::VectorXd tau_ff_pri, q_cmd_primary, q_feedback_primary, dq_feedback_primary;
-        //     utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_primary,
-        //     MotionGroup::Primary); utils::GetJointFromWholeBody(this->robot_model_, measurement.position,
-        //     q_feedback_primary, MotionGroup::Primary); utils::GetJointFromWholeBody(this->robot_model_,
-        //     measurement.velocity, dq_feedback_primary, MotionGroup::Primary); auto ret_pri =
-        //     impedance_ctrl_primary_->UpdateTorqueCommand(q_feedback_primary, dq_feedback_primary, q_cmd_primary,
-        //     tau_ff_pri); utils::MapJointToWholeBody(this->robot_model_, tau_ff_pri,
-        //     this->runtime_data_.joint_cmd.torque_feedforward, MotionGroup::Primary);
-        // }
-        // if (dyn_base_params_secondary.has_value())
-        // {
-        //     Eigen::VectorXd tau_ff_sec, q_cmd_secondary, q_feedback_secondary, dq_feedback_secondary;
-        //     utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_secondary,
-        //     MotionGroup::Secondary); utils::GetJointFromWholeBody(this->robot_model_, measurement.position,
-        //     q_feedback_secondary, MotionGroup::Secondary); utils::GetJointFromWholeBody(this->robot_model_,
-        //     measurement.velocity, dq_feedback_secondary, MotionGroup::Secondary); auto ret_sec =
-        //     impedance_ctrl_secondary_->UpdateTorqueCommand(q_feedback_secondary, dq_feedback_secondary,
-        //     q_cmd_secondary, tau_ff_sec); utils::MapJointToWholeBody(this->robot_model_, tau_ff_sec,
-        //     this->runtime_data_.joint_cmd.torque_feedforward, MotionGroup::Secondary);
-        // }
+        const auto &dyn_base_params_primary = this->robot_model_.params_ptr->dyn_base_params_primary;
+        const auto &dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
+        if (dyn_base_params_primary.has_value()) {
+            Eigen::VectorXd tau_ff_pri, q_cmd_primary, q_feedback_primary, dq_feedback_primary, dq_cmd_primary;
+            utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_primary,
+                                         MotionGroup::Primary);
+            utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_primary,
+                                         MotionGroup::Primary);
+            utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_primary,
+                                         MotionGroup::Primary);
+            utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.velocity, dq_cmd_primary,
+                                         MotionGroup::Primary);
+
+            auto ret_pri = impedance_ctrl_primary_->UpdateTorqueCommand(q_feedback_primary, dq_feedback_primary,
+                                                                        q_cmd_primary, dq_cmd_primary, tau_ff_pri);
+            utils::MapJointToWholeBody(this->robot_model_, tau_ff_pri, this->runtime_data_.joint_cmd.torque_feedforward,
+                                       MotionGroup::Primary);
+        }
+        if (dyn_base_params_secondary.has_value()) {
+            Eigen::VectorXd tau_ff_sec, q_cmd_secondary, q_feedback_secondary, dq_feedback_secondary, dq_cmd_secondary;
+            utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_secondary,
+                                         MotionGroup::Secondary);
+            utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_secondary,
+                                         MotionGroup::Secondary);
+            utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.position, q_cmd_secondary,
+                                         MotionGroup::Secondary);
+            utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.velocity, dq_cmd_secondary,
+                                         MotionGroup::Secondary);
+            auto ret_sec = impedance_ctrl_secondary_->UpdateTorqueCommand(
+                q_feedback_secondary, dq_feedback_secondary, q_cmd_secondary, dq_cmd_secondary, tau_ff_sec);
+            utils::MapJointToWholeBody(this->robot_model_, tau_ff_sec, this->runtime_data_.joint_cmd.torque_feedforward,
+                                       MotionGroup::Secondary);
+        }
     }
 
     // 发布关节命令到缓冲区 publish the joint command to the buffer
@@ -462,19 +471,28 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
                         LOG_WARN << "Dynamic parameters not available, cannot enable torque control.";
                     }
                     break;
-                // case 2:
-                //     if (this->robot_model_.IsDynamicParamsAvailable())  // 无动力学参数不能开启阻抗控制
-                //     {
-                //         robot_property_.run_mode = RunMode::CartesianImpedance;
-                //     }
-                //     else
-                //     {
-                //         LOG_WARN << "Dynamic parameters not available, cannot enable impedance control mode.";
-                //     }
-                //     break;
-                // case 3:
-                //     robot_property_.run_mode = RunMode::Drag; // 在server层处理开启哪种拖动模式 Handle which drag
-                //     mode to enable at server layer break;
+                case 2:
+                    robot_property_.run_mode = RunMode::Drag;  // 在server层处理开启哪种拖动模式
+                    break;
+                case 3:
+                    if (this->robot_model_.IsDynamicParamsAvailable())  // 无动力学参数不能开启阻抗控制
+                    {
+                        robot_property_.run_mode = RunMode::CartesianImpedance;
+                    } else {
+                        std::cout << "[WARN] Dynamic parameters not available, cannot enable impedance control mode.\n";
+                        LOG_WARN << "Dynamic parameters not available, cannot enable impedance control mode.";
+                    }
+                    break;
+                case 4:
+                    if (this->robot_model_.IsDynamicParamsAvailable())  // 无动力学参数不能开启阻抗控制
+                    {
+                        robot_property_.run_mode = RunMode::DragImpedance;
+                    } else {
+                        std::cout
+                            << "[WARN] Dynamic parameters not available, cannot enable drag impedance control mode.\n";
+                        LOG_WARN << "Dynamic parameters not available, cannot enable drag impedance control mode.";
+                    }
+                    break;
                 default:
                     LOG_WARN << "Invalid run mode: " << mode << ", switch failed.";
                     break;
@@ -577,13 +595,85 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
             return;
         }
         case RequestType::CartStiffness: {
-            assert(request.data.has_value() && std::holds_alternative<Vector6d>(request.data.value()));
-            auto stiffness = std::get<Vector6d>(request.data.value());
-            impedance_ctrl_primary_->SetStiffness(stiffness);
-            impedance_ctrl_secondary_->SetStiffness(stiffness);
-            LOG_INFO << "Set cartisian impedance stiffness to " << stiffness.transpose();
+            auto stiffness = std::get<Eigen::VectorXd>(request.data.value());
+            if (stiffness.size() == 1) {
+                if (stiffness[0] < -FloatZeroTol) {
+                    std::stringstream ss;
+                    ss << "[WARN] Invalid cart stiffness value: " << stiffness[0] << ", must >= 0. Command ignored.\n";
+                    std::cout << ss.str();
+                    LOG_WARN << ss.str();
+                    return;
+                }
+                robot_property_.cart_stiffness = Vector12d::Constant(stiffness[0]);
+            } else {
+                if (stiffness.size() == 12) {
+                    if ((stiffness.array() < -FloatZeroTol).any()) {
+                        std::stringstream ss;
+                        ss << "[WARN] Invalid cart stiffness value in: " << stiffness.transpose()
+                           << ", all values must >= 0. Command ignored.\n";
+                        std::cout << ss.str();
+                        LOG_WARN << ss.str();
+                        return;
+                    }
+                    robot_property_.cart_stiffness = stiffness;
+                } else {
+                    std::stringstream ss;
+                    ss << "[WARN] Invalid cart stiffness size: " << stiffness.size() << ", expected size: 12"
+                       << " or 1. Command ignored.\n";
+                    std::cout << ss.str();
+                    LOG_WARN << ss.str();
+                }
+            }
+            impedance_ctrl_primary_->SetStiffness(robot_property_.cart_stiffness.head(6));
+            impedance_ctrl_secondary_->SetStiffness(robot_property_.cart_stiffness.tail(6));
+            std::stringstream ss;
+            ss << "[INFO] Set cartisian impedance stiffness to " << robot_property_.cart_stiffness.transpose() << "\n";
+            std::cout << ss.str();
+            LOG_INFO << ss.str();
             return;
         }
+        case RequestType::CartDampingRatio: {
+            auto damping_ratio = std::get<Eigen::VectorXd>(request.data.value());
+            if (damping_ratio.size() == 1) {
+                if (damping_ratio[0] < 0.5 - FloatZeroTol || damping_ratio[0] > 1.5 + FloatZeroTol) {
+                    std::stringstream ss;
+                    ss << "[WARN] Invalid cart damping ratio value: " << damping_ratio[0]
+                       << ", must >= 0.5 and <= 1.5. Command ignored.\n";
+                    std::cout << ss.str();
+                    LOG_WARN << ss.str();
+                    return;
+                }
+                robot_property_.cart_damping_ratio = Vector12d::Constant(damping_ratio[0]);
+            } else {
+                if (damping_ratio.size() == 12) {
+                    if ((damping_ratio.array() < 0.5 - FloatZeroTol).any() ||
+                        (damping_ratio.array() > 1.5 + FloatZeroTol).any()) {
+                        std::stringstream ss;
+                        ss << "[WARN] Invalid cart damping ratio value in: " << damping_ratio.transpose()
+                           << ", all values must >= 0.5 and <= 1.5. Command ignored.\n";
+                        std::cout << ss.str();
+                        LOG_WARN << ss.str();
+                        return;
+                    }
+                    robot_property_.cart_damping_ratio = damping_ratio;
+                } else {
+                    std::stringstream ss;
+                    ss << "[WARN] Invalid cart damping ratio size: " << damping_ratio.size() << ", expected size: 12"
+                       << " or 1. Command ignored.\n";
+                    std::cout << ss.str();
+                    LOG_WARN << ss.str();
+                }
+            }
+            impedance_ctrl_primary_->SetDampingRatio(robot_property_.cart_damping_ratio.head(6));
+            impedance_ctrl_secondary_->SetDampingRatio(robot_property_.cart_damping_ratio.tail(6));
+            std::stringstream ss;
+            ss << "[INFO] Set cartisian impedance damping ratio to " << robot_property_.cart_damping_ratio.transpose()
+               << "\n";
+            std::cout << ss.str();
+            LOG_INFO << ss.str();
+            return;
+        }
+
         case RequestType::SafeLevel: {
             assert(request.data.has_value() && std::holds_alternative<double>(request.data.value()));
             double safe_level = std::get<double>(request.data.value());
