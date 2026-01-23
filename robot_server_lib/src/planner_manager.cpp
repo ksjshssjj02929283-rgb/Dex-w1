@@ -32,9 +32,6 @@ void PlannerManager::Initialize() {
         robot_model_, manager_buffer_.streaming_command_latest_buffer, manager_dt);
     ee_velocity_streaming_planner_ = std::make_shared<EEVelocityStreamingPlanner>(
         robot_model_, manager_buffer_.streaming_command_latest_buffer, manager_dt);
-
-    admittance_ctrl_primary_ = std::make_shared<dynamics::CartesianAdmittanceController>();
-    admittance_ctrl_secondary_ = std::make_shared<dynamics::CartesianAdmittanceController>();
     impedance_ctrl_primary_ =
         std::make_shared<dynamics::CartesianImpedanceController>(robot_model_, MotionGroup::Primary);
     impedance_ctrl_secondary_ =
@@ -646,8 +643,8 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
                 robot_property_.cart_damping_ratio = Vector12d::Constant(damping_ratio[0]);
             } else {
                 if (damping_ratio.size() == 12) {
-                    if ((damping_ratio.array() < 0.5 - FloatZeroTol).any() ||
-                        (damping_ratio.array() > 1.5 + FloatZeroTol).any()) {
+                    if ((damping_ratio.array() < 0.7 - FloatZeroTol).any() ||
+                        (damping_ratio.array() > 1.3 + FloatZeroTol).any()) {
                         std::stringstream ss;
                         ss << "[WARN] Invalid cart damping ratio value in: " << damping_ratio.transpose()
                            << ", all values must >= 0.5 and <= 1.5. Command ignored.\n";

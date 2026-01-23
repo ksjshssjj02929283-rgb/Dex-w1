@@ -23,8 +23,8 @@ protected:
     // Gain parameter
     struct {
         double M_d = 2.0;
-        VectorDof K_p = VectorDof::Constant(100.0);
-        VectorDof K_v = VectorDof::Constant(10.0);
+        VectorDof K_p = VectorDof::Constant(200.0);
+        VectorDof K_v = VectorDof::Constant(20.0);
     } parameters_;
 };
 }  // namespace robot_server_lib

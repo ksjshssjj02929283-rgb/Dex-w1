@@ -78,7 +78,7 @@ bool CartesianImpedanceController::UpdateTorqueCommand(
             .cwiseMax(-this->trans_intg_clip_max_);
 
     /* ================= CartesianImpedance force ================= */
-    Vector6d damping_vector = this->cart_damping_ratio_.asDiagonal() * 1.6 * (this->mass_vector_.array() * this->stiffness_vector_.array()).sqrt().matrix();
+    Vector6d damping_vector = this->damping_ratio_.asDiagonal() * critical_damping_ratio_ * (this->mass_vector_.array() * this->stiffness_vector_.array()).sqrt().matrix();
     Vector3d fp =
         this->stiffness_vector_.head<3>().asDiagonal() * err_p +
         damping_vector.head<3>().asDiagonal() * derr_p +
@@ -177,9 +177,9 @@ void CartesianImpedanceController::SetStiffness(const Vector6d& K)
 
 void CartesianImpedanceController::SetDampingRatio(const Vector6d& D_ratio)
 {
-    this->cart_damping_ratio_ = D_ratio;
+    this->damping_ratio_ = D_ratio;
     std::stringstream ss_damp;
-    ss_damp << std::fixed << std::setprecision(4) << this->cart_damping_ratio_.transpose();
+    ss_damp << std::fixed << std::setprecision(4) << this->damping_ratio_.transpose();
     LOG_INFO << "CartesianImpedanceController: Set cartesian damping ratio to [" << ss_damp.str() << "]";
 }
 } // namespace dynamics

@@ -42,14 +42,14 @@ private:
     Vector3d trans_intg_clip_max_ = trans_clip_max_;
     Vector3d rot_intg_clip_max_ = rot_clip_max_;
 
-    Vector6d mass_vector_ = {1.0, 1.0, 1.0, 0.2, 0.2, 0.2};              // 惯性矩阵对角线元素
-    Vector6d stiffness_vector_ = {100, 100, 100, 100, 100, 100};     // 刚度
-    Vector6d cart_damping_ratio_ = Vector6d::Constant(1.0);                // 阻尼根据刚度自动适配
-
+    Vector6d mass_vector_ = {1.0, 1.0, 1.0, 0.1, 0.1, 0.1};              // 惯性矩阵对角线元素
+    Vector6d stiffness_vector_ = {200, 200, 200, 200, 200, 200};     // 刚度
     Vector6d Ki_vector_ = stiffness_vector_ * 0.01;                      // 积分增益
+    Vector6d damping_ratio_ = Vector6d::Constant(1.0);                // 阻尼根据刚度自动适配
+    double critical_damping_ratio_ = 1.5;
 
     Eigen::VectorXd q_nullspace_;                             // 零空间目标位置
-    double nullspace_stiff_ = 3.0;                            // 零空间刚度
+    double nullspace_stiff_ = 4.0;                            // 零空间刚度
     double nullspace_damp_ = 0.0;                              // 零空间阻尼
 
     double delta_tau_max_ = 1.0;                              // 最大力矩变化率限制

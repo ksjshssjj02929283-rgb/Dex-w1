@@ -20,10 +20,6 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
     LOG_INFO
         << "---------------------------------------Robot Server Initializing---------------------------------------";
 
-    LOG_INFO << "";
-    LOG_INFO
-        << "---------------------------------------Robot Server Initializing---------------------------------------";
-
     this->robot_server_state_publisher_ =
         this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state" + interface_suffix, 10);
 

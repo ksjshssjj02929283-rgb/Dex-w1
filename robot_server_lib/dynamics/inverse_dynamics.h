@@ -12,7 +12,7 @@ namespace dynamics
 {
 
 // 计算逆动力学
-Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq);
+Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, bool use_lower_friction_factor = false);
 
 // 计算正动力学
 Eigen::VectorXd ForwardDynamics(const pinocchio::Model& model, const Eigen::VectorXd& q, const Eigen::VectorXd& dq,
@@ -28,7 +28,7 @@ Eigen::VectorXd MapToParamOrder(const pinocchio::Model& model, const Eigen::Vect
 
 // 由符号计算生成的逆动力学计算函数
 Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq,
-                                   const VectorDof& ddq, const Vector3d& gravity_acc_armbase, MotionGroup motion_group);
+                                   const VectorDof& ddq, const Vector3d& gravity_acc_armbase, MotionGroup motion_group, bool use_lower_friction_factor = false);
 
 // 由符号计算生成的质量矩阵计算函数
 Eigen::MatrixXd GetMassMatrixBySymbol(const RobotModel& robot_model, const Eigen::VectorXd& q_arm, MotionGroup motion_group);

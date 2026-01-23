@@ -66,10 +66,10 @@ private:
                                                       "LEFT_J5",  "LEFT_J6",  "LEFT_J7",  "RIGHT_J1", "RIGHT_J2",
                                                       "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
     struct {
-        double positive_limit_Nm[ndof_robot]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0,
-                                             10.0,  10.0,  10.0,  25.0,  25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
-        double negative_limit_Nm[ndof_robot]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 25.0, 25.0, 25.0, 25.0,
-                                             10.0,  10.0,  10.0,  25.0,  25.0, 25.0, 25.0, 10.0, 10.0, 10.0};
+        double positive_limit_Nm[ndof_robot]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 31.0, 31.0, 31.0, 31.0,
+                                             10.0,  10.0,  10.0,  31.0,  31.0, 31.0, 31.0, 10.0, 10.0, 10.0};
+        double negative_limit_Nm[ndof_robot]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 31.0, 31.0, 31.0, 31.0,
+                                             10.0,  10.0,  10.0,  31.0,  31.0, 31.0, 31.0, 10.0, 10.0, 10.0};
     } torque_limit_;  // 关节力矩限制参数默认值, 单位: Nm
 
     RunMode previous_mode_{RunMode::Position};
