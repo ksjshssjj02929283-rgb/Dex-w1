@@ -49,7 +49,7 @@ private:
     double critical_damping_ratio_ = 1.5;
 
     Eigen::VectorXd q_nullspace_;                             // 零空间目标位置
-    double nullspace_stiff_ = 4.0;                            // 零空间刚度
+    double nullspace_stiff_ = 3.5;                            // 零空间刚度
     double nullspace_damp_ = 0.0;                              // 零空间阻尼
 
     double delta_tau_max_ = 1.0;                              // 最大力矩变化率限制
