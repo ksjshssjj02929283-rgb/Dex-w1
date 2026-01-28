@@ -80,7 +80,7 @@ template <typename VectorType>
 std::ostringstream VectorToJsonArrayString(const VectorType &vec) {
     std::ostringstream ss;
     ss << "[";
-    for (int i = 0; i < vec.size(); ++i) {
+    for (size_t i = 0; i < vec.size(); ++i) {
         using ElemT = std::decay_t<decltype(vec[i])>;
         if constexpr (std::is_integral_v<ElemT>) {
             ss << static_cast<long long>(vec[i]);
