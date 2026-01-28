@@ -9,6 +9,7 @@ from .path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from .utils.w1_params import W1Params, W1ArmType, W1Version
 from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
+from .client_manager import ClientManager
 from .w1_manager import W1Manager
 from .path_planner.utils.robot_type import RobotType
 from .path_planner.planner_pinocchio import Planner_Pin
