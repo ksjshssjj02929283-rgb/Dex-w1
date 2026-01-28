@@ -231,6 +231,7 @@ struct RobotParams {
     std::filesystem::path left_arm_urdf_path;
     std::filesystem::path right_arm_urdf_path;
     std::string robot_name;
+    std::string robot_version;
     std::string left_arm_name;
     std::string right_arm_name;
     std::vector<std::string> joint_command_sequence_by_name;  // 关节指令顺序

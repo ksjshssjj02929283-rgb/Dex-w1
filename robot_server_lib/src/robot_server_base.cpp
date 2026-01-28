@@ -166,9 +166,12 @@ std::string RobotServerBase::GetRobotServerStateJson(uint64_t timestamp_ns,
                                                      const std::optional<std::vector<double>>& sensor_wrench,
                                                      const std::optional<std::vector<double>>& ee_pose,
                                                      const std::optional<PlannerManagerInfo>& planner_info) {
-    std::string json =
-        "{\"timestamp\":" + std::to_string(timestamp_ns) + ",\"status\":\"" + ToString(this->manager_state_) + "\"";
-
+    std::string json = "{\"timestamp\":" + std::to_string(timestamp_ns) + ",\"status\":\"" +
+                       ToString(this->manager_state_) + "\"" + ", \"robot_type\":\"" +
+                       this->robot_model_.params_ptr->robot_name + "\"" + ", \"robot_version\":\"" +
+                       this->robot_model_.params_ptr->robot_version + "\"";
+    PlannerManagerInfo manager_info;
+    this->manager_buffers_.planner_manager_info->PeekLatest(&manager_info);
     if (planner_info.has_value()) {
         std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(position.value());
         std::ostringstream joint_velocity_ss = utils::VectorToJsonArrayString(velocity.value());
@@ -176,15 +179,17 @@ std::string RobotServerBase::GetRobotServerStateJson(uint64_t timestamp_ns,
         std::ostringstream joint_sensor_wrench_ss = utils::VectorToJsonArrayString(sensor_wrench.value());
         std::ostringstream ee_pose_ss = utils::VectorToJsonArrayString(ee_pose.value());
 
-        json += ",\"run_mode\":\"" + std::string(ToString(planner_info->robot_property.run_mode)) + "\"" +
-                ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+        json += "\n ,\"run_mode\":\"" + std::string(ToString(planner_info->robot_property.run_mode)) + "\"" +
+                ", \"server_error_code\":\"" + ToString(manager_info.robot_property.error_code) + "\"" +
+                ", \"safe_level\":\"" + std::to_string(manager_info.robot_property.safe_level) + "\"" +
+                ", \"global_speed_ratio\":\"" + std::to_string(manager_info.robot_property.global_speed_ratio) + "\"" +
+                "\n ,\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
                 ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
                 ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
-                ",\"ee_pose\":" + ee_pose_ss.str() + ",\"force_sensor\":" + joint_sensor_wrench_ss.str() +
-                ",\"joint_position\":" + joint_position_ss.str() + ",\"joint_velocity\":" + joint_velocity_ss.str() +
-                ",\"joint_torque\":" + joint_torque_ss.str();
+                ",\n \"ee_pose\":" + ee_pose_ss.str() + ",\n \"force_sensor\":" + joint_sensor_wrench_ss.str() +
+                ",\n \"joint_position\":" + joint_position_ss.str() +
+                ",\n \"joint_velocity\":" + joint_velocity_ss.str() + ",\n \"joint_torque\":" + joint_torque_ss.str();
     }
-
     json += "}";
     return json;
 }

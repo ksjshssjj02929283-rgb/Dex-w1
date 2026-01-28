@@ -19,9 +19,19 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     const auto package_share_path = ament_index_cpp::get_package_share_directory("robot_server_lib");
     if (!config_json.contains("robot_name") || !config_json["robot_name"].is_string()) {
         LOG_CRIT << "robot.cfg missing 'robot_name' field";
+        std::cout << "[Error] robot.cfg missing 'robot_name' field\n";
         assert(false && "robot.cfg missing 'robot_name' field");
     }
     params.robot_name = config_json["robot_name"].get<std::string>();
+
+    if (config_json.contains("robot_version") && config_json["robot_version"].is_string()) {
+        params.robot_version = config_json["robot_version"].get<std::string>();
+    } else {
+        LOG_CRIT << "robot.cfg missing 'robot_version' field, using default empty string";
+        std::cout << "[Error] robot.cfg missing 'robot_version' field\n";
+        assert(false && "robot.cfg missing 'robot_version' field");
+    }
+
     params.urdf_path =
         std::filesystem::path(package_share_path) / "robot_models" / params.robot_name / (params.robot_name + ".urdf");
 
@@ -61,7 +71,7 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         params.dyn_base_params_primary = dyn_base_params_primary;
     } else {
         std::cout << "Use dafault dynamic model in urdf\n";
-        LOG_INFO << "No dyn_base_params_primary in robot.cfg, use dafault dynamic model";
+        LOG_INFO << "Use dafault dynamic model in urdf";
     }
     if (config_json.contains("dyn_base_params_secondary")) {
         Eigen::VectorXd dyn_base_params_secondary;
@@ -69,7 +79,7 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         params.dyn_base_params_secondary = dyn_base_params_secondary;
     } else {
         std::cout << "Use dafault dynamic model in urdf\n";
-        LOG_INFO << "No dyn_base_params_secondary in robot.cfg, use dafault dynamic model";
+        LOG_INFO << "Use dafault dynamic model in urdf";
     }
 
     if (config_json.contains("joint_command_sequence_by_name")) {
@@ -256,6 +266,7 @@ PlannerRequest ParseSetPropertyRequest(
         planner_request.type = RequestType::Empty;
         planner_request.data = std::nullopt;
         LOG_CRIT << "Parse property: type not defined: " << request->property_type;
+        std::cout << "[Error] Parse property: type not defined: " << request->property_type << "\n";
         return planner_request;
     }
 
@@ -322,6 +333,7 @@ PlannerRequest ParseMoveRequest(
     if (!motion_group.has_value()) {
         planner_request.type = RequestType::Unknown;
         LOG_CRIT << "Parse move request: unknown motion group: " << input_request->motion_group;
+        std::cout << "[Error] Parse move request: unknown motion group: " << input_request->motion_group << "\n";
     }
     move_request.motion_group = *motion_group;
 
