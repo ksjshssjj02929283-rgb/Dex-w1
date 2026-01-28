@@ -14,8 +14,11 @@ import json
 import atexit
 from queue import Queue, Empty
 from copy import deepcopy
+import concurrent.futures
+
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
+
 import pinocchio as pin
 
 from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, download_w1_urdf, StatusCode
@@ -36,6 +39,10 @@ from .utils.w1_params import W1Params
 from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 
 from dexe_rp import DexforceW1Kinematics, SRSConfig
+
+# from clientsupervisor.move_sync_option import MoveSyncOption
+from clientsupervisor.client_supervisior import RobotClientSupervisor
+from ..client_supervisor.robot_client_warpper import RobotClientWarpper, GripperClientWarpper
 
 
 class W1Manager:
@@ -99,6 +106,8 @@ class W1Manager:
             self._init_clients()
         except Exception:
             raise RuntimeError("Ros2 node create failed")
+
+        self._init_client_supervisor()
 
         self._init_kine_solver()
 
@@ -273,8 +282,53 @@ class W1Manager:
         self._node_thread.start()
         self.logger.info("Ros2 client initialized.")
 
+    def _init_client_supervisor(self):
+        
+        robot_client_warpper_sim = RobotClientWarpper(self._robot_client_sim)
+        robot_client_warpper_real = RobotClientWarpper(self._robot_client_real)
+
+        left_ee_client_warpper_sim = GripperClientWarpper(self._left_ee_client_sim)
+        left_ee_client_warpper_real = GripperClientWarpper(self._left_ee_client_real)
+
+        right_ee_client_warpper_sim = GripperClientWarpper(self._right_ee_client_sim)
+        right_ee_client_warpper_real = GripperClientWarpper(self._right_ee_client_real)
+        
+        sim_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        real_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+        self._client_supervisor_sim = RobotClientSupervisor(
+            robot_client=robot_client_warpper_sim,
+            client_map={"left_ee": left_ee_client_warpper_sim, "right_ee": right_ee_client_warpper_sim},
+            executor_owned=sim_executor,
+        )
+
+        self._client_supervisor_real = RobotClientSupervisor(
+            robot_client=robot_client_warpper_real,
+            client_map={"left_ee": left_ee_client_warpper_real, "right_ee": right_ee_client_warpper_real},
+            executor_owned=real_executor,
+        )
+
+        self._client_supervisor_sim.initialize()
+        self._client_supervisor_real.initialize()
+
+        self.logger.info("Client supervisor initialized.")
+
     def _destroy_clients(self):
         try:
+            try:
+                if self._client_supervisor_real is not None:
+                    self._client_supervisor_real.stop()
+                    self._client_supervisor_real = None
+            except Exception as e:
+                self.logger.error(f"Failed to stop real client supervisor: {e}")
+
+            try:
+                if self._client_supervisor_sim is not None:
+                    self._client_supervisor_sim.stop()
+                    self._client_supervisor_sim = None
+            except Exception as e:
+                self.logger.error(f"Failed to stop sim client supervisor: {e}")
+
             if rclpy.ok():
                 rclpy.shutdown()  # 停止ros触发spin
 
@@ -1306,14 +1360,14 @@ class W1Manager:
     def execute_joint_traj(
             self,
             qpos_array: np.ndarray,
-            left_arm_ee_trigger_list: list = None,
-            right_arm_ee_trigger_list: list = None) -> StatusCode:
+            left_arm_ee_trigger_list: list[Tuple[int, List[float]]] = None,
+            right_arm_ee_trigger_list: list[Tuple[int, List[float]]] = None) -> StatusCode:
         """按10ms间隔执行关节轨迹
 
         Args:
             qpos_array (np.ndarray): 关节轨迹
-            left_arm_ee_trigger_list (list, optional): 左末端执行器触发序列. Defaults to None.
-            right_arm_ee_trigger_list (list, optional): 右末端执行器触发序列. Defaults to None.
+            left_arm_ee_trigger_list (list[Tuple[int, List[float]]], optional): 左末端执行器触发序列. Defaults to None.
+            right_arm_ee_trigger_list (list[Tuple[int, List[float]]], optional): 右末端执行器触发序列. Defaults to None.
 
         Returns:
             StatusCode: 

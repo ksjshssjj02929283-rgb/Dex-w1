@@ -1,0 +1,489 @@
+import numpy as np
+from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
+from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
+from .path_planner.bezier_blend_path import interpolate_cartesian_path
+from .w1_mgr_util.supervisor_view import SupervisorViewW1
+from .w1_mgr_util.supervisor_util import StaticUtilityW1
+from ..common import get_logger
+
+
+class DualArmMovementBaseW1(object):
+
+    def __init__(self, w1_params_in, supervisor_in, kine_in):
+        self.w1_params = w1_params_in
+        self.supervisor = SupervisorViewW1(supervisor_in=supervisor_in, w1_params_in=w1_params_in, kine_in=kine_in)
+        self.logger = get_logger()
+    
+    def _plan_to_waypoint(self,
+                          name: str,
+                          cur_qpos: np.ndarray,
+                          waypoints_dict: dict,
+                          speed_ratio: float,
+                          is_cartesian: bool = False,
+                          qpos_seed: np.ndarray = None,
+                          cartesian_step: float = None,
+                          is_local: bool = True) -> tuple[bool, np.ndarray]:
+        if not is_local:
+            qpos_array = cur_qpos[self.w1_params.index_infos[name]["index"]]
+        else:
+            qpos_array = cur_qpos
+        (int_res, pos_raw_array, qvel_limits_array,
+         _) = StaticUtilityW1.parse_waypoints_from_dict(self.supervisor, name, waypoints_dict, speed_ratio,
+                                              is_cartesian)
+        if int_res == -1:  # 输入不合法
+            return False, None
+        elif int_res == 0:  # 输入为空
+            return True, qpos_array
+        # 输入合法
+        qvel_limits_array_ = np.vstack([
+            self.w1_params.default_qvel[self.w1_params.index_infos[name]
+                                        ["index"]], qvel_limits_array
+        ])
+        if is_cartesian:
+            if not is_local:
+                # Transfer global frame to local frame
+                ref_torso_qpos = cur_qpos[self.w1_params.index_infos["torso"]
+                                          ["index"]]
+                ref_qpos = np.zeros(self.w1_params.full_body_dofs)
+                ref_qpos[self.w1_params.index_infos["torso"]
+                         ["index"]] = ref_torso_qpos
+                res_fk, T_chassis_armbase = self.supervisor.get_xpos(f"{name}_base",
+                                                          ref_qpos,
+                                                          is_local=False)
+                if not res_fk:
+                    self.logger.error(f"{name}_base solve fk failed!")
+                    return False, None
+                temp = [
+                    np.linalg.inv(T_chassis_armbase) @ user_pose_to_xpos(
+                        pose[:3].tolist(), pose[3:].tolist())
+                    for pose in pos_raw_array
+                ]
+                pos_raw_array = [
+                    np.array(xpos_to_user_pose(xpos)) for xpos in temp
+                ]
+                cur_arm_qpos = cur_qpos[self.w1_params.index_infos[name]
+                                        ["index"]]
+            else:
+                cur_arm_qpos = cur_qpos
+
+            # In local frame
+            res_fk, cur_xpos = self.supervisor._get_arm_kine(name).get_fk(cur_arm_qpos)
+            if not res_fk:
+                self.logger.error(f"{name} solve fk failed!")
+                return False, None
+            xpos_raw_list = [
+                user_pose_to_xpos(pose[:3].tolist(), pose[3:].tolist())
+                for pose in pos_raw_array
+            ]
+            xpos_raw_list_ = [cur_xpos] + xpos_raw_list
+            res_plan, qpos_array = self.plan_cartesian_traj(
+                name, xpos_raw_list_, qpos_seed, qvel_limits_array_,
+                cartesian_step)
+            if not res_plan:
+                return False, None
+        else:
+            qpos_raw_array_ = np.vstack([cur_qpos, pos_raw_array])
+            res_plan, qpos_array = StaticUtilityW1.plan_joint_traj(self.supervisor, name, qpos_raw_array_,
+                                                        qvel_limits_array_)
+            if not res_plan:
+                return False, None
+
+        return True, qpos_array
+    
+    def _plan_to_waypoint_with_ee(
+            self,
+            name: str,
+            cur_qpos: np.ndarray,
+            cur_ee_qpos: np.ndarray,
+            waypoints_dict: dict,
+            speed_ratio: float,
+            is_cartesian: bool = False,
+            qpos_seed: np.ndarray = None,
+            cartesian_step: float = None,
+            is_local: bool = True) -> tuple[bool, np.ndarray, list]:
+        if not is_local:
+            qpos_array = cur_qpos[self.w1_params.index_infos[name]["index"]]
+        else:
+            qpos_array = cur_qpos
+
+        (int_res, pos_raw_array, qvel_limits_array,
+         arm_ee_state_list) = self._parse_waypoints_from_dict(
+             name, waypoints_dict, speed_ratio, is_cartesian)
+        if int_res == -1:
+            return False, None, None
+        elif int_res == 0:
+            return True, qpos_array, None
+
+        # without ee motion
+        if arm_ee_state_list is None:
+            res, qpos_array = self._plan_to_waypoint(name, cur_qpos,
+                                                     waypoints_dict,
+                                                     speed_ratio, is_cartesian,
+                                                     qpos_seed, cartesian_step,
+                                                     is_local)
+            if not res:
+                return False, None, None
+            return True, qpos_array, None
+
+        # with ee motion
+        if not is_cartesian:
+            pos_raw_array_ = np.vstack([cur_qpos, pos_raw_array])
+        else:
+            if not is_local:
+                # Transfer global frame to local frame
+                ref_torso_qpos = cur_qpos[self.w1_params.index_infos["torso"]
+                                          ["index"]]
+                ref_qpos = np.zeros(self.w1_params.full_body_dofs)
+                ref_qpos[self.w1_params.index_infos["torso"]
+                         ["index"]] = ref_torso_qpos
+                res_fk, T_chassis_armbase = self.supervisor.get_xpos(f"{name}_base",
+                                                          ref_qpos,
+                                                          is_local=False)
+                if not res_fk:
+                    self.logger.error(f"{name}_base solve fk failed!")
+                    return False, None, None
+                temp = [
+                    np.linalg.inv(T_chassis_armbase) @ user_pose_to_xpos(
+                        pose[:3].tolist(), pose[3:].tolist())
+                    for pose in pos_raw_array
+                ]
+                pos_raw_array = [
+                    np.array(xpos_to_user_pose(xpos)) for xpos in temp
+                ]
+                cur_arm_qpos = cur_qpos[self.w1_params.index_infos[name]
+                                        ["index"]]
+            else:
+                cur_arm_qpos = cur_qpos
+
+            res_fk, cur_xpos = self.supervisor._get_arm_kine(name).get_fk(cur_arm_qpos)
+            if not res_fk:
+                self.logger.error(f"{name} solve fk failed!")
+                return False, None, None
+            pos_raw_array_ = np.vstack(
+                [xpos_to_user_pose(cur_xpos), pos_raw_array])
+
+        qvel_limits_array_ = np.vstack([
+            self.w1_params.default_qvel[self.w1_params.index_infos[name]
+                                        ["index"]], qvel_limits_array
+        ])
+        cur_ee_state = [0., cur_ee_qpos.tolist(), 0.]
+        arm_ee_state_list_ = [cur_ee_state] + [
+            ee_state if ee_state is not None else cur_ee_state
+            for ee_state in arm_ee_state_list
+        ]
+
+        # segment raw waypoint
+        arm_ee_trigger_list = []  # (count, ee_qpos)
+        res, segment_list = StaticUtilityW1.plan_arm_ee_trigger(self.supervisor, arm_ee_state_list_)
+        if not res:
+            return False, None, None
+
+        total_count = 0
+        total_qpos_array = None
+        if is_cartesian:
+            cur_qpos_seed = qpos_seed
+
+        for start_idx, end_idx in segment_list:
+            seg_pos_list = pos_raw_array_[start_idx:end_idx + 1]
+            seg_qvel_limits_list = qvel_limits_array_[start_idx:end_idx + 1]
+            if is_cartesian:
+                seg_xpos_list = [
+                    user_pose_to_xpos(pose[:3].tolist(), pose[3:].tolist())
+                    for pose in seg_pos_list
+                ]
+                res_plan, seg_qpos_samples_array = self.plan_cartesian_traj(
+                    name, seg_xpos_list, cur_qpos_seed, seg_qvel_limits_list,
+                    cartesian_step)
+            else:
+                res_plan, seg_qpos_samples_array = StaticUtilityW1.plan_joint_traj(
+                    self.supervisor,
+                    name, seg_pos_list, seg_qvel_limits_list)
+            if not res_plan:
+                return False, None, None
+
+            # pre delay
+            pre_delay_time = arm_ee_state_list_[end_idx][0]
+            if pre_delay_time >= self.TIME_STEP:
+                pre_delay_count = max(
+                    1, int(np.ceil(pre_delay_time / self.TIME_STEP)))
+                seg_qpos_samples_array = np.vstack([
+                    seg_qpos_samples_array,
+                    np.repeat(seg_qpos_samples_array[-1:],
+                              pre_delay_count,
+                              axis=0)
+                ])
+            # ee trigger
+            arm_ee_trigger_list.append(
+                (total_count + seg_qpos_samples_array.shape[0] - 1,
+                 arm_ee_state_list_[end_idx][1]))
+            # post delay
+            post_delay_time = arm_ee_state_list_[end_idx][2]
+            if post_delay_time >= self.TIME_STEP:
+                post_delay_count = max(
+                    1, int(np.ceil(post_delay_time / self.TIME_STEP)))
+                seg_qpos_samples_array = np.vstack([
+                    seg_qpos_samples_array,
+                    np.repeat(seg_qpos_samples_array[-1:],
+                              post_delay_count,
+                              axis=0)
+                ])
+
+            if total_qpos_array is None:
+                total_qpos_array = seg_qpos_samples_array
+            else:
+                total_qpos_array = np.vstack(
+                    ([total_qpos_array, seg_qpos_samples_array[1:]]))
+
+            if is_cartesian:
+                cur_qpos_seed = total_qpos_array[-1]
+
+            total_count = total_qpos_array.shape[0]
+
+        return True, total_qpos_array, arm_ee_trigger_list
+
+    def plan_cartesian_traj(
+            self,
+            name: str,
+            xpos_list: list[np.ndarray],
+            qpos_seed: np.ndarray,
+            qvel_limits_array: np.ndarray = None,
+            cartesian_step: float = 0.005) -> tuple[bool, np.ndarray]:
+        """对机械臂进行笛卡尔轨迹规划，可指定路径点的各关节的速度约束；速度表示从上一点到当前点的最大关节速度
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+            xpos_list (list[np.ndarray]): 笛卡尔路径点
+            qpos_seed (np.ndarray): 起始参考关节seed
+            qvel_limits_array (np.ndarray, optional): 路径点关节速度约束，省略则按默认关节速度
+            cartesian_step (float, optional): 笛卡尔轨迹采样步长 默认0.005m
+
+        Returns:
+            tuple[bool, np.ndarray]
+        """
+        arm_kine = self.supervisor._get_arm_kine(name)
+        if arm_kine is None:
+            return False, None
+
+        # cartesian interpolation
+        prefix_dist_list = [0.]
+        for idx in range(len(xpos_list) - 1):
+            dist = np.linalg.norm(xpos_list[idx + 1][:3, 3] -
+                                  xpos_list[idx][:3, 3])
+            prefix_dist_list.append(prefix_dist_list[-1] + dist)
+        total_dist = prefix_dist_list[-1]
+        num_sample = max(2, int(np.ceil(total_dist / cartesian_step)))
+
+        res, xpos_sample_array = interpolate_cartesian_path(
+            xpos_list, 0.005, num_sample)
+        if not res:
+            return False, None
+
+        # vel align
+        # TODO: use ee vel rather than qvel
+        if qvel_limits_array is None:
+            qvel_limits_array_ = None
+        else:
+            idx = 0
+            qvel_limits_list_ = [qvel_limits_array[idx]]
+            cur_xpos = xpos_sample_array[0]
+            cur_dist = 0.
+            for xpos in xpos_sample_array[1:-1]:
+                cur_dist += np.linalg.norm(xpos[:3, 3] - cur_xpos[:3, 3])
+                if cur_dist >= prefix_dist_list[idx]:
+                    idx += 1
+                qvel_limits_list_.append(qvel_limits_array[idx])
+                cur_xpos = xpos
+            qvel_limits_list_.append(qvel_limits_array[-1])
+        qvel_limits_array_ = np.array(qvel_limits_list_)
+
+        # solve ik
+        qpos_list = []
+        cur_qseed = qpos_seed
+        for cur_xpos in xpos_sample_array:
+            res_ik, cur_qpos = arm_kine.get_nearst_ik(xpos=cur_xpos,
+                                                      qpos_seed=cur_qseed)
+            if not res_ik:
+                self.logger.error(
+                    f"{name} solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}."
+                )
+                return False, None
+            if not np.allclose(cur_qpos, cur_qseed, atol=np.deg2rad(90)):
+                self.logger.error(f"{name} qpos traj is not continues\n" + \
+                                  f"cur_qpos(deg): {np.rad2deg(cur_qpos)}\n" + \
+                                  f"cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
+                return False, None
+            qpos_list.append(cur_qpos)
+            cur_qseed = cur_qpos
+
+        return StaticUtilityW1.plan_joint_traj(self.supervisor, name, np.array(qpos_list),
+                                    qvel_limits_array_)
+
+
+class DualArmMoveJointW1(DualArmMovementBaseW1):
+
+    def __init__(self, w1_params_in, supervisor_in, kine_in):
+        super().__init__(w1_params_in, supervisor_in, kine_in)
+
+    def plan_joint_full_body(
+            self,
+            start_qpos: np.ndarray,
+            start_left_arm_ee_qpos: np.ndarray,
+            start_right_arm_ee_qpos: np.ndarray,
+            waypoints_dict: dict,
+            speed_ratio: float = 1.0) -> tuple[bool, np.ndarray, list, list]:
+        if not self.supervisor._check_qpos_limits("full_body", start_qpos):
+            return False, None, None, None
+
+        start_torso_qpos = start_qpos[self.w1_params.torso_index]
+        start_head_qpos = start_qpos[self.w1_params.head_index]
+        start_left_arm_qpos = start_qpos[self.w1_params.left_arm_index]
+        start_right_arm_qpos = start_qpos[self.w1_params.right_arm_index]
+
+        self.logger.debug(
+            f"plan_joint_full_body() input cur_qpos: {start_qpos}")
+        self.logger.debug(
+            f"plan_joint_full_body() input cur_ee_qpos: {start_left_arm_ee_qpos}, {start_right_arm_ee_qpos}"
+        )
+        self.logger.debug("plan_joint_full_body() input waypoints_dict:")
+        self.logger.debug(waypoints_dict)
+        self.logger.debug(
+            f"plan_joint_full_body() input speed_ratio: {speed_ratio}")
+
+        # torso
+        res_torso, torso_qpos_array = self._plan_to_waypoint(
+            "torso", start_torso_qpos, waypoints_dict, speed_ratio)
+        if not res_torso:
+            self.logger.error("Plan to torso traj failed.")
+            return False, None, None, None
+
+        # head
+        res_head, head_qpos_array = self._plan_to_waypoint(
+            "head", start_head_qpos, waypoints_dict, speed_ratio)
+        if not res_head:
+            self.logger.error("Plan to head traj failed.")
+            return False, None, None, None
+
+        # left_arm
+        left_arm_ee_trigger_list = None
+        if not self._has_arm_ee_client("left_arm_ee", False):
+            (res_left_arm, left_arm_qpos_array) = self._plan_to_waypoint(
+                "left_arm", start_left_arm_qpos, waypoints_dict, speed_ratio)
+            if not res_left_arm:
+                self.logger.error("Plan to left arm traj failed.")
+                return False, None, None, None
+        else:
+            if not self._check_qpos_limits("left_arm_ee",
+                                           start_left_arm_ee_qpos):
+                return False, None, None, None
+            (res_left_arm, left_arm_qpos_array,
+             left_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee(
+                 "left_arm", start_left_arm_qpos, start_left_arm_ee_qpos,
+                 waypoints_dict, speed_ratio)
+            if not res_left_arm:
+                self.logger.error("Plan to left arm traj with ee failed.")
+                return False, None, None, None
+
+        # right_arm
+        right_arm_ee_trigger_list = None
+        if not self._has_arm_ee_client("right_arm_ee", False):
+            (res_right_arm, right_arm_qpos_array) = self._plan_to_waypoint(
+                "right_arm", start_right_arm_qpos, waypoints_dict, speed_ratio)
+            if not res_right_arm:
+                self.logger.error("Plan to right arm traj failed.")
+                return False, None, None, None
+        else:
+            if not self._check_qpos_limits("right_arm_ee",
+                                           start_right_arm_ee_qpos):
+                return False, None, None, None
+            (res_right_arm, right_arm_qpos_array,
+             right_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee(
+                 "right_arm", start_right_arm_qpos, start_right_arm_ee_qpos,
+                 waypoints_dict, speed_ratio)
+            if not res_right_arm:
+                self.logger.error("Plan to right arm traj with ee failed.")
+                return False, None, None, None
+
+        # align
+        res_align, total_qpos_array = StaticUtilityW1.qpos_align(torso_qpos_array,
+                                                       head_qpos_array,
+                                                       left_arm_qpos_array,
+                                                       right_arm_qpos_array)
+        if not res_align:
+            return False, None, None, None
+
+        return True, total_qpos_array, left_arm_ee_trigger_list, right_arm_ee_trigger_list
+    
+    def move_joint_full_body(self, waypoints_dict: dict, speed_ratio: float = 1.0):
+        res, cur_qpos = self.supervisor.get_current_qpos()
+        if not res:
+            return False
+        cur_left_arm_ee_qpos = None
+        if self._has_arm_ee_client("left_arm_ee", False):
+            res, cur_left_arm_ee_qpos = self.supervisor.get_current_qpos("left_arm_ee")
+            if not res:
+                return False
+        cur_right_arm_ee_qpos = None
+        if self._has_arm_ee_client("right_arm_ee", False):
+            res, cur_right_arm_ee_qpos = self.supervisor.get_current_qpos("right_arm_ee")
+            if not res:
+                return False
+
+        # plan traj
+        (res, total_qpos_array, left_arm_ee_trigger_list,
+         right_arm_ee_trigger_list) = self.plan_joint_full_body(
+             cur_qpos, cur_left_arm_ee_qpos, cur_right_arm_ee_qpos,
+             waypoints_dict, speed_ratio)
+        if not res:
+            return False
+
+        # execute
+        return self.supervisor.execute_joint_traj(total_qpos_array,
+                                       left_arm_ee_trigger_list,
+                                       right_arm_ee_trigger_list)
+    
+    def move_torso_linear(self,
+                          delta_x_mm: float,
+                          delta_z_mm: float,
+                          cartesian_step=0.002,
+                          speed_ratio: float = 1.) -> bool:
+        """腿部从当前位置直线移动相对距离
+
+        Args:
+            delta_x_mm (float): x方向(前后)直线相对运动距离
+            delta_z_mm (float): z方向(上下)直线相对运动距离
+            cartesian_step (float, optional): 直线离散步长. Defaults to 0.002.
+            speed_ratio (float, optional): 运动速率. Defaults to 1..
+
+        Returns:
+            bool: 
+        """
+        res, cur_qpos = self.get_current_qpos()
+        if not res:
+            return False
+        res_fk, cur_x, cur_z, cur_y_theta = self.kine.get_torso_fk(cur_qpos[:3])
+        if not res_fk:
+            return False
+        target_x = cur_x + (delta_x_mm / 1000.)
+        target_z = cur_z + (delta_z_mm / 1000.)
+        # TODO: check com in support polyhedron
+
+        # Create path
+        p_cur = np.array([cur_x, cur_z])
+        p_target = np.array([target_x, target_z])
+        dist = np.linalg.norm(p_target - p_cur)
+        n_steps = int(np.ceil(dist / cartesian_step))
+        s_list = np.linspace(0, 1, n_steps + 1)
+        p_list = [p_cur + (p_target - p_cur) * s for s in s_list]
+
+        # Solve ik
+        qpos_list = []
+        for p in p_list:
+            res_ik, qpos = self.kine.get_torso_ik(p[0], p[1], cur_y_theta,
+                                                  cur_qpos[1] < 0)
+            if not res_ik:
+                return False
+            qpos_list.append(np.r_[qpos, cur_qpos[3]])
+
+        return self.move_joint_full_body(
+            waypoints_dict={f"torso": [qpos.tolist() for qpos in qpos_list]},
+            speed_ratio=speed_ratio)

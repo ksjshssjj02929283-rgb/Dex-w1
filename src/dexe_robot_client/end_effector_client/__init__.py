@@ -7,9 +7,9 @@
 from .end_effector_type import EndEffectorType
 from .brainco_hand_client import BrainCoHandClient
 from .pgc_gripper_client import PGCGripperClient
-from .end_effector_factory import create_end_effector_client
+from .end_effector_factory import create_end_effector_client, create_end_effector_client_real_and_sim
 
 __all__ = [
     "EndEffectorType", "BrainCoHandClient", "PGCGripperClient",
-    "create_end_effector_client"
+    "create_end_effector_client", "create_end_effector_client_real_and_sim",
 ]
