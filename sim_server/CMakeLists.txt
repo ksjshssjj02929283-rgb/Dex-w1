@@ -60,11 +60,11 @@ if(NOT TARGET DexeRP)
     set_target_properties(DexeRP PROPERTIES IMPORTED_LOCATION "${DEXERP_LOCAL_LIB}")
 
     # so that #include "dexe_rp/xxx.h" works
-    target_include_directories(DexeRP INTERFACE "${DEXERP_WS_ROOT}/../include")
+    target_include_directories(DexeRP INTERFACE "${DEXERP_WS_ROOT}/..")
 
     # install headers + .so into colcon install/ (deployment just ships install/)
     install(FILES "${DEXERP_LOCAL_LIB}" DESTINATION lib)
-    install(DIRECTORY "${DEXERP_WS_ROOT}/../include" DESTINATION include)
+    install(DIRECTORY "${DEXERP_WS_ROOT}/../dexe_rp" DESTINATION include)
   else()
     message(FATAL_ERROR "DexeRP not found: ${DEXERP_LOCAL_LIB} (and no system target DexeRP)")
   endif()
