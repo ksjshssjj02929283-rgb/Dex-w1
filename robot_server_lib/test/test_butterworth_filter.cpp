@@ -14,16 +14,26 @@
  * 9. 输出连续性
  */
 
+#include "../utils/butterworth_filter.h"
+
 #include <gtest/gtest.h>
 
 #include <cmath>
 #include <vector>
 
-#include "../utils/butterworth_filter.h"
+// 测试夹具
+class ButterworthFilterTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        filter_ = std::make_unique<ButterworthFilter>();
+    }
 
-// 测试 1: 初始化测试 - 验证首次调用输出等于输入
-TEST(ButterworthFilterTest, Initialization) {
-    ButterworthFilter filter;
+    std::unique_ptr<ButterworthFilter> filter_;
+};
+
+// 测试 1: 初始化测试
+TEST_F(ButterworthFilterTest, Initialization) {
+    // 第一次调用 Apply，输出应该等于输入（初始化行为）
     double input = 5.0;
     double output = filter.Apply(input);
     EXPECT_NEAR(output, input, 1e-10);
