@@ -3,12 +3,12 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>  // 新增
 
-#include "robot_server_lib/butterworth_filter.h"
 #include "chassis_interfaces/msg/chassis_motor_control.hpp"
 #include "chassis_interfaces/msg/chassis_whole_control.hpp"
 #include "joint_interfaces/msg/joint_control.hpp"
 #include "joint_interfaces/msg/joint_position_control.hpp"
 #include "joint_interfaces/msg/joint_velocity_torque_limit_feedback.hpp"
+#include "robot_server_lib/butterworth_filter.h"
 #include "robot_server_lib/force_sensor_reader.h"
 #include "robot_server_lib/robot_server_base.h"
 #include "shared_memory_def.h"

@@ -11,11 +11,11 @@
  * 6. 重新配置测试
  */
 
-#include "../utils/zvd_input_shaper.h"
-
 #include <gtest/gtest.h>
 
 #include <cmath>
+
+#include "../utils/zvd_input_shaper.h"
 
 // 测试夹具
 class ZVDInputShaperTest : public ::testing::Test {
