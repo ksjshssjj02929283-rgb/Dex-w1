@@ -14,19 +14,17 @@
  * 9. 输出连续性
  */
 
-#include "../utils/butterworth_filter.h"
-
 #include <gtest/gtest.h>
 
 #include <cmath>
 #include <vector>
 
+#include "../utils/butterworth_filter.h"
+
 // 测试夹具
 class ButterworthFilterTest : public ::testing::Test {
 protected:
-    void SetUp() override {
-        filter_ = std::make_unique<ButterworthFilter>();
-    }
+    void SetUp() override { filter_ = std::make_unique<ButterworthFilter>(); }
 
     std::unique_ptr<ButterworthFilter> filter_;
 };
