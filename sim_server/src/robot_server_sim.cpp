@@ -34,13 +34,14 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
 }
 
 void RobotServer::RobotThreadFunc() {
-#if false
+#if TORQUE_CONTROL
     RCLCPP_INFO(this->get_logger(), "Torque control is enabled.");
     LOG_INFO << "Torque control is enabled.";
 
     TorqueCtrlCommand torque_cmd{};
     JointRawMeasurement raw_measurement{};
-    raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, 1.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
+    raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, 1.0, 1.2, 0.0,
+        1.0, 0.0, 0.5, 0.5;
     raw_measurement.velocity.setZero();
     raw_measurement.effort.setZero();
     raw_measurement.sensor_wrench = Eigen::VectorXd::Zero(12);
@@ -48,19 +49,22 @@ void RobotServer::RobotThreadFunc() {
     this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
 
     auto next_cycle_time_point = std::chrono::steady_clock::now();
-    while (rclcpp::ok())
-    {
+    while (rclcpp::ok()) {
         next_cycle_time_point += std::chrono::microseconds(simulation_dt_micro);
         PlannerManagerCommand q_cmd{};
-        if (this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd) && this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd)
-            && (manager_state_ == Status::Idle || manager_state_ == Status::Running))  // 有指令了才进行正动力学仿真
+        if (this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd) &&
+            this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd) &&
+            (manager_state_ == Status::Idle || manager_state_ == Status::Running))  // 有指令了才进行正动力学仿真
         {
-            VectorDof ddq = dynamics::ForwardDynamics(*this->robot_model_.model_ptr, raw_measurement.position, raw_measurement.velocity,
-                                                    torque_cmd.torque, this->robot_model_.params_ptr->joint_command_sequence_by_name);
+            VectorDof ddq = dynamics::ForwardDynamics(*this->robot_model_.model_ptr, raw_measurement.position,
+                                                      raw_measurement.velocity, torque_cmd.torque,
+                                                      this->robot_model_.params_ptr->joint_command_sequence_by_name);
             raw_measurement.velocity += simulation_dt * ddq;
-            raw_measurement.velocity.segment(0, 6) = q_cmd.cmd.velocity.segment(0, 6);  // 保持躯干和头部由位置控制器控制
+            raw_measurement.velocity.segment(0, 6) =
+                q_cmd.cmd.velocity.segment(0, 6);  // 保持躯干和头部由位置控制器控制
             raw_measurement.position += simulation_dt * raw_measurement.velocity;
-            raw_measurement.position.segment(0, 6) = q_cmd.cmd.position.segment(0, 6);  // 保持躯干和头部由位置控制器控制
+            raw_measurement.position.segment(0, 6) =
+                q_cmd.cmd.position.segment(0, 6);  // 保持躯干和头部由位置控制器控制
             raw_measurement.effort = torque_cmd.torque;
             raw_measurement.time_point = TimePointSystem::Now();
             this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
@@ -72,21 +76,22 @@ void RobotServer::RobotThreadFunc() {
     LOG_INFO << "Torque control is disabled.";
 
     PlannerManagerCommand q_cmd{};
-    JointRawMeasurement raw_measurement{};
-    raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0,
+    JointMeasurement joint_measurement{};
+    joint_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0,
         1.0, 0.0, 0.5, 0.5;
-    raw_measurement.velocity.setZero();
-    raw_measurement.effort.setZero();
-    raw_measurement.time_point = TimePointSystem::Now();
-    this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
+    joint_measurement.q_desired_pre = joint_measurement.position;
+    joint_measurement.velocity.setZero();
+    joint_measurement.effort.setZero();
+    this->manager_buffers_.joint_measurement->AppendNewElement(joint_measurement);
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok()) {
         next_cycle_time_point += std::chrono::microseconds(manager_dt_micro);
         if (this->manager_buffers_.planner_manager_command->PeekLatest(&q_cmd)) {
             // 更新关节测量数据
-            raw_measurement.position = q_cmd.cmd.position;
-            raw_measurement.velocity = q_cmd.cmd.velocity;
-            this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
+            joint_measurement.position = q_cmd.cmd.position;
+            joint_measurement.q_desired_pre = q_cmd.cmd.position;
+            joint_measurement.velocity = q_cmd.cmd.velocity;
+            this->manager_buffers_.joint_measurement->AppendNewElement(joint_measurement);
         }
         std::this_thread::sleep_until(next_cycle_time_point);
     }
@@ -125,6 +130,7 @@ void RobotServer::PublishFeedback() {
     feedback_msg.velocity.resize(ndof_robot);
     feedback_msg.effort.resize(ndof_robot);
 
+#if TORQUE_CONTROL
     JointRawMeasurement raw_measurement{};
     if (this->robot_buffers_.joint_raw_measurement->PeekLatest(&raw_measurement)) {
         for (int i = 0; i < ndof_robot; ++i) {
@@ -133,9 +139,20 @@ void RobotServer::PublishFeedback() {
             feedback_msg.velocity[i] = raw_measurement.velocity[i];
             feedback_msg.effort[i] = raw_measurement.effort[i];
         }
-
         feedback_publisher_->publish(feedback_msg);
     }
+#else
+    JointMeasurement joint_measurement{};
+    if (this->manager_buffers_.joint_measurement->PeekLatest(&joint_measurement)) {
+        for (int i = 0; i < ndof_robot; ++i) {
+            feedback_msg.name[i] = ecat_joint_name_[i];
+            feedback_msg.position[i] = joint_measurement.position[i];
+            feedback_msg.velocity[i] = joint_measurement.velocity[i];
+            feedback_msg.effort[i] = joint_measurement.effort[i];
+        }
+        feedback_publisher_->publish(feedback_msg);
+    }
+#endif
 }
 
 Int64 RobotServer::StartStreaming(PlannerRequest planner_request) {

@@ -21,7 +21,6 @@ protected:
     void ControlCallback(const JointControlMsg::SharedPtr msg);
     void PositionControlCallback(const JointPositionControlMsg::SharedPtr msg);
     Int64 StartStreaming(const PlannerRequest planner_request);
-
     rclcpp::TimerBase::SharedPtr control_timer_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;
     rclcpp::Subscription<JointControlMsg>::SharedPtr control_subscriber_;

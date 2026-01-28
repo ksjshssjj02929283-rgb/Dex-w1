@@ -37,7 +37,7 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
     this->move_robot_action_server_ = rclcpp_action::create_server<MoveRobot>(
         this, "/control/move_robot" + interface_suffix,
         // Goal callback
-        [](const rclcpp_action::GoalUUID &, std::shared_ptr<const MoveRobot::Goal>) {
+        [](const rclcpp_action::GoalUUID&, std::shared_ptr<const MoveRobot::Goal>) {
             return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
         },
         // Cancel callback
@@ -55,7 +55,7 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
 }
 
 RobotServerBase::~RobotServerBase() {
-    auto join_thread_if_joinable = [](std::thread &t) {
+    auto join_thread_if_joinable = [](std::thread& t) {
         if (t.joinable()) t.join();
     };
     join_thread_if_joinable(this->publish_thread_);
@@ -66,7 +66,9 @@ RobotServerBase::~RobotServerBase() {
 
 void RobotServerBase::Run() {
     this->robot_thread_ = std::thread(&RobotServerBase::RobotThreadFunc, this);
-    this->torque_control_thread_ = std::thread(&RobotServerBase::TorqueControlThreadFunc, this);
+    if (TORQUE_CONTROL || !is_sim_) {
+        this->torque_control_thread_ = std::thread(&RobotServerBase::TorqueControlThreadFunc, this);
+    }
     this->manager_thread_ = std::thread(&RobotServerBase::ManagerThreadFunc, this);
     this->publish_thread_ = std::thread(&RobotServerBase::PublishThreadFunc, this);
     RCLCPP_INFO(this->get_logger(), "Initialized successfully.");
@@ -103,44 +105,92 @@ void RobotServerBase::PublishThreadFunc() {
     PlannerManagerCommand planner_cmd{};
     PlannerManagerInfo planner_info{};
     auto next_cycle_time_point = std::chrono::steady_clock::now();
+
     while (rclcpp::ok()) {
         next_cycle_time_point += std::chrono::microseconds(publish_dt_micro);
 
-        // Publish /feedback/robot_server_state
         std_msgs::msg::String robot_server_state_msg;
+        uint64_t timestamp_ns = this->now().nanoseconds();
+
         if (this->robot_buffers_.joint_raw_measurement->PeekLatest(&raw_measurement) &&
             this->manager_buffers_.planner_manager_info->PeekLatest(&planner_info) &&
-            this->manager_buffers_.planner_manager_command->PeekLatest(
-                &planner_cmd))  // just to ensure there is at least one command
-        {
-            std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(raw_measurement.position);
-            std::ostringstream joint_velocity_ss = utils::VectorToJsonArrayString(raw_measurement.velocity);
-            std::ostringstream joint_torque_ss = utils::VectorToJsonArrayString(raw_measurement.effort);
-            std::ostringstream joint_sensor_wrench_ss = utils::VectorToJsonArrayString(raw_measurement.sensor_wrench);
-            std::ostringstream ee_pose_ss = utils::VectorToJsonArrayString(planner_info.ee_pose_measurement);
-            uint64_t timestamp_ns = this->now().nanoseconds();
-            robot_server_state_msg.data =
-                std::string("{\"timestamp\":") + std::to_string(timestamp_ns) + ",\"status\":\"" +
-                ToString(this->manager_state_) + "\"" + ",\"run_mode\":\"" +
-                ToString(planner_info.robot_property.run_mode) + "\"" +
-                ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
-                ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
-                ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
-                ",\"ee_pose\":" + ee_pose_ss.str() + ",\"force_sensor\":" + joint_sensor_wrench_ss.str() +
-                ",\"joint_position\":" + joint_position_ss.str() + ",\"joint_velocity\":" + joint_velocity_ss.str() +
-                ",\"joint_torque\":" + joint_torque_ss.str() + "}";
+            this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd)) {
+            robot_server_state_msg.data = GetRobotServerStateJson(
+                timestamp_ns,
+                std::vector<double>(raw_measurement.position.data(),
+                                    raw_measurement.position.data() + raw_measurement.position.size()),
+                std::vector<double>(raw_measurement.velocity.data(),
+                                    raw_measurement.velocity.data() + raw_measurement.velocity.size()),
+                std::vector<double>(raw_measurement.effort.data(),
+                                    raw_measurement.effort.data() + raw_measurement.effort.size()),
+                std::vector<double>(raw_measurement.sensor_wrench.data(),
+                                    raw_measurement.sensor_wrench.data() + raw_measurement.sensor_wrench.size()),
+                std::vector<double>(planner_info.ee_pose_measurement.data(),
+                                    planner_info.ee_pose_measurement.data() + planner_info.ee_pose_measurement.size()),
+                planner_info);
+        } else if (!TORQUE_CONTROL && is_sim_) {
+            JointMeasurement joint_measurement;
+            if (this->manager_buffers_.joint_measurement->PeekLatest(&joint_measurement) &&
+                this->manager_buffers_.planner_manager_info->PeekLatest(&planner_info) &&
+                this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd)) {
+                robot_server_state_msg.data = GetRobotServerStateJson(
+                    timestamp_ns,
+                    std::vector<double>(joint_measurement.position.data(),
+                                        joint_measurement.position.data() + joint_measurement.position.size()),
+                    std::vector<double>(joint_measurement.velocity.data(),
+                                        joint_measurement.velocity.data() + joint_measurement.velocity.size()),
+                    std::vector<double>(joint_measurement.effort.data(),
+                                        joint_measurement.effort.data() + joint_measurement.effort.size()),
+                    std::vector<double>(raw_measurement.sensor_wrench.data(),
+                                        raw_measurement.sensor_wrench.data() + raw_measurement.sensor_wrench.size()),
+                    std::vector<double>(
+                        planner_info.ee_pose_measurement.data(),
+                        planner_info.ee_pose_measurement.data() + planner_info.ee_pose_measurement.size()),
+                    planner_info);
+            } else {
+                robot_server_state_msg.data = GetRobotServerStateJson(timestamp_ns);
+            }
         } else {
-            uint64_t timestamp_ns = this->now().nanoseconds();
-            robot_server_state_msg.data = std::string("{\"timestamp\":") + std::to_string(timestamp_ns) +
-                                          ",\"status\":\"" + ToString(this->manager_state_) + "\"}";
+            robot_server_state_msg.data = GetRobotServerStateJson(timestamp_ns);
         }
+
         this->robot_server_state_publisher_->publish(robot_server_state_msg);
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }
 
-Int64 RobotServerBase::MakeNewRequestID(const PlannerRequest &planner_request) {
-    const RequestType &type = planner_request.type;
+std::string RobotServerBase::GetRobotServerStateJson(uint64_t timestamp_ns,
+                                                     const std::optional<std::vector<double>>& position,
+                                                     const std::optional<std::vector<double>>& velocity,
+                                                     const std::optional<std::vector<double>>& effort,
+                                                     const std::optional<std::vector<double>>& sensor_wrench,
+                                                     const std::optional<std::vector<double>>& ee_pose,
+                                                     const std::optional<PlannerManagerInfo>& planner_info) {
+    std::string json =
+        "{\"timestamp\":" + std::to_string(timestamp_ns) + ",\"status\":\"" + ToString(this->manager_state_) + "\"";
+
+    if (planner_info.has_value()) {
+        std::ostringstream joint_position_ss = utils::VectorToJsonArrayString(position.value());
+        std::ostringstream joint_velocity_ss = utils::VectorToJsonArrayString(velocity.value());
+        std::ostringstream joint_torque_ss = utils::VectorToJsonArrayString(effort.value());
+        std::ostringstream joint_sensor_wrench_ss = utils::VectorToJsonArrayString(sensor_wrench.value());
+        std::ostringstream ee_pose_ss = utils::VectorToJsonArrayString(ee_pose.value());
+
+        json += ",\"run_mode\":\"" + std::string(ToString(planner_info->robot_property.run_mode)) + "\"" +
+                ",\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+                ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
+                ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
+                ",\"ee_pose\":" + ee_pose_ss.str() + ",\"force_sensor\":" + joint_sensor_wrench_ss.str() +
+                ",\"joint_position\":" + joint_position_ss.str() + ",\"joint_velocity\":" + joint_velocity_ss.str() +
+                ",\"joint_torque\":" + joint_torque_ss.str();
+    }
+
+    json += "}";
+    return json;
+}
+
+Int64 RobotServerBase::MakeNewRequestID(const PlannerRequest& planner_request) {
+    const RequestType& type = planner_request.type;
     if (type == RequestType::StartJointStreaming || type == RequestType::StartEEPoseStreaming ||
         type == RequestType::StartEEVelocityStreaming) {
         if (this->latest_received_id_ >
@@ -225,7 +275,7 @@ void RobotServerBase::MoveRobotCallback(
 
 void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::SharedPtr streaming_msg) {
     std::ostringstream ss;
-    for (const auto &v : streaming_msg->position) {
+    for (const auto& v : streaming_msg->position) {
         ss << v << " ";
     }
     if (streaming_msg->streaming_finished) {

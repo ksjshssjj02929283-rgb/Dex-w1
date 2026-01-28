@@ -28,7 +28,7 @@ fi
 
 cd "${WORKSPACE_DIR}/.."
 PACKAGES=$(find dexe_robot_server -name "package.xml" -exec sh -c 'dirname {} | xargs basename' \; | sort -u | tr '\n' ' ')
-colcon build --cmake-args -DENABLE_TORQUE_CONTROL_SIMULATION=ON --packages-select $PACKAGES
+colcon build --cmake-args -DENABLE_TORQUE_CONTROL_SIMULATION=OFF --packages-select $PACKAGES
 
 BIN=install/w1_server/lib/w1_server/w1_server
 if [ -f "$BIN" ]; then

@@ -6,3 +6,4 @@ __pycache__/
 *.pyc
 nano_logs/
 script/dyn_params_ident_data/recdata/
+CLAUDE.md

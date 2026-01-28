@@ -19,10 +19,21 @@ ComputeCommandStatus EEVelocityStreamingPlanner::ComputeCommand(const JointMeasu
         StreamingCommand cmd_buffer;
         bool received = streaming_buffer_->PeekLatest(&cmd_buffer);
         if (received && cmd_buffer.request_id == runtime_.request_id) {
-            if (cmd_buffer.command.size() != 6) {
-                LOG_CRIT << "EEVelocityStreamingPlanner: data size error: " << cmd_buffer.command.size()
-                         << ", expected 6.";
-                return ComputeCommandStatus::Error;
+            if (motion_group_ == MotionGroup::BothArms) {
+                if (cmd_buffer.command.size() != 12) {
+                    std::stringstream ss;
+                    ss << "EEVelocityStreamingPlanner: BothArms data size error: " << cmd_buffer.command.size()
+                       << ", expected 12.";
+                    std::cout << ss.str() << "\n";
+                    LOG_CRIT << ss.str();
+                    return ComputeCommandStatus::Error;
+                }
+            } else {
+                if (cmd_buffer.command.size() != 6) {
+                    LOG_CRIT << "EEVelocityStreamingPlanner: Single-arm data size error: " << cmd_buffer.command.size()
+                             << ", expected 6.";
+                    return ComputeCommandStatus::Error;
+                }
             }
             runtime_.latest_cmd.emplace(cmd_buffer);
         }
@@ -47,51 +58,147 @@ ComputeCommandStatus EEVelocityStreamingPlanner::ComputeCommand(const JointMeasu
     }
     runtime_.streaming_finished = latest_cmd.streaming_finished || is_timeout;
 
-    Eigen::VectorXd desired_q;
-    utils::GetJointFromWholeBody(this->robot_model_, measurement.q_desired_pre, desired_q, this->motion_group_);
-    Vector6d input_velocity;
-    if (!runtime_.streaming_finished) {
-        // 处理输入更新对应motion group的关节角
-        if (6 != latest_cmd.command.size()) {
-            return ComputeCommandStatus::Error;
-        }
-        input_velocity = latest_cmd.command;
-        // 根据参考系转换速度
-        if (reference_frame_ == ReferenceFrame::EEFrame) {
-            Eigen::Affine3d transform(pinocchio::GetFK(this->pinocchio_model_, desired_q));
-            input_velocity.head<3>() = transform.linear() * input_velocity.head<3>();
-            input_velocity.tail<3>() = transform.linear() * input_velocity.tail<3>();
-        } else if (reference_frame_ == ReferenceFrame::WorldBase) {
-            const auto &joint_command_sequence_by_name = this->robot_model_.params_ptr->joint_command_sequence_by_name;
-            Eigen::VectorXd q_desired_urdf = dynamics::MapToUrdfOrder(
-                *this->robot_model_.model_ptr, measurement.q_desired_pre, joint_command_sequence_by_name);
-            auto armbase_pose_in_worldbase =
-                pinocchio::GetFkByFrameId(*this->robot_model_.model_ptr, q_desired_urdf, this->arm_base_id_);
-            input_velocity.head<3>() = armbase_pose_in_worldbase.rotation().transpose() * input_velocity.head<3>();
-            input_velocity.tail<3>() = armbase_pose_in_worldbase.rotation().transpose() * input_velocity.tail<3>();
-        }
-    } else {
-        input_velocity.setZero();
-    }
-    // 计算当前位置的雅可比矩阵
-    Eigen::MatrixXd jacobian = pinocchio::GetJacobiMatrix(this->pinocchio_model_, desired_q);
-    // // 计算雅可比伪逆矩阵
-    Eigen::MatrixXd jacobian_pinv;
-    pinocchio::PseudoInverse(jacobian, jacobian_pinv);
-    // // 计算关节速度解
-    runtime_.qdot_solved = jacobian_pinv * input_velocity;
-
-    //映射回whole body关节速度
+    // Initialize output joint velocity
     auto last_cmd_qdot = output_joint_cmd.velocity;
+    output_joint_cmd.velocity.setZero();
 
-    utils::MapJointToWholeBody(this->robot_model_, runtime_.qdot_solved, output_joint_cmd.velocity,
-                               this->motion_group_);
+    // Handle both single-arm and dual-arm cases
+    Eigen::VectorXd desired_q_primary, desired_q_secondary;
+    utils::GetJointFromWholeBody(this->robot_model_, measurement.q_desired_pre, desired_q_primary,
+                                 MotionGroup::Primary);
+    utils::GetJointFromWholeBody(this->robot_model_, measurement.q_desired_pre, desired_q_secondary,
+                                 MotionGroup::Secondary);
+
+    if (motion_group_ == MotionGroup::BothArms) {
+        // Dual-arm mode: handle 12D command (6D for each arm)
+        Vector6d input_velocity_primary, input_velocity_secondary;
+        if (!runtime_.streaming_finished) {
+            if (latest_cmd.command.size() != 12) {
+                return ComputeCommandStatus::Error;
+            }
+            input_velocity_primary = latest_cmd.command.head<6>();
+            input_velocity_secondary = latest_cmd.command.tail<6>();
+
+            // Apply reference frame transformations for both arms
+            if (reference_frame_ == ReferenceFrame::EEFrame) {
+                // Primary arm transformation
+                Eigen::Affine3d transform_primary(
+                    pinocchio::GetFK(*this->robot_model_.primary_arm_model_ptr, desired_q_primary));
+                input_velocity_primary.head<3>() = transform_primary.linear() * input_velocity_primary.head<3>();
+                input_velocity_primary.tail<3>() = transform_primary.linear() * input_velocity_primary.tail<3>();
+
+                // Secondary arm transformation
+                Eigen::Affine3d transform_secondary(
+                    pinocchio::GetFK(*this->robot_model_.secondary_arm_model_ptr, desired_q_secondary));
+                input_velocity_secondary.head<3>() = transform_secondary.linear() * input_velocity_secondary.head<3>();
+                input_velocity_secondary.tail<3>() = transform_secondary.linear() * input_velocity_secondary.tail<3>();
+            } else if (reference_frame_ == ReferenceFrame::WorldBase) {
+                const auto &joint_command_sequence_by_name =
+                    this->robot_model_.params_ptr->joint_command_sequence_by_name;
+
+                // Primary arm transformation
+                Eigen::VectorXd q_desired_urdf_primary = dynamics::MapToUrdfOrder(
+                    *this->robot_model_.primary_arm_model_ptr, desired_q_primary, joint_command_sequence_by_name);
+                auto primary_armbase_pose_in_worldbase = pinocchio::GetFkByFrameId(
+                    *this->robot_model_.primary_arm_model_ptr, q_desired_urdf_primary, this->arm_base_id_);
+                input_velocity_primary.head<3>() =
+                    primary_armbase_pose_in_worldbase.rotation().transpose() * input_velocity_primary.head<3>();
+                input_velocity_primary.tail<3>() =
+                    primary_armbase_pose_in_worldbase.rotation().transpose() * input_velocity_primary.tail<3>();
+
+                // Secondary arm transformation
+                Eigen::VectorXd q_desired_urdf_secondary = dynamics::MapToUrdfOrder(
+                    *this->robot_model_.secondary_arm_model_ptr, desired_q_secondary, joint_command_sequence_by_name);
+                auto secondary_armbase_pose_in_worldbase = pinocchio::GetFkByFrameId(
+                    *this->robot_model_.secondary_arm_model_ptr, q_desired_urdf_secondary, this->arm_base_id_);
+                input_velocity_secondary.head<3>() =
+                    secondary_armbase_pose_in_worldbase.rotation().transpose() * input_velocity_secondary.head<3>();
+                input_velocity_secondary.tail<3>() =
+                    secondary_armbase_pose_in_worldbase.rotation().transpose() * input_velocity_secondary.tail<3>();
+            }
+        } else {
+            input_velocity_primary.setZero();
+            input_velocity_secondary.setZero();
+        }
+
+        // Compute Jacobians for both arms
+        Eigen::MatrixXd jacobian_primary =
+            pinocchio::GetJacobiMatrix(*this->robot_model_.primary_arm_model_ptr, desired_q_primary);
+        Eigen::MatrixXd jacobian_secondary =
+            pinocchio::GetJacobiMatrix(*this->robot_model_.secondary_arm_model_ptr, desired_q_secondary);
+
+        // Compute pseudo-inverses
+        Eigen::MatrixXd jacobian_pinv_primary, jacobian_pinv_secondary;
+        pinocchio::PseudoInverse(jacobian_primary, jacobian_pinv_primary);
+        pinocchio::PseudoInverse(jacobian_secondary, jacobian_pinv_secondary);
+
+        // Solve joint velocities for both arms
+        runtime_.qdot_solved_primary = jacobian_pinv_primary * input_velocity_primary;
+        runtime_.qdot_solved_secondary = jacobian_pinv_secondary * input_velocity_secondary;
+
+        // Map both arm velocities to whole body
+        utils::MapJointToWholeBody(this->robot_model_, runtime_.qdot_solved_primary, output_joint_cmd.velocity,
+                                   MotionGroup::Primary);
+        utils::MapJointToWholeBody(this->robot_model_, runtime_.qdot_solved_secondary, output_joint_cmd.velocity,
+                                   MotionGroup::Secondary);
+
+        // Maintain backward compatibility
+        runtime_.qdot_solved = output_joint_cmd.velocity;
+    } else {
+        // Single-arm mode: handle 6D command
+        Vector6d input_velocity;
+        if (!runtime_.streaming_finished) {
+            if (6 != latest_cmd.command.size()) {
+                return ComputeCommandStatus::Error;
+            }
+            input_velocity = latest_cmd.command;
+
+            // Apply reference frame transformation
+            if (reference_frame_ == ReferenceFrame::EEFrame) {
+                Eigen::Affine3d transform(pinocchio::GetFK(this->pinocchio_model_, desired_q_primary));
+                input_velocity.head<3>() = transform.linear() * input_velocity.head<3>();
+                input_velocity.tail<3>() = transform.linear() * input_velocity.tail<3>();
+            } else if (reference_frame_ == ReferenceFrame::WorldBase) {
+                const auto &joint_command_sequence_by_name =
+                    this->robot_model_.params_ptr->joint_command_sequence_by_name;
+                Eigen::VectorXd q_desired_urdf = dynamics::MapToUrdfOrder(
+                    *this->robot_model_.model_ptr, measurement.q_desired_pre, joint_command_sequence_by_name);
+                auto armbase_pose_in_worldbase =
+                    pinocchio::GetFkByFrameId(*this->robot_model_.model_ptr, q_desired_urdf, this->arm_base_id_);
+                input_velocity.head<3>() = armbase_pose_in_worldbase.rotation().transpose() * input_velocity.head<3>();
+                input_velocity.tail<3>() = armbase_pose_in_worldbase.rotation().transpose() * input_velocity.tail<3>();
+            }
+        } else {
+            input_velocity.setZero();
+        }
+
+        // Compute Jacobian for the current arm
+        Eigen::MatrixXd jacobian = pinocchio::GetJacobiMatrix(this->pinocchio_model_, desired_q_primary);
+
+        // Compute pseudo-inverse
+        Eigen::MatrixXd jacobian_pinv;
+        pinocchio::PseudoInverse(jacobian, jacobian_pinv);
+
+        // Solve joint velocity
+        runtime_.qdot_solved = jacobian_pinv * input_velocity;
+
+        // Map to whole body
+        utils::MapJointToWholeBody(this->robot_model_, runtime_.qdot_solved, output_joint_cmd.velocity,
+                                   this->motion_group_);
+    }
 
     output_joint_cmd.position = measurement.q_desired_pre + output_joint_cmd.velocity * controller_dt_;
     output_joint_cmd.acceleration = (output_joint_cmd.velocity - last_cmd_qdot) / controller_dt_;
     output_joint_cmd.torque_feedforward.setZero();
 
+    // Check robot stopped status - include both arm velocities in dual-arm mode
     bool robot_stopped = (measurement.velocity.array() < IdleVelocityThreshold).all();
+    if (motion_group_ == MotionGroup::BothArms) {
+        robot_stopped = robot_stopped && (runtime_.qdot_solved_primary.array().abs() < IdleVelocityThreshold).all() &&
+                        (runtime_.qdot_solved_secondary.array().abs() < IdleVelocityThreshold).all();
+    } else {
+        robot_stopped = robot_stopped && (runtime_.qdot_solved.array().abs() < IdleVelocityThreshold).all();
+    }
 
     // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
     if (runtime_.streaming_finished && robot_stopped) {
@@ -117,13 +224,20 @@ bool EEVelocityStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &req
 
     int first_arm_joint_id;
     if (motion_group_ == MotionGroup::Primary) {
-        runtime_.qdot_solved.setZero(ndof_primary_);
+        runtime_.qdot_solved_primary.setZero(ndof_primary_);
+        runtime_.qdot_solved = runtime_.qdot_solved_primary;  // Backward compatibility
         this->pinocchio_model_ = *this->robot_model_.primary_arm_model_ptr;
         first_arm_joint_id = this->robot_model_.params_ptr->joints_primary[0];
     } else if (motion_group_ == MotionGroup::Secondary) {
-        runtime_.qdot_solved.setZero(ndof_secondary_);
+        runtime_.qdot_solved_secondary.setZero(ndof_secondary_);
+        runtime_.qdot_solved = runtime_.qdot_solved_secondary;  // Backward compatibility
         this->pinocchio_model_ = *this->robot_model_.secondary_arm_model_ptr;
         first_arm_joint_id = this->robot_model_.params_ptr->joints_secondary[0];
+    } else if (motion_group_ == MotionGroup::BothArms) {
+        runtime_.qdot_solved_primary.setZero(ndof_primary_);
+        runtime_.qdot_solved_secondary.setZero(ndof_secondary_);
+        runtime_.qdot_solved.setZero(ndof_primary_ + ndof_secondary_);  // Combined
+        first_arm_joint_id = this->robot_model_.params_ptr->joints_primary[0];
     } else {
         LOG_CRIT << "EEVelocityStreamingPlanner: Unsupported motion group.";
         return false;

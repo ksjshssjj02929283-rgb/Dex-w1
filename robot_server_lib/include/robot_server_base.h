@@ -34,7 +34,7 @@ protected:
                                      std::shared_ptr<robot_server_interfaces::srv::SetProperty::Response>);
 
     void Run();
-    Int64 MakeNewRequestID(const PlannerRequest &planner_request);
+    Int64 MakeNewRequestID(const PlannerRequest& planner_request);
     void StreamingCommandCallback(const robot_server_interfaces::msg::StreamingCommand::SharedPtr msg);
 
     void MoveRobotCallback(
@@ -73,5 +73,14 @@ protected:
         std::atomic_int64_t queued{-1};
         std::atomic_int64_t finished{-1};
     } latest_report_id_;
+
+private:
+    std::string GetRobotServerStateJson(uint64_t timestamp_ns,
+                                        const std::optional<std::vector<double>>& position = std::nullopt,
+                                        const std::optional<std::vector<double>>& velocity = std::nullopt,
+                                        const std::optional<std::vector<double>>& effort = std::nullopt,
+                                        const std::optional<std::vector<double>>& sensor_wrench = std::nullopt,
+                                        const std::optional<std::vector<double>>& ee_pose = std::nullopt,
+                                        const std::optional<PlannerManagerInfo>& planner_info = std::nullopt);
 };
 }  // namespace robot_server_lib

@@ -24,7 +24,11 @@ public:
         Int64 request_id{-1};
         bool streaming_finished{false};
         std::optional<StreamingCommand> latest_cmd;
-        Eigen::VectorXd qdot_solved;
+
+        // Dual-arm specific fields
+        Eigen::VectorXd qdot_solved_primary;    // For primary arm (7 DOF)
+        Eigen::VectorXd qdot_solved_secondary;  // For secondary arm (7 DOF)
+        Eigen::VectorXd qdot_solved;            // Backward compatibility
     } runtime_;
 
 private:
