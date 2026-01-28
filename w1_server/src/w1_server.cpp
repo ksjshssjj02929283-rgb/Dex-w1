@@ -416,6 +416,8 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
     uint64_t timestamp_ns = this->now().nanoseconds();
     robot_server_state_msg.data =
         std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
+        ", \"robot_type\":\"" + this->robot_model_.params_ptr->robot_name + "\"" +
+        ", \"robot_version\":\"" + this->robot_model_.params_ptr->robot_version + "\"" +
         ", \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
         ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
         ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
