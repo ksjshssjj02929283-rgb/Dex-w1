@@ -14,6 +14,8 @@
  * 9. 输出连续性
  */
 
+#include "../utils/butterworth_filter.h"
+
 #include <gtest/gtest.h>
 
 #include <cmath>
