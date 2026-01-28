@@ -29,7 +29,9 @@ public:
      * @param damping_ratio 阻尼比 (无量纲, 0-1)
      * @param sampling_time_sec 采样周期 (秒)
      */
-    ZVDInputShaper(double natural_frequency_hz, double damping_ratio, double sampling_time_sec = 0.001);
+    ZVDInputShaper(double natural_frequency_hz,
+                   double damping_ratio,
+                   double sampling_time_sec = 0.001);
 
     /**
      * @brief 应用 ZVD 整形到单个输入样本

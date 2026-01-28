@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cmath>
 
-ZVDInputShaper::ZVDInputShaper(double natural_frequency_hz, double damping_ratio, double sampling_time_sec)
+ZVDInputShaper::ZVDInputShaper(double natural_frequency_hz,
+                               double damping_ratio,
+                               double sampling_time_sec)
     : natural_frequency_hz_(natural_frequency_hz),
       damping_ratio_(damping_ratio),
       sampling_time_(sampling_time_sec),
@@ -60,9 +62,9 @@ double ZVDInputShaper::Apply(double input) {
     // 注意：input_history_[T3_] 是最新的输入（当前时刻）
     //       input_history_[T3_ - T2_] 是延迟 T2 的输入
     //       input_history_[0] 是延迟 T3 的输入
-    double output = A1_ * input_history_[T3_] +        // 当前输入
-                    A2_ * input_history_[T3_ - T2_] +  // 延迟 T2
-                    A3_ * input_history_[0];           // 延迟 T3
+    double output = A1_ * input_history_[T3_] +           // 当前输入
+                    A2_ * input_history_[T3_ - T2_] +     // 延迟 T2
+                    A3_ * input_history_[0];              // 延迟 T3
 
     return output;
 }
@@ -81,8 +83,14 @@ void ZVDInputShaper::Configure(double natural_frequency_hz, double damping_ratio
     initialized_ = false;
 }
 
-int ZVDInputShaper::GetDelaySamples() const { return T_d_; }
+int ZVDInputShaper::GetDelaySamples() const {
+    return T_d_;
+}
 
-double ZVDInputShaper::GetDelaySeconds() const { return T_d_ * sampling_time_; }
+double ZVDInputShaper::GetDelaySeconds() const {
+    return T_d_ * sampling_time_;
+}
 
-bool ZVDInputShaper::IsInitialized() const { return initialized_; }
+bool ZVDInputShaper::IsInitialized() const {
+    return initialized_;
+}
