@@ -1,6 +1,5 @@
 # 切换到包含所有包的根目录
-WORKSPACE_DIR=$(pwd)
-
+WORKSPACE_DIR=$(dirname "$0")
 source /opt/ros/humble/setup.bash
 
 # === 1. 检查 ROS 环境 ===
