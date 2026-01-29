@@ -61,23 +61,28 @@ def process_channel_fft(data_list, channel_name, target_vel=None):
     t = np.array([p['t'] for p in points])
     y = np.array([p['val'] for p in points])
 
-    # Filter data: 3 seconds AFTER reaching target velocity
+    # Filter data: from peak velocity point to max 3 seconds after
     if target_vel is not None and target_vel > 0:
-        # Find first index where velocity >= 95% of target
-        threshold = target_vel * 0.95
-        # Use abs to handle potential negative directions
-        idx_reached = np.where(np.abs(y) >= threshold)[0]
+        # Find the peak velocity
+        peak_vel = np.max(np.abs(y))
+        peak_threshold = peak_vel * 0.95
 
+        # Find first index where velocity >= 95% of peak velocity
+        idx_reached = np.where(np.abs(y) >= peak_threshold)[0]
         if len(idx_reached) == 0:
             print(
-                f"Warning: Target velocity {target_vel} never reached for channel {channel_name}"
+                f"Warning: Peak velocity threshold {peak_threshold} never reached for channel {channel_name}"
             )
             return None, None, None, None, None
 
-        t_reached = t[idx_reached[0]]
-        t_start = t_reached + 3.0
+        idx_start = idx_reached[0]
 
-        mask = t >= t_start
+        # End point: maximum 3 seconds after start
+        time_limit = t[idx_start] + 3.0
+        idx_end = np.where(t <= time_limit)[0][-1]  # Last index within time limit
+
+        # Use data from peak velocity to 3 seconds after
+        mask = (t >= t[idx_start]) & (t <= t[idx_end])
         t = t[mask]
         y = y[mask]
     elif len(t) > 0:
@@ -135,6 +140,46 @@ def analyze_file(filepath, output_dir):
     freq_r, amp_r, fs_r, t_r, y_r = process_channel_fft(data, 'right',
                                                         target_vel)
 
+    # Calculate start and end points for marking on plot
+    left_start_idx = None
+    left_end_idx = None
+    right_start_idx = None
+    right_end_idx = None
+
+    if t_l is not None and len(t_l) > 0:
+        points_left = [d for d in data if d['type'] == 'left']
+        points_left.sort(key=lambda x: x['t'])
+        y_full_left = np.array([p['val'] for p in points_left])
+        t_full_left = np.array([p['t'] for p in points_left])
+
+        peak_vel_left = np.max(np.abs(y_full_left))
+        peak_threshold_left = peak_vel_left * 0.95
+        idx_reached = np.where(np.abs(y_full_left) >= peak_threshold_left)[0]
+        if len(idx_reached) > 0:
+            left_start_idx = idx_reached[0]
+            # End point: 3 seconds after start
+            time_limit = t_full_left[left_start_idx] + 3.0
+            idx_end_candidates = np.where(t_full_left <= time_limit)[0]
+            if len(idx_end_candidates) > 0:
+                left_end_idx = idx_end_candidates[-1]
+
+    if t_r is not None and len(t_r) > 0:
+        points_right = [d for d in data if d['type'] == 'right']
+        points_right.sort(key=lambda x: x['t'])
+        y_full_right = np.array([p['val'] for p in points_right])
+        t_full_right = np.array([p['t'] for p in points_right])
+
+        peak_vel_right = np.max(np.abs(y_full_right))
+        peak_threshold_right = peak_vel_right * 0.95
+        idx_reached = np.where(np.abs(y_full_right) >= peak_threshold_right)[0]
+        if len(idx_reached) > 0:
+            right_start_idx = idx_reached[0]
+            # End point: 3 seconds after start
+            time_limit = t_full_right[right_start_idx] + 3.0
+            idx_end_candidates = np.where(t_full_right <= time_limit)[0]
+            if len(idx_end_candidates) > 0:
+                right_end_idx = idx_end_candidates[-1]
+
     peak_freq = 0
     max_amp = 0
 
@@ -162,17 +207,50 @@ def analyze_file(filepath, output_dir):
     plt.ylabel("Amp")
     plt.legend()
     plt.grid(True)
-    plt.xlim(0, 20)
+    plt.xlim(0, 10)
+    plt.xticks(np.arange(0, 11, 1))  # Set ticks every 1 Hz from 0 to 10
 
     # Subplot 2: Velocity vs Time
     plt.subplot(2, 1, 2)
-    if t_l is not None:
-        # Normalize time start to 0
-        plt.plot(t_l - t_l[0], y_l, label='Left Vel', alpha=0.7)
-    if t_r is not None:
-        # Normalize time start to 0 if possible, or align with Left
-        start_t = t_l[0] if t_l is not None else t_r[0]
-        plt.plot(t_r - start_t, y_r, label='Right Vel', alpha=0.7)
+
+    # Plot full data for both channels
+    points_left = [d for d in data if d['type'] == 'left']
+    points_right = [d for d in data if d['type'] == 'right']
+
+    if len(points_left) > 0:
+        points_left.sort(key=lambda x: x['t'])
+        t_full_left = np.array([p['t'] for p in points_left])
+        y_full_left = np.array([p['val'] for p in points_left])
+        plt.plot(t_full_left - t_full_left[0], y_full_left, label='Left Vel', alpha=0.7)
+
+    if len(points_right) > 0:
+        points_right.sort(key=lambda x: x['t'])
+        t_full_right = np.array([p['t'] for p in points_right])
+        y_full_right = np.array([p['val'] for p in points_right])
+        start_t = t_full_left[0] if len(points_left) > 0 else t_full_right[0]
+        plt.plot(t_full_right - start_t, y_full_right, label='Right Vel', alpha=0.7)
+
+        # Mark start and end points for left channel
+        if len(points_left) > 0 and left_start_idx is not None:
+            start_marker_t = t_full_left[left_start_idx] - t_full_left[0]
+            start_marker_y = y_full_left[left_start_idx]
+            plt.plot(start_marker_t, start_marker_y, 'go', markersize=8, label='Left Start')
+
+            if left_end_idx is not None:
+                end_marker_t = t_full_left[left_end_idx] - t_full_left[0]
+                end_marker_y = y_full_left[left_end_idx]
+                plt.plot(end_marker_t, end_marker_y, 'ro', markersize=8, label='Left End')
+
+        # Mark start and end points for right channel
+        if right_start_idx is not None:
+            start_marker_t = t_full_right[right_start_idx] - start_t
+            start_marker_y = y_full_right[right_start_idx]
+            plt.plot(start_marker_t, start_marker_y, 'g^', markersize=8, label='Right Start')
+
+            if right_end_idx is not None:
+                end_marker_t = t_full_right[right_end_idx] - start_t
+                end_marker_y = y_full_right[right_end_idx]
+                plt.plot(end_marker_t, end_marker_y, 'r^', markersize=8, label='Right End')
 
     plt.title("Velocity vs Time")
     plt.xlabel("Time (s)")
