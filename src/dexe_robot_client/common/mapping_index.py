@@ -103,6 +103,51 @@ class RealRobotIdx_PGC(Enum):
     RIGHT_FINGER2 = auto()
 
 
+class RealRobotIdx_Linker(Enum):
+    ANKLE = auto()
+    KNEE = auto()
+    BUTTOCK = auto()
+    WAIST = auto()
+    NECK1 = auto()
+    NECK2 = auto()
+    LEFT_J1 = auto()
+    LEFT_J2 = auto()
+    LEFT_J3 = auto()
+    LEFT_J4 = auto()
+    LEFT_J5 = auto()
+    LEFT_J6 = auto()
+    LEFT_J7 = auto()
+    RIGHT_J1 = auto()
+    RIGHT_J2 = auto()
+    RIGHT_J3 = auto()
+    RIGHT_J4 = auto()
+    RIGHT_J5 = auto()
+    RIGHT_J6 = auto()
+    RIGHT_J7 = auto()
+    LEFT_THUMBCMC = auto()
+    LEFT_THUMBMCP = auto()
+    LEFT_THUMBPIP = auto()
+    LEFT_INDEXMCP = auto()
+    LEFT_INDEXPIP = auto()
+    LEFT_MIDDLEMCP = auto()
+    LEFT_MIDDLEPIP = auto()
+    LEFT_RINGMCP = auto()
+    LEFT_RINGPIP = auto()
+    LEFT_LITTLEMCP = auto()
+    LEFT_LITTLEPIP = auto()
+    RIGHT_THUMBCMC = auto()
+    RIGHT_THUMBMCP = auto()
+    RIGHT_THUMBPIP = auto()
+    RIGHT_INDEXMCP = auto()
+    RIGHT_INDEXPIP = auto()
+    RIGHT_MIDDLEMCP = auto()
+    RIGHT_MIDDLEPIP = auto()
+    RIGHT_RINGMCP = auto()
+    RIGHT_RINGPIP = auto()
+    RIGHT_LITTLEMCP = auto()
+    RIGHT_LITTLEPIP = auto()
+
+
 def get_robot_sim2real_idx(articulation) -> List[int]:
     """
     This function maps the simulation joints to the real robot joint indices.
@@ -159,6 +204,8 @@ def get_pin2real_idx(urdf_path) -> List[int]:
         real_robot_idx = RealRobotIdx_Brainco
     if pin_model.njoints - 1 == 24:
         real_robot_idx = RealRobotIdx_PGC
+    if pin_model.njoints - 1 == 42:
+        real_robot_idx = RealRobotIdx_Linker
     pin_names = list(pin_model.names)[1:]
     pin_dict = {name: idx for idx, name in enumerate(pin_names)}
     real_names = [realjoint.name for realjoint in real_robot_idx]
@@ -185,6 +232,8 @@ def get_real2pin_idx(urdf_path) -> List[int]:
         real_robot_idx = RealRobotIdx_Brainco
     if pin_model.njoints - 1 == 24:
         real_robot_idx = RealRobotIdx_PGC
+    if pin_model.njoints - 1 == 42:
+        real_robot_idx = RealRobotIdx_Linker
     pin_names = list(pin_model.names)[1:]
     real_names = [realjoint.name for realjoint in real_robot_idx]
     real_dict = {name: idx for idx, name in enumerate(real_names)}
@@ -213,6 +262,8 @@ def get_real_idx(end_effector_type: EndEffectorType = None):
         real_robot_idx = RealRobotIdx_Brainco
     if end_effector_type == EndEffectorType.PGC_GRIPPER:
         real_robot_idx = RealRobotIdx_PGC
+    if end_effector_type == EndEffectorType.LINKER_HAND:
+        real_robot_idx = RealRobotIdx_Linker
 
     real_names = [realjoint.name for realjoint in real_robot_idx]
     real_dict = {name: idx for idx, name in enumerate(real_names)}
@@ -293,6 +344,45 @@ def get_real_idx(end_effector_type: EndEffectorType = None):
             "RIGHT_FINGER1"], real_dict["RIGHT_FINGER2"]
         left_hand_idx = [left_finger1_idx, left_finger2_idx]
         right_hand_idx = [right_finger1_idx, right_finger2_idx]
+
+        return torso_idx, head_idx, left_arm_idx, right_arm_idx, left_hand_idx, right_hand_idx
+
+    if end_effector_type == EndEffectorType.LINKER_HAND:
+        left_thumb_prox_base_idx, left_thumb_prox_idx, left_thumb_dist_idx = \
+            real_dict["LEFT_THUMBCMC"], real_dict["LEFT_THUMBMCP"], real_dict["LEFT_THUMBPIP"]
+        left_index_prox_idx, left_index_dist_idx = \
+            real_dict["LEFT_INDEXMCP"], real_dict["LEFT_INDEXPIP"]
+        left_middle_prox_idx, left_middle_dist_idx = \
+            real_dict["LEFT_MIDDLEMCP"], real_dict["LEFT_MIDDLEPIP"]
+        left_ring_prox_idx, left_ring_dist_idx = \
+            real_dict["LEFT_RINGMCP"], real_dict["LEFT_RINGPIP"]
+        left_little_prox_idx, left_little_dist_idx = \
+            real_dict["LEFT_LITTLEMCP"], real_dict["LEFT_LITTLEPIP"]
+
+        left_hand_idx = [
+            left_thumb_prox_base_idx, left_thumb_prox_idx, left_thumb_dist_idx,
+            left_index_prox_idx, left_index_dist_idx, left_middle_prox_idx,
+            left_middle_dist_idx, left_ring_prox_idx, left_ring_dist_idx,
+            left_little_prox_idx, left_little_dist_idx
+        ]
+
+        right_thumb_prox_base_idx, right_thumb_prox_idx, right_thumb_dist_idx = \
+            real_dict["RIGHT_THUMBCMC"], real_dict["RIGHT_THUMBMCP"], real_dict["RIGHT_THUMBPIP"]
+        right_index_prox_idx, right_index_dist_idx = \
+            real_dict["RIGHT_INDEXMCP"], real_dict["RIGHT_INDEXPIP"]
+        right_middle_prox_idx, right_middle_dist_idx = \
+            real_dict["RIGHT_MIDDLEMCP"], real_dict["RIGHT_MIDDLEPIP"]
+        right_ring_prox_idx, right_ring_dist_idx = \
+            real_dict["RIGHT_RINGMCP"], real_dict["RIGHT_RINGPIP"]
+        right_little_prox_idx, right_little_dist_idx = \
+            real_dict["RIGHT_LITTLEMCP"], real_dict["RIGHT_LITTLEPIP"]
+
+        right_hand_idx = [
+            right_thumb_prox_base_idx, right_thumb_prox_idx,
+            right_thumb_dist_idx, right_index_prox_idx, right_index_dist_idx,
+            right_middle_prox_idx, right_middle_dist_idx, right_ring_prox_idx,
+            right_ring_dist_idx, right_little_prox_idx, right_little_dist_idx
+        ]
 
         return torso_idx, head_idx, left_arm_idx, right_arm_idx, left_hand_idx, right_hand_idx
 
@@ -387,6 +477,45 @@ def get_pin_idx(urdf_path):
             "RIGHT_FINGER1"], pin_dict["RIGHT_FINGER2"]
         left_hand_idx = [left_finger1_idx, left_finger2_idx]
         right_hand_idx = [right_finger1_idx, right_finger2_idx]
+
+        return torso_idx, head_idx, left_arm_idx, right_arm_idx, left_hand_idx, right_hand_idx
+
+    if pin_model.njoints - 1 == 42:
+        left_thumb_prox_base_idx, left_thumb_prox_idx, left_thumb_dist_idx = \
+            pin_dict["LEFT_THUMBCMC"], pin_dict["LEFT_THUMBMCP"], pin_dict["LEFT_THUMBPIP"]
+        left_index_prox_idx, left_index_dist_idx = \
+            pin_dict["LEFT_INDEXMCP"], pin_dict["LEFT_INDEXPIP"]
+        left_middle_prox_idx, left_middle_dist_idx = \
+            pin_dict["LEFT_MIDDLEMCP"], pin_dict["LEFT_MIDDLEPIP"]
+        left_ring_prox_idx, left_ring_dist_idx = \
+            pin_dict["LEFT_RINGMCP"], pin_dict["LEFT_RINGPIP"]
+        left_little_prox_idx, left_little_dist_idx = \
+            pin_dict["LEFT_LITTLEMCP"], pin_dict["LEFT_LITTLEPIP"]
+
+        left_hand_idx = [
+            left_thumb_prox_base_idx, left_thumb_prox_idx, left_thumb_dist_idx,
+            left_index_prox_idx, left_index_dist_idx, left_middle_prox_idx,
+            left_middle_dist_idx, left_ring_prox_idx, left_ring_dist_idx,
+            left_little_prox_idx, left_little_dist_idx
+        ]
+
+        right_thumb_prox_base_idx, right_thumb_prox_idx, right_thumb_dist_idx = \
+            pin_dict["RIGHT_THUMBCMC"], pin_dict["RIGHT_THUMBMCP"], pin_dict["RIGHT_THUMBPIP"]
+        right_index_prox_idx, right_index_dist_idx = \
+            pin_dict["RIGHT_INDEXMCP"], pin_dict["RIGHT_INDEXPIP"]
+        right_middle_prox_idx, right_middle_dist_idx = \
+            pin_dict["RIGHT_MIDDLEMCP"], pin_dict["RIGHT_MIDDLEPIP"]
+        right_ring_prox_idx, right_ring_dist_idx = \
+            pin_dict["RIGHT_RINGMCP"], pin_dict["RIGHT_RINGPIP"]
+        right_little_prox_idx, right_little_dist_idx = \
+            pin_dict["RIGHT_LITTLEMCP"], pin_dict["RIGHT_LITTLEPIP"]
+
+        right_hand_idx = [
+            right_thumb_prox_base_idx, right_thumb_prox_idx,
+            right_thumb_dist_idx, right_index_prox_idx, right_index_dist_idx,
+            right_middle_prox_idx, right_middle_dist_idx, right_ring_prox_idx,
+            right_ring_dist_idx, right_little_prox_idx, right_little_dist_idx
+        ]
 
         return torso_idx, head_idx, left_arm_idx, right_arm_idx, left_hand_idx, right_hand_idx
 

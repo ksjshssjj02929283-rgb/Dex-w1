@@ -86,6 +86,11 @@ class Planner_Pin:
                     raise ValueError(
                         "For PGC_GRIPPER, left_ee_qpos and right_ee_qpos should have shape of (2, )"
                     )
+            elif self.ee_type == EndEffectorType.LINKER_HAND:
+                if left_ee_qpos.shape != (6,) or right_ee_qpos.shape != (6,):
+                    raise ValueError(
+                        "For LINKER_HAND, left_ee_qpos and right_ee_qpos should have shape of (6, )"
+                    )
             else:
                 raise ValueError("Unsupported end effector type")
             left_ee_qpos, right_ee_qpos = self._compute_ee_qpos(
@@ -100,6 +105,8 @@ class Planner_Pin:
                 real_qpos = np.concatenate((real_qpos, np.zeros(20)), axis=0)
             if self.pin_model.njoints - 1 == 24:
                 real_qpos = np.concatenate((real_qpos, np.zeros(4)), axis=0)
+            if self.pin_model.njoints - 1 == 42:
+                real_qpos = np.concatenate((real_qpos, np.zeros(22)), axis=0)
 
         pin_qpos = real_qpos[self.real2pin_idx]
 
@@ -146,6 +153,8 @@ class Planner_Pin:
                 real_qpos = np.concatenate((real_qpos, np.zeros(20)), axis=0)
             elif self.ee_type == EndEffectorType.PGC_GRIPPER:
                 real_qpos = np.concatenate((real_qpos, np.zeros(4)), axis=0)
+            elif self.ee_type == EndEffectorType.LINKER_HAND:
+                real_qpos = np.concatenate((real_qpos, np.zeros(22)), axis=0)
 
         pin_qpos = real_qpos[self.real2pin_idx]
         pinocchio.forwardKinematics(self.pin_model, self.pin_data, pin_qpos)
@@ -171,8 +180,8 @@ class Planner_Pin:
         if self.ee_type == EndEffectorType.BRAINCO_HAND:
             left_ee_qpos, right_ee_qpos = np.zeros(6), np.zeros(6)
 
-            left_ee_qpos[0], left_ee_qpos[1] = self._pulse_to_radian(left_ee_pulse[0], BRAINCO_LEFT_LIMITS[0, 0], BRAINCO_LEFT_LIMITS[1, 0]), \
-                                            self._pulse_to_radian(left_ee_pulse[1], BRAINCO_LEFT_LIMITS[0, 1], BRAINCO_LEFT_LIMITS[1, 1])
+            left_ee_qpos[0], left_ee_qpos[1] = self._pulse_to_radian(left_ee_pulse[0], BRAINCO_LEFT_LIMITS[0, 1], BRAINCO_LEFT_LIMITS[1, 1]), \
+                                            self._pulse_to_radian(left_ee_pulse[1], BRAINCO_LEFT_LIMITS[0, 0], BRAINCO_LEFT_LIMITS[1, 0])
             left_ee_qpos[2] = self._pulse_to_radian(left_ee_pulse[2],
                                                     BRAINCO_LEFT_LIMITS[0, 2],
                                                     BRAINCO_LEFT_LIMITS[1, 2])
@@ -186,8 +195,8 @@ class Planner_Pin:
                                                     BRAINCO_LEFT_LIMITS[0, 8],
                                                     BRAINCO_LEFT_LIMITS[1, 8])
 
-            right_ee_qpos[0], right_ee_qpos[1] = self._pulse_to_radian(right_ee_pulse[0], BRAINCO_RIGHT_LIMITS[0, 0], BRAINCO_RIGHT_LIMITS[1, 0]), \
-                                            self._pulse_to_radian(right_ee_pulse[1], BRAINCO_RIGHT_LIMITS[0, 1], BRAINCO_RIGHT_LIMITS[1, 1])
+            right_ee_qpos[0], right_ee_qpos[1] = self._pulse_to_radian(right_ee_pulse[0], BRAINCO_RIGHT_LIMITS[0, 1], BRAINCO_RIGHT_LIMITS[1, 1]), \
+                                            self._pulse_to_radian(right_ee_pulse[1], BRAINCO_RIGHT_LIMITS[0, 0], BRAINCO_RIGHT_LIMITS[1, 0])
             right_ee_qpos[2] = self._pulse_to_radian(right_ee_pulse[2],
                                                      BRAINCO_RIGHT_LIMITS[0, 2],
                                                      BRAINCO_RIGHT_LIMITS[1, 2])
@@ -200,6 +209,40 @@ class Planner_Pin:
             right_ee_qpos[5] = self._pulse_to_radian(right_ee_pulse[5],
                                                      BRAINCO_RIGHT_LIMITS[0, 8],
                                                      BRAINCO_RIGHT_LIMITS[1, 8])
+
+            return left_ee_qpos, right_ee_qpos
+        elif self.ee_type == EndEffectorType.LINKER_HAND:
+            left_ee_qpos, right_ee_qpos = np.zeros(6), np.zeros(6)
+            # pulse index order (thumb_mcp, thumb_cmc, index_mcp, middle_mcp, ring_mcp, little_mcp)
+            left_ee_qpos[0], left_ee_qpos[1] = self._pulse_to_radian(left_ee_pulse[0], LINKER_LEFT_LIMITS[0,1], LINKER_LEFT_LIMITS[1,1]), \
+                                            self._pulse_to_radian(left_ee_pulse[1], LINKER_LEFT_LIMITS[0,0], LINKER_LEFT_LIMITS[1,0])
+            left_ee_qpos[2] = self._pulse_to_radian(left_ee_pulse[2],
+                                                    LINKER_LEFT_LIMITS[0, 3],
+                                                    LINKER_LEFT_LIMITS[1, 3])
+            left_ee_qpos[3] = self._pulse_to_radian(left_ee_pulse[3],
+                                                    LINKER_LEFT_LIMITS[0, 5],
+                                                    LINKER_LEFT_LIMITS[1, 5])
+            left_ee_qpos[4] = self._pulse_to_radian(left_ee_pulse[4],
+                                                    LINKER_LEFT_LIMITS[0, 7],
+                                                    LINKER_LEFT_LIMITS[1, 7])
+            left_ee_qpos[5] = self._pulse_to_radian(left_ee_pulse[5],
+                                                    LINKER_LEFT_LIMITS[0, 9],
+                                                    LINKER_LEFT_LIMITS[1, 9])
+            # pulse index order (thumb_mcp, thumb_cmc, index_mcp, middle_mcp, ring_mcp, little_mcp)
+            right_ee_qpos[0], right_ee_qpos[1] = self._pulse_to_radian(right_ee_pulse[0], LINKER_RIGHT_LIMITS[0,1], LINKER_RIGHT_LIMITS[1,1]), \
+                                            self._pulse_to_radian(right_ee_pulse[1], LINKER_RIGHT_LIMITS[0,0], LINKER_RIGHT_LIMITS[1,0])
+            right_ee_qpos[2] = self._pulse_to_radian(right_ee_pulse[2],
+                                                     LINKER_RIGHT_LIMITS[0, 3],
+                                                     LINKER_RIGHT_LIMITS[1, 3])
+            right_ee_qpos[3] = self._pulse_to_radian(right_ee_pulse[3],
+                                                     LINKER_RIGHT_LIMITS[0, 5],
+                                                     LINKER_RIGHT_LIMITS[1, 5])
+            right_ee_qpos[4] = self._pulse_to_radian(right_ee_pulse[4],
+                                                     LINKER_RIGHT_LIMITS[0, 7],
+                                                     LINKER_RIGHT_LIMITS[1, 7])
+            right_ee_qpos[5] = self._pulse_to_radian(right_ee_pulse[5],
+                                                     LINKER_RIGHT_LIMITS[0, 9],
+                                                     LINKER_RIGHT_LIMITS[1, 9])
 
             return left_ee_qpos, right_ee_qpos
         elif self.ee_type == EndEffectorType.PGC_GRIPPER:
@@ -227,6 +270,7 @@ class Planner_Pin:
                              armree_qpos: np.ndarray):
         if self.ee_type == EndEffectorType.BRAINCO_HAND:
             arml_thumb_cmc, arml_thumb_mcp = armlee_qpos[1], armlee_qpos[0]
+            # arml_thumb_cmc, arml_thumb_mcp = armlee_qpos[0], armlee_qpos[1]
             arml_index_mcp = armlee_qpos[2]
             arml_index_pip = self._compute_ee_mimic_qpos(
                 arml_index_mcp, 1.2, 0.1937, BRAINCO_LEFT_LIMITS[0, 3],
@@ -245,6 +289,7 @@ class Planner_Pin:
                 BRAINCO_LEFT_LIMITS[1, 9])
 
             armr_thumb_cmc, armr_thumb_mcp = armree_qpos[1], armree_qpos[0]
+            # armr_thumb_cmc, armr_thumb_mcp = armree_qpos[0], armree_qpos[1]
             armr_index_mcp = armree_qpos[2]
             armr_index_pip = self._compute_ee_mimic_qpos(
                 armr_index_mcp, 1.2, 0.1937, BRAINCO_RIGHT_LIMITS[0, 3],
@@ -271,6 +316,62 @@ class Planner_Pin:
                 armr_thumb_cmc, armr_thumb_mcp, armr_index_mcp, armr_index_pip,
                 armr_middle_mcp, armr_middle_pip, armr_ring_mcp, armr_ring_pip,
                 armr_little_mcp, armr_little_pip
+            ])
+            return complete_armlee_qpos, complete_armree_qpos
+        elif self.ee_type == EndEffectorType.LINKER_HAND:
+            arml_thumb_cmc, arml_thumb_mcp = armlee_qpos[1], armlee_qpos[0]
+            # arml_thumb_cmc, arml_thumb_mcp = armlee_qpos[0], armlee_qpos[1]
+            arml_thumb_pip = self._compute_ee_mimic_qpos(
+                arml_thumb_mcp, 0.611762, 0.612611, LINKER_LEFT_LIMITS[0, 2],
+                LINKER_LEFT_LIMITS[1, 2])
+            arml_index_mcp = armlee_qpos[2]
+            arml_index_pip = self._compute_ee_mimic_qpos(
+                arml_index_mcp, 0.976341, 0.0, LINKER_LEFT_LIMITS[0, 4],
+                LINKER_LEFT_LIMITS[1, 4])
+            arml_middle_mcp = armlee_qpos[3]
+            arml_middle_pip = self._compute_ee_mimic_qpos(
+                arml_middle_mcp, 1.001797, 0.0, LINKER_LEFT_LIMITS[0, 6],
+                LINKER_LEFT_LIMITS[1, 6])
+            arml_ring_mcp = armlee_qpos[4]
+            arml_ring_pip = self._compute_ee_mimic_qpos(
+                arml_ring_mcp, 0.982213, 0.0, LINKER_LEFT_LIMITS[0, 8],
+                LINKER_LEFT_LIMITS[1, 8])
+            arml_little_mcp = armlee_qpos[5]
+            arml_little_pip = self._compute_ee_mimic_qpos(
+                arml_little_mcp, 0.974884, 0.0, LINKER_LEFT_LIMITS[0, 10],
+                LINKER_LEFT_LIMITS[1, 10])
+
+            armr_thumb_cmc, armr_thumb_mcp = armree_qpos[1], armree_qpos[0]
+            # armr_thumb_cmc, armr_thumb_mcp = armree_qpos[0], armree_qpos[1]
+            armr_thumb_pip = self._compute_ee_mimic_qpos(
+                armr_thumb_mcp, 0.611762, 0.612611, LINKER_RIGHT_LIMITS[0, 2],
+                LINKER_RIGHT_LIMITS[1, 2])
+            armr_index_mcp = armree_qpos[2]
+            armr_index_pip = self._compute_ee_mimic_qpos(
+                armr_index_mcp, 0.976341, 0.0, LINKER_RIGHT_LIMITS[0, 4],
+                LINKER_RIGHT_LIMITS[1, 4])
+            armr_middle_mcp = armree_qpos[3]
+            armr_middle_pip = self._compute_ee_mimic_qpos(
+                armr_middle_mcp, 1.001797, 0.0, LINKER_RIGHT_LIMITS[0, 6],
+                LINKER_RIGHT_LIMITS[1, 6])
+            armr_ring_mcp = armree_qpos[4]
+            armr_ring_pip = self._compute_ee_mimic_qpos(
+                armr_ring_mcp, 0.982213, 0.0, LINKER_RIGHT_LIMITS[0, 8],
+                LINKER_RIGHT_LIMITS[1, 8])
+            armr_little_mcp = armree_qpos[5]
+            armr_little_pip = self._compute_ee_mimic_qpos(
+                armr_little_mcp, 0.974884, 0.0, LINKER_RIGHT_LIMITS[0, 10],
+                LINKER_RIGHT_LIMITS[1, 10])
+
+            complete_armlee_qpos = np.array([
+                arml_thumb_cmc, arml_thumb_mcp, arml_thumb_pip, arml_index_mcp,
+                arml_index_pip, arml_middle_mcp, arml_middle_pip, arml_ring_mcp,
+                arml_ring_pip, arml_little_mcp, arml_little_pip
+            ])
+            complete_armree_qpos = np.array([
+                armr_thumb_cmc, armr_thumb_mcp, armr_thumb_pip, armr_index_mcp,
+                armr_index_pip, armr_middle_mcp, armr_middle_pip, armr_ring_mcp,
+                armr_ring_pip, armr_little_mcp, armr_little_pip
             ])
             return complete_armlee_qpos, complete_armree_qpos
         elif self.ee_type == EndEffectorType.PGC_GRIPPER:

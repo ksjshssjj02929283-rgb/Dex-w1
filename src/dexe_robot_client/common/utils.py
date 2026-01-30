@@ -216,6 +216,17 @@ def download_w1_urdf(
             unzip_file(filename=file_name,
                        zip_path=DOWNLOAD_DIR,
                        unzip_path=MODEL_DIR)
+    elif end_effector_type == EndEffectorType.LINKER_HAND:
+        name += "_LINKER"
+        end_effector_folder_path = MODEL_DIR / "simplified_linker"
+        if not end_effector_folder_path.exists():
+            end_effector_url = os.path.join(URL_PREFIX, "Model",
+                                            "simplified_linker.zip")
+            download_file(url=end_effector_url, dest_path=DOWNLOAD_DIR)
+            file_name = "simplified_linker.zip"
+            unzip_file(filename=file_name,
+                       zip_path=DOWNLOAD_DIR,
+                       unzip_path=MODEL_DIR)
     else:
         logger.error(f"{end_effector_type.name} are not support.")
         return False, None

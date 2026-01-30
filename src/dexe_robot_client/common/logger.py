@@ -15,7 +15,7 @@ from .config import LOG_DIR, PACKAGE_NAME
 
 
 def get_logger() -> logging.Logger:
-    return Logger.get_instance()
+    return DexeRobotClientLogger.get_instance()
 
 
 LEVEL_COLORS = {
@@ -27,7 +27,7 @@ LEVEL_COLORS = {
 }
 
 
-class Logger:
+class DexeRobotClientLogger:
 
     class PrettyFilter(logging.Filter):
 
@@ -77,6 +77,17 @@ class Logger:
     def get_instance(cls) -> logging.Logger:
         return cls(LOG_DIR / f"{PACKAGE_NAME}.log", PACKAGE_NAME)._logger
 
+    @classmethod
+    def set_console_level(cls, level: int):
+        """
+        动态设置 console handler 日志等级
+        """
+        logger = cls.get_instance()
+
+        for h in logger.handlers:
+            if isinstance(h, logging.StreamHandler):
+                h.setLevel(level)
+
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
             with cls._lock:
@@ -87,7 +98,7 @@ class Logger:
     def __init__(self,
                  log_file_path="",
                  name="root",
-                 console_level: int = logging.DEBUG,
+                 console_level: int = logging.INFO,
                  file_level: int = logging.DEBUG,
                  pretty_in_console=True,
                  pretty_in_file=True):
