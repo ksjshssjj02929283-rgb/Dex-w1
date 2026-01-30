@@ -7,9 +7,13 @@
 
 class EIInputShaper {
 public:
-    enum Type { EI, TWO_HUMP_EI };  // EI整形器类型枚举
+    enum Type { NONE, EI, TWO_HUMP_EI };  // EI整形器类型枚举，NONE只进行ramp不滤波
 
-    EIInputShaper(Type type, double natural_freq, double vibration_tol = 0.05);  // 构造函数，初始化EI整形器参数
+    EIInputShaper(Type type,
+                  double natural_freq,
+                  double sampling_time,
+                  double max_ramp_rate_rpm = 0.0,
+                  double vibration_tol = 0.05);  // 构造函数，初始化EI整形器参数
 
     double Apply(double input);                                       // 应用EI输入整形
     std::pair<double, double> Apply(double input_r, double input_l);  // 双通道应用EI输入整形
@@ -21,9 +25,6 @@ public:
     void Configure(double natural_freq);  // 配置频率
     void SetType(Type type);              // 设置整形器类型
 
-    void EnableRamp(bool enable);                  // 使能斜坡限制
-    void SetRampRate(double max_rate_per_sample);  // 设置斜坡最大变化率
-
     bool DetectDecelStart(bool current_decel_flag);  // 检测减速开始时刻
 
 private:
@@ -34,7 +35,7 @@ private:
     void DecelStopImpl(std::deque<double>& buffer, double current_velocity, int interpolation_length);  // 减速停止实现
     double RampImpl(double target, double current, double max_rate);  // 斜坡限制实现
 
-    Type type_ = Type::EI;
+    Type type_ = Type::TWO_HUMP_EI;
     double natural_freq_ = 2.0;
     double damping_ratio_ = 0.05;
     double sampling_time_ = 0.001;
@@ -62,8 +63,7 @@ private:
     int decel_total_steps_ = 0;
     bool previous_decel_flag_ = false;
 
-    bool ramp_enabled_ = false;
-    double max_ramp_rate_ = 0.0;
+    double max_ramp_rate_rpm_per_sample_ = 0.0;  // 最大斜坡变化率，单位：rpm/周期
     double ramp_output_ = 0.0;
     double ramp_output_r_ = 0.0;
     double ramp_output_l_ = 0.0;
