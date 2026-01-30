@@ -1,0 +1,188 @@
+digraph G {
+node [shape=box];
+"base_link" [label="base_link"];
+"chassis_base_link" [label="chassis_base_link"];
+"torso_base_link" [label="torso_base_link"];
+"ankle" [label="ankle"];
+"knee" [label="knee"];
+"buttock" [label="buttock"];
+"waist" [label="waist"];
+"head_base_link" [label="head_base_link"];
+"neck_base" [label="neck_base"];
+"neck1" [label="neck1"];
+"neck2" [label="neck2"];
+"eyes" [label="eyes"];
+"left_base_link" [label="left_base_link"];
+"left_base_to_left_arm_connector" [label="left_base_to_left_arm_connector"];
+"left_arm_base" [label="left_arm_base"];
+"left_j1" [label="left_j1"];
+"left_j2" [label="left_j2"];
+"left_j3" [label="left_j3"];
+"left_j4" [label="left_j4"];
+"left_j5" [label="left_j5"];
+"left_j6" [label="left_j6"];
+"left_j7" [label="left_j7"];
+"left_ee" [label="left_ee"];
+"left_hand_base" [label="left_hand_base"];
+"left_base_offset" [label="left_base_offset"];
+"left_index_prox" [label="left_index_prox"];
+"left_index_dist" [label="left_index_dist"];
+"left_little_prox" [label="left_little_prox"];
+"left_little_dist" [label="left_little_dist"];
+"left_middle_prox" [label="left_middle_prox"];
+"left_middle_dist" [label="left_middle_dist"];
+"left_ring_prox" [label="left_ring_prox"];
+"left_ring_dist" [label="left_ring_dist"];
+"left_thumb_prox" [label="left_thumb_prox"];
+"left_thumb_dist" [label="left_thumb_dist"];
+"left_wrist_camera" [label="left_wrist_camera"];
+"right_base_link" [label="right_base_link"];
+"right_base_to_right_arm_connector" [label="right_base_to_right_arm_connector"];
+"right_arm_base" [label="right_arm_base"];
+"right_j1" [label="right_j1"];
+"right_j2" [label="right_j2"];
+"right_j3" [label="right_j3"];
+"right_j4" [label="right_j4"];
+"right_j5" [label="right_j5"];
+"right_j6" [label="right_j6"];
+"right_j7" [label="right_j7"];
+"right_ee" [label="right_ee"];
+"right_hand_base" [label="right_hand_base"];
+"right_base_offset" [label="right_base_offset"];
+"right_index_prox" [label="right_index_prox"];
+"right_index_dist" [label="right_index_dist"];
+"right_little_prox" [label="right_little_prox"];
+"right_little_dist" [label="right_little_dist"];
+"right_middle_prox" [label="right_middle_prox"];
+"right_middle_dist" [label="right_middle_dist"];
+"right_ring_prox" [label="right_ring_prox"];
+"right_ring_dist" [label="right_ring_dist"];
+"right_thumb_prox" [label="right_thumb_prox"];
+"right_thumb_dist" [label="right_thumb_dist"];
+"right_wrist_camera" [label="right_wrist_camera"];
+"wheel_left" [label="wheel_left"];
+"wheel_right" [label="wheel_right"];
+node [shape=ellipse, color=blue, fontcolor=blue];
+"base_link" -> "BASE_LINK_TO_CHASSIS_CONNECTOR" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"BASE_LINK_TO_CHASSIS_CONNECTOR" -> "chassis_base_link"
+"chassis_base_link" -> "CHASSIS_TO_TORSO_CONNECTOR" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"CHASSIS_TO_TORSO_CONNECTOR" -> "torso_base_link"
+"torso_base_link" -> "ANKLE" [label="xyz: 0 0 0.292 \nrpy: 1.5708 -0 0"]
+"ANKLE" -> "ankle"
+"ankle" -> "KNEE" [label="xyz: 0 0.34 0 \nrpy: 0 -0 0"]
+"KNEE" -> "knee"
+"knee" -> "BUTTOCK" [label="xyz: 0 0.34 0 \nrpy: 0 -0 0"]
+"BUTTOCK" -> "buttock"
+"buttock" -> "WAIST" [label="xyz: 0 0.1578 0 \nrpy: -1.5708 0 0"]
+"WAIST" -> "waist"
+"waist" -> "TORSO_TO_HEAD_CONNECTOR" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"TORSO_TO_HEAD_CONNECTOR" -> "head_base_link"
+"head_base_link" -> "NECK_BASE" [label="xyz: 0 0 0.308 \nrpy: 0 -0 0"]
+"NECK_BASE" -> "neck_base"
+"neck_base" -> "NECK1" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"NECK1" -> "neck1"
+"neck1" -> "NECK2" [label="xyz: 0 0 0.081 \nrpy: -1.5708 0 0"]
+"NECK2" -> "neck2"
+"neck2" -> "NECK2_TO_EYES" [label="xyz: 0.091 -0.051 0 \nrpy: 0 1.5708 -2.879"]
+"NECK2_TO_EYES" -> "eyes"
+"waist" -> "TORSO_TO_LEFT_ARM_CONNECTOR" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"TORSO_TO_LEFT_ARM_CONNECTOR" -> "left_base_link"
+"left_base_link" -> "LEFT_BASE_TO_LEFT_ARM_CONNECTOR" [label="xyz: 0 0.0985 0.235 \nrpy: 0 -1.5708 -1.5708"]
+"LEFT_BASE_TO_LEFT_ARM_CONNECTOR" -> "left_base_to_left_arm_connector"
+"left_base_to_left_arm_connector" -> "LEFT_ARM_BASE" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"LEFT_ARM_BASE" -> "left_arm_base"
+"left_arm_base" -> "LEFT_J1" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"LEFT_J1" -> "left_j1"
+"left_j1" -> "LEFT_J2" [label="xyz: 0 0 0.1025 \nrpy: 1.5708 -0 3.14159"]
+"LEFT_J2" -> "left_j2"
+"left_j2" -> "LEFT_J3" [label="xyz: 0 0.26 0 \nrpy: 0 -1.5708 4.71239"]
+"LEFT_J3" -> "left_j3"
+"left_j3" -> "LEFT_J4" [label="xyz: 0 0 0 \nrpy: 1.5708 -0 0"]
+"LEFT_J4" -> "left_j4"
+"left_j4" -> "LEFT_J5" [label="xyz: 0 0.166 0 \nrpy: 1.5708 1.22465e-16 3.14159"]
+"LEFT_J5" -> "left_j5"
+"left_j5" -> "LEFT_J6" [label="xyz: 0 0 0.098 \nrpy: 1.5708 -0 0"]
+"LEFT_J6" -> "left_j6"
+"left_j6" -> "LEFT_J7" [label="xyz: 0 0 0 \nrpy: 1.5708 5.55112e-17 -1.5708"]
+"LEFT_J7" -> "left_j7"
+"left_j7" -> "LEFT_EE" [label="xyz: -0.066 0 0 \nrpy: 0 -1.5708 0"]
+"LEFT_EE" -> "left_ee"
+"left_ee" -> "LEFT_ARM_TO_LEFT_HAND_CONNECTOR" [label="xyz: 0 0 0 \nrpy: 1.5708 -0 3.14159"]
+"LEFT_ARM_TO_LEFT_HAND_CONNECTOR" -> "left_hand_base"
+"left_hand_base" -> "LEFT_BASE_OFFSET" [label="xyz: 0 0.0298242 0 \nrpy: -0.0698132 0 0"]
+"LEFT_BASE_OFFSET" -> "left_base_offset"
+"left_base_offset" -> "LEFT_INDEXMCP" [label="xyz: -0.029003 0.088291 0.0022155 \nrpy: -0.029415 0.05236 0.034907"]
+"LEFT_INDEXMCP" -> "left_index_prox"
+"left_index_prox" -> "LEFT_INDEXPIP" [label="xyz: 0 0.035 0 \nrpy: 0.19353 -0 0"]
+"LEFT_INDEXPIP" -> "left_index_dist"
+"left_base_offset" -> "LEFT_LITTLEMCP" [label="xyz: 0.033731 0.083777 0.0022155 \nrpy: -0.024909 -0.05236 -0.069813"]
+"LEFT_LITTLEMCP" -> "left_little_prox"
+"left_little_prox" -> "LEFT_LITTLEPIP" [label="xyz: 0 0.035 0 \nrpy: 0.20294 -0 0"]
+"LEFT_LITTLEPIP" -> "left_little_dist"
+"left_base_offset" -> "LEFT_MIDDLEMCP" [label="xyz: -0.008 0.092284 -0.0017707 \nrpy: 0 -0 0"]
+"LEFT_MIDDLEMCP" -> "left_middle_prox"
+"left_middle_prox" -> "LEFT_MIDDLEPIP" [label="xyz: 0 0.042 0 \nrpy: 0.18357 -0 0"]
+"LEFT_MIDDLEPIP" -> "left_middle_dist"
+"left_base_offset" -> "LEFT_RINGMCP" [label="xyz: 0.013103 0.090291 -0.0017845 \nrpy: -0.0092374 -0.05236 -0.034907"]
+"LEFT_RINGMCP" -> "left_ring_prox"
+"left_ring_prox" -> "LEFT_RINGPIP" [label="xyz: 0 0.042 0 \nrpy: 0.16583 -0 0"]
+"LEFT_RINGPIP" -> "left_ring_dist"
+"left_base_offset" -> "LEFT_THUMBCMC" [label="xyz: -0.0245 0.022632 0.023263 \nrpy: 0.14578 -1.0699 -0.12808"]
+"LEFT_THUMBCMC" -> "left_thumb_prox"
+"left_thumb_prox" -> "LEFT_THUMBMCP" [label="xyz: 0 0 0.013647 \nrpy: 0.87266 -0.49642 0"]
+"LEFT_THUMBMCP" -> "left_thumb_dist"
+"left_ee" -> "LEFT_EE_TO_LEFT_WRIST_CAMERA" [label="xyz: 1.77636e-17 -0.08 0.06 \nrpy: 2.79253 -0 3.2051e-09"]
+"LEFT_EE_TO_LEFT_WRIST_CAMERA" -> "left_wrist_camera"
+"waist" -> "TORSO_TO_RIGHT_ARM_CONNECTOR" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"TORSO_TO_RIGHT_ARM_CONNECTOR" -> "right_base_link"
+"right_base_link" -> "RIGHT_BASE_TO_RIGHT_ARM_CONNECTOR" [label="xyz: 0 -0.0985 0.235 \nrpy: 0 1.5708 -1.5708"]
+"RIGHT_BASE_TO_RIGHT_ARM_CONNECTOR" -> "right_base_to_right_arm_connector"
+"right_base_to_right_arm_connector" -> "RIGHT_ARM_BASE" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"RIGHT_ARM_BASE" -> "right_arm_base"
+"right_arm_base" -> "RIGHT_J1" [label="xyz: 0 0 0 \nrpy: 0 -0 0"]
+"RIGHT_J1" -> "right_j1"
+"right_j1" -> "RIGHT_J2" [label="xyz: 0 0 0.1025 \nrpy: 1.5708 -0 3.14159"]
+"RIGHT_J2" -> "right_j2"
+"right_j2" -> "RIGHT_J3" [label="xyz: 0 0.26 0 \nrpy: 0 -1.5708 4.71239"]
+"RIGHT_J3" -> "right_j3"
+"right_j3" -> "RIGHT_J4" [label="xyz: 0 0 0 \nrpy: 1.5708 -0 0"]
+"RIGHT_J4" -> "right_j4"
+"right_j4" -> "RIGHT_J5" [label="xyz: 0 0.166 0 \nrpy: 1.5708 1.22465e-16 3.14159"]
+"RIGHT_J5" -> "right_j5"
+"right_j5" -> "RIGHT_J6" [label="xyz: 0 0 0.098 \nrpy: 1.5708 -0 0"]
+"RIGHT_J6" -> "right_j6"
+"right_j6" -> "RIGHT_J7" [label="xyz: 0 0 0 \nrpy: 1.5708 5.55112e-17 -1.5708"]
+"RIGHT_J7" -> "right_j7"
+"right_j7" -> "RIGHT_EE" [label="xyz: -0.066 0 0 \nrpy: 0 -1.5708 0"]
+"RIGHT_EE" -> "right_ee"
+"right_ee" -> "RIGHT_ARM_TO_RIGHT_HAND_CONNECTOR" [label="xyz: 0 0 0 \nrpy: 1.5708 -0 0"]
+"RIGHT_ARM_TO_RIGHT_HAND_CONNECTOR" -> "right_hand_base"
+"right_hand_base" -> "RIGHT_BASE_OFFSET" [label="xyz: 0 0.0298242 0 \nrpy: 0 -0 0"]
+"RIGHT_BASE_OFFSET" -> "right_base_offset"
+"right_base_offset" -> "RIGHT_INDEXMCP" [label="xyz: 0.029003 0.088231 -0.0039488 \nrpy: -0.09929 -0.054667 -0.031168"]
+"RIGHT_INDEXMCP" -> "right_index_prox"
+"right_index_prox" -> "RIGHT_INDEXPIP" [label="xyz: 0 0.035 0 \nrpy: 0.19353 -0 0"]
+"RIGHT_INDEXPIP" -> "right_index_dist"
+"right_base_offset" -> "RIGHT_LITTLEMCP" [label="xyz: -0.033731 0.083727 -0.0036339 \nrpy: -0.094666 0.057099 0.065996"]
+"RIGHT_LITTLEMCP" -> "right_little_prox"
+"right_little_prox" -> "RIGHT_LITTLEPIP" [label="xyz: 0 0.035 0 \nrpy: 0.20294 -0 0"]
+"RIGHT_LITTLEPIP" -> "right_little_dist"
+"right_base_offset" -> "RIGHT_MIDDLEMCP" [label="xyz: 0.008 0.091935 -0.0082038 \nrpy: -0.069813 0 0"]
+"RIGHT_MIDDLEMCP" -> "right_middle_prox"
+"right_middle_prox" -> "RIGHT_MIDDLEPIP" [label="xyz: 0 0.042 0 \nrpy: 0.18357 -0 0"]
+"RIGHT_MIDDLEPIP" -> "right_middle_dist"
+"right_base_offset" -> "RIGHT_RINGMCP" [label="xyz: -0.013103 0.089947 -0.0080786 \nrpy: -0.079113 0.054667 0.031168"]
+"RIGHT_RINGMCP" -> "right_ring_prox"
+"right_ring_prox" -> "RIGHT_RINGPIP" [label="xyz: 0 0.042 0 \nrpy: 0.16583 -0 0"]
+"RIGHT_RINGPIP" -> "right_ring_dist"
+"right_base_offset" -> "RIGHT_THUMBCMC" [label="xyz: 0.0245 0.0242 0.021628 \nrpy: 0 -0.49642 0"]
+"RIGHT_THUMBCMC" -> "right_thumb_prox"
+"right_thumb_prox" -> "RIGHT_THUMBMCP" [label="xyz: 0.013647 0 0 \nrpy: -0.39332 0.31115 -0.93514"]
+"RIGHT_THUMBMCP" -> "right_thumb_dist"
+"right_ee" -> "RIGHT_EE_TO_RIGHT_WRIST_CAMERA" [label="xyz: 1.77636e-17 0.08 0.06 \nrpy: 2.79253 -0 -3.14159"]
+"RIGHT_EE_TO_RIGHT_WRIST_CAMERA" -> "right_wrist_camera"
+"chassis_base_link" -> "WHEEL_LEFT" [label="xyz: 0 0.2539 0.053 \nrpy: 0 -0 0"]
+"WHEEL_LEFT" -> "wheel_left"
+"chassis_base_link" -> "WHEEL_RIGHT" [label="xyz: 0 -0.2539 0.053 \nrpy: 0 -0 0"]
+"WHEEL_RIGHT" -> "wheel_right"
+}
