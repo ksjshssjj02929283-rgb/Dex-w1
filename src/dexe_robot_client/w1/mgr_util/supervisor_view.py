@@ -221,6 +221,95 @@ class SupervisorViewW1(object):
                 return res, None
         return self.get_xpos(name, cur_qpos, is_local)
 
+    def get_current_pose(self,
+                         name: str,
+                         is_local: bool = True) -> tuple[StatusCode, list]:
+        """is_local=True，获取left_arm/right_arm当前相对于arm base坐标系的笛卡尔位姿[xyz_mm, rpy_deg]
+
+            is_local=False，获取left_arm/right_arm当前相对于chassis坐标系的笛卡尔位姿[xyz_mm, rpy_deg]
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+            is_local (bool, optional): w.r.t. arm base frame or chassis frame. Defaults to True.
+
+        Returns:
+            tuple[StatusCode, list]: 
+        """
+        res, cur_xpos = self.get_current_xpos(name, is_local)
+        if res.value < 0:
+            return res, None
+        return res, xpos_to_user_pose(cur_xpos)
+
+    def get_pose(self,
+                 name: str,
+                 qpos: np.ndarray,
+                 is_local: bool = True) -> tuple[StatusCode, list]:
+        """is_local=True，获取left_arm/right_arm相对于arm base坐标系的笛卡尔位姿[xyz_mm, rpy_deg]，size(qpos)=7
+
+            is_local=False，获取left_arm/right_arm相对于chassis坐标系的笛卡尔位姿[xyz_mm, rpy_deg]，size(qpos)=20
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+            qpos (np.ndarray): 
+            is_local (bool, optional): w.r.t. arm base frame or chassis frame. Defaults to True.
+
+        Returns:
+            tuple[StatusCode, list]: 
+        """
+        res, cur_xpos = self.get_xpos(name, qpos, is_local)
+        if res.value < 0:
+            return res, None
+        return res, xpos_to_user_pose(cur_xpos)
+
+
+    def transfer_grasp_pose(
+            self, name: str, pre_grasp_pose: list, pre_torso_qpos: np.ndarray,
+            target_torso_qpos: np.ndarray) -> tuple[StatusCode, list]:
+        """保持抓取点在全身坐标系的位置，获取torso运动后的相对于机械臂基座坐标系的抓取pose
+
+        Args:
+            name (str): left_arm / right_arm
+            pre_grasp_pose (list): 抓取前相对于机械臂基座的pose
+            pre_torso_qpos (np.ndarray): torso运动前的qpos
+            target_torso_qpos (np.ndarray): torso运动后的qpos
+
+        Returns:
+            tuple[StatusCode, list]
+        """
+        pre_torso_qpos = np.array(pre_torso_qpos)
+        target_torso_qpos = np.array(target_torso_qpos)
+
+        if not self._check_arm_name(name):
+            return StatusCode.NAME_MISMATCH, None
+        if not self._check_qpos_dimension("torso", pre_torso_qpos) or \
+            not self._check_qpos_dimension("torso", target_torso_qpos):
+            return StatusCode.DIM_MISMATCH, None
+
+        T_armbase_ee_pre = user_pose_to_xpos(pre_grasp_pose[:3],
+                                             pre_grasp_pose[3:])
+
+        qpos_pre = np.zeros(self.w1_params.full_body_dofs)
+        qpos_pre[:4] = pre_torso_qpos
+        res_fk, T_chassis_armbase_pre = self.kine.get_fk(
+            name + "_base", qpos_pre)
+        if not res_fk:
+            self.logger.error(f"{name} solve fk failed!")
+            return StatusCode.IK_FAIL, None
+
+        qpos_target = np.zeros(self.w1_params.full_body_dofs)
+        qpos_target[:4] = target_torso_qpos
+        res_fk, T_chasis_armbase_target = self.kine.get_fk(
+            name + "_base", qpos_target)
+        if not res_fk:
+            self.logger.error(f"{name} solve fk failed!")
+            return StatusCode.FK_FAIL, None
+
+        T_armbase_ee_target = np.linalg.inv(
+            T_chasis_armbase_target) @ T_chassis_armbase_pre @ T_armbase_ee_pre
+        return StatusCode.SUCCESS, xpos_to_user_pose(T_armbase_ee_target)
+
+
+
     def get_xpos(self,
                  name: str,
                  qpos: np.ndarray,
@@ -276,30 +365,33 @@ class SupervisorViewW1(object):
         if self._has_arm_ee_client("left_arm_ee",
                                    False) and self._has_arm_ee_client(
                                        "right_arm_ee", False):
-            torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self.pin_kine.get_Kinematics(
+            torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(
                 qpos,
                 left_ee_qpos=armlee_qpos,
                 right_ee_qpos=armree_qpos,
                 compute_ee=True)
         else:
-            torso_tf, head_tf, arml_tf, armr_tf = self.pin_kine.get_Kinematics(
+            torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(
                 qpos, left_ee_qpos=None, right_ee_qpos=None, compute_ee=False)
             armlee_tf, armree_tf = None, None
 
-        self.collision_checker.set_head_body_transform(head_transforms=head_tf,
-                                                       body_transforms=torso_tf)
-        self.collision_checker.update_arm_transform(arml_tf + armr_tf,
-                                                    armlee_tf, armree_tf)
-        res = self.collision_checker.check_collision(robot_name=robot_name)
+        self.fcl_checker.set_head_body_transform(head_transforms=head_tf,
+                                                 body_transforms=torso_tf)
+        self.fcl_checker.update_arm_transform(arml_tf + armr_tf, armlee_tf,
+                                              armree_tf)
+        res = self.fcl_checker.naive_check_collision(robot_name=robot_name)
+        if res:
+            self.fcl_checker.update_vis_transform(
+                torso_tf + head_tf + arml_tf + armr_tf, armlee_tf, armree_tf)
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def is_traj_collision(self,
-                          qpos_array: np.ndarray,
-                          left_arm_ee_trigger_list: list[tuple[int,
-                                                               list]] = None,
-                          right_arm_ee_trigger_list: list[tuple[int,
+                           qpos_array: np.ndarray,
+                           left_arm_ee_trigger_list: list[tuple[int,
                                                                 list]] = None,
-                          step: int = 5) -> StatusCode:
+                           right_arm_ee_trigger_list: list[tuple[int,
+                                                                 list]] = None,
+                           step: int = 5) -> StatusCode:
         """检查轨迹是否碰撞
         Args:
             qpos_array (np.ndarray): 10ms间隔的轨迹
@@ -360,6 +452,33 @@ class SupervisorViewW1(object):
                     return StatusCode.SUCCESS
             return StatusCode.FAIL
 
+
+    def stop_move(self, timeout_sec: float = 3.0) -> StatusCode:
+        """停止运动
+
+        Args:
+            timeout_sec (float, optional): 等待停止超时时间. Defaults to 3.0.
+
+        Args:
+            timeout_sec (float, optional): 等待停止超时时间. Defaults to 3.0.
+
+        Returns:
+            StatusCode: 
+        """
+        self.logger.info("Stop move by user!")
+        self._stop_move_event.set()
+        if self.supervisor.robot_client.stop_move() == -1:
+            self.logger.error("Stop move by user failed!")
+            return StatusCode.FAIL
+        t0 = time.time()
+        while self.supervisor.robot_client.status != Status.Idle:
+            if time.time() - t0 > timeout_sec:
+                self.logger.error("Stop move wait timeout!")
+                return StatusCode.TIME_OUT
+            time.sleep(2 * self.TIME_STEP)
+        return StatusCode.SUCCESS
+
+
     def execute_joint_traj(
         self,
         qpos_array: np.ndarray,
@@ -377,10 +496,32 @@ class SupervisorViewW1(object):
             StatusCode: Execution status
         """
         self.logger.debug("Starting joint trajectory execution...")
+
+        # check enable
+        if self.supervisor.robot_client.status != Status.Idle:
+            self.logger.error(
+                f"Robot client not in idle before moving. (Current status: {self.supervisor.robot_client.status})"
+            )
+            return StatusCode.ROBOT_STATUS_INVALID
+
+        # reset stop move flag
+        if self._stop_move_event.is_set():
+            self._stop_move_event.clear()
+
+        # check current qpos and start qpos
+        res, cur_qpos = self.get_current_qpos()
+        if res.value < 0:
+            return res
+        if not np.allclose(cur_qpos, qpos_array[0], atol=np.deg2rad(1)):
+            self.logger.error(
+                f"cur_qpos ({cur_qpos}) is not equal to start_qpos ({qpos_array[0]})."
+            )
+            return StatusCode.NOT_AT_START
+
         # Validate inputs
         if not isinstance(qpos_array, np.ndarray):
             self.logger.error("qpos_array must be a numpy array.")
-            return False
+            return StatusCode.EE_MOVE_FAIL
 
         # Ensure trigger lists are valid or default to empty lists
         left_arm_ee_trigger_list = left_arm_ee_trigger_list or []
@@ -396,6 +537,7 @@ class SupervisorViewW1(object):
         unique_sync_ids = sorted(
             set(raw_endpoint_index)) if raw_endpoint_index else None
 
+        t0 = time.time()
         try:
             move_id, end_id = self.supervisor.move_joint_trajectory_async(
                 qpos_array,
@@ -450,5 +592,26 @@ class SupervisorViewW1(object):
         self.logger.debug("Waiting for all movements to complete...")
         self.supervisor.wait_move()
 
+        traj_duration = (qpos_array.shape[0] - 1) * self.TIME_STEP
+        self.logger.info("Finish moving. " +
+                         f"Ideal duration should be {traj_duration}s, " +
+                         f"and actual duration is {time.time() - t0}s.")
+
+        # check reach qpos
+        targt_qpos = qpos_array[-1]
+        res, cur_qpos = self.get_current_qpos()
+        if res.value < 0:
+            return res
+        if not np.allclose(cur_qpos, targt_qpos, atol=np.deg2rad(5)):
+            self.logger.error(
+                f"Current qpos does NOT reach the target qpos, " +
+                f"qpos error(deg): {np.rad2deg(cur_qpos - targt_qpos)}.")
+            return StatusCode.GOAL_NOT_REACH
+        if not np.allclose(cur_qpos, targt_qpos, atol=np.deg2rad(0.5)):
+            self.logger.warning(
+                f"Current qpos does NOT close to the target qpos, " +
+                f"qpos error(deg): {np.rad2deg(cur_qpos - targt_qpos)}.")
+
+
         self.logger.debug("Joint trajectory execution completed successfully.")
-        return True
+        return StatusCode.SUCCESS

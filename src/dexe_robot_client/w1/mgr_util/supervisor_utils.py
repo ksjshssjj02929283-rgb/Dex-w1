@@ -203,3 +203,14 @@ class StaticUtilityW1(object):
             temp_arrays.append(padded)
 
         return True, np.hstack(temp_arrays)
+
+    @staticmethod
+    def cal_path_seg_interpolate_num(waypoint_list: list[np.ndarray],
+                                      cartesian_step: float = 0.005):
+        interpolate_num_list = []
+        for idx in range(len(waypoint_list) - 1):
+            dist = np.linalg.norm(waypoint_list[idx + 1][:3, 3] -
+                                  waypoint_list[idx][:3, 3])
+            num_sample = max(2, int(np.ceil(dist / cartesian_step)))
+            interpolate_num_list.append(num_sample)
+        return interpolate_num_list
