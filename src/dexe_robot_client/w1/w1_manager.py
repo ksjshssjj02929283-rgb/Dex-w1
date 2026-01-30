@@ -47,6 +47,7 @@ from .mgr_util.robot_client_warpper import RobotClientWarpper, GripperClientWarp
 from .movement.move_line_dual_arm import DualArmMoveLineW1
 from .movement.move_joint_dual_arm import DualArmMoveJointW1
 
+
 class W1Manager:
     _instance = None
     _lock = threading.Lock()
@@ -286,28 +287,38 @@ class W1Manager:
         self.logger.info("Ros2 client initialized.")
 
     def _init_client_supervisor(self):
-        
+
         robot_client_warpper_sim = RobotClientWarpper(self._robot_client_sim)
         robot_client_warpper_real = RobotClientWarpper(self._robot_client_real)
 
-        left_ee_client_warpper_sim = GripperClientWarpper(self._left_ee_client_sim)
-        left_ee_client_warpper_real = GripperClientWarpper(self._left_ee_client_real)
+        left_ee_client_warpper_sim = GripperClientWarpper(
+            self._left_ee_client_sim)
+        left_ee_client_warpper_real = GripperClientWarpper(
+            self._left_ee_client_real)
 
-        right_ee_client_warpper_sim = GripperClientWarpper(self._right_ee_client_sim)
-        right_ee_client_warpper_real = GripperClientWarpper(self._right_ee_client_real)
-        
+        right_ee_client_warpper_sim = GripperClientWarpper(
+            self._right_ee_client_sim)
+        right_ee_client_warpper_real = GripperClientWarpper(
+            self._right_ee_client_real)
+
         sim_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         real_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
         self._client_supervisor_sim = RobotClientSupervisor(
             robot_client=robot_client_warpper_sim,
-            client_map={"left_arm_ee": left_ee_client_warpper_sim, "right_arm_ee": right_ee_client_warpper_sim},
+            client_map={
+                "left_arm_ee": left_ee_client_warpper_sim,
+                "right_arm_ee": right_ee_client_warpper_sim
+            },
             executor_owned=sim_executor,
         )
 
         self._client_supervisor_real = RobotClientSupervisor(
             robot_client=robot_client_warpper_real,
-            client_map={"left_arm_ee": left_ee_client_warpper_real, "right_arm_ee": right_ee_client_warpper_real},
+            client_map={
+                "left_arm_ee": left_ee_client_warpper_real,
+                "right_arm_ee": right_ee_client_warpper_real
+            },
             executor_owned=real_executor,
         )
 
@@ -1361,10 +1372,11 @@ class W1Manager:
         return StatusCode.SUCCESS, segment_list
 
     def execute_joint_traj(
-            self,
-            qpos_array: np.ndarray,
-            left_arm_ee_trigger_list: list[Tuple[int, List[float]]] = None,
-            right_arm_ee_trigger_list: list[Tuple[int, List[float]]] = None) -> StatusCode:
+        self,
+        qpos_array: np.ndarray,
+        left_arm_ee_trigger_list: list[Tuple[int, List[float]]] = None,
+        right_arm_ee_trigger_list: list[Tuple[int, List[float]]] = None
+    ) -> StatusCode:
         """按10ms间隔执行关节轨迹
 
         Args:
@@ -2552,14 +2564,13 @@ class W1Manager:
         Returns:
             bool
         """
-        movement = DualArmMoveJointW1(
-            w1_params=self.w1_params,
-            supervisor=self._client_supervisor_sim,
-            kine_solver=self.kine,
-            pin_kin_solver=self._pin_kine,
-            collision_checker=self.fcl_checker
-        )
-        return movement.move_joint_full_body(waypoints_dict, speed_ratio, is_sparse)
+        movement = DualArmMoveJointW1(w1_params=self.w1_params,
+                                      supervisor=self._client_supervisor_sim,
+                                      kine_solver=self.kine,
+                                      pin_kin_solver=self._pin_kine,
+                                      collision_checker=self.fcl_checker)
+        return movement.move_joint_full_body(waypoints_dict, speed_ratio,
+                                             is_sparse)
 
     @time_consuming
     def plan_linear_full_body(
@@ -2608,25 +2619,17 @@ class W1Manager:
         Returns:
             tuple[StatusCode, np.ndarray, list, list]: 规划成功与否，全身关节轨迹，左末端执行器轨迹，右末端执行器轨迹
         """
-        movement = DualArmMoveLineW1(
-            w1_params=self.w1_params,
-            supervisor=self._client_supervisor_sim,
-            kine_solver=self.kine,
-            pin_kin_solver=self._pin_kine,
-            collision_checker=self.fcl_checker
-        )
-        return movement.plan_linear_full_body(
-            start_qpos,
-            start_left_arm_ee_qpos,
-            start_right_arm_ee_qpos,
-            waypoints_dict,
-            left_qpos_seed,
-            right_qpos_seed,
-            cartesian_step,
-            speed_ratio,
-            is_local,
-            is_sync)
-
+        movement = DualArmMoveLineW1(w1_params=self.w1_params,
+                                     supervisor=self._client_supervisor_sim,
+                                     kine_solver=self.kine,
+                                     pin_kin_solver=self._pin_kine,
+                                     collision_checker=self.fcl_checker)
+        return movement.plan_linear_full_body(start_qpos,
+                                              start_left_arm_ee_qpos,
+                                              start_right_arm_ee_qpos,
+                                              waypoints_dict, left_qpos_seed,
+                                              right_qpos_seed, cartesian_step,
+                                              speed_ratio, is_local, is_sync)
 
     def move_linear_full_body(self,
                               waypoints_dict: dict,
@@ -2664,21 +2667,14 @@ class W1Manager:
         Returns:
             StatusCode
         """
-        movement = DualArmMoveLineW1(
-            w1_params=self.w1_params,
-            supervisor=self._client_supervisor_sim,
-            kine_solver=self.kine,
-            pin_kin_solver=self._pin_kine,
-            collision_checker=self.fcl_checker
-        )
-        return movement.move_linear_full_body(
-            waypoints_dict,
-            left_qpos_seed,
-            right_qpos_seed,
-            cartesian_step,
-            speed_ratio,
-            is_local,
-            is_sync)
+        movement = DualArmMoveLineW1(w1_params=self.w1_params,
+                                     supervisor=self._client_supervisor_sim,
+                                     kine_solver=self.kine,
+                                     pin_kin_solver=self._pin_kine,
+                                     collision_checker=self.fcl_checker)
+        return movement.move_linear_full_body(waypoints_dict, left_qpos_seed,
+                                              right_qpos_seed, cartesian_step,
+                                              speed_ratio, is_local, is_sync)
 
     def move_torso_linear(self,
                           delta_x_mm: float,
@@ -2766,13 +2762,11 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        movement = DualArmMoveLineW1(
-            w1_params=self.w1_params,
-            supervisor=self._client_supervisor_sim,
-            kine_solver=self.kine,
-            pin_kin_solver=self._pin_kine,
-            collision_checker=self.fcl_checker
-        )
+        movement = DualArmMoveLineW1(w1_params=self.w1_params,
+                                     supervisor=self._client_supervisor_sim,
+                                     kine_solver=self.kine,
+                                     pin_kin_solver=self._pin_kine,
+                                     collision_checker=self.fcl_checker)
         return movement.move_arm_linear(name,
                                         delta_trans_mm,
                                         cartesian_step=cartesian_step,
@@ -2795,17 +2789,15 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        movement = DualArmMoveLineW1(
-            w1_params=self.w1_params,
-            supervisor=self._client_supervisor_sim,
-            kine_solver=self.kine,
-            pin_kin_solver=self._pin_kine,
-            collision_checker=self.fcl_checker
-        )
+        movement = DualArmMoveLineW1(w1_params=self.w1_params,
+                                     supervisor=self._client_supervisor_sim,
+                                     kine_solver=self.kine,
+                                     pin_kin_solver=self._pin_kine,
+                                     collision_checker=self.fcl_checker)
         return movement.rotate_arm_linear(name,
-                                         delta_rot_deg,
-                                         speed_ratio=speed_ratio,
-                                         along_base_frame=along_base_frame)
+                                          delta_rot_deg,
+                                          speed_ratio=speed_ratio,
+                                          along_base_frame=along_base_frame)
 
     def attach_object(self,
                       obj_name: str,

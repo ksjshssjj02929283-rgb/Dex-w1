@@ -12,15 +12,16 @@ from .supervisor_view import SupervisorViewW1
 
 from ..path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm
 
+
 class StaticUtilityW1(object):
 
     @staticmethod
     def parse_waypoints_from_dict(
-            supervisor: SupervisorViewW1,
-            name: str,
-            waypoints_dict: dict,
-            speed_ratio: float,
-            is_cartesian: bool = False
+        supervisor: SupervisorViewW1,
+        name: str,
+        waypoints_dict: dict,
+        speed_ratio: float,
+        is_cartesian: bool = False
     ) -> tuple[StatusCode, np.ndarray, np.ndarray, list]:
         """解析并检查输入  
             StatusCode: """
@@ -32,7 +33,8 @@ class StaticUtilityW1(object):
         if not all(isinstance(pos, list) for pos in pos_list):
             supervisor.logger.error(f"{pos_list} not a 2d-list.")
             return StatusCode.INPUT_INVALID, None, None, None
-        if not is_cartesian and not supervisor._check_qpos_dimension(name, pos_list):
+        if not is_cartesian and not supervisor._check_qpos_dimension(
+                name, pos_list):
             return StatusCode.DIM_MISMATCH, None, None, None
         if is_cartesian and not all(len(pos) == 6 for pos in pos_list):
             supervisor.logger.error(f"Dimension of {pos_list[0]} != 6.")
@@ -52,10 +54,10 @@ class StaticUtilityW1(object):
 
         default_qvel = supervisor.w1_params.default_qvel[
             supervisor.w1_params.index_infos[name]["index"]]
-        min_qvel = supervisor.w1_params.min_qvel[supervisor.w1_params.index_infos[name]
-                                           ["index"]]
-        max_qvel = supervisor.w1_params.max_qvel[supervisor.w1_params.index_infos[name]
-                                           ["index"]]
+        min_qvel = supervisor.w1_params.min_qvel[
+            supervisor.w1_params.index_infos[name]["index"]]
+        max_qvel = supervisor.w1_params.max_qvel[
+            supervisor.w1_params.index_infos[name]["index"]]
         qvel_limits_array = np.clip(np.outer(speed_ratio_list, default_qvel),
                                     min_qvel, max_qvel)
 
@@ -74,14 +76,15 @@ class StaticUtilityW1(object):
 
         return StatusCode.SUCCESS, np.array(
             pos_list), qvel_limits_array, arm_ee_state_list
-    
+
     @staticmethod
     def plan_joint_traj(
             supervisor: SupervisorViewW1,
             name: str,
             qpos_array: np.ndarray,
             is_sparse: bool,
-            qvel_limits_array: np.ndarray = None) -> tuple[StatusCode, np.ndarray]:
+            qvel_limits_array: np.ndarray = None
+    ) -> tuple[StatusCode, np.ndarray]:
         """对各部件进行关节轨迹规划，可指定路径点的各关节的速度约束;速度表示从上一点到当前点的最大关节速度
 
         Args:
@@ -144,9 +147,10 @@ class StaticUtilityW1(object):
         if not res:
             return StatusCode.PLAN_TRAJ_FAIL, None
         return StatusCode.SUCCESS, pos_array
-    
+
     @staticmethod
-    def plan_arm_ee_trigger(supervisor: SupervisorViewW1, arm_ee_state_list: list) -> tuple[StatusCode, list]:
+    def plan_arm_ee_trigger(supervisor: SupervisorViewW1,
+                            arm_ee_state_list: list) -> tuple[StatusCode, list]:
         # TODO: 存在延时的才分段，否则不分段且全部waypoint ee_qpos都到点触发？
         if not supervisor._check_arm_ee_states(arm_ee_state_list):
             return StatusCode.INPUT_INVALID, None
@@ -169,12 +173,11 @@ class StaticUtilityW1(object):
             segment_list.append([start_idx, len(arm_ee_state_list) - 1])
         supervisor.logger.debug(f"plan_arm_ee_trigger result: {segment_list}.")
         return StatusCode.SUCCESS, segment_list
-    
+
     @staticmethod
-    def qpos_align(
-            supervisor, torso_qpos_array: np.ndarray, head_qpos_array: np.ndarray,
-            left_arm_qpos_array: np.ndarray,
-            right_arm_qpos_array: np.ndarray) -> tuple[bool, np.ndarray]:
+    def qpos_align(supervisor, torso_qpos_array: np.ndarray,
+                   head_qpos_array: np.ndarray, left_arm_qpos_array: np.ndarray,
+                   right_arm_qpos_array: np.ndarray) -> tuple[bool, np.ndarray]:
         """轨迹对齐，按先运动后等待的模式进行补齐"""
         qpos_array_list = [
             np.atleast_2d(torso_qpos_array),
@@ -200,4 +203,3 @@ class StaticUtilityW1(object):
             temp_arrays.append(padded)
 
         return True, np.hstack(temp_arrays)
-

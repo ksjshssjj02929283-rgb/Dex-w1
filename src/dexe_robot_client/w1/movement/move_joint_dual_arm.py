@@ -1,3 +1,9 @@
+# ----------------------------------------------------------------------------
+# Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+#
+# All rights reserved.
+# ----------------------------------------------------------------------------
+
 import numpy as np
 from ..utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
@@ -11,10 +17,22 @@ from ..path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, 
 
 from dexe_rp import DexforceW1Kinematics, SRSConfig
 
+
 class DualArmMoveJointW1(DualArmMovementBaseW1):
 
-    def __init__(self, w1_params, supervisor, kine_solver, pin_kin_solver, collision_checker, time_step: float = 0.01):
-        super().__init__(w1_params, supervisor, kine_solver, pin_kin_solver, collision_checker, time_step=time_step)
+    def __init__(self,
+                 w1_params,
+                 supervisor,
+                 kine_solver,
+                 pin_kin_solver,
+                 collision_checker,
+                 time_step: float = 0.01):
+        super().__init__(w1_params,
+                         supervisor,
+                         kine_solver,
+                         pin_kin_solver,
+                         collision_checker,
+                         time_step=time_step)
 
     def plan_joint_full_body(
             self,
@@ -96,27 +114,30 @@ class DualArmMoveJointW1(DualArmMovementBaseW1):
                 return False, None, None, None
 
         # align
-        res_align, total_qpos_array = StaticUtilityW1.qpos_align(torso_qpos_array,
-                                                       head_qpos_array,
-                                                       left_arm_qpos_array,
-                                                       right_arm_qpos_array)
+        res_align, total_qpos_array = StaticUtilityW1.qpos_align(
+            torso_qpos_array, head_qpos_array, left_arm_qpos_array,
+            right_arm_qpos_array)
         if not res_align:
             return False, None, None, None
 
         return True, total_qpos_array, left_arm_ee_trigger_list, right_arm_ee_trigger_list
-    
-    def move_joint_full_body(self, waypoints_dict: dict, speed_ratio: float = 1.0):
+
+    def move_joint_full_body(self,
+                             waypoints_dict: dict,
+                             speed_ratio: float = 1.0):
         res, cur_qpos = self.get_current_qpos()
         if res.value < 0:
             return res
         cur_left_arm_ee_qpos = None
         if self.supervisor_view._has_arm_ee_client("left_arm_ee", False):
-            res, cur_left_arm_ee_qpos = self.supervisor_view.get_current_qpos("left_arm_ee")
+            res, cur_left_arm_ee_qpos = self.supervisor_view.get_current_qpos(
+                "left_arm_ee")
             if res.value < 0:
                 return res
         cur_right_arm_ee_qpos = None
         if self.supervisor_view._has_arm_ee_client("right_arm_ee", False):
-            res, cur_right_arm_ee_qpos = self.supervisor_view.get_current_qpos("right_arm_ee")
+            res, cur_right_arm_ee_qpos = self.supervisor_view.get_current_qpos(
+                "right_arm_ee")
             if res.value < 0:
                 return res
 
@@ -133,10 +154,10 @@ class DualArmMoveJointW1(DualArmMovementBaseW1):
         #     return False
 
         # execute
-        return self.supervisor_view.execute_joint_traj(total_qpos_array,
-                                       left_arm_ee_trigger_list,
-                                       right_arm_ee_trigger_list)
-    
+        return self.supervisor_view.execute_joint_traj(
+            total_qpos_array, left_arm_ee_trigger_list,
+            right_arm_ee_trigger_list)
+
     def move_torso_linear(self,
                           delta_x_mm: float,
                           delta_z_mm: float,

@@ -16,13 +16,26 @@ from ..path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, 
 
 from dexe_rp import DexforceW1Kinematics, SRSConfig
 
+
 class DualArmMovementBaseW1(object):
 
-    def __init__(self, w1_params, supervisor, kine_solver, pin_kin_solver, collision_checker, time_step: float = 0.01):
+    def __init__(self,
+                 w1_params,
+                 supervisor,
+                 kine_solver,
+                 pin_kin_solver,
+                 collision_checker,
+                 time_step: float = 0.01):
         self.w1_params = w1_params
-        self.supervisor_view = SupervisorViewW1(supervisor=supervisor, w1_params=w1_params, kine_solver=kine_solver, pin_kin_solver=pin_kin_solver, collision_checker=collision_checker, time_step=time_step)
+        self.supervisor_view = SupervisorViewW1(
+            supervisor=supervisor,
+            w1_params=w1_params,
+            kine_solver=kine_solver,
+            pin_kin_solver=pin_kin_solver,
+            collision_checker=collision_checker,
+            time_step=time_step)
         self.logger = get_logger()
-    
+
     def _plan_to_waypoint(self,
                           name: str,
                           cur_qpos: np.ndarray,
@@ -37,8 +50,10 @@ class DualArmMovementBaseW1(object):
         else:
             qpos_array = cur_qpos
         (int_res, pos_raw_array, qvel_limits_array,
-         _) = StaticUtilityW1.parse_waypoints_from_dict(self.supervisor_view, name, waypoints_dict, speed_ratio,
-                                              is_cartesian)
+         _) = StaticUtilityW1.parse_waypoints_from_dict(self.supervisor_view,
+                                                        name, waypoints_dict,
+                                                        speed_ratio,
+                                                        is_cartesian)
         if int_res == -1:  # 输入不合法
             return False, None
         elif int_res == 0:  # 输入为空
@@ -56,9 +71,8 @@ class DualArmMovementBaseW1(object):
                 ref_qpos = np.zeros(self.w1_params.full_body_dofs)
                 ref_qpos[self.w1_params.index_infos["torso"]
                          ["index"]] = ref_torso_qpos
-                res_fk, T_chassis_armbase = self.supervisor_view.get_xpos(f"{name}_base",
-                                                          ref_qpos,
-                                                          is_local=False)
+                res_fk, T_chassis_armbase = self.supervisor_view.get_xpos(
+                    f"{name}_base", ref_qpos, is_local=False)
                 if not res_fk:
                     self.logger.error(f"{name}_base solve fk failed!")
                     return False, None
@@ -76,7 +90,8 @@ class DualArmMovementBaseW1(object):
                 cur_arm_qpos = cur_qpos
 
             # In local frame
-            res_fk, cur_xpos = self.supervisor_view._get_arm_kine(name).get_fk(cur_arm_qpos)
+            res_fk, cur_xpos = self.supervisor_view._get_arm_kine(name).get_fk(
+                cur_arm_qpos)
             if not res_fk:
                 self.logger.error(f"{name} solve fk failed!")
                 return False, None
@@ -92,13 +107,13 @@ class DualArmMovementBaseW1(object):
                 return False, None
         else:
             qpos_raw_array_ = np.vstack([cur_qpos, pos_raw_array])
-            res_plan, qpos_array = StaticUtilityW1.plan_joint_traj(self.supervisor_view, name, qpos_raw_array_,
-                                                        qvel_limits_array_)
+            res_plan, qpos_array = StaticUtilityW1.plan_joint_traj(
+                self.supervisor_view, name, qpos_raw_array_, qvel_limits_array_)
             if not res_plan:
                 return False, None
 
         return True, qpos_array
-    
+
     def _plan_to_waypoint_with_ee(
             self,
             name: str,
@@ -145,9 +160,8 @@ class DualArmMovementBaseW1(object):
                 ref_qpos = np.zeros(self.w1_params.full_body_dofs)
                 ref_qpos[self.w1_params.index_infos["torso"]
                          ["index"]] = ref_torso_qpos
-                res_fk, T_chassis_armbase = self.supervisor_view.get_xpos(f"{name}_base",
-                                                          ref_qpos,
-                                                          is_local=False)
+                res_fk, T_chassis_armbase = self.supervisor_view.get_xpos(
+                    f"{name}_base", ref_qpos, is_local=False)
                 if not res_fk:
                     self.logger.error(f"{name}_base solve fk failed!")
                     return False, None, None
@@ -164,7 +178,8 @@ class DualArmMovementBaseW1(object):
             else:
                 cur_arm_qpos = cur_qpos
 
-            res_fk, cur_xpos = self.supervisor_view._get_arm_kine(name).get_fk(cur_arm_qpos)
+            res_fk, cur_xpos = self.supervisor_view._get_arm_kine(name).get_fk(
+                cur_arm_qpos)
             if not res_fk:
                 self.logger.error(f"{name} solve fk failed!")
                 return False, None, None
@@ -183,7 +198,8 @@ class DualArmMovementBaseW1(object):
 
         # segment raw waypoint
         arm_ee_trigger_list = []  # (count, ee_qpos)
-        res, segment_list = StaticUtilityW1.plan_arm_ee_trigger(self.supervisor_view, arm_ee_state_list_)
+        res, segment_list = StaticUtilityW1.plan_arm_ee_trigger(
+            self.supervisor_view, arm_ee_state_list_)
         if not res:
             return False, None, None
 
@@ -205,8 +221,8 @@ class DualArmMovementBaseW1(object):
                     cartesian_step)
             else:
                 res_plan, seg_qpos_samples_array = StaticUtilityW1.plan_joint_traj(
-                    self.supervisor_view,
-                    name, seg_pos_list, seg_qvel_limits_list)
+                    self.supervisor_view, name, seg_pos_list,
+                    seg_qvel_limits_list)
             if not res_plan:
                 return False, None, None
 
@@ -342,6 +358,6 @@ class DualArmMovementBaseW1(object):
             qpos_list.append(cur_qpos)
             cur_qseed = cur_qpos
 
-        return StaticUtilityW1.plan_joint_traj(self.supervisor_view, name, np.array(qpos_list), False,
-                                    qvel_limits_array_)
-
+        return StaticUtilityW1.plan_joint_traj(self.supervisor_view, name,
+                                               np.array(qpos_list), False,
+                                               qvel_limits_array_)

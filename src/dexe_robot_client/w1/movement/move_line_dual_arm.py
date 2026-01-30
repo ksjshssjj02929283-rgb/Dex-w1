@@ -1,4 +1,11 @@
+# ----------------------------------------------------------------------------
+# Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+#
+# All rights reserved.
+# ----------------------------------------------------------------------------
+
 import numpy as np
+from copy import deepcopy
 from ..utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 
@@ -11,10 +18,22 @@ from ..path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, 
 
 from dexe_rp import DexforceW1Kinematics, SRSConfig
 
+
 class DualArmMoveLineW1(DualArmMovementBaseW1):
 
-    def __init__(self, w1_params, supervisor, kine_solver, pin_kin_solver, collision_checker, time_step: float = 0.01):
-        super().__init__(w1_params, supervisor, kine_solver, pin_kin_solver, collision_checker, time_step=time_step)
+    def __init__(self,
+                 w1_params,
+                 supervisor,
+                 kine_solver,
+                 pin_kin_solver,
+                 collision_checker,
+                 time_step: float = 0.01):
+        super().__init__(w1_params,
+                         supervisor,
+                         kine_solver,
+                         pin_kin_solver,
+                         collision_checker,
+                         time_step=time_step)
 
     def _plan_to_waypoint(
             self,
@@ -32,8 +51,10 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
         else:
             qpos_array = cur_qpos
         (res, pos_raw_array, qvel_limits_array,
-         _) = StaticUtilityW1.parse_waypoints_from_dict(self.supervisor_view, name, waypoints_dict, speed_ratio,
-                                              is_cartesian)
+         _) = StaticUtilityW1.parse_waypoints_from_dict(self.supervisor_view,
+                                                        name, waypoints_dict,
+                                                        speed_ratio,
+                                                        is_cartesian)
         if res == StatusCode.INPUT_EMPTY:  # 输入为空
             return StatusCode.SUCCESS, qpos_array
         elif res.value < 0:  # 输入不合法
@@ -51,9 +72,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 ref_qpos = np.zeros(self.w1_params.full_body_dofs)
                 ref_qpos[self.w1_params.index_infos["torso"]
                          ["index"]] = ref_torso_qpos
-                res_fk, T_chassis_armbase = self.supervisor_view.get_xpos(f"{name}_base",
-                                                          ref_qpos,
-                                                          is_local=False)
+                res_fk, T_chassis_armbase = self.supervisor_view.get_xpos(
+                    f"{name}_base", ref_qpos, is_local=False)
                 if res_fk.value < 0:
                     self.logger.error(f"{name}_base solve fk failed!")
                     return res_fk, None
@@ -71,7 +91,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 cur_arm_qpos = cur_qpos
 
             # In local frame
-            res_fk, cur_xpos = self.supervisor_view._get_arm_kine(name).get_fk(cur_arm_qpos)
+            res_fk, cur_xpos = self.supervisor_view._get_arm_kine(name).get_fk(
+                cur_arm_qpos)
             if not res_fk:
                 self.logger.error(f"{name} solve fk failed!")
                 return StatusCode.FK_FAIL, None
@@ -87,9 +108,9 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 return res_plan, None
         else:
             qpos_raw_array_ = np.vstack([cur_qpos, pos_raw_array])
-            res_plan, qpos_array = self.plan_joint_traj(name, qpos_raw_array_,
-                                                        is_sparse,
-                                                        qvel_limits_array_)
+            res_plan, qpos_array = StaticUtilityW1.plan_joint_traj(
+                self.supervisor_view, name, qpos_raw_array_, is_sparse,
+                qvel_limits_array_)
             if res_plan.value < 0:
                 return res_plan, None
 
@@ -114,7 +135,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
 
         (res, pos_raw_array, qvel_limits_array,
          arm_ee_state_list) = StaticUtilityW1.parse_waypoints_from_dict(
-             self.supervisor_view, name, waypoints_dict, speed_ratio, is_cartesian)
+             self.supervisor_view, name, waypoints_dict, speed_ratio,
+             is_cartesian)
         if res == StatusCode.INPUT_EMPTY:
             return StatusCode.SUCCESS, qpos_array, None
         elif res.value < 0:
@@ -144,9 +166,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 ref_qpos = np.zeros(self.w1_params.full_body_dofs)
                 ref_qpos[self.w1_params.index_infos["torso"]
                          ["index"]] = ref_torso_qpos
-                res_fk, T_chassis_armbase = self.supervisor_view.get_xpos(f"{name}_base",
-                                                          ref_qpos,
-                                                          is_local=False)
+                res_fk, T_chassis_armbase = self.supervisor_view.get_xpos(
+                    f"{name}_base", ref_qpos, is_local=False)
                 if res_fk.value < 0:
                     self.logger.error(f"{name}_base solve fk failed!")
                     return res_fk, None, None
@@ -163,7 +184,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
             else:
                 cur_arm_qpos = cur_qpos
 
-            res_fk, cur_xpos = self.supervisor_view._get_arm_kine(name).get_fk(cur_arm_qpos)
+            res_fk, cur_xpos = self.supervisor_view._get_arm_kine(name).get_fk(
+                cur_arm_qpos)
             if not res_fk:
                 self.logger.error(f"{name} solve fk failed!")
                 return StatusCode.FK_FAIL, None, None
@@ -182,7 +204,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
 
         # segment raw waypoint
         arm_ee_trigger_list = []  # (count, ee_qpos)
-        res, segment_list = StaticUtilityW1.plan_arm_ee_trigger(self.supervisor_view, arm_ee_state_list_)
+        res, segment_list = StaticUtilityW1.plan_arm_ee_trigger(
+            self.supervisor_view, arm_ee_state_list_)
         if res.value < 0:
             return res, None, None
 
@@ -203,8 +226,9 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                     name, seg_xpos_list, cur_qpos_seed, seg_qvel_limits_array,
                     cartesian_step)
             else:
-                res_plan, seg_qpos_samples_array = self.plan_joint_traj(
-                    name, seg_pos_array, is_sparse, seg_qvel_limits_array)
+                res_plan, seg_qpos_samples_array = StaticUtilityW1.plan_joint_traj(
+                    self.supervisor_view, name, seg_pos_array, is_sparse,
+                    seg_qvel_limits_array)
             if res_plan.value < 0:
                 return res_plan, None, None
 
@@ -212,7 +236,9 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
             pre_delay_time = arm_ee_state_list_[end_idx][0]
             if pre_delay_time >= self.supervisor_view.TIME_STEP:
                 pre_delay_count = max(
-                    1, int(np.ceil(pre_delay_time / self.supervisor_view.TIME_STEP)))
+                    1,
+                    int(np.ceil(pre_delay_time /
+                                self.supervisor_view.TIME_STEP)))
                 seg_qpos_samples_array = np.vstack([
                     seg_qpos_samples_array,
                     np.repeat(seg_qpos_samples_array[-1:],
@@ -227,7 +253,10 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
             post_delay_time = arm_ee_state_list_[end_idx][2]
             if post_delay_time >= self.supervisor_view.TIME_STEP:
                 post_delay_count = max(
-                    1, int(np.ceil(post_delay_time / self.supervisor_view.TIME_STEP)))
+                    1,
+                    int(
+                        np.ceil(post_delay_time /
+                                self.supervisor_view.TIME_STEP)))
                 seg_qpos_samples_array = np.vstack([
                     seg_qpos_samples_array,
                     np.repeat(seg_qpos_samples_array[-1:],
@@ -291,10 +320,13 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
         if not self.supervisor_view._check_qpos_limits("full_body", start_qpos):
             return StatusCode.EXCEED_LIMIT, None, None, None
 
-        start_torso_qpos = start_qpos[self.supervisor_view.w1_params.torso_index]
+        start_torso_qpos = start_qpos[
+            self.supervisor_view.w1_params.torso_index]
         start_head_qpos = start_qpos[self.supervisor_view.w1_params.head_index]
-        start_left_arm_qpos = start_qpos[self.supervisor_view.w1_params.left_arm_index]
-        start_right_arm_qpos = start_qpos[self.supervisor_view.w1_params.right_arm_index]
+        start_left_arm_qpos = start_qpos[
+            self.supervisor_view.w1_params.left_arm_index]
+        start_right_arm_qpos = start_qpos[
+            self.supervisor_view.w1_params.right_arm_index]
 
         if left_qpos_seed is None:
             left_qpos_seed = start_left_arm_qpos
@@ -306,7 +338,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
         self.supervisor_view.logger.debug(
             f"plan_linear_full_body() input cur_ee_qpos: {start_left_arm_ee_qpos}, {start_right_arm_ee_qpos}"
         )
-        self.supervisor_view.logger.debug("plan_linear_full_body() input waypoints_dict:")
+        self.supervisor_view.logger.debug(
+            "plan_linear_full_body() input waypoints_dict:")
         self.supervisor_view.logger.debug(waypoints_dict)
         self.supervisor_view.logger.debug(
             f"plan_linear_full_body() input speed_ratio: {speed_ratio}")
@@ -328,7 +361,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
         if not is_sync:
             # left_arm
             left_arm_ee_trigger_list = None
-            if not self.supervisor_view._has_arm_ee_client("left_arm_ee", False):
+            if not self.supervisor_view._has_arm_ee_client(
+                    "left_arm_ee", False):
                 if is_local:
                     (res_left_arm,
                      left_arm_qpos_array) = self._plan_to_waypoint(
@@ -352,11 +386,12 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                          cartesian_step=cartesian_step,
                          is_local=False)
                 if res_left_arm.value < 0:
-                    self.supervisor_view.logger.error("Plan to left arm traj failed.")
+                    self.supervisor_view.logger.error(
+                        "Plan to left arm traj failed.")
                     return res_left_arm, None, None, None
             else:
-                if not self.supervisor_view._check_qpos_limits("left_arm_ee",
-                                               start_left_arm_ee_qpos):
+                if not self.supervisor_view._check_qpos_limits(
+                        "left_arm_ee", start_left_arm_ee_qpos):
                     return StatusCode.EXCEED_LIMIT, None, None, None
                 if is_local:
                     (res_left_arm, left_arm_qpos_array,
@@ -383,12 +418,14 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                          cartesian_step=cartesian_step,
                          is_local=False)
                 if res_left_arm.value < 0:
-                    self.supervisor_view.logger.error("Plan to left arm traj with ee failed.")
+                    self.supervisor_view.logger.error(
+                        "Plan to left arm traj with ee failed.")
                     return res_left_arm, None, None, None
 
             # right_arm
             right_arm_ee_trigger_list = None
-            if not self.supervisor_view._has_arm_ee_client("right_arm_ee", False):
+            if not self.supervisor_view._has_arm_ee_client(
+                    "right_arm_ee", False):
                 if is_local:
                     (res_right_arm,
                      right_arm_qpos_array) = self._plan_to_waypoint(
@@ -412,11 +449,12 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                          cartesian_step=cartesian_step,
                          is_local=False)
                 if res_right_arm.value < 0:
-                    self.supervisor_view.logger.error("Plan to right arm traj failed.")
+                    self.supervisor_view.logger.error(
+                        "Plan to right arm traj failed.")
                     return res_right_arm, None, None, None
             else:
-                if not self.supervisor_view._check_qpos_limits("right_arm_ee",
-                                               start_right_arm_ee_qpos):
+                if not self.supervisor_view._check_qpos_limits(
+                        "right_arm_ee", start_right_arm_ee_qpos):
                     return StatusCode.EXCEED_LIMIT, None, None, None
                 if is_local:
                     (res_right_arm, right_arm_qpos_array,
@@ -445,7 +483,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                         cartesian_step=cartesian_step,
                         is_local=False)
                 if res_right_arm.value < 0:
-                    self.supervisor_view.logger.error("Plan to right arm traj with ee failed.")
+                    self.supervisor_view.logger.error(
+                        "Plan to right arm traj with ee failed.")
                     return res_right_arm, None, None, None
         else:
             # dual arm move line sync planning
@@ -467,11 +506,13 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                     )
                     if res_dual_arm:
                         left_arm_qpos_array = np.vstack([
-                            start_qpos[self.supervisor_view.w1_params.left_arm_index],
+                            start_qpos[
+                                self.supervisor_view.w1_params.left_arm_index],
                             left_arm_qpos_array
                         ])
                         right_arm_qpos_array = np.vstack([
-                            start_qpos[self.supervisor_view.w1_params.right_arm_index],
+                            start_qpos[
+                                self.supervisor_view.w1_params.right_arm_index],
                             right_arm_qpos_array
                         ])
                 else:
@@ -489,15 +530,18 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                     )
                     if res_dual_arm:
                         left_arm_qpos_array = np.vstack([
-                            start_qpos[self.supervisor_view.w1_params.left_arm_index],
+                            start_qpos[
+                                self.supervisor_view.w1_params.left_arm_index],
                             left_arm_qpos_array
                         ])
                         right_arm_qpos_array = np.vstack([
-                            start_qpos[self.supervisor_view.w1_params.right_arm_index],
+                            start_qpos[
+                                self.supervisor_view.w1_params.right_arm_index],
                             right_arm_qpos_array
                         ])
                 if res_dual_arm.value < 0:
-                    self.supervisor_view.logger.error("Plan to dual arm sync traj failed.")
+                    self.supervisor_view.logger.error(
+                        "Plan to dual arm sync traj failed.")
                     return res_dual_arm, None, None, None
 
             # TODO: complete this: the following part originally designed for synchronize dual arm with ee, but not implemented yet
@@ -517,11 +561,13 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                     )
                     if res_dual_arm:
                         left_arm_qpos_array = np.vstack([
-                            start_qpos[self.supervisor_view.w1_params.left_arm_index],
+                            start_qpos[
+                                self.supervisor_view.w1_params.left_arm_index],
                             left_arm_qpos_array
                         ])
                         right_arm_qpos_array = np.vstack([
-                            start_qpos[self.supervisor_view.w1_params.right_arm_index],
+                            start_qpos[
+                                self.supervisor_view.w1_params.right_arm_index],
                             right_arm_qpos_array
                         ])
                 else:
@@ -539,15 +585,18 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                     )
                     if res_dual_arm:
                         left_arm_qpos_array = np.vstack([
-                            start_qpos[self.supervisor_view.w1_params.left_arm_index],
+                            start_qpos[
+                                self.supervisor_view.w1_params.left_arm_index],
                             left_arm_qpos_array
                         ])
                         right_arm_qpos_array = np.vstack([
-                            start_qpos[self.supervisor_view.w1_params.right_arm_index],
+                            start_qpos[
+                                self.supervisor_view.w1_params.right_arm_index],
                             right_arm_qpos_array
                         ])
                 if res_dual_arm.value < 0:
-                    self.supervisor_view.logger.error("Plan to dual arm sync traj failed.")
+                    self.supervisor_view.logger.error(
+                        "Plan to dual arm sync traj failed.")
                     return res_dual_arm, None, None, None
 
                 left_ee_target_list = waypoints_dict.get("left_arm_ee")
@@ -577,10 +626,9 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                     ])
 
         # align
-        res_align, total_qpos_array = StaticUtilityW1.qpos_align(self.supervisor_view, torso_qpos_array,
-                                                       head_qpos_array,
-                                                       left_arm_qpos_array,
-                                                       right_arm_qpos_array)
+        res_align, total_qpos_array = StaticUtilityW1.qpos_align(
+            self.supervisor_view, torso_qpos_array, head_qpos_array,
+            left_arm_qpos_array, right_arm_qpos_array)
         if not res_align:
             return StatusCode.FAIL, None, None, None
 
@@ -589,7 +637,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 left_arm_ee_trigger_list=left_arm_ee_trigger_list,
                 right_arm_ee_trigger_list=right_arm_ee_trigger_list
         ) != StatusCode.FAIL:
-            self.supervisor_view.logger.error("Full body linear traj collision detected!")
+            self.supervisor_view.logger.error(
+                "Full body linear traj collision detected!")
             return StatusCode.COLLISION_FAIL, None, None, None
 
         return StatusCode.SUCCESS, total_qpos_array, left_arm_ee_trigger_list, right_arm_ee_trigger_list
@@ -635,12 +684,14 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
             return res
         cur_left_arm_ee_qpos = None
         if self.supervisor_view._has_arm_ee_client("left_arm_ee", False):
-            res, cur_left_arm_ee_qpos = self.supervisor_view.get_current_qpos("left_arm_ee")
+            res, cur_left_arm_ee_qpos = self.supervisor_view.get_current_qpos(
+                "left_arm_ee")
             if res.value < 0:
                 return res
         cur_right_arm_ee_qpos = None
         if self.supervisor_view._has_arm_ee_client("right_arm_ee", False):
-            res, cur_right_arm_ee_qpos = self.supervisor_view.get_current_qpos("right_arm_ee")
+            res, cur_right_arm_ee_qpos = self.supervisor_view.get_current_qpos(
+                "right_arm_ee")
             if res.value < 0:
                 return res
 
@@ -662,9 +713,9 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
         #     return False
 
         # execute
-        return self.supervisor_view.execute_joint_traj(total_qpos_array,
-                                       left_arm_ee_trigger_list,
-                                       right_arm_ee_trigger_list)
+        return self.supervisor_view.execute_joint_traj(
+            total_qpos_array, left_arm_ee_trigger_list,
+            right_arm_ee_trigger_list)
 
     def move_arm_linear(self,
                         name: str,
@@ -693,7 +744,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
 
         delta_xpos = user_pose_to_xpos(delta_trans_mm, [0., 0., 0.])
         if along_base_frame:
-            res, T_chassis_ee = self.supervisor_view.get_current_xpos(name, False)
+            res, T_chassis_ee = self.supervisor_view.get_current_xpos(
+                name, False)
             if res.value < 0:
                 return res
             target_xpos = T_armbase_ee @ np.linalg.inv(T_chassis_ee) @ (
@@ -733,7 +785,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
         target_xpos = deepcopy(T_armbase_ee)
 
         if along_base_frame:
-            res, T_chassis_ee = self.supervisor_view.get_current_xpos(name, False)
+            res, T_chassis_ee = self.supervisor_view.get_current_xpos(
+                name, False)
             if res.value < 0:
                 return res
             target_xpos[:3,:3] = T_armbase_ee[:3,:3] \
@@ -759,7 +812,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
         res, cur_qpos = self.supervisor_view.get_current_qpos()
         if res.value < 0:
             return res
-        cur_qseed = cur_qpos[self.supervisor_view.w1_params.index_infos[name]["index"]]
+        cur_qseed = cur_qpos[self.supervisor_view.w1_params.index_infos[name]
+                             ["index"]]
         for cur_xpos in xpos_sample_array:
             res_ik, qpos = arm_kine.get_nearest_ik(xpos=cur_xpos,
                                                    qpos_seed=cur_qseed)
@@ -777,19 +831,18 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
             cur_qseed = qpos
 
         speed_ratio_list = [speed_ratio] * len(qpos_list)
-        default_qvel =  self.supervisor_view.w1_params.default_qvel[
+        default_qvel = self.supervisor_view.w1_params.default_qvel[
             self.supervisor_view.w1_params.index_infos[name]["index"]]
-        min_qvel = self.supervisor_view.w1_params.min_qvel[self.supervisor_view.w1_params.index_infos[name]
-                                           ["index"]]
-        max_qvel = self.supervisor_view.w1_params.max_qvel[self.supervisor_view.w1_params.index_infos[name]
-                                           ["index"]]
+        min_qvel = self.supervisor_view.w1_params.min_qvel[
+            self.supervisor_view.w1_params.index_infos[name]["index"]]
+        max_qvel = self.supervisor_view.w1_params.max_qvel[
+            self.supervisor_view.w1_params.index_infos[name]["index"]]
         qvel_limits_array = np.clip(np.outer(speed_ratio_list, default_qvel),
                                     min_qvel, max_qvel)
 
-        res_plan, arm_qpos_array = self.supervisor_view.plan_joint_traj(name,
-                                                        np.array(qpos_list),
-                                                        False,
-                                                        qvel_limits_array)
+        res_plan, arm_qpos_array = StaticUtilityW1.plan_joint_traj(
+            self.supervisor_view, name, np.array(qpos_list), False,
+            qvel_limits_array)
         if res_plan.value < 0:
             return res_plan, None
 
@@ -798,14 +851,16 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
             res_align, total_qpos_array = StaticUtilityW1.qpos_align(
                 self.supervisor_view,
                 cur_qpos[self.supervisor_view.w1_params.torso_index],
-                cur_qpos[self.supervisor_view.w1_params.head_index], arm_qpos_array,
+                cur_qpos[self.supervisor_view.w1_params.head_index],
+                arm_qpos_array,
                 cur_qpos[self.supervisor_view.w1_params.right_arm_index])
         else:
             res_align, total_qpos_array = StaticUtilityW1.qpos_align(
                 self.supervisor_view,
                 cur_qpos[self.supervisor_view.w1_params.torso_index],
                 cur_qpos[self.supervisor_view.w1_params.head_index],
-                cur_qpos[self.supervisor_view.w1_params.left_arm_index], arm_qpos_array)
+                cur_qpos[self.supervisor_view.w1_params.left_arm_index],
+                arm_qpos_array)
         if not res_align:
             return StatusCode.FAIL
 

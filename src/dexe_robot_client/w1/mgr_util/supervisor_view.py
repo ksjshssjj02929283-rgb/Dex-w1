@@ -10,12 +10,18 @@ from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlann
 from ...common import get_logger, StatusCode
 from typing import Tuple, List
 
-
 from clientsupervisor.move_sync_option import MoveSyncOption  # pyright: ignore[reportMissingImports]
+
 
 class SupervisorViewW1(object):
 
-    def __init__(self, supervisor, w1_params, kine_solver, pin_kin_solver, collision_checker, time_step : float = 0.01) -> None:
+    def __init__(self,
+                 supervisor,
+                 w1_params,
+                 kine_solver,
+                 pin_kin_solver,
+                 collision_checker,
+                 time_step: float = 0.01) -> None:
         self.supervisor = supervisor
         self.logger = get_logger()
         self.w1_params = w1_params
@@ -37,13 +43,13 @@ class SupervisorViewW1(object):
         self.logger.error(
             f"{self.w1_params.arm_ee_names} is supported, except {name}.")
         return False
-    
+
     def _get_arm_ee_client(self, name: str):
         if not self._has_arm_ee_client(name):
             return None
         client = self.supervisor.client_map.get(name)
         return client
-    
+
     def _check_name(self, name: str) -> bool:
         """仅支持component检查，不包含ee"""
         if name not in self.w1_params.names:
@@ -51,14 +57,14 @@ class SupervisorViewW1(object):
                 f"{self.w1_params.names} is supported, except {name}.")
             return False
         return True
-    
+
     def _check_arm_name(self, name: str) -> bool:
         support_names = self.w1_params.arm_names
         if name not in support_names:
             self.logger.error(f"{support_names} is supported, except {name}.")
             return False
         return True
-    
+
     def _check_qpos_dimension(self, name: str, qpos) -> bool:
         """支持component和ee的检查"""
         if name in self.w1_params.arm_ee_names:
@@ -80,7 +86,7 @@ class SupervisorViewW1(object):
 
         self.logger.error(f"{name} qpos dimension mismatch")
         return False
-    
+
     def _check_qpos_limits(self, name: str, qpos: np.ndarray) -> bool:
         """支持多个qpos检查；支持component和ee的检查"""
         if not self._check_qpos_dimension(name, qpos):
@@ -95,7 +101,7 @@ class SupervisorViewW1(object):
                               f"excceeded limits([{qpos_lb[invalid_idx]}, {qpos_ub[invalid_idx]}]).")
             return False
         return True
-    
+
     def _check_arm_ee_states(self, arm_ee_state_list: list) -> bool:
         if len(arm_ee_state_list) == 0:
             self.logger.error("Unexpected error, FIXME!")
@@ -114,10 +120,11 @@ class SupervisorViewW1(object):
                 "left_arm_ee", [ee_state[1] for ee_state in valid_ee_state]):
             return False
         return True
-    
+
     def get_qpos_limits(
             self,
-            name: str = "full_body") -> tuple[StatusCode, np.ndarray, np.ndarray]:
+            name: str = "full_body"
+    ) -> tuple[StatusCode, np.ndarray, np.ndarray]:
         """获取特定部件(支持ee)的关节极限
 
         Args:
@@ -141,9 +148,10 @@ class SupervisorViewW1(object):
             qpos_ub = self.w1_params.qpos_ub[self.w1_params.index_infos[name]
                                              ["index"]]
         return StatusCode.SUCCESS, qpos_lb, qpos_ub
-    
+
     def get_current_qpos(self,
-                         name: str = "full_body") -> tuple[StatusCode, np.ndarray]:
+                         name: str = "full_body"
+                        ) -> tuple[StatusCode, np.ndarray]:
         """获取特定部件(支持ee)的当前关节位置
 
         Args:
@@ -176,7 +184,7 @@ class SupervisorViewW1(object):
             return StatusCode.SUCCESS, cur_qpos
         return StatusCode.SUCCESS, cur_qpos[self.w1_params.index_infos[name]
                                             ["index"]]
-    
+
     def _get_arm_kine(self, name: str):
         if not self._check_arm_name(name):
             return None
@@ -184,10 +192,11 @@ class SupervisorViewW1(object):
             return self.kine.left_arm_kine
         elif name == "right_arm":
             return self.kine.right_arm_kine
-        
-    def get_current_xpos(self,
-                         name: str,
-                         is_local: bool = True) -> tuple[StatusCode, np.ndarray]:
+
+    def get_current_xpos(
+            self,
+            name: str,
+            is_local: bool = True) -> tuple[StatusCode, np.ndarray]:
         """is_local=True，获取left_arm/right_arm相对于arm base坐标系的笛卡尔位姿
         
             is_local=False，获取["head", "head_flange" 
@@ -278,19 +287,19 @@ class SupervisorViewW1(object):
             armlee_tf, armree_tf = None, None
 
         self.collision_checker.set_head_body_transform(head_transforms=head_tf,
-                                                 body_transforms=torso_tf)
-        self.collision_checker.update_arm_transform(arml_tf + armr_tf, armlee_tf,
-                                              armree_tf)
+                                                       body_transforms=torso_tf)
+        self.collision_checker.update_arm_transform(arml_tf + armr_tf,
+                                                    armlee_tf, armree_tf)
         res = self.collision_checker.check_collision(robot_name=robot_name)
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def is_traj_collision(self,
-                           qpos_array: np.ndarray,
-                           left_arm_ee_trigger_list: list[tuple[int,
+                          qpos_array: np.ndarray,
+                          left_arm_ee_trigger_list: list[tuple[int,
+                                                               list]] = None,
+                          right_arm_ee_trigger_list: list[tuple[int,
                                                                 list]] = None,
-                           right_arm_ee_trigger_list: list[tuple[int,
-                                                                 list]] = None,
-                           step: int = 5) -> StatusCode:
+                          step: int = 5) -> StatusCode:
         """检查轨迹是否碰撞
         Args:
             qpos_array (np.ndarray): 10ms间隔的轨迹
@@ -351,10 +360,12 @@ class SupervisorViewW1(object):
                     return StatusCode.SUCCESS
             return StatusCode.FAIL
 
-    def execute_joint_traj(self,
-                           qpos_array: np.ndarray,
-                           left_arm_ee_trigger_list: list[Tuple[int, List[float]]] = None,
-                           right_arm_ee_trigger_list: list[Tuple[int, List[float]]] = None) -> bool:
+    def execute_joint_traj(
+        self,
+        qpos_array: np.ndarray,
+        left_arm_ee_trigger_list: list[Tuple[int, List[float]]] = None,
+        right_arm_ee_trigger_list: list[Tuple[int,
+                                              List[float]]] = None) -> bool:
         """Execute joint trajectory with 10ms interval
 
         Args:
@@ -371,39 +382,64 @@ class SupervisorViewW1(object):
             self.logger.error("qpos_array must be a numpy array.")
             return False
 
-        # Extract unique sync IDs from trigger lists
-        raw_endpoint_index = []
-        if left_arm_ee_trigger_list:
-            raw_endpoint_index.extend(sync_id for sync_id, _ in left_arm_ee_trigger_list)
-        if right_arm_ee_trigger_list:
-            raw_endpoint_index.extend(sync_id for sync_id, _ in right_arm_ee_trigger_list)
-        unique_sync_ids = sorted(set(raw_endpoint_index))
+        # Ensure trigger lists are valid or default to empty lists
+        left_arm_ee_trigger_list = left_arm_ee_trigger_list or []
+        right_arm_ee_trigger_list = right_arm_ee_trigger_list or []
 
-        move_id, end_id = self.supervisor.move_joint_trajectory_async(
-            qpos_array, interval=self.TIME_STEP, endpoint_index=unique_sync_ids)
-        self.logger.debug(f"Trajectory execution started: move_id={move_id}, end_id={end_id}")
+        # Extract unique sync IDs
+        raw_endpoint_index = [
+            sync_id for sync_id, _ in left_arm_ee_trigger_list
+        ]
+        raw_endpoint_index += [
+            sync_id for sync_id, _ in right_arm_ee_trigger_list
+        ]
+        unique_sync_ids = sorted(
+            set(raw_endpoint_index)) if raw_endpoint_index else None
+
+        try:
+            move_id, end_id = self.supervisor.move_joint_trajectory_async(
+                qpos_array,
+                interval=self.TIME_STEP,
+                endpoint_index=unique_sync_ids)
+            self.logger.debug(
+                f"Trajectory execution started: move_id={move_id}, end_id={end_id}"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to start joint trajectory: {e}")
+            return False
 
         # Process trigger lists
-        def process_trigger_list(trigger_list):
-            if not trigger_list:
-                return [], []
-            sync_id_map = {sync_id: move_id + i + 1 for i, sync_id in enumerate(unique_sync_ids)}
-            new_trigger_list = [
-                (sync_id_map[sync_id], action)
-                for sync_id, action in trigger_list if sync_id in sync_id_map
-            ]
+        def process_trigger_list(trigger_list, unique_sync_ids, move_id):
+            if not trigger_list or not unique_sync_ids:
+                return []
+            sync_id_map = {
+                sync_id: move_id + i + 1
+                for i, sync_id in enumerate(unique_sync_ids)
+            }
+            new_trigger_list = [(sync_id_map[sync_id], action)
+                                for sync_id, action in trigger_list
+                                if sync_id in sync_id_map]
             new_trigger_list.sort(key=lambda x: x[0])
             return new_trigger_list
 
-        left_arm_ee_trigger_list_new = process_trigger_list(left_arm_ee_trigger_list)
-        right_arm_ee_trigger_list_new = process_trigger_list(right_arm_ee_trigger_list)
+        left_arm_ee_trigger_list_new = process_trigger_list(
+            left_arm_ee_trigger_list, unique_sync_ids, move_id)
+        right_arm_ee_trigger_list_new = process_trigger_list(
+            right_arm_ee_trigger_list, unique_sync_ids, move_id)
 
         # Trigger end-effector actions
         def trigger_ee_actions(trigger_list, arm_name):
             for sync_id, action in trigger_list:
-                self.supervisor.call_srv_async(
-                    arm_name, {"action": action},
-                    MoveSyncOption.sync_w_explicit_id(sync_id))
+                try:
+                    self.supervisor.call_srv_async(
+                        arm_name, {"action": action},
+                        MoveSyncOption.sync_w_explicit_id(sync_id))
+                    self.logger.debug(
+                        f"Triggered action for {arm_name}: sync_id={sync_id}, action={action}"
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to trigger action for {arm_name}: {e}")
 
         if left_arm_ee_trigger_list_new:
             trigger_ee_actions(left_arm_ee_trigger_list_new, "left_arm_ee")

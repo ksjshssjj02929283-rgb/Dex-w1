@@ -22,6 +22,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 class RobotClientWarpper(ReducedRobotClientInterface):
+
     def __init__(self, client: "RobotClient"):
         self._client = client
 
@@ -38,7 +39,11 @@ class RobotClientWarpper(ReducedRobotClientInterface):
             logger.error(f"Failed to query state: {e}")
             raise
 
-    def move_joint_trajectory_async(self, motion_target: List[List[float]], interval: float = 0.01, endpoint_index: Optional[List[int]] = None) -> int:
+    def move_joint_trajectory_async(
+            self,
+            motion_target: List[List[float]],
+            interval: float = 0.01,
+            endpoint_index: Optional[List[int]] = None) -> int:
         """
         Move the robot along a joint trajectory asynchronously.
             
@@ -50,18 +55,24 @@ class RobotClientWarpper(ReducedRobotClientInterface):
         Returns:
             int: move id
         """
-        flattened_motion_target = [angle for point in motion_target for angle in point]
+        flattened_motion_target = [
+            angle for point in motion_target for angle in point
+        ]
 
-        finished_id = self._client.move_traj_async(flattened_motion_target, motion_group=MotionGroup.WholeBody, interval=interval, endpoint_index=endpoint_index)
+        finished_id = self._client.move_traj_async(
+            flattened_motion_target,
+            motion_group=MotionGroup.WholeBody,
+            interval=interval,
+            endpoint_index=endpoint_index)
 
         return finished_id - len(endpoint_index if endpoint_index else []) + 1
-
 
     def get_info(self) -> Dict:
         return self._client.get_info()
 
 
 class GripperClientWarpper(GenericClient):
+
     def __init__(self, client: "EndEffectorClient"):
         self._client = client
 

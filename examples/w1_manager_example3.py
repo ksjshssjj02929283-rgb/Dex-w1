@@ -88,3 +88,12 @@ def arm_angle_motion():
 
 if __name__ == "__main__":
     arm_angle_motion()
+
+    # TODO: keep the script running to observe the robot state in simulator
+    import time
+
+    try:
+        while True:
+            time.sleep(0.2)
+    except KeyboardInterrupt:
+        print("Exiting the script. Goodbye!")

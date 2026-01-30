@@ -25,7 +25,9 @@ def create_end_effector_client(is_left: bool, is_sim: bool,
 
     return client_class(is_left=is_left, is_sim=is_sim)
 
+
 create_end_effector_client_real_and_sim = lambda is_left, end_effector_type: (
-    create_end_effector_client(is_left=is_left, is_sim=True, end_effector_type=end_effector_type),
-    create_end_effector_client(is_left=is_left, is_sim=False, end_effector_type=end_effector_type)
-)
+    create_end_effector_client(
+        is_left=is_left, is_sim=True, end_effector_type=end_effector_type),
+    create_end_effector_client(
+        is_left=is_left, is_sim=False, end_effector_type=end_effector_type))

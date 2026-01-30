@@ -124,3 +124,11 @@ if __name__ == "__main__":
         当execute_joint_traj()不采用streaming模式，而是move_traj模式，python中并行提升大
         """
     main(use_parallel=True)
+
+    import time
+
+    try:
+        while True:
+            time.sleep(0.2)
+    except KeyboardInterrupt:
+        print("Exiting the script. Goodbye!")

@@ -19,6 +19,7 @@ from ..common import (get_logger, generate_w1_urdf, download_w1_urdf,
                       get_ee_sim2real_idx, get_ee_real2sim_idx)
 from ..end_effector_client import EndEffectorType
 
+
 # python3 -m dexe_robot_client.sim_server.viser_server
 class ViserServer:
 
@@ -48,7 +49,7 @@ class ViserServer:
         self.config = {**self.DEFAULT_CONFIG, **(config or {})}
 
         res, self._urdf_path = download_w1_urdf(arm_type, w1_version,
-                                          end_effector_type)
+                                                end_effector_type)
         if not res:
             raise ValueError(f"Found URDF failed.")
 
@@ -65,8 +66,8 @@ class ViserServer:
 
         # initialize robot node
         self._robot_node = self._create_node_with_subscription(
-            "robot_node", self.config["robot_topic"], self._subscriber_robot_callback, String
-        )
+            "robot_node", self.config["robot_topic"],
+            self._subscriber_robot_callback, String)
         self._ros2_nodes.append(self._robot_node)
 
         # initialize end-effector nodes
@@ -76,13 +77,15 @@ class ViserServer:
                 node_name = f"{side}_ee_node"
                 topic = ee_topics[self._end_effector_type][side]
                 callback = getattr(self, f"_subscriber_{side}_ee_callback")
-                ee_node = self._create_node_with_subscription(node_name, topic, callback, EEJointFeedback)
+                ee_node = self._create_node_with_subscription(
+                    node_name, topic, callback, EEJointFeedback)
                 self._ros2_nodes.append(ee_node)
 
         # start ROS thread
         self._start_ros_thread()
 
-    def _create_node_with_subscription(self, node_name, topic, callback, msg_type):
+    def _create_node_with_subscription(self, node_name, topic, callback,
+                                       msg_type):
         node = Node(node_name)
         node.create_subscription(msg_type, topic, callback, qos_profile=100)
         return node
@@ -92,7 +95,8 @@ class ViserServer:
         for node in self._ros2_nodes:
             self._executor.add_node(node)
 
-        self._ros_thread = threading.Thread(target=self._executor.spin, daemon=True)
+        self._ros_thread = threading.Thread(target=self._executor.spin,
+                                            daemon=True)
         self._ros_thread.start()
 
     def _init_visualization(self):
@@ -119,30 +123,35 @@ class ViserServer:
         if self._end_effector_type is not None:
             self.left_ee_sim2real_index = get_ee_sim2real_idx(
                 joint_names, True, self._end_effector_type)
-            self.left_ee_joint_limits = np.array([joint_limits[i] for i in self.left_ee_sim2real_index])
+            self.left_ee_joint_limits = np.array(
+                [joint_limits[i] for i in self.left_ee_sim2real_index])
 
             self.right_ee_sim2real_index = get_ee_sim2real_idx(
                 joint_names, False, self._end_effector_type)
-            self.right_ee_joint_limits = np.array([joint_limits[i] for i in self.right_ee_sim2real_index])
+            self.right_ee_joint_limits = np.array(
+                [joint_limits[i] for i in self.right_ee_sim2real_index])
 
         self.robot_sim2real_index = get_robot_sim2real_idx(joint_names)
-
 
     def _subscriber_robot_callback(self, msg):
         try:
             state = json.loads(msg.data)
             if "joint_position" not in state:
-                self.logger.warning("Received robot state without 'joint_position'.")
+                self.logger.warning(
+                    "Received robot state without 'joint_position'.")
                 return
             with self._lock:
-                self._cur_qpos[self.robot_sim2real_index] = np.array(state["joint_position"])
+                self._cur_qpos[self.robot_sim2real_index] = np.array(
+                    state["joint_position"])
             self.w1_viser_handle.update_cfg(self._cur_qpos)
         except Exception as e:
             self.logger.error(f"Error in robot callback: {e}")
 
-    def _update_ee_joint_positions(self, raw_qpos, joint_limits, sim2real_index):
+    def _update_ee_joint_positions(self, raw_qpos, joint_limits,
+                                   sim2real_index):
         try:
-            qpos = joint_limits[:, 0] + raw_qpos / 100.0 * (joint_limits[:, 1] - joint_limits[:, 0])
+            qpos = joint_limits[:, 0] + raw_qpos / 100.0 * (joint_limits[:, 1] -
+                                                            joint_limits[:, 0])
             with self._lock:
                 self._cur_qpos[sim2real_index] = qpos
             self.w1_viser_handle.update_cfg(self._cur_qpos)
@@ -151,11 +160,13 @@ class ViserServer:
 
     def _subscriber_left_ee_callback(self, msg):
         raw_qpos = np.array(msg.position)
-        self._update_ee_joint_positions(raw_qpos, self.left_ee_joint_limits, self.left_ee_sim2real_index)
+        self._update_ee_joint_positions(raw_qpos, self.left_ee_joint_limits,
+                                        self.left_ee_sim2real_index)
 
     def _subscriber_right_ee_callback(self, msg):
         raw_qpos = np.array(msg.position)
-        self._update_ee_joint_positions(raw_qpos, self.right_ee_joint_limits, self.right_ee_sim2real_index)
+        self._update_ee_joint_positions(raw_qpos, self.right_ee_joint_limits,
+                                        self.right_ee_sim2real_index)
 
     def _shutdown(self):
         try:
@@ -181,14 +192,14 @@ class ViserServer:
         finally:
             self._shutdown()
 
+
 if __name__ == "__main__":
     rclpy.init()
 
     try:
-        server = ViserServer(
-            arm_type=W1ArmType.ANTHROPOMORPHIC,
-            w1_version=W1Version.V2,
-            end_effector_type=EndEffectorType.BRAINCO_HAND)
+        server = ViserServer(arm_type=W1ArmType.ANTHROPOMORPHIC,
+                             w1_version=W1Version.V2,
+                             end_effector_type=EndEffectorType.BRAINCO_HAND)
         server.run()
     except Exception as e:
         print(f"Unexpected error: {e}")

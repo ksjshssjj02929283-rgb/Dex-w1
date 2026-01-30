@@ -1,4 +1,3 @@
-
 import rclpy
 from dexe_robot_client.w1.w1_manager import W1Manager
 from dexe_robot_client.common import W1ArmType, W1Version
