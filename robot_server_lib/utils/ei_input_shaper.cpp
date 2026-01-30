@@ -5,12 +5,33 @@
 #include <numeric>
 
 // EI输入整形器实现 - 用于抑制机械系统振动
-EIInputShaper::EIInputShaper(Type type, double natural_freq, double vibration_tol)
-    : type_(type), natural_freq_(natural_freq), vibration_tol_(vibration_tol) {
+EIInputShaper::EIInputShaper(
+    Type type, double natural_freq, double sampling_time, double max_ramp_rate_rpm, double vibration_tol)
+    : type_(type),
+      natural_freq_(natural_freq),
+      sampling_time_(sampling_time),
+      max_ramp_rate_rpm_per_sample_(max_ramp_rate_rpm),
+      vibration_tol_(vibration_tol) {
     CalculateCoefficients();
 }
 
 void EIInputShaper::CalculateCoefficients() {
+    // NONE类型只需要最小缓冲区，不计算滤波系数
+    if (type_ == Type::NONE) {
+        T3_ = 0;
+        T2_ = 0;
+        T4_ = 0;
+        A1_ = 1.0;  // 透传系数
+        A2_ = 0.0;
+        A3_ = 0.0;
+        A4_ = 0.0;
+        buffer_.resize(1, 0.0);
+        buffer_r_.resize(1, 0.0);
+        buffer_l_.resize(1, 0.0);
+        initialized_ = false;
+        return;
+    }
+
     double vib_period = 1.0 / natural_freq_;
     int T_d = static_cast<int>(std::round(vib_period / sampling_time_));
     T3_ = T_d;
@@ -89,15 +110,13 @@ double EIInputShaper::Apply(double input) {
     }
 
     double ramped_input = input;
-    if (ramp_enabled_) {
-        if (!ramp_initialized_) {
-            ramp_output_ = input;
-            ramp_initialized_ = true;
-        } else {
-            ramp_output_ = RampImpl(input, ramp_output_, max_ramp_rate_);
-        }
-        ramped_input = ramp_output_;
+    if (!ramp_initialized_) {
+        ramp_output_ = input;
+        ramp_initialized_ = true;
+    } else {
+        ramp_output_ = RampImpl(input, ramp_output_, max_ramp_rate_rpm_per_sample_);
     }
+    ramped_input = ramp_output_;
 
     return ApplyImpl(buffer_, ramped_input);
 }
@@ -110,18 +129,16 @@ std::pair<double, double> EIInputShaper::Apply(double input_r, double input_l) {
     double ramped_input_r = input_r;
     double ramped_input_l = input_l;
 
-    if (ramp_enabled_) {
-        if (!ramp_initialized_) {
-            ramp_output_r_ = input_r;
-            ramp_output_l_ = input_l;
-            ramp_initialized_ = true;
-        } else {
-            ramp_output_r_ = RampImpl(input_r, ramp_output_r_, max_ramp_rate_);
-            ramp_output_l_ = RampImpl(input_l, ramp_output_l_, max_ramp_rate_);
-        }
-        ramped_input_r = ramp_output_r_;
-        ramped_input_l = ramp_output_l_;
+    if (!ramp_initialized_) {
+        ramp_output_r_ = input_r;
+        ramp_output_l_ = input_l;
+        ramp_initialized_ = true;
+    } else {
+        ramp_output_r_ = RampImpl(input_r, ramp_output_r_, max_ramp_rate_rpm_per_sample_);
+        ramp_output_l_ = RampImpl(input_l, ramp_output_l_, max_ramp_rate_rpm_per_sample_);
     }
+    ramped_input_r = ramp_output_r_;
+    ramped_input_l = ramp_output_l_;
 
     return {ApplyImpl(buffer_r_, ramped_input_r), ApplyImpl(buffer_l_, ramped_input_l)};
 }
@@ -135,6 +152,11 @@ double EIInputShaper::ApplyImpl(std::deque<double>& buffer, double input) {
 
     buffer.pop_front();
     buffer.push_back(input);
+
+    // NONE类型不进行滤波，直接返回输入
+    if (type_ == Type::NONE) {
+        return input;
+    }
 
     double output = A1_ * buffer.back();
 
@@ -223,10 +245,6 @@ void EIInputShaper::SetType(Type type) {
     CalculateCoefficients();
     Reset();
 }
-
-void EIInputShaper::EnableRamp(bool enable) { ramp_enabled_ = enable; }
-
-void EIInputShaper::SetRampRate(double max_rate_per_sample) { max_ramp_rate_ = max_rate_per_sample; }
 
 bool EIInputShaper::DetectDecelStart(bool current_decel_flag) {
     bool decel_start = (current_decel_flag && !previous_decel_flag_);

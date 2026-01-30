@@ -53,10 +53,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     for (int i = 0; i < ndof_robot; ++i) {
         butterworth_filter_[i] = std::make_shared<ButterworthFilter>();
     }
-    // 初始化底盘速度输入整形器（自然频率由配置指定，阻尼比0.05，采样周期1ms）
-    chassis_shaper_ = std::make_unique<EIInputShaper>(chassis_shaper_type_, DiffChassisNatureFreq);
-    chassis_shaper_->EnableRamp(true);
-    chassis_shaper_->SetRampRate(1.0);  // 最大变化率: 1.0 m/s per sample
+    // 初始化底盘速度输入整形器（自然频率由配置指定，采样周期torque_ctrl_dt）
+    chassis_shaper_ = std::make_unique<EIInputShaper>(chassis_shaper_type_, DiffChassisNatureFreq, torque_ctrl_dt,
+                                                      DiffChassisMaxRampRpm);
 
     // 初始化力传感器
     // primary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB2");

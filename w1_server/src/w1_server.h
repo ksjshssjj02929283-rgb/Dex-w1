@@ -100,10 +100,12 @@ private:
 
     // 底盘速度输入整形器
     std::unique_ptr<EIInputShaper> chassis_shaper_;
-    EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
+    EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::TWO_HUMP_EI;  // 输入整形器类型
     const double DiffChassisWidth = 0.4390;
     const double DiffChassisWheelD = 0.1730;    // 差速轮径，用于转RPM
     const double DiffChassisNatureFreq = 1.67;  // 底盘输入整形器自然频率，单位Hz
+    // ramp率转换: 0.5m/s每周期
+    const double DiffChassisMaxRampRpm = 0.5 / (M_PI * DiffChassisWheelD) * 60.0;
 
     // 力传感器相关
     Vector3d sensor_force_;
