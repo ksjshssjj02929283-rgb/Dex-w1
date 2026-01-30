@@ -43,7 +43,7 @@ from dexe_rp import DexforceW1Kinematics, SRSConfig
 
 # from clientsupervisor.move_sync_option import MoveSyncOption
 from clientsupervisor.client_supervisior import RobotClientSupervisor
-from .mgr_util.robot_client_warpper import RobotClientWarpper, GripperClientWarpper
+from .mgr_util.robot_client_warpper import RobotClientWrapper, GripperClientWrapper
 from .movement.move_line_dual_arm import DualArmMoveLineW1
 from .movement.move_joint_dual_arm import DualArmMoveJointW1
 
@@ -288,36 +288,36 @@ class W1Manager:
 
     def _init_client_supervisor(self):
 
-        robot_client_warpper_sim = RobotClientWarpper(self._robot_client_sim)
-        robot_client_warpper_real = RobotClientWarpper(self._robot_client_real)
+        robot_client_wrapper_sim = RobotClientWrapper(self._robot_client_sim)
+        robot_client_wrapper_real = RobotClientWrapper(self._robot_client_real)
 
-        left_ee_client_warpper_sim = GripperClientWarpper(
+        left_ee_client_wrapper_sim = GripperClientWrapper(
             self._left_ee_client_sim)
-        left_ee_client_warpper_real = GripperClientWarpper(
+        left_ee_client_wrapper_real = GripperClientWrapper(
             self._left_ee_client_real)
 
-        right_ee_client_warpper_sim = GripperClientWarpper(
+        right_ee_client_wrapper_sim = GripperClientWrapper(
             self._right_ee_client_sim)
-        right_ee_client_warpper_real = GripperClientWarpper(
+        right_ee_client_wrapper_real = GripperClientWrapper(
             self._right_ee_client_real)
 
         sim_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         real_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
         self._client_supervisor_sim = RobotClientSupervisor(
-            robot_client=robot_client_warpper_sim,
+            robot_client=robot_client_wrapper_sim,
             client_map={
-                "left_arm_ee": left_ee_client_warpper_sim,
-                "right_arm_ee": right_ee_client_warpper_sim
+                "left_arm_ee": left_ee_client_wrapper_sim,
+                "right_arm_ee": right_ee_client_wrapper_sim
             },
             executor_owned=sim_executor,
         )
 
         self._client_supervisor_real = RobotClientSupervisor(
-            robot_client=robot_client_warpper_real,
+            robot_client=robot_client_wrapper_real,
             client_map={
-                "left_arm_ee": left_ee_client_warpper_real,
-                "right_arm_ee": right_ee_client_warpper_real
+                "left_arm_ee": left_ee_client_wrapper_real,
+                "right_arm_ee": right_ee_client_wrapper_real
             },
             executor_owned=real_executor,
         )

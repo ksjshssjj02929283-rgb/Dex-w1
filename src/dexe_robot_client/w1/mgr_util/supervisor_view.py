@@ -10,7 +10,7 @@ from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlann
 from ...common import get_logger, StatusCode
 from typing import Tuple, List
 
-from clientsupervisor.move_sync_option import MoveSyncOption  # pyright: ignore[reportMissingImports]
+from ...client_supervisor.utils.move_sync_option import MoveSyncOption
 
 
 class SupervisorViewW1(object):

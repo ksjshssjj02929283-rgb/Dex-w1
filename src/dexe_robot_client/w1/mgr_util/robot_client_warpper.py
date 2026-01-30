@@ -10,18 +10,13 @@ import numpy as np
 from queue import SimpleQueue
 from typing import List, Optional, Dict
 
-from clientsupervisor.clients.generic_client import GenericClient
-from clientsupervisor.clients.reduced_robot_client_interface import ReducedRobotClientInterface
-from clientsupervisor.clients.modular_reduced_robot_client import ModularReducedRobotClient as RobotClient  # pyright: ignore[reportMissingImports]
-from clientsupervisor.move_sync_option import MoveSyncOption  # pyright: ignore[reportMissingImports]
-import logging
+from ...client_supervisor.clients.generic_client import GenericClient
+from ...client_supervisor.clients.reduced_robot_client_interface import ReducedRobotClientInterface
+from ...client_supervisor.utils.move_sync_option import MoveSyncOption
 from ...robot_client.data_structure import MotionType, MotionGroup
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
-
-class RobotClientWarpper(ReducedRobotClientInterface):
+class RobotClientWrapper(ReducedRobotClientInterface):
 
     def __init__(self, client: "RobotClient"):
         self._client = client
@@ -53,7 +48,7 @@ class RobotClientWarpper(ReducedRobotClientInterface):
             endpoint_index: Optional[List[int]]: segment endpoints index for synchronized tasks
 
         Returns:
-            int: move id
+            int: movement beginning ID
         """
         flattened_motion_target = [
             angle for point in motion_target for angle in point
@@ -71,7 +66,7 @@ class RobotClientWarpper(ReducedRobotClientInterface):
         return self._client.get_info()
 
 
-class GripperClientWarpper(GenericClient):
+class GripperClientWrapper(GenericClient):
 
     def __init__(self, client: "EndEffectorClient"):
         self._client = client
@@ -82,7 +77,6 @@ class GripperClientWarpper(GenericClient):
 
     def invoke_async(self, request_id: int, content: Dict) -> bool:
         action = content['action']
-        print(f"GripperClientWarpper invoke_async action: {action}")
         self._client.set_pos(action)
         return True
 
