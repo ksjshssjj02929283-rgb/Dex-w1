@@ -16,7 +16,6 @@ from queue import Queue, Empty
 from copy import deepcopy
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
-import pinocchio as pin
 
 from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, download_w1_urdf, StatusCode
 from ..common.mapping_index import *
@@ -1044,7 +1043,10 @@ class W1Manager:
                                                  body_transforms=torso_tf)
         self.fcl_checker.update_arm_transform(arml_tf + armr_tf, armlee_tf,
                                               armree_tf)
-        res = self.fcl_checker.check_collision(robot_name=robot_name)
+        res = self.fcl_checker.naive_check_collision(robot_name=robot_name)
+        if res:
+            self.fcl_checker.update_vis_transform(
+                torso_tf + head_tf + arml_tf + armr_tf, armlee_tf, armree_tf)
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def _is_traj_collision(self,
