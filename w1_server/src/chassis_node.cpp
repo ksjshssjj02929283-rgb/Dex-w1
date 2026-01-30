@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include "robot_server_lib/NanoLog.hpp"
 
 using json = nlohmann::json;
 namespace chassis_node {
@@ -235,15 +236,22 @@ void ChassisNode::onTimer() {
     RobotFeedback feedback_data{};
     bool ret = feedback_shm_instance.PeekLatest(&feedback_data);
     const auto &chassis_data = feedback_data.chassis_feedback;
-    PublishOmniMotorFeedback(chassis_data);
     if (use_imu_yaw_ && !is_imu_inited_) {
         // RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Waiting for chassis initialized ...");
         return;
     }
-    if (chassis_model_ == 0)
+    if (chassis_model_ == 0){
         IntegrateOdomOnce(chassis_data);
-    else
+        if(fabs(chassis_data.left_velocity) > 0.005 && fabs(chassis_data.right_velocity) > 0.005)
+        {
+            LOG_CRIT << "chassis right vel: " << chassis_data.left_velocity << " chassis left vel: " << chassis_data.right_velocity;
+        }
+    }
+    else{
+        PublishOmniMotorFeedback(chassis_data);
         IntegrateOmniOdomOnce(chassis_data);
+    }
+        
     PublishOdometry();
 }
 
