@@ -2,124 +2,70 @@
 
 #include <cmath>
 #include <deque>
+#include <utility>
+#include <vector>
 
-/**
- * @brief EI (Extra Insensitive) Input Shaper
- *
- * 实现 EI 输入整形算法，是 ZVD 的改进版本，通过多项式优化系数提高对建模误差的鲁棒性。
- * EI shaper 对频率建模误差的容忍度更高，适用于实际机器人控制场景。
- *
- * 算法原理：
- *   output(t) = A1·input(t) + A2·input(t-T2) + A3·input(t-T3)
- *
- * 其中系数通过多项式拟合优化：
- *   A1 = 0.24968 + 0.24961*V_tol + 0.80008*ζ + 1.23328*V_tol*ζ
- *        + 0.49599*ζ² + 3.17316*V_tol*ζ²
- *   A3 = 0.25149 + 0.21474*V_tol - 0.83249*ζ + 1.41498*V_tol*ζ
- *        + 0.85181*ζ² - 4.90094*V_tol*ζ²
- *   A2 = 1 - A1 - A3
- *
- *   T2_time = T_vib * (0.4999 + 0.46159*V_tol*ζ + 4.26169*V_tol*ζ²
- *             + 1.75601*V_tol*ζ³ + 8.57843*V_tol²*ζ
- *             - 108.644*V_tol²*ζ² + 336.989*V_tol²*ζ³)
- *   T2 = round(T2_time / T_s)
- *   T3 = T_d
- *
- * 参数：
- *   V_tol - 振动容忍度/建模误差 (默认 0.05，即 5%)
- *   ζ - 阻尼比
- *   T_vib - 振动周期 = 1/f_n
- *   T_s - 采样周期
- *   T_d - 离散化振动周期 = round(T_vib/T_s)
- *
- * 参考：
- *   - Singer, N.C. and Seering, W.P., 1990. "Preshaping command inputs
- *     to reduce system vibration"
- *   - 内部测试报告：20231210_v1.0_IST/20231204_InputShaping/EI.m
- */
 class EIInputShaper {
 public:
-    /**
-     * @brief 构造函数
-     * @param natural_frequency_hz 系统自然频率 (Hz)
-     * @param damping_ratio 阻尼比 (无量纲, 0-1)
-     * @param sampling_time_sec 采样周期 (秒)
-     * @param vibration_tolerance 振动容忍度/建模误差 (默认 0.05 = 5%)
-     */
-    EIInputShaper(double natural_frequency_hz,
-                  double damping_ratio,
-                  double sampling_time_sec = 0.001,
-                  double vibration_tolerance = 0.05);
+    enum Type { EI, TWO_HUMP_EI };  // EI整形器类型枚举
 
-    /**
-     * @brief 应用 EI 整形到单个输入样本
-     * @param input 输入信号
-     * @return 整形后的输出信号
-     */
-    double Apply(double input);
+    EIInputShaper(Type type, double natural_freq, double vibration_tol = 0.05);  // 构造函数，初始化EI整形器参数
 
-    /**
-     * @brief 重置内部状态（用于模式切换）
-     * 将缓冲区清零，下次 Apply 时重新初始化
-     */
-    void Reset();
+    double Apply(double input);                                       // 应用EI输入整形
+    std::pair<double, double> Apply(double input_r, double input_l);  // 双通道应用EI输入整形
 
-    /**
-     * @brief 运行时重新配置参数
-     * @param natural_frequency_hz 系统自然频率 (Hz)
-     * @param damping_ratio 阻尼比 (无量纲, 0-1)
-     * @param vibration_tolerance 振动容忍度 (可选，默认保持不变)
-     */
-    void Configure(double natural_frequency_hz, double damping_ratio, double vibration_tolerance = -1.0);
+    void DecelStop(double current_velocity, int interpolation_length);               // 减速停止，单通道
+    void DecelStop(double velocity_r, double velocity_l, int interpolation_length);  // 减速停止，双通道
 
-    /**
-     * @brief 查询当前延迟（采样点数）
-     * @return 延迟的采样点数（T3）
-     */
-    int GetDelaySamples() const;
+    void Reset();                         // 重置状态
+    void Configure(double natural_freq);  // 配置频率
+    void SetType(Type type);              // 设置整形器类型
 
-    /**
-     * @brief 查询当前延迟（秒）
-     * @return 延迟时间（秒）
-     */
-    double GetDelaySeconds() const;
+    void EnableRamp(bool enable);                  // 使能斜坡限制
+    void SetRampRate(double max_rate_per_sample);  // 设置斜坡最大变化率
 
-    /**
-     * @brief 查询是否已初始化
-     * @return true 如果已初始化
-     */
-    bool IsInitialized() const;
-
-    /**
-     * @brief 获取当前系数（用于调试）
-     */
-    void GetCoefficients(double& A1, double& A2, double& A3, int& T2, int& T3) const;
+    bool DetectDecelStart(bool current_decel_flag);  // 检测减速开始时刻
 
 private:
-    /**
-     * @brief 计算 EI 系数和时间延迟
-     */
-    void CalculateCoefficients();
+    void CalculateCoefficients();         // 计算EI系数
+    void CalculateTwoHumpCoefficients();  // 计算双峰EI系数
 
-    // EI 脉冲幅值
-    double A1_;
-    double A2_;
-    double A3_;
+    double ApplyImpl(std::deque<double>& buffer, double input);  // 应用整形器实现
+    void DecelStopImpl(std::deque<double>& buffer, double current_velocity, int interpolation_length);  // 减速停止实现
+    double RampImpl(double target, double current, double max_rate);  // 斜坡限制实现
 
-    // 时间延迟（采样点数）
-    int T2_;
-    int T3_;
-    int T_d_;
+    Type type_ = Type::EI;
+    double natural_freq_ = 2.0;
+    double damping_ratio_ = 0.05;
+    double sampling_time_ = 0.001;
+    double vibration_tol_ = 0.05;
 
-    // 系统参数
-    double natural_frequency_hz_;
-    double damping_ratio_;
-    double sampling_time_;
-    double vibration_tolerance_;
+    double A1_ = 0.0;
+    double A2_ = 0.0;
+    double A3_ = 0.0;
+    double A4_ = 0.0;
+    int T2_ = 0;
+    int T3_ = 0;
+    int T4_ = 0;
 
-    // 输入历史缓冲区
-    std::deque<double> input_history_;
+    std::deque<double> buffer_;
+    std::deque<double> buffer_r_;
+    std::deque<double> buffer_l_;
 
-    // 初始化状态
-    bool initialized_;
+    std::deque<double> decel_buffer_;
+    std::deque<double> decel_buffer_r_;
+    std::deque<double> decel_buffer_l_;
+
+    bool decel_mode_ = false;
+    bool initialized_ = false;
+    int decel_counter_ = 0;
+    int decel_total_steps_ = 0;
+    bool previous_decel_flag_ = false;
+
+    bool ramp_enabled_ = false;
+    double max_ramp_rate_ = 0.0;
+    double ramp_output_ = 0.0;
+    double ramp_output_r_ = 0.0;
+    double ramp_output_l_ = 0.0;
+    bool ramp_initialized_ = false;
 };

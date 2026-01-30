@@ -53,6 +53,11 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     for (int i = 0; i < ndof_robot; ++i) {
         butterworth_filter_[i] = std::make_shared<ButterworthFilter>();
     }
+    // 初始化底盘速度输入整形器（自然频率由配置指定，阻尼比0.05，采样周期1ms）
+    chassis_shaper_ = std::make_unique<EIInputShaper>(chassis_shaper_type_, DiffChassisNatureFreq);
+    chassis_shaper_->EnableRamp(true);
+    chassis_shaper_->SetRampRate(1.0);  // 最大变化率: 1.0 m/s per sample
+
     // 初始化力传感器
     // primary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB2");
     // secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");
@@ -76,12 +81,12 @@ void RobotServer::ForceArrayCallback(const std_msgs::msg::Float64MultiArray::Sha
 void RobotServer::InitParamConfig() {
     auto config_path = server_data_dir_ / "w1_config.json";
 
-    const std::set<std::string> kAllowedRootKeys{"enable_ruckig"};
+    const std::set<std::string> kAllowedRootKeys{"enable_ruckig", "enable_chassis_shaper"};
 
     nlohmann::json root;
-    // 若文件不存在则创建默认配置
     if (!std::filesystem::exists(config_path)) {
         root["enable_ruckig"] = this->enable_ruckig_;
+        root["enable_chassis_shaper"] = this->enable_chassis_shaper_;
 
         std::ofstream ofs(config_path);
         ofs << root.dump(2);
@@ -99,7 +104,6 @@ void RobotServer::InitParamConfig() {
 
     bool need_rewrite = false;
 
-    // 清理未定义根字段
     for (auto it = root.begin(); it != root.end(); ++it) {
         if (!kAllowedRootKeys.count(it.key())) {
             need_rewrite = true;
@@ -111,23 +115,28 @@ void RobotServer::InitParamConfig() {
         root["enable_ruckig"] = this->enable_ruckig_;
         need_rewrite = true;
     }
+    if (!root.contains("enable_chassis_shaper")) {
+        root["enable_chassis_shaper"] = this->enable_chassis_shaper_;
+        need_rewrite = true;
+    }
 
-    // 同步布尔值
     this->enable_ruckig_ = root.value("enable_ruckig", this->enable_ruckig_);
+    this->enable_chassis_shaper_ = root.value("enable_chassis_shaper", this->enable_chassis_shaper_);
 
-    // 构建干净配置
     nlohmann::json root_clean;
     root_clean["enable_ruckig"] = this->enable_ruckig_;
+    root_clean["enable_chassis_shaper"] = this->enable_chassis_shaper_;
 
-    // 如果发现未定义字段或缺失字段，则回写干净配置
     if (need_rewrite) {
         std::ofstream ofs(config_path);
         ofs << root_clean.dump(2);
     }
 
-    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s)", config_path.string().c_str(),
-                this->enable_ruckig_ ? "true" : "false");
-    LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_;
+    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_chassis_shaper=%s)",
+                config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
+                this->enable_chassis_shaper_ ? "true" : "false");
+    LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_
+             << ", enable_chassis_shaper=" << this->enable_chassis_shaper_;
 }
 
 void RobotServer::TorqueControlThreadFunc() {
@@ -342,6 +351,34 @@ void RobotServer::TorqueControlThreadFunc() {
                      << ", robot_server_state:" << GetRobotServerStateMsg().data.c_str();
             last_status_word_ = robot_feedback_.robot_status_word;
             last_control_word_ = robot_control_.robot_control_word;
+        }
+        // 底盘控制：应用输入整形并写入共享内存
+        robot_control_.chassis_mode = chassis_control_target_.chassis_mode;
+        robot_control_.chassis_cnt++;
+        if (chassis_control_target_.chassis_mode == 1) {
+            // 差速模式：对左右轮速度应用输入整形
+            if (enable_chassis_shaper_) {
+                auto [shaper_left, shaper_right] = chassis_shaper_->Apply(
+                    chassis_control_target_.chassis_left_velocity, chassis_control_target_.chassis_right_velocity);
+                robot_control_.chassis_left_velocity = shaper_left;
+                robot_control_.chassis_right_velocity = shaper_right;
+            } else {
+                robot_control_.chassis_left_velocity = chassis_control_target_.chassis_left_velocity;
+                robot_control_.chassis_right_velocity = chassis_control_target_.chassis_right_velocity;
+            }
+        } else if (chassis_control_target_.chassis_mode == 2) {
+            // 全向电机控制模式：直接复制
+            for (size_t i = 0; i < OMNI_MOTOR_NUM; i++) {
+                robot_control_.chassis_motor_velocity[i] = chassis_control_target_.chassis_motor_velocity[i];
+                robot_control_.chassis_motor_direction[i] = chassis_control_target_.chassis_motor_direction[i];
+            }
+            robot_control_.chassis_estop = chassis_control_target_.chassis_estop;
+            robot_control_.chassis_neutral = chassis_control_target_.chassis_neutral;
+        } else if (chassis_control_target_.chassis_mode == 0) {
+            // 全向整车控制模式：复制参数
+            robot_control_.chassis_whole_mode = chassis_control_target_.chassis_whole_mode;
+            robot_control_.chassis_velocity = chassis_control_target_.chassis_velocity;
+            robot_control_.chassis_direction = chassis_control_target_.chassis_direction;
         }
         control_shm_instance.AppendNewElement(robot_control_);
         std::this_thread::sleep_until(next_cycle_time_point);
@@ -630,42 +667,37 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
 }
 
 void RobotServer::OmniChassisControlCallback(const ChassisWholeControlMsg::SharedPtr msg) {
-    robot_control_.chassis_mode = 0;  // 设置为全向整车模式
-    robot_control_.chassis_whole_mode = msg->mode;
-    robot_control_.chassis_velocity = msg->speed;
-    robot_control_.chassis_direction = msg->direction;
-    robot_control_.chassis_cnt++;
+    chassis_control_target_.chassis_mode = 0;  // 设置为全向整车模式
+    chassis_control_target_.chassis_whole_mode = msg->mode;
+    chassis_control_target_.chassis_velocity = msg->speed;
+    chassis_control_target_.chassis_direction = msg->direction;
     RCLCPP_DEBUG(this->get_logger(), "Omni chassis control: mode=%ld, speed=%.2f, direction=%.2f", msg->mode,
                  msg->speed, msg->direction);
 }
 
 // 全向底盘电机控制回调
 void RobotServer::OmniChassisMotorControlCallback(const ChassisMotorControlMsg::SharedPtr msg) {
-    robot_control_.chassis_mode = 2;  // 设置为电机控制模式
+    chassis_control_target_.chassis_mode = 2;  // 设置为电机控制模式
     for (size_t i = 0; i < msg->speed.size() && i < OMNI_MOTOR_NUM; i++) {
-        robot_control_.chassis_motor_velocity[i] = msg->speed[i];
-        robot_control_.chassis_motor_direction[i] = msg->position[i];
+        chassis_control_target_.chassis_motor_velocity[i] = msg->speed[i];
+        chassis_control_target_.chassis_motor_direction[i] = msg->position[i];
     }
-    robot_control_.chassis_cnt++;
-    robot_control_.chassis_estop = msg->estop;
-    robot_control_.chassis_neutral = msg->neutral;
+    chassis_control_target_.chassis_estop = msg->estop;
+    chassis_control_target_.chassis_neutral = msg->neutral;
     RCLCPP_DEBUG(this->get_logger(), "Omni chassis motor control: estop=%ld, neutral=%ld", msg->estop, msg->neutral);
 }
 
 void RobotServer::DiffChassisControlCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
-    robot_control_.chassis_mode = 1;  // 设置为差速模式
-    // robot_control_.chassis_right_velocity = msg->linear.x + msg->angular.z * DiffChassisWidth * 0.5;
-    // robot_control_.chassis_left_velocity = msg->linear.x - msg->angular.z * DiffChassisWidth * 0.5;
+    chassis_control_target_.chassis_mode = 1;  // 设置为差速模式
     double chassis_right_velocity = msg->linear.x + msg->angular.z * DiffChassisWidth * 0.5;
     double chassis_left_velocity = msg->linear.x - msg->angular.z * DiffChassisWidth * 0.5;
 
-    robot_control_.chassis_right_velocity = chassis_right_velocity * 60 / (M_PI * DiffChassisWheelD);
-    robot_control_.chassis_left_velocity = chassis_left_velocity * 60 / (M_PI * DiffChassisWheelD);
+    chassis_control_target_.chassis_right_velocity = chassis_right_velocity * 60 / (M_PI * DiffChassisWheelD);
+    chassis_control_target_.chassis_left_velocity = chassis_left_velocity * 60 / (M_PI * DiffChassisWheelD);
 
-    robot_control_.chassis_cnt++;
     RCLCPP_DEBUG(this->get_logger(), "Diff chassis control: linear.x=%.2f, angular.z=%.2f => left=%.2f, right=%.2f",
-                 msg->linear.x, msg->angular.z, robot_control_.chassis_left_velocity,
-                 robot_control_.chassis_right_velocity);
+                 msg->linear.x, msg->angular.z, chassis_control_target_.chassis_left_velocity,
+                 chassis_control_target_.chassis_right_velocity);
 }
 
 }  // namespace robot_server_lib

@@ -9,6 +9,7 @@
 #include "joint_interfaces/msg/joint_position_control.hpp"
 #include "joint_interfaces/msg/joint_velocity_torque_limit_feedback.hpp"
 #include "robot_server_lib/butterworth_filter.h"
+#include "robot_server_lib/ei_input_shaper.h"
 #include "robot_server_lib/force_sensor_reader.h"
 #include "robot_server_lib/robot_server_base.h"
 #include "shared_memory_def.h"
@@ -77,11 +78,32 @@ private:
     const int max_switch_count_ = 200;     // 切换控制模式时的位置保持周期数
     bool enable_ruckig_ = true;            // /control/joint接口是否使用 Ruckig 进行轨迹规划
     bool enable_record_ = false;           // 是否启用调试日志
+    bool enable_chassis_shaper_ = true;    // 是否启用底盘速度输入整形器
     const int first_arm_joint_index_ = 6;  // 左臂第一个关节在整体关节数组中的索引
     const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
-    const double DiffChassisWidth = 0.4390;
-    const double DiffChassisWheelD = 0.1730;  // 差速轮径，用于转RPM
+
     std::shared_ptr<ButterworthFilter> butterworth_filter_[ndof_robot];
+
+    // 底盘控制目标变量（不直接写入共享内存）
+    struct {
+        int chassis_mode = 0;
+        int chassis_whole_mode = 0;
+        double chassis_velocity = 0.0;
+        double chassis_direction = 0.0;
+        double chassis_left_velocity = 0.0;
+        double chassis_right_velocity = 0.0;
+        double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};
+        double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};
+        int chassis_estop = 0;
+        int chassis_neutral = 0;
+    } chassis_control_target_;
+
+    // 底盘速度输入整形器
+    std::unique_ptr<EIInputShaper> chassis_shaper_;
+    EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
+    const double DiffChassisWidth = 0.4390;
+    const double DiffChassisWheelD = 0.1730;    // 差速轮径，用于转RPM
+    const double DiffChassisNatureFreq = 1.67;  // 底盘输入整形器自然频率，单位Hz
 
     // 力传感器相关
     Vector3d sensor_force_;
