@@ -187,3 +187,8 @@ def move_full_body_example2(move_with_ee: bool,
 if __name__ == "__main__":
     # move_full_body_example1(move_with_ee = True, is_sim = True)
     move_full_body_example2(move_with_ee=True, is_sim=True, is_local=False)
+    
+    # TODO: keep the script running to observe the robot state in simulator
+    import time
+    while True:
+        time.sleep(0.2)

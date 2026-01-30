@@ -10,9 +10,12 @@ from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlann
 from ...common import get_logger, StatusCode
 from typing import Tuple, List
 
+
+from clientsupervisor.move_sync_option import MoveSyncOption  # pyright: ignore[reportMissingImports]
+
 class SupervisorViewW1(object):
 
-    def __init__(self, supervisor, w1_params, kine_solver, pin_kin_solver,collision_checker, time_step : float = 0.01) -> None:
+    def __init__(self, supervisor, w1_params, kine_solver, pin_kin_solver, collision_checker, time_step : float = 0.01) -> None:
         self.supervisor = supervisor
         self.logger = get_logger()
         self.w1_params = w1_params
@@ -362,33 +365,54 @@ class SupervisorViewW1(object):
         Returns:
             StatusCode: Execution status
         """
-        # try:
-        self.logger.info("Starting joint trajectory execution...")
-        move_id, end_id = self.supervisor.move_joint_trajectory_async(
-            qpos_array, interval=0.01)
+        self.logger.debug("Starting joint trajectory execution...")
+        # Validate inputs
+        if not isinstance(qpos_array, np.ndarray):
+            self.logger.error("qpos_array must be a numpy array.")
+            return False
 
+        # Extract unique sync IDs from trigger lists
+        raw_endpoint_index = []
         if left_arm_ee_trigger_list:
-            for trigger in left_arm_ee_trigger_list:
-                action, sync_id = trigger
-                self.logger.info(f"Triggering left arm EE action: {action}")
-                self.supervisor.call_srv_async(
-                    "left_arm_ee", {"action": action},
-                    MoveSyncOption.sync_w_explicit_id(sync_id))
-
+            raw_endpoint_index.extend(sync_id for sync_id, _ in left_arm_ee_trigger_list)
         if right_arm_ee_trigger_list:
-            for trigger in right_arm_ee_trigger_list:
-                action, sync_id = trigger
-                self.logger.info(f"Triggering right arm EE action: {action}")
+            raw_endpoint_index.extend(sync_id for sync_id, _ in right_arm_ee_trigger_list)
+        unique_sync_ids = sorted(set(raw_endpoint_index))
+
+        move_id, end_id = self.supervisor.move_joint_trajectory_async(
+            qpos_array, interval=self.TIME_STEP, endpoint_index=unique_sync_ids)
+        self.logger.debug(f"Trajectory execution started: move_id={move_id}, end_id={end_id}")
+
+        # Process trigger lists
+        def process_trigger_list(trigger_list):
+            if not trigger_list:
+                return [], []
+            sync_id_map = {sync_id: move_id + i + 1 for i, sync_id in enumerate(unique_sync_ids)}
+            new_trigger_list = [
+                (sync_id_map[sync_id], action)
+                for sync_id, action in trigger_list if sync_id in sync_id_map
+            ]
+            new_trigger_list.sort(key=lambda x: x[0])
+            return new_trigger_list
+
+        left_arm_ee_trigger_list_new = process_trigger_list(left_arm_ee_trigger_list)
+        right_arm_ee_trigger_list_new = process_trigger_list(right_arm_ee_trigger_list)
+
+        # Trigger end-effector actions
+        def trigger_ee_actions(trigger_list, arm_name):
+            for sync_id, action in trigger_list:
                 self.supervisor.call_srv_async(
-                    "right_arm_ee", {"action": action},
+                    arm_name, {"action": action},
                     MoveSyncOption.sync_w_explicit_id(sync_id))
 
-        self.logger.info("Waiting for all movements to complete...")
+        if left_arm_ee_trigger_list_new:
+            trigger_ee_actions(left_arm_ee_trigger_list_new, "left_arm_ee")
+        if right_arm_ee_trigger_list_new:
+            trigger_ee_actions(right_arm_ee_trigger_list_new, "right_arm_ee")
+
+        # Wait for completion
+        self.logger.debug("Waiting for all movements to complete...")
         self.supervisor.wait_move()
 
-        self.logger.info("Joint trajectory execution completed successfully.")
+        self.logger.debug("Joint trajectory execution completed successfully.")
         return True
-
-        # except Exception as e:
-        #     self.logger.error(f"Error during joint trajectory execution: {e}")
-        #     return False

@@ -45,6 +45,7 @@ from dexe_rp import DexforceW1Kinematics, SRSConfig
 from clientsupervisor.client_supervisior import RobotClientSupervisor
 from .mgr_util.robot_client_warpper import RobotClientWarpper, GripperClientWarpper
 from .movement.move_line_dual_arm import DualArmMoveLineW1
+from .movement.move_joint_dual_arm import DualArmMoveJointW1
 
 class W1Manager:
     _instance = None
@@ -295,8 +296,8 @@ class W1Manager:
         right_ee_client_warpper_sim = GripperClientWarpper(self._right_ee_client_sim)
         right_ee_client_warpper_real = GripperClientWarpper(self._right_ee_client_real)
         
-        sim_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        real_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        sim_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        real_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
         self._client_supervisor_sim = RobotClientSupervisor(
             robot_client=robot_client_warpper_sim,
@@ -2551,36 +2552,14 @@ class W1Manager:
         Returns:
             bool
         """
-        res, cur_qpos = self.get_current_qpos()
-        if res.value < 0:
-            return res
-        cur_left_arm_ee_qpos = None
-        if self._has_arm_ee_client("left_arm_ee", False):
-            res, cur_left_arm_ee_qpos = self.get_current_qpos("left_arm_ee")
-            if res.value < 0:
-                return res
-        cur_right_arm_ee_qpos = None
-        if self._has_arm_ee_client("right_arm_ee", False):
-            res, cur_right_arm_ee_qpos = self.get_current_qpos("right_arm_ee")
-            if res.value < 0:
-                return res
-
-        # plan traj
-        (res, total_qpos_array, left_arm_ee_trigger_list,
-         right_arm_ee_trigger_list) = self.plan_joint_full_body(
-             cur_qpos, cur_left_arm_ee_qpos, cur_right_arm_ee_qpos,
-             waypoints_dict, speed_ratio, is_sparse)
-        if res.value < 0:
-            return res
-
-        # # check collision
-        # if self._check_traj_collision(total_qpos_array):
-        #     return False
-
-        # execute
-        return self.execute_joint_traj(total_qpos_array,
-                                       left_arm_ee_trigger_list,
-                                       right_arm_ee_trigger_list)
+        movement = DualArmMoveJointW1(
+            w1_params=self.w1_params,
+            supervisor=self._client_supervisor_sim,
+            kine_solver=self.kine,
+            pin_kin_solver=self._pin_kine,
+            collision_checker=self.fcl_checker
+        )
+        return movement.move_joint_full_body(waypoints_dict, speed_ratio, is_sparse)
 
     @time_consuming
     def plan_linear_full_body(

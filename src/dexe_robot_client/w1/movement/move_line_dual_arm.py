@@ -16,7 +16,6 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
     def __init__(self, w1_params, supervisor, kine_solver, pin_kin_solver, collision_checker, time_step: float = 0.01):
         super().__init__(w1_params, supervisor, kine_solver, pin_kin_solver, collision_checker, time_step=time_step)
 
-
     def _plan_to_waypoint(
             self,
             name: str,
