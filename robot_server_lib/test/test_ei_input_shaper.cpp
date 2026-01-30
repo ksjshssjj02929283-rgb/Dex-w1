@@ -28,8 +28,7 @@ TEST(EIInputShaperTest, UnitStepResponse) {
     const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
-    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, damping_ratio, sampling_time_sec,
-                         vibration_tolerance);
+    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
 
     double final_output = 0.0;
     for (int i = 0; i < 100; ++i) {
@@ -45,8 +44,7 @@ TEST(EIInputShaperTest, ZeroInputResponse) {
     const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
-    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, damping_ratio, sampling_time_sec,
-                         vibration_tolerance);
+    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
 
     for (int i = 0; i < 100; ++i) {
         double output = shaper.Apply(0.0);
@@ -61,8 +59,7 @@ TEST(EIInputShaperTest, RampResponse) {
     const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
-    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, damping_ratio, sampling_time_sec,
-                         vibration_tolerance);
+    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
 
     double slope = 0.01;
     double steady_state_error = 0.0;
@@ -89,8 +86,7 @@ TEST(EIInputShaperTest, ResetFunctionality) {
     const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
-    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, damping_ratio, sampling_time_sec,
-                         vibration_tolerance);
+    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
 
     for (int i = 0; i < 50; ++i) {
         shaper.Apply(1.0);
@@ -107,8 +103,9 @@ TEST(EIInputShaperTest, TypeSwitching) {
     const double natural_frequency_hz = 1.67;
     const double damping_ratio = 0.05;
     const double sampling_time_sec = 0.01;
+    const double vibration_tolerance = 0.05;
 
-    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, damping_ratio, sampling_time_sec);
+    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
 
     for (int i = 0; i < 50; ++i) {
         shaper.Apply(1.0);
@@ -130,8 +127,7 @@ TEST(EIInputShaperTest, TwoHumpEI) {
     const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
-    EIInputShaper shaper(EIInputShaper::TWO_HUMP_EI, natural_frequency_hz, damping_ratio, sampling_time_sec,
-                         vibration_tolerance);
+    EIInputShaper shaper(EIInputShaper::TWO_HUMP_EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
 
     double final_output = 0.0;
     for (int i = 0; i < 200; ++i) {
@@ -147,8 +143,7 @@ TEST(EIInputShaperTest, DecelEdgeDetection) {
     const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
-    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, damping_ratio, sampling_time_sec,
-                         vibration_tolerance);
+    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
 
     bool decel_start = shaper.DetectDecelStart(false);
     EXPECT_FALSE(decel_start);
@@ -173,11 +168,7 @@ TEST(EIInputShaperTest, RampFunction) {
     const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
-    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, damping_ratio, sampling_time_sec,
-                         vibration_tolerance);
-
-    shaper.EnableRamp(true);
-    shaper.SetRampRate(0.01);
+    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
 
     double output1 = shaper.Apply(1.0);
     EXPECT_NEAR(output1, 0.01, 1e-10);
@@ -202,11 +193,7 @@ TEST(EIInputShaperTest, RampFunctionDualChannel) {
     const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
-    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, damping_ratio, sampling_time_sec,
-                         vibration_tolerance);
-
-    shaper.EnableRamp(true);
-    shaper.SetRampRate(0.01);
+    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
 
     auto [output_r1, output_l1] = shaper.Apply(1.0, 2.0);
     EXPECT_NEAR(output_r1, 0.01, 1e-10);
@@ -231,11 +218,7 @@ TEST(EIInputShaperTest, RampDirectionChange) {
     const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
-    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, damping_ratio, sampling_time_sec,
-                         vibration_tolerance);
-
-    shaper.EnableRamp(true);
-    shaper.SetRampRate(0.01);
+    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
 
     for (int i = 0; i < 100; ++i) {
         shaper.Apply(1.0);
@@ -248,4 +231,43 @@ TEST(EIInputShaperTest, RampDirectionChange) {
 
     double output3 = shaper.Apply(0.0);
     EXPECT_NEAR(output3, 0.98, 1e-2);
+}
+
+// 测试 11: NONE类型 - 不滤波但支持ramp
+TEST(EIInputShaperTest, NoneTypeNoFilterWithRamp) {
+    const double natural_frequency_hz = 1.67;
+    const double vibration_tolerance = 0.05;
+
+    EIInputShaper shaper(EIInputShaper::NONE, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
+
+    // 测试不滤波 - 直接透传
+    double output1 = shaper.Apply(5.0);
+    EXPECT_NEAR(output1, 5.0, 1e-10);
+
+    double output2 = shaper.Apply(10.0);
+    EXPECT_NEAR(output2, 10.0, 1e-10);
+
+    // 测试双通道不滤波
+    auto [output_r1, output_l1] = shaper.Apply(3.0, 7.0);
+    EXPECT_NEAR(output_r1, 3.0, 1e-10);
+    EXPECT_NEAR(output_l1, 7.0, 1e-10);
+
+    // 启用ramp - 验证NONE类型支持ramp功能
+    shaper.Reset();
+
+    // 第一次调用设为输入值
+    double ramp_output1 = shaper.Apply(1.0);
+    EXPECT_DOUBLE_EQ(ramp_output1, 1.0);
+
+    // 改变目标值，验证ramp会逐步接近新目标
+    double prev = ramp_output1;
+    for (int i = 0; i < 15; ++i) {
+        double curr = shaper.Apply(2.0);
+        // ramp应该逐步增加或保持不变（达到目标后）
+        EXPECT_GE(curr, prev);
+        EXPECT_LE(curr, 2.0);
+        prev = curr;
+    }
+    // 最终应该达到或接近目标值2.0
+    EXPECT_NEAR(prev, 2.0, 0.15);
 }
