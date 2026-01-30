@@ -16,12 +16,15 @@ class StatusCode(Enum):
     INPUT_INVALID = -201
     DIM_MISMATCH = -202
     NAME_MISMATCH = -204
+    INPUT_EMPTY = -205
 
-    ROBOT_STATUS_ERROR = -300
+    ROBOT_STATUS_INVALID = -300
     ROBOT_NOT_CONNECT = -301
     ROBOT_NOT_ENABLE = -302
+    ROBOT_MOVE_FAIL = -303
 
     EE_NOT_CONNECT = -400
+    EE_MOVE_FAIL = -401
 
     CHASSIS_NOT_CONNECT = -500
 
@@ -37,6 +40,8 @@ class StatusCode(Enum):
 
     STOP_MOVE = -800
 
+    TIME_OUT = -900
+
 
 class StatusContext:
     STATUS_MESSAGES = {
@@ -47,12 +52,15 @@ class StatusContext:
         StatusCode.INPUT_INVALID: "Input invalid",
         StatusCode.DIM_MISMATCH: "Dimension mismatch",
         StatusCode.NAME_MISMATCH: "Name mismatch",
+        StatusCode.INPUT_EMPTY: "Input empty",
 
-        StatusCode.ROBOT_STATUS_ERROR: "Robot status mismatch",
+        StatusCode.ROBOT_STATUS_INVALID: "Robot status mismatch",
         StatusCode.ROBOT_NOT_CONNECT: "Robot not connect",
         StatusCode.ROBOT_NOT_ENABLE: "Robot not enable",
+        StatusCode.ROBOT_MOVE_FAIL: "Robot move failed",
 
         StatusCode.EE_NOT_CONNECT: "Endeffector not connect",
+        StatusCode.EE_MOVE_FAIL: "Endeffector move failed",
 
         StatusCode.CHASSIS_NOT_CONNECT: "Chassis not connect",
 
@@ -66,7 +74,9 @@ class StatusContext:
         StatusCode.NOT_AT_START: "Current qpos not at start qpos of trajectory",
         StatusCode.GOAL_NOT_REACH: "Final qpos not reach the final qpos of trajectory",
 
-        StatusCode.STOP_MOVE: "Stop move by user"
+        StatusCode.STOP_MOVE: "Stop move by user",
+
+        StatusCode.TIME_OUT: "Time out failed"
     }
 
     @staticmethod

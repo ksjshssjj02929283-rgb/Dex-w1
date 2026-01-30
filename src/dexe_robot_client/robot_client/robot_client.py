@@ -5,17 +5,29 @@
 # ----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
 from .data_structure import *
+from ..common import get_logger
 
 
 class RobotClient(ABC):
 
     def __init__(self, is_sim: bool = False):
+        self.logger = get_logger()
         self.is_sim = is_sim
 
+        # robot info
         self.status = None
+        self.robot_type = None
+        self.arm_type = None
+        self.robot_version = None
+
+        # status words/control words
         self.robot_statusword = None
         self.robot_controlword = None
+
+        # property
         self.run_mode = None
+        self.safe_level = None
+        self.global_speed_ratio = None
 
         self.latest_sent_id = -1
         self.latest_queued_id = -1
@@ -49,13 +61,18 @@ class RobotClient(ABC):
         """Get robot state information.
         获取机器人状态信息
         Returns:
-            RobotState: 机器人状态集合
+            RobotInfo: 机器人状态集合
         """
         return RobotInfo(
             status=self.status,
+            robot_type=self.robot_type,
+            arm_type=self.arm_type,
+            robot_version=self.robot_version,
             robot_statusword=self.robot_statusword,
             robot_controlword=self.robot_controlword,
             run_mode=self.run_mode,
+            safe_level=self.safe_level,
+            global_speed_ratio=self.global_speed_ratio,
             latest_sent_id=self.latest_sent_id,
             latest_queued_id=self.latest_queued_id,
             latest_finished_id=self.latest_finished_id,
@@ -73,6 +90,30 @@ class RobotClient(ABC):
             ee_pose=self.ee_pose,
             torso_pose_X_Z_RY=self.torso_pose_X_Z_RY,
         )
+
+    def get_robot_type(self) -> str:
+        """Get robot type string.
+        获取机器人型号字符串
+        Returns:
+            str: 机器人型号字符串
+        """
+        return self.robot_type
+
+    def get_arm_type(self) -> str:
+        """Get robot arm type string.
+        获取机器人臂型字符串
+        Returns:
+            str: 机器人臂型字符串
+        """
+        return self.arm_type
+
+    def get_robot_version(self) -> str:
+        """Get robot version string.
+        获取机器人版本字符串
+        Returns:
+            str: 机器人版本字符串
+        """
+        return self.robot_version
 
     def set_tcp(
         self,
@@ -138,27 +179,93 @@ class RobotClient(ABC):
         return self.send_set_property_request(PropertyType.SafeLevel,
                                               safe_level)
 
-    def set_impedance_mode(self, set_enable: bool) -> int:
+    def switch_run_mode(self, run_mode: RunMode) -> int:
         """async interface - setting robot impedance mode
-        异步接口 - 开关机器人阻抗模式, 开启后机器人处于阻抗控制状态, 仅真实机器人生效
+        异步接口 - 切换机器人运行模式, RunMode.Position: 位置模式, RunMode.Torque: 力矩模式, RunMode.Drag: 拖动模式, RunMode.CartesianImpedance: 笛卡尔阻抗模式
         Args:
-            - set_enable: bool: 是否开启阻抗模式, True: 开启阻抗模式, False: 关闭阻抗模式
+            - run_mode: RunMode: 运行模式
         Returns:
             - int: request id 指令号, 可用于等待对应运动指令完成等
         """
-        return self.send_set_property_request(PropertyType.EnableImpedance,
-                                              set_enable)
+        return self.send_set_property_request(PropertyType.SwitchRunMode,
+                                              run_mode.value - 1)
 
-    def set_impedance_mode(self, set_enable: bool) -> int:
-        """async interface - setting robot impedance mode
-        异步接口 - 开关机器人阻抗模式, 开启后机器人处于阻抗控制状态, 仅真实机器人生效
+    def set_joint_stiffness(self, stiffness: Union[float, list[float]]) -> int:
+        """async interface - setting joint stiffness
+        异步接口 - 设置力矩模式下的关节刚度
         Args:
-            - set_enable: bool: 是否开启阻抗模式, True: 开启阻抗模式, False: 关闭阻抗模式
+            - stiffness: float or list[float]: 输入1维数据则设置全部关节刚度相同, 输入多维数据需与双臂关节数目相同(w1为14)则分别设置各关节刚度
         Returns:
             - int: request id 指令号, 可用于等待对应运动指令完成等
         """
-        return self.send_set_property_request(PropertyType.EnableImpedance,
-                                              set_enable)
+        # 检测维度是否合法
+        if isinstance(stiffness, list):
+            if len(stiffness) not in [1, 14]:
+                self.logger.error(
+                    "Joint stiffness length invalid, should be 1 or 14.")
+                return -1
+        return self.send_set_property_request(PropertyType.JointStiffness,
+                                              stiffness)
+
+    def set_joint_damping(self, damping: Union[float, list[float]]) -> int:
+        """async interface - setting joint damping
+        异步接口 - 设置力矩模式下的关节阻尼
+        Args:
+            - damping: float or list[float]: 输入1维数据则设置全部关节阻尼相同, 输入多维数据需与双臂关节数目相同(14维)则分别设置各关节阻尼
+        Returns:
+            - int: request id 指令号, 可用于等待对应运动指令完成等
+        """
+        # 检测维度是否合法
+        if isinstance(damping, list):
+            if len(damping) not in [1, 14]:
+                self.logger.error(
+                    "Joint damping length invalid, should be 1 or 14.")
+                return -1
+        return self.send_set_property_request(PropertyType.JointDamping,
+                                              damping)
+
+    def set_cartesian_stiffness(self, stiffness: Union[float,
+                                                       list[float]]) -> int:
+        """async interface - setting cartesian stiffness
+        异步接口 - 设置笛卡尔阻抗模式下的笛卡尔刚度
+        Args:
+            - stiffness: float or list[float]: 输入1维数据则设置全部方向刚度相同, 输入多维数据需与双臂笛卡尔空间维度相同(12维)则分别设置各方向刚度
+        Returns:
+            - int: request id 指令号, 可用于等待对应运动指令完成等
+        """
+        # 检测维度是否合法
+        if isinstance(stiffness, list):
+            if len(stiffness) not in [1, 12]:
+                self.logger.error(
+                    "Cartesian stiffness length invalid, should be 1 or 12.")
+                return -1
+        return self.send_set_property_request(PropertyType.CartStiffness,
+                                              stiffness)
+
+    def set_cartesian_damping_ratio(
+            self, damping_ratio: Union[float, list[float]]) -> int:
+        """async interface - setting cartesian damping ratio
+        异步接口 - 设置笛卡尔阻抗模式下的笛卡尔阻尼比
+        Args:
+            - damping_ratio: float or list[float]: 笛卡尔阻尼比, 取值范围0.7~1.3, 默认设置为1.0, 输入1维数据则设置全部方向阻尼比相同, 输入多维数据需与双臂笛卡尔空间维度相同(12维)则分别设置各方向阻尼比
+        Returns:
+            - int: request id 指令号, 可用于等待对应运动指令完成等
+        """
+        # 检测输入是否合法
+        if isinstance(damping_ratio, list):
+            if any(dr < 0.7 or dr > 1.3 for dr in damping_ratio):
+                self.logger.error(
+                    "Cartesian damping ratio values invalid, should be in range [0.7, 1.3]."
+                )
+                return -1
+        else:
+            if damping_ratio < 0.7 or damping_ratio > 1.3:
+                self.logger.error(
+                    "Cartesian damping ratio value invalid, should be in range [0.7, 1.3]."
+                )
+                return -1
+        return self.send_set_property_request(PropertyType.CartDampingRatio,
+                                              damping_ratio)
 
     """ ---------------------------------------------------------------------------
     User interfaces - Move requests
@@ -384,6 +491,23 @@ class RobotClient(ABC):
 
         request = MoveRequest(type=MotionType.StartEEPoseStreaming,
                               motion_group=motion_group)
+        return self.send_move_robot_request(request)
+
+    def start_ee_velocity_streaming_request(
+            self,
+            motion_group: MotionGroup = MotionGroup.Primary,
+            reference_frame: Optional[ReferenceFrame] = None  # 参考坐标系
+    ) -> int:
+        """sync interface - start streaming control
+        同步接口 - 开启一个流控制request, 运行流控制指令前需先调用此命令, 仅可在机器人Idle状态下调用, 可先调用wait_move_finish等待之前发送的指令完成让机器人进入Idle状态
+        Returns:
+            - int: request id 指令号
+        """
+        self.wait_request_finish()
+
+        request = MoveRequest(type=MotionType.StartEEVelocityStreaming,
+                              motion_group=motion_group,
+                              reference_frame=reference_frame)
         return self.send_move_robot_request(request)
 
     def send_streaming_command(

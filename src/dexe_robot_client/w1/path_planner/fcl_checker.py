@@ -13,6 +13,8 @@ import json
 from IPython import embed
 from scipy.spatial.transform import Rotation as R
 from copy import deepcopy
+from ...common import LOG_DIR
+from dataclasses import dataclass
 
 from ...end_effector_client import EndEffectorType
 from .utils.robot_type import *
@@ -75,7 +77,7 @@ class FCLChecker:
                 self.use_ee = True
             else:
                 raise ValueError(
-                    f"Unsupported End Effector Type: {end_effector_type}. Please use PGC_GRIPPER or BRAINCO_HAND."
+                    f"Unsupported End Effector Type: {end_effector_type}. Please use PGC_GRIPPER or BRAINCO_HAND or LINKER_HAND."
                 )
 
         self.arml_attached = False
@@ -84,6 +86,8 @@ class FCLChecker:
         self.armr7_T_object = None
         self.arml_grasp_obj_name = None
         self.armr_grasp_obj_name = None
+
+        self.obj_name = {}
 
         self._create_robot_obj()
         self._create_robot_manager()
@@ -111,6 +115,7 @@ class FCLChecker:
         fcl_transform = fcl.Transform(rotation, translation)
         fcl_obj = fcl.CollisionObject(bvh, fcl_transform)
 
+        self.obj_name[fcl_obj] = os.path.splitext(os.path.basename(obj_path))[0]
         return fcl_obj
 
     def _create_robot_obj(self):
@@ -128,7 +133,6 @@ class FCLChecker:
         self.armree_links = [
             self._obj2fcl(path) for path in self.armree_full_path
         ] if self.use_ee else []
-
         self.logger.debug(
             f"Created FCL Objects: {len(self.arml_links)} left arm links, {len(self.armr_links)} right arm links, {len(self.head_links)} head links, {len(self.body_links)} body links, {len(self.armlee_links)} armlee links, {len(self.armree_links)} armree links"
         )
@@ -1008,11 +1012,16 @@ class FCLChecker:
             return True
         ret = fcl.collide(obs1, obs2, cdata.request, cdata.result)
         if ret > 0:
+            print(
+                self.obj_name.get(obs1, "unknown") + "  vs  " +
+                self.obj_name.get(obs2, "unknown"))
             cdata.done = True
             return True
         return cdata.done
 
-    def check_collision(self, robot_name: str = "whole_body") -> bool:
+    def check_collision(self,
+                        robot_name: str = "whole_body",
+                        check_between_end_effectors: bool = True) -> bool:
         """
         The main collision checking function
 
@@ -1178,6 +1187,14 @@ class FCLChecker:
                         self.logger.info(
                             "Right end effector collided with self arm.")
                         return True
+                if check_between_end_effectors:
+                    self.armlee_manager.collide(self.armree_manager, cdata,
+                                                self._is_collide)
+                    if cdata.done:
+                        self.logger.info(
+                            "Left end effector collided with right end effector."
+                        )
+                        return True
 
             # Check collision between arms and grasp objects manager
             self.arml_manager.collide(self.grasp_objects_manager, cdata,
@@ -1240,6 +1257,15 @@ class FCLChecker:
                     if cdata.done:
                         return True
 
+                if check_between_end_effectors:
+                    self.armlee_manager.collide(self.armree_manager, cdata,
+                                                self._is_collide)
+                    if cdata.done:
+                        self.logger.info(
+                            "Left end effector collided with right end effector."
+                        )
+                        return True
+
         if robot_name == "right_arm":
             self.armr_manager.collide(self.obstacle_manager, cdata,
                                       self._is_collide)
@@ -1291,6 +1317,303 @@ class FCLChecker:
                     if cdata.done:
                         return True
 
+                if check_between_end_effectors:
+                    self.armree_manager.collide(self.armlee_manager, cdata,
+                                                self._is_collide)
+                    if cdata.done:
+                        self.logger.info(
+                            "Left end effector collided with right end effector."
+                        )
+                        return True
+
+        return cdata.done
+
+    def _check_collision_two_sets(self, objects_set1, objects_set2, cdata):
+        for obj1 in objects_set1:
+            for obj2 in objects_set2:
+                if self._is_collide(obj1, obj2, cdata):
+                    return True
+        return False
+
+    def naive_check_collision(self,
+                              robot_name: str = "whole_body",
+                              check_between_end_effectors: bool = True) -> bool:
+        req = fcl.CollisionRequest()
+        res = fcl.CollisionResult()
+
+        req.num_max_contacts = 1
+        req.enable_cost = False
+        req.gjk_solver_type = fcl.GJKSolverType.GST_INDEP
+
+        cdata = fcl.CollisionData(req, res)
+
+        if robot_name == "whole_body":
+            # Check left arm vs obstacles
+            self._check_collision_two_sets(self.arml_links, self.obstacles,
+                                           cdata)
+            if cdata.done:
+                self.logger.info("Left arm collided with obstacles.")
+                return True
+            # Check right arm vs obstacles
+            self._check_collision_two_sets(self.armr_links, self.obstacles,
+                                           cdata)
+            if cdata.done:
+                self.logger.info("Right arm collided with obstacles.")
+                return True
+
+            self_arm_collide = self._check_collision_single_arm(cdata)
+            if self_arm_collide:
+                self.logger.info("self arm collided with itself.")
+                return True
+
+            # Check left arm vs right arm
+            self._check_collision_two_sets(self.arml_links, self.armr_links,
+                                           cdata)
+            if cdata.done:
+                self.logger.info("Left arm collided with right arm.")
+                return True
+            # Check left arm vs head
+            self._check_collision_two_sets(self.arml_links, self.head_links,
+                                           cdata)
+            if cdata.done:
+                self.logger.info("Left arm collided with head.")
+                return True
+            # Check right arm vs head
+            self._check_collision_two_sets(self.armr_links, self.head_links,
+                                           cdata)
+            if cdata.done:
+                self.logger.info("Right arm collided with head.")
+                return True
+
+            for l_link in self.arml_links[1:]:
+                for b_link in self.body_links:
+                    if self._is_collide(l_link, b_link, cdata):
+                        self.logger.info("Left arm collided with body.")
+                        return True
+            for r_link in self.armr_links[1:]:
+                for b_link in self.body_links:
+                    if self._is_collide(r_link, b_link, cdata):
+                        self.logger.info("Right arm collided with body.")
+                        return True
+
+            if self.use_ee:
+                # Check left end effector vs obstacles
+                self._check_collision_two_sets(self.armlee_links,
+                                               self.obstacles, cdata)
+                if cdata.done:
+                    self.logger.info(
+                        "Left end effector collided with obstacles.")
+                    return True
+                # Check right end effector vs obstacles
+                self._check_collision_two_sets(self.armree_links,
+                                               self.obstacles, cdata)
+                if cdata.done:
+                    self.logger.info(
+                        "Right end effector collided with obstacles.")
+                    return True
+                # Check left end effector vs grasp objects
+                self._check_collision_two_sets(self.armlee_links,
+                                               self.grasp_objects, cdata)
+                if cdata.done:
+                    self.logger.info(
+                        "Left end effector collided with grasp objects.")
+                    return True
+                # Check right end effector vs grasp objects
+                self._check_collision_two_sets(self.armree_links,
+                                               self.grasp_objects, cdata)
+                if cdata.done:
+                    self.logger.info(
+                        "Right end effector collided with grasp objects.")
+                    return True
+                # Check left end effector vs body & head
+                self._check_collision_two_sets(self.armlee_links,
+                                               self.body_links, cdata)
+                if cdata.done:
+                    self.logger.info("Left end effector collided with body.")
+                    return True
+                self._check_collision_two_sets(self.armlee_links,
+                                               self.head_links, cdata)
+                if cdata.done:
+                    self.logger.info("Left end effector collided with head.")
+                    return True
+                # Check right end effector vs body & head
+                self._check_collision_two_sets(self.armree_links,
+                                               self.body_links, cdata)
+                if cdata.done:
+                    self.logger.info("Right end effector collided with body.")
+                    return True
+                self._check_collision_two_sets(self.armree_links,
+                                               self.head_links, cdata)
+                if cdata.done:
+                    self.logger.info("Right end effector collided with head.")
+                    return True
+                # Check left end effector vs right arm & self arm
+                self._check_collision_two_sets(self.armlee_links,
+                                               self.armr_links, cdata)
+                if cdata.done:
+                    self.logger.info(
+                        "Left end effector collided with right arm.")
+                    return True
+                for l_link in self.arml_links[:-2]:
+                    self._check_collision_two_sets(self.armlee_links, [l_link],
+                                                   cdata)
+                    if cdata.done:
+                        self.logger.info(
+                            "Left end effector collided with self arm.")
+                        return True
+                # Check right end effector vs left arm & self arm
+                self._check_collision_two_sets(self.armree_links,
+                                               self.arml_links, cdata)
+                if cdata.done:
+                    self.logger.info(
+                        "Right end effector collided with left arm.")
+                    return True
+                for r_link in self.armr_links[:-2]:
+                    self._check_collision_two_sets(self.armree_links, [r_link],
+                                                   cdata)
+                    if cdata.done:
+                        self.logger.info(
+                            "Right end effector collided with self arm.")
+                        return True
+
+                if check_between_end_effectors:
+                    self._check_collision_two_sets(self.armlee_links,
+                                                   self.armree_links, cdata)
+                    if cdata.done:
+                        self.logger.info(
+                            "Left end effector collided with right end effector."
+                        )
+                        return True
+
+            # Check collision between arms and grasp objects manager
+            self._check_collision_two_sets(self.arml_links, self.grasp_objects,
+                                           cdata)
+            if cdata.done:
+                return True
+            self._check_collision_two_sets(self.armr_links, self.grasp_objects,
+                                           cdata)
+            if cdata.done:
+                return True
+
+        if robot_name == "left_arm":
+            self._check_collision_two_sets(self.arml_links, self.obstacles,
+                                           cdata)
+            if cdata.done:
+                return True
+            self._check_collision_two_sets(self.arml_links, self.grasp_objects,
+                                           cdata)
+            if cdata.done:
+                return True
+            self_arm_collide = self._check_collision_single_arm(
+                cdata, robot_name="left_arm")
+            if self_arm_collide:
+                return True
+            self._check_collision_two_sets(self.arml_links, self.armr_links,
+                                           cdata)
+            if cdata.done:
+                return True
+            self._check_collision_two_sets(self.arml_links, self.head_links,
+                                           cdata)
+            if cdata.done:
+                return True
+            for l_link in self.arml_links[1:]:
+                for b_link in self.body_links:
+                    if self._is_collide(l_link, b_link, cdata):
+                        return True
+            if self.use_ee:
+                self._check_collision_two_sets(self.armlee_links,
+                                               self.obstacles, cdata)
+                if cdata.done:
+                    return True
+                self._check_collision_two_sets(self.armlee_links,
+                                               self.grasp_objects, cdata)
+                if cdata.done:
+                    return True
+                self._check_collision_two_sets(self.armlee_links,
+                                               self.body_links, cdata)
+                if cdata.done:
+                    return True
+                self._check_collision_two_sets(self.armlee_links,
+                                               self.head_links, cdata)
+                if cdata.done:
+                    return True
+                self._check_collision_two_sets(self.armlee_links,
+                                               self.armr_links, cdata)
+                if cdata.done:
+                    return True
+                for l_link in self.arml_links[:-2]:
+                    self._check_collision_two_sets(self.armlee_links, [l_link],
+                                                   cdata)
+                    if cdata.done:
+                        return True
+                if check_between_end_effectors:
+                    self._check_collision_two_sets(self.armlee_links,
+                                                   self.armree_links, cdata)
+                    if cdata.done:
+                        self.logger.info(
+                            "Left end effector collided with right end effector."
+                        )
+                        return True
+
+        if robot_name == "right_arm":
+            self._check_collision_two_sets(self.armr_links, self.obstacles,
+                                           cdata)
+            if cdata.done:
+                return True
+            self._check_collision_two_sets(self.armr_links, self.grasp_objects,
+                                           cdata)
+            if cdata.done:
+                return True
+            self_arm_collide = self._check_collision_single_arm(
+                cdata, robot_name="right_arm")
+            if self_arm_collide:
+                return True
+            self._check_collision_two_sets(self.armr_links, self.arml_links,
+                                           cdata)
+            if cdata.done:
+                return True
+            self._check_collision_two_sets(self.armr_links, self.head_links,
+                                           cdata)
+            if cdata.done:
+                return True
+            for r_link in self.armr_links[1:]:
+                for b_link in self.body_links:
+                    if self._is_collide(r_link, b_link, cdata):
+                        return True
+            if self.use_ee:
+                self._check_collision_two_sets(self.armree_links,
+                                               self.obstacles, cdata)
+                if cdata.done:
+                    return True
+                self._check_collision_two_sets(self.armree_links,
+                                               self.grasp_objects, cdata)
+                if cdata.done:
+                    return True
+                self._check_collision_two_sets(self.armree_links,
+                                               self.body_links, cdata)
+                if cdata.done:
+                    return True
+                self._check_collision_two_sets(self.armree_links,
+                                               self.head_links, cdata)
+                if cdata.done:
+                    return True
+                self._check_collision_two_sets(self.armree_links,
+                                               self.arml_links, cdata)
+                if cdata.done:
+                    return True
+                for r_link in self.armr_links[:-2]:
+                    self._check_collision_two_sets(self.armree_links, [r_link],
+                                                   cdata)
+                    if cdata.done:
+                        return True
+                if check_between_end_effectors:
+                    self._check_collision_two_sets(self.armree_links,
+                                                   self.armlee_links, cdata)
+                    if cdata.done:
+                        self.logger.info(
+                            "Left end effector collided with right end effector."
+                        )
+                        return True
         return cdata.done
 
     def check_collision_between_arms(self):
@@ -1529,14 +1852,21 @@ class FCLChecker:
         for mesh in self.obstacle_mesh_list:
             scene.add_geometry(mesh)
 
-        if self.arml_attached:
-            grasp_vis_mesh = deepcopy(self.grasp_object_mesh_list)
-            for i, mesh in enumerate(grasp_vis_mesh):
-                mesh.apply_transform(transforms[12] @ self.arml7_T_object)
-            for mesh in grasp_vis_mesh:
-                scene.add_geometry(mesh)
-        for mesh in self.grasp_object_mesh_list:
-            scene.add_geometry(mesh)
+        # if self.arml_attached:
+        #     grasp_vis_mesh = deepcopy(self.grasp_object_mesh_list)
+        #     for i, mesh in enumerate(grasp_vis_mesh):
+        #         mesh.apply_transform(transforms[12] @ self.arml7_T_object)
+        #     for mesh in grasp_vis_mesh:
+        #         scene.add_geometry(mesh)
+        # for mesh in self.grasp_object_mesh_list:
+        #     scene.add_geometry(mesh)
 
-        scene.show()
+        saved_path = os.path.join(LOG_DIR, 'collision_check_scene.ply')
+        scene.export(saved_path)
+
+        # png = scene.save_image(resolution=(1280, 720), visible=True)
+        # with open('collision_check_scene.png', 'wb') as f:
+        #     f.write(png)
+
+        # scene.show()
         # embed()

@@ -10,7 +10,6 @@ from copy import deepcopy
 from dexe_robot_client.end_effector_client import EndEffectorType
 from dexe_robot_client.common import W1Version, W1ArmType
 from dexe_robot_client.w1 import W1Manager, xpos_to_user_pose, user_pose_to_xpos
-from dexe_robot_client.w1 import W1Manager, xpos_to_user_pose, user_pose_to_xpos
 
 
 def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):

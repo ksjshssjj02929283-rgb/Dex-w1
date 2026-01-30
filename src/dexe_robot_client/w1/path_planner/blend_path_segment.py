@@ -340,8 +340,9 @@ class PathSegR3xSO3Bezier(PathSegmentBase):
                                               SO3_length, s0_global)
         self._R3_major = True
         length = self._R3_path_seg.get_length()
-        if length < EPSILON:
-            length = self._SO3_path_seg.get_length()
+        length2 = self._SO3_path_seg.get_length()
+        if length < 1e-4 and length2 > 1e-4:
+            length = length2
             self._R3_major = False
         super().__init__(length, s0_global)
 

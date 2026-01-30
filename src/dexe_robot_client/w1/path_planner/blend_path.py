@@ -101,7 +101,7 @@ class PathBezier(ABC):
         path_seg = self._get_path_segment_at_s(s)
         return path_seg.get_torsion(s)
 
-    def get_sample_by_step(self, step: float) -> np.ndarray:
+    def get_sample_by_step(self, step: float) -> np.ndarray | None:
         if not self.is_init:
             self.logger.error(f"Not init, call calc_path() first!")
             return None
@@ -121,7 +121,7 @@ class PathBezier(ABC):
             s_vals = np.append(s_vals, self.get_length())
         return np.array([self.get_config(s).tolist() for s in s_vals])
 
-    def get_sample_by_num(self, num: int) -> np.ndarray:
+    def get_sample_by_num(self, num: int) -> np.ndarray | None:
         if not self.is_init:
             self.logger.error(f"Not init, call calc_path() first!")
             return None
@@ -286,7 +286,7 @@ class PathRnBezier(PathBezier):
         self.is_init = True
         return True
 
-    def get_sample_by_step(self, step: float) -> np.ndarray:
+    def get_sample_by_step(self, step: float) -> np.ndarray | None:
         if not self.is_init:
             self.logger.error(f"Not init, call calc_path() first!")
             return None
@@ -314,7 +314,7 @@ class PathRnBezier(PathBezier):
         ]
         return np.array(sample_list)
 
-    def get_sample_by_num(self, num: int) -> np.ndarray:
+    def get_sample_by_num(self, num: int) -> np.ndarray | None:
         if not self.is_init:
             self.logger.error(f"Not init, call calc_path() first!")
             return None
