@@ -48,6 +48,7 @@ if [ "$ARCH" == "x86_64" ]; then
 elif [[ "$ARCH" == "aarch64" || "$ARCH" == arm* ]]; then
     pip install ompl-1.7.0-cp310-cp310-manylinux_2_28_aarch64.whl
 fi
+cd ..
 
 
 echo "=== Installing octomap ==="

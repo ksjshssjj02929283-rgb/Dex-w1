@@ -50,8 +50,8 @@ PGC_RIGHT_LIMITS = np.array([[0.0, 0.0], [0.025, 0.025]])
 
 ANTH_MODEL_DIR = MODEL_DIR / "W1_V2_A"
 INDU_MODEL_DIR = MODEL_DIR / "W1_V2_I"
-ANTH_COLLISION_DIR = ANTH_MODEL_DIR / "Collision"
-INDU_COLLISION_DIR = INDU_MODEL_DIR / "Collision"
+ANTH_COLLISION_DIR = ANTH_MODEL_DIR / "Collision_simp"
+INDU_COLLISION_DIR = INDU_MODEL_DIR / "Collision_simp"
 
 ANTH_BRAINCO_MODEL_DIR = MODEL_DIR / "W1_V2_A_BRAINCO"
 INDU_BRAINCO_MODEL_DIR = MODEL_DIR / "W1_V2_I_BRAINCO"
@@ -300,6 +300,8 @@ def get_torso_full_path(robot_type: RobotType = None):
 
 
 def get_ee_full_path(robot_type: RobotType, ee_type: EndEffectorType):
+    if ee_type is None:
+        return [], []
     if ee_type == EndEffectorType.BRAINCO_HAND:
         if robot_type == RobotType.W1V02_1:
             return [RobotEE.BRAINCO_LEFT_HAND.value + "/" + name for name in BRAINCO_LEFT_LINK_NAMES], \

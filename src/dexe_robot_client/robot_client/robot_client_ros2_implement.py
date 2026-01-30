@@ -15,17 +15,16 @@ from std_msgs.msg import String
 from robot_server_interfaces.srv import GetProperty, SetProperty
 from robot_server_interfaces.action import MoveRobot
 from robot_server_interfaces.msg import StreamingCommand
+import re
 
 from .data_structure import *
 from .robot_client import RobotClient
-from ..common import get_logger, time_consuming
 
 
 class RobotClientRos2(Node, RobotClient):
     """ros2 client universal interfaces"""
 
     def __init__(self, is_sim: bool = False, timeout_sec: float = 1.0):
-        self.logger = get_logger()
         if is_sim:
             self.node_name = "robot_client_sim"
         else:
@@ -333,7 +332,18 @@ class RobotClientRos2(Node, RobotClient):
             except Exception:
                 self.logger.warning(
                     f"Unknown status received: {state.get('status')}")
-
+        if "robot_type" in state:
+            robot_type_str = state["robot_type"]
+            # 使用正则表达式拆分机器人型号和臂型, 规则为首字母大写后跟数字为机器人型号, 后面跟大写字母开头的臂型字符串
+            match = re.match(r'^([A-Z]\d+)([A-Z][a-z]+)$', robot_type_str)
+            if match:
+                self.robot_type = match.group(1)
+                self.arm_type = match.group(2)
+            else:
+                self.robot_type = robot_type_str
+                self.arm_type = None
+        if "robot_version" in state:
+            self.robot_version = state["robot_version"]
         # basic robot words / mode
         if "robot_statusword" in state:
             self.robot_statusword = state["robot_statusword"]
@@ -341,7 +351,10 @@ class RobotClientRos2(Node, RobotClient):
             self.robot_controlword = state["robot_controlword"]
         if "run_mode" in state:
             self.run_mode = state["run_mode"]
-
+        if "safe_level" in state:
+            self.safe_level = state["safe_level"]
+        if "global_speed_ratio" in state:
+            self.global_speed_ratio = float(state["global_speed_ratio"])
         # request ids
         if "latest_queued_id" in state:
             self.latest_queued_id = state["latest_queued_id"]
