@@ -16,9 +16,10 @@ enum for various states and request types
 
 class RunMode(Enum):
     Position = auto()  # position controls
-    Impedance = auto()  # impedance control
+    Torque = auto()  # joint impedance control
     Drag = auto()  # zero-stiff control
-    Teleoperate = auto()  # teleoperate control
+    CartesianImpedance = auto()  # cartesian impedance control
+    DragImpedance = auto()  # drag with impedance control
 
 
 class Status(Enum):
@@ -29,17 +30,17 @@ class Status(Enum):
 
 
 class PropertyType(Enum):
-    RunMode = auto()  # run mode
-
-    ClearError = auto()  # clear error
-
-    EnableDrag = auto()
-    SafeLevel = auto()
-
     TcpPrimary = auto()  # tool primary
     TcpSecondary = auto()  # tool secondary
-
     SpeedRatio = auto()  # speed ratio percentage: 0-100
+    ClearError = auto()  # clear error
+    SafeLevel = auto()
+    SwitchRunMode = auto()  # run mode
+    EnableDrag = auto()
+    JointStiffness = auto()  # joint stiffness
+    JointDamping = auto()  # joint damping
+    CartStiffness = auto()  # cartesian stiffness
+    CartDampingRatio = auto()  # cartesian damping ratio 0.7~1.3
 
 
 class MotionType(Enum):
@@ -49,6 +50,7 @@ class MotionType(Enum):
 
     StartJointStreaming = auto()
     StartEEPoseStreaming = auto()
+    StartEEVelocityStreaming = auto()
 
     StopMove = auto()
 
@@ -68,6 +70,7 @@ class ReferenceFrame(Enum):
 
     ArmBase = auto()  # arm base frame
     WorldBase = auto()  # world frame
+    EEFrame = auto()  # end-effector frame
 
 
 """ ---------------------------------------------------------------------------
@@ -80,9 +83,14 @@ robot state and requests data structure class
 class RobotInfo:
     """robot info 机器人状态集合"""
     status: Status
+    robot_version: str
+    robot_type: str
+    arm_type: str
     robot_statusword: int
     robot_controlword: int
     run_mode: RunMode
+    safe_level: float
+    global_speed_ratio: float
 
     latest_sent_id: int
     latest_queued_id: int
