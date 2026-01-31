@@ -2,6 +2,9 @@
 WORKSPACE_DIR=$(dirname "$0")
 source /opt/ros/humble/setup.bash
 
+# 构建类型：Release（默认）或 RelWithDebInfo（开发模式，编译更快）
+BUILD_TYPE=${BUILD_TYPE:-Release}
+
 # === 1. 检查 ROS 环境 ===
 if [ -z "$ROS_DISTRO" ]; then
     echo "❌ 请先 source 对应ROS环境，例如："
@@ -27,7 +30,7 @@ fi
 
 cd "${WORKSPACE_DIR}/.."
 PACKAGES=$(find dexe_robot_server -name "package.xml" -exec sh -c 'dirname {} | xargs basename' \; | sort -u | tr '\n' ' ')
-colcon build --cmake-args -DENABLE_TORQUE_CONTROL_SIMULATION=OFF --packages-select $PACKAGES
+colcon build --parallel-workers $(nproc) --cmake-args -GNinja -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DENABLE_TORQUE_CONTROL_SIMULATION=OFF --packages-select $PACKAGES
 
 BIN=install/w1_server/lib/w1_server/w1_server
 if [ -f "$BIN" ]; then
