@@ -34,6 +34,7 @@ class SupervisorViewW1(object):
         self.kine_solver = kine_solver
         self.pin_kine_solver = pin_kine_solver  # Use 'whole_body_kin_solver'?
         self.collision_checker = collision_checker
+        self.hybrid_planner = hybrid_planner
         self.cartesian_planner = cartesian_planner
         self.cartesian_joint_planner = cartesian_joint_planner
         self.stop_move_event = stop_move_event

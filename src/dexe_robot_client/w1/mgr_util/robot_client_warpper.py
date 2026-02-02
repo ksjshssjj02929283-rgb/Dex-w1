@@ -34,7 +34,7 @@ class RobotClientWrapper(ReducedRobotClientInterface):
             )
             return state
         except Exception as e:
-            logger.error(f"Failed to query state: {e}")
+            logger.error(f"Unexpected error while querying state: {e}")
             raise
 
     def move_joint_trajectory_async(
@@ -66,15 +66,17 @@ class RobotClientWrapper(ReducedRobotClientInterface):
         self.finished_id = finished_id
         self.endpoint_index = endpoint_index if endpoint_index else []
 
-        return finished_id - len(endpoint_index if endpoint_index else []) + 1
+        return finished_id - len(self.endpoint_index) + 1
 
     def wait_move(self, time_out: float = -1, interval: float = 0.01) -> bool:
         traj_duration = (self.traj_num - 1) * interval
+        timeout_sec = max(5., traj_duration)
         last_finished_id = self.finished_id - len(self.endpoint_index)
+
         for next_finished_id in range(last_finished_id + 1,
                                       self.finished_id + 1):
             self._client.wait_request_finish(request_id=next_finished_id,
-                                             timeout_sec=max(5., traj_duration))
+                                             timeout_sec=timeout_sec)
 
         return True
 
