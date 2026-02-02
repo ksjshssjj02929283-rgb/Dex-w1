@@ -26,8 +26,15 @@ source ./dexe_interfaces/install/setup.bash
 
 #### Install dexe_robot_client
 ```bash
-pip install -e .
+pip install -e . # 安装包
+dexe_robot_client-install-scripts # 安装examples和scripts到dexe_robot_client_data中 
 ```
+
+#### Packaging
+```bash
+python3 -m build
+```
+whl包详见`dist`文件夹
 
 #### Uninstall
 ```bash
