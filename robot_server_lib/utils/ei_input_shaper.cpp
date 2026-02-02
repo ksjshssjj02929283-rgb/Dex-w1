@@ -10,7 +10,7 @@ EIInputShaper::EIInputShaper(
     : type_(type),
       natural_freq_(natural_freq),
       sampling_time_(sampling_time),
-      max_ramp_rate_rpm_per_sample_(max_ramp_rate_rpm),
+      max_ramp_rate_rpm_per_sample_(max_ramp_rate_rpm * sampling_time_),
       vibration_tol_(vibration_tol) {
     CalculateCoefficients();
 }
