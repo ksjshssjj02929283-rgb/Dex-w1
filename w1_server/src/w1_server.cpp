@@ -639,27 +639,25 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
     LOG_INFO << "/control/debug message received: " << msg->data;
 
     try {
-        auto parse_json = [](const nlohmann::json &obj, const char *key) -> bool {
+        const auto json_data = nlohmann::json::parse(msg->data);
+
+        auto get_bool_value = [](const nlohmann::json &obj, const char *key) -> bool {
             if (!obj.contains(key)) return false;
             const auto &v = obj[key];
-            if (v.is_boolean()) {
-                return v.get<bool>();
-            }
-            if (v.is_number_integer()) {
-                return v.get<int>();
-            }
+            if (v.is_boolean()) return v.get<bool>();
+            if (v.is_number_integer()) return v.get<int>() != 0;
             return false;
         };
 
-        if (parse_json(nlohmann::json::parse(msg->data), "enable_record")) {
-            this->enable_record_ = true;
-            RCLCPP_INFO(this->get_logger(), "enable_record_ set to true");
-            LOG_INFO << "enable_record_ set to true";
-        } else {
-            this->enable_record_ = false;
-            RCLCPP_INFO(this->get_logger(), "enable_record_ set to false");
-            LOG_INFO << "enable_record_ set to false";
-        }
+        auto update_bool_param = [this, &json_data, &get_bool_value](const char *key, bool &param) {
+            param = get_bool_value(json_data, key);
+            RCLCPP_INFO(this->get_logger(), "%s set to %s", key, param ? "true" : "false");
+            LOG_INFO << key << " set to " << (param ? "true" : "false");
+        };
+
+        update_bool_param("enable_record", this->enable_record_);
+        update_bool_param("enable_chassis_shaper", this->enable_chassis_shaper_);
+
     } catch (const std::exception &e) {
         RCLCPP_WARN(this->get_logger(), "Failed to parse /control/debug JSON: %s", e.what());
     }
