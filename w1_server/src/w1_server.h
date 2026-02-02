@@ -105,7 +105,7 @@ private:
     const double DiffChassisWheelD = 0.1730;    // 差速轮径，用于转RPM
     const double DiffChassisNatureFreq = 1.67;  // 底盘输入整形器自然频率，单位Hz
     // ramp率转换: 0.5m/s每周期
-    const double DiffChassisMaxRampRpm = 0.5 / (M_PI * DiffChassisWheelD) * 60.0;
+    const double DiffChassisMaxRampRpm = 1.0 / (M_PI * DiffChassisWheelD) * 60.0;
 
     // 力传感器相关
     Vector3d sensor_force_;
