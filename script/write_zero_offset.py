@@ -109,12 +109,12 @@ def set_zero_offset(is_left: bool, zero_offsets_deg: list) -> bool:
 if __name__ == '__main__':
     # 示例：设置左臂零位偏差
     # 从~/dexeRP_data/W1_V02_L.json中获取零位偏差
-    with open('/home/zh/dexeRP_data/W1_V02_L.json', 'r') as f:
+    with open('/home/dexforce/dexe_rp_data/W1_V02_L.json', 'r') as f:
         data = json.load(f)
         left_zero_offsets = data['zero_offset']  # 左臂7个关节的零位偏差（单位：度）
     set_zero_offset(is_left=True, zero_offsets_deg=left_zero_offsets)
 
-    with open('/home/zh/dexeRP_data/W1_V02_R.json', 'r') as f:
+    with open('/home/dexforce/dexe_rp_data/W1_V02_R.json', 'r') as f:
         data = json.load(f)
         right_zero_offsets = data['zero_offset']  # 右臂7个关节的零位偏差（单位：度）
     set_zero_offset(is_left=False, zero_offsets_deg=right_zero_offsets)
