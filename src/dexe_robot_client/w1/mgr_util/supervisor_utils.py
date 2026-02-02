@@ -4,6 +4,7 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
+import time
 import numpy as np
 from ..utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
@@ -11,6 +12,7 @@ from ...common import get_logger, StatusCode
 from .supervisor_view import SupervisorViewW1
 
 from ..path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm
+from dexe_rp import DexforceW1Kinematics, SRSConfig
 
 
 class StaticUtilityW1(object):
@@ -149,6 +151,103 @@ class StaticUtilityW1(object):
         return StatusCode.SUCCESS, pos_array
 
     @staticmethod
+    def plan_cartesian_traj(
+            supervisor: SupervisorViewW1,
+            name: str,
+            xpos_list: list[np.ndarray],
+            qpos_seed: np.ndarray,
+            qvel_limits_array: np.ndarray = None,
+            cartesian_step: float = 0.005) -> tuple[StatusCode, np.ndarray]:
+        """对机械臂进行笛卡尔轨迹规划，可指定路径点的各关节的速度约束；速度表示从上一点到当前点的最大关节速度
+
+        Args:
+            name (str): ["left_arm", "right_arm"]
+            xpos_list (list[np.ndarray]): 笛卡尔路径点
+            qpos_seed (np.ndarray): 起始参考关节seed
+            qvel_limits_array (np.ndarray, optional): 路径点关节速度约束，省略则按默认关节速度
+            cartesian_step (float, optional): 笛卡尔轨迹采样步长 默认0.005m
+
+        Returns:
+            tuple[StatusCode, np.ndarray]
+        """
+        arm_kine = supervisor._get_arm_kine(name)
+        if arm_kine is None:
+            return StatusCode.NAME_MISMATCH, None
+
+        # cartesian interpolation
+        path = PathR3xSO3Bezier(np.array(xpos_list))
+        if not path.calc_path():
+            return StatusCode.PLAN_PATH_FAIL, None
+        if len(xpos_list) == 2 and path.get_length() < cartesian_step:
+            xpos_sample_array = np.array(xpos_list)
+        else:
+            xpos_sample_array = path.get_sample_by_step(cartesian_step)
+            if xpos_sample_array is None:
+                return StatusCode.PLAN_PATH_FAIL, None
+
+        prefix_dist_list = [0.]
+        for idx in range(len(xpos_list) - 1):
+            dist = np.linalg.norm(xpos_list[idx + 1][:3, 3] -
+                                  xpos_list[idx][:3, 3])
+            prefix_dist_list.append(prefix_dist_list[-1] + dist)
+
+        # vel align
+        # TODO: use ee vel rather than qvel
+        if qvel_limits_array is None:
+            qvel_limits_array_ = None
+        else:
+            idx = 0
+            qvel_limits_list_ = [qvel_limits_array[idx]]
+            cur_xpos = xpos_sample_array[0]
+            cur_dist = 0.
+            for xpos in xpos_sample_array[1:-1]:
+                dist = weighted_norm(xpos[:3, 3] - cur_xpos[:3, 3])
+                cur_dist += dist
+                if cur_dist >= prefix_dist_list[idx] + 1e-6:
+                    idx += 1
+                qvel_limits_list_.append(qvel_limits_array[idx])
+                cur_xpos = xpos
+            qvel_limits_list_.append(qvel_limits_array[-1])
+        qvel_limits_array_ = np.array(qvel_limits_list_)
+
+        # solve ik
+        qpos_list = []
+        cur_qseed = qpos_seed
+        for i, cur_xpos in enumerate(xpos_sample_array):
+            use_nearest = (i != 0)
+
+            if not use_nearest:
+                res, ref_psi = arm_kine.calc_arm_angle(cur_qseed)
+                if res:
+                    srs_cfg = SRSConfig(cur_qseed, ref_psi)
+                    res_ik, cur_qpos = arm_kine.get_ik(cur_xpos, srs_cfg)
+                    if not res_ik:
+                        use_nearest = True
+                else:
+                    use_nearest = True
+
+            if use_nearest:
+                res_ik, cur_qpos = arm_kine.get_nearest_ik(xpos=cur_xpos,
+                                                           qpos_seed=cur_qseed)
+
+            if not res_ik:
+                supervisor.logger.error(
+                    f"{name} solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}."
+                )
+                return StatusCode.IK_FAIL, None
+            if not np.allclose(cur_qpos, cur_qseed, atol=np.deg2rad(90)):
+                supervisor.logger.error(f"{name} qpos traj is not continues\n" + \
+                                  f"cur_qpos(deg): {np.rad2deg(cur_qpos)}\n" + \
+                                  f"cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
+                return StatusCode.IK_FAIL, None
+            qpos_list.append(cur_qpos)
+            cur_qseed = cur_qpos
+
+        return StaticUtilityW1.plan_joint_traj(supervisor, name,
+                                               np.array(qpos_list), False,
+                                               qvel_limits_array_)
+
+    @staticmethod
     def plan_arm_ee_trigger(supervisor: SupervisorViewW1,
                             arm_ee_state_list: list) -> tuple[StatusCode, list]:
         # TODO: 存在延时的才分段，否则不分段且全部waypoint ee_qpos都到点触发？
@@ -175,7 +274,7 @@ class StaticUtilityW1(object):
         return StatusCode.SUCCESS, segment_list
 
     @staticmethod
-    def qpos_align(supervisor, torso_qpos_array: np.ndarray,
+    def qpos_align(supervisor: SupervisorViewW1, torso_qpos_array: np.ndarray,
                    head_qpos_array: np.ndarray, left_arm_qpos_array: np.ndarray,
                    right_arm_qpos_array: np.ndarray) -> tuple[bool, np.ndarray]:
         """轨迹对齐，按先运动后等待的模式进行补齐"""
@@ -206,7 +305,7 @@ class StaticUtilityW1(object):
 
     @staticmethod
     def cal_path_seg_interpolate_num(waypoint_list: list[np.ndarray],
-                                      cartesian_step: float = 0.005):
+                                     cartesian_step: float = 0.005):
         interpolate_num_list = []
         for idx in range(len(waypoint_list) - 1):
             dist = np.linalg.norm(waypoint_list[idx + 1][:3, 3] -

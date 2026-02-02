@@ -20,6 +20,9 @@ class RobotClientWrapper(ReducedRobotClientInterface):
 
     def __init__(self, client: "RobotClient"):
         self._client = client
+        self.finished_id = -1
+        self.traj_num = -1
+        self.endpoint_index = []
 
     def query_state(self) -> ReducedRobotClientInterface.ReducedRobotState:
         try:
@@ -50,6 +53,7 @@ class RobotClientWrapper(ReducedRobotClientInterface):
         Returns:
             int: movement beginning ID
         """
+        self.traj_num = len(motion_target)
         flattened_motion_target = [
             angle for point in motion_target for angle in point
         ]
@@ -59,8 +63,20 @@ class RobotClientWrapper(ReducedRobotClientInterface):
             motion_group=MotionGroup.WholeBody,
             interval=interval,
             endpoint_index=endpoint_index)
+        self.finished_id = finished_id
+        self.endpoint_index = endpoint_index if endpoint_index else []
 
         return finished_id - len(endpoint_index if endpoint_index else []) + 1
+
+    def wait_move(self, time_out: float = -1, interval: float = 0.01) -> bool:
+        traj_duration = (self.traj_num - 1) * interval
+        last_finished_id = self.finished_id - len(self.endpoint_index)
+        for next_finished_id in range(last_finished_id + 1,
+                                      self.finished_id + 1):
+            self._client.wait_request_finish(request_id=next_finished_id,
+                                             timeout_sec=max(5., traj_duration))
+
+        return True
 
     def get_info(self) -> Dict:
         return self._client.get_info()

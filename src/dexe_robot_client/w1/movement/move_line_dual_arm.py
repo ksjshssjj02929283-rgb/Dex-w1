@@ -4,6 +4,7 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
+import threading
 import numpy as np
 from copy import deepcopy
 from ..utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
@@ -25,14 +26,22 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                  w1_params,
                  supervisor,
                  kine_solver,
-                 pin_kin_solver,
+                 pin_kine_solver,
                  collision_checker,
+                 hybrid_planner,
+                 cartesian_planner,
+                 cartesian_joint_planner,
+                 stop_move_event: threading.Event,
                  time_step: float = 0.01):
         super().__init__(w1_params,
                          supervisor,
                          kine_solver,
-                         pin_kin_solver,
+                         pin_kine_solver,
                          collision_checker,
+                         hybrid_planner,
+                         cartesian_planner,
+                         cartesian_joint_planner,
+                         stop_move_event,
                          time_step=time_step)
 
     def _plan_to_waypoint(
@@ -101,9 +110,9 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 for pose in pos_raw_array
             ]
             xpos_raw_list_ = [cur_xpos] + xpos_raw_list
-            res_plan, qpos_array = self.plan_cartesian_traj(
-                name, xpos_raw_list_, qpos_seed, qvel_limits_array_,
-                cartesian_step)
+            res_plan, qpos_array = StaticUtilityW1.plan_cartesian_traj(
+                self.supervisor_view, name, xpos_raw_list_, qpos_seed,
+                qvel_limits_array_, cartesian_step)
             if res_plan.value < 0:
                 return res_plan, None
         else:
@@ -222,9 +231,9 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                     user_pose_to_xpos(pose[:3].tolist(), pose[3:].tolist())
                     for pose in seg_pos_array
                 ]
-                res_plan, seg_qpos_samples_array = self.plan_cartesian_traj(
-                    name, seg_xpos_list, cur_qpos_seed, seg_qvel_limits_array,
-                    cartesian_step)
+                res_plan, seg_qpos_samples_array = StaticUtilityW1.plan_cartesian_traj(
+                    self.supervisor_view, name, seg_xpos_list, cur_qpos_seed,
+                    seg_qvel_limits_array, cartesian_step)
             else:
                 res_plan, seg_qpos_samples_array = StaticUtilityW1.plan_joint_traj(
                     self.supervisor_view, name, seg_pos_array, is_sparse,
@@ -277,7 +286,6 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
 
         return StatusCode.SUCCESS, total_qpos_array, arm_ee_trigger_list
 
-
     def _plan_linear_dual_arm_sync(self,
                                    cur_left_qpos: np.ndarray,
                                    cur_right_qpos: np.ndarray,
@@ -296,10 +304,18 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
         else:
             left_qpos_array = cur_left_qpos
             right_qpos_array = cur_right_qpos
-        left_parse_res, left_pos_raw_array, left_qvel_limits_array, _ = StaticUtilityW1.parse_waypoints_from_dict(self.supervisor_view,
-            "left_arm", waypoints_dict, left_speed_ratio, is_cartesian=True)
-        right_parse_res, right_pos_raw_array, right_qvel_limits_array, _ = StaticUtilityW1.parse_waypoints_from_dict(self.supervisor_view,
-            "right_arm", waypoints_dict, right_speed_ratio, is_cartesian=True)
+        left_parse_res, left_pos_raw_array, left_qvel_limits_array, _ = StaticUtilityW1.parse_waypoints_from_dict(
+            self.supervisor_view,
+            "left_arm",
+            waypoints_dict,
+            left_speed_ratio,
+            is_cartesian=True)
+        right_parse_res, right_pos_raw_array, right_qvel_limits_array, _ = StaticUtilityW1.parse_waypoints_from_dict(
+            self.supervisor_view,
+            "right_arm",
+            waypoints_dict,
+            right_speed_ratio,
+            is_cartesian=True)
         # TODO: 这里res=0的情况判断需要完善，比如一个手臂有输入，一个手臂无输入
         if left_parse_res == StatusCode.INPUT_EMPTY or right_parse_res == StatusCode.INPUT_EMPTY:
             return StatusCode.SUCCESS, left_qpos_array, right_qpos_array
@@ -322,9 +338,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
             ref_qpos = np.zeros(self.w1_params.full_body_dofs)
             ref_qpos[self.w1_params.index_infos["torso"]
                      ["index"]] = ref_torso_qpos
-            res_left_fk, T_chassis_left_armbase = self.supervisor_view.get_xpos("left_arm_base",
-                                                                ref_qpos,
-                                                                is_local=False)
+            res_left_fk, T_chassis_left_armbase = self.supervisor_view.get_xpos(
+                "left_arm_base", ref_qpos, is_local=False)
             if res_left_fk.value < 0:
                 self.logger.error("left_arm_base solve fk failed!")
                 return res_left_fk, None, None
@@ -357,13 +372,13 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
             cur_left_arm_qpos = cur_left_qpos
             cur_right_arm_qpos = cur_right_qpos
 
-        res_left_fk, cur_left_xpos = self.supervisor_view._get_arm_kine("left_arm").get_fk(
-            cur_left_arm_qpos)
+        res_left_fk, cur_left_xpos = self.supervisor_view._get_arm_kine(
+            "left_arm").get_fk(cur_left_arm_qpos)
         if not res_left_fk:
             self.logger.error("left_arm solve fk failed!")
             return StatusCode.FK_FAIL, None, None
-        res_right_fk, cur_right_xpos = self.supervisor_view._get_arm_kine("right_arm").get_fk(
-            cur_right_arm_qpos)
+        res_right_fk, cur_right_xpos = self.supervisor_view._get_arm_kine(
+            "right_arm").get_fk(cur_right_arm_qpos)
         if not res_right_fk:
             self.logger.error("right_arm solve fk failed!")
             return StatusCode.FK_FAIL, None, None
@@ -389,7 +404,6 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
         if res_plan.value < 0:
             return res_plan, None, None
         return StatusCode.SUCCESS, left_qpos_array, right_qpos_array
-
 
     def plan_dual_arm_cartesian_traj(
         self,
@@ -421,10 +435,10 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
             right_prefix_dist_list.append(right_prefix_dist_list[-1] + dist)
         right_total_dist = right_prefix_dist_list[-1]
 
-        left_interpolate_num_list = StaticUtilityW1.cal_path_seg_interpolate_num(self.supervisor_view,
-            left_xpos_list, cartesian_step)
-        right_interpolate_num_list = StaticUtilityW1.cal_path_seg_interpolate_num(self.supervisor_view,
-            right_xpos_list, cartesian_step)
+        left_interpolate_num_list = StaticUtilityW1.cal_path_seg_interpolate_num(
+            self.supervisor_view, left_xpos_list, cartesian_step)
+        right_interpolate_num_list = StaticUtilityW1.cal_path_seg_interpolate_num(
+            self.supervisor_view, right_xpos_list, cartesian_step)
         if len(left_interpolate_num_list) != len(right_interpolate_num_list):
             self.logger.error(
                 "Left and right arm waypoint segment number mismatch.")
@@ -1329,7 +1343,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
         arml_kine, armr_kine = self.supervisor_view._get_arm_kine(
             "left_arm"), self.supervisor_view._get_arm_kine("right_arm")
 
-        res, cur_qpos = self.get_current_qpos()
+        res, cur_qpos = self.supervisor_view.get_current_qpos()
         cur_head_qpos = cur_qpos[self.real_head_idx]
         cur_torso_qpos = cur_qpos[self.real_torso_idx]
         cur_arml_qpos = cur_qpos[self.real_arml_idx]
@@ -1337,13 +1351,13 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
         res, cur_arml_pose = arml_kine.get_fk(cur_arml_qpos)
         res, cur_armr_pose = armr_kine.get_fk(cur_armr_qpos)
 
-        cur_arml_base_tf, cur_armr_base_tf = self.supervisor_view.pin_kine.get_arm_base_tf(
+        cur_arml_base_tf, cur_armr_base_tf = self.supervisor_view.pin_kine_solver.get_arm_base_tf(
             real_qpos=cur_qpos)
         if not is_local:
             cur_arml_pose = cur_arml_base_tf @ cur_arml_pose
             cur_armr_pose = cur_armr_base_tf @ cur_armr_pose
 
-        self.cartesian_planner.set_left_right_relationship(
+        self.supervisor_view.cartesian_planner.set_left_right_relationship(
             left_tcp_pose=cur_arml_pose,
             right_tcp_pose=cur_armr_pose,
             is_local=is_local)
@@ -1431,7 +1445,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 target_qvel_limits_array_ = np.vstack(
                     [self.w1_params.default_qvel, target_qvel_limits_array])
 
-        res, left_pose_array, right_pose_array = self.cartesian_planner.generate_line_traj_from_tcp_poses(
+        res, left_pose_array, right_pose_array = self.supervisor_view.cartesian_planner.generate_line_traj_from_tcp_poses(
             name=target_arm_name,
             waypoint_list=target_pose_list,
             cartesian_step=0.005,
@@ -1464,11 +1478,11 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
         qvel_limits_array_ = np.array(qvel_limits_list_)
 
         if is_local:
-            left_res, left_joint_traj = self.cartesian_joint_planner.plan_single_arm(
+            left_res, left_joint_traj = self.supervisor_view.cartesian_joint_planner.plan_single_arm(
                 name="left_arm",
                 start_qpos=cur_arml_qpos,
                 end_effector_traj=left_pose_array)
-            right_res, right_joint_traj = self.cartesian_joint_planner.plan_single_arm(
+            right_res, right_joint_traj = self.supervisor_view.cartesian_joint_planner.plan_single_arm(
                 name="right_arm",
                 start_qpos=cur_armr_qpos,
                 end_effector_traj=right_pose_array)
@@ -1483,7 +1497,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 )
                 return StatusCode.PLAN_TRAJ_FAIL, None
 
-            res, left_joint_traj_, right_joint_traj_ = self.cartesian_joint_planner.generate_dense_dual_arm_joint_traj(
+            res, left_joint_traj_, right_joint_traj_ = self.supervisor_view.cartesian_joint_planner.generate_dense_dual_arm_joint_traj(
                 left_joint_traj=left_joint_traj,
                 right_joint_traj=right_joint_traj,
                 qvel_limits_array=qvel_limits_array_,
@@ -1496,10 +1510,9 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 )
                 return StatusCode.PLAN_TRAJ_FAIL, None
 
-            res, move_arml_armr_traj = self._qpos_align(cur_torso_qpos,
-                                                        cur_head_qpos,
-                                                        left_joint_traj_,
-                                                        right_joint_traj_)
+            res, move_arml_armr_traj = StaticUtilityW1.qpos_align(
+                self.supervisor_view, cur_torso_qpos, cur_head_qpos,
+                left_joint_traj_, right_joint_traj_)
             if not res:
                 self.logger.error(
                     "Align dual arm traj failed in plan_linear_dual_arm_sync.")
@@ -1516,7 +1529,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
             return StatusCode.SUCCESS, move_arml_armr_traj
 
         else:
-            res, full_body_joint_traj = self.cartesian_joint_planner.plan_whole_body(
+            res, full_body_joint_traj = self.supervisor_view.cartesian_joint_planner.plan_whole_body(
                 start_qpos=cur_qpos,
                 left_end_effector_traj=left_pose_array,
                 right_end_effector_traj=right_pose_array)
@@ -1526,7 +1539,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 )
                 return StatusCode.PLAN_TRAJ_FAIL, None
 
-            res, full_body_joint_traj_ = self.cartesian_joint_planner.generate_dense_whole_body_joint_traj(
+            res, full_body_joint_traj_ = self.supervisor_view.cartesian_joint_planner.generate_dense_whole_body_joint_traj(
                 whole_body_joint_traj=full_body_joint_traj,
                 qvel_limits_array=qvel_limits_array_,
                 current_qpos=cur_qpos)
@@ -1549,72 +1562,43 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
 
             return StatusCode.SUCCESS, move_arml_armr_traj
 
+    def move_linear_dual_arm_sync(self,
+                                  task_dict: dict,
+                                  speed_ratio: float = 1.0,
+                                  is_local: bool = True):
 
-    def move_torso_linear(self,
-                          delta_x_mm: float,
-                          delta_z_mm: float,
-                          cartesian_step=0.002,
-                          speed_ratio: float = 1.) -> StatusCode:
-        """腿部从当前位置直线移动相对距离
+        res, full_body_traj = self.plan_linear_dual_arm_sync(
+            task_dict=task_dict, speed_ratio=speed_ratio, is_local=is_local)
+
+        if res.value < 0:
+            self.logger.error("Plan linear dual arm sync traj failed.")
+            return res
+
+        return self.supervisor_view.execute_joint_traj(
+            qpos_array=full_body_traj,
+            left_arm_ee_trigger_list=None,
+            right_arm_ee_trigger_list=None), full_body_traj
+
+    def plan_cartesian_traj(
+            self,
+            name: str,
+            xpos_list: list[np.ndarray],
+            qpos_seed: np.ndarray,
+            qvel_limits_array: np.ndarray = None,
+            cartesian_step: float = 0.005) -> tuple[StatusCode, np.ndarray]:
+        """对机械臂进行笛卡尔轨迹规划，可指定路径点的各关节的速度约束；速度表示从上一点到当前点的最大关节速度
 
         Args:
-            delta_x_mm (float): x方向(前后)直线相对运动距离
-            delta_z_mm (float): z方向(上下)直线相对运动距离
-            cartesian_step (float, optional): 直线离散步长. Defaults to 0.002.
-            speed_ratio (float, optional): 运动速率. Defaults to 1..
+            name (str): ["left_arm", "right_arm"]
+            xpos_list (list[np.ndarray]): 笛卡尔路径点
+            qpos_seed (np.ndarray): 起始参考关节seed
+            qvel_limits_array (np.ndarray, optional): 路径点关节速度约束，省略则按默认关节速度
+            cartesian_step (float, optional): 笛卡尔轨迹采样步长 默认0.005m
 
         Returns:
-            StatusCode: 
+            tuple[StatusCode, np.ndarray]
         """
-        res, cur_qpos = self.supervisor_view.get_current_qpos()
-        if res.value < 0:
-            return res
-        res_fk, cur_x, cur_z, cur_y_theta = self.supervisor_view.kine.get_torso_fk(cur_qpos[:3])
-        if not res_fk:
-            return StatusCode.FK_FAIL
-        target_x = cur_x + (delta_x_mm / 1000.)
-        target_z = cur_z + (delta_z_mm / 1000.)
-        # TODO: check com in support polyhedron
-
-        # Create path
-        p_cur = np.array([cur_x, cur_z])
-        p_target = np.array([target_x, target_z])
-        dist = np.linalg.norm(p_target - p_cur)
-        n_steps = int(np.ceil(dist / cartesian_step))
-        s_list = np.linspace(0, 1, n_steps + 1)
-        p_list = [p_cur + (p_target - p_cur) * s for s in s_list]
-
-        # Solve ik
-        qpos_list = []
-        for p in p_list:
-            res_ik, qpos = self.supervisor_view.kine.get_torso_ik(p[0], p[1], cur_y_theta,
-                                                  cur_qpos[1] < 0)
-            if not res_ik:
-                return StatusCode.IK_FAIL
-            qpos_list.append(np.r_[qpos, cur_qpos[3]])
-
-        speed_ratio_list = [speed_ratio] * len(qpos_list)
-        default_qvel = self.w1_params.default_qvel[
-            self.w1_params.index_infos["torso"]["index"]]
-        min_qvel = self.w1_params.min_qvel[self.w1_params.index_infos["torso"]
-                                           ["index"]]
-        max_qvel = self.w1_params.max_qvel[self.w1_params.index_infos["torso"]
-                                           ["index"]]
-        qvel_limits_array = np.clip(np.outer(speed_ratio_list, default_qvel),
-                                    min_qvel, max_qvel)
-
-        res_plan, torso_qpos_array = self.plan_joint_traj(
-            "torso", np.array(qpos_list), False, qvel_limits_array)
-        if res_plan.value < 0:
-            return res_plan, None
-
-        # align
-        res_align, total_qpos_array = self._qpos_align(
-            torso_qpos_array, cur_qpos[self.w1_params.head_index],
-            cur_qpos[self.w1_params.left_arm_index],
-            cur_qpos[self.w1_params.right_arm_index])
-        if not res_align:
-            return StatusCode.FAIL
-
-        return self.execute_joint_traj(total_qpos_array)
-
+        return StaticUtilityW1.plan_cartesian_traj(self.supervisor_view, name,
+                                                   xpos_list, qpos_seed,
+                                                   qvel_limits_array,
+                                                   cartesian_step)

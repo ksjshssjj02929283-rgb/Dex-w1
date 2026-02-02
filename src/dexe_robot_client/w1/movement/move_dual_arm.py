@@ -4,6 +4,7 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
+import threading
 import numpy as np
 from ..utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
@@ -23,19 +24,26 @@ class DualArmMovementBaseW1(object):
                  w1_params,
                  supervisor,
                  kine_solver,
-                 pin_kin_solver,
+                 pin_kine_solver,
                  collision_checker,
+                 hybrid_planner,
+                 cartesian_planner,
+                 cartesian_joint_planner,
+                 stop_move_event: threading.Event,
                  time_step: float = 0.01):
         self.w1_params = w1_params
         self.supervisor_view = SupervisorViewW1(
             supervisor=supervisor,
             w1_params=w1_params,
             kine_solver=kine_solver,
-            pin_kin_solver=pin_kin_solver,
+            pin_kine_solver=pin_kine_solver,
             collision_checker=collision_checker,
+            hybrid_planner=hybrid_planner,
+            cartesian_planner=cartesian_planner,
+            cartesian_joint_planner=cartesian_joint_planner,
+            stop_move_event=stop_move_event,
             time_step=time_step)
         self.logger = get_logger()
-
 
     def move_dual_arm_single_task(self,
                                   task_dict: dict,
@@ -57,7 +65,7 @@ class DualArmMovementBaseW1(object):
         Notes:
             - It will execute the moving of torso and head first, then execute the moving of left and right arms including the end effectors.
         """
-        res, current_qpos = self.get_current_qpos()
+        res, current_qpos = self.supervisor_view.get_current_qpos()
         if res.value < 0:
             self.logger.error(
                 "Function: move_dual_arm_single_task(), failed to get current qpos"
@@ -69,11 +77,13 @@ class DualArmMovementBaseW1(object):
         cur_arml_qpos = current_qpos[self.real_arml_idx]
         cur_armr_qpos = current_qpos[self.real_armr_idx]
 
-        res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+        res, cur_armlee_qpos = self.supervisor_view.get_current_qpos(
+            "left_arm_ee")
         if res.value < 0:
             self.logger.error("Get current left arm ee qpos failed.")
             return res
-        res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+        res, cur_armree_qpos = self.supervisor_view.get_current_qpos(
+            "right_arm_ee")
         if res.value < 0:
             self.logger.error("Get current right arm ee qpos failed.")
             return res
@@ -130,22 +140,24 @@ class DualArmMovementBaseW1(object):
                     )
                     return StatusCode.COLLISION_FAIL
 
-        res_align, move_torso_head_traj = self._qpos_align(
-            torso_qpos_array, head_qpos_array, cur_arml_qpos, cur_armr_qpos)
+        res_align, move_torso_head_traj = StaticUtilityW1.qpos_align(
+            self.supervisor_view, torso_qpos_array, head_qpos_array,
+            cur_arml_qpos, cur_armr_qpos)
         if not res_align:
             self.logger.error(
                 "Function: move_dual_arm_single_task(), failed to align torso and head traj"
             )
             return StatusCode.FAIL
 
-        res_execute = self.execute_joint_traj(qpos_array=move_torso_head_traj,
-                                              left_arm_ee_trigger_list=None,
-                                              right_arm_ee_trigger_list=None)
+        res_execute = self.supervisor_view.execute_joint_traj(
+            qpos_array=move_torso_head_traj,
+            left_arm_ee_trigger_list=None,
+            right_arm_ee_trigger_list=None)
         if res_execute.value < 0:
             self.logger.error("Execute torso and head moving traj failed.")
             return res_execute
 
-        res, current_qpos = self.get_current_qpos()
+        res, current_qpos = self.supervisor_view.get_current_qpos()
         if res.value < 0:
             self.logger.error(
                 "Function: move_dual_arm_single_task(), failed to get current qpos"
@@ -156,11 +168,13 @@ class DualArmMovementBaseW1(object):
         cur_arml_qpos = current_qpos[self.real_arml_idx]
         cur_armr_qpos = current_qpos[self.real_armr_idx]
 
-        res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+        res, cur_armlee_qpos = self.supervisor_view.get_current_qpos(
+            "left_arm_ee")
         if res.value < 0:
             self.logger.error("Get current left arm ee qpos failed.")
             return res
-        res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+        res, cur_armree_qpos = self.supervisor_view.get_current_qpos(
+            "right_arm_ee")
         if res.value < 0:
             self.logger.error("Get current right arm ee qpos failed.")
             return res
@@ -347,8 +361,9 @@ class DualArmMovementBaseW1(object):
                         (max(1, int(armr_pre_insert + armr_post_insert)), 1))
             ])
 
-            res_align, move_arml_armr_traj = self._qpos_align(
-                cur_torso_qpos, cur_head_qpos, arml_traj, armr_traj)
+            res_align, move_arml_armr_traj = StaticUtilityW1.qpos_align(
+                self.supervisor_view, cur_torso_qpos, cur_head_qpos, arml_traj,
+                armr_traj)
 
             # # check trajectory collision
             if lee_target is None:
@@ -371,7 +386,7 @@ class DualArmMovementBaseW1(object):
                     break
                     # return False
 
-            return self.execute_joint_traj(
+            return self.supervisor_view.execute_joint_traj(
                 qpos_array=move_arml_armr_traj,
                 left_arm_ee_trigger_list=armlee_trigger,
                 right_arm_ee_trigger_list=armree_trigger)
@@ -394,8 +409,9 @@ class DualArmMovementBaseW1(object):
                         (max(1, int(arml_pre_insert + arml_post_insert)), 1))
             ])
 
-            res_align, move_arml_armr_traj = self._qpos_align(
-                cur_torso_qpos, cur_head_qpos, arml_traj, cur_armr_qpos)
+            res_align, move_arml_armr_traj = StaticUtilityW1.qpos_align(
+                self.supervisor_view, cur_torso_qpos, cur_head_qpos, arml_traj,
+                cur_armr_qpos)
 
             # check trajectory collision
             if lee_target is None:
@@ -418,7 +434,7 @@ class DualArmMovementBaseW1(object):
                     break
                     # return False
 
-            return self.execute_joint_traj(
+            return self.supervisor_view.execute_joint_traj(
                 qpos_array=move_arml_armr_traj,
                 left_arm_ee_trigger_list=armlee_trigger,
                 right_arm_ee_trigger_list=armree_trigger)
@@ -440,8 +456,9 @@ class DualArmMovementBaseW1(object):
                         (max(1, int(armr_pre_insert + armr_post_insert)), 1))
             ])
 
-            res_align, move_arml_armr_traj = self._qpos_align(
-                cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_traj)
+            res_align, move_arml_armr_traj = StaticUtilityW1.qpos_align(
+                self.supervisor_view, cur_torso_qpos, cur_head_qpos,
+                cur_arml_qpos, armr_traj)
 
             # check trajectory collision
             if lee_target is None:
@@ -464,7 +481,7 @@ class DualArmMovementBaseW1(object):
                     break
                     # return False
 
-            return self.execute_joint_traj(
+            return self.supervisor_view.execute_joint_traj(
                 qpos_array=move_arml_armr_traj,
                 left_arm_ee_trigger_list=armlee_trigger,
                 right_arm_ee_trigger_list=armree_trigger)
@@ -486,8 +503,9 @@ class DualArmMovementBaseW1(object):
                 cur_armr_qpos,
                 (max(1, int(armr_pre_insert + armr_post_insert)), 1))
 
-            res_align, move_arml_armr_traj = self._qpos_align(
-                cur_torso_qpos, cur_head_qpos, arml_traj, armr_traj)
+            res_align, move_arml_armr_traj = StaticUtilityW1.qpos_align(
+                self.supervisor_view, cur_torso_qpos, cur_head_qpos, arml_traj,
+                armr_traj)
 
             # check trajectory collision
             if lee_target is None:
@@ -510,7 +528,7 @@ class DualArmMovementBaseW1(object):
                     break
                     # return False
 
-            return self.execute_joint_traj(
+            return self.supervisor_view.execute_joint_traj(
                 qpos_array=move_arml_armr_traj,
                 left_arm_ee_trigger_list=armlee_trigger,
                 right_arm_ee_trigger_list=armree_trigger)
@@ -541,7 +559,7 @@ class DualArmMovementBaseW1(object):
             )
             return StatusCode.INPUT_INVALID
 
-        res, current_qpos = self.get_current_qpos()
+        res, current_qpos = self.supervisor_view.get_current_qpos()
         if res.value < 0:
             self.logger.error(
                 "Function: move_single_arm(), failed to get current qpos")
@@ -551,11 +569,13 @@ class DualArmMovementBaseW1(object):
         cur_arml_qpos = current_qpos[self.real_arml_idx]
         cur_armr_qpos = current_qpos[self.real_armr_idx]
 
-        res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+        res, cur_armlee_qpos = self.supervisor_view.get_current_qpos(
+            "left_arm_ee")
         if res.value < 0:
             self.logger.error("Get current left arm ee qpos failed.")
             return res
-        res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+        res, cur_armree_qpos = self.supervisor_view.get_current_qpos(
+            "right_arm_ee")
         if res.value < 0:
             self.logger.error("Get current right arm ee qpos failed.")
             return res
@@ -601,11 +621,12 @@ class DualArmMovementBaseW1(object):
                         "It will occur collision for this head moving trajectory"
                     )
                     return StatusCode.COLLISION_FAIL
-        res_align, move_torso_head_traj = self._qpos_align(
-            torso_qpos_array, head_qpos_array, cur_arml_qpos, cur_armr_qpos)
-        self.execute_joint_traj(qpos_array=move_torso_head_traj,
-                                left_arm_ee_trigger_list=None,
-                                right_arm_ee_trigger_list=None)
+        res_align, move_torso_head_traj = StaticUtilityW1.qpos_align(
+            self.supervisor_view, torso_qpos_array, head_qpos_array,
+            cur_arml_qpos, cur_armr_qpos)
+        self.supervisor_view.execute_joint_traj(qpos_array=move_torso_head_traj,
+                                                left_arm_ee_trigger_list=None,
+                                                right_arm_ee_trigger_list=None)
 
         if arml_target_list is not None and arml_target_list != []:
             lee_target_list = task_dict.get("left_arm_ee")
@@ -626,7 +647,7 @@ class DualArmMovementBaseW1(object):
 
             for i in range(len(arml_target_list)):
 
-                res, current_qpos = self.get_current_qpos()
+                res, current_qpos = self.supervisor_view.get_current_qpos()
                 if res.value < 0:
                     self.logger.error(
                         "Function: move_single_arm(), failed to get current qpos"
@@ -637,11 +658,13 @@ class DualArmMovementBaseW1(object):
                 cur_arml_qpos = current_qpos[self.real_arml_idx]
                 cur_armr_qpos = current_qpos[self.real_armr_idx]
 
-                res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+                res, cur_armlee_qpos = self.supervisor_view.get_current_qpos(
+                    "left_arm_ee")
                 if res.value < 0:
                     self.logger.error("Get current left arm ee qpos failed.")
                     return res
-                res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+                res, cur_armree_qpos = self.supervisor_view.get_current_qpos(
+                    "right_arm_ee")
                 if res.value < 0:
                     self.logger.error("Get current right arm ee qpos failed.")
                     return res
@@ -720,11 +743,13 @@ class DualArmMovementBaseW1(object):
                         arml_traj[-1, :],
                         (max(1, int(arml_pre_insert + arml_post_insert)), 1))
                 ])
-                res_align, move_arml_armr_traj = self._qpos_align(
-                    cur_torso_qpos, cur_head_qpos, arml_traj, cur_armr_qpos)
-                self.execute_joint_traj(qpos_array=move_arml_armr_traj,
-                                        left_arm_ee_trigger_list=arml_trigger,
-                                        right_arm_ee_trigger_list=None)
+                res_align, move_arml_armr_traj = StaticUtilityW1.qpos_align(
+                    self.supervisor_view, cur_torso_qpos, cur_head_qpos,
+                    arml_traj, cur_armr_qpos)
+                self.supervisor_view.execute_joint_traj(
+                    qpos_array=move_arml_armr_traj,
+                    left_arm_ee_trigger_list=arml_trigger,
+                    right_arm_ee_trigger_list=None)
 
         elif armr_target_list is not None and armr_target_list != []:
             ree_target_list = task_dict.get("right_arm_ee")
@@ -744,7 +769,7 @@ class DualArmMovementBaseW1(object):
                 armr_speed_ratio_list = [speed_ratio] * len(armr_target_list)
 
             for i in range(len(armr_target_list)):
-                res, current_qpos = self.get_current_qpos()
+                res, current_qpos = self.supervisor_view.get_current_qpos()
                 if res.value < 0:
                     self.logger.error(
                         "Function: move_single_arm(), failed to get current qpos"
@@ -755,11 +780,13 @@ class DualArmMovementBaseW1(object):
                 cur_arml_qpos = current_qpos[self.real_arml_idx]
                 cur_armr_qpos = current_qpos[self.real_armr_idx]
 
-                res, cur_arml_qpos = self.get_current_qpos("left_arm_ee")
+                res, cur_arml_qpos = self.supervisor_view.get_current_qpos(
+                    "left_arm_ee")
                 if res.value < 0:
                     self.logger.error("Get current left arm ee qpos failed.")
                     return res
-                res, cur_armr_qpos = self.get_current_qpos("right_arm_ee")
+                res, cur_armr_qpos = self.supervisor_view.get_current_qpos(
+                    "right_arm_ee")
                 if res.value < 0:
                     self.logger.error("Get current right arm ee qpos failed.")
                     return res
@@ -837,14 +864,13 @@ class DualArmMovementBaseW1(object):
                         armr_traj[-1, :],
                         (max(1, int(armr_pre_insert + armr_post_insert)), 1))
                 ])
-                res_align, move_arml_armr_traj = self._qpos_align(
-                    cur_torso_qpos, cur_head_qpos, cur_arml_qpos, armr_traj)
-                return self.execute_joint_traj(
+                res_align, move_arml_armr_traj = StaticUtilityW1.qpos_align(
+                    self.supervisor_view, cur_torso_qpos, cur_head_qpos,
+                    cur_arml_qpos, armr_traj)
+                return self.supervisor_view.execute_joint_traj(
                     qpos_array=move_arml_armr_traj,
                     left_arm_ee_trigger_list=None,
                     right_arm_ee_trigger_list=armr_trigger)
-
-
 
     def plan_dual_arm_multiple_task(self,
                                     task_dict: list,
@@ -923,7 +949,7 @@ class DualArmMovementBaseW1(object):
                 return StatusCode.DIM_MISMATCH, None, None, None
 
         # Execute torso and head movement first
-        res, current_qpos = self.get_current_qpos()
+        res, current_qpos = self.supervisor_view.get_current_qpos()
         if res.value < 0:
             self.logger.error(
                 "Function: plan_dual_arm_multiple_task(), failed to get current qpos"
@@ -935,11 +961,13 @@ class DualArmMovementBaseW1(object):
         cur_arml_qpos = current_qpos[self.real_arml_idx]
         cur_armr_qpos = current_qpos[self.real_armr_idx]
 
-        res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+        res, cur_armlee_qpos = self.supervisor_view.get_current_qpos(
+            "left_arm_ee")
         if res.value < 0:
             self.logger.error("Get current left arm ee qpos failed.")
             return res, None, None, None
-        res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+        res, cur_armree_qpos = self.supervisor_view.get_current_qpos(
+            "right_arm_ee")
         if res.value < 0:
             self.logger.error("Get current right arm ee qpos failed.")
             return res, None, None, None
@@ -1000,17 +1028,19 @@ class DualArmMovementBaseW1(object):
                         )
                         return StatusCode.COLLISION_FAIL, None, None, None
 
-        res_align, move_torso_head_traj = self._qpos_align(
-            torso_qpos_array, head_qpos_array, cur_arml_qpos, cur_armr_qpos)
+        res_align, move_torso_head_traj = StaticUtilityW1.qpos_align(
+            self.supervisor_view, torso_qpos_array, head_qpos_array,
+            cur_arml_qpos, cur_armr_qpos)
         if not res_align:
             self.logger.error(
                 "Function: plan_dual_arm_multiple_task(), failed to align torso and head traj"
             )
             return StatusCode.FAIL, None, None, None
 
-        res_execute = self.execute_joint_traj(qpos_array=move_torso_head_traj,
-                                              left_arm_ee_trigger_list=None,
-                                              right_arm_ee_trigger_list=None)
+        res_execute = self.supervisor_view.execute_joint_traj(
+            qpos_array=move_torso_head_traj,
+            left_arm_ee_trigger_list=None,
+            right_arm_ee_trigger_list=None)
         if res_execute.value < 0:
             self.logger.error("Execute torso and head moving traj failed.")
             return res_execute, None, None, None
@@ -1035,7 +1065,7 @@ class DualArmMovementBaseW1(object):
         armlee_trigger_list = []
         for i in range(len(target_arml_pose_list)):
             if arml_use_collision_check_list[i]:
-                res, current_qpos = self.get_current_qpos()
+                res, current_qpos = self.supervisor_view.get_current_qpos()
                 if res.value < 0:
                     self.logger.error(
                         "Function: plan_dual_arm_multiple_task(), failed to get current qpos"
@@ -1050,14 +1080,16 @@ class DualArmMovementBaseW1(object):
                 cur_armr_qpos = current_qpos[self.real_armr_idx]
 
                 if i == 0:
-                    res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+                    res, cur_armlee_qpos = self.supervisor_view.get_current_qpos(
+                        "left_arm_ee")
                     if res.value < 0:
                         self.logger.error(
                             "Get current left arm ee qpos failed.")
                         return res, None, None, None
                 else:
                     cur_armlee_qpos = np.asarray(armlee_trigger_list[-1][1])
-                res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+                res, cur_armree_qpos = self.supervisor_view.get_current_qpos(
+                    "right_arm_ee")
                 if res.value < 0:
                     self.logger.error("Get current right arm ee qpos failed.")
                     return res, None, None, None
@@ -1140,7 +1172,7 @@ class DualArmMovementBaseW1(object):
                 ])
                 arml_traj_list.append(arml_traj)
             else:
-                res, current_qpos = self.get_current_qpos()
+                res, current_qpos = self.supervisor_view.get_current_qpos()
                 if res.value < 0:
                     self.logger.error(
                         "Function: plan_dual_arm_multiple_task(), failed to get current qpos"
@@ -1155,14 +1187,16 @@ class DualArmMovementBaseW1(object):
                 cur_armr_qpos = current_qpos[self.real_armr_idx]
 
                 if i == 0:
-                    res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+                    res, cur_armlee_qpos = self.supervisor_view.get_current_qpos(
+                        "left_arm_ee")
                     if res.value < 0:
                         self.logger.error(
                             "Get current left arm ee qpos failed.")
                         return res, None, None, None
                 else:
                     cur_armlee_qpos = np.asarray(armlee_trigger_list[-1][1])
-                res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+                res, cur_armree_qpos = self.supervisor_view.get_current_qpos(
+                    "right_arm_ee")
                 if res.value < 0:
                     self.logger.error("Get current right arm ee qpos failed.")
                     return res, None, None, None
@@ -1209,7 +1243,7 @@ class DualArmMovementBaseW1(object):
         armree_trigger_list = []
         for i in range(len(target_armr_pose_list)):
             if armr_use_collision_check_list[i]:
-                res, current_qpos = self.get_current_qpos()
+                res, current_qpos = self.supervisor_view.get_current_qpos()
                 if res.value < 0:
                     self.logger.error(
                         "Function: plan_dual_arm_multiple_task(), failed to get current qpos"
@@ -1223,12 +1257,14 @@ class DualArmMovementBaseW1(object):
                 else:
                     cur_armr_qpos = armr_traj_list[-1][-1, :]
 
-                res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+                res, cur_armlee_qpos = self.supervisor_view.get_current_qpos(
+                    "left_arm_ee")
                 if res.value < 0:
                     self.logger.error("Get current left arm ee qpos failed.")
                     return res, None, None, None
                 if i == 0:
-                    res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+                    res, cur_armree_qpos = self.supervisor_view.get_current_qpos(
+                        "right_arm_ee")
                     if res.value < 0:
                         self.logger.error(
                             "Get current right arm ee qpos failed.")
@@ -1316,7 +1352,7 @@ class DualArmMovementBaseW1(object):
                 ])
                 armr_traj_list.append(armr_traj)
             else:
-                res, current_qpos = self.get_current_qpos()
+                res, current_qpos = self.supervisor_view.get_current_qpos()
                 if res.value < 0:
                     self.logger.error(
                         "Function: plan_dual_arm_multiple_task(), failed to get current qpos"
@@ -1330,12 +1366,14 @@ class DualArmMovementBaseW1(object):
                 else:
                     cur_armr_qpos = armr_traj_list[-1][-1, :]
 
-                res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+                res, cur_armlee_qpos = self.supervisor_view.get_current_qpos(
+                    "left_arm_ee")
                 if res.value < 0:
                     self.logger.error("Get current left arm ee qpos failed.")
                     return res, None, None, None
                 if i == 0:
-                    res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+                    res, cur_armree_qpos = self.supervisor_view.get_current_qpos(
+                        "right_arm_ee")
                     if res.value < 0:
                         self.logger.error(
                             "Get current right arm ee qpos failed.")
@@ -1367,11 +1405,13 @@ class DualArmMovementBaseW1(object):
                 armr_traj_list.append(armr_traj)
                 armree_trigger_list.append(right_arm_ee_trigger_list[0])
 
-        res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+        res, cur_armlee_qpos = self.supervisor_view.get_current_qpos(
+            "left_arm_ee")
         if res.value < 0:
             self.logger.error("Get current left arm ee qpos failed.")
             return res, None, None, None
-        res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+        res, cur_armree_qpos = self.supervisor_view.get_current_qpos(
+            "right_arm_ee")
         if res.value < 0:
             self.logger.error("Get current right arm ee qpos failed.")
             return res, None, None, None
@@ -1383,7 +1423,7 @@ class DualArmMovementBaseW1(object):
                                                                         left_ee_trigger_list=armlee_trigger_list,
                                                                         right_ee_trigger_list=armree_trigger_list)
 
-        res, current_qpos = self.get_current_qpos()
+        res, current_qpos = self.supervisor_view.get_current_qpos()
         if res.value < 0:
             self.logger.error(
                 "Function: plan_dual_arm_multiple_task(), failed to get current qpos"
@@ -1392,10 +1432,9 @@ class DualArmMovementBaseW1(object):
         cur_torso_qpos = current_qpos[self.real_torso_idx]
         cur_head_qpos = current_qpos[self.real_head_idx]
 
-        res, move_arml_armr_traj = self._qpos_align(cur_torso_qpos,
-                                                    cur_head_qpos,
-                                                    coordinated_left,
-                                                    coordinated_right)
+        res, move_arml_armr_traj = StaticUtilityW1.qpos_align(
+            self.supervisor_view, cur_torso_qpos, cur_head_qpos,
+            coordinated_left, coordinated_right)
 
         return StatusCode.SUCCESS, move_arml_armr_traj, coordinated_left_ee, coordinated_right_ee
 
@@ -1410,11 +1449,10 @@ class DualArmMovementBaseW1(object):
                 "Function: move_dual_arm_multiple_task(), failed to plan dual arm multiple task"
             )
             return res
-        return self.execute_joint_traj(
+        return self.supervisor_view.execute_joint_traj(
             qpos_array=move_arml_armr_traj,
             left_arm_ee_trigger_list=left_ee_trigger_list,
             right_arm_ee_trigger_list=right_ee_trigger_list)
-
 
     def _plan_to_waypoint(
             self,
@@ -1433,8 +1471,9 @@ class DualArmMovementBaseW1(object):
             qpos_array = cur_qpos
         (res, pos_raw_array, qvel_limits_array,
          _) = StaticUtilityW1.parse_waypoints_from_dict(self.supervisor_view,
-            name, waypoints_dict, speed_ratio,
-                                              is_cartesian)
+                                                        name, waypoints_dict,
+                                                        speed_ratio,
+                                                        is_cartesian)
         if res == StatusCode.INPUT_EMPTY:  # 输入为空
             return StatusCode.SUCCESS, qpos_array
         elif res.value < 0:  # 输入不合法
@@ -1452,9 +1491,8 @@ class DualArmMovementBaseW1(object):
                 ref_qpos = np.zeros(self.w1_params.full_body_dofs)
                 ref_qpos[self.w1_params.index_infos["torso"]
                          ["index"]] = ref_torso_qpos
-                res_fk, T_chassis_armbase = self.supervisor_view.get_xpos(f"{name}_base",
-                                                          ref_qpos,
-                                                          is_local=False)
+                res_fk, T_chassis_armbase = self.supervisor_view.get_xpos(
+                    f"{name}_base", ref_qpos, is_local=False)
                 if res_fk.value < 0:
                     self.logger.error(f"{name}_base solve fk failed!")
                     return res_fk, None
@@ -1472,7 +1510,8 @@ class DualArmMovementBaseW1(object):
                 cur_arm_qpos = cur_qpos
 
             # In local frame
-            res_fk, cur_xpos = self.supervisor_view._get_arm_kine(name).get_fk(cur_arm_qpos)
+            res_fk, cur_xpos = self.supervisor_view._get_arm_kine(name).get_fk(
+                cur_arm_qpos)
             if not res_fk:
                 self.logger.error(f"{name} solve fk failed!")
                 return StatusCode.FK_FAIL, None
@@ -1481,16 +1520,16 @@ class DualArmMovementBaseW1(object):
                 for pose in pos_raw_array
             ]
             xpos_raw_list_ = [cur_xpos] + xpos_raw_list
-            res_plan, qpos_array = self.plan_cartesian_traj(
-                name, xpos_raw_list_, qpos_seed, qvel_limits_array_,
-                cartesian_step)
+            res_plan, qpos_array = StaticUtilityW1.plan_cartesian_traj(
+                self.supervisor_view, name, xpos_raw_list_, qpos_seed,
+                qvel_limits_array_, cartesian_step)
             if res_plan.value < 0:
                 return res_plan, None
         else:
             qpos_raw_array_ = np.vstack([cur_qpos, pos_raw_array])
-            res_plan, qpos_array = self.plan_joint_traj(name, qpos_raw_array_,
-                                                        is_sparse,
-                                                        qvel_limits_array_)
+            res_plan, qpos_array = StaticUtilityW1.plan_joint_traj(
+                self.supervisor_view, name, qpos_raw_array_, is_sparse,
+                qvel_limits_array_)
             if res_plan.value < 0:
                 return res_plan, None
 
@@ -1514,8 +1553,9 @@ class DualArmMovementBaseW1(object):
             qpos_array = cur_qpos
 
         (res, pos_raw_array, qvel_limits_array,
-         arm_ee_state_list) = StaticUtilityW1.parse_waypoints_from_dict(self.supervisor_view,
-             name, waypoints_dict, speed_ratio, is_cartesian)
+         arm_ee_state_list) = StaticUtilityW1.parse_waypoints_from_dict(
+             self.supervisor_view, name, waypoints_dict, speed_ratio,
+             is_cartesian)
         if res == StatusCode.INPUT_EMPTY:
             return StatusCode.SUCCESS, qpos_array, None
         elif res.value < 0:
@@ -1583,7 +1623,8 @@ class DualArmMovementBaseW1(object):
 
         # segment raw waypoint
         arm_ee_trigger_list = []  # (count, ee_qpos)
-        res, segment_list = self.plan_arm_ee_trigger(arm_ee_state_list_)
+        res, segment_list = StaticUtilityW1.plan_arm_ee_trigger(
+            self.supervisor_view, arm_ee_state_list_)
         if res.value < 0:
             return res, None, None
 
@@ -1600,12 +1641,13 @@ class DualArmMovementBaseW1(object):
                     user_pose_to_xpos(pose[:3].tolist(), pose[3:].tolist())
                     for pose in seg_pos_array
                 ]
-                res_plan, seg_qpos_samples_array = self.plan_cartesian_traj(
-                    name, seg_xpos_list, cur_qpos_seed, seg_qvel_limits_array,
-                    cartesian_step)
+                res_plan, seg_qpos_samples_array = StaticUtilityW1.plan_cartesian_traj(
+                    self.supervisor_view, name, seg_xpos_list, cur_qpos_seed,
+                    seg_qvel_limits_array, cartesian_step)
             else:
-                res_plan, seg_qpos_samples_array = self.plan_joint_traj(
-                    name, seg_pos_array, is_sparse, seg_qvel_limits_array)
+                res_plan, seg_qpos_samples_array = StaticUtilityW1.plan_joint_traj(
+                    self.supervisor_view, name, seg_pos_array, is_sparse,
+                    seg_qvel_limits_array)
             if res_plan.value < 0:
                 return res_plan, None, None
 
@@ -1649,125 +1691,78 @@ class DualArmMovementBaseW1(object):
 
         return StatusCode.SUCCESS, total_qpos_array, arm_ee_trigger_list
 
-    def plan_cartesian_traj(
-            self,
-            name: str,
-            xpos_list: list[np.ndarray],
-            qpos_seed: np.ndarray,
-            qvel_limits_array: np.ndarray = None,
-            cartesian_step: float = 0.005) -> tuple[StatusCode, np.ndarray]:
-        """对机械臂进行笛卡尔轨迹规划，可指定路径点的各关节的速度约束；速度表示从上一点到当前点的最大关节速度
-
-        Args:
-            name (str): ["left_arm", "right_arm"]
-            xpos_list (list[np.ndarray]): 笛卡尔路径点
-            qpos_seed (np.ndarray): 起始参考关节seed
-            qvel_limits_array (np.ndarray, optional): 路径点关节速度约束，省略则按默认关节速度
-            cartesian_step (float, optional): 笛卡尔轨迹采样步长 默认0.005m
-
-        Returns:
-            tuple[StatusCode, np.ndarray]
-        """
-        arm_kine = self.supervisor_view._get_arm_kine(name)
-        if arm_kine is None:
-            return StatusCode.NAME_MISMATCH, None
-
-        # cartesian interpolation
-        path = PathR3xSO3Bezier(np.array(xpos_list))
-        if not path.calc_path():
-            return StatusCode.PLAN_PATH_FAIL, None
-        if len(xpos_list) == 2 and path.get_length() < cartesian_step:
-            xpos_sample_array = np.array(xpos_list)
-        else:
-            xpos_sample_array = path.get_sample_by_step(cartesian_step)
-            if xpos_sample_array is None:
-                return StatusCode.PLAN_PATH_FAIL, None
-
-        prefix_dist_list = [0.]
-        for idx in range(len(xpos_list) - 1):
-            dist = np.linalg.norm(xpos_list[idx + 1][:3, 3] -
-                                  xpos_list[idx][:3, 3])
-            prefix_dist_list.append(prefix_dist_list[-1] + dist)
-
-        # vel align
-        # TODO: use ee vel rather than qvel
-        if qvel_limits_array is None:
-            qvel_limits_array_ = None
-        else:
-            idx = 0
-            qvel_limits_list_ = [qvel_limits_array[idx]]
-            cur_xpos = xpos_sample_array[0]
-            cur_dist = 0.
-            for xpos in xpos_sample_array[1:-1]:
-                dist = weighted_norm(xpos[:3, 3] - cur_xpos[:3, 3])
-                cur_dist += dist
-                if cur_dist >= prefix_dist_list[idx] + 1e-6:
-                    idx += 1
-                qvel_limits_list_.append(qvel_limits_array[idx])
-                cur_xpos = xpos
-            qvel_limits_list_.append(qvel_limits_array[-1])
-        qvel_limits_array_ = np.array(qvel_limits_list_)
-
-        # solve ik
-        qpos_list = []
-        cur_qseed = qpos_seed
-        for i, cur_xpos in enumerate(xpos_sample_array):
-            use_nearest = (i != 0)
-
-            if not use_nearest:
-                res, ref_psi = arm_kine.calc_arm_angle(cur_qseed)
-                if res:
-                    srs_cfg = SRSConfig(cur_qseed, ref_psi)
-                    res_ik, cur_qpos = arm_kine.get_ik(cur_xpos, srs_cfg)
-                    if not res_ik:
-                        use_nearest = True
-                else:
-                    use_nearest = True
-
-            if use_nearest:
-                res_ik, cur_qpos = arm_kine.get_nearest_ik(xpos=cur_xpos,
-                                                           qpos_seed=cur_qseed)
-
-            if not res_ik:
-                self.logger.error(
-                    f"{name} solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}."
-                )
-                return StatusCode.IK_FAIL, None
-            if not np.allclose(cur_qpos, cur_qseed, atol=np.deg2rad(90)):
-                self.logger.error(f"{name} qpos traj is not continues\n" + \
-                                  f"cur_qpos(deg): {np.rad2deg(cur_qpos)}\n" + \
-                                  f"cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
-                return StatusCode.IK_FAIL, None
-            qpos_list.append(cur_qpos)
-            cur_qseed = cur_qpos
-
-        return StaticUtilityW1.plan_joint_traj(self.supervisor_view, name,
-                                               np.array(qpos_list), False,
-                                               qvel_limits_array_)
-
-
     def plan_arm_ee_trigger(self,
                             arm_ee_state_list: list) -> tuple[StatusCode, list]:
-        # TODO: 存在延时的才分段，否则不分段且全部waypoint ee_qpos都到点触发？
-        if not self.supervisor_view._check_arm_ee_states(arm_ee_state_list):
-            return StatusCode.INPUT_INVALID, None
-        ee_qpos_array = np.array(
-            [ee_qpos for _, ee_qpos, _ in arm_ee_state_list])
-        if not self.supervisor_view._check_qpos_limits("left_arm_ee", ee_qpos_array):
-            return StatusCode.EXCEED_LIMIT, None
+        return StaticUtilityW1.plan_arm_ee_trigger(self.supervisor_view,
+                                                   arm_ee_state_list)
 
-        segment_list = []
-        start_idx = 0
-        for i in range(1, len(arm_ee_state_list)):
-            pre_qpos = arm_ee_state_list[i - 1][1]
-            pre_delay, qpos, post_delay = arm_ee_state_list[i]
-            if pre_delay != 0. or post_delay != 0. or not np.allclose(
-                    qpos, pre_qpos, atol=np.deg2rad(0.5)):
-                segment_list.append([start_idx, i])
-                start_idx = i
+    def move_torso_linear(self,
+                          delta_x_mm: float,
+                          delta_z_mm: float,
+                          cartesian_step=0.002,
+                          speed_ratio: float = 1.) -> StatusCode:
+        """腿部从当前位置直线移动相对距离
 
-        if start_idx < len(arm_ee_state_list) - 1:
-            segment_list.append([start_idx, len(arm_ee_state_list) - 1])
-        self.logger.debug(f"plan_arm_ee_trigger result: {segment_list}.")
+        Args:
+            delta_x_mm (float): x方向(前后)直线相对运动距离
+            delta_z_mm (float): z方向(上下)直线相对运动距离
+            cartesian_step (float, optional): 直线离散步长. Defaults to 0.002.
+            speed_ratio (float, optional): 运动速率. Defaults to 1..
 
-        return StatusCode.SUCCESS, segment_list
+        Returns:
+            StatusCode: 
+        """
+        res, cur_qpos = self.supervisor_view.get_current_qpos()
+        if res.value < 0:
+            return res
+        res_fk, cur_x, cur_z, cur_y_theta = self.supervisor_view.kine_solver.get_torso_fk(
+            cur_qpos[:3])
+        if not res_fk:
+            return StatusCode.FK_FAIL
+        target_x = cur_x + (delta_x_mm / 1000.)
+        target_z = cur_z + (delta_z_mm / 1000.)
+        # TODO: check com in support polyhedron
+
+        # Create path
+        p_cur = np.array([cur_x, cur_z])
+        p_target = np.array([target_x, target_z])
+        dist = np.linalg.norm(p_target - p_cur)
+        n_steps = int(np.ceil(dist / cartesian_step))
+        s_list = np.linspace(0, 1, n_steps + 1)
+        p_list = [p_cur + (p_target - p_cur) * s for s in s_list]
+
+        # Solve ik
+        qpos_list = []
+        for p in p_list:
+            res_ik, qpos = self.supervisor_view.kine_solver.get_torso_ik(
+                p[0], p[1], cur_y_theta, cur_qpos[1] < 0)
+            if not res_ik:
+                return StatusCode.IK_FAIL
+            qpos_list.append(np.r_[qpos, cur_qpos[3]])
+
+        speed_ratio_list = [speed_ratio] * len(qpos_list)
+        default_qvel = self.w1_params.default_qvel[
+            self.w1_params.index_infos["torso"]["index"]]
+        min_qvel = self.w1_params.min_qvel[self.w1_params.index_infos["torso"]
+                                           ["index"]]
+        max_qvel = self.w1_params.max_qvel[self.w1_params.index_infos["torso"]
+                                           ["index"]]
+        qvel_limits_array = np.clip(np.outer(speed_ratio_list, default_qvel),
+                                    min_qvel, max_qvel)
+
+        res_plan, torso_qpos_array = StaticUtilityW1.plan_joint_traj(
+            self.supervisor_view, "torso", np.array(qpos_list), False,
+            qvel_limits_array)
+        if res_plan.value < 0:
+            return res_plan, None
+
+        # align
+        res_align, total_qpos_array = StaticUtilityW1.qpos_align(
+            self.supervisor_view, torso_qpos_array,
+            cur_qpos[self.w1_params.head_index],
+            cur_qpos[self.w1_params.left_arm_index],
+            cur_qpos[self.w1_params.right_arm_index])
+        if not res_align:
+            return StatusCode.FAIL
+
+        return self.supervisor_view.execute_joint_traj(total_qpos_array)

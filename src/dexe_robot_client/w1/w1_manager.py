@@ -290,15 +290,16 @@ class W1Manager:
         robot_client_wrapper_sim = RobotClientWrapper(self._robot_client_sim)
         robot_client_wrapper_real = RobotClientWrapper(self._robot_client_real)
 
-        left_ee_client_wrapper_sim = GripperClientWrapper(
-            self._left_ee_client_sim)
-        left_ee_client_wrapper_real = GripperClientWrapper(
-            self._left_ee_client_real)
+        if self._end_effector_type is not None:
+            left_ee_client_wrapper_sim = GripperClientWrapper(
+                self._left_ee_client_sim)
+            left_ee_client_wrapper_real = GripperClientWrapper(
+                self._left_ee_client_real)
 
-        right_ee_client_wrapper_sim = GripperClientWrapper(
-            self._right_ee_client_sim)
-        right_ee_client_wrapper_real = GripperClientWrapper(
-            self._right_ee_client_real)
+            right_ee_client_wrapper_sim = GripperClientWrapper(
+                self._right_ee_client_sim)
+            right_ee_client_wrapper_real = GripperClientWrapper(
+                self._right_ee_client_real)
 
         sim_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         real_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -312,14 +313,43 @@ class W1Manager:
             executor_owned=sim_executor,
         )
 
-        self._client_supervisor_real = RobotClientSupervisor(
-            robot_client=robot_client_wrapper_real,
-            client_map={
-                "left_arm_ee": left_ee_client_wrapper_real,
-                "right_arm_ee": right_ee_client_wrapper_real
-            },
-            executor_owned=real_executor,
-        )
+        if self._end_effector_type is not None:
+            if self._use_nav:
+                self._client_supervisor_real = RobotClientSupervisor(
+                    robot_client=robot_client_wrapper_real,
+                    client_map={
+                        "left_arm_ee": left_ee_client_wrapper_real,
+                        "right_arm_ee": right_ee_client_wrapper_real,
+                        # TODO: add chassis client wrapper
+                        "chassis": self._chassis_client_real
+                    },
+                    executor_owned=real_executor,
+                )
+            else:
+                self._client_supervisor_real = RobotClientSupervisor(
+                    robot_client=robot_client_wrapper_real,
+                    client_map={
+                        "left_arm_ee": left_ee_client_wrapper_real,
+                        "right_arm_ee": right_ee_client_wrapper_real
+                    },
+                    executor_owned=real_executor,
+                )
+        else:
+            if self._use_nav:
+                self._client_supervisor_real = RobotClientSupervisor(
+                    robot_client=robot_client_wrapper_real,
+                    client_map={
+                        # TODO: add chassis client wrapper
+                        "chassis": self._chassis_client_real
+                    },
+                    executor_owned=real_executor,
+                )
+            else:
+                self._client_supervisor_real = RobotClientSupervisor(
+                    robot_client=robot_client_wrapper_real,
+                    client_map={},
+                    executor_owned=real_executor,
+                )
 
         self._client_supervisor_sim.initialize()
         self._client_supervisor_real.initialize()
@@ -328,17 +358,28 @@ class W1Manager:
             supervisor=self._client_supervisor_sim,
             w1_params=self.w1_params,
             kine_solver=self.kine,
-            pin_kin_solver=self._pin_kine,
+            pin_kine_solver=self._pin_kine,
             collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
 
         self.supervisor_view_real = SupervisorViewW1(
             supervisor=self._client_supervisor_real,
             w1_params=self.w1_params,
             kine_solver=self.kine,
-            pin_kin_solver=self._pin_kine,
+            pin_kine_solver=self._pin_kine,
             collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
+
+        self.target_supervisor = self._client_supervisor_sim if self._is_sim else self._client_supervisor_real
+        self.target_supervisor_view = self.supervisor_view_sim if self._is_sim else self.supervisor_view_real
 
         self.logger.info("Client supervisor initialized.")
 
@@ -399,52 +440,6 @@ class W1Manager:
             return None
         return self.chassis_client
 
-    def _save_home_qpos(self, file_path=DATA_DIR / "config.json") -> bool:
-        file_path_ = pathlib.Path(file_path)
-        if not file_path_.exists() or file_path_.stat().st_size == 0:
-            self.logger.error(f"{str(file_path)} invalid.")
-            return False
-
-        with open(file_path, "r") as f:
-            json_data = json.load(f)
-
-        json_data["home_qpos"] = self.get_home_qpos().tolist()
-
-        with open(file_path, "w") as f:
-            json.dump(json_data, f, indent=4, ensure_ascii=False)
-        self.w1_params.update_params(file_path)
-        return True
-
-    def _qpos_align(
-            self, torso_qpos_array: np.ndarray, head_qpos_array: np.ndarray,
-            left_arm_qpos_array: np.ndarray,
-            right_arm_qpos_array: np.ndarray) -> tuple[bool, np.ndarray]:
-        """轨迹对齐，按先运动后等待的模式进行补齐"""
-        qpos_array_list = [
-            np.atleast_2d(torso_qpos_array),
-            np.atleast_2d(head_qpos_array),
-            np.atleast_2d(left_arm_qpos_array),
-            np.atleast_2d(right_arm_qpos_array)
-        ]
-        if all(q.size == 0 for q in qpos_array_list):
-            self.logger.error("No qpos to be aligned")
-            return False, None
-
-        max_count = max(q.shape[0] for q in qpos_array_list)
-
-        temp_arrays = []
-        for qpos_array in qpos_array_list:
-            pad_count = max_count - qpos_array.shape[0]
-            if pad_count > 0:
-                padded = np.vstack(
-                    [qpos_array,
-                     np.tile(qpos_array[-1], (pad_count, 1))])
-            else:
-                padded = qpos_array
-            temp_arrays.append(padded)
-
-        return True, np.hstack(temp_arrays)
-
     def load_fcl_environment(self, file_path: str = None) -> None:
         """
         file_path: the path of fcl environment json file path
@@ -476,9 +471,7 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        if self.is_connected(timeout_sec):
-            return StatusCode.SUCCESS
-        return StatusCode.FAIL
+        return self.target_supervisor_view.connect(timeout_sec)
 
     def is_connected(self, timeout_sec: float = 0.1) -> StatusCode:
         """检查所有client是否处于连接状态
@@ -489,29 +482,11 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        if not self.robot_client.is_connected(timeout_sec):
-            self.logger.info(f"{self.robot_client.node_name} is not connected!")
-            return StatusCode.ROBOT_NOT_CONNECT
-        if self._has_arm_ee_client("left_arm_ee", False):
-            if not self.left_ee_client.is_connected(timeout_sec):
-                self.logger.info(
-                    f"{self.left_ee_client.node_name} is not connected!")
-                return StatusCode.EE_NOT_CONNECT
-        if self._has_arm_ee_client("right_arm_ee", False):
-            if not self.right_ee_client.is_connected(timeout_sec):
-                self.logger.info(
-                    f"{self.right_ee_client.node_name} is not connected!")
-                return StatusCode.EE_NOT_CONNECT
-        if (self._use_nav and not self.chassis_client.is_connected()):
-            self.logger.error(
-                f"{self.chassis_client.node_name} is not connected!")
-            return StatusCode.CHASSIS_NOT_CONNECT
-        return StatusCode.SUCCESS
+        return self.target_supervisor_view.is_connected(timeout_sec,
+                                                        self._use_nav)
 
     def enable(self, timeout_sec: float = 0.5) -> StatusCode:
-        self.logger.warning(
-            "Not implemented (Currently it will automatically enable).")
-        return StatusCode.SUCCESS
+        return self.target_supervisor_view.enable(timeout_sec)
 
     def is_enabled(self) -> StatusCode:
         """检查robot是否处于使能状态
@@ -519,16 +494,7 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        if not self.robot_client.is_connected(0.5):
-            self.logger.error(
-                f"{self.robot_client.node_name} is not connected!")
-            return StatusCode.ROBOT_NOT_CONNECT
-        if self.robot_client.status == Status.Init:
-            self.logger.error(
-                f"{self.robot_client.node_name} is not enabled, robot status: {self.robot_client.robot_statusword}."
-            )
-            return StatusCode.ROBOT_NOT_ENABLE
-        return StatusCode.SUCCESS
+        return self.target_supervisor_view.is_enabled()
 
     def clear_robot_error(self) -> StatusCode:
         """清除机器人错误
@@ -536,14 +502,8 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        if self._is_sim:
-            self.logger.error("Only support real mode.")
-            return StatusCode.FAIL
-        res = self.robot_client.clear_error()
-        if res == -1:
-            self.logger.error("Clear robot error failed!")
-            return StatusCode.FAIL
-        return StatusCode.SUCCESS
+        return self.target_supervisor_view.clear_robot_error(
+            is_sim=self._is_sim)
 
     def set_drag_mode(self, enable_drag: bool) -> StatusCode:
         """开关机器人拖动示教模式
@@ -554,14 +514,8 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        if self._is_sim:
-            self.logger.error("Only support real mode.")
-            return StatusCode.FAIL
-        res = self.robot_client.set_drag_mode(enable_drag)
-        if res == -1:
-            self.logger.error("Set drag mode failed!")
-            return StatusCode.FAIL
-        return StatusCode.SUCCESS
+        return self.target_supervisor_view.set_drag_mode(
+            enable_drag=enable_drag, is_sim=self._is_sim)
 
     def set_safe_level(self, safe_level: float) -> StatusCode:
         """设置机器人安全等级
@@ -574,17 +528,13 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        if self._is_sim:
-            self.logger.error("Only support real mode.")
-            return StatusCode.FAIL
-        res = self.robot_client.set_safe_level(safe_level)
-        if res == -1:
-            self.logger.error("Set save level failed!")
-            return StatusCode.FAIL
-        return StatusCode.SUCCESS
+        return self.target_supervisor_view.set_safe_level(safe_level=safe_level,
+                                                          is_sim=self._is_sim)
 
     def set_sim_mode(self, enable_sim: bool) -> StatusCode:
         """设置仿真/真实模式"""
+        # TODO: 优化代码结构，避免重复
+
         if self._is_sim == enable_sim:
             mode = "sim" if self._is_sim else "real"
             self.logger.info(f"W1 manager already in {mode} mode.")
@@ -657,6 +607,10 @@ class W1Manager:
         if self._use_nav and target_chassis_client is not None:
             self.chassis_client = target_chassis_client
         self.logger.info(f"W1 manager set to {target_name} mode.")
+
+        self.target_supervisor = self._client_supervisor_sim if self._is_sim else self._client_supervisor_real
+        self.target_supervisor_view = self.supervisor_view_sim if self._is_sim else self.supervisor_view_real
+
         return StatusCode.SUCCESS
 
     def move_chassis_nav2(self, base_position: np.ndarray) -> StatusCode:
@@ -764,13 +718,7 @@ class W1Manager:
         Returns:
             StatusCode
         """
-        qpos_ = np.array(qpos)
-        if not self._has_arm_ee_client(name, False):
-            return StatusCode.FAIL
-        if not self._check_qpos_dimension(name, qpos_):
-            return StatusCode.DIM_MISMATCH
-        res = self._get_arm_ee_client(name).set_pos(qpos_)
-        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
+        return self.target_supervisor_view.set_ee_qpos(name, qpos)
 
     def set_home_qpos(self,
                       home_qpos: np.ndarray,
@@ -784,17 +732,11 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        if not self._check_qpos_limits("full_body", home_qpos):
-            return StatusCode.EXCEED_LIMIT
-        self.w1_params.home_qpos = home_qpos
-        if save_to_file:
-            res = self._save_home_qpos()
-            if not res:
-                return StatusCode.FAIL
-        return StatusCode.SUCCESS
+        return self.target_supervisor_view.set_home_qpos(
+            home_qpos, save_to_file)
 
     def get_home_qpos(self) -> np.ndarray:
-        return self.w1_params.home_qpos
+        return self.target_supervisor_view.get_home_qpos()
 
     def get_qpos_limits(
             self,
@@ -809,7 +751,7 @@ class W1Manager:
         Returns:
             tuple[StatusCode, np.ndarray, np.ndarray]: 状态码；下极限；上极限
         """
-        return self.supervisor_view_sim.get_qpos_limits(name)
+        return self.target_supervisor_view.get_qpos_limits(name)
 
     def get_current_qpos(self,
                          name: str = "full_body"
@@ -823,7 +765,7 @@ class W1Manager:
         Returns:
             tuple[StatusCode, np.ndarray]
         """
-        return self.supervisor_view_sim.get_current_qpos(name)
+        return self.target_supervisor_view.get_current_qpos(name)
 
     def get_current_xpos(
             self,
@@ -843,7 +785,7 @@ class W1Manager:
         Returns:
             tuple[StatusCode, np.ndarray]: 
         """
-        return self.supervisor_view_sim.get_current_xpos(name, is_local)
+        return self.target_supervisor_view.get_current_xpos(name, is_local)
 
     def get_xpos(self,
                  name: str,
@@ -866,7 +808,7 @@ class W1Manager:
         Returns:
             tuple[StatusCode, np.ndarray]: 
         """
-        return self.supervisor_view_sim.get_xpos(name, qpos, is_local)
+        return self.target_supervisor_view.get_xpos(name, qpos, is_local)
 
     def set_tcp(self, name: str, xpos: np.ndarray) -> StatusCode:
         """设置left_arm/right_arm的tcp
@@ -924,7 +866,7 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        return self.supervisor_view_sim.stop_move(timeout_sec)
+        return self.target_supervisor_view.stop_move(timeout_sec)
 
     def is_collision(self,
                      qpos: np.ndarray,
@@ -932,7 +874,8 @@ class W1Manager:
                      armree_qpos: np.ndarray = None,
                      robot_name: str = "whole_body") -> StatusCode:
         """检查qpos状态是否碰撞"""
-        return self.supervisor_view_sim.is_collision(qpos, armlee_qpos, armree_qpos, robot_name)
+        return self.target_supervisor_view.is_collision(qpos, armlee_qpos,
+                                                        armree_qpos, robot_name)
 
     def plan_joint_traj(
             self,
@@ -952,15 +895,20 @@ class W1Manager:
         Returns:
             tuple[StatusCode, np.ndarray]
         """
-        movement = DualArmMovementBaseW1(w1_params=self.w1_params,
-                                      supervisor=self._client_supervisor_sim,
-                                      kine_solver=self.kine,
-                                      pin_kin_solver=self._pin_kine,
-                                      collision_checker=self.fcl_checker)
+        movement = DualArmMovementBaseW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.plan_joint_traj(name, qpos_array, is_sparse,
-                                       qvel_limits_array)
+                                        qvel_limits_array)
 
-    # Move to DualArmMovementBaseW1
     def plan_cartesian_traj(
             self,
             name: str,
@@ -980,25 +928,35 @@ class W1Manager:
         Returns:
             tuple[StatusCode, np.ndarray]
         """
-        movement = DualArmMovementBaseW1(w1_params=self.w1_params,
-                                      supervisor=self._client_supervisor_sim,
-                                      kine_solver=self.kine,
-                                      pin_kin_solver=self._pin_kine,
-                                      collision_checker=self.fcl_checker)
+        movement = DualArmMovementBaseW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.plan_cartesian_traj(name, xpos_list, qpos_seed,
-                                           qvel_limits_array, cartesian_step)
+                                            qvel_limits_array, cartesian_step)
 
-    # Move to DualArmMovementBaseW1
     def plan_arm_ee_trigger(self,
                             arm_ee_state_list: list) -> tuple[StatusCode, list]:
-        movement = DualArmMovementBaseW1(w1_params=self.w1_params,
-                                      supervisor=self._client_supervisor_sim,
-                                      kine_solver=self.kine,
-                                      pin_kin_solver=self._pin_kine,
-                                      collision_checker=self.fcl_checker)
+        movement = DualArmMovementBaseW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.plan_arm_ee_trigger(arm_ee_state_list)
 
-    # Move to SupervisorView
     def execute_joint_traj(
         self,
         qpos_array: np.ndarray,
@@ -1016,11 +974,8 @@ class W1Manager:
             StatusCode: 
         """
         return self.supervisor_view_sim.execute_joint_traj(
-            qpos_array,
-            left_arm_ee_trigger_list,
-            right_arm_ee_trigger_list)
+            qpos_array, left_arm_ee_trigger_list, right_arm_ee_trigger_list)
 
-    # Move to SupervisorView
     ########## demo定制API ###########
     def get_current_pose(self,
                          name: str,
@@ -1038,7 +993,6 @@ class W1Manager:
         """
         return self.supervisor_view_sim.get_current_pose(name, is_local)
 
-    # Move to SupervisorView
     def get_pose(self,
                  name: str,
                  qpos: np.ndarray,
@@ -1071,10 +1025,8 @@ class W1Manager:
         Returns:
             tuple[StatusCode, list]
         """
-        return self.supervisor_view_sim.transfer_grasp_pose(name, pre_grasp_pose,
-                                                    pre_torso_qpos,
-                                                    target_torso_qpos)
-
+        return self.supervisor_view_sim.transfer_grasp_pose(
+            name, pre_grasp_pose, pre_torso_qpos, target_torso_qpos)
 
     def plan_dual_arm_cartesian_traj(
         self,
@@ -1086,16 +1038,20 @@ class W1Manager:
         right_qvel_limits_array: np.ndarray = None,
         cartesian_step: float = 0.005
     ) -> tuple[StatusCode, np.ndarray, np.ndarray]:
-        movement = DualArmMoveLineW1(w1_params=self.w1_params,
-                                     supervisor=self._client_supervisor_sim,
-                                     kine_solver=self.kine,
-                                     pin_kin_solver=self._pin_kine,
-                                     collision_checker=self.fcl_checker)
+        movement = DualArmMoveLineW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.plan_dual_arm_cartesian_traj(
-            left_xpos_list, right_xpos_list, left_qpos_seed,
-            right_qpos_seed, left_qvel_limits_array,
-            right_qvel_limits_array, cartesian_step)
-
+            left_xpos_list, right_xpos_list, left_qpos_seed, right_qpos_seed,
+            left_qvel_limits_array, right_qvel_limits_array, cartesian_step)
 
     @time_consuming
     def plan_joint_full_body(
@@ -1134,19 +1090,22 @@ class W1Manager:
         Returns:
             tuple[bool, np.ndarray, list, list]: 规划成功与否，全身关节轨迹，左末端执行器轨迹，右末端执行器轨迹
         """
-        movement = DualArmMoveJointW1(w1_params=self.w1_params,
-                                      supervisor=self._client_supervisor_sim,
-                                      kine_solver=self.kine,
-                                      pin_kin_solver=self._pin_kine,
-                                      collision_checker=self.fcl_checker)
-        return movement.plan_joint_full_body(start_qpos,
-                                               start_left_arm_ee_qpos,
-                                               start_right_arm_ee_qpos,
-                                               waypoints_dict, speed_ratio,
-                                               is_sparse)
+        movement = DualArmMoveJointW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
+        return movement.plan_joint_full_body(start_qpos, start_left_arm_ee_qpos,
+                                             start_right_arm_ee_qpos,
+                                             waypoints_dict, speed_ratio,
+                                             is_sparse)
 
-
-    # move to DualArmMoveJointW1
     def move_joint_full_body(self,
                              waypoints_dict: dict,
                              speed_ratio: float = 1.0,
@@ -1172,15 +1131,20 @@ class W1Manager:
         Returns:
             bool
         """
-        movement = DualArmMoveJointW1(w1_params=self.w1_params,
-                                      supervisor=self._client_supervisor_sim,
-                                      kine_solver=self.kine,
-                                      pin_kin_solver=self._pin_kine,
-                                      collision_checker=self.fcl_checker)
+        movement = DualArmMoveJointW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.move_joint_full_body(waypoints_dict, speed_ratio,
                                              is_sparse)
 
-    # move to DualArmMoveLinearW1
     @time_consuming
     def plan_linear_full_body(
             self,
@@ -1228,11 +1192,17 @@ class W1Manager:
         Returns:
             tuple[StatusCode, np.ndarray, list, list]: 规划成功与否，全身关节轨迹，左末端执行器轨迹，右末端执行器轨迹
         """
-        movement = DualArmMoveLineW1(w1_params=self.w1_params,
-                                     supervisor=self._client_supervisor_sim,
-                                     kine_solver=self.kine,
-                                     pin_kin_solver=self._pin_kine,
-                                     collision_checker=self.fcl_checker)
+        movement = DualArmMoveLineW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.plan_linear_full_body(start_qpos,
                                               start_left_arm_ee_qpos,
                                               start_right_arm_ee_qpos,
@@ -1240,7 +1210,6 @@ class W1Manager:
                                               right_qpos_seed, cartesian_step,
                                               speed_ratio, is_local, is_sync)
 
-    # move to DualArmMoveLinearW1
     def move_linear_full_body(self,
                               waypoints_dict: dict,
                               left_qpos_seed: np.ndarray = None,
@@ -1277,11 +1246,17 @@ class W1Manager:
         Returns:
             StatusCode
         """
-        movement = DualArmMoveLineW1(w1_params=self.w1_params,
-                                     supervisor=self._client_supervisor_sim,
-                                     kine_solver=self.kine,
-                                     pin_kin_solver=self._pin_kine,
-                                     collision_checker=self.fcl_checker)
+        movement = DualArmMoveLineW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.move_linear_full_body(waypoints_dict, left_qpos_seed,
                                               right_qpos_seed, cartesian_step,
                                               speed_ratio, is_local, is_sync)
@@ -1302,17 +1277,22 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        movement = DualArmMoveLineW1(w1_params=self.w1_params,
-                                     supervisor=self._client_supervisor_sim,
-                                     kine_solver=self.kine,
-                                     pin_kin_solver=self._pin_kine,
-                                     collision_checker=self.fcl_checker)
+        movement = DualArmMoveLineW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.move_torso_linear(delta_x_mm,
                                           delta_z_mm,
                                           cartesian_step=cartesian_step,
                                           speed_ratio=speed_ratio)
 
-    # move to DualArmMoveLinearW1
     def move_arm_linear(self,
                         name: str,
                         delta_trans_mm: list,
@@ -1331,11 +1311,17 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        movement = DualArmMoveLineW1(w1_params=self.w1_params,
-                                     supervisor=self._client_supervisor_sim,
-                                     kine_solver=self.kine,
-                                     pin_kin_solver=self._pin_kine,
-                                     collision_checker=self.fcl_checker)
+        movement = DualArmMoveLineW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.move_arm_linear(name,
                                         delta_trans_mm,
                                         cartesian_step=cartesian_step,
@@ -1358,11 +1344,17 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        movement = DualArmMoveLineW1(w1_params=self.w1_params,
-                                     supervisor=self._client_supervisor_sim,
-                                     kine_solver=self.kine,
-                                     pin_kin_solver=self._pin_kine,
-                                     collision_checker=self.fcl_checker)
+        movement = DualArmMoveLineW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.rotate_arm_linear(name,
                                           delta_rot_deg,
                                           speed_ratio=speed_ratio,
@@ -1593,11 +1585,17 @@ class W1Manager:
         Notes:
             - It will execute the moving of torso and head first, then execute the moving of left and right arms including the end effectors.
         """
-        movement = DualArmMovementBaseW1(w1_params=self.w1_params,
-                                      supervisor=self._client_supervisor_sim,
-                                      kine_solver=self.kine,
-                                      pin_kin_solver=self._pin_kine,
-                                      collision_checker=self.fcl_checker)
+        movement = DualArmMovementBaseW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.move_dual_arm_single_task(task_dict, speed_ratio)
 
     def move_single_arm(self, task_dict: dict, speed_ratio: float = 1.0):
@@ -1618,11 +1616,17 @@ class W1Manager:
         Notes:
             - The parameter task_dict should only have one arm's target, the other arm's target should be None or []
         """
-        movement = DualArmMovementBaseW1(w1_params=self.w1_params,
-                                      supervisor=self._client_supervisor_sim,
-                                      kine_solver=self.kine,
-                                      pin_kin_solver=self._pin_kine,
-                                      collision_checker=self.fcl_checker)
+        movement = DualArmMovementBaseW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.move_single_arm(task_dict, speed_ratio)
 
     def plan_dual_arm_multiple_task(self,
@@ -1650,21 +1654,33 @@ class W1Manager:
             - "left_use_collision_check" and "right_use_collision_check" are parameters to specify whether use a planning method with collision
                 or use move line for the specifc task. Default is True.
         """
-        movement = DualArmMovementBaseW1(w1_params=self.w1_params,
-                                      supervisor=self._client_supervisor_sim,
-                                      kine_solver=self.kine,
-                                      pin_kin_solver=self._pin_kine,
-                                      collision_checker=self.fcl_checker)
+        movement = DualArmMovementBaseW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.plan_dual_arm_multiple_task(task_dict, speed_ratio)
 
     def move_dual_arm_multiple_task(self,
                                     task_dict: list,
                                     speed_ratio: float = 1.0):
-        movement = DualArmMovementBaseW1(w1_params=self.w1_params,
-                                      supervisor=self._client_supervisor_sim,
-                                      kine_solver=self.kine,
-                                      pin_kin_solver=self._pin_kine,
-                                      collision_checker=self.fcl_checker)
+        movement = DualArmMovementBaseW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            stop_move_event=self._stop_move_event,
+            time_step=self.TIME_STEP)
         return movement.move_dual_arm_multiple_task(task_dict, speed_ratio)
 
     def plan_linear_dual_arm_sync(self,
@@ -1672,28 +1688,23 @@ class W1Manager:
                                   speed_ratio: float = 1.0,
                                   is_local: bool = True):
         movement = DualArmMoveLineW1(w1_params=self.w1_params,
-                                     supervisor=self._client_supervisor_sim,
+                                     supervisor=self.target_supervisor,
                                      kine_solver=self.kine,
-                                     pin_kin_solver=self._pin_kine,
+                                     pin_kine_solver=self._pin_kine,
                                      collision_checker=self.fcl_checker)
-        return movement.plan_linear_dual_arm_sync(
-            task_dict=task_dict,
-            speed_ratio=speed_ratio,
-            is_local=is_local)
+        return movement.plan_linear_dual_arm_sync(task_dict=task_dict,
+                                                  speed_ratio=speed_ratio,
+                                                  is_local=is_local)
 
     def move_linear_dual_arm_sync(self,
                                   task_dict: dict,
                                   speed_ratio: float = 1.0,
                                   is_local: bool = True):
-
-        res, full_body_traj = self.plan_linear_dual_arm_sync(
-            task_dict=task_dict, speed_ratio=speed_ratio, is_local=is_local)
-
-        if res.value < 0:
-            self.logger.error("Plan linear dual arm sync traj failed.")
-            return res
-
-        return self.execute_joint_traj(
-            qpos_array=full_body_traj,
-            left_arm_ee_trigger_list=None,
-            right_arm_ee_trigger_list=None), full_body_traj
+        movement = DualArmMoveLineW1(w1_params=self.w1_params,
+                                     supervisor=self.target_supervisor,
+                                     kine_solver=self.kine,
+                                     pin_kine_solver=self._pin_kine,
+                                     collision_checker=self.fcl_checker)
+        return movement.move_linear_dual_arm_sync(task_dict=task_dict,
+                                                  speed_ratio=speed_ratio,
+                                                  is_local=is_local)

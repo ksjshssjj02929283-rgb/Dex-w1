@@ -4,6 +4,7 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
+import threading
 import numpy as np
 from ..utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
@@ -24,14 +25,22 @@ class DualArmMoveJointW1(DualArmMovementBaseW1):
                  w1_params,
                  supervisor,
                  kine_solver,
-                 pin_kin_solver,
+                 pin_kine_solver,
                  collision_checker,
+                 hybrid_planner,
+                 cartesian_planner,
+                 cartesian_joint_planner,
+                 stop_move_event: threading.Event,
                  time_step: float = 0.01):
         super().__init__(w1_params,
                          supervisor,
                          kine_solver,
-                         pin_kin_solver,
+                         pin_kine_solver,
                          collision_checker,
+                         hybrid_planner,
+                         cartesian_planner,
+                         cartesian_joint_planner,
+                         stop_move_event,
                          time_step=time_step)
         pass
 
@@ -120,8 +129,8 @@ class DualArmMoveJointW1(DualArmMovementBaseW1):
                 self.logger.error("Plan to left arm traj failed.")
                 return res_left_arm, None, None, None
         else:
-            if not self.supervisor_view._check_qpos_limits("left_arm_ee",
-                                           start_left_arm_ee_qpos):
+            if not self.supervisor_view._check_qpos_limits(
+                    "left_arm_ee", start_left_arm_ee_qpos):
                 return StatusCode.EXCEED_LIMIT, None, None, None
             (res_left_arm, left_arm_qpos_array,
              left_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee(
@@ -148,8 +157,8 @@ class DualArmMoveJointW1(DualArmMovementBaseW1):
                 self.logger.error("Plan to right arm traj failed.")
                 return res_right_arm, None, None, None
         else:
-            if not self.supervisor_view._check_qpos_limits("right_arm_ee",
-                                           start_right_arm_ee_qpos):
+            if not self.supervisor_view._check_qpos_limits(
+                    "right_arm_ee", start_right_arm_ee_qpos):
                 return StatusCode.EXCEED_LIMIT, None, None, None
             (res_right_arm, right_arm_qpos_array,
              right_arm_ee_trigger_list) = self._plan_to_waypoint_with_ee(
@@ -165,11 +174,8 @@ class DualArmMoveJointW1(DualArmMovementBaseW1):
 
         # align
         res_align, total_qpos_array = StaticUtilityW1.qpos_align(
-                                                       self.supervisor_view,
-                                                       torso_qpos_array,
-                                                       head_qpos_array,
-                                                       left_arm_qpos_array,
-                                                       right_arm_qpos_array)
+            self.supervisor_view, torso_qpos_array, head_qpos_array,
+            left_arm_qpos_array, right_arm_qpos_array)
         if not res_align:
             return StatusCode.FAIL, None, None, None
 
@@ -219,8 +225,12 @@ class DualArmMoveJointW1(DualArmMovementBaseW1):
         # plan traj
         (res, total_qpos_array, left_arm_ee_trigger_list,
          right_arm_ee_trigger_list) = self.supervisor_view.plan_joint_full_body(
-             cur_qpos, cur_left_arm_ee_qpos, cur_right_arm_ee_qpos,
-             waypoints_dict, speed_ratio, is_sparse=is_sparse)
+             cur_qpos,
+             cur_left_arm_ee_qpos,
+             cur_right_arm_ee_qpos,
+             waypoints_dict,
+             speed_ratio,
+             is_sparse=is_sparse)
         if res.value < 0:
             return res
 
@@ -232,54 +242,6 @@ class DualArmMoveJointW1(DualArmMovementBaseW1):
         return self.supervisor_view.execute_joint_traj(
             total_qpos_array, left_arm_ee_trigger_list,
             right_arm_ee_trigger_list)
-
-    def move_torso_linear(self,
-                          delta_x_mm: float,
-                          delta_z_mm: float,
-                          cartesian_step=0.002,
-                          speed_ratio: float = 1.) -> bool:
-        """腿部从当前位置直线移动相对距离
-
-        Args:
-            delta_x_mm (float): x方向(前后)直线相对运动距离
-            delta_z_mm (float): z方向(上下)直线相对运动距离
-            cartesian_step (float, optional): 直线离散步长. Defaults to 0.002.
-            speed_ratio (float, optional): 运动速率. Defaults to 1..
-
-        Returns:
-            bool: 
-        """
-        res, cur_qpos = self.get_current_qpos()
-        if not res:
-            return False
-        res_fk, cur_x, cur_z, cur_y_theta = self.kine.get_torso_fk(cur_qpos[:3])
-        if not res_fk:
-            return False
-        target_x = cur_x + (delta_x_mm / 1000.)
-        target_z = cur_z + (delta_z_mm / 1000.)
-        # TODO: check com in support polyhedron
-
-        # Create path
-        p_cur = np.array([cur_x, cur_z])
-        p_target = np.array([target_x, target_z])
-        dist = np.linalg.norm(p_target - p_cur)
-        n_steps = int(np.ceil(dist / cartesian_step))
-        s_list = np.linspace(0, 1, n_steps + 1)
-        p_list = [p_cur + (p_target - p_cur) * s for s in s_list]
-
-        # Solve ik
-        qpos_list = []
-        for p in p_list:
-            res_ik, qpos = self.kine.get_torso_ik(p[0], p[1], cur_y_theta,
-                                                  cur_qpos[1] < 0)
-            if not res_ik:
-                return False
-            qpos_list.append(np.r_[qpos, cur_qpos[3]])
-
-        return self.move_joint_full_body(
-            waypoints_dict={f"torso": [qpos.tolist() for qpos in qpos_list]},
-            speed_ratio=speed_ratio)
-
 
     def plan_joint_traj(
             self,
@@ -299,54 +261,6 @@ class DualArmMoveJointW1(DualArmMovementBaseW1):
         Returns:
             tuple[StatusCode, np.ndarray]
         """
-        if not self.supervisor_view._check_name(name):
-            return StatusCode.NAME_MISMATCH, None
-        if not self.supervisor_view._check_qpos_limits(name, qpos_array):
-            return StatusCode.EXCEED_LIMIT, None
-
-        step = weighted_norm(np.deg2rad([1.] * qpos_array[0].shape[0]))
-        if qpos_array.shape[0] == 2 and weighted_norm(qpos_array[1] -
-                                                      qpos_array[0]) < step:
-            return StatusCode.SUCCESS, qpos_array
-
-        if is_sparse:
-            path = PathRnBezier(qpos_array)
-            if not path.calc_path():
-                return StatusCode.PLAN_PATH_FAIL, None
-            qpos_sample_array = path.get_sample_by_step(step)
-            if qpos_sample_array is None:
-                return StatusCode.PLAN_PATH_FAIL, None
-
-            # vel align
-            prefix_dist_list = [0.]
-            for idx in range(len(qpos_array) - 1):
-                dist = weighted_norm(qpos_array[idx + 1] - qpos_array[idx])
-                prefix_dist_list.append(prefix_dist_list[-1] + dist)
-
-            idx = 0
-            qvel_limits_list = [qvel_limits_array[0]]
-            cur_qpos = qpos_sample_array[0]
-            cur_dist = 0.
-            for qpos in qpos_sample_array[1:-1]:
-                cur_dist += weighted_norm(qpos - cur_qpos)
-                if cur_dist >= prefix_dist_list[idx]:
-                    idx += 1
-                qvel_limits_list.append(qvel_limits_array[idx])
-                cur_qpos = qpos
-            qvel_limits_list.append(qvel_limits_array[-1])
-
-            qpos_array = qpos_sample_array
-            qvel_limits_array = np.array(qvel_limits_list)
-
-        dofs = self.w1_params.index_infos[name]["dofs"]
-        index = self.w1_params.index_infos[name]["index"]
-        vel_limits = self.w1_params.max_qvel[index]
-        acc_limits = self.w1_params.max_qacc[index]
-        traj_planner = ToppraTrajectoryPlanner(dofs, vel_limits, acc_limits)
-        res, pos_array, _, _, _ = traj_planner.plan(qpos_array,
-                                                    qvel_limits_array,
-                                                    self.supervisor_view.TIME_STEP)
-        if not res:
-            return StatusCode.PLAN_TRAJ_FAIL, None
-        return StatusCode.SUCCESS, pos_array
-
+        return StaticUtilityW1.plan_joint_traj(self.supervisor_view, name,
+                                               qpos_array, is_sparse,
+                                               qvel_limits_array)
