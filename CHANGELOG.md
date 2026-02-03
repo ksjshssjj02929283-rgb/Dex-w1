@@ -1,6 +1,9 @@
 # CHANGELOG
 
 ## [Unreleased]
+### Feat
+ - 增加脚本安装指令 dexe_robot_client-install-scripts
+
 
 ## [V0.3.0]
 ### Feat
