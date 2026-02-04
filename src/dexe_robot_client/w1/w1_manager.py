@@ -96,16 +96,15 @@ class W1Manager:
         # 在主线程中正常退出时自动调用
         atexit.register(self._destroy_clients)
 
-        try:
-            self._init_clients()
-        except Exception:
-            raise RuntimeError("Ros2 node create failed")
+        self._init_clients()
 
         self._init_kine_solver()
 
         if not self.set_sim_mode(is_sim):
             if is_sim:
+                self.logger.error(f"Set sim mode failed")
                 raise RuntimeError("Set sim mode failed")
+            self.logger.error(f"Set real mode failed")
             raise RuntimeError("Set real mode failed")
 
         # initialize fcl checker and pinocchio model and planner
@@ -211,86 +210,118 @@ class W1Manager:
                                                   end_effector_type)
 
     def _init_clients(self):
+        if self._executor is not None:
+            self.logger.error(f"Ros2 already initialized")
+            raise RuntimeError("Ros2 already initialized")
+
         if not rclpy.ok():
             rclpy.init()
 
-        self._robot_client_sim = RobotClient(is_sim=True)
-        self._robot_client_real = RobotClient(is_sim=False)
-        self._chassis_client_real = ChassisClient(is_sim=False)
-        self.robot_client = self._robot_client_sim
+        self._clients = []
+        self._executor = None
+        self._node_thread = None
 
-        if self._end_effector_type is None:
-            self.logger.info(f"No movable end effector.")
-            if self._use_nav:
-                self._clients = [
-                    self._robot_client_sim, self._robot_client_real,
-                    self._chassis_client_real
-                ]
-            else:
-                self._clients = [
-                    self._robot_client_sim, self._robot_client_real
-                ]
-        else:
-            self._left_ee_client_sim = create_end_effector_client(
-                is_left=True,
-                is_sim=True,
-                end_effector_type=self._end_effector_type)
-            self._right_ee_client_sim = create_end_effector_client(
-                is_left=False,
-                is_sim=True,
-                end_effector_type=self._end_effector_type)
-            self._left_ee_client_real = create_end_effector_client(
-                is_left=True,
-                is_sim=False,
-                end_effector_type=self._end_effector_type)
-            self._right_ee_client_real = create_end_effector_client(
-                is_left=False,
-                is_sim=False,
-                end_effector_type=self._end_effector_type)
-            self.left_ee_client = self._left_ee_client_sim
-            self.right_ee_client = self._right_ee_client_sim
+        try:
+            self._robot_client_sim = RobotClient(is_sim=True)
+            self._robot_client_real = RobotClient(is_sim=False)
+            self._chassis_client_real = ChassisClient(is_sim=False)
+            self.robot_client = self._robot_client_sim
 
-            if self._use_nav:
-                self._clients = [
-                    self._robot_client_sim, self._robot_client_real,
-                    self._left_ee_client_sim, self._left_ee_client_real,
-                    self._right_ee_client_sim, self._right_ee_client_real,
-                    self._chassis_client_real
-                ]
+            if self._end_effector_type is None:
+                self.logger.info(f"No movable end effector.")
+                if self._use_nav:
+                    self._clients = [
+                        self._robot_client_sim, self._robot_client_real,
+                        self._chassis_client_real
+                    ]
+                else:
+                    self._clients = [
+                        self._robot_client_sim, self._robot_client_real
+                    ]
             else:
-                self._clients = [
-                    self._robot_client_sim, self._robot_client_real,
-                    self._left_ee_client_sim, self._left_ee_client_real,
-                    self._right_ee_client_sim, self._right_ee_client_real
-                ]
+                self._left_ee_client_sim = create_end_effector_client(
+                    is_left=True,
+                    is_sim=True,
+                    end_effector_type=self._end_effector_type)
+                self._right_ee_client_sim = create_end_effector_client(
+                    is_left=False,
+                    is_sim=True,
+                    end_effector_type=self._end_effector_type)
+                self._left_ee_client_real = create_end_effector_client(
+                    is_left=True,
+                    is_sim=False,
+                    end_effector_type=self._end_effector_type)
+                self._right_ee_client_real = create_end_effector_client(
+                    is_left=False,
+                    is_sim=False,
+                    end_effector_type=self._end_effector_type)
+                self.left_ee_client = self._left_ee_client_sim
+                self.right_ee_client = self._right_ee_client_sim
+
+                if self._use_nav:
+                    self._clients = [
+                        self._robot_client_sim, self._robot_client_real,
+                        self._left_ee_client_sim, self._left_ee_client_real,
+                        self._right_ee_client_sim, self._right_ee_client_real,
+                        self._chassis_client_real
+                    ]
+                else:
+                    self._clients = [
+                        self._robot_client_sim, self._robot_client_real,
+                        self._left_ee_client_sim, self._left_ee_client_real,
+                        self._right_ee_client_sim, self._right_ee_client_real
+                    ]
+        except Exception as e:
+            self._destroy_clients()
+            self.logger.error(f"Ros2 node create failed: {e}")
+            raise RuntimeError(f"Ros2 node create failed: {e}")
 
         self._is_sim = True
 
-        self._executor = MultiThreadedExecutor()
-        for node in self._clients:
-            self._executor.add_node(node)
-        self._node_thread = threading.Thread(target=self._executor.spin,
-                                             daemon=True)
-        self._node_thread.start()
+        try:
+            self._executor = MultiThreadedExecutor()
+            for node in self._clients:
+                self._executor.add_node(node)
+            self._node_thread = threading.Thread(target=self._executor.spin,
+                                                 daemon=False)
+            self._node_thread.start()
+        except Exception as e:
+            self._destroy_clients()
+            self.logger.error(f"Ros2 node spin failed: {e}")
+            raise RuntimeError(f"Ros2 node spin failed: {e}")
+
         self.logger.info("Ros2 client initialized.")
 
     def _destroy_clients(self):
         try:
-            if rclpy.ok():
-                rclpy.shutdown()  # 停止ros触发spin
-
-            if self._node_thread is not None:
-                self._node_thread.join()
-
             if self._executor is not None:
                 self._executor.shutdown()
 
-            for node in self._clients:
-                node.destroy_node()
+            if self._node_thread is not None and self._node_thread.is_alive():
+                self._node_thread.join(timeout=5.0)
 
-            self.logger.debug(f"Ros2 node destroyed.")
+            if self._executor:
+                for node in self._clients:
+                    try:
+                        self._executor.remove_node(node)
+                    except Exception:
+                        pass
+
+            for node in self._clients:
+                if node.context.ok():
+                    node.destroy_node()
+
+            self._clients.clear()
+            self._executor = None
+            self._node_thread = None
+
+            if rclpy.ok():
+                rclpy.shutdown()
+
         except Exception as e:
             self.logger.error(f"Ros2 node destroy failed: {e}.")
+
+        self.logger.info(f"Ros2 node destroyed.")
 
     def _init_kine_solver(self):
         ik_nearest_weight = np.array([2., 2., 2., 1., 1., 1., 1.])
@@ -1166,7 +1197,7 @@ class W1Manager:
             cur_dist = 0.
             for qpos in qpos_sample_array[1:-1]:
                 cur_dist += weighted_norm(qpos - cur_qpos)
-                if cur_dist >= prefix_dist_list[idx]:
+                if cur_dist >= prefix_dist_list[idx] + 1e-6:
                     idx += 1
                 qvel_limits_list.append(qvel_limits_array[idx])
                 cur_qpos = qpos
