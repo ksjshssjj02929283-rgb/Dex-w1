@@ -3,12 +3,13 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>  // 新增
 
-#include "butterworth_filter.h"
 #include "chassis_interfaces/msg/chassis_motor_control.hpp"
 #include "chassis_interfaces/msg/chassis_whole_control.hpp"
 #include "joint_interfaces/msg/joint_control.hpp"
 #include "joint_interfaces/msg/joint_position_control.hpp"
 #include "joint_interfaces/msg/joint_velocity_torque_limit_feedback.hpp"
+#include "robot_server_lib/butterworth_filter.h"
+#include "robot_server_lib/ei_input_shaper.h"
 #include "robot_server_lib/force_sensor_reader.h"
 #include "robot_server_lib/robot_server_base.h"
 #include "shared_memory_def.h"
@@ -25,7 +26,7 @@ using SetProperty = robot_server_interfaces::srv::SetProperty;
 
 class RobotServer : public RobotServerBase {
 public:
-    RobotServer(std::filesystem::path robot_cfg_path, bool is_sim);
+    RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, bool is_a1_mode = false);
 
 private:
     void TorqueControlThreadFunc() override;
@@ -61,10 +62,11 @@ private:
     RobotFeedback robot_feedback_;
     PlannerManagerInfo manager_info_;
     bool is_torque_limit_reached_[ndof_robot] = {false};  // 达到力矩限制标志位
-    const std::string ecat_joint_name_[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",
-                                                      "NECK2",    "LEFT_J1",  "LEFT_J2",  "LEFT_J3",  "LEFT_J4",
-                                                      "LEFT_J5",  "LEFT_J6",  "LEFT_J7",  "RIGHT_J1", "RIGHT_J2",
-                                                      "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
+    // W1 模式下的默认关节名称，A1 模式下会动态调整
+    std::string ecat_joint_name_[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",
+                                                "NECK2",    "LEFT_J1",  "LEFT_J2",  "LEFT_J3",  "LEFT_J4",
+                                                "LEFT_J5",  "LEFT_J6",  "LEFT_J7",  "RIGHT_J1", "RIGHT_J2",
+                                                "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
     struct {
         double positive_limit_Nm[ndof_robot]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 31.0, 31.0, 31.0, 31.0,
                                              10.0,  10.0,  10.0,  31.0,  31.0, 31.0, 31.0, 10.0, 10.0, 10.0};
@@ -74,14 +76,45 @@ private:
 
     RunMode previous_mode_{RunMode::Position};
     int switch_counter_ = 0;
-    const int max_switch_count_ = 200;     // 切换控制模式时的位置保持周期数
-    bool enable_ruckig_ = true;            // /control/joint接口是否使用 Ruckig 进行轨迹规划
-    bool enable_record_ = false;           // 是否启用调试日志
-    const int first_arm_joint_index_ = 6;  // 左臂第一个关节在整体关节数组中的索引
+    const int max_switch_count_ = 200;    // 切换控制模式时的位置保持周期数
+    bool enable_ruckig_ = true;           // /control/joint接口是否使用 Ruckig 进行轨迹规划
+    bool enable_record_ = false;          // 是否启用调试日志
+    bool enable_chassis_shaper_ = false;  // 是否启用底盘速度输入整形器
+    int first_arm_joint_index_ = 6;       // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
     const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
-    const double DiffChassisWidth = 0.4390;
-    const double DiffChassisWheelD = 0.1730;  // 差速轮径，用于转RPM
+
+    // A1 模式支持
+    bool is_a1_mode_ = false;  // A1 模式标志
+    int ndof_config_;          // 从配置读取的实际关节数 (W1=20, A1=14)
+
+    // 虚拟关节转换函数（A1 模式使用）
+    void Expand14ToVirtual20(const RobotFeedback& real_feedback, RobotFeedback& virtual_feedback);
+    void ExtractVirtual20To14(const RobotControl& virtual_control, RobotControl& real_control);
+
     std::shared_ptr<ButterworthFilter> butterworth_filter_[ndof_robot];
+
+    // 底盘控制目标变量（不直接写入共享内存）
+    struct {
+        int chassis_mode = 0;
+        int chassis_whole_mode = 0;
+        double chassis_velocity = 0.0;
+        double chassis_direction = 0.0;
+        double chassis_left_velocity = 0.0;
+        double chassis_right_velocity = 0.0;
+        double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};
+        double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};
+        int chassis_estop = 0;
+        int chassis_neutral = 0;
+    } chassis_control_target_;
+
+    // 底盘速度输入整形器
+    std::unique_ptr<EIInputShaper> chassis_shaper_;
+    EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::TWO_HUMP_EI;  // 输入整形器类型
+    const double DiffChassisWidth = 0.4390;
+    const double DiffChassisWheelD = 0.1730;    // 差速轮径，用于转RPM
+    const double DiffChassisNatureFreq = 1.67;  // 底盘输入整形器自然频率，单位Hz
+    // ramp率转换: 0.5m/s每周期
+    const double DiffChassisMaxRampRpm = 1.0 / (M_PI * DiffChassisWheelD) * 60.0;
 
     // 力传感器相关
     Vector3d sensor_force_;

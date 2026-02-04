@@ -113,6 +113,7 @@ void PlannerManager::LoopOnce() {
         const auto &dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
         if (dyn_base_params_primary.has_value()) {
             Eigen::VectorXd tau_ff_pri, q_cmd_primary, q_feedback_primary, dq_feedback_primary, dq_cmd_primary;
+            Vector6d F_imp_pri;
             utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_primary,
                                          MotionGroup::Primary);
             utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_primary,
@@ -122,13 +123,15 @@ void PlannerManager::LoopOnce() {
             utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.velocity, dq_cmd_primary,
                                          MotionGroup::Primary);
 
-            auto ret_pri = impedance_ctrl_primary_->UpdateTorqueCommand(q_feedback_primary, dq_feedback_primary,
-                                                                        q_cmd_primary, dq_cmd_primary, tau_ff_pri);
+            auto ret_pri = impedance_ctrl_primary_->UpdateTorqueCommand(
+                q_feedback_primary, dq_feedback_primary, q_cmd_primary, dq_cmd_primary, tau_ff_pri, F_imp_pri);
             utils::MapJointToWholeBody(this->robot_model_, tau_ff_pri, this->runtime_data_.joint_cmd.torque_feedforward,
                                        MotionGroup::Primary);
+            this->robot_property_.cart_impedance_force.head(6) = F_imp_pri;
         }
         if (dyn_base_params_secondary.has_value()) {
             Eigen::VectorXd tau_ff_sec, q_cmd_secondary, q_feedback_secondary, dq_feedback_secondary, dq_cmd_secondary;
+            Vector6d F_imp_sec;
             utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_secondary,
                                          MotionGroup::Secondary);
             utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_secondary,
@@ -138,9 +141,10 @@ void PlannerManager::LoopOnce() {
             utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.velocity, dq_cmd_secondary,
                                          MotionGroup::Secondary);
             auto ret_sec = impedance_ctrl_secondary_->UpdateTorqueCommand(
-                q_feedback_secondary, dq_feedback_secondary, q_cmd_secondary, dq_cmd_secondary, tau_ff_sec);
+                q_feedback_secondary, dq_feedback_secondary, q_cmd_secondary, dq_cmd_secondary, tau_ff_sec, F_imp_sec);
             utils::MapJointToWholeBody(this->robot_model_, tau_ff_sec, this->runtime_data_.joint_cmd.torque_feedforward,
                                        MotionGroup::Secondary);
+            this->robot_property_.cart_impedance_force.tail(6) = F_imp_sec;
         }
     }
 

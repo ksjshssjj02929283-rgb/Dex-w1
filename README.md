@@ -17,17 +17,6 @@ sudo apt install nlohmann-json3-dev ros-humble-ruckig ros-humble-pinocchio
 # 底盘相关依赖库
 sudo apt install ros-humble-nav-msgs ros-humble-tf2-ros ros-humble-tf2-geometry-msgs
 
-# Ros接口库
-git clone git@69.235.177.182:dexembodied/dexe_interfaces.git #需要dexe_interfaces main分支, 放在dexe_robot_server同级目录下即可, 无需手动编译
-
-# dexRP机器人规划库
-git clone git@69.235.177.182:dexembodied/dexe_robot_planning.git #需要dexe_robot_planning接口包, 需要手动安装
-cd dexe_robot_planning
-git checkout dev # 切换dev分支
-pip install conan  # 安装conan包管理工具
-./scripts/build.sh  # 运行编译脚本
-cd build && sudo make install # 安装编译好的库
-
 # 代码格式(可选)
 sudo apt install clang-format
 
@@ -76,14 +65,6 @@ pip install meshcat
 colcon build --cmake-args -DENABLE_SIM_SERVER=OFF
 ```
 
-**gtest单元测试：**
-
-默认开启, 如需关闭则
-
-```bash
-colcon build --cmake-args -DBUILD_TESTING=OFF
-```
-
 **力控仿真模式：需在可视化仿真开启后开启，运行力控仿真，输出的关节位置为力控仿真后的关节位置**
 
 默认关闭，如需开启则
@@ -128,5 +109,5 @@ colcon build --cmake-args -DENABLE_TORQUE_CONTROL_SIMULATION=ON
 开发者提交代码前需统一代码风格, 请运行：
 
 ```bash
-./dexe_robot_server/style.sh
+./dexe_robot_server/check_style.sh
 ```

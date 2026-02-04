@@ -93,6 +93,7 @@ struct RobotProperty {
     VectorDof joint_damping = VectorDof::Constant(10.0);
     Vector12d cart_stiffness = Vector12d::Constant(200.0);
     Vector12d cart_damping_ratio = Vector12d::Constant(1.0);  // 阻尼比 范围0.5 ~ 1.5
+    Vector12d cart_impedance_force = Vector12d::Zero();       // 预估笛卡尔阻抗力
     ErrorCode error_code{ErrorCode::NoError};
 };
 
