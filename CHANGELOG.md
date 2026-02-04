@@ -4,6 +4,8 @@
 ### Feat
  - 增加脚本安装指令 dexe_robot_client-install-scripts
 
+### Fix
+ - 修复Ros2 node的初始化和销毁顺序，避免初始化失败
 
 ## [V0.3.0]
 ### Feat
