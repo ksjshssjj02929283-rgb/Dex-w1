@@ -8,7 +8,7 @@ import time
 import numpy as np
 from ..utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
-from ...common import get_logger, StatusCode
+from ...common import get_logger, DATA_DIR, StatusCode
 from .supervisor_view import SupervisorViewW1
 
 from ..path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm
@@ -272,6 +272,27 @@ class StaticUtilityW1(object):
             segment_list.append([start_idx, len(arm_ee_state_list) - 1])
         supervisor.logger.debug(f"plan_arm_ee_trigger result: {segment_list}.")
         return StatusCode.SUCCESS, segment_list
+
+    @staticmethod
+    def save_home_qpos(supervisor: SupervisorViewW1,
+                       file_path=DATA_DIR / "config.json") -> bool:
+        """
+        将home_qpos保存到本地文件中, 并更新supervisor_view中的home_qpos参数.
+        """
+        file_path_ = pathlib.Path(file_path)
+        if not file_path_.exists() or file_path_.stat().st_size == 0:
+            self.logger.error(f"{str(file_path)} invalid.")
+            return False
+
+        with open(file_path, "r") as f:
+            json_data = json.load(f)
+
+        json_data["home_qpos"] = self.get_home_qpos().tolist()
+
+        with open(file_path, "w") as f:
+            json.dump(json_data, f, indent=4, ensure_ascii=False)
+        self.w1_params.update_params(file_path)
+        return True
 
     @staticmethod
     def qpos_align(supervisor: SupervisorViewW1, torso_qpos_array: np.ndarray,

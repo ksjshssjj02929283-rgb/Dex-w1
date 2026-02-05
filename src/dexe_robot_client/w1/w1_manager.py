@@ -20,7 +20,7 @@ from typing import Tuple, List
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
-from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, download_w1_urdf, StatusCode
+from ..common import time_consuming, get_logger, W1ArmType, W1Version, download_w1_urdf, StatusCode
 from ..common.mapping_index import *
 from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..navigation_client import ChassisClient
@@ -471,7 +471,9 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        return self.target_supervisor_view.connect(timeout_sec)
+        if self.is_connected(timeout_sec):
+            return StatusCode.SUCCESS
+        return StatusCode.FAIL
 
     def is_connected(self, timeout_sec: float = 0.1) -> StatusCode:
         """检查所有client是否处于连接状态
@@ -482,11 +484,39 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        return self.target_supervisor_view.is_connected(timeout_sec,
-                                                        self._use_nav)
+        robot_client = self.target_supervisor.robot_client._client
+        left_ee_client = self.target_supervisor.client_map.get(
+            "left_arm_ee", None)
+        right_ee_client = self.target_supervisor.client_map.get(
+            "right_arm_ee", None)
+        # chassis_client = self.target_supervisor.client_map.get("chassis", None)
+
+        if not robot_client.is_connected(timeout_sec):
+            self.logger.info(f"{robot_client.node_name} is not connected!")
+            return StatusCode.ROBOT_NOT_CONNECT
+        if self.target_supervisor_view._has_arm_ee_client("left_arm_ee", False):
+            if not left_ee_client._client.is_connected(timeout_sec):
+                self.logger.info(
+                    f"{left_ee_client._client.node_name} is not connected!")
+                return StatusCode.EE_NOT_CONNECT
+        if self.target_supervisor_view._has_arm_ee_client(
+                "right_arm_ee", False):
+            if not right_ee_client._client.is_connected(timeout_sec):
+                self.logger.info(
+                    f"{right_ee_client._client.node_name} is not connected!")
+                return StatusCode.EE_NOT_CONNECT
+        if self._use_nav:
+            if not self.chassis_client.is_connected():
+                self.logger.error(
+                    f"{self.chassis_client.node_name} is not connected!")
+            return StatusCode.CHASSIS_NOT_CONNECT
+
+        return StatusCode.SUCCESS
 
     def enable(self, timeout_sec: float = 0.5) -> StatusCode:
-        return self.target_supervisor_view.enable(timeout_sec)
+        self.logger.warning(
+            "Not implemented (Currently it will automatically enable).")
+        return StatusCode.SUCCESS
 
     def is_enabled(self) -> StatusCode:
         """检查robot是否处于使能状态
@@ -494,7 +524,18 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        return self.target_supervisor_view.is_enabled()
+        # robot_client = self.target_supervisor.robot_client._client
+        robot_client = self.robot_client
+
+        if not robot_client.is_connected(0.5):
+            self.logger.error(f"{robot_client.node_name} is not connected!")
+            return StatusCode.ROBOT_NOT_CONNECT
+        if robot_client.status == Status.Init:
+            self.logger.error(
+                f"{robot_client.node_name} is not enabled, robot status: {robot_client.robot_statusword}."
+            )
+            return StatusCode.ROBOT_NOT_ENABLE
+        return StatusCode.SUCCESS
 
     def clear_robot_error(self) -> StatusCode:
         """清除机器人错误
@@ -502,8 +543,19 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        return self.target_supervisor_view.clear_robot_error(
-            is_sim=self._is_sim)
+        # robot_client = self.target_supervisor.robot_client._client
+        robot_client = self.robot_client
+
+        if self._is_sim:
+            self.logger.error("Only support real mode.")
+            return StatusCode.FAIL
+
+        res = robot_client.clear_error()
+        if res == -1:
+            self.logger.error("Clear robot error failed!")
+            return StatusCode.FAIL
+
+        return StatusCode.SUCCESS
 
     def set_drag_mode(self, enable_drag: bool) -> StatusCode:
         """开关机器人拖动示教模式
@@ -514,8 +566,16 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        return self.target_supervisor_view.set_drag_mode(
-            enable_drag=enable_drag, is_sim=self._is_sim)
+        if self._is_sim:
+            self.logger.error("Only support real mode.")
+            return StatusCode.FAIL
+
+        res = self.robot_client.set_drag_mode(enable_drag)
+        if res == -1:
+            self.logger.error("Set drag mode failed!")
+            return StatusCode.FAIL
+
+        return StatusCode.SUCCESS
 
     def set_safe_level(self, safe_level: float) -> StatusCode:
         """设置机器人安全等级
@@ -528,8 +588,16 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        return self.target_supervisor_view.set_safe_level(safe_level=safe_level,
-                                                          is_sim=self._is_sim)
+        if self._is_sim:
+            self.logger.error("Only support real mode.")
+            return StatusCode.FAIL
+
+        res = self.robot_client.set_safe_level(safe_level)
+        if res == -1:
+            self.logger.error("Set save level failed!")
+            return StatusCode.FAIL
+
+        return StatusCode.SUCCESS
 
     def set_sim_mode(self, enable_sim: bool) -> StatusCode:
         """设置仿真/真实模式"""
@@ -718,7 +786,18 @@ class W1Manager:
         Returns:
             StatusCode
         """
-        return self.target_supervisor_view.set_ee_qpos(name, qpos)
+        qpos_action = {}
+        qpos = np.array(qpos)
+        qpos_action["action"] = qpos
+        if not self.target_supervisor_view._has_arm_ee_client(name, False):
+            return StatusCode.FAIL
+        if not self.target_supervisor_view._check_qpos_dimension(name, qpos):
+            return StatusCode.DIM_MISMATCH
+
+        res = self.target_supervisor_view.get_arm_ee_client(name).invoke_async(
+            request_id=-1, content=qpos_action)
+
+        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def set_home_qpos(self,
                       home_qpos: np.ndarray,
@@ -732,11 +811,18 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        return self.target_supervisor_view.set_home_qpos(
-            home_qpos, save_to_file)
+        if not self.target_supervisor_view._check_qpos_limits(
+                "full_body", home_qpos):
+            return StatusCode.EXCEED_LIMIT
+        self.w1_params.home_qpos = home_qpos
+        if save_to_file:
+            res = StaticUtilityW1.save_home_qpos(self.target_supervisor_view)
+            if not res:
+                return StatusCode.FAIL
+        return StatusCode.SUCCESS
 
     def get_home_qpos(self) -> np.ndarray:
-        return self.target_supervisor_view.get_home_qpos()
+        return self.w1_params.home_qpos
 
     def get_qpos_limits(
             self,
@@ -973,7 +1059,7 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
-        return self.supervisor_view_sim.execute_joint_traj(
+        return self.target_supervisor_view.execute_joint_traj(
             qpos_array, left_arm_ee_trigger_list, right_arm_ee_trigger_list)
 
     ########## demo定制API ###########

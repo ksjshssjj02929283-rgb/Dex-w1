@@ -42,186 +42,6 @@ class SupervisorViewW1(object):
 
         self.logger = get_logger()
 
-    def connect(self, timeout_sec: float = 0.5) -> StatusCode:
-        """连接client(sim/real)
-
-        Args:
-            timeout_sec (float, optional): 等待连接超时时间. Defaults to 0.5.
-
-        Returns:
-            StatusCode: 
-        """
-        if self.is_connected(timeout_sec):
-            return StatusCode.SUCCESS
-        return StatusCode.FAIL
-
-    def is_connected(self,
-                     timeout_sec: float = 0.1,
-                     use_nav: bool = False) -> StatusCode:
-        """检查所有client是否处于连接状态
-
-        Args:
-            timeout_sec (float, optional): 等待连接超时时间. Defaults to 0.5.
-
-        Returns:
-            StatusCode: 
-        """
-        robot_client = self.supervisor.robot_client._client
-        left_ee_client = self.supervisor.client_map.get("left_arm_ee", None)
-        right_ee_client = self.supervisor.client_map.get("right_arm_ee", None)
-        chassis_client = self.supervisor.client_map.get("chassis", None)
-
-        if not robot_client.is_connected(timeout_sec):
-            self.logger.info(f"{robot_client.node_name} is not connected!")
-            return StatusCode.ROBOT_NOT_CONNECT
-        if self._has_arm_ee_client("left_arm_ee", False):
-            if not left_ee_client._client.is_connected(timeout_sec):
-                self.logger.info(
-                    f"{left_ee_client._client.node_name} is not connected!")
-                return StatusCode.EE_NOT_CONNECT
-        if self._has_arm_ee_client("right_arm_ee", False):
-            if not right_ee_client._client.is_connected(timeout_sec):
-                self.logger.info(
-                    f"{right_ee_client._client.node_name} is not connected!")
-                return StatusCode.EE_NOT_CONNECT
-        if (use_nav):
-            if not self.chassis_client.is_connected():
-                self.logger.error(
-                    f"{self.chassis_client.node_name} is not connected!")
-            return StatusCode.CHASSIS_NOT_CONNECT
-
-        return StatusCode.SUCCESS
-
-    def enable(self, timeout_sec: float = 0.5) -> StatusCode:
-        self.logger.warning(
-            "Not implemented (Currently it will automatically enable).")
-        return StatusCode.SUCCESS
-
-    def is_enabled(self) -> StatusCode:
-        """检查robot是否处于使能状态
-
-        Returns:
-            StatusCode: 
-        """
-        robot_client = self.supervisor.robot_client._client
-
-        if not robot_client.is_connected(0.5):
-            self.logger.error(f"{robot_client.node_name} is not connected!")
-            return StatusCode.ROBOT_NOT_CONNECT
-        if robot_client.status == Status.Init:
-            self.logger.error(
-                f"{robot_client.node_name} is not enabled, robot status: {robot_client.robot_statusword}."
-            )
-            return StatusCode.ROBOT_NOT_ENABLE
-        return StatusCode.SUCCESS
-
-    def clear_robot_error(self, is_sim: bool = False) -> StatusCode:
-        """清除机器人错误
-
-        Returns:
-            StatusCode: 
-        """
-        robot_client = self.supervisor.robot_client._client
-
-        if is_sim:
-            self.logger.error("Only support real mode.")
-            return StatusCode.FAIL
-
-        res = robot_client.clear_error()
-        if res == -1:
-            self.logger.error("Clear robot error failed!")
-            return StatusCode.FAIL
-
-        return StatusCode.SUCCESS
-
-    def set_drag_mode(self,
-                      enable_drag: bool,
-                      is_sim: bool = False) -> StatusCode:
-        """开关机器人拖动示教模式
-
-        Args:
-            enable_drag (bool): 是否开启拖动示教模式
-
-        Returns:
-            StatusCode: 
-        """
-        if is_sim:
-            self.logger.error("Only support real mode.")
-            return StatusCode.FAIL
-
-        res = self.robot_client.set_drag_mode(enable_drag)
-        if res == -1:
-            self.logger.error("Set drag mode failed!")
-            return StatusCode.FAIL
-
-        return StatusCode.SUCCESS
-
-    def set_safe_level(self,
-                       safe_level: float,
-                       is_sim: bool = False) -> StatusCode:
-        """设置机器人安全等级
-
-        Args:
-            safe_level (float): 安全级别, 取值范围 [0.1, 1], 默认为0.5  
-                                0.1时机械臂柔性最大,1.0时机械臂刚性最大   
-                                值越小机械臂柔性越大越安全, 刚性越大运动跟踪性能越好但碰撞时容易造成机械臂损坏
-
-        Returns:
-            StatusCode: 
-        """
-        if is_sim:
-            self.logger.error("Only support real mode.")
-            return StatusCode.FAIL
-
-        res = self.robot_client.set_safe_level(safe_level)
-        if res == -1:
-            self.logger.error("Set save level failed!")
-            return StatusCode.FAIL
-
-        return StatusCode.SUCCESS
-
-    def set_ee_qpos(self, name: str, qpos: np.ndarray) -> StatusCode:
-        """控制end effector运动
-
-        Args:
-            name (str): ["left_arm_ee", "right_arm_ee"]
-            qpos (np.ndarray): 期望位置 0~100
-
-        Returns:
-            StatusCode
-        """
-        qpos_ = np.array(qpos)
-        if not self._has_arm_ee_client(name, False):
-            return StatusCode.FAIL
-        if not self._check_qpos_dimension(name, qpos_):
-            return StatusCode.DIM_MISMATCH
-        res = self._get_arm_ee_client(name).set_pos(qpos_)
-        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
-
-    def set_home_qpos(self,
-                      home_qpos: np.ndarray,
-                      save_to_file: bool = False) -> StatusCode:
-        """设置home qpos
-
-        Args:
-            home_qpos (np.ndarray): 
-            save_to_file (bool, optional): 是否保存至默认路径data/config.json. Defaults to False.
-
-        Returns:
-            StatusCode: 
-        """
-        if not self._check_qpos_limits("full_body", home_qpos):
-            return StatusCode.EXCEED_LIMIT
-        self.w1_params.home_qpos = home_qpos
-        if save_to_file:
-            res = self._save_home_qpos()
-            if not res:
-                return StatusCode.FAIL
-        return StatusCode.SUCCESS
-
-    def get_home_qpos(self) -> np.ndarray:
-        return self.w1_params.home_qpos
-
     def _has_arm_ee_client(self, name: str, verbose: bool = True) -> bool:
         if name in self.w1_params.arm_ee_names:
             if name == "left_arm_ee" and 'left_arm_ee' in self.supervisor.client_map:
@@ -236,10 +56,10 @@ class SupervisorViewW1(object):
             f"{self.w1_params.arm_ee_names} is supported, except {name}.")
         return False
 
-    def _get_arm_ee_client(self, name: str):
+    def get_arm_ee_client(self, name: str):
         if not self._has_arm_ee_client(name):
             return None
-        client = self.supervisor.client_map.get(name)._client
+        client = self.supervisor.client_map.get(name, None)
         return client
 
     def _check_name(self, name: str) -> bool:
@@ -361,8 +181,11 @@ class SupervisorViewW1(object):
         if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name, False):
                 return StatusCode.FAIL, None
-            res, value = self._get_arm_ee_client(name).get_pos()
-            return (StatusCode.SUCCESS if res else StatusCode.FAIL), value
+            status = self.get_arm_ee_client(name).peek_status()
+            res = status.get("res", False)
+            action = status.get("action", None)
+
+            return (StatusCode.SUCCESS if res else StatusCode.FAIL), action
 
         robot_info = self.supervisor.robot_client.get_info()
         if robot_info.joint_position is None:
@@ -682,10 +505,11 @@ class SupervisorViewW1(object):
         """
         self.logger.debug("Starting joint trajectory execution...")
 
+        robot_client = self.supervisor.robot_client._client
         # check enable
-        if self.supervisor.robot_client._client.status != Status.Idle:
+        if robot_client.status != Status.Idle:
             self.logger.error(
-                f"Robot client not in idle before moving. (Current status: {self.supervisor.robot_client._client.status})"
+                f"Robot client not in idle before moving. (Current status: {robot_client.status})"
             )
             return StatusCode.ROBOT_STATUS_INVALID
 
@@ -775,19 +599,9 @@ class SupervisorViewW1(object):
 
         # Wait for completion
         self.logger.debug("Waiting for all movements to complete...")
-        endpoint_index = [qpos_array.shape[0]]
+
         traj_duration = (qpos_array.shape[0] - 1) * self.TIME_STEP
-        last_finished_id = end_id - len(endpoint_index)
-        for next_finished_id in range(last_finished_id + 1, end_id + 1):
-            if self.stop_move_event.is_set():
-                self.logger.info(f"Stop moving")
-                self.stop_move_event.set()
-                return StatusCode.STOP_MOVE
-            robot_client = self.supervisor.robot_client._client
-            robot_client.wait_request_finish(request_id=next_finished_id,
-                                             timeout_sec=max(5., traj_duration))
-        self.supervisor.wait_move(time_out=max(5, traj_duration),
-                                  interval=self.TIME_STEP)
+        self.supervisor.wait_move(time_out=max(5, traj_duration))
 
         self.logger.info("Finish moving. " +
                          f"Ideal duration should be {traj_duration}s, " +
