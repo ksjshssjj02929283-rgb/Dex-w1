@@ -28,9 +28,10 @@ int main(int argc, char* argv[]) {
     rclcpp::executors::MultiThreadedExecutor executor;
     auto node_server = std::make_shared<robot_server_lib::RobotServer>(robot_cfg_path, false, is_a1_mode);
 
+    std::shared_ptr<chassis_node::ChassisNode> node_chassis;
     // A1 模式下不启动底盘节点
     if (!is_a1_mode) {
-        auto node_chassis = std::make_shared<chassis_node::ChassisNode>();
+        node_chassis = std::make_shared<chassis_node::ChassisNode>();
         executor.add_node(node_chassis);
     }
 
