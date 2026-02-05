@@ -270,7 +270,7 @@ class RobotClientSupervisor(object):
                 continue
 
             # Query robot status and check for synced tasks
-            robot_state = self._robot_client.query_state()
+            robot_state: Optional[ReducedRobotClientInterface.ReducedRobotState] = self._robot_client.query_state()
             if robot_state is None:
                 # To next loop
                 time.sleep(idle_interval)
@@ -279,7 +279,12 @@ class RobotClientSupervisor(object):
             # Execute the tasks that depend on robot state
             remaining_tasks = deque()
             for task in local_tasks_sync:
+                # Directly drop this one without invoking or put into buffer
                 assert task.associated_move_id >= 0
+                if task.associated_move_id <= robot_state.latest_kill_id:
+                    continue
+
+                # Not killed
                 if task.associated_move_id > robot_state.latest_finished_id:
                     remaining_tasks.append(task)
                     continue

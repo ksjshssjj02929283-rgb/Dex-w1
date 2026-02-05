@@ -22,7 +22,9 @@ class RobotClientWrapper(ReducedRobotClientInterface):
         """
         Initialize the RobotClientWrapper with a RobotClient instance.
         """
+        super().__init__()
         self._client = client
+        self._latest_kill_id = -1
 
     def query_state(self) -> ReducedRobotClientInterface.ReducedRobotState:
         """
@@ -36,6 +38,7 @@ class RobotClientWrapper(ReducedRobotClientInterface):
             jps=info.joint_position,
             latest_sent_id=info.latest_sent_id,
             latest_finished_id=info.latest_finished_id,
+            latest_kill_id=self._latest_kill_id
         )
         return state
 
@@ -84,6 +87,11 @@ class RobotClientWrapper(ReducedRobotClientInterface):
 
     def get_info(self) -> Dict:
         return self._client.get_info()
+
+    def stop_move(self):
+        new_kill_id = self._client.stop_move()
+        new_kill_id = max(self._latest_kill_id, new_kill_id)
+        self._latest_kill_id = new_kill_id
 
 
 class GripperClientWrapper(GenericClient):

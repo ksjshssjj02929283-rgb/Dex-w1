@@ -22,6 +22,7 @@ class ReducedRobotClientInterface(object):
         jps: List[float]  # Joint positions
         latest_finished_id: int = -1  # Last finished movement ID
         latest_sent_id: int = 1  # Last sent movement ID
+        latest_kill_id: int = -1
 
     @dataclass
     class MovementRequest(object):
@@ -113,3 +114,6 @@ class ReducedRobotClientInterface(object):
 
     def wait_move(self, time_out: float = -1, interval: float = 0.05) -> bool:
         return False
+    
+    def stop_move(self):
+        pass
