@@ -5,7 +5,7 @@ project(w1_server)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Release)
-set(W1_SERVER_VERSION "0.3.0")
+set(W1_SERVER_VERSION "0.3.1")
 
 # 如果系统安装了 ccache 则启用，否则保持不启用
 find_program(CCACHE_PROGRAM ccache)
