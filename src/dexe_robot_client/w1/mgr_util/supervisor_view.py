@@ -37,7 +37,7 @@ class SupervisorViewW1(object):
         self.hybrid_planner = hybrid_planner
         self.cartesian_planner = cartesian_planner
         self.cartesian_joint_planner = cartesian_joint_planner
-        self.stop_move_event = stop_move_event
+        # self.stop_move_event = stop_move_event
         self.TIME_STEP = time_step  # removed after mgr_util refactor
 
         self.logger = get_logger()
@@ -475,7 +475,7 @@ class SupervisorViewW1(object):
             StatusCode: 
         """
         self.logger.info("Stop move by user!")
-        self.stop_move_event.set()
+        # self.stop_move_event.set()
         if self.supervisor.robot_client.stop_move() == -1:
             self.logger.error("Stop move by user failed!")
             return StatusCode.FAIL
@@ -514,8 +514,8 @@ class SupervisorViewW1(object):
             return StatusCode.ROBOT_STATUS_INVALID
 
         # reset stop move flag
-        if self.stop_move_event.is_set():
-            self.stop_move_event.clear()
+        # if self.stop_move_event.is_set():
+        #     self.stop_move_event.clear()
 
         # check current qpos and start qpos
         res, cur_qpos = self.get_current_qpos()
