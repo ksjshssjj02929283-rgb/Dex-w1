@@ -6,11 +6,11 @@
 
 // EI输入整形器实现 - 用于抑制机械系统振动
 EIInputShaper::EIInputShaper(
-    Type type, double natural_freq, double sampling_time, double max_ramp_rate_rpm, double vibration_tol)
+    Type type, double natural_freq, double sampling_time, double max_ramp_rate, double vibration_tol)
     : type_(type),
       natural_freq_(natural_freq),
       sampling_time_(sampling_time),
-      max_ramp_rate_rpm_per_sample_(max_ramp_rate_rpm * sampling_time_),
+      max_ramp_rate_per_sample_(max_ramp_rate * sampling_time_),
       vibration_tol_(vibration_tol) {
     CalculateCoefficients();
 }
@@ -26,8 +26,8 @@ void EIInputShaper::CalculateCoefficients() {
         A3_ = 0.0;
         A4_ = 0.0;
         buffer_.resize(1, 0.0);
-        buffer_r_.resize(1, 0.0);
-        buffer_l_.resize(1, 0.0);
+        buffer_ch1_.resize(1, 0.0);
+        buffer_ch2_.resize(1, 0.0);
         initialized_ = false;
         return;
     }
@@ -58,8 +58,8 @@ void EIInputShaper::CalculateCoefficients() {
 
     int buffer_size = T3_ + 1;
     buffer_.resize(buffer_size, 0.0);
-    buffer_r_.resize(buffer_size, 0.0);
-    buffer_l_.resize(buffer_size, 0.0);
+    buffer_ch1_.resize(buffer_size, 0.0);
+    buffer_ch2_.resize(buffer_size, 0.0);
     initialized_ = false;
 }
 
@@ -105,42 +105,34 @@ double EIInputShaper::RampImpl(double target, double current, double max_rate) {
 }
 
 double EIInputShaper::Apply(double input) {
-    if (decel_mode_) {
-        return ApplyImpl(decel_buffer_, 0.0);
-    }
-
     double ramped_input = input;
     if (!ramp_initialized_) {
         ramp_output_ = input;
         ramp_initialized_ = true;
     } else {
-        ramp_output_ = RampImpl(input, ramp_output_, max_ramp_rate_rpm_per_sample_);
+        ramp_output_ = RampImpl(input, ramp_output_, max_ramp_rate_per_sample_);
     }
     ramped_input = ramp_output_;
 
     return ApplyImpl(buffer_, ramped_input);
 }
 
-std::pair<double, double> EIInputShaper::Apply(double input_r, double input_l) {
-    if (decel_mode_) {
-        return {ApplyImpl(decel_buffer_r_, 0.0), ApplyImpl(decel_buffer_l_, 0.0)};
-    }
-
-    double ramped_input_r = input_r;
-    double ramped_input_l = input_l;
+std::pair<double, double> EIInputShaper::Apply(double input_ch1, double input_ch2) {
+    double ramped_input_ch1 = input_ch1;
+    double ramped_input_ch2 = input_ch2;
 
     if (!ramp_initialized_) {
-        ramp_output_r_ = input_r;
-        ramp_output_l_ = input_l;
+        ramp_output_ch1_ = input_ch1;
+        ramp_output_ch2_ = input_ch2;
         ramp_initialized_ = true;
     } else {
-        ramp_output_r_ = RampImpl(input_r, ramp_output_r_, max_ramp_rate_rpm_per_sample_);
-        ramp_output_l_ = RampImpl(input_l, ramp_output_l_, max_ramp_rate_rpm_per_sample_);
+        ramp_output_ch1_ = RampImpl(input_ch1, ramp_output_ch1_, max_ramp_rate_per_sample_);
+        ramp_output_ch2_ = RampImpl(input_ch2, ramp_output_ch2_, max_ramp_rate_per_sample_);
     }
-    ramped_input_r = ramp_output_r_;
-    ramped_input_l = ramp_output_l_;
+    ramped_input_ch1 = ramp_output_ch1_;
+    ramped_input_ch2 = ramp_output_ch2_;
 
-    return {ApplyImpl(buffer_r_, ramped_input_r), ApplyImpl(buffer_l_, ramped_input_l)};
+    return {ApplyImpl(buffer_ch1_, ramped_input_ch1), ApplyImpl(buffer_ch2_, ramped_input_ch2)};
 }
 
 double EIInputShaper::ApplyImpl(std::deque<double>& buffer, double input) {
@@ -182,72 +174,13 @@ double EIInputShaper::ApplyImpl(std::deque<double>& buffer, double input) {
     return output;
 }
 
-void EIInputShaper::DecelStop(double current_velocity, int interpolation_length) {
-    DecelStopImpl(decel_buffer_, current_velocity, interpolation_length);
-    decel_counter_ = static_cast<int>(decel_buffer_.size());
-    decel_total_steps_ = decel_counter_;
-    decel_mode_ = true;
-}
-
-void EIInputShaper::DecelStop(double velocity_r, double velocity_l, int interpolation_length) {
-    DecelStopImpl(decel_buffer_r_, velocity_r, interpolation_length);
-    DecelStopImpl(decel_buffer_l_, velocity_l, interpolation_length);
-    decel_counter_ = static_cast<int>(decel_buffer_r_.size());
-    decel_total_steps_ = decel_counter_;
-    decel_mode_ = true;
-}
-
-void EIInputShaper::DecelStopImpl(std::deque<double>& buffer, double current_velocity, int interpolation_length) {
-    if (buffer.empty()) {
-        buffer.resize(T3_ + 1, 0.0);
-    }
-
-    int buffer_size = static_cast<int>(buffer.size());
-    double ramp_rate = current_velocity / static_cast<double>(interpolation_length);
-
-    for (int i = 0; i < buffer_size - interpolation_length; ++i) {
-        buffer.pop_front();
-        buffer.push_back(current_velocity);
-    }
-
-    for (int i = 0; i < interpolation_length; ++i) {
-        buffer.pop_front();
-        buffer.push_back(current_velocity - ramp_rate * i);
-    }
-}
-
 void EIInputShaper::Reset() {
     std::fill(buffer_.begin(), buffer_.end(), 0.0);
-    std::fill(buffer_r_.begin(), buffer_r_.end(), 0.0);
-    std::fill(buffer_l_.begin(), buffer_l_.end(), 0.0);
-    decel_buffer_.clear();
-    decel_buffer_r_.clear();
-    decel_buffer_l_.clear();
+    std::fill(buffer_ch1_.begin(), buffer_ch1_.end(), 0.0);
+    std::fill(buffer_ch2_.begin(), buffer_ch2_.end(), 0.0);
     initialized_ = false;
-    decel_mode_ = false;
-    decel_counter_ = 0;
-    decel_total_steps_ = 0;
-    previous_decel_flag_ = false;
     ramp_output_ = 0.0;
-    ramp_output_r_ = 0.0;
-    ramp_output_l_ = 0.0;
+    ramp_output_ch1_ = 0.0;
+    ramp_output_ch2_ = 0.0;
     ramp_initialized_ = false;
-}
-
-void EIInputShaper::Configure(double natural_freq) {
-    natural_freq_ = natural_freq;
-    CalculateCoefficients();
-    Reset();
-}
-
-void EIInputShaper::SetType(Type type) {
-    type_ = type;
-    CalculateCoefficients();
-    Reset();
-}
-
-bool EIInputShaper::DetectDecelStart(bool current_decel_flag) {
-    bool decel_start = (current_decel_flag && !previous_decel_flag_);
-    previous_decel_flag_ = current_decel_flag;
-    return decel_start;
 }

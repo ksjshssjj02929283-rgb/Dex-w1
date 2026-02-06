@@ -56,6 +56,12 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, bool
                                                           DiffChassisMaxRampRpm);
     }
 
+    torso_j1_shaper_ = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ1NatureFreq, torque_ctrl_dt, 1.0);
+
+    // 初始化整形器状态追踪变量
+    prev_chassis_shaper_enabled_ = enable_chassis_shaper_.load();
+    prev_torso_shaper_enabled_ = enable_torso_shaper_.load();
+
     force_subscriber_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
         "force_array", rclcpp::QoS(10), std::bind(&RobotServer::ForceArrayCallback, this, std::placeholders::_1));
 
@@ -96,12 +102,15 @@ void RobotServer::ForceArrayCallback(const std_msgs::msg::Float64MultiArray::Sha
 void RobotServer::InitParamConfig() {
     auto config_path = server_data_dir_ / "w1_config.json";
 
-    const std::set<std::string> kAllowedRootKeys{"enable_ruckig", "enable_chassis_shaper"};
+    const std::set<std::string> kAllowedRootKeys{"enable_ruckig", "enable_chassis_shaper", "enable_torso_shaper",
+                                                 "enable_record"};
 
     nlohmann::json root;
     if (!std::filesystem::exists(config_path)) {
         root["enable_ruckig"] = this->enable_ruckig_;
-        root["enable_chassis_shaper"] = this->enable_chassis_shaper_;
+        root["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
+        root["enable_torso_shaper"] = this->enable_torso_shaper_.load();
+        root["enable_record"] = this->enable_record_;
 
         std::ofstream ofs(config_path);
         ofs << root.dump(2);
@@ -131,27 +140,44 @@ void RobotServer::InitParamConfig() {
         need_rewrite = true;
     }
     if (!root.contains("enable_chassis_shaper")) {
-        root["enable_chassis_shaper"] = this->enable_chassis_shaper_;
+        root["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
+        need_rewrite = true;
+    }
+    if (!root.contains("enable_torso_shaper")) {
+        root["enable_torso_shaper"] = this->enable_torso_shaper_.load();
+        need_rewrite = true;
+    }
+    if (!root.contains("enable_record")) {
+        root["enable_record"] = this->enable_record_;
         need_rewrite = true;
     }
 
     this->enable_ruckig_ = root.value("enable_ruckig", this->enable_ruckig_);
-    this->enable_chassis_shaper_ = root.value("enable_chassis_shaper", this->enable_chassis_shaper_);
+    this->enable_chassis_shaper_ = root.value("enable_chassis_shaper", this->enable_chassis_shaper_.load());
+    this->enable_torso_shaper_ = root.value("enable_torso_shaper", this->enable_torso_shaper_.load());
+    this->enable_record_ = root.value("enable_record", this->enable_record_);
 
     nlohmann::json root_clean;
     root_clean["enable_ruckig"] = this->enable_ruckig_;
-    root_clean["enable_chassis_shaper"] = this->enable_chassis_shaper_;
+    root_clean["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
+    root_clean["enable_torso_shaper"] = this->enable_torso_shaper_.load();
+    root_clean["enable_record"] = this->enable_record_;
 
     if (need_rewrite) {
         std::ofstream ofs(config_path);
         ofs << root_clean.dump(2);
     }
 
-    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_chassis_shaper=%s)",
+    RCLCPP_INFO(this->get_logger(),
+                "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_chassis_shaper=%s, enable_torso_shaper=%s, "
+                "enable_record=%s)",
                 config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
-                this->enable_chassis_shaper_ ? "true" : "false");
+                this->enable_chassis_shaper_.load() ? "true" : "false",
+                this->enable_torso_shaper_.load() ? "true" : "false", this->enable_record_ ? "true" : "false");
     LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_
-             << ", enable_chassis_shaper=" << this->enable_chassis_shaper_;
+             << ", enable_chassis_shaper=" << this->enable_chassis_shaper_.load()
+             << ", enable_torso_shaper=" << this->enable_torso_shaper_.load()
+             << ", enable_record=" << this->enable_record_;
 }
 
 void RobotServer::TorqueControlThreadFunc() {
@@ -359,11 +385,29 @@ void RobotServer::TorqueControlThreadFunc() {
                 }
                 // 滤波关节位置指令
                 robot_control_.position[i] = butterworth_filter_[i]->Apply(robot_control_.position[i]);
+
+                // 对 torso J1 (索引 0) 应用 EI 输入整形
+                if (i == 0) {
+                    // 检测 torso 整形器开关状态变化
+                    bool current_torso_enabled = enable_torso_shaper_.load();
+                    if (current_torso_enabled != prev_torso_shaper_enabled_) {
+                        torso_j1_shaper_->Reset();
+                        prev_torso_shaper_enabled_ = current_torso_enabled;
+                        RCLCPP_INFO(this->get_logger(), "Torso J1 shaper %s, buffer reset",
+                                    current_torso_enabled ? "enabled" : "disabled");
+
+                        // 应用整形
+                        if (current_torso_enabled) {
+                            robot_control_.position[0] = torso_j1_shaper_->Apply(robot_control_.position[0]);
+                        }
+                    }
+                }
             }
         } else {
             for (int i = 0; i < ndof_robot; ++i) {
                 this->butterworth_filter_[i]->Reset();  // 重置滤波器状态
             }
+            torso_j1_shaper_->Reset();
         }
         // 如果状态字发生变化了则打印
         static int16_t last_status_word_ = -1;
@@ -394,7 +438,18 @@ void RobotServer::TorqueControlThreadFunc() {
 
             if (chassis_control_target_.chassis_mode == 1) {
                 // 差速模式：对左右轮速度应用输入整形
-                if (enable_chassis_shaper_) {
+
+                // 检测底盘整形器开关状态变化
+                bool current_chassis_enabled = enable_chassis_shaper_.load();
+                if (current_chassis_enabled != prev_chassis_shaper_enabled_) {
+                    chassis_shaper_->Reset();
+                    prev_chassis_shaper_enabled_ = current_chassis_enabled;
+                    RCLCPP_INFO(this->get_logger(), "Chassis shaper %s, buffer reset",
+                                current_chassis_enabled ? "enabled" : "disabled");
+                }
+
+                // 应用整形
+                if (current_chassis_enabled) {
                     auto [shaper_left, shaper_right] = chassis_shaper_->Apply(
                         chassis_control_target_.chassis_left_velocity, chassis_control_target_.chassis_right_velocity);
                     robot_control_.chassis_left_velocity = shaper_left;
@@ -686,22 +741,36 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
     try {
         const auto json_data = nlohmann::json::parse(msg->data);
 
-        auto get_bool_value = [](const nlohmann::json &obj, const char *key) -> bool {
-            if (!obj.contains(key)) return false;
+        auto get_bool_value = [](const nlohmann::json &obj, const char *key) -> std::optional<bool> {
+            if (!obj.contains(key)) return std::nullopt;
             const auto &v = obj[key];
             if (v.is_boolean()) return v.get<bool>();
             if (v.is_number_integer()) return v.get<int>() != 0;
-            return false;
+            return std::nullopt;
         };
 
         auto update_bool_param = [this, &json_data, &get_bool_value](const char *key, bool &param) {
-            param = get_bool_value(json_data, key);
-            RCLCPP_INFO(this->get_logger(), "%s set to %s", key, param ? "true" : "false");
-            LOG_INFO << key << " set to " << (param ? "true" : "false");
+            auto value = get_bool_value(json_data, key);
+            if (value.has_value()) {
+                param = value.value();
+                RCLCPP_INFO(this->get_logger(), "%s set to %s", key, param ? "true" : "false");
+                LOG_INFO << key << " set to " << (param ? "true" : "false");
+            }
+        };
+
+        auto update_atomic_bool_param = [this, &json_data, &get_bool_value](const char *key, std::atomic<bool> &param) {
+            auto value = get_bool_value(json_data, key);
+            if (value.has_value()) {
+                bool bool_value = value.value();
+                param.store(bool_value);
+                RCLCPP_INFO(this->get_logger(), "%s set to %s", key, bool_value ? "true" : "false");
+                LOG_INFO << key << " set to " << (bool_value ? "true" : "false");
+            }
         };
 
         update_bool_param("enable_record", this->enable_record_);
-        update_bool_param("enable_chassis_shaper", this->enable_chassis_shaper_);
+        update_atomic_bool_param("enable_chassis_shaper", this->enable_chassis_shaper_);
+        update_atomic_bool_param("enable_torso_shaper", this->enable_torso_shaper_);
 
     } catch (const std::exception &e) {
         RCLCPP_WARN(this->get_logger(), "Failed to parse /control/debug JSON: %s", e.what());
