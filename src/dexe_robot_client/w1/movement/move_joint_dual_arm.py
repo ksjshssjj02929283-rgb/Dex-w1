@@ -30,7 +30,6 @@ class DualArmMoveJointW1(DualArmMovementBaseW1):
                  hybrid_planner,
                  cartesian_planner,
                  cartesian_joint_planner,
-                 stop_move_event: threading.Event,
                  time_step: float = 0.01):
         super().__init__(w1_params,
                          supervisor,
@@ -40,7 +39,6 @@ class DualArmMoveJointW1(DualArmMovementBaseW1):
                          hybrid_planner,
                          cartesian_planner,
                          cartesian_joint_planner,
-                         stop_move_event,
                          time_step=time_step)
         pass
 

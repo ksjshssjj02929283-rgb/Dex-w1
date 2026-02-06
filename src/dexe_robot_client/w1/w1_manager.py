@@ -133,9 +133,6 @@ class W1Manager:
                                      w1_version=w1_version,
                                      end_effector_type=end_effector_type)
 
-        self._stop_move_event = threading.Event()
-        self._stop_move_event.clear()
-
         self.collision_cnt = 0
 
         # initialize client supervisor
@@ -363,7 +360,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
 
         self.supervisor_view_real = SupervisorViewW1(
@@ -375,7 +371,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
 
         self.target_supervisor = self._client_supervisor_sim if self._is_sim else self._client_supervisor_real
@@ -990,7 +985,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.plan_joint_traj(name, qpos_array, is_sparse,
                                         qvel_limits_array)
@@ -1023,7 +1017,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.plan_cartesian_traj(name, xpos_list, qpos_seed,
                                             qvel_limits_array, cartesian_step)
@@ -1039,7 +1032,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.plan_arm_ee_trigger(arm_ee_state_list)
 
@@ -1133,7 +1125,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.plan_dual_arm_cartesian_traj(
             left_xpos_list, right_xpos_list, left_qpos_seed, right_qpos_seed,
@@ -1185,7 +1176,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.plan_joint_full_body(start_qpos, start_left_arm_ee_qpos,
                                              start_right_arm_ee_qpos,
@@ -1226,7 +1216,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.move_joint_full_body(waypoints_dict, speed_ratio,
                                              is_sparse)
@@ -1287,7 +1276,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.plan_linear_full_body(start_qpos,
                                               start_left_arm_ee_qpos,
@@ -1341,7 +1329,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.move_linear_full_body(waypoints_dict, left_qpos_seed,
                                               right_qpos_seed, cartesian_step,
@@ -1372,7 +1359,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.move_torso_linear(delta_x_mm,
                                           delta_z_mm,
@@ -1406,7 +1392,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.move_arm_linear(name,
                                         delta_trans_mm,
@@ -1439,7 +1424,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.rotate_arm_linear(name,
                                           delta_rot_deg,
@@ -1680,7 +1664,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.move_dual_arm_single_task(task_dict, speed_ratio)
 
@@ -1711,7 +1694,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.move_single_arm(task_dict, speed_ratio)
 
@@ -1749,7 +1731,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.plan_dual_arm_multiple_task(task_dict, speed_ratio)
 
@@ -1765,7 +1746,6 @@ class W1Manager:
             hybrid_planner=self.hybrid_planner,
             cartesian_planner=self.cartesian_planner,
             cartesian_joint_planner=self.cartesian_joint_planner,
-            stop_move_event=self._stop_move_event,
             time_step=self.TIME_STEP)
         return movement.move_dual_arm_multiple_task(task_dict, speed_ratio)
 

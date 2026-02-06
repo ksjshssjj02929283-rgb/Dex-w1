@@ -27,7 +27,6 @@ class SupervisorViewW1(object):
                  hybrid_planner,
                  cartesian_planner,
                  cartesian_joint_planner,
-                 stop_move_event: threading.Event,
                  time_step: float = 0.01) -> None:
         self.supervisor = supervisor
         self.w1_params = w1_params
@@ -37,7 +36,6 @@ class SupervisorViewW1(object):
         self.hybrid_planner = hybrid_planner
         self.cartesian_planner = cartesian_planner
         self.cartesian_joint_planner = cartesian_joint_planner
-        # self.stop_move_event = stop_move_event
         self.TIME_STEP = time_step  # removed after mgr_util refactor
 
         self.logger = get_logger()
@@ -475,7 +473,6 @@ class SupervisorViewW1(object):
             StatusCode: 
         """
         self.logger.info("Stop move by user!")
-        # self.stop_move_event.set()
         if self.supervisor.robot_client.stop_move() == -1:
             self.logger.error("Stop move by user failed!")
             return StatusCode.FAIL
@@ -512,10 +509,6 @@ class SupervisorViewW1(object):
                 f"Robot client not in idle before moving. (Current status: {robot_client.status})"
             )
             return StatusCode.ROBOT_STATUS_INVALID
-
-        # reset stop move flag
-        # if self.stop_move_event.is_set():
-        #     self.stop_move_event.clear()
 
         # check current qpos and start qpos
         res, cur_qpos = self.get_current_qpos()
@@ -597,7 +590,6 @@ class SupervisorViewW1(object):
 
         traj_duration = (qpos_array.shape[0] - 1) * self.TIME_STEP
         self.supervisor.wait_move(time_out=max(5, traj_duration))
-        # time.sleep(2.0)
         self.logger.info("Finish moving. " +
                          f"Ideal duration should be {traj_duration}s, " +
                          f"and actual duration is {time.time() - t0}s.")

@@ -64,6 +64,7 @@ class RobotClientWrapper(ReducedRobotClientInterface):
         finished_id = self._client.move_traj_async(
             flattened_motion_target,
             motion_group=MotionGroup.WholeBody,
+            endpoint_index=endpoint_index,
             interval=interval)
         endpoint_index = endpoint_index if endpoint_index else []
 

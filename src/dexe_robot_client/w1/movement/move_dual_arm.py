@@ -29,7 +29,6 @@ class DualArmMovementBaseW1(object):
                  hybrid_planner,
                  cartesian_planner,
                  cartesian_joint_planner,
-                 stop_move_event: threading.Event,
                  time_step: float = 0.01):
         self.w1_params = w1_params
         self.supervisor_view = SupervisorViewW1(
@@ -41,7 +40,6 @@ class DualArmMovementBaseW1(object):
             hybrid_planner=hybrid_planner,
             cartesian_planner=cartesian_planner,
             cartesian_joint_planner=cartesian_joint_planner,
-            stop_move_event=stop_move_event,
             time_step=time_step)
         self.logger = get_logger()
 
