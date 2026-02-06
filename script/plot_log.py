@@ -110,6 +110,11 @@ def main():
         action="store_true",
         help="Enable debug logging.",
     )
+    parser.add_argument(
+        "--torso",
+        action="store_true",
+        help="Only plot torso data (joint 0-5).",
+    )
     args = parser.parse_args()
 
     log_path = Path(args.path).expanduser()
@@ -402,15 +407,20 @@ def main():
     torso_joints = list(range(6))
 
     figs = []
-    if args.debug:
-        print("[DEBUG] Creating Torso plot...")
-    figs.append(plot_arm("Torso", torso_joints, "Torso"))
-    if args.debug:
-        print("[DEBUG] Creating Left Arm plot...")
-    figs.append(plot_arm("Left Arm", left_joints, "Left"))
-    if args.debug:
-        print("[DEBUG] Creating Right Arm plot...")
-    figs.append(plot_arm("Right Arm", right_joints, "Right"))
+    if args.torso:
+        if args.debug:
+            print("[DEBUG] Creating Torso plot only...")
+        figs.append(plot_arm("Torso", torso_joints, "Torso"))
+    else:
+        if args.debug:
+            print("[DEBUG] Creating Torso plot...")
+        figs.append(plot_arm("Torso", torso_joints, "Torso"))
+        if args.debug:
+            print("[DEBUG] Creating Left Arm plot...")
+        figs.append(plot_arm("Left Arm", left_joints, "Left"))
+        if args.debug:
+            print("[DEBUG] Creating Right Arm plot...")
+        figs.append(plot_arm("Right Arm", right_joints, "Right"))
     if args.debug:
         print(f"[DEBUG] {len(figs)} figures created successfully")
 
