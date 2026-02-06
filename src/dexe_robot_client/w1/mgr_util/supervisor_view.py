@@ -544,20 +544,15 @@ class SupervisorViewW1(object):
             sync_id for sync_id, _ in right_arm_ee_trigger_list
         ]
         unique_sync_ids = sorted(
-            set(raw_endpoint_index)) if raw_endpoint_index else None
+            set(raw_endpoint_index)) if raw_endpoint_index else [
+                len(qpos_array)
+            ]
 
         t0 = time.time()
-        try:
-            move_id, end_id = self.supervisor.move_joint_trajectory_async(
-                qpos_array,
-                interval=self.TIME_STEP,
-                endpoint_index=unique_sync_ids)
-            self.logger.debug(
-                f"Trajectory execution started: move_id={move_id}, end_id={end_id}"
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to start joint trajectory: {e}")
-            return False
+        move_id, end_id = self.supervisor.move_joint_trajectory_async(
+            qpos_array, interval=self.TIME_STEP, endpoint_index=unique_sync_ids)
+        self.logger.debug(
+            f"Trajectory execution started: move_id={move_id}, end_id={end_id}")
 
         # Process trigger lists
         def process_trigger_list(trigger_list, unique_sync_ids, move_id):
@@ -602,7 +597,7 @@ class SupervisorViewW1(object):
 
         traj_duration = (qpos_array.shape[0] - 1) * self.TIME_STEP
         self.supervisor.wait_move(time_out=max(5, traj_duration))
-
+        # time.sleep(2.0)
         self.logger.info("Finish moving. " +
                          f"Ideal duration should be {traj_duration}s, " +
                          f"and actual duration is {time.time() - t0}s.")
@@ -612,15 +607,24 @@ class SupervisorViewW1(object):
         res, cur_qpos = self.get_current_qpos()
         if res.value < 0:
             return res
-        if not np.allclose(cur_qpos, target_qpos, atol=np.deg2rad(5)):
+
+        reach_tolerance_rad = np.deg2rad(5)
+        close_tolerance_rad = np.deg2rad(0.5)
+        if not np.allclose(cur_qpos, target_qpos, atol=reach_tolerance_rad):
             self.logger.error(
-                f"Current qpos[{cur_qpos}] does NOT reach the target qpos[{target_qpos}], "
-                + f"qpos error(deg): {np.rad2deg(cur_qpos - target_qpos)}.")
+                f"Current qpos does NOT reach the target qpos: " +
+                f"\n\tcurrrent qpos: [{cur_qpos.tolist()}], " +
+                f"\n\ttarget qpos: [{target_qpos.tolist()}], " +
+                f"\n\tqpos error(deg): {np.rad2deg(cur_qpos - target_qpos).tolist()}."
+            )
             return StatusCode.GOAL_NOT_REACH
-        if not np.allclose(cur_qpos, target_qpos, atol=np.deg2rad(0.5)):
+        if not np.allclose(cur_qpos, target_qpos, atol=close_tolerance_rad):
             self.logger.warning(
-                f"Current qpos[{cur_qpos}] does NOT close to the target qpos[{target_qpos}], "
-                + f"qpos error(deg): {np.rad2deg(cur_qpos - target_qpos)}.")
+                f"Current qpos does NOT close to the target qpos: " +
+                f"\n\tcurrrent qpos: [{cur_qpos.tolist()}], " +
+                f"\n\ttarget qpos: [{target_qpos.tolist()}], " +
+                f"\n\tqpos error(deg): {np.rad2deg(cur_qpos - target_qpos).tolist()}."
+            )
 
         self.logger.debug("Joint trajectory execution completed successfully.")
         return StatusCode.SUCCESS

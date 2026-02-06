@@ -270,7 +270,9 @@ class RobotClientSupervisor(object):
                 continue
 
             # Query robot status and check for synced tasks
-            robot_state: Optional[ReducedRobotClientInterface.ReducedRobotState] = self._robot_client.query_state()
+            robot_state: Optional[
+                ReducedRobotClientInterface.
+                ReducedRobotState] = self._robot_client.query_state()
             if robot_state is None:
                 # To next loop
                 time.sleep(idle_interval)

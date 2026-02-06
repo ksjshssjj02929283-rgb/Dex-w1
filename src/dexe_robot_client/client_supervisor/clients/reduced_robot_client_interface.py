@@ -114,6 +114,6 @@ class ReducedRobotClientInterface(object):
 
     def wait_move(self, time_out: float = -1, interval: float = 0.05) -> bool:
         return False
-    
+
     def stop_move(self):
         pass

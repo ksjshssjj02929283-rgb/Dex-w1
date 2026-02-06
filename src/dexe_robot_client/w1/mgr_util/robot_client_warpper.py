@@ -38,8 +38,7 @@ class RobotClientWrapper(ReducedRobotClientInterface):
             jps=info.joint_position,
             latest_sent_id=info.latest_sent_id,
             latest_finished_id=info.latest_finished_id,
-            latest_kill_id=self._latest_kill_id
-        )
+            latest_kill_id=self._latest_kill_id)
         return state
 
     def move_joint_trajectory_async(
@@ -65,8 +64,7 @@ class RobotClientWrapper(ReducedRobotClientInterface):
         finished_id = self._client.move_traj_async(
             flattened_motion_target,
             motion_group=MotionGroup.WholeBody,
-            interval=interval,
-            endpoint_index=endpoint_index)
+            interval=interval)
         endpoint_index = endpoint_index if endpoint_index else []
 
         return finished_id - len(endpoint_index) + 1
