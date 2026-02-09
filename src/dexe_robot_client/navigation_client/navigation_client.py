@@ -1,6 +1,7 @@
 import time
 import threading
 import numpy as np
+import math
 from abc import ABC, abstractmethod
 import rclpy
 from rclpy.node import Node
@@ -9,6 +10,10 @@ from action_msgs.msg import GoalStatus
 from scipy.spatial.transform import Rotation as R
 from nav2_msgs.action import NavigateToPose
 from std_srvs.srv import Trigger
+from rcl_interfaces.srv import SetParameters, GetParameters
+from rcl_interfaces.msg import ParameterType
+from rclpy.parameter import Parameter
+from geometry_msgs.msg import Polygon, Point32
 
 from ..common import get_logger
 
@@ -35,6 +40,14 @@ class NavigationClient(ABC, Node):
         self._get_pos_subscriber = None
         self._set_chassis_charging_client = None
         self._cancel_control_client = None
+        self._controller_set_param_client = None
+        self._local_costmap_set_param_client = None
+        self._global_costmap_set_param_client = None
+
+        self._controller_get_param_client = None
+        self._local_costmap_get_param_client = None
+        self._global_costmap_get_param_client = None
+
         self._battery_percentage = -1.0
 
         self._nav_goal_handle = None
@@ -341,6 +354,107 @@ class NavigationClient(ABC, Node):
         self._set_ctrl_publisher.publish(chassis_position)
         return True
 
+    def set_goal_tolerance(self, xy_tolerance: float,
+                           yaw_tolerance: float) -> bool:
+        """
+        设置导航到达精度
+        yaw_tolerance 单位：弧度（Nav2 内部用 rad）
+        """
+
+        lon_ok = self._set_param(self._controller_set_param_client,
+                                 self._controller_get_param_client,
+                                 'goal_checker.lon_goal_tolerance',
+                                 xy_tolerance)
+        lat_ok = self._set_param(self._controller_set_param_client,
+                                 self._controller_get_param_client,
+                                 'goal_checker.lat_goal_tolerance',
+                                 xy_tolerance)
+        yaw_ok = self._set_param(self._controller_set_param_client,
+                                 self._controller_get_param_client,
+                                 'goal_checker.yaw_goal_tolerance',
+                                 yaw_tolerance)
+
+        self.get_logger().info(
+            f"Set goal tolerance: xy={xy_tolerance}, yaw={yaw_tolerance}")
+
+        return lon_ok and lat_ok and yaw_ok
+
+    def set_footprint(self, vertices: list) -> bool:
+        """
+        设置机器人 footprint
+        vertices: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+        """
+
+        if len(vertices) != 4:
+            self.get_logger().error("Footprint must have 4 vertices")
+            return False
+
+        footprint_str = "[" + ",".join([f"[{v[0]},{v[1]}]" for v in vertices
+                                       ]) + "]"
+
+        # local
+        local_success = self._set_param(self._local_costmap_set_param_client,
+                                        self._local_costmap_get_param_client,
+                                        'footprint', footprint_str)
+
+        # global
+        global_success = self._set_param(self._global_costmap_set_param_client,
+                                         self._global_costmap_get_param_client,
+                                         'footprint', footprint_str)
+
+        if local_success and global_success:
+            self.get_logger().info(
+                f"Successfully set and verified footprint: {footprint_str}")
+            return True
+        else:
+            self.get_logger().error(f"Failed to set footprint.")
+            return False
+
+    def set_inflation_radius(self, radius: float) -> bool:
+        """
+        设置膨胀层半径（local + global）
+        """
+
+        local_success = self._set_param(self._local_costmap_set_param_client,
+                                        self._local_costmap_get_param_client,
+                                        'inflation_layer.inflation_radius',
+                                        radius)
+
+        global_success = self._set_param(self._global_costmap_set_param_client,
+                                         self._global_costmap_get_param_client,
+                                         'inflation_layer.inflation_radius',
+                                         radius)
+
+        if local_success and global_success:
+            self.get_logger().info(
+                f"Successfully set and verified inflation radius to {radius}")
+            return True
+        else:
+            self.get_logger().error(f"Failed to set inflation radius.")
+            return False
+
+    def set_follow_velocity_limits(self, vx_max: float, wz_max: float):
+        """
+        同时设置 FollowPath 线速度 & 角速度上限
+        """
+
+        vx_success = self._set_param(self._controller_set_param_client,
+                                     self._controller_get_param_client,
+                                     'FollowPath.vx_max', vx_max)
+
+        wz_success = self._set_param(self._controller_set_param_client,
+                                     self._controller_get_param_client,
+                                     'FollowPath.wz_max', wz_max)
+
+        if vx_success and wz_success:
+            self.get_logger().info(
+                f"Successfully set and verified FollowPath limits: vx_max={vx_max}, wz_max={wz_max}"
+            )
+            return True
+        else:
+            self.get_logger().error(f"Failed to set FollowPath limits.")
+            return False
+
     def spin_once(self, timeout_sec: float = 0.1):
         r"""Spin the node once with a timeout of 0.1 sec."""
         rclpy.spin_once(self, timeout_sec=timeout_sec)
@@ -398,3 +512,107 @@ class NavigationClient(ABC, Node):
             self.get_logger().info("Navigation goal cancelled.")
         except Exception as e:
             self.get_logger().error(f"Error in cancel response: {str(e)}")
+
+    def _get_param(self, client, name: str):
+        if not client.wait_for_service(timeout_sec=0.5):
+            self.get_logger().error(
+                f"Get parameter service '{client.srv_name}' not available")
+            return None
+
+        req = GetParameters.Request()
+        req.names = [name]
+        future = client.call_async(req)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=1.0)
+
+        if not future.done():
+            self.get_logger().error(
+                f"Failed to get parameter '{name}': service call timed out.")
+            return None
+
+        response = future.result()
+        if not response.values:
+            self.get_logger().error(
+                f"Failed to get parameter '{name}': parameter not found.")
+            return None
+
+        return response.values[0]
+
+    def _set_param(self, set_client, get_client, name: str, value):
+        if not set_client.wait_for_service(timeout_sec=0.5):
+            self.get_logger().error(
+                f"Set parameter service '{set_client.srv_name}' not available")
+            return False
+
+        # ✅ 用 rclpy.parameter.Parameter
+        param = Parameter(name=name, value=value)
+
+        req = SetParameters.Request()
+        req.parameters = [param.to_parameter_msg()]
+
+        future = set_client.call_async(req)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=1.0)
+
+        if not future.done():
+            self.get_logger().error(f"Timeout setting parameter '{name}'")
+            return False
+
+        result = future.result().results[0]
+        if not result.successful:
+            self.get_logger().error(
+                f"Failed to set parameter '{name}': {result.reason}")
+            return False
+
+        self.get_logger().info(
+            f"Parameter '{name}' set to '{value}', verifying...")
+
+        # ---------- 校验 ----------
+        time.sleep(0.1)
+        get_param_value = self._get_param(get_client, name)
+        if get_param_value is None:
+            self.get_logger().error(
+                f"Failed to get parameter '{name}' for verification")
+            return False
+
+        retrieved_value = None
+
+        if get_param_value.type == ParameterType.PARAMETER_DOUBLE:
+            retrieved_value = get_param_value.double_value
+            # 浮点数用近似比较
+            if not math.isclose(retrieved_value, float(value), rel_tol=1e-6):
+                self.get_logger().error(
+                    f"Parameter '{name}' verification failed! "
+                    f"Expected: {value}, Got: {retrieved_value}")
+                return False
+
+        elif get_param_value.type == ParameterType.PARAMETER_INTEGER:
+            retrieved_value = get_param_value.integer_value
+            if retrieved_value != int(value):
+                self.get_logger().error(
+                    f"Parameter '{name}' verification failed! "
+                    f"Expected: {value}, Got: {retrieved_value}")
+                return False
+
+        elif get_param_value.type == ParameterType.PARAMETER_BOOL:
+            retrieved_value = get_param_value.bool_value
+            if retrieved_value != bool(value):
+                self.get_logger().error(
+                    f"Parameter '{name}' verification failed! "
+                    f"Expected: {value}, Got: {retrieved_value}")
+                return False
+
+        elif get_param_value.type == ParameterType.PARAMETER_STRING:
+            retrieved_value = get_param_value.string_value
+            if retrieved_value != str(value):
+                self.get_logger().error(
+                    f"Parameter '{name}' verification failed! "
+                    f"Expected: {value}, Got: {retrieved_value}")
+                return False
+
+        else:
+            self.get_logger().error(
+                f"Unsupported parameter type {get_param_value.type} for '{name}'"
+            )
+            return False
+
+        self.get_logger().info(f"Parameter '{name}' verified successfully.")
+        return True

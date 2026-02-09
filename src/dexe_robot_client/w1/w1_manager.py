@@ -355,6 +355,11 @@ class W1Manager:
         if self.chassis_client is None:
             self.logger.error("Chassis client has not initialized")
             return False
+        # 仅在真正使用到底盘相关接口时检查连接状态
+        if not self.chassis_client.is_connected():
+            self.logger.error(
+                f"{self.chassis_client.node_name} is not connected!")
+            return False
         return True
 
     def _get_chassis_client(self):
@@ -552,10 +557,6 @@ class W1Manager:
                 self.logger.info(
                     f"{self.right_ee_client.node_name} is not connected!")
                 return StatusCode.EE_NOT_CONNECT
-        if (self._use_nav and not self.chassis_client.is_connected()):
-            self.logger.error(
-                f"{self.chassis_client.node_name} is not connected!")
-            return StatusCode.CHASSIS_NOT_CONNECT
         return StatusCode.SUCCESS
 
     def enable(self, timeout_sec: float = 0.5) -> StatusCode:
@@ -677,12 +678,6 @@ class W1Manager:
                     f"{target_right_ee_client.node_name} is not connected!")
                 return StatusCode.EE_NOT_CONNECT
 
-        if self._use_nav and target_chassis_client is not None and not target_chassis_client.is_connected(
-        ):
-            self.logger.error(
-                f"{target_chassis_client.node_name} is not connected!")
-            return StatusCode.CHASSIS_NOT_CONNECT
-
         # 检查current client
         if not self.robot_client.is_connected():
             self.logger.error(
@@ -803,6 +798,75 @@ class W1Manager:
         if nav_cancel_ok or control_cancel_ok:
             return StatusCode.SUCCESS
         return StatusCode.FAIL
+
+    def set_chassis_footprint(self, vertices: list) -> StatusCode:
+        """设置底盘足迹，以底盘中心为原点，其他四个点为四边形四角点
+        vertices: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+        """
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        if len(vertices) != 4:
+            self.get_logger().error("Footprint must have 4 vertices")
+            return StatusCode.FAIL
+        self.logger.info("Sending request to set chassis footprint...")
+        set_footprint_ok = self._get_chassis_client().set_footprint(vertices)
+        if set_footprint_ok:
+            return StatusCode.SUCCESS
+        else:
+            return StatusCode.FAIL
+
+    def set_chassis_nav_tolerance(self, xy_tol: float,
+                                  yaw_tol: float) -> StatusCode:
+        """设置底盘导航容差"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        set_nav_tolerance = self._get_chassis_client().set_goal_tolerance(
+            xy_tol, yaw_tol)
+        if set_nav_tolerance:
+            return StatusCode.SUCCESS
+        else:
+            return StatusCode.FAIL
+
+    def set_chassis_inflation_radius(self, radius: float) -> StatusCode:
+        """设置底盘膨胀半径"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        set_chassis_inflation = self._get_chassis_client().set_inflation_radius(
+            radius)
+        if set_chassis_inflation:
+            return StatusCode.SUCCESS
+        else:
+            return StatusCode.FAIL
+
+    def set_follow_velocity_limits(self, vx_max: float,
+                                   wz_max: float) -> StatusCode:
+        """
+        同时设置 FollowPath 线速度 & 角速度上限
+        """
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        set_follow_velocity_limits = self._get_chassis_client(
+        ).set_follow_velocity_limits(vx_max, wz_max)
+        if set_follow_velocity_limits:
+            return StatusCode.SUCCESS
+        else:
+            return StatusCode.FAIL
 
     def set_ee_qpos(self, name: str, qpos: np.ndarray) -> StatusCode:
         """控制end effector运动

@@ -2,16 +2,15 @@
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-dexe_robot_client = ["examples/**/*.py",
-                    "scripts/**/*.py"]
-
 [project]
 name = "dexe_robot_client"
-version = "0.3.0"
+version = "0.3.1"
 description = "DexEmbodied Robot Client"
 authors = [
     { name = "Dexforce", email = "dexforce@dexforce.com" }
