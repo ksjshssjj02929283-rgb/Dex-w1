@@ -25,13 +25,11 @@ kill_process() {
 kill_process "sim_server"
 kill_process "w1_server"
 
+taskset -c 5 ros2 run sim_server sim_server > /dev/null 2>&1 &
+taskset -c 6 script/set_max_position_following_error_window.sh > /dev/null 2>&1 &
+
 if [ "$A1_MODE" = true ]; then
-    echo "🚀 启动 A1 模式 (14 DOF 双机械臂，无底盘)..."
-    echo "📄 使用配置: robot.cfg (与 W1 共用)"
     taskset -c 6 ../install/w1_server/lib/w1_server/w1_server --a1
 else
-    echo "🚀 启动 W1 模式 (完整机器人，24 DOF + 底盘)..."
-    taskset -c 5 ros2 run sim_server sim_server > /dev/null 2>&1 &
-    taskset -c 6 script/set_max_position_following_error_window.sh > /dev/null 2>&1 &
     taskset -c 6 ros2 run w1_server w1_server
 fi
