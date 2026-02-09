@@ -1,8 +1,10 @@
-# ----------------------------------------------------------------------------
-# Copyright (c) 2021-2025 DexForce Technology Co., Ltd.
-#
-# All rights reserved.
-# ----------------------------------------------------------------------------
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
 
 from .config import DATA_DIR, ASSETS_DIR, LOG_DIR, URL_PREFIX, MODEL_DIR, ENVIRONMENT_DIR
 from .logger import get_logger, DexeRobotClientLogger

@@ -2,12 +2,15 @@
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [project]
 name = "dexe_robot_client"
-version = "0.3.0"
+version = "0.3.1"
 description = "DexEmbodied Robot Client"
 authors = [
     { name = "Dexforce", email = "dexforce@dexforce.com" }
@@ -22,6 +25,9 @@ dependencies = [
     "trimesh>=4.2.4",
     "pathfinding"
 ]
+
+[project.scripts]
+dexe_robot_client-install-scripts = "dexe_robot_client.cli:export_scripts"
 
 [project.optional-dependencies]
 dev = [

@@ -1,3 +1,11 @@
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
+
 import numpy as np
 from dexe_robot_client.w1.kinemtaics.pin_ik_whole_body import PinIKWholeBody
 from dexe_robot_client.w1.utils.unit_conversion import *

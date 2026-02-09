@@ -1,3 +1,11 @@
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
+
 from dexe_robot_client.w1.path_planner.cartesian_planner import CartesianPlanner
 from dexe_robot_client.w1.path_planner.cartesian_to_joint_planner import CartesianToJointPlanner
 from dexe_robot_client.common import W1ArmType, W1Version

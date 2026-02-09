@@ -1,8 +1,10 @@
-# ----------------------------------------------------------------------------
-# Copyright (c) 2021-2025 DexForce Technology Co., Ltd.
-#
-# All rights reserved.
-# ----------------------------------------------------------------------------
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
 
 from .path_planner.blend_path_segment import PathSegmentBase, PathSegRnBezier, PathSegR3xSO3Bezier
 from .path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier

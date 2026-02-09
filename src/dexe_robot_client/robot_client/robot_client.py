@@ -1,8 +1,10 @@
-# ----------------------------------------------------------------------------
-# Copyright (c) 2021-2025 DexForce Technology Co., Ltd.
-#
-# All rights reserved.
-# ----------------------------------------------------------------------------
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
 from abc import ABC, abstractmethod
 from .data_structure import *
 from ..common import get_logger
@@ -28,6 +30,11 @@ class RobotClient(ABC):
         self.run_mode = None
         self.safe_level = None
         self.global_speed_ratio = None
+        self.joint_stiffness = None
+        self.joint_damping = None
+        self.cart_stiffness = None
+        self.cart_damping_ratio = None
+        self.cart_impedance_force = None
 
         self.latest_sent_id = -1
         self.latest_queued_id = -1
@@ -73,6 +80,11 @@ class RobotClient(ABC):
             run_mode=self.run_mode,
             safe_level=self.safe_level,
             global_speed_ratio=self.global_speed_ratio,
+            joint_stiffness=self.joint_stiffness,
+            joint_damping=self.joint_damping,
+            cart_stiffness=self.cart_stiffness,
+            cart_damping_ratio=self.cart_damping_ratio,
+            cart_impedance_force=self.cart_impedance_force,
             latest_sent_id=self.latest_sent_id,
             latest_queued_id=self.latest_queued_id,
             latest_finished_id=self.latest_finished_id,
@@ -606,13 +618,13 @@ class RobotClient(ABC):
 
     @abstractmethod
     def wait_request_finish(self,
-                            request_id: int,
-                            timeout: float = 20.0) -> bool:
+                            request_id: Optional[int] = None,
+                            timeout: float = 30.0) -> bool:
         """sync interface - wait for move request to finish
         同步接口 - 等待运动请求完成
         Args:
-            request_id: int: 运动请求号
-            timeout: float: 超时时间, 默认20秒
+            request_id: int: 运动请求号, 为空时默认等待最后一个请求完成
+            timeout: float: 超时时间, 默认30秒
         Returns:
             bool: true if success, false if fail or timeout
         """
