@@ -1,3 +1,11 @@
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
+
 from dexe_robot_client.w1 import RobotType, Planner_Pin
 from dexe_robot_client.w1.path_planner.better_fcl_checker import FCLChecker
 from dexe_robot_client.end_effector_client import EndEffectorType

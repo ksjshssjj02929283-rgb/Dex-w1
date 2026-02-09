@@ -1,8 +1,10 @@
-# ----------------------------------------------------------------------------
-# Copyright (c) 2021-2025 DexForce Technology Co., Ltd.
-#
-# All rights reserved.
-# ----------------------------------------------------------------------------
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
 
 import numpy as np
 
@@ -94,16 +96,15 @@ class W1Manager:
         # 在主线程中正常退出时自动调用
         atexit.register(self._destroy_clients)
 
-        try:
-            self._init_clients()
-        except Exception:
-            raise RuntimeError("Ros2 node create failed")
+        self._init_clients()
 
         self._init_kine_solver()
 
         if not self.set_sim_mode(is_sim):
             if is_sim:
+                self.logger.error(f"Set sim mode failed")
                 raise RuntimeError("Set sim mode failed")
+            self.logger.error(f"Set real mode failed")
             raise RuntimeError("Set real mode failed")
 
         # initialize fcl checker and pinocchio model and planner
@@ -209,86 +210,118 @@ class W1Manager:
                                                   end_effector_type)
 
     def _init_clients(self):
+        if self._executor is not None:
+            self.logger.error(f"Ros2 already initialized")
+            raise RuntimeError("Ros2 already initialized")
+
         if not rclpy.ok():
             rclpy.init()
 
-        self._robot_client_sim = RobotClient(is_sim=True)
-        self._robot_client_real = RobotClient(is_sim=False)
-        self._chassis_client_real = ChassisClient(is_sim=False)
-        self.robot_client = self._robot_client_sim
+        self._clients = []
+        self._executor = None
+        self._node_thread = None
 
-        if self._end_effector_type is None:
-            self.logger.info(f"No movable end effector.")
-            if self._use_nav:
-                self._clients = [
-                    self._robot_client_sim, self._robot_client_real,
-                    self._chassis_client_real
-                ]
-            else:
-                self._clients = [
-                    self._robot_client_sim, self._robot_client_real
-                ]
-        else:
-            self._left_ee_client_sim = create_end_effector_client(
-                is_left=True,
-                is_sim=True,
-                end_effector_type=self._end_effector_type)
-            self._right_ee_client_sim = create_end_effector_client(
-                is_left=False,
-                is_sim=True,
-                end_effector_type=self._end_effector_type)
-            self._left_ee_client_real = create_end_effector_client(
-                is_left=True,
-                is_sim=False,
-                end_effector_type=self._end_effector_type)
-            self._right_ee_client_real = create_end_effector_client(
-                is_left=False,
-                is_sim=False,
-                end_effector_type=self._end_effector_type)
-            self.left_ee_client = self._left_ee_client_sim
-            self.right_ee_client = self._right_ee_client_sim
+        try:
+            self._robot_client_sim = RobotClient(is_sim=True)
+            self._robot_client_real = RobotClient(is_sim=False)
+            self._chassis_client_real = ChassisClient(is_sim=False)
+            self.robot_client = self._robot_client_sim
 
-            if self._use_nav:
-                self._clients = [
-                    self._robot_client_sim, self._robot_client_real,
-                    self._left_ee_client_sim, self._left_ee_client_real,
-                    self._right_ee_client_sim, self._right_ee_client_real,
-                    self._chassis_client_real
-                ]
+            if self._end_effector_type is None:
+                self.logger.info(f"No movable end effector.")
+                if self._use_nav:
+                    self._clients = [
+                        self._robot_client_sim, self._robot_client_real,
+                        self._chassis_client_real
+                    ]
+                else:
+                    self._clients = [
+                        self._robot_client_sim, self._robot_client_real
+                    ]
             else:
-                self._clients = [
-                    self._robot_client_sim, self._robot_client_real,
-                    self._left_ee_client_sim, self._left_ee_client_real,
-                    self._right_ee_client_sim, self._right_ee_client_real
-                ]
+                self._left_ee_client_sim = create_end_effector_client(
+                    is_left=True,
+                    is_sim=True,
+                    end_effector_type=self._end_effector_type)
+                self._right_ee_client_sim = create_end_effector_client(
+                    is_left=False,
+                    is_sim=True,
+                    end_effector_type=self._end_effector_type)
+                self._left_ee_client_real = create_end_effector_client(
+                    is_left=True,
+                    is_sim=False,
+                    end_effector_type=self._end_effector_type)
+                self._right_ee_client_real = create_end_effector_client(
+                    is_left=False,
+                    is_sim=False,
+                    end_effector_type=self._end_effector_type)
+                self.left_ee_client = self._left_ee_client_sim
+                self.right_ee_client = self._right_ee_client_sim
+
+                if self._use_nav:
+                    self._clients = [
+                        self._robot_client_sim, self._robot_client_real,
+                        self._left_ee_client_sim, self._left_ee_client_real,
+                        self._right_ee_client_sim, self._right_ee_client_real,
+                        self._chassis_client_real
+                    ]
+                else:
+                    self._clients = [
+                        self._robot_client_sim, self._robot_client_real,
+                        self._left_ee_client_sim, self._left_ee_client_real,
+                        self._right_ee_client_sim, self._right_ee_client_real
+                    ]
+        except Exception as e:
+            self._destroy_clients()
+            self.logger.error(f"Ros2 node create failed: {e}")
+            raise RuntimeError(f"Ros2 node create failed: {e}")
 
         self._is_sim = True
 
-        self._executor = MultiThreadedExecutor()
-        for node in self._clients:
-            self._executor.add_node(node)
-        self._node_thread = threading.Thread(target=self._executor.spin,
-                                             daemon=True)
-        self._node_thread.start()
+        try:
+            self._executor = MultiThreadedExecutor()
+            for node in self._clients:
+                self._executor.add_node(node)
+            self._node_thread = threading.Thread(target=self._executor.spin,
+                                                 daemon=False)
+            self._node_thread.start()
+        except Exception as e:
+            self._destroy_clients()
+            self.logger.error(f"Ros2 node spin failed: {e}")
+            raise RuntimeError(f"Ros2 node spin failed: {e}")
+
         self.logger.info("Ros2 client initialized.")
 
     def _destroy_clients(self):
         try:
-            if rclpy.ok():
-                rclpy.shutdown()  # 停止ros触发spin
-
-            if self._node_thread is not None:
-                self._node_thread.join()
-
             if self._executor is not None:
                 self._executor.shutdown()
 
-            for node in self._clients:
-                node.destroy_node()
+            if self._node_thread is not None and self._node_thread.is_alive():
+                self._node_thread.join(timeout=5.0)
 
-            self.logger.debug(f"Ros2 node destroyed.")
+            if self._executor:
+                for node in self._clients:
+                    try:
+                        self._executor.remove_node(node)
+                    except Exception:
+                        pass
+
+            for node in self._clients:
+                if node.context.ok():
+                    node.destroy_node()
+
+            self._clients.clear()
+            self._executor = None
+            self._node_thread = None
+
+            if rclpy.ok():
+                rclpy.shutdown()
+
         except Exception as e:
             self.logger.error(f"Ros2 node destroy failed: {e}.")
+
+        self.logger.info(f"Ros2 node destroyed.")
 
     def _init_kine_solver(self):
         ik_nearest_weight = np.array([2., 2., 2., 1., 1., 1., 1.])
@@ -321,6 +354,11 @@ class W1Manager:
             return False
         if self.chassis_client is None:
             self.logger.error("Chassis client has not initialized")
+            return False
+        # 仅在真正使用到底盘相关接口时检查连接状态
+        if not self.chassis_client.is_connected():
+            self.logger.error(
+                f"{self.chassis_client.node_name} is not connected!")
             return False
         return True
 
@@ -519,10 +557,6 @@ class W1Manager:
                 self.logger.info(
                     f"{self.right_ee_client.node_name} is not connected!")
                 return StatusCode.EE_NOT_CONNECT
-        if (self._use_nav and not self.chassis_client.is_connected()):
-            self.logger.error(
-                f"{self.chassis_client.node_name} is not connected!")
-            return StatusCode.CHASSIS_NOT_CONNECT
         return StatusCode.SUCCESS
 
     def enable(self, timeout_sec: float = 0.5) -> StatusCode:
@@ -644,12 +678,6 @@ class W1Manager:
                     f"{target_right_ee_client.node_name} is not connected!")
                 return StatusCode.EE_NOT_CONNECT
 
-        if self._use_nav and target_chassis_client is not None and not target_chassis_client.is_connected(
-        ):
-            self.logger.error(
-                f"{target_chassis_client.node_name} is not connected!")
-            return StatusCode.CHASSIS_NOT_CONNECT
-
         # 检查current client
         if not self.robot_client.is_connected():
             self.logger.error(
@@ -770,6 +798,75 @@ class W1Manager:
         if nav_cancel_ok or control_cancel_ok:
             return StatusCode.SUCCESS
         return StatusCode.FAIL
+
+    def set_chassis_footprint(self, vertices: list) -> StatusCode:
+        """设置底盘足迹，以底盘中心为原点，其他四个点为四边形四角点
+        vertices: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+        """
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        if len(vertices) != 4:
+            self.get_logger().error("Footprint must have 4 vertices")
+            return StatusCode.FAIL
+        self.logger.info("Sending request to set chassis footprint...")
+        set_footprint_ok = self._get_chassis_client().set_footprint(vertices)
+        if set_footprint_ok:
+            return StatusCode.SUCCESS
+        else:
+            return StatusCode.FAIL
+
+    def set_chassis_nav_tolerance(self, xy_tol: float,
+                                  yaw_tol: float) -> StatusCode:
+        """设置底盘导航容差"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        set_nav_tolerance = self._get_chassis_client().set_goal_tolerance(
+            xy_tol, yaw_tol)
+        if set_nav_tolerance:
+            return StatusCode.SUCCESS
+        else:
+            return StatusCode.FAIL
+
+    def set_chassis_inflation_radius(self, radius: float) -> StatusCode:
+        """设置底盘膨胀半径"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        set_chassis_inflation = self._get_chassis_client().set_inflation_radius(
+            radius)
+        if set_chassis_inflation:
+            return StatusCode.SUCCESS
+        else:
+            return StatusCode.FAIL
+
+    def set_follow_velocity_limits(self, vx_max: float,
+                                   wz_max: float) -> StatusCode:
+        """
+        同时设置 FollowPath 线速度 & 角速度上限
+        """
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        set_follow_velocity_limits = self._get_chassis_client(
+        ).set_follow_velocity_limits(vx_max, wz_max)
+        if set_follow_velocity_limits:
+            return StatusCode.SUCCESS
+        else:
+            return StatusCode.FAIL
 
     def set_ee_qpos(self, name: str, qpos: np.ndarray) -> StatusCode:
         """控制end effector运动
@@ -1164,7 +1261,7 @@ class W1Manager:
             cur_dist = 0.
             for qpos in qpos_sample_array[1:-1]:
                 cur_dist += weighted_norm(qpos - cur_qpos)
-                if cur_dist >= prefix_dist_list[idx]:
+                if cur_dist >= prefix_dist_list[idx] + 1e-6:
                     idx += 1
                 qvel_limits_list.append(qvel_limits_array[idx])
                 cur_qpos = qpos

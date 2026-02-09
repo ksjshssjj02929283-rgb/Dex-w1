@@ -1,8 +1,10 @@
-# ----------------------------------------------------------------------------
-# Copyright (c) 2021-2025 DexForce Technology Co., Ltd.
-#
-# All rights reserved.
-# ----------------------------------------------------------------------------
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
 
 import numpy as np
 import json
@@ -355,6 +357,20 @@ class RobotClientRos2(Node, RobotClient):
             self.safe_level = state["safe_level"]
         if "global_speed_ratio" in state:
             self.global_speed_ratio = float(state["global_speed_ratio"])
+        if "joint_stiffness" in state:
+            self.joint_stiffness = [float(x) for x in state["joint_stiffness"]]
+        if "joint_damping" in state:
+            self.joint_damping = [float(x) for x in state["joint_damping"]]
+        if "cart_stiffness" in state:
+            self.cart_stiffness = [float(x) for x in state["cart_stiffness"]]
+        if "cart_damping_ratio" in state:
+            self.cart_damping_ratio = [
+                float(x) for x in state["cart_damping_ratio"]
+            ]
+        if "cart_impedance_force" in state:
+            self.cart_impedance_force = [
+                float(x) for x in state["cart_impedance_force"]
+            ]
         # request ids
         if "latest_queued_id" in state:
             self.latest_queued_id = state["latest_queued_id"]

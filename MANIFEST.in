@@ -1,0 +1,2 @@
+recursive-include src/examples *.py
+recursive-include src/scripts *.py
