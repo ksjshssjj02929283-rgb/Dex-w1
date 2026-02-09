@@ -18,6 +18,18 @@ from IPython import embed
 from dexe_robot_client.common.config import DATA_DIR
 from loop_rate_limiters import RateLimiter
 from dexe_rp import W1Vis, pos_wxyz_to_homogeneous, Box, Material
+"""
+This example task shows demo of dual arm(fix-connection) move line using whole body ik(whole body motion)
+
+Note:
+    - The comment part is viser visualization code for debugging
+    - is_local:
+        -- False means the waypoints should be in robot base_link frame and
+              the planner will use whole body ik solver to plan whole body motion trajectory
+    - The teaching point should only have one arm's waypoint,
+        the planner will automatically compute the other arm's waypoint by the fixed connection between the two arms.
+    - plan_linear_dual_arm_sync and move_linear_dual_arm_sync have the same parameters, which have the same effect.
+"""
 
 task_dict1 = {
     "torso": [[0.78539816, -1.57079633, 0.78539816, 0.03490659]],
@@ -50,7 +62,7 @@ task_dict1 = {
 
 def test_move_linear_dual_arm_sync(task_dict):
     res, full_body_traj = w1_manager.plan_linear_dual_arm_sync(
-        task_dict=task_dict, is_local=False)
+        task_dict=task_dict, is_local=False, use_collision_validator=True)
     return res, full_body_traj
 
 
@@ -75,7 +87,6 @@ if __name__ == "__main__":
                              save_to_file=False)
     w1_manager.go_home(1.)
 
-    # # Visualization setup in viser
     # vis = W1Vis()
     # h_torso_text = vis.server.gui.add_text(label="Torso (rad)",
     #                                        initial_value="[]")
@@ -93,7 +104,8 @@ if __name__ == "__main__":
     # vis.set_qpos("robot", init_qpos)
 
     res, full_body_traj = test_move_linear_dual_arm_sync(task_dict=task_dict1)
-    # input("Press Enter to continue")
+
+    # input("Press Enter to start visualization...")
     # idx = 0
     # rate = RateLimiter(frequency=100, warn=True)
     # while True:
