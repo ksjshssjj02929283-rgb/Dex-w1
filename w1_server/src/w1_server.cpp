@@ -166,6 +166,11 @@ void RobotServer::InitParamConfig() {
     this->enable_torso_shaper_ = root.value("enable_torso_shaper", this->enable_torso_shaper_.load());
     this->enable_record_ = root.value("enable_record", this->enable_record_);
 
+    // A1 和 Arm 模式下禁用 torso shaper
+    if (robot_mode_ != RobotMode::W1) {
+        this->enable_torso_shaper_ = false;
+    }
+
     nlohmann::json root_clean;
     root_clean["enable_ruckig"] = this->enable_ruckig_;
     root_clean["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
