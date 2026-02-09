@@ -9,6 +9,7 @@ from action_msgs.msg import GoalStatus
 from scipy.spatial.transform import Rotation as R
 from nav2_msgs.action import NavigateToPose
 from std_srvs.srv import Trigger
+from std_msgs.msg import Bool
 
 from ..common import get_logger
 
@@ -36,6 +37,8 @@ class NavigationClient(ABC, Node):
         self._set_chassis_charging_client = None
         self._cancel_control_client = None
         self._battery_percentage = -1.0
+        self._obstacle_subscriber = None
+        self._has_obstacle = False
 
         self._nav_goal_handle = None
         self._nav_result_future = None
@@ -119,6 +122,10 @@ class NavigationClient(ABC, Node):
                         self._battery_percentage = float(key_value.value)
                         break
 
+    def _obstacle_callback(self, msg):
+        """障碍物检测回调函数"""
+        self._has_obstacle = msg.data
+
     def get_battery_percentage(self) -> tuple[bool, float]:
         """获取当前电池电量百分比。
 
@@ -129,6 +136,15 @@ class NavigationClient(ABC, Node):
             return False, -1.0
         else:
             return True, self._battery_percentage
+
+    def get_front_obstacle(self) -> bool:
+        """获取前方障碍物检测状态。
+
+        Returns:
+            bool: 如果检测到障碍物则返回 True，否则返回 False。
+        """
+        self.spin_once()
+        return self._has_obstacle
 
     def get_chassis_position(self) -> tuple[bool, np.ndarray]:
         """

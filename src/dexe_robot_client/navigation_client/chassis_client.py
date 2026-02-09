@@ -5,6 +5,7 @@ from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
 from std_srvs.srv import Trigger
+from std_msgs.msg import Bool
 
 
 class ChassisClient(NavigationClient):
@@ -47,3 +48,8 @@ class ChassisClient(NavigationClient):
                 Trigger, 'control/cancel_chassis_control')
             self._set_chassis_charging_client = self.create_client(
                 Trigger, 'auto_charging')
+            
+            # 订阅障碍物检测话题（仿真和真实模式都订阅）
+            self._obstacle_subscriber = self.create_subscription(
+                Bool, "obstacle_detector/has_obstacle",
+                self._obstacle_callback, 10)

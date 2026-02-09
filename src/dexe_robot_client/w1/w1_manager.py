@@ -755,6 +755,24 @@ class W1Manager:
         res, value = self._get_chassis_client().get_battery_percentage()
         return (StatusCode.SUCCESS if res else StatusCode.FAIL), value
 
+    def get_front_obstacle(self) -> tuple[StatusCode, bool]:
+        """获取前方障碍物检测状态
+        
+        Returns:
+            tuple[StatusCode, bool]: 状态码和障碍物检测结果
+                - 如果检测到障碍物则返回 (StatusCode.SUCCESS, True)
+                - 如果没有障碍物则返回 (StatusCode.SUCCESS, False)
+                - 如果导航功能未启用或客户端未初始化则返回 (StatusCode.FAIL, False)
+        """
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL, False
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL, False
+        has_obstacle = self._get_chassis_client().get_front_obstacle()
+        return StatusCode.SUCCESS, has_obstacle
+
     def get_nav_status(self) -> str:
         """获取导航状态"""
         if not self._use_nav:
