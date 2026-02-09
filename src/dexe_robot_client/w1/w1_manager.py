@@ -1148,6 +1148,8 @@ class W1Manager:
 
     def _is_traj_collision(self,
                            qpos_array: np.ndarray,
+                           left_arm_start_ee_qpos: np.ndarray | list[float],
+                           right_arm_start_ee_qpos: np.ndarray | list[float],
                            left_arm_ee_trigger_list: list[tuple[int,
                                                                 list]] = None,
                            right_arm_ee_trigger_list: list[tuple[int,
@@ -1156,21 +1158,35 @@ class W1Manager:
         """检查轨迹是否碰撞
         Args:
             qpos_array (np.ndarray): 10ms间隔的轨迹
-            left_arm_ee_trigger_list (list[tuple[int, list]], optional): 左臂末端执行器触发列表，格式[(idx, qpos), ...]. Defaults to None.
-            right_arm_ee_trigger_list (list[tuple[int, list]], optional): 右臂末端执行器触发列表，格式[(idx, qpos), ...]. Defaults to None.
+            left_arm_start_ee_qpos (np.ndarray|list[float]): 左臂末端执行器起始位置
+            right_arm_start_ee_qpos (np.ndarray|list[float]): 右臂末端执行器起始位置
             left_arm_ee_trigger_list (list[tuple[int, list]], optional): 左臂末端执行器触发列表，格式[(idx, qpos), ...]. Defaults to None.
             right_arm_ee_trigger_list (list[tuple[int, list]], optional): 右臂末端执行器触发列表，格式[(idx, qpos), ...]. Defaults to None.
             step (int, optional): 检测步长，每步10ms. Defaults to 5.
         Returns:
             StatusCode: 
+        
+        Notes:
+            - if there is no ee client, left_arm_start_ee_qpos and right_arm_start_ee_qpos should be None
         """
         # NOTE: 最大速度 伸直构型下 仅基座关节运动导致的末端位移 5 * 0.01s * 1rad/s * 0.7m = 3.5cm
 
         if self._has_arm_ee_client("left_arm_ee",
                                    False) and self._has_arm_ee_client(
                                        "right_arm_ee", False):
-            cur_left_ee_qpos = self.get_current_qpos("left_arm_ee")[1]
-            cur_right_ee_qpos = self.get_current_qpos("right_arm_ee")[1]
+            if left_arm_start_ee_qpos is None or not self._check_qpos_dimension(
+                    "left_arm_ee", left_arm_start_ee_qpos):
+                raise ValueError(
+                    "Left arm start ee qpos is required and should have correct dimension."
+                )
+            if right_arm_start_ee_qpos is None or not self._check_qpos_dimension(
+                    "right_arm_ee", right_arm_start_ee_qpos):
+                raise ValueError(
+                    "Right arm start ee qpos is required and should have correct dimension."
+                )
+            cur_left_ee_qpos = np.asarray(left_arm_start_ee_qpos)
+            cur_right_ee_qpos = np.asarray(right_arm_start_ee_qpos)
+
             if left_arm_ee_trigger_list is None:
                 left_arm_ee_qpos_array = np.tile(cur_left_ee_qpos,
                                                  (qpos_array.shape[0], 1))
@@ -1974,6 +1990,7 @@ class W1Manager:
             interpolate_num_list.append(num_sample)
         return interpolate_num_list
 
+    @time_consuming
     def plan_dual_arm_cartesian_traj(
         self,
         left_xpos_list: list[np.ndarray],
@@ -2429,13 +2446,14 @@ class W1Manager:
 
     @time_consuming
     def plan_joint_full_body(
-            self,
-            start_qpos: np.ndarray,
-            start_left_arm_ee_qpos: np.ndarray,
-            start_right_arm_ee_qpos: np.ndarray,
-            waypoints_dict: dict,
-            speed_ratio: float = 1.0,
-            is_sparse: bool = True
+        self,
+        start_qpos: np.ndarray,
+        start_left_arm_ee_qpos: np.ndarray,
+        start_right_arm_ee_qpos: np.ndarray,
+        waypoints_dict: dict,
+        speed_ratio: float = 1.0,
+        is_sparse: bool = True,
+        use_collision_validator: bool = True
     ) -> tuple[StatusCode, np.ndarray, list, list]:
         """规划各部件独立关节空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
@@ -2567,12 +2585,25 @@ class W1Manager:
         if not res_align:
             return StatusCode.FAIL, None, None, None
 
+        if use_collision_validator:
+            if self._is_traj_collision(
+                    qpos_array=total_qpos_array,
+                    left_arm_start_ee_qpos=start_left_arm_ee_qpos,
+                    right_arm_start_ee_qpos=start_right_arm_ee_qpos,
+                    left_arm_ee_trigger_list=left_arm_ee_trigger_list,
+                    right_arm_ee_trigger_list=right_arm_ee_trigger_list
+            ) != StatusCode.FAIL:
+                self.logger.error("Full body linear traj collision detected!")
+                return StatusCode.COLLISION_FAIL, None, None, None
+
         return StatusCode.SUCCESS, total_qpos_array, left_arm_ee_trigger_list, right_arm_ee_trigger_list
 
-    def move_joint_full_body(self,
-                             waypoints_dict: dict,
-                             speed_ratio: float = 1.0,
-                             is_sparse: bool = True) -> StatusCode:
+    def move_joint_full_body(
+            self,
+            waypoints_dict: dict,
+            speed_ratio: float = 1.0,
+            is_sparse: bool = True,
+            use_collision_validator: bool = True) -> StatusCode:
         """从当前位置规划并执行各部件独立关节空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
         - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
@@ -2612,7 +2643,7 @@ class W1Manager:
         (res, total_qpos_array, left_arm_ee_trigger_list,
          right_arm_ee_trigger_list) = self.plan_joint_full_body(
              cur_qpos, cur_left_arm_ee_qpos, cur_right_arm_ee_qpos,
-             waypoints_dict, speed_ratio, is_sparse)
+             waypoints_dict, speed_ratio, is_sparse, use_collision_validator)
         if res.value < 0:
             return res
 
@@ -2627,17 +2658,19 @@ class W1Manager:
 
     @time_consuming
     def plan_linear_full_body(
-            self,
-            start_qpos: np.ndarray,
-            start_left_arm_ee_qpos: np.ndarray,
-            start_right_arm_ee_qpos: np.ndarray,
-            waypoints_dict: dict,
-            left_qpos_seed: np.ndarray = None,
-            right_qpos_seed: np.ndarray = None,
-            cartesian_step: float = 0.005,
-            speed_ratio: float = 1.0,
-            is_local: bool = True,
-            is_sync: bool = False) -> tuple[StatusCode, np.ndarray, list, list]:
+        self,
+        start_qpos: np.ndarray,
+        start_left_arm_ee_qpos: np.ndarray,
+        start_right_arm_ee_qpos: np.ndarray,
+        waypoints_dict: dict,
+        left_qpos_seed: np.ndarray = None,
+        right_qpos_seed: np.ndarray = None,
+        cartesian_step: float = 0.005,
+        speed_ratio: float = 1.0,
+        is_local: bool = True,
+        is_sync: bool = False,
+        use_collision_validator: bool = True
+    ) -> tuple[StatusCode, np.ndarray, list, list]:
         """规划各部件独立关节空间运动，arm执行笛卡尔空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
         - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
@@ -2968,24 +3001,29 @@ class W1Manager:
         if not res_align:
             return StatusCode.FAIL, None, None, None
 
-        if self._is_traj_collision(
-                qpos_array=total_qpos_array,
-                left_arm_ee_trigger_list=left_arm_ee_trigger_list,
-                right_arm_ee_trigger_list=right_arm_ee_trigger_list
-        ) != StatusCode.FAIL:
-            self.logger.error("Full body linear traj collision detected!")
-            return StatusCode.COLLISION_FAIL, None, None, None
+        if use_collision_validator:
+            if self._is_traj_collision(
+                    qpos_array=total_qpos_array,
+                    left_arm_start_ee_qpos=start_left_arm_ee_qpos,
+                    right_arm_start_ee_qpos=start_right_arm_ee_qpos,
+                    left_arm_ee_trigger_list=left_arm_ee_trigger_list,
+                    right_arm_ee_trigger_list=right_arm_ee_trigger_list
+            ) != StatusCode.FAIL:
+                self.logger.error("Full body linear traj collision detected!")
+                return StatusCode.COLLISION_FAIL, None, None, None
 
         return StatusCode.SUCCESS, total_qpos_array, left_arm_ee_trigger_list, right_arm_ee_trigger_list
 
-    def move_linear_full_body(self,
-                              waypoints_dict: dict,
-                              left_qpos_seed: np.ndarray = None,
-                              right_qpos_seed: np.ndarray = None,
-                              cartesian_step: float = 0.005,
-                              speed_ratio: float = 1.0,
-                              is_local: bool = True,
-                              is_sync: bool = False) -> StatusCode:
+    def move_linear_full_body(
+            self,
+            waypoints_dict: dict,
+            left_qpos_seed: np.ndarray = None,
+            right_qpos_seed: np.ndarray = None,
+            cartesian_step: float = 0.005,
+            speed_ratio: float = 1.0,
+            is_local: bool = True,
+            is_sync: bool = False,
+            use_collision_validator: bool = True) -> StatusCode:
         """从当前位置规划各部件独立关节空间运动，arm执行笛卡尔空间运动
         - 每个key接收多个qpos路径点，key省略视为不控制
         - 同一部件之间的key需要对齐：torso、head、left_xx和right_xx
@@ -3033,7 +3071,7 @@ class W1Manager:
          right_arm_ee_trigger_list) = self.plan_linear_full_body(
              cur_qpos, cur_left_arm_ee_qpos, cur_right_arm_ee_qpos,
              waypoints_dict, left_qpos_seed, right_qpos_seed, cartesian_step,
-             speed_ratio, is_local, is_sync)
+             speed_ratio, is_local, is_sync, use_collision_validator)
 
         # TODO: just for test, comment this
         self.total_qpos_array = total_qpos_array
@@ -4843,7 +4881,8 @@ class W1Manager:
     def plan_linear_dual_arm_sync(self,
                                   task_dict: dict,
                                   speed_ratio: float = 1.0,
-                                  is_local: bool = True):
+                                  is_local: bool = True,
+                                  use_collision_validator: bool = True):
         arml_kine, armr_kine = self._get_arm_kine(
             "left_arm"), self._get_arm_kine("right_arm")
 
@@ -5022,14 +5061,18 @@ class W1Manager:
                 self.logger.error(
                     "Align dual arm traj failed in plan_linear_dual_arm_sync.")
                 return StatusCode.FAIL, None
-
-            if self._is_traj_collision(
-                    qpos_array=move_arml_armr_traj,
-                    left_arm_ee_trigger_list=None,
-                    right_arm_ee_trigger_list=None) != StatusCode.FAIL:
-                self.logger.error(
-                    "Collision detected in plan_linear_dual_arm_sync.")
-                return StatusCode.COLLISION_FAIL, None
+            if use_collision_validator:
+                cur_left_ee_qpos = self.get_current_qpos("left_arm_ee")[1]
+                cur_right_ee_qpos = self.get_current_qpos("right_arm_ee")[1]
+                if self._is_traj_collision(
+                        qpos_array=move_arml_armr_traj,
+                        left_arm_start_ee_qpos=cur_left_ee_qpos,
+                        right_arm_start_ee_qpos=cur_right_ee_qpos,
+                        left_arm_ee_trigger_list=None,
+                        right_arm_ee_trigger_list=None) != StatusCode.FAIL:
+                    self.logger.error(
+                        "Collision detected in plan_linear_dual_arm_sync.")
+                    return StatusCode.COLLISION_FAIL, None
 
             return StatusCode.SUCCESS, move_arml_armr_traj
 
@@ -5057,23 +5100,32 @@ class W1Manager:
 
             move_arml_armr_traj = full_body_joint_traj_
 
-            if self._is_traj_collision(
-                    qpos_array=move_arml_armr_traj,
-                    left_arm_ee_trigger_list=None,
-                    right_arm_ee_trigger_list=None) != StatusCode.FAIL:
-                self.logger.error(
-                    "Collision detected in plan_linear_dual_arm_sync.")
-                return StatusCode.COLLISION_FAIL, None
+            if use_collision_validator:
+                cur_left_ee_qpos = self.get_current_qpos("left_arm_ee")[1]
+                cur_right_ee_qpos = self.get_current_qpos("right_arm_ee")[1]
+                if self._is_traj_collision(
+                        qpos_array=move_arml_armr_traj,
+                        left_arm_start_ee_qpos=cur_left_ee_qpos,
+                        right_arm_start_ee_qpos=cur_right_ee_qpos,
+                        left_arm_ee_trigger_list=None,
+                        right_arm_ee_trigger_list=None) != StatusCode.FAIL:
+                    self.logger.error(
+                        "Collision detected in plan_linear_dual_arm_sync.")
+                    return StatusCode.COLLISION_FAIL, None
 
             return StatusCode.SUCCESS, move_arml_armr_traj
 
     def move_linear_dual_arm_sync(self,
                                   task_dict: dict,
                                   speed_ratio: float = 1.0,
-                                  is_local: bool = True):
+                                  is_local: bool = True,
+                                  use_collision_validator: bool = True):
 
         res, full_body_traj = self.plan_linear_dual_arm_sync(
-            task_dict=task_dict, speed_ratio=speed_ratio, is_local=is_local)
+            task_dict=task_dict,
+            speed_ratio=speed_ratio,
+            is_local=is_local,
+            use_collision_validator=use_collision_validator)
 
         if res.value < 0:
             self.logger.error("Plan linear dual arm sync traj failed.")
