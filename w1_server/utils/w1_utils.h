@@ -23,18 +23,19 @@ namespace robot_server_lib {
 namespace utils {
 
 template <typename VectorType>
-std::ostringstream MotorStatusToJsonArrayString(const VectorType &vec, int start_index, int end_index) {
+std::ostringstream MotorStatusToJsonArrayString(const VectorType &vec, int start_index, int count) {
     int total_size = static_cast<int>(GetContainerSize(vec));
     if (start_index < 0) start_index = 0;
-    if (end_index < 0 || end_index > total_size) end_index = total_size;
-    if (start_index > end_index) start_index = end_index;
+    if (count < 0 || start_index + count > total_size) count = total_size - start_index;
+    if (count < 0) count = 0;
 
     std::ostringstream ss;
     ss << "[";
-    for (int i = start_index; i < end_index; ++i) {
-        using ElemT = std::decay_t<decltype(vec[i])>;
+    for (int i = 0; i < count; ++i) {
+        int idx = start_index + i;
+        using ElemT = std::decay_t<decltype(vec[idx])>;
         if constexpr (std::is_integral_v<ElemT>) {
-            auto data = static_cast<long>(vec[i]);
+            auto data = static_cast<long>(vec[idx]);
             switch (data) {
                 case 1:
                     ss << "\"INIT\"";
@@ -55,7 +56,7 @@ std::ostringstream MotorStatusToJsonArrayString(const VectorType &vec, int start
         } else {
             ss << "invalid data";
         }
-        if (i < end_index - 1) ss << ",";
+        if (i < count - 1) ss << ",";
     }
     ss << "]";
     return ss;
@@ -111,18 +112,19 @@ inline std::ostringstream RobotControlwordToJsonString(const int &control_word) 
 }
 
 template <typename VectorType>
-std::ostringstream MotorErrorcodeToJsonArrayString(const VectorType &vec, int start_index, int end_index) {
+std::ostringstream MotorErrorcodeToJsonArrayString(const VectorType &vec, int start_index, int count) {
     int total_size = static_cast<int>(GetContainerSize(vec));
     if (start_index < 0) start_index = 0;
-    if (end_index < 0 || end_index > total_size) end_index = total_size;
-    if (start_index > end_index) start_index = end_index;
+    if (count < 0 || start_index + count > total_size) count = total_size - start_index;
+    if (count < 0) count = 0;
 
     std::ostringstream ss;
     ss << "[";
-    for (int i = start_index; i < end_index; ++i) {
-        using ElemT = std::decay_t<decltype(vec[i])>;
+    for (int i = 0; i < count; ++i) {
+        int idx = start_index + i;
+        using ElemT = std::decay_t<decltype(vec[idx])>;
         if constexpr (std::is_integral_v<ElemT>) {
-            auto data = static_cast<long>(vec[i]);
+            auto data = static_cast<long>(vec[idx]);
             switch (data) {
                 default:
                     ss << data;
@@ -131,7 +133,7 @@ std::ostringstream MotorErrorcodeToJsonArrayString(const VectorType &vec, int st
         } else {
             ss << "invalid data";
         }
-        if (i < end_index - 1) ss << ",";
+        if (i < count - 1) ss << ",";
     }
     ss << "]";
     return ss;

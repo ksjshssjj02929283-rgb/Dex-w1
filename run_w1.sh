@@ -3,8 +3,11 @@ cd "$(dirname "$0")"
 
 # 解析参数
 A1_MODE=false
+ARM_MODE=false
 if [[ "$1" == "--a1" ]] || [[ "$1" == "a1" ]]; then
     A1_MODE=true
+elif [[ "$1" == "--arm" ]] || [[ "$1" == "arm" ]]; then
+    ARM_MODE=true
 fi
 
 SUDO_PASS=123456
@@ -26,8 +29,11 @@ kill_process "sim_server"
 kill_process "w1_server"
 
 if [ "$A1_MODE" = true ]; then
-    echo "📄 使用配置: robot.cfg (与 W1 共用)"
+    echo "📄 使用配置: robot.cfg (A1 模式)"
     taskset -c 6 ../install/w1_server/lib/w1_server/w1_server --a1
+elif [ "$ARM_MODE" = true ]; then
+    echo "📄 使用配置: robot.cfg (Arm 模式)"
+    taskset -c 6 ../install/w1_server/lib/w1_server/w1_server --arm
 else
     taskset -c 5 ros2 run sim_server sim_server > /dev/null 2>&1 &
     taskset -c 6 script/set_max_position_following_error_window.sh > /dev/null 2>&1 &

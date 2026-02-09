@@ -18,6 +18,8 @@
 
 namespace robot_server_lib {
 
+enum class RobotMode { W1, A1, Arm };
+
 using JointControlMsg = joint_interfaces::msg::JointControl;
 using JointPositionControlMsg = joint_interfaces::msg::JointPositionControl;
 using ChassisWholeControlMsg = chassis_interfaces::msg::ChassisWholeControl;
@@ -27,7 +29,7 @@ using SetProperty = robot_server_interfaces::srv::SetProperty;
 
 class RobotServer : public RobotServerBase {
 public:
-    RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, bool is_a1_mode = false);
+    RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, RobotMode robot_mode = RobotMode::W1);
 
 private:
     void TorqueControlThreadFunc() override;
@@ -89,13 +91,15 @@ private:
     bool prev_chassis_shaper_enabled_ = false;
     bool prev_torso_shaper_enabled_ = false;
 
-    // A1 模式支持
-    bool is_a1_mode_ = false;  // A1 模式标志
-    int ndof_config_;          // 从配置读取的实际关节数 (W1=20, A1=14)
+    // 机器人模式支持
+    RobotMode robot_mode_ = RobotMode::W1;  // 当前机器人模式
+    int ndof_config_;                       // 从配置读取的实际关节数 (W1=20, A1=14, Arm=7)
 
-    // 虚拟关节转换函数（A1 模式使用）
+    // 虚拟关节转换函数（A1/Arm 模式使用）
     void Expand14ToVirtual20(const RobotFeedback& real_feedback, RobotFeedback& virtual_feedback);
+    void Expand7ToVirtual20(const RobotFeedback& real_feedback, RobotFeedback& virtual_feedback);
     void ExtractVirtual20To14(const RobotControl& virtual_control, RobotControl& real_control);
+    void ExtractVirtual20To7(const RobotControl& virtual_control, RobotControl& real_control);
 
     std::shared_ptr<ButterworthFilter> butterworth_filter_[ndof_robot];
 

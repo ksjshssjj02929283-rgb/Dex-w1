@@ -50,27 +50,28 @@ inline std::size_t GetContainerSize(const T (&)[N]) {
 }
 
 template <typename VectorType>
-std::ostringstream VectorToJsonArrayString(const VectorType &vec, int start_index, int end_index) {
+std::ostringstream VectorToJsonArrayString(const VectorType &vec, int start_index, int count) {
     int total_size = static_cast<int>(GetContainerSize(vec));
     if (start_index < 0) start_index = 0;
-    if (end_index < 0 || end_index > total_size) end_index = total_size;
-    if (start_index > end_index) start_index = end_index;
+    if (count < 0 || start_index + count > total_size) count = total_size - start_index;
+    if (count < 0) count = 0;
 
     std::ostringstream ss;
     ss << "[";
-    for (int i = start_index; i < end_index; ++i) {
-        using ElemT = std::decay_t<decltype(vec[i])>;
+    for (int i = 0; i < count; ++i) {
+        int idx = start_index + i;
+        using ElemT = std::decay_t<decltype(vec[idx])>;
         if constexpr (std::is_integral_v<ElemT>) {
-            ss << static_cast<long long>(vec[i]);
+            ss << static_cast<long long>(vec[idx]);
         } else {
-            double v = static_cast<double>(vec[i]);
+            double v = static_cast<double>(vec[idx]);
             if (std::isfinite(v)) {
                 ss << std::fixed << std::setprecision(4) << v;
             } else {
                 ss << "null";
             }
         }
-        if (i < end_index - 1) ss << ",";
+        if (i < count - 1) ss << ",";
     }
     ss << "]";
     return ss;
