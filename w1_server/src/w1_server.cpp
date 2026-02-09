@@ -7,19 +7,28 @@
 
 namespace robot_server_lib {
 
-RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, bool is_a1_mode)
-    : RobotServerBase(robot_cfg_path, is_sim), is_a1_mode_(is_a1_mode) {
+RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, RobotMode robot_mode)
+    : RobotServerBase(robot_cfg_path, is_sim), robot_mode_(robot_mode) {
     LOG_INFO << "w1_server version: " << W1_SERVER_VERSION;
 
-    // 根据传入参数设置A1模式
-    if (is_a1_mode_) {
-        ndof_config_ = 14;
-        LOG_INFO << "A1 模式已启用，实际关节数: " << ndof_config_;
-        RCLCPP_INFO(this->get_logger(), "A1 模式已启用，实际关节数: %d", ndof_config_);
-    } else {
-        ndof_config_ = ndof_robot;
-        LOG_INFO << "W1 模式已启用，实际关节数: " << ndof_config_;
-        RCLCPP_INFO(this->get_logger(), "W1 模式已启用，实际关节数: %d", ndof_config_);
+    // 根据传入参数设置模式
+    switch (robot_mode_) {
+        case RobotMode::Arm:
+            ndof_config_ = 7;
+            LOG_INFO << "Arm 模式已启用，实际关节数: " << ndof_config_;
+            RCLCPP_INFO(this->get_logger(), "Arm 模式已启用，实际关节数: %d", ndof_config_);
+            break;
+        case RobotMode::A1:
+            ndof_config_ = 14;
+            LOG_INFO << "A1 模式已启用，实际关节数: " << ndof_config_;
+            RCLCPP_INFO(this->get_logger(), "A1 模式已启用，实际关节数: %d", ndof_config_);
+            break;
+        case RobotMode::W1:
+        default:
+            ndof_config_ = ndof_robot;
+            LOG_INFO << "W1 模式已启用，实际关节数: " << ndof_config_;
+            RCLCPP_INFO(this->get_logger(), "W1 模式已启用，实际关节数: %d", ndof_config_);
+            break;
     }
 
     // 创建 /feedback/joint 发布器
@@ -37,8 +46,8 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, bool
     position_control_subscriber_ = this->create_subscription<JointPositionControlMsg>(
         "/control/joint_position", 10, std::bind(&RobotServer::PositionControlCallback, this, std::placeholders::_1));
 
-    // A1 模式下不创建底盘订阅器
-    if (!is_a1_mode_) {
+    // A1/Arm 模式下不创建底盘订阅器
+    if (robot_mode_ == RobotMode::W1) {
         // 创建 /control/omni_chassis 订阅器
         omni_chassis_control_subscriber_ = this->create_subscription<ChassisWholeControlMsg>(
             "/control/omni_chassis", 10,
@@ -214,9 +223,11 @@ void RobotServer::TorqueControlThreadFunc() {
         RobotFeedback feedback_temp{};
         bool ret = feedback_shm_instance.PeekLatest(&feedback_temp) && feedback_temp.cnt > 0;
 
-        // 如果A1 模式：将14关节反馈展开为20关节虚拟反馈
+        // 如果A1/Arm模式：将反馈展开为20关节虚拟反馈
         if (ret) {
-            if (is_a1_mode_) {
+            if (robot_mode_ == RobotMode::Arm) {
+                Expand7ToVirtual20(feedback_temp, robot_feedback_);
+            } else if (robot_mode_ == RobotMode::A1) {
                 Expand14ToVirtual20(feedback_temp, robot_feedback_);
             } else {
                 robot_feedback_ = feedback_temp;
@@ -231,18 +242,19 @@ void RobotServer::TorqueControlThreadFunc() {
         }
         // 如果开启了记录, 则在日志中记录数据
         if (this->enable_record_ && manager_state_ == Status::Running && loop_counter % 4 == 0) {
-            int idx_offset = is_a1_mode_ ? first_arm_joint_index_ : 0;
-            LOG_INFO << "{ \"joint_position\": "
-                     << utils::VectorToJsonArrayString(robot_feedback_.position, idx_offset, ndof_robot).str()
-                     << ", \"joint_velocity\": "
-                     << utils::VectorToJsonArrayString(robot_feedback_.velocity, idx_offset, ndof_robot).str()
-                     << ", \"joint_torque\":"
-                     << utils::VectorToJsonArrayString(robot_feedback_.torque, idx_offset, ndof_robot).str()
-                     << ", \"joint_position_cmd\": "
-                     << utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_robot).str()
-                     << ", \"joint_torque_feedforward\": "
-                     << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, idx_offset, ndof_robot).str()
-                     << "}";
+            int idx_offset = (robot_mode_ != RobotMode::W1) ? first_arm_joint_index_ : 0;
+            LOG_INFO
+                << "{ \"joint_position\": "
+                << utils::VectorToJsonArrayString(robot_feedback_.position, idx_offset, ndof_config_).str()
+                << ", \"joint_velocity\": "
+                << utils::VectorToJsonArrayString(robot_feedback_.velocity, idx_offset, ndof_config_).str()
+                << ", \"joint_torque\":"
+                << utils::VectorToJsonArrayString(robot_feedback_.torque, idx_offset, ndof_config_).str()
+                << ", \"joint_position_cmd\": "
+                << utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str()
+                << ", \"joint_torque_feedforward\": "
+                << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, idx_offset, ndof_config_).str()
+                << "}";
         }
         // 如果机器人就绪，则写入测量数据
         if (this->is_robot_ready_) {
@@ -428,7 +440,11 @@ void RobotServer::TorqueControlThreadFunc() {
         }
 
         // 底盘控制：应用输入整形并写入共享内存
-        if (is_a1_mode_) {
+        if (robot_mode_ == RobotMode::Arm) {
+            RobotControl arm_control{};
+            ExtractVirtual20To7(robot_control_, arm_control);
+            control_shm_instance.AppendNewElement(arm_control);
+        } else if (robot_mode_ == RobotMode::A1) {
             RobotControl a1_control{};
             ExtractVirtual20To14(robot_control_, a1_control);
             control_shm_instance.AppendNewElement(a1_control);
@@ -544,8 +560,9 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
 {
     auto robot_server_state_msg = std_msgs::msg::String();
     uint64_t timestamp_ns = this->now().nanoseconds();
-    // A1模式下数据在虚拟20关节表示中的6-19位置，需要提取
-    int idx_offset = is_a1_mode_ ? first_arm_joint_index_ : 0;
+    // A1/Arm模式下数据在虚拟20关节表示中的6-19位置，需要提取
+    int idx_offset = (robot_mode_ != RobotMode::W1) ? first_arm_joint_index_ : 0;
+    int cart_param_count = (robot_mode_ == RobotMode::Arm) ? 6 : static_cast<int>(this->manager_info_.robot_property.cart_stiffness.size());
     robot_server_state_msg.data =
         std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
         ", \"robot_type\":\"" + this->robot_model_.params_ptr->robot_name + "\"" +
@@ -558,27 +575,27 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ", \"server_error_code\":\"" + ToString(this->manager_info_.robot_property.error_code) + "\"" +
         ", \"safe_level\":\"" + std::to_string(this->manager_info_.robot_property.safe_level) + "\"" +
         ", \"global_speed_ratio\":\"" + std::to_string(this->manager_info_.robot_property.global_speed_ratio) + "\"" +
-        ",\n  \"joint_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_stiffness, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_damping\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_damping, idx_offset, ndof_robot).str() +
-        ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness).str() +
-        ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio).str() +
-        ",\n  \"cart_impedance_force\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_impedance_force).str() +
+        ",\n  \"joint_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_stiffness, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_damping\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_damping, idx_offset, ndof_config_).str() +
+        ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness, 0, cart_param_count).str() +
+        ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio, 0, cart_param_count).str() +
+        ",\n  \"cart_impedance_force\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_impedance_force, 0, cart_param_count).str() +
         ",\n  \"robot_statusword\":" + utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
         ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
-        ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, idx_offset, ndof_robot).str() +
-        ",\n  \"motor_error_code\":" + utils::MotorErrorcodeToJsonArrayString(this->robot_feedback_.motor_error_code, idx_offset, ndof_robot).str() +
-        ",\n  \"motor_temperature\":" + utils::VectorToJsonArrayString(this->robot_feedback_.motor_temperature, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_position\":" + utils::VectorToJsonArrayString(this->robot_feedback_.position, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_position_cmd\":" + utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_velocity\":" + utils::VectorToJsonArrayString(this->robot_feedback_.velocity, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_velocity_cmd\":" + utils::VectorToJsonArrayString(this->robot_control_.velocity, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(this->robot_feedback_.torque, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(this->robot_control_.torque_feedforward, idx_offset, ndof_robot).str() +
+        ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, idx_offset, ndof_config_).str() +
+        ",\n  \"motor_error_code\":" + utils::MotorErrorcodeToJsonArrayString(this->robot_feedback_.motor_error_code, idx_offset, ndof_config_).str() +
+        ",\n  \"motor_temperature\":" + utils::VectorToJsonArrayString(this->robot_feedback_.motor_temperature, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_position\":" + utils::VectorToJsonArrayString(this->robot_feedback_.position, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_position_cmd\":" + utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_velocity\":" + utils::VectorToJsonArrayString(this->robot_feedback_.velocity, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_velocity_cmd\":" + utils::VectorToJsonArrayString(this->robot_control_.velocity, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(this->robot_feedback_.torque, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(this->robot_control_.torque_feedforward, idx_offset, ndof_config_).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
-        ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(this->robot_control_.negative_torque_limit, idx_offset, ndof_robot).str() +
-        ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(this->robot_control_.positive_torque_limit, idx_offset, ndof_robot).str() +
-        ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_measurement).str() +
-        ",\n  \"torso_pose_X_Z_RY\":" + utils::VectorToJsonArrayString(this->manager_info_.torso_pose_measurement).str() + "}";
+        ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(this->robot_control_.negative_torque_limit, idx_offset, ndof_config_).str() +
+        ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(this->robot_control_.positive_torque_limit, idx_offset, ndof_config_).str() +
+        ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_measurement, 0, cart_param_count).str() +
+        ",\n  \"torso_pose_X_Z_RY\":" + utils::VectorToJsonArrayString(this->manager_info_.torso_pose_measurement, 0, cart_param_count).str() + "}";
     return robot_server_state_msg;
 }
 // clang-format on
@@ -593,8 +610,8 @@ void RobotServer::PublishFeedback() {
     feedback_msg.velocity.resize(ndof_config_);
     feedback_msg.effort.resize(ndof_config_);
 
-    // A1模式下数据在虚拟20关节表示中的6-19位置，需要提取
-    int idx_offset = is_a1_mode_ ? first_arm_joint_index_ : 0;
+    // A1/Arm模式下数据在虚拟20关节表示中的6-19位置，需要提取
+    int idx_offset = (robot_mode_ != RobotMode::W1) ? first_arm_joint_index_ : 0;
     for (int i = 0; i < ndof_config_; ++i) {
         feedback_msg.name[i] = ecat_joint_name_[idx_offset + i];
         feedback_msg.position[i] = robot_feedback_.position[idx_offset + i];
@@ -838,6 +855,46 @@ void RobotServer::ExtractVirtual20To14(const RobotControl &virtual_control, Robo
     // A1无底盘控制，跳过底盘控制字段
 
     // 双臂 (0-13) <- virtual[6-19]，左臂virtual[6-12]->real[0-6]，右臂virtual[13-19]->real[7-13]
+    for (int i = 0; i < ndof_config_; ++i) {
+        real_control.position[i] = virtual_control.position[first_arm_joint_index_ + i];
+        real_control.velocity[i] = virtual_control.velocity[first_arm_joint_index_ + i];
+        real_control.acceleration[i] = virtual_control.acceleration[first_arm_joint_index_ + i];
+        real_control.torque_feedforward[i] = virtual_control.torque_feedforward[first_arm_joint_index_ + i];
+        real_control.torque_external[i] = virtual_control.torque_external[first_arm_joint_index_ + i];
+        real_control.positive_velocity_limit[i] = virtual_control.positive_velocity_limit[first_arm_joint_index_ + i];
+        real_control.negative_velocity_limit[i] = virtual_control.negative_velocity_limit[first_arm_joint_index_ + i];
+        real_control.positive_torque_limit[i] = virtual_control.positive_torque_limit[first_arm_joint_index_ + i];
+        real_control.negative_torque_limit[i] = virtual_control.negative_torque_limit[first_arm_joint_index_ + i];
+    }
+}
+
+// Arm 模式虚拟关节转换函数：将7关节反馈扩展为20关节虚拟反馈
+void RobotServer::Expand7ToVirtual20(const RobotFeedback &real_feedback, RobotFeedback &virtual_feedback) {
+    // 复制基本字段
+    virtual_feedback.cnt = real_feedback.cnt;
+    virtual_feedback.robot_status_word = real_feedback.robot_status_word;
+    virtual_feedback.robot_error_code = real_feedback.robot_error_code;
+
+    // 躯干 (0-5) 和右臂 (13-19) 的电机状态保持为0
+    // 左臂 (6-12) <- real[0-6]
+    for (int i = 0; i < ndof_config_; ++i) {
+        virtual_feedback.al_status[first_arm_joint_index_ + i] = real_feedback.al_status[i];
+        virtual_feedback.motor_error_code[first_arm_joint_index_ + i] = real_feedback.motor_error_code[i];
+        virtual_feedback.motor_temperature[first_arm_joint_index_ + i] = real_feedback.motor_temperature[i];
+        virtual_feedback.position[first_arm_joint_index_ + i] = real_feedback.position[i];
+        virtual_feedback.velocity[first_arm_joint_index_ + i] = real_feedback.velocity[i];
+        virtual_feedback.torque[first_arm_joint_index_ + i] = real_feedback.torque[i];
+    }
+}
+
+// Arm 模式虚拟关节转换函数：将20关节虚拟控制提取为7关节实际控制
+void RobotServer::ExtractVirtual20To7(const RobotControl &virtual_control, RobotControl &real_control) {
+    // 复制基本字段
+    real_control.cnt = virtual_control.cnt;
+    real_control.robot_control_word = virtual_control.robot_control_word;
+    // Arm无底盘控制，跳过底盘控制字段
+
+    // 左臂 (0-6) <- virtual[6-12]
     for (int i = 0; i < ndof_config_; ++i) {
         real_control.position[i] = virtual_control.position[first_arm_joint_index_ + i];
         real_control.velocity[i] = virtual_control.velocity[first_arm_joint_index_ + i];
