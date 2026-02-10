@@ -37,5 +37,5 @@ elif [ "$ARM_MODE" = true ]; then
     echo "📄 使用配置: robot.cfg (Arm 模式)"
     taskset -c 6 ../install/w1_server/lib/w1_server/w1_server --arm
 else
-    taskset -c 6 ros2 run w1_server w1_server
+    taskset -c 6 ../install/w1_server/lib/w1_server/w1_server
 fi
