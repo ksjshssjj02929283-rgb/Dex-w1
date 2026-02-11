@@ -4880,22 +4880,40 @@ class W1Manager:
 
     def plan_linear_dual_arm_sync(self,
                                   task_dict: dict,
+                                  start_qpos: np.ndarray,
+                                  start_left_arm_ee_qpos: np.ndarray,
+                                  start_right_arm_ee_qpos: np.ndarray,
                                   speed_ratio: float = 1.0,
                                   is_local: bool = True,
                                   use_collision_validator: bool = True):
+        """
+        Fixed connection between left and right arm, plan linear trajectory for dual arm or whole body motion.
+
+        Args:
+            task_dict (dict): same as previous function parameters, but only support one arm task at the same time
+            start_qpos (np.ndarray, shape=(20,)): the start joint position of robot, for w1 should be (20,)
+            start_left_arm_ee_qpos (np.ndarray, shape=(N,)): the start left arm ee qpos
+            start_right_arm_ee_qpos (np.ndarray, shape=(N,)): the start right arm ee qpos
+            speed_ratio (float, optional): a ratio to scale the default joint velocity. Defaults to 1.0.
+            is_local (bool, optional): whether the target pose in task_dict is in local frame or global frame. Defaults to True.
+            use_collision_validator (bool, optional): whether to use collision validator to check the trajectory safety. Defaults to True.
+
+        Notes:
+            - Only support one arm task in task_dict at the same time
+            - if there isn't any end effectors, start_left_arm_ee_qpos and start_right_arm_ee_qpos can be set to None 
+        """
         arml_kine, armr_kine = self._get_arm_kine(
             "left_arm"), self._get_arm_kine("right_arm")
 
-        res, cur_qpos = self.get_current_qpos()
-        cur_head_qpos = cur_qpos[self.real_head_idx]
-        cur_torso_qpos = cur_qpos[self.real_torso_idx]
-        cur_arml_qpos = cur_qpos[self.real_arml_idx]
-        cur_armr_qpos = cur_qpos[self.real_armr_idx]
+        cur_head_qpos = start_qpos[self.real_head_idx]
+        cur_torso_qpos = start_qpos[self.real_torso_idx]
+        cur_arml_qpos = start_qpos[self.real_arml_idx]
+        cur_armr_qpos = start_qpos[self.real_armr_idx]
         res, cur_arml_pose = arml_kine.get_fk(cur_arml_qpos)
         res, cur_armr_pose = armr_kine.get_fk(cur_armr_qpos)
 
         cur_arml_base_tf, cur_armr_base_tf = self._pin_kine.get_arm_base_tf(
-            real_qpos=cur_qpos)
+            real_qpos=start_qpos)
         if not is_local:
             cur_arml_pose = cur_arml_base_tf @ cur_arml_pose
             cur_armr_pose = cur_armr_base_tf @ cur_armr_pose
@@ -5062,12 +5080,10 @@ class W1Manager:
                     "Align dual arm traj failed in plan_linear_dual_arm_sync.")
                 return StatusCode.FAIL, None
             if use_collision_validator:
-                cur_left_ee_qpos = self.get_current_qpos("left_arm_ee")[1]
-                cur_right_ee_qpos = self.get_current_qpos("right_arm_ee")[1]
                 if self._is_traj_collision(
                         qpos_array=move_arml_armr_traj,
-                        left_arm_start_ee_qpos=cur_left_ee_qpos,
-                        right_arm_start_ee_qpos=cur_right_ee_qpos,
+                        left_arm_start_ee_qpos=start_left_arm_ee_qpos,
+                        right_arm_start_ee_qpos=start_right_arm_ee_qpos,
                         left_arm_ee_trigger_list=None,
                         right_arm_ee_trigger_list=None) != StatusCode.FAIL:
                     self.logger.error(
@@ -5078,7 +5094,7 @@ class W1Manager:
 
         else:
             res, full_body_joint_traj = self.cartesian_joint_planner.plan_whole_body(
-                start_qpos=cur_qpos,
+                start_qpos=start_qpos,
                 left_end_effector_traj=left_pose_array,
                 right_end_effector_traj=right_pose_array)
             if not res:
@@ -5090,7 +5106,7 @@ class W1Manager:
             res, full_body_joint_traj_ = self.cartesian_joint_planner.generate_dense_whole_body_joint_traj(
                 whole_body_joint_traj=full_body_joint_traj,
                 qvel_limits_array=qvel_limits_array_,
-                current_qpos=cur_qpos)
+                current_qpos=start_qpos)
 
             if not res:
                 self.logger.error(
@@ -5101,12 +5117,10 @@ class W1Manager:
             move_arml_armr_traj = full_body_joint_traj_
 
             if use_collision_validator:
-                cur_left_ee_qpos = self.get_current_qpos("left_arm_ee")[1]
-                cur_right_ee_qpos = self.get_current_qpos("right_arm_ee")[1]
                 if self._is_traj_collision(
                         qpos_array=move_arml_armr_traj,
-                        left_arm_start_ee_qpos=cur_left_ee_qpos,
-                        right_arm_start_ee_qpos=cur_right_ee_qpos,
+                        left_arm_start_ee_qpos=start_left_arm_ee_qpos,
+                        right_arm_start_ee_qpos=start_right_arm_ee_qpos,
                         left_arm_ee_trigger_list=None,
                         right_arm_ee_trigger_list=None) != StatusCode.FAIL:
                     self.logger.error(
@@ -5121,8 +5135,27 @@ class W1Manager:
                                   is_local: bool = True,
                                   use_collision_validator: bool = True):
 
+        res, cur_qpos = self.get_current_qpos()
+        if res.value < 0:
+            self.logger.error(
+                "Function: move_linear_dual_arm_sync(), failed to get current qpos"
+            )
+            return res
+
+        res, cur_armlee_qpos = self.get_current_qpos("left_arm_ee")
+        if res.value < 0:
+            self.logger.error("Get current left arm ee qpos failed.")
+            return res
+        res, cur_armree_qpos = self.get_current_qpos("right_arm_ee")
+        if res.value < 0:
+            self.logger.error("Get current right arm ee qpos failed.")
+            return res
+
         res, full_body_traj = self.plan_linear_dual_arm_sync(
             task_dict=task_dict,
+            start_qpos=cur_qpos,
+            start_left_arm_ee_qpos=cur_armlee_qpos,
+            start_right_arm_ee_qpos=cur_armree_qpos,
             speed_ratio=speed_ratio,
             is_local=is_local,
             use_collision_validator=use_collision_validator)
