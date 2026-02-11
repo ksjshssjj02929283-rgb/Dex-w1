@@ -10,6 +10,7 @@ from sensor_msgs.msg import JointState
 from joint_interfaces.msg import JointVelocityTorqueLimitFeedback, JointPositionControl
 from PyQt5.QtCore import Qt
 import time  # 新增
+import argparse  # 新增
 
 class CustomTableWidget(QTableWidget):
     def __init__(self, send_data, parent=None):
@@ -57,9 +58,10 @@ class CustomTableWidget(QTableWidget):
         super().keyPressEvent(event)
 
 class JointControlWidget(QWidget):
-    def __init__(self, ros_node):
+    def __init__(self, ros_node, step_mode=False):
         super().__init__()
         self.ros_node = ros_node
+        self.step_mode = step_mode
         self.setFixedSize(1600, 700)
 
         self.feedback_table = QTableWidget()
@@ -204,6 +206,11 @@ class JointControlWidget(QWidget):
 
             # 修改 target_position 时启动/更新计划
             if changed_col == 1:  # position 列
+                # step 模式下直接一次性下发，不进行插值
+                if self.step_mode:
+                    self.motion_plans.pop(name, None)
+                    self.ros_node.publish_control([{'name': name, 'target_position': target_position}])
+                    return
                 # 若速度为0则直接一次性下发
                 if target_velocity <= 0.0:
                     self.motion_plans.pop(name, None)
@@ -332,7 +339,13 @@ def main():
     rclpy.init()
     app = QApplication(sys.argv)
 
-    use_sim = '--sim' in sys.argv or '-s' in sys.argv
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--sim', '-s', action='store_true', help='Use simulation topics')
+    parser.add_argument('--step', action='store_true', help='Step mode: directly publish target position without interpolation')
+    args = parser.parse_args()
+
+    use_sim = args.sim
+    step_mode = args.step
 
     node_holder = {}
 
@@ -343,9 +356,9 @@ def main():
     ros_node = ROS2Node(update_callback, use_sim=use_sim)
     node_holder['ros_node'] = ros_node
 
-    widget = JointControlWidget(ros_node)
+    widget = JointControlWidget(ros_node, step_mode=step_mode)
     node_holder['widget'] = widget
-    widget.setWindowTitle(f"Joint Control Interface{' [SIM]' if use_sim else ''}")
+    widget.setWindowTitle(f"Joint Control Interface{' [SIM]' if use_sim else ''}{' [STEP]' if step_mode else ''}")
     widget.show()
 
     qt_ros_timer = QTimer()

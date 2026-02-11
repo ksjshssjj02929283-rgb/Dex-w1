@@ -112,7 +112,7 @@ void RobotServer::InitParamConfig() {
     auto config_path = server_data_dir_ / "w1_config.json";
 
     const std::set<std::string> kAllowedRootKeys{"enable_ruckig", "enable_chassis_shaper", "enable_torso_shaper",
-                                                 "enable_record"};
+                                                 "enable_record", "enable_butterworth_filter"};
 
     nlohmann::json root;
     if (!std::filesystem::exists(config_path)) {
@@ -120,6 +120,7 @@ void RobotServer::InitParamConfig() {
         root["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
         root["enable_torso_shaper"] = this->enable_torso_shaper_.load();
         root["enable_record"] = this->enable_record_;
+        root["enable_butterworth_filter"] = this->enable_butterworth_filter_.load();
 
         std::ofstream ofs(config_path);
         ofs << root.dump(2);
@@ -160,11 +161,16 @@ void RobotServer::InitParamConfig() {
         root["enable_record"] = this->enable_record_;
         need_rewrite = true;
     }
+    if (!root.contains("enable_butterworth_filter")) {
+        root["enable_butterworth_filter"] = this->enable_butterworth_filter_.load();
+        need_rewrite = true;
+    }
 
     this->enable_ruckig_ = root.value("enable_ruckig", this->enable_ruckig_);
     this->enable_chassis_shaper_ = root.value("enable_chassis_shaper", this->enable_chassis_shaper_.load());
     this->enable_torso_shaper_ = root.value("enable_torso_shaper", this->enable_torso_shaper_.load());
     this->enable_record_ = root.value("enable_record", this->enable_record_);
+    this->enable_butterworth_filter_ = root.value("enable_butterworth_filter", this->enable_butterworth_filter_.load());
 
     // A1 和 Arm 模式下禁用 torso shaper
     if (robot_mode_ != RobotMode::W1) {
@@ -176,6 +182,7 @@ void RobotServer::InitParamConfig() {
     root_clean["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
     root_clean["enable_torso_shaper"] = this->enable_torso_shaper_.load();
     root_clean["enable_record"] = this->enable_record_;
+    root_clean["enable_butterworth_filter"] = this->enable_butterworth_filter_.load();
 
     if (need_rewrite) {
         std::ofstream ofs(config_path);
@@ -184,14 +191,16 @@ void RobotServer::InitParamConfig() {
 
     RCLCPP_INFO(this->get_logger(),
                 "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_chassis_shaper=%s, enable_torso_shaper=%s, "
-                "enable_record=%s)",
+                "enable_record=%s, enable_butterworth_filter=%s)",
                 config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
                 this->enable_chassis_shaper_.load() ? "true" : "false",
-                this->enable_torso_shaper_.load() ? "true" : "false", this->enable_record_ ? "true" : "false");
+                this->enable_torso_shaper_.load() ? "true" : "false", this->enable_record_ ? "true" : "false",
+                this->enable_butterworth_filter_.load() ? "true" : "false");
     LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_
              << ", enable_chassis_shaper=" << this->enable_chassis_shaper_.load()
              << ", enable_torso_shaper=" << this->enable_torso_shaper_.load()
-             << ", enable_record=" << this->enable_record_;
+             << ", enable_record=" << this->enable_record_
+             << ", enable_butterworth_filter=" << this->enable_butterworth_filter_.load();
 }
 
 void RobotServer::TorqueControlThreadFunc() {
@@ -401,7 +410,9 @@ void RobotServer::TorqueControlThreadFunc() {
                         break;
                 }
                 // 滤波关节位置指令
-                robot_control_.position[i] = butterworth_filter_[i]->Apply(robot_control_.position[i]);
+                if (this->enable_butterworth_filter_.load()) {
+                    robot_control_.position[i] = butterworth_filter_[i]->Apply(robot_control_.position[i]);
+                }
 
                 // 对 torso J1 (索引 0) 应用 EI 输入整形
                 if (i == 0) {
@@ -793,6 +804,7 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
         update_bool_param("enable_record", this->enable_record_);
         update_atomic_bool_param("enable_chassis_shaper", this->enable_chassis_shaper_);
         update_atomic_bool_param("enable_torso_shaper", this->enable_torso_shaper_);
+        update_atomic_bool_param("enable_butterworth_filter", this->enable_butterworth_filter_);
 
     } catch (const std::exception &e) {
         RCLCPP_WARN(this->get_logger(), "Failed to parse /control/debug JSON: %s", e.what());
