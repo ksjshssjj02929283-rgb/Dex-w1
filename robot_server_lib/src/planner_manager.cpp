@@ -51,9 +51,7 @@ void PlannerManager::LoopOnce() {
         time_meta.measurement_time = TimePointSystem::Invalid();
     } else {
         time_meta.measurement_time = TimePointSystem::Now();
-        // 安全及错误检测 Safety check
-        if (!CheckMeasurementSafety(measurement, *robot_model_.params_ptr, robot_property_.error_code) &&
-            manager_state_ != Status::Error) {
+        if (!CheckSafety(measurement, robot_model_, robot_property_.error_code) && manager_state_ != Status::Error) {
             runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
             ReportRequestStatus(runtime_data_.latest_processing_request_id,
                                 runtime_data_.latest_processing_request_type, RequestStatus::ErrorDrop, manager_state_);

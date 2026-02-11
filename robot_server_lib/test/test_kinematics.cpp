@@ -3,7 +3,9 @@
 #include <Eigen/Dense>
 #include <chrono>
 
+#include "inverse_dynamics.h"
 #include "kinematics_include.h"
+#include "safety_check.h"
 #include "utils.h"
 
 using namespace robot_server_lib;
@@ -17,7 +19,6 @@ TEST(SRSKinematicsTest, Kinematics) {
     bool success = false;
     auto pose_in = pose;
     auto q_in_and_out = q_in_left;
-    // 打印耗时
     auto start_time = std::chrono::high_resolution_clock::now();
     success = srs_kine_left.GetIK(pose_in, q_in_and_out);
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -28,4 +29,46 @@ TEST(SRSKinematicsTest, Kinematics) {
     for (int i = 0; i < q_in_left.size(); ++i) {
         EXPECT_NEAR(q_in_left[i], q_in_and_out[i], 0.01) << "Joint " << i << "fk ik mismatch";
     }
+}
+
+TEST(SRSKinematicsTest, GetAllJointLimitsFromURDF) {
+    const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
+    const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot.cfg";
+    RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
+
+    const auto &model = *robot_model.model_ptr;
+    const auto &joint_names = robot_model.params_ptr->joint_command_sequence_by_name;
+
+    Eigen::VectorXd lb = dynamics::MapToParamOrder(model, model.lowerPositionLimit, joint_names);
+    Eigen::VectorXd ub = dynamics::MapToParamOrder(model, model.upperPositionLimit, joint_names);
+
+    std::cout << "All Joint Limits (Param Order, " << ndof_robot << " joints):" << std::endl;
+    for (int i = 0; i < ndof_robot; ++i) {
+        std::cout << "  Joint " << i << " (" << joint_names[i] << "): [" << lb[i] << ", " << ub[i] << "]" << std::endl;
+    }
+
+    EXPECT_EQ(lb.size(), ndof_robot);
+    EXPECT_EQ(ub.size(), ndof_robot);
+
+    for (int i = 0; i < ndof_robot; ++i) {
+        EXPECT_LE(lb[i], ub[i]) << "Joint " << i << " (" << joint_names[i] << ") lower > upper";
+    }
+}
+
+TEST(SRSKinematicsTest, CheckSafety) {
+    const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
+    const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot.cfg";
+    RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
+
+    JointMeasurement measurement;
+    measurement.position = Eigen::VectorXd::Zero(ndof_robot);
+    measurement.velocity = Eigen::VectorXd::Zero(ndof_robot);
+    measurement.effort = Eigen::VectorXd::Zero(ndof_robot);
+
+    ErrorCode error_code = ErrorCode::NoError;
+
+    bool result = CheckSafety(measurement, robot_model, error_code);
+    EXPECT_TRUE(result);
+    EXPECT_EQ(error_code, ErrorCode::NoError);
+    std::cout << "CheckSafety with zero measurement: passed" << std::endl;
 }

@@ -28,7 +28,7 @@ constexpr double simulation_dt = double(simulation_dt_micro) / 1e6;
 constexpr double IdleVelocityThreshold = 0.05 / 180 * M_PI;  // 静止状态的速度阈值
 constexpr double PositionThreshold = 1e-6;                   // 位置误差容忍度
 constexpr double FloatZeroTol = 1e-9;                        // 浮点数零值容忍度
-constexpr double StreamingCommandTimeout = 10;              // 流式命令超时10秒
+constexpr double StreamingCommandTimeout = 10;               // 流式命令超时10秒
 
 using Int64 = std::int64_t;
 using VectorDof = Eigen::Matrix<double, ndof_robot, 1>;
@@ -51,7 +51,14 @@ enum class RunMode {
 
 enum class Status { Init, Idle, Running, Error };
 
-enum class ErrorCode { NoError, InvalidRequest, VelocityOverLimit, TorqueOverLimit, IKFailed };
+enum class ErrorCode {
+    NoError,
+    InvalidRequest,
+    VelocityOverLimit,
+    TorqueOverLimit,
+    PositionOverLimit,
+    IKFailed
+};
 
 enum class RequestType {
     Empty,  // empty command

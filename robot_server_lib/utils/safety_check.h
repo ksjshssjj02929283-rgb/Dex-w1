@@ -1,11 +1,10 @@
 #pragma once
 #include "data_structure.h"
-namespace robot_server_lib {
-constexpr double velocity_error_threshold = 1.5;  // 错误阈值比例
-constexpr double torque_error_threshold = 1.5;    // 错误阈值比例
+#include "inverse_dynamics.h"
 
-// 检查关节速度是否超出限制
-bool CheckMeasurementSafety(const JointMeasurement& joint_measurement,
-                            const RobotParams& robot_params,
-                            ErrorCode& error_code);
+namespace robot_server_lib {
+constexpr double torque_error_threshold = 2.0;
+constexpr double velocity_error_threshold = 1.5;
+
+bool CheckSafety(const JointMeasurement& joint_measurement, const RobotModel& robot_model, ErrorCode& error_code);
 }  // namespace robot_server_lib

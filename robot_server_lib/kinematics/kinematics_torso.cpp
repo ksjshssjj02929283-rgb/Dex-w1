@@ -97,5 +97,7 @@ bool TorsoKinematics::GetIK(const PoseQuaternion& pose, Eigen::VectorXd& q_out, 
     return true;
 }
 
+std::pair<Eigen::VectorXd, Eigen::VectorXd> TorsoKinematics::GetQposLimits() const { return {qmin_, qmax_}; }
+
 }  // namespace kinematics
 }  // namespace robot_server_lib

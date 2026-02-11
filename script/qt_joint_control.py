@@ -286,14 +286,16 @@ class JointControlWidget(QWidget):
                 item.setText(new_text)
 
 class ROS2Node(Node):
-    def __init__(self, update_callback):
+    def __init__(self, update_callback, use_sim=False):
         super().__init__('joint_control_gui')
         self.update_callback = update_callback
         self.joint_states = []
         self.velocity_torque_limits = {}
-        self.create_subscription(JointState, '/feedback/joint', self.joint_state_callback, 10)
-        self.create_subscription(JointVelocityTorqueLimitFeedback, '/feedback/joint_velocity_torque_limit', self.limit_feedback_callback, 10)
-        self.position_control_pub = self.create_publisher(JointPositionControl, '/control/joint_position', 10)
+
+        suffix = '_sim' if use_sim else ''
+        self.create_subscription(JointState, f'/feedback/joint{suffix}', self.joint_state_callback, 10)
+        self.create_subscription(JointVelocityTorqueLimitFeedback, f'/feedback/joint_velocity_torque_limit{suffix}', self.limit_feedback_callback, 10)
+        self.position_control_pub = self.create_publisher(JointPositionControl, f'/control/joint_position{suffix}', 10)
 
     def joint_state_callback(self, msg):
         self.joint_states = []
@@ -330,17 +332,20 @@ def main():
     rclpy.init()
     app = QApplication(sys.argv)
 
+    use_sim = '--sim' in sys.argv or '-s' in sys.argv
+
     node_holder = {}
 
     def update_callback():
         if 'widget' in node_holder:
             node_holder['widget'].update_feedback_table()
 
-    ros_node = ROS2Node(update_callback)
+    ros_node = ROS2Node(update_callback, use_sim=use_sim)
     node_holder['ros_node'] = ros_node
 
     widget = JointControlWidget(ros_node)
     node_holder['widget'] = widget
+    widget.setWindowTitle(f"Joint Control Interface{' [SIM]' if use_sim else ''}")
     widget.show()
 
     qt_ros_timer = QTimer()
