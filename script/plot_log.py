@@ -245,43 +245,36 @@ def main():
         os.makedirs(save_dir, exist_ok=True)
         plt.switch_backend('Agg')
 
-    # 每个手臂一张大图，每张图包含7个关节（每个关节一列，4行）
-    def plot_arm(arm_name, joint_indices, arm_side):
-        rows = 4  # position, torque, pos_error, tor_error
+    # 每个手臂一张大图，每张图包含7个关节（每个关节一列，5行）
+    def plot_arm(arm_name, joint_indices, arm_side, times_input):
+        rows = 5  # position, torque, pos_error, velocity, spectrum
         cols = len(joint_indices)  # 7个关节
         # 将整张大图分辨率设置为 1920x1080 像素（每张大图）
-        # figsize 单位为英寸，dpi*figsize = 像素。这里使用 dpi=100 -> figsize=(19.2, 10.8)
-        fig, axes = plt.subplots(rows, cols, figsize=(19.2, 10.8), dpi=100, sharex=True)
+        # figsize 单位为英寸，dpi*figsize = 像素。这里使用 dpi=100 -> figsize=(19.2, 14)
+        fig, axes = plt.subplots(rows, cols, figsize=(19.2, 14), dpi=100)
 
         # 将所有坐标轴刻度格式化为小数点后3位
         for ax in axes.flatten():
             ax.xaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
             ax.yaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
-        # 最大化显示
-        mng = plt.get_current_fig_manager()
-        try:
-            mng.window.state('zoomed')  # Windows
-        except:
-            try:
-                mng.window.showMaximized()  # Linux
-            except:
-                try:
-                    mng.frame.Maximize(True)  # macOS
-                except:
-                    pass
 
         for ci, j in enumerate(joint_indices):
             joint_num = ci + 1
-            col_title = f"{arm_side} J{joint_num}"
+            # torso 关节最后两个改名为 head1, head2
+            if arm_name == "Torso" and ci >= 4:
+                col_title = f"Head{ci - 3}"
+            else:
+                col_title = f"{arm_side} J{joint_num}"
 
             # 1) position（度）
             ax = axes[0, ci]
             ax.plot(times, pos_deg[:, j], label="position (deg)", color="tab:blue", linewidth=1.2)
             if np.isfinite(pos_cmd_deg[:, j]).any():
-                ax.plot(times, pos_cmd_deg[:, j], label="position_cmd (deg)", 
+                ax.plot(times, pos_cmd_deg[:, j], label="position_cmd (deg)",
                        color="tab:green", linewidth=1.2, linestyle="--")
             ax.grid(True, alpha=0.3, linestyle=':')
             ax.set_title(col_title, fontsize=12)
+            ax.set_xlabel("Time [s]", fontsize=11)
             if ci == 0:
                 ax.set_ylabel("Position [rad]", fontsize=11)
                 ax.legend(loc="best", fontsize=9)
@@ -310,9 +303,10 @@ def main():
             ax = axes[1, ci]
             ax.plot(times, tor[:, j], label="torque", color="tab:red", linewidth=1.2)
             if np.isfinite(tor_ff[:, j]).any():
-                ax.plot(times, tor_ff[:, j], label="torque_cmd", 
+                ax.plot(times, tor_ff[:, j], label="torque_cmd",
                        color="tab:orange", linewidth=1.2, linestyle="--")
             ax.grid(True, alpha=0.3, linestyle=':')
+            ax.set_xlabel("Time [s]", fontsize=11)
             if ci == 0:
                 ax.set_ylabel("Torque [Nm]", fontsize=11)
                 ax.legend(loc="best", fontsize=9)
@@ -337,13 +331,13 @@ def main():
             # 3) position error（度）
             ax = axes[2, ci]
             if np.isfinite(pos_err_deg[:, j]).any():
-                ax.plot(times, pos_err_deg[:, j], label="pos_error (deg)", 
+                ax.plot(times, pos_err_deg[:, j], label="pos_error (deg)",
                        color="tab:purple", linewidth=1.2)
                 if ci == 0:
                     ax.legend(loc="best", fontsize=9)
             else:
-                ax.text(0.5, 0.5, "No position error data", 
-                       transform=ax.transAxes, ha="center", va="center", 
+                ax.text(0.5, 0.5, "No position error data",
+                       transform=ax.transAxes, ha="center", va="center",
                        alpha=0.6, fontsize=10)
             # 新增：强制 position error 纵轴范围至少为 0.1 度
             try:
@@ -360,19 +354,20 @@ def main():
             except Exception:
                 pass
             ax.grid(True, alpha=0.3, linestyle=':')
+            ax.set_xlabel("Time [s]", fontsize=11)
             if ci == 0:
                 ax.set_ylabel("Pos Error [deg]", fontsize=11)
 
             # 4) velocity（deg/s）  — 用速度替换力矩偏差图，单位改为度/秒
             ax = axes[3, ci]
             if np.isfinite(vel_deg[:, j]).any():
-                ax.plot(times, vel_deg[:, j], label="velocity (deg/s)", 
+                ax.plot(times, vel_deg[:, j], label="velocity (deg/s)",
                        color="tab:brown", linewidth=1.2)
                 if ci == 0:
                     ax.legend(loc="best", fontsize=9)
             else:
-                ax.text(0.5, 0.5, "No velocity data", 
-                       transform=ax.transAxes, ha="center", va="center", 
+                ax.text(0.5, 0.5, "No velocity data",
+                       transform=ax.transAxes, ha="center", va="center",
                        alpha=0.6, fontsize=10)
             ax.grid(True, alpha=0.3, linestyle=':')
             ax.set_xlabel("Time [s]", fontsize=11)
@@ -394,9 +389,53 @@ def main():
             if ci == 0:
                 ax.set_ylabel("Velocity [deg/s]", fontsize=11)
 
-        # 调整布局，为标题留出更多空间，并进一步增大子图间的水平/垂直间距
-        fig.subplots_adjust(top=0.96, bottom=0.03, left=0.05, right=0.96,
-                     hspace=0.1, wspace=0.4)
+            # 5) position spectrum (FFT)
+            ax = axes[4, ci]
+            valid_pos_mask = np.isfinite(pos_deg[:, j])
+            valid_pos = pos_deg[:, j][valid_pos_mask]
+            if valid_pos.size >= 2:
+                # 使用有效位置对应的时间点来计算采样率
+                valid_times = times[valid_pos_mask]
+                time_diffs = np.diff(valid_times)
+                time_diffs = time_diffs[time_diffs > 0]
+                if len(time_diffs) >= 1:
+                    dt = np.mean(time_diffs)
+                else:
+                    dt = 0.001
+                fs = 1.0 / dt if dt > 0 else 1000.0
+                n = valid_pos.size
+                pos_centered = valid_pos - np.mean(valid_pos)
+                fft_vals = np.fft.fft(pos_centered)
+                fft_freq = np.fft.fftfreq(n, d=dt)
+                pos_mask = fft_freq > 0
+                fft_freq_pos = fft_freq[pos_mask]
+                fft_mag = np.abs(fft_vals[pos_mask])
+                fft_mag_norm = 2.0 / n * fft_mag
+                freq_mask = fft_freq_pos <= 10
+                ax.plot(fft_freq_pos[freq_mask], fft_mag_norm[freq_mask],
+                       color="tab:blue", linewidth=1.0)
+                ax.grid(True, alpha=0.3, linestyle=':')
+                if fft_mag_norm[freq_mask].size > 0:
+                    peak_idx = np.argmax(fft_mag_norm[freq_mask])
+                    if fft_mag_norm[freq_mask][peak_idx] > 0.01 * fft_mag_norm[freq_mask].max():
+                        peak_freq = fft_freq_pos[freq_mask][peak_idx]
+                        ax.axvline(x=peak_freq, color='tab:red', linestyle='--', alpha=0.7, linewidth=1)
+                        ax.annotate(f'{peak_freq:.1f}Hz',
+                                   xy=(peak_freq, fft_mag_norm[freq_mask][peak_idx]),
+                                   xytext=(peak_freq * 1.2, fft_mag_norm[freq_mask][peak_idx] * 0.8),
+                                   fontsize=8, color='tab:red')
+                ax.set_xlim(0, 10)
+                ax.set_xlabel("Frequency [Hz]", fontsize=11)
+            else:
+                ax.text(0.5, 0.5, "No spectrum data",
+                       transform=ax.transAxes, ha="center", va="center",
+                       alpha=0.6, fontsize=10)
+                ax.set_xlabel("Frequency [Hz]", fontsize=11)
+            if ci == 0:
+                ax.set_ylabel("Spectrum [deg]", fontsize=11)
+
+        # 调整布局
+        fig.tight_layout(rect=[0.01, 0.01, 1, 0.98], h_pad=2, w_pad=0.5)
         return fig
 
     # 左臂：关节索引 6-12 (7个关节)
@@ -410,17 +449,17 @@ def main():
     if args.torso:
         if args.debug:
             print("[DEBUG] Creating Torso plot only...")
-        figs.append(plot_arm("Torso", torso_joints, "Torso"))
+        figs.append(plot_arm("Torso", torso_joints, "Torso", times))
     else:
         if args.debug:
             print("[DEBUG] Creating Torso plot...")
-        figs.append(plot_arm("Torso", torso_joints, "Torso"))
+        figs.append(plot_arm("Torso", torso_joints, "Torso", times))
         if args.debug:
             print("[DEBUG] Creating Left Arm plot...")
-        figs.append(plot_arm("Left Arm", left_joints, "Left"))
+        figs.append(plot_arm("Left Arm", left_joints, "Left", times))
         if args.debug:
             print("[DEBUG] Creating Right Arm plot...")
-        figs.append(plot_arm("Right Arm", right_joints, "Right"))
+        figs.append(plot_arm("Right Arm", right_joints, "Right", times))
     if args.debug:
         print(f"[DEBUG] {len(figs)} figures created successfully")
 
