@@ -61,8 +61,16 @@ task_dict1 = {
 
 
 def test_move_linear_dual_arm_sync(task_dict):
+    res, cur_qpos = w1_manager.get_current_qpos()
+    res, cur_armlee_qpos = w1_manager.get_current_qpos("left_arm_ee")
+    res, cur_armree_qpos = w1_manager.get_current_qpos("right_arm_ee")
     res, full_body_traj = w1_manager.plan_linear_dual_arm_sync(
-        task_dict=task_dict, is_local=False, use_collision_validator=True)
+        task_dict=task_dict,
+        start_qpos=cur_qpos,
+        start_left_arm_ee_qpos=cur_armlee_qpos,
+        start_right_arm_ee_qpos=cur_armree_qpos,
+        is_local=False,
+        use_collision_validator=True)
     return res, full_body_traj
 
 
