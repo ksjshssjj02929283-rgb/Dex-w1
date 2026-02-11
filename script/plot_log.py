@@ -54,7 +54,7 @@ def parse_line(line, debug=False):
             print(f"[DEBUG] Failed to parse JSON: {e}")
         return None
 
-    # 校验存在的数组长度是否为 20
+    # 校验存在的数组长度是否为 20（标准模式）或 14（A1模式）
     array_keys = [
         "joint_position",
         "joint_velocity",
@@ -65,9 +65,8 @@ def parse_line(line, debug=False):
     for k in array_keys:
         if k in data:
             arr = data[k]
-            if not isinstance(arr, list) or len(arr) != 20:
-                if debug:
-                    print(f"[DEBUG] Invalid array length for {k}: {len(arr) if isinstance(arr, list) else type(arr)}")
+            if not isinstance(arr, list) or len(arr) not in (20, 14):
+                print(f"[DEBUG] Invalid array length for {k}: {len(arr) if isinstance(arr, list) else type(arr)}")
                 return None
 
     return ts, data
@@ -114,6 +113,16 @@ def main():
         "--torso",
         action="store_true",
         help="Only plot torso data (joint 0-5).",
+    )
+    parser.add_argument(
+        "--a1",
+        action="store_true",
+        help="A1 mode: only plot arms (joint 6-19, 14 joints).",
+    )
+    parser.add_argument(
+        "--hz",
+        action="store_true",
+        help="Show frequency spectrum for each joint.",
     )
     args = parser.parse_args()
 
@@ -203,13 +212,23 @@ def main():
     times = np.array([(s[0] - samples[0][0]).total_seconds() for s in samples], dtype=float)
     n = len(samples)
 
-    # 为每个键准备 Nx20 的数组，缺失数据用 NaN 填充
+    # 根据第一个有效样本确定关节数量（14=A1模式，20=标准模式）
+    joint_count = 14
+    for _, d in samples:
+        if "joint_position" in d and isinstance(d["joint_position"], list):
+            joint_count = len(d["joint_position"])
+            break
+
+    if args.debug:
+        print(f"[DEBUG] Joint count: {joint_count} ({'A1' if joint_count == 14 else 'Standard'} mode)")
+
+    # 为每个键准备 Nx关节数 的数组，缺失数据用 NaN 填充
     def build_array(key):
-        arr = np.full((n, 20), np.nan, dtype=float)
+        arr = np.full((n, joint_count), np.nan, dtype=float)
         for i, (_, d) in enumerate(samples):
             if key in d:
                 v = d[key]
-                if isinstance(v, list) and len(v) == 20:
+                if isinstance(v, list) and len(v) == joint_count:
                     arr[i, :] = np.array(v, dtype=float)
         return arr
 
@@ -220,7 +239,7 @@ def main():
     vel = build_array("joint_velocity")
 
     if args.debug:
-        print(f"[DEBUG] Data array shape: ({n}, 20)")
+        print(f"[DEBUG] Data array shape: ({n}, {joint_count})")
         print(f"[DEBUG] Position data - NaN count: {np.sum(~np.isfinite(pos))}, valid: {np.sum(np.isfinite(pos))}")
         print(f"[DEBUG] Torque data - NaN count: {np.sum(~np.isfinite(tor))}, valid: {np.sum(np.isfinite(tor))}")
         print(f"[DEBUG] Velocity data - NaN count: {np.sum(~np.isfinite(vel))}, valid: {np.sum(np.isfinite(vel))}")
@@ -245,13 +264,12 @@ def main():
         os.makedirs(save_dir, exist_ok=True)
         plt.switch_backend('Agg')
 
-    # 每个手臂一张大图，每张图包含7个关节（每个关节一列，5行）
-    def plot_arm(arm_name, joint_indices, arm_side, times_input):
-        rows = 5  # position, torque, pos_error, velocity, spectrum
-        cols = len(joint_indices)  # 7个关节
-        # 将整张大图分辨率设置为 1920x1080 像素（每张大图）
-        # figsize 单位为英寸，dpi*figsize = 像素。这里使用 dpi=100 -> figsize=(19.2, 14)
-        fig, axes = plt.subplots(rows, cols, figsize=(19.2, 14), dpi=100)
+    # 每个手臂一张大图，每张图包含7个关节
+    # 如果启用 --hz，则添加频谱图（第5行）
+    def plot_arm(arm_name, joint_indices, arm_side, times_input, show_hz=False):
+        rows = 5 if show_hz else 4
+        cols = len(joint_indices)
+        fig, axes = plt.subplots(rows, cols, figsize=(19.2, 14 if show_hz else 11), dpi=100)
 
         # 将所有坐标轴刻度格式化为小数点后3位
         for ax in axes.flatten():
@@ -389,77 +407,85 @@ def main():
             if ci == 0:
                 ax.set_ylabel("Velocity [deg/s]", fontsize=11)
 
-            # 5) position spectrum (FFT)
-            ax = axes[4, ci]
-            valid_pos_mask = np.isfinite(pos_deg[:, j])
-            valid_pos = pos_deg[:, j][valid_pos_mask]
-            if valid_pos.size >= 2:
-                # 使用有效位置对应的时间点来计算采样率
-                valid_times = times[valid_pos_mask]
-                time_diffs = np.diff(valid_times)
-                time_diffs = time_diffs[time_diffs > 0]
-                if len(time_diffs) >= 1:
-                    dt = np.mean(time_diffs)
+            # 5) position spectrum (FFT) - only if --hz enabled
+            if show_hz:
+                ax = axes[4, ci]
+                valid_pos_mask = np.isfinite(pos_deg[:, j])
+                valid_pos = pos_deg[:, j][valid_pos_mask]
+                if valid_pos.size >= 2:
+                    valid_times = times[valid_pos_mask]
+                    time_diffs = np.diff(valid_times)
+                    time_diffs = time_diffs[time_diffs > 0]
+                    if len(time_diffs) >= 1:
+                        dt = np.mean(time_diffs)
+                    else:
+                        dt = 0.001
+                    fs = 1.0 / dt if dt > 0 else 1000.0
+                    n = valid_pos.size
+                    pos_centered = valid_pos - np.mean(valid_pos)
+                    fft_vals = np.fft.fft(pos_centered)
+                    fft_freq = np.fft.fftfreq(n, d=dt)
+                    pos_mask = fft_freq > 0
+                    fft_freq_pos = fft_freq[pos_mask]
+                    fft_mag = np.abs(fft_vals[pos_mask])
+                    fft_mag_norm = 2.0 / n * fft_mag
+                    freq_mask = fft_freq_pos <= 10
+                    ax.plot(fft_freq_pos[freq_mask], fft_mag_norm[freq_mask],
+                           color="tab:blue", linewidth=1.0)
+                    ax.grid(True, alpha=0.3, linestyle=':')
+                    if fft_mag_norm[freq_mask].size > 0:
+                        peak_idx = np.argmax(fft_mag_norm[freq_mask])
+                        if fft_mag_norm[freq_mask][peak_idx] > 0.01 * fft_mag_norm[freq_mask].max():
+                            peak_freq = fft_freq_pos[freq_mask][peak_idx]
+                            ax.axvline(x=peak_freq, color='tab:red', linestyle='--', alpha=0.7, linewidth=1)
+                            ax.annotate(f'{peak_freq:.1f}Hz',
+                                       xy=(peak_freq, fft_mag_norm[freq_mask][peak_idx]),
+                                       xytext=(peak_freq * 1.2, fft_mag_norm[freq_mask][peak_idx] * 0.8),
+                                       fontsize=8, color='tab:red')
+                    ax.set_xlim(0, 10)
+                    ax.set_xlabel("Frequency [Hz]", fontsize=11)
                 else:
-                    dt = 0.001
-                fs = 1.0 / dt if dt > 0 else 1000.0
-                n = valid_pos.size
-                pos_centered = valid_pos - np.mean(valid_pos)
-                fft_vals = np.fft.fft(pos_centered)
-                fft_freq = np.fft.fftfreq(n, d=dt)
-                pos_mask = fft_freq > 0
-                fft_freq_pos = fft_freq[pos_mask]
-                fft_mag = np.abs(fft_vals[pos_mask])
-                fft_mag_norm = 2.0 / n * fft_mag
-                freq_mask = fft_freq_pos <= 10
-                ax.plot(fft_freq_pos[freq_mask], fft_mag_norm[freq_mask],
-                       color="tab:blue", linewidth=1.0)
-                ax.grid(True, alpha=0.3, linestyle=':')
-                if fft_mag_norm[freq_mask].size > 0:
-                    peak_idx = np.argmax(fft_mag_norm[freq_mask])
-                    if fft_mag_norm[freq_mask][peak_idx] > 0.01 * fft_mag_norm[freq_mask].max():
-                        peak_freq = fft_freq_pos[freq_mask][peak_idx]
-                        ax.axvline(x=peak_freq, color='tab:red', linestyle='--', alpha=0.7, linewidth=1)
-                        ax.annotate(f'{peak_freq:.1f}Hz',
-                                   xy=(peak_freq, fft_mag_norm[freq_mask][peak_idx]),
-                                   xytext=(peak_freq * 1.2, fft_mag_norm[freq_mask][peak_idx] * 0.8),
-                                   fontsize=8, color='tab:red')
-                ax.set_xlim(0, 10)
-                ax.set_xlabel("Frequency [Hz]", fontsize=11)
-            else:
-                ax.text(0.5, 0.5, "No spectrum data",
-                       transform=ax.transAxes, ha="center", va="center",
-                       alpha=0.6, fontsize=10)
-                ax.set_xlabel("Frequency [Hz]", fontsize=11)
-            if ci == 0:
-                ax.set_ylabel("Spectrum [deg]", fontsize=11)
+                    ax.text(0.5, 0.5, "No spectrum data",
+                           transform=ax.transAxes, ha="center", va="center",
+                           alpha=0.6, fontsize=10)
+                    ax.set_xlabel("Frequency [Hz]", fontsize=11)
+                if ci == 0:
+                    ax.set_ylabel("Spectrum [deg]", fontsize=11)
 
         # 调整布局
         fig.tight_layout(rect=[0.01, 0.01, 1, 0.98], h_pad=2, w_pad=0.5)
         return fig
 
-    # 左臂：关节索引 6-12 (7个关节)
-    left_joints = list(range(6, 13))
-    # 右臂：关节索引 13-19 (7个关节)
-    right_joints = list(range(13, 20))
+    # A1模式：只有双臂14个关节（数据数组索引0-13，对应原始关节6-19）
+    if args.a1:
+        left_joints = list(range(7))
+        right_joints = list(range(7, 14))
+    else:
+        left_joints = list(range(6, 13))
+        right_joints = list(range(13, 20))
     # Torso：关节索引 0-5 (6个关节)
     torso_joints = list(range(6))
 
     figs = []
-    if args.torso:
+    if args.a1:
+        if args.debug:
+            print("[DEBUG] Creating A1 mode plots (arms only)...")
+        figs.append(plot_arm("Left Arm", left_joints, "Left", times, show_hz=args.hz))
+        figs.append(plot_arm("Right Arm", right_joints, "Right", times, show_hz=args.hz))
+    elif args.torso:
         if args.debug:
             print("[DEBUG] Creating Torso plot only...")
-        figs.append(plot_arm("Torso", torso_joints, "Torso", times))
+        figs.append(plot_arm("Torso", torso_joints, "Torso", times, show_hz=args.hz))
     else:
         if args.debug:
             print("[DEBUG] Creating Torso plot...")
-        figs.append(plot_arm("Torso", torso_joints, "Torso", times))
+        figs.append(plot_arm("Torso", torso_joints, "Torso", times, show_hz=args.hz))
         if args.debug:
             print("[DEBUG] Creating Left Arm plot...")
-        figs.append(plot_arm("Left Arm", left_joints, "Left", times))
+        figs.append(plot_arm("Left Arm", left_joints, "Left", times, show_hz=args.hz))
         if args.debug:
             print("[DEBUG] Creating Right Arm plot...")
-        figs.append(plot_arm("Right Arm", right_joints, "Right", times))
+        figs.append(plot_arm("Right Arm", right_joints, "Right", times, show_hz=args.hz))
     if args.debug:
         print(f"[DEBUG] {len(figs)} figures created successfully")
 
