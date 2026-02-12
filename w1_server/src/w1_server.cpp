@@ -190,8 +190,12 @@ void RobotServer::InitParamConfig() {
     }
 
     RCLCPP_INFO(this->get_logger(),
-                "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_chassis_shaper=%s, enable_torso_shaper=%s, "
-                "enable_record=%s, enable_butterworth_filter=%s)",
+                "Loaded w1_config.json from: %s \n"
+                "enable_ruckig=%s, \n"
+                "enable_chassis_shaper=%s, \n"
+                "enable_torso_shaper=%s, \n"
+                "enable_record=%s, \n"
+                "enable_butterworth_filter=%s)",
                 config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
                 this->enable_chassis_shaper_.load() ? "true" : "false",
                 this->enable_torso_shaper_.load() ? "true" : "false", this->enable_record_ ? "true" : "false",

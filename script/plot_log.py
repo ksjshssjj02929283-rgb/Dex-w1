@@ -207,6 +207,7 @@ def main():
         return
 
     samples = filtered
+    start_timestamp = samples[0][0] # 获取记录开始的时间戳
 
     # 组装为时间序列（长度 = 样本条数），以保留样本的第一个时间为基点
     times = np.array([(s[0] - samples[0][0]).total_seconds() for s in samples], dtype=float)
@@ -266,10 +267,11 @@ def main():
 
     # 每个手臂一张大图，每张图包含7个关节
     # 如果启用 --hz，则添加频谱图（第5行）
-    def plot_arm(arm_name, joint_indices, arm_side, times_input, show_hz=False):
+    def plot_arm(arm_name, joint_indices, arm_side, times_input, start_timestamp, show_hz=False):
         rows = 5 if show_hz else 4
         cols = len(joint_indices)
         fig, axes = plt.subplots(rows, cols, figsize=(19.2, 14 if show_hz else 11), dpi=100)
+        fig.suptitle(f"{arm_name} (Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})", fontsize=10)
 
         # 将所有坐标轴刻度格式化为小数点后3位
         for ax in axes.flatten():
@@ -286,16 +288,16 @@ def main():
 
             # 1) position（度）
             ax = axes[0, ci]
-            ax.plot(times, pos_deg[:, j], label="position (deg)", color="tab:blue", linewidth=1.2)
+            ax.plot(times, pos_deg[:, j], label="position", color="tab:blue", linewidth=1.2)
             if np.isfinite(pos_cmd_deg[:, j]).any():
-                ax.plot(times, pos_cmd_deg[:, j], label="position_cmd (deg)",
+                ax.plot(times, pos_cmd_deg[:, j], label="position_cmd",
                        color="tab:green", linewidth=1.2, linestyle="--")
             ax.grid(True, alpha=0.3, linestyle=':')
-            ax.set_title(col_title, fontsize=12)
-            ax.set_xlabel("Time [s]", fontsize=11)
+            ax.tick_params(labelsize=7)
+            ax.set_title(col_title, fontsize=9)
             if ci == 0:
-                ax.set_ylabel("Position [rad]", fontsize=11)
-                ax.legend(loc="best", fontsize=9)
+                ax.set_ylabel("Position [deg]", fontsize=7)
+                ax.legend(loc="best", fontsize=7)
             else:
                 pass  # 仅首列显示图例
             # 强制 position 纵轴范围至少为 0.1（对已有数据有效）
@@ -317,42 +319,44 @@ def main():
             except Exception:
                 pass
 
-            # 2) torque
+            # 2) velocity
             ax = axes[1, ci]
-            ax.plot(times, tor[:, j], label="torque", color="tab:red", linewidth=1.2)
-            if np.isfinite(tor_ff[:, j]).any():
-                ax.plot(times, tor_ff[:, j], label="torque_cmd",
-                       color="tab:orange", linewidth=1.2, linestyle="--")
+            if np.isfinite(vel_deg[:, j]).any():
+                ax.plot(times, vel_deg[:, j], label="velocity",
+                       color="tab:brown", linewidth=1.2)
+                if ci == 0:
+                    ax.legend(loc="best", fontsize=7)
+            else:
+                ax.text(0.5, 0.5, "No velocity data",
+                       transform=ax.transAxes, ha="center", va="center",
+                       alpha=0.6, fontsize=10)
             ax.grid(True, alpha=0.3, linestyle=':')
-            ax.set_xlabel("Time [s]", fontsize=11)
-            if ci == 0:
-                ax.set_ylabel("Torque [Nm]", fontsize=11)
-                ax.legend(loc="best", fontsize=9)
-            # 强制 torque 纵轴范围至少为 1.0（对已有数据有效）
+            ax.tick_params(labelsize=7)
+            # 强制 velocity 纵轴范围至少为 0.02 rad/s（对已有数据有效）
             try:
-                t_vals = np.hstack([
-                    tor[:, j][np.isfinite(tor[:, j])],
-                    tor_ff[:, j][np.isfinite(tor_ff[:, j])]
-                ])
-                if t_vals.size > 0:
-                    tmin = t_vals.min()
-                    tmax = t_vals.max()
-                    trange = tmax - tmin
-                    min_trange = 0.4
-                    if trange < min_trange:
-                        center = 0.5 * (tmax + tmin)
-                        half = 0.5 * min_trange
+                v_vals = vel_deg[:, j][np.isfinite(vel_deg[:, j])]
+                if v_vals.size > 0:
+                    vmin = v_vals.min()
+                    vmax = v_vals.max()
+                    vrange = vmax - vmin
+                    # 保持当前数值门限不变（单位现在为 deg/s）
+                    min_vrange = 0.4
+                    if vrange < min_vrange:
+                        center = 0.5 * (vmax + vmin)
+                        half = 0.5 * min_vrange
                         ax.set_ylim(center - half, center + half)
             except Exception:
                 pass
+            if ci == 0:
+                ax.set_ylabel("Velocity [deg/s]", fontsize=7)
 
-            # 3) position error（度）
+            # 3) position error
             ax = axes[2, ci]
             if np.isfinite(pos_err_deg[:, j]).any():
-                ax.plot(times, pos_err_deg[:, j], label="pos_error (deg)",
+                ax.plot(times, pos_err_deg[:, j], label="pos_error",
                        color="tab:purple", linewidth=1.2)
                 if ci == 0:
-                    ax.legend(loc="best", fontsize=9)
+                    ax.legend(loc="best", fontsize=7)
             else:
                 ax.text(0.5, 0.5, "No position error data",
                        transform=ax.transAxes, ha="center", va="center",
@@ -372,40 +376,31 @@ def main():
             except Exception:
                 pass
             ax.grid(True, alpha=0.3, linestyle=':')
-            ax.set_xlabel("Time [s]", fontsize=11)
+            ax.tick_params(labelsize=7)
             if ci == 0:
-                ax.set_ylabel("Pos Error [deg]", fontsize=11)
-
-            # 4) velocity（deg/s）  — 用速度替换力矩偏差图，单位改为度/秒
+                ax.set_ylabel("Pos Error [deg]", fontsize=7)
+            # 4) torque
             ax = axes[3, ci]
-            if np.isfinite(vel_deg[:, j]).any():
-                ax.plot(times, vel_deg[:, j], label="velocity (deg/s)",
-                       color="tab:brown", linewidth=1.2)
-                if ci == 0:
-                    ax.legend(loc="best", fontsize=9)
-            else:
-                ax.text(0.5, 0.5, "No velocity data",
-                       transform=ax.transAxes, ha="center", va="center",
-                       alpha=0.6, fontsize=10)
+            ax.plot(times, tor[:, j], label="torque", color="tab:red", linewidth=1.2)
             ax.grid(True, alpha=0.3, linestyle=':')
-            ax.set_xlabel("Time [s]", fontsize=11)
-            # 强制 velocity 纵轴范围至少为 0.02 rad/s（对已有数据有效）
+            ax.tick_params(labelsize=7)
+            if ci == 0:
+                ax.set_ylabel("Torque [Nm]", fontsize=7)
+                ax.legend(loc="best", fontsize=7)
+            # 强制 torque 纵轴范围至少为 1.0（对已有数据有效）
             try:
-                v_vals = vel_deg[:, j][np.isfinite(vel_deg[:, j])]
-                if v_vals.size > 0:
-                    vmin = v_vals.min()
-                    vmax = v_vals.max()
-                    vrange = vmax - vmin
-                    # 保持当前数值门限不变（单位现在为 deg/s）
-                    min_vrange = 0.4
-                    if vrange < min_vrange:
-                        center = 0.5 * (vmax + vmin)
-                        half = 0.5 * min_vrange
+                t_vals = tor[:, j][np.isfinite(tor[:, j])]
+                if t_vals.size > 0:
+                    tmin = t_vals.min()
+                    tmax = t_vals.max()
+                    trange = tmax - tmin
+                    min_trange = 0.4
+                    if trange < min_trange:
+                        center = 0.5 * (tmax + tmin)
+                        half = 0.5 * min_trange
                         ax.set_ylim(center - half, center + half)
             except Exception:
                 pass
-            if ci == 0:
-                ax.set_ylabel("Velocity [deg/s]", fontsize=11)
 
             # 5) position spectrum (FFT) - only if --hz enabled
             if show_hz:
@@ -431,29 +426,30 @@ def main():
                     fft_mag_norm = 2.0 / n * fft_mag
                     freq_mask = fft_freq_pos <= 10
                     ax.plot(fft_freq_pos[freq_mask], fft_mag_norm[freq_mask],
-                           color="tab:blue", linewidth=1.0)
+                        color="tab:blue", linewidth=1.0)
                     ax.grid(True, alpha=0.3, linestyle=':')
+                    ax.tick_params(labelsize=7)
                     if fft_mag_norm[freq_mask].size > 0:
                         peak_idx = np.argmax(fft_mag_norm[freq_mask])
                         if fft_mag_norm[freq_mask][peak_idx] > 0.01 * fft_mag_norm[freq_mask].max():
                             peak_freq = fft_freq_pos[freq_mask][peak_idx]
                             ax.axvline(x=peak_freq, color='tab:red', linestyle='--', alpha=0.7, linewidth=1)
                             ax.annotate(f'{peak_freq:.1f}Hz',
-                                       xy=(peak_freq, fft_mag_norm[freq_mask][peak_idx]),
-                                       xytext=(peak_freq * 1.2, fft_mag_norm[freq_mask][peak_idx] * 0.8),
-                                       fontsize=8, color='tab:red')
+                                    xy=(peak_freq, fft_mag_norm[freq_mask][peak_idx]),
+                                    xytext=(peak_freq * 1.2, fft_mag_norm[freq_mask][peak_idx] * 0.8),
+                                    fontsize=8, color='tab:red')
                     ax.set_xlim(0, 10)
-                    ax.set_xlabel("Frequency [Hz]", fontsize=11)
+                    ax.set_xlabel("(Hz)", fontsize=7, x=1.02, ha='left')
                 else:
                     ax.text(0.5, 0.5, "No spectrum data",
-                           transform=ax.transAxes, ha="center", va="center",
-                           alpha=0.6, fontsize=10)
-                    ax.set_xlabel("Frequency [Hz]", fontsize=11)
+                        transform=ax.transAxes, ha="center", va="center",
+                        alpha=0.6, fontsize=10)
+                    ax.set_xlabel("(Hz)", fontsize=7, x=1.02, ha='left')
                 if ci == 0:
-                    ax.set_ylabel("Spectrum [deg]", fontsize=11)
+                    ax.set_ylabel("Spectrum [deg]", fontsize=7)
 
         # 调整布局
-        fig.tight_layout(rect=[0.01, 0.01, 1, 0.98], h_pad=2, w_pad=0.5)
+        fig.tight_layout(rect=[0.02, 0.02, 1, 0.96], h_pad=2, w_pad=2)
         return fig
 
     # A1模式：只有双臂14个关节（数据数组索引0-13，对应原始关节6-19）
@@ -470,22 +466,22 @@ def main():
     if args.a1:
         if args.debug:
             print("[DEBUG] Creating A1 mode plots (arms only)...")
-        figs.append(plot_arm("Left Arm", left_joints, "Left", times, show_hz=args.hz))
-        figs.append(plot_arm("Right Arm", right_joints, "Right", times, show_hz=args.hz))
+        figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz))
+        figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz))
     elif args.torso:
         if args.debug:
             print("[DEBUG] Creating Torso plot only...")
-        figs.append(plot_arm("Torso", torso_joints, "Torso", times, show_hz=args.hz))
+        figs.append(plot_arm("Torso", torso_joints, "Torso", times, start_timestamp, show_hz=args.hz))
     else:
         if args.debug:
             print("[DEBUG] Creating Torso plot...")
-        figs.append(plot_arm("Torso", torso_joints, "Torso", times, show_hz=args.hz))
+        figs.append(plot_arm("Torso", torso_joints, "Torso", times, start_timestamp, show_hz=args.hz))
         if args.debug:
             print("[DEBUG] Creating Left Arm plot...")
-        figs.append(plot_arm("Left Arm", left_joints, "Left", times, show_hz=args.hz))
+        figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz))
         if args.debug:
             print("[DEBUG] Creating Right Arm plot...")
-        figs.append(plot_arm("Right Arm", right_joints, "Right", times, show_hz=args.hz))
+        figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz))
     if args.debug:
         print(f"[DEBUG] {len(figs)} figures created successfully")
 
