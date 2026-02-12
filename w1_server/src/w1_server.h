@@ -83,11 +83,11 @@ private:
     bool enable_ruckig_ = true;                          // /control/joint接口是否使用 Ruckig 进行轨迹规划
     bool enable_record_ = false;                         // 是否启用调试日志
     std::atomic<bool> enable_chassis_shaper_{false};     // 是否启用底盘速度输入整形器
-    std::atomic<bool> enable_torso_shaper_{false};       // 是否启用 torso J1 输入整形器
-    std::atomic<bool> enable_butterworth_filter_{true};  // 是否启用巴特沃斯滤波
-    int first_arm_joint_index_ = 6;                      // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
-    const double position_diff_threshold_ = 1.578;       // /control/joint 位置控制命令阈值，超过该值认为是异常命令
-    double streaming_timeout_ = 0.5;                     // /control/joint_position streaming 超时时间
+    std::atomic<bool> enable_torso_shaper_{false};       // 是否启用 torso J1-J4 输入整形器
+    std::atomic<bool> enable_butterworth_filter_{false};  // 是否启用巴特沃斯滤波
+    int first_arm_joint_index_ = 6;  // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
+    const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
+    double streaming_timeout_ = 0.5;                // /control/joint_position streaming 超时时间
 
     // 整形器开关状态追踪变量，用于检测状态变化以实现自动重置
     bool prev_chassis_shaper_enabled_ = false;
@@ -121,17 +121,20 @@ private:
 
     // 底盘速度输入整形器
     std::unique_ptr<EIInputShaper> chassis_shaper_;
-    EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::TWO_HUMP_EI;  // 输入整形器类型
+    EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
     const double DiffChassisWidth = 0.4390;
     const double DiffChassisWheelD = 0.1730;    // 差速轮径，用于转RPM
     const double DiffChassisNatureFreq = 1.67;  // 底盘输入整形器自然频率，单位Hz
     // ramp率转换: 0.5m/s每周期
     const double DiffChassisMaxRampRpm = 1.0 / (M_PI * DiffChassisWheelD) * 60.0;
 
-    // torso J1 输入整形器
-    std::unique_ptr<EIInputShaper> torso_j1_shaper_;
-    EIInputShaper::Type torso_shaper_type_ = EIInputShaper::TWO_HUMP_EI;
+    // torso J1-J4 输入整形器数组
+    std::unique_ptr<EIInputShaper> torso_shapers_[4];
+    EIInputShaper::Type torso_shaper_type_ = EIInputShaper::EI;
     const double TorsoJ1NatureFreq = 3.07;  // torso J1 自然频率，单位Hz
+    const double TorsoJ2NatureFreq = 4.50;  // torso J2 自然频率，单位Hz
+    const double TorsoJ3NatureFreq = 4.50;  // torso J3 自然频率，单位Hz
+    const double TorsoJ4NatureFreq = 4.50;  // torso J4 自然频率，单位Hz
 
     // 力传感器相关
     Vector3d sensor_force_;

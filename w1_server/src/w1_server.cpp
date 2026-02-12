@@ -65,7 +65,11 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, Robo
                                                           DiffChassisMaxRampRpm);
     }
 
-    torso_j1_shaper_ = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ1NatureFreq, torque_ctrl_dt, 1.0);
+    // torso J1-J4 输入整形器
+    torso_shapers_[0] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ1NatureFreq, torque_ctrl_dt, 1.0);
+    torso_shapers_[1] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ2NatureFreq, torque_ctrl_dt, 1.0);
+    torso_shapers_[2] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ3NatureFreq, torque_ctrl_dt, 1.0);
+    torso_shapers_[3] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ4NatureFreq, torque_ctrl_dt, 1.0);
 
     // 初始化整形器状态追踪变量
     prev_chassis_shaper_enabled_ = enable_chassis_shaper_.load();
@@ -418,20 +422,20 @@ void RobotServer::TorqueControlThreadFunc() {
                     robot_control_.position[i] = butterworth_filter_[i]->Apply(robot_control_.position[i]);
                 }
 
-                // 对 torso J1 (索引 0) 应用 EI 输入整形
-                if (i == 0) {
+                // 对 torso J1-J4 (索引 0-3) 应用 EI 输入整形
+                if (i >= 0 && i < 4) {
                     // 检测 torso 整形器开关状态变化
                     bool current_torso_enabled = enable_torso_shaper_.load();
                     if (current_torso_enabled != prev_torso_shaper_enabled_) {
-                        torso_j1_shaper_->Reset();
+                        torso_shapers_[i]->Reset();
                         prev_torso_shaper_enabled_ = current_torso_enabled;
-                        RCLCPP_INFO(this->get_logger(), "Torso J1 shaper %s, buffer reset",
+                        RCLCPP_INFO(this->get_logger(), "Torso J%d shaper %s, buffer reset", i + 1,
                                     current_torso_enabled ? "enabled" : "disabled");
+                    }
 
-                        // 应用整形
-                        if (current_torso_enabled) {
-                            robot_control_.position[0] = torso_j1_shaper_->Apply(robot_control_.position[0]);
-                        }
+                    // 应用整形
+                    if (current_torso_enabled) {
+                        robot_control_.position[i] = torso_shapers_[i]->Apply(robot_control_.position[i]);
                     }
                 }
             }
@@ -439,7 +443,9 @@ void RobotServer::TorqueControlThreadFunc() {
             for (int i = 0; i < ndof_robot; ++i) {
                 this->butterworth_filter_[i]->Reset();  // 重置滤波器状态
             }
-            torso_j1_shaper_->Reset();
+            for (int i = 0; i < 4; ++i) {
+                torso_shapers_[i]->Reset();
+            }
         }
         // 如果状态字发生变化了则打印
         static int16_t last_status_word_ = -1;
