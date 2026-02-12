@@ -51,14 +51,7 @@ enum class RunMode {
 
 enum class Status { Init, Idle, Running, Error };
 
-enum class ErrorCode {
-    NoError,
-    InvalidRequest,
-    VelocityOverLimit,
-    TorqueOverLimit,
-    PositionOverLimit,
-    IKFailed
-};
+enum class ErrorCode { NoError, InvalidRequest, VelocityOverLimit, TorqueOverLimit, PositionOverLimit, IKFailed };
 
 enum class RequestType {
     Empty,  // empty command

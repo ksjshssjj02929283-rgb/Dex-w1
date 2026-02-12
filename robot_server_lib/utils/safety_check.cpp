@@ -14,8 +14,8 @@ bool CheckSafety(const JointMeasurement &joint_measurement, const RobotModel &ro
             if (error_code != ErrorCode::VelocityOverLimit) {
                 std::stringstream ss;
                 ss << "Joint " << i << " velocity over limit, current velocity: " << joint_measurement.velocity[i]
-                   << ", limits: [" << params.joint_max_velocity_limit_negative[i] * velocity_error_threshold
-                   << ", " << params.joint_max_velocity_limit_positive[i] * velocity_error_threshold << "]";
+                   << ", limits: [" << params.joint_max_velocity_limit_negative[i] * velocity_error_threshold << ", "
+                   << params.joint_max_velocity_limit_positive[i] * velocity_error_threshold << "]";
                 std::cout << ss.str() << "\n";
                 LOG_CRIT << ss.str();
                 error_code = ErrorCode::VelocityOverLimit;
@@ -44,8 +44,8 @@ bool CheckSafety(const JointMeasurement &joint_measurement, const RobotModel &ro
         if (joint_measurement.position[i] > ub[i] && joint_measurement.velocity[i] > IdleVelocityThreshold) {
             if (error_code != ErrorCode::PositionOverLimit) {
                 std::stringstream ss;
-                ss << "Joint " << joint_names[i]
-                   << " exceeds upper limit, position: " << joint_measurement.position[i] << ", limit: " << ub[i];
+                ss << "Joint " << joint_names[i] << " exceeds upper limit, position: " << joint_measurement.position[i]
+                   << ", limit: " << ub[i];
                 std::cout << ss.str() << "\n";
                 LOG_CRIT << ss.str();
                 error_code = ErrorCode::PositionOverLimit;
@@ -55,8 +55,8 @@ bool CheckSafety(const JointMeasurement &joint_measurement, const RobotModel &ro
         if (joint_measurement.position[i] < lb[i] && joint_measurement.velocity[i] < -IdleVelocityThreshold) {
             if (error_code != ErrorCode::PositionOverLimit) {
                 std::stringstream ss;
-                ss << "Joint " << joint_names[i]
-                   << " exceeds lower limit, position: " << joint_measurement.position[i] << ", limit: " << lb[i];
+                ss << "Joint " << joint_names[i] << " exceeds lower limit, position: " << joint_measurement.position[i]
+                   << ", limit: " << lb[i];
                 std::cout << ss.str() << "\n";
                 LOG_CRIT << ss.str();
                 error_code = ErrorCode::PositionOverLimit;

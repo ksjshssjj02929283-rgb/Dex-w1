@@ -80,6 +80,9 @@ protected:
 
     MotionGroup motion_group_;
 
+    static constexpr double DefaultStreamingTimeout = 10.0;  // 默认超时时间（秒）
+    double streaming_timeout_ = DefaultStreamingTimeout;     // 当前使用的超时时间
+
     int ndof_primary_{7};
     int ndof_secondary_{7};
     int ndof_torso_{3};

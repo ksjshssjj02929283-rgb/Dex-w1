@@ -85,8 +85,9 @@ private:
     std::atomic<bool> enable_chassis_shaper_{false};     // 是否启用底盘速度输入整形器
     std::atomic<bool> enable_torso_shaper_{false};       // 是否启用 torso J1 输入整形器
     std::atomic<bool> enable_butterworth_filter_{true};  // 是否启用巴特沃斯滤波
-    int first_arm_joint_index_ = 6;  // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
-    const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
+    int first_arm_joint_index_ = 6;                      // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
+    const double position_diff_threshold_ = 1.578;       // /control/joint 位置控制命令阈值，超过该值认为是异常命令
+    double streaming_timeout_ = 0.5;                     // /control/joint_position streaming 超时时间
 
     // 整形器开关状态追踪变量，用于检测状态变化以实现自动重置
     bool prev_chassis_shaper_enabled_ = false;

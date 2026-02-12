@@ -39,8 +39,8 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
         output_joint_cmd.acceleration.setZero();
         output_joint_cmd.torque_feedforward.setZero();
         auto time_interval = (time_meta.current_time.time_in_ns() - request_start_time_.time_in_ns()) * 1e-9;
-        return time_interval < StreamingCommandTimeout ? ComputeCommandStatus::TaskOngoing
-                                                       : ComputeCommandStatus::TaskFinished;
+        return time_interval < streaming_timeout_ ? ComputeCommandStatus::TaskOngoing
+                                                  : ComputeCommandStatus::TaskFinished;
     }
 
     const StreamingCommand &latest_cmd = runtime_.latest_cmd.value();
@@ -49,7 +49,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
     bool is_timeout = false;
     if (latest_cmd.received_time.is_valid()) {
         auto time_interval = (time_meta.current_time.time_in_ns() - latest_cmd.received_time.time_in_ns()) * 1e-9;
-        is_timeout = time_interval > StreamingCommandTimeout;
+        is_timeout = time_interval > streaming_timeout_;
     }
     runtime_.streaming_finished = latest_cmd.streaming_finished || is_timeout;
 
@@ -68,8 +68,8 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             command_finished_time_ = TimePointSystem::Now();
         }
         robot_stopped =
-            robot_stopped || ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 >
-                              StreamingCommandTimeout);
+            robot_stopped ||
+            ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > streaming_timeout_);
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
         return runtime_.streaming_finished && robot_stopped ? ComputeCommandStatus::TaskFinished
                                                             : ComputeCommandStatus::TaskOngoing;
@@ -119,8 +119,8 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             command_finished_time_ = TimePointSystem::Now();
         }
         robot_stopped =
-            robot_stopped || ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 >
-                              StreamingCommandTimeout);
+            robot_stopped ||
+            ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > streaming_timeout_);
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
         if (runtime_.streaming_finished && robot_stopped) {
             LOG_INFO << "JointStreamingPlanner: TaskFinished, measurement velocity: "
@@ -150,6 +150,13 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
         no_ruckig_mode_ = (bool)move_request.optional_mode.value();
     } else {
         no_ruckig_mode_ = false;
+    }
+
+    // 超时时间设置
+    if (move_request.streaming_timeout.has_value()) {
+        streaming_timeout_ = move_request.streaming_timeout.value();
+    } else {
+        streaming_timeout_ = DefaultStreamingTimeout;
     }
 
     runtime_.request_id = request.request_id;

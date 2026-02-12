@@ -167,6 +167,7 @@ struct MoveRequest {
     std::optional<bool> optional_mode;
     std::optional<std::vector<int>> endpoint_index;
     std::optional<double> interval;
+    std::optional<double> streaming_timeout;
 };
 
 using PlannerData = std::variant<MoveRequest, PoseQuaternion, Vector3d, Vector6d, Eigen::VectorXd, bool, int, double>;
