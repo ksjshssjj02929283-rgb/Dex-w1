@@ -417,10 +417,6 @@ void RobotServer::TorqueControlThreadFunc() {
                         assert(false && "Unknown RunMode");
                         break;
                 }
-                // 滤波关节位置指令
-                if (this->enable_butterworth_filter_.load()) {
-                    robot_control_.position[i] = butterworth_filter_[i]->Apply(robot_control_.position[i]);
-                }
 
                 // 对 torso J1-J4 (索引 0-3) 应用 EI 输入整形
                 if (i >= 0 && i < 4) {
@@ -723,6 +719,12 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
             streaming_request_id_ = StartStreaming(planner_request);
         }
         if (streaming_request_id_ > -1) {
+            // 对位置指令应用巴特沃斯滤波
+            if (this->enable_butterworth_filter_.load()) {
+                for (int j = 0; j < ndof_robot; ++j) {
+                    robot_control_temp.position[j] = butterworth_filter_[j]->Apply(robot_control_temp.position[j]);
+                }
+            }
             StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
             streaming_msg->request_id = streaming_request_id_;
             streaming_msg->streaming_finished = false;
@@ -738,9 +740,8 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
     bool position_valid = true;
     for (size_t i = 0; i < msg->name.size(); ++i) {
         for (int j = 0; j < ndof_robot; ++j) {
-            if (ecat_joint_name_[j] == msg->name[i]) {
-                if (std::abs(robot_control_temp.position[j] - msg->position[i]) > position_diff_threshold_ &&
-                    position_valid) {
+            if (ecat_joint_name_[j] == msg->name[i] && position_valid) {
+                if (std::abs(robot_control_temp.position[j] - msg->position[i]) > position_diff_threshold_) {
                     RCLCPP_WARN(
                         this->get_logger(),
                         "Control command for joint %s rejected: position difference %.4f exceeds threshold %.4f",
@@ -750,9 +751,10 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
                              << std::abs(robot_control_temp.position[j] - msg->position[i]) << " exceeds threshold "
                              << position_diff_threshold_;
                     position_valid = false;
+                } else {
+                    robot_control_temp.position[j] = msg->position[i];
                 }
-                robot_control_temp.position[j] = msg->position[i];
-                break;
+                break;  // 已经找到并处理了对应的关节，跳出内层循环继续处理下一个输入关节
             }
         }
     }
@@ -769,6 +771,12 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
             streaming_request_id_ = StartStreaming(planner_request);
         }
         if (streaming_request_id_ != -1) {
+            // 对位置指令应用巴特沃斯滤波
+            if (this->enable_butterworth_filter_.load()) {
+                for (int j = 0; j < ndof_robot; ++j) {
+                    robot_control_temp.position[j] = butterworth_filter_[j]->Apply(robot_control_temp.position[j]);
+                }
+            }
             StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
             streaming_msg->request_id = streaming_request_id_;
             streaming_msg->streaming_finished = false;
