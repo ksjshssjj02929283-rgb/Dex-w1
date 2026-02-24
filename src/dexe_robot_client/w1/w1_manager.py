@@ -1288,9 +1288,12 @@ class W1Manager:
 
         dofs = self.w1_params.index_infos[name]["dofs"]
         index = self.w1_params.index_infos[name]["index"]
+        pos_limits = np.vstack(
+            (self.w1_params.qpos_lb[index], self.w1_params.qpos_ub[index]))
         vel_limits = self.w1_params.max_qvel[index]
         acc_limits = self.w1_params.max_qacc[index]
-        traj_planner = ToppraTrajectoryPlanner(dofs, vel_limits, acc_limits)
+        traj_planner = ToppraTrajectoryPlanner(dofs, pos_limits, vel_limits,
+                                               acc_limits)
         res, pos_array, _, _, _ = traj_planner.plan(qpos_array,
                                                     qvel_limits_array,
                                                     self.TIME_STEP)
@@ -2311,13 +2314,19 @@ class W1Manager:
         dofs = 2 * self.w1_params.index_infos["left_arm"]["dofs"]
         left_index = self.w1_params.index_infos["left_arm"]["index"]
         right_index = self.w1_params.index_infos["right_arm"]["index"]
+        pos_lb_limits = np.hstack((self.w1_params.qpos_lb[left_index],
+                                   self.w1_params.qpos_lb[right_index]))
+        pos_ub_limits = np.hstack((self.w1_params.qpos_ub[left_index],
+                                   self.w1_params.qpos_ub[right_index]))
+        pos_limits = np.vstack([pos_lb_limits, pos_ub_limits])
         left_vel_limits = self.w1_params.max_qvel[left_index]
         right_vel_limits = self.w1_params.max_qvel[right_index]
         vel_limits = np.concatenate([left_vel_limits, right_vel_limits])
         left_acc_limits = self.w1_params.max_qacc[left_index]
         right_acc_limits = self.w1_params.max_qacc[right_index]
         acc_limits = np.concatenate([left_acc_limits, right_acc_limits])
-        traj_planner = ToppraTrajectoryPlanner(dofs, vel_limits, acc_limits)
+        traj_planner = ToppraTrajectoryPlanner(dofs, pos_limits, vel_limits,
+                                               acc_limits)
         res, qpos_array, _, _, _ = traj_planner.plan(qpos_array,
                                                      qvel_limits_array_,
                                                      self.TIME_STEP)
@@ -3741,9 +3750,18 @@ class W1Manager:
                                            armr_start=cur_armr_qpos,
                                            arml_goal=target_arml_qpos,
                                            armr_goal=target_armr_qpos)
-        self.hybrid_planner.set_traj_max_vel(
-            left_max_vel=arml_speed_ratio * 0.3,
-            right_max_vel=armr_speed_ratio * 0.3)
+        left_index = self.w1_params.index_infos["left_arm"]["index"]
+        right_index = self.w1_params.index_infos["right_arm"]["index"]
+        self.hybrid_planner.set_traj_limits(
+            np.vstack((self.w1_params.qpos_lb[left_index],
+                       self.w1_params.qpos_ub[left_index])),
+            np.vstack((self.w1_params.qpos_lb[right_index],
+                       self.w1_params.qpos_ub[right_index])),
+            self.w1_params.max_qvel[left_index],
+            self.w1_params.max_qvel[right_index],
+            self.w1_params.max_qacc[left_index],
+            self.w1_params.max_qacc[right_index],
+        )
         arml_traj, armr_traj, planning_time = self.hybrid_planner.plan()
 
         self.logger.info(
@@ -4163,8 +4181,18 @@ class W1Manager:
                                                    armr_start=cur_armr_qpos,
                                                    arml_goal=target_arml_qpos,
                                                    armr_goal=cur_armr_qpos)
-                self.hybrid_planner.set_traj_max_vel(
-                    left_max_vel=arml_speed_ratio * 0.3, right_max_vel=0.3)
+                left_index = self.w1_params.index_infos["left_arm"]["index"]
+                right_index = self.w1_params.index_infos["right_arm"]["index"]
+                self.hybrid_planner.set_traj_limits(
+                    np.vstack((self.w1_params.qpos_lb[left_index],
+                               self.w1_params.qpos_ub[left_index])),
+                    np.vstack((self.w1_params.qpos_lb[right_index],
+                               self.w1_params.qpos_ub[right_index])),
+                    self.w1_params.max_qvel[left_index],
+                    self.w1_params.max_qvel[right_index],
+                    self.w1_params.max_qacc[left_index],
+                    self.w1_params.max_qacc[right_index],
+                )
                 arml_traj, armr_traj, planning_time = self.hybrid_planner.plan()
 
                 if arml_traj is None:
@@ -4282,8 +4310,18 @@ class W1Manager:
                                                    armr_start=cur_armr_qpos,
                                                    arml_goal=cur_arml_qpos,
                                                    armr_goal=target_armr_qpos)
-                self.hybrid_planner.set_traj_max_vel(
-                    left_max_vel=0.3, right_max_vel=armr_speed_ratio * 0.3)
+                left_index = self.w1_params.index_infos["left_arm"]["index"]
+                right_index = self.w1_params.index_infos["right_arm"]["index"]
+                self.hybrid_planner.set_traj_limits(
+                    np.vstack((self.w1_params.qpos_lb[left_index],
+                               self.w1_params.qpos_ub[left_index])),
+                    np.vstack((self.w1_params.qpos_lb[right_index],
+                               self.w1_params.qpos_ub[right_index])),
+                    self.w1_params.max_qvel[left_index],
+                    self.w1_params.max_qvel[right_index],
+                    self.w1_params.max_qacc[left_index],
+                    self.w1_params.max_qacc[right_index],
+                )
                 arml_traj, armr_traj, planning_time = self.hybrid_planner.plan()
 
                 if armr_traj is None:
@@ -4577,8 +4615,18 @@ class W1Manager:
                                                    armr_start=cur_armr_qpos,
                                                    arml_goal=target_arml_qpos,
                                                    armr_goal=cur_armr_qpos)
-                self.hybrid_planner.set_traj_max_vel(
-                    left_max_vel=arml_speed_ratio * 0.3, right_max_vel=0.3)
+                left_index = self.w1_params.index_infos["left_arm"]["index"]
+                right_index = self.w1_params.index_infos["right_arm"]["index"]
+                self.hybrid_planner.set_traj_limits(
+                    np.vstack((self.w1_params.qpos_lb[left_index],
+                               self.w1_params.qpos_ub[left_index])),
+                    np.vstack((self.w1_params.qpos_lb[right_index],
+                               self.w1_params.qpos_ub[right_index])),
+                    self.w1_params.max_qvel[left_index],
+                    self.w1_params.max_qvel[right_index],
+                    self.w1_params.max_qacc[left_index],
+                    self.w1_params.max_qacc[right_index],
+                )
                 arml_traj, armr_traj, planning_time = self.hybrid_planner.plan()
 
                 if arml_traj is None:
@@ -4752,8 +4800,18 @@ class W1Manager:
                                                    armr_start=cur_armr_qpos,
                                                    arml_goal=cur_arml_qpos,
                                                    armr_goal=target_armr_qpos)
-                self.hybrid_planner.set_traj_max_vel(
-                    left_max_vel=0.3, right_max_vel=armr_speed_ratio * 0.3)
+                left_index = self.w1_params.index_infos["left_arm"]["index"]
+                right_index = self.w1_params.index_infos["right_arm"]["index"]
+                self.hybrid_planner.set_traj_limits(
+                    np.vstack((self.w1_params.qpos_lb[left_index],
+                               self.w1_params.qpos_ub[left_index])),
+                    np.vstack((self.w1_params.qpos_lb[right_index],
+                               self.w1_params.qpos_ub[right_index])),
+                    self.w1_params.max_qvel[left_index],
+                    self.w1_params.max_qvel[right_index],
+                    self.w1_params.max_qacc[left_index],
+                    self.w1_params.max_qacc[right_index],
+                )
                 arml_traj, armr_traj, planning_time = self.hybrid_planner.plan()
 
                 if armr_traj is None:
