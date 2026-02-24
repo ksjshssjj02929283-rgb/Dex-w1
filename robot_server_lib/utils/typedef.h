@@ -55,6 +55,7 @@ enum class ErrorCode { NoError, InvalidRequest, VelocityOverLimit, TorqueOverLim
 
 enum class RequestType {
     Empty,  // empty command
+    EnableRobot,  // 手动控制电机使能
 
     // Set Property Request
     TcpPrimary,

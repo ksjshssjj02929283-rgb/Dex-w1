@@ -262,6 +262,10 @@ void RobotServer::TorqueControlThreadFunc() {
         if (ret) {
             this->SwitchControlWord();
         }
+        // 检查 EnableRobot 标志，如果为 false 则清除 MOTOR_ENABLE
+        if (!this->manager_info_.robot_property.enable_robot) {
+            robot_control_.robot_control_word &= ~CTRLWORD_MOTOR_ENABLE;
+        }
         // 如果开启了记录, 则在日志中记录数据
         if (this->enable_record_ && manager_state_ == Status::Running && loop_counter % 4 == 0) {
             int idx_offset = (robot_mode_ != RobotMode::W1) ? first_arm_joint_index_ : 0;

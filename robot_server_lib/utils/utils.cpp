@@ -275,6 +275,9 @@ PlannerRequest ParseSetPropertyRequest(
 
     planner_request.type = *request_type;
     switch (planner_request.type) {
+        case RequestType::EnableRobot:
+            planner_request.data = parse_bool(request->value);
+            break;
         case RequestType::TcpPrimary:
         case RequestType::TcpSecondary:
             planner_request.data = utils::StringToPoseQuaternion(request->value);

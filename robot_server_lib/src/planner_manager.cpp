@@ -437,6 +437,13 @@ void PlannerManager::ChangeState(Status new_state) {
 void PlannerManager::SetProperty(const PlannerRequest &request) {
     // todo: 数据格式错误转error的处理
     switch (request.type) {
+        case RequestType::EnableRobot: {
+            assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
+            bool enable_robot = std::get<bool>(request.data.value());
+            robot_property_.enable_robot = enable_robot;
+            LOG_INFO << "Set enable_robot to " << (enable_robot ? "true" : "false");
+            return;
+        }
         case RequestType::TcpPrimary: {
             assert(request.data.has_value() && std::holds_alternative<PoseQuaternion>(request.data.value()));
             auto tcp_temp = std::get<PoseQuaternion>(request.data.value());
