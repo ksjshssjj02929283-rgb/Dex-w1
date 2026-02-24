@@ -5,6 +5,8 @@ from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
 from std_srvs.srv import Trigger
+from rcl_interfaces.srv import GetParameters, SetParameters
+from rclpy.parameter import Parameter
 from std_msgs.msg import Bool
 
 
@@ -48,6 +50,24 @@ class ChassisClient(NavigationClient):
                 Trigger, 'control/cancel_chassis_control')
             self._set_chassis_charging_client = self.create_client(
                 Trigger, 'auto_charging')
+
+            self._controller_set_param_client = self.create_client(
+                SetParameters, '/controller_server/set_parameters')
+
+            self._controller_get_param_client = self.create_client(
+                GetParameters, '/controller_server/get_parameters')
+
+            self._local_costmap_set_param_client = self.create_client(
+                SetParameters, '/local_costmap/local_costmap/set_parameters')
+
+            self._local_costmap_get_param_client = self.create_client(
+                GetParameters, '/local_costmap/local_costmap/get_parameters')
+
+            self._global_costmap_set_param_client = self.create_client(
+                SetParameters, '/global_costmap/global_costmap/set_parameters')
+
+            self._global_costmap_get_param_client = self.create_client(
+                GetParameters, '/global_costmap/global_costmap/get_parameters')
             
             # 订阅障碍物检测话题（仿真和真实模式都订阅）
             self._obstacle_subscriber = self.create_subscription(

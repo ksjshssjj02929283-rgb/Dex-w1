@@ -74,9 +74,7 @@ def main(is_sim=True):
     print(f"[INFO] Robot type: {client.get_robot_type()}")
     print(f"[INFO] Robot arm type: {client.get_arm_type()}")
     print(f"[INFO] Robot version: {client.get_robot_version()}")
-    print(f"[INFO] Current robot status: {client.get_info().status}")
-    print(f"[INFO] Current joint position: {client.get_info().joint_position}")
-    print(f"[INFO] Current ee_pose: {client.get_info().ee_pose}")
+    print(f"[INFO] Current robot info: {client.get_info()}")
 
     # """设置全局速度"""
     client.set_global_speed(0.5)

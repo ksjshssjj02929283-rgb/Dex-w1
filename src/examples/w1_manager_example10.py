@@ -1,3 +1,11 @@
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
+
 import os
 import numpy as np
 from dexe_robot_client.end_effector_client import EndEffectorType
@@ -10,6 +18,20 @@ from IPython import embed
 from dexe_robot_client.common.config import DATA_DIR
 from loop_rate_limiters import RateLimiter
 from dexe_rp import W1Vis, pos_wxyz_to_homogeneous, Box, Material
+"""
+This example task shows demo of dual arm move line with point-to-point synchronization.
+The task semantic description is pull down the coffee handle synchronously.
+
+Note:
+    - The comment part is viser visualization code for debugging
+    - is_sync: 
+        -- True means the two arms will reach each waypoint at the same time
+        -- False means the two arms will reach each waypoint independently
+    - use_collision_validator: 
+        -- True means the planned trajectory will be checked by collision validator
+        -- False means no collision check will be performed for the planned trajectory
+    - plan_linear_full_body also has the above two parameters, which have the same effect.
+"""
 
 task_dict1 = {
     "torso": [[0.78539816, -1.57079633, 0.78539816, 0.03490659]],
@@ -44,7 +66,9 @@ task_dict1 = {
 
 
 def test_move_linear_full_body(task_dict):
-    w1_manager.move_linear_full_body(waypoints_dict=task_dict, is_sync=True)
+    w1_manager.move_linear_full_body(waypoints_dict=task_dict,
+                                     is_sync=True,
+                                     use_collision_validator=True)
 
 
 if __name__ == "__main__":
@@ -52,7 +76,7 @@ if __name__ == "__main__":
     w1_manager = W1Manager(is_sim=True,
                            arm_type=W1ArmType.ANTHROPOMORPHIC,
                            w1_version=W1Version.V2,
-                           end_effector_type=EndEffectorType.LINKER_HAND)
+                           end_effector_type=EndEffectorType.BRAINCO_HAND)
     if not w1_manager.connect() and not w1_manager.is_enabled():
         raise RuntimeError("Failed to connect to W1 robot.")
 
@@ -63,9 +87,9 @@ if __name__ == "__main__":
     w1_manager.set_tcp("right_arm", xpos=right_tcp_xpos)
 
     w1_manager.set_home_qpos(np.array([
-        0.78539816, -1.57079633, 0.78539816, 0.03490659, 0., -0.76794487, -0.98,
-        -1.451, 1.622, -0.479, -1.453, -0.513, 0.33, 0.969, 1.416, -1.594,
-        0.559, 1.263, 0.53, -0.436
+        0.7854, -1.5708, 0.7854, 0.0349, 0, -0.6632, 0.962, -0.771, -0.949,
+        -2.072, 0.435, -0.004, 0.012, -1.0031, 0.7219, 0.8681, 2.024, -0.4591,
+        0.1159, -0.1521
     ]),
                              save_to_file=False)
     w1_manager.go_home(1.)
@@ -81,9 +105,9 @@ if __name__ == "__main__":
     #                                            initial_value="[]")
 
     # init_qpos = np.array([
-    #     0.78539816, -1.57079633, 0.78539816, 0.03490659, 0., -0.76794487, -0.98,
-    #     -1.451, 1.622, -0.479, -1.453, -0.513, 0.33, 0.969, 1.416, -1.594,
-    #     0.559, 1.263, 0.53, -0.436
+    #     0.7854, -1.5708, 0.7854, 0.0349, 0, -0.6632,
+    #      0.962, -0.771, -0.949, -2.072, 0.435, -0.004, 0.012,
+    #      -1.0031, 0.7219, 0.8681, 2.024, -0.4591, 0.1159, -0.1521
     # ])
     # vis.set_qpos("robot", init_qpos)
 

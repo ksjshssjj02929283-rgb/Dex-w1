@@ -93,6 +93,11 @@ class RobotInfo:
     run_mode: RunMode
     safe_level: float
     global_speed_ratio: float
+    joint_stiffness: list[float]
+    joint_damping: list[float]
+    cart_stiffness: list[float]
+    cart_damping_ratio: list[float]
+    cart_impedance_force: list[float]
 
     latest_sent_id: int
     latest_queued_id: int
