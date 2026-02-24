@@ -221,13 +221,48 @@ class HybridPlanner:
         self.armlee_wait_time, self.armree_wait_time = armlee_wait_time, armree_wait_time
         self.armlee_exec_time, self.armree_exec_time = armlee_exec_time, armree_exec_time
 
-    def set_traj_max_vel(self, left_max_vel, right_max_vel):
-        if left_max_vel <= 0 or right_max_vel <= 0:
+    def set_traj_limits(self, arml_pos_limits, armr_pos_limits, arml_vel_limits,
+                        armr_vel_limits, arml_acc_limits, armr_acc_limits):
+        if (arml_pos_limits.shape[0] == self.arml_dim and arml_pos_limits.shape[1] == 2) or \
+            (arml_pos_limits.shape[0] == 2 and arml_pos_limits.shape[1] == self.arml_dim):
+            self.arml_pos_limits = arml_pos_limits
+        else:
             raise ValueError(
-                f"max_vel must be positive, got left_max_vel: {left_max_vel}, right_max_vel: {right_max_vel}"
+                f"Left Arm Position limits must be a {self.arml_dim}x2 or 2x{self.arml_dim} array, got {arml_pos_limits.shape}"
             )
-        self.left_traj_max_vel = left_max_vel
-        self.right_traj_max_vel = right_max_vel
+        if (armr_pos_limits.shape[0] == self.armr_dim and armr_pos_limits.shape[1] == 2) or \
+            (armr_pos_limits.shape[0] == 2 and armr_pos_limits.shape[1] == self.armr_dim):
+            self.armr_pos_limits = armr_pos_limits
+        else:
+            raise ValueError(
+                f"Right Arm Position limits must be a {self.armr_dim}x2 or 2x{self.armr_dim} array, got {armr_pos_limits.shape}"
+            )
+
+        if arml_vel_limits.shape[0] == self.arml_dim:
+            self.arml_vel_limits = arml_vel_limits
+        else:
+            raise ValueError(
+                f"Left Arm Velocity limits must be a {self.arml_dim}-element array, got {arml_vel_limits.shape}"
+            )
+        if armr_vel_limits.shape[0] == self.armr_dim:
+            self.armr_vel_limits = armr_vel_limits
+        else:
+            raise ValueError(
+                f"Right Arm Velocity limits must be a {self.armr_dim}-element array, got {armr_vel_limits.shape}"
+            )
+
+        if arml_acc_limits.shape[0] == self.arml_dim:
+            self.arml_acc_limits = arml_acc_limits
+        else:
+            raise ValueError(
+                f"Left Arm Acceleration limits must be a {self.arml_dim}-element array, got {arml_acc_limits.shape}"
+            )
+        if armr_acc_limits.shape[0] == self.armr_dim:
+            self.armr_acc_limits = armr_acc_limits
+        else:
+            raise ValueError(
+                f"Right Arm Acceleration limits must be a {self.armr_dim}-element array, got {armr_acc_limits.shape}"
+            )
 
     def attach_object(self,
                       obj_name: str,
@@ -325,7 +360,9 @@ class HybridPlanner:
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
             ompl_planner.set_end_effector_qpos(self.armlee_qpos,
                                                self.armree_qpos)
-            ompl_planner.set_traj_max_vel(self.left_traj_max_vel)
+            ompl_planner.set_traj_limits(self.arml_pos_limits,
+                                         self.arml_vel_limits,
+                                         self.arml_acc_limits)
             left_path, left_trajectory, left_plan_time = ompl_planner.plan(
                 planning_time=2.0)
             if left_path is not None:
@@ -349,7 +386,9 @@ class HybridPlanner:
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
             ompl_planner.set_end_effector_qpos(self.armlee_qpos,
                                                self.armree_qpos)
-            ompl_planner.set_traj_max_vel(self.right_traj_max_vel)
+            ompl_planner.set_traj_limits(self.armr_pos_limits,
+                                         self.armr_vel_limits,
+                                         self.armr_acc_limits)
             right_path, right_trajectory, right_plan_time = ompl_planner.plan(
                 planning_time=2.0)
             if right_path is not None:
@@ -372,8 +411,12 @@ class HybridPlanner:
                                              planner_pin=self.planner_pin,
                                              use_ee=self.use_ee)
             ompl_planner.set_head_body(self.head_qpos, self.torso_qpos)
-            ompl_planner.set_traj_max_vel(self.left_traj_max_vel,
-                                          self.right_traj_max_vel)
+            ompl_planner.set_traj_limits(self.arml_pos_limits,
+                                         self.armr_pos_limits,
+                                         self.arml_vel_limits,
+                                         self.armr_vel_limits,
+                                         self.arml_acc_limits,
+                                         self.armr_acc_limits)
             ompl_planner.set_end_effector_qpos(self.armlee_qpos,
                                                self.armree_qpos)
             coordinated_left, coordinated_right, plan_time = ompl_planner.plan()

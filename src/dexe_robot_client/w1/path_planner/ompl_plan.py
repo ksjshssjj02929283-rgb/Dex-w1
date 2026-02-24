@@ -85,8 +85,6 @@ class OMPLPlanSingle:
             self.end_effector_type = fcl_checker.end_effector_type
         self.use_ee = use_ee
 
-        self.traj_max_vel = 0.3
-
         self.logger = get_logger()
 
     def set_head_body(self, head_qpos, body_qpos):
@@ -132,10 +130,27 @@ class OMPLPlanSingle:
                 self.end_effector_qpos = armree_qpos
                 self.other_hand_qpos = armree_qpos
 
-    def set_traj_max_vel(self, max_vel):
-        if max_vel <= 0:
-            raise ValueError(f"max_vel must be positive, got {max_vel}")
-        self.traj_max_vel = max_vel
+    def set_traj_limits(self, pos_limits, vel_limits, acc_limits):
+        dofs = self.space.getDimension()
+        if (pos_limits.shape[0] == dofs and pos_limits.shape[1] == 2) or \
+            (pos_limits.shape[0] == 2 and pos_limits.shape[1] == dofs):
+            self.pos_limits = pos_limits
+        else:
+            raise ValueError(
+                f"Position limits must be a {dofs}x2 or 2x{dofs} array, got {pos_limits.shape}"
+            )
+        if vel_limits.shape[0] == dofs:
+            self.vel_limits = vel_limits
+        else:
+            raise ValueError(
+                f"Velocity limits must be a {dofs}-element array, got {vel_limits.shape}"
+            )
+        if acc_limits.shape[0] == dofs:
+            self.acc_limits = acc_limits
+        else:
+            raise ValueError(
+                f"Acceleration limits must be a {dofs}-element array, got {acc_limits.shape}"
+            )
 
     def set_start_goal(self, start, goal):
         if start.shape[0] != self.space.getDimension():
@@ -280,15 +295,10 @@ class OMPLPlanSingle:
             qpos_list.append(qpos)
         return np.array(qpos_list, dtype=np.float64)
 
-    def gen_trajectory(self, path, max_v):
-        # path_waypoints = []
-        # for i in range(path.shape[0]):
-        #     point = {"position": path[i, :].tolist()}
-        #     path_waypoints.append(point)
+    def gen_trajectory(self, path, pos_limits, vel_limits, acc_limits):
         dofs = self.space.getDimension()
-        vel_limits = [max_v] * dofs
-        acc_limits = [5.0] * dofs
-        traj_planner = ToppraTrajectoryPlanner(dofs, vel_limits, acc_limits)
+        traj_planner = ToppraTrajectoryPlanner(dofs, pos_limits, vel_limits,
+                                               acc_limits)
         res, pos_array, vel_array, acc_array, duration = traj_planner.plan(path)
         return pos_array, vel_array, acc_array, duration
 
@@ -424,7 +434,7 @@ class OMPLPlanSingle:
             )
             toppra_start_time = time.time()
             result_traj, result_vel, result_acc, duration = self.gen_trajectory(
-                np_path, max_v=self.traj_max_vel)
+                np_path, self.pos_limits, self.vel_limits, self.acc_limits)
             self.logger.info(
                 f"Toppra consuming time {time.time() - toppra_start_time:.6f} seconds"
             )
@@ -552,14 +562,29 @@ class OMPLPlanCentralized:
 
         self.use_ee = use_ee
 
-        self.traj_max_vel = 0.3
-
         self.logger = get_logger()
 
-    def set_traj_max_vel(self, max_vel):
-        if max_vel <= 0:
-            raise ValueError(f"max_vel must be positive, got {max_vel}")
-        self.traj_max_vel = max_vel
+    def set_traj_limits(self, pos_limits, vel_limits, acc_limits):
+        dofs = self.space.getDimension()
+        if (pos_limits.shape[0] == dofs and pos_limits.shape[1] == 2) or \
+            (pos_limits.shape[0] == 2 and pos_limits.shape[1] == dofs):
+            self.pos_limits = pos_limits
+        else:
+            raise ValueError(
+                f"Position limits must be a {dofs}x2 or 2x{dofs} array, got {pos_limits.shape}"
+            )
+        if vel_limits.shape[0] == dofs:
+            self.vel_limits = vel_limits
+        else:
+            raise ValueError(
+                f"Velocity limits must be a {dofs}-element array, got {vel_limits.shape}"
+            )
+        if acc_limits.shape[0] == dofs:
+            self.acc_limits = acc_limits
+        else:
+            raise ValueError(
+                f"Acceleration limits must be a {dofs}-element array, got {acc_limits.shape}"
+            )
 
     def set_head_body(self, head_qpos, body_qpos):
         if head_qpos.shape[0] != 2:
@@ -677,15 +702,10 @@ class OMPLPlanCentralized:
             qpos_list.append(qpos)
         return np.array(qpos_list, dtype=np.float64)
 
-    def gen_trajectory(self, path, max_v):
-        # path_waypoints = []
-        # for i in range(path.shape[0]):
-        #     point = {"position": path[i, :].tolist()}
-        #     path_waypoints.append(point)
+    def gen_trajectory(self, path, pos_limits, vel_limits, acc_limits):
         dofs = self.space.getDimension()
-        vel_limits = [max_v] * dofs
-        acc_limits = [5.0] * dofs
-        traj_planner = ToppraTrajectoryPlanner(dofs, vel_limits, acc_limits)
+        traj_planner = ToppraTrajectoryPlanner(dofs, pos_limits, vel_limits,
+                                               acc_limits)
         res, pos_array, vel_array, acc_array, duration = traj_planner.plan(path)
         return pos_array, vel_array, acc_array, duration
 
@@ -737,7 +757,7 @@ class OMPLPlanCentralized:
                 f"Finish find a path with {path.getStateCount()} waypoints in {total_time:.6f} seconds"
             )
             result_traj, result_vel, result_acc, duration = self.gen_trajectory(
-                np_path, max_v=self.traj_max_vel)
+                np_path, self.pos_limits, self.vel_limits, self.acc_limits)
             self.result_traj = result_traj
 
             return np_path, self.result_traj, total_time
@@ -822,20 +842,55 @@ class OMPLPlanDecoupled:
         self.arml_result_trajectory = None
         self.armr_result_trajectory = None
 
-        self.left_traj_max_vel = 0.3
-        self.right_traj_max_vel = 0.3
-
         self.logger = get_logger()
 
-    def set_traj_max_vel(self, left_max_vel, right_max_vel):
-        if left_max_vel <= 0 or right_max_vel <= 0:
+    def set_traj_limits(self, arml_pos_limits, armr_pos_limits, arml_vel_limits,
+                        armr_vel_limits, arml_acc_limits, armr_acc_limits):
+        if (arml_pos_limits.shape[0] == self.arml_dim and arml_pos_limits.shape[1] == 2) or \
+            (arml_pos_limits.shape[0] == 2 and arml_pos_limits.shape[1] == self.arml_dim):
+            self.arml_pos_limits = arml_pos_limits
+        else:
             raise ValueError(
-                f"max_vel must be positive, got {left_max_vel} and {right_max_vel}"
+                f"Left Arm Position limits must be a {self.arml_dim}x2 or 2x{self.arml_dim} array, got {arml_pos_limits.shape}"
             )
-        self.left_traj_max_vel = left_max_vel
-        self.right_traj_max_vel = right_max_vel
-        self.arml_planner.set_traj_max_vel(left_max_vel)
-        self.armr_planner.set_traj_max_vel(right_max_vel)
+        if (armr_pos_limits.shape[0] == self.armr_dim and armr_pos_limits.shape[1] == 2) or \
+            (armr_pos_limits.shape[0] == 2 and armr_pos_limits.shape[1] == self.armr_dim):
+            self.armr_pos_limits = armr_pos_limits
+        else:
+            raise ValueError(
+                f"Right Arm Position limits must be a {self.armr_dim}x2 or 2x{self.armr_dim} array, got {armr_pos_limits.shape}"
+            )
+
+        if arml_vel_limits.shape[0] == self.arml_dim:
+            self.arml_vel_limits = arml_vel_limits
+        else:
+            raise ValueError(
+                f"Left Arm Velocity limits must be a {self.arml_dim}-element array, got {arml_vel_limits.shape}"
+            )
+        if armr_vel_limits.shape[0] == self.armr_dim:
+            self.armr_vel_limits = armr_vel_limits
+        else:
+            raise ValueError(
+                f"Right Arm Velocity limits must be a {self.armr_dim}-element array, got {armr_vel_limits.shape}"
+            )
+
+        if arml_acc_limits.shape[0] == self.arml_dim:
+            self.arml_acc_limits = arml_acc_limits
+        else:
+            raise ValueError(
+                f"Left Arm Acceleration limits must be a {self.arml_dim}-element array, got {arml_acc_limits.shape}"
+            )
+        if armr_acc_limits.shape[0] == self.armr_dim:
+            self.armr_acc_limits = armr_acc_limits
+        else:
+            raise ValueError(
+                f"Right Arm Acceleration limits must be a {self.armr_dim}-element array, got {armr_acc_limits.shape}"
+            )
+
+        self.arml_planner.set_traj_limits(arml_pos_limits, arml_vel_limits,
+                                          arml_acc_limits)
+        self.armr_planner.set_traj_limits(armr_pos_limits, armr_vel_limits,
+                                          armr_acc_limits)
 
     def set_head_body(self, head_qpos, body_qpos):
         if head_qpos.shape[0] != 2:
@@ -867,18 +922,18 @@ class OMPLPlanDecoupled:
             self.arml_planner.set_end_effector_qpos(armlee_qpos, armree_qpos)
             self.armr_planner.set_end_effector_qpos(armree_qpos, armree_qpos)
 
-    def gen_trajectory(self, path, max_v, is_left=True):
-        # path_waypoints = []
-        # for i in range(path.shape[0]):
-        #     point = {"position": path[i, :].tolist()}
-        #     path_waypoints.append(point)
+    def gen_trajectory(self,
+                       path,
+                       pos_limits,
+                       vel_limits,
+                       acc_limits,
+                       is_left=True):
         if is_left:
             dofs = self.arml_dim
         else:
             dofs = self.armr_dim
-        vel_limits = [max_v] * dofs
-        acc_limits = [5.0] * dofs
-        traj_planner = ToppraTrajectoryPlanner(dofs, vel_limits, acc_limits)
+        traj_planner = ToppraTrajectoryPlanner(dofs, pos_limits, vel_limits,
+                                               acc_limits)
         res, pos_array, vel_array, acc_array, duration = traj_planner.plan(path)
         return pos_array, vel_array, acc_array, duration
 
@@ -918,8 +973,6 @@ class OMPLPlanDecoupled:
             return None, None, None
 
         start_time = time.time()
-        # arml_traj, arml_vel, arml_acc, arml_duration = self.gen_trajectory(arml_path, max_v=self.left_traj_max_vel, is_left=True)
-        # armr_traj, armr_vel, armr_acc, armr_duration = self.gen_trajectory(armr_path, max_v=self.right_traj_max_vel, is_left=False)
 
         coordinator = Coordination(arml_trajectory,
                                    armr_trajectory,
