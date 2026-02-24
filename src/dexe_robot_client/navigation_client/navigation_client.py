@@ -14,6 +14,10 @@ from rcl_interfaces.srv import SetParameters, GetParameters
 from rcl_interfaces.msg import ParameterType
 from rclpy.parameter import Parameter
 from geometry_msgs.msg import Polygon, Point32
+from rcl_interfaces.srv import SetParameters, GetParameters
+from rcl_interfaces.msg import ParameterType
+from rclpy.parameter import Parameter
+from geometry_msgs.msg import Polygon, Point32
 from std_msgs.msg import Bool
 
 from ..common import get_logger
