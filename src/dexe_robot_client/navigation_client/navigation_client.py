@@ -61,12 +61,19 @@ class NavigationClient(ABC, Node):
         self._nav_result_future = None
         self._nav_status = "IDLE"  # 或 NAVIGATING / SUCCEEDED / FAILED / CANCELLED
         self._nav_result = None  # 存储最后的导航结果
+        self._last_control_status = None
+        self._last_control_status_success = False
+        # control status 防抖 + 防陈旧
+        self._control_status_requesting = False
+        self._last_control_status_time = None
+        self._control_status_timeout = 1.0  # 秒，超过认为状态陈旧
 
         self._init_subscriber(is_sim)
         self._init_publisher(is_sim)
         self.spin_once(timeout_sec=timeout_sec)
 
         self.create_timer(0.1, self._check_connection_status)
+        self.create_timer(0.5, self.refresh_control_status)
 
     def _check_connection_status(self):
         """定时检查消息是否超时"""
@@ -287,32 +294,50 @@ class NavigationClient(ABC, Node):
             return False
 
     def get_control_status(self) -> str:
-        """获取底层移动控制节点的状态。
-
-        返回:
-            str: 状态信息 ("IDLE", "CONTROL", "CANCEL CONTROL") 或错误信息。
         """
-        if not hasattr(
-                self, '_get_status_client'
-        ) or not self._get_status_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().error("Control status service not available.")
-            return "SERVICE_NOT_AVAILABLE"
+        获取当前缓存的底层控制状态（不触发服务调用）
+
+        Returns:
+            str:
+                - "IDLE"
+                - "CONTROL"
+                - "CANCEL CONTROL"
+                - "UNKNOWN"
+        """
+        self.spin_once()
+
+        if self._last_control_status_success and self._last_control_status_time:
+            # 防止返回陈旧状态
+            if (time.time() - self._last_control_status_time
+               ) <= self._control_status_timeout:
+                return self._last_control_status
+
+        return "UNKNOWN"
+
+    def refresh_control_status(self) -> bool:
+        """
+        主动向底层控制节点请求一次状态（异步，带 in-flight 防抖）
+        Returns:
+            bool: 请求是否成功发出
+        """
+        # 防止请求堆积
+        if self._control_status_requesting:
+            return False
+
+        if not hasattr(self, '_get_status_client') or \
+        not self._get_status_client.wait_for_service(timeout_sec=0.2):
+            return False
 
         request = Trigger.Request()
-        future = self._get_status_client.call_async(request)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
-
-        if future.done():
-            try:
-                response = future.result()
-                self.get_logger().info(f"Control status: {response.message}")
-                return response.message if response.success else "STATUS_QUERY_FAILED"
-            except Exception as e:
-                self.get_logger().error(f"Service call failed: {e}")
-                return "SERVICE_CALL_FAILED"
-        else:
-            self.get_logger().error("Service call timed out.")
-            return "SERVICE_TIMEOUT"
+        try:
+            self._control_status_requesting = True
+            future = self._get_status_client.call_async(request)
+            future.add_done_callback(self._on_get_control_status_response)
+            return True
+        except Exception as e:
+            self._control_status_requesting = False
+            self.get_logger().error(f"Failed to refresh control status: {e}")
+            return False
 
     def cancel_chassis_control(self) -> bool:
         """请求取消当前的控制任务。
@@ -326,21 +351,16 @@ class NavigationClient(ABC, Node):
             self.get_logger().error("Cancel control service not available.")
             return False
 
+        # 非阻塞调用：发送请求后立即返回，结果由回调处理
         request = Trigger.Request()
-        future = self._cancel_control_client.call_async(request)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
-
-        if future.done():
-            try:
-                response = future.result()
-                self.get_logger().info(
-                    f"Cancel control response: {response.message}")
-                return response.success
-            except Exception as e:
-                self.get_logger().error(f"Service call failed: {e}")
-                return False
-        else:
-            self.get_logger().error("Service call timed out.")
+        try:
+            future = self._cancel_control_client.call_async(request)
+            future.add_done_callback(self._on_cancel_control_response)
+            self.get_logger().info("Cancel control request sent.")
+            return True
+        except Exception as e:
+            self.get_logger().error(
+                f"Failed to send cancel control request: {e}")
             return False
 
     def set_chassis_control_position(self, position) -> bool:
@@ -532,6 +552,36 @@ class NavigationClient(ABC, Node):
             self.get_logger().info("Navigation goal cancelled.")
         except Exception as e:
             self.get_logger().error(f"Error in cancel response: {str(e)}")
+
+        def _on_cancel_control_response(self, future):
+            """Callback for cancel control service response (non-blocking)."""
+
+        try:
+            response = future.result()
+            self.get_logger().info(
+                f"Cancel control response: {response.message}")
+        except Exception as e:
+            self.get_logger().error(f"Error in cancel control response: {e}")
+
+    def _on_get_control_status_response(self, future):
+        """Callback for get_control_status async response (non-blocking)."""
+        self._control_status_requesting = False
+
+        try:
+            response = future.result()
+
+            # 记录时间戳
+            self._last_control_status_time = time.time()
+
+            # 直接缓存（假设底层返回的就是合法状态）
+            self._last_control_status = response.message
+            self._last_control_status_success = bool(response.success)
+
+            # self.get_logger().info(f"Control status updated: {response.message}")
+        except Exception as e:
+            self._last_control_status_success = False
+            self.get_logger().error(
+                f"Error in get control status response: {e}")
 
     def _get_param(self, client, name: str):
         if not client.wait_for_service(timeout_sec=0.5):

@@ -88,8 +88,8 @@ class ChassisClient(NavigationClient):
 
             self._global_costmap_get_param_client = self.create_client(
                 GetParameters, '/global_costmap/global_costmap/get_parameters')
-            
+
             # 订阅障碍物检测话题（仿真和真实模式都订阅）
             self._obstacle_subscriber = self.create_subscription(
-                Bool, "obstacle_detector/has_obstacle",
-                self._obstacle_callback, 10)
+                Bool, "obstacle_detector/has_obstacle", self._obstacle_callback,
+                10)
