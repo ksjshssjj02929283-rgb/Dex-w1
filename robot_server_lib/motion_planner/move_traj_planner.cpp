@@ -154,10 +154,10 @@ bool MoveTrajPlanner::ResetForNewTrajectory(const PlannerRequest &request,
         LOG_CRIT << "MoveTrajPlanner: missing trajectory interval";
         return false;
     }
-    if (move_request.endpoint_index.has_value()) {
+    if (move_request.endpoint_index.has_value() && !move_request.endpoint_index.value().empty()) {
         runtime_.endpoint_index = move_request.endpoint_index.value();
         // 校验传的最后一个index是否等于点位数
-        if (!runtime_.endpoint_index.empty() && runtime_.endpoint_index.back() != user_npoints) {
+        if (runtime_.endpoint_index.back() != user_npoints) {
             LOG_CRIT << "MoveTrajPlanner: endpoint_index's last index " << runtime_.endpoint_index.back()
                      << " is not equal to user_npoints " << user_npoints;
             return false;
