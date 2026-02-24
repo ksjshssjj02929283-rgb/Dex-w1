@@ -38,11 +38,10 @@ bool IdlePlanner::ResetForNewTrajectory(const PlannerRequest &request,
     PoseQuaternion pose_idle_secondary =
         kinematics_secondary_ptr_->GetFK(q_idle.tail(ndof_secondary_), robot_property_.tcp_frame_secondary);
 
-    LOG_INFO << "Reset idle joint to: " << idle_position_.transpose();
-    LOG_INFO << "Primary_joint_idle: " << q_idle.head(ndof_primary_).transpose()
-             << ", Secondary_joint_idle: " << q_idle.tail(ndof_secondary_).transpose();
-    LOG_INFO << "Idle pose primary: " << pose_idle.ToString();
-    LOG_INFO << "Idle pose secondary: " << pose_idle_secondary.ToString();
+    LOG_INFO << "Idle Joint Position: " << idle_position_.transpose();
+    LOG_INFO << "Idle pose primary: " << pose_idle.ToString()
+             << ", Idle pose secondary: " << pose_idle_secondary.ToString();
+    LOG_INFO << "";
     return true;
 }
 

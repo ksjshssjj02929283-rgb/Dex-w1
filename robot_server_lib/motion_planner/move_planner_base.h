@@ -71,7 +71,7 @@ protected:
     std::shared_ptr<kinematics::TorsoKinematics> kinematics_torso_ptr_;
 
     TrajectoryBounds streaming_bounds_{1.0 * M_PI, 3.0 * M_PI, 50.0 * M_PI};  // trajectory bounds, unit: rad
-    TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI, 1.0 * M_PI};       // trajectory bounds, unit: rad
+    TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI, 2.0 * M_PI};       // trajectory bounds, unit: rad
 
     struct {
         TrajectoryBounds translation{0.25, 0.25, 0.25};                 // cartesian space translation bounds, unit: m

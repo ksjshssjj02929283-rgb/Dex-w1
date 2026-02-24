@@ -361,6 +361,7 @@ PlannerRequest ParseMoveRequest(
         };
         set_bool("optional_mode", move_request.optional_mode);
         set_double("speed", move_request.speed);
+        set_double("acceleration", move_request.acceleration);
         set_double("blend_tolerance", move_request.blend_tolerance);
         set_double("interval", move_request.interval);
         if (input_config_json.contains("reference_frame")) {

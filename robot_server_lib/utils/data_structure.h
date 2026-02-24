@@ -164,6 +164,7 @@ struct MoveRequest {
 
     std::optional<ReferenceFrame> reference_frame;
     std::optional<double> speed;
+    std::optional<double> acceleration;  // 加速度比例，范围 0.01 ~ 1.0
     std::optional<double> blend_tolerance;
     std::optional<bool> optional_mode;
     std::optional<std::vector<int>> endpoint_index;
