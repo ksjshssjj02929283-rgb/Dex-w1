@@ -66,10 +66,10 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, Robo
     }
 
     // torso J1-J4 输入整形器
-    torso_shapers_[0] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ1NatureFreq, torque_ctrl_dt, 1.0);
-    torso_shapers_[1] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ2NatureFreq, torque_ctrl_dt, 1.0);
-    torso_shapers_[2] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ3NatureFreq, torque_ctrl_dt, 1.0);
-    torso_shapers_[3] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ4NatureFreq, torque_ctrl_dt, 1.0);
+    torso_shapers_[0] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ1NatureFreq, torque_ctrl_dt, TorsoShaperMaxRampRadPerSec);
+    torso_shapers_[1] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ2NatureFreq, torque_ctrl_dt, TorsoShaperMaxRampRadPerSec);
+    torso_shapers_[2] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ3NatureFreq, torque_ctrl_dt, TorsoShaperMaxRampRadPerSec);
+    torso_shapers_[3] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ4NatureFreq, torque_ctrl_dt, TorsoShaperMaxRampRadPerSec);
 
     // 初始化整形器状态追踪变量
     prev_chassis_shaper_enabled_ = enable_chassis_shaper_.load();
@@ -265,6 +265,7 @@ void RobotServer::TorqueControlThreadFunc() {
         // 检查 EnableRobot 标志，如果为 false 则清除 MOTOR_ENABLE
         if (!this->manager_info_.robot_property.enable_robot) {
             robot_control_.robot_control_word &= ~CTRLWORD_MOTOR_ENABLE;
+            robot_control_.robot_control_word &= CTRLWORD_MOTOR_QUICK_STOP;
         }
         // 如果开启了记录, 则在独立的记录日志中记录数据
         if (this->enable_record_ && manager_state_ == Status::Running && loop_counter % 4 == 0) {

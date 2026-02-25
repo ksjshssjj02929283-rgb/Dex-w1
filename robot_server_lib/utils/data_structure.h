@@ -147,6 +147,7 @@ struct PoseQuaternion {
 struct PlannerManagerCommand {
     std::int64_t sequence_number{-1};
     JointCommand cmd;
+    bool use_simple_dynamics{false};  // 是否使用简化动力学计算
 };
 
 struct TorqueCtrlCommand {

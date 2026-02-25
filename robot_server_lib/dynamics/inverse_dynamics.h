@@ -12,7 +12,9 @@ namespace dynamics
 {
 
 // 计算逆动力学
-Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, bool use_lower_friction_factor = false);
+// use_lower_friction_factor: 是否使用低摩擦模型
+// use_simple_dynamics: 是否使用简化动力学计算（跳过动力学参数，仅使用 pinocchio rnea）
+Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, bool use_lower_friction_factor = false, bool use_simple_dynamics = false);
 
 // 计算正动力学
 Eigen::VectorXd ForwardDynamics(const pinocchio::Model& model, const Eigen::VectorXd& q, const Eigen::VectorXd& dq,

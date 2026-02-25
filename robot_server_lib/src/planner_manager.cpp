@@ -151,6 +151,8 @@ void PlannerManager::LoopOnce() {
         PlannerManagerCommand planner_command{};
         planner_command.sequence_number = runtime_data_.loop_counter;
         planner_command.cmd = runtime_data_.joint_cmd;
+        // 位置模式下使用简化动力学计算（不加载动力学参数），提升性能
+        planner_command.use_simple_dynamics = (robot_property_.run_mode == RunMode::Position);
         manager_buffer_.planner_manager_command->AppendNewElement(planner_command);
     }
 

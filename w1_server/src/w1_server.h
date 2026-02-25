@@ -128,7 +128,6 @@ private:
     const double DiffChassisNatureFreq = 1.67;  // 底盘输入整形器自然频率，单位Hz
     // ramp率转换: 0.5m/s每周期
     const double DiffChassisMaxRampRpm = 0.5 / (M_PI * DiffChassisWheelD) * 60.0;
-
     // torso J1-J4 输入整形器数组
     std::unique_ptr<EIInputShaper> torso_shapers_[4];
     EIInputShaper::Type torso_shaper_type_ = EIInputShaper::EI;
@@ -136,6 +135,7 @@ private:
     const double TorsoJ2NatureFreq = 4.50;  // torso J2 自然频率，单位Hz
     const double TorsoJ3NatureFreq = 4.50;  // torso J3 自然频率，单位Hz
     const double TorsoJ4NatureFreq = 4.50;  // torso J4 自然频率，单位Hz
+    const double TorsoShaperMaxRampRadPerSec = 0.1; // torso J1-J4 最大角速度 ramp率，单位 rad/s 每周期
 
     // 力传感器相关
     Vector3d sensor_force_;

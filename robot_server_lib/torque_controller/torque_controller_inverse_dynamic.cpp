@@ -18,19 +18,20 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
     VectorDof dq_error = VectorDof::Zero();
     this->parameters_.K_p = input_cmd.cmd.joint_stiffness;
     this->parameters_.K_v = input_cmd.cmd.joint_damping;
+    bool use_simple_dynamics = input_cmd.use_simple_dynamics;
     switch (state_) {
         case TorqueControllerState::Idle:
             torque_joint_impedance = this->parameters_.K_p.asDiagonal() * (idle_q_ - feedback_q) +
                                      this->parameters_.K_v.asDiagonal() * (-feedback_dq);
-            output_cmd.torque_feedforward =
-                dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
+            output_cmd.torque_feedforward = dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq,
+                                                                      VectorDof::Zero(), false, use_simple_dynamics);
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
             output_cmd.q_desired = idle_q_;
             break;
         case TorqueControllerState::Decelerating:
             torque_joint_impedance = this->parameters_.K_v.asDiagonal() * (-feedback_dq);
-            output_cmd.torque_feedforward =
-                dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
+            output_cmd.torque_feedforward = dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq,
+                                                                      VectorDof::Zero(), false, use_simple_dynamics);
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
             output_cmd.q_desired = feedback_q;
             break;
@@ -39,10 +40,11 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
             dq_error = cmd_dq - feedback_dq;
             torque_joint_impedance =
                 this->parameters_.K_p.asDiagonal() * q_error + this->parameters_.K_v.asDiagonal() * dq_error;
-            output_cmd.torque_feedforward = dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq,
-                                                                      VectorDof::Zero());  // 补偿重力, 科氏力, 摩擦力
-            VectorDof torque_feedforward_low_friction =
-                dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero(), true);
+            output_cmd.torque_feedforward =
+                dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero(), false,
+                                          use_simple_dynamics);  // 补偿重力, 科氏力, 摩擦力
+            VectorDof torque_feedforward_low_friction = dynamics::InverseDynamics(
+                robot_model_, feedback_q, feedback_dq, VectorDof::Zero(), true, use_simple_dynamics);
             output_cmd.torque_impedance = torque_cart_impedance + torque_feedforward_low_friction;
             output_cmd.torque = torque_joint_impedance + torque_feedforward_low_friction;
             output_cmd.q_desired = cmd_q;
