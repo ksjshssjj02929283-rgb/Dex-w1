@@ -280,6 +280,12 @@ void RobotServer::TorqueControlThreadFunc() {
                     << utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str()
                     << ", \"joint_torque_feedforward\": "
                     << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, idx_offset, ndof_config_).str()
+                    << ", \"chassis_target_left_velocity\": " << chassis_control_target_.chassis_left_velocity
+                    << ", \"chassis_target_right_velocity\": " << chassis_control_target_.chassis_right_velocity
+                    << ", \"chassis_cmd_left_velocity\": " << robot_control_.chassis_left_velocity
+                    << ", \"chassis_cmd_right_velocity\": " << robot_control_.chassis_right_velocity
+                    << ", \"chassis_feedback_left_velocity\": " << robot_feedback_.chassis_feedback.left_velocity
+                    << ", \"chassis_feedback_right_velocity\": " << robot_feedback_.chassis_feedback.right_velocity
                     << "} \n";
             nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
         }
@@ -481,8 +487,6 @@ void RobotServer::TorqueControlThreadFunc() {
 
             if (chassis_control_target_.chassis_mode == 1) {
                 // 差速模式：对左右轮速度应用输入整形
-
-                // 检测底盘整形器开关状态变化
                 bool current_chassis_enabled = enable_chassis_shaper_.load();
                 if (current_chassis_enabled != prev_chassis_shaper_enabled_) {
                     chassis_shaper_->Reset();
@@ -490,7 +494,6 @@ void RobotServer::TorqueControlThreadFunc() {
                     RCLCPP_INFO(this->get_logger(), "Chassis shaper %s, buffer reset",
                                 current_chassis_enabled ? "enabled" : "disabled");
                 }
-
                 // 应用整形
                 if (current_chassis_enabled) {
                     auto [shaper_left, shaper_right] = chassis_shaper_->Apply(

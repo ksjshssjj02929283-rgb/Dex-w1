@@ -1,3 +1,19 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+机器人日志绘图工具 - 用于可视化 robot_server 记录的数据
+使用方法:
+    python3 plot_log.py                           # 默认绘制 torso + arms + chassis (最近2秒)
+    python3 plot_log.py 5                         # 绘制最近5秒的数据
+    python3 plot_log.py --seconds=10              # 绘制最近10秒的数据
+    python3 plot_log.py --torso                   # 只绘制 torso 数据
+    python3 plot_log.py --chassis                 # 只绘制底盘数据 (差速轮速度)
+    python3 plot_log.py --hz                      # 显示频谱图
+    python3 plot_log.py --save                    # 保存图片到脚本目录
+    python3 plot_log.py --debug                   # 显示调试信息
+    python3 plot_log.py --a1                      # A1模式：只绘制手臂数据 (14个关节)
+"""
+
 import argparse
 import json
 import os
@@ -69,6 +85,21 @@ def parse_line(line, debug=False):
                 print(f"[DEBUG] Invalid array length for {k}: {len(arr) if isinstance(arr, list) else type(arr)}")
                 return None
 
+    # 校验底盘数据键（如果存在）
+    chassis_keys = [
+        "chassis_target_left_velocity",
+        "chassis_target_right_velocity",
+        "chassis_cmd_left_velocity",
+        "chassis_cmd_right_velocity",
+        "chassis_feedback_left_velocity",
+        "chassis_feedback_right_velocity",
+    ]
+    for k in chassis_keys:
+        if k in data:
+            if not isinstance(data[k], (int, float)):
+                print(f"[DEBUG] Invalid chassis data type for {k}: {type(data[k])}")
+                return None
+
     return ts, data
 
 
@@ -80,12 +111,6 @@ def main():
             sys.argv[1] = f"--seconds={sec}"
 
     parser = argparse.ArgumentParser(description="Plot last N points from robot_server log.")
-    parser.add_argument(
-        "--path",
-        type=str,
-        default="~/log/robot_record.txt",
-        help="Path to robot_server log file (default: ~/log/robot_record.txt).",
-    )
     parser.add_argument(
         "--n",
         type=int,
@@ -100,9 +125,8 @@ def main():
     )
     parser.add_argument(
         "--save",
-        type=str,
-        default=None,
-        help="Save plots to the specified directory instead of showing.",
+        action="store_true",
+        help="Save plots to script directory instead of showing.",
     )
     parser.add_argument(
         "--debug",
@@ -124,9 +148,14 @@ def main():
         action="store_true",
         help="Show frequency spectrum for each joint.",
     )
+    parser.add_argument(
+        "--chassis",
+        action="store_true",
+        help="Only plot chassis data (differential drive velocity).",
+    )
     args = parser.parse_args()
 
-    log_path = Path(args.path).expanduser()
+    log_path = Path("~/log/robot_record.txt").expanduser()
     if not log_path.exists():
         print(f"Log file not found: {log_path}")
         return
@@ -239,6 +268,32 @@ def main():
     tor_ff = build_array("joint_torque_feedforward")
     vel = build_array("joint_velocity")
 
+    # 底盘数据解析（单个值，不是数组）
+    chassis_keys = [
+        "chassis_target_left_velocity",
+        "chassis_target_right_velocity",
+        "chassis_cmd_left_velocity",
+        "chassis_cmd_right_velocity",
+        "chassis_feedback_left_velocity",
+        "chassis_feedback_right_velocity",
+    ]
+
+    def build_chassis_array(key):
+        arr = np.full(n, np.nan, dtype=float)
+        for i, (_, d) in enumerate(samples):
+            if key in d:
+                v = d[key]
+                if isinstance(v, (int, float)):
+                    arr[i] = float(v)
+        return arr
+
+    chassis_data = {}
+    has_chassis_data = False
+    for key in chassis_keys:
+        chassis_data[key] = build_chassis_array(key)
+        if np.isfinite(chassis_data[key]).any():
+            has_chassis_data = True
+
     if args.debug:
         print(f"[DEBUG] Data array shape: ({n}, {joint_count})")
         print(f"[DEBUG] Position data - NaN count: {np.sum(~np.isfinite(pos))}, valid: {np.sum(np.isfinite(pos))}")
@@ -259,11 +314,130 @@ def main():
     plt.rcParams['figure.max_open_warning'] = 100  # 允许更多图形
     plt.rcParams['figure.autolayout'] = False  # 手动调整布局
 
-    # 如果需要保存，使用非交互式后端
-    save_dir = args.save
-    if save_dir:
+    # 如果需要保存，使用非交互式后端，保存到脚本所在目录
+    save_dir = None
+    if args.save:
+        save_dir = Path(__file__).parent.resolve()
         os.makedirs(save_dir, exist_ok=True)
         plt.switch_backend('Agg')
+
+    # 底盘数据绘图函数
+    def plot_chassis(times_input, start_timestamp, show_hz=False):
+        if not has_chassis_data:
+            return None
+
+        rows = 4 if show_hz else 3
+        fig, axes = plt.subplots(rows, 1, figsize=(19.2, 10 if show_hz else 8), dpi=100)
+        fig.suptitle(f"Chassis (Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})", fontsize=11)
+
+        # 将所有坐标轴刻度格式化为小数点后3位
+        for ax in axes.flatten():
+            ax.xaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
+            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
+
+        # 左轮速度对比
+        ax = axes[0]
+        if np.isfinite(chassis_data["chassis_target_left_velocity"]).any():
+            ax.plot(times, chassis_data["chassis_target_left_velocity"], label="target_left",
+                    color="tab:blue", linewidth=1.2)
+        if np.isfinite(chassis_data["chassis_cmd_left_velocity"]).any():
+            ax.plot(times, chassis_data["chassis_cmd_left_velocity"], label="cmd_left",
+                    color="tab:green", linewidth=1.2, linestyle="--")
+        if np.isfinite(chassis_data["chassis_feedback_left_velocity"]).any():
+            ax.plot(times, chassis_data["chassis_feedback_left_velocity"], label="feedback_left",
+                    color="tab:red", linewidth=1.2, linestyle=":")
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.set_ylabel("Left Velocity [rpm]", fontsize=9)
+        ax.legend(loc="best", fontsize=8)
+        ax.set_title("Left Wheel Velocity", fontsize=10)
+
+        # 右轮速度对比
+        ax = axes[1]
+        if np.isfinite(chassis_data["chassis_target_right_velocity"]).any():
+            ax.plot(times, chassis_data["chassis_target_right_velocity"], label="target_right",
+                    color="tab:blue", linewidth=1.2)
+        if np.isfinite(chassis_data["chassis_cmd_right_velocity"]).any():
+            ax.plot(times, chassis_data["chassis_cmd_right_velocity"], label="cmd_right",
+                    color="tab:green", linewidth=1.2, linestyle="--")
+        if np.isfinite(chassis_data["chassis_feedback_right_velocity"]).any():
+            ax.plot(times, chassis_data["chassis_feedback_right_velocity"], label="feedback_right",
+                    color="tab:red", linewidth=1.2, linestyle=":")
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.set_ylabel("Right Velocity [rpm]", fontsize=9)
+        ax.legend(loc="best", fontsize=8)
+        ax.set_title("Right Wheel Velocity", fontsize=10)
+
+        # 左右轮误差
+        ax = axes[2]
+        if np.isfinite(chassis_data["chassis_feedback_left_velocity"]).any():
+            left_err = chassis_data["chassis_cmd_left_velocity"] - chassis_data["chassis_feedback_left_velocity"]
+            ax.plot(times, left_err, label="left_error", color="tab:blue", linewidth=1.2)
+        if np.isfinite(chassis_data["chassis_feedback_right_velocity"]).any():
+            right_err = chassis_data["chassis_cmd_right_velocity"] - chassis_data["chassis_feedback_right_velocity"]
+            ax.plot(times, right_err, label="right_error", color="tab:red", linewidth=1.2)
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.set_ylabel("Velocity Error [rpm]", fontsize=9)
+        ax.set_xlabel("Time [s]", fontsize=9)
+        ax.legend(loc="best", fontsize=8)
+        ax.set_title("Velocity Error (cmd - feedback)", fontsize=10)
+
+        # 4) feedback velocity spectrum (FFT) - only if --hz enabled
+        if show_hz:
+            ax = axes[3]
+            # 左轮反馈速度频谱
+            valid_left_mask = np.isfinite(chassis_data["chassis_feedback_left_velocity"])
+            valid_left = chassis_data["chassis_feedback_left_velocity"][valid_left_mask]
+            if valid_left.size >= 2:
+                valid_times_left = times[valid_left_mask]
+                time_diffs_left = np.diff(valid_times_left)
+                time_diffs_left = time_diffs_left[time_diffs_left > 0]
+                if len(time_diffs_left) >= 1:
+                    dt_left = np.mean(time_diffs_left)
+                else:
+                    dt_left = 0.001
+                fs = 1.0 / dt_left if dt_left > 0 else 1000.0
+                n_left = valid_left.size
+                left_centered = valid_left - np.mean(valid_left)
+                fft_vals_left = np.fft.fft(left_centered)
+                fft_freq_left = np.fft.fftfreq(n_left, d=dt_left)
+                left_mask = fft_freq_left > 0
+                fft_freq_left_pos = fft_freq_left[left_mask]
+                fft_mag_left = np.abs(fft_vals_left[left_mask])
+                fft_mag_left_norm = 2.0 / n_left * fft_mag_left
+                freq_mask_left = fft_freq_left_pos <= 10
+                ax.plot(fft_freq_left_pos[freq_mask_left], fft_mag_left_norm[freq_mask_left],
+                    label="left_feedback", color="tab:blue", linewidth=1.0)
+
+            # 右轮反馈速度频谱
+            valid_right_mask = np.isfinite(chassis_data["chassis_feedback_right_velocity"])
+            valid_right = chassis_data["chassis_feedback_right_velocity"][valid_right_mask]
+            if valid_right.size >= 2:
+                valid_times_right = times[valid_right_mask]
+                time_diffs_right = np.diff(valid_times_right)
+                time_diffs_right = time_diffs_right[time_diffs_right > 0]
+                if len(time_diffs_right) >= 1:
+                    dt_right = np.mean(time_diffs_right)
+                else:
+                    dt_right = 0.001
+                n_right = valid_right.size
+                right_centered = valid_right - np.mean(valid_right)
+                fft_vals_right = np.fft.fft(right_centered)
+                fft_freq_right = np.fft.fftfreq(n_right, d=dt_right)
+                right_mask = fft_freq_right > 0
+                fft_freq_right_pos = fft_freq_right[right_mask]
+                fft_mag_right = np.abs(fft_vals_right[right_mask])
+                fft_mag_right_norm = 2.0 / n_right * fft_mag_right
+                freq_mask_right = fft_freq_right_pos <= 10
+                ax.plot(fft_freq_right_pos[freq_mask_right], fft_mag_right_norm[freq_mask_right],
+                    label="right_feedback", color="tab:red", linewidth=1.0)
+
+            ax.grid(True, alpha=0.3, linestyle=':')
+            ax.set_ylabel("FFT Magnitude", fontsize=9)
+            ax.set_xlabel("Frequency [Hz]", fontsize=9)
+            ax.legend(loc="best", fontsize=8)
+            ax.set_title("Feedback Velocity Spectrum (FFT)", fontsize=10)
+
+        return fig
 
     # 每个手臂一张大图，每张图包含7个关节
     # 如果启用 --hz，则添加频谱图（第5行）
@@ -463,7 +637,17 @@ def main():
     torso_joints = list(range(6))
 
     figs = []
-    if args.a1:
+    # --chassis 模式：只画底盘图
+    if args.chassis:
+        if args.debug:
+            print("[DEBUG] Creating Chassis plot only...")
+        chassis_fig = plot_chassis(times, start_timestamp, show_hz=args.hz)
+        if chassis_fig is not None:
+            figs.append(chassis_fig)
+        else:
+            print("No chassis data found in log file.")
+            return
+    elif args.a1:
         if args.debug:
             print("[DEBUG] Creating A1 mode plots (arms only)...")
         figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz))
@@ -482,14 +666,27 @@ def main():
         if args.debug:
             print("[DEBUG] Creating Right Arm plot...")
         figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz))
+
+        # 添加底盘数据绘图（如果存在）
+        chassis_fig = plot_chassis(times, start_timestamp, show_hz=args.hz)
+        if chassis_fig is not None:
+            figs.append(chassis_fig)
+            if args.debug:
+                print("[DEBUG] Creating Chassis plot...")
+
     if args.debug:
         print(f"[DEBUG] {len(figs)} figures created successfully")
 
     if save_dir:
+        # 动态生成文件名：torso, left_arm, right_arm, chassis
+        base_names = ["torso.png", "left_arm.png", "right_arm.png", "chassis.png"]
         for i, fig in enumerate(figs):
-            filenames = ["torso.png", "left_arm.png", "right_arm.png"]
-            fig.savefig(os.path.join(save_dir, filenames[i]), dpi=100)
-            print(f"Saved: {os.path.join(save_dir, filenames[i])}")
+            if i < len(base_names):
+                filename = base_names[i]
+            else:
+                filename = f"fig_{i}.png"
+            fig.savefig(os.path.join(save_dir, filename), dpi=100)
+            print(f"Saved: {os.path.join(save_dir, filename)}")
         plt.close('all')
     else:
         plt.show()
