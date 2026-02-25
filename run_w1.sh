@@ -18,7 +18,7 @@ source ../install/setup.bash
 # Function to kill process by name
 kill_process() {
     local name=$1
-    pids=$(pgrep -f "$name")
+    pids=$(pgrep -x "$name")
     if [ -n "$pids" ]; then
         kill -9 $pids
     fi

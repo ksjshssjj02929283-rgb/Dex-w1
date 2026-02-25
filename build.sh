@@ -2,6 +2,8 @@
 WORKSPACE_DIR=$(dirname "$0")
 source /opt/ros/humble/setup.bash
 
+rm -rf build/w1_server  # 清理w1_server的构建目录重新cmake以避免覆盖robot.cfg
+
 # 构建类型：Release（默认）或 RelWithDebInfo（开发模式，编译更快）
 BUILD_TYPE=${BUILD_TYPE:-Release}
 
@@ -32,19 +34,30 @@ cd "${WORKSPACE_DIR}/.."
 PACKAGES=$(find dexe_robot_server -name "package.xml" -exec sh -c 'dirname {} | xargs basename' \; | sort -u | tr '\n' ' ')
 colcon build --parallel-workers $(nproc) --cmake-args -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DENABLE_TORQUE_CONTROL_SIMULATION=OFF --packages-select $PACKAGES
 
-# 检查 w1_server 二进制文件并设置权限
-BIN=install/w1_server/lib/w1_server/w1_server
-if [ -f "$BIN" ]; then
-  sudo setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$BIN" || true
-  echo "setcap applied to $BIN:"; getcap -v "$BIN" || true
-else
-  echo "ERROR: $BIN 不存在，检查构建是否成功"
-fi
-
 # 复制到 /opt 并配置运行时库路径
 OPT_DIR=/opt/w1_server
 sudo rm -rf $OPT_DIR
 sudo cp -r install $OPT_DIR
+
+# 设置 w1_server 权限（复制后设置）
+if [ -f "$OPT_DIR/w1_server/lib/w1_server/w1_server" ]; then
+  sudo setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$OPT_DIR/w1_server/lib/w1_server/w1_server" || true
+  echo "setcap applied to $OPT_DIR/w1_server/lib/w1_server/w1_server:"; getcap -v "$OPT_DIR/w1_server/lib/w1_server/w1_server" || true
+fi
+# if [ -f "$OPT_DIR/lib/w1_server/w1_server" ]; then
+#   sudo setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$OPT_DIR/lib/w1_server/w1_server" || true
+#   echo "setcap applied to $OPT_DIR/lib/w1_server/w1_server:"; getcap -v "$OPT_DIR/lib/w1_server/w1_server" || true
+# fi
+
+# 设置 feedback 权限（复制后设置）
+if [ -f "$OPT_DIR/w1_server/lib/w1_server/feedback" ]; then
+  sudo setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$OPT_DIR/w1_server/lib/w1_server/feedback" || true
+  echo "setcap applied to $OPT_DIR/w1_server/lib/w1_server/feedback:"; getcap -v "$OPT_DIR/w1_server/lib/w1_server/feedback" || true
+fi
+# if [ -f "$OPT_DIR/lib/w1_server/feedback" ]; then
+#   sudo setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$OPT_DIR/lib/w1_server/feedback" || true
+#   echo "setcap applied to $OPT_DIR/lib/w1_server/feedback:"; getcap -v "$OPT_DIR/lib/w1_server/feedback" || true
+# fi
 
 {
     echo "/opt/ros/humble/lib"
@@ -55,4 +68,3 @@ sudo cp -r install $OPT_DIR
     echo "$OPT_DIR/robot_server_interfaces/lib"
     echo "$OPT_DIR/robot_server_lib/lib"
 } | sudo tee /etc/ld.so.conf.d/w1_server.conf
-sudo ldconfig
