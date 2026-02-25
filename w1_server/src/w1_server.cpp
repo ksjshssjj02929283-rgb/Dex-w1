@@ -66,10 +66,14 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, Robo
     }
 
     // torso J1-J4 输入整形器
-    torso_shapers_[0] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ1NatureFreq, torque_ctrl_dt, TorsoShaperMaxRampRadPerSec);
-    torso_shapers_[1] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ2NatureFreq, torque_ctrl_dt, TorsoShaperMaxRampRadPerSec);
-    torso_shapers_[2] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ3NatureFreq, torque_ctrl_dt, TorsoShaperMaxRampRadPerSec);
-    torso_shapers_[3] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ4NatureFreq, torque_ctrl_dt, TorsoShaperMaxRampRadPerSec);
+    torso_shapers_[0] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ1NatureFreq, torque_ctrl_dt,
+                                                        TorsoShaperMaxRampRadPerSec);
+    torso_shapers_[1] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ2NatureFreq, torque_ctrl_dt,
+                                                        TorsoShaperMaxRampRadPerSec);
+    torso_shapers_[2] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ3NatureFreq, torque_ctrl_dt,
+                                                        TorsoShaperMaxRampRadPerSec);
+    torso_shapers_[3] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ4NatureFreq, torque_ctrl_dt,
+                                                        TorsoShaperMaxRampRadPerSec);
 
     // 初始化整形器状态追踪变量
     prev_chassis_shaper_enabled_ = enable_chassis_shaper_.load();
@@ -261,11 +265,6 @@ void RobotServer::TorqueControlThreadFunc() {
         robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
         if (ret) {
             this->SwitchControlWord();
-        }
-        // 检查 EnableRobot 标志，如果为 false 则清除 MOTOR_ENABLE
-        if (!this->manager_info_.robot_property.enable_robot) {
-            robot_control_.robot_control_word &= ~CTRLWORD_MOTOR_ENABLE;
-            robot_control_.robot_control_word &= CTRLWORD_MOTOR_QUICK_STOP;
         }
         // 如果开启了记录, 则在独立的记录日志中记录数据
         if (this->enable_record_ && manager_state_ == Status::Running && loop_counter % 4 == 0) {
@@ -524,6 +523,18 @@ void RobotServer::TorqueControlThreadFunc() {
 
 void RobotServer::SwitchControlWord() {
     static bool inited = false;
+    // 0. Sleep 模式下进入QUICK_STOP，阻止写入measurement
+    if (this->manager_info_.robot_property.run_mode == RunMode::Sleep) {
+        this->is_robot_ready_ = false;
+        robot_control_.robot_control_word = CTRLWORD_MOTOR_QUICK_STOP;
+        for (int i = 0; i < ndof_robot; i++) {
+            this->robot_control_.position[i] = this->robot_feedback_.position[i];
+            this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
+            this->robot_control_.negative_torque_limit[i] = this->torque_limit_.negative_limit_Nm[i];
+        }
+        return;
+    }
+    // 1. 根据状态字切换控制字
     switch (robot_feedback_.robot_status_word) {
         case STATUSWORD_MOTOR_READY:
             // ready状态is_robot_ready_置为true, 可以写入measurement, 生成cmd后再使能电机
@@ -562,7 +573,7 @@ void RobotServer::SwitchControlWord() {
             }
             break;
     }
-
+    // 2. 如果初次启动或者状态字是故障，则发送清除故障命令
     if (!inited || manager_info_.robot_property.clear_error_flag) {
         this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CLEAR_FAULT;
     }

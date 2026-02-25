@@ -131,11 +131,11 @@ private:
     // torso J1-J4 输入整形器数组
     std::unique_ptr<EIInputShaper> torso_shapers_[4];
     EIInputShaper::Type torso_shaper_type_ = EIInputShaper::EI;
-    const double TorsoJ1NatureFreq = 3.07;  // torso J1 自然频率，单位Hz
-    const double TorsoJ2NatureFreq = 4.50;  // torso J2 自然频率，单位Hz
-    const double TorsoJ3NatureFreq = 4.50;  // torso J3 自然频率，单位Hz
-    const double TorsoJ4NatureFreq = 4.50;  // torso J4 自然频率，单位Hz
-    const double TorsoShaperMaxRampRadPerSec = 0.1; // torso J1-J4 最大角速度 ramp率，单位 rad/s 每周期
+    const double TorsoJ1NatureFreq = 3.07;           // torso J1 自然频率，单位Hz
+    const double TorsoJ2NatureFreq = 4.50;           // torso J2 自然频率，单位Hz
+    const double TorsoJ3NatureFreq = 4.50;           // torso J3 自然频率，单位Hz
+    const double TorsoJ4NatureFreq = 4.50;           // torso J4 自然频率，单位Hz
+    const double TorsoShaperMaxRampRadPerSec = 0.1;  // torso J1-J4 最大角速度 ramp率，单位 rad/s 每周期
 
     // 力传感器相关
     Vector3d sensor_force_;

@@ -86,7 +86,6 @@ struct RobotProperty {
     pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     RunMode run_mode{RunMode::Position};
-    bool enable_robot{true};  // 手动控制电机使能标志
     double global_speed_ratio{0.5};
     double safe_level{0.5};
     bool clear_error_flag{false};

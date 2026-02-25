@@ -44,6 +44,7 @@ enum class RunMode {
     Position,            // position controls
     Torque,              // torque control
     Drag,                // zero-stiff control
+    Sleep,               // sleep mode, motors disabled
     CartesianImpedance,  // impedance control
     DragImpedance,       // mixed drag and impedance control
     Unknown
@@ -57,7 +58,6 @@ enum class RequestType {
     Empty,  // empty command
 
     // Set Property Request
-    EnableRobot,  // 手动控制电机使能
     TcpPrimary,
     TcpSecondary,
     SpeedRatio,
@@ -65,6 +65,7 @@ enum class RequestType {
     SafeLevel,
     SwitchRunMode,
     EnableDrag,
+    EnableSleep,  // 休眠模式切换
     JointStiffness,
     JointDamping,
     CartStiffness,

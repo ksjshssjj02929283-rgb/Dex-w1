@@ -207,21 +207,52 @@ RequestResponse PlannerManager::OnRequestStateInit() {
     // If the measurement time is invalid, the new measurement is not here yet
     if (time_meta.measurement_time.is_invalid()) {
         manager_buffer_.planner_manager_command->Reset();  // 重置命令缓冲区 Reset the command buffer
-        if (request.type == RequestType::ClearError) {
-            //清除错误状态 Clear error state
-            response.re_run = true;
-            response.request_consumed = true;
-            robot_property_.clear_error_flag = true;
-            robot_property_.error_code = ErrorCode::NoError;  // 尝试清除错误码 Clear error code
-            runtime_data_.latest_processing_request_id =
-                request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
-            runtime_data_.latest_processing_request_type = request.type;
-            runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
-            ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
-        } else if (request.type != RequestType::Empty) {
-            runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
-            ReportRequestStatus(request.request_id, request.type, RequestStatus::ErrorDrop, manager_state_);
-            response.request_consumed = true;
+        switch (request.type) {
+            case RequestType::ClearError: {
+                // 清除错误状态 Clear error state
+                response.re_run = true;
+                response.request_consumed = true;
+                robot_property_.clear_error_flag = true;
+                robot_property_.error_code = ErrorCode::NoError;  // 尝试清除错误码 Clear error code
+                runtime_data_.latest_processing_request_id =
+                    request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
+                runtime_data_.latest_processing_request_type = request.type;
+                runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+                ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
+                break;
+            }
+            case RequestType::EnableSleep: {
+                // Sleep 模式下在 Init 状态也可以取消休眠
+                assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
+                bool enable_sleep = std::get<bool>(request.data.value());
+                if (!enable_sleep) {
+                    // 取消 Sleep 模式，恢复到 Position
+                    robot_property_.run_mode = RunMode::Position;
+                    response.re_run = true;
+                    response.request_consumed = true;
+                    runtime_data_.latest_processing_request_id = request.request_id;
+                    runtime_data_.latest_processing_request_type = request.type;
+                    runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+                    ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
+                    LOG_INFO << "Cancel Sleep mode in Init state, switched to Position mode";
+                } else {
+                    response.request_consumed = true;
+                    runtime_data_.latest_processing_request_id = request.request_id;
+                    runtime_data_.latest_processing_request_type = request.type;
+                    runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+                    ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
+                }
+                break;
+            }
+            case RequestType::Empty:
+                // 空命令不处理
+                break;
+            default:
+                // 其他命令在 Init 状态下被拒绝
+                runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+                ReportRequestStatus(request.request_id, request.type, RequestStatus::ErrorDrop, manager_state_);
+                response.request_consumed = true;
+                break;
         }
 
         return response;
@@ -439,13 +470,6 @@ void PlannerManager::ChangeState(Status new_state) {
 void PlannerManager::SetProperty(const PlannerRequest &request) {
     // todo: 数据格式错误转error的处理
     switch (request.type) {
-        case RequestType::EnableRobot: {
-            assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
-            bool enable_robot = std::get<bool>(request.data.value());
-            robot_property_.enable_robot = enable_robot;
-            LOG_INFO << "Set enable_robot to " << (enable_robot ? "true" : "false");
-            return;
-        }
         case RequestType::TcpPrimary: {
             assert(request.data.has_value() && std::holds_alternative<PoseQuaternion>(request.data.value()));
             auto tcp_temp = std::get<PoseQuaternion>(request.data.value());
@@ -522,6 +546,18 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
                 robot_property_.run_mode = previous_mode;
             }
             LOG_INFO << "Set run mode to " << ToString(robot_property_.run_mode);
+            return;
+        }
+        case RequestType::EnableSleep: {
+            assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
+            bool enable_sleep = std::get<bool>(request.data.value());
+            if (enable_sleep) {
+                robot_property_.run_mode = RunMode::Sleep;
+                LOG_INFO << "Enable Sleep mode";
+            } else {
+                robot_property_.run_mode = RunMode::Position;
+                LOG_INFO << "Disable Sleep mode";
+            }
             return;
         }
         case RequestType::JointStiffness: {
