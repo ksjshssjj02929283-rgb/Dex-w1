@@ -670,4 +670,46 @@ void set_log_level(LogLevel level) { loglevel.store(static_cast<unsigned int>(le
 
 bool is_logged(LogLevel level) { return static_cast<unsigned int>(level) >= loglevel.load(std::memory_order_relaxed); }
 
+// LogManager implementation
+LogManager &LogManager::instance() {
+    static LogManager manager;
+    return manager;
+}
+
+NanoLogger *LogManager::get_or_create_logger(const std::string &name,
+                                             GuaranteedLogger gl,
+                                             const std::string &log_directory,
+                                             const std::string &log_file_name,
+                                             uint32_t roll_size_mb,
+                                             uint32_t max_files) {
+    auto it = loggers_.find(name);
+    if (it != loggers_.end()) {
+        return it->second.get();
+    }
+
+    // 创建新的日志实例
+    auto logger = std::make_unique<NanoLogger>(gl, log_directory, log_file_name, roll_size_mb, max_files);
+    NanoLogger *logger_ptr = logger.get();
+    loggers_[name] = std::move(logger);
+
+    // 如果是第一个创建的实例，设置为默认实例
+    if (default_logger_ == nullptr) {
+        default_logger_ = logger_ptr;
+        atomic_default_logger_.store(logger_ptr, std::memory_order_seq_cst);
+    }
+
+    return logger_ptr;
+}
+
+NanoLogger *LogManager::get_default_logger() { return default_logger_; }
+
+std::atomic<NanoLogger *> *LogManager::get_default_atomic_logger() { return &atomic_default_logger_; }
+
+void LogManager::write_to_logger(const std::string &name, NanoLogLine &&logline) {
+    auto it = loggers_.find(name);
+    if (it != loggers_.end()) {
+        it->second->add(std::move(logline));
+    }
+}
+
 }  // namespace nanolog

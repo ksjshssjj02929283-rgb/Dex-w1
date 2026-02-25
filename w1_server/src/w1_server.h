@@ -9,6 +9,7 @@
 #include "joint_interfaces/msg/joint_control.hpp"
 #include "joint_interfaces/msg/joint_position_control.hpp"
 #include "joint_interfaces/msg/joint_velocity_torque_limit_feedback.hpp"
+#include "robot_server_lib/NanoLog.hpp"
 #include "robot_server_lib/butterworth_filter.h"
 #include "robot_server_lib/ei_input_shaper.h"
 #include "robot_server_lib/force_sensor_reader.h"

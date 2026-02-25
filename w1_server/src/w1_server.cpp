@@ -266,21 +266,22 @@ void RobotServer::TorqueControlThreadFunc() {
         if (!this->manager_info_.robot_property.enable_robot) {
             robot_control_.robot_control_word &= ~CTRLWORD_MOTOR_ENABLE;
         }
-        // 如果开启了记录, 则在日志中记录数据
+        // 如果开启了记录, 则在独立的记录日志中记录数据
         if (this->enable_record_ && manager_state_ == Status::Running && loop_counter % 4 == 0) {
             int idx_offset = (robot_mode_ != RobotMode::W1) ? first_arm_joint_index_ : 0;
-            LOG_INFO
-                << "{ \"joint_position\": "
-                << utils::VectorToJsonArrayString(robot_feedback_.position, idx_offset, ndof_config_).str()
-                << ", \"joint_velocity\": "
-                << utils::VectorToJsonArrayString(robot_feedback_.velocity, idx_offset, ndof_config_).str()
-                << ", \"joint_torque\":"
-                << utils::VectorToJsonArrayString(robot_feedback_.torque, idx_offset, ndof_config_).str()
-                << ", \"joint_position_cmd\": "
-                << utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str()
-                << ", \"joint_torque_feedforward\": "
-                << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, idx_offset, ndof_config_).str()
-                << "}";
+            nanolog::NanoLogLine logline(nanolog::LogLevel::CRIT, __FILE__, __func__, __LINE__);
+            logline << "{ \"joint_position\": "
+                    << utils::VectorToJsonArrayString(robot_feedback_.position, idx_offset, ndof_config_).str()
+                    << ", \"joint_velocity\": "
+                    << utils::VectorToJsonArrayString(robot_feedback_.velocity, idx_offset, ndof_config_).str()
+                    << ", \"joint_torque\":"
+                    << utils::VectorToJsonArrayString(robot_feedback_.torque, idx_offset, ndof_config_).str()
+                    << ", \"joint_position_cmd\": "
+                    << utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str()
+                    << ", \"joint_torque_feedforward\": "
+                    << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, idx_offset, ndof_config_).str()
+                    << "} \n";
+            nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
         }
         // 如果机器人就绪，则写入测量数据
         if (this->is_robot_ready_) {

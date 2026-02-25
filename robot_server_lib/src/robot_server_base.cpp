@@ -12,7 +12,15 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
     std::filesystem::create_directories(home_dir / "log");
     nanolog::initialize(nanolog::GuaranteedLogger(), (home_dir / "log/").string(), "robot_server" + interface_suffix,
                         10,
-                        10);                          // 每个日志文件最大20MB，最多保留10个日志文件
+                        10);  // 每个日志文件最大20MB，最多保留10个日志文件
+
+    // 初始化记录日志实例（用于记录关节数据等高频数据）
+    nanolog::LogManager::instance().get_or_create_logger("record",  // 日志实例名称
+                                                         nanolog::GuaranteedLogger(), (home_dir / "log/").string(),
+                                                         "robot_record" + interface_suffix,
+                                                         20,  // 每个日志文件最大20MB
+                                                         5);  // 保留5个日志文件
+
     nanolog::set_log_level(nanolog::LogLevel::INFO);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
     RCLCPP_INFO(this->get_logger(), "Logs directory: %s",
                 ((home_dir / "log").string() + "/robot_server" + interface_suffix + ".txt").c_str());

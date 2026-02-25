@@ -27,8 +27,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #define NANO_LOG_HEADER_GUARD
 
 #include <Eigen/Dense>
+#include <atomic>
 #include <cstdint>
 #include <iosfwd>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -36,6 +38,42 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <vector>
 
 namespace nanolog {
+
+// 前向声明
+class NanoLogger;
+class NanoLogLine;
+struct GuaranteedLogger;
+struct NonGuaranteedLogger;
+
+// 日志实例管理器，支持多实例日志
+class LogManager {
+public:
+    static LogManager &instance();
+
+    // 创建或获取命名日志实例
+    NanoLogger *get_or_create_logger(const std::string &name,
+                                     GuaranteedLogger gl,
+                                     const std::string &log_directory,
+                                     const std::string &log_file_name,
+                                     uint32_t roll_size_mb,
+                                     uint32_t max_files);
+
+    // 获取用于 LOG 宏的默认日志实例
+    NanoLogger *get_default_logger();
+
+    // 获取默认原子指针（用于 LOG 宏）
+    std::atomic<NanoLogger *> *get_default_atomic_logger();
+
+    // 向指定名称的日志实例写入一行日志
+    void write_to_logger(const std::string &name, NanoLogLine &&logline);
+
+private:
+    LogManager() = default;
+    std::map<std::string, std::unique_ptr<NanoLogger>> loggers_;
+    NanoLogger *default_logger_ = nullptr;
+    std::atomic<NanoLogger *> atomic_default_logger_{nullptr};
+};
+
 enum class LogLevel : uint8_t { DEBUG, INFO, WARN, CRIT };
 
 class NanoLogLine {

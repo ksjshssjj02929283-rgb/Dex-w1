@@ -83,8 +83,8 @@ def main():
     parser.add_argument(
         "--path",
         type=str,
-        default="~/log/robot_server.txt",
-        help="Path to robot_server log file.",
+        default="~/log/robot_record.txt",
+        help="Path to robot_server log file (default: ~/log/robot_record.txt).",
     )
     parser.add_argument(
         "--n",
@@ -271,7 +271,7 @@ def main():
         rows = 5 if show_hz else 4
         cols = len(joint_indices)
         fig, axes = plt.subplots(rows, cols, figsize=(19.2, 14 if show_hz else 11), dpi=100)
-        fig.suptitle(f"{arm_name} (Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})", fontsize=10)
+        fig.suptitle(f"{arm_name} (Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})", fontsize=11)
 
         # 将所有坐标轴刻度格式化为小数点后3位
         for ax in axes.flatten():
@@ -449,7 +449,7 @@ def main():
                     ax.set_ylabel("Spectrum [deg]", fontsize=7)
 
         # 调整布局
-        fig.tight_layout(rect=[0.02, 0.02, 1, 0.96], h_pad=2, w_pad=2)
+        fig.tight_layout(rect=[0.02, 0.02, 1, 0.98], h_pad=2, w_pad=2)
         return fig
 
     # A1模式：只有双臂14个关节（数据数组索引0-13，对应原始关节6-19）
