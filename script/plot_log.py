@@ -554,13 +554,13 @@ def main():
             except Exception:
                 pass
 
-            # 5) position spectrum (FFT) - only if --hz enabled
+            # 5) velocity spectrum (FFT) - only if --hz enabled
             if show_hz:
                 ax = axes[4, ci]
-                valid_pos_mask = np.isfinite(pos_deg[:, j])
-                valid_pos = pos_deg[:, j][valid_pos_mask]
-                if valid_pos.size >= 2:
-                    valid_times = times[valid_pos_mask]
+                valid_vel_mask = np.isfinite(vel_deg[:, j])
+                valid_vel = vel_deg[:, j][valid_vel_mask]
+                if valid_vel.size >= 2:
+                    valid_times = times[valid_vel_mask]
                     time_diffs = np.diff(valid_times)
                     time_diffs = time_diffs[time_diffs > 0]
                     if len(time_diffs) >= 1:
@@ -568,23 +568,23 @@ def main():
                     else:
                         dt = 0.001
                     fs = 1.0 / dt if dt > 0 else 1000.0
-                    n = valid_pos.size
-                    pos_centered = valid_pos - np.mean(valid_pos)
-                    fft_vals = np.fft.fft(pos_centered)
+                    n = valid_vel.size
+                    vel_centered = valid_vel - np.mean(valid_vel)
+                    fft_vals = np.fft.fft(vel_centered)
                     fft_freq = np.fft.fftfreq(n, d=dt)
-                    pos_mask = fft_freq > 0
-                    fft_freq_pos = fft_freq[pos_mask]
-                    fft_mag = np.abs(fft_vals[pos_mask])
+                    vel_mask = fft_freq > 0
+                    fft_freq_vel = fft_freq[vel_mask]
+                    fft_mag = np.abs(fft_vals[vel_mask])
                     fft_mag_norm = 2.0 / n * fft_mag
-                    freq_mask = fft_freq_pos <= 10
-                    ax.plot(fft_freq_pos[freq_mask], fft_mag_norm[freq_mask],
-                        color="tab:blue", linewidth=1.0)
+                    freq_mask = fft_freq_vel <= 10
+                    ax.plot(fft_freq_vel[freq_mask], fft_mag_norm[freq_mask],
+                        color="tab:brown", linewidth=1.0)
                     ax.grid(True, alpha=0.3, linestyle=':')
                     ax.tick_params(labelsize=7)
                     if fft_mag_norm[freq_mask].size > 0:
                         peak_idx = np.argmax(fft_mag_norm[freq_mask])
                         if fft_mag_norm[freq_mask][peak_idx] > 0.01 * fft_mag_norm[freq_mask].max():
-                            peak_freq = fft_freq_pos[freq_mask][peak_idx]
+                            peak_freq = fft_freq_vel[freq_mask][peak_idx]
                             ax.axvline(x=peak_freq, color='tab:red', linestyle='--', alpha=0.7, linewidth=1)
                             ax.annotate(f'{peak_freq:.1f}Hz',
                                     xy=(peak_freq, fft_mag_norm[freq_mask][peak_idx]),
@@ -598,7 +598,7 @@ def main():
                         alpha=0.6, fontsize=10)
                     ax.set_xlabel("(Hz)", fontsize=7, x=1.02, ha='left')
                 if ci == 0:
-                    ax.set_ylabel("Spectrum [deg]", fontsize=7)
+                    ax.set_ylabel("Spectrum [deg/s]", fontsize=7)
 
         # 调整布局
         fig.tight_layout(rect=[0.02, 0.02, 1, 0.98], h_pad=2, w_pad=2)
