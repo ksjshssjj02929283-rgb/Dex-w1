@@ -40,8 +40,8 @@ from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 from dexe_rp import DexforceW1Kinematics, SRSConfig
 
 from ..client_supervisor.client_supervisior import RobotClientSupervisor
-from .mgr_util.supervisor_view import SupervisorViewW1
 from .mgr_util.robot_client_warpper import RobotClientWrapper, GripperClientWrapper
+from .mgr_util.supervisor_view import SupervisorViewW1
 from .mgr_util.supervisor_utils import StaticUtilityW1
 
 from .movement.move_line_dual_arm import DualArmMoveLineW1
@@ -125,8 +125,6 @@ class W1Manager:
         self._init_pinocchio(arm_type=arm_type,
                              w1_version=w1_version,
                              end_effector_type=end_effector_type)
-        self.real_torso_idx, self.real_head_idx, self.real_arml_idx, self.real_armr_idx = get_real_idx(
-        )
         self._init_planner(arm_type=arm_type,
                            w1_version=w1_version,
                            end_effector_type=end_effector_type)
@@ -1739,7 +1737,7 @@ class W1Manager:
     def move_dual_arm_multiple_task(self,
                                     task_dict: list,
                                     speed_ratio: float = 1.0):
-        movement = DualArmMovementBaseW1(
+        movement = DualArmMoveLineW1(
             w1_params=self.w1_params,
             supervisor=self.target_supervisor,
             kine_solver=self.kine,
@@ -1755,11 +1753,16 @@ class W1Manager:
                                   task_dict: dict,
                                   speed_ratio: float = 1.0,
                                   is_local: bool = True):
-        movement = DualArmMoveLineW1(w1_params=self.w1_params,
-                                     supervisor=self.target_supervisor,
-                                     kine_solver=self.kine,
-                                     pin_kine_solver=self._pin_kine,
-                                     collision_checker=self.fcl_checker)
+        movement = DualArmMoveLineW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            time_step=self.TIME_STEP)
         return movement.plan_linear_dual_arm_sync(task_dict=task_dict,
                                                   speed_ratio=speed_ratio,
                                                   is_local=is_local)
@@ -1768,11 +1771,16 @@ class W1Manager:
                                   task_dict: dict,
                                   speed_ratio: float = 1.0,
                                   is_local: bool = True):
-        movement = DualArmMoveLineW1(w1_params=self.w1_params,
-                                     supervisor=self.target_supervisor,
-                                     kine_solver=self.kine,
-                                     pin_kine_solver=self._pin_kine,
-                                     collision_checker=self.fcl_checker)
+        movement = DualArmMoveLineW1(
+            w1_params=self.w1_params,
+            supervisor=self.target_supervisor,
+            kine_solver=self.kine,
+            pin_kine_solver=self._pin_kine,
+            collision_checker=self.fcl_checker,
+            hybrid_planner=self.hybrid_planner,
+            cartesian_planner=self.cartesian_planner,
+            cartesian_joint_planner=self.cartesian_joint_planner,
+            time_step=self.TIME_STEP)
         return movement.move_linear_dual_arm_sync(task_dict=task_dict,
                                                   speed_ratio=speed_ratio,
                                                   is_local=is_local)

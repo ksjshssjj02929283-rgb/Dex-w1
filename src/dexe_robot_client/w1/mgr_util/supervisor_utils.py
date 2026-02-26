@@ -5,6 +5,8 @@
 # ----------------------------------------------------------------------------
 
 import time
+import json
+import pathlib
 import numpy as np
 from ..utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
@@ -46,7 +48,7 @@ class StaticUtilityW1(object):
         if not speed_ratio_list:  # None or []
             speed_ratio_list = [speed_ratio] * len(pos_list)
         elif len(speed_ratio_list) != len(pos_list):
-            self.logger.error(
+            supervisor.logger.error(
                 f"{name} qpos and speed_ratio dimension mismatch.")
             return StatusCode.DIM_MISMATCH, None, None, None
         # 将None元素替换为global_speed_ratio
@@ -281,17 +283,17 @@ class StaticUtilityW1(object):
         """
         file_path_ = pathlib.Path(file_path)
         if not file_path_.exists() or file_path_.stat().st_size == 0:
-            self.logger.error(f"{str(file_path)} invalid.")
+            supervisor.logger.error(f"{str(file_path)} invalid.")
             return False
 
         with open(file_path, "r") as f:
             json_data = json.load(f)
 
-        json_data["home_qpos"] = self.get_home_qpos().tolist()
+        json_data["home_qpos"] = supervisor.w1_params.home_qpos.tolist()
 
         with open(file_path, "w") as f:
             json.dump(json_data, f, indent=4, ensure_ascii=False)
-        self.w1_params.update_params(file_path)
+        supervisor.w1_params.update_params(file_path)
         return True
 
     @staticmethod
@@ -325,7 +327,8 @@ class StaticUtilityW1(object):
         return True, np.hstack(temp_arrays)
 
     @staticmethod
-    def cal_path_seg_interpolate_num(waypoint_list: list[np.ndarray],
+    def cal_path_seg_interpolate_num(supervisor: SupervisorViewW1,
+                                     waypoint_list: list[np.ndarray],
                                      cartesian_step: float = 0.005):
         interpolate_num_list = []
         for idx in range(len(waypoint_list) - 1):

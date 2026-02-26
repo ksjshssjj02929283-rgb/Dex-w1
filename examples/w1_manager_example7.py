@@ -147,7 +147,7 @@ task_dict6 = {
 
 
 def test_single_task(task_dict=None,
-                     load_env=True,
+                     load_env=False,
                      fcl_env_path=None,
                      planner_env_path=None):
     if load_env:
@@ -193,7 +193,7 @@ if __name__ == "__main__":
     planner_upward_env_path = f"{DATA_DIR}/environment/expanded_coffee_demo_upward.json"
 
     test_single_task(task_dict=task_dict1,
-                     load_env=True,
+                     load_env=False,
                      fcl_env_path=fcl_upward_env_path,
                      planner_env_path=planner_upward_env_path)
     # w1_manager.add_control_part()
@@ -207,6 +207,6 @@ if __name__ == "__main__":
     # w1_manager.reload_coffee_machine_in_viser()
     test_single_task(task_dict=task_dict5, load_env=False)
     test_single_task(task_dict=task_dict6,
-                     load_env=True,
+                     load_env=False,
                      fcl_env_path=fcl_downward_env_path,
                      planner_env_path=planner_downward_env_path)

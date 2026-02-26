@@ -536,6 +536,8 @@ class SupervisorViewW1(object):
         raw_endpoint_index += [
             sync_id for sync_id, _ in right_arm_ee_trigger_list
         ]
+        # Ensure the end of the trajectory is included
+        raw_endpoint_index.append(qpos_array.shape[0])
         unique_sync_ids = sorted(
             set(raw_endpoint_index)) if raw_endpoint_index else [
                 len(qpos_array)
@@ -556,7 +558,7 @@ class SupervisorViewW1(object):
             return new_trigger_list
 
         t0 = time.time()
-        self.logger.debug(
+        self.logger.info(
             f"Initiating trajectory execution with {len(qpos_array)} points and "
             + f"{len(left_arm_ee_trigger_list)} left arm EE triggers, " +
             f"{len(right_arm_ee_trigger_list)} right arm EE triggers, " +

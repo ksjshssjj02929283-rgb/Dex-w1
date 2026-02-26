@@ -290,6 +290,7 @@ class RobotClientSupervisor(object):
                     continue
 
                 # Not killed
+                # TODO: latest_finished_id may None if the robot client is not working properly, need to handle this case
                 if task.associated_move_id > robot_state.latest_finished_id:
                     remaining_tasks.append(task)
                     continue

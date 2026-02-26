@@ -12,6 +12,7 @@ from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlann
 from ..mgr_util.supervisor_view import SupervisorViewW1
 from ..mgr_util.supervisor_utils import StaticUtilityW1
 from ...common import get_logger, time_consuming, StatusCode
+from ...common.mapping_index import get_real_idx
 
 from ..path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm
 
@@ -42,6 +43,9 @@ class DualArmMovementBaseW1(object):
             cartesian_joint_planner=cartesian_joint_planner,
             time_step=time_step)
         self.logger = get_logger()
+
+        self.real_torso_idx, self.real_head_idx, self.real_arml_idx, self.real_armr_idx = get_real_idx(
+        )
 
     def move_dual_arm_single_task(self,
                                   task_dict: dict,
@@ -101,7 +105,7 @@ class DualArmMovementBaseW1(object):
                 target_torso_qpos = torso_qpos_array[i]
                 real_qpos = np.concatenate((target_torso_qpos, cur_head_qpos,
                                             cur_arml_qpos, cur_armr_qpos))
-                if self.is_collision(
+                if self.supervisor_view.is_collision(
                         real_qpos,
                         armlee_qpos=cur_armlee_qpos,
                         armree_qpos=cur_armree_qpos) != StatusCode.FAIL:
@@ -129,11 +133,11 @@ class DualArmMovementBaseW1(object):
                 target_head_qpos = head_qpos_array[i]
                 real_qpos = np.concatenate((cur_torso_qpos, target_head_qpos,
                                             cur_arml_qpos, cur_armr_qpos))
-                if self.is_collision(
+                if self.supervisor_view.is_collision(
                         real_qpos,
                         armlee_qpos=cur_armlee_qpos,
                         armree_qpos=cur_armree_qpos) != StatusCode.FAIL:
-                    self.logger.waring(
+                    self.logger.warning(
                         "It will occur collision for this head moving trajectory"
                     )
                     return StatusCode.COLLISION_FAIL
@@ -177,7 +181,7 @@ class DualArmMovementBaseW1(object):
             self.logger.error("Get current right arm ee qpos failed.")
             return res
 
-        arml_kine = self._get_arm_kine("left_arm")
+        arml_kine = self.supervisor_view._get_arm_kine("left_arm")
         target_arml_pose = task_dict.get("left_arm")
 
         arml_speed_ratio = task_dict.get("left_arm_speed_ratio")
@@ -211,7 +215,7 @@ class DualArmMovementBaseW1(object):
                 else:
                     real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos,
                                                 arml_ik_qpos, cur_armr_qpos))
-                    if self.is_collision(
+                    if self.supervisor_view.is_collision(
                             real_qpos,
                             armlee_qpos=cur_armlee_qpos,
                             armree_qpos=cur_armree_qpos) != StatusCode.FAIL:
@@ -229,7 +233,7 @@ class DualArmMovementBaseW1(object):
         else:
             target_arml_qpos = cur_arml_qpos
 
-        armr_kine = self._get_arm_kine("right_arm")
+        armr_kine = self.supervisor_view._get_arm_kine("right_arm")
         target_armr_pose = task_dict.get("right_arm")
 
         armr_speed_ratio = task_dict.get("right_arm_speed_ratio")
@@ -262,7 +266,7 @@ class DualArmMovementBaseW1(object):
                 else:
                     real_qpos = np.concatenate((cur_torso_qpos, cur_head_qpos,
                                                 cur_arml_qpos, armr_ik_qpos))
-                    if self.is_collision(
+                    if self.supervisor_view.is_collision(
                             real_qpos,
                             armlee_qpos=cur_armlee_qpos,
                             armree_qpos=cur_armree_qpos) != StatusCode.FAIL:
@@ -280,18 +284,20 @@ class DualArmMovementBaseW1(object):
         else:
             target_armr_qpos = cur_armr_qpos
 
-        self.hybrid_planner.set_head_torso(head_qpos=cur_head_qpos,
-                                           torso_qpos=cur_torso_qpos)
-        self.hybrid_planner.set_end_effector_qpos(armlee_qpos=cur_armlee_qpos,
-                                                  armree_qpos=cur_armree_qpos)
-        self.hybrid_planner.set_start_goal(arml_start=cur_arml_qpos,
-                                           armr_start=cur_armr_qpos,
-                                           arml_goal=target_arml_qpos,
-                                           armr_goal=target_armr_qpos)
-        self.hybrid_planner.set_traj_max_vel(
+        self.supervisor_view.hybrid_planner.set_head_torso(
+            head_qpos=cur_head_qpos, torso_qpos=cur_torso_qpos)
+        self.supervisor_view.hybrid_planner.set_end_effector_qpos(
+            armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos)
+        self.supervisor_view.hybrid_planner.set_start_goal(
+            arml_start=cur_arml_qpos,
+            armr_start=cur_armr_qpos,
+            arml_goal=target_arml_qpos,
+            armr_goal=target_armr_qpos)
+        self.supervisor_view.hybrid_planner.set_traj_max_vel(
             left_max_vel=arml_speed_ratio * 0.3,
             right_max_vel=armr_speed_ratio * 0.3)
-        arml_traj, armr_traj, planning_time = self.hybrid_planner.plan()
+        arml_traj, armr_traj, planning_time = self.supervisor_view.hybrid_planner.plan(
+        )
 
         self.logger.info(
             f"Finish Planning, time consumption: {planning_time}, with left arm traj shape: {None if arml_traj is None else arml_traj.shape}, right arm traj shape: {None if armr_traj is None else armr_traj.shape}"
@@ -369,7 +375,7 @@ class DualArmMovementBaseW1(object):
             if ree_target is None:
                 ree_target = cur_armree_qpos
             for qpos in move_arml_armr_traj:
-                if self.is_collision(
+                if self.supervisor_view.is_collision(
                         qpos,
                         armlee_qpos=cur_armlee_qpos,
                         armree_qpos=cur_armree_qpos) != StatusCode.FAIL:
@@ -417,7 +423,7 @@ class DualArmMovementBaseW1(object):
             if ree_target is None:
                 ree_target = cur_armree_qpos
             for qpos in move_arml_armr_traj:
-                if self.is_collision(
+                if self.supervisor_view.is_collision(
                         qpos,
                         armlee_qpos=cur_armlee_qpos,
                         armree_qpos=cur_armree_qpos) != StatusCode.FAIL:
@@ -464,7 +470,7 @@ class DualArmMovementBaseW1(object):
             if ree_target is None:
                 ree_target = cur_armree_qpos
             for qpos in move_arml_armr_traj:
-                if self.is_collision(
+                if self.supervisor_view.is_collision(
                         qpos,
                         armlee_qpos=cur_armlee_qpos,
                         armree_qpos=cur_armree_qpos) != StatusCode.FAIL:
@@ -511,7 +517,7 @@ class DualArmMovementBaseW1(object):
             if ree_target is None:
                 ree_target = cur_armree_qpos
             for qpos in move_arml_armr_traj:
-                if self.is_collision(
+                if self.supervisor_view.is_collision(
                         qpos,
                         armlee_qpos=cur_armlee_qpos,
                         armree_qpos=cur_armree_qpos) != StatusCode.FAIL:
@@ -590,7 +596,7 @@ class DualArmMovementBaseW1(object):
                 target_torso_qpos = torso_qpos_array[i]
                 real_qpos = np.concatenate((target_torso_qpos, cur_head_qpos,
                                             cur_arml_qpos, cur_armr_qpos))
-                if self.is_collision(
+                if self.supervisor_view.is_collision(
                         real_qpos,
                         armlee_qpos=cur_armlee_qpos,
                         armree_qpos=cur_armree_qpos) != StatusCode.FAIL:
@@ -611,7 +617,7 @@ class DualArmMovementBaseW1(object):
                 target_head_qpos = head_qpos_array[i]
                 real_qpos = np.concatenate((cur_torso_qpos, target_head_qpos,
                                             cur_arml_qpos, cur_armr_qpos))
-                if self.is_collision(
+                if self.supervisor_view.is_collision(
                         real_qpos,
                         armlee_qpos=cur_armlee_qpos,
                         armree_qpos=cur_armree_qpos) != StatusCode.FAIL:
@@ -634,7 +640,7 @@ class DualArmMovementBaseW1(object):
                 )
                 return StatusCode.DIM_MISMATCH
 
-            arml_kine = self._get_arm_kine("left_arm")
+            arml_kine = self.supervisor_view._get_arm_kine("left_arm")
             arml_speed_ratio_list = task_dict.get("left_arm_speed_ratio")
             if arml_speed_ratio_list is not None and arml_speed_ratio_list != []:
                 for i in range(len(arml_speed_ratio_list)):
@@ -692,10 +698,11 @@ class DualArmMovementBaseW1(object):
                             real_qpos = np.concatenate(
                                 (cur_torso_qpos, cur_head_qpos, arml_ik_qpos,
                                  cur_armr_qpos))
-                            if self.is_collision(real_qpos,
-                                                 armlee_qpos=cur_armlee_qpos,
-                                                 armree_qpos=cur_armree_qpos
-                                                ) != StatusCode.FAIL:
+                            if self.supervisor_view.is_collision(
+                                    real_qpos,
+                                    armlee_qpos=cur_armlee_qpos,
+                                    armree_qpos=cur_armree_qpos
+                            ) != StatusCode.FAIL:
                                 self.logger.warning(
                                     "It will occur collision for this left arm ik solution, try to find another one"
                                 )
@@ -711,17 +718,19 @@ class DualArmMovementBaseW1(object):
                     self.logger.warning("invalid left arm target input")
                     return StatusCode.INPUT_INVALID
 
-                self.hybrid_planner.set_head_torso(head_qpos=cur_head_qpos,
-                                                   torso_qpos=cur_torso_qpos)
-                self.hybrid_planner.set_end_effector_qpos(
+                self.supervisor_view.hybrid_planner.set_head_torso(
+                    head_qpos=cur_head_qpos, torso_qpos=cur_torso_qpos)
+                self.supervisor_view.hybrid_planner.set_end_effector_qpos(
                     armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos)
-                self.hybrid_planner.set_start_goal(arml_start=cur_arml_qpos,
-                                                   armr_start=cur_armr_qpos,
-                                                   arml_goal=target_arml_qpos,
-                                                   armr_goal=cur_armr_qpos)
-                self.hybrid_planner.set_traj_max_vel(
+                self.supervisor_view.hybrid_planner.set_start_goal(
+                    arml_start=cur_arml_qpos,
+                    armr_start=cur_armr_qpos,
+                    arml_goal=target_arml_qpos,
+                    armr_goal=cur_armr_qpos)
+                self.supervisor_view.hybrid_planner.set_traj_max_vel(
                     left_max_vel=arml_speed_ratio * 0.3, right_max_vel=0.3)
-                arml_traj, armr_traj, planning_time = self.hybrid_planner.plan()
+                arml_traj, armr_traj, planning_time = self.supervisor_view.hybrid_planner.plan(
+                )
 
                 if arml_traj is None:
                     arml_traj = np.array([cur_arml_qpos])
@@ -757,7 +766,7 @@ class DualArmMovementBaseW1(object):
                 )
                 return StatusCode.DIM_MISMATCH
 
-            armr_kine = self._get_arm_kine("right_arm")
+            armr_kine = self.supervisor_view._get_arm_kine("right_arm")
             armr_speed_ratio_list = task_dict.get("right_arm_speed_ratio")
             if armr_speed_ratio_list is not None and armr_speed_ratio_list != []:
                 for i in range(len(armr_speed_ratio_list)):
@@ -815,10 +824,11 @@ class DualArmMovementBaseW1(object):
                             real_qpos = np.concatenate(
                                 (cur_torso_qpos, cur_head_qpos, cur_arml_qpos,
                                  armr_ik_qpos))
-                            if self.is_collision(real_qpos,
-                                                 armlee_qpos=cur_armlee_qpos,
-                                                 armree_qpos=cur_armree_qpos
-                                                ) != StatusCode.FAIL:
+                            if self.supervisor_view.is_collision(
+                                    real_qpos,
+                                    armlee_qpos=cur_armlee_qpos,
+                                    armree_qpos=cur_armree_qpos
+                            ) != StatusCode.FAIL:
                                 self.logger.warning(
                                     "It will occur collision for this right arm ik solution, try to find another one"
                                 )
@@ -834,17 +844,19 @@ class DualArmMovementBaseW1(object):
                     self.logger.warning("invalid right arm target")
                     return StatusCode.INPUT_INVALID
 
-                self.hybrid_planner.set_head_torso(head_qpos=cur_head_qpos,
-                                                   torso_qpos=cur_torso_qpos)
-                self.hybrid_planner.set_end_effector_qpos(
+                self.supervisor_view.hybrid_planner.set_head_torso(
+                    head_qpos=cur_head_qpos, torso_qpos=cur_torso_qpos)
+                self.supervisor_view.hybrid_planner.set_end_effector_qpos(
                     armlee_qpos=cur_armlee_qpos, armree_qpos=cur_armree_qpos)
-                self.hybrid_planner.set_start_goal(arml_start=cur_arml_qpos,
-                                                   armr_start=cur_armr_qpos,
-                                                   arml_goal=cur_arml_qpos,
-                                                   armr_goal=target_armr_qpos)
-                self.hybrid_planner.set_traj_max_vel(
+                self.supervisor_view.hybrid_planner.set_start_goal(
+                    arml_start=cur_arml_qpos,
+                    armr_start=cur_armr_qpos,
+                    arml_goal=cur_arml_qpos,
+                    armr_goal=target_armr_qpos)
+                self.supervisor_view.hybrid_planner.set_traj_max_vel(
                     left_max_vel=0.3, right_max_vel=armr_speed_ratio * 0.3)
-                arml_traj, armr_traj, planning_time = self.hybrid_planner.plan()
+                arml_traj, armr_traj, planning_time = self.supervisor_view.hybrid_planner.plan(
+                )
 
                 if armr_traj is None:
                     armr_traj = np.array([cur_armr_qpos])

@@ -123,7 +123,7 @@ if __name__ == "__main__":
 
         当execute_joint_traj()不采用streaming模式，而是move_traj模式，python中并行提升大
         """
-    main(use_parallel=True)
+    main(use_parallel=False)
 
     import time
 

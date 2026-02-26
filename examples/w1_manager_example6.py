@@ -82,7 +82,7 @@ task_dict3 = {
 
 
 def test_multiple_task(task_dict=None,
-                       load_env=True,
+                       load_env=False,
                        fcl_env_path=None,
                        planner_env_path=None):
     if load_env:

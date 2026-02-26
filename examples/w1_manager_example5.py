@@ -182,7 +182,7 @@ if __name__ == "__main__":
     # 回原点
     print("回原点， 加载把手上提的环境")
     test_single_task(task_dict=task_dict1,
-                     load_env=True,
+                     load_env=False,
                      fcl_env_path=fcl_upward_env_path,
                      planner_env_path=planner_upward_env_path)
     # input("Press Enter to continue to next test...")

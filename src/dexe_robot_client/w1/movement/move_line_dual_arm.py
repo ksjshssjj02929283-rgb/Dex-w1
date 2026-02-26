@@ -488,9 +488,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
         right_acc_limits = self.w1_params.max_qacc[right_index]
         acc_limits = np.concatenate([left_acc_limits, right_acc_limits])
         traj_planner = ToppraTrajectoryPlanner(dofs, vel_limits, acc_limits)
-        res, qpos_array, _, _, _ = traj_planner.plan(qpos_array,
-                                                     qvel_limits_array_,
-                                                     self.TIME_STEP)
+        res, qpos_array, _, _, _ = traj_planner.plan(
+            qpos_array, qvel_limits_array_, self.supervisor_view.TIME_STEP)
 
         if not res:
             self.logger.error("Dual arm cartesian traj planning failed.")
@@ -619,7 +618,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                     real_qpos = np.concatenate(
                         (target_torso_qpos, cur_head_qpos, cur_arml_qpos,
                          cur_armr_qpos))
-                    if self.is_collision(
+                    if self.supervisor_view.is_collision(
                             real_qpos,
                             armlee_qpos=cur_armlee_qpos,
                             armree_qpos=cur_armree_qpos) != StatusCode.FAIL:
@@ -649,11 +648,11 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                     real_qpos = np.concatenate(
                         (cur_torso_qpos, target_head_qpos, cur_arml_qpos,
                          cur_armr_qpos))
-                    if self.is_collision(
+                    if self.supervisor_view.is_collision(
                             real_qpos,
                             armlee_qpos=cur_armlee_qpos,
                             armree_qpos=cur_armree_qpos) != StatusCode.FAIL:
-                        self.logger.waring(
+                        self.logger.warning(
                             "It will occur collision for this head moving trajectory"
                         )
                         return StatusCode.COLLISION_FAIL, None, None, None
@@ -676,7 +675,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
             return res_execute, None, None, None
 
         # Execute dual arm tasks
-        arml_kine = self._get_arm_kine("left_arm")
+        arml_kine = self.supervisor_view._get_arm_kine("left_arm")
         if arml_speed_ratio_list is not None and arml_speed_ratio_list != []:
             for i in range(len(arml_speed_ratio_list)):
                 if arml_speed_ratio_list[i] is None:
@@ -748,7 +747,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                             real_qpos = np.concatenate(
                                 (cur_torso_qpos, cur_head_qpos, arml_ik_qpos,
                                  cur_armr_qpos))
-                            if self.is_collision(
+                            if self.supervisor_view.is_collision(
                                     real_qpos,
                                     armlee_qpos=cur_armlee_qpos,
                                     armree_qpos=cur_armree_qpos,
@@ -791,8 +790,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 lee_post_time = target_armlee_qpos_list[i][2]
                 lee_target = target_armlee_qpos_list[i][1]
 
-                arml_pre_insert = lee_pre_time / self.TIME_STEP
-                arml_post_insert = lee_post_time / self.TIME_STEP
+                arml_pre_insert = lee_pre_time / self.supervisor_view.TIME_STEP
+                arml_post_insert = lee_post_time / self.supervisor_view.TIME_STEP
 
                 armlee_trigger_list.append(
                     (arml_traj.shape[0] + arml_pre_insert, lee_target))
@@ -856,7 +855,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 arml_traj_list.append(arml_traj)
                 armlee_trigger_list.append(left_arm_ee_trigger_list[0])
 
-        armr_kine = self._get_arm_kine("right_arm")
+        armr_kine = self.supervisor_view._get_arm_kine("right_arm")
         if armr_speed_ratio_list is not None and armr_speed_ratio_list != []:
             for i in range(len(armr_speed_ratio_list)):
                 if armr_speed_ratio_list[i] is None:
@@ -929,7 +928,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                             real_qpos = np.concatenate(
                                 (cur_torso_qpos, cur_head_qpos, cur_arml_qpos,
                                  armr_ik_qpos))
-                            if self.is_collision(
+                            if self.supervisor_view.is_collision(
                                     real_qpos,
                                     armlee_qpos=cur_armlee_qpos,
                                     armree_qpos=cur_armree_qpos,
@@ -973,8 +972,8 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 ree_post_time = target_armree_qpos_list[i][2]
                 ree_target = target_armree_qpos_list[i][1]
 
-                armr_pre_insert = ree_pre_time / self.TIME_STEP
-                armr_post_insert = ree_post_time / self.TIME_STEP
+                armr_pre_insert = ree_pre_time / self.supervisor_view.TIME_STEP
+                armr_post_insert = ree_post_time / self.supervisor_view.TIME_STEP
 
                 armree_trigger_list.append(
                     (armr_traj.shape[0] + armr_pre_insert, ree_target))
@@ -1304,7 +1303,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                 not self.supervisor_view._has_arm_ee_client("right_arm_ee", False):
                 if is_local:
                     (res_dual_arm, left_arm_qpos_array, right_arm_qpos_array) \
-                     = self.supervisor_view._plan_linear_dual_arm_sync(
+                     = self._plan_linear_dual_arm_sync(
                         start_left_arm_qpos,
                         start_right_arm_qpos,
                         waypoints_dict,
@@ -1328,7 +1327,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                         ])
                 else:
                     (res_dual_arm, left_arm_qpos_array, right_arm_qpos_array) \
-                     = self.supervisor_view._plan_linear_dual_arm_sync(
+                     = self._plan_linear_dual_arm_sync(
                         start_qpos,
                         start_qpos,
                         waypoints_dict,
@@ -1359,7 +1358,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
             else:
                 if is_local:
                     (res_dual_arm, left_arm_qpos_array, right_arm_qpos_array) \
-                     = self.supervisor_view._plan_linear_dual_arm_sync(
+                     = self._plan_linear_dual_arm_sync(
                         start_left_arm_qpos,
                         start_right_arm_qpos,
                         waypoints_dict,
@@ -1383,7 +1382,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                         ])
                 else:
                     (res_dual_arm, left_arm_qpos_array, right_arm_qpos_array) \
-                     = self.supervisor_view._plan_linear_dual_arm_sync(
+                     = self._plan_linear_dual_arm_sync(
                         start_qpos,
                         start_qpos,
                         waypoints_dict,
@@ -1860,7 +1859,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                     "Align dual arm traj failed in plan_linear_dual_arm_sync.")
                 return StatusCode.FAIL, None
 
-            if self._is_traj_collision(
+            if self.supervisor_view.is_traj_collision(
                     qpos_array=move_arml_armr_traj,
                     left_arm_ee_trigger_list=None,
                     right_arm_ee_trigger_list=None) != StatusCode.FAIL:
@@ -1894,7 +1893,7 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
 
             move_arml_armr_traj = full_body_joint_traj_
 
-            if self._is_traj_collision(
+            if self.supervisor_view.is_traj_collision(
                     qpos_array=move_arml_armr_traj,
                     left_arm_ee_trigger_list=None,
                     right_arm_ee_trigger_list=None) != StatusCode.FAIL:
