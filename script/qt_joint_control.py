@@ -1,3 +1,15 @@
+# 用法:
+#   python qt_joint_control.py              # 物理机模式
+#   python qt_joint_control.py --sim        # 仿真模式
+#   python qt_joint_control.py --step       # Step 模式
+#   python qt_joint_control.py --sim --step # 仿真 + Step 模式
+#
+# 操作:
+#   上/下键    : 调整位置/速度值
+#   左/右键    : 快速调整
+#   回车       : 确认下发 (velocity 列)
+#   点击"同步反馈数据到控制表": 从反馈同步到控制表
+
 import sys
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QTableWidget, QTableWidgetItem,

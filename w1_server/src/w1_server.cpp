@@ -286,7 +286,7 @@ void RobotServer::TorqueControlThreadFunc() {
                     << ", \"chassis_cmd_right_velocity\": " << robot_control_.chassis_right_velocity
                     << ", \"chassis_feedback_left_velocity\": " << robot_feedback_.chassis_feedback.left_velocity
                     << ", \"chassis_feedback_right_velocity\": " << robot_feedback_.chassis_feedback.right_velocity
-                    << "} \n";
+                    << "}";
             nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
         }
         // 如果机器人就绪，则写入测量数据

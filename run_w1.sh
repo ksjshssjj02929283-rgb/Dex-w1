@@ -1,3 +1,9 @@
+#   ./run_w1.sh          # 默认启动 W1 模式 (20关节)
+#   ./run_w1.sh a1       # 启动 A1 模式 (14关节)
+#   ./run_w1.sh --a1     # 同上
+#   ./run_w1.sh arm      # 启动 Arm 模式 (仅机械臂, 7关节)
+#   ./run_w1.sh --arm    # 同上
+
 # 切换到脚本所在目录
 cd "$(dirname "$0")"
 
