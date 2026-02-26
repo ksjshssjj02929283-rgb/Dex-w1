@@ -541,12 +541,6 @@ class SupervisorViewW1(object):
                 len(qpos_array)
             ]
 
-        t0 = time.time()
-        move_id, end_id = self.supervisor.move_joint_trajectory_async(
-            qpos_array, interval=self.TIME_STEP, endpoint_index=unique_sync_ids)
-        self.logger.debug(
-            f"Trajectory execution started: move_id={move_id}, end_id={end_id}")
-
         # Process trigger lists
         def process_trigger_list(trigger_list, unique_sync_ids, move_id):
             if not trigger_list or not unique_sync_ids:
@@ -560,6 +554,17 @@ class SupervisorViewW1(object):
                                 if sync_id in sync_id_map]
             new_trigger_list.sort(key=lambda x: x[0])
             return new_trigger_list
+
+        t0 = time.time()
+        self.logger.debug(
+            f"Initiating trajectory execution with {len(qpos_array)} points and "
+            + f"{len(left_arm_ee_trigger_list)} left arm EE triggers, " +
+            f"{len(right_arm_ee_trigger_list)} right arm EE triggers, " +
+            f"Unique sync IDs: {unique_sync_ids}.")
+        move_id, end_id = self.supervisor.move_joint_trajectory_async(
+            qpos_array, interval=self.TIME_STEP, endpoint_index=unique_sync_ids)
+        self.logger.debug(
+            f"Trajectory execution started: move_id={move_id}, end_id={end_id}")
 
         left_arm_ee_trigger_list_new = process_trigger_list(
             left_arm_ee_trigger_list, unique_sync_ids, move_id)

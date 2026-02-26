@@ -8,8 +8,6 @@ import time
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, List
 
-from clientsupervisor.utils.logger import logger
-
 
 class ReducedRobotClientInterface(object):
 

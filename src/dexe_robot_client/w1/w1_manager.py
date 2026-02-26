@@ -39,12 +39,14 @@ from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 
 from dexe_rp import DexforceW1Kinematics, SRSConfig
 
-# from clientsupervisor.move_sync_option import MoveSyncOption
-from clientsupervisor.client_supervisior import RobotClientSupervisor
+from ..client_supervisor.client_supervisior import RobotClientSupervisor
 from .mgr_util.supervisor_view import SupervisorViewW1
 from .mgr_util.robot_client_warpper import RobotClientWrapper, GripperClientWrapper
+from .mgr_util.supervisor_utils import StaticUtilityW1
+
 from .movement.move_line_dual_arm import DualArmMoveLineW1
 from .movement.move_joint_dual_arm import DualArmMoveJointW1
+from .movement.move_dual_arm import DualArmMovementBaseW1
 
 
 class W1Manager:

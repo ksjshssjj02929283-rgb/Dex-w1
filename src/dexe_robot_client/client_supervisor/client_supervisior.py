@@ -17,6 +17,8 @@ from .clients.reduced_robot_client_interface import ReducedRobotClientInterface
 from .clients.modular_reduced_robot_client import ModularReducedRobotClient
 from .utils.move_sync_option import MoveSyncOption
 
+from ..common import get_logger
+
 
 class RobotClientSupervisor(object):
     """
@@ -55,6 +57,7 @@ class RobotClientSupervisor(object):
             client_map (Dict[str, GenericClient]): Peripheral device client map.
             executor_owned (Optional[ThreadPoolExecutor]): Shared thread pool executor.
         """
+        self.logger = get_logger()
         self._robot_client = robot_client  # Robot main client
         self._client_map = (client_map if client_map is not None else {}
                            )  # Peripheral device client map
@@ -89,7 +92,7 @@ class RobotClientSupervisor(object):
         Starts the background thread.
         """
         if self._bg_thread is not None and self._bg_thread.is_alive():
-            logger.warning("Supervisor is already initialized.")
+            self.logger.warning("Supervisor is already initialized.")
             return
 
         # Init robot client
@@ -108,7 +111,7 @@ class RobotClientSupervisor(object):
         Stop the supervisor, background thread, all clients, and the robot client.
         """
         if self._bg_thread is None or not self._bg_thread.is_alive():
-            logger.warning("Supervisor is not running or already stopped.")
+            self.logger.warning("Supervisor is not running or already stopped.")
             return
 
         self._stop = True

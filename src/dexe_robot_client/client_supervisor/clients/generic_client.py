@@ -6,7 +6,7 @@
 
 from abc import abstractmethod
 from typing import Dict, Optional
-from clientsupervisor.utils.types import PeekResponseResult, PeekResponseResultType
+from ..utils.types import PeekResponseResult, PeekResponseResultType
 
 
 class GenericClient(object):

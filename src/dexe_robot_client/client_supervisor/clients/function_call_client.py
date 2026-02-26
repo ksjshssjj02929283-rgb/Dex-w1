@@ -8,9 +8,8 @@ import heapq
 import concurrent.futures
 from typing import Dict, Optional, Tuple, List
 
-from clientsupervisor.utils.types import PeekResponseResult, PeekResponseResultType
-from clientsupervisor.clients.generic_client import GenericClient
-from clientsupervisor.utils.logger import logger
+from ..utils.types import PeekResponseResult, PeekResponseResultType
+from .generic_client import GenericClient
 
 
 class InPlaceFunctionCallClient(GenericClient):

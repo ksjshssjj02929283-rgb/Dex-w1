@@ -13,8 +13,9 @@ from typing import List, Optional, Dict
 from abc import abstractmethod
 
 from dataclasses import dataclass
-from clientsupervisor.clients.reduced_robot_client_interface import ReducedRobotClientInterface
-from clientsupervisor.utils.logger import logger
+from .reduced_robot_client_interface import ReducedRobotClientInterface
+
+from ...common import get_logger
 
 
 class SubModuleTask(object):
@@ -58,6 +59,7 @@ class ModularReducedRobotClient(ReducedRobotClientInterface):
         interval: float = 0.01,
     ):
         super().__init__()
+        self.logger = get_logger()
         self._lock = threading.Lock()
         self._current_full_q = init_full_q.copy()
         self._finished_move_id = -1
@@ -81,7 +83,7 @@ class ModularReducedRobotClient(ReducedRobotClientInterface):
         Initialize and start the background thread for processing movement requests.
         """
         if self._bg_thread is not None and self._bg_thread.is_alive():
-            logger.warning("Background thread is already running.")
+            self.logger.warning("Background thread is already running.")
             return
 
         self._bg_thread = threading.Thread(target=self._bg_thread_loop)
@@ -242,7 +244,8 @@ class ModularReducedRobotClient(ReducedRobotClientInterface):
         self._on_initial_state_bg_thread(current_full_jps)
 
         # State for the current movement
-        current_move: Optional[self.MovementRequest] = None
+        current_move: Optional[
+            ReducedRobotClientInterface.MovementRequest] = None
         idx_in_current_move: int = -1
         next_endpoint2check: int = 0
         next_finished_move_id: int = -1
@@ -266,7 +269,7 @@ class ModularReducedRobotClient(ReducedRobotClientInterface):
             # 1. If no current move, try to get a new move from the queue
             if current_move is None:
                 try:
-                    elem: self.MovementRequest = (
+                    elem: ReducedRobotClientInterface.MovementRequest = (
                         self._main_task_queue.get_nowait())
                     current_move = elem
                     idx_in_current_move = 0
