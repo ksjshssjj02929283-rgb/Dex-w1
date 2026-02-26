@@ -1,3 +1,11 @@
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
+
 import ompl.base as ob
 import ompl.geometric as og
 import numpy as np
@@ -66,6 +74,7 @@ class OMPLPlanSingle:
         self.start_state = start_state
         self.goal_state = goal_state
         self.fcl_checker = fcl_checker
+        self.fcl_checker.set_verbose(False)
         self.other_arm_qpos = other_arm_qpos
         self.result_path = None
         self.result_traj = None
@@ -545,6 +554,7 @@ class OMPLPlanCentralized:
         self.start_state = np.concatenate((arml_start, armr_start))
         self.goal_state = np.concatenate((arml_goal, armr_goal))
         self.fcl_checker = fcl_checker
+        self.fcl_checker.set_verbose(False)
         self.result_path = None
         self.result_traj = None
 
@@ -801,6 +811,7 @@ class OMPLPlanDecoupled:
 
         self.use_ee = use_ee
         self.fcl_checker = fcl_checker
+        self.fcl_checker.set_verbose(False)
         # self.urdf_path = urdf_path
         self.planner_pin = planner_pin
         self.arml_planner = OMPLPlanSingle(arml_dim,
