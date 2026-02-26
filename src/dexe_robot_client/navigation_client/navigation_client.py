@@ -265,7 +265,9 @@ class NavigationClient(ABC, Node):
         """取消当前的导航任务 (非阻塞)。"""
         # 如果目标还未被接受，等待最多 1 秒让 goal_handle 被设置
         if self._nav_goal_handle is None and self._nav_status == "NAVIGATING":
-            self.get_logger().info("Waiting for navigation goal to be accepted before cancelling...")
+            self.get_logger().info(
+                "Waiting for navigation goal to be accepted before cancelling..."
+            )
             start_time = time.time()
             while time.time() - start_time < 1.0:
                 self.spin_once(timeout_sec=0.05)
@@ -283,7 +285,8 @@ class NavigationClient(ABC, Node):
         try:
             cancel_future = self._nav_goal_handle.cancel_goal_async()
             cancel_future.add_done_callback(
-                lambda future: self._on_nav_cancel_response(future, current_task_id))
+                lambda future: self._on_nav_cancel_response(
+                    future, current_task_id))
             self.get_logger().info("Navigation cancel request sent.")
             return True
         except Exception as e:
@@ -531,7 +534,8 @@ class NavigationClient(ABC, Node):
         # 检查是否是当前任务
         if task_id != self._nav_task_id:
             self.get_logger().warning(
-                f"Ignoring goal response for old task {task_id} (current: {self._nav_task_id})")
+                f"Ignoring goal response for old task {task_id} (current: {self._nav_task_id})"
+            )
             return
 
         goal_handle = future.result()
@@ -554,7 +558,8 @@ class NavigationClient(ABC, Node):
         # 检查是否是当前任务
         if task_id != self._nav_task_id:
             self.get_logger().warning(
-                f"Ignoring nav result for old task {task_id} (current: {self._nav_task_id})")
+                f"Ignoring nav result for old task {task_id} (current: {self._nav_task_id})"
+            )
             return
 
         try:
@@ -582,7 +587,8 @@ class NavigationClient(ABC, Node):
         # 检查是否是当前任务
         if task_id != self._nav_task_id:
             self.get_logger().warning(
-                f"Ignoring cancel response for old task {task_id} (current: {self._nav_task_id})")
+                f"Ignoring cancel response for old task {task_id} (current: {self._nav_task_id})"
+            )
             return
 
         try:
@@ -597,7 +603,8 @@ class NavigationClient(ABC, Node):
         """Callback for cancel control service response (non-blocking)."""
         try:
             response = future.result()
-            self.get_logger().info(f"Cancel control response: {response.message}")
+            self.get_logger().info(
+                f"Cancel control response: {response.message}")
         except Exception as e:
             self.get_logger().error(f"Error in cancel control response: {e}")
 
