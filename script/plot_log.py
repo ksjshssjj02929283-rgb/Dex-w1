@@ -470,8 +470,38 @@ def main():
             except Exception:
                 pass
 
-            # 2) velocity
+            # 2) position error
             ax = axes[1, ci]
+            if np.isfinite(pos_err_deg[:, j]).any():
+                ax.plot(times, pos_err_deg[:, j], label="pos_error",
+                       color="tab:purple", linewidth=1.2)
+                if ci == 0:
+                    ax.legend(loc="best", fontsize=7)
+            else:
+                ax.text(0.5, 0.5, "No position error data",
+                       transform=ax.transAxes, ha="center", va="center",
+                       alpha=0.6, fontsize=10)
+            # 强制 position error 纵轴范围至少为 0.1 度
+            try:
+                pe_vals = pos_err_deg[:, j][np.isfinite(pos_err_deg[:, j])]
+                if pe_vals.size > 0:
+                    pmin = pe_vals.min()
+                    pmax = pe_vals.max()
+                    prank = pmax - pmin
+                    min_perr_range = 0.04
+                    if prank < min_perr_range:
+                        center = 0.5 * (pmax + pmin)
+                        half = 0.5 * min_perr_range
+                        ax.set_ylim(center - half, center + half)
+            except Exception:
+                pass
+            ax.grid(True, alpha=0.3, linestyle=':')
+            ax.tick_params(labelsize=7)
+            if ci == 0:
+                ax.set_ylabel("Pos Error [deg]", fontsize=7)
+
+            # 3) velocity
+            ax = axes[2, ci]
             if np.isfinite(vel_deg[:, j]).any():
                 ax.plot(times, vel_deg[:, j], label="velocity",
                        color="tab:brown", linewidth=1.2)
@@ -501,35 +531,6 @@ def main():
             if ci == 0:
                 ax.set_ylabel("Velocity [deg/s]", fontsize=7)
 
-            # 3) position error
-            ax = axes[2, ci]
-            if np.isfinite(pos_err_deg[:, j]).any():
-                ax.plot(times, pos_err_deg[:, j], label="pos_error",
-                       color="tab:purple", linewidth=1.2)
-                if ci == 0:
-                    ax.legend(loc="best", fontsize=7)
-            else:
-                ax.text(0.5, 0.5, "No position error data",
-                       transform=ax.transAxes, ha="center", va="center",
-                       alpha=0.6, fontsize=10)
-            # 新增：强制 position error 纵轴范围至少为 0.1 度
-            try:
-                pe_vals = pos_err_deg[:, j][np.isfinite(pos_err_deg[:, j])]
-                if pe_vals.size > 0:
-                    pmin = pe_vals.min()
-                    pmax = pe_vals.max()
-                    prank = pmax - pmin
-                    min_perr_range = 0.04
-                    if prank < min_perr_range:
-                        center = 0.5 * (pmax + pmin)
-                        half = 0.5 * min_perr_range
-                        ax.set_ylim(center - half, center + half)
-            except Exception:
-                pass
-            ax.grid(True, alpha=0.3, linestyle=':')
-            ax.tick_params(labelsize=7)
-            if ci == 0:
-                ax.set_ylabel("Pos Error [deg]", fontsize=7)
             # 4) torque
             ax = axes[3, ci]
             ax.plot(times, tor[:, j], label="torque", color="tab:red", linewidth=1.2)
