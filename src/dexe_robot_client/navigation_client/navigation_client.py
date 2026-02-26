@@ -61,6 +61,7 @@ class NavigationClient(ABC, Node):
         self._nav_result_future = None
         self._nav_status = "IDLE"  # 或 NAVIGATING / SUCCEEDED / FAILED / CANCELLED
         self._nav_result = None  # 存储最后的导航结果
+        self._nav_task_id = 0  # 导航任务ID，用于区分不同的导航任务
         self._last_control_status = None
         self._last_control_status_success = False
         # control status 防抖 + 防陈旧
@@ -86,6 +87,7 @@ class NavigationClient(ABC, Node):
     def is_connected(self, timeout_sec: float = 0.1):
         start_time = time.time()
         while time.time() - start_time < timeout_sec:
+            self.spin_once()
             if self._last_msg_time is not None:
                 return True
             time.sleep(0.01)
@@ -225,13 +227,17 @@ class NavigationClient(ABC, Node):
                 "NavigateToPose action server not available.")
             return False
 
-        # 状态置为导航中
+        # 清理旧的导航状态，防止旧回调干扰新任务
+        self._nav_task_id += 1  # 新任务ID
+        current_task_id = self._nav_task_id
+        self._nav_goal_handle = None
         self._nav_status = "NAVIGATING"
         self._nav_result = None
 
         # 异步发送
         send_future = self._set_nav_client.send_goal_async(nav2_position)
-        send_future.add_done_callback(self._on_nav_goal_response)
+        send_future.add_done_callback(
+            lambda future: self._on_nav_goal_response(future, current_task_id))
 
         return True
 
@@ -257,12 +263,27 @@ class NavigationClient(ABC, Node):
 
     def cancel_chassis_nav2(self) -> bool:
         """取消当前的导航任务 (非阻塞)。"""
+        # 如果目标还未被接受，等待最多 1 秒让 goal_handle 被设置
+        if self._nav_goal_handle is None and self._nav_status == "NAVIGATING":
+            self.get_logger().info("Waiting for navigation goal to be accepted before cancelling...")
+            start_time = time.time()
+            while time.time() - start_time < 1.0:
+                self.spin_once(timeout_sec=0.05)
+                if self._nav_goal_handle is not None:
+                    break
+                time.sleep(0.05)
+
         if self._nav_goal_handle is None:
             self.get_logger().warning("No active navigation goal to cancel.")
             return False
+
+        # 保存当前任务ID
+        current_task_id = self._nav_task_id
+
         try:
             cancel_future = self._nav_goal_handle.cancel_goal_async()
-            cancel_future.add_done_callback(self._on_nav_cancel_response)
+            cancel_future.add_done_callback(
+                lambda future: self._on_nav_cancel_response(future, current_task_id))
             self.get_logger().info("Navigation cancel request sent.")
             return True
         except Exception as e:
@@ -504,9 +525,15 @@ class NavigationClient(ABC, Node):
         while rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.1)
 
-    def _on_nav_goal_response(self, future):
+    def _on_nav_goal_response(self, future, task_id):
         """Callback for navigation goal response.
         """
+        # 检查是否是当前任务
+        if task_id != self._nav_task_id:
+            self.get_logger().warning(
+                f"Ignoring goal response for old task {task_id} (current: {self._nav_task_id})")
+            return
+
         goal_handle = future.result()
         if not goal_handle.accepted:
             self.get_logger().error("Goal was rejected.")
@@ -518,11 +545,18 @@ class NavigationClient(ABC, Node):
 
         # 异步等待结果
         self._nav_result_future = goal_handle.get_result_async()
-        self._nav_result_future.add_done_callback(self._on_nav_result)
+        self._nav_result_future.add_done_callback(
+            lambda future: self._on_nav_result(future, task_id))
 
-    def _on_nav_result(self, future):
+    def _on_nav_result(self, future, task_id):
         """Callback for navigation result.
         """
+        # 检查是否是当前任务
+        if task_id != self._nav_task_id:
+            self.get_logger().warning(
+                f"Ignoring nav result for old task {task_id} (current: {self._nav_task_id})")
+            return
+
         try:
             result = future.result()
             self._nav_result = result
@@ -542,9 +576,15 @@ class NavigationClient(ABC, Node):
             self.get_logger().error(
                 f"Error getting navigation result: {str(e)}")
 
-    def _on_nav_cancel_response(self, future):
+    def _on_nav_cancel_response(self, future, task_id):
         """Callback for navigation cancel response.
         """
+        # 检查是否是当前任务
+        if task_id != self._nav_task_id:
+            self.get_logger().warning(
+                f"Ignoring cancel response for old task {task_id} (current: {self._nav_task_id})")
+            return
+
         try:
             _ = future.result()
             self._nav_status = "CANCELLED"
@@ -553,13 +593,11 @@ class NavigationClient(ABC, Node):
         except Exception as e:
             self.get_logger().error(f"Error in cancel response: {str(e)}")
 
-        def _on_cancel_control_response(self, future):
-            """Callback for cancel control service response (non-blocking)."""
-
+    def _on_cancel_control_response(self, future):
+        """Callback for cancel control service response (non-blocking)."""
         try:
             response = future.result()
-            self.get_logger().info(
-                f"Cancel control response: {response.message}")
+            self.get_logger().info(f"Cancel control response: {response.message}")
         except Exception as e:
             self.get_logger().error(f"Error in cancel control response: {e}")
 
