@@ -95,6 +95,7 @@ class FCLChecker:
         self._create_robot_manager()
 
         self.visualize = False
+        self.verbose = True
 
         # self.temp_obstacle = []
 
@@ -439,6 +440,7 @@ class FCLChecker:
             self.logger.error(f"The obstacle with name {name} does not exist")
             return False
         fcl_obj = self.obstacles_dict[name]
+        self.obstacles.remove(fcl_obj)
         self.obstacle_manager.unregisterObject(fcl_obj)
         self.obstacle_manager.setup()
         return True
@@ -454,6 +456,7 @@ class FCLChecker:
             self.logger.error(f"The obstacle with name {name} does not exist")
             return False
         fcl_obj = self.obstacles_dict[name]
+        self.obstacles.append(fcl_obj)
         self.obstacle_manager.registerObject(fcl_obj)
         self.obstacle_manager.setup()
         return True
@@ -709,6 +712,7 @@ class FCLChecker:
             translation = center.reshape(3, 1).astype(np.float64)
             fcl_transform = fcl.Transform(rot_mat, translation)
             fcl_obj = fcl.CollisionObject(bvh, fcl_transform)
+            self.grasp_object_mesh_list.append(mesh)
         elif obj_type == "box":
             if center is None or size is None or len(size) != 3:
                 raise ValueError(
@@ -770,6 +774,7 @@ class FCLChecker:
         self.arml_grasp_obj_name = obj_name
 
         self.arml_links.append(fcl_obj)
+        self.grasp_objects.remove(fcl_obj)
         self.grasp_objects_manager.unregisterObject(fcl_obj)
         self.arml_manager.registerObject(fcl_obj)
         self.arml_manager.setup()
@@ -814,6 +819,7 @@ class FCLChecker:
         self.arml_grasp_obj_name = None
 
         self.arml_links.remove(fcl_obj)
+        self.grasp_objects.append(fcl_obj)
         self.arml_manager.unregisterObject(fcl_obj)
         self.grasp_objects_manager.registerObject(fcl_obj)
         self.grasp_objects_manager.setup()
@@ -853,6 +859,7 @@ class FCLChecker:
         self.armr_grasp_obj_name = obj_name
 
         self.armr_links.append(fcl_obj)
+        self.grasp_objects.remove(fcl_obj)
         self.grasp_objects_manager.unregisterObject(fcl_obj)
         self.armr_manager.registerObject(fcl_obj)
         self.armr_manager.setup()
@@ -897,6 +904,7 @@ class FCLChecker:
         self.armr_grasp_obj_name = None
 
         self.armr_links.remove(fcl_obj)
+        self.grasp_objects.append(fcl_obj)
         self.armr_manager.unregisterObject(fcl_obj)
         self.grasp_objects_manager.registerObject(fcl_obj)
         self.grasp_objects_manager.setup()
@@ -1006,6 +1014,9 @@ class FCLChecker:
             self.armlee_manager.update()
             self.armree_manager.update()
 
+    def set_verbose(self, verbose: bool):
+        self.verbose = verbose
+
     def _is_collide(self, obs1, obs2, cdata):
         """
         Collision callback function
@@ -1014,9 +1025,10 @@ class FCLChecker:
             return True
         ret = fcl.collide(obs1, obs2, cdata.request, cdata.result)
         if ret > 0:
-            print(
-                self.obj_name.get(obs1, "unknown") + "  vs  " +
-                self.obj_name.get(obs2, "unknown"))
+            if self.verbose:
+                self.logger.debug(
+                    self.obj_name.get(obs1, "unknown") + "  vs  " +
+                    self.obj_name.get(obs2, "unknown"))
             cdata.done = True
             return True
         return cdata.done

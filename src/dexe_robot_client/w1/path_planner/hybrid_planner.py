@@ -1,3 +1,11 @@
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
+
 import os
 import time
 import numpy as np
@@ -432,7 +440,8 @@ class HybridPlanner:
             self.logger.info(
                 "No planning needed, both arms are already at their goal positions."
             )
-            return None, None, 0.0
+            return np.atleast_2d(self.arml_start), np.atleast_2d(
+                self.armr_start), 0.0
 
     def coordinate_trajectories_with_EE(
             self, left_traj_list: list[np.ndarray],
