@@ -109,8 +109,11 @@ void NanoLogLine::encode(Arg arg, uint8_t type_id) {
     encode<Arg>(arg);
 }
 
-NanoLogLine::NanoLogLine(LogLevel level, char const *file, char const *function, uint32_t line)
-    : m_bytes_used(0), m_buffer_size(sizeof(m_stack_buffer)) {
+// 静态成员变量初始化
+bool NanoLogLine::s_enable_timestamp = true;
+
+NanoLogLine::NanoLogLine(LogLevel level, char const *file, char const *function, uint32_t line, bool enable_timestamp)
+    : m_bytes_used(0), m_buffer_size(sizeof(m_stack_buffer)), m_enable_timestamp(enable_timestamp) {
     encode<uint64_t>(timestamp_now());
     encode<std::thread::id>(this_thread_id());
     encode<string_literal_t>(string_literal_t(file));
@@ -137,7 +140,10 @@ void NanoLogLine::stringify(std::ostream &os) {
     LogLevel loglevel = *reinterpret_cast<LogLevel *>(b);
     b += sizeof(LogLevel);
 
-    format_timestamp(os, timestamp);
+    // 根据该日志行的配置决定是否输出时间戳
+    if (m_enable_timestamp) {
+        format_timestamp(os, timestamp);
+    }
 
     stringify(os, b, end);
 
@@ -482,10 +488,12 @@ public:
     FileWriter(std::string const &log_directory,
                std::string const &log_file_name,
                uint32_t log_file_roll_size_mb,
-               uint32_t max_files)
+               uint32_t max_files,
+               std::string const &file_suffix = "txt")
         : m_log_file_roll_size_bytes(std::max(1u, log_file_roll_size_mb) * 1024u * 1024u),
           m_name(log_directory + log_file_name),
-          m_max_files(std::max(1u, max_files)) {
+          m_max_files(std::max(1u, max_files)),
+          m_file_suffix(file_suffix) {
         open_fresh_base_file();
     }
 
@@ -502,7 +510,8 @@ private:
     std::string make_path(uint32_t index) const {
         std::string path = m_name;
         if (index > 0) path.append(std::to_string(index));
-        path.append(".txt");
+        path.append(".");
+        path.append(m_file_suffix);
         return path;
     }
 
@@ -557,6 +566,7 @@ private:
     uint32_t const m_log_file_roll_size_bytes;
     std::string const m_name;    // directory + base name (no extension, suffix added here)
     uint32_t const m_max_files;  // fixed rolling count
+    std::string const m_file_suffix;  // 文件后缀，如 "txt", "jsonl"
     std::unique_ptr<std::ofstream> m_os;
 };
 
@@ -566,10 +576,11 @@ public:
                std::string const &log_directory,
                std::string const &log_file_name,
                uint32_t log_file_roll_size_mb,
-               uint32_t max_files)
+               uint32_t max_files,
+               std::string const &file_suffix = "txt")
         : m_state(State::INIT),
           m_buffer_base(new RingBuffer(std::max(1u, ngl.ring_buffer_size_mb) * 1024 * 4)),
-          m_file_writer(log_directory, log_file_name, std::max(1u, log_file_roll_size_mb), std::max(1u, max_files)),
+          m_file_writer(log_directory, log_file_name, std::max(1u, log_file_roll_size_mb), std::max(1u, max_files), file_suffix),
           m_thread(&NanoLogger::pop, this) {
         m_state.store(State::READY, std::memory_order_release);
     }
@@ -578,10 +589,11 @@ public:
                std::string const &log_directory,
                std::string const &log_file_name,
                uint32_t log_file_roll_size_mb,
-               uint32_t max_files)
+               uint32_t max_files,
+               std::string const &file_suffix = "txt")
         : m_state(State::INIT),
           m_buffer_base(new QueueBuffer()),
-          m_file_writer(log_directory, log_file_name, std::max(1u, log_file_roll_size_mb), std::max(1u, max_files)),
+          m_file_writer(log_directory, log_file_name, std::max(1u, log_file_roll_size_mb), std::max(1u, max_files), file_suffix),
           m_thread(&NanoLogger::pop, this) {
         m_state.store(State::READY, std::memory_order_release);
     }
@@ -681,14 +693,15 @@ NanoLogger *LogManager::get_or_create_logger(const std::string &name,
                                              const std::string &log_directory,
                                              const std::string &log_file_name,
                                              uint32_t roll_size_mb,
-                                             uint32_t max_files) {
+                                             uint32_t max_files,
+                                             const std::string &file_suffix) {
     auto it = loggers_.find(name);
     if (it != loggers_.end()) {
         return it->second.get();
     }
 
     // 创建新的日志实例
-    auto logger = std::make_unique<NanoLogger>(gl, log_directory, log_file_name, roll_size_mb, max_files);
+    auto logger = std::make_unique<NanoLogger>(gl, log_directory, log_file_name, roll_size_mb, max_files, file_suffix);
     NanoLogger *logger_ptr = logger.get();
     loggers_[name] = std::move(logger);
 

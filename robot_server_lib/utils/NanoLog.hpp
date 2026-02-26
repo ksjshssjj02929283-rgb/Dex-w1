@@ -51,12 +51,14 @@ public:
     static LogManager &instance();
 
     // 创建或获取命名日志实例
+    // file_suffix: 日志文件后缀，默认 "txt"，可设置为 "jsonl" 等
     NanoLogger *get_or_create_logger(const std::string &name,
                                      GuaranteedLogger gl,
                                      const std::string &log_directory,
                                      const std::string &log_file_name,
                                      uint32_t roll_size_mb,
-                                     uint32_t max_files);
+                                     uint32_t max_files,
+                                     const std::string &file_suffix = "txt");
 
     // 获取用于 LOG 宏的默认日志实例
     NanoLogger *get_default_logger();
@@ -78,7 +80,15 @@ enum class LogLevel : uint8_t { DEBUG, INFO, WARN, CRIT };
 
 class NanoLogLine {
 public:
-    NanoLogLine(LogLevel level, char const *file, char const *function, uint32_t line);
+    // 设置是否输出时间戳（默认输出）
+    static void set_enable_timestamp(bool enable) { s_enable_timestamp = enable; }
+    static bool get_enable_timestamp() { return s_enable_timestamp; }
+
+    // 静态成员变量声明
+    static bool s_enable_timestamp;
+
+    // 构造函数：enable_timestamp 参数控制该日志行是否输出时间戳（默认继承静态配置）
+    NanoLogLine(LogLevel level, char const *file, char const *function, uint32_t line, bool enable_timestamp = true);
     ~NanoLogLine();
 
     NanoLogLine(NanoLogLine &&) = default;
@@ -180,7 +190,8 @@ private:
     size_t m_bytes_used;
     size_t m_buffer_size;
     std::unique_ptr<char[]> m_heap_buffer;
-    char m_stack_buffer[256 - 2 * sizeof(size_t) - sizeof(decltype(m_heap_buffer)) - 8 /* Reserved */];
+    char m_stack_buffer[256 - 2 * sizeof(size_t) - sizeof(decltype(m_heap_buffer)) - 9 /* Reserved */];
+    bool m_enable_timestamp;  // 该日志行是否输出时间戳
 };
 
 struct NanoLog {

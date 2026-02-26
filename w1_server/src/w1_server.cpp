@@ -269,8 +269,11 @@ void RobotServer::TorqueControlThreadFunc() {
         // 如果开启了记录, 则在独立的记录日志中记录数据
         if (this->enable_record_ && manager_state_ == Status::Running && loop_counter % 4 == 0) {
             int idx_offset = (robot_mode_ != RobotMode::W1) ? first_arm_joint_index_ : 0;
-            nanolog::NanoLogLine logline(nanolog::LogLevel::CRIT, __FILE__, __func__, __LINE__);
-            logline << "{ \"joint_position\": "
+            double timestamp_s = this->now().nanoseconds() / 1e9;
+
+            nanolog::NanoLogLine logline(nanolog::LogLevel::CRIT, __FILE__, __func__, __LINE__, false);
+            logline << "{\"timestamp\": \"" << std::to_string(timestamp_s) << "\", "
+                    << "\"joint_position\": "
                     << utils::VectorToJsonArrayString(robot_feedback_.position, idx_offset, ndof_config_).str()
                     << ", \"joint_velocity\": "
                     << utils::VectorToJsonArrayString(robot_feedback_.velocity, idx_offset, ndof_config_).str()

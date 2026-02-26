@@ -30,39 +30,32 @@ import matplotlib.ticker as mticker
 
 def parse_line(line, debug=False):
     """
-    解析单行：
-    - 提取 [] 中的时间戳
-    - 提取 {} 中的 JSON
+    解析单行 JSONL：{"timestamp": "秒.微秒", ...}
     返回: (timestamp: datetime, data: dict) 或 None
     """
     line = line.strip()
     if not line:
-        if debug:
-            print("[DEBUG] Empty line skipped")
         return None
 
-    # 提取时间戳
-    ts_match = re.search(r"\[(.*?)\]", line)
-    if not ts_match:
-        if debug:
-            print(f"[DEBUG] No timestamp found in line: {line[:80]}...")
-        return None
-    ts_str = ts_match.group(1)
     try:
-        # 形如 2025-12-02 15:07:32.170155
-        ts = datetime.fromisoformat(ts_str)
+        data = json.loads(line)
     except Exception as e:
         if debug:
-            print(f"[DEBUG] Failed to parse timestamp '{ts_str}': {e}")
+            print(f"[DEBUG] Failed to parse JSON: {e}")
         return None
 
-    # 提取 JSON
-    brace_idx = line.find("{")
-    if brace_idx == -1:
-        if debug:
-            print(f"[DEBUG] No JSON found in line: {line[:80]}...")
+    if "timestamp" not in data:
         return None
-    json_str = line[brace_idx:]
+
+    try:
+        ts_float = float(data["timestamp"])
+        ts = datetime.fromtimestamp(ts_float)
+    except Exception as e:
+        if debug:
+            print(f"[DEBUG] Failed to parse timestamp '{data['timestamp']}': {e}")
+        return None
+
+    return ts, data
     try:
         data = json.loads(json_str)
     except Exception as e:
@@ -155,7 +148,7 @@ def main():
     )
     args = parser.parse_args()
 
-    log_path = Path("~/log/robot_record.txt").expanduser()
+    log_path = Path("~/log/robot_record.jsonl").expanduser()
     if not log_path.exists():
         print(f"Log file not found: {log_path}")
         return
@@ -189,22 +182,6 @@ def main():
     if not samples:
         print("No valid samples found.")
         return
-
-    # 过滤：只保留包含至少一个关节数组的数据行
-    valid_samples = deque()
-    for ts, d in samples:
-        has_joint_data = any(k in d for k in ["joint_position", "joint_velocity", "joint_torque"])
-        if has_joint_data:
-            valid_samples.append((ts, d))
-
-    if args.debug:
-        print(f"[DEBUG] Samples with joint data: {len(valid_samples)} (filtered out {len(samples) - len(valid_samples)} non-joint entries)")
-
-    if not valid_samples:
-        print("No joint data samples found.")
-        return
-
-    samples = valid_samples
 
     # 按时间窗口过滤：以最后一条样本为基准，保留最近 args.seconds 秒的样本
     last_ts = samples[-1][0]

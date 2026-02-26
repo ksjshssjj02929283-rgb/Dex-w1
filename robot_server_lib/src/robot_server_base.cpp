@@ -19,11 +19,13 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
                                                          nanolog::GuaranteedLogger(), (home_dir / "log/").string(),
                                                          "robot_record" + interface_suffix,
                                                          20,  // 每个日志文件最大20MB
-                                                         5);  // 保留5个日志文件
+                                                         5,   // 保留5个日志文件
+                                                         "jsonl");  // 文件后缀
 
     nanolog::set_log_level(nanolog::LogLevel::INFO);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
-    RCLCPP_INFO(this->get_logger(), "Logs directory: %s",
-                ((home_dir / "log").string() + "/robot_server" + interface_suffix + ".txt").c_str());
+    RCLCPP_INFO(this->get_logger(), "Logs directory: %s, Records directory: %s",
+                ((home_dir / "log").string() + "/robot_server" + interface_suffix + ".txt").c_str(),
+                ((home_dir / "log").string() + "/robot_record" + interface_suffix + ".jsonl").c_str());
     LOG_INFO << "";
     LOG_INFO
         << "---------------------------------------Robot Server Initializing---------------------------------------";

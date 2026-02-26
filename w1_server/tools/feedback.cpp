@@ -41,12 +41,17 @@ static void setup_realtime() {
 int main(int argc, char* argv[]) {
     setup_realtime();
 
-    // 检查是否需要记录日志
+    // 检查是否需要记录日志和机器人模式
     bool record = false;
+    int ndof = ndof_robot;  // 默认 20 关节 (W1 模式)
     for (int i = 1; i < argc; i++) {
-        if (std::string(argv[i]) == "--record") {
+        std::string arg = argv[i];
+        if (arg == "--record") {
             record = true;
-            break;
+        } else if (arg == "--a1" || arg == "a1") {
+            ndof = 14;  // A1 模式 14 关节
+        } else if (arg == "--arm" || arg == "arm") {
+            ndof = 7;  // Arm 模式 7 关节
         }
     }
 
@@ -73,9 +78,9 @@ int main(int argc, char* argv[]) {
             if (record) {
                 std::ostringstream ss;
                 ss << "vel: ";
-                for (int i = 0; i < ndof_robot; i++) {
+                for (int i = 0; i < ndof; i++) {
                     ss << ctrl.velocity[i];
-                    if (i < ndof_robot - 1) ss << ", ";
+                    if (i < ndof - 1) ss << ", ";
                 }
                 LOG_INFO << ss.str();
             }
@@ -83,7 +88,7 @@ int main(int argc, char* argv[]) {
 
         // 构造反馈数据并写入
         fb.robot_status_word = 2;  // robot ready
-        for (int i = 0; i < ndof_robot; i++) {
+        for (int i = 0; i < ndof; i++) {
             fb.position[i] = ctrl.position[i];
             fb.velocity[i] = ctrl.velocity[i];
             fb.torque[i] = ctrl.torque_feedforward[i];
