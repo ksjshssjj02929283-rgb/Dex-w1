@@ -6,14 +6,8 @@
 
 import numpy as np
 
-np.set_printoptions(precision=4, suppress=True)
-import time
 import threading
-import pathlib
-import json
 import atexit
-from queue import Queue, Empty
-from copy import deepcopy
 import concurrent.futures
 from typing import Tuple, List
 
@@ -47,6 +41,8 @@ from .mgr_util.supervisor_utils import StaticUtilityW1
 from .movement.move_line_dual_arm import DualArmMoveLineW1
 from .movement.move_joint_dual_arm import DualArmMoveJointW1
 from .movement.move_dual_arm import DualArmMovementBaseW1
+
+np.set_printoptions(precision=4, suppress=True)
 
 
 class W1Manager:
@@ -373,10 +369,17 @@ class W1Manager:
             cartesian_joint_planner=self.cartesian_joint_planner,
             time_step=self.TIME_STEP)
 
-        self.target_supervisor = self._client_supervisor_sim if self._is_sim else self._client_supervisor_real
-        self.target_supervisor_view = self.supervisor_view_sim if self._is_sim else self.supervisor_view_real
-
         self.logger.info("Client supervisor initialized.")
+
+    @property
+    def target_supervisor(self):
+        """根据当前模式动态返回目标 supervisor"""
+        return self._client_supervisor_sim if self._is_sim else self._client_supervisor_real
+
+    @property
+    def target_supervisor_view(self):
+        """根据当前模式动态返回目标 supervisor_view"""
+        return self.supervisor_view_sim if self._is_sim else self.supervisor_view_real
 
     def _destroy_clients(self):
         try:
