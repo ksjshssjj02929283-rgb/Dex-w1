@@ -596,7 +596,8 @@ class SupervisorViewW1(object):
         self.logger.debug("Waiting for all movements to complete...")
 
         traj_duration = (qpos_array.shape[0] - 1) * self.TIME_STEP
-        self.supervisor.wait_move(time_out=max(5, traj_duration))
+        # TODO: timeout should be computed more precisely based on the trajectory duration and trigger points
+        self.supervisor.wait_move(time_out=max(30., traj_duration + 2.))
         self.logger.info("Finish moving. " +
                          f"Ideal duration should be {traj_duration}s, " +
                          f"and actual duration is {time.time() - t0}s.")

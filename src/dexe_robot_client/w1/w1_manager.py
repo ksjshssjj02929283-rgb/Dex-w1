@@ -141,24 +141,27 @@ class W1Manager:
                                      end_effector_type=self._end_effector_type)
         self._init_client_supervisor()
 
+    def _get_robot_type(self, arm_type: W1ArmType, w1_version: W1Version):
+        if w1_version != W1Version.V2:
+            raise ValueError(f"Not supported w1 version: {w1_version}")
+
+        robot_type_map = {
+            W1ArmType.ANTHROPOMORPHIC: RobotType.W1V02_1,
+            W1ArmType.INDUSTRIAL: RobotType.W1V02_2,
+        }
+
+        if arm_type not in robot_type_map:
+            raise ValueError(f"Not supported arm type: {arm_type}")
+
+        return robot_type_map[arm_type]
+
     def _init_fcl_checker(self,
                           arm_type: W1ArmType,
                           w1_version: W1Version = W1Version.V2,
                           end_effector_type: EndEffectorType = None):
-        if w1_version == W1Version.V2:
-            if arm_type == W1ArmType.ANTHROPOMORPHIC:
-                fcl_robot_type = RobotType.W1V02_1
-            elif arm_type == W1ArmType.INDUSTRIAL:
-                fcl_robot_type = RobotType.W1V02_2
-            else:
-                raise ValueError(
-                    f"Not supported arm type: {arm_type} for fcl checker")
-                return
-            self.fcl_checker = FCLChecker(fcl_robot_type, end_effector_type)
-            self.fcl_checker.enable_visualize()
-        else:
-            raise ValueError(
-                f"Not supported w1 version: {w1_version} for fcl checker")
+        fcl_robot_type = self._get_robot_type(arm_type, w1_version)
+        self.fcl_checker = FCLChecker(fcl_robot_type, end_effector_type)
+        self.fcl_checker.enable_visualize()
 
     def _init_pinocchio(self,
                         arm_type: W1ArmType = W1ArmType.ANTHROPOMORPHIC,
@@ -167,50 +170,23 @@ class W1Manager:
         """
         Initialize the pinocchio model and data for the robot.
         """
-        if w1_version == W1Version.V2:
-            if arm_type == W1ArmType.ANTHROPOMORPHIC:
-                pin_robot_type = RobotType.W1V02_1
-            elif arm_type == W1ArmType.INDUSTRIAL:
-                pin_robot_type = RobotType.W1V02_2
-            else:
-                raise ValueError(
-                    f"Not supported arm type: {arm_type} for pinocchio model")
-                return
-            if end_effector_type is None or isinstance(end_effector_type,
-                                                       EndEffectorType):
-                pin_ee_type = end_effector_type
-            else:
-                raise ValueError(
-                    f"Not supported end_effector_type: {end_effector_type} for pinocchio model"
-                )
-                return
-
-            self._pin_kine = Planner_Pin(robot_type=pin_robot_type,
-                                         end_effector_type=pin_ee_type)
-
-        else:
-            raise ValueError(
-                f"Not supported w1 version: {w1_version} for pinocchio model")
+        end_effector_type = end_effector_type
+        pin_robot_type = self._get_robot_type(arm_type, w1_version)
+        self._pin_kine = Planner_Pin(robot_type=pin_robot_type,
+                                     end_effector_type=end_effector_type)
 
     def _init_planner(self,
                       arm_type: W1ArmType,
                       w1_version: W1Version.V2,
                       end_effector_type: EndEffectorType = None):
-        if w1_version == W1Version.V2:
-            if arm_type == W1ArmType.ANTHROPOMORPHIC:
-                planner_robot_type = RobotType.W1V02_1
-            elif arm_type == W1ArmType.INDUSTRIAL:
-                planner_robot_type = RobotType.W1V02_2
-            else:
-                raise ValueError(
-                    f"Not supported arm type: {arm_type} for planner")
-                return
-            HybridPlanner.set_arms_cfg(SINGLE_ARM_DIM, SINGLE_ARM_DIM,
-                                       LARM_BOUND, RARM_BOUND)
-            HybridPlanner.set_robot_cfg(robot_type=planner_robot_type,
-                                        ee_type=end_effector_type)
-            # HybridPlanner.set_env_json(get_env_json_path())
-            self.hybrid_planner = HybridPlanner()
+        planner_robot_type = self._get_robot_type(arm_type, w1_version)
+
+        HybridPlanner.set_arms_cfg(SINGLE_ARM_DIM, SINGLE_ARM_DIM, LARM_BOUND,
+                                   RARM_BOUND)
+        HybridPlanner.set_robot_cfg(robot_type=planner_robot_type,
+                                    ee_type=end_effector_type)
+
+        self.hybrid_planner = HybridPlanner()
 
     def _init_cartesian_planner(self,
                                 arm_type: W1ArmType,
@@ -282,8 +258,16 @@ class W1Manager:
         for node in self._clients:
             self._executor.add_node(node)
 
-        self._node_thread = threading.Thread(target=self._executor.spin,
-                                             daemon=True)
+        self._running = True
+
+        def spin_executor():
+            while self._running and rclpy.ok():
+                try:
+                    self._executor.spin_once(timeout_sec=0.1)
+                except Exception as e:
+                    self.logger.error(f"Executor spin error: {e}")
+
+        self._node_thread = threading.Thread(target=spin_executor, daemon=True)
         self._node_thread.start()
 
         # Log initialized clients
@@ -385,17 +369,26 @@ class W1Manager:
             except Exception as e:
                 self.logger.error(f"Failed to stop sim client supervisor: {e}")
 
-            if rclpy.ok():
-                rclpy.shutdown()  # 停止ros触发spin
-
             if self._node_thread is not None:
-                self._node_thread.join()
+                self._running = False
+                self._node_thread.join(timeout=5.)
+                self._node_thread = None
 
             if self._executor is not None:
                 self._executor.shutdown()
+                self._executor = None
 
             for node in self._clients:
-                node.destroy_node()
+                try:
+                    node.destroy_node()
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to destroy node {node.node_name}: {e}")
+
+            self._clients.clear()
+
+            if rclpy.ok():
+                rclpy.shutdown()
 
             self.logger.debug(f"Ros2 node destroyed.")
         except Exception as e:
