@@ -85,7 +85,7 @@ if __name__ == "__main__":
     # vis.set_qpos("robot", init_qpos)
 
     res, full_body_traj = test_move_linear_dual_arm_sync(task_dict=task_dict1)
-    # input("Press Enter to continue")
+    input("Press Enter to continue")
     # idx = 0
     # rate = RateLimiter(frequency=100, warn=True)
     # while True:

@@ -129,7 +129,7 @@ if __name__ == "__main__":
     # 回原点
     print("回原点 + 左手抓胶囊，右手拿杯子 + 左手放胶囊，右手放杯子 + 准备下压把手， 加载把手上提的环境")
     test_multiple_task(task_dict=task_dict1,
-                       load_env=True,
+                       load_env=False,
                        fcl_env_path=fcl_upward_env_path,
                        planner_env_path=planner_upward_env_path)
     # 下压把手
@@ -139,7 +139,7 @@ if __name__ == "__main__":
     # 准备拿咖啡
     print("重载把手下压环境， 准备拿咖啡")
     test_multiple_task(task_dict=task_dict3,
-                       load_env=True,
+                       load_env=False,
                        fcl_env_path=fcl_downward_env_path,
                        planner_env_path=planner_downward_env_path)
 

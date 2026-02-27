@@ -214,7 +214,7 @@ if __name__ == "__main__":
     # 准备拿咖啡
     # print("准备拿咖啡, 重载把手下压环境")
     test_single_task(task_dict=task_dict7,
-                     load_env=True,
+                     load_env=False,
                      fcl_env_path=fcl_downward_env_path,
                      planner_env_path=planner_downward_env_path)
     # input("Press Enter to continue to next test...")
