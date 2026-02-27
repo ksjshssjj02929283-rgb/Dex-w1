@@ -66,6 +66,9 @@ class CartesianToJointPlanner:
         self.logger.info(
             f"Initialize kinematic solver for Cartesian to Joint Planner")
 
+    def set_whole_body_ik_cost_type(self, cost_type: str):
+        self.whole_body_ik_solver.set_cost_function(cost_type=cost_type)
+
     def set_arm_tcp(self, name: str, pose: np.ndarray):
         if name == "left_arm":
             self.left_tcp = pose

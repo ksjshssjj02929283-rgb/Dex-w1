@@ -4612,6 +4612,24 @@ class W1Manager:
             left_arm_ee_trigger_list=left_ee_trigger_list,
             right_arm_ee_trigger_list=right_ee_trigger_list)
 
+    def set_whole_body_ik_cost_type(self, cost_type: str):
+        """
+        Set the cost type for whole body ik solver. The cost type will affect the motion style of the planned trajectory.
+        
+        Args:
+            cost_type (str): the cost type for whole body ik solver, currently support "standard", "standard_bend_backward"
+        """
+
+        if cost_type not in self.cartesian_joint_planner.whole_body_ik_solver.supported_cost_types:
+            self.logger.error(
+                f"Unsupported cost type: {cost_type}, please choose \
+                    from {self.cartesian_joint_planner.whole_body_ik_solver.supported_cost_types}"
+            )
+            return StatusCode.INPUT_INVALID
+        self.cartesian_joint_planner.set_whole_body_ik_cost_type(
+            cost_type=cost_type)
+        return StatusCode.SUCCESS
+
     def plan_linear_dual_arm_sync(self,
                                   task_dict: dict,
                                   start_qpos: np.ndarray,
