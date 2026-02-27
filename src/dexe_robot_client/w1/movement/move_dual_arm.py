@@ -386,7 +386,6 @@ class DualArmMovementBaseW1(object):
                     self.logger.warning(
                         "It will occur collision for this dual arm moving trajectory"
                     )
-                    self.collision_cnt += 1
                     break
                     # return False
 
@@ -434,7 +433,6 @@ class DualArmMovementBaseW1(object):
                     self.logger.warning(
                         "It will occur collision for this dual arm moving trajectory"
                     )
-                    self.collision_cnt += 1
                     break
                     # return False
 
@@ -481,7 +479,6 @@ class DualArmMovementBaseW1(object):
                     self.logger.warning(
                         "It will occur collision for this dual arm moving trajectory"
                     )
-                    self.collision_cnt += 1
                     break
                     # return False
 
@@ -528,7 +525,6 @@ class DualArmMovementBaseW1(object):
                     self.logger.warning(
                         "It will occur collision for this dual arm moving trajectory"
                     )
-                    self.collision_cnt += 1
                     break
                     # return False
 

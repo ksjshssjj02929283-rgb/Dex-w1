@@ -20,8 +20,6 @@ from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..navigation_client import ChassisClient
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
-from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
-from .path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm
 from .path_planner.cartesian_planner import CartesianPlanner
 from .path_planner.cartesian_to_joint_planner import CartesianToJointPlanner
 from .path_planner.fcl_checker import FCLChecker
@@ -29,7 +27,6 @@ from .path_planner.planner_pinocchio import Planner_Pin
 from .path_planner.utils.robot_type import *
 from .path_planner.hybrid_planner import HybridPlanner
 from .utils.w1_params import W1Params
-from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 
 from dexe_rp import DexforceW1Kinematics, SRSConfig
 
@@ -62,9 +59,9 @@ class W1Manager:
                  end_effector_type: EndEffectorType = None,
                  use_nav: bool = False):
         self.logger = get_logger()
-
         self.TIME_STEP = 0.01  # 100Hz
 
+        # Initialize attributes
         self.robot_client = None
         self._robot_client_sim = None
         self._robot_client_real = None
@@ -83,7 +80,6 @@ class W1Manager:
         self._chassis_client_real = None
 
         self._clients = []
-
         self._executor = None
         self._node_thread = None
 
@@ -95,43 +91,54 @@ class W1Manager:
         self.w1_params = W1Params(self._arm_type, self._w1_version,
                                   self._end_effector_type)
 
-        res, file_path = download_w1_urdf(arm_type, w1_version,
-                                          end_effector_type)
-        res, file_path = download_w1_urdf(arm_type, w1_version, None)
+        # Download URDF files
+        self._download_urdf_files(arm_type, w1_version, end_effector_type)
 
-        # 在主线程中正常退出时自动调用
+        # Register cleanup function
         atexit.register(self._destroy_clients)
 
+        # Initialize components
         try:
-            self._init_clients()
-        except Exception:
-            raise RuntimeError("Ros2 node create failed")
+            self._initialize_components(is_sim)
+        except Exception as e:
+            self.logger.error(f"Initialization failed: {e}")
+            self._destroy_clients()
+            raise RuntimeError("W1Manager initialization failed") from e
 
+    def _download_urdf_files(self, arm_type, w1_version, end_effector_type):
+        """Download URDF files."""
+        res, file_path = download_w1_urdf(arm_type, w1_version,
+                                          end_effector_type)
+        if not res:
+            raise RuntimeError(
+                f"Failed to download URDF for {arm_type}, {w1_version}, {end_effector_type}"
+            )
+        res, file_path = download_w1_urdf(arm_type, w1_version, None)
+        if not res:
+            raise RuntimeError(
+                f"Failed to download URDF for {arm_type}, {w1_version}, None")
+
+    def _initialize_components(self, is_sim):
+        """Initialize all components."""
+        self._init_clients()
         self._init_kine_solver()
 
         if not self.set_sim_mode(is_sim):
-            if is_sim:
-                raise RuntimeError("Set sim mode failed")
-            raise RuntimeError("Set real mode failed")
+            mode = "sim" if is_sim else "real"
+            raise RuntimeError(f"Set {mode} mode failed")
 
-        # initialize fcl checker and pinocchio model and planner
-        self._init_fcl_checker(arm_type=arm_type,
-                               w1_version=w1_version,
-                               end_effector_type=end_effector_type)
-        self._init_pinocchio(arm_type=arm_type,
-                             w1_version=w1_version,
-                             end_effector_type=end_effector_type)
-        self._init_planner(arm_type=arm_type,
-                           w1_version=w1_version,
-                           end_effector_type=end_effector_type)
-
-        self._init_cartesian_planner(arm_type=arm_type,
-                                     w1_version=w1_version,
-                                     end_effector_type=end_effector_type)
-
-        self.collision_cnt = 0
-
-        # initialize client supervisor
+        self._init_fcl_checker(arm_type=self._arm_type,
+                               w1_version=self._w1_version,
+                               end_effector_type=self._end_effector_type)
+        self._init_pinocchio(arm_type=self._arm_type,
+                             w1_version=self._w1_version,
+                             end_effector_type=self._end_effector_type)
+        self._init_planner(arm_type=self._arm_type,
+                           w1_version=self._w1_version,
+                           end_effector_type=self._end_effector_type)
+        self._init_cartesian_planner(arm_type=self._arm_type,
+                                     w1_version=self._w1_version,
+                                     end_effector_type=self._end_effector_type)
         self._init_client_supervisor()
 
     def _init_fcl_checker(self,
@@ -215,134 +222,115 @@ class W1Manager:
                                                   end_effector_type)
 
     def _init_clients(self):
+        if self._executor is not None:
+            self.logger.error(f"Ros2 already initialized")
+            raise RuntimeError("Ros2 already initialized")
+
         if not rclpy.ok():
             rclpy.init()
 
+        # Initialize robot and chassis clients
         self._robot_client_sim = RobotClient(is_sim=True)
         self._robot_client_real = RobotClient(is_sim=False)
         self._chassis_client_real = ChassisClient(is_sim=False)
         self.robot_client = self._robot_client_sim
 
-        if self._end_effector_type is None:
-            self.logger.info(f"No movable end effector.")
-            if self._use_nav:
-                self._clients = [
-                    self._robot_client_sim, self._robot_client_real,
-                    self._chassis_client_real
-                ]
-            else:
-                self._clients = [
-                    self._robot_client_sim, self._robot_client_real
-                ]
-        else:
-            self._left_ee_client_sim = create_end_effector_client(
-                is_left=True,
-                is_sim=True,
-                end_effector_type=self._end_effector_type)
-            self._right_ee_client_sim = create_end_effector_client(
-                is_left=False,
-                is_sim=True,
-                end_effector_type=self._end_effector_type)
-            self._left_ee_client_real = create_end_effector_client(
-                is_left=True,
-                is_sim=False,
-                end_effector_type=self._end_effector_type)
-            self._right_ee_client_real = create_end_effector_client(
-                is_left=False,
-                is_sim=False,
-                end_effector_type=self._end_effector_type)
-            self.left_ee_client = self._left_ee_client_sim
-            self.right_ee_client = self._right_ee_client_sim
+        # Initialize end effector clients if applicable
+        ee_clients = []
+        if self._end_effector_type is not None:
+            try:
+                self._left_ee_client_sim = create_end_effector_client(
+                    is_left=True,
+                    is_sim=True,
+                    end_effector_type=self._end_effector_type)
+                self._right_ee_client_sim = create_end_effector_client(
+                    is_left=False,
+                    is_sim=True,
+                    end_effector_type=self._end_effector_type)
+                self._left_ee_client_real = create_end_effector_client(
+                    is_left=True,
+                    is_sim=False,
+                    end_effector_type=self._end_effector_type)
+                self._right_ee_client_real = create_end_effector_client(
+                    is_left=False,
+                    is_sim=False,
+                    end_effector_type=self._end_effector_type)
+                self.left_ee_client = self._left_ee_client_sim
+                self.right_ee_client = self._right_ee_client_sim
 
-            if self._use_nav:
-                self._clients = [
-                    self._robot_client_sim, self._robot_client_real,
-                    self._left_ee_client_sim, self._left_ee_client_real,
-                    self._right_ee_client_sim, self._right_ee_client_real,
-                    self._chassis_client_real
-                ]
-            else:
-                self._clients = [
-                    self._robot_client_sim, self._robot_client_real,
+                ee_clients = [
                     self._left_ee_client_sim, self._left_ee_client_real,
                     self._right_ee_client_sim, self._right_ee_client_real
                 ]
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to initialize end effector clients: {e}")
+                raise
 
+        # Build client list based on navigation and end effector usage
+        self._clients = [self._robot_client_sim, self._robot_client_real]
+        if ee_clients:
+            self._clients.extend(ee_clients)
+        if self._use_nav:
+            self._clients.append(self._chassis_client_real)
+
+        # Set simulation mode
         self._is_sim = True
 
+        # Initialize executor and start spinning
         self._executor = MultiThreadedExecutor()
         for node in self._clients:
             self._executor.add_node(node)
+
         self._node_thread = threading.Thread(target=self._executor.spin,
                                              daemon=True)
         self._node_thread.start()
-        self.logger.info("Ros2 client initialized.")
+
+        # Log initialized clients
+        client_names = [client.node_name for client in self._clients]
+        self.logger.info(f"Ros2 clients initialized: {client_names}")
 
     def _init_client_supervisor(self):
+
+        def _create_robot_client_supervisor(robot_client_wrapper, client_map,
+                                            executor):
+            """Helper function to create a RobotClientSupervisor."""
+            return RobotClientSupervisor(
+                robot_client=robot_client_wrapper,
+                client_map=client_map,
+                executor_owned=executor,
+            )
 
         robot_client_wrapper_sim = RobotClientWrapper(self._robot_client_sim)
         robot_client_wrapper_real = RobotClientWrapper(self._robot_client_real)
 
-        if self._end_effector_type is not None:
-            left_ee_client_wrapper_sim = GripperClientWrapper(
-                self._left_ee_client_sim)
-            left_ee_client_wrapper_real = GripperClientWrapper(
-                self._left_ee_client_real)
-
-            right_ee_client_wrapper_sim = GripperClientWrapper(
-                self._right_ee_client_sim)
-            right_ee_client_wrapper_real = GripperClientWrapper(
-                self._right_ee_client_real)
-
         sim_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         real_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
-        self._client_supervisor_sim = RobotClientSupervisor(
-            robot_client=robot_client_wrapper_sim,
-            client_map={
-                "left_arm_ee": left_ee_client_wrapper_sim,
-                "right_arm_ee": right_ee_client_wrapper_sim
-            },
-            executor_owned=sim_executor,
-        )
+        # Initialize client maps
+        client_map_sim = {}
+        client_map_real = {}
 
         if self._end_effector_type is not None:
-            if self._use_nav:
-                self._client_supervisor_real = RobotClientSupervisor(
-                    robot_client=robot_client_wrapper_real,
-                    client_map={
-                        "left_arm_ee": left_ee_client_wrapper_real,
-                        "right_arm_ee": right_ee_client_wrapper_real,
-                        # TODO: add chassis client wrapper
-                        "chassis": self._chassis_client_real
-                    },
-                    executor_owned=real_executor,
-                )
-            else:
-                self._client_supervisor_real = RobotClientSupervisor(
-                    robot_client=robot_client_wrapper_real,
-                    client_map={
-                        "left_arm_ee": left_ee_client_wrapper_real,
-                        "right_arm_ee": right_ee_client_wrapper_real
-                    },
-                    executor_owned=real_executor,
-                )
-        else:
-            if self._use_nav:
-                self._client_supervisor_real = RobotClientSupervisor(
-                    robot_client=robot_client_wrapper_real,
-                    client_map={
-                        # TODO: add chassis client wrapper
-                        "chassis": self._chassis_client_real
-                    },
-                    executor_owned=real_executor,
-                )
-            else:
-                self._client_supervisor_real = RobotClientSupervisor(
-                    robot_client=robot_client_wrapper_real,
-                    client_map={},
-                    executor_owned=real_executor,
-                )
+            client_map_sim.update({
+                "left_arm_ee": GripperClientWrapper(self._left_ee_client_sim),
+                "right_arm_ee": GripperClientWrapper(self._right_ee_client_sim),
+            })
+            client_map_real.update({
+                "left_arm_ee":
+                    GripperClientWrapper(self._left_ee_client_real),
+                "right_arm_ee":
+                    GripperClientWrapper(self._right_ee_client_real),
+            })
+
+        if self._use_nav:
+            client_map_real["chassis"] = self._chassis_client_real
+
+        # Create supervisors
+        self._client_supervisor_sim = _create_robot_client_supervisor(
+            robot_client_wrapper_sim, client_map_sim, sim_executor)
+        self._client_supervisor_real = _create_robot_client_supervisor(
+            robot_client_wrapper_real, client_map_real, real_executor)
 
         self._client_supervisor_sim.initialize()
         self._client_supervisor_real.initialize()
@@ -673,9 +661,6 @@ class W1Manager:
         if self._use_nav and target_chassis_client is not None:
             self.chassis_client = target_chassis_client
         self.logger.info(f"W1 manager set to {target_name} mode.")
-
-        self.target_supervisor = self._client_supervisor_sim if self._is_sim else self._client_supervisor_real
-        self.target_supervisor_view = self.supervisor_view_sim if self._is_sim else self.supervisor_view_real
 
         return StatusCode.SUCCESS
 
@@ -1072,7 +1057,7 @@ class W1Manager:
         Returns:
             tuple[StatusCode, list]: 
         """
-        return self.supervisor_view_sim.get_current_pose(name, is_local)
+        return self.target_supervisor_view.get_current_pose(name, is_local)
 
     def get_pose(self,
                  name: str,
@@ -1090,7 +1075,7 @@ class W1Manager:
         Returns:
             tuple[StatusCode, list]: 
         """
-        return self.supervisor_view_sim.get_pose(name, qpos, is_local)
+        return self.target_supervisor_view.get_pose(name, qpos, is_local)
 
     def transfer_grasp_pose(
             self, name: str, pre_grasp_pose: list, pre_torso_qpos: np.ndarray,
@@ -1106,7 +1091,7 @@ class W1Manager:
         Returns:
             tuple[StatusCode, list]
         """
-        return self.supervisor_view_sim.transfer_grasp_pose(
+        return self.target_supervisor_view.transfer_grasp_pose(
             name, pre_grasp_pose, pre_torso_qpos, target_torso_qpos)
 
     def plan_dual_arm_cartesian_traj(

@@ -219,6 +219,4 @@ if __name__ == "__main__":
                      planner_env_path=planner_downward_env_path)
     # input("Press Enter to continue to next test...")
 
-    print(f"---------collision count: {w1_manager.collision_cnt}---------")
-
     embed()
