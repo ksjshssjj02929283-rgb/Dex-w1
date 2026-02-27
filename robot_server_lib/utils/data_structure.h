@@ -67,16 +67,15 @@ struct JointCommand {
     VectorDof position;
     VectorDof velocity;
     VectorDof acceleration;
-    VectorDof admittance_position;
     VectorDof torque_feedforward;
     VectorDof joint_stiffness = VectorDof::Constant(100.0);
     VectorDof joint_damping = VectorDof::Constant(10.0);
+    VectorDof position_before_filter;  // 滤波前的位置指令
 
     std::string ToString() const {
         std::stringstream ss;
         ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose()
            << ", Acceleration: " << acceleration.transpose()
-           << ", Compliance Position: " << admittance_position.transpose()
            << ", Torque Feedforward: " << torque_feedforward.transpose();
         return ss.str();
     }

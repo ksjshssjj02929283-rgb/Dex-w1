@@ -35,6 +35,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
 
     // 如果从startstreaming后没有收到任何流式命令，检查是否超时, 超时则结束任务
     if (!runtime_.latest_cmd.has_value()) {
+        output_joint_cmd.position_before_filter = measurement.q_desired_pre;
         output_joint_cmd.position = measurement.q_desired_pre;
         output_joint_cmd.velocity.setZero();
         output_joint_cmd.acceleration.setZero();
@@ -59,7 +60,8 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
         bool robot_stopped = true;
         for (auto i = 0; i < ndof_robot; i++) {
             // 如果超时则保持当前指令位置
-            output_joint_cmd.position[i] = is_timeout ? measurement.q_desired_pre[i] : latest_cmd.command[i];
+            output_joint_cmd.position_before_filter[i] = is_timeout ? measurement.q_desired_pre[i] : latest_cmd.command[i];
+            output_joint_cmd.position[i] = output_joint_cmd.position_before_filter[i];
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
@@ -68,7 +70,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
         // 应用巴特沃斯滤波
         if (use_filter_) {
             for (auto i = 0; i < ndof_robot; i++) {
-                output_joint_cmd.position[i] = filter_[i]->Apply(output_joint_cmd.position[i]);
+                output_joint_cmd.position[i] = filter_[i]->Apply(output_joint_cmd.position_before_filter[i]);
             }
         }
         if (!command_finished_time_.is_valid()) {
@@ -106,6 +108,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
     // Ruckig输出
     if (status == ruckig::Working) {
         for (auto i = 0; i < ndof_robot; i++) {
+            output_joint_cmd.position_before_filter[i] = runtime_.output.new_position[i];
             output_joint_cmd.position[i] = runtime_.output.new_position[i];
             output_joint_cmd.velocity[i] = runtime_.output.new_velocity[i];
             output_joint_cmd.acceleration[i] = runtime_.output.new_acceleration[i];
@@ -114,7 +117,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
         // 应用巴特沃斯滤波
         if (use_filter_) {
             for (auto i = 0; i < ndof_robot; i++) {
-                output_joint_cmd.position[i] = filter_[i]->Apply(output_joint_cmd.position[i]);
+                output_joint_cmd.position[i] = filter_[i]->Apply(output_joint_cmd.position_before_filter[i]);
             }
         }
         runtime_.output.pass_to_input(runtime_.input);
@@ -122,6 +125,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
     } else if (status == ruckig::Finished) {
         bool robot_stopped = true;
         for (auto i = 0; i < ndof_robot; i++) {
+            output_joint_cmd.position_before_filter[i] = runtime_.output.new_position[i];
             output_joint_cmd.position[i] = runtime_.output.new_position[i];
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
@@ -131,7 +135,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
         // 应用巴特沃斯滤波
         if (use_filter_) {
             for (auto i = 0; i < ndof_robot; i++) {
-                output_joint_cmd.position[i] = filter_[i]->Apply(output_joint_cmd.position[i]);
+                output_joint_cmd.position[i] = filter_[i]->Apply(output_joint_cmd.position_before_filter[i]);
             }
         }
         if (!command_finished_time_.is_valid()) {

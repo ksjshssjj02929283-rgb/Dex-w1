@@ -265,6 +265,9 @@ void RobotServer::TorqueControlThreadFunc() {
         if (this->enable_record_ && manager_state_ == Status::Running && loop_counter % 4 == 0) {
             int idx_offset = (robot_mode_ != RobotMode::W1) ? first_arm_joint_index_ : 0;
             double timestamp_s = this->now().nanoseconds() / 1e9;
+            // 获取上一个周期的规划命令（用于日志记录）
+            PlannerManagerCommand planner_cmd_for_log{};
+            this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd_for_log);
 
             nanolog::NanoLogLine logline(nanolog::LogLevel::CRIT, __FILE__, __func__, __LINE__, false);
             logline << "{\"timestamp\": \"" << std::to_string(timestamp_s) << "\", "
@@ -276,6 +279,8 @@ void RobotServer::TorqueControlThreadFunc() {
                     << utils::VectorToJsonArrayString(robot_feedback_.torque, idx_offset, ndof_config_).str()
                     << ", \"joint_position_input\": "
                     << utils::VectorToJsonArrayString(joint_position_input_, idx_offset, ndof_config_).str()
+                    << ", \"joint_position_before_filter\": "
+                    << utils::VectorToJsonArrayString(planner_cmd_for_log.cmd.position_before_filter, idx_offset, ndof_config_).str()
                     << ", \"joint_position_cmd\": "
                     << utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str()
                     << ", \"joint_torque_feedforward\": "

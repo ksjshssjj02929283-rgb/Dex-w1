@@ -242,6 +242,7 @@ def main():
     pos = build_array("joint_position")
     pos_cmd = build_array("joint_position_cmd")
     pos_input = build_array("joint_position_input")
+    pos_before_filter = build_array("joint_position_before_filter")
     tor = build_array("joint_torque")
     tor_ff = build_array("joint_torque_feedforward")
     vel = build_array("joint_velocity")
@@ -448,6 +449,10 @@ def main():
             if np.isfinite(pos_input[:, j]).any():
                 ax.plot(times, np.degrees(pos_input[:, j]), label="position_input",
                        color="tab:orange", linewidth=1.2, linestyle=":")
+            # 绘制 joint_position_before_filter（滤波前的位置指令）
+            if np.isfinite(pos_before_filter[:, j]).any():
+                ax.plot(times, np.degrees(pos_before_filter[:, j]), label="position_before_filter",
+                       color="tab:purple", linewidth=1.2, linestyle="-.")
             ax.grid(True, alpha=0.3, linestyle=':')
             ax.tick_params(labelsize=7)
             ax.set_title(col_title, fontsize=9)
