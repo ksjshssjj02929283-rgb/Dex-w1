@@ -41,22 +41,22 @@ bool CheckSafety(const JointMeasurement &joint_measurement, const RobotModel &ro
     Eigen::VectorXd ub = dynamics::MapToParamOrder(model, model.upperPositionLimit, joint_names);
 
     for (int i = 0; i < ndof_robot; i++) {
-        if (joint_measurement.position[i] > ub[i] && joint_measurement.velocity[i] > IdleVelocityThreshold) {
+        if (joint_measurement.position[i] > ub[i] && joint_measurement.velocity[i] > position_limit_vel_threshold) {
             if (error_code != ErrorCode::PositionOverLimit) {
                 std::stringstream ss;
                 ss << "Joint " << joint_names[i] << " exceeds upper limit, position: " << joint_measurement.position[i]
-                   << ", limit: " << ub[i];
+                   << ", limit: " << ub[i] << ", velocity: " << joint_measurement.velocity[i] << ", velocity threshold: " << position_limit_vel_threshold;
                 std::cout << ss.str() << "\n";
                 LOG_CRIT << ss.str();
                 error_code = ErrorCode::PositionOverLimit;
             }
             return false;
         }
-        if (joint_measurement.position[i] < lb[i] && joint_measurement.velocity[i] < -IdleVelocityThreshold) {
+        if (joint_measurement.position[i] < lb[i] && joint_measurement.velocity[i] < -position_limit_vel_threshold) {
             if (error_code != ErrorCode::PositionOverLimit) {
                 std::stringstream ss;
                 ss << "Joint " << joint_names[i] << " exceeds lower limit, position: " << joint_measurement.position[i]
-                   << ", limit: " << lb[i];
+                   << ", limit: " << lb[i] << ", velocity: " << joint_measurement.velocity[i] << ", velocity threshold: " << -position_limit_vel_threshold;
                 std::cout << ss.str() << "\n";
                 LOG_CRIT << ss.str();
                 error_code = ErrorCode::PositionOverLimit;
