@@ -62,20 +62,16 @@ class W1Manager:
         self.TIME_STEP = 0.01  # 100Hz
 
         # Initialize attributes
-        self.robot_client = None
         self._robot_client_sim = None
         self._robot_client_real = None
 
-        self.left_ee_client = None
         self._left_ee_client_sim = None
         self._left_ee_client_real = None
 
-        self.right_ee_client = None
         self._right_ee_client_sim = None
         self._right_ee_client_real = None
 
         self._use_nav = use_nav
-        self.chassis_client = None
         self._chassis_client_sim = None
         self._chassis_client_real = None
 
@@ -104,6 +100,48 @@ class W1Manager:
             self.logger.error(f"Initialization failed: {e}")
             self._destroy_clients()
             raise RuntimeError("W1Manager initialization failed") from e
+
+    @property
+    def robot_client(self):
+        """根据当前模式动态返回目标 robot client"""
+        return self._robot_client_sim if self._is_sim else self._robot_client_real
+
+    @property
+    def left_ee_client(self):
+        """根据当前模式动态返回目标 left ee client"""
+        if self._end_effector_type is None:
+            self.logger.error(
+                "End effector type is None, no EE client available.")
+            return None
+        return self._left_ee_client_sim if self._is_sim else self._left_ee_client_real
+
+    @property
+    def right_ee_client(self):
+        """根据当前模式动态返回目标 right ee client"""
+        if self._end_effector_type is None:
+            self.logger.error(
+                "End effector type is None, no EE client available.")
+            return None
+        return self._right_ee_client_sim if self._is_sim else self._right_ee_client_real
+
+    @property
+    def chassis_client(self):
+        """根据当前模式动态返回目标 chassis client"""
+        if not self._use_nav:
+            self.logger.error(
+                "Navigation function is disabled, no chassis client available.")
+            return None
+        return self._chassis_client_real if not self._is_sim else None
+
+    @property
+    def target_supervisor(self):
+        """根据当前模式动态返回目标 supervisor"""
+        return self._client_supervisor_sim if self._is_sim else self._client_supervisor_real
+
+    @property
+    def target_supervisor_view(self):
+        """根据当前模式动态返回目标 supervisor_view"""
+        return self.supervisor_view_sim if self._is_sim else self.supervisor_view_real
 
     def _download_urdf_files(self, arm_type, w1_version, end_effector_type):
         """Download URDF files."""
@@ -209,7 +247,6 @@ class W1Manager:
         self._robot_client_sim = RobotClient(is_sim=True)
         self._robot_client_real = RobotClient(is_sim=False)
         self._chassis_client_real = ChassisClient(is_sim=False)
-        self.robot_client = self._robot_client_sim
 
         # Initialize end effector clients if applicable
         ee_clients = []
@@ -231,8 +268,6 @@ class W1Manager:
                     is_left=False,
                     is_sim=False,
                     end_effector_type=self._end_effector_type)
-                self.left_ee_client = self._left_ee_client_sim
-                self.right_ee_client = self._right_ee_client_sim
 
                 ee_clients = [
                     self._left_ee_client_sim, self._left_ee_client_real,
@@ -342,16 +377,6 @@ class W1Manager:
             time_step=self.TIME_STEP)
 
         self.logger.info("Client supervisor initialized.")
-
-    @property
-    def target_supervisor(self):
-        """根据当前模式动态返回目标 supervisor"""
-        return self._client_supervisor_sim if self._is_sim else self._client_supervisor_real
-
-    @property
-    def target_supervisor_view(self):
-        """根据当前模式动态返回目标 supervisor_view"""
-        return self.supervisor_view_sim if self._is_sim else self.supervisor_view_real
 
     def _destroy_clients(self):
         try:
@@ -589,10 +614,6 @@ class W1Manager:
 
         if enable_sim:
             target_name = "sim"
-            target_robot_client = self._robot_client_sim
-            target_left_ee_client = self._left_ee_client_sim
-            target_right_ee_client = self._right_ee_client_sim
-            target_chassis_client = None
             if self._use_nav:
                 self.logger.info(
                     "Navigation client only support real mode. use_nav set to False."
@@ -600,34 +621,27 @@ class W1Manager:
                 self._use_nav = False
         else:
             target_name = "real"
-            target_robot_client = self._robot_client_real
-            target_left_ee_client = self._left_ee_client_real
-            target_right_ee_client = self._right_ee_client_real
-            if self._use_nav:
-                target_chassis_client = self._chassis_client_real
-            else:
-                target_chassis_client = None
 
         # 检查target client
-        if not target_robot_client.is_connected(timeout_sec=0.1):
+        if not self.robot_client.is_connected(timeout_sec=0.1):
             self.logger.error(
-                f"{target_robot_client.node_name} is not connected!")
+                f"{self.robot_client.node_name} is not connected!")
             return StatusCode.ROBOT_NOT_CONNECT
 
         if self._end_effector_type is not None:
-            if not target_left_ee_client.is_connected():
+            if not self.left_ee_client.is_connected():
                 self.logger.error(
-                    f"{target_left_ee_client.node_name} is not connected!")
+                    f"{self.left_ee_client.node_name} is not connected!")
                 return StatusCode.EE_NOT_CONNECT
-            if not target_right_ee_client.is_connected():
+            if not self.right_ee_client.is_connected():
                 self.logger.error(
-                    f"{target_right_ee_client.node_name} is not connected!")
+                    f"{self.right_ee_client.node_name} is not connected!")
                 return StatusCode.EE_NOT_CONNECT
 
-        if self._use_nav and target_chassis_client is not None and not target_chassis_client.is_connected(
+        if self._use_nav and self.chassis_client is not None and not self.chassis_client.is_connected(
         ):
             self.logger.error(
-                f"{target_chassis_client.node_name} is not connected!")
+                f"{self.chassis_client.node_name} is not connected!")
             return StatusCode.CHASSIS_NOT_CONNECT
 
         # 检查current client
@@ -646,13 +660,8 @@ class W1Manager:
                     f"{self.right_ee_client.node_name} is not connected!")
                 return StatusCode.EE_NOT_CONNECT
 
-        self.robot_client = target_robot_client
-        if self._end_effector_type is not None:
-            self.left_ee_client = target_left_ee_client
-            self.right_ee_client = target_right_ee_client
         self._is_sim = enable_sim
-        if self._use_nav and target_chassis_client is not None:
-            self.chassis_client = target_chassis_client
+
         self.logger.info(f"W1 manager set to {target_name} mode.")
 
         return StatusCode.SUCCESS
