@@ -48,7 +48,7 @@ class PinIKWholeBody:
         Args:
             urdf_path (str): Path to the URDF file of the robot.
             track_type (str): Type of tracking frame configuration. Options are "teleoperate", "standard", or "custom".
-            cost_type (str): Type of cost function to use. Options are "teleoperate_straight", "teleoperate_bend", "standard"
+            cost_type (str): Type of cost function to use. Options are "teleoperate_straight", "teleoperate_bend", "standard", "standard_bend_backward".
             kept_joint_names (list[str]): List of joint names to keep free during IK. If None, all joints are free.
             custom_left_ee_tf (np.ndarray, shape=(4,4)): Custom transformation matrix for the left end-effector.
             custom_right_ee_tf (np.ndarray, shape=(4,4)): Custom transformation matrix for the right end-effector.
@@ -65,9 +65,12 @@ class PinIKWholeBody:
         else:
             raise ValueError(f"Invalid track_type: {track_type}")
 
-        if cost_type in [
-                "teleoperate_straight", "teleoperate_bend", "standard"
-        ]:
+        self.supported_cost_types = [
+            "teleoperate_straight", "teleoperate_bend", "standard",
+            "standard_bend_backward"
+        ]
+
+        if cost_type in self.supported_cost_types:
             self.cost_type = cost_type
         else:
             raise ValueError(f"Invalid cost_type: {cost_type}")
@@ -94,7 +97,7 @@ class PinIKWholeBody:
 
         self._create_pin_casadi()
         self._create_trans_rot_error()
-        self._init_casadi_solver(cost_type=self.cost_type)
+        self.set_cost_function(cost_type=self.cost_type)
 
     def _add_track_frame(self,
                          custom_left_ee_tf: np.ndarray = None,
@@ -211,7 +214,13 @@ class PinIKWholeBody:
                     [casadi.vertcat(*calc_head_rot_err)])
         }
 
-    def _init_casadi_solver(self, cost_type: str):
+    def set_cost_function(self, cost_type: str):
+        """
+        Set the cost function of the IK numerical solver's optimization problem
+
+        Args:
+            cost_type (str): The type of predefined cost function. Options are "teleoperate_straight", "teleoperate_bend", "standard", "standard_bend_backward".
+        """
         self.opti = casadi.Opti()
         self.var_q = self.opti.variable(self.robot_.model.nq)
         self.var_q_last = self.opti.parameter(self.robot_.model.nq)
@@ -220,7 +229,27 @@ class PinIKWholeBody:
         self.param_right_tf = self.opti.parameter(4, 4)
         self.param_head_tf = self.opti.parameter(4, 4)
 
-        if cost_type == "standard":
+        opts = {
+            'ipopt': {
+                'print_level': 0,
+                'max_iter': 100,
+                'tol': 1e-4
+            },
+            'print_time': False,
+            'calc_lam_p': False,
+        }
+        self.opti.solver("ipopt", opts)
+
+        self.solver_dict = {
+            "opti": self.opti,
+            "var_q": self.var_q,
+            "var_q_last": self.var_q_last,
+            "param_left_tf": self.param_left_tf,
+            "param_right_tf": self.param_right_tf,
+            "param_head_tf": self.param_head_tf
+        }
+
+        if cost_type == "standard" or cost_type == "standard_bend_backward":
             self.translational_cost = casadi.sumsqr(
                 self.translational_error_dict["standard"](self.var_q,
                                                           self.param_left_tf,
@@ -309,25 +338,35 @@ class PinIKWholeBody:
                                    self.var_q_last[0:3])  # move arms first cost
             )
 
-        opts = {
-            'ipopt': {
-                'print_level': 0,
-                'max_iter': 100,
-                'tol': 1e-4
-            },
-            'print_time': False,
-            'calc_lam_p': False,
-        }
-        self.opti.solver("ipopt", opts)
+        if cost_type == "standard_bend_backward":
+            regularization_cost = casadi.sumsqr(10 * self.var_q[3])
 
-        self.solver_dict = {
-            "opti": self.opti,
-            "var_q": self.var_q,
-            "var_q_last": self.var_q_last,
-            "param_left_tf": self.param_left_tf,
-            "param_right_tf": self.param_right_tf,
-            "param_head_tf": self.param_head_tf
-        }
+            self.opti.subject_to(
+                self.opti.bounded(self.robot_.model.lowerPositionLimit,
+                                  self.var_q,
+                                  self.robot_.model.upperPositionLimit))
+
+            self.opti.subject_to(self.var_q[0] + self.var_q[1] + self.var_q[2]
+                                 >= 0)  # torso leaning forward constraint
+            self.opti.subject_to(self.var_q[0]
+                                 <= 0)  # legs bending forward constraint
+            self.opti.subject_to(self.var_q[1] >= 0)
+            self.opti.subject_to(self.var_q[2] <= 0)
+            self.opti.subject_to(self.var_q[9]
+                                 <= 0)  # elbow joint inward constraint
+            self.opti.subject_to(self.var_q[16] >= 0)
+
+            self.opti.subject_to(self.var_q[0] + 0.5 * self.var_q[1] == 0)
+
+            self.opti.minimize(
+                50 * self.translational_cost + self.rotation_cost +
+                0.02 * regularization_cost + self.smooth_cost +
+                5 * casadi.sumsqr(self.var_q[0] + self.var_q[1] +
+                                  self.var_q[2])  # upper body straight cost
+                +
+                10 * casadi.sumsqr(self.var_q[0:3] -
+                                   self.var_q_last[0:3])  # move arms first cost
+            )
 
     def solve_ik(self,
                  left_ee_target: np.ndarray,
@@ -343,7 +382,7 @@ class PinIKWholeBody:
 
         self.opti.set_value(self.param_left_tf, left_ee_target)
         self.opti.set_value(self.param_right_tf, right_ee_target)
-        if self.cost_type != "standard":
+        if self.cost_type != "standard" and self.cost_type != "standard_bend_backward":
             if head_ee_target is None:
                 self.logger.error(
                     "head_ee_target must be provided for teleoperate cost types."
