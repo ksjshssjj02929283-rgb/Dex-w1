@@ -87,7 +87,7 @@ private:
     std::atomic<bool> enable_torso_shaper_{false};    // 是否启用 torso J1-J4 输入整形器
     int first_arm_joint_index_ = 6;  // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
     const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
-    double streaming_timeout_ = 1.5;                // /control/joint_position streaming 超时时间
+    double streaming_timeout_ = 0.5;                // /control/joint_position streaming 超时时间
 
     // 整形器开关状态追踪变量，用于检测状态变化以实现自动重置
     bool prev_chassis_shaper_enabled_ = false;

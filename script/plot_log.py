@@ -241,6 +241,7 @@ def main():
 
     pos = build_array("joint_position")
     pos_cmd = build_array("joint_position_cmd")
+    pos_input = build_array("joint_position_input")
     tor = build_array("joint_torque")
     tor_ff = build_array("joint_torque_feedforward")
     vel = build_array("joint_velocity")
@@ -443,6 +444,10 @@ def main():
             if np.isfinite(pos_cmd_deg[:, j]).any():
                 ax.plot(times, pos_cmd_deg[:, j], label="position_cmd",
                        color="tab:green", linewidth=1.2, linestyle="--")
+            # 绘制 joint_position_input（来自 StreamingCommand）
+            if np.isfinite(pos_input[:, j]).any():
+                ax.plot(times, np.degrees(pos_input[:, j]), label="position_input",
+                       color="tab:orange", linewidth=1.2, linestyle=":")
             ax.grid(True, alpha=0.3, linestyle=':')
             ax.tick_params(labelsize=7)
             ax.set_title(col_title, fontsize=9)

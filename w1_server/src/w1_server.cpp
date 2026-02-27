@@ -274,6 +274,8 @@ void RobotServer::TorqueControlThreadFunc() {
                     << utils::VectorToJsonArrayString(robot_feedback_.velocity, idx_offset, ndof_config_).str()
                     << ", \"joint_torque\":"
                     << utils::VectorToJsonArrayString(robot_feedback_.torque, idx_offset, ndof_config_).str()
+                    << ", \"joint_position_input\": "
+                    << utils::VectorToJsonArrayString(joint_position_input_, idx_offset, ndof_config_).str()
                     << ", \"joint_position_cmd\": "
                     << utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str()
                     << ", \"joint_torque_feedforward\": "

@@ -67,7 +67,8 @@ protected:
         request_handle_queue_{32};
     std::filesystem::path server_data_dir_ = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
     std::filesystem::path home_dir = std::filesystem::path(std::getenv("HOME"));
-
+    // 记录最新的 streaming command 输入的关节位置
+    VectorDof joint_position_input_;
     struct {
         std::atomic_int64_t error_drop{-1};
         std::atomic_int64_t queued{-1};
