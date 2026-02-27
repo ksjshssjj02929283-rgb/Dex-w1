@@ -2,6 +2,7 @@
 
 #include <chrono>
 
+#include "butterworth_filter.h"
 #include "move_planner_base.h"
 
 namespace robot_server_lib {
@@ -35,7 +36,11 @@ protected:
 
     TimePointSystem request_start_time_{TimePointSystem::Invalid()};
     TimePointSystem command_finished_time_{TimePointSystem::Invalid()};
-    bool no_ruckig_mode_ = false;
+    bool use_ruckig_ = true;
+
+    // 巴特沃斯滤波器
+    std::shared_ptr<ButterworthFilter> filter_[ndof_robot];
+    bool use_filter_ = false;
 };
 
 }  // namespace robot_server_lib

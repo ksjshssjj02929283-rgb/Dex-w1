@@ -92,10 +92,6 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, Robo
     // 创建定时器，定时发布feedback 定时器回调函数
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
 
-    for (int i = 0; i < ndof_robot; ++i) {
-        butterworth_filter_[i] = std::make_shared<ButterworthFilter>();
-    }
-
     // 初始化力传感器
     // primary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB2");
     // secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");
@@ -120,7 +116,7 @@ void RobotServer::InitParamConfig() {
     auto config_path = server_data_dir_ / "w1_config.json";
 
     const std::set<std::string> kAllowedRootKeys{"enable_ruckig", "enable_chassis_shaper", "enable_torso_shaper",
-                                                 "enable_record", "enable_butterworth_filter"};
+                                                 "enable_record", "enable_filter"};
 
     nlohmann::json root;
     if (!std::filesystem::exists(config_path)) {
@@ -128,7 +124,7 @@ void RobotServer::InitParamConfig() {
         root["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
         root["enable_torso_shaper"] = this->enable_torso_shaper_.load();
         root["enable_record"] = this->enable_record_;
-        root["enable_butterworth_filter"] = this->enable_butterworth_filter_.load();
+        root["enable_filter"] = this->enable_filter_;
 
         std::ofstream ofs(config_path);
         ofs << root.dump(2);
@@ -169,8 +165,8 @@ void RobotServer::InitParamConfig() {
         root["enable_record"] = this->enable_record_;
         need_rewrite = true;
     }
-    if (!root.contains("enable_butterworth_filter")) {
-        root["enable_butterworth_filter"] = this->enable_butterworth_filter_.load();
+    if (!root.contains("enable_filter")) {
+        root["enable_filter"] = this->enable_filter_;
         need_rewrite = true;
     }
 
@@ -178,7 +174,7 @@ void RobotServer::InitParamConfig() {
     this->enable_chassis_shaper_ = root.value("enable_chassis_shaper", this->enable_chassis_shaper_.load());
     this->enable_torso_shaper_ = root.value("enable_torso_shaper", this->enable_torso_shaper_.load());
     this->enable_record_ = root.value("enable_record", this->enable_record_);
-    this->enable_butterworth_filter_ = root.value("enable_butterworth_filter", this->enable_butterworth_filter_.load());
+    this->enable_filter_ = root.value("enable_filter", this->enable_filter_);
 
     // A1 和 Arm 模式下禁用 torso shaper
     if (robot_mode_ != RobotMode::W1) {
@@ -190,7 +186,7 @@ void RobotServer::InitParamConfig() {
     root_clean["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
     root_clean["enable_torso_shaper"] = this->enable_torso_shaper_.load();
     root_clean["enable_record"] = this->enable_record_;
-    root_clean["enable_butterworth_filter"] = this->enable_butterworth_filter_.load();
+    root_clean["enable_filter"] = this->enable_filter_;
 
     if (need_rewrite) {
         std::ofstream ofs(config_path);
@@ -203,16 +199,15 @@ void RobotServer::InitParamConfig() {
                 "enable_chassis_shaper=%s, \n"
                 "enable_torso_shaper=%s, \n"
                 "enable_record=%s, \n"
-                "enable_butterworth_filter=%s)",
+                "enable_filter=%s)",
                 config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
                 this->enable_chassis_shaper_.load() ? "true" : "false",
                 this->enable_torso_shaper_.load() ? "true" : "false", this->enable_record_ ? "true" : "false",
-                this->enable_butterworth_filter_.load() ? "true" : "false");
+                this->enable_filter_ ? "true" : "false");
     LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_
              << ", enable_chassis_shaper=" << this->enable_chassis_shaper_.load()
              << ", enable_torso_shaper=" << this->enable_torso_shaper_.load()
-             << ", enable_record=" << this->enable_record_
-             << ", enable_butterworth_filter=" << this->enable_butterworth_filter_.load();
+             << ", enable_record=" << this->enable_record_ << ", enable_filter=" << this->enable_filter_;
 }
 
 void RobotServer::TorqueControlThreadFunc() {
@@ -450,9 +445,6 @@ void RobotServer::TorqueControlThreadFunc() {
                 }
             }
         } else {
-            for (int i = 0; i < ndof_robot; ++i) {
-                this->butterworth_filter_[i]->Reset();  // 重置滤波器状态
-            }
             for (int i = 0; i < 4; ++i) {
                 torso_shapers_[i]->Reset();
             }
@@ -737,17 +729,12 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
             planner_request.type = RequestType::StartJointStreaming;
             MoveRequest move_request;
             move_request.motion_group = MotionGroup::WholeBody;
-            move_request.optional_mode = enable_ruckig_ ? false : true;  // true: no ruckig 模式, false: ruckig 模式
+            move_request.use_ruckig = enable_ruckig_;
+            move_request.use_filter = enable_filter_;
             planner_request.data = move_request;
             streaming_request_id_ = StartStreaming(planner_request);
         }
         if (streaming_request_id_ > -1) {
-            // 对位置指令应用巴特沃斯滤波
-            if (this->enable_butterworth_filter_.load()) {
-                for (int j = 0; j < ndof_robot; ++j) {
-                    robot_control_temp.position[j] = butterworth_filter_[j]->Apply(robot_control_temp.position[j]);
-                }
-            }
             StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
             streaming_msg->request_id = streaming_request_id_;
             streaming_msg->streaming_finished = false;
@@ -788,18 +775,13 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
             planner_request.type = RequestType::StartJointStreaming;
             MoveRequest move_request;
             move_request.motion_group = MotionGroup::WholeBody;
-            move_request.optional_mode = enable_ruckig_ ? false : true;  // true: no ruckig 模式, false: ruckig 模式
+            move_request.use_ruckig = enable_ruckig_;
+            move_request.use_filter = enable_filter_;
             move_request.streaming_timeout = streaming_timeout_;
             planner_request.data = move_request;
             streaming_request_id_ = StartStreaming(planner_request);
         }
         if (streaming_request_id_ != -1) {
-            // 对位置指令应用巴特沃斯滤波
-            if (this->enable_butterworth_filter_.load()) {
-                for (int j = 0; j < ndof_robot; ++j) {
-                    robot_control_temp.position[j] = butterworth_filter_[j]->Apply(robot_control_temp.position[j]);
-                }
-            }
             StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
             streaming_msg->request_id = streaming_request_id_;
             streaming_msg->streaming_finished = false;
@@ -844,9 +826,9 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
         };
 
         update_bool_param("enable_record", this->enable_record_);
+        update_bool_param("enable_filter", this->enable_filter_);
         update_atomic_bool_param("enable_chassis_shaper", this->enable_chassis_shaper_);
         update_atomic_bool_param("enable_torso_shaper", this->enable_torso_shaper_);
-        update_atomic_bool_param("enable_butterworth_filter", this->enable_butterworth_filter_);
 
     } catch (const std::exception &e) {
         RCLCPP_WARN(this->get_logger(), "Failed to parse /control/debug JSON: %s", e.what());

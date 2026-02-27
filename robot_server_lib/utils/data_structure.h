@@ -166,10 +166,11 @@ struct MoveRequest {
     std::optional<double> speed;
     std::optional<double> acceleration;  // 加速度比例，范围 0.01 ~ 1.0
     std::optional<double> blend_tolerance;
-    std::optional<bool> optional_mode;
+    std::optional<bool> use_ruckig;
     std::optional<std::vector<int>> endpoint_index;
     std::optional<double> interval;
     std::optional<double> streaming_timeout;
+    std::optional<bool> use_filter;  // 是否启用巴特沃斯滤波
 };
 
 using PlannerData = std::variant<MoveRequest, PoseQuaternion, Vector3d, Vector6d, Eigen::VectorXd, bool, int, double>;

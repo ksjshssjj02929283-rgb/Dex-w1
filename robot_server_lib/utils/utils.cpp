@@ -357,7 +357,8 @@ PlannerRequest ParseMoveRequest(
         auto set_bool = [&](const char *key, std::optional<bool> &dst) {
             if (input_config_json.contains(key)) dst.emplace(input_config_json[key].get<bool>());
         };
-        set_bool("optional_mode", move_request.optional_mode);
+        set_bool("use_ruckig", move_request.use_ruckig);
+        set_bool("use_filter", move_request.use_filter);
         set_double("speed", move_request.speed);
         set_double("acceleration", move_request.acceleration);
         set_double("blend_tolerance", move_request.blend_tolerance);

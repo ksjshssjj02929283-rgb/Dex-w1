@@ -564,8 +564,8 @@ private:
     uint32_t m_file_number = 0;  // unused but kept for structure compatibility
     std::streamoff m_bytes_written = 0;
     uint32_t const m_log_file_roll_size_bytes;
-    std::string const m_name;    // directory + base name (no extension, suffix added here)
-    uint32_t const m_max_files;  // fixed rolling count
+    std::string const m_name;         // directory + base name (no extension, suffix added here)
+    uint32_t const m_max_files;       // fixed rolling count
     std::string const m_file_suffix;  // 文件后缀，如 "txt", "jsonl"
     std::unique_ptr<std::ofstream> m_os;
 };
@@ -580,7 +580,8 @@ public:
                std::string const &file_suffix = "txt")
         : m_state(State::INIT),
           m_buffer_base(new RingBuffer(std::max(1u, ngl.ring_buffer_size_mb) * 1024 * 4)),
-          m_file_writer(log_directory, log_file_name, std::max(1u, log_file_roll_size_mb), std::max(1u, max_files), file_suffix),
+          m_file_writer(
+              log_directory, log_file_name, std::max(1u, log_file_roll_size_mb), std::max(1u, max_files), file_suffix),
           m_thread(&NanoLogger::pop, this) {
         m_state.store(State::READY, std::memory_order_release);
     }
@@ -593,7 +594,8 @@ public:
                std::string const &file_suffix = "txt")
         : m_state(State::INIT),
           m_buffer_base(new QueueBuffer()),
-          m_file_writer(log_directory, log_file_name, std::max(1u, log_file_roll_size_mb), std::max(1u, max_files), file_suffix),
+          m_file_writer(
+              log_directory, log_file_name, std::max(1u, log_file_roll_size_mb), std::max(1u, max_files), file_suffix),
           m_thread(&NanoLogger::pop, this) {
         m_state.store(State::READY, std::memory_order_release);
     }
