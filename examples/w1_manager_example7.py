@@ -172,10 +172,10 @@ if __name__ == "__main__":
         raise RuntimeError("Failed to connect to W1 robot.")
 
     # yapf: disable
-    w1_manager.set_home_qpos(np.deg2rad([0, 0, 0, 0, 0, 0,
-                                        5, -20, -5, -30, 0, -15, 0,
-                                        -5, 20, 5, 30, 0, 15, 0]),
-                            save_to_file=False)
+    w1_manager.set_home_qpos(np.array([0.785, -1.57, 0.785, 0.03490658503988659, 0.0, -0.6632251157578453,
+        2.1155, -0.2175, -1.0686, -1.8855, 0.0081, 0.1119, 0.6381, -2.1155,
+        0.2175, 1.0686, 1.8855, -0.0081, -0.1119, -0.6381
+    ]), save_to_file=False)
     # yapf: enable
     w1_manager.go_home(1.)
 
