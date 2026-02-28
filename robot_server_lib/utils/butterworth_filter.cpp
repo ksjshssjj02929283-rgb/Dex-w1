@@ -1,9 +1,10 @@
 #include "butterworth_filter.h"
 
 ButterworthFilter::ButterworthFilter() {
-    // 固定参数：3Hz 二阶临界阻尼低通滤波器 (Fs=250Hz, ζ=1.0)
-    filter_.b = {0.0013487119483563, 0.0026974238967127, 0.0013487119483563};
-    filter_.a = {1.0, -1.8934641463618269, 0.8988589941552524};
+    // 一阶低通滤波器：fc=3Hz, fs=250Hz, 无超调
+    // alpha = 2*pi*fc / (fs + 2*pi*fc) ≈ 0.0753
+    filter_.b = {7.5303293549481168e-02, 7.5303293549481168e-02};
+    filter_.a = {1.0, -8.4939670251051883e-01};
 }
 
 double ButterworthFilter::Apply(double input) {
