@@ -360,12 +360,13 @@ def main():
         ax.legend(loc="best", fontsize=8)
         ax.set_title("Velocity Error (cmd - feedback)", fontsize=10)
 
-        # 4) feedback velocity spectrum (FFT) - only if --hz enabled
+        # 4) velocity error spectrum (FFT) - only if --hz enabled
         if show_hz:
             ax = axes[3]
-            # 左轮反馈速度频谱
-            valid_left_mask = np.isfinite(chassis_data["chassis_feedback_left_velocity"])
-            valid_left = chassis_data["chassis_feedback_left_velocity"][valid_left_mask]
+            # 左轮速度误差频谱
+            left_err = chassis_data["chassis_cmd_left_velocity"] - chassis_data["chassis_feedback_left_velocity"]
+            valid_left_mask = np.isfinite(left_err)
+            valid_left = left_err[valid_left_mask]
             if valid_left.size >= 2:
                 valid_times_left = times[valid_left_mask]
                 time_diffs_left = np.diff(valid_times_left)
@@ -385,11 +386,12 @@ def main():
                 fft_mag_left_norm = 2.0 / n_left * fft_mag_left
                 freq_mask_left = fft_freq_left_pos <= 10
                 ax.plot(fft_freq_left_pos[freq_mask_left], fft_mag_left_norm[freq_mask_left],
-                    label="left_feedback", color="tab:blue", linewidth=1.0)
+                    label="left_error", color="tab:blue", linewidth=1.0)
 
-            # 右轮反馈速度频谱
-            valid_right_mask = np.isfinite(chassis_data["chassis_feedback_right_velocity"])
-            valid_right = chassis_data["chassis_feedback_right_velocity"][valid_right_mask]
+            # 右轮速度误差频谱
+            right_err = chassis_data["chassis_cmd_right_velocity"] - chassis_data["chassis_feedback_right_velocity"]
+            valid_right_mask = np.isfinite(right_err)
+            valid_right = right_err[valid_right_mask]
             if valid_right.size >= 2:
                 valid_times_right = times[valid_right_mask]
                 time_diffs_right = np.diff(valid_times_right)
@@ -408,13 +410,13 @@ def main():
                 fft_mag_right_norm = 2.0 / n_right * fft_mag_right
                 freq_mask_right = fft_freq_right_pos <= 10
                 ax.plot(fft_freq_right_pos[freq_mask_right], fft_mag_right_norm[freq_mask_right],
-                    label="right_feedback", color="tab:red", linewidth=1.0)
+                    label="right_error", color="tab:red", linewidth=1.0)
 
             ax.grid(True, alpha=0.3, linestyle=':')
             ax.set_ylabel("FFT Magnitude", fontsize=9)
             ax.set_xlabel("Frequency [Hz]", fontsize=9)
             ax.legend(loc="best", fontsize=8)
-            ax.set_title("Feedback Velocity Spectrum (FFT)", fontsize=10)
+            ax.set_title("Velocity Error Spectrum (FFT)", fontsize=10)
 
         return fig
 
@@ -564,13 +566,13 @@ def main():
             except Exception:
                 pass
 
-            # 5) velocity spectrum (FFT) - only if --hz enabled
+            # 5) position error spectrum (FFT) - only if --hz enabled
             if show_hz:
                 ax = axes[4, ci]
-                valid_vel_mask = np.isfinite(vel_deg[:, j])
-                valid_vel = vel_deg[:, j][valid_vel_mask]
-                if valid_vel.size >= 2:
-                    valid_times = times[valid_vel_mask]
+                valid_err_mask = np.isfinite(pos_err_deg[:, j])
+                valid_err = pos_err_deg[:, j][valid_err_mask]
+                if valid_err.size >= 2:
+                    valid_times = times[valid_err_mask]
                     time_diffs = np.diff(valid_times)
                     time_diffs = time_diffs[time_diffs > 0]
                     if len(time_diffs) >= 1:
@@ -578,23 +580,23 @@ def main():
                     else:
                         dt = 0.001
                     fs = 1.0 / dt if dt > 0 else 1000.0
-                    n = valid_vel.size
-                    vel_centered = valid_vel - np.mean(valid_vel)
-                    fft_vals = np.fft.fft(vel_centered)
+                    n = valid_err.size
+                    err_centered = valid_err - np.mean(valid_err)
+                    fft_vals = np.fft.fft(err_centered)
                     fft_freq = np.fft.fftfreq(n, d=dt)
-                    vel_mask = fft_freq > 0
-                    fft_freq_vel = fft_freq[vel_mask]
-                    fft_mag = np.abs(fft_vals[vel_mask])
+                    err_mask = fft_freq > 0
+                    fft_freq_err = fft_freq[err_mask]
+                    fft_mag = np.abs(fft_vals[err_mask])
                     fft_mag_norm = 2.0 / n * fft_mag
-                    freq_mask = fft_freq_vel <= 10
-                    ax.plot(fft_freq_vel[freq_mask], fft_mag_norm[freq_mask],
-                        color="tab:brown", linewidth=1.0)
+                    freq_mask = fft_freq_err <= 10
+                    ax.plot(fft_freq_err[freq_mask], fft_mag_norm[freq_mask],
+                        color="tab:purple", linewidth=1.0)
                     ax.grid(True, alpha=0.3, linestyle=':')
                     ax.tick_params(labelsize=7)
                     if fft_mag_norm[freq_mask].size > 0:
                         peak_idx = np.argmax(fft_mag_norm[freq_mask])
                         if fft_mag_norm[freq_mask][peak_idx] > 0.01 * fft_mag_norm[freq_mask].max():
-                            peak_freq = fft_freq_vel[freq_mask][peak_idx]
+                            peak_freq = fft_freq_err[freq_mask][peak_idx]
                             ax.axvline(x=peak_freq, color='tab:red', linestyle='--', alpha=0.7, linewidth=1)
                             ax.annotate(f'{peak_freq:.1f}Hz',
                                     xy=(peak_freq, fft_mag_norm[freq_mask][peak_idx]),
@@ -608,7 +610,7 @@ def main():
                         alpha=0.6, fontsize=10)
                     ax.set_xlabel("(Hz)", fontsize=7, x=1.02, ha='left')
                 if ci == 0:
-                    ax.set_ylabel("Spectrum [deg/s]", fontsize=7)
+                    ax.set_ylabel("Spectrum [deg]", fontsize=7)
 
         # 调整布局
         fig.tight_layout(rect=[0.02, 0.02, 1, 0.98], h_pad=2, w_pad=2)
