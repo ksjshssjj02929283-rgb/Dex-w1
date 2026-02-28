@@ -157,7 +157,8 @@ class JointTrajectoryPublisher(Node):
         print(f"发布位置: {msg}")
 
         self.publisher.publish(msg)
-        self.get_logger().info(f"发送第{self.step_index+1}/{self.total_points}个位置")
+        if self.step_index % 100 == 0:
+            self.get_logger().info(f"发送第{self.step_index+1}/{self.total_points}个位置")
         self.step_index += 1
 
     def _request_shutdown(self):
