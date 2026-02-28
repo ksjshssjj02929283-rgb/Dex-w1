@@ -154,10 +154,10 @@ class JointTrajectoryPublisher(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = self.joint_names
         msg.position = self.positions[self.step_index].tolist()
-        print(f"发布位置: {msg}")
 
         self.publisher.publish(msg)
         if self.step_index % 100 == 0:
+            print(f"发布位置: {msg}")
             self.get_logger().info(f"发送第{self.step_index+1}/{self.total_points}个位置")
         self.step_index += 1
 
