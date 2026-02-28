@@ -548,7 +548,7 @@ class SupervisorViewW1(object):
             if not trigger_list or not unique_sync_ids:
                 return []
             sync_id_map = {
-                sync_id: move_id + i + 1
+                sync_id: move_id + i
                 for i, sync_id in enumerate(unique_sync_ids)
             }
             new_trigger_list = [(sync_id_map[sync_id], action)
