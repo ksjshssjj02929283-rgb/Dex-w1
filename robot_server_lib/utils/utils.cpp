@@ -352,10 +352,16 @@ PlannerRequest ParseMoveRequest(
         const auto input_config_json = json::parse(input_request->config);
 
         auto set_double = [&](const char *key, std::optional<double> &dst) {
-            if (input_config_json.contains(key)) dst.emplace(input_config_json[key].get<double>());
+            if (input_config_json.contains(key)) {
+                dst.emplace(input_config_json[key].get<double>());
+                LOG_INFO << "Parsed config: " << key << " = " << dst.value();
+            }
         };
         auto set_bool = [&](const char *key, std::optional<bool> &dst) {
-            if (input_config_json.contains(key)) dst.emplace(input_config_json[key].get<bool>());
+            if (input_config_json.contains(key)) {
+                dst.emplace(input_config_json[key].get<bool>());
+                LOG_INFO << "Parsed config: " << key << " = " << (dst.value() ? "true" : "false");
+            }
         };
         set_bool("use_ruckig", move_request.use_ruckig);
         set_bool("use_filter", move_request.use_filter);
@@ -367,11 +373,13 @@ PlannerRequest ParseMoveRequest(
             const auto ref =
                 magic_enum::enum_cast<ReferenceFrame>(input_config_json["reference_frame"].get<std::string>());
             move_request.reference_frame.emplace(ref.value_or(ReferenceFrame::Unknown));
+            LOG_INFO << "Parsed config: reference_frame = " << input_config_json["reference_frame"].get<std::string>();
         }
         if (input_config_json.contains("endpoint_index")) {
             std::vector<int> endpoint_index;
             for (const auto &item : input_config_json["endpoint_index"]) endpoint_index.push_back(item.get<int>());
             move_request.endpoint_index.emplace(std::move(endpoint_index));
+            LOG_INFO << "Parsed config: endpoint_index = " << move_request.endpoint_index.value().size() << " points";
         }
     }
     planner_request.data = move_request;

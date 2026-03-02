@@ -7,3 +7,4 @@ __pycache__/
 nano_logs/
 script/dyn_params_ident_data/recdata/
 CLAUDE.md
+dexe_robot_client/
