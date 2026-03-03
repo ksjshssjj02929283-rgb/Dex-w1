@@ -62,7 +62,7 @@ def _get_motor_position_deg_by_index(motor_index_list: list) -> list:
     return qpos_list
 
 def _write_zero_offset(is_left: bool, index_list: list, zero_offset_list: list, joint_ids: list):
-    target_joint_ids = joint_ids if is_left else [j + len(joint_ids) for j in joint_ids]
+    target_joint_ids = joint_ids
     if len(zero_offset_list) != len(target_joint_ids):
         raise ValueError(f"offset_list 长度应为 {len(target_joint_ids)}，当前为 {len(zero_offset_list)}")
     pre_offset_list = []
