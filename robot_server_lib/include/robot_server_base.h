@@ -43,7 +43,7 @@ protected:
                              RequestType request_type,
                              RequestStatus request_status,
                              Status manager_state);
-    void Setup_Realtime();
+    void Setup_Realtime(int priority = 99);
 
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_server_state_publisher_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_server_state_real_subscriber_;

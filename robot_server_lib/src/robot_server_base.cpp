@@ -86,6 +86,9 @@ void RobotServerBase::Run() {
 }
 
 void RobotServerBase::ManagerThreadFunc() {
+    if (!is_sim_) {
+        Setup_Realtime(80);
+    }
     PlannerManager planner_manager(this->robot_model_, this->manager_buffers_,
                                    std::bind(&RobotServerBase::ReportRequestStatus, this, std::placeholders::_1,
                                              std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
@@ -399,14 +402,14 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id,
     }
 }
 
-void RobotServerBase::Setup_Realtime() {
+void RobotServerBase::Setup_Realtime(int priority) {
     // 锁内存，避免分页抖动
     if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
         std::cerr << "mlockall failed: " << std::strerror(errno) << std::endl;
     }
     // 设置SCHED_FIFO实时调度
     sched_param sp{};
-    sp.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    sp.sched_priority = priority;
     if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0) {
         std::cerr << "sched_setscheduler failed: " << std::strerror(errno) << std::endl;
         LOG_CRIT << "sched_setscheduler failed, please run setcap!";
