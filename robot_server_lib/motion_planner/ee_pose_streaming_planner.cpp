@@ -12,6 +12,7 @@ EEPoseStreamingPlanner::EEPoseStreamingPlanner(
         runtime_.input.max_velocity[i] = joint_bounds_.max_velocity;
         runtime_.input.max_acceleration[i] = joint_bounds_.max_acceleration;
         runtime_.input.max_jerk[i] = joint_bounds_.max_jerk;
+        filter_[i] = std::make_shared<ButterworthFilter>();
     }
 }
 
@@ -33,6 +34,7 @@ ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasureme
         }
     }
     if (!runtime_.latest_cmd.has_value()) {
+        output_joint_cmd.position_before_filter = measurement.q_desired_pre;
         output_joint_cmd.position = measurement.q_desired_pre;
         output_joint_cmd.velocity.setZero();
         output_joint_cmd.acceleration.setZero();
@@ -77,21 +79,35 @@ ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasureme
     // Ruckig输出
     if (status == ruckig::Working) {
         for (auto i = 0; i < ndof_robot; i++) {
+            output_joint_cmd.position_before_filter[i] = runtime_.output.new_position[i];
             output_joint_cmd.position[i] = runtime_.output.new_position[i];
             output_joint_cmd.velocity[i] = runtime_.output.new_velocity[i];
             output_joint_cmd.acceleration[i] = runtime_.output.new_acceleration[i];
             output_joint_cmd.torque_feedforward[i] = 0;
+        }
+        // 应用巴特沃斯滤波
+        if (use_filter_) {
+            for (auto i = 0; i < ndof_robot; i++) {
+                output_joint_cmd.position[i] = filter_[i]->Apply(output_joint_cmd.position_before_filter[i]);
+            }
         }
         runtime_.output.pass_to_input(runtime_.input);
         return ComputeCommandStatus::TaskOngoing;
     } else if (status == ruckig::Finished) {
         bool robot_stopped = true;
         for (auto i = 0; i < ndof_robot; i++) {
+            output_joint_cmd.position_before_filter[i] = runtime_.output.new_position[i];
             output_joint_cmd.position[i] = runtime_.output.new_position[i];
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
             robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
+        }
+        // 应用巴特沃斯滤波
+        if (use_filter_) {
+            for (auto i = 0; i < ndof_robot; i++) {
+                output_joint_cmd.position[i] = filter_[i]->Apply(output_joint_cmd.position_before_filter[i]);
+            }
         }
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
         if (runtime_.streaming_finished && robot_stopped) {
@@ -119,6 +135,17 @@ bool EEPoseStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request
         streaming_timeout_ = move_request.streaming_timeout.value();
     } else {
         streaming_timeout_ = DefaultStreamingTimeout;
+    }
+
+    // 滤波配置
+    if (move_request.use_filter.has_value()) {
+        use_filter_ = move_request.use_filter.value();
+    } else {
+        use_filter_ = false;
+    }
+    // 重置滤波器状态
+    for (auto i = 0; i < ndof_robot; i++) {
+        filter_[i]->Reset();
     }
 
     runtime_.request_id = request.request_id;
