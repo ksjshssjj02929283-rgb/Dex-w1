@@ -6,7 +6,7 @@ from ...common import get_logger, W1ArmType, W1Version
 from ..utils.w1_params import W1Params
 from ...end_effector_client import EndEffectorType
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
-from ..kinemtaics.pin_ik_whole_body import PinIKWholeBody
+from ..kinematics.pin_ik_whole_body import PinIKWholeBody
 from .utils.robot_type import *
 from dexe_rp import DexforceW1Kinematics, SRSConfig
 

@@ -509,11 +509,6 @@ class W1Manager:
                 self.logger.info(
                     f"{right_ee_client._client.node_name} is not connected!")
                 return StatusCode.EE_NOT_CONNECT
-        if self._use_nav:
-            if not self.chassis_client.is_connected():
-                self.logger.error(
-                    f"{self.chassis_client.node_name} is not connected!")
-            return StatusCode.CHASSIS_NOT_CONNECT
 
         return StatusCode.SUCCESS
 
