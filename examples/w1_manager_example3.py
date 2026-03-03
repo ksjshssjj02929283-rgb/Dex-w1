@@ -85,6 +85,9 @@ def arm_angle_motion():
     # execute
     w1_manager.execute_joint_traj(qpos_array)
 
+    input("Press Enter to exit the script and stop the robot")
+    w1_manager.close()
+
 
 if __name__ == "__main__":
     arm_angle_motion()

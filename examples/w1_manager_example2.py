@@ -38,4 +38,5 @@ if __name__ == "__main__":
         w1_manager.rotate_arm_linear("right_arm", [0, 0, 10],
                                      along_base_frame=False)
 
-        # from IPython import embed; embed() # FIXME: embed退出后会报错！
+    input("Press Enter to exit the script and stop the robot")
+    w1_manager.close()

@@ -114,6 +114,9 @@ def main(use_parallel=False):
     else:
         plan_then_move()
 
+    input("Press Enter to exit the script and stop the robot")
+    w1_manager.close()
+
 
 if __name__ == "__main__":
     """由于python GIL锁
@@ -123,4 +126,4 @@ if __name__ == "__main__":
 
         当execute_joint_traj()不采用streaming模式，而是move_traj模式，python中并行提升大
         """
-    main(use_parallel=True)
+    main(use_parallel=False)

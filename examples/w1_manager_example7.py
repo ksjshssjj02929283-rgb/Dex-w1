@@ -147,7 +147,7 @@ task_dict6 = {
 
 
 def test_single_task(task_dict=None,
-                     load_env=True,
+                     load_env=False,
                      fcl_env_path=None,
                      planner_env_path=None):
     if load_env:
@@ -172,10 +172,10 @@ if __name__ == "__main__":
         raise RuntimeError("Failed to connect to W1 robot.")
 
     # yapf: disable
-    w1_manager.set_home_qpos(np.deg2rad([0, 0, 0, 0, 0, 0,
-                                        5, -20, -5, -30, 0, -15, 0,
-                                        -5, 20, 5, 30, 0, 15, 0]),
-                            save_to_file=False)
+    w1_manager.set_home_qpos(np.array([0.785, -1.57, 0.785, 0.03490658503988659, 0.0, -0.6632251157578453,
+        2.1155, -0.2175, -1.0686, -1.8855, 0.0081, 0.1119, 0.6381, -2.1155,
+        0.2175, 1.0686, 1.8855, -0.0081, -0.1119, -0.6381
+    ]), save_to_file=False)
     # yapf: enable
     w1_manager.go_home(1.)
 
@@ -193,20 +193,23 @@ if __name__ == "__main__":
     planner_upward_env_path = f"{DATA_DIR}/environment/expanded_coffee_demo_upward.json"
 
     test_single_task(task_dict=task_dict1,
-                     load_env=True,
+                     load_env=False,
                      fcl_env_path=fcl_upward_env_path,
                      planner_env_path=planner_upward_env_path)
     # w1_manager.add_control_part()
     # w1_manager.attach_cup_in_viser()
-    w1_manager.attach_object(obj_name="cup", which_arm="right")
+    # w1_manager.attach_object(obj_name="cup", which_arm="right")
     test_single_task(task_dict=task_dict2, load_env=False)
     # w1_manager.detach_cup_in_viser()
-    w1_manager.detach_object(obj_name="cup", which_arm="right")
+    # w1_manager.detach_object(obj_name="cup", which_arm="right")
     test_single_task(task_dict=task_dict3, load_env=False)
     test_single_task(task_dict=task_dict4, load_env=False)
     # w1_manager.reload_coffee_machine_in_viser()
     test_single_task(task_dict=task_dict5, load_env=False)
     test_single_task(task_dict=task_dict6,
-                     load_env=True,
+                     load_env=False,
                      fcl_env_path=fcl_downward_env_path,
                      planner_env_path=planner_downward_env_path)
+
+    input("Press Enter to exit the script and stop the robot")
+    w1_manager.close()

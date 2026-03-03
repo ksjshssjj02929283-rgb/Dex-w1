@@ -84,6 +84,9 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
         },
                                         speed_ratio=0.5)
 
+    input("Press Enter to exit the script and stop the robot")
+    w1_manager.close()
+
 
 def move_full_body_example2(move_with_ee: bool,
                             is_sim: bool = True,
@@ -181,6 +184,9 @@ def move_full_body_example2(move_with_ee: bool,
         },
                                          speed_ratio=0.5,
                                          is_local=is_local)
+
+    input("Press Enter to exit the script and stop the robot")
+    w1_manager.close()
 
 
 if __name__ == "__main__":

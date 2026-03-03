@@ -148,18 +148,17 @@ class RealRobotIdx_Linker(Enum):
     RIGHT_LITTLEPIP = auto()
 
 
-def get_robot_sim2real_idx(articulation) -> List[int]:
+def get_robot_sim2real_idx(sim_joint_names: List[str]) -> List[int]:
     """
     This function maps the simulation joints to the real robot joint indices.
     
     Args: 
-        articulation: The dexsim robot instance
+        sim_joint_names: The list of joint names in the simulation robot
     
     Returns:
         sim2real_idx: A list of indices mapping simulation joint names to real robot joint indices
     """
-    sim_actived_names = articulation.get_actived_joint_names()
-    sim_dict = {name: idx for idx, name in enumerate(sim_actived_names)}
+    sim_dict = {name: idx for idx, name in enumerate(sim_joint_names)}
     real_names = [realjoint.name for realjoint in RealRobotIdx]
     sim2real_idx = []
     for real_name in real_names:
@@ -167,21 +166,20 @@ def get_robot_sim2real_idx(articulation) -> List[int]:
     return sim2real_idx
 
 
-def get_robot_real2sim_idx(articulation) -> List[int]:
+def get_robot_real2sim_idx(sim_joint_names: List[str]) -> List[int]:
     """
     This function maps the real robot joint indices to the simulation joints.
 
     Args:
-        articulation: The dexsim robot instance
+        sim_joint_names: The list of joint names in the simulation robot
     
     Returns:
         real2sim_dix: A list of indices mapping real robot joint indices to simulation joints
     """
-    sim_actived_names = articulation.get_actived_joint_names()
     real_names = [realjoint.name for realjoint in RealRobotIdx]
     real_dict = {name: idx for idx, name in enumerate(real_names)}
     real2sim_dix = []
-    for sim_name in sim_actived_names:
+    for sim_name in sim_joint_names:
         if sim_name in real_names:
             real2sim_dix.append(real_dict[sim_name])
     return real2sim_dix
@@ -546,10 +544,9 @@ class RightBrainCoHandIdx(Enum):
     RIGHT_LITTLEMCP = auto()
 
 
-def get_ee_sim2real_idx(articulation, is_left: bool,
+def get_ee_sim2real_idx(sim_joint_names: List[str], is_left: bool,
                         end_effector_type: EndEffectorType) -> List[int]:
-    sim_actived_names = articulation.get_actived_joint_names()
-    sim_dict = {name: idx for idx, name in enumerate(sim_actived_names)}
+    sim_dict = {name: idx for idx, name in enumerate(sim_joint_names)}
 
     idx_class_map = {
         (EndEffectorType.BRAINCO_HAND, True): LeftBrainCoHandIdx,
@@ -571,7 +568,7 @@ def get_ee_sim2real_idx(articulation, is_left: bool,
     return sim2real_idx
 
 
-def get_ee_real2sim_idx(articulation, is_left: bool,
+def get_ee_real2sim_idx(sim_joint_names: List[str], is_left: bool,
                         endeffector_type: EndEffectorType) -> List[int]:
     # TODO:
     pass

@@ -50,7 +50,6 @@ elif [[ "$ARCH" == "aarch64" || "$ARCH" == arm* ]]; then
 fi
 cd ..
 
-
 echo "=== Installing octomap ==="
 cd octomap-1.10.0
 rm -rf build

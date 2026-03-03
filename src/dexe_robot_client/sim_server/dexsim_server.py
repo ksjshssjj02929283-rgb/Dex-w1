@@ -151,12 +151,14 @@ class DexsimServer:
 
         if self._end_effector_type is not None:
             self.left_ee_sim2real_index = get_ee_sim2real_idx(
-                self._articulation, True, self._end_effector_type)
+                self._articulation.get_actived_joint_names(), True,
+                self._end_effector_type)
             self.left_ee_joint_limits = self._articulation.get_joint_limits()[
                 self.left_ee_sim2real_index]
 
             self.right_ee_sim2real_index = get_ee_sim2real_idx(
-                self._articulation, False, self._end_effector_type)
+                self._articulation.get_actived_joint_names(), False,
+                self._end_effector_type)
             self.right_ee_joint_limits = self._articulation.get_joint_limits()[
                 self.right_ee_sim2real_index]
 
@@ -166,7 +168,8 @@ class DexsimServer:
                 max_force=1e3,
                 drive_type=dexsim.types.DriveType.FORCE)
 
-        self.robot_sim2real_index = get_robot_sim2real_idx(self._articulation)
+        self.robot_sim2real_index = get_robot_sim2real_idx(
+            self._articulation.get_actived_joint_names())
         self._articulation.set_drive(stiffness=1e4,
                                      damping=1e3,
                                      max_force=1e5,
