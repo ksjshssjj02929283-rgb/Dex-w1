@@ -85,7 +85,7 @@ struct RobotProperty {
     pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     RunMode run_mode{RunMode::Position};
-    double global_speed_ratio{0.5};
+    double global_speed_ratio{1.0};
     double safe_level{0.5};
     bool clear_error_flag{false};
     VectorDof joint_stiffness = VectorDof::Constant(100.0);

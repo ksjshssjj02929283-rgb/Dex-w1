@@ -611,11 +611,16 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
         ", \"robot_type\":\"" + this->robot_model_.params_ptr->robot_name + "\"" +
         ", \"robot_version\":\"" + this->robot_model_.params_ptr->robot_version + "\"" +
-        ", \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+        ",\n  \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
         ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
         ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
         ",\n  \"status\":\"" + ToString(this->manager_state_) + "\"" +
-        ", \"run_mode\":\"" + ToString(this->manager_info_.robot_property.run_mode) + "\"" +
+        ", \"robot_statusword\":" + utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
+        ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
+        ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, idx_offset, ndof_config_).str() +
+        ",\n  \"motor_error_code\":" + utils::MotorErrorcodeToJsonArrayString(this->robot_feedback_.motor_error_code, idx_offset, ndof_config_).str() +
+        ",\n  \"motor_temperature\":" + utils::VectorToJsonArrayString(this->robot_feedback_.motor_temperature, idx_offset, ndof_config_).str() +
+        ",\n  \"run_mode\":\"" + ToString(this->manager_info_.robot_property.run_mode) + "\"" +
         ", \"server_error_code\":\"" + ToString(this->manager_info_.robot_property.error_code) + "\"" +
         ", \"safe_level\":\"" + std::to_string(this->manager_info_.robot_property.safe_level) + "\"" +
         ", \"global_speed_ratio\":\"" + std::to_string(this->manager_info_.robot_property.global_speed_ratio) + "\"" +
@@ -624,11 +629,6 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness, 0, cart_param_count).str() +
         ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio, 0, cart_param_count).str() +
         ",\n  \"cart_impedance_force\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_impedance_force, 0, cart_param_count).str() +
-        ",\n  \"robot_statusword\":" + utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
-        ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
-        ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, idx_offset, ndof_config_).str() +
-        ",\n  \"motor_error_code\":" + utils::MotorErrorcodeToJsonArrayString(this->robot_feedback_.motor_error_code, idx_offset, ndof_config_).str() +
-        ",\n  \"motor_temperature\":" + utils::VectorToJsonArrayString(this->robot_feedback_.motor_temperature, idx_offset, ndof_config_).str() +
         ",\n  \"joint_position\":" + utils::VectorToJsonArrayString(this->robot_feedback_.position, idx_offset, ndof_config_).str() +
         ",\n  \"joint_position_cmd\":" + utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str() +
         ",\n  \"joint_velocity\":" + utils::VectorToJsonArrayString(this->robot_feedback_.velocity, idx_offset, ndof_config_).str() +
