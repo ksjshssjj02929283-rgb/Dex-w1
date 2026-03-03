@@ -67,7 +67,7 @@ TEST(ButterworthFilterTest, StepResponseCharacteristics) {
     std::vector<double> outputs;
 
     for (int i = 0; i < 500; ++i) {
-        double input = (i < 100) ? 0.0 : 1.0;client
+        double input = (i < 100) ? 0.0 : 1.0;
         double output = filter.Apply(input);
         outputs.push_back(output);
     }
