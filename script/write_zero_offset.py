@@ -128,7 +128,7 @@ def main():
         left_zero_offsets = load_zero_offsets(is_left=True)
         set_zero_offset_w1(is_left=True, zero_offsets_deg=left_zero_offsets, joint_ids=joint_ids)
 
-        joint_ids = list(range(13, 20))
+        joint_ids = list(range(7))
         right_zero_offsets = load_zero_offsets(is_left=False)
         set_zero_offset_w1(is_left=False, zero_offsets_deg=right_zero_offsets, joint_ids=joint_ids)
 
