@@ -585,6 +585,9 @@ void RobotServer::SwitchControlWord() {
 }
 
 void RobotServer::PublishThreadFunc() {
+    if (!is_sim_) {
+        Setup_Realtime(60);
+    }
     JointRawMeasurement raw_measurement;
     Eigen::VectorXd ee_pose;
     Eigen::VectorXd torso_X_Z_RY;
