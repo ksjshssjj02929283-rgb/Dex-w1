@@ -60,7 +60,8 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
         bool robot_stopped = true;
         for (auto i = 0; i < ndof_robot; i++) {
             // 如果超时则保持当前指令位置
-            output_joint_cmd.position_before_filter[i] = is_timeout ? measurement.q_desired_pre[i] : latest_cmd.command[i];
+            output_joint_cmd.position_before_filter[i] =
+                is_timeout ? measurement.q_desired_pre[i] : latest_cmd.command[i];
             output_joint_cmd.position[i] = output_joint_cmd.position_before_filter[i];
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;

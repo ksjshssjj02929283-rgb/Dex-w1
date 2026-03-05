@@ -123,8 +123,8 @@ public:
     }
 
     // 尝试读取一帧（非阻塞 + 整体超时，避免死等）
-    // M4313SXX 数据帧格式: 0x55 0xAA | 0x14 | ID | Fx(2) | Fy(2) | Fz(2) | Mx(2) | My(2) | Mz(2) | Status(2) | Sum | 0x0A
-    // 共 20 字节 (0x14 = 20)
+    // M4313SXX 数据帧格式: 0x55 0xAA | 0x14 | ID | Fx(2) | Fy(2) | Fz(2) | Mx(2) | My(2) | Mz(2) | Status(2) | Sum |
+    // 0x0A 共 20 字节 (0x14 = 20)
     bool ReadFrameOnce(std::array<double, 6> &out, int attempts = 3) {
         if (fd_ < 0) return false;
 

@@ -1,8 +1,8 @@
 #include "butterworth_filter.h"
 
 ButterworthFilter::ButterworthFilter() {
-    filter_.b = {1.3198341078312058e-03, 2.6396682156624115e-03, 1.3198341078312058e-03 };
-    filter_.a = {1.0, -1.8546819153535965, 8.5996125178492133e-01 };
+    filter_.b = {1.3198341078312058e-03, 2.6396682156624115e-03, 1.3198341078312058e-03};
+    filter_.a = {1.0, -1.8546819153535965, 8.5996125178492133e-01};
 }
 
 double ButterworthFilter::Apply(double input) {

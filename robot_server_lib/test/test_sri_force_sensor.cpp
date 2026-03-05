@@ -1,16 +1,15 @@
 #include <gtest/gtest.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <string>
 #include <thread>
 #include <vector>
-#include <atomic>
 
 #include "sri_force_sensor.h"
-
 
 static std::string FindSRISensorPort() {
     const char* env_port = std::getenv("SRI_SENSOR_PORT");
@@ -38,9 +37,10 @@ TEST(SRISerialTest, OpenPortAndReadData) {
 
     // Set callback to count received data
     std::atomic<int> callback_count{0};
-    SRICommM8218CallbackFunction m8218Callback = [&callback_count](float fx, float fy, float fz, float mx, float my, float mz) {
+    SRICommM8218CallbackFunction m8218Callback = [&callback_count](float fx, float fy, float fz, float mx, float my,
+                                                                   float mz) {
         callback_count++;
-        if(callback_count % 10 == 0){
+        if (callback_count % 10 == 0) {
             printf("Data: %f, %f, %f,   %f, %f, %f\n", fx, fy, fz, mx, my, mz);
         }
         return true;
@@ -64,8 +64,8 @@ TEST(SRISerialTest, OpenPortAndReadData) {
     double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     int count = callback_count.load();
 
-    std::cout << "[SRISerialTest] Port: " << port << ", callback_count: " << count
-              << ", elapsed: " << elapsed << " s, rate: " << (count / elapsed) << " Hz" << std::endl;
+    std::cout << "[SRISerialTest] Port: " << port << ", callback_count: " << count << ", elapsed: " << elapsed
+              << " s, rate: " << (count / elapsed) << " Hz" << std::endl;
 
     // Close port
     serial.ClosePort();

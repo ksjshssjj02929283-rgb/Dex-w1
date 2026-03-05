@@ -74,7 +74,7 @@ protected:
     TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI, 2.0 * M_PI};       // trajectory bounds, unit: rad
 
     struct {
-        TrajectoryBounds translation{0.5, 0.5, 0.5};                 // cartesian space translation bounds, unit: m
+        TrajectoryBounds translation{0.5, 0.5, 0.5};                    // cartesian space translation bounds, unit: m
         TrajectoryBounds rotation{0.5 * M_PI, 0.5 * M_PI, 0.5 * M_PI};  // cartesian space rotation bounds, unit: rad
     } cartesian_bounds_;
 
