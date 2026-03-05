@@ -72,7 +72,9 @@ int main(int argc, char* argv[]) {
         // 读取控制指令
         RobotFeedback fb;
         RobotControl ctrl;
-
+        ctrl.position[0] = 0.5;
+        ctrl.position[1] = -1.0;
+        ctrl.position[2] = 0.5;
         if (ctrl_shm.PeekLatest(&ctrl)) {
             // 如果需要记录日志，只记录速度数据
             if (record) {

@@ -8,7 +8,9 @@
 namespace robot_server_lib {
 
 RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, RobotMode robot_mode)
-    : RobotServerBase(robot_cfg_path, is_sim), robot_mode_(robot_mode) {
+    : RobotServerBase(robot_cfg_path, is_sim),
+      robot_mode_(robot_mode),
+      line_interpolator_(ndof_robot, torque_ctrl_dt_micro / manager_dt_micro) {
     LOG_INFO << "w1_server version: " << W1_SERVER_VERSION;
 
     // 根据传入参数设置模式
@@ -280,7 +282,9 @@ void RobotServer::TorqueControlThreadFunc() {
                     << ", \"joint_position_input\": "
                     << utils::VectorToJsonArrayString(joint_position_input_, idx_offset, ndof_config_).str()
                     << ", \"joint_position_before_filter\": "
-                    << utils::VectorToJsonArrayString(planner_cmd_for_log.cmd.position_before_filter, idx_offset, ndof_config_).str()
+                    << utils::VectorToJsonArrayString(planner_cmd_for_log.cmd.position_before_filter, idx_offset,
+                                                      ndof_config_)
+                           .str()
                     << ", \"joint_position_cmd\": "
                     << utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str()
                     << ", \"joint_torque_feedforward\": "
@@ -336,9 +340,11 @@ void RobotServer::TorqueControlThreadFunc() {
         if (this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) &&
             this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd)) {
             this->is_cmd_valid_ = true;
+            // 位置指令线性插值
+            VectorDof interpolated_position = line_interpolator_.Interpolate(planner_cmd.cmd.position);
             JointMeasurement manager_measurement{};
             for (int i = 0; i < ndof_robot; ++i) {
-                this->robot_control_.position[i] = planner_cmd.cmd.position[i];
+                this->robot_control_.position[i] = interpolated_position[i];
                 this->robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
                 this->robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
                 this->robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
@@ -355,6 +361,7 @@ void RobotServer::TorqueControlThreadFunc() {
                                 if (i >= first_arm_joint_index_) {
                                     manager_measurement.q_desired_pre[i] = robot_feedback_.position[i];
                                     this->robot_control_.position[i] = robot_feedback_.position[i];
+                                    line_interpolator_.Reset();
                                 }
                                 manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
                             }
@@ -452,6 +459,7 @@ void RobotServer::TorqueControlThreadFunc() {
                 }
             }
         } else {
+            line_interpolator_.Reset();
             for (int i = 0; i < 4; ++i) {
                 torso_shapers_[i]->Reset();
             }
@@ -531,6 +539,7 @@ void RobotServer::SwitchControlWord() {
     // 0. Sleep 模式下进入QUICK_STOP，阻止写入measurement
     if (this->manager_info_.robot_property.run_mode == RunMode::Sleep) {
         this->is_robot_ready_ = false;
+        line_interpolator_.Reset();
         robot_control_.robot_control_word = CTRLWORD_MOTOR_QUICK_STOP;
         for (int i = 0; i < ndof_robot; i++) {
             this->robot_control_.position[i] = this->robot_feedback_.position[i];
@@ -548,6 +557,7 @@ void RobotServer::SwitchControlWord() {
             if (this->is_cmd_valid_) {
                 this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
             } else {
+                line_interpolator_.Reset();
                 for (int i = 0; i < ndof_robot; i++) {
                     this->robot_control_.position[i] = this->robot_feedback_.position[i];
                     this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
@@ -560,6 +570,7 @@ void RobotServer::SwitchControlWord() {
             inited = true;
             this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
             if (!this->is_cmd_valid_) {
+                line_interpolator_.Reset();
                 for (int i = 0; i < ndof_robot; i++) {
                     this->robot_control_.position[i] = this->robot_feedback_.position[i];
                     this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
@@ -571,6 +582,7 @@ void RobotServer::SwitchControlWord() {
         case STATUSWORD_MOTOR_FAULT:
         case STATUSWORD_MOTOR_QUICK_STOP:
         default:
+            line_interpolator_.Reset();
             for (int i = 0; i < ndof_robot; i++) {
                 this->robot_control_.position[i] = this->robot_feedback_.position[i];
                 this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
@@ -614,9 +626,6 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
         ", \"robot_type\":\"" + this->robot_model_.params_ptr->robot_name + "\"" +
         ", \"robot_version\":\"" + this->robot_model_.params_ptr->robot_version + "\"" +
-        ",\n  \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
-        ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
-        ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
         ",\n  \"status\":\"" + ToString(this->manager_state_) + "\"" +
         ", \"robot_statusword\":" + utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
         ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
@@ -627,11 +636,6 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ", \"server_error_code\":\"" + ToString(this->manager_info_.robot_property.error_code) + "\"" +
         ", \"safe_level\":\"" + std::to_string(this->manager_info_.robot_property.safe_level) + "\"" +
         ", \"global_speed_ratio\":\"" + std::to_string(this->manager_info_.robot_property.global_speed_ratio) + "\"" +
-        ",\n  \"joint_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_stiffness, idx_offset, ndof_config_).str() +
-        ",\n  \"joint_damping\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_damping, idx_offset, ndof_config_).str() +
-        ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness, 0, cart_param_count).str() +
-        ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio, 0, cart_param_count).str() +
-        ",\n  \"cart_impedance_force\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_impedance_force, 0, cart_param_count).str() +
         ",\n  \"joint_position\":" + utils::VectorToJsonArrayString(this->robot_feedback_.position, idx_offset, ndof_config_).str() +
         ",\n  \"joint_position_cmd\":" + utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str() +
         ",\n  \"joint_velocity\":" + utils::VectorToJsonArrayString(this->robot_feedback_.velocity, idx_offset, ndof_config_).str() +
@@ -642,7 +646,16 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(this->robot_control_.negative_torque_limit, idx_offset, ndof_config_).str() +
         ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(this->robot_control_.positive_torque_limit, idx_offset, ndof_config_).str() +
         ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_measurement, 0, cart_param_count).str() +
-        ",\n  \"torso_pose_X_Z_RY\":" + utils::VectorToJsonArrayString(this->manager_info_.torso_pose_measurement, 0, cart_param_count).str() + "}";
+        ",\n  \"torso_pose_X_Z_RY\":" + utils::VectorToJsonArrayString(this->manager_info_.torso_pose_measurement, 0, cart_param_count).str() +
+        ",\n  \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+        ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
+        ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
+        ",\n  \"joint_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_stiffness, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_damping\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_damping, idx_offset, ndof_config_).str() +
+        ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness, 0, cart_param_count).str() +
+        ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio, 0, cart_param_count).str() +
+        ",\n  \"cart_impedance_force\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_impedance_force, 0, cart_param_count).str() +
+        "}";
     return robot_server_state_msg;
 }
 // clang-format on

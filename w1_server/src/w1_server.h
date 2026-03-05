@@ -13,6 +13,7 @@
 #include "robot_server_lib/ei_input_shaper.h"
 #include "robot_server_lib/force_sensor_reader.h"
 #include "robot_server_lib/robot_server_base.h"
+#include "robot_server_lib/utils.h"
 #include "shared_memory_def.h"
 #include "w1_utils.h"
 
@@ -141,6 +142,9 @@ private:
     std::shared_ptr<ForceSensorReader> secondary_sensor_;
     bool primary_sensor_ready_ = false;
     bool secondary_sensor_ready_ = false;
+
+    // 位置指令线性插值器 (250Hz -> 1kHz)
+    utils::LinearInterpolator line_interpolator_;
 };
 
 }  // namespace robot_server_lib
