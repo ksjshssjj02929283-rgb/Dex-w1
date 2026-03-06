@@ -137,6 +137,11 @@ def main():
         help="A1 mode: only plot arms (joint 6-19, 14 joints).",
     )
     parser.add_argument(
+        "--arm",
+        action="store_true",
+        help="Arm mode: only plot arms (left + right, no torso or chassis).",
+    )
+    parser.add_argument(
         "--hz",
         action="store_true",
         help="Show frequency spectrum for each joint.",
@@ -645,6 +650,11 @@ def main():
     elif args.a1:
         if args.debug:
             print("[DEBUG] Creating A1 mode plots (arms only)...")
+        figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz))
+        figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz))
+    elif args.arm:
+        if args.debug:
+            print("[DEBUG] Creating Arm mode plots (arms only, no torso or chassis)...")
         figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz))
         figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz))
     elif args.torso:
