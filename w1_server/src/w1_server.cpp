@@ -716,7 +716,7 @@ Int64 RobotServer::StartStreaming(PlannerRequest planner_request) {
 }
 
 void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
-    auto robot_control_temp = robot_control_;
+    VectorDof planner_cmd_position = this->planner_cmd_.cmd.position;  // 使用planner_cmd_作为基础，保留未更新的字段
     bool position_valid = true;
     for (size_t i = 0; i < msg->name.size(); ++i) {
         for (int j = 0; j < ndof_robot; ++j) {
@@ -725,19 +725,19 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
                 robot_control_.negative_velocity_limit[j] = msg->negative_velocity_limit[i];
                 robot_control_.positive_torque_limit[j] = msg->positive_torque_limit[i];
                 robot_control_.negative_torque_limit[j] = msg->negative_torque_limit[i];
-                if (std::abs(robot_control_temp.position[j] - msg->position[i]) > position_diff_threshold_ &&
+                if (std::abs(planner_cmd_position[j] - msg->position[i]) > position_diff_threshold_ &&
                     position_valid) {
                     RCLCPP_WARN(
                         this->get_logger(),
                         "Control command for joint %s rejected: position difference %.4f exceeds threshold %.4f",
-                        ecat_joint_name_[j].c_str(), std::abs(robot_control_temp.position[j] - msg->position[i]),
+                        ecat_joint_name_[j].c_str(), std::abs(planner_cmd_position[j] - msg->position[i]),
                         position_diff_threshold_);
                     LOG_CRIT << "Control command for joint " << ecat_joint_name_[j] << " rejected: position difference "
-                             << std::abs(robot_control_temp.position[j] - msg->position[i]) << " exceeds threshold "
+                             << std::abs(planner_cmd_position[j] - msg->position[i]) << " exceeds threshold "
                              << position_diff_threshold_;
                     position_valid = false;
                 }
-                robot_control_temp.position[j] = msg->position[i];
+                planner_cmd_position[j] = msg->position[i];
 
                 break;
             }
@@ -760,30 +760,30 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
             streaming_msg->request_id = streaming_request_id_;
             streaming_msg->streaming_finished = false;
             streaming_msg->position =
-                std::vector<float>(robot_control_temp.position, robot_control_temp.position + ndof_robot);
+                std::vector<float>(planner_cmd_position.data(), planner_cmd_position.data() + ndof_robot);
             this->StreamingCommandCallback(streaming_msg);
         }
     }
 }
 
 void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedPtr msg) {
-    auto robot_control_temp = robot_control_;
+    VectorDof planner_cmd_position = this->planner_cmd_.cmd.position;  // 使用planner_cmd_作为基础，保留未更新的字段
     bool position_valid = true;
     for (size_t i = 0; i < msg->name.size(); ++i) {
         for (int j = 0; j < ndof_robot; ++j) {
             if (ecat_joint_name_[j] == msg->name[i] && position_valid) {
-                if (std::abs(robot_control_temp.position[j] - msg->position[i]) > position_diff_threshold_) {
+                if (std::abs(planner_cmd_position[j] - msg->position[i]) > position_diff_threshold_) {
                     RCLCPP_WARN(
                         this->get_logger(),
                         "Control command for joint %s rejected: position difference %.4f exceeds threshold %.4f",
-                        ecat_joint_name_[j].c_str(), std::abs(robot_control_temp.position[j] - msg->position[i]),
+                        ecat_joint_name_[j].c_str(), std::abs(planner_cmd_position[j] - msg->position[i]),
                         position_diff_threshold_);
                     LOG_CRIT << "Control command for joint " << ecat_joint_name_[j] << " rejected: position difference "
-                             << std::abs(robot_control_temp.position[j] - msg->position[i]) << " exceeds threshold "
+                             << std::abs(planner_cmd_position[j] - msg->position[i]) << " exceeds threshold "
                              << position_diff_threshold_;
                     position_valid = false;
                 } else {
-                    robot_control_temp.position[j] = msg->position[i];
+                    planner_cmd_position[j] = msg->position[i];
                 }
                 break;  // 已经找到并处理了对应的关节，跳出内层循环继续处理下一个输入关节
             }
@@ -807,7 +807,7 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
             streaming_msg->request_id = streaming_request_id_;
             streaming_msg->streaming_finished = false;
             streaming_msg->position =
-                std::vector<float>(robot_control_temp.position, robot_control_temp.position + ndof_robot);
+                std::vector<float>(planner_cmd_position.data(), planner_cmd_position.data() + ndof_robot);
             this->StreamingCommandCallback(streaming_msg);
         }
     }
