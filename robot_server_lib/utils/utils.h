@@ -66,7 +66,7 @@ std::ostringstream VectorToJsonArrayString(const VectorType &vec, int start_inde
         } else {
             double v = static_cast<double>(vec[idx]);
             if (std::isfinite(v)) {
-                ss << std::fixed << std::setprecision(4) << v;
+                ss << std::fixed << std::setprecision(5) << v;
             } else {
                 ss << "null";
             }
@@ -136,47 +136,31 @@ inline int FloatCompare(double a, double b, double tol = 1e-9) noexcept {
 // 例如：250Hz规划层到1kHz力控层的插值
 class LinearInterpolator {
 public:
-    LinearInterpolator(int ndof, int interpolation_steps) : ndof_(ndof), interpolation_steps_(interpolation_steps) {
-        prev_position_.resize(ndof);
-        start_position_.resize(ndof);
-        prev_position_.setZero();
-        start_position_.setZero();
-    }
+    LinearInterpolator(int interpolation_steps);
 
     // 执行一次插值计算，返回插值后的位置
     // Call every control cycle (1kHz)
-    Eigen::VectorXd Interpolate(const Eigen::VectorXd &target_position) {
-        if (!inited_ || counter_ >= interpolation_steps_) {
-            // 未启动或已完成插值，直接返回目标位置
-            prev_position_ = target_position;
-            return target_position;
+    VectorDof Interpolate(const VectorDof &target_position);
+
+    bool TargetChanged(const VectorDof &target_position) const {
+        for (int i = 0; i < target_position.size(); ++i) {
+            if (!FloatEqual(target_position[i], target_position_[i])) {
+                return true;
+            }
         }
-
-        // 线性插值: alpha 从 1/interpolation_steps_ 到 1.0
-        double alpha = static_cast<double>(counter_ + 1) / interpolation_steps_;
-        Eigen::VectorXd result = start_position_ + (target_position - start_position_) * alpha;
-
-        prev_position_ = target_position;
-        counter_++;
-        return result;
+        return false;
     }
 
     // 重置插值器状态
-    void Reset() {
-        if (!inited_) return;  // 已经重置过，无需重复
-        prev_position_.setZero();
-        start_position_.setZero();
-        counter_ = 0;
-        inited_ = false;
-    }
+    void Reset();
 
 private:
-    int ndof_;                        // 关节数量
-    int interpolation_steps_;         // 插值步数 (例如 4 表示 250Hz->1kHz 的 4 个周期)
-    Eigen::VectorXd prev_position_;   // 上一次的目标位置
-    Eigen::VectorXd start_position_;  // 插值起始位置
-    int counter_ = 0;                 // 当前插值计数器
-    bool inited_ = false;             // 是否已初始化
+    int interpolation_steps_;        // 插值步数 (例如 4 表示 250Hz->1kHz 的 4 个周期)
+    VectorDof pre_target_position_;  // 插值起始位置，也记录上一次的目标位置
+    VectorDof target_position_;      // 插值目标位置
+
+    int counter_ = 0;      // 当前插值计数器
+    bool inited_ = false;  // 是否已初始化
 };
 }  // namespace utils
 }  // namespace robot_server_lib

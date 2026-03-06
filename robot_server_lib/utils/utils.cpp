@@ -431,5 +431,49 @@ Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench
     return sensor_wrench;
 }
 
+// 线性插值器实现：用于在高低频率控制线程间平滑过渡
+LinearInterpolator::LinearInterpolator(int interpolation_steps) : interpolation_steps_(interpolation_steps) {
+    assert(interpolation_steps_ > 0 && "interpolation_steps must be > 0");
+    pre_target_position_.setZero();
+}
+
+VectorDof LinearInterpolator::Interpolate(const VectorDof &target_position) {
+    if (!inited_) {
+        // 首次调用，初始化
+        counter_ = 0;
+        inited_ = true;
+        target_position_ = target_position;
+        pre_target_position_ = target_position;
+        return target_position_;
+    }
+    // 如果目标位置发生变化，更新起始位置并重置计数器
+    if (TargetChanged(target_position)) {
+        counter_ = 0;
+        pre_target_position_ = target_position_;
+        target_position_ = target_position;
+    }
+
+    if (counter_ < interpolation_steps_) {
+        // 线性插值: alpha 从 1/interpolation_steps_ 到 1.0
+        double alpha = static_cast<double>(counter_ + 1) / interpolation_steps_;
+        VectorDof result = pre_target_position_ + (target_position - pre_target_position_) * alpha;
+        counter_++;
+        return result;
+    } else {
+        // 如果没变化且插值周期完成，更新起始位置为当前目标位置
+        counter_ = interpolation_steps_;
+        pre_target_position_ = target_position_;
+        return pre_target_position_;
+    }
+}
+
+void LinearInterpolator::Reset() {
+    if (!inited_) return;
+    pre_target_position_.setZero();
+    target_position_.setZero();
+    counter_ = 0;
+    inited_ = false;
+}
+
 }  // namespace utils
 }  // namespace robot_server_lib

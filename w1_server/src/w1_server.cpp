@@ -10,7 +10,7 @@ namespace robot_server_lib {
 RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, RobotMode robot_mode)
     : RobotServerBase(robot_cfg_path, is_sim),
       robot_mode_(robot_mode),
-      line_interpolator_(ndof_robot, torque_ctrl_dt_micro / manager_dt_micro) {
+      line_interpolator_(manager_dt_micro / torque_ctrl_dt_micro) {
     LOG_INFO << "w1_server version: " << W1_SERVER_VERSION;
 
     // 根据传入参数设置模式
@@ -264,12 +264,10 @@ void RobotServer::TorqueControlThreadFunc() {
             this->SwitchControlWord();
         }
         // 如果开启了记录, 则在独立的记录日志中记录数据
-        if (this->enable_record_ && manager_state_ == Status::Running && loop_counter % 4 == 0) {
+        if (this->enable_record_ && manager_state_ == Status::Running && loop_counter % 1 == 0) {
             int idx_offset = (robot_mode_ != RobotMode::W1) ? first_arm_joint_index_ : 0;
             double timestamp_s = this->now().nanoseconds() / 1e9;
             // 获取上一个周期的规划命令（用于日志记录）
-            PlannerManagerCommand planner_cmd_for_log{};
-            this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd_for_log);
 
             nanolog::NanoLogLine logline(nanolog::LogLevel::CRIT, __FILE__, __func__, __LINE__, false);
             logline << "{\"timestamp\": \"" << std::to_string(timestamp_s) << "\", "
@@ -282,9 +280,11 @@ void RobotServer::TorqueControlThreadFunc() {
                     << ", \"joint_position_input\": "
                     << utils::VectorToJsonArrayString(joint_position_input_, idx_offset, ndof_config_).str()
                     << ", \"joint_position_before_filter\": "
-                    << utils::VectorToJsonArrayString(planner_cmd_for_log.cmd.position_before_filter, idx_offset,
+                    << utils::VectorToJsonArrayString(this->planner_cmd_.cmd.position_before_filter, idx_offset,
                                                       ndof_config_)
                            .str()
+                    << ", \"joint_position_after_filter\": "
+                    << utils::VectorToJsonArrayString(this->planner_cmd_.cmd.position, idx_offset, ndof_config_).str()
                     << ", \"joint_position_cmd\": "
                     << utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str()
                     << ", \"joint_torque_feedforward\": "
@@ -333,19 +333,19 @@ void RobotServer::TorqueControlThreadFunc() {
         torque_controller_manager.LoopOnce();
 
         // 获取并写入控制数据: 关节位置, 速度, 关节力矩限制, 外部力矩
-        PlannerManagerCommand planner_cmd{};
         TorqueCtrlCommand torque_cmd{};
+        this->planner_cmd_ = PlannerManagerCommand{};  // 默认值，避免未写入时使用了旧数据
         this->is_cmd_valid_ = false;
         this->manager_buffers_.planner_manager_info->PeekLatest(&this->manager_info_);
-        if (this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) &&
+        if (this->manager_buffers_.planner_manager_command->PeekLatest(&this->planner_cmd_) &&
             this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd)) {
             this->is_cmd_valid_ = true;
             // 位置指令线性插值
-            VectorDof interpolated_position = line_interpolator_.Interpolate(planner_cmd.cmd.position);
+            VectorDof interpolated_position = line_interpolator_.Interpolate(this->planner_cmd_.cmd.position);
             JointMeasurement manager_measurement{};
             for (int i = 0; i < ndof_robot; ++i) {
                 this->robot_control_.position[i] = interpolated_position[i];
-                this->robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
+                this->robot_control_.velocity[i] = this->planner_cmd_.cmd.velocity[i];
                 this->robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
                 this->robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
                 switch (this->manager_info_.robot_property.run_mode) {
@@ -603,12 +603,10 @@ void RobotServer::PublishThreadFunc() {
     JointRawMeasurement raw_measurement;
     Eigen::VectorXd ee_pose;
     Eigen::VectorXd torso_X_Z_RY;
-    PlannerManagerCommand planner_cmd{};
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok()) {
         next_cycle_time_point += std::chrono::microseconds(publish_dt_micro);
         // Publish /feedback/robot_server_state
-
         this->robot_server_state_publisher_->publish(GetRobotServerStateMsg());
         std::this_thread::sleep_until(next_cycle_time_point);
     }

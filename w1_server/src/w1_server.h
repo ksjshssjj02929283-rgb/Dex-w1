@@ -64,7 +64,8 @@ private:
     bool is_cmd_valid_{false};
     RobotControl robot_control_;
     RobotFeedback robot_feedback_;
-    PlannerManagerInfo manager_info_;
+    PlannerManagerInfo manager_info_{};
+    PlannerManagerCommand planner_cmd_{};
     bool is_torque_limit_reached_[ndof_robot] = {false};  // 达到力矩限制标志位
     // W1 模式下的默认关节名称，A1 模式下会动态调整
     std::string ecat_joint_name_[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",
