@@ -17,6 +17,7 @@
 
 volatile std::sig_atomic_t g_stop_flag = 0;
 const int ndof_robot = 20;  // 机器人实际关节数，Arm/A1 模式下只使用前 7/14 个
+static double prev_position[ndof_robot] = {0};  // 上一次的位置
 
 void signal_handler(int signal) {
     if (signal == SIGINT) {
@@ -92,7 +93,9 @@ int main(int argc, char* argv[]) {
         fb.robot_status_word = 2;  // robot ready
         for (int i = 0; i < ndof; i++) {
             fb.position[i] = ctrl.position[i];
-            fb.velocity[i] = ctrl.velocity[i];
+            // 计算速度：位置差分 / 0.001s (1ms周期)
+            fb.velocity[i] = (ctrl.position[i] - prev_position[i]) * 1000.0;
+            prev_position[i] = ctrl.position[i];
             fb.torque[i] = ctrl.torque_feedforward[i];
         }
         if (fb_shm.AppendNewElement(fb)) {
