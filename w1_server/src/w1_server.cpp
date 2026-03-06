@@ -725,8 +725,7 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
                 robot_control_.negative_velocity_limit[j] = msg->negative_velocity_limit[i];
                 robot_control_.positive_torque_limit[j] = msg->positive_torque_limit[i];
                 robot_control_.negative_torque_limit[j] = msg->negative_torque_limit[i];
-                if (std::abs(planner_cmd_position[j] - msg->position[i]) > position_diff_threshold_ &&
-                    position_valid) {
+                if (std::abs(planner_cmd_position[j] - msg->position[i]) > position_diff_threshold_ && position_valid) {
                     RCLCPP_WARN(
                         this->get_logger(),
                         "Control command for joint %s rejected: position difference %.4f exceeds threshold %.4f",

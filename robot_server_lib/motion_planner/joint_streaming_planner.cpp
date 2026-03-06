@@ -77,8 +77,9 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
         if (!command_finished_time_.is_valid()) {
             command_finished_time_ = TimePointSystem::Now();
         }
+        // 如果没有收到新的命令且机器人已经静止，则结束本次streaming
         robot_stopped =
-            robot_stopped ||
+            robot_stopped &&
             ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > streaming_timeout_);
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
         return runtime_.streaming_finished && robot_stopped ? ComputeCommandStatus::TaskFinished
@@ -143,7 +144,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             command_finished_time_ = TimePointSystem::Now();
         }
         robot_stopped =
-            robot_stopped ||
+            robot_stopped &&
             ((TimePointSystem::Now().time_in_ns() - command_finished_time_.time_in_ns()) * 1e-9 > streaming_timeout_);
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
         if (runtime_.streaming_finished && robot_stopped) {

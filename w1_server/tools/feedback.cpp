@@ -16,7 +16,7 @@
 #include "shared_memory_def.h"
 
 volatile std::sig_atomic_t g_stop_flag = 0;
-const int ndof_robot = 20;  // 机器人实际关节数，Arm/A1 模式下只使用前 7/14 个
+const int ndof_robot = 20;                      // 机器人实际关节数，Arm/A1 模式下只使用前 7/14 个
 static double prev_position[ndof_robot] = {0};  // 上一次的位置
 
 void signal_handler(int signal) {
