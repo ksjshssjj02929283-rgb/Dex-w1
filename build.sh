@@ -1,16 +1,12 @@
 # 切换到包含所有包的根目录
 WORKSPACE_DIR=$(dirname "$0")
+cd "$WORKSPACE_DIR"/..
 source /opt/ros/humble/setup.bash
 
 rm -rf build/L1_server  # 清理L1_server的构建目录重新cmake以避免覆盖robot.cfg
 
-# === 1. 检查 ROS 环境 ===
-if [ -z "$ROS_DISTRO" ]; then
-    echo "❌ 请先 source 对应ROS环境，例如："
-    echo "   source /opt/ros/humble/setup.bash"
-    exit 1
-fi
-echo "✅ ROS版本: $ROS_DISTRO"
+PACKAGES=$(find dexe_interfaces dexe_robot_server -name "package.xml" -exec sh -c 'dirname {} | xargs basename' \; | sort -u | tr '\n' ' ')
+colcon build --cmake-args --packages-select $PACKAGES
 
 BIN=install/L1_server/lib/L1_server/L1_server
 if [ -f "$BIN" ]; then
