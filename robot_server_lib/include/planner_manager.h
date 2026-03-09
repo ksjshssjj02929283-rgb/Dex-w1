@@ -1,31 +1,28 @@
 #pragma once
 
-#include "cartesian_admittance_controller.h"
 #include "cartesian_impedance_controller.h"
 #include "motion_planner_include.h"
 #include "safety_check.h"
 #include "utils.h"
 
-namespace robot_server_lib
-{
+namespace robot_server_lib {
 
-struct RequestResponse
-{
+struct RequestResponse {
     bool re_run{false};
     bool request_consumed{false};
 };
 
-class PlannerManager
-{
-   public:
-    PlannerManager(RobotModel robot_model, PlannerManagerBuffers buffer,
+class PlannerManager {
+public:
+    PlannerManager(RobotModel robot_model,
+                   PlannerManagerBuffers buffer,
                    std::function<void(Int64, RequestType, RequestStatus, Status)> report_request_status);
 
     ~PlannerManager();
 
     void LoopOnce();
 
-   private:
+private:
     RobotModel robot_model_;
 
     std::function<void(Int64, RequestType, RequestStatus, Status)> ReportRequestStatus;
@@ -51,14 +48,9 @@ class PlannerManager
     std::shared_ptr<JointStreamingPlanner> joint_streaming_planner_{nullptr};
     std::shared_ptr<EEPoseStreamingPlanner> ee_pose_streaming_planner_{nullptr};
     std::shared_ptr<EEVelocityStreamingPlanner> ee_velocity_streaming_planner_{nullptr};
-
-    std::shared_ptr<dynamics::CartesianAdmittanceController> admittance_ctrl_primary_{nullptr};
-    std::shared_ptr<dynamics::CartesianAdmittanceController> admittance_ctrl_secondary_{nullptr};
-
     std::shared_ptr<dynamics::CartesianImpedanceController> impedance_ctrl_primary_{nullptr};
     std::shared_ptr<dynamics::CartesianImpedanceController> impedance_ctrl_secondary_{nullptr};
-    struct
-    {
+    struct {
         // Timing maintained by the state machine
         Int64 loop_counter{-1};
         TimeMetaInfo time_meta{};

@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import re
 import sys
 from collections import deque
@@ -11,40 +12,49 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
 
-def parse_line(line):
+def parse_line(line, debug=False):
     """
     解析单行：
     - 提取 [] 中的时间戳
     - 提取 {} 中的 JSON
-    - 仅检查数组长度是否为 14（存在的键校验），缺失键不视为格式错误
     返回: (timestamp: datetime, data: dict) 或 None
     """
     line = line.strip()
     if not line:
+        if debug:
+            print("[DEBUG] Empty line skipped")
         return None
 
     # 提取时间戳
     ts_match = re.search(r"\[(.*?)\]", line)
     if not ts_match:
+        if debug:
+            print(f"[DEBUG] No timestamp found in line: {line[:80]}...")
         return None
     ts_str = ts_match.group(1)
     try:
         # 形如 2025-12-02 15:07:32.170155
         ts = datetime.fromisoformat(ts_str)
-    except Exception:
+    except Exception as e:
+        if debug:
+            print(f"[DEBUG] Failed to parse timestamp '{ts_str}': {e}")
         return None
 
     # 提取 JSON
     brace_idx = line.find("{")
     if brace_idx == -1:
+        if debug:
+            print(f"[DEBUG] No JSON found in line: {line[:80]}...")
         return None
     json_str = line[brace_idx:]
     try:
         data = json.loads(json_str)
-    except Exception:
+    except Exception as e:
+        if debug:
+            print(f"[DEBUG] Failed to parse JSON: {e}")
         return None
 
-    # 校验存在的数组长度是否为 14
+    # 校验存在的数组长度是否为 20
     array_keys = [
         "joint_position",
         "joint_velocity",
@@ -55,7 +65,9 @@ def parse_line(line):
     for k in array_keys:
         if k in data:
             arr = data[k]
-            if not isinstance(arr, list) or len(arr) != 14:
+            if not isinstance(arr, list) or len(arr) != 20:
+                if debug:
+                    print(f"[DEBUG] Invalid array length for {k}: {len(arr) if isinstance(arr, list) else type(arr)}")
                 return None
 
     return ts, data
@@ -72,7 +84,7 @@ def main():
     parser.add_argument(
         "--path",
         type=str,
-        default="~/dexe_robot_server_data/logs/robot_server.txt",
+        default="~/log/robot_server.txt",
         help="Path to robot_server log file.",
     )
     parser.add_argument(
@@ -87,6 +99,17 @@ def main():
         default=2.0,
         help="Time window in seconds to plot from the end (default: 2.0).",
     )
+    parser.add_argument(
+        "--save",
+        type=str,
+        default=None,
+        help="Save plots to the specified directory instead of showing.",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging.",
+    )
     args = parser.parse_args()
 
     log_path = Path(args.path).expanduser()
@@ -94,28 +117,76 @@ def main():
         print(f"Log file not found: {log_path}")
         return
 
+    if args.debug:
+        print(f"[DEBUG] Reading log file: {log_path}")
+        print(f"[DEBUG] Max samples: {args.n}, Time window: {args.seconds}s")
+
     # 用 deque 限制读取时的最大样本数，最终按时间窗口过滤
     samples = deque(maxlen=args.n)
+    total_lines = 0
+    parsed_count = 0
+    failed_count = 0
 
     with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
-            parsed = parse_line(line)
+            total_lines += 1
+            parsed = parse_line(line, debug=args.debug)
             if parsed is None:
+                failed_count += 1
                 continue
             ts, data = parsed
             samples.append((ts, data))
+            parsed_count += 1
+
+    if args.debug:
+        print(f"[DEBUG] Total lines read: {total_lines}")
+        print(f"[DEBUG] Successfully parsed: {parsed_count}, Failed: {failed_count}")
+        print(f"[DEBUG] Samples in buffer: {len(samples)}")
 
     if not samples:
         print("No valid samples found.")
         return
 
+    # 过滤：只保留包含至少一个关节数组的数据行
+    valid_samples = deque()
+    for ts, d in samples:
+        has_joint_data = any(k in d for k in ["joint_position", "joint_velocity", "joint_torque"])
+        if has_joint_data:
+            valid_samples.append((ts, d))
+
+    if args.debug:
+        print(f"[DEBUG] Samples with joint data: {len(valid_samples)} (filtered out {len(samples) - len(valid_samples)} non-joint entries)")
+
+    if not valid_samples:
+        print("No joint data samples found.")
+        return
+
+    samples = valid_samples
+
     # 按时间窗口过滤：以最后一条样本为基准，保留最近 args.seconds 秒的样本
     last_ts = samples[-1][0]
     cutoff = last_ts - timedelta(seconds=abs(args.seconds))
+    if args.debug:
+        print(f"[DEBUG] Last timestamp: {last_ts}")
+        print(f"[DEBUG] Cutoff time: {cutoff} (last {args.seconds}s)")
     filtered = deque()
     for ts, d in samples:
         if ts >= cutoff:
             filtered.append((ts, d))
+
+    if args.debug:
+        print(f"[DEBUG] Samples after time filtering: {len(filtered)}")
+        if filtered:
+            # 显示第一个和最后一个样本的详细信息
+            first_ts, first_data = filtered[0]
+            last_ts, last_data = filtered[-1]
+            print(f"[DEBUG] First sample time: {first_ts}")
+            print(f"[DEBUG] Last sample time: {last_ts}")
+            print(f"[DEBUG] First sample keys: {list(first_data.keys())}")
+            for key in ["joint_position", "joint_velocity", "joint_torque"]:
+                if key in first_data:
+                    arr = first_data[key]
+                    print(f"[DEBUG] {key}: len={len(arr)}, first_val={arr[0]:.4f}, last_val={arr[-1]:.4f}")
 
     if not filtered:
         print(f"No samples found within the last {args.seconds} seconds.")
@@ -127,13 +198,13 @@ def main():
     times = np.array([(s[0] - samples[0][0]).total_seconds() for s in samples], dtype=float)
     n = len(samples)
 
-    # 为每个键准备 Nx14 的数组，缺失数据用 NaN 填充
+    # 为每个键准备 Nx20 的数组，缺失数据用 NaN 填充
     def build_array(key):
-        arr = np.full((n, 14), np.nan, dtype=float)
+        arr = np.full((n, 20), np.nan, dtype=float)
         for i, (_, d) in enumerate(samples):
             if key in d:
                 v = d[key]
-                if isinstance(v, list) and len(v) == 14:
+                if isinstance(v, list) and len(v) == 20:
                     arr[i, :] = np.array(v, dtype=float)
         return arr
 
@@ -141,6 +212,13 @@ def main():
     pos_cmd = build_array("joint_position_cmd")
     tor = build_array("joint_torque")
     tor_ff = build_array("joint_torque_feedforward")
+    vel = build_array("joint_velocity")
+
+    if args.debug:
+        print(f"[DEBUG] Data array shape: ({n}, 20)")
+        print(f"[DEBUG] Position data - NaN count: {np.sum(~np.isfinite(pos))}, valid: {np.sum(np.isfinite(pos))}")
+        print(f"[DEBUG] Torque data - NaN count: {np.sum(~np.isfinite(tor))}, valid: {np.sum(np.isfinite(tor))}")
+        print(f"[DEBUG] Velocity data - NaN count: {np.sum(~np.isfinite(vel))}, valid: {np.sum(np.isfinite(vel))}")
 
     # 将位置从弧度转换为度（便于展示）
     pos_deg = np.degrees(pos)
@@ -149,14 +227,19 @@ def main():
     # 误差（仅在双方都有数据时才会得到数值，否则为 NaN），单位为度
     pos_err_deg = pos_cmd_deg - pos_deg
     tor_err = tor_ff - tor
-    # 速度，原始为 rad/s -> 转为 deg/s 以便显示
-    vel = build_array("joint_velocity")
+    # 速度已读取，转换为度/秒
     vel_deg = np.degrees(vel)
 
     # 设置matplotlib参数以最大化显示
     plt.rcParams['figure.max_open_warning'] = 100  # 允许更多图形
     plt.rcParams['figure.autolayout'] = False  # 手动调整布局
-    
+
+    # 如果需要保存，使用非交互式后端
+    save_dir = args.save
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        plt.switch_backend('Agg')
+
     # 每个手臂一张大图，每张图包含7个关节（每个关节一列，4行）
     def plot_arm(arm_name, joint_indices, arm_side):
         rows = 4  # position, torque, pos_error, tor_error
@@ -164,7 +247,7 @@ def main():
         # 将整张大图分辨率设置为 1920x1080 像素（每张大图）
         # figsize 单位为英寸，dpi*figsize = 像素。这里使用 dpi=100 -> figsize=(19.2, 10.8)
         fig, axes = plt.subplots(rows, cols, figsize=(19.2, 10.8), dpi=100, sharex=True)
-        
+
         # 将所有坐标轴刻度格式化为小数点后3位
         for ax in axes.flatten():
             ax.xaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
@@ -311,17 +394,34 @@ def main():
                      hspace=0.1, wspace=0.4)
         return fig
 
-    # 左臂：关节索引 0-6
-    left_joints = list(range(7))
-    # 右臂：关节索引 7-13
-    right_joints = list(range(7, 14))
+    # 左臂：关节索引 6-12 (7个关节)
+    left_joints = list(range(6, 13))
+    # 右臂：关节索引 13-19 (7个关节)
+    right_joints = list(range(13, 20))
+    # Torso：关节索引 0-5 (6个关节)
+    torso_joints = list(range(6))
 
     figs = []
+    if args.debug:
+        print("[DEBUG] Creating Torso plot...")
+    figs.append(plot_arm("Torso", torso_joints, "Torso"))
+    if args.debug:
+        print("[DEBUG] Creating Left Arm plot...")
     figs.append(plot_arm("Left Arm", left_joints, "Left"))
+    if args.debug:
+        print("[DEBUG] Creating Right Arm plot...")
     figs.append(plot_arm("Right Arm", right_joints, "Right"))
+    if args.debug:
+        print(f"[DEBUG] {len(figs)} figures created successfully")
 
-    # 一次性显示
-    plt.show()
+    if save_dir:
+        for i, fig in enumerate(figs):
+            filenames = ["torso.png", "left_arm.png", "right_arm.png"]
+            fig.savefig(os.path.join(save_dir, filenames[i]), dpi=100)
+            print(f"Saved: {os.path.join(save_dir, filenames[i])}")
+        plt.close('all')
+    else:
+        plt.show()
 
 
 if __name__ == "__main__":

@@ -2,12 +2,12 @@
 
 #include <Eigen/Dense>
 #include <cmath>
-#include "utils.h"
+
 #include "inverse_dynamics.h"
+#include "utils.h"
 
 using namespace robot_server_lib;
-TEST(InverseDynamikTest, InverseDyn)
-{
+TEST(InverseDynamikTest, InverseDyn) {
     std::filesystem::path home_dir = std::filesystem::path(std::getenv("HOME"));
     std::filesystem::create_directories(home_dir / "log");
     nanolog::initialize(nanolog::GuaranteedLogger(), (home_dir / "log/").string(), "robot_server", 10,
@@ -17,11 +17,9 @@ TEST(InverseDynamikTest, InverseDyn)
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot.cfg";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
     Eigen::VectorXd q(robot_model.model_ptr->nq);
-    q << 0.5, -1.0, 0.5, 0.0, 0.0, 0.0,
-         0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5,
-         -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
+    q << 0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5;
     VectorDof dq = VectorDof::Zero();
     VectorDof ddq = VectorDof::Zero();
     auto tau = dynamics::InverseDynamics(robot_model, q, dq, ddq);
-    std::cout << "Torque output: "<< tau.transpose() << ", when q: "<< q.transpose() << std::endl;
+    std::cout << "Torque output: " << tau.transpose() << ", when q: " << q.transpose() << std::endl;
 }

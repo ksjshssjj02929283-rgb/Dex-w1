@@ -7,8 +7,7 @@
 #include "utils.h"
 
 using namespace robot_server_lib;
-TEST(SRSKinematicsTest, Kinematics)
-{
+TEST(SRSKinematicsTest, Kinematics) {
     kinematics::SRSKinematics srs_kine_left(true, false);
 
     Eigen::VectorXd q_in_left(7);
@@ -26,8 +25,7 @@ TEST(SRSKinematicsTest, Kinematics)
     std::cout << "Left: Inverse Kinematics q_out: " << q_in_and_out.transpose() << std::endl;
     std::cout << "Left: Inverse Kinematics duration: " << duration.count() / 1000.0 << " ms" << std::endl;
     EXPECT_TRUE(success) << "Inverse Kinematics failed!";
-    for (int i = 0; i < q_in_left.size(); ++i)
-    {
+    for (int i = 0; i < q_in_left.size(); ++i) {
         EXPECT_NEAR(q_in_left[i], q_in_and_out[i], 0.01) << "Joint " << i << "fk ik mismatch";
     }
 }

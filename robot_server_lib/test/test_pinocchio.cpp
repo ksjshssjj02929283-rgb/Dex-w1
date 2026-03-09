@@ -2,22 +2,20 @@
 
 #include <Eigen/Dense>
 #include <cmath>
-#include "utils.h"
-#include "NanoLog.hpp"
 
-void PrintModelInfo(const pinocchio::Model& model, const std::string& tag)
-{
+#include "NanoLog.hpp"
+#include "utils.h"
+
+void PrintModelInfo(const pinocchio::Model& model, const std::string& tag) {
     std::cout << "==== " << tag << " ====" << std::endl;
     std::cout << "Number of joints: " << model.nv << std::endl;
-    for (int idx = 1; idx <= model.nv; ++idx)
-    {
+    for (int idx = 1; idx <= model.nv; ++idx) {
         std::cout << "Joint " << idx << ": " << model.names[idx] << std::endl;
     }
 }
 
 using namespace robot_server_lib;
-TEST(PinocchioModelTest, Pinocchio)
-{
+TEST(PinocchioModelTest, Pinocchio) {
     std::filesystem::path home_dir = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
     std::filesystem::create_directories(home_dir / "log");
     nanolog::initialize(nanolog::GuaranteedLogger(), (home_dir / "log/").string(), "robot_server", 10,
@@ -37,9 +35,9 @@ TEST(PinocchioModelTest, Pinocchio)
     std::cout << std::fixed << std::setprecision(3) << "Jacobian at left ee_link (q = 0):\n" << J << std::endl;
 
     Eigen::MatrixXd expected(6, 7);
-    expected << 0.000, 0.590, 0.000, -0.000, 0.000, -0.000, 0.066, -0.000, -0.000, -0.000, -0.330, 0.000, -0.066, -0.000, 0.000, 0.000, -0.000,
-        -0.000, 0.000, -0.000, 0.000, 0.000, 0.000, -0.000, 1.000, -0.000, 1.000, 0.000, 0.000, 1.000, -0.000, -0.000, -0.000, -0.000, 1.000, 1.000,
-        0.000, 1.000, 0.000, 1.000, 0.000, 0.000;
+    expected << 0.000, 0.590, 0.000, -0.000, 0.000, -0.000, 0.066, -0.000, -0.000, -0.000, -0.330, 0.000, -0.066,
+        -0.000, 0.000, 0.000, -0.000, -0.000, 0.000, -0.000, 0.000, 0.000, 0.000, -0.000, 1.000, -0.000, 1.000, 0.000,
+        0.000, 1.000, -0.000, -0.000, -0.000, -0.000, 1.000, 1.000, 0.000, 1.000, 0.000, 1.000, 0.000, 0.000;
 
     const double tol = 1e-3;
     double max_abs_diff = (J - expected).cwiseAbs().maxCoeff();
@@ -51,7 +49,8 @@ TEST(PinocchioModelTest, Pinocchio)
     pinocchio::forwardKinematics(*robot_model.model_ptr, data, q1);
     pinocchio::updateFramePlacements(*robot_model.model_ptr, data);
 
-    Eigen::MatrixXd M = pinocchio::GetInertiaMatrix(*robot_model.primary_arm_model_ptr, Eigen::VectorXd::Zero(robot_model.primary_arm_model_ptr->nv));
+    Eigen::MatrixXd M = pinocchio::GetInertiaMatrix(*robot_model.primary_arm_model_ptr,
+                                                    Eigen::VectorXd::Zero(robot_model.primary_arm_model_ptr->nv));
     std::cout << "Inertia matrix at q1:\n" << M << std::endl;
 
     // for (int fid = 0; fid < robot_model.model_ptr->nframes; ++fid)

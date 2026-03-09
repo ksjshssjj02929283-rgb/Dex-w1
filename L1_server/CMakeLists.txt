@@ -5,7 +5,7 @@ project(L1_server)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Release)
-set(L1_SERVER_VERSION "0.3.0")
+set(W1_SERVER_VERSION "0.3.1")
 
 # 如果系统安装了 ccache 则启用，否则保持不启用
 find_program(CCACHE_PROGRAM ccache)
@@ -59,8 +59,15 @@ find_package(robot_server_interfaces REQUIRED)
 find_package(robot_server_lib REQUIRED)
 
 if(NOT TARGET DexeRP)
-  # robot_server_lib/  -> dexe_robot_server/ -> workspace/
-  set(DEXERP_WS_ROOT "${CMAKE_CURRENT_LIST_DIR}/../lib")
+  # choose per-arch folder
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7|armv7l|armv8|arm)$")
+    set(DEXERP_WS_ROOT "${CMAKE_CURRENT_LIST_DIR}/../lib/dexe_rp/arm")
+  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|x64|i[3-6]86)$")
+    set(DEXERP_WS_ROOT "${CMAKE_CURRENT_LIST_DIR}/../lib/dexe_rp/x86")
+  else()
+    message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}. Please provide DexeRP under lib/.")
+  endif()
+
   set(DEXERP_LOCAL_LIB "${DEXERP_WS_ROOT}/libDexeRP.so")
 
   if(EXISTS "${DEXERP_LOCAL_LIB}")
@@ -68,11 +75,11 @@ if(NOT TARGET DexeRP)
     set_target_properties(DexeRP PROPERTIES IMPORTED_LOCATION "${DEXERP_LOCAL_LIB}")
 
     # so that #include "dexe_rp/xxx.h" works
-    target_include_directories(DexeRP INTERFACE "${DEXERP_WS_ROOT}")
+    target_include_directories(DexeRP INTERFACE "${DEXERP_WS_ROOT}/..")
 
     # install headers + .so into colcon install/ (deployment just ships install/)
     install(FILES "${DEXERP_LOCAL_LIB}" DESTINATION lib)
-    install(DIRECTORY "${DEXERP_WS_ROOT}/dexe_rp" DESTINATION include)
+    install(DIRECTORY "${DEXERP_WS_ROOT}/../dexe_rp" DESTINATION include)
   else()
     message(FATAL_ERROR "DexeRP not found: ${DEXERP_LOCAL_LIB} (and no system target DexeRP)")
   endif()
@@ -139,5 +146,25 @@ else()
     DESTINATION share/${PROJECT_NAME}
   )
 endif()
+
+# chassis.cfg：临时增加底盘类型配置
+set(ROBOT_CFG_INSTALL_PATH
+    "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/chassis.cfg"
+)
+
+if(EXISTS "${ROBOT_CFG_INSTALL_PATH}")
+  message(STATUS
+    "[${PROJECT_NAME}] chassis.cfg already exists at install destination, skipping install."
+  )
+else()
+  message(STATUS
+    "[${PROJECT_NAME}] chassis.cfg not found at install destination, will be installed."
+  )
+  install(
+    FILES chassis.cfg
+    DESTINATION share/${PROJECT_NAME}
+  )
+endif()
+
 
 ament_package()

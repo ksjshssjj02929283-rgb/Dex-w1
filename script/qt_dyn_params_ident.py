@@ -625,11 +625,77 @@ class DynParamCalculator:
         with open(out_path, 'w') as f:
             f.write(header_cpp + func_src_c)
 
+    def generate_mass_matrix_code(self):
+        import re
+        from sympybotics.symcode import code_to_func
+        rbt_no_gravity = sympybotics.RobotDef(
+            f"{self.robot_type}",
+            [
+                ("-pi/2", 0, 0.1025, "q"),
+                ("pi/2", 0, 0.0, "q"),
+                ("-pi/2", 0, 0.26, "q"),
+                ("pi/2", 0, 0.0, "q"),
+                ("-pi/2", 0, 0.264, "q"),
+                ("pi/2", 0, 0.0, "q"),
+                (0, 0, 0.0, "q"),
+            ],
+            dh_convention="standard",
+        )
+        rbt_no_gravity.frictionmodel = {"Coulomb", "viscous", "offset"}
+        rbt_no_gravity.driveinertiamodel = "simplified"
+        rbt_no_gravity.gravityacc = (sympy.Matrix([0.0, 0.0, 0.0]))
+        rbt_sym = sympybotics.RobotDynCode(rbt_no_gravity, verbose=True)
+
+        # 构造 tau = H(g) * Pb * dyn_base_parameters（7x1）
+        pb_syms = sympy.symbols(f'pb0:{len(self.rbt.dyn.baseparms)}')  # 仅用于构造表达式
+        pb = sympy.Matrix(pb_syms)
+        tau_expr = rbt_sym.dyn.H * self.rbt.dyn.Pb * pb  # 7x1
+
+        # 复用 H 的子表达式，生成 code 结构
+        T_se = sympybotics.symcode.Subexprs()
+        T_se._subexp_iv = rbt_sym._H_se
+        tau_code = T_se.get(tau_expr)
+
+        # 构造替换映射与函数签名（包含 dyn_base_params 与 gravity_acc）
+        q_subs = {q: f'q[{i}]' for i, q in enumerate(rbt_no_gravity.q)}
+        dq_subs = {dq: f'0.0' for i, dq in enumerate(rbt_no_gravity.dq)}
+        ddq_subs = {ddq: f'ddq[{i}]' for i, ddq in enumerate(rbt_no_gravity.ddq)}
+        pb_subs = {sym: f'dyn_base_params[{i}]' for i, sym in enumerate(pb_syms)}
+        subs = {**q_subs, **dq_subs, **ddq_subs, **pb_subs}
+
+        # 6) 生成 C++ 版本（用 C 代码风格，.cpp 可直接编译）
+        func_src_c = code_to_func(
+            'C', tau_code, 'M_term_out', 'mass_term',
+            ['q', 'ddq', 'dyn_base_params'], subs
+        )
+        header_cpp = (
+            '#include <math.h>\n'
+            '#include <stddef.h>\n'
+            'static inline double sign(double x){ return (x>0) - (x<0); }\n\n'
+        )
+
+        # 替换 ((x) > 0) - ((x) < 0) 为 sign(x)
+        pattern = re.compile(r'\(\(([^()]+?)\) > 0\) - \(\(\1\) < 0\)')
+        while True:
+            new_func_src_c = pattern.sub(r'sign(\1)', func_src_c)
+            if new_func_src_c == func_src_c:
+                break
+            func_src_c = new_func_src_c
+
+        out_path = os.path.join(os.path.dirname(__file__), 'mass_matrix.cpp')
+        with open(out_path, 'w') as f:
+            f.write(header_cpp + func_src_c)
+
     def calc_dyn_params(self):
         # 创建机器人模型并计算基础参数集
         self.log_msg("正在进行机器人建模...")
         self.rbt = self.create_robot_model(self.robot_type)
         self.log_msg(f"机器人建模完毕, 最小参数辨识集: {self.rbt.dyn.baseparms}")
+        # 输出包含fo_的参数的序号
+        fc_indices = [i for i, param in enumerate(self.rbt.dyn.baseparms) if "fc_" in str(param)]
+        fv_indices = [i for i, param in enumerate(self.rbt.dyn.baseparms) if "fv_" in str(param)]
+        fo_indices = [i for i, param in enumerate(self.rbt.dyn.baseparms) if "fo_" in str(param)]
+        self.log_msg(f"f_coulumb index: {fc_indices}, f_viscous index: {fv_indices}, f_offset index: {fo_indices}")
         self.log_msg("开始处理轨迹数据...")
         self.process_and_cache_data()
         self.log_msg("轨迹数据处理完毕, 开始计算参数...")
@@ -1079,6 +1145,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
         self.btn_show_plot = QtWidgets.QPushButton("图示已采集轨迹")
         self.btn_show_regression = QtWidgets.QPushButton("图示参数验证结果")
+        self.btn_gen_inertia_code = QtWidgets.QPushButton("生成惯量矩阵代码")
         btn_h = max(
             self.btn_run_sim.sizeHint().height(), self.btn_show_plot.sizeHint().height()
         )
@@ -1120,6 +1187,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_calc_params = QtWidgets.QPushButton("计算动力学参数")
         self.btn_write_params = QtWidgets.QPushButton("写入辨识参数")
         self.btn_gen_regression_code = QtWidgets.QPushButton("生成回归矩阵代码")
+        self.btn_gen_inertia_code = QtWidgets.QPushButton("生成惯量矩阵代码")
         bottom_vbox.addWidget(self.btn_run_real)
         # 图示已采集轨迹放在真机采集所有轨迹下方
         bottom_vbox.addWidget(self.btn_show_plot)
@@ -1134,6 +1202,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         result_vbox.addWidget(self.btn_show_regression)
         result_vbox.addWidget(self.btn_write_params)
         result_vbox.addWidget(self.btn_gen_regression_code)
+        result_vbox.addWidget(self.btn_gen_inertia_code)
         ctrl_layout.addWidget(result_group)
         ctrl_layout.addStretch(1)
         # 第四部分：停止按钮
@@ -1215,6 +1284,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         # 新增：图示辨识结果按钮
         self.btn_show_regression.clicked.connect(self.on_show_regression)
         self.btn_gen_regression_code.clicked.connect(self.on_generate_regression_code)
+        # 新增：惯量矩阵按钮
+        self.btn_gen_inertia_code.clicked.connect(self.on_generate_inertia_code)
         # 可视化子进程句柄
         self._visual_proc = None
         # 外部浏览器打开防抖标志（避免多次打开同一地址）
@@ -1248,11 +1319,14 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_show_regression.setDisabled(True)
         self.btn_write_params.setDisabled(True)
         self.btn_gen_regression_code.setDisabled(True)
+        self.btn_gen_inertia_code.setDisabled(True)
         # 控制可见性：仅当脚本以 --dev 参数运行时才显示该按钮
         self._show_dex_features = "--dev" in sys.argv
         if not getattr(self, "_show_dex_features", False):
             self.btn_calc_params.setDisabled(True)
             self.btn_gen_regression_code.setVisible(False)
+            # 新增：非 dev 隐藏惯量矩阵按钮
+            self.btn_gen_inertia_code.setVisible(False)
 
         self._did_initial_ref_plot = False
 
@@ -1300,6 +1374,9 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 True if disabled else (not self._params_calculated)
             )
             self.btn_gen_regression_code.setDisabled(
+                True if disabled else (not self._params_calculated)
+            )
+            self.btn_gen_inertia_code.setDisabled(
                 True if disabled else (not self._params_calculated)
             )
             self.traj_combo.setDisabled(disabled)
@@ -1552,6 +1629,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 self.btn_write_params.setDisabled(False)
                 self.btn_show_regression.setDisabled(False)
                 self.btn_gen_regression_code.setDisabled(False)
+                self.btn_gen_inertia_code.setDisabled(False)
             except Exception:
                 pass
             self._plot_regression_on_canvas()
@@ -1634,6 +1712,21 @@ class DynParamGUI(QtWidgets.QMainWindow):
         except Exception as e:
             self.log_msg("生成回归矩阵代码启动失败: " + str(e))
 
+    # 新增：生成惯量矩阵代码
+    def on_generate_inertia_code(self):
+        try:
+            if not getattr(self, "_params_calculated", False):
+                self.log_msg("请先完成动力学参数计算后再生成惯量矩阵代码。")
+                return
+            self.update_params_from_ui()
+            self.disable_buttons(True)
+            t = threading.Thread(
+                target=self._thread_generate_inertia_code, daemon=True
+            )
+            t.start()
+        except Exception as e:
+            self.log_msg("生成惯量矩阵代码启动失败: " + str(e))
+
     def _thread_generate_regression_code(self):
         try:
             # 根据当前界面选择的臂侧生成对应的代码
@@ -1644,6 +1737,23 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.log_msg(f"回归矩阵/逆动力学代码已生成: {out_path}")
         except Exception as e:
             self.log_msg("生成回归矩阵代码出错: " + str(e))
+        finally:
+            try:
+                QtCore.QMetaObject.invokeMethod(
+                    self, "enable_buttons", QtCore.Qt.QueuedConnection
+                )
+            except Exception:
+                pass
+
+    def _thread_generate_inertia_code(self):
+        try:
+            calc = self.dyn.calculator_left
+            self.log_msg("正在生成惯量矩阵代码...")
+            calc.generate_mass_matrix_code()
+            out_path = os.path.join(os.path.dirname(__file__), "mass_matrix.cpp")
+            self.log_msg(f"惯量矩阵代码已生成: {out_path}")
+        except Exception as e:
+            self.log_msg("生成惯量矩阵代码出错: " + str(e))
         finally:
             try:
                 QtCore.QMetaObject.invokeMethod(

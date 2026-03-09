@@ -1,18 +1,19 @@
 #include "torque_controller_manager.h"
 
-namespace robot_server_lib
-{
+namespace robot_server_lib {
 
-TorqueControllerManager::TorqueControllerManager(RobotModel robot_model, PlannerManagerBuffers manager_buffers, TorqueControlBuffer robot_buffers)
-    : robot_model_(std::move(robot_model)), manager_buffers_(std::move(manager_buffers)), robot_buffers_(std::move(robot_buffers))
-{
+TorqueControllerManager::TorqueControllerManager(RobotModel robot_model,
+                                                 PlannerManagerBuffers manager_buffers,
+                                                 TorqueControlBuffer robot_buffers)
+    : robot_model_(std::move(robot_model)),
+      manager_buffers_(std::move(manager_buffers)),
+      robot_buffers_(std::move(robot_buffers)) {
     Initialize();
 }
 
 TorqueControllerManager::~TorqueControllerManager() = default;
 
-void TorqueControllerManager::Initialize()
-{
+void TorqueControllerManager::Initialize() {
     // Initialize the runtime data
     runtime_data_.loop_counter = -1;
 
@@ -25,58 +26,49 @@ void TorqueControllerManager::Initialize()
     torque_controller_ = std::make_shared<TorqueControllerInvDynamic>(robot_model_);
 }
 
-void TorqueControllerManager::LoopOnce()
-{
+void TorqueControllerManager::LoopOnce() {
     runtime_data_.loop_counter++;
 
     // 尝试获取最新的关节测量值 Try to peek the latest joint raw_measurement
     runtime_data_.time_meta.current_time = TimePointSystem::Now();
-    if (!robot_buffers_.joint_raw_measurement->PeekLatest(&runtime_data_.raw_measurement))
-    {
+    if (!robot_buffers_.joint_raw_measurement->PeekLatest(&runtime_data_.raw_measurement)) {
         runtime_data_.time_meta.measurement_time = TimePointSystem::Invalid();
         runtime_data_.raw_measurement = JointRawMeasurement{};
-    }
-    else
-    {
+    } else {
         runtime_data_.time_meta.measurement_time = TimePointSystem::Now();
     }
     // 获取最新的位置控制下发的joint command
-    if (!manager_buffers_.planner_manager_command->PeekLatest(&runtime_data_.input_joint_cmd.cmd))
-    {
+    if (!manager_buffers_.planner_manager_command->PeekLatest(&runtime_data_.input_joint_cmd.cmd)) {
         runtime_data_.input_joint_cmd.time_point = TimePointSystem::Invalid();
-    }
-    else
-    {
+    } else {
         runtime_data_.input_joint_cmd.time_point = TimePointSystem::Now();
     }
 
     ProcessResponse response;
     response.re_run = true;  // first run
-    while (response.re_run)
-    {
-        switch (controller_state_)
-        {
-        case TorqueControllerState::Init:
-            response = InitProcess();
-            break;
-        case TorqueControllerState::Idle:
-            response = IdleProcess();
-            break;
-        case TorqueControllerState::Decelerating:
-            response = DeceleratingProcess();
-            break;
-        case TorqueControllerState::Operating:
-            response = OperatingProcess();
-            break;
-        default:
-            assert(false && "Unknown state in TorqueControllerManager");
+    while (response.re_run) {
+        switch (controller_state_) {
+            case TorqueControllerState::Init:
+                response = InitProcess();
+                break;
+            case TorqueControllerState::Idle:
+                response = IdleProcess();
+                break;
+            case TorqueControllerState::Decelerating:
+                response = DeceleratingProcess();
+                break;
+            case TorqueControllerState::Operating:
+                response = OperatingProcess();
+                break;
+            default:
+                assert(false && "Unknown state in TorqueControllerManager");
         }
     }
 
     // Publish
-    if (TimePointSystem::IsValid(runtime_data_.time_meta.measurement_time))
-    {
-        torque_controller_->ComputeCommand(runtime_data_.raw_measurement, runtime_data_.input_joint_cmd.cmd, runtime_data_.output_cmd);
+    if (TimePointSystem::IsValid(runtime_data_.time_meta.measurement_time)) {
+        torque_controller_->ComputeCommand(runtime_data_.raw_measurement, runtime_data_.input_joint_cmd.cmd,
+                                           runtime_data_.output_cmd);
         JointMeasurement manager_measurement{};
         manager_measurement.position = runtime_data_.raw_measurement.position;
         manager_measurement.velocity = runtime_data_.raw_measurement.velocity;
@@ -85,25 +77,20 @@ void TorqueControllerManager::LoopOnce()
         manager_measurement.sensor_wrench = runtime_data_.raw_measurement.sensor_wrench;
         manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
         robot_buffers_.torque_controller_command->AppendNewElement(runtime_data_.output_cmd);
-    }
-    else
-    {
+    } else {
         // No valid raw measurement, reset the manager_measurement and torque command buffers
         manager_buffers_.joint_measurement->Reset();
         robot_buffers_.torque_controller_command->Reset();
-        if (runtime_data_.loop_counter % 3000 == 0)
-        {
+        if (runtime_data_.loop_counter % 3000 == 0) {
             LOG_CRIT << "No Raw joint measurement available, skipping loop.";
         }
     }
 }
 
-ProcessResponse TorqueControllerManager::InitProcess()
-{
+ProcessResponse TorqueControllerManager::InitProcess() {
     ProcessResponse response;
     last_cmd_sequence_number_ = runtime_data_.input_joint_cmd.cmd.sequence_number;
-    if (TimePointSystem::IsValid(runtime_data_.time_meta.measurement_time))
-    {
+    if (TimePointSystem::IsValid(runtime_data_.time_meta.measurement_time)) {
         ChangeState(TorqueControllerState::Idle);
         response.re_run = true;
         return response;
@@ -111,29 +98,23 @@ ProcessResponse TorqueControllerManager::InitProcess()
     return response;
 }
 
-ProcessResponse TorqueControllerManager::IdleProcess()
-{
+ProcessResponse TorqueControllerManager::IdleProcess() {
     ProcessResponse response;
-    if (TimePointSystem::IsInvalid(runtime_data_.time_meta.measurement_time))
-    {
+    if (TimePointSystem::IsInvalid(runtime_data_.time_meta.measurement_time)) {
         ChangeState(TorqueControllerState::Init);
         response.re_run = true;
         return response;
     }
     assert(TimePointSystem::IsValid(runtime_data_.raw_measurement.time_point));
     Int64 received_cmd_sequence = runtime_data_.input_joint_cmd.cmd.sequence_number;
-    if (current_episode_index_ == runtime_data_.time_meta.episode_index)
-    {
-        if (received_cmd_sequence >= 0 && received_cmd_sequence > last_cmd_sequence_number_)
-        {
+    if (current_episode_index_ == runtime_data_.time_meta.episode_index) {
+        if (received_cmd_sequence >= 0 && received_cmd_sequence > last_cmd_sequence_number_) {
             last_cmd_sequence_number_ = received_cmd_sequence;
             ChangeState(TorqueControllerState::Operating);
             response.re_run = true;
             return response;
         }
-    }
-    else
-    {
+    } else {
         // A new idle episode
         current_episode_index_ = runtime_data_.time_meta.episode_index;
         last_cmd_sequence_number_ = received_cmd_sequence;
@@ -143,11 +124,9 @@ ProcessResponse TorqueControllerManager::IdleProcess()
     return response;
 }
 
-ProcessResponse TorqueControllerManager::DeceleratingProcess()
-{
+ProcessResponse TorqueControllerManager::DeceleratingProcess() {
     ProcessResponse response;
-    if (TimePointSystem::IsInvalid(runtime_data_.time_meta.measurement_time))
-    {
+    if (TimePointSystem::IsInvalid(runtime_data_.time_meta.measurement_time)) {
         ChangeState(TorqueControllerState::Init);
         response.re_run = true;
         return response;
@@ -155,10 +134,8 @@ ProcessResponse TorqueControllerManager::DeceleratingProcess()
     assert(TimePointSystem::IsValid(runtime_data_.raw_measurement.time_point));
     Int64 received_cmd_sequence = runtime_data_.input_joint_cmd.cmd.sequence_number;
 
-    if (current_episode_index_ == runtime_data_.time_meta.episode_index)
-    {
-        if (received_cmd_sequence >= 0 && received_cmd_sequence > last_cmd_sequence_number_)
-        {
+    if (current_episode_index_ == runtime_data_.time_meta.episode_index) {
+        if (received_cmd_sequence >= 0 && received_cmd_sequence > last_cmd_sequence_number_) {
             last_cmd_sequence_number_ = received_cmd_sequence;
             ChangeState(TorqueControllerState::Operating);
             response.re_run = true;
@@ -166,15 +143,12 @@ ProcessResponse TorqueControllerManager::DeceleratingProcess()
         }
 
         // Speed is slow enough for idle
-        if (runtime_data_.raw_measurement.velocity.norm() < IdleVelocityThreshold)
-        {
+        if (runtime_data_.raw_measurement.velocity.norm() < IdleVelocityThreshold) {
             ChangeState(TorqueControllerState::Idle);
             response.re_run = true;
             return response;
         }
-    }
-    else
-    {
+    } else {
         // A new episode
         current_episode_index_ = runtime_data_.time_meta.episode_index;
         last_cmd_sequence_number_ = received_cmd_sequence;
@@ -183,11 +157,9 @@ ProcessResponse TorqueControllerManager::DeceleratingProcess()
     return response;
 }
 
-ProcessResponse TorqueControllerManager::OperatingProcess()
-{
+ProcessResponse TorqueControllerManager::OperatingProcess() {
     ProcessResponse response;
-    if (TimePointSystem::IsInvalid(runtime_data_.time_meta.measurement_time))
-    {
+    if (TimePointSystem::IsInvalid(runtime_data_.time_meta.measurement_time)) {
         ChangeState(TorqueControllerState::Init);
         response.re_run = true;
         return response;
@@ -196,21 +168,17 @@ ProcessResponse TorqueControllerManager::OperatingProcess()
     const auto &received_cmd_time = runtime_data_.input_joint_cmd.time_point;
     const Int64 received_cmd_seq = runtime_data_.input_joint_cmd.cmd.sequence_number;
 
-    if (current_episode_index_ == runtime_data_.time_meta.episode_index)
-    {
+    if (current_episode_index_ == runtime_data_.time_meta.episode_index) {
         // In this episode, check if the cmd is too old
         const auto now = TimePointSystem::Now();
         const bool cmd_delayed = now.time_in_ns() > received_cmd_time.time_in_ns() + MaxDelayInNs;
-        if (received_cmd_seq < 0 || cmd_delayed)
-        {
+        if (received_cmd_seq < 0 || cmd_delayed) {
             last_cmd_sequence_number_ = received_cmd_seq;
             ChangeState(TorqueControllerState::Decelerating);
             response.re_run = true;
             return response;
         }
-    }
-    else
-    {
+    } else {
         // A new episode
         current_episode_index_ = runtime_data_.time_meta.episode_index;
         last_cmd_sequence_number_ = received_cmd_seq;
@@ -220,8 +188,7 @@ ProcessResponse TorqueControllerManager::OperatingProcess()
     return response;
 }
 
-void TorqueControllerManager::ChangeState(TorqueControllerState new_state)
-{
+void TorqueControllerManager::ChangeState(TorqueControllerState new_state) {
     assert(controller_state_ != new_state);
     runtime_data_.time_meta.episode_index += 1;
     runtime_data_.time_meta.episode_start_time = runtime_data_.time_meta.current_time;

@@ -14,21 +14,21 @@
 #include <type_traits>
 #include <vector>
 
-namespace robot_server_lib
-{
+namespace robot_server_lib {
 
 constexpr int ndof_robot = 20;
 constexpr int torque_ctrl_dt_micro = 1000;  // 1kHz
 constexpr int manager_dt_micro = 4 * torque_ctrl_dt_micro;
 constexpr int simulation_dt_micro = torque_ctrl_dt_micro;
-constexpr int publish_dt_micro = 10000;   // 100 hz
+constexpr int publish_dt_micro = 10000;  // 100 hz
 
 constexpr double torque_ctrl_dt = double(torque_ctrl_dt_micro) / 1e6;
 constexpr double manager_dt = double(manager_dt_micro) / 1e6;
 constexpr double simulation_dt = double(simulation_dt_micro) / 1e6;
 constexpr double IdleVelocityThreshold = 0.05 / 180 * M_PI;  // 静止状态的速度阈值
 constexpr double PositionThreshold = 1e-6;                   // 位置误差容忍度
-constexpr double StreamingCommandTimeout = 1.5;              // 流式命令超时1.5秒
+constexpr double FloatZeroTol = 1e-9;                        // 浮点数零值容忍度
+constexpr double StreamingCommandTimeout = 10;              // 流式命令超时10秒
 
 using Int64 = std::int64_t;
 using VectorDof = Eigen::Matrix<double, ndof_robot, 1>;
@@ -40,34 +40,20 @@ using Vector3d = Eigen::Matrix<double, 3, 1>;
 using Vector6d = Eigen::Matrix<double, 6, 1>;
 using Vector12d = Eigen::Matrix<double, 12, 1>;
 
-enum class RunMode
-{
-    Position,     // position controls
-    Torque,       // torque control
-    CartesianImpedance,    // impedance control
-    Drag,         // zero-stiff control
+enum class RunMode {
+    Position,            // position controls
+    Torque,              // torque control
+    Drag,                // zero-stiff control
+    CartesianImpedance,  // impedance control
+    DragImpedance,       // mixed drag and impedance control
     Unknown
 };
 
-enum class Status
-{
-    Init,
-    Idle,
-    Running,
-    Error
-};
+enum class Status { Init, Idle, Running, Error };
 
-enum class ErrorCode
-{
-    NoError,
-    InvalidRequest,
-    VelocityOverLimit,
-    TorqueOverLimit,
-    IKFailed
-};
+enum class ErrorCode { NoError, InvalidRequest, VelocityOverLimit, TorqueOverLimit, IKFailed };
 
-enum class RequestType
-{
+enum class RequestType {
     Empty,  // empty command
 
     // Set Property Request
@@ -78,8 +64,10 @@ enum class RequestType
     SafeLevel,
     SwitchRunMode,
     EnableDrag,
-    ImpedanceMass,
-    ImpedanceStiffness,
+    JointStiffness,
+    JointDamping,
+    CartStiffness,
+    CartDampingRatio,
     // Move Request
     MoveJoint,
     MoveLine,
@@ -94,8 +82,7 @@ enum class RequestType
     Unknown
 };
 
-enum class MotionGroup
-{
+enum class MotionGroup {
     Primary,
     Secondary,
     BothArms,
@@ -105,16 +92,14 @@ enum class MotionGroup
     Unknown
 };
 
-enum class ReferenceFrame
-{
+enum class ReferenceFrame {
     ArmBase,    // arm base frame
     WorldBase,  // world base frame
-    EEFrame,     // end-effector frame
+    EEFrame,    // end-effector frame
     Unknown
 };
 
-enum class RequestStatus
-{
+enum class RequestStatus {
     ErrorDrop,
     Executed,
     PhaseFinished,
@@ -125,8 +110,7 @@ enum class RequestStatus
 };
 
 template <typename E, typename = std::enable_if_t<std::is_enum_v<E>>>
-inline const char *ToString(E e)
-{
+inline const char *ToString(E e) {
     auto sv = magic_enum::enum_name(e);
     return sv.empty() ? "Unknown" : sv.data();
 }

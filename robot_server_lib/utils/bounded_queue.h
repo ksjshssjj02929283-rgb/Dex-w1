@@ -10,13 +10,11 @@
 #include <iostream>
 #include <vector>
 
-namespace robot_server_lib
-{
+namespace robot_server_lib {
 
 template <typename T>
-class BoundedQueue
-{
-   private:
+class BoundedQueue {
+private:
     // The buffer for the data, the size is not mutable after construction
     // T should support default construction && copy, it is usually POD type
     std::vector<T> ring_buffer_;
@@ -33,7 +31,7 @@ class BoundedQueue
     std::atomic_uint64_t reserve_end_{0};
     std::atomic_uint64_t commit_end_{0};
 
-   public:
+public:
     explicit BoundedQueue(std::uint64_t capacity);
     ~BoundedQueue() = default;
     // No-copy/assign/move, as usual in concurrent code

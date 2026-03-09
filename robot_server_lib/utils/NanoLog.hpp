@@ -35,19 +35,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <type_traits>
 #include <vector>
 
-namespace nanolog
-{
-enum class LogLevel : uint8_t
-{
-    DEBUG,
-    INFO,
-    WARN,
-    CRIT
-};
+namespace nanolog {
+enum class LogLevel : uint8_t { DEBUG, INFO, WARN, CRIT };
 
-class NanoLogLine
-{
-   public:
+class NanoLogLine {
+public:
     NanoLogLine(LogLevel level, char const *file, char const *function, uint32_t line);
     ~NanoLogLine();
 
@@ -65,21 +57,17 @@ class NanoLogLine
     NanoLogLine &operator<<(std::string const &arg);
 
     template <size_t N>
-    NanoLogLine &operator<<(const char (&arg)[N])
-    {
+    NanoLogLine &operator<<(const char (&arg)[N]) {
         encode(string_literal_t(arg));
         return *this;
     }
 
     // std::vector<double>
-    NanoLogLine &operator<<(const std::vector<double> &vec)
-    {
+    NanoLogLine &operator<<(const std::vector<double> &vec) {
         (*this) << "[";
-        for (size_t i = 0; i < vec.size(); ++i)
-        {
+        for (size_t i = 0; i < vec.size(); ++i) {
             (*this) << vec[i];
-            if (i != vec.size() - 1)
-            {
+            if (i != vec.size() - 1) {
                 (*this) << ", ";
             }
         }
@@ -88,14 +76,11 @@ class NanoLogLine
     }
 
     // std::vector<int>
-    NanoLogLine &operator<<(const std::vector<int> &vec)
-    {
+    NanoLogLine &operator<<(const std::vector<int> &vec) {
         (*this) << "[";
-        for (size_t i = 0; i < vec.size(); ++i)
-        {
+        for (size_t i = 0; i < vec.size(); ++i) {
             (*this) << static_cast<int32_t>(vec[i]);
-            if (i != vec.size() - 1)
-            {
+            if (i != vec.size() - 1) {
                 (*this) << ", ";
             }
         }
@@ -104,8 +89,7 @@ class NanoLogLine
     }
 
     template <typename Derived>
-    NanoLogLine &operator<<(const Eigen::EigenBase<Derived> &expr)
-    {
+    NanoLogLine &operator<<(const Eigen::EigenBase<Derived> &expr) {
         // 无括号，无对齐，元素与行之间都用 ", " 分隔
         static const Eigen::IOFormat kFmt(Eigen::StreamPrecision, Eigen::DontAlignCols, ", ", ", ", "", "", "", "");
         std::ostringstream oss;
@@ -114,8 +98,7 @@ class NanoLogLine
     }
 
     template <typename Derived>
-    NanoLogLine &operator<<(const Eigen::QuaternionBase<Derived> &q)
-    {
+    NanoLogLine &operator<<(const Eigen::QuaternionBase<Derived> &q) {
         // 同样去掉括号
         std::ostringstream oss;
         oss << q.x() << ", " << q.y() << ", " << q.z() << ", " << q.w();
@@ -123,26 +106,23 @@ class NanoLogLine
     }
 
     template <typename Arg>
-    typename std::enable_if<std::is_same<Arg, char const *>::value, NanoLogLine &>::type operator<<(Arg const &arg)
-    {
+    typename std::enable_if<std::is_same<Arg, char const *>::value, NanoLogLine &>::type operator<<(Arg const &arg) {
         encode(arg);
         return *this;
     }
 
     template <typename Arg>
-    typename std::enable_if<std::is_same<Arg, char *>::value, NanoLogLine &>::type operator<<(Arg const &arg)
-    {
+    typename std::enable_if<std::is_same<Arg, char *>::value, NanoLogLine &>::type operator<<(Arg const &arg) {
         encode(arg);
         return *this;
     }
 
-    struct string_literal_t
-    {
+    struct string_literal_t {
         explicit string_literal_t(char const *s) : m_s(s) {}
         char const *m_s;
     };
 
-   private:
+private:
     char *buffer();
 
     template <typename Arg>
@@ -158,15 +138,14 @@ class NanoLogLine
     void resize_buffer_if_needed(size_t additional_bytes);
     void stringify(std::ostream &os, char *start, char const *const end);
 
-   private:
+private:
     size_t m_bytes_used;
     size_t m_buffer_size;
     std::unique_ptr<char[]> m_heap_buffer;
     char m_stack_buffer[256 - 2 * sizeof(size_t) - sizeof(decltype(m_heap_buffer)) - 8 /* Reserved */];
 };
 
-struct NanoLog
-{
+struct NanoLog {
     /*
      * Ideally this should have been operator+=
      * Could not get that to compile, so here we are...
@@ -186,8 +165,7 @@ bool is_logged(LogLevel level);
  * is determined by this parameter. Since each LogLine is 256 bytes,
  * ring_buffer_size = ring_buffer_size_mb * 1024 * 1024 / 256
  */
-struct NonGuaranteedLogger
-{
+struct NonGuaranteedLogger {
     NonGuaranteedLogger(uint32_t ring_buffer_size_mb_) : ring_buffer_size_mb(ring_buffer_size_mb_) {}
     uint32_t ring_buffer_size_mb;
 };
@@ -195,9 +173,7 @@ struct NonGuaranteedLogger
 /*
  * Provides a guarantee log lines will not be dropped.
  */
-struct GuaranteedLogger
-{
-};
+struct GuaranteedLogger {};
 
 /*
  * Ensure initialize() is called prior to any log statements.
@@ -212,14 +188,26 @@ struct GuaranteedLogger
  * The newest is nanolog.txt, the oldest is nanolog(K-1).txt.
  * Rotation happens when nanolog.txt exceeds roll size.
  */
-void initialize(GuaranteedLogger gl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb);
-void initialize(NonGuaranteedLogger ngl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb);
+void initialize(GuaranteedLogger gl,
+                std::string const &log_directory,
+                std::string const &log_file_name,
+                uint32_t log_file_roll_size_mb);
+void initialize(NonGuaranteedLogger ngl,
+                std::string const &log_directory,
+                std::string const &log_file_name,
+                uint32_t log_file_roll_size_mb);
 
 // New overloads with fixed rolling file count
-void initialize(GuaranteedLogger gl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb,
+void initialize(GuaranteedLogger gl,
+                std::string const &log_directory,
+                std::string const &log_file_name,
+                uint32_t log_file_roll_size_mb,
                 uint32_t max_files);
 
-void initialize(NonGuaranteedLogger ngl, std::string const &log_directory, std::string const &log_file_name, uint32_t log_file_roll_size_mb,
+void initialize(NonGuaranteedLogger ngl,
+                std::string const &log_directory,
+                std::string const &log_file_name,
+                uint32_t log_file_roll_size_mb,
                 uint32_t max_files);
 
 }  // namespace nanolog
