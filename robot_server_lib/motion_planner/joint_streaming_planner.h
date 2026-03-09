@@ -40,7 +40,7 @@ protected:
 
     // 巴特沃斯滤波器
     std::shared_ptr<ButterworthFilter> filter_[ndof_robot];
-    bool use_filter_ = false;
+    bool use_filter_ = true;
 };
 
 }  // namespace robot_server_lib

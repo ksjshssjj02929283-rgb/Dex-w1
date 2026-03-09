@@ -188,7 +188,7 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     if (move_request.use_filter.has_value()) {
         use_filter_ = move_request.use_filter.value();
     } else {
-        use_filter_ = false;
+        use_filter_ = true;
     }
     // 重置滤波器状态
     for (auto i = 0; i < ndof_robot; i++) {

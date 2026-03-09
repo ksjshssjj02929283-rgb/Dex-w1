@@ -694,6 +694,47 @@ def main():
             print(f"Saved: {os.path.join(save_dir, filename)}")
         plt.close('all')
     else:
+        # 添加滚轮缩放
+        def on_scroll(event):
+            if event.inaxes is None:
+                return
+            # 向上滚动缩小，向下滚动放大
+            scale_factor = 0.9 if event.button == 'up' else 1.1
+            ax = event.inaxes
+            xlim = ax.get_xlim()
+            ylim = ax.get_ylim()
+
+            # 以鼠标位置为中心缩放
+            mouse_x = event.xdata
+            mouse_y = event.ydata
+
+            if mouse_x is not None and mouse_y is not None:
+                # 计算鼠标在当前视图中的相对位置
+                x_ratio = (mouse_x - xlim[0]) / (xlim[1] - xlim[0])
+                y_ratio = (mouse_y - ylim[0]) / (ylim[1] - ylim[0])
+
+                # 计算新范围，保持鼠标相对位置不变
+                x_range = (xlim[1] - xlim[0]) * scale_factor
+                y_range = (ylim[1] - ylim[0]) * scale_factor
+
+                new_xlim = [mouse_x - x_range * x_ratio, mouse_x + x_range * (1 - x_ratio)]
+                new_ylim = [mouse_y - y_range * y_ratio, mouse_y + y_range * (1 - y_ratio)]
+            else:
+                x_range = (xlim[1] - xlim[0]) * scale_factor
+                y_range = (ylim[1] - ylim[0]) * scale_factor
+                x_center = (xlim[0] + xlim[1]) / 2
+                y_center = (ylim[0] + ylim[1]) / 2
+                new_xlim = [x_center - x_range/2, x_center + x_range/2]
+                new_ylim = [y_center - y_range/2, y_center + y_range/2]
+
+            ax.set_xlim(new_xlim)
+            ax.set_ylim(new_ylim)
+            plt.draw()
+
+        # 为所有打开的图形绑定事件
+        for fig in figs:
+            fig.canvas.mpl_connect('scroll_event', on_scroll)
+
         plt.show()
 
 
