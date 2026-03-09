@@ -43,13 +43,14 @@ class RobotServer : public RobotServerBase
     const int ndof_body_ = 18;                    // 机器人上半身自由度
     const int ndof_legs_ = 12;                      // 腿部自由度
 
-    std::string joint_name_[30] = {"BUTTOCK","WAIST","NECK1","NECK2",
+    std::string joint_name_[30] = {"WAIST", "BUTTOCK","NECK1","NECK2",
         "LEFT_J1",  "LEFT_J2",  "LEFT_J3",  "LEFT_J4", "LEFT_J5",  "LEFT_J6",  "LEFT_J7",
         "RIGHT_J1", "RIGHT_J2", "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7",
         "LEFT_LEG_J1",  "LEFT_LEG_J2",  "LEFT_LEG_J3",  "LEFT_LEG_J4", "LEFT_LEG_J5",  "LEFT_LEG_J6",
         "RIGHT_LEG_J1", "RIGHT_LEG_J2", "RIGHT_LEG_J3", "RIGHT_LEG_J4", "RIGHT_LEG_J5", "RIGHT_LEG_J6"};
 
-    double legs_stiffness_[12] = {50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0};
+    double torque_limit_Nm_[18] = {87.0, 87.0, 10.0, 10.0, 31.0, 31.0, 31.0, 31.0, 10.0,  10.0,  10.0,  31.0,  31.0, 31.0, 31.0, 10.0, 10.0, 10.0};
+    double legs_stiffness_[12] = {100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0};
     double legs_damping_[12]   = {5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0};
 
     bool clear_error_flag_{false};

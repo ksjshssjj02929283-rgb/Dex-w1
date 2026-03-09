@@ -171,6 +171,8 @@ void RobotServer::WriteFeedbackToControl()
         robot_control_.position[i] = robot_feedback_.position[i];
         robot_control_.velocity[i] = 0.0;
         robot_control_.torque_feedforward[i] = 0.0;
+        robot_control_.positive_torque_limit[i] = this->torque_limit_Nm_[i];
+        robot_control_.negative_torque_limit[i] = -this->torque_limit_Nm_[i];
     }
     for (int i = 0; i < this->ndof_legs_; ++i)
     {
