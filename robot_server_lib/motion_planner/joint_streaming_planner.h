@@ -36,11 +36,17 @@ protected:
 
     TimePointSystem request_start_time_{TimePointSystem::Invalid()};
     TimePointSystem command_finished_time_{TimePointSystem::Invalid()};
+    TimePointSystem last_log_time_{TimePointSystem::Invalid()};  // 上次打印日志的时间
+    int frame_count_{0};                                         // 帧计数器
     bool use_ruckig_ = true;
 
     // 巴特沃斯滤波器
     std::shared_ptr<ButterworthFilter> filter_[ndof_robot];
     bool use_filter_ = true;
+
+    // 目标速度和加速度配置
+    bool use_velocity_ = false;
+    bool use_acceleration_ = false;
 };
 
 }  // namespace robot_server_lib

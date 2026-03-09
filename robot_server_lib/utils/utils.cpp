@@ -257,6 +257,23 @@ bool GetJointFromWholeBody(const RobotModel &robot_model,
     return true;
 }
 
+int GetJointCount(const RobotModel &robot_model, const MotionGroup &motion_group) {
+    switch (motion_group) {
+        case MotionGroup::Primary:
+            return robot_model.params_ptr->joints_primary.size();
+        case MotionGroup::Secondary:
+            return robot_model.params_ptr->joints_secondary.size();
+        case MotionGroup::BothArms:
+            return robot_model.params_ptr->joints_primary.size() + robot_model.params_ptr->joints_secondary.size();
+        case MotionGroup::WholeBody:
+            return ndof_robot;
+        case MotionGroup::Torso:
+            return robot_model.params_ptr->joints_torso.size();
+        default:
+            return ndof_robot;
+    }
+}
+
 PlannerRequest ParseSetPropertyRequest(
     const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request) {
     PlannerRequest planner_request;
@@ -365,6 +382,8 @@ PlannerRequest ParseMoveRequest(
         };
         set_bool("use_ruckig", move_request.use_ruckig);
         set_bool("use_filter", move_request.use_filter);
+        set_bool("use_velocity", move_request.use_velocity);
+        set_bool("use_acceleration", move_request.use_acceleration);
         set_double("speed", move_request.speed);
         set_double("acceleration", move_request.acceleration);
         set_double("blend_tolerance", move_request.blend_tolerance);

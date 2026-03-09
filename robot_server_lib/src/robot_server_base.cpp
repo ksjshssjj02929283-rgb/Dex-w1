@@ -293,7 +293,8 @@ void RobotServerBase::MoveRobotCallback(
 
 void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::SharedPtr streaming_msg) {
     // 记录输入的关节位置（float -> double）
-    for (size_t i = 0; i < streaming_msg->position.size() && i < joint_position_input_.size(); ++i) {
+    for (size_t i = 0; i < streaming_msg->position.size() && i < static_cast<size_t>(joint_position_input_.size());
+         ++i) {
         joint_position_input_(i) = streaming_msg->position[i];
     }
 

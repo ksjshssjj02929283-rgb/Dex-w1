@@ -169,7 +169,9 @@ struct MoveRequest {
     std::optional<std::vector<int>> endpoint_index;
     std::optional<double> interval;
     std::optional<double> streaming_timeout;
-    std::optional<bool> use_filter;  // 是否启用巴特沃斯滤波
+    std::optional<bool> use_filter;        // 是否启用巴特沃斯滤波
+    std::optional<bool> use_velocity;      // 是否使用目标速度输入
+    std::optional<bool> use_acceleration;  // 是否使用目标加速度输入
 };
 
 using PlannerData = std::variant<MoveRequest, PoseQuaternion, Vector3d, Vector6d, Eigen::VectorXd, bool, int, double>;
@@ -183,7 +185,9 @@ struct PlannerRequest {
 struct StreamingCommand {
     Int64 request_id{-1};
     bool streaming_finished{false};
-    Eigen::VectorXd command;  // 用于存储流式数据
+    Eigen::VectorXd command;              // 用于存储流式数据
+    Eigen::VectorXd target_velocity;      // 目标速度
+    Eigen::VectorXd target_acceleration;  // 目标加速度
     TimePointSystem received_time{TimePointSystem::Invalid()};
 };
 

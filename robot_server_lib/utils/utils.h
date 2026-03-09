@@ -115,6 +115,9 @@ bool GetJointFromWholeBody(const RobotModel &robot_model,
                            Eigen::VectorXd &q,
                            const MotionGroup &motion_group);
 
+// 根据 motion_group 获取对应的关节数量
+int GetJointCount(const RobotModel &robot_model, const MotionGroup &motion_group);
+
 Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary);
 
 // 浮点数近似相等判断 (绝对+相对容差)
