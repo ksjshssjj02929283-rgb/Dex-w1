@@ -8,8 +8,8 @@
 #include <cstring>
 #include <iostream>
 
-#define FEEDBACK_SHM_KEY 0x1000
-#define CONTROL_SHM_KEY 0x2000
+#define FEEDBACK_SHM_KEY 0x1001
+#define CONTROL_SHM_KEY 0x2001
 #define MAX_JOINT_NUM 32
 #define OMNI_MOTOR_NUM 4
 
@@ -20,7 +20,13 @@ struct ChassisFeedback {
     double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};   //底盘电机控制速度
     double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};  //底盘电机控制方向
     uint16_t status_word;
-    uint16_t error_code;
+    uint16_t error_code_left;
+    uint16_t error_code_right;
+    double left_current = 0;
+    double right_current = 0;
+    double driver_temperature = 0;
+    double left_temperature = 0;
+    double right_temperature = 0;
 };
 
 struct RobotFeedback {

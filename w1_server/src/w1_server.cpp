@@ -653,6 +653,16 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness, 0, cart_param_count).str() +
         ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio, 0, cart_param_count).str() +
         ",\n  \"cart_impedance_force\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_impedance_force, 0, cart_param_count).str() +
+        ",\n  \"chassis_status_word\":" + std::to_string(this->robot_feedback_.chassis_feedback.status_word) +
+        ", \"chassis_error_code_left\":" + std::to_string(this->robot_feedback_.chassis_feedback.error_code_left) +
+        ", \"chassis_error_code_right\":" + std::to_string(this->robot_feedback_.chassis_feedback.error_code_right) +
+        ",\n \"chassis_left_velocity\":" + std::to_string(this->robot_feedback_.chassis_feedback.left_velocity) +
+        ", \"chassis_right_velocity\":" + std::to_string(this->robot_feedback_.chassis_feedback.right_velocity) +
+        ", \"chassis_left_current\":" + std::to_string(this->robot_feedback_.chassis_feedback.left_current) +
+        ", \"chassis_right_current\":" + std::to_string(this->robot_feedback_.chassis_feedback.right_current) +
+        ",\n \"chassis_driver_temperature\":" + std::to_string(this->robot_feedback_.chassis_feedback.driver_temperature) +
+        ", \"chassis_left_temperature\":" + std::to_string(this->robot_feedback_.chassis_feedback.left_temperature) +
+        ", \"chassis_right_temperature\":" + std::to_string(this->robot_feedback_.chassis_feedback.right_temperature) +
         "}";
     return robot_server_state_msg;
 }
