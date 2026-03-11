@@ -12,7 +12,9 @@ namespace robot_server_lib
 RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : RobotServerBase(robot_cfg_path, is_sim)
 {
     // 尝试从 ~/dexe_robot_server_data/l1_config.json 加载配置
-    std::filesystem::path config_path = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data" / "l1_config.json";
+    std::filesystem::path config_dir = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
+    std::filesystem::path config_path = config_dir / "l1_config.json";
+
     if (std::filesystem::exists(config_path))
     {
         try
@@ -30,7 +32,18 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
                 {
                     legs_stiffness_[i] = arr[i].get<double>();
                 }
-                RCLCPP_INFO(this->get_logger(), "Loaded legs_stiffness from config file");
+                RCLCPP_INFO(this->get_logger(), "Loaded legs_stiffness from config file: %s", config_path.string().c_str());
+            }
+            else
+            {
+                // 字段不存在，使用默认值并保存
+                nlohmann::json arr_stiffness = nlohmann::json::array();
+                for (int i = 0; i < 12; i++) arr_stiffness.push_back(legs_stiffness_[i]);
+                config["legs_stiffness"] = arr_stiffness;
+                std::ofstream out_file(config_path);
+                out_file << config.dump(4);
+                out_file.close();
+                RCLCPP_INFO(this->get_logger(), "legs_stiffness not found in config, saved default values");
             }
 
             // 读取 legs_damping
@@ -42,17 +55,60 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
                 {
                     legs_damping_[i] = arr[i].get<double>();
                 }
-                RCLCPP_INFO(this->get_logger(), "Loaded legs_damping from config file");
+                RCLCPP_INFO(this->get_logger(), "Loaded legs_damping from config file: %s", config_path.string().c_str());
+            }
+            else
+            {
+                // 字段不存在，使用默认值并保存
+                nlohmann::json arr_damping = nlohmann::json::array();
+                for (int i = 0; i < 12; i++) arr_damping.push_back(legs_damping_[i]);
+                config["legs_damping"] = arr_damping;
+                std::ofstream out_file(config_path);
+                out_file << config.dump(4);
+                out_file.close();
+                RCLCPP_INFO(this->get_logger(), "legs_damping not found in config, saved default values");
             }
         }
         catch (const std::exception& e)
         {
             RCLCPP_WARN(this->get_logger(), "Failed to load l1_config.json: %s, using default values", e.what());
+            // 配置文件为空或解析失败，创建默认配置文件
+            std::filesystem::create_directories(config_dir);
+            nlohmann::json config;
+
+            nlohmann::json arr_stiffness = nlohmann::json::array();
+            for (int i = 0; i < 12; i++) arr_stiffness.push_back(legs_stiffness_[i]);
+            config["legs_stiffness"] = arr_stiffness;
+
+            nlohmann::json arr_damping = nlohmann::json::array();
+            for (int i = 0; i < 12; i++) arr_damping.push_back(legs_damping_[i]);
+            config["legs_damping"] = arr_damping;
+
+            std::ofstream out_file(config_path);
+            out_file << config.dump(4);
+            out_file.close();
+            RCLCPP_INFO(this->get_logger(), "Created default config file at: %s", config_path.string().c_str());
         }
     }
     else
     {
-        RCLCPP_INFO(this->get_logger(), "Config file %s not found, using default legs_stiffness and legs_damping", config_path.string().c_str());
+        // 配置文件不存在，创建默认配置文件
+        std::filesystem::create_directories(config_dir);
+        nlohmann::json config;
+
+        nlohmann::json arr_stiffness = nlohmann::json::array();
+        for (int i = 0; i < 12; i++) arr_stiffness.push_back(legs_stiffness_[i]);
+        config["legs_stiffness"] = arr_stiffness;
+
+        nlohmann::json arr_damping = nlohmann::json::array();
+        for (int i = 0; i < 12; i++) arr_damping.push_back(legs_damping_[i]);
+        config["legs_damping"] = arr_damping;
+
+        std::ofstream out_file(config_path);
+        out_file << config.dump(4);
+        out_file.close();
+
+        RCLCPP_INFO(this->get_logger(), "Config file not found, created default config at %s", config_path.string().c_str());
     }
 
     // 打印当前的刚度和阻尼值
@@ -199,10 +255,6 @@ void RobotServer::JointControlThreadFunc()
         static int16_t last_control_word_ = -1;
         if (robot_feedback_.robot_status_word != last_status_word_ || robot_control_.robot_control_word != last_control_word_)
         {
-            RCLCPP_INFO(this->get_logger(), "Status word changed to: %s, control word changed to %s robot status: \n%s",
-                        utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str(),
-                        utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str().c_str(),
-                        this->GetRobotStatusString().c_str());
             LOG_INFO << "";
             LOG_INFO << "Status word changed to " << utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str()
                      << ", control word changed to " << utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str()
