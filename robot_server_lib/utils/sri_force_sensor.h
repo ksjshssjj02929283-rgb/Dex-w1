@@ -35,14 +35,6 @@
 
 typedef unsigned char BYTE;
 
-#ifndef max
-#define max(a, b) (((a) > (b)) ? (a) : (b))
-#endif
-
-#ifndef min
-#define min(a, b) (((a) < (b)) ? (a) : (b))
-#endif
-
 #ifndef INT16
 typedef short INT16;
 #endif

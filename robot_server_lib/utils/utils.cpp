@@ -422,10 +422,10 @@ StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interf
 
 Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary) {
     // 最小力/力矩阈值(去除摩擦力), 和最大力/力矩值
-    constexpr double force_threshold = 2;
+    constexpr double force_threshold = 1.0;
     constexpr double torque_threshold = 0.1;
-    constexpr double force_max = 80.0;
-    constexpr double torque_max = 4.0;
+    constexpr double force_max = 100.0;
+    constexpr double torque_max = 10.0;
 
     auto deadzone_saturate = [](double x, double th, double mx) noexcept -> double {
         double y = std::max(0.0, std::abs(x) - th);

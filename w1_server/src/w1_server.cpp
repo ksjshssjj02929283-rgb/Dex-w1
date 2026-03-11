@@ -95,9 +95,17 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, Robo
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
 
     // 初始化力传感器
-    // primary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB2");
-    // secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");
-
+    primary_sensor_ = std::make_shared<SriForceSensor>();
+    if (!primary_sensor_->Init(460800)) {
+        RCLCPP_WARN(this->get_logger(), "Failed to initialize primary force sensor");
+        LOG_WARN << "Failed to initialize primary force sensor";
+        primary_sensor_ = nullptr;
+    } else {
+        primary_sensor_ready_ = true;
+        RCLCPP_INFO(this->get_logger(), "Primary force sensor initialized successfully");
+        LOG_INFO << "Primary force sensor initialized successfully";
+    }
+    // secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");  // 暂未使用
     this->Run();
 }
 
@@ -232,11 +240,11 @@ void RobotServer::TorqueControlThreadFunc() {
         // 读取力传感器数据
         Vector6d sensor_data_primary = Vector6d::Zero();
         Vector6d sensor_data_secondary = Vector6d::Zero();
-        if (primary_sensor_) {
-            primary_sensor_->Read(sensor_data_primary);
+        if (primary_sensor_ && primary_sensor_ready_) {
+            primary_sensor_->PeekLatest(&sensor_data_primary);
         }
-        if (secondary_sensor_) {
-            secondary_sensor_->Read(sensor_data_secondary);
+        if (secondary_sensor_ && secondary_sensor_ready_) {
+            secondary_sensor_->PeekLatest(&sensor_data_secondary);
         }
 
         // 叠加手动输入的力数据

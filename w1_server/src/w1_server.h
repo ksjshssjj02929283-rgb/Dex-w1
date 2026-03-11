@@ -11,7 +11,7 @@
 #include "joint_interfaces/msg/joint_velocity_torque_limit_feedback.hpp"
 #include "robot_server_lib/NanoLog.hpp"
 #include "robot_server_lib/ei_input_shaper.h"
-#include "robot_server_lib/force_sensor_reader.h"
+#include "robot_server_lib/sri_force_sensor.h"
 #include "robot_server_lib/robot_server_base.h"
 #include "robot_server_lib/utils.h"
 #include "shared_memory_def.h"
@@ -139,8 +139,8 @@ private:
     // 力传感器相关
     Vector3d sensor_force_;
     Vector12d sensor_wrench_;
-    std::shared_ptr<ForceSensorReader> primary_sensor_;
-    std::shared_ptr<ForceSensorReader> secondary_sensor_;
+    std::shared_ptr<SriForceSensor> primary_sensor_;
+    std::shared_ptr<SriForceSensor> secondary_sensor_;  // 暂未使用
     bool primary_sensor_ready_ = false;
     bool secondary_sensor_ready_ = false;
 

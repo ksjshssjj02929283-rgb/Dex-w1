@@ -124,9 +124,12 @@ void SriForceSensor::ProcessCalibrationData(float fx, float fy, float fz, float 
             for (int i = 0; i < 6; i++) {
                 mZeroOffset[i] = mCalibrationSum[i] / mCalibrationSampleCount;
             }
-            printf("Zero calibration completed: samples=%d, offset=%.4f, %.4f, %.4f, %.4f, %.4f, %.4f\n",
+            printf("[Info] SRI force sensor: Zero calibration completed: samples=%d, offset=%.4f, %.4f, %.4f, %.4f, %.4f, %.4f\n",
                    mCalibrationSampleCount, mZeroOffset[0], mZeroOffset[1], mZeroOffset[2],
                    mZeroOffset[3], mZeroOffset[4], mZeroOffset[5]);
+            LOG_INFO << "Zero calibration completed: samples=" << mCalibrationSampleCount
+                     << ", offset=" << mZeroOffset[0] << ", " << mZeroOffset[1] << ", " << mZeroOffset[2] << ", "
+                     << mZeroOffset[3] << ", " << mZeroOffset[4] << ", " << mZeroOffset[5];
         }
         mIsCalibrating = false;
         return;
@@ -234,7 +237,8 @@ void* SriForceSensor::ReadThread(void* param) {
 }
 
 void SriForceSensor::ReadLoop() {
-    printf("SRI force sensor read thread started\n");
+    printf("[Info] SRI force sensor: Read thread started\n");
+    LOG_INFO << "SRI force sensor: Read thread started";
     while (true) {
         if (m_serial_fd < 0) break;
 
@@ -285,14 +289,16 @@ void SriForceSensor::ReadLoop() {
             usleep(50);
         }
     }
-    printf("SRI force sensor read thread stopped\n");
+    printf("[Info] SRI force sensor: Read thread stopped\n");
+    LOG_INFO << "SRI force sensor: Read thread stopped";
 }
 
 bool SriForceSensor::Init(int baudrate) {
     // 查找串口
     const char* port = FindSerialPort();
     if (port == nullptr) {
-        printf("SRI force sensor: No serial port found!\n");
+        printf("[Warn] SRI force sensor: No sensor found!\n");
+        LOG_WARN << "No SRI force sensor found!";
         return false;
     }
 
@@ -302,17 +308,19 @@ bool SriForceSensor::Init(int baudrate) {
     // 打开串口
     m_serial_fd = OpenPort(port);
     if (m_serial_fd < 0) {
-        printf("Failed to open serial port: %s\n", port);
+        printf("[Warn] SRI force sensor: Failed to open serial port: %s\n", port);
+        LOG_WARN << "Failed to open serial port: " << port;
         return false;
     }
-    printf("Opened serial port %d\n", m_serial_fd);
+    printf("[Info] SRI force sensor: Opened serial port %d\n", m_serial_fd);
 
     // 配置串口参数
     SetPara(m_serial_fd, baudrate);
 
     // 启动读取线程
     if (pthread_create(&m_rec_threadid, nullptr, ReadThread, this) != 0) {
-        printf("Failed to create read thread\n");
+        printf("[Warn] SRI force sensor: Failed to create read thread\n");
+        LOG_WARN << "Failed to create read thread";
         ClosePort(m_serial_fd);
         m_serial_fd = -1;
         return false;
@@ -332,7 +340,8 @@ bool SriForceSensor::Init(int baudrate) {
         usleep(10000);
     }
 
-    printf("SRI force sensor initialized successfully\n");
+    printf("[Info] SRI force sensor: Initialized successfully\n");
+    LOG_INFO << "SRI force sensor initialized successfully";
     return true;
 }
 
