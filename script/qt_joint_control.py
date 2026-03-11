@@ -74,7 +74,7 @@ class JointControlWidget(QWidget):
         super().__init__()
         self.ros_node = ros_node
         self.step_mode = step_mode
-        self.setFixedSize(1600, 700)
+        self.setWindowState(Qt.WindowMaximized)
 
         self.feedback_table = QTableWidget()
         self.control_table = CustomTableWidget(self.send_control_data)
@@ -84,6 +84,9 @@ class JointControlWidget(QWidget):
         self.sync_button.clicked.connect(self.sync_from_feedback)
 
         self.init_tables()
+
+        # 安装事件过滤器，点击空白处取消焦点
+        self.control_table.installEventFilter(self)
 
         layout = QHBoxLayout()
         left = QVBoxLayout()
@@ -114,6 +117,13 @@ class JointControlWidget(QWidget):
         self.motion_timer.timeout.connect(self.update_motion)
         self.motion_timer.start(10)  # 0.01s
 
+        # 滚动条同步滚动
+        self.feedback_vbar = self.feedback_table.verticalScrollBar()
+        self.control_vbar = self.control_table.verticalScrollBar()
+        self.feedback_vbar.valueChanged.connect(self.on_feedback_scroll)
+        self.control_vbar.valueChanged.connect(self.on_control_scroll)
+        self._syncing = False
+
     def init_tables(self):
         headers_feedback = ["name", "position", "velocity", "torque",
                             "pos_torque_limit", "neg_torque_limit"]
@@ -122,6 +132,20 @@ class JointControlWidget(QWidget):
         self.feedback_table.setHorizontalHeaderLabels(headers_feedback)
         self.control_table.setColumnCount(len(headers_control))
         self.control_table.setHorizontalHeaderLabels(headers_control)
+
+    def on_feedback_scroll(self, value):
+        if self._syncing:
+            return
+        self._syncing = True
+        self.control_vbar.setValue(value)
+        self._syncing = False
+
+    def on_control_scroll(self, value):
+        if self._syncing:
+            return
+        self._syncing = True
+        self.feedback_vbar.setValue(value)
+        self._syncing = False
 
     def onSelectionChanged(self):
         # 获取当前选中的单元格
@@ -137,6 +161,22 @@ class JointControlWidget(QWidget):
                     item = self.control_table.item(row, col)
                     if item and item != current_item:
                         item.setBackground(Qt.white)
+        else:
+            # 没有选中项时，清除所有焦点样式
+            for row in range(self.control_table.rowCount()):
+                for col in range(self.control_table.columnCount()):
+                    item = self.control_table.item(row, col)
+                    if item:
+                        item.setBackground(Qt.white)
+
+    def eventFilter(self, obj, event):
+        # 点击 control_table 空白处取消焦点
+        if obj == self.control_table and event.type() == event.MouseButtonPress:
+            item = self.control_table.itemAt(event.pos())
+            if item is None:
+                self.control_table.clearSelection()
+                self.onSelectionChanged()
+        return super().eventFilter(obj, event)
 
     def update_feedback_table(self):
         joint_data = self.ros_node.joint_states
