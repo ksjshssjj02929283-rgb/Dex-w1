@@ -1,7 +1,7 @@
 import sys
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QHBoxLayout, QPushButton, QLabel
+    QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QScrollArea
 )
 from PyQt5.QtCore import QTimer
 import rclpy
@@ -9,7 +9,6 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from joint_interfaces.msg import JointPositionControl
 from PyQt5.QtCore import Qt
-import time  # 新增
 
 class CustomTableWidget(QTableWidget):
     def __init__(self, send_data, parent=None):
@@ -26,10 +25,10 @@ class CustomTableWidget(QTableWidget):
                 row = current_item.row()
                 col = current_item.column()
 
-                # 仅 velocity 列允许回车提交，position 列回车忽略
+                # 仅回车提交position列
                 if event.key() in (Qt.Key_Enter, Qt.Key_Return):
-                    if col == 2:  # target_velocity
-                        current_value = max(0.01, min(0.2, current_value))  # 手动输入回车也限幅
+                    if col == 1:  # target_position
+                        current_value = max(-3.14, min(3.14, current_value))  # 手动输入回车也限幅
                         current_item.setText(f"{current_value:.2f}")
                         self.send_msg(row, col)
                     return
@@ -45,8 +44,6 @@ class CustomTableWidget(QTableWidget):
                     current_value += delta_map[key]
                     if col == 1:  # target_position 限幅
                         current_value = max(-3.14, min(3.14, current_value))
-                    if col == 2:  # target_velocity 限幅
-                        current_value = max(0.01, min(0.2, current_value))
                     current_item.setText(f"{current_value:.2f}")
                     self.send_msg(row, col)
                     index = model.index(row, col)
@@ -60,7 +57,6 @@ class JointControlWidget(QWidget):
     def __init__(self, ros_node):
         super().__init__()
         self.ros_node = ros_node
-        self.setFixedSize(1600, 700)
 
         self.feedback_table = QTableWidget()
         self.control_table = CustomTableWidget(self.send_control_data)
@@ -71,7 +67,11 @@ class JointControlWidget(QWidget):
 
         self.init_tables()
 
-        layout = QHBoxLayout()
+        # 创建垂直滚动区域，放置两个表格
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+
+        tables_layout = QHBoxLayout()
         left = QVBoxLayout()
         right = QVBoxLayout()
 
@@ -82,11 +82,26 @@ class JointControlWidget(QWidget):
         right.addWidget(self.control_table)
         right.addWidget(self.sync_button)
 
-        layout.addLayout(left)
-        layout.addLayout(right)
-        self.setLayout(layout)
+        tables_layout.addLayout(left)
+        tables_layout.addLayout(right)
+
+        container = QWidget()
+        container.setLayout(tables_layout)
+        self.scroll_area.setWidget(container)
+
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(self.scroll_area)
+        self.setLayout(main_layout)
         self.setWindowTitle("Joint Control Interface")
+        self.showMaximized()
+
         self.control_table.itemSelectionChanged.connect(self.onSelectionChanged)
+
+        # 同步滚动
+        self.feedback_table.verticalScrollBar().valueChanged.connect(
+            self.control_table.verticalScrollBar().setValue)
+        self.control_table.verticalScrollBar().valueChanged.connect(
+            self.feedback_table.verticalScrollBar().setValue)
 
         self.change_pos=3
 
@@ -94,15 +109,9 @@ class JointControlWidget(QWidget):
         self.timer.timeout.connect(self.update_feedback_table)
         self.timer.start(500)
 
-        # 运动计划: { name: {start_pos, target_pos, velocity, start_time, total_time} }
-        self.motion_plans = {}
-        self.motion_timer = QTimer()
-        self.motion_timer.timeout.connect(self.update_motion)
-        self.motion_timer.start(10)  # 0.01s
-
     def init_tables(self):
         headers_feedback = ["name", "position", "velocity", "torque"]
-        headers_control = ["name", "target_position", "target_velocity"]  # 新增列
+        headers_control = ["name", "target_position"]
         self.feedback_table.setColumnCount(len(headers_feedback))
         self.feedback_table.setHorizontalHeaderLabels(headers_feedback)
         self.control_table.setColumnCount(len(headers_control))
@@ -113,7 +122,7 @@ class JointControlWidget(QWidget):
         selected_items = self.control_table.selectedItems()
         if selected_items:
             current_item = selected_items[0]
-            current_item.setBackground(Qt.yellow)
+            current_item.setBackground(Qt.green)
             #print(f"onSelectionChanged:{current_item}\r\n")
 
             # 清除其他单元格的焦点样式
@@ -121,6 +130,13 @@ class JointControlWidget(QWidget):
                 for col in range(self.control_table.columnCount()):
                     item = self.control_table.item(row, col)
                     if item and item != current_item:
+                        item.setBackground(Qt.white)
+        else:
+            # 没有选中任何单元格时，清除所有焦点样式
+            for row in range(self.control_table.rowCount()):
+                for col in range(self.control_table.columnCount()):
+                    item = self.control_table.item(row, col)
+                    if item:
                         item.setBackground(Qt.white)
 
     def update_feedback_table(self):
@@ -148,12 +164,11 @@ class JointControlWidget(QWidget):
             values = [
                 self.feedback_table.item(row, 0).text(),  # name
                 self.feedback_table.item(row, 1).text(),  # 初始 target_position
-                f"{0.10:.2f}",                            # 默认 target_velocity = 0.1
             ]
             for col, val in enumerate(values):
                 item = QTableWidgetItem(val)
-                # name 与 target_position 禁止手动编辑
-                if col in (0, 1):
+                # name 禁止手动编辑
+                if col == 0:
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 self.control_table.setItem(row, col, item)
         self.control_table.resizeColumnsToContents()
@@ -164,119 +179,24 @@ class JointControlWidget(QWidget):
         try:
             name_item = self.control_table.item(changed_row, 0)
             pos_item = self.control_table.item(changed_row, 1)
-            vel_item = self.control_table.item(changed_row, 2)
-            if not (name_item and pos_item and vel_item):
+            if not (name_item and pos_item):
                 return
             name = name_item.text()
             target_position = float(pos_item.text())
-            target_velocity = float(vel_item.text())
-            target_velocity = max(0.01, min(0.2, target_velocity))
 
-            # 修改 target_velocity 时不立即下发位置，只调整当前计划速度
-            if changed_col == 2:  # velocity 列
-                if name in self.motion_plans:
-                    now = time.time()
-                    plan = self.motion_plans[name]
-                    elapsed = now - plan['start_time']
-                    if plan['total_time'] > 0:
-                        ratio = min(elapsed / plan['total_time'], 1.0)
-                        current_pos = plan['start_pos'] + (plan['target_pos'] - plan['start_pos']) * ratio
-                    else:
-                        current_pos = plan['target_pos']
-                    remaining_dist = plan['target_pos'] - current_pos
-                    if abs(remaining_dist) < 1e-6 or target_velocity <= 0.0:
-                        # 结束计划，等下一次位置修改再处理
-                        self.motion_plans.pop(name, None)
-                    else:
-                        new_total = abs(remaining_dist) / target_velocity
-                        self.motion_plans[name] = {
-                            'start_pos': current_pos,
-                            'target_pos': plan['target_pos'],
-                            'velocity': target_velocity,
-                            'start_time': now,
-                            'total_time': new_total,
-                        }
-                return
-
-            # 修改 target_position 时启动/更新计划
-            if changed_col == 1:  # position 列
-                # 若速度为0则直接一次性下发
-                if target_velocity <= 0.0:
-                    self.motion_plans.pop(name, None)
-                    self.ros_node.publish_control([{'name': name, 'target_position': target_position}])
-                    return
-                self.start_motion_plan(name, target_position, target_velocity)
+            # 直接下发位置指令
+            self.ros_node.publish_control([{'name': name, 'target_position': target_position}])
         except Exception as e:
             print(f"Error parsing control data row {changed_row}: {e}")
 
-    def get_current_feedback_position(self, name):
-        for js in self.ros_node.joint_states:
-            if js['name'] == name:
-                return js.get('position', 0.0)
-        return 0.0
-
-    def start_motion_plan(self, name, target_pos, velocity):
-        current_time = time.time()
-        # 若已有计划，先计算当前位置作为新的起点
-        if name in self.motion_plans:
-            plan = self.motion_plans[name]
-            elapsed = current_time - plan['start_time']
-            if plan['total_time'] > 0:
-                ratio = min(elapsed / plan['total_time'], 1.0)
-                current_pos = plan['start_pos'] + (plan['target_pos'] - plan['start_pos']) * ratio
-            else:
-                current_pos = plan['target_pos']
-        else:
-            current_pos = self.get_current_feedback_position(name)
-
-        distance = target_pos - current_pos
-        if abs(distance) < 1e-6 or velocity <= 0.0:
-            # 直接到达
-            self.motion_plans.pop(name, None)
-            self.ros_node.publish_control([{'name': name, 'target_position': target_pos}])
-            return
-
-        total_time = abs(distance) / velocity
-        self.motion_plans[name] = {
-            'start_pos': current_pos,
-            'target_pos': target_pos,
-            'velocity': velocity,
-            'start_time': current_time,
-            'total_time': total_time,
-        }
-
-    def update_motion(self):
-        if not self.motion_plans:
-            return
-        now = time.time()
-        publish_items = []
-        finished = []
-        for name, plan in self.motion_plans.items():
-            dt = now - plan['start_time']
-            if plan['total_time'] <= 0:
-                pos = plan['target_pos']
-                finished.append(name)
-            else:
-                ratio = dt / plan['total_time']
-                if ratio >= 1.0:
-                    pos = plan['target_pos']
-                    finished.append(name)
-                else:
-                    pos = plan['start_pos'] + (plan['target_pos'] - plan['start_pos']) * ratio
-            publish_items.append({'name': name, 'target_position': pos})
-        if publish_items:
-            self.ros_node.publish_control(publish_items)
-        for name in finished:
-            self.motion_plans.pop(name, None)
-
     def onControlItemChanged(self, item):
-        # 仅对 velocity 列 (索引2) 手动输入进行限幅
-        if item and item.column() == 2:
+        # 仅对 position 列 (索引1) 手动输入进行限幅
+        if item and item.column() == 1:
             try:
                 v = float(item.text())
             except ValueError:
-                v = 0.10
-            v = max(0.01, min(0.2, v))
+                v = 0.0
+            v = max(-3.14, min(3.14, v))
             new_text = f"{v:.2f}"
             if item.text() != new_text:
                 item.setText(new_text)

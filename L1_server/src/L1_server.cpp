@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <nlohmann/json.hpp>
 #include <system_error>
 
@@ -10,8 +11,66 @@ namespace robot_server_lib
 
 RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : RobotServerBase(robot_cfg_path, is_sim)
 {
+    // 尝试从 ~/dexe_robot_server_data/l1_config.json 加载配置
+    std::filesystem::path config_path = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data" / "l1_config.json";
+    if (std::filesystem::exists(config_path))
+    {
+        try
+        {
+            std::ifstream config_file(config_path);
+            nlohmann::json config = nlohmann::json::parse(config_file);
+            config_file.close();
+
+            // 读取 legs_stiffness
+            if (config.contains("legs_stiffness") && config["legs_stiffness"].is_array())
+            {
+                auto& arr = config["legs_stiffness"];
+                int count = std::min(12, (int)arr.size());
+                for (int i = 0; i < count; i++)
+                {
+                    legs_stiffness_[i] = arr[i].get<double>();
+                }
+                RCLCPP_INFO(this->get_logger(), "Loaded legs_stiffness from config file");
+            }
+
+            // 读取 legs_damping
+            if (config.contains("legs_damping") && config["legs_damping"].is_array())
+            {
+                auto& arr = config["legs_damping"];
+                int count = std::min(12, (int)arr.size());
+                for (int i = 0; i < count; i++)
+                {
+                    legs_damping_[i] = arr[i].get<double>();
+                }
+                RCLCPP_INFO(this->get_logger(), "Loaded legs_damping from config file");
+            }
+        }
+        catch (const std::exception& e)
+        {
+            RCLCPP_WARN(this->get_logger(), "Failed to load l1_config.json: %s, using default values", e.what());
+        }
+    }
+    else
+    {
+        RCLCPP_INFO(this->get_logger(), "Config file %s not found, using default legs_stiffness and legs_damping", config_path.string().c_str());
+    }
+
+    // 打印当前的刚度和阻尼值
+    std::string stiffness_str = "legs_stiffness: ";
+    std::string damping_str = "legs_damping: ";
+    for (int i = 0; i < 12; i++)
+    {
+        stiffness_str += std::to_string(legs_stiffness_[i]) + " ";
+        damping_str += std::to_string(legs_damping_[i]) + " ";
+    }
+    RCLCPP_INFO(this->get_logger(), "%s", stiffness_str.c_str());
+    RCLCPP_INFO(this->get_logger(), "%s", damping_str.c_str());
+
     // 创建 /hardware/joint_state 发布器
     joint_state_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/hardware/joint_state", 10);
+
+    // 创建 /hardware/robot_status 发布器
+    robot_status_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state", 10);
 
     // 创建 /hardware/joint_command 订阅器 输入为28自由度, 16上半身+12腿部
     joint_command_subscriber_ = this->create_subscription<JointCommandMsg>(
@@ -26,6 +85,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
 
     // 启动关节控制线程
     torque_control_thread_ = std::thread(&RobotServer::JointControlThreadFunc, this);
+
+    // 启动100Hz关节状态发布线程
+    joint_state_publisher_thread_ = std::thread(&RobotServer::JointStatePublisherThreadFunc, this);
 }
 
 
@@ -122,17 +184,6 @@ void RobotServer::JointControlThreadFunc()
                 this->clear_error_flag_ = false;
             }
         }
-        // 每10个周期publish一次关节状态
-        if (loop_counter % 10 == 0)
-        {
-            this->JointStatePublisher();
-            if (loop_counter % 500 == 0)
-            {
-                std::cout << "leg control command: \n"
-                          << robot_control_.PrintLegControl() << std::endl;
-            }
-
-        }
         // 如果机器人未就绪则重置反馈共享内存
         if (!this->is_robot_ready_)
         {
@@ -209,6 +260,23 @@ void RobotServer::JointStatePublisher()
         joint_state_msg.effort[i + this->ndof_body_] = robot_feedback_.leg_feedback_[i].joint_torque;
     }
     this->joint_state_publisher_->publish(joint_state_msg);
+
+    // 发布 robot status string
+    auto robot_status_msg = std_msgs::msg::String();
+    robot_status_msg.data = this->GetRobotStatusString();
+    this->robot_status_publisher_->publish(robot_status_msg);
+}
+
+void RobotServer::JointStatePublisherThreadFunc()
+{
+    // 100Hz周期
+    auto next_cycle_time_point = std::chrono::steady_clock::now();
+    while (rclcpp::ok())
+    {
+        next_cycle_time_point += std::chrono::microseconds(publish_dt_micro);
+        this->JointStatePublisher();
+        std::this_thread::sleep_until(next_cycle_time_point);
+    }
 }
 
 void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg)
@@ -249,6 +317,16 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg)
 std::string RobotServer::GetRobotStatusString()
 {
     uint64_t timestamp_ns = this->now().nanoseconds();
+    // 构建腿部位置数组
+    std::vector<double> leg_position(ndof_legs_), leg_velocity(ndof_legs_), leg_torque(ndof_legs_), leg_stiffness(ndof_legs_), leg_damping(ndof_legs_);
+    for (int i = 0; i < ndof_legs_; ++i)
+    {
+        leg_position[i] = robot_feedback_.leg_feedback_[i].joint_position;
+        leg_velocity[i] = robot_feedback_.leg_feedback_[i].joint_velocity;
+        leg_torque[i] = robot_feedback_.leg_feedback_[i].joint_torque;
+        leg_stiffness[i] = robot_control_.leg_control[i].joint_Kp;
+        leg_damping[i] = robot_control_.leg_control[i].joint_Kd;
+    }
     auto status_string =
         std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
         ",\n  \"robot_statusword\":" + utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
@@ -259,7 +337,12 @@ std::string RobotServer::GetRobotStatusString()
         ",\n  \"body_joint_position\":" + utils::VectorToJsonArrayString(this->robot_feedback_.position, 0, ndof_body_).str() +
         ",\n  \"body_joint_velocity\":" + utils::VectorToJsonArrayString(this->robot_feedback_.velocity, 0, ndof_body_).str() +
         ",\n  \"body_joint_torque\":" + utils::VectorToJsonArrayString(this->robot_feedback_.torque, 0, ndof_body_).str() +
-        ",\n  \"leg_control_cmd\":" + this->robot_control_.PrintLegControl() +
+        ",\n  \"leg_joint_position_cmd\":" + utils::VectorToJsonArrayString(robot_control_.position, ndof_body_, ndof_body_ + ndof_legs_).str() +
+        ",\n  \"leg_joint_position\":" + utils::VectorToJsonArrayString(leg_position, 0, ndof_legs_).str() +
+        ",\n  \"leg_joint_velocity\":" + utils::VectorToJsonArrayString(leg_velocity, 0, ndof_legs_).str() +
+        ",\n  \"leg_joint_torque\":" + utils::VectorToJsonArrayString(leg_torque, 0, ndof_legs_).str() +
+        ",\n  \"leg_stiffness\":" + utils::VectorToJsonArrayString(leg_stiffness, 0, ndof_legs_).str() +
+        ",\n  \"leg_damping\":" + utils::VectorToJsonArrayString(leg_damping, 0, ndof_legs_).str() +
         "\n}";
     return status_string;
 }

@@ -23,6 +23,7 @@ class RobotServer : public RobotServerBase
 
    private:
     void JointControlThreadFunc();
+    void JointStatePublisherThreadFunc();  // 100Hz关节状态发布线程
 
     void JointCommandCallback(const joint_interfaces::msg::JointCommand::SharedPtr msg);
     void JointPositionControlCallback(const joint_interfaces::msg::JointPositionControl::SharedPtr msg);
@@ -32,6 +33,7 @@ class RobotServer : public RobotServerBase
     std::string GetRobotStatusString();
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_status_publisher_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr debug_subscriber_;
     rclcpp::Subscription<joint_interfaces::msg::JointCommand>::SharedPtr joint_command_subscriber_;
     rclcpp::Subscription<joint_interfaces::msg::JointPositionControl>::SharedPtr joint_position_control_subscriber_;
@@ -50,10 +52,12 @@ class RobotServer : public RobotServerBase
         "RIGHT_LEG_J1", "RIGHT_LEG_J2", "RIGHT_LEG_J3", "RIGHT_LEG_J4", "RIGHT_LEG_J5", "RIGHT_LEG_J6"};
 
     double torque_limit_Nm_[18] = {87.0, 87.0, 10.0, 10.0, 31.0, 31.0, 31.0, 31.0, 10.0,  10.0,  10.0,  31.0,  31.0, 31.0, 31.0, 10.0, 10.0, 10.0};
-    double legs_stiffness_[12] = {100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0};
+    double legs_stiffness_[12] = {200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0};
     double legs_damping_[12]   = {5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0};
 
     bool clear_error_flag_{false};
+
+    std::thread joint_state_publisher_thread_;  // 100Hz关节状态发布线程
 };
 
 }  // namespace robot_server_lib
