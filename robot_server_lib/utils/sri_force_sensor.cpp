@@ -2,234 +2,156 @@
 
 #include <pthread.h>
 
+void Setup_Realtime(int priority) {
+    // 锁内存，避免分页抖动
+    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
+        std::cerr << "mlockall failed: " << std::strerror(errno) << std::endl;
+    }
+    // 设置SCHED_FIFO实时调度
+    sched_param sp{};
+    sp.sched_priority = priority;
+    if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0) {
+        std::cerr << "sched_setscheduler failed: " << std::strerror(errno) << std::endl;
+        LOG_CRIT << "sched_setscheduler failed, please run setcap!";
+        assert(false && "sched_setscheduler failed, please run setcap!");
+    }
+}
+
 //====================================
-// CSRICommCircularBuffer Implementation
+// SriForceSensor Implementation
 //====================================
 
-CSRICommCircularBuffer::CSRICommCircularBuffer() : mBuffer(nullptr), mBufferSize(0), mWIndex(0), mRIndex(0) {}
-
-CSRICommCircularBuffer::~CSRICommCircularBuffer() { delete[] mBuffer; }
-
-bool CSRICommCircularBuffer::Init(int bufferMaxSize) {
-    if (bufferMaxSize <= 0) {
-        return false;
-    }
-    mWIndex = 0;
-    mRIndex = 0;
-    mBufferSize = bufferMaxSize;
-    mBuffer = new BYTE[mBufferSize];
-    return true;
+SriForceSensor::SriForceSensor()
+    : m_serial_fd(-1), m_rec_threadid(0), mReadBuffer(nullptr) {
+    mReadBuffer = new unsigned char[REC_DATA_LEN];
 }
 
-int CSRICommCircularBuffer::GetLength() {
-    int wIndex = mWIndex;
-    int rIndex = mRIndex;
-
-    if (wIndex == rIndex) {
-        return 0;
-    } else if (wIndex > rIndex) {
-        return wIndex - rIndex;
-    } else {
-        return mBufferSize - rIndex + wIndex;
-    }
+SriForceSensor::~SriForceSensor() {
+    Close();
+    delete[] mReadBuffer;
 }
 
-int CSRICommCircularBuffer::GetLength(int& wIndex, int& rIndex) {
-    wIndex = mWIndex;
-    rIndex = mRIndex;
-
-    if (wIndex == rIndex) {
-        return 0;
-    } else if (wIndex > rIndex) {
-        return wIndex - rIndex;
-    } else {
-        return mBufferSize - rIndex + wIndex;
-    }
-}
-
-bool CSRICommCircularBuffer::Clear() {
-    mWIndex = 0;
-    mRIndex = 0;
-    return true;
-}
-
-bool CSRICommCircularBuffer::Clear(int clearLen) {
-    if (clearLen < 0) {
-        return false;
-    }
-    if (clearLen == 0) {
-        return true;
-    }
-    int wIndex = 0;
-    int rIndex = 0;
-    int length = GetLength(wIndex, rIndex);
-    if (clearLen > length) {
-        return Clear();
-    }
-    mRIndex = (rIndex + clearLen) % mBufferSize;
-    return true;
-}
-
-int CSRICommCircularBuffer::Write(BYTE* data, int dataLen) {
-    if (dataLen <= 0) {
-        return 0;
-    }
-    int len = (dataLen > mBufferSize) ? mBufferSize : dataLen;
-
-    int wIndex = 0;
-    int rIndex = 0;
-    int length = GetLength(wIndex, rIndex);
-    int spaceLen = mBufferSize - length - 1;
-    if (len > spaceLen) {
-        return 0;
-    }
-
-    if (wIndex + len <= mBufferSize) {
-        memcpy(mBuffer + wIndex, data, len);
-        mWIndex = (wIndex + len) % mBufferSize;
-    } else {
-        int firstBlockLen = mBufferSize - wIndex;
-        int secondBlockLen = len - firstBlockLen;
-        memcpy(mBuffer + wIndex, data, firstBlockLen);
-        memcpy(mBuffer, data + firstBlockLen, secondBlockLen);
-        mWIndex = (wIndex + len) % mBufferSize;
-    }
-    return len;
-}
-
-int CSRICommCircularBuffer::Write(BYTE data) {
-    int wIndex = 0;
-    int rIndex = 0;
-    int length = GetLength(wIndex, rIndex);
-    int spaceLen = mBufferSize - length - 1;
-    if (1 > spaceLen) {
-        return 0;
-    }
-
-    mBuffer[wIndex] = data;
-    mWIndex = (wIndex + 1) % mBufferSize;
-    return 1;
-}
-
-BYTE* CSRICommCircularBuffer::Read(int& dataLen, int readLen, bool delData) {
-    int wIndex = 0;
-    int rIndex = 0;
-    int length = GetLength(wIndex, rIndex);
-
-    int len = (readLen <= 0) ? length : min(length, readLen);
-    if (len <= 0) {
-        return nullptr;
-    }
-
-    BYTE* data = new BYTE[len];
-    dataLen = len;
-
-    if (rIndex + len <= mBufferSize) {
-        memcpy(data, mBuffer + rIndex, len);
-        if (delData) {
-            mRIndex = (rIndex + len) % mBufferSize;
-        }
-    } else {
-        int firstBlockLen = mBufferSize - rIndex;
-        int secondBlockLen = len - firstBlockLen;
-        memcpy(data, mBuffer + rIndex, firstBlockLen);
-        memcpy(data + firstBlockLen, mBuffer, secondBlockLen);
-        if (delData) {
-            mRIndex = (rIndex + len) % mBufferSize;
+// 串口方法
+const char* SriForceSensor::FindSerialPort() {
+    const char* candidates[] = {"/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyUSB2"};
+    for (const auto& device : candidates) {
+        if (access(device, F_OK) == 0) {
+            printf("Found SRI force sensor at: %s\n", device);
+            return device;
         }
     }
-    return data;
+    return nullptr;
 }
 
-BYTE* CSRICommCircularBuffer::ReadTry(int& dataLen, int readLen) { return Read(dataLen, readLen, false); }
-
-//====================================
-// CSRICommM8218Parser Implementation
-//====================================
-
-CSRICommM8218Parser::CSRICommM8218Parser() { mCircularBuffer.Init(102400); }
-
-CSRICommM8218Parser::~CSRICommM8218Parser() {}
-
-bool CSRICommM8218Parser::SetM8218CallbackFunction(SRICommM8218CallbackFunction m8218CallbackFunction) {
-    mM8218CallbackFunction = m8218CallbackFunction;
-    return true;
+int SriForceSensor::OpenPort(const char* device) {
+    int fd = open(device, O_RDWR | O_NOCTTY | O_NONBLOCK);
+    return fd;
 }
 
-bool CSRICommM8218Parser::OnReceivedData(BYTE* data, int dataLen) {
-    if (data == nullptr || dataLen <= 0) {
-        return false;
+int SriForceSensor::BaudRate(int baudrate) {
+    switch (baudrate) {
+        case 115200:
+            return B115200;
+        case 460800:
+            return B460800;
+        default:
+            return B9600;
     }
-    mCircularBuffer.Write(data, dataLen);
-
-    int delLen = 0;
-    float fx, fy, fz, mx, my, mz;
-    if (!ParseDataFromBuffer(delLen, fx, fy, fz, mx, my, mz)) {
-        mCircularBuffer.Clear(delLen);
-        return false;
-    }
-    mCircularBuffer.Clear(delLen);
-
-    if (mM8218CallbackFunction) {
-        mM8218CallbackFunction(fx, fy, fz, mx, my, mz);
-    }
-    return true;
 }
 
-bool CSRICommM8218Parser::ParseDataFromBuffer(
-    int& delLen, float& fx, float& fy, float& fz, float& mx, float& my, float& mz) {
-    delLen = 0;
-    int dataLen = 0;
-    BYTE* data = mCircularBuffer.ReadTry(dataLen);
-    if (data == nullptr) {
-        return false;
-    }
-
-    int headIndex = ParseGetHeadIndex(data, dataLen);
-    if (headIndex == -1 || headIndex + 12 > dataLen) {
-        delLen = (headIndex == -1) ? dataLen - 1 : headIndex;
-        return false;
-    }
-
-    int index = headIndex + 2;
-    byte buf[11];
-    memcpy(&buf, data + index, 11);
-
-    INT32 forceInt32[6];
-    forceInt32[0] = (buf[0] << 9) + (buf[1] << 1) + ((buf[2] & 0x80) >> 7);
-    forceInt32[1] = ((buf[2] & 0x7F) << 10) + ((buf[3] & 0xFF) << 2) + ((buf[4] & 0xC0) >> 6);
-    forceInt32[2] = ((buf[4] & 0x3F) << 11) + ((buf[5] & 0xFF) << 3) + ((buf[6] & 0xE0) >> 5);
-    forceInt32[3] = ((buf[6] & 0x1F) << 7) + ((buf[7] & 0xFE) >> 1);
-    forceInt32[4] = ((buf[7] & 0x01) << 11) + ((buf[8] & 0xFF) << 3) + ((buf[9] & 0xE0) >> 5);
-    forceInt32[5] = ((buf[9] & 0x1F) << 7) + ((buf[10] & 0xFE) >> 1);
-
-    index = index + 11;
-    BYTE crc = data[index];
-    BYTE calCrc = MyCRC_GetCRC8(buf, 11);
-    delLen = index;
-    if (crc != calCrc) {
-        return false;
-    }
-
-    float f[6];
-    for (int i = 0; i < 3; i++) {
-        f[i] = (forceInt32[i] & 0x10000) ? -(float)((forceInt32[i] & 0xffff) / 10.0)
-                                         : (float)((forceInt32[i] & 0xffff) / 10.0);
-    }
-    for (int i = 3; i < 6; i++) {
-        f[i] = (forceInt32[i] & 0x0800) ? -(float)((forceInt32[i] & 0x07ff) / 10.0)
-                                        : (float)((forceInt32[i] & 0x07ff) / 10.0);
-    }
-    fx = f[0];
-    fy = f[1];
-    fz = f[2];
-    mx = f[3];
-    my = f[4];
-    mz = f[5];
-    return true;
+int SriForceSensor::SetPara(int serialfd, int speed) {
+    struct termios tty;
+    bzero(&tty, sizeof(tty));
+    cfmakeraw(&tty);
+    tty.c_cflag = BaudRate(speed) | CLOCAL | CREAD;
+    tty.c_cflag &= ~CSIZE;
+    tty.c_cflag |= CS8;
+    tty.c_cflag |= PARENB;
+    tty.c_cflag &= ~PARODD;
+    tty.c_cflag |= CSTOPB;
+    tcflush(serialfd, TCIFLUSH);
+    tty.c_cc[VTIME] = 1;
+    tty.c_cc[VMIN] = 1;
+    return tcsetattr(serialfd, TCSANOW, &tty);
 }
 
-uint8_t CSRICommM8218Parser::MyCRC_GetCRC8(uint8_t* pDat, uint8_t bytes) {
+int SriForceSensor::WriteData(int fd, const char* data, int datalength) {
+    if (fd < 0) return -1;
+
+    int len = 0, total_len = 0;
+    while (total_len < datalength) {
+        len = write(fd, &data[total_len], datalength - total_len);
+        if (len > 0) {
+            total_len += len;
+        } else {
+            return -1;
+        }
+    }
+    return total_len;
+}
+
+int SriForceSensor::ReadData(int fd, unsigned char* data, int datalength) {
+    if (fd < 0) return -1;
+
+    fd_set readset;
+    FD_ZERO(&readset);
+    FD_SET(fd, &readset);
+
+    struct timeval tv = {0, 10};
+    if (select(fd + 1, &readset, nullptr, nullptr, &tv) <= 0) {
+        return 0;
+    }
+    return FD_ISSET(fd, &readset) ? read(fd, data, datalength) : 0;
+}
+
+void SriForceSensor::ClosePort(int fd) {
+    if (fd > 0) {
+        ::close(fd);
+    }
+}
+
+// 零位校准方法
+void SriForceSensor::ProcessCalibrationData(float fx, float fy, float fz, float mx, float my, float mz) {
+    if (!mIsCalibrating) {
+        return;
+    }
+
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - mCalibrationStartTime).count();
+
+    if (elapsed >= 500) {
+        if (mCalibrationSampleCount > 0) {
+            for (int i = 0; i < 6; i++) {
+                mZeroOffset[i] = mCalibrationSum[i] / mCalibrationSampleCount;
+            }
+            printf("Zero calibration completed: samples=%d, offset=%.4f, %.4f, %.4f, %.4f, %.4f, %.4f\n",
+                   mCalibrationSampleCount, mZeroOffset[0], mZeroOffset[1], mZeroOffset[2],
+                   mZeroOffset[3], mZeroOffset[4], mZeroOffset[5]);
+        }
+        mIsCalibrating = false;
+        return;
+    }
+
+    mCalibrationSum[0] += fx;
+    mCalibrationSum[1] += fy;
+    mCalibrationSum[2] += fz;
+    mCalibrationSum[3] += mx;
+    mCalibrationSum[4] += my;
+    mCalibrationSum[5] += mz;
+    mCalibrationSampleCount++;
+}
+
+void SriForceSensor::ApplyZeroOffset(float& fx, float& fy, float& fz, float& mx, float& my, float& mz) {
+    fx -= mZeroOffset[0];
+    fy -= mZeroOffset[1];
+    fz -= mZeroOffset[2];
+    mx -= mZeroOffset[3];
+    my -= mZeroOffset[4];
+    mz -= mZeroOffset[5];
+}
+
+// 解析方法
+uint8_t SriForceSensor::MyCRC_GetCRC8(uint8_t* pDat, uint8_t bytes) {
     uint8_t CRC8_POLY = 0x8C;
     uint8_t crc = 0;
     while (bytes--) {
@@ -246,233 +168,192 @@ uint8_t CSRICommM8218Parser::MyCRC_GetCRC8(uint8_t* pDat, uint8_t bytes) {
     return crc;
 }
 
-int CSRICommM8218Parser::ParseGetHeadIndex(BYTE* data, int dataLen) {
+int SriForceSensor::ParseFrame(const unsigned char* data, int dataLen, int offset, float& fx, float& fy, float& fz, float& mx, float& my, float& mz) {
+    if (offset + 14 > dataLen) {
+        return -1;
+    }
+
+    // 查找帧头 0xAA 0x55
     int headIndex = -1;
-    int countHead = 0;
-    for (int i = 0; i < dataLen - 1; i++) {
+    for (int i = offset; i < dataLen - 1; i++) {
         if (data[i] == 0xAA && data[i + 1] == 0x55) {
             headIndex = i;
-            countHead++;
+            break;
         }
+    }
+    if (headIndex == -1 || headIndex + 14 > dataLen) {
+        return -1;
     }
 
-    if (headIndex + 12 > dataLen && countHead > 1) {
-        int RcountHead = 0;
-        for (int i = 0; i < dataLen - 1; i++) {
-            if (data[i] == 0xAA && data[i + 1] == 0x55) {
-                if (++RcountHead == countHead - 1) {
-                    return i;
-                }
-            }
-        }
+    // 解析数据
+    int index = headIndex + 2;
+    byte buf[11];
+    memcpy(&buf, data + index, 11);
+
+    INT32 forceInt32[6];
+    forceInt32[0] = (buf[0] << 9) + (buf[1] << 1) + ((buf[2] & 0x80) >> 7);
+    forceInt32[1] = ((buf[2] & 0x7F) << 10) + ((buf[3] & 0xFF) << 2) + ((buf[4] & 0xC0) >> 6);
+    forceInt32[2] = ((buf[4] & 0x3F) << 11) + ((buf[5] & 0xFF) << 3) + ((buf[6] & 0xE0) >> 5);
+    forceInt32[3] = ((buf[6] & 0x1F) << 7) + ((buf[7] & 0xFE) >> 1);
+    forceInt32[4] = ((buf[7] & 0x01) << 11) + ((buf[8] & 0xFF) << 3) + ((buf[9] & 0xE0) >> 5);
+    forceInt32[5] = ((buf[9] & 0x1F) << 7) + ((buf[10] & 0xFE) >> 1);
+
+    BYTE crc = data[index + 11];
+    BYTE calCrc = MyCRC_GetCRC8(buf, 11);
+    if (crc != calCrc) {
+        return headIndex + 1;  // CRC失败，跳过1字节
     }
-    return headIndex;
+
+    float f[6];
+    for (int i = 0; i < 3; i++) {
+        f[i] = (forceInt32[i] & 0x10000) ? -(float)((forceInt32[i] & 0xffff) / 10.0)
+                                         : (float)((forceInt32[i] & 0xffff) / 10.0);
+    }
+    for (int i = 3; i < 6; i++) {
+        f[i] = (forceInt32[i] & 0x0800) ? -(float)((forceInt32[i] & 0x07ff) / 10.0)
+                                        : (float)((forceInt32[i] & 0x07ff) / 10.0);
+    }
+
+    fx = f[0];
+    fy = f[1];
+    fz = f[2];
+    mx = f[3];
+    my = f[4];
+    mz = f[5];
+    return headIndex + 14;  // 返回解析成功后的新偏移量
 }
 
-//====================================
-// SerialManeger_linux Implementation
-//====================================
-
-void* ReadSerialDate(void* para) {
-    auto* p_serial_test = static_cast<SerialManeger_linux*>(para);
-    printf("ReadSerialDate Thread Start\n");
-    while (true) {
-        p_serial_test->Read();
-        usleep(100);
-    }
-    printf("Receive thread break!\n");
+// 读取线程
+void* SriForceSensor::ReadThread(void* param) {
+    Setup_Realtime(70);
+    auto* sensor = static_cast<SriForceSensor*>(param);
+    sensor->ReadLoop();
     pthread_detach(pthread_self());
     pthread_exit(nullptr);
     return nullptr;
 }
 
-SerialManeger_linux::SerialManeger_linux() : mParser(nullptr), m_serial_fd(-1), mReadBuffer(nullptr) {
-    mReadBuffer = new unsigned char[REC_DATA_LEN];
-}
+void SriForceSensor::ReadLoop() {
+    printf("SRI force sensor read thread started\n");
+    while (true) {
+        if (m_serial_fd < 0) break;
 
-SerialManeger_linux::~SerialManeger_linux() { delete[] mReadBuffer; }
+        int recvDataLen = ReadData(m_serial_fd, mReadBuffer, REC_DATA_LEN);
+        if (recvDataLen > 0) {
+            // 只解析最后一个有效帧
+            float fx = 0, fy = 0, fz = 0, mx = 0, my = 0, mz = 0;
+            int found = 0;
 
-int SerialManeger_linux::Read() {
-    if (m_serial_fd < 0) return -1;
+            int offset = 0;
+            while (offset + 14 <= recvDataLen) {
+                float tfx, tfy, tfz, tmx, tmy, tmz;
+                int newOffset = ParseFrame(mReadBuffer, recvDataLen, offset, tfx, tfy, tfz, tmx, tmy, tmz);
+                if (newOffset < 0) {
+                    break;
+                }
+                if (newOffset == offset) {
+                    offset++;
+                    continue;
+                }
 
-    int recvDataLen = ReadData(m_serial_fd, mReadBuffer, REC_DATA_LEN);
-    if (recvDataLen > 0) {
-        OnReceivedData(mReadBuffer, recvDataLen);
-        return 0;
-    }
-    return -1;
-}
+                // 更新最新值
+                fx = tfx;
+                fy = tfy;
+                fz = tfz;
+                mx = tmx;
+                my = tmy;
+                mz = tmz;
+                found = 1;
+                offset = newOffset;
+            }
 
-bool SerialManeger_linux::OnReceivedData(BYTE* data, int dataLen) {
-    if (mParser != nullptr) {
-        mParser->OnReceivedData(data, dataLen);
-    }
-    return true;
-}
-
-bool SerialManeger_linux::AddCommParser(CSRICommM8218Parser* parser) {
-    mParser = parser;
-    return true;
-}
-
-int SerialManeger_linux::OpenSerialPort(int index) {
-    m_serial_fd = OpenPort(index);
-    if (m_serial_fd < 0) {
-        printf("Open serial port %d failed!\n", index);
-        return -1;
-    }
-    printf("Open serial port %d Success\n", m_serial_fd);
-    return 0;
-}
-
-int SerialManeger_linux::OpenSerialPort(const char* device) {
-    m_serial_fd = OpenPort(device);
-    if (m_serial_fd < 0) {
-        printf("Open serial port %s failed!\n", device);
-        return -1;
-    }
-    printf("Open serial port %d Success\n", m_serial_fd);
-    return 0;
-}
-
-int SerialManeger_linux::SerialRun(int BaudRate) {
-    SetPara(m_serial_fd, BaudRate);
-    if (pthread_create(&m_rec_threadid, nullptr, ReadSerialDate, this) != 0) {
-        printf("creat Receive_Thread failed \n");
-        ClosePort(m_serial_fd);
-        m_serial_fd = -1;
-        return -1;
-    }
-    return 0;
-}
-
-int SerialManeger_linux::ClosePort() {
-    ClosePort(m_serial_fd);
-    m_serial_fd = -1;
-    return 0;
-}
-
-int SerialManeger_linux::Write(const char* data, int datalength) {
-    if (WriteData(m_serial_fd, data, datalength) < 0) {
-        printf("Write Data Fail!\n");
-        return -1;
-    }
-    return 0;
-}
-
-int SerialManeger_linux::BaudRate(int baudrate) {
-    switch (baudrate) {
-        case 115200:
-            return B115200;
-        case 460800:
-            return B460800;
-        default:
-            return B9600;
-    }
-}
-
-int SerialManeger_linux::SetPara(int serialfd, int speed, int databits, int stopbits, int parity) {
-    struct termios tty;
-    bzero(&tty, sizeof(tty));
-    cfmakeraw(&tty);
-    tty.c_cflag = BaudRate(speed) | CLOCAL | CREAD;
-    tty.c_cflag &= ~CSIZE;
-
-    switch (databits) {
-        case 5:
-            tty.c_cflag |= CS5;
-            break;
-        case 6:
-            tty.c_cflag |= CS6;
-            break;
-        case 7:
-            tty.c_cflag |= CS7;
-            break;
-        default:
-            tty.c_cflag |= CS8;
-            break;
-    }
-
-    switch (parity) {
-        case 1:
-            tty.c_cflag |= PARENB;
-            tty.c_cflag &= ~PARODD;
-            break;
-        case 2:
-            tty.c_cflag |= PARENB | PARODD;
-            break;
-        default:
-            tty.c_cflag &= ~PARENB;
-            break;
-    }
-
-    switch (stopbits) {
-        case 2:
-            tty.c_cflag |= CSTOPB;
-            break;
-        default:
-            tty.c_cflag &= ~CSTOPB;
-            break;
-    }
-
-    tcflush(serialfd, TCIFLUSH);
-    tty.c_cc[VTIME] = 1;
-    tty.c_cc[VMIN] = 1;
-    return tcsetattr(serialfd, TCSANOW, &tty);
-}
-
-int SerialManeger_linux::WriteData(int fd, const char* data, int datalength) {
-    if (fd < 0) return -1;
-
-    int len = 0, total_len = 0;
-    while (total_len < datalength) {
-        len = write(fd, &data[total_len], datalength - total_len);
-        if (len > 0) {
-            total_len += len;
+            if (found) {
+                // 校准
+                if (mIsCalibrating) {
+                    ProcessCalibrationData(fx, fy, fz, mx, my, mz);
+                } else {
+                    // 应用零位偏移并写入 buffer
+                    ApplyZeroOffset(fx, fy, fz, mx, my, mz);
+                    if (buffer_) {
+                        robot_server_lib::Vector6d vec;
+                        vec << fx, fy, fz, mx, my, mz;
+                        buffer_->AppendNewElement(vec);
+                    }
+                }
+            }
         } else {
-            return -1;
+            usleep(50);
         }
     }
-    return total_len;
+    printf("SRI force sensor read thread stopped\n");
 }
 
-int SerialManeger_linux::ReadData(int fd, unsigned char* data, int datalength) {
-    if (fd < 0) return -1;
-
-    fd_set readset;
-    FD_ZERO(&readset);
-    FD_SET(fd, &readset);
-
-    struct timeval tv = {0, 1000};
-    if (select(fd + 1, &readset, nullptr, nullptr, &tv) <= 0) {
-        return 0;
+bool SriForceSensor::Init(int baudrate) {
+    // 查找串口
+    const char* port = FindSerialPort();
+    if (port == nullptr) {
+        printf("SRI force sensor: No serial port found!\n");
+        return false;
     }
-    return FD_ISSET(fd, &readset) ? read(fd, data, datalength) : 0;
+
+    // 创建 buffer
+    buffer_ = std::make_shared<robot_server_lib::SingleWriterLatestBuffer<robot_server_lib::Vector6d>>();
+
+    // 打开串口
+    m_serial_fd = OpenPort(port);
+    if (m_serial_fd < 0) {
+        printf("Failed to open serial port: %s\n", port);
+        return false;
+    }
+    printf("Opened serial port %d\n", m_serial_fd);
+
+    // 配置串口参数
+    SetPara(m_serial_fd, baudrate);
+
+    // 启动读取线程
+    if (pthread_create(&m_rec_threadid, nullptr, ReadThread, this) != 0) {
+        printf("Failed to create read thread\n");
+        ClosePort(m_serial_fd);
+        m_serial_fd = -1;
+        return false;
+    }
+
+    // 等待数据开始流动
+    usleep(100000);
+
+    // 启动零位校准
+    mIsCalibrating = true;
+    mCalibrationSampleCount = 0;
+    memset(mCalibrationSum, 0, sizeof(mCalibrationSum));
+    mCalibrationStartTime = std::chrono::steady_clock::now();
+
+    // 等待校准完成
+    while (mIsCalibrating) {
+        usleep(10000);
+    }
+
+    printf("SRI force sensor initialized successfully\n");
+    return true;
 }
 
-void SerialManeger_linux::ClosePort(int fd) {
-    if (fd > 0) {
-        ::close(fd);
+void SriForceSensor::Close() {
+    if (m_serial_fd > 0) {
+        ClosePort(m_serial_fd);
+        m_serial_fd = -1;
+    }
+    if (m_rec_threadid) {
+        pthread_cancel(m_rec_threadid);
+        m_rec_threadid = 0;
     }
 }
 
-int SerialManeger_linux::OpenPort(int index) {
-    const char* device;
-    switch (index) {
-        case ttyUSB1:
-            device = "/dev/ttyUSB1";
-            break;
-        case ttyUSB2:
-            device = "/dev/ttyUSB2";
-            break;
-        default:
-            device = "/dev/ttyUSB0";
-            break;
+bool SriForceSensor::PeekLatest(robot_server_lib::Vector6d* output) {
+    if (buffer_ && output) {
+        return buffer_->PeekLatest(output);
     }
-    return OpenPort(device);
+    return false;
 }
 
-int SerialManeger_linux::OpenPort(const char* device) {
-    int fd = open(device, O_RDWR | O_NOCTTY | O_NONBLOCK);
-    return fd;
+bool SriForceSensor::IsCalibrating() const {
+    return mIsCalibrating;
 }

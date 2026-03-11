@@ -8,69 +8,48 @@
 #include <string>
 #include <thread>
 #include <vector>
-
+#include "utils.h"
 #include "sri_force_sensor.h"
 
-static std::string FindSRISensorPort() {
-    const char* env_port = std::getenv("SRI_SENSOR_PORT");
-    if (env_port && access(env_port, F_OK) == 0) return std::string(env_port);
-
-    // Try common serial device names
-    std::vector<std::string> candidates = {"/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyUSB2"};
-    for (const auto& p : candidates) {
-        if (access(p.c_str(), F_OK) == 0) return p;
-    }
-    return {};
-}
-
 TEST(SRISerialTest, OpenPortAndReadData) {
-    std::string port = FindSRISensorPort();
-    if (port.empty()) {
-        GTEST_SKIP() << "No SRI sensor serial device found. Set SRI_SENSOR_PORT or plug sensor.";
+    std::filesystem::path home_dir = std::filesystem::path(std::getenv("HOME"));
+    std::filesystem::create_directories(home_dir / "log");
+    nanolog::initialize(nanolog::GuaranteedLogger(), (home_dir / "log/").string(), "robot_server", 10,
+                        10);                          // 每个日志文件最大20MB，最多保留10个日志文件
+    nanolog::set_log_level(nanolog::LogLevel::DEBUG);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
+    std::cout << "log recorded to: " << ((home_dir / "log").string() + "/robot_server.txt") << std::endl;
+    SriForceSensor sensor;
+
+    // 初始化传感器（自动查找串口、校准）
+    if (!sensor.Init(460800)) {
+        GTEST_SKIP() << "No SRI sensor serial device found or init failed.";
     }
 
-    SerialManeger_linux serial;
-    CSRICommM8218Parser parser;
-
-    // Open serial port
-    ASSERT_EQ(serial.OpenSerialPort(port.c_str()), 0) << "Failed to open port " << port;
-
-    // Set callback to count received data
-    std::atomic<int> callback_count{0};
-    SRICommM8218CallbackFunction m8218Callback = [&callback_count](float fx, float fy, float fz, float mx, float my,
-                                                                   float mz) {
-        callback_count++;
-        if (callback_count % 10 == 0) {
-            printf("Data: %f, %f, %f,   %f, %f, %f\n", fx, fy, fz, mx, my, mz);
-        }
-        return true;
-    };
-    parser.SetM8218CallbackFunction(m8218Callback);
-    serial.AddCommParser(&parser);
-
-    // Start reading - this runs in background thread
-    int ret = serial.SerialRun(460800);
-    ASSERT_EQ(ret, 0) << "SerialRun failed with code " << ret;
-
-    // Measure for 10 seconds
-    const auto duration_s = std::chrono::seconds(10);
+    // 测量 5 秒
+    const auto duration_s = std::chrono::seconds(5);
     auto start = std::chrono::steady_clock::now();
     auto end = start + duration_s;
 
+    std::atomic<int> read_count{0};
+    robot_server_lib::Vector6d data;
+
     while (std::chrono::steady_clock::now() < end) {
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
+        if (sensor.PeekLatest(&data)) {
+            read_count++;
+            LOG_INFO << "Read data: " << data[0] << ", " << data[1] << ", " << data[2] << ", " << data[3] << ", " << data[4] << ", " << data[5];
+        }
+        std::this_thread::sleep_for(std::chrono::microseconds(1000));
     }
 
     double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-    int count = callback_count.load();
+    int count = read_count.load();
 
-    std::cout << "[SRISerialTest] Port: " << port << ", callback_count: " << count << ", elapsed: " << elapsed
+    std::cout << "[SRISerialTest] read_count: " << count << ", elapsed: " << elapsed
               << " s, rate: " << (count / elapsed) << " Hz" << std::endl;
 
-    // Close port
-    serial.ClosePort();
+    // 关闭传感器
+    sensor.Close();
 
-    // Expect at least some successful readings in 5s if sensor is present
-    // M8218 typically outputs at 100Hz, so expect ~500 readings
-    EXPECT_GE(count, 10) << "Too few callbacks received in 5 seconds on " << port;
+    // 期望至少读到一些数据（2000Hz * 5s = 10000，容错取 5000）
+    EXPECT_GE(count, 5000) << "Too few reads received in 5 seconds";
 }

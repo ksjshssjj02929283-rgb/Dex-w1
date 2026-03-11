@@ -1,6 +1,11 @@
 #ifndef SRI_FORCE_SERVER_H
 #define SRI_FORCE_SERVER_H
 
+#include <sched.h>
+#include <sys/mman.h>
+#include <sys/resource.h>
+#include <unistd.h>
+
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -19,11 +24,14 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
 
-typedef std::function<bool(float fx, float fy, float fz, float mx, float my, float mz)> SRICommM8218CallbackFunction;
+#include "typedef.h"
+#include "single_rw_latest_queue.h"
+#include "NanoLog.hpp"
 
 typedef unsigned char BYTE;
 
@@ -53,78 +61,63 @@ typedef unsigned char byte;
 
 #define REC_DATA_LEN 8192
 
-enum { ttyUSB0 = 0, ttyUSB1, ttyUSB2 };
-
-class CSRICommCircularBuffer {
+// 整合后的 SRI 力传感器类
+class SriForceSensor {
 public:
-    CSRICommCircularBuffer();
-    ~CSRICommCircularBuffer();
+    SriForceSensor();
+    ~SriForceSensor();
 
-    bool Init(int bufferMaxSize = 10240);
-    int GetLength();
-    int GetLength(int& wIndex, int& rIndex);
-    bool Clear();
-    bool Clear(int clearLen);
+    // 初始化：自动查找串口、解析、零位校准
+    bool Init(int baudrate = 460800);
+    // 关闭串口
+    void Close();
 
-    int Write(BYTE* data, int dataLen);
-    int Write(BYTE data);
+    // 读取最新力传感器数据 (fx, fy, fz, mx, my, mz)
+    bool PeekLatest(robot_server_lib::Vector6d* output);
 
-    BYTE* Read(int& dataLen, int readLen = 0, bool delData = true);
-    BYTE* ReadTry(int& dataLen, int readLen = 0);
+    // 是否正在校准
+    bool IsCalibrating() const;
 
 private:
-    BYTE* mBuffer;
-    int mBufferSize;
-    int mWIndex;
-    int mRIndex;
-};
+    // 串口相关
+    int m_serial_fd;
+    pthread_t m_rec_threadid;
+    unsigned char* mReadBuffer;
 
-class CSRICommM8218Parser {
-public:
-    CSRICommM8218Parser();
-    ~CSRICommM8218Parser();
+    // 数据输出 buffer
+    std::shared_ptr<robot_server_lib::SingleWriterLatestBuffer<robot_server_lib::Vector6d>> buffer_;
 
-    bool SetM8218CallbackFunction(SRICommM8218CallbackFunction m8218CallbackFunction);
+    // 零位校准相关
+    bool mIsCalibrating = false;
+    int mCalibrationSampleCount = 0;
+    float mZeroOffset[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    float mCalibrationSum[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    std::chrono::steady_clock::time_point mCalibrationStartTime;
 
-    bool OnReceivedData(BYTE* data, int dataLen);
-
-private:
-    CSRICommCircularBuffer mCircularBuffer;
-    SRICommM8218CallbackFunction mM8218CallbackFunction;
-
-    bool ParseDataFromBuffer(int& delLen, float& fx, float& fy, float& fz, float& mx, float& my, float& mz);
-    int ParseGetHeadIndex(BYTE* data, int dataLen);
-    uint8_t MyCRC_GetCRC8(uint8_t* pDat, uint8_t bytes);
-};
-
-class SerialManeger_linux {
-public:
-    SerialManeger_linux();
-    ~SerialManeger_linux();
-    int SerialRun(int BaudRate);
-    int OpenSerialPort(int index);
-    int OpenSerialPort(const char* device);
-
-    int Write(const char* data, int datalength);
-    int Read();
-    int ClosePort();
-
-    bool AddCommParser(CSRICommM8218Parser* parser);
-    bool OnReceivedData(BYTE* data, int dataLen);
-
-    int OpenPort(int index);
+    // 串口方法
     int OpenPort(const char* device);
-    int SetPara(int serialfd, int speed = 2, int databits = 8, int stopbits = 2, int parity = 1);
+    int SetPara(int serialfd, int speed);
     int WriteData(int fd, const char* data, int datalength);
     int ReadData(int fd, unsigned char* data, int datalength);
     void ClosePort(int fd);
     int BaudRate(int baudrate);
 
-private:
-    CSRICommM8218Parser* mParser;
-    int m_serial_fd;
-    pthread_t m_rec_threadid;
-    unsigned char* mReadBuffer;
+    // 读取线程
+    static void* ReadThread(void* param);
+    void ReadLoop();
+
+    // 解析方法：成功返回新的偏移量，失败返回-1
+    int ParseFrame(const unsigned char* data, int dataLen, int offset, float& fx, float& fy, float& fz, float& mx, float& my, float& mz);
+
+    // CRC校验
+    uint8_t MyCRC_GetCRC8(uint8_t* pDat, uint8_t bytes);
+
+    // 零位校准方法
+    void ProcessCalibrationData(float fx, float fy, float fz, float mx, float my, float mz);
+    void ApplyZeroOffset(float& fx, float& fy, float& fz, float& mx, float& my, float& mz);
+
+    // 辅助方法
+    const char* FindSerialPort();
 };
 
 #endif
