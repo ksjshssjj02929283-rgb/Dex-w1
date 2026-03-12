@@ -3,7 +3,8 @@
 #include "NanoLog.hpp"
 
 namespace robot_server_lib {
-bool CheckSafety(const JointMeasurement &joint_measurement, const RobotModel &robot_model, ErrorCode &error_code) {
+bool CheckSafety(const JointMeasurement &joint_measurement, const RobotModel &robot_model, ErrorCode &error_code,
+                 bool check_position_limit) {
     const auto &params = *robot_model.params_ptr;
     const auto &model = *robot_model.model_ptr;
     const auto &joint_names = params.joint_command_sequence_by_name;
@@ -37,33 +38,40 @@ bool CheckSafety(const JointMeasurement &joint_measurement, const RobotModel &ro
         }
     }
 
-    Eigen::VectorXd lb = dynamics::MapToParamOrder(model, model.lowerPositionLimit, joint_names);
-    Eigen::VectorXd ub = dynamics::MapToParamOrder(model, model.upperPositionLimit, joint_names);
+    // 位置限位检测（可在拖动模式下跳过）
+    if (check_position_limit) {
+        Eigen::VectorXd lb = dynamics::MapToParamOrder(model, model.lowerPositionLimit, joint_names);
+        Eigen::VectorXd ub = dynamics::MapToParamOrder(model, model.upperPositionLimit, joint_names);
 
-    for (int i = 0; i < ndof_robot; i++) {
-        if (joint_measurement.position[i] > ub[i] && joint_measurement.velocity[i] > position_limit_vel_threshold) {
-            if (error_code != ErrorCode::PositionOverLimit) {
-                std::stringstream ss;
-                ss << "Joint " << joint_names[i] << " exceeds upper limit, position: " << joint_measurement.position[i]
-                   << ", limit: " << ub[i] << ", velocity: " << joint_measurement.velocity[i]
-                   << ", velocity threshold: " << position_limit_vel_threshold;
-                std::cout << ss.str() << "\n";
-                LOG_CRIT << ss.str();
-                error_code = ErrorCode::PositionOverLimit;
+        for (int i = 0; i < ndof_robot; i++) {
+            if (joint_measurement.position[i] > ub[i] &&
+                joint_measurement.velocity[i] > position_limit_vel_threshold) {
+                if (error_code != ErrorCode::PositionOverLimit) {
+                    std::stringstream ss;
+                    ss << "Joint " << joint_names[i] << " exceeds upper limit, position: "
+                       << joint_measurement.position[i] << ", limit: " << ub[i]
+                       << ", velocity: " << joint_measurement.velocity[i]
+                       << ", velocity threshold: " << position_limit_vel_threshold;
+                    std::cout << ss.str() << "\n";
+                    LOG_CRIT << ss.str();
+                    error_code = ErrorCode::PositionOverLimit;
+                }
+                return false;
             }
-            return false;
-        }
-        if (joint_measurement.position[i] < lb[i] && joint_measurement.velocity[i] < -position_limit_vel_threshold) {
-            if (error_code != ErrorCode::PositionOverLimit) {
-                std::stringstream ss;
-                ss << "Joint " << joint_names[i] << " exceeds lower limit, position: " << joint_measurement.position[i]
-                   << ", limit: " << lb[i] << ", velocity: " << joint_measurement.velocity[i]
-                   << ", velocity threshold: " << -position_limit_vel_threshold;
-                std::cout << ss.str() << "\n";
-                LOG_CRIT << ss.str();
-                error_code = ErrorCode::PositionOverLimit;
+            if (joint_measurement.position[i] < lb[i] &&
+                joint_measurement.velocity[i] < -position_limit_vel_threshold) {
+                if (error_code != ErrorCode::PositionOverLimit) {
+                    std::stringstream ss;
+                    ss << "Joint " << joint_names[i] << " exceeds lower limit, position: "
+                       << joint_measurement.position[i] << ", limit: " << lb[i]
+                       << ", velocity: " << joint_measurement.velocity[i]
+                       << ", velocity threshold: " << -position_limit_vel_threshold;
+                    std::cout << ss.str() << "\n";
+                    LOG_CRIT << ss.str();
+                    error_code = ErrorCode::PositionOverLimit;
+                }
+                return false;
             }
-            return false;
         }
     }
     return true;

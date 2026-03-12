@@ -51,7 +51,11 @@ void PlannerManager::LoopOnce() {
         time_meta.measurement_time = TimePointSystem::Invalid();
     } else {
         time_meta.measurement_time = TimePointSystem::Now();
-        if (!CheckSafety(measurement, robot_model_, robot_property_.error_code) && manager_state_ != Status::Error) {
+        // 拖动模式下跳过位置限位检测（允许超出位置限位），但仍检测速度和力矩限位
+        bool skip_position_check =
+            (robot_property_.run_mode == RunMode::Drag || robot_property_.run_mode == RunMode::DragImpedance);
+        if (!CheckSafety(measurement, robot_model_, robot_property_.error_code, !skip_position_check) &&
+            manager_state_ != Status::Error) {
             runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
             ReportRequestStatus(runtime_data_.latest_processing_request_id,
                                 runtime_data_.latest_processing_request_type, RequestStatus::ErrorDrop, manager_state_);
