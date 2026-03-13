@@ -1,9 +1,21 @@
 #include <cerrno>
 #include <cstring>
 #include <iostream>
+#include <pthread.h>
+#include <sched.h>
 
 #include "chassis_node.h"
 #include "w1_server.h"
+
+// 设置主线程实时优先级
+static void SetupRealtimeThread(int priority) {
+    pthread_t this_thread = pthread_self();
+    struct sched_param param;
+    param.sched_priority = priority;
+    if (pthread_setschedparam(this_thread, SCHED_FIFO, &param) != 0) {
+        std::cerr << "pthread_setschedparam failed: " << std::strerror(errno) << std::endl;
+    }
+}
 
 int main(int argc, char* argv[]) {
     const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
@@ -51,6 +63,10 @@ int main(int argc, char* argv[]) {
     }
 
     executor.add_node(node_server);
+
+    // 设置主线程实时优先级（用于 ROS 回调）
+    SetupRealtimeThread(70);
+
     executor.spin();
     rclcpp::shutdown();
     return 0;
