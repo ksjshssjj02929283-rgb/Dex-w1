@@ -20,11 +20,5 @@ protected:
     RobotModel robot_model_;
 
     TorqueControllerState state_{TorqueControllerState::Init};
-    // Gain parameter
-    struct {
-        double M_d = 2.0;
-        VectorDof K_p = VectorDof::Constant(200.0);
-        VectorDof K_v = VectorDof::Constant(20.0);
-    } parameters_;
 };
 }  // namespace robot_server_lib

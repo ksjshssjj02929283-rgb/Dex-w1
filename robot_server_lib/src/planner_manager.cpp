@@ -110,6 +110,7 @@ void PlannerManager::LoopOnce() {
         }
         this->runtime_data_.joint_cmd.joint_stiffness = this->robot_property_.joint_stiffness;
         this->runtime_data_.joint_cmd.joint_damping = this->robot_property_.joint_damping;
+        this->runtime_data_.joint_cmd.joint_integral_ratio = this->robot_property_.joint_integral_ratio;
         // 如果提供了动力学参数, 则计算双臂前馈阻抗控制力 Compute the feedforward impedance control torque for both arms
         const auto &dyn_base_params_primary = this->robot_model_.params_ptr->dyn_base_params_primary;
         const auto &dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
@@ -640,6 +641,20 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
             std::cout << "[INFO] Set joint damping to " << robot_property_.joint_damping.tail(ndof_arm).transpose()
                       << "\n";
             LOG_INFO << "Set joint damping to " << robot_property_.joint_damping.tail(ndof_arm).transpose();
+            return;
+        }
+        case RequestType::JointIntegralRatio: {
+            auto k_i_ratio = std::get<double>(request.data.value());
+            if (k_i_ratio < 0.0 || k_i_ratio > 1.0) {
+                std::stringstream ss;
+                ss << "[WARN] Invalid k_i_ratio value: " << k_i_ratio << ", must be in range [0, 1]. Command ignored.\n";
+                std::cout << ss.str();
+                LOG_WARN << ss.str();
+                return;
+            }
+            robot_property_.joint_integral_ratio = k_i_ratio;
+            std::cout << "[INFO] Set k_i_ratio to " << robot_property_.joint_integral_ratio << "\n";
+            LOG_INFO << "Set k_i_ratio to " << robot_property_.joint_integral_ratio;
             return;
         }
         case RequestType::CartStiffness: {

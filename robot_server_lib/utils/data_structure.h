@@ -68,8 +68,9 @@ struct JointCommand {
     VectorDof velocity;
     VectorDof acceleration;
     VectorDof torque_feedforward;
-    VectorDof joint_stiffness = VectorDof::Constant(100.0);
-    VectorDof joint_damping = VectorDof::Constant(10.0);
+    VectorDof joint_stiffness;
+    VectorDof joint_damping;
+    double joint_integral_ratio;
     VectorDof position_before_filter;  // 滤波前的位置指令
 
     std::string ToString() const {
@@ -88,8 +89,9 @@ struct RobotProperty {
     double global_speed_ratio{1.0};
     double safe_level{0.5};
     bool clear_error_flag{false};
-    VectorDof joint_stiffness = VectorDof::Constant(100.0);
-    VectorDof joint_damping = VectorDof::Constant(10.0);
+    VectorDof joint_stiffness = VectorDof::Constant(200.0);
+    VectorDof joint_damping = VectorDof::Constant(20.0);
+    double joint_integral_ratio = 0.05;
     Vector12d cart_stiffness = Vector12d::Constant(200.0);
     Vector12d cart_damping_ratio = Vector12d::Constant(1.0);  // 阻尼比 范围0.5 ~ 1.5
     Vector12d cart_impedance_force = Vector12d::Zero();       // 预估笛卡尔阻抗力

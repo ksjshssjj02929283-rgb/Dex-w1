@@ -68,6 +68,7 @@ enum class RequestType {
     EnableSleep,  // 休眠模式切换
     JointStiffness,
     JointDamping,
+    JointIntegralRatio,
     CartStiffness,
     CartDampingRatio,
     // Move Request
