@@ -294,6 +294,7 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     }
     runtime_.request_id = request.request_id;
     runtime_.streaming_finished = false;
+    runtime_.stopping = false;
     runtime_.latest_cmd = std::nullopt;
     runtime_.previous_cmd = std::nullopt;
 
@@ -316,6 +317,75 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     frame_count_ = 0;
 
     return true;
+}
+
+ComputeCommandStatus JointStreamingPlanner::ComputeStopCommand(const JointMeasurement &measurement,
+                                                               const TimeMetaInfo &time_meta,
+                                                               JointCommand &output_joint_cmd) {
+    // 首次调用 ComputeStopCommand，设置停止标志
+    if (!runtime_.stopping) {
+        runtime_.stopping = true;
+        runtime_.streaming_finished = true;  // 标记流结束，不再接收新命令
+
+        // 设置 Ruckig 目标为当前位置，目标速度为 0，实现平滑停止
+        for (auto i = 0; i < ndof_robot; i++) {
+            runtime_.input.target_position[i] = runtime_.output.new_position[i];
+            runtime_.input.target_velocity[i] = 0.0;
+            runtime_.input.target_acceleration[i] = 0.0;
+        }
+        LOG_INFO << "JointStreamingPlanner: Stop command received, stopping smoothly";
+    }
+
+    if (!use_ruckig_) {
+        // 不使用 Ruckig 时使用基类的停止逻辑
+        return MotionPlannerBase::ComputeStopCommand(measurement, time_meta, output_joint_cmd);
+    }
+
+    // 使用 Ruckig 进行平滑停止
+    auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
+
+    if (status == ruckig::Working) {
+        for (auto i = 0; i < ndof_robot; i++) {
+            output_joint_cmd.position_before_filter[i] = runtime_.output.new_position[i];
+            output_joint_cmd.position[i] = runtime_.output.new_position[i];
+            output_joint_cmd.velocity[i] = runtime_.output.new_velocity[i];
+            output_joint_cmd.acceleration[i] = runtime_.output.new_acceleration[i];
+            output_joint_cmd.torque_feedforward[i] = 0;
+        }
+        // 应用巴特沃斯滤波
+        if (use_filter_) {
+            for (auto i = 0; i < ndof_robot; i++) {
+                output_joint_cmd.position[i] = filter_[i]->Apply(output_joint_cmd.position_before_filter[i]);
+            }
+        }
+        runtime_.output.pass_to_input(runtime_.input);
+        return ComputeCommandStatus::TaskOngoing;
+    } else if (status == ruckig::Finished) {
+        // 检查机器人是否静止
+        bool robot_stopped = true;
+        for (auto i = 0; i < ndof_robot; i++) {
+            output_joint_cmd.position_before_filter[i] = runtime_.output.new_position[i];
+            output_joint_cmd.position[i] = runtime_.output.new_position[i];
+            output_joint_cmd.velocity[i] = 0.0;
+            output_joint_cmd.acceleration[i] = 0.0;
+            output_joint_cmd.torque_feedforward[i] = 0.0;
+            robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
+        }
+        // 应用巴特沃斯滤波
+        if (use_filter_) {
+            for (auto i = 0; i < ndof_robot; i++) {
+                output_joint_cmd.position[i] = filter_[i]->Apply(output_joint_cmd.position_before_filter[i]);
+            }
+        }
+        if (robot_stopped) {
+            LOG_INFO << "JointStreamingPlanner: Stop finished, robot stopped";
+            return ComputeCommandStatus::TaskStopped;
+        } else {
+            return ComputeCommandStatus::TaskOngoing;
+        }
+    } else {
+        return ComputeCommandStatus::Error;
+    }
 }
 
 }  // namespace robot_server_lib

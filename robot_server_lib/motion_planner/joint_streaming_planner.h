@@ -16,6 +16,9 @@ public:
     ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
                                         const TimeMetaInfo &time_meta,
                                         JointCommand &output_joint_cmd) override;
+    ComputeCommandStatus ComputeStopCommand(const JointMeasurement &measurement,
+                                           const TimeMetaInfo &time_meta,
+                                           JointCommand &output_joint_cmd) override;
     bool ResetForNewTrajectory(const PlannerRequest &request,
                                const JointMeasurement &measurement,
                                const TimeMetaInfo &time_meta) override;
@@ -27,6 +30,7 @@ protected:
     struct {
         Int64 request_id{-1};
         bool streaming_finished{false};
+        bool stopping{false};  // 是否正在执行停止命令
         std::optional<StreamingCommand> latest_cmd;
         std::optional<StreamingCommand> previous_cmd;
 
