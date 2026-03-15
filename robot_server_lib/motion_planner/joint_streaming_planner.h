@@ -39,6 +39,7 @@ protected:
     TimePointSystem last_log_time_{TimePointSystem::Invalid()};  // 上次打印日志的时间
     int frame_count_{0};                                         // 帧计数器
     bool use_ruckig_ = true;
+    double streaming_velocity_timeout_{0.1};  // Ruckig 速度超时时间，默认 100ms
 
     // 巴特沃斯滤波器
     std::shared_ptr<ButterworthFilter> filter_[ndof_robot];

@@ -99,11 +99,13 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
 
     const StreamingCommand &latest_cmd = runtime_.latest_cmd.value();
 
-    // 检查是否超时, 如果超时则认为流式命令结束
+    // 如果有有效输入指令则检查指令是否超时, 如果超时则认为流式命令结束
     bool is_timeout = false;
+    bool is_velocity_timeout = false;  // 速度超时，使用更短的时间
     if (latest_cmd.received_time.is_valid()) {
         auto time_interval = (time_meta.current_time.time_in_ns() - latest_cmd.received_time.time_in_ns()) * 1e-9;
         is_timeout = time_interval > streaming_timeout_;
+        is_velocity_timeout = time_interval > streaming_velocity_timeout_;  // 更快触发速度停止
     }
     runtime_.streaming_finished = latest_cmd.streaming_finished || is_timeout;
 
@@ -166,8 +168,8 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             runtime_.input.current_velocity[i] = runtime_.output.new_velocity[i];
             runtime_.input.current_acceleration[i] = runtime_.output.new_acceleration[i];
             runtime_.input.target_position[i] = latest_cmd.command[i];
-            runtime_.input.target_velocity[i] = use_velocity_ ? latest_cmd.target_velocity[i] : 0.0;
-            runtime_.input.target_acceleration[i] = use_acceleration_ ? latest_cmd.target_acceleration[i] : 0.0;
+            runtime_.input.target_velocity[i] = (use_velocity_ && !is_velocity_timeout) ? latest_cmd.target_velocity[i] : 0.0;
+            runtime_.input.target_acceleration[i] = (use_acceleration_ && !is_velocity_timeout) ? latest_cmd.target_acceleration[i] : 0.0;
         }
         // 每秒打印一次日志，内容包括接收到的命令帧数、位置、速度、加速度等信息
         if (!last_log_time_.is_valid() ||
@@ -261,6 +263,11 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
         streaming_timeout_ = move_request.streaming_timeout.value();
     } else {
         streaming_timeout_ = DefaultStreamingTimeout;
+    }
+
+    // Ruckig 速度超时时间设置（比 streaming_timeout 更短，用于快速停止）
+    if (move_request.streaming_velocity_timeout.has_value()) {
+        streaming_velocity_timeout_ = move_request.streaming_velocity_timeout.value();
     }
 
     // 滤波配置
