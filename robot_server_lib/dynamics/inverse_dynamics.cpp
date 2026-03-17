@@ -5,7 +5,7 @@ namespace robot_server_lib
 namespace dynamics
 {
 
-Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, bool use_lower_friction_factor, bool use_simple_dynamics)
+Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, bool use_simple_dynamics)
 {
     const auto& model = *robot_model.model_ptr;
     const auto& joint_command_sequence_by_name = robot_model.params_ptr->joint_command_sequence_by_name;
@@ -31,7 +31,7 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
             int arm_base_id = robot_model.model_ptr->getFrameId(first_joint_name) - 1;
             auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, q_urdf, arm_base_id);
             Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
-            Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Primary, use_lower_friction_factor);
+            Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Primary);
             utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Primary);
         }
         if (dyn_base_params_secondary.has_value())
@@ -42,7 +42,7 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
             int arm_base_id = robot_model.model_ptr->getFrameId(first_joint_name) - 1;
             auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, q_urdf, arm_base_id);
             Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
-            Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Secondary, use_lower_friction_factor);
+            Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Secondary);
             utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Secondary);
         }
     }

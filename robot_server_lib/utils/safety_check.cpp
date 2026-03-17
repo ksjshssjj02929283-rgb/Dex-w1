@@ -3,7 +3,9 @@
 #include "NanoLog.hpp"
 
 namespace robot_server_lib {
-bool CheckSafety(const JointMeasurement &joint_measurement, const RobotModel &robot_model, ErrorCode &error_code,
+bool CheckSafety(const JointMeasurement &joint_measurement,
+                 const RobotModel &robot_model,
+                 ErrorCode &error_code,
                  bool check_position_limit) {
     const auto &params = *robot_model.params_ptr;
     const auto &model = *robot_model.model_ptr;
@@ -49,12 +51,12 @@ bool CheckSafety(const JointMeasurement &joint_measurement, const RobotModel &ro
         ub = ub - margin_rad;  // 上限向下调整
 
         for (int i = 0; i < ndof_robot; i++) {
-            if (joint_measurement.position[i] > ub[i] &&
-                joint_measurement.velocity[i] > position_limit_vel_threshold) {
+            if (joint_measurement.position[i] > ub[i] && joint_measurement.velocity[i] > position_limit_vel_threshold) {
                 if (error_code != ErrorCode::PositionOverLimit) {
                     std::stringstream ss;
-                    ss << "Joint " << joint_names[i] << " exceeds upper limit, position: "
-                       << joint_measurement.position[i] << ", limit: " << ub[i] << ", original limit: " << ub[i] + margin_rad[i] << ", margin_rad: " << margin_rad[i]
+                    ss << "Joint " << joint_names[i]
+                       << " exceeds upper limit, position: " << joint_measurement.position[i] << ", limit: " << ub[i]
+                       << ", original limit: " << ub[i] + margin_rad[i] << ", margin_rad: " << margin_rad[i]
                        << ", velocity: " << joint_measurement.velocity[i]
                        << ", velocity threshold: " << position_limit_vel_threshold;
                     std::cout << ss.str() << "\n";
@@ -67,8 +69,9 @@ bool CheckSafety(const JointMeasurement &joint_measurement, const RobotModel &ro
                 joint_measurement.velocity[i] < -position_limit_vel_threshold) {
                 if (error_code != ErrorCode::PositionOverLimit) {
                     std::stringstream ss;
-                    ss << "Joint " << joint_names[i] << " exceeds lower limit, position: "
-                       << joint_measurement.position[i] << ", limit: " << lb[i] << ", original limit: " << lb[i] - margin_rad[i]  << ", margin_rad: " << margin_rad[i]
+                    ss << "Joint " << joint_names[i]
+                       << " exceeds lower limit, position: " << joint_measurement.position[i] << ", limit: " << lb[i]
+                       << ", original limit: " << lb[i] - margin_rad[i] << ", margin_rad: " << margin_rad[i]
                        << ", velocity: " << joint_measurement.velocity[i]
                        << ", velocity threshold: " << -position_limit_vel_threshold;
                     std::cout << ss.str() << "\n";

@@ -1,8 +1,9 @@
+#include <pthread.h>
+#include <sched.h>
+
 #include <cerrno>
 #include <cstring>
 #include <iostream>
-#include <pthread.h>
-#include <sched.h>
 
 #include "chassis_node.h"
 #include "w1_server.h"

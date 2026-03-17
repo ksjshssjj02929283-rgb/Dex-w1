@@ -16,6 +16,13 @@ void PlannerManager::Initialize() {
     runtime_data_.loop_counter = -1;
     runtime_data_.planner_request.request_id = -1;
 
+    // Initialize pre-allocated variables for PublishPlannerInfo
+    runtime_data_.publish_measurement_primary.resize(robot_model_.params_ptr->joints_primary.size());
+    runtime_data_.publish_measurement_secondary.resize(robot_model_.params_ptr->joints_secondary.size());
+    runtime_data_.publish_measurement_torso.resize(robot_model_.params_ptr->joints_torso.size());
+    runtime_data_.publish_ee_pose.resize(14);
+    runtime_data_.publish_torso_X_Z_RY.resize(3);
+
     auto &time_meta = runtime_data_.time_meta;
     time_meta.current_time = TimePointSystem::Now();
     time_meta.measurement_time = TimePointSystem::Invalid();
@@ -647,7 +654,8 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
             auto k_i_ratio = std::get<double>(request.data.value());
             if (k_i_ratio < 0.0 || k_i_ratio > 1.0) {
                 std::stringstream ss;
-                ss << "[WARN] Invalid k_i_ratio value: " << k_i_ratio << ", must be in range [0, 1]. Command ignored.\n";
+                ss << "[WARN] Invalid k_i_ratio value: " << k_i_ratio
+                   << ", must be in range [0, 1]. Command ignored.\n";
                 std::cout << ss.str();
                 LOG_WARN << ss.str();
                 return;
@@ -803,7 +811,10 @@ void PlannerManager::OnEmergencyRequest() {
 void PlannerManager::PublishPlannerInfo() {
     PlannerManagerInfo info{};
     auto &measurement = runtime_data_.measurement;
-    Eigen::VectorXd measurement_primary, measurement_secondary, measurement_torso;
+    // Use pre-allocated member variables instead of creating temporary vectors
+    auto &measurement_primary = runtime_data_.publish_measurement_primary;
+    auto &measurement_secondary = runtime_data_.publish_measurement_secondary;
+    auto &measurement_torso = runtime_data_.publish_measurement_torso;
     PoseQuaternion ee_pose_primary, ee_pose_secondary, torso_pose;
     utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_primary, MotionGroup::Primary);
     utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_secondary,
@@ -815,13 +826,11 @@ void PlannerManager::PublishPlannerInfo() {
             idle_planner_->KinematicsSecondary()->GetFK(measurement_secondary, robot_property_.tcp_frame_secondary);
         torso_pose = idle_planner_->KinematicsTorso()->GetFK(measurement_torso);
     }
-    // 计算手臂末端位姿并存储 Compute end-effector pose and store
-    Eigen::VectorXd ee_pose(14);
+    auto &ee_pose = runtime_data_.publish_ee_pose;
     ee_pose << ee_pose_primary.ToVectorXd(), ee_pose_secondary.ToVectorXd();
     ee_pose = (ee_pose.array() * 1e4).round() / 1e4;  // 精确到小数点后四位
     info.ee_pose_measurement = ee_pose;
-    // 计算躯干末端位姿并存储 Compute torso pose and store
-    Eigen::VectorXd torso_X_Z_RY(3);
+    auto &torso_X_Z_RY = runtime_data_.publish_torso_X_Z_RY;
     torso_X_Z_RY << torso_pose.position[0], torso_pose.position[2],
         measurement_torso[0] + measurement_torso[1] + measurement_torso[2];
     info.torso_pose_measurement = torso_X_Z_RY;

@@ -8,14 +8,15 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "utils.h"
+
 #include "sri_force_sensor.h"
+#include "utils.h"
 
 TEST(SRISerialTest, OpenPortAndReadData) {
     std::filesystem::path home_dir = std::filesystem::path(std::getenv("HOME"));
     std::filesystem::create_directories(home_dir / "log");
     nanolog::initialize(nanolog::GuaranteedLogger(), (home_dir / "log/").string(), "robot_server", 10,
-                        10);                          // 每个日志文件最大20MB，最多保留10个日志文件
+                        10);                           // 每个日志文件最大20MB，最多保留10个日志文件
     nanolog::set_log_level(nanolog::LogLevel::DEBUG);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
     std::cout << "log recorded to: " << ((home_dir / "log").string() + "/robot_server.txt") << std::endl;
     SriForceSensor sensor;
@@ -36,7 +37,8 @@ TEST(SRISerialTest, OpenPortAndReadData) {
     while (std::chrono::steady_clock::now() < end) {
         if (sensor.PeekLatest(&data)) {
             read_count++;
-            LOG_INFO << "Read data: " << data[0] << ", " << data[1] << ", " << data[2] << ", " << data[3] << ", " << data[4] << ", " << data[5];
+            LOG_INFO << "Read data: " << data[0] << ", " << data[1] << ", " << data[2] << ", " << data[3] << ", "
+                     << data[4] << ", " << data[5];
         }
         std::this_thread::sleep_for(std::chrono::microseconds(1000));
     }

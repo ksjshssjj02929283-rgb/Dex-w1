@@ -172,9 +172,9 @@ struct MoveRequest {
     std::optional<double> interval;
     std::optional<double> streaming_timeout;
     std::optional<double> streaming_velocity_timeout;  // Ruckig 速度超时时间，比 streaming_timeout 更短
-    std::optional<bool> use_filter;        // 是否启用巴特沃斯滤波
-    std::optional<bool> use_velocity;      // 是否使用目标速度输入
-    std::optional<bool> use_acceleration;  // 是否使用目标加速度输入
+    std::optional<bool> use_filter;                    // 是否启用巴特沃斯滤波
+    std::optional<bool> use_velocity;                  // 是否使用目标速度输入
+    std::optional<bool> use_acceleration;              // 是否使用目标加速度输入
 };
 
 using PlannerData = std::variant<MoveRequest, PoseQuaternion, Vector3d, Vector6d, Eigen::VectorXd, bool, int, double>;
@@ -250,7 +250,7 @@ struct RobotParams {
     Eigen::VectorXd joint_max_velocity_limit_negative;        // 关节负向最大速度限制
     Eigen::VectorXd joint_max_torque_limit_positive;          // 关节正向最大力矩限制
     Eigen::VectorXd joint_max_torque_limit_negative;          // 关节负向最大力矩限制
-    Eigen::VectorXd joint_limit_margin_deg;           // 关节位置限位安全阈值（度），用于在硬限位基础上缩小范围
+    Eigen::VectorXd joint_limit_margin_deg;  // 关节位置限位安全阈值（度），用于在硬限位基础上缩小范围
     Eigen::VectorXd joints_primary;
     Eigen::VectorXd joints_secondary;
     Eigen::VectorXd joints_torso;

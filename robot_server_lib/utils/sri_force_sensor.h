@@ -1,17 +1,15 @@
 #ifndef SRI_FORCE_SERVER_H
 #define SRI_FORCE_SERVER_H
 
-#include <sched.h>
-#include <sys/mman.h>
-#include <sys/resource.h>
-#include <unistd.h>
-
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/signal.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -29,9 +27,9 @@
 #include <thread>
 #include <vector>
 
-#include "typedef.h"
-#include "single_rw_latest_queue.h"
 #include "NanoLog.hpp"
+#include "single_rw_latest_queue.h"
+#include "typedef.h"
 
 typedef unsigned char BYTE;
 
@@ -99,7 +97,15 @@ private:
     void ReadLoop();
 
     // 解析方法：成功返回新的偏移量，失败返回-1
-    int ParseFrame(const unsigned char* data, int dataLen, int offset, float& fx, float& fy, float& fz, float& mx, float& my, float& mz);
+    int ParseFrame(const unsigned char* data,
+                   int dataLen,
+                   int offset,
+                   float& fx,
+                   float& fy,
+                   float& fz,
+                   float& mx,
+                   float& my,
+                   float& mz);
 
     // CRC校验
     uint8_t MyCRC_GetCRC8(uint8_t* pDat, uint8_t bytes);

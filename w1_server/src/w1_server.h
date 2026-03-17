@@ -11,8 +11,8 @@
 #include "joint_interfaces/msg/joint_velocity_torque_limit_feedback.hpp"
 #include "robot_server_lib/NanoLog.hpp"
 #include "robot_server_lib/ei_input_shaper.h"
-#include "robot_server_lib/sri_force_sensor.h"
 #include "robot_server_lib/robot_server_base.h"
+#include "robot_server_lib/sri_force_sensor.h"
 #include "robot_server_lib/utils.h"
 #include "shared_memory_def.h"
 #include "w1_utils.h"
@@ -132,10 +132,10 @@ private:
     EIInputShaper::Type torso_shaper_type_ = EIInputShaper::EI;
     const double TorsoShaperMaxRampRadPerSec = 0.5;  // 最大角速度 ramp率，单位 rad/s 每周期
     // 躯干频率参数 (可配置)
-    double TorsoJ1NatureFreq = 3.0;           // torso J1 自然频率，单位Hz
-    double TorsoJ2NatureFreq = 2.5;           // torso J2 自然频率，单位Hz
-    double TorsoJ3NatureFreq = 2.5;           // torso J3 自然频率，单位Hz
-    double TorsoJ4NatureFreq = 4.5;           // torso J4 自然频率，单位Hz
+    double TorsoJ1NatureFreq = 3.0;  // torso J1 自然频率，单位Hz
+    double TorsoJ2NatureFreq = 2.5;  // torso J2 自然频率，单位Hz
+    double TorsoJ3NatureFreq = 2.5;  // torso J3 自然频率，单位Hz
+    double TorsoJ4NatureFreq = 4.5;  // torso J4 自然频率，单位Hz
 
     // 力传感器相关
     Vector3d sensor_force_;

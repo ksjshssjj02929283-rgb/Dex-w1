@@ -69,6 +69,12 @@ protected:
     std::filesystem::path home_dir = std::filesystem::path(std::getenv("HOME"));
     // 记录最新的 streaming command 输入的关节位置
     VectorDof joint_position_input_;
+    // 预分配的JSON序列化缓冲区，避免每次循环分配
+    std::vector<double> json_position_buffer_;
+    std::vector<double> json_velocity_buffer_;
+    std::vector<double> json_effort_buffer_;
+    std::vector<double> json_sensor_wrench_buffer_;
+    std::vector<double> json_ee_pose_buffer_;
     struct {
         std::atomic_int64_t error_drop{-1};
         std::atomic_int64_t queued{-1};

@@ -125,9 +125,9 @@ void RobotServer::ForceArrayCallback(const std_msgs::msg::Float64MultiArray::Sha
 void RobotServer::InitParamConfig() {
     auto config_path = server_data_dir_ / "w1_config.json";
 
-    const std::set<std::string> kAllowedRootKeys{"enable_ruckig", "enable_chassis_shaper", "enable_torso_shaper",
-                                                 "TorsoJ1NatureFreq", "TorsoJ2NatureFreq", "TorsoJ3NatureFreq", "TorsoJ4NatureFreq",
-                                                 "enable_record", "enable_filter"};
+    const std::set<std::string> kAllowedRootKeys{"enable_ruckig",     "enable_chassis_shaper", "enable_torso_shaper",
+                                                 "TorsoJ1NatureFreq", "TorsoJ2NatureFreq",     "TorsoJ3NatureFreq",
+                                                 "TorsoJ4NatureFreq", "enable_record",         "enable_filter"};
 
     nlohmann::json root;
     if (!std::filesystem::exists(config_path)) {
@@ -242,9 +242,8 @@ void RobotServer::InitParamConfig() {
                 "enable_filter=%s)",
                 config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
                 this->enable_chassis_shaper_.load() ? "true" : "false",
-                this->enable_torso_shaper_.load() ? "true" : "false",
-                this->TorsoJ1NatureFreq, this->TorsoJ2NatureFreq, this->TorsoJ3NatureFreq, this->TorsoJ4NatureFreq,
-                this->enable_record_ ? "true" : "false",
+                this->enable_torso_shaper_.load() ? "true" : "false", this->TorsoJ1NatureFreq, this->TorsoJ2NatureFreq,
+                this->TorsoJ3NatureFreq, this->TorsoJ4NatureFreq, this->enable_record_ ? "true" : "false",
                 this->enable_filter_ ? "true" : "false");
     LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_
              << ", enable_chassis_shaper=" << this->enable_chassis_shaper_.load()
@@ -490,8 +489,8 @@ void RobotServer::TorqueControlThreadFunc() {
                     if (current_torso_enabled != prev_torso_shaper_enabled_) {
                         torso_shapers_[i]->Reset();
                         prev_torso_shaper_enabled_ = current_torso_enabled;
-                        RCLCPP_INFO(this->get_logger(), "Torso J%d shaper %s, buffer reset",
-                                    i + 1, current_torso_enabled ? "enabled" : "disabled");
+                        RCLCPP_INFO(this->get_logger(), "Torso J%d shaper %s, buffer reset", i + 1,
+                                    current_torso_enabled ? "enabled" : "disabled");
                     }
 
                     // 应用整形

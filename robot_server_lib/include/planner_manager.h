@@ -66,6 +66,13 @@ private:
         Int64 last_finished_request_id{-1};
         Int64 terminated_request_id{-1};
         RequestType latest_processing_request_type{RequestType::Empty};
+
+        // Pre-allocated variables for PublishPlannerInfo (to reduce memory allocation)
+        Eigen::VectorXd publish_measurement_primary;
+        Eigen::VectorXd publish_measurement_secondary;
+        Eigen::VectorXd publish_measurement_torso;
+        Eigen::VectorXd publish_ee_pose;
+        Eigen::VectorXd publish_torso_X_Z_RY;
     } runtime_data_;
 
     void Initialize();

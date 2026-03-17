@@ -21,8 +21,7 @@ void Setup_Realtime(int priority) {
 // SriForceSensor Implementation
 //====================================
 
-SriForceSensor::SriForceSensor()
-    : m_serial_fd(-1), m_rec_threadid(0), mReadBuffer(nullptr) {
+SriForceSensor::SriForceSensor() : m_serial_fd(-1), m_rec_threadid(0), mReadBuffer(nullptr) {
     mReadBuffer = new unsigned char[REC_DATA_LEN];
 }
 
@@ -124,9 +123,11 @@ void SriForceSensor::ProcessCalibrationData(float fx, float fy, float fz, float 
             for (int i = 0; i < 6; i++) {
                 mZeroOffset[i] = mCalibrationSum[i] / mCalibrationSampleCount;
             }
-            printf("[Info] SRI force sensor: Zero calibration completed: samples=%d, offset=%.4f, %.4f, %.4f, %.4f, %.4f, %.4f\n",
-                   mCalibrationSampleCount, mZeroOffset[0], mZeroOffset[1], mZeroOffset[2],
-                   mZeroOffset[3], mZeroOffset[4], mZeroOffset[5]);
+            printf(
+                "[Info] SRI force sensor: Zero calibration completed: samples=%d, offset=%.4f, %.4f, %.4f, %.4f, %.4f, "
+                "%.4f\n",
+                mCalibrationSampleCount, mZeroOffset[0], mZeroOffset[1], mZeroOffset[2], mZeroOffset[3], mZeroOffset[4],
+                mZeroOffset[5]);
             LOG_INFO << "Zero calibration completed: samples=" << mCalibrationSampleCount
                      << ", offset=" << mZeroOffset[0] << ", " << mZeroOffset[1] << ", " << mZeroOffset[2] << ", "
                      << mZeroOffset[3] << ", " << mZeroOffset[4] << ", " << mZeroOffset[5];
@@ -171,7 +172,15 @@ uint8_t SriForceSensor::MyCRC_GetCRC8(uint8_t* pDat, uint8_t bytes) {
     return crc;
 }
 
-int SriForceSensor::ParseFrame(const unsigned char* data, int dataLen, int offset, float& fx, float& fy, float& fz, float& mx, float& my, float& mz) {
+int SriForceSensor::ParseFrame(const unsigned char* data,
+                               int dataLen,
+                               int offset,
+                               float& fx,
+                               float& fy,
+                               float& fz,
+                               float& mx,
+                               float& my,
+                               float& mz) {
     if (offset + 14 > dataLen) {
         return -1;
     }
@@ -363,6 +372,4 @@ bool SriForceSensor::PeekLatest(robot_server_lib::Vector6d* output) {
     return false;
 }
 
-bool SriForceSensor::IsCalibrating() const {
-    return mIsCalibrating;
-}
+bool SriForceSensor::IsCalibrating() const { return mIsCalibrating; }

@@ -12,9 +12,8 @@ namespace dynamics
 {
 
 // 计算逆动力学
-// use_lower_friction_factor: 是否使用低摩擦模型
 // use_simple_dynamics: 是否使用简化动力学计算（跳过动力学参数，仅使用 pinocchio rnea）
-Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, bool use_lower_friction_factor = false, bool use_simple_dynamics = false);
+Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, bool use_simple_dynamics = false);
 
 // 计算正动力学
 Eigen::VectorXd ForwardDynamics(const pinocchio::Model& model, const Eigen::VectorXd& q, const Eigen::VectorXd& dq,
@@ -30,7 +29,7 @@ Eigen::VectorXd MapToParamOrder(const pinocchio::Model& model, const Eigen::Vect
 
 // 由符号计算生成的逆动力学计算函数
 Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq,
-                                   const VectorDof& ddq, const Vector3d& gravity_acc_armbase, MotionGroup motion_group, bool use_lower_friction_factor = false);
+                                   const VectorDof& ddq, const Vector3d& gravity_acc_armbase, MotionGroup motion_group);
 
 // 由符号计算生成的质量矩阵计算函数
 Eigen::MatrixXd GetMassMatrixBySymbol(const RobotModel& robot_model, const Eigen::VectorXd& q_arm, MotionGroup motion_group);

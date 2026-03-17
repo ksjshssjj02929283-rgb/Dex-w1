@@ -168,8 +168,10 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             runtime_.input.current_velocity[i] = runtime_.output.new_velocity[i];
             runtime_.input.current_acceleration[i] = runtime_.output.new_acceleration[i];
             runtime_.input.target_position[i] = latest_cmd.command[i];
-            runtime_.input.target_velocity[i] = (use_velocity_ && !is_velocity_timeout) ? latest_cmd.target_velocity[i] : 0.0;
-            runtime_.input.target_acceleration[i] = (use_acceleration_ && !is_velocity_timeout) ? latest_cmd.target_acceleration[i] : 0.0;
+            runtime_.input.target_velocity[i] =
+                (use_velocity_ && !is_velocity_timeout) ? latest_cmd.target_velocity[i] : 0.0;
+            runtime_.input.target_acceleration[i] =
+                (use_acceleration_ && !is_velocity_timeout) ? latest_cmd.target_acceleration[i] : 0.0;
         }
         // 每秒打印一次日志，内容包括接收到的命令帧数、位置、速度、加速度等信息
         if (!last_log_time_.is_valid() ||
