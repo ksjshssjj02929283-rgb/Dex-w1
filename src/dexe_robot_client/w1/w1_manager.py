@@ -768,25 +768,25 @@ class W1Manager:
         has_obstacle = self._get_chassis_client().get_front_obstacle()
         return StatusCode.SUCCESS, has_obstacle
 
-    def get_nav_status(self) -> str:
+    def get_nav_status(self) -> tuple[StatusCode,str]:
         """获取导航状态"""
         if not self._use_nav:
             self.logger.error("Navigation function is disabled.")
-            return "DISABLED"
+            return StatusCode.FAIL, "DISABLED"
         if not self._has_chassis_client():
             self.logger.error("Chassis client has not initialized")
-            return "NOT_INITIALIZED"
-        return self._get_chassis_client().get_nav_state()
+            return StatusCode.FAIL, "NOT_INITIALIZED"
+        return StatusCode.SUCCESS, self._get_chassis_client().get_nav_state()
 
     def get_control_status(self) -> str:
         """获取底盘控制状态"""
         if not self._use_nav:
             self.logger.error("Navigation function is disabled.")
-            return "DISABLED"
+            return StatusCode.FAIL, "DISABLED"
         if not self._has_chassis_client():
             self.logger.error("Chassis client has not initialized")
-            return "NOT_INITIALIZED"
-        return self._get_chassis_client().get_control_status()
+            return StatusCode.FAIL, "NOT_INITIALIZED"
+        return StatusCode.SUCCESS, self._get_chassis_client().get_control_status()
 
     def set_auto_charging(self) -> StatusCode:
         """调用回充服务"""
