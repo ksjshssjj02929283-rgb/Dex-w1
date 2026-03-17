@@ -10,11 +10,12 @@
 
 using namespace robot_server_lib;
 TEST(SRSKinematicsTest, Kinematics) {
-    kinematics::SRSKinematics srs_kine_left(true, false);
+    kinematics::SRSKinematics srs_kine_left(true, true);
 
     Eigen::VectorXd q_in_left(7);
     q_in_left << 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5;
     auto pose = srs_kine_left.GetFK(q_in_left);
+    std::cout << "Left: Forward Kinematics Left q_in: " << q_in_left.transpose() << std::endl;
     std::cout << "Left: Forward Kinematics Left Pose_out: " << pose.ToString() << std::endl;
     bool success = false;
     auto pose_in = pose;
