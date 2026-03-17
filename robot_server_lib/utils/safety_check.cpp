@@ -43,13 +43,18 @@ bool CheckSafety(const JointMeasurement &joint_measurement, const RobotModel &ro
         Eigen::VectorXd lb = dynamics::MapToParamOrder(model, model.lowerPositionLimit, joint_names);
         Eigen::VectorXd ub = dynamics::MapToParamOrder(model, model.upperPositionLimit, joint_names);
 
+        // 应用安全阈值（将 deg 转换为 rad）
+        Eigen::VectorXd margin_rad = params.joint_limit_margin_deg * M_PI / 180.0;
+        lb = lb + margin_rad;  // 下限向上调整
+        ub = ub - margin_rad;  // 上限向下调整
+
         for (int i = 0; i < ndof_robot; i++) {
             if (joint_measurement.position[i] > ub[i] &&
                 joint_measurement.velocity[i] > position_limit_vel_threshold) {
                 if (error_code != ErrorCode::PositionOverLimit) {
                     std::stringstream ss;
                     ss << "Joint " << joint_names[i] << " exceeds upper limit, position: "
-                       << joint_measurement.position[i] << ", limit: " << ub[i]
+                       << joint_measurement.position[i] << ", limit: " << ub[i] << ", original limit: " << ub[i] + margin_rad[i] << ", margin_rad: " << margin_rad[i]
                        << ", velocity: " << joint_measurement.velocity[i]
                        << ", velocity threshold: " << position_limit_vel_threshold;
                     std::cout << ss.str() << "\n";
@@ -63,7 +68,7 @@ bool CheckSafety(const JointMeasurement &joint_measurement, const RobotModel &ro
                 if (error_code != ErrorCode::PositionOverLimit) {
                     std::stringstream ss;
                     ss << "Joint " << joint_names[i] << " exceeds lower limit, position: "
-                       << joint_measurement.position[i] << ", limit: " << lb[i]
+                       << joint_measurement.position[i] << ", limit: " << lb[i] << ", original limit: " << lb[i] - margin_rad[i]  << ", margin_rad: " << margin_rad[i]
                        << ", velocity: " << joint_measurement.velocity[i]
                        << ", velocity threshold: " << -position_limit_vel_threshold;
                     std::cout << ss.str() << "\n";

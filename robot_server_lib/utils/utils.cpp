@@ -63,6 +63,7 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     parse_array("joint_max_velocity_limit_negative", params.joint_max_velocity_limit_negative);
     parse_array("joint_max_torque_limit_positive", params.joint_max_torque_limit_positive);
     parse_array("joint_max_torque_limit_negative", params.joint_max_torque_limit_negative);
+    parse_array("joint_limit_margin_deg", params.joint_limit_margin_deg);
 
     // 解度析动力学基参数矩阵
     if (config_json.contains("dyn_base_params_primary")) {

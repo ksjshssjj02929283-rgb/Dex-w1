@@ -250,6 +250,7 @@ struct RobotParams {
     Eigen::VectorXd joint_max_velocity_limit_negative;        // 关节负向最大速度限制
     Eigen::VectorXd joint_max_torque_limit_positive;          // 关节正向最大力矩限制
     Eigen::VectorXd joint_max_torque_limit_negative;          // 关节负向最大力矩限制
+    Eigen::VectorXd joint_limit_margin_deg;           // 关节位置限位安全阈值（度），用于在硬限位基础上缩小范围
     Eigen::VectorXd joints_primary;
     Eigen::VectorXd joints_secondary;
     Eigen::VectorXd joints_torso;

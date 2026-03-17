@@ -86,7 +86,7 @@ private:
     bool enable_filter_ = true;                       // /control/joint接口是否启用巴特沃斯滤波
     bool enable_record_ = false;                      // 是否启用调试日志
     std::atomic<bool> enable_chassis_shaper_{false};  // 是否启用底盘速度输入整形器
-    std::atomic<bool> enable_torso_shaper_{false};    // 是否启用 torso J1-J4 输入整形器
+    std::atomic<bool> enable_torso_shaper_{false};    // 是否启用腿部 (ANKLE, KNEE) 输入整形器
     int first_arm_joint_index_ = 6;  // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
     const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
     double streaming_timeout_ = 0.5;                // /control/joint_position streaming 超时时间
@@ -127,14 +127,15 @@ private:
     const double DiffChassisNatureFreq = 1.67;  // 底盘输入整形器自然频率，单位Hz
     // ramp率转换: 0.5m/s每周期
     const double DiffChassisMaxRampRpm = 0.5 / (M_PI * DiffChassisWheelD) * 60.0;
-    // torso J1-J4 输入整形器数组
+    // 躯干输入整形器数组 (J1-J4)
     std::unique_ptr<EIInputShaper> torso_shapers_[4];
     EIInputShaper::Type torso_shaper_type_ = EIInputShaper::EI;
-    const double TorsoJ1NatureFreq = 3.07;           // torso J1 自然频率，单位Hz
-    const double TorsoJ2NatureFreq = 2.50;           // torso J2 自然频率，单位Hz
-    const double TorsoJ3NatureFreq = 2.50;           // torso J3 自然频率，单位Hz
-    const double TorsoJ4NatureFreq = 4.50;           // torso J4 自然频率，单位Hz
-    const double TorsoShaperMaxRampRadPerSec = 0.5;  // torso J1-J4 最大角速度 ramp率，单位 rad/s 每周期
+    const double TorsoShaperMaxRampRadPerSec = 0.5;  // 最大角速度 ramp率，单位 rad/s 每周期
+    // 躯干频率参数 (可配置)
+    double TorsoJ1NatureFreq = 3.0;           // torso J1 自然频率，单位Hz
+    double TorsoJ2NatureFreq = 2.5;           // torso J2 自然频率，单位Hz
+    double TorsoJ3NatureFreq = 2.5;           // torso J3 自然频率，单位Hz
+    double TorsoJ4NatureFreq = 4.5;           // torso J4 自然频率，单位Hz
 
     // 力传感器相关
     Vector3d sensor_force_;

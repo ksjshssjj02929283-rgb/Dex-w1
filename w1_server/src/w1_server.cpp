@@ -67,7 +67,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, Robo
                                                           DiffChassisMaxRampRpm);
     }
 
-    // torso J1-J4 输入整形器
+    // 躯干输入整形器 (J1-J4)
     torso_shapers_[0] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ1NatureFreq, torque_ctrl_dt,
                                                         TorsoShaperMaxRampRadPerSec);
     torso_shapers_[1] = std::make_unique<EIInputShaper>(torso_shaper_type_, TorsoJ2NatureFreq, torque_ctrl_dt,
@@ -126,6 +126,7 @@ void RobotServer::InitParamConfig() {
     auto config_path = server_data_dir_ / "w1_config.json";
 
     const std::set<std::string> kAllowedRootKeys{"enable_ruckig", "enable_chassis_shaper", "enable_torso_shaper",
+                                                 "TorsoJ1NatureFreq", "TorsoJ2NatureFreq", "TorsoJ3NatureFreq", "TorsoJ4NatureFreq",
                                                  "enable_record", "enable_filter"};
 
     nlohmann::json root;
@@ -133,6 +134,10 @@ void RobotServer::InitParamConfig() {
         root["enable_ruckig"] = this->enable_ruckig_;
         root["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
         root["enable_torso_shaper"] = this->enable_torso_shaper_.load();
+        root["TorsoJ1NatureFreq"] = this->TorsoJ1NatureFreq;
+        root["TorsoJ2NatureFreq"] = this->TorsoJ2NatureFreq;
+        root["TorsoJ3NatureFreq"] = this->TorsoJ3NatureFreq;
+        root["TorsoJ4NatureFreq"] = this->TorsoJ4NatureFreq;
         root["enable_record"] = this->enable_record_;
         root["enable_filter"] = this->enable_filter_;
 
@@ -171,6 +176,22 @@ void RobotServer::InitParamConfig() {
         root["enable_torso_shaper"] = this->enable_torso_shaper_.load();
         need_rewrite = true;
     }
+    if (!root.contains("TorsoJ1NatureFreq")) {
+        root["TorsoJ1NatureFreq"] = this->TorsoJ1NatureFreq;
+        need_rewrite = true;
+    }
+    if (!root.contains("TorsoJ2NatureFreq")) {
+        root["TorsoJ2NatureFreq"] = this->TorsoJ2NatureFreq;
+        need_rewrite = true;
+    }
+    if (!root.contains("TorsoJ3NatureFreq")) {
+        root["TorsoJ3NatureFreq"] = this->TorsoJ3NatureFreq;
+        need_rewrite = true;
+    }
+    if (!root.contains("TorsoJ4NatureFreq")) {
+        root["TorsoJ4NatureFreq"] = this->TorsoJ4NatureFreq;
+        need_rewrite = true;
+    }
     if (!root.contains("enable_record")) {
         root["enable_record"] = this->enable_record_;
         need_rewrite = true;
@@ -183,6 +204,10 @@ void RobotServer::InitParamConfig() {
     this->enable_ruckig_ = root.value("enable_ruckig", this->enable_ruckig_);
     this->enable_chassis_shaper_ = root.value("enable_chassis_shaper", this->enable_chassis_shaper_.load());
     this->enable_torso_shaper_ = root.value("enable_torso_shaper", this->enable_torso_shaper_.load());
+    this->TorsoJ1NatureFreq = root.value("TorsoJ1NatureFreq", this->TorsoJ1NatureFreq);
+    this->TorsoJ2NatureFreq = root.value("TorsoJ2NatureFreq", this->TorsoJ2NatureFreq);
+    this->TorsoJ3NatureFreq = root.value("TorsoJ3NatureFreq", this->TorsoJ3NatureFreq);
+    this->TorsoJ4NatureFreq = root.value("TorsoJ4NatureFreq", this->TorsoJ4NatureFreq);
     this->enable_record_ = root.value("enable_record", this->enable_record_);
     this->enable_filter_ = root.value("enable_filter", this->enable_filter_);
 
@@ -195,6 +220,10 @@ void RobotServer::InitParamConfig() {
     root_clean["enable_ruckig"] = this->enable_ruckig_;
     root_clean["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
     root_clean["enable_torso_shaper"] = this->enable_torso_shaper_.load();
+    root_clean["TorsoJ1NatureFreq"] = this->TorsoJ1NatureFreq;
+    root_clean["TorsoJ2NatureFreq"] = this->TorsoJ2NatureFreq;
+    root_clean["TorsoJ3NatureFreq"] = this->TorsoJ3NatureFreq;
+    root_clean["TorsoJ4NatureFreq"] = this->TorsoJ4NatureFreq;
     root_clean["enable_record"] = this->enable_record_;
     root_clean["enable_filter"] = this->enable_filter_;
 
@@ -208,15 +237,20 @@ void RobotServer::InitParamConfig() {
                 "enable_ruckig=%s, \n"
                 "enable_chassis_shaper=%s, \n"
                 "enable_torso_shaper=%s, \n"
+                "TorsoJ1NatureFreq=%.2f, TorsoJ2NatureFreq=%.2f, TorsoJ3NatureFreq=%.2f, TorsoJ4NatureFreq=%.2f, \n"
                 "enable_record=%s, \n"
                 "enable_filter=%s)",
                 config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
                 this->enable_chassis_shaper_.load() ? "true" : "false",
-                this->enable_torso_shaper_.load() ? "true" : "false", this->enable_record_ ? "true" : "false",
+                this->enable_torso_shaper_.load() ? "true" : "false",
+                this->TorsoJ1NatureFreq, this->TorsoJ2NatureFreq, this->TorsoJ3NatureFreq, this->TorsoJ4NatureFreq,
+                this->enable_record_ ? "true" : "false",
                 this->enable_filter_ ? "true" : "false");
     LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_
              << ", enable_chassis_shaper=" << this->enable_chassis_shaper_.load()
              << ", enable_torso_shaper=" << this->enable_torso_shaper_.load()
+             << ", TorsoJ1NatureFreq=" << this->TorsoJ1NatureFreq << ", TorsoJ2NatureFreq=" << this->TorsoJ2NatureFreq
+             << ", TorsoJ3NatureFreq=" << this->TorsoJ3NatureFreq << ", TorsoJ4NatureFreq=" << this->TorsoJ4NatureFreq
              << ", enable_record=" << this->enable_record_ << ", enable_filter=" << this->enable_filter_;
 }
 
@@ -449,15 +483,15 @@ void RobotServer::TorqueControlThreadFunc() {
                         break;
                 }
 
-                // 对 torso J1-J4 (索引 0-3) 应用 EI 输入整形
+                // 对躯干 (Torso J1-J4, 索引 0-3) 应用 EI 输入整形
                 if (i >= 0 && i < 4) {
-                    // 检测 torso 整形器开关状态变化
+                    // 检测整形器开关状态变化
                     bool current_torso_enabled = enable_torso_shaper_.load();
                     if (current_torso_enabled != prev_torso_shaper_enabled_) {
                         torso_shapers_[i]->Reset();
                         prev_torso_shaper_enabled_ = current_torso_enabled;
-                        RCLCPP_INFO(this->get_logger(), "Torso J%d shaper %s, buffer reset", i + 1,
-                                    current_torso_enabled ? "enabled" : "disabled");
+                        RCLCPP_INFO(this->get_logger(), "Torso J%d shaper %s, buffer reset",
+                                    i + 1, current_torso_enabled ? "enabled" : "disabled");
                     }
 
                     // 应用整形
@@ -867,6 +901,27 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
         update_bool_param("enable_filter", this->enable_filter_);
         update_atomic_bool_param("enable_chassis_shaper", this->enable_chassis_shaper_);
         update_atomic_bool_param("enable_torso_shaper", this->enable_torso_shaper_);
+
+        // 更新腿部频率参数后需要重新初始化腿部输入整形器
+        auto get_double_value = [&json_data](const char *key) -> std::optional<double> {
+            if (json_data.contains(key) && json_data[key].is_number()) {
+                return json_data[key].get<double>();
+            }
+            return std::nullopt;
+        };
+        auto update_double_param = [this, &json_data, &get_double_value](const char *key, double &param) {
+            auto value = get_double_value(key);
+            if (value.has_value()) {
+                double double_value = value.value();
+                param = double_value;
+                RCLCPP_INFO(this->get_logger(), "%s set to %.2f", key, double_value);
+                LOG_INFO << key << " set to " << double_value;
+            }
+        };
+        update_double_param("TorsoJ1NatureFreq", this->TorsoJ1NatureFreq);
+        update_double_param("TorsoJ2NatureFreq", this->TorsoJ2NatureFreq);
+        update_double_param("TorsoJ3NatureFreq", this->TorsoJ3NatureFreq);
+        update_double_param("TorsoJ4NatureFreq", this->TorsoJ4NatureFreq);
 
     } catch (const std::exception &e) {
         RCLCPP_WARN(this->get_logger(), "Failed to parse /control/debug JSON: %s", e.what());
