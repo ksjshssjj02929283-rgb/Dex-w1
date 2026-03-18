@@ -2,8 +2,6 @@
 WORKSPACE_DIR=$(dirname "$0")
 source /opt/ros/humble/setup.bash
 
-rm -rf build/w1_server  # 清理w1_server的构建目录重新cmake以避免覆盖robot.cfg
-
 # 构建类型：Release（默认）或 RelWithDebInfo（开发模式，编译更快）
 BUILD_TYPE=${BUILD_TYPE:-Release}
 

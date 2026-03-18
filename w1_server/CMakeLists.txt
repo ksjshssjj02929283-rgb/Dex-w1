@@ -137,43 +137,14 @@ install(
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# robot.cfg：如果目标已存在则跳过安装
-set(ROBOT_CFG_INSTALL_PATH
-    "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/robot.cfg"
+install(
+  FILES robot.cfg
+  DESTINATION share/${PROJECT_NAME}
 )
-
-if(EXISTS "${ROBOT_CFG_INSTALL_PATH}")
-  message(STATUS
-    "[${PROJECT_NAME}] robot.cfg already exists at install destination, skipping install."
-  )
-else()
-  message(STATUS
-    "[${PROJECT_NAME}] robot.cfg not found at install destination, will be installed."
-  )
-  install(
-    FILES robot.cfg
-    DESTINATION share/${PROJECT_NAME}
-  )
-endif()
-
-# chassis.cfg：临时增加底盘类型配置
-set(ROBOT_CFG_INSTALL_PATH
-    "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/chassis.cfg"
+install(
+  FILES chassis.cfg
+  DESTINATION share/${PROJECT_NAME}
 )
-
-if(EXISTS "${ROBOT_CFG_INSTALL_PATH}")
-  message(STATUS
-    "[${PROJECT_NAME}] chassis.cfg already exists at install destination, skipping install."
-  )
-else()
-  message(STATUS
-    "[${PROJECT_NAME}] chassis.cfg not found at install destination, will be installed."
-  )
-  install(
-    FILES chassis.cfg
-    DESTINATION share/${PROJECT_NAME}
-  )
-endif()
 
 # feedback 可执行文件
 add_executable(feedback tools/feedback.cpp)

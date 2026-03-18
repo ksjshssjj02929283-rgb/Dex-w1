@@ -12,6 +12,9 @@ PlannerManager::PlannerManager(RobotModel robot_model,
 PlannerManager::~PlannerManager() = default;
 
 void PlannerManager::Initialize() {
+    // 从 robot_model 中加载机器人属性配置
+    robot_property_ = robot_model_.robot_property;
+
     // Initialize the runtime data
     runtime_data_.loop_counter = -1;
     runtime_data_.planner_request.request_id = -1;

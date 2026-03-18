@@ -101,6 +101,44 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     robot_model.secondary_arm_model_ptr = std::make_shared<pinocchio::Model>(right_arm_model);
     robot_model.params_ptr = std::make_shared<RobotParams>(params);
 
+    // 解析 RobotProperty 配置参数
+    RobotProperty robot_property;
+    Eigen::VectorXd temp_vec;
+
+    if (config_json.contains("joint_stiffness")) {
+        parse_array("joint_stiffness", temp_vec);
+        robot_property.joint_stiffness = temp_vec;
+    }
+
+    if (config_json.contains("joint_damping")) {
+        parse_array("joint_damping", temp_vec);
+        robot_property.joint_damping = temp_vec;
+    }
+
+    if (config_json.contains("joint_integral_ratio") && config_json["joint_integral_ratio"].is_number()) {
+        robot_property.joint_integral_ratio = config_json["joint_integral_ratio"].get<double>();
+    }
+
+    if (config_json.contains("safe_level") && config_json["safe_level"].is_number()) {
+        robot_property.safe_level = config_json["safe_level"].get<double>();
+    }
+
+    if (config_json.contains("global_speed_ratio") && config_json["global_speed_ratio"].is_number()) {
+        robot_property.global_speed_ratio = config_json["global_speed_ratio"].get<double>();
+    }
+
+    if (config_json.contains("cart_stiffness")) {
+        parse_array("cart_stiffness", temp_vec);
+        robot_property.cart_stiffness = temp_vec;
+    }
+
+    if (config_json.contains("cart_damping_ratio")) {
+        parse_array("cart_damping_ratio", temp_vec);
+        robot_property.cart_damping_ratio = temp_vec;
+    }
+
+    robot_model.robot_property = robot_property;
+
     return robot_model;
 }
 

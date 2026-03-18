@@ -691,6 +691,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
         ",\n  \"joint_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_stiffness, idx_offset, ndof_config_).str() +
         ",\n  \"joint_damping\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_damping, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_integral_ratio\":" + std::to_string(this->manager_info_.robot_property.joint_integral_ratio) + "\"" +
         ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness, 0, cart_param_count).str() +
         ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio, 0, cart_param_count).str() +
         ",\n  \"cart_impedance_force\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_impedance_force, 0, cart_param_count).str() +

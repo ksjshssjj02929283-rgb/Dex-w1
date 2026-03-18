@@ -239,6 +239,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             return ComputeCommandStatus::TaskOngoing;
         }
     } else {
+        LOG_CRIT << "JointStreamingPlanner: Ruckig error, status = " << static_cast<int>(status);
         return ComputeCommandStatus::Error;
     }
 }
