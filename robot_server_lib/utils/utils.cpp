@@ -319,6 +319,9 @@ PlannerRequest ParseSetPropertyRequest(
         case RequestType::CartDampingRatio:
             planner_request.data = utils::StringToVectorXd(request->value);
             break;
+        case RequestType::JointIntegralRatio:
+            planner_request.data = std::clamp(std::stod(request->value), 0.00, 1.0);
+            break;
         default:
             planner_request.type = RequestType::Empty;
             planner_request.data = std::nullopt;
