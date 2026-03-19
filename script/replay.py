@@ -165,9 +165,9 @@ def main(args=None):
 
     # 创建节点
     node = Node("replay_node")
-    node.publisher = node.create_publisher(JointPositionControl, "/control/joint_position", 10)
+    node.publisher = node.create_publisher(JointPositionControl, "/hardware/joint_position_control", 10)
     node.server_status = None
-    node.create_subscription(String, "/feedback/robot_server_state", robot_state_callback(node), 10)
+    node.create_subscription(String, "/hardware/joint_state", robot_state_callback(node), 10)
     executor = MultiThreadedExecutor()
     executor.add_node(node)
     ros_thread = threading.Thread(target=executor.spin, daemon=True)
