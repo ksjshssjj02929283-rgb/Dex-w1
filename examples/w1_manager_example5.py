@@ -219,5 +219,4 @@ if __name__ == "__main__":
                      planner_env_path=planner_downward_env_path)
     # input("Press Enter to continue to next test...")
 
-    input("Press Enter to exit the script and stop the robot")
-    w1_manager.close()
+    embed()

@@ -109,6 +109,7 @@ if __name__ == "__main__":
     test_move_linear_full_body(task_dict=task_dict1)
 
     # total_qpos_array = w1_manager.total_qpos_array
+    input("Press Enter to start visualization...")
     # idx = 0
     # rate = RateLimiter(frequency=100, warn=True)
     # while True:
@@ -118,6 +119,3 @@ if __name__ == "__main__":
     #         idx += 1
     #         # input("Press Enter to continue...")
     #     rate.sleep()
-
-    input("Press Enter to exit the script and stop the robot")
-    w1_manager.close()

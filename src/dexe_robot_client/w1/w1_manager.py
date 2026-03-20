@@ -91,14 +91,14 @@ class W1Manager:
         self._download_urdf_files(arm_type, w1_version, end_effector_type)
 
         # Register cleanup function
-        self._atexit_cb = self.close
-        atexit.register(self._atexit_cb)
+        atexit.register(self._destroy_clients)
 
         # Initialize components
         try:
             self._initialize_components(is_sim)
         except Exception as e:
-            self.close()
+            self.logger.error(f"Initialization failed: {e}")
+            self._destroy_clients()
             raise RuntimeError("W1Manager initialization failed") from e
 
     @property
@@ -300,7 +300,7 @@ class W1Manager:
                 try:
                     self._executor.spin_once(timeout_sec=0.1)
                 except Exception as e:
-                    break
+                    self.logger.error(f"Executor spin error: {e}")
 
         self._node_thread = threading.Thread(target=spin_executor, daemon=True)
         self._node_thread.start()
@@ -378,49 +378,40 @@ class W1Manager:
 
         self.logger.info("Client supervisor initialized.")
 
-    def close(self):
-        """推荐的显式释放入口：只需要调用一次。"""
-        try:
-            atexit.unregister(self._atexit_cb)
-        except Exception:
-            pass
-        self._destroy_clients()
-
     def _destroy_clients(self):
-
         try:
-            if self._client_supervisor_real is not None:
-                self._client_supervisor_real.stop()
-                self._client_supervisor_real = None
-        except Exception as e:
-            self.logger.error(f"Failed to stop real client supervisor: {e}")
-
-        try:
-            if self._client_supervisor_sim is not None:
-                self._client_supervisor_sim.stop()
-                self._client_supervisor_sim = None
-        except Exception as e:
-            self.logger.error(f"Failed to stop sim client supervisor: {e}")
-
-        if self._node_thread is not None:
-            self._running = False
-            self._node_thread.join(timeout=5.)
-            self._node_thread = None
-
-        if self._executor is not None:
-            self._executor.shutdown()
-            self._executor = None
-
-        for node in self._clients:
             try:
-                node.destroy_node()
+                if self._client_supervisor_real is not None:
+                    self._client_supervisor_real.stop()
+                    self._client_supervisor_real = None
             except Exception as e:
-                self.logger.error(
-                    f"Failed to destroy node {node.node_name}: {e}")
+                self.logger.error(f"Failed to stop real client supervisor: {e}")
 
-        self._clients.clear()
+            try:
+                if self._client_supervisor_sim is not None:
+                    self._client_supervisor_sim.stop()
+                    self._client_supervisor_sim = None
+            except Exception as e:
+                self.logger.error(f"Failed to stop sim client supervisor: {e}")
 
-        try:
+            if self._node_thread is not None:
+                self._running = False
+                self._node_thread.join(timeout=5.)
+                self._node_thread = None
+
+            if self._executor is not None:
+                self._executor.shutdown()
+                self._executor = None
+
+            for node in self._clients:
+                try:
+                    node.destroy_node()
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to destroy node {node.node_name}: {e}")
+
+            self._clients.clear()
+
             if rclpy.ok():
                 rclpy.shutdown()
 

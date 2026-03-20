@@ -84,9 +84,6 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
         },
                                         speed_ratio=0.5)
 
-    input("Press Enter to exit the script and stop the robot")
-    w1_manager.close()
-
 
 def move_full_body_example2(move_with_ee: bool,
                             is_sim: bool = True,
@@ -185,10 +182,16 @@ def move_full_body_example2(move_with_ee: bool,
                                          speed_ratio=0.5,
                                          is_local=is_local)
 
-    input("Press Enter to exit the script and stop the robot")
-    w1_manager.close()
-
 
 if __name__ == "__main__":
     # move_full_body_example1(move_with_ee = True, is_sim = True)
     move_full_body_example2(move_with_ee=True, is_sim=True, is_local=False)
+
+    # TODO: keep the script running to observe the robot state in simulator
+    import time
+
+    try:
+        while True:
+            time.sleep(0.2)
+    except KeyboardInterrupt:
+        print("Exiting the script. Goodbye!")

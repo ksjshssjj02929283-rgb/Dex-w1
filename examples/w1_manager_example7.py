@@ -210,6 +210,3 @@ if __name__ == "__main__":
                      load_env=False,
                      fcl_env_path=fcl_downward_env_path,
                      planner_env_path=planner_downward_env_path)
-
-    input("Press Enter to exit the script and stop the robot")
-    w1_manager.close()

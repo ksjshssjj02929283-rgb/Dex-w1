@@ -38,5 +38,11 @@ if __name__ == "__main__":
         w1_manager.rotate_arm_linear("right_arm", [0, 0, 10],
                                      along_base_frame=False)
 
-    input("Press Enter to exit the script and stop the robot")
-    w1_manager.close()
+        # TODO: keep the script running to observe the robot state in simulator
+        import time
+
+        try:
+            while True:
+                time.sleep(0.2)
+        except KeyboardInterrupt:
+            print("Exiting the script. Goodbye!")

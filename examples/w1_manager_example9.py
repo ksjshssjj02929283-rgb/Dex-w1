@@ -85,7 +85,12 @@ if __name__ == "__main__":
     # vis.set_qpos("robot", init_qpos)
 
     res, full_body_traj = test_move_linear_dual_arm_sync(task_dict=task_dict1)
-
-    input("Press Enter to exit the script and stop the robot")
-
-    w1_manager.close()
+    input("Press Enter to continue")
+    # idx = 0
+    # rate = RateLimiter(frequency=100, warn=True)
+    # while True:
+    #     if idx < len(full_body_traj):
+    #         vis.set_qpos("robot", full_body_traj[idx])
+    #         idx += 1
+    #         # input("Press Enter to continue...")
+    #     rate.sleep()
