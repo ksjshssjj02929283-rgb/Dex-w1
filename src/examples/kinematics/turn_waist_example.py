@@ -50,7 +50,7 @@ task_dict1 = {
                      154.99840845940943, 432.0726882387296, 874.0060771620388,
                      153.75265706823149, -85.14610235747321, 99.11888114766928
                  ]],
-    "left_arm_speed_ratio": [0.5, 0.5, 0.5, 0.5],
+    "left_arm_speed_ratio": [1., 1., 1., 1.],
     "left_arm_ee": [],
     "right_arm": [],
     "right_arm_speed_ratio": [],
@@ -114,10 +114,16 @@ if __name__ == "__main__":
                                            degrees=True).as_matrix()
     w1_manager.set_tcp("right_arm", xpos=right_tcp_xpos)
 
+    # home_qpos = np.array([
+    #     1.353, -2.705, 1.395, 0.009, 0.0, -0.681, -0.891, -1.655, 1.55, -0.023,
+    #     -1.514, -0.633, 0.068, 0.894, 1.7, -1.529, 0.021, 1.324, 0.679, -0.14
+    # ])
+
     home_qpos = np.array([
-        1.353, -2.705, 1.395, 0.009, 0.0, -0.681, -0.891, -1.655, 1.55, -0.023,
+        0.885, -1.77, 0.885, 0.000, 0.0, -0.681, -0.891, -1.655, 1.55, -0.023,
         -1.514, -0.633, 0.068, 0.894, 1.7, -1.529, 0.021, 1.324, 0.679, -0.14
     ])
+
     left_ee_home_qpos = np.array([0.0] * 6)
     right_ee_home_qpos = np.array([0.0] * 6)
 
@@ -129,6 +135,8 @@ if __name__ == "__main__":
     vis.set_qpos("robot", home_qpos)
     vis.set_ee_pos("left_ee", left_ee_home_qpos)
     vis.set_ee_pos("right_ee", right_ee_home_qpos)
+
+    input("Press Enter to start the test...")
 
     res, full_body_traj1 = test_move_linear_dual_arm_sync(home_qpos,
                                                           left_ee_home_qpos,

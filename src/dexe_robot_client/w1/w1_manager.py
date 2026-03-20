@@ -2341,16 +2341,17 @@ class W1Manager:
 
         return StatusCode.SUCCESS, left_qpos_array, right_qpos_array
 
-    def _plan_linear_dual_arm_sync(self,
-                                   cur_left_qpos: np.ndarray,
-                                   cur_right_qpos: np.ndarray,
-                                   waypoints_dict: dict,
-                                   left_speed_ratio: float,
-                                   right_speed_ratio: float,
-                                   left_qpos_seed: np.ndarray = None,
-                                   right_qpos_seed: np.ndarray = None,
-                                   cartesian_step: float = None,
-                                   is_local: bool = True):
+    def _plan_linear_dual_arm_sync_point_by_point(
+            self,
+            cur_left_qpos: np.ndarray,
+            cur_right_qpos: np.ndarray,
+            waypoints_dict: dict,
+            left_speed_ratio: float,
+            right_speed_ratio: float,
+            left_qpos_seed: np.ndarray = None,
+            right_qpos_seed: np.ndarray = None,
+            cartesian_step: float = None,
+            is_local: bool = True):
         if not is_local:
             left_qpos_array = cur_left_qpos[
                 self.w1_params.index_infos["left_arm"]["index"]]
@@ -2880,7 +2881,7 @@ class W1Manager:
                 not self._has_arm_ee_client("right_arm_ee", False):
                 if is_local:
                     (res_dual_arm, left_arm_qpos_array, right_arm_qpos_array) \
-                     = self._plan_linear_dual_arm_sync(
+                     = self._plan_linear_dual_arm_sync_point_by_point(
                         start_left_arm_qpos,
                         start_right_arm_qpos,
                         waypoints_dict,
@@ -2902,7 +2903,7 @@ class W1Manager:
                         ])
                 else:
                     (res_dual_arm, left_arm_qpos_array, right_arm_qpos_array) \
-                     = self._plan_linear_dual_arm_sync(
+                     = self._plan_linear_dual_arm_sync_point_by_point(
                         start_qpos,
                         start_qpos,
                         waypoints_dict,
@@ -2930,7 +2931,7 @@ class W1Manager:
             else:
                 if is_local:
                     (res_dual_arm, left_arm_qpos_array, right_arm_qpos_array) \
-                     = self._plan_linear_dual_arm_sync(
+                     = self._plan_linear_dual_arm_sync_point_by_point(
                         start_left_arm_qpos,
                         start_right_arm_qpos,
                         waypoints_dict,
@@ -2952,7 +2953,7 @@ class W1Manager:
                         ])
                 else:
                     (res_dual_arm, left_arm_qpos_array, right_arm_qpos_array) \
-                     = self._plan_linear_dual_arm_sync(
+                     = self._plan_linear_dual_arm_sync_point_by_point(
                         start_qpos,
                         start_qpos,
                         waypoints_dict,
@@ -2981,25 +2982,28 @@ class W1Manager:
                 if left_ee_target_list is not None and left_ee_target_list != []:
                     left_ee_target = left_ee_target_list[-1]
                     left_arm_ee_trigger_list = [
-                        (left_arm_qpos_array.shape[0] + left_ee_target[0],
+                        (int(left_arm_qpos_array.shape[0] +
+                             left_ee_target[0] / self.TIME_STEP),
                          left_ee_target[1])
                     ]
                     left_arm_qpos_array = np.vstack([
                         left_arm_qpos_array,
                         np.tile(left_arm_qpos_array[-1, :],
-                                (int(left_ee_target[0] + left_ee_target[2]), 1))
+                                (int((left_ee_target[0] + left_ee_target[2]) /
+                                     self.TIME_STEP), 1))
                     ])
                 if right_ee_target_list is not None and right_ee_target_list != []:
                     right_ee_target = right_ee_target_list[-1]
                     right_arm_ee_trigger_list = [
-                        (right_arm_qpos_array.shape[0] + right_ee_target[0],
+                        (int(right_arm_qpos_array.shape[0] +
+                             right_ee_target[0] / self.TIME_STEP),
                          right_ee_target[1])
                     ]
                     right_arm_qpos_array = np.vstack([
                         right_arm_qpos_array,
-                        np.tile(
-                            right_arm_qpos_array[-1, :],
-                            (int(right_ee_target[0] + right_ee_target[2]), 1))
+                        np.tile(right_arm_qpos_array[-1, :],
+                                (int((right_ee_target[0] + right_ee_target[2]) /
+                                     self.TIME_STEP), 1))
                     ])
 
         # align
@@ -4920,3 +4924,467 @@ class W1Manager:
             qpos_array=full_body_traj,
             left_arm_ee_trigger_list=None,
             right_arm_ee_trigger_list=None), full_body_traj
+
+    def _interpolate_bezier_path(
+        self,
+        path: PathR3xSO3Bezier,
+        cartesian_step: float = 0.005,
+        interpolate_num: int = None,
+        interpolate_num_list: list = None
+    ) -> tuple[StatusCode, list[np.ndarray]]:
+        """
+        Note:
+            - The input path should be already calculated, and the path type should be PathType.Bezier5thCartesian
+        """
+        if interpolate_num is not None and interpolate_num_list is not None:
+            self.logger.error(
+                "Only one of interpolate_num and interpolate_num_list should be set."
+            )
+            return StatusCode.INPUT_INVALID, None
+
+        if interpolate_num_list is None and interpolate_num is None:
+            interpolated_path = path.get_sample_by_step(cartesian_step)
+            if interpolated_path is None:
+                self.logger.error("Interpolate bezier path failed.")
+                return StatusCode.PLAN_PATH_FAIL, None
+            return StatusCode.SUCCESS, interpolated_path
+        elif interpolate_num is not None and interpolate_num_list is None:
+            interpolated_path = path.get_sample_by_num(interpolate_num)
+            if interpolated_path is None:
+                self.logger.error("Interpolate bezier path failed.")
+                return StatusCode.PLAN_PATH_FAIL, None
+            return StatusCode.SUCCESS, interpolated_path
+        elif interpolate_num_list is not None and interpolate_num is None:
+            path_seg_list = path.get_path_segments()
+            # TODO: 判断如果因为某些点距离很近导致path计算过程中滤除了这些点，然后path segments的数量和interpolate_num_list长度不一致的情况
+            # 这里假设path segments都是按照直线+blend+直线的顺序
+            path_linear_seg_list, path_blend_seg_list = [], []
+            for i in range(len(path_seg_list)):
+                if i % 2 == 0:
+                    path_linear_seg_list.append(path_seg_list[i])
+                else:
+                    path_blend_seg_list.append(path_seg_list[i])
+
+            path_rearrange_seg_list = []
+            if len(path_blend_seg_list) != 0:
+                for i in range(len(path_linear_seg_list)):
+                    if i == 0:
+                        path_rearrange_seg_list.append(
+                            ([], path_linear_seg_list[i],
+                             path_blend_seg_list[i]))
+                    elif i == len(path_linear_seg_list) - 1:
+                        path_rearrange_seg_list.append(
+                            (path_blend_seg_list[i - 1],
+                             path_linear_seg_list[i], []))
+                    else:
+                        path_rearrange_seg_list.append(
+                            (path_blend_seg_list[i - 1],
+                             path_linear_seg_list[i], path_blend_seg_list[i]))
+            else:
+                path_rearrange_seg_list.append(
+                    ([], path_linear_seg_list[0], []))
+
+            if len(path_rearrange_seg_list) != len(interpolate_num_list):
+                self.logger.eror(
+                    "The length of beizer path segments mismatch with the length of interpolate_num_list."
+                )
+                return StatusCode.INPUT_INVALID, None
+
+            interpolate_path = []
+            for idx, (pre_blend_seg, linear_seg,
+                      post_blend_seg) in enumerate(path_rearrange_seg_list):
+                interpolate_num = interpolate_num_list[idx]
+                pre_blend_seg_length = pre_blend_seg.get_length(
+                ) if pre_blend_seg != [] else 0.0
+                linear_seg_length = linear_seg.get_length()
+                post_blend_seg_length = post_blend_seg.get_length(
+                ) if post_blend_seg != [] else 0.0
+
+                weights = np.array([
+                    pre_blend_seg_length / 2, linear_seg_length,
+                    post_blend_seg_length / 2
+                ])
+                den = weights.sum()
+                if den <= 0:
+                    pre_blend_interpolate_num = linear_interpolate_num = post_blend_interpolate_num = 0
+                else:
+                    raw = interpolate_num * weights / den
+                    base = np.floor(raw).astype(int)
+                    remain = int(interpolate_num - base.sum())
+                    frac_order = np.argsort(raw - base)[::-1]
+                    base[frac_order[:remain]] += 1
+                    pre_blend_interpolate_num, linear_interpolate_num, post_blend_interpolate_num = base.tolist(
+                    )
+
+                sample_seg_list = []
+                pre_blend_s = np.linspace(
+                    pre_blend_seg.get_s0() + pre_blend_seg.get_length() / 2,
+                    pre_blend_seg.get_s0() + pre_blend_seg.get_length(),
+                    pre_blend_interpolate_num) if pre_blend_seg != [] else None
+                linear_s = np.linspace(linear_seg.get_s0(),
+                                       linear_seg.get_s0() + linear_seg_length,
+                                       linear_interpolate_num)
+                post_blend_s = np.linspace(
+                    post_blend_seg.get_s0(),
+                    post_blend_seg.get_s0() +
+                    post_blend_seg_length / 2, post_blend_interpolate_num
+                ) if post_blend_seg != [] else None
+
+                if pre_blend_s is not None:
+                    for s in pre_blend_s:
+                        if s == pre_blend_s[0]:
+                            continue
+                        sample_seg_list.append(pre_blend_seg.get_config(s))
+                for s in linear_s:
+                    if pre_blend_s is not None and s == linear_s[0]:
+                        continue
+                    sample_seg_list.append(linear_seg.get_config(s))
+                if post_blend_s is not None:
+                    for s in post_blend_s:
+                        if s == post_blend_s[0]:
+                            continue
+                        sample_seg_list.append(post_blend_seg.get_config(s))
+
+                interpolate_path.extend(sample_seg_list)
+
+            return StatusCode.SUCCESS, interpolate_path
+
+    @time_consuming
+    def plan_linear_whole_body_ik(self,
+                                  start_qpos: np.ndarray,
+                                  start_left_arm_ee_qpos: np.ndarray,
+                                  start_right_arm_ee_qpos: np.ndarray,
+                                  waypoints_dict: dict,
+                                  cartesian_step: float = 0.005,
+                                  speed_ratio: float = 1.0,
+                                  use_collision_validator: bool = True,
+                                  movement_mode: str = "eager"):
+        """
+        This function is used to plan linear trajectory of end effector in Cartesian space,
+            and use whole body ik to solve the corresponding joint trajectory. 
+
+        Notes:
+            - Only execute the last end effector task in waypoints_dict
+            - If there is not end-effectors, start_left_arm_ee_qpos and start_right_arm_ee_qpos can be set to None
+            - Arms' teaching point should be in chassis base-link frame
+        """
+        if movement_mode not in [
+                "eager", "sync_endpoint", "sync_point_by_point"
+        ]:
+            self.logger.error(
+                f"Unsupported movement mode: {movement_mode}, please choose from ['eager', 'sync_endpoint', 'sync_point_by_point']"
+            )
+            return StatusCode.INPUT_INVALID, None, None, None
+
+        left_parse_res, left_pos_raw_array, left_qvel_limits_array, _ = \
+            self._parse_waypoints_from_dict("left_arm", waypoints_dict, speed_ratio, is_cartesian=True)
+        right_parse_res, right_pos_raw_array, right_qvel_limits_array, _ = \
+            self._parse_waypoints_from_dict("right_arm", waypoints_dict, speed_ratio, is_cartesian=True)
+        if left_parse_res == StatusCode.INPUT_EMPTY or right_parse_res == StatusCode.INPUT_EMPTY:
+            return StatusCode.SUCCESS, np.atleast_2d(start_qpos), None, None
+        elif left_parse_res.value < 0 or right_parse_res.value < 0:
+            return StatusCode.FAIL, None, None, None
+
+        res_left_fk, start_left_xpos = self.get_xpos("left_arm",
+                                                     start_qpos,
+                                                     is_local=False)
+        res_right_fk, start_right_xpos = self.get_xpos("right_arm",
+                                                       start_qpos,
+                                                       is_local=False)
+
+        left_pos_raw_list = [start_left_xpos] + \
+            [user_pose_to_xpos(pose[:3], pose[3:]) for pose in left_pos_raw_array]
+        right_pos_raw_list = [start_right_xpos] + \
+            [user_pose_to_xpos(pose[:3], pose[3:]) for pose in right_pos_raw_array]
+
+        left_qvel_limits_array = np.vstack(
+            (self.w1_params.default_qvel[self.w1_params.index_infos["left_arm"]
+                                         ["index"]], left_qvel_limits_array))
+        right_qvel_limits_array = np.vstack(
+            (self.w1_params.default_qvel[self.w1_params.index_infos["right_arm"]
+                                         ["index"]], right_qvel_limits_array))
+
+        if movement_mode == "sync_point_by_point":
+            if len(left_pos_raw_list) != len(right_pos_raw_list):
+                self.logger.error(
+                    "The number of left arm waypoints and right arm waypoints should be the same."
+                )
+                return StatusCode.DIM_MISMATCH, None, None, None
+
+        if left_qvel_limits_array.shape[0] != len(
+                left_pos_raw_list) or right_qvel_limits_array.shape[0] != len(
+                    right_pos_raw_list):
+            self.logger.error(
+                "The number of rows in qvel_limits_array should be the same as the number of waypoints."
+            )
+            return StatusCode.DIM_MISMATCH, None, None, None
+
+        left_prefix_dist_list = [0.]
+        for idx in range(len(left_pos_raw_list) - 1):
+            dist = np.linalg.norm(left_pos_raw_list[idx + 1][:3, 3] -
+                                  left_pos_raw_list[idx][:3, 3])
+            left_prefix_dist_list.append(left_prefix_dist_list[-1] + dist)
+        right_prefix_dist_list = [0.]
+        for idx in range(len(right_pos_raw_list) - 1):
+            dist = np.linalg.norm(right_pos_raw_list[idx + 1][:3, 3] -
+                                  right_pos_raw_list[idx][:3, 3])
+            right_prefix_dist_list.append(right_prefix_dist_list[-1] + dist)
+
+        if movement_mode == "sync_point_by_point":
+            left_interpolate_num_list = self._cal_path_seg_interpolate_num(
+                left_pos_raw_list, cartesian_step)
+            right_interpolate_num_list = self._cal_path_seg_interpolate_num(
+                right_pos_raw_list, cartesian_step)
+            if len(left_interpolate_num_list) != len(
+                    right_interpolate_num_list):
+                self.logger.error(
+                    "Left and right arm waypoint segment number mismatch.")
+                return StatusCode.INPUT_INVALID, None, None, None
+
+            interpolate_num_list = []
+            for i in range(len(left_interpolate_num_list)):
+                left_interpolate_num = left_interpolate_num_list[i]
+                right_interpolate_num = right_interpolate_num_list[i]
+                seg_num_sample = max(left_interpolate_num,
+                                     right_interpolate_num)
+                interpolate_num_list.append(seg_num_sample)
+
+            left_bezier_planner = PathR3xSO3Bezier(left_pos_raw_list)
+            if not left_bezier_planner.calc_path(PathType.Bezier5thCartesian,
+                                                 0.01):
+                self.logger.error("Left arm bezier path planning failed.")
+                return StatusCode.PLAN_PATH_FAIL, None, None, None
+
+            right_bezier_planner = PathR3xSO3Bezier(right_pos_raw_list)
+            if not right_bezier_planner.calc_path(PathType.Bezier5thCartesian,
+                                                  0.01):
+                self.logger.error("Right arm bezier path planning failed.")
+                return StatusCode.PLAN_PATH_FAIL, None, None, None
+
+            res, left_xpos_sample_array = self._interpolate_bezier_path(
+                left_bezier_planner,
+                cartesian_step,
+                interpolate_num_list=interpolate_num_list)
+            if res != StatusCode.SUCCESS:
+                self.logger.error("Left arm bezier path interpolation failed.")
+                return StatusCode.PLAN_PATH_FAIL, None, None, None
+            res, right_xpos_sample_array = self._interpolate_bezier_path(
+                right_bezier_planner,
+                cartesian_step,
+                interpolate_num_list=interpolate_num_list)
+            if res != StatusCode.SUCCESS:
+                self.logger.error("Right arm bezier path interpolation failed.")
+                return StatusCode.PLAN_PATH_FAIL, None, None, None
+
+        if movement_mode == "eager":
+            left_bezier_planner = PathR3xSO3Bezier(left_pos_raw_list)
+            if not left_bezier_planner.calc_path(PathType.Bezier5thCartesian,
+                                                 0.01):
+                self.logger.error("Left arm bezier path planning failed.")
+                return StatusCode.PLAN_PATH_FAIL, None, None, None
+
+            right_bezier_planner = PathR3xSO3Bezier(right_pos_raw_list)
+            if not right_bezier_planner.calc_path(PathType.Bezier5thCartesian,
+                                                  0.01):
+                self.logger.error("Right arm bezier path planning failed.")
+                return StatusCode.PLAN_PATH_FAIL, None, None, None
+
+            res, left_xpos_sample_array = self._interpolate_bezier_path(
+                left_bezier_planner, cartesian_step)
+            if res != StatusCode.SUCCESS:
+                self.logger.error("Left arm bezier path interpolation failed.")
+                return StatusCode.PLAN_PATH_FAIL, None, None, None
+            res, right_xpos_sample_array = self._interpolate_bezier_path(
+                right_bezier_planner, cartesian_step)
+            if res != StatusCode.SUCCESS:
+                self.logger.error("Right arm bezier path interpolation failed.")
+                return StatusCode.PLAN_PATH_FAIL, None, None, None
+
+            # pad the shorter one to make them have the same number of waypoints
+            left_len = left_xpos_sample_array.shape[0]
+            right_len = right_xpos_sample_array.shape[0]
+
+            if left_len < right_len:
+                pad = np.repeat(left_xpos_sample_array[-1:],
+                                right_len - left_len,
+                                axis=0)
+                left_xpos_sample_array = np.concatenate(
+                    [left_xpos_sample_array, pad], axis=0)
+            elif right_len < left_len:
+                pad = np.repeat(right_xpos_sample_array[-1:],
+                                left_len - right_len,
+                                axis=0)
+                right_xpos_sample_array = np.concatenate(
+                    [right_xpos_sample_array, pad], axis=0)
+
+            left_xpos_sample_array = list(left_xpos_sample_array)
+            right_xpos_sample_array = list(right_xpos_sample_array)
+
+        if movement_mode == "sync_endpoint":
+            left_interpolate_num_list = self._cal_path_seg_interpolate_num(
+                left_pos_raw_list, cartesian_step)
+            right_interpolate_num_list = self._cal_path_seg_interpolate_num(
+                right_pos_raw_list, cartesian_step)
+            left_interpolate_num = sum(left_interpolate_num_list)
+            right_interpolate_num = sum(right_interpolate_num_list)
+            total_interpolate_num = max(left_interpolate_num,
+                                        right_interpolate_num)
+
+            left_bezier_planner = PathR3xSO3Bezier(left_pos_raw_list)
+            if not left_bezier_planner.calc_path(PathType.Bezier5thCartesian,
+                                                 0.01):
+                self.logger.error("Left arm bezier path planning failed.")
+                return StatusCode.PLAN_PATH_FAIL, None, None, None
+
+            right_bezier_planner = PathR3xSO3Bezier(right_pos_raw_list)
+            if not right_bezier_planner.calc_path(PathType.Bezier5thCartesian,
+                                                  0.01):
+                self.logger.error("Right arm bezier path planning failed.")
+                return StatusCode.PLAN_PATH_FAIL, None, None, None
+
+            res, left_xpos_sample_array = self._interpolate_bezier_path(
+                left_bezier_planner, interpolate_num=total_interpolate_num)
+            if res != StatusCode.SUCCESS:
+                self.logger.error("Left arm bezier path interpolation failed.")
+                return StatusCode.PLAN_PATH_FAIL, None, None, None
+            res, right_xpos_sample_array = self._interpolate_bezier_path(
+                right_bezier_planner, interpolate_num=total_interpolate_num)
+            if res != StatusCode.SUCCESS:
+                self.logger.error("Right arm bezier path interpolation failed.")
+                return StatusCode.PLAN_PATH_FAIL, None, None, None
+
+            left_xpos_sample_array = list(left_xpos_sample_array)
+            right_xpos_sample_array = list(right_xpos_sample_array)
+
+        if len(left_xpos_sample_array) != len(right_xpos_sample_array):
+            self.logger.error(
+                "Left and right arm sample number mismatch after interpolation."
+            )
+            return StatusCode.PLAN_PATH_FAIL, None, None, None
+
+        # vel align
+        if left_qvel_limits_array is None:
+            left_qvel_limits_array_ = None
+        else:
+            idx = 0
+            left_qvel_limits_list_ = [left_qvel_limits_array[idx]]
+            cur_left_xpos = left_xpos_sample_array[0]
+            cur_dist = 0.
+            for left_xpos in left_xpos_sample_array[1:-1]:
+                cur_dist += np.linalg.norm(left_xpos[:3, 3] -
+                                           cur_left_xpos[:3, 3])
+                if cur_dist >= left_prefix_dist_list[idx]:
+                    idx += 1
+                left_qvel_limits_list_.append(left_qvel_limits_array[idx])
+                cur_left_xpos = left_xpos
+            left_qvel_limits_list_.append(left_qvel_limits_array[-1])
+        left_qvel_limits_array_ = np.array(left_qvel_limits_list_)
+
+        if right_qvel_limits_array is None:
+            right_qvel_limits_array_ = None
+        else:
+            idx = 0
+            right_qvel_limits_list_ = [right_qvel_limits_array[idx]]
+            cur_right_xpos = right_xpos_sample_array[0]
+            cur_dist = 0.
+            for right_xpos in right_xpos_sample_array[1:-1]:
+                cur_dist += np.linalg.norm(right_xpos[:3, 3] -
+                                           cur_right_xpos[:3, 3])
+                if cur_dist >= right_prefix_dist_list[idx]:
+                    idx += 1
+                right_qvel_limits_list_.append(right_qvel_limits_array[idx])
+                cur_right_xpos = right_xpos
+            right_qvel_limits_list_.append(right_qvel_limits_array[-1])
+        right_qvel_limits_array_ = np.array(right_qvel_limits_list_)
+
+        torso_qvel_limits_array_ = np.tile(
+            self.w1_params.default_qvel[self.w1_params.index_infos["torso"]
+                                        ["index"]],
+            (left_qvel_limits_array_.shape[0], 1))
+        head_qvel_limits_array_ = np.tile(
+            self.w1_params.default_qvel[self.w1_params.index_infos["head"]
+                                        ["index"]],
+            (left_qvel_limits_array_.shape[0], 1))
+        qvel_limits_array_ = np.hstack([
+            torso_qvel_limits_array_, head_qvel_limits_array_,
+            left_qvel_limits_array_, right_qvel_limits_array_
+        ])
+
+        res, full_body_joint_traj = self.cartesian_joint_planner.plan_whole_body(
+            start_qpos=start_qpos,
+            left_end_effector_traj=np.asarray(left_xpos_sample_array),
+            right_end_effector_traj=np.asarray(right_xpos_sample_array))
+
+        # resolve for the last target
+        left_last_target_xpos = left_xpos_sample_array[-1]
+        right_last_target_xpos = right_xpos_sample_array[-1] @ np.linalg.inv(
+            self.cartesian_joint_planner.right_tcp)
+        self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
+            "standard_strict")
+        res, full_body_last_qpos = self.cartesian_joint_planner.whole_body_ik_solver.solve_ik(
+            left_ee_target=left_last_target_xpos,
+            right_ee_target=right_last_target_xpos,
+            cur_qpos=full_body_joint_traj[-1])
+        full_body_joint_traj = np.vstack(
+            [full_body_joint_traj, full_body_last_qpos])
+        qvel_limits_array_ = np.vstack(
+            [qvel_limits_array_, qvel_limits_array_[-1]])
+        self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
+            "standard")
+
+        if not res:
+            self.logger.error(
+                "Whole body joint traj planning failed in plan_linear_whole_body_ik."
+            )
+            return StatusCode.PLAN_TRAJ_FAIL, None, None, None
+
+        res, full_body_joint_traj_ = self.cartesian_joint_planner.generate_dense_whole_body_joint_traj(
+            whole_body_joint_traj=full_body_joint_traj,
+            qvel_limits_array=qvel_limits_array_,
+            current_qpos=start_qpos)
+        if not res:
+            self.logger.error(
+                "Generate dense whole body joint traj failed in plan_linear_whole_body_ik."
+            )
+            return StatusCode.PLAN_TRAJ_FAIL, None, None, None
+
+        # TODO: Add end effector trigger
+        left_ee_target_list = waypoints_dict.get("left_arm_ee")
+        right_ee_target_list = waypoints_dict.get("right_arm_ee")
+        left_arm_ee_trigger_list, right_arm_ee_trigger_list = None, None
+        left_wait_time, right_wait_time = 0.0, 0.0
+        if left_ee_target_list is not None and left_ee_target_list != []:
+            left_ee_target = left_ee_target_list[-1]
+            left_arm_ee_trigger_list = [
+                (full_body_joint_traj_.shape[0] +
+                 int(left_ee_target[0] / self.TIME_STEP), left_ee_target[1])
+            ]
+            left_wait_time = left_ee_target[0] + left_ee_target[2]
+        if right_ee_target_list is not None and right_ee_target_list != []:
+            right_ee_target = right_ee_target_list[-1]
+            right_arm_ee_trigger_list = [
+                (full_body_joint_traj_.shape[0] +
+                 int(right_ee_target[0] / self.TIME_STEP), right_ee_target[1])
+            ]
+            right_wait_time = right_ee_target[0] + right_ee_target[2]
+
+        full_body_wait_time = max(left_wait_time, right_wait_time)
+        full_body_joint_traj_ = np.vstack([
+            full_body_joint_traj_,
+            np.tile(full_body_joint_traj_[-1, :],
+                    (int(np.ceil(full_body_wait_time / self.TIME_STEP)), 1))
+        ])
+
+        if use_collision_validator:
+            if self._is_traj_collision(
+                    qpos_array=full_body_joint_traj_,
+                    left_arm_start_ee_qpos=start_left_arm_ee_qpos,
+                    right_arm_start_ee_qpos=start_right_arm_ee_qpos,
+                    left_arm_ee_trigger_list=left_arm_ee_trigger_list,
+                    right_arm_ee_trigger_list=right_arm_ee_trigger_list
+            ) != StatusCode.FAIL:
+                self.logger.error(
+                    "Collision detected in plan_linear_whole_body_ik.")
+                return StatusCode.COLLISION_FAIL, None, None, None
+
+        return StatusCode.SUCCESS, full_body_joint_traj_, left_arm_ee_trigger_list, right_arm_ee_trigger_list

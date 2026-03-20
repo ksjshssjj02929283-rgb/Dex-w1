@@ -7,7 +7,7 @@ All rights reserved.
 '''
 
 import numpy as np
-from dexe_robot_client.w1.kinemtaics.pin_ik_whole_body import PinIKWholeBody
+from dexe_robot_client.w1.kinematics.pin_ik_whole_body import PinIKWholeBody
 from dexe_robot_client.w1.utils.unit_conversion import *
 from dexe_rp import W1Vis, pos_wxyz_to_homogeneous, Box, Material
 from loop_rate_limiters import RateLimiter
@@ -98,10 +98,10 @@ if __name__ == "__main__":
                                               cur_qpos=cur_qpos)
         if res:
             vis.set_qpos("robot", result_qpos)
-            print("qpos: ", np.round(result_qpos, 3).tolist())
-            print("left arm tcp pose:", arml_tcp_user_pose)
-            print("right arm tcp pose:", armr_tcp_user_pose)
-            print("-----")
+            # print("qpos: ", np.round(result_qpos, 3).tolist())
+            # print("left arm tcp pose:", arml_tcp_user_pose)
+            # print("right arm tcp pose:", armr_tcp_user_pose)
+            # print("-----")
 
             rate.sleep()
         else:
