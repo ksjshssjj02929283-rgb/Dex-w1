@@ -423,7 +423,6 @@ PlannerRequest ParseMoveRequest(
             }
         };
         set_bool("use_ruckig", move_request.use_ruckig);
-        set_bool("use_filter", move_request.use_filter);
         set_bool("use_velocity", move_request.use_velocity);
         set_bool("use_acceleration", move_request.use_acceleration);
         set_double("speed", move_request.speed);

@@ -10,6 +10,7 @@
 #include "joint_interfaces/msg/joint_position_control.hpp"
 #include "joint_interfaces/msg/joint_velocity_torque_limit_feedback.hpp"
 #include "robot_server_lib/NanoLog.hpp"
+#include "robot_server_lib/butterworth_filter.h"
 #include "robot_server_lib/ei_input_shaper.h"
 #include "robot_server_lib/robot_server_base.h"
 #include "robot_server_lib/sri_force_sensor.h"
@@ -83,7 +84,7 @@ private:
     int switch_counter_ = 0;
     const int max_switch_count_ = 200;                // 切换控制模式时的位置保持周期数
     bool enable_ruckig_ = true;                       // /control/joint接口是否使用 Ruckig 进行轨迹规划
-    bool enable_filter_ = true;                       // /control/joint接口是否启用巴特沃斯滤波
+    bool enable_butterworth_filter_[ndof_robot];      // 每个关节是否启用巴特沃斯滤波
     bool enable_record_ = false;                      // 是否启用调试日志
     std::atomic<bool> enable_chassis_shaper_{false};  // 是否启用底盘速度输入整形器
     std::atomic<bool> enable_torso_shaper_{false};    // 是否启用腿部 (ANKLE, KNEE) 输入整形器
@@ -147,6 +148,9 @@ private:
 
     // 位置指令线性插值器 (250Hz -> 1kHz)
     utils::LinearInterpolator line_interpolator_;
+
+    // 巴特沃斯滤波器数组 (1kHz 线程中应用)
+    std::shared_ptr<ButterworthFilter> butterworth_filter_[ndof_robot];
 };
 
 }  // namespace robot_server_lib

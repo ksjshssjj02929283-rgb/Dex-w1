@@ -12,7 +12,6 @@ JointStreamingPlanner::JointStreamingPlanner(
         runtime_.input.max_velocity[i] = streaming_bounds_.max_velocity;
         runtime_.input.max_acceleration[i] = streaming_bounds_.max_acceleration;
         runtime_.input.max_jerk[i] = streaming_bounds_.max_jerk;
-        filter_[i] = std::make_shared<ButterworthFilter>();
     }
 }
 
@@ -87,7 +86,6 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
 
     // 如果从startstreaming后没有收到任何流式命令，检查是否超时, 超时则结束任务
     if (!runtime_.latest_cmd.has_value()) {
-        output_joint_cmd.position_before_filter = measurement.q_desired_pre;
         output_joint_cmd.position = measurement.q_desired_pre;
         output_joint_cmd.velocity.setZero();
         output_joint_cmd.acceleration.setZero();
@@ -114,19 +112,11 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
         bool robot_stopped = true;
         for (auto i = 0; i < ndof_robot; i++) {
             // 如果超时则保持当前指令位置
-            output_joint_cmd.position_before_filter[i] =
-                is_timeout ? measurement.q_desired_pre[i] : latest_cmd.command[i];
-            output_joint_cmd.position[i] = output_joint_cmd.position_before_filter[i];
+            output_joint_cmd.position[i] = is_timeout ? measurement.q_desired_pre[i] : latest_cmd.command[i];
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
             robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
-        }
-        // 应用巴特沃斯滤波
-        if (use_filter_) {
-            for (auto i = 0; i < ndof_robot; i++) {
-                output_joint_cmd.position[i] = filter_[i]->Apply(output_joint_cmd.position_before_filter[i]);
-            }
         }
         if (!command_finished_time_.is_valid()) {
             command_finished_time_ = TimePointSystem::Now();
@@ -193,35 +183,21 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
     // Ruckig输出
     if (status == ruckig::Working) {
         for (auto i = 0; i < ndof_robot; i++) {
-            output_joint_cmd.position_before_filter[i] = runtime_.output.new_position[i];
             output_joint_cmd.position[i] = runtime_.output.new_position[i];
             output_joint_cmd.velocity[i] = runtime_.output.new_velocity[i];
             output_joint_cmd.acceleration[i] = runtime_.output.new_acceleration[i];
             output_joint_cmd.torque_feedforward[i] = 0;
-        }
-        // 应用巴特沃斯滤波
-        if (use_filter_) {
-            for (auto i = 0; i < ndof_robot; i++) {
-                output_joint_cmd.position[i] = filter_[i]->Apply(output_joint_cmd.position_before_filter[i]);
-            }
         }
         runtime_.output.pass_to_input(runtime_.input);
         return ComputeCommandStatus::TaskOngoing;
     } else if (status == ruckig::Finished) {
         bool robot_stopped = true;
         for (auto i = 0; i < ndof_robot; i++) {
-            output_joint_cmd.position_before_filter[i] = runtime_.output.new_position[i];
             output_joint_cmd.position[i] = runtime_.output.new_position[i];
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
             robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
-        }
-        // 应用巴特沃斯滤波
-        if (use_filter_) {
-            for (auto i = 0; i < ndof_robot; i++) {
-                output_joint_cmd.position[i] = filter_[i]->Apply(output_joint_cmd.position_before_filter[i]);
-            }
         }
         if (!command_finished_time_.is_valid()) {
             command_finished_time_ = TimePointSystem::Now();
@@ -271,17 +247,6 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     // Ruckig 速度超时时间设置（比 streaming_timeout 更短，用于快速停止）
     if (move_request.streaming_velocity_timeout.has_value()) {
         streaming_velocity_timeout_ = move_request.streaming_velocity_timeout.value();
-    }
-
-    // 滤波配置
-    if (move_request.use_filter.has_value()) {
-        use_filter_ = move_request.use_filter.value();
-    } else {
-        use_filter_ = true;
-    }
-    // 重置滤波器状态
-    for (auto i = 0; i < ndof_robot; i++) {
-        filter_[i]->Reset();
     }
 
     // 目标速度和加速度配置

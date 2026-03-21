@@ -94,6 +94,12 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, Robo
     // 创建定时器，定时发布feedback 定时器回调函数
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
 
+    // 初始化巴特沃斯滤波器和滤波开关
+    for (int i = 0; i < ndof_robot; ++i) {
+        butterworth_filter_[i] = std::make_shared<ButterworthFilter>();
+        enable_butterworth_filter_[i] = true;  // 默认所有关节启用滤波
+    }
+
     // 初始化力传感器
     // primary_sensor_ = std::make_shared<SriForceSensor>();
     // if (!primary_sensor_->Init(460800)) {
@@ -125,9 +131,10 @@ void RobotServer::ForceArrayCallback(const std_msgs::msg::Float64MultiArray::Sha
 void RobotServer::InitParamConfig() {
     auto config_path = server_data_dir_ / "w1_config.json";
 
-    const std::set<std::string> kAllowedRootKeys{"enable_ruckig",     "enable_chassis_shaper", "enable_torso_shaper",
-                                                 "TorsoJ1NatureFreq", "TorsoJ2NatureFreq",     "TorsoJ3NatureFreq",
-                                                 "TorsoJ4NatureFreq", "enable_record",         "enable_filter"};
+    const std::set<std::string> kAllowedRootKeys{
+        "enable_ruckig",     "enable_chassis_shaper", "enable_torso_shaper",
+        "TorsoJ1NatureFreq", "TorsoJ2NatureFreq",     "TorsoJ3NatureFreq",
+        "TorsoJ4NatureFreq", "enable_record",         "enable_butterworth_filter"};
 
     nlohmann::json root;
     if (!std::filesystem::exists(config_path)) {
@@ -139,7 +146,8 @@ void RobotServer::InitParamConfig() {
         root["TorsoJ3NatureFreq"] = this->TorsoJ3NatureFreq;
         root["TorsoJ4NatureFreq"] = this->TorsoJ4NatureFreq;
         root["enable_record"] = this->enable_record_;
-        root["enable_filter"] = this->enable_filter_;
+        root["enable_butterworth_filter"] =
+            std::vector<bool>(this->enable_butterworth_filter_, this->enable_butterworth_filter_ + ndof_robot);
 
         std::ofstream ofs(config_path);
         ofs << root.dump(2);
@@ -196,8 +204,9 @@ void RobotServer::InitParamConfig() {
         root["enable_record"] = this->enable_record_;
         need_rewrite = true;
     }
-    if (!root.contains("enable_filter")) {
-        root["enable_filter"] = this->enable_filter_;
+    if (!root.contains("enable_butterworth_filter")) {
+        root["enable_butterworth_filter"] =
+            std::vector<bool>(this->enable_butterworth_filter_, this->enable_butterworth_filter_ + ndof_robot);
         need_rewrite = true;
     }
 
@@ -209,7 +218,14 @@ void RobotServer::InitParamConfig() {
     this->TorsoJ3NatureFreq = root.value("TorsoJ3NatureFreq", this->TorsoJ3NatureFreq);
     this->TorsoJ4NatureFreq = root.value("TorsoJ4NatureFreq", this->TorsoJ4NatureFreq);
     this->enable_record_ = root.value("enable_record", this->enable_record_);
-    this->enable_filter_ = root.value("enable_filter", this->enable_filter_);
+
+    // 读取 enable_butterworth_filter 数组
+    auto filter_array =
+        root.value("enable_butterworth_filter",
+                   std::vector<bool>(this->enable_butterworth_filter_, this->enable_butterworth_filter_ + ndof_robot));
+    for (int i = 0; i < ndof_robot && i < static_cast<int>(filter_array.size()); ++i) {
+        this->enable_butterworth_filter_[i] = filter_array[i];
+    }
 
     // A1 和 Arm 模式下禁用 torso shaper
     if (robot_mode_ != RobotMode::W1) {
@@ -225,12 +241,21 @@ void RobotServer::InitParamConfig() {
     root_clean["TorsoJ3NatureFreq"] = this->TorsoJ3NatureFreq;
     root_clean["TorsoJ4NatureFreq"] = this->TorsoJ4NatureFreq;
     root_clean["enable_record"] = this->enable_record_;
-    root_clean["enable_filter"] = this->enable_filter_;
+    root_clean["enable_butterworth_filter"] =
+        std::vector<bool>(this->enable_butterworth_filter_, this->enable_butterworth_filter_ + ndof_robot);
 
     if (need_rewrite) {
         std::ofstream ofs(config_path);
         ofs << root_clean.dump(2);
     }
+
+    // 生成 enable_butterworth_filter 数组的字符串表示
+    std::string filter_str = "[";
+    for (int i = 0; i < ndof_robot; ++i) {
+        filter_str += (this->enable_butterworth_filter_[i] ? "true" : "false");
+        if (i < ndof_robot - 1) filter_str += ", ";
+    }
+    filter_str += "]";
 
     RCLCPP_INFO(this->get_logger(),
                 "Loaded w1_config.json from: %s \n"
@@ -239,18 +264,18 @@ void RobotServer::InitParamConfig() {
                 "enable_torso_shaper=%s, \n"
                 "TorsoJ1NatureFreq=%.2f, TorsoJ2NatureFreq=%.2f, TorsoJ3NatureFreq=%.2f, TorsoJ4NatureFreq=%.2f, \n"
                 "enable_record=%s, \n"
-                "enable_filter=%s)",
+                "enable_butterworth_filter=%s)",
                 config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
                 this->enable_chassis_shaper_.load() ? "true" : "false",
                 this->enable_torso_shaper_.load() ? "true" : "false", this->TorsoJ1NatureFreq, this->TorsoJ2NatureFreq,
                 this->TorsoJ3NatureFreq, this->TorsoJ4NatureFreq, this->enable_record_ ? "true" : "false",
-                this->enable_filter_ ? "true" : "false");
+                filter_str.c_str());
     LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_
              << ", enable_chassis_shaper=" << this->enable_chassis_shaper_.load()
              << ", enable_torso_shaper=" << this->enable_torso_shaper_.load()
              << ", TorsoJ1NatureFreq=" << this->TorsoJ1NatureFreq << ", TorsoJ2NatureFreq=" << this->TorsoJ2NatureFreq
              << ", TorsoJ3NatureFreq=" << this->TorsoJ3NatureFreq << ", TorsoJ4NatureFreq=" << this->TorsoJ4NatureFreq
-             << ", enable_record=" << this->enable_record_ << ", enable_filter=" << this->enable_filter_;
+             << ", enable_record=" << this->enable_record_;
 }
 
 void RobotServer::TorqueControlThreadFunc() {
@@ -320,12 +345,6 @@ void RobotServer::TorqueControlThreadFunc() {
                     << utils::VectorToJsonArrayString(robot_feedback_.torque, idx_offset, ndof_config_).str()
                     << ", \"joint_position_input\": "
                     << utils::VectorToJsonArrayString(joint_position_input_, idx_offset, ndof_config_).str()
-                    << ", \"joint_position_before_filter\": "
-                    << utils::VectorToJsonArrayString(this->planner_cmd_.cmd.position_before_filter, idx_offset,
-                                                      ndof_config_)
-                           .str()
-                    << ", \"joint_position_after_filter\": "
-                    << utils::VectorToJsonArrayString(this->planner_cmd_.cmd.position, idx_offset, ndof_config_).str()
                     << ", \"joint_position_cmd\": "
                     << utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str()
                     << ", \"joint_torque_feedforward\": "
@@ -482,6 +501,14 @@ void RobotServer::TorqueControlThreadFunc() {
                         break;
                 }
 
+                // 对所有关节应用巴特沃斯滤波 (在 EI 输入整形之前)
+                if (this->enable_butterworth_filter_[i]) {
+                    robot_control_.position[i] = butterworth_filter_[i]->Apply(robot_control_.position[i]);
+                } else {
+                    butterworth_filter_[i]
+                        ->Reset();  // 如果当前关节不启用滤波器，则重置滤波器状态，避免下次启用时的突变
+                }
+
                 // 对躯干 (Torso J1-J4, 索引 0-3) 应用 EI 输入整形
                 if (i >= 0 && i < 4) {
                     // 检测整形器开关状态变化
@@ -501,6 +528,9 @@ void RobotServer::TorqueControlThreadFunc() {
             }
         } else {
             line_interpolator_.Reset();
+            for (int i = 0; i < ndof_robot; ++i) {
+                butterworth_filter_[i]->Reset();  // 重置滤波器状态
+            }
             for (int i = 0; i < 4; ++i) {
                 torso_shapers_[i]->Reset();
             }
@@ -802,7 +832,6 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
             MoveRequest move_request;
             move_request.motion_group = MotionGroup::WholeBody;
             move_request.use_ruckig = enable_ruckig_;
-            move_request.use_filter = enable_filter_;
             planner_request.data = move_request;
             streaming_request_id_ = StartStreaming(planner_request);
         }
@@ -848,7 +877,6 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
             MoveRequest move_request;
             move_request.motion_group = MotionGroup::WholeBody;
             move_request.use_ruckig = enable_ruckig_;
-            move_request.use_filter = enable_filter_;
             move_request.streaming_timeout = streaming_timeout_;
             planner_request.data = move_request;
             streaming_request_id_ = StartStreaming(planner_request);
@@ -897,8 +925,24 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
             }
         };
 
+        // 处理 enable_butterworth_filter 数组
+        auto update_filter_array = [this, &json_data](const char *key) {
+            if (json_data.contains(key) && json_data[key].is_array()) {
+                auto &arr = json_data[key];
+                for (size_t i = 0; i < arr.size() && i < ndof_robot; ++i) {
+                    if (arr[i].is_boolean()) {
+                        this->enable_butterworth_filter_[i] = arr[i].get<bool>();
+                    } else if (arr[i].is_number_integer()) {
+                        this->enable_butterworth_filter_[i] = arr[i].get<int>() != 0;
+                    }
+                }
+                RCLCPP_INFO(this->get_logger(), "%s updated", key);
+                LOG_INFO << key << " updated";
+            }
+        };
+
         update_bool_param("enable_record", this->enable_record_);
-        update_bool_param("enable_filter", this->enable_filter_);
+        update_filter_array("enable_butterworth_filter");
         update_atomic_bool_param("enable_chassis_shaper", this->enable_chassis_shaper_);
         update_atomic_bool_param("enable_torso_shaper", this->enable_torso_shaper_);
 

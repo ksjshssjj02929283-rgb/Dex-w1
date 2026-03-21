@@ -15,8 +15,8 @@ public:
 
 protected:
     VectorDof idle_q_;
-    VectorDof integral_error_ = VectorDof::Zero();         // 积分误差累计
-    double error_integral_max_ = 0.1;  // 积分误差限幅
+    VectorDof integral_error_ = VectorDof::Zero();  // 积分误差累计
+    double error_integral_max_ = 0.1;               // 积分误差限幅
 };
 
 }  // namespace robot_server_lib

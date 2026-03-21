@@ -1,6 +1,5 @@
 #pragma once
 
-#include "butterworth_filter.h"
 #include "move_planner_base.h"
 
 namespace robot_server_lib {
@@ -24,10 +23,6 @@ protected:
 
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer_;
     ruckig::Ruckig<ndof_robot> ruckig_otg_;
-
-    // 巴特沃斯滤波器
-    std::shared_ptr<ButterworthFilter> filter_[ndof_robot];
-    bool use_filter_{false};
 
     struct {
         Int64 request_id{-1};

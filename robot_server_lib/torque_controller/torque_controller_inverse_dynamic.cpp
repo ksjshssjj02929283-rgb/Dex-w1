@@ -39,11 +39,9 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
             q_error = cmd_q - feedback_q;
             dq_error = cmd_dq - feedback_dq;
             // 积分误差累计并限幅
-            for (int i = 0; i < ndof_robot; i++)
-            {
-                if(std::abs(q_error[i]) < 0.005 / 180 * M_PI) 
-                {
-                    q_error [i] = 0.0;
+            for (int i = 0; i < ndof_robot; i++) {
+                if (std::abs(q_error[i]) < 0.005 / 180 * M_PI) {
+                    q_error[i] = 0.0;
                 }
             }
             integral_error_ = (integral_error_ + q_error).cwiseMin(error_integral_max_).cwiseMax(-error_integral_max_);

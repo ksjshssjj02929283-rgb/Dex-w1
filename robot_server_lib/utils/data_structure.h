@@ -71,7 +71,6 @@ struct JointCommand {
     VectorDof joint_stiffness;
     VectorDof joint_damping;
     double joint_integral_ratio;
-    VectorDof position_before_filter;  // 滤波前的位置指令
 
     std::string ToString() const {
         std::stringstream ss;
@@ -172,7 +171,6 @@ struct MoveRequest {
     std::optional<double> interval;
     std::optional<double> streaming_timeout;
     std::optional<double> streaming_velocity_timeout;  // Ruckig 速度超时时间，比 streaming_timeout 更短
-    std::optional<bool> use_filter;                    // 是否启用巴特沃斯滤波
     std::optional<bool> use_velocity;                  // 是否使用目标速度输入
     std::optional<bool> use_acceleration;              // 是否使用目标加速度输入
 };
