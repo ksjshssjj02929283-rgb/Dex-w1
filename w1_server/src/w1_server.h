@@ -82,19 +82,16 @@ private:
 
     RunMode previous_mode_{RunMode::Position};
     int switch_counter_ = 0;
-    const int max_switch_count_ = 200;                // 切换控制模式时的位置保持周期数
-    bool enable_ruckig_ = true;                       // /control/joint接口是否使用 Ruckig 进行轨迹规划
-    bool enable_butterworth_filter_[ndof_robot];      // 每个关节是否启用巴特沃斯滤波
-    bool enable_record_ = false;                      // 是否启用调试日志
-    std::atomic<bool> enable_chassis_shaper_{false};  // 是否启用底盘速度输入整形器
-    std::atomic<bool> enable_torso_shaper_{false};    // 是否启用腿部 (ANKLE, KNEE) 输入整形器
-    int first_arm_joint_index_ = 6;  // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
+    const int max_switch_count_ = 200;            // 切换控制模式时的位置保持周期数
+    bool enable_ruckig_ = true;                   // /control/joint接口是否使用 Ruckig 进行轨迹规划
+    bool enable_butterworth_filter_[ndof_robot];  // 每个关节是否启用巴特沃斯滤波
+    bool enable_record_ = false;                  // 是否启用调试日志
+    int first_arm_joint_index_ = 6;               // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
     const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
     double streaming_timeout_ = 0.5;                // /control/joint_position streaming 超时时间
 
     // 整形器开关状态追踪变量，用于检测状态变化以实现自动重置
     bool prev_chassis_shaper_enabled_ = false;
-    bool prev_torso_shaper_enabled_ = false;
 
     // 机器人模式支持
     RobotMode robot_mode_ = RobotMode::W1;  // 当前机器人模式
@@ -120,7 +117,9 @@ private:
         int chassis_neutral = 0;
     } chassis_control_target_;
 
-    // 底盘速度输入整形器
+    // 输入整形器
+    std::atomic<bool> enable_chassis_shaper_{false};  // 是否启用底盘速度输入整形器
+    bool enable_input_shaper_[ndof_robot];            // 每个关节是否启用输入整形器
     std::unique_ptr<EIInputShaper> chassis_shaper_;
     EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
     const double DiffChassisWidth = 0.4390;
@@ -128,15 +127,12 @@ private:
     const double DiffChassisNatureFreq = 1.67;  // 底盘输入整形器自然频率，单位Hz
     // ramp率转换: 0.5m/s每周期
     const double DiffChassisMaxRampRpm = 0.5 / (M_PI * DiffChassisWheelD) * 60.0;
-    // 躯干输入整形器数组 (J1-J4)
-    std::unique_ptr<EIInputShaper> torso_shapers_[4];
-    EIInputShaper::Type torso_shaper_type_ = EIInputShaper::EI;
-    const double TorsoShaperMaxRampRadPerSec = 0.5;  // 最大角速度 ramp率，单位 rad/s 每周期
-    // 躯干频率参数 (可配置)
-    double TorsoJ1NatureFreq = 3.0;  // torso J1 自然频率，单位Hz
-    double TorsoJ2NatureFreq = 2.5;  // torso J2 自然频率，单位Hz
-    double TorsoJ3NatureFreq = 2.5;  // torso J3 自然频率，单位Hz
-    double TorsoJ4NatureFreq = 4.5;  // torso J4 自然频率，单位Hz
+    std::unique_ptr<EIInputShaper> input_shapers_[ndof_robot];
+    EIInputShaper::Type input_shaper_type_ = EIInputShaper::EI;
+    const double input_shaper_max_ramp_rad_per_sec = M_PI;  // 最大角速度 ramp率，单位 rad/s 每周期
+    double input_shaper_frequency_[ndof_robot] = {
+        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
+        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0};  // 每个关节的输入整形器自然频率，单位Hz
 
     // 力传感器相关
     Vector3d sensor_force_;
