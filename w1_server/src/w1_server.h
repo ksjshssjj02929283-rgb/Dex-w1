@@ -82,13 +82,14 @@ private:
 
     RunMode previous_mode_{RunMode::Position};
     int switch_counter_ = 0;
-    const int max_switch_count_ = 200;            // 切换控制模式时的位置保持周期数
-    bool enable_ruckig_ = true;                   // /control/joint接口是否使用 Ruckig 进行轨迹规划
-    bool enable_butterworth_filter_[ndof_robot];  // 每个关节是否启用巴特沃斯滤波
-    bool enable_record_ = false;                  // 是否启用调试日志
-    int first_arm_joint_index_ = 6;               // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
+    const int max_switch_count_ = 200;  // 切换控制模式时的位置保持周期数
+    bool enable_ruckig_ = true;         // /control/joint接口是否使用 Ruckig 进行轨迹规划
+    bool enable_record_ = false;        // 是否启用调试日志
+    int first_arm_joint_index_ = 6;     // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
     const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
     double streaming_timeout_ = 0.5;                // /control/joint_position streaming 超时时间
+    VectorDof joint_position_before_filter_ = VectorDof::Zero();
+    VectorDof joint_position_after_filter_ = VectorDof::Zero();
 
     // 整形器开关状态追踪变量，用于检测状态变化以实现自动重置
     bool prev_chassis_shaper_enabled_ = false;
@@ -117,23 +118,6 @@ private:
         int chassis_neutral = 0;
     } chassis_control_target_;
 
-    // 输入整形器
-    std::atomic<bool> enable_chassis_shaper_{false};  // 是否启用底盘速度输入整形器
-    bool enable_input_shaper_[ndof_robot];            // 每个关节是否启用输入整形器
-    std::unique_ptr<EIInputShaper> chassis_shaper_;
-    EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
-    const double DiffChassisWidth = 0.4390;
-    const double DiffChassisWheelD = 0.1730;    // 差速轮径，用于转RPM
-    const double DiffChassisNatureFreq = 1.67;  // 底盘输入整形器自然频率，单位Hz
-    // ramp率转换: 0.5m/s每周期
-    const double DiffChassisMaxRampRpm = 0.5 / (M_PI * DiffChassisWheelD) * 60.0;
-    std::unique_ptr<EIInputShaper> input_shapers_[ndof_robot];
-    EIInputShaper::Type input_shaper_type_ = EIInputShaper::EI;
-    const double input_shaper_max_ramp_rad_per_sec = M_PI;  // 最大角速度 ramp率，单位 rad/s 每周期
-    double input_shaper_frequency_[ndof_robot] = {
-        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
-        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0};  // 每个关节的输入整形器自然频率，单位Hz
-
     // 力传感器相关
     Vector3d sensor_force_;
     Vector12d sensor_wrench_;
@@ -146,7 +130,27 @@ private:
     utils::LinearInterpolator line_interpolator_;
 
     // 巴特沃斯滤波器数组 (1kHz 线程中应用)
+    bool enable_butterworth_filter_[ndof_robot] = {
+        true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true};  // 每个关节是否启用巴特沃斯滤波
     std::shared_ptr<ButterworthFilter> butterworth_filter_[ndof_robot];
+
+    // 输入整形器
+    std::atomic<bool> enable_chassis_shaper_{false};  // 是否启用底盘速度输入整形器
+    bool enable_input_shaper_[ndof_robot] = {false};  // 每个关节是否启用输入整形器
+    std::shared_ptr<EIInputShaper> chassis_shaper_;
+    EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
+    const double DiffChassisWidth = 0.4390;
+    const double DiffChassisWheelD = 0.1730;    // 差速轮径，用于转RPM
+    const double DiffChassisNatureFreq = 1.67;  // 底盘输入整形器自然频率，单位Hz
+    // ramp率转换: 0.5m/s每周期
+    const double DiffChassisMaxRampRpm = 0.5 / (M_PI * DiffChassisWheelD) * 60.0;
+    std::shared_ptr<EIInputShaper> input_shapers_[ndof_robot];
+    EIInputShaper::Type input_shaper_type_ = EIInputShaper::EI;
+    const double input_shaper_max_ramp_rad_per_sec = M_PI;  // 最大角速度 ramp率，单位 rad/s 每周期
+    double input_shaper_frequency_[ndof_robot] = {
+        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
+        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0};  // 每个关节的输入整形器自然频率，单位Hz
 };
 
 }  // namespace robot_server_lib

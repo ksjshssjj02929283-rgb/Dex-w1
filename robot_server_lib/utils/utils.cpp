@@ -65,6 +65,20 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     parse_array("joint_max_torque_limit_negative", params.joint_max_torque_limit_negative);
     parse_array("joint_limit_margin_deg", params.joint_limit_margin_deg);
 
+    // 解析流式运动限制参数
+    if (config_json.contains("streaming_bounds")) {
+        const auto &sb = config_json["streaming_bounds"];
+        if (sb.contains("max_velocity") && sb["max_velocity"].is_number()) {
+            params.streaming_bounds.max_velocity = sb["max_velocity"].get<double>();
+        }
+        if (sb.contains("max_acceleration") && sb["max_acceleration"].is_number()) {
+            params.streaming_bounds.max_acceleration = sb["max_acceleration"].get<double>();
+        }
+        if (sb.contains("max_jerk") && sb["max_jerk"].is_number()) {
+            params.streaming_bounds.max_jerk = sb["max_jerk"].get<double>();
+        }
+    }
+
     // 解度析动力学基参数矩阵
     if (config_json.contains("dyn_base_params_primary")) {
         Eigen::VectorXd dyn_base_params_primary;

@@ -183,6 +183,12 @@ struct PlannerRequest {
     std::optional<PlannerData> data;  // start streaming指令无data
 };
 
+struct TrajectoryBounds {
+    double max_velocity{1.0};
+    double max_acceleration{2.0};
+    double max_jerk{100000.0};
+};
+
 struct StreamingCommand {
     Int64 request_id{-1};
     bool streaming_finished{false};
@@ -254,6 +260,7 @@ struct RobotParams {
     Eigen::VectorXd joints_torso;
     std::optional<Eigen::VectorXd> dyn_base_params_primary;    // 动力学基参数矩阵(非方阵)
     std::optional<Eigen::VectorXd> dyn_base_params_secondary;  // 动力学基参数矩阵(非方阵)
+    TrajectoryBounds streaming_bounds;
 };
 
 struct RobotModel {

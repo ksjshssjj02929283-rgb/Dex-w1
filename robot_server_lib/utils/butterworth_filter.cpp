@@ -1,8 +1,9 @@
 #include "butterworth_filter.h"
 
 ButterworthFilter::ButterworthFilter() {
-    filter_.b = {1.3198341078312058e-03, 2.6396682156624115e-03, 1.3198341078312058e-03};
-    filter_.a = {1.0, -1.8546819153535965, 8.5996125178492133e-01};
+    // 固定参数：3Hz 二阶临界阻尼滤波器（ζ=1.0，无过冲）
+    filter_.b = {8.7175477092027442e-05, 1.7435095418405488e-04, 8.7175477092027442e-05};
+    filter_.a = {1.0, -1.9626528765033522, 0.9630015784117203};
 }
 
 double ButterworthFilter::Apply(double input) {

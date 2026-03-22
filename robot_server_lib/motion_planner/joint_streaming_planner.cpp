@@ -8,6 +8,10 @@ JointStreamingPlanner::JointStreamingPlanner(
     double controller_dt)
     : MotionPlannerBase(robot_model), streaming_buffer_(streaming_buffer), ruckig_otg_(controller_dt_) {
     controller_dt_ = controller_dt;
+    // 从配置读取流式运动限制参数
+    streaming_bounds_ = robot_model.params_ptr->streaming_bounds;
+    LOG_INFO << "JointStreamingPlanner initialized with streaming bounds: Velocity: " << streaming_bounds_.max_velocity
+             << ", Acceleration: " << streaming_bounds_.max_acceleration << ", Jerk: " << streaming_bounds_.max_jerk;
     for (auto i = 0; i < ndof_robot; i++) {
         runtime_.input.max_velocity[i] = streaming_bounds_.max_velocity;
         runtime_.input.max_acceleration[i] = streaming_bounds_.max_acceleration;

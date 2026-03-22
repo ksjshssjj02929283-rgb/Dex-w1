@@ -63,7 +63,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, Robo
         // 创建 /control/cmd_vel 订阅器
         diff_chassis_control_subscriber_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "/control/cmd_vel", 10, std::bind(&RobotServer::DiffChassisControlCallback, this, std::placeholders::_1));
-        chassis_shaper_ = std::make_unique<EIInputShaper>(chassis_shaper_type_, DiffChassisNatureFreq, torque_ctrl_dt,
+        chassis_shaper_ = std::make_shared<EIInputShaper>(chassis_shaper_type_, DiffChassisNatureFreq, torque_ctrl_dt,
                                                           DiffChassisMaxRampRpm);
     }
 
@@ -86,10 +86,8 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, Robo
     // 初始化巴特沃斯滤波器和滤波开关
     for (int i = 0; i < ndof_robot; ++i) {
         butterworth_filter_[i] = std::make_shared<ButterworthFilter>();
-        input_shapers_[i] = std::make_unique<EIInputShaper>(input_shaper_type_, input_shaper_frequency_[i],
+        input_shapers_[i] = std::make_shared<EIInputShaper>(input_shaper_type_, input_shaper_frequency_[i],
                                                             torque_ctrl_dt, input_shaper_max_ramp_rad_per_sec);
-        enable_butterworth_filter_[i] = true;  // 默认所有关节启用滤波
-        enable_input_shaper_[i] = false;       // 默认所有关节禁用整形器
     }
 
     // 初始化力传感器
@@ -340,7 +338,11 @@ void RobotServer::TorqueControlThreadFunc() {
                     << ", \"joint_torque\":"
                     << utils::VectorToJsonArrayString(robot_feedback_.torque, idx_offset, ndof_config_).str()
                     << ", \"joint_position_input\": "
-                    << utils::VectorToJsonArrayString(joint_position_input_, idx_offset, ndof_config_).str()
+                    << utils::VectorToJsonArrayString(joint_position_before_filter_, idx_offset, ndof_config_).str()
+                    << ", \"joint_position_before_filter\": "
+                    << utils::VectorToJsonArrayString(joint_position_before_filter_, idx_offset, ndof_config_).str()
+                    << ", \"joint_position_after_filter\": "
+                    << utils::VectorToJsonArrayString(joint_position_after_filter_, idx_offset, ndof_config_).str()
                     << ", \"joint_position_cmd\": "
                     << utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str()
                     << ", \"joint_torque_feedforward\": "
@@ -496,7 +498,7 @@ void RobotServer::TorqueControlThreadFunc() {
                         assert(false && "Unknown RunMode");
                         break;
                 }
-
+                joint_position_before_filter_[i] = this->robot_control_.position[i];
                 // 对所有关节应用巴特沃斯滤波 (在 EI 输入整形之前)
                 if (this->enable_butterworth_filter_[i]) {
                     robot_control_.position[i] = butterworth_filter_[i]->Apply(robot_control_.position[i]);
@@ -504,6 +506,7 @@ void RobotServer::TorqueControlThreadFunc() {
                     butterworth_filter_[i]
                         ->Reset();  // 如果当前关节不启用滤波器，则重置滤波器状态，避免下次启用时的突变
                 }
+                joint_position_after_filter_[i] = this->robot_control_.position[i];
 
                 // 对所有关节应用 EI 输入整形
                 if (this->enable_input_shaper_[i]) {
@@ -782,7 +785,7 @@ Int64 RobotServer::StartStreaming(PlannerRequest planner_request) {
 }
 
 void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
-    VectorDof planner_cmd_position = this->planner_cmd_.cmd.position;  // 使用planner_cmd_作为基础，保留未更新的字段
+    auto robot_control_temp = robot_control_;
     bool position_valid = true;
     for (size_t i = 0; i < msg->name.size(); ++i) {
         for (int j = 0; j < ndof_robot; ++j) {
@@ -791,18 +794,19 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
                 robot_control_.negative_velocity_limit[j] = msg->negative_velocity_limit[i];
                 robot_control_.positive_torque_limit[j] = msg->positive_torque_limit[i];
                 robot_control_.negative_torque_limit[j] = msg->negative_torque_limit[i];
-                if (std::abs(planner_cmd_position[j] - msg->position[i]) > position_diff_threshold_ && position_valid) {
+                if (std::abs(robot_control_temp.position[j] - msg->position[i]) > position_diff_threshold_ &&
+                    position_valid) {
                     RCLCPP_WARN(
                         this->get_logger(),
                         "Control command for joint %s rejected: position difference %.4f exceeds threshold %.4f",
-                        ecat_joint_name_[j].c_str(), std::abs(planner_cmd_position[j] - msg->position[i]),
+                        ecat_joint_name_[j].c_str(), std::abs(robot_control_temp.position[j] - msg->position[i]),
                         position_diff_threshold_);
                     LOG_CRIT << "Control command for joint " << ecat_joint_name_[j] << " rejected: position difference "
-                             << std::abs(planner_cmd_position[j] - msg->position[i]) << " exceeds threshold "
+                             << std::abs(robot_control_temp.position[j] - msg->position[i]) << " exceeds threshold "
                              << position_diff_threshold_;
                     position_valid = false;
                 }
-                planner_cmd_position[j] = msg->position[i];
+                robot_control_temp.position[j] = msg->position[i];
 
                 break;
             }
@@ -824,31 +828,30 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
             streaming_msg->request_id = streaming_request_id_;
             streaming_msg->streaming_finished = false;
             streaming_msg->position =
-                std::vector<float>(planner_cmd_position.data(), planner_cmd_position.data() + ndof_robot);
+                std::vector<float>(robot_control_temp.position, robot_control_temp.position + ndof_robot);
             this->StreamingCommandCallback(streaming_msg);
         }
     }
 }
 
 void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedPtr msg) {
-    VectorDof planner_cmd_position = this->planner_cmd_.cmd.position;  // 使用planner_cmd_作为基础，保留未更新的字段
+    auto robot_control_temp = robot_control_;
     bool position_valid = true;
     for (size_t i = 0; i < msg->name.size(); ++i) {
         for (int j = 0; j < ndof_robot; ++j) {
             if (ecat_joint_name_[j] == msg->name[i] && position_valid) {
-                if (std::abs(planner_cmd_position[j] - msg->position[i]) > position_diff_threshold_) {
+                if (std::abs(robot_control_temp.position[j] - msg->position[i]) > position_diff_threshold_) {
                     RCLCPP_WARN(
                         this->get_logger(),
                         "Control command for joint %s rejected: position difference %.4f exceeds threshold %.4f",
-                        ecat_joint_name_[j].c_str(), std::abs(planner_cmd_position[j] - msg->position[i]),
+                        ecat_joint_name_[j].c_str(), std::abs(robot_control_temp.position[j] - msg->position[i]),
                         position_diff_threshold_);
                     LOG_CRIT << "Control command for joint " << ecat_joint_name_[j] << " rejected: position difference "
-                             << std::abs(planner_cmd_position[j] - msg->position[i]) << " exceeds threshold "
+                             << std::abs(robot_control_temp.position[j] - msg->position[i]) << " exceeds threshold "
                              << position_diff_threshold_;
                     position_valid = false;
-                } else {
-                    planner_cmd_position[j] = msg->position[i];
                 }
+                robot_control_temp.position[j] = msg->position[i];
                 break;  // 已经找到并处理了对应的关节，跳出内层循环继续处理下一个输入关节
             }
         }
@@ -870,11 +873,12 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
             streaming_msg->request_id = streaming_request_id_;
             streaming_msg->streaming_finished = false;
             streaming_msg->position =
-                std::vector<float>(planner_cmd_position.data(), planner_cmd_position.data() + ndof_robot);
+                std::vector<float>(robot_control_temp.position, robot_control_temp.position + ndof_robot);
             this->StreamingCommandCallback(streaming_msg);
         }
     }
 }
+
 void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
     RCLCPP_INFO(this->get_logger(), "/control/debug message received: %s", msg->data.c_str());
     LOG_INFO << "/control/debug message received: " << msg->data;
