@@ -146,8 +146,8 @@ private:
     // ramp率转换: 0.5m/s每周期
     const double DiffChassisMaxRampRpm = 0.5 / (M_PI * DiffChassisWheelD) * 60.0;
     std::shared_ptr<EIInputShaper> input_shapers_[ndof_robot];
-    EIInputShaper::Type input_shaper_type_ = EIInputShaper::EI;
-    const double input_shaper_max_ramp_rad_per_sec = M_PI;  // 最大角速度 ramp率，单位 rad/s 每周期
+    EIInputShaper::Type input_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
+    const double input_shaper_max_ramp_rad_per_sec = 10 * M_PI;  // 禁用 ramp 限制（Ruckig 已做轨迹平滑）
     double input_shaper_frequency_[ndof_robot] = {
         3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
         3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0};  // 每个关节的输入整形器自然频率，单位Hz

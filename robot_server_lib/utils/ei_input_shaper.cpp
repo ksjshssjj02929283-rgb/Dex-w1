@@ -56,7 +56,11 @@ void EIInputShaper::CalculateCoefficients() {
         CalculateTwoHumpCoefficients();
     }
 
+    // 缓冲区大小需要能容纳所有需要访问的时间点
     int buffer_size = T3_ + 1;
+    if (type_ == TWO_HUMP_EI) {
+        buffer_size = std::max(buffer_size, T4_ + 1);
+    }
     buffer_.resize(buffer_size, 0.0);
     buffer_ch1_.resize(buffer_size, 0.0);
     buffer_ch2_.resize(buffer_size, 0.0);
@@ -153,20 +157,20 @@ double EIInputShaper::ApplyImpl(std::deque<double>& buffer, double input) {
     double output = A1_ * buffer.back();
 
     if (type_ == EI) {
-        if (static_cast<int>(buffer.size()) > T2_) {
+        if (T2_ > 0 && static_cast<int>(buffer.size()) > T2_) {
             output += A2_ * buffer[buffer.size() - 1 - T2_];
         }
-        if (static_cast<int>(buffer.size()) > T3_) {
+        if (T3_ > 0 && static_cast<int>(buffer.size()) > T3_) {
             output += A3_ * buffer[buffer.size() - 1 - T3_];
         }
     } else if (type_ == TWO_HUMP_EI) {
-        if (static_cast<int>(buffer.size()) > T2_) {
+        if (T2_ > 0 && static_cast<int>(buffer.size()) > T2_) {
             output += A2_ * buffer[buffer.size() - 1 - T2_];
         }
-        if (static_cast<int>(buffer.size()) > T3_) {
+        if (T3_ > 0 && static_cast<int>(buffer.size()) > T3_) {
             output += A3_ * buffer[buffer.size() - 1 - T3_];
         }
-        if (static_cast<int>(buffer.size()) > T4_) {
+        if (T4_ > 0 && static_cast<int>(buffer.size()) > T4_) {
             output += A4_ * buffer[buffer.size() - 1 - T4_];
         }
     }
