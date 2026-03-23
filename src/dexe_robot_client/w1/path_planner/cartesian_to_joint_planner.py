@@ -14,7 +14,7 @@ from ...common import get_logger, W1ArmType, W1Version
 from ..utils.w1_params import W1Params
 from ...end_effector_client import EndEffectorType
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
-from ..kinemtaics.pin_ik_whole_body import PinIKWholeBody
+from ..kinematics.pin_ik_whole_body import PinIKWholeBody
 from .utils.robot_type import *
 from dexe_rp import DexforceW1Kinematics, SRSConfig
 
@@ -125,6 +125,9 @@ class CartesianToJointPlanner:
         joint_qpos_array = np.array(joint_qpos_list)
         return True, joint_qpos_array
 
+    from dexe_robot_client.common import time_consuming
+
+    @time_consuming
     def plan_whole_body(self, start_qpos: np.ndarray,
                         left_end_effector_traj: np.ndarray,
                         right_end_effector_traj: np.ndarray):
@@ -161,6 +164,9 @@ class CartesianToJointPlanner:
             if not res_ik:
                 self.logger.error(
                     f"Whole body Cartesian_to_joint_planner: solve ik failed, cur_qpos(deg): {np.rad2deg(current_qpos)}"
+                )
+                self.logger.error(
+                    f"cartesian trajectory length {left_end_effector_traj.shape[0]}, and solve failed at index {len(joint_qpos_list)}."
                 )
                 return False, None
             if not np.allclose(result_qpos, current_qpos,

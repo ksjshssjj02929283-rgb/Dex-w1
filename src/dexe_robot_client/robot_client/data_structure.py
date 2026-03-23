@@ -39,8 +39,10 @@ class PropertyType(Enum):
     SafeLevel = auto()
     SwitchRunMode = auto()  # run mode
     EnableDrag = auto()
+    EnableSleep = auto()  # sleep mode, motors disabled
     JointStiffness = auto()  # joint stiffness
     JointDamping = auto()  # joint damping
+    JointIntegralRatio = auto()  # joint integral ratio (K_i = K_p * k_i_ratio)
     CartStiffness = auto()  # cartesian stiffness
     CartDampingRatio = auto()  # cartesian damping ratio 0.7~1.3
 
@@ -129,9 +131,7 @@ class MoveRequest:
     motion_group: Optional[MotionGroup] = None
     value: Optional[Union[list[float], np.ndarray]] = None  # 目标位置
 
-    reference_frame: Optional[ReferenceFrame] = None  # 参考坐标系
-    speed: Optional[float] = None  # 速度百分比 0~1
-    kwargs: dict = None  # 其他参数
+    kwargs: dict = None  # 其他参数 (speed, acceleration, reference_frame 等)
 
 
 def value_to_string(value) -> str:

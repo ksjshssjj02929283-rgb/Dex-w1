@@ -80,6 +80,7 @@ def main(is_sim=True):
     client.set_global_speed(0.5)
     """move joint接口示例"""
     client.move_joint_sync(joint_left0 + joint_right0, MotionGroup.BothArms)
+    # client.move_joint_sync(joint_left0 + joint_right0, MotionGroup.BothArms, speed=2.0, acceleration=2.0)
     """move traj接口示例"""
     endpoint_index = [2, 5, 7, 9]
     end_id = client.move_traj_async(target_traj,
@@ -95,15 +96,27 @@ def main(is_sim=True):
     ee_pose[0] -= 0.15
     ee_pose[7] += 0.15
     client.move_line_sync(ee_pose, MotionGroup.BothArms)
+    # client.move_line_sync(ee_pose, MotionGroup.BothArms, speed=2.0, acceleration=2.0)
     """joint streaming接口示例"""
     joint_position = client.get_info().joint_position
-    client.start_joint_streaming_request(MotionGroup.WholeBody)
+    use_velocity = True  # 是否开启速度控制
+    client.start_joint_streaming_request(
+        MotionGroup.WholeBody,
+        use_velocity=use_velocity)  # 开启速度和加速度控制可以提升运动的响应性和稳定性
+    # client.start_joint_streaming_request(MotionGroup.WholeBody, use_filter=False) # 关闭滤波后可以提升运动的跟踪性, 但会降低平滑性
     for _ in range(100):
         joint_position[7] -= 0.003
         joint_position[8] += 0.003
-        client.send_streaming_command(joint_position, streaming_finished=False)
+        joint_velocity = [
+            0, 0, 0, 0, 0, 0, 0, -0.3, 0.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        ]  # 长度需与关节数一致
+        joint_command = joint_position + joint_velocity if use_velocity else joint_position  # 如果开启了传入速度, 则位置+速度控制拼接成一个命令列表发送给服务器, 服务器会根据是否开启速度控制来解析命令
+        client.send_streaming_command(joint_command, streaming_finished=False)
         client.wait_second(0.01)
-    client.send_streaming_command(joint_position, streaming_finished=True)
+    joint_command = joint_position + [
+        0.0
+    ] * 20 if use_velocity else joint_position  # 发送最后一个命令时如果开启了速度控制, 需要将速度置为0以免机器人继续运动
+    client.send_streaming_command(joint_command, streaming_finished=True)
     """ee pose streaming示例"""
     ee_pose = client.get_info().ee_pose
     client.start_ee_pose_streaming_request(MotionGroup.BothArms)
@@ -128,6 +141,7 @@ def main(is_sim=True):
     client.clear_error()  # 清除错误
     # client.set_safe_level(0.2) # 设置安全级别 范围[0.1, 1], 值越大机械臂刚度越大, 开机默认为1.0, 仅真实机器人生效
     # client.set_drag_mode(True) # 设置拖拽模式, 开启后可以拖拽关节到任意位置并保持姿态, 仅真实机器人生效
+    # client.set_sleep_mode(True)  # 设置睡眠模式, 开启后会去使能进入睡眠状态, 以降低能耗, 适用于长时间等待的场景, 仅真实机器人生效
     # client.switch_run_mode(RunMode.Torque) # 切换运行模式为力控模式 RunMode.Position: 位置模式, RunMode.Torque: 力矩模式,
     # RunMode.Drag: 拖动模式, RunMode.CartesianImpedance: 笛卡尔阻抗模式
     # client.set_joint_stiffness(200) # 设置全部关节刚度
