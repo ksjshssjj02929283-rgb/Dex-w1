@@ -48,14 +48,12 @@ class NavigationClient(ABC, Node):
         self._last_control_status_time = None
         self._control_status_timeout = 1.0  # 秒，超过认为状态陈旧
 
-
         self._init_subscriber(is_sim)
         self._init_publisher(is_sim)
         self.spin_once(timeout_sec=timeout_sec)
 
         self.create_timer(0.1, self._check_connection_status)
         self.create_timer(0.5, self.refresh_control_status)
-
 
     def _check_connection_status(self):
         """定时检查消息是否超时"""
@@ -277,7 +275,8 @@ class NavigationClient(ABC, Node):
 
         if self._last_control_status_success and self._last_control_status_time:
             # 防止返回陈旧状态
-            if (time.time() - self._last_control_status_time) <= self._control_status_timeout:
+            if (time.time() - self._last_control_status_time
+               ) <= self._control_status_timeout:
                 return self._last_control_status
 
         return "UNKNOWN"
@@ -307,7 +306,6 @@ class NavigationClient(ABC, Node):
             self.get_logger().error(f"Failed to refresh control status: {e}")
             return False
 
-
     def cancel_chassis_control(self) -> bool:
         """请求取消当前的控制任务。
 
@@ -328,7 +326,8 @@ class NavigationClient(ABC, Node):
             self.get_logger().info("Cancel control request sent.")
             return True
         except Exception as e:
-            self.get_logger().error(f"Failed to send cancel control request: {e}")
+            self.get_logger().error(
+                f"Failed to send cancel control request: {e}")
             return False
 
     def set_chassis_control_position(self, position) -> bool:
@@ -424,7 +423,8 @@ class NavigationClient(ABC, Node):
         """Callback for cancel control service response (non-blocking)."""
         try:
             response = future.result()
-            self.get_logger().info(f"Cancel control response: {response.message}")
+            self.get_logger().info(
+                f"Cancel control response: {response.message}")
         except Exception as e:
             self.get_logger().error(f"Error in cancel control response: {e}")
 
@@ -445,4 +445,5 @@ class NavigationClient(ABC, Node):
             # self.get_logger().info(f"Control status updated: {response.message}")
         except Exception as e:
             self._last_control_status_success = False
-            self.get_logger().error(f"Error in get control status response: {e}")
+            self.get_logger().error(
+                f"Error in get control status response: {e}")
