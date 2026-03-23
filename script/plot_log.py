@@ -151,6 +151,12 @@ def main():
         action="store_true",
         help="Only plot chassis data (differential drive velocity).",
     )
+    parser.add_argument(
+        "--joint",
+        type=int,
+        default=None,
+        help="Plot a single joint by index (0-19 for standard, 0-13 for A1 mode).",
+    )
     args = parser.parse_args()
 
     log_path = Path("~/log/robot_record.jsonl").expanduser()
@@ -426,6 +432,137 @@ def main():
 
         return fig
 
+    # 单个关节绘图函数
+    def plot_single_joint(joint_idx, joint_count, times_input, start_timestamp, show_hz=False):
+        rows = 5 if show_hz else 4
+        fig, axes = plt.subplots(rows, 1, figsize=(19.2, 14 if show_hz else 11), dpi=100)
+
+        # 确定关节名称
+        if joint_count == 14:
+            # A1 模式
+            if joint_idx < 7:
+                joint_name = f"Left J{joint_idx + 1}"
+            else:
+                joint_name = f"Right J{joint_idx - 6}"
+        else:
+            # 标准模式
+            if joint_idx < 6:
+                joint_name = f"Torso J{joint_idx + 1}"
+            elif joint_idx < 13:
+                joint_name = f"Left J{joint_idx - 5}"
+            else:
+                joint_name = f"Right J{joint_idx - 12}"
+
+        fig.suptitle(f"{joint_name} (Index {joint_idx}, Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})", fontsize=11)
+
+        # 格式化坐标轴
+        for ax in axes.flatten():
+            ax.xaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
+            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
+
+        # 1) position (度)
+        ax = axes[0]
+        ax.plot(times, pos_deg[:, joint_idx], label="position", color="tab:blue", linewidth=1.2)
+        if np.isfinite(pos_cmd_deg[:, joint_idx]).any():
+            ax.plot(times, pos_cmd_deg[:, joint_idx], label="position_cmd",
+                   color="tab:green", linewidth=1.2, linestyle="--")
+        if np.isfinite(pos_input[:, joint_idx]).any():
+            ax.plot(times, np.degrees(pos_input[:, joint_idx]), label="position_input",
+                   color="tab:orange", linewidth=1.2, linestyle=":")
+        if np.isfinite(pos_before_filter[:, joint_idx]).any():
+            ax.plot(times, np.degrees(pos_before_filter[:, joint_idx]), label="position_before_filter",
+                   color="tab:purple", linewidth=1.2, linestyle="-.")
+        if np.isfinite(pos_after_filter[:, joint_idx]).any():
+            ax.plot(times, np.degrees(pos_after_filter[:, joint_idx]), label="position_after_filter",
+                   color="tab:cyan", linewidth=1.2, linestyle="-.")
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.tick_params(labelsize=8)
+        ax.set_ylabel("Position [deg]", fontsize=9)
+        ax.legend(loc="best", fontsize=8)
+        ax.set_title(f"{joint_name} - Position", fontsize=10)
+
+        # 2) position error
+        ax = axes[1]
+        if np.isfinite(pos_err_deg[:, joint_idx]).any():
+            ax.plot(times, pos_err_deg[:, joint_idx], label="pos_error",
+                   color="tab:purple", linewidth=1.2)
+            ax.legend(loc="best", fontsize=8)
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.tick_params(labelsize=8)
+        ax.set_ylabel("Pos Error [deg]", fontsize=9)
+        ax.set_title(f"{joint_name} - Position Error", fontsize=10)
+
+        # 3) velocity
+        ax = axes[2]
+        if np.isfinite(vel_deg[:, joint_idx]).any():
+            ax.plot(times, vel_deg[:, joint_idx], label="velocity",
+                   color="tab:brown", linewidth=1.2)
+            ax.legend(loc="best", fontsize=8)
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.tick_params(labelsize=8)
+        ax.set_ylabel("Velocity [deg/s]", fontsize=9)
+        ax.set_title(f"{joint_name} - Velocity", fontsize=10)
+
+        # 4) torque
+        ax = axes[3]
+        ax.plot(times, tor[:, joint_idx], label="torque", color="tab:red", linewidth=1.2)
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.tick_params(labelsize=8)
+        ax.set_ylabel("Torque [Nm]", fontsize=9)
+        ax.set_xlabel("Time [s]", fontsize=9)
+        ax.legend(loc="best", fontsize=8)
+        ax.set_title(f"{joint_name} - Torque", fontsize=10)
+
+        # 5) position error spectrum (FFT) - only if --hz enabled
+        if show_hz:
+            ax = axes[4]
+            valid_err_mask = np.isfinite(pos_err_deg[:, joint_idx])
+            valid_err = pos_err_deg[:, joint_idx][valid_err_mask]
+            if valid_err.size >= 2:
+                valid_times = times[valid_err_mask]
+                time_diffs = np.diff(valid_times)
+                time_diffs = time_diffs[time_diffs > 0]
+                if len(time_diffs) >= 1:
+                    dt = np.mean(time_diffs)
+                else:
+                    dt = 0.001
+                fs = 1.0 / dt if dt > 0 else 1000.0
+                n = valid_err.size
+                err_centered = valid_err - np.mean(valid_err)
+                fft_vals = np.fft.fft(err_centered)
+                fft_freq = np.fft.fftfreq(n, d=dt)
+                err_mask = fft_freq > 0
+                fft_freq_err = fft_freq[err_mask]
+                fft_mag = np.abs(fft_vals[err_mask])
+                fft_mag_norm = 2.0 / n * fft_mag
+                freq_mask = fft_freq_err <= 10
+                ax.plot(fft_freq_err[freq_mask], fft_mag_norm[freq_mask],
+                    color="tab:purple", linewidth=1.0)
+                ax.grid(True, alpha=0.3, linestyle=':')
+                ax.tick_params(labelsize=8)
+                if fft_mag_norm[freq_mask].size > 0:
+                    peak_idx = np.argmax(fft_mag_norm[freq_mask])
+                    if fft_mag_norm[freq_mask][peak_idx] > 0.01 * fft_mag_norm[freq_mask].max():
+                        peak_freq = fft_freq_err[freq_mask][peak_idx]
+                        ax.axvline(x=peak_freq, color='tab:red', linestyle='--', alpha=0.7, linewidth=1)
+                        ax.annotate(f'{peak_freq:.1f}Hz',
+                                xy=(peak_freq, fft_mag_norm[freq_mask][peak_idx]),
+                                xytext=(peak_freq * 1.2, fft_mag_norm[freq_mask][peak_idx] * 0.8),
+                                fontsize=8, color='tab:red')
+                ax.set_xlim(0, 10)
+                ax.set_xlabel("Frequency [Hz]", fontsize=9)
+                ax.set_ylabel("Spectrum [deg]", fontsize=9)
+                ax.set_title(f"{joint_name} - Position Error Spectrum", fontsize=10)
+            else:
+                ax.text(0.5, 0.5, "No spectrum data",
+                    transform=ax.transAxes, ha="center", va="center",
+                    alpha=0.6, fontsize=10)
+                ax.set_xlabel("Frequency [Hz]", fontsize=9)
+
+        # 调整布局
+        fig.tight_layout(rect=[0.02, 0.02, 1, 0.98], h_pad=2, w_pad=2)
+        return fig
+
     # 每个手臂一张大图，每张图包含7个关节
     # 如果启用 --hz，则添加频谱图（第5行）
     def plot_arm(arm_name, joint_indices, arm_side, times_input, start_timestamp, show_hz=False):
@@ -637,8 +774,16 @@ def main():
     torso_joints = list(range(6))
 
     figs = []
+    # --joint 模式：只画单个关节图
+    if args.joint is not None:
+        if args.joint < 0 or args.joint >= joint_count:
+            print(f"Invalid joint index {args.joint}. Must be 0-{joint_count - 1} for current mode.")
+            return
+        if args.debug:
+            print(f"[DEBUG] Creating single joint plot for joint {args.joint}...")
+        figs.append(plot_single_joint(args.joint, joint_count, times, start_timestamp, show_hz=args.hz))
     # --chassis 模式：只画底盘图
-    if args.chassis:
+    elif args.chassis:
         if args.debug:
             print("[DEBUG] Creating Chassis plot only...")
         chassis_fig = plot_chassis(times, start_timestamp, show_hz=args.hz)
@@ -734,6 +879,12 @@ def main():
         # 为所有打开的图形绑定事件
         for fig in figs:
             fig.canvas.mpl_connect('scroll_event', on_scroll)
+            # 默认全屏显示
+            try:
+                mng = fig.canvas.manager
+                mng.window.showMaximized()
+            except Exception:
+                pass
 
         plt.show()
 
