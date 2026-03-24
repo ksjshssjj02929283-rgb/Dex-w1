@@ -1,12 +1,11 @@
 #include <pwd.h>
+#include <readline/history.h>
+#include <readline/readline.h>
 #include <sched.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/select.h>
 #include <unistd.h>
-
-#include <readline/history.h>
-#include <readline/readline.h>
 
 #include <chrono>
 #include <csignal>
@@ -43,9 +42,9 @@ void input_callback(char* line) {
     }
     g_got_input = true;
 }
-static double target_position = 0.0;         // 目标位置
-static double target_torque = 0.0;          // 目标力矩
-static std::string control_mode = "csp";    // 控制模式: csp 或 cst
+static double target_position = 0.0;      // 目标位置
+static double target_torque = 0.0;        // 目标力矩
+static std::string control_mode = "csp";  // 控制模式: csp 或 cst
 
 // 当前反馈数据（从控制线程更新）
 static double current_position = 0.0;
@@ -135,10 +134,11 @@ void process_command(const std::string& line) {
                   << "  当前速度: " << current_velocity * 180.0 / M_PI << " deg/s\n"
                   << "  当前力矩: " << current_torque << " Nm\n"
                   << "  状态字: " << current_status_word << " ("
-                  << ((current_status_word == STATUSWORD_MOTOR_READY) ? "READY" :
-                      (current_status_word == STATUSWORD_MOTOR_ENABLED) ? "ENABLED" :
-                      (current_status_word == STATUSWORD_MOTOR_FAULT) ? "FAULT" :
-                      (current_status_word == STATUSWORD_MOTOR_QUICK_STOP) ? "QUICK_STOP" : "NOT_READY")
+                  << ((current_status_word == STATUSWORD_MOTOR_READY)        ? "READY"
+                      : (current_status_word == STATUSWORD_MOTOR_ENABLED)    ? "ENABLED"
+                      : (current_status_word == STATUSWORD_MOTOR_FAULT)      ? "FAULT"
+                      : (current_status_word == STATUSWORD_MOTOR_QUICK_STOP) ? "QUICK_STOP"
+                                                                             : "NOT_READY")
                   << ")\n"
                   << "====================================\n\n";
     } else if (cmd == "help" || cmd == "h" || cmd == "?") {
@@ -225,16 +225,18 @@ int main(int argc, char* argv[]) {
 
                 // 记录数据
                 if (enable_record) {
-                    double timestamp_s = static_cast<double>(std::chrono::steady_clock::now().time_since_epoch().count()) / 1e9;
+                    double timestamp_s =
+                        static_cast<double>(std::chrono::steady_clock::now().time_since_epoch().count()) / 1e9;
 
                     LOG_INFO << "{\"timestamp\": " << std::to_string(timestamp_s) << ", "
-                            << "\"position_cmd\": " << control.position[0] * 180.0 / M_PI << ", "
-                            << "\"torque_cmd\": " << control.torque_feedforward[0] << ", "
-                            << "\"position\": " << current_position * 180.0 / M_PI << ", "
-                            << "\"velocity\": " << current_velocity * 180.0 / M_PI << ", "
-                            << "\"torque\": " << current_torque << ", "
-                            << "\"force\": [" << sensor_force[0] << ", " << sensor_force[1] << ", " << sensor_force[2] << ", " << sensor_force[3] << ", " << sensor_force[4] << ", " << sensor_force[5] << "]"
-                            << "}";
+                             << "\"position_cmd\": " << control.position[0] * 180.0 / M_PI << ", "
+                             << "\"torque_cmd\": " << control.torque_feedforward[0] << ", "
+                             << "\"position\": " << current_position * 180.0 / M_PI << ", "
+                             << "\"velocity\": " << current_velocity * 180.0 / M_PI << ", "
+                             << "\"torque\": " << current_torque << ", "
+                             << "\"force\": [" << sensor_force[0] << ", " << sensor_force[1] << ", " << sensor_force[2]
+                             << ", " << sensor_force[3] << ", " << sensor_force[4] << ", " << sensor_force[5] << "]"
+                             << "}";
                 }
 
                 // 默认控制字：上电 + 清除故障
