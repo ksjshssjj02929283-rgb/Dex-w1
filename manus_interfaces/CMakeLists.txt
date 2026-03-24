@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.11)
-project(manus_ros2_msgs)
+project(manus_interfaces)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)

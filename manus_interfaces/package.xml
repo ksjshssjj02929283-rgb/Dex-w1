@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>manus_ros2_msgs</name>
+  <name>manus_interfaces</name>
   <version>0.0.1</version>
   <description>Describes the manus ROS2 messages</description>
   <maintainer email="support@manus-meta.com">MANUS</maintainer>
