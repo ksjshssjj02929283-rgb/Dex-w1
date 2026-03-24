@@ -42,20 +42,18 @@ if [ -f "$OPT_DIR/w1_server/lib/w1_server/w1_server" ]; then
   sudo setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$OPT_DIR/w1_server/lib/w1_server/w1_server" || true
   echo "setcap applied to $OPT_DIR/w1_server/lib/w1_server/w1_server:"; getcap -v "$OPT_DIR/w1_server/lib/w1_server/w1_server" || true
 fi
-# if [ -f "$OPT_DIR/lib/w1_server/w1_server" ]; then
-#   sudo setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$OPT_DIR/lib/w1_server/w1_server" || true
-#   echo "setcap applied to $OPT_DIR/lib/w1_server/w1_server:"; getcap -v "$OPT_DIR/lib/w1_server/w1_server" || true
-# fi
 
 # 设置 feedback 权限（复制后设置）
 if [ -f "$OPT_DIR/w1_server/lib/w1_server/feedback" ]; then
   sudo setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$OPT_DIR/w1_server/lib/w1_server/feedback" || true
   echo "setcap applied to $OPT_DIR/w1_server/lib/w1_server/feedback:"; getcap -v "$OPT_DIR/w1_server/lib/w1_server/feedback" || true
 fi
-# if [ -f "$OPT_DIR/lib/w1_server/feedback" ]; then
-#   sudo setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$OPT_DIR/lib/w1_server/feedback" || true
-#   echo "setcap applied to $OPT_DIR/lib/w1_server/feedback:"; getcap -v "$OPT_DIR/lib/w1_server/feedback" || true
-# fi
+
+# 设置 joint_control 权限（复制后设置）
+if [ -f "$OPT_DIR/w1_server/lib/w1_server/joint_control" ]; then
+  sudo setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$OPT_DIR/w1_server/lib/w1_server/joint_control" || true
+  echo "setcap applied to $OPT_DIR/w1_server/lib/w1_server/joint_control:"; getcap -v "$OPT_DIR/w1_server/lib/w1_server/joint_control" || true
+fi
 
 {
     echo "/opt/ros/humble/lib"
