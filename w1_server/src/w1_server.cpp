@@ -85,7 +85,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, Robo
 
     // 初始化巴特沃斯滤波器和滤波开关
     for (int i = 0; i < ndof_robot; ++i) {
-        butterworth_filter_[i] = std::make_shared<ButterworthFilter>();
+        butterworth_filter_[i] = std::make_shared<ButterworthFilter>(butterworth_filter_frequency_[i]);
         input_shapers_[i] = std::make_shared<EIInputShaper>(input_shaper_type_, input_shaper_frequency_[i],
                                                             torque_ctrl_dt, input_shaper_max_ramp_rad_per_sec);
     }
@@ -121,9 +121,10 @@ void RobotServer::ForceArrayCallback(const std_msgs::msg::Float64MultiArray::Sha
 void RobotServer::InitParamConfig() {
     auto config_path = server_data_dir_ / "w1_config.json";
 
-    const std::set<std::string> kAllowedRootKeys{"enable_ruckig",       "enable_chassis_shaper",
-                                                 "enable_input_shaper", "input_shaper_frequency",
-                                                 "enable_record",       "enable_butterworth_filter"};
+    const std::set<std::string> kAllowedRootKeys{"enable_ruckig",                  "enable_chassis_shaper",
+                                                 "enable_input_shaper",              "input_shaper_frequency",
+                                                 "enable_record",                   "enable_butterworth_filter",
+                                                 "butterworth_filter_frequency"};
 
     nlohmann::json root;
     if (!std::filesystem::exists(config_path)) {
@@ -136,6 +137,9 @@ void RobotServer::InitParamConfig() {
         root["enable_record"] = this->enable_record_;
         root["enable_butterworth_filter"] =
             std::vector<bool>(this->enable_butterworth_filter_, this->enable_butterworth_filter_ + ndof_robot);
+        root["butterworth_filter_frequency"] =
+            std::vector<double>(this->butterworth_filter_frequency_,
+                                this->butterworth_filter_frequency_ + ndof_robot);
 
         std::ofstream ofs(config_path);
         ofs << root.dump(2);
@@ -187,6 +191,12 @@ void RobotServer::InitParamConfig() {
             std::vector<bool>(this->enable_butterworth_filter_, this->enable_butterworth_filter_ + ndof_robot);
         need_rewrite = true;
     }
+    if (!root.contains("butterworth_filter_frequency")) {
+        root["butterworth_filter_frequency"] =
+            std::vector<double>(this->butterworth_filter_frequency_,
+                                this->butterworth_filter_frequency_ + ndof_robot);
+        need_rewrite = true;
+    }
 
     this->enable_ruckig_ = root.value("enable_ruckig", this->enable_ruckig_);
     this->enable_chassis_shaper_ = root.value("enable_chassis_shaper", this->enable_chassis_shaper_.load());
@@ -215,6 +225,15 @@ void RobotServer::InitParamConfig() {
         this->enable_butterworth_filter_[i] = filter_array[i];
     }
 
+    // 读取 butterworth_filter_frequency 数组
+    auto filter_freq_array =
+        root.value("butterworth_filter_frequency",
+                   std::vector<double>(this->butterworth_filter_frequency_,
+                                      this->butterworth_filter_frequency_ + ndof_robot));
+    for (int i = 0; i < ndof_robot && i < static_cast<int>(filter_freq_array.size()); ++i) {
+        this->butterworth_filter_frequency_[i] = filter_freq_array[i];
+    }
+
     nlohmann::json root_clean;
     root_clean["enable_ruckig"] = this->enable_ruckig_;
     root_clean["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
@@ -225,6 +244,9 @@ void RobotServer::InitParamConfig() {
     root_clean["enable_record"] = this->enable_record_;
     root_clean["enable_butterworth_filter"] =
         std::vector<bool>(this->enable_butterworth_filter_, this->enable_butterworth_filter_ + ndof_robot);
+    root_clean["butterworth_filter_frequency"] =
+        std::vector<double>(this->butterworth_filter_frequency_,
+                           this->butterworth_filter_frequency_ + ndof_robot);
 
     if (need_rewrite) {
         std::ofstream ofs(config_path);
@@ -255,6 +277,14 @@ void RobotServer::InitParamConfig() {
     }
     filter_str += "]";
 
+    // 生成 butterworth_filter_frequency 数组的字符串表示
+    std::string filter_freq_str = "[";
+    for (int i = 0; i < ndof_robot; ++i) {
+        filter_freq_str += std::to_string(this->butterworth_filter_frequency_[i]);
+        if (i < ndof_robot - 1) filter_freq_str += ", ";
+    }
+    filter_freq_str += "]";
+
     RCLCPP_INFO(this->get_logger(),
                 "Loaded w1_config.json from: %s \n"
                 "enable_ruckig=%s, \n"
@@ -262,14 +292,18 @@ void RobotServer::InitParamConfig() {
                 "enable_input_shaper=%s, \n"
                 "input_shaper_frequency=%s, \n"
                 "enable_record=%s, \n"
-                "enable_butterworth_filter=%s)",
+                "enable_butterworth_filter=%s, \n"
+                "butterworth_filter_frequency=%s)",
                 config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
                 this->enable_chassis_shaper_.load() ? "true" : "false", input_shaper_str.c_str(),
-                input_shaper_frequency_str.c_str(), this->enable_record_ ? "true" : "false", filter_str.c_str());
+                input_shaper_frequency_str.c_str(), this->enable_record_ ? "true" : "false", filter_str.c_str(),
+                filter_freq_str.c_str());
     LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_
              << ", enable_chassis_shaper=" << this->enable_chassis_shaper_.load()
              << ", enable_input_shaper=" << input_shaper_str
-             << ", input_shaper_frequency=" << input_shaper_frequency_str << ", enable_record=" << this->enable_record_;
+             << ", input_shaper_frequency=" << input_shaper_frequency_str << ", enable_record=" << this->enable_record_
+             << ", enable_butterworth_filter=" << filter_str
+             << ", butterworth_filter_frequency=" << filter_freq_str;
 }
 
 void RobotServer::TorqueControlThreadFunc() {
