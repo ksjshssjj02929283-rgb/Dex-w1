@@ -16,7 +16,6 @@
 #include <string>
 #include <thread>
 
-#include "NanoLog.hpp"
 #include "shared_memory_def.h"
 #include "sri_force_sensor.h"
 #include "typedef.h"
@@ -55,9 +54,6 @@ static uint16_t current_status_word = 0;
 // 力传感器数据
 static robot_server_lib::Vector6d sensor_force = robot_server_lib::Vector6d::Zero();
 
-// 记录开关
-static bool enable_record = false;
-
 void signal_handler(int signal) {
     if (signal == SIGINT) {
         g_stop_flag = 1;
@@ -82,7 +78,6 @@ void print_help() {
               << "pos <value>   - 设置目标位置 (角度)\n"
               << "torque <value> - 设置目标力矩 (Nm)\n"
               << "mode <csp|cst> - 设置控制模式\n"
-              << "record on|off  - 开启/关闭数据记录\n"
               << "status        - 查看当前状态\n"
               << "help          - 显示帮助\n"
               << "quit          - 退出程序\n"
@@ -143,21 +138,6 @@ void process_command(const std::string& line) {
                   << "====================================\n\n";
     } else if (cmd == "help" || cmd == "h" || cmd == "?") {
         print_help();
-    } else if (cmd == "record" || cmd == "r") {
-        std::string onoff;
-        if (iss >> onoff) {
-            if (onoff == "on" || onoff == "1" || onoff == "true") {
-                enable_record = true;
-                std::cout << "开启数据记录\n";
-            } else if (onoff == "off" || onoff == "0" || onoff == "false") {
-                enable_record = false;
-                std::cout << "关闭数据记录\n";
-            } else {
-                std::cout << "用法: record on|off\n";
-            }
-        } else {
-            std::cout << "当前记录状态: " << (enable_record ? "开启" : "关闭") << "\n";
-        }
     } else if (cmd == "quit" || cmd == "q" || cmd == "exit") {
         g_stop_flag = 1;
     } else if (cmd.empty()) {
@@ -173,17 +153,6 @@ int main(int argc, char* argv[]) {
 
     // 设置实时权限（必须在其他线程创建之前调用）
     setup_realtime();
-
-    // 初始化 Nanolog
-    const char* home_dir = std::getenv("HOME");
-    if (home_dir == nullptr) {
-        home_dir = "/tmp";
-    }
-    std::filesystem::path log_dir = std::filesystem::path(home_dir) / "log";
-    std::filesystem::create_directories(log_dir);
-    nanolog::initialize(nanolog::GuaranteedLogger(), (log_dir / "").string(), "joint_control", 10);
-    nanolog::set_log_level(nanolog::LogLevel::INFO);
-    std::cout << "日志路径: " << (log_dir / "joint_control.txt").string() << "\n";
 
     // 初始化力传感器（可选，失败不影响运行）
     auto force_sensor = std::make_shared<SriForceSensor>();
@@ -221,22 +190,6 @@ int main(int argc, char* argv[]) {
                 robot_server_lib::Vector6d force_data = robot_server_lib::Vector6d::Zero();
                 if (force_sensor && force_sensor->PeekLatest(&force_data)) {
                     sensor_force = force_data;
-                }
-
-                // 记录数据
-                if (enable_record) {
-                    double timestamp_s =
-                        static_cast<double>(std::chrono::steady_clock::now().time_since_epoch().count()) / 1e9;
-
-                    LOG_INFO << "{\"timestamp\": " << std::to_string(timestamp_s) << ", "
-                             << "\"position_cmd\": " << control.position[0] * 180.0 / M_PI << ", "
-                             << "\"torque_cmd\": " << control.torque_feedforward[0] << ", "
-                             << "\"position\": " << current_position * 180.0 / M_PI << ", "
-                             << "\"velocity\": " << current_velocity * 180.0 / M_PI << ", "
-                             << "\"torque\": " << current_torque << ", "
-                             << "\"force\": [" << sensor_force[0] << ", " << sensor_force[1] << ", " << sensor_force[2]
-                             << ", " << sensor_force[3] << ", " << sensor_force[4] << ", " << sensor_force[5] << "]"
-                             << "}";
                 }
 
                 // 默认控制字：上电 + 清除故障
