@@ -1,4 +1,5 @@
 #include "butterworth_filter.h"
+
 #include <cmath>
 
 ButterworthFilter::ButterworthFilter() : ButterworthFilter(3.0) {}

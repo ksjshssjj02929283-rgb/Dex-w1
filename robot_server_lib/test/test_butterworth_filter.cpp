@@ -184,7 +184,7 @@ TEST(ButterworthFilterTest, OutputContinuity) {
 // 测试 11: 不同截止频率对比 - 验证不同截止频率产生不同滤波器系数
 TEST(ButterworthFilterTest, DifferentCutoffFrequencies) {
     // 这个测试验证不同截止频率产生不同的响应特性
-    ButterworthFilter filter_low(2.0);   // 2Hz截止频率
+    ButterworthFilter filter_low(2.0);    // 2Hz截止频率
     ButterworthFilter filter_high(20.0);  // 20Hz截止频率
 
     // 记录前几次迭代的输出

@@ -121,10 +121,9 @@ void RobotServer::ForceArrayCallback(const std_msgs::msg::Float64MultiArray::Sha
 void RobotServer::InitParamConfig() {
     auto config_path = server_data_dir_ / "w1_config.json";
 
-    const std::set<std::string> kAllowedRootKeys{"enable_ruckig",                  "enable_chassis_shaper",
-                                                 "enable_input_shaper",              "input_shaper_frequency",
-                                                 "enable_record",                   "enable_butterworth_filter",
-                                                 "butterworth_filter_frequency"};
+    const std::set<std::string> kAllowedRootKeys{
+        "enable_ruckig", "enable_chassis_shaper",     "enable_input_shaper",         "input_shaper_frequency",
+        "enable_record", "enable_butterworth_filter", "butterworth_filter_frequency"};
 
     nlohmann::json root;
     if (!std::filesystem::exists(config_path)) {
@@ -138,8 +137,7 @@ void RobotServer::InitParamConfig() {
         root["enable_butterworth_filter"] =
             std::vector<bool>(this->enable_butterworth_filter_, this->enable_butterworth_filter_ + ndof_robot);
         root["butterworth_filter_frequency"] =
-            std::vector<double>(this->butterworth_filter_frequency_,
-                                this->butterworth_filter_frequency_ + ndof_robot);
+            std::vector<double>(this->butterworth_filter_frequency_, this->butterworth_filter_frequency_ + ndof_robot);
 
         std::ofstream ofs(config_path);
         ofs << root.dump(2);
@@ -193,8 +191,7 @@ void RobotServer::InitParamConfig() {
     }
     if (!root.contains("butterworth_filter_frequency")) {
         root["butterworth_filter_frequency"] =
-            std::vector<double>(this->butterworth_filter_frequency_,
-                                this->butterworth_filter_frequency_ + ndof_robot);
+            std::vector<double>(this->butterworth_filter_frequency_, this->butterworth_filter_frequency_ + ndof_robot);
         need_rewrite = true;
     }
 
@@ -226,10 +223,9 @@ void RobotServer::InitParamConfig() {
     }
 
     // 读取 butterworth_filter_frequency 数组
-    auto filter_freq_array =
-        root.value("butterworth_filter_frequency",
-                   std::vector<double>(this->butterworth_filter_frequency_,
-                                      this->butterworth_filter_frequency_ + ndof_robot));
+    auto filter_freq_array = root.value(
+        "butterworth_filter_frequency",
+        std::vector<double>(this->butterworth_filter_frequency_, this->butterworth_filter_frequency_ + ndof_robot));
     for (int i = 0; i < ndof_robot && i < static_cast<int>(filter_freq_array.size()); ++i) {
         this->butterworth_filter_frequency_[i] = filter_freq_array[i];
     }
@@ -245,8 +241,7 @@ void RobotServer::InitParamConfig() {
     root_clean["enable_butterworth_filter"] =
         std::vector<bool>(this->enable_butterworth_filter_, this->enable_butterworth_filter_ + ndof_robot);
     root_clean["butterworth_filter_frequency"] =
-        std::vector<double>(this->butterworth_filter_frequency_,
-                           this->butterworth_filter_frequency_ + ndof_robot);
+        std::vector<double>(this->butterworth_filter_frequency_, this->butterworth_filter_frequency_ + ndof_robot);
 
     if (need_rewrite) {
         std::ofstream ofs(config_path);
@@ -302,8 +297,7 @@ void RobotServer::InitParamConfig() {
              << ", enable_chassis_shaper=" << this->enable_chassis_shaper_.load()
              << ", enable_input_shaper=" << input_shaper_str
              << ", input_shaper_frequency=" << input_shaper_frequency_str << ", enable_record=" << this->enable_record_
-             << ", enable_butterworth_filter=" << filter_str
-             << ", butterworth_filter_frequency=" << filter_freq_str;
+             << ", enable_butterworth_filter=" << filter_str << ", butterworth_filter_frequency=" << filter_freq_str;
 }
 
 void RobotServer::TorqueControlThreadFunc() {
