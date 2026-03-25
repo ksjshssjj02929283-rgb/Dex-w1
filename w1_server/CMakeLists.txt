@@ -161,22 +161,5 @@ target_link_libraries(feedback PUBLIC
 )
 install(TARGETS feedback DESTINATION lib/${PROJECT_NAME})
 
-# joint_control 可执行文件
-add_executable(joint_control tools/joint_control.cpp)
-target_include_directories(joint_control PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/utils>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../robot_server_lib/utils>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../robot_server_lib>
-)
-ament_target_dependencies(joint_control PUBLIC robot_server_lib)
-target_link_libraries(joint_control PUBLIC
-    Threads::Threads
-    rt
-    Eigen3::Eigen
-    pthread
-    readline
-)
-install(TARGETS joint_control DESTINATION lib/${PROJECT_NAME})
-
 
 ament_package()
