@@ -32,11 +32,10 @@ ComputeCommandStatus MotionPlannerBase::ComputeStopCommand(const JointMeasuremen
     auto output_velocity = joint_cmd.velocity;
     bool robot_stopped = true;
     for (auto i = 0; i < ndof_robot; i++) {
-        if (output_velocity[i] > 0.0 && output_velocity[i] > streaming_bounds_.max_acceleration * controller_dt_) {
-            output_velocity[i] -= streaming_bounds_.max_acceleration * controller_dt_;
-        } else if (output_velocity[i] < 0.0 &&
-                   output_velocity[i] < -streaming_bounds_.max_acceleration * controller_dt_) {
-            output_velocity[i] += streaming_bounds_.max_acceleration * controller_dt_;
+        if (output_velocity[i] > 0.0 && output_velocity[i] > stop_bounds_.max_acceleration * controller_dt_) {
+            output_velocity[i] -= stop_bounds_.max_acceleration * controller_dt_;
+        } else if (output_velocity[i] < 0.0 && output_velocity[i] < -stop_bounds_.max_acceleration * controller_dt_) {
+            output_velocity[i] += stop_bounds_.max_acceleration * controller_dt_;
         } else {
             output_velocity[i] = 0.0;
             stop_finished = stop_finished && true;
