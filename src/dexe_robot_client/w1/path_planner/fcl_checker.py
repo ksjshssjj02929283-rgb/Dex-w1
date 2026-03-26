@@ -97,8 +97,6 @@ class FCLChecker:
         self.visualize = False
         self.verbose = True
 
-        # self.temp_obstacle = []
-
     def _obj2fcl(self, obj_path):
         """
         Transfer a mesh file(OBJ or STL) to FCL collision object
