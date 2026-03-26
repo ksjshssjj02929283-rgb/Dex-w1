@@ -15,11 +15,26 @@ from ...common import get_logger
 
 class ToppraTrajectoryPlanner:
 
-    def __init__(self, dofs: int, vel_limits: np.ndarray,
-                 acc_limits: np.ndarray):
+    def __init__(self, dofs: int, pos_limits: np.ndarray,
+                 vel_limits: np.ndarray, acc_limits: np.ndarray):
         self.logger = get_logger()
         self.dofs = dofs
         # default constraints
+        # TODO: if dofs is 2, specific handling for pos_limits
+        self.pos_limits = np.zeros(
+            (self.dofs,
+             2))  # shape: (dofs, 2), each row is [lower_bound, upper_bound]
+        if pos_limits.shape[0] == 2 and pos_limits.shape[1] == self.dofs:
+            for i in range(self.dofs):
+                self.pos_limits[i] = np.array(
+                    [pos_limits[0, i], pos_limits[1, i]])
+        elif pos_limits.shape[0] == self.dofs and pos_limits.shape[1] == 2:
+            self.pos_limits = pos_limits
+        else:
+            raise ValueError(
+                f"Pos limits dimension mismatch, {pos_limits.shape} != ({self.dofs}, 2) or (2, {self.dofs})."
+            )
+
         self.vel_limits = np.array([[-v, v] for v in vel_limits])
         self.acc_limits = np.array([[-a, a] for a in acc_limits])
         if self.vel_limits.shape[0] != self.dofs:
@@ -99,6 +114,11 @@ class ToppraTrajectoryPlanner:
         # if self._is_acc_valid(acc_array):
         #     return True, pos_array, vel_array, acc_array, duration
         # return False, None, None, None, None
+
+        # Check position limits
+        if not self._is_pos_valid(pos_array=pos_array):
+            return False, None, None, None, None
+
         return True, pos_array, vel_array, acc_array, duration
 
     def _is_acc_valid(self, acc_array) -> bool:
@@ -129,3 +149,14 @@ class ToppraTrajectoryPlanner:
                 f"Acc exceeding limit result: {acc_exceed_info} %.")
 
         return acc_valid
+
+    def _is_pos_valid(self, pos_array) -> bool:
+        pos_valid = np.all((pos_array >= self.pos_limits[:, 0]) & \
+                           (pos_array <= self.pos_limits[:, 1]))
+
+        if not pos_valid:
+            self.logger.error(
+                f"TOPPRA: Failed to plan trajectory that satisfied position constraint."
+            )
+            return False
+        return True

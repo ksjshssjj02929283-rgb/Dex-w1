@@ -1,6 +1,20 @@
 # CHANGELOG
 
-## [Unreleased]
+## [V0.4.0]
+### Feat
+ - 增加了Toprra规划轨迹后的关节角超限检查
+ - 增加了streaming模式中use_filter,use_velocity,use_acceleration等开关
+ - 增加依赖全身IK求解的move_line规划器
+ - 增加了双臂固连move_line的向后屈腿模式
+
+### Fix
+ - 修复了RRT类规划算法中的一些bug以及examples
+
+### Refactor
+ - 部分规划接口改为被动接受起始关节角而非主动获取当前关节角
+
+### Improve
+  - 增加了是否使用碰撞检测检查规划出的轨迹是否会发生自碰撞
 
 ## [V0.3.1]
 ### Feat

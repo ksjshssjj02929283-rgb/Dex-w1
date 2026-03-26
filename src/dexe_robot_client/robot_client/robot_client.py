@@ -179,6 +179,17 @@ class RobotClient(ABC):
         return self.send_set_property_request(PropertyType.EnableDrag,
                                               set_enable)
 
+    def set_sleep_mode(self, set_enable: bool) -> int:
+        """async interface - setting robot sleep mode
+        异步接口 - 开关机器人休眠模式, 开启后电机将断使能, 机器人无法运动, 仅真实机器人生效
+        Args:
+            - set_enable: bool: 是否开启休眠模式, True: 开启休眠模式(电机断使能), False: 关闭休眠模式(电机使能)
+        Returns:
+            - int: request id 指令号, 可用于等待对应运动指令完成等
+        """
+        return self.send_set_property_request(PropertyType.EnableSleep,
+                                              set_enable)
+
     def set_safe_level(self, safe_level: float) -> int:
         """async interface - setting robot safe level
         异步接口 - 设置机器人安全级别, 仅真实机器人生效
@@ -235,6 +246,21 @@ class RobotClient(ABC):
                 return -1
         return self.send_set_property_request(PropertyType.JointDamping,
                                               damping)
+
+    def set_joint_integral_ratio(self, ratio: float) -> int:
+        """async interface - setting joint integral ratio
+        异步接口 - 设置力矩模式下的关节积分系数比例 (K_i = K_p * ratio)
+        Args:
+            - ratio: float: 积分系数比例，范围 [0, 1], 默认为0.05, 值越大积分项作用越明显，增大可减小稳态误差, 但过大可能导致系统震荡不稳定
+        Returns:
+            - int: request id 指令号, 可用于等待对应运动指令完成等
+        """
+        if ratio < 0.0 or ratio > 1.0:
+            self.logger.error(
+                "Joint integral ratio invalid, should be in range [0, 1].")
+            return -1
+        return self.send_set_property_request(PropertyType.JointIntegralRatio,
+                                              ratio)
 
     def set_cartesian_stiffness(self, stiffness: Union[float,
                                                        list[float]]) -> int:
@@ -297,7 +323,6 @@ class RobotClient(ABC):
         self,
         motion_target: list[float],
         motion_group: MotionGroup = MotionGroup.Primary,
-        speed: float = 1.0,
         **kwargs,
     ) -> int:
         """async interface - joint move to target joint angles
@@ -306,16 +331,16 @@ class RobotClient(ABC):
         - target:
             - 关节角度list[float]: [j1, j2, j3, ...], 数据长度要与指定的motion_group一致
 
-        - arm: 可选项:
-            - MotionGroup.PrimaryArm: 机器人为双臂时左臂运动, target长度要与左臂关节数一致
-            - MotionGroup.SecondaryArm: 机器人为双臂时右臂运动, target长度要与右臂关节数一致
+        - motion_group: 可选项:
+            - MotionGroup.Primary: 机器人为双臂时左臂运动, target长度要与左臂关节数一致
+            - MotionGroup.Secondary: 机器人为双臂时右臂运动, target长度要与右臂关节数一致
             - MotionGroup.BothArms: 机器人为双臂时双臂运动, target长度要与双臂关节数相加一致, 左臂在前右臂在后:
                 [j1_left, j2_left, ..., jn_left, j1_right, j2_right, ..., jn_right]
             - MotionGroup.WholeBody: 机器人为双臂时全身运动(包括腿和头), target长度要与全身关节数一致
 
-        - speed: 速度百分比 0.0 ~ 1.0
-
         - kwargs: 可选参数
+            - speed: 速度百分比 0.01 ~ 2.0
+            - acceleration: 加速度百分比 0.01 ~ 2.0
             - blend_tolerance: 平滑容忍度, 单位m
             - todo: 其他参数, 如触发拍照, 夹爪, 语音等动作
 
@@ -326,7 +351,6 @@ class RobotClient(ABC):
             motion_type=MotionType.MoveJoint,
             motion_group=motion_group,
             motion_target=motion_target,
-            speed=speed,
             kwargs=kwargs,
         )
 
@@ -336,7 +360,6 @@ class RobotClient(ABC):
         self,
         motion_target: list[float],
         motion_group: MotionGroup = MotionGroup.Primary,
-        speed: float = 1.0,
         **kwargs,
     ) -> int:
         """sync interface - joint move to target joint angles
@@ -345,7 +368,6 @@ class RobotClient(ABC):
         request_id = self.move_joint_async(
             motion_target=motion_target,
             motion_group=motion_group,
-            speed=speed,
             kwargs=kwargs,
         )
         self.wait_request_finish(request_id)
@@ -355,8 +377,6 @@ class RobotClient(ABC):
         self,
         motion_target: Union[list[float], np.ndarray],
         motion_group: MotionGroup = MotionGroup.Primary,
-        reference_frame: ReferenceFrame = ReferenceFrame.ArmBase,
-        speed: float = 1.0,
         **kwargs,
     ) -> int:
         """async interface - line move to target cartesian pose
@@ -366,11 +386,10 @@ class RobotClient(ABC):
         - arm 可选项:
             - MotionGroup.PrimaryArm: 机器人为双臂时左臂运动, 单臂时即为机器人当前运动
             - MotionGroup.SecondaryArm: 机器人为双臂时右臂运动, 单臂时指令无效返回false
-        - reference_frame: 参考坐标系可选项:
-            - ReferenceFrame.ArmBase: 以臂基坐标系为参考坐标系
-            - ReferenceFrame.WorldBase: 以世界坐标系为参考坐标系
-        - speed: 速度百分比 0.0 ~ 1.0
         - kwargs: 可选参数
+            - reference_frame: 参考坐标系 (ReferenceFrame.ArmBase / ReferenceFrame.WorldBase)
+            - speed: 速度百分比 0.01 ~ 2.0
+            - acceleration: 加速度百分比 0.01 ~ 2.0
             - blend_tolerance: 平滑容忍度, 单位m
             - todo: 其他参数, 如触发拍照, 夹爪, 语音等动作
         Returns:
@@ -380,8 +399,6 @@ class RobotClient(ABC):
             motion_type=MotionType.MoveLine,
             motion_group=motion_group,
             motion_target=motion_target,
-            reference_frame=reference_frame,
-            speed=speed,
             kwargs=kwargs,
         )
 
@@ -391,18 +408,20 @@ class RobotClient(ABC):
         self,
         motion_target: Union[list[float], np.ndarray],
         motion_group: MotionGroup = MotionGroup.Primary,
-        reference_frame: ReferenceFrame = ReferenceFrame.ArmBase,
-        speed: float = 1.0,
         **kwargs,
     ) -> int:
         """sync interface - line move to target cartesian pose
         同步接口 - move_line_async的同步版本接口, 会等待此request完成后再返回
+        - kwargs: 可选参数
+            - reference_frame: 参考坐标系 (ReferenceFrame.ArmBase / ReferenceFrame.WorldBase)
+            - speed: 速度百分比 0.01 ~ 2.0
+            - acceleration: 加速度百分比 0.01 ~ 2.0
+            - blend_tolerance: 平滑容忍度, 单位m
+            - todo: 其他参数, 如触发拍照, 夹爪, 语音等动作
         """
         request_id = self.move_line_async(
             motion_group=motion_group,
             motion_target=motion_target,
-            reference_frame=reference_frame,
-            speed=speed,
             kwargs=kwargs,
         )
         self.wait_request_finish(request_id)
@@ -451,25 +470,6 @@ class RobotClient(ABC):
 
         return self.send_move_robot_request(move_joint_request)
 
-    def move_joint_sync(
-        self,
-        motion_target: list[float],
-        motion_group: MotionGroup = MotionGroup.Primary,
-        speed: float = 1.0,
-        **kwargs,
-    ) -> int:
-        """sync interface - joint move to target joint angles
-        同步接口 - move_joint_async的同步版本接口, 会等待此request完成后再返回
-        """
-        request_id = self.move_joint_async(
-            motion_target=motion_target,
-            motion_group=motion_group,
-            speed=speed,
-            kwargs=kwargs,
-        )
-        self.wait_request_finish(request_id)
-        return request_id
-
     """ ---------------------------------------------------------------------------
     User interfaces - streaming requests
     用户接口 - 流控制指令
@@ -478,31 +478,65 @@ class RobotClient(ABC):
     def start_joint_streaming_request(
         self,
         motion_group: MotionGroup = MotionGroup.Primary,
+        use_filter: Optional[bool] = None,
+        use_velocity: Optional[bool] = None,
+        use_acceleration: Optional[bool] = None,
+        streaming_timeout: Optional[float] = None,
+        streaming_velocity_timeout: Optional[float] = None,
     ) -> int:
         """sync interface - start streaming control
         同步接口 - 开启一个流控制request, 运行流控制指令前需先调用此命令, 仅可在机器人Idle状态下调用, 可先调用wait_move_finish等待之前发送的指令完成让机器人进入Idle状态
+        Args:
+            - motion_group: MotionGroup: 运动组
+            - use_filter: Optional[bool]: 是否启用巴特沃斯滤波, 默认 None 表示使用服务器端默认配置
+            - use_velocity: Optional[bool]: 是否启用速度控制, 默认 None 表示使用服务器端默认配置
+            - use_acceleration: Optional[bool]: 是否启用加速度控制, 默认 None 表示使用服务器端默认配置
+            - streaming_timeout: Optional[float]: 流超时时间(秒), 指令超过此时间未更新则认为流结束
+            - streaming_velocity_timeout: Optional[float]: 速度超时时间(秒), 如果启用了速度控制则超过此时间则速度置零, 比 streaming_timeout 更短以保证安全性
         Returns:
             - int: request id 指令号
         """
         self.wait_request_finish()
 
+        kwargs = {}
+        if use_filter is not None:
+            kwargs["use_filter"] = use_filter
+        if use_velocity is not None:
+            kwargs["use_velocity"] = use_velocity
+        if use_acceleration is not None:
+            kwargs["use_acceleration"] = use_acceleration
+        if streaming_timeout is not None:
+            kwargs["streaming_timeout"] = streaming_timeout
+        if streaming_velocity_timeout is not None:
+            kwargs["streaming_velocity_timeout"] = streaming_velocity_timeout
+
         request = MoveRequest(type=MotionType.StartJointStreaming,
-                              motion_group=motion_group)
+                              motion_group=motion_group,
+                              kwargs=kwargs)
         return self.send_move_robot_request(request)
 
     def start_ee_pose_streaming_request(
         self,
         motion_group: MotionGroup = MotionGroup.Primary,
+        use_filter: Optional[bool] = None,
     ) -> int:
         """sync interface - start streaming control
         同步接口 - 开启一个流控制request, 运行流控制指令前需先调用此命令, 仅可在机器人Idle状态下调用, 可先调用wait_move_finish等待之前发送的指令完成让机器人进入Idle状态
+        Args:
+            - motion_group: MotionGroup: 运动组
+            - use_filter: Optional[bool]: 是否启用巴特沃斯滤波, 默认 None 表示使用服务器端默认配置
         Returns:
             - int: request id 指令号
         """
         self.wait_request_finish()
 
+        kwargs = {}
+        if use_filter is not None:
+            kwargs["use_filter"] = use_filter
+
         request = MoveRequest(type=MotionType.StartEEPoseStreaming,
-                              motion_group=motion_group)
+                              motion_group=motion_group,
+                              kwargs=kwargs)
         return self.send_move_robot_request(request)
 
     def start_ee_velocity_streaming_request(
@@ -548,8 +582,6 @@ class RobotClient(ABC):
         motion_type: MotionType,
         motion_group: MotionGroup = MotionGroup.Primary,
         motion_target: Optional[list[float]] = None,
-        speed: Optional[float] = None,
-        reference_frame: Optional[ReferenceFrame] = None,
         **kwargs,
     ) -> MoveRequest:
         """create a move joint request
@@ -558,10 +590,11 @@ class RobotClient(ABC):
             - type: MotionType: 运动类型
             - motion_group: 运动部位
             - value: 目标位置
-            - reference_frame: 参考坐标系
-            - speed: 运动速度
 
-        - kwargs 可选项
+        - kwargs 可选参数
+            - reference_frame: 参考坐标系 (ReferenceFrame.ArmBase / ReferenceFrame.WorldBase)
+            - speed: 速度百分比 0.01 ~ 2.0
+            - acceleration: 加速度百分比 0.01 ~ 2.0
             - blend_tolerance: 平滑容忍度, 单位m
         Returns:
             MoveRequest: 运动指令
@@ -570,8 +603,6 @@ class RobotClient(ABC):
             type=motion_type,
             motion_group=motion_group,
             value=motion_target,
-            reference_frame=reference_frame,
-            speed=speed,
             kwargs=kwargs,
         )
         return move_joint_request
