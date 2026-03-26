@@ -126,7 +126,7 @@ private:
     bool primary_sensor_ready_ = false;
     bool secondary_sensor_ready_ = false;
 
-    // 位置指令线性插值器 (250Hz -> 1kHz)
+    // 位置指令线性插值器 (1kHz)
     utils::LinearInterpolator line_interpolator_;
 
     // 巴特沃斯滤波器数组 (1kHz 线程中应用)
@@ -139,9 +139,9 @@ private:
 
     // 输入整形器
     std::atomic<bool> enable_chassis_shaper_{false};  // 是否启用底盘速度输入整形器
-    bool enable_input_shaper_[ndof_robot] = {false, false, false, false, false, false, false,
-                                             false, false, false, false, false, false, false,
-                                             false, false, false, false, false, false};  // 每个关节是否启用输入整形器
+    bool enable_input_shaper_[ndof_robot] = {
+        true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true};  // 每个关节是否启用输入整形器
     std::shared_ptr<EIInputShaper> chassis_shaper_;
     EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
     const double DiffChassisWidth = 0.4390;
@@ -152,9 +152,8 @@ private:
     std::shared_ptr<EIInputShaper> input_shapers_[ndof_robot];
     EIInputShaper::Type input_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
     const double input_shaper_max_ramp_rad_per_sec = 10 * M_PI;
-    double input_shaper_frequency_[ndof_robot] = {
-        2.9,  2.9,  2.9,  3.5, 12.0, 12.0, 6.7,  9.5,  9.5,  12.0,
-        12.0, 12.0, 12.0, 6.7, 9.5,  9.5,  12.0, 12.0, 12.0, 12.0};  // 每个关节的输入整形器自然频率，单位Hz
+    double input_shaper_frequency_[ndof_robot] = {2.9,  2.9,  2.9,  3.5, 12.0, 12.0, 6.7,  9.5,  9.5,  12.0,
+                                                  12.0, 12.0, 12.0, 6.7, 9.5,  9.5,  12.0, 12.0, 12.0, 12.0};
 };
 
 }  // namespace robot_server_lib
