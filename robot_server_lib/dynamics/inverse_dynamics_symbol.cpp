@@ -78,7 +78,7 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDo
     dyn_base_params[24] *= friction_ratio; // J3摩擦系数需手动减少fv
     dyn_base_params[35] *= friction_ratio; // J4摩擦系数需手动减少fv
     dyn_base_params[46] *= friction_ratio; // J5摩擦系数需手动减少fv
-    dyn_base_params[57] *= friction_ratio; // J6摩擦系数需手动减少fv
+    dyn_base_params[57] *= 0.5; // J6摩擦系数需手动减少fv
     dyn_base_params[68] *= friction_ratio; // J7摩擦系数需手动减少fv
     return _InvDynamikBySymbol(q_arm, dq_arm, ddq_arm, gravity_acc_armbase, dyn_base_params);
 }

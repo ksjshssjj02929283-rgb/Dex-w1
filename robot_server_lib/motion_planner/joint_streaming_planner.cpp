@@ -169,11 +169,9 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
         }
         // 每秒打印一次日志，内容包括接收到的命令帧数、位置、速度、加速度等信息
         if (!last_log_time_.is_valid() ||
-            (time_meta.current_time.time_in_ns() - last_log_time_.time_in_ns()) * 1e-9 >= 1.0) {
+            (time_meta.current_time.time_in_ns() - last_log_time_.time_in_ns()) * 1e-9 >= 10.0) {
             LOG_INFO << "Streaming received " << frame_count_ << " frames in last period, "
-                     << "position = " << latest_cmd.command.transpose()
-                     << ", velocity = " << latest_cmd.target_velocity.transpose()
-                     << ", acceleration = " << latest_cmd.target_acceleration.transpose();
+                     << "position = " << latest_cmd.command.transpose();
             frame_count_ = 0;
             last_log_time_ = time_meta.current_time;
         }

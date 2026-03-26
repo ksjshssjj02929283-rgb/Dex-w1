@@ -363,6 +363,7 @@ PlannerRequest ParseSetPropertyRequest(
             break;
         case RequestType::EnableDrag:
         case RequestType::EnableSleep:
+        case RequestType::EnablePosLimitCheck:
             planner_request.data = parse_bool(request->value);
             break;
         case RequestType::JointStiffness:

@@ -88,6 +88,7 @@ struct RobotProperty {
     double global_speed_ratio{1.0};
     double safe_level{0.5};
     bool clear_error_flag{false};
+    bool enable_position_limit_check_{true};  // 位置限位检测开关，默认开启
     VectorDof joint_stiffness = VectorDof::Constant(200.0);
     VectorDof joint_damping = VectorDof::Constant(20.0);
     double joint_integral_ratio = 0.01;

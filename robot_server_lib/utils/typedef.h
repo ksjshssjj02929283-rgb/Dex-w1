@@ -65,7 +65,8 @@ enum class RequestType {
     SafeLevel,
     SwitchRunMode,
     EnableDrag,
-    EnableSleep,  // 休眠模式切换
+    EnableSleep,          // 休眠模式切换
+    EnablePosLimitCheck,  // 位置限位检测开关
     JointStiffness,
     JointDamping,
     JointIntegralRatio,
