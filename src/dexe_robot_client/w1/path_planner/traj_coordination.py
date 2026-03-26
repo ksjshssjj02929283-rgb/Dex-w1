@@ -879,14 +879,14 @@ class Coordination:
             right_old2new = self._build_index_map(x_orig_duration,
                                                   x_new_duration)
             left_ee_trigger_new = [
-                left_old2new[idx]
+                left_old2new[idx - 1]
                 for idx in self.left_ee_trigger
-                if idx in left_old2new
+                if (idx - 1) in left_old2new
             ]
             right_ee_trigger_new = [
-                right_old2new[idx]
+                right_old2new[idx - 1]
                 for idx in self.right_ee_trigger
-                if idx in right_old2new
+                if (idx - 1) in right_old2new
             ]
             self.logger.info(f"left_ee_trigger_new: {left_ee_trigger_new}")
             self.logger.info(f"right_ee_trigger_new: {right_ee_trigger_new}")

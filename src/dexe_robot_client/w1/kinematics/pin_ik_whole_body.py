@@ -48,7 +48,7 @@ class PinIKWholeBody:
         Args:
             urdf_path (str): Path to the URDF file of the robot.
             track_type (str): Type of tracking frame configuration. Options are "teleoperate", "standard", or "custom".
-            cost_type (str): Type of cost function to use. Options are "teleoperate_straight", "teleoperate_bend", "standard"
+            cost_type (str): Type of cost function to use. Options are "teleoperate_straight", "teleoperate_bend", "standard", "standard_bend_backward".
             kept_joint_names (list[str]): List of joint names to keep free during IK. If None, all joints are free.
             custom_left_ee_tf (np.ndarray, shape=(4,4)): Custom transformation matrix for the left end-effector.
             custom_right_ee_tf (np.ndarray, shape=(4,4)): Custom transformation matrix for the right end-effector.
@@ -65,9 +65,12 @@ class PinIKWholeBody:
         else:
             raise ValueError(f"Invalid track_type: {track_type}")
 
-        if cost_type in [
-                "teleoperate_straight", "teleoperate_bend", "standard"
-        ]:
+        self.supported_cost_types = [
+            "teleoperate_straight", "teleoperate_bend", "standard",
+            "standard_bend_backward"
+        ]
+
+        if cost_type in self.supported_cost_types:
             self.cost_type = cost_type
         else:
             raise ValueError(f"Invalid cost_type: {cost_type}")
@@ -94,7 +97,7 @@ class PinIKWholeBody:
 
         self._create_pin_casadi()
         self._create_trans_rot_error()
-        self._init_casadi_solver(cost_type=self.cost_type)
+        self.set_cost_function(cost_type=self.cost_type)
 
     def _add_track_frame(self,
                          custom_left_ee_tf: np.ndarray = None,
@@ -211,7 +214,13 @@ class PinIKWholeBody:
                     [casadi.vertcat(*calc_head_rot_err)])
         }
 
-    def _init_casadi_solver(self, cost_type: str):
+    def set_cost_function(self, cost_type: str):
+        """
+        Set the cost function of the IK numerical solver's optimization problem
+
+        Args:
+            cost_type (str): The type of predefined cost function. Options are "teleoperate_straight", "teleoperate_bend", "standard", "standard_bend_backward".
+        """
         self.opti = casadi.Opti()
         self.var_q = self.opti.variable(self.robot_.model.nq)
         self.var_q_last = self.opti.parameter(self.robot_.model.nq)
@@ -220,7 +229,27 @@ class PinIKWholeBody:
         self.param_right_tf = self.opti.parameter(4, 4)
         self.param_head_tf = self.opti.parameter(4, 4)
 
-        if cost_type == "standard":
+        opts = {
+            'ipopt': {
+                'print_level': 0,
+                'max_iter': 100,
+                'tol': 1e-4
+            },
+            'print_time': False,
+            'calc_lam_p': False,
+        }
+        self.opti.solver("ipopt", opts)
+
+        self.solver_dict = {
+            "opti": self.opti,
+            "var_q": self.var_q,
+            "var_q_last": self.var_q_last,
+            "param_left_tf": self.param_left_tf,
+            "param_right_tf": self.param_right_tf,
+            "param_head_tf": self.param_head_tf
+        }
+
+        if cost_type == "standard" or cost_type == "standard_bend_backward" or cost_type == "standard_strict":
             self.translational_cost = casadi.sumsqr(
                 self.translational_error_dict["standard"](self.var_q,
                                                           self.param_left_tf,
@@ -280,7 +309,7 @@ class PinIKWholeBody:
 
         if cost_type == "standard":
             # TODO： tune the weight of waist joint regularization
-            regularization_cost = casadi.sumsqr(10 * self.var_q[3])
+            regularization_cost = 10 * casadi.sumsqr(self.var_q[3])
 
             self.opti.subject_to(
                 self.opti.bounded(self.robot_.model.lowerPositionLimit,
@@ -299,41 +328,271 @@ class PinIKWholeBody:
 
             self.opti.subject_to(self.var_q[0] + 0.5 * self.var_q[1] == 0)
 
+            # Center of mass cost computation
+            cpin.centerOfMass(self.cmodel, self.cdata, self.cq)
+            self.com_world = self.cdata.com[0]  # shape (3,)
+            self.base_frame_id = self.cmodel.getFrameId("base_link")
+            self.T_w_b = self.cdata.oMf[self.base_frame_id]
+            self.com_base = self.T_w_b.inverse() * self.com_world  # shape (3,)
+            self.com_position = casadi.Function("com_position", [self.cq],
+                                                [self.com_base])
+
+            com = self.com_position(self.var_q)
+
+            self.opti.subject_to(com[0] >= -0.25)
+            self.opti.subject_to(com[0] <= 0.25)
+            self.opti.subject_to(com[1] >= -0.25)
+            self.opti.subject_to(com[1] <= 0.25)
+
+            # self.opti.subject_to(self.translational_cost <= 0.000001)
+            # self.opti.subject_to(self.rotation_cost <= 0.00005)
+
+            arml6_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[11] - self.robot_.model.upperPositionLimit[11])
+            )) + 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[11] - self.var_q[11])))
+            armr6_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[18] - self.robot_.model.upperPositionLimit[18])
+            )) + 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[18] - self.var_q[18])))
+            self.arm6_cost = casadi.sumsqr(
+                casadi.vertcat(arml6_cost, armr6_cost))
+
+            arml7_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[12] - self.robot_.model.upperPositionLimit[12])
+            )) + 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[12] - self.var_q[12])))
+            armr7_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[19] - self.robot_.model.upperPositionLimit[19])
+            )) + 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[19] - self.var_q[19])))
+            self.arm7_cost = casadi.sumsqr(
+                casadi.vertcat(arml7_cost, armr7_cost))
+
+            left_angle_cost = 1 / (1 + casadi.exp(-25 * (-2 - self.cq[7])))
+            right_angle_cost = 1 / (1 + casadi.exp(-25 * (self.cq[14] - 2)))
+            angle_cost = [left_angle_cost, right_angle_cost]
+            self.angle_cost_func = casadi.Function(
+                "angle_cost", [self.cq], [casadi.vertcat(*angle_cost)])
+
+            self.waist_straight_weight = 5 / (1 + casadi.exp(
+                -50 *
+                (0.55 -
+                 (self.param_left_tf[0, 3] + self.param_right_tf[0, 3]) / 2)))
+
+            # yapf: disable
             self.opti.minimize(
-                50 * self.translational_cost + self.rotation_cost +
-                0.02 * regularization_cost + self.smooth_cost +
-                5 * casadi.sumsqr(self.var_q[0] + self.var_q[1] +
-                                  self.var_q[2])  # upper body straight cost
-                +
-                10 * casadi.sumsqr(self.var_q[0:3] -
+                800 * self.translational_cost
+                + 10 * self.rotation_cost
+                + 0.02 * regularization_cost
+                + 5 * self.smooth_cost
+                + self.waist_straight_weight * casadi.sumsqr(self.var_q[0] + self.var_q[1] + self.var_q[2])  # upper body straight cost
+                + 10 * casadi.sumsqr(self.var_q[0:3] -
                                    self.var_q_last[0:3])  # move arms first cost
+                + 10 * (self.arm6_cost + self.arm7_cost)
+                + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
             )
+            # yapf: enable
 
-        opts = {
-            'ipopt': {
-                'print_level': 0,
-                'max_iter': 100,
-                'tol': 1e-4
-            },
-            'print_time': False,
-            'calc_lam_p': False,
-        }
-        self.opti.solver("ipopt", opts)
+        if cost_type == "standard_bend_backward":
+            regularization_cost = 10 * casadi.sumsqr(self.var_q[3])
 
-        self.solver_dict = {
-            "opti": self.opti,
-            "var_q": self.var_q,
-            "var_q_last": self.var_q_last,
-            "param_left_tf": self.param_left_tf,
-            "param_right_tf": self.param_right_tf,
-            "param_head_tf": self.param_head_tf
-        }
+            self.opti.subject_to(
+                self.opti.bounded(self.robot_.model.lowerPositionLimit,
+                                  self.var_q,
+                                  self.robot_.model.upperPositionLimit))
+
+            self.opti.subject_to(self.var_q[0] + self.var_q[1] + self.var_q[2]
+                                 >= 0)  # torso leaning forward constraint
+            self.opti.subject_to(self.var_q[0]
+                                 <= 0)  # legs bending forward constraint
+            self.opti.subject_to(self.var_q[1] >= 0)
+            self.opti.subject_to(self.var_q[2] <= 0)
+            self.opti.subject_to(self.var_q[9]
+                                 <= 0)  # elbow joint inward constraint
+            self.opti.subject_to(self.var_q[16] >= 0)
+
+            self.opti.subject_to(self.var_q[0] + 0.5 * self.var_q[1] == 0)
+
+            # Center of mass cost computation
+            cpin.centerOfMass(self.cmodel, self.cdata, self.cq)
+            self.com_world = self.cdata.com[0]  # shape (3,)
+            self.base_frame_id = self.cmodel.getFrameId("base_link")
+            self.T_w_b = self.cdata.oMf[self.base_frame_id]
+            self.com_base = self.T_w_b.inverse() * self.com_world  # shape (3,)
+            self.com_position = casadi.Function("com_position", [self.cq],
+                                                [self.com_base])
+
+            com = self.com_position(self.var_q)
+
+            self.opti.subject_to(com[0] >= -0.25)
+            self.opti.subject_to(com[0] <= 0.25)
+            self.opti.subject_to(com[1] >= -0.25)
+            self.opti.subject_to(com[1] <= 0.25)
+
+            arml6_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[11] - self.robot_.model.upperPositionLimit[11])
+            )) + 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[11] - self.var_q[11])))
+            armr6_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[18] - self.robot_.model.upperPositionLimit[18])
+            )) + 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[18] - self.var_q[18])))
+            self.arm6_cost = casadi.sumsqr(
+                casadi.vertcat(arml6_cost, armr6_cost))
+
+            arml7_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[12] - self.robot_.model.upperPositionLimit[12])
+            )) + 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[12] - self.var_q[12])))
+            armr7_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[19] - self.robot_.model.upperPositionLimit[19])
+            )) + 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[19] - self.var_q[19])))
+            self.arm7_cost = casadi.sumsqr(
+                casadi.vertcat(arml7_cost, armr7_cost))
+
+            left_angle_cost = 1 / (1 + casadi.exp(-25 * (-2 - self.cq[7])))
+            right_angle_cost = 1 / (1 + casadi.exp(-25 * (self.cq[14] - 2)))
+            angle_cost = [left_angle_cost, right_angle_cost]
+            self.angle_cost_func = casadi.Function(
+                "angle_cost", [self.cq], [casadi.vertcat(*angle_cost)])
+
+            waist_straight_weight = 5 / (1 + casadi.exp(
+                -50 *
+                (0.6 -
+                 (self.param_left_tf[0, 3] + self.param_right_tf[0, 3]) / 2)))
+
+            # yapf: disable
+            self.opti.minimize(
+                800 * self.translational_cost
+                + 10 * self.rotation_cost
+                + 0.02 * regularization_cost
+                + 5 * self.smooth_cost
+                + waist_straight_weight * casadi.sumsqr(self.var_q[0] + self.var_q[1] + self.var_q[2])  # upper body straight cost
+                + 10 * casadi.sumsqr(self.var_q[0:3] -
+                                   self.var_q_last[0:3])  # move arms first cost
+                + 10 * (self.arm6_cost + self.arm7_cost)
+                + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
+            )
+            # yapf: enable
+
+        if cost_type == "standard_strict":
+            # TODO： tune the weight of waist joint regularization
+            regularization_cost = 10 * casadi.sumsqr(self.var_q[3])
+
+            self.opti.subject_to(
+                self.opti.bounded(self.robot_.model.lowerPositionLimit,
+                                  self.var_q,
+                                  self.robot_.model.upperPositionLimit))
+
+            self.opti.subject_to(self.var_q[0] + self.var_q[1] + self.var_q[2]
+                                 >= 0)  # torso leaning forward constraint
+            self.opti.subject_to(self.var_q[0]
+                                 >= 0)  # legs bending forward constraint
+            self.opti.subject_to(self.var_q[1] <= 0)
+            self.opti.subject_to(self.var_q[2] >= 0)
+            self.opti.subject_to(self.var_q[9]
+                                 <= 0)  # elbow joint inward constraint
+            self.opti.subject_to(self.var_q[16] >= 0)
+
+            self.opti.subject_to(self.var_q[0] + 0.5 * self.var_q[1] == 0)
+
+            # Center of mass cost computation
+            cpin.centerOfMass(self.cmodel, self.cdata, self.cq)
+            self.com_world = self.cdata.com[0]  # shape (3,)
+            self.base_frame_id = self.cmodel.getFrameId("base_link")
+            self.T_w_b = self.cdata.oMf[self.base_frame_id]
+            self.com_base = self.T_w_b.inverse() * self.com_world  # shape (3,)
+            self.com_position = casadi.Function("com_position", [self.cq],
+                                                [self.com_base])
+
+            com = self.com_position(self.var_q)
+
+            self.opti.subject_to(com[0] >= -0.25)
+            self.opti.subject_to(com[0] <= 0.25)
+            self.opti.subject_to(com[1] >= -0.25)
+            self.opti.subject_to(com[1] <= 0.25)
+
+            self.opti.subject_to(self.translational_cost <= 0.000001)
+            self.opti.subject_to(self.rotation_cost <= 0.00005)
+
+            arml6_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[11] - self.robot_.model.upperPositionLimit[11])
+            )) + 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[11] - self.var_q[11])))
+            armr6_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[18] - self.robot_.model.upperPositionLimit[18])
+            )) + 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[18] - self.var_q[18])))
+            self.arm6_cost = casadi.sumsqr(
+                casadi.vertcat(arml6_cost, armr6_cost))
+
+            arml7_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[12] - self.robot_.model.upperPositionLimit[12])
+            )) + 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[12] - self.var_q[12])))
+            armr7_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[19] - self.robot_.model.upperPositionLimit[19])
+            )) + 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[19] - self.var_q[19])))
+            self.arm7_cost = casadi.sumsqr(
+                casadi.vertcat(arml7_cost, armr7_cost))
+
+            left_angle_cost = 1 / (1 + casadi.exp(-25 * (-2 - self.cq[7])))
+            right_angle_cost = 1 / (1 + casadi.exp(-25 * (self.cq[14] - 2)))
+            angle_cost = [left_angle_cost, right_angle_cost]
+            self.angle_cost_func = casadi.Function(
+                "angle_cost", [self.cq], [casadi.vertcat(*angle_cost)])
+
+            self.waist_straight_weight = 5 / (1 + casadi.exp(
+                -50 *
+                (0.55 -
+                 (self.param_left_tf[0, 3] + self.param_right_tf[0, 3]) / 2)))
+
+            # yapf: disable
+            self.opti.minimize(
+                1000 * self.translational_cost
+                + 20 * self.rotation_cost
+                + 0.02 * regularization_cost
+                + 5 * self.smooth_cost
+                + self.waist_straight_weight * casadi.sumsqr(self.var_q[0] + self.var_q[1] + self.var_q[2])  # upper body straight cost
+                + 10 * casadi.sumsqr(self.var_q[0:3] -
+                                   self.var_q_last[0:3])  # move arms first cost
+                + 10 * (self.arm6_cost + self.arm7_cost)
+                + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
+            )
 
     def solve_ik(self,
                  left_ee_target: np.ndarray,
                  right_ee_target: np.ndarray,
                  head_ee_target: np.ndarray = None,
                  cur_qpos: np.ndarray = None):
+
         if cur_qpos is None:
             self.init_data = np.zeros(self.robot_.model.nq)
         else:
@@ -343,7 +602,7 @@ class PinIKWholeBody:
 
         self.opti.set_value(self.param_left_tf, left_ee_target)
         self.opti.set_value(self.param_right_tf, right_ee_target)
-        if self.cost_type != "standard":
+        if self.cost_type != "standard" and self.cost_type != "standard_bend_backward" and self.cost_type != "standard_strict":
             if head_ee_target is None:
                 self.logger.error(
                     "head_ee_target must be provided for teleoperate cost types."
@@ -358,4 +617,20 @@ class PinIKWholeBody:
             return True, solution_q
         except Exception as e:
             self.logger.error(f"IK solver failed: {e}")
+            self.opti.debug.show_infeasibilities()
+            print(f"var_q: {self.opti.debug.value(self.var_q)}")
+            print(f"left_ee_target: {left_ee_target}")
+            print(f"right_ee_target: {right_ee_target}")
+            print(f"translation_cost: {self.opti.debug.value(self.translational_cost)}")
+            print(f"rotation_cost: {self.opti.debug.value(self.rotation_cost)}")
+            print(f"smooth_cost: {self.opti.debug.value(self.smooth_cost)}")
+            print(f"arm6 arm7 cost: {self.opti.debug.value(self.arm6_cost)}  {self.opti.debug.value(self.arm7_cost)}")
+            print(f"angle_cost: {self.opti.debug.value(self.angle_cost_func(self.var_q))}")
+            print(f"waist_straight_weight: {self.opti.debug.value(self.waist_straight_weight)}")
+
+            rot_err = self.rotational_error_dict["standard"](
+                self.var_q, self.param_left_tf, self.param_right_tf
+            )
+            print(f"rotational error: {self.opti.debug.value(rot_err)}")
+
             return False, None

@@ -169,10 +169,6 @@ class RobotClientRos2(Node, RobotClient):
             goal_msg.target = [float(x) for x in request.value]
 
         config_dict = {}
-        if request.reference_frame is not None:
-            config_dict["reference_frame"] = request.reference_frame.name
-        if request.speed is not None:
-            config_dict["speed"] = request.speed
         if request.kwargs is not None:
             config_dict.update(request.kwargs)
         if config_dict:

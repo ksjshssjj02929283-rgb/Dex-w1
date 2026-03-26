@@ -1,3 +1,11 @@
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
+
 from enum import Enum, auto
 import os
 import pathlib

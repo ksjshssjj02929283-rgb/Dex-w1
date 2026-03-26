@@ -1,3 +1,11 @@
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
+
 import numpy as np
 from copy import deepcopy
 import time
@@ -6,7 +14,7 @@ from ...common import get_logger, W1ArmType, W1Version
 from ..utils.w1_params import W1Params
 from ...end_effector_client import EndEffectorType
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
-from ..kinemtaics.pin_ik_whole_body import PinIKWholeBody
+from ..kinematics.pin_ik_whole_body import PinIKWholeBody
 from .utils.robot_type import *
 from dexe_rp import DexforceW1Kinematics, SRSConfig
 
@@ -57,6 +65,9 @@ class CartesianToJointPlanner:
 
         self.logger.info(
             f"Initialize kinematic solver for Cartesian to Joint Planner")
+
+    def set_whole_body_ik_cost_type(self, cost_type: str):
+        self.whole_body_ik_solver.set_cost_function(cost_type=cost_type)
 
     def set_arm_tcp(self, name: str, pose: np.ndarray):
         if name == "left_arm":
@@ -114,6 +125,9 @@ class CartesianToJointPlanner:
         joint_qpos_array = np.array(joint_qpos_list)
         return True, joint_qpos_array
 
+    from dexe_robot_client.common import time_consuming
+
+    @time_consuming
     def plan_whole_body(self, start_qpos: np.ndarray,
                         left_end_effector_traj: np.ndarray,
                         right_end_effector_traj: np.ndarray):
@@ -151,6 +165,9 @@ class CartesianToJointPlanner:
                 self.logger.error(
                     f"Whole body Cartesian_to_joint_planner: solve ik failed, cur_qpos(deg): {np.rad2deg(current_qpos)}"
                 )
+                self.logger.error(
+                    f"cartesian trajectory length {left_end_effector_traj.shape[0]}, and solve failed at index {len(joint_qpos_list)}."
+                )
                 return False, None
             if not np.allclose(result_qpos, current_qpos,
                                atol=np.deg2rad(90.0)):
@@ -175,6 +192,11 @@ class CartesianToJointPlanner:
 
         left_index = self.w1_params.index_infos["left_arm"]["index"]
         right_index = self.w1_params.index_infos["right_arm"]["index"]
+        left_pos_limits = np.vstack((self.w1_params.qpos_lb[left_index],
+                                     self.w1_params.qpos_ub[left_index]))
+        right_pos_limits = np.vstack((self.w1_params.qpos_lb[right_index],
+                                      self.w1_params.qpos_ub[right_index]))
+        dual_arm_pos_limits = np.hstack([left_pos_limits, right_pos_limits])
         left_vel_limits = self.w1_params.max_qvel[left_index]
         right_vel_limits = self.w1_params.max_qvel[right_index]
         dual_arm_vel_limits = np.concatenate(
@@ -201,7 +223,8 @@ class CartesianToJointPlanner:
                         [current_left_qpos, left_joint_traj])
                     qvel_limits_array = np.vstack(
                         [qvel_limits_array[0], qvel_limits_array])
-                traj_planner = ToppraTrajectoryPlanner(dofs, left_vel_limits,
+                traj_planner = ToppraTrajectoryPlanner(dofs, left_pos_limits,
+                                                       left_vel_limits,
                                                        left_acc_limits)
                 res, pos_array, _, _, _ = traj_planner.plan(
                     left_joint_traj, qvel_limits_array)
@@ -221,7 +244,8 @@ class CartesianToJointPlanner:
                         [current_right_qpos, right_joint_traj])
                     qvel_limits_array = np.vstack(
                         [qvel_limits_array[0], qvel_limits_array])
-                traj_planner = ToppraTrajectoryPlanner(dofs, right_vel_limits,
+                traj_planner = ToppraTrajectoryPlanner(dofs, right_pos_limits,
+                                                       right_vel_limits,
                                                        right_acc_limits)
                 res, pos_array, _, _, _ = traj_planner.plan(
                     right_joint_traj, qvel_limits_array)
@@ -248,6 +272,7 @@ class CartesianToJointPlanner:
             combined_traj = np.concatenate([left_joint_traj, right_joint_traj],
                                            axis=1)
             traj_planner = ToppraTrajectoryPlanner(dual_arm_dofs,
+                                                   dual_arm_pos_limits,
                                                    dual_arm_vel_limits,
                                                    dual_arm_acc_limits)
             qvel_limits_array = np.hstack(
@@ -297,10 +322,12 @@ class CartesianToJointPlanner:
                 [qvel_limits_array[0], qvel_limits_array])
 
         dofs = self.w1_params.full_body_dofs
+        pos_limits = np.vstack((self.w1_params.qpos_lb, self.w1_params.qpos_ub))
         vel_limits = self.w1_params.max_qvel
         acc_limits = self.w1_params.max_qacc
 
-        traj_planner = ToppraTrajectoryPlanner(dofs, vel_limits, acc_limits)
+        traj_planner = ToppraTrajectoryPlanner(dofs, pos_limits, vel_limits,
+                                               acc_limits)
         res, qpos_array, _, _, _ = traj_planner.plan(whole_body_joint_traj,
                                                      qvel_limits_array)
         if not res:

@@ -52,9 +52,10 @@ def main():
     ta.setup_logging("INFO")
 
     dofs = 3
+    pos_limits = np.array([[-3.14, -3.14, -3.14], [3.14, 3.14, 3.14]])
     vel_limits = [1.] * dofs
     acc_limits = [5.] * dofs
-    planner = ToppraTrajectoryPlanner(dofs, vel_limits, acc_limits)
+    planner = ToppraTrajectoryPlanner(dofs, pos_limits, vel_limits, acc_limits)
 
     qpos_array = np.array([[0., 0., 0.], [1., 2., 3.], [3., 2., 1.],
                            [0., 0., 0.]])
@@ -65,6 +66,17 @@ def main():
     # res, pos_array, vel_array, acc_array, duration = planner.plan(qpos_array)
 
     plot_trajectory(pos_array, vel_array, acc_array)
+
+    qpos_array2 = np.array([[0., 0., 0.], [1., 2., 3.], [1.5, 2.5, 3.135],
+                            [1.5, 2.5, 3.138], [1.5, 2.5, 3.139], [3., 2., 1.],
+                            [0., 0., 0.]])
+    qvel_array2 = np.array([[100., 100., 100.], [1., 1., 1.], [1., 1., 1.],
+                            [1., 1., 1.], [1., 1., 1.], [2., 2., 2.],
+                            [1., 1., 1.]])
+    res, pos_array2, vel_array2, acc_array2, duration2 = planner.plan(
+        qpos_array2, qvel_array2)
+
+    plot_trajectory(pos_array2, vel_array2, acc_array2)
 
 
 if __name__ == "__main__":

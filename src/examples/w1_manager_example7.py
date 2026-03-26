@@ -17,6 +17,13 @@ from scipy.spatial.transform import Rotation as R
 from IPython import embed
 from dexe_robot_client.common.config import DATA_DIR
 
+from dexe_rp import W1Vis, pos_wxyz_to_homogeneous, Box, Sphere, Mesh, Material
+import json
+"""
+This example shows advanced useage of plan_dual_arm_multiple_task
+    including attaching/detaching objects, disable/enable obstacles, combining move line and RRT planning
+"""
+
 # 回原点
 task_dict1 = {
     "torso": [[0.785, -1.57, 0.785, 0.03490658503988659]],
@@ -98,13 +105,13 @@ task_dict3 = {
     "left_arm": [[-12.99, 329.39, -0.8, -150.06, -6.2, -42.88],
                  [52.59, 513.68, 71.56, -135.01, -15.82, -17.95]],
     "left_arm_speed_ratio": [1., 1.],
-    "left_arm_ee": [[0.0, [10, 100, 30, 30, 30, 30], 0.0],
+    "left_arm_ee": [[0.3, [10, 100, 30, 30, 30, 30], 0.3],
                     [0.2, [0, 0, 0, 0, 0, 0], 0.3]],
     "left_use_collision_check": [False, True],
     "right_arm": [[252.0, 273.86, 173.45, -140.2, -10.99, 1.43],
                   [-41.94, 508.91, 76.45, -113.91, 6.08, 19.82]],
     "right_arm_speed_ratio": [1., 1.],
-    "right_arm_ee": [[0.0, [20, 19, 19, 20, 19, 19], 0.0],
+    "right_arm_ee": [[0.3, [20, 19, 19, 20, 19, 19], 0.3],
                      [0.2, [0, 0, 0, 0, 0, 0], 0.3]],
     "right_use_collision_check": [False, True]
 }
@@ -154,18 +161,141 @@ task_dict6 = {
 }
 
 
-def test_single_task(task_dict=None,
-                     load_env=True,
-                     fcl_env_path=None,
-                     planner_env_path=None):
+def test_multiple_task(start_qpos,
+                       start_left_arm_ee_qpos,
+                       start_right_arm_ee_qpos,
+                       task_dict=None,
+                       load_env=True,
+                       fcl_env_path=None,
+                       planner_env_path=None):
     if load_env:
         w1_manager.load_fcl_environment(fcl_env_path)
         w1_manager.load_planner_environment(planner_env_path)
-    w1_manager.move_dual_arm_multiple_task(task_dict=task_dict, speed_ratio=1)
+    res, trajectory, armlee_trigger, armree_trigger = \
+        w1_manager.plan_dual_arm_multiple_task(start_qpos,
+                                               start_left_arm_ee_qpos,
+                                               start_right_arm_ee_qpos,
+                                               task_dict=task_dict,
+                                               speed_ratio=1)
+    return res, trajectory, armlee_trigger, armree_trigger
 
 
-def move_linear_full_body(task_dict=None):
-    w1_manager.move_linear_full_body(waypoints_dict=task_dict, speed_ratio=1)
+def move_linear_full_body(start_qpos,
+                          start_left_arm_ee_qpos,
+                          start_right_arm_ee_qpos,
+                          task_dict=None):
+    res, trajectory, armlee_trigger, armree_trigger = \
+        w1_manager.plan_linear_full_body(start_qpos,
+                                         start_left_arm_ee_qpos,
+                                         start_right_arm_ee_qpos,
+                                         waypoints_dict=task_dict,
+                                         speed_ratio=1,
+                                         use_collision_validator=False)
+    return res, trajectory, armlee_trigger, armree_trigger
+
+
+def _load_viser_environment(vis, file_path: str = None):
+    if file_path is not None:
+        with open(file_path, 'r') as f:
+            env_data = json.load(f)
+        obstacle_cfg = env_data.get("scene_objects", None)
+        workobjects_cfg = env_data.get("user_workobjects", None)
+        scene_handle_list = []
+        workobjects_handle_list = []
+        if obstacle_cfg is not None:
+            for obj in obstacle_cfg:
+                if obj["shape"]["shape_type"] == "box":
+                    box = Box(
+                        obj["shape"]["raw_data"][0],
+                        obj["shape"]["raw_data"][1],
+                        obj["shape"]["raw_data"][2],
+                        pos_wxyz_to_homogeneous(obj["pose"][:3],
+                                                obj["pose"][3:]))
+                    h_box = vis.add_body(f"/{obj['name']}", box)
+                    scene_handle_list.append(h_box)
+                if obj["shape"]["shape_type"] == "sphere":
+                    sphere = Sphere(
+                        obj["shape"]["raw_data"][0],
+                        pos_wxyz_to_homogeneous(obj["pose"][:3],
+                                                obj["pose"][3:]))
+                    h_sphere = vis.add_body(f"/{obj['name']}", sphere)
+                    scene_handle_list.append(h_sphere)
+                if obj["shape"]["shape_type"] == "mesh":
+                    mesh = Mesh.init_from_file(
+                        obj["shape"]["raw_data"],
+                        pos_wxyz_to_homogeneous(obj["pose"][:3],
+                                                obj["pose"][3:]))
+                    h_mesh = vis.add_body(f"/{obj['name']}", mesh)
+                    scene_handle_list.append(h_mesh)
+        if workobjects_cfg is not None:
+            for obj in workobjects_cfg:
+                if obj["shape"]["shape_type"] == "box":
+                    box = Box(
+                        obj["shape"]["raw_data"][0],
+                        obj["shape"]["raw_data"][1],
+                        obj["shape"]["raw_data"][2],
+                        pos_wxyz_to_homogeneous(obj["pose"][:3],
+                                                obj["pose"][3:]), Material.RED)
+                    h_box = vis.add_body(f"/{obj['name_key']}", box)
+                    workobjects_handle_list.append(h_box)
+                if obj["shape"]["shape_type"] == "sphere":
+                    sphere = Sphere(
+                        obj["shape"]["raw_data"][0],
+                        pos_wxyz_to_homogeneous(obj["pose"][:3],
+                                                obj["pose"][3:]), Material.RED)
+                    h_sphere = vis.add_body(f"/{obj['name_key']}", sphere)
+                    workobjects_handle_list.append(h_sphere)
+                if obj["shape"]["shape_type"] == "mesh":
+                    mesh = Mesh.init_from_file(
+                        obj["shape"]["raw_data"],
+                        pos_wxyz_to_homogeneous(obj["pose"][:3],
+                                                obj["pose"][3:]), Material.RED)
+                    h_mesh = vis.add_body(f"/{obj['name_key']}", mesh)
+                    workobjects_handle_list.append(h_mesh)
+
+        return scene_handle_list, workobjects_handle_list
+
+
+def load_viser(file_path: str = None):
+    vis = W1Vis()
+    vis.set_qpos("robot", home_qpos)
+    vis.set_ee_pos("left_ee", left_ee_home_qpos)
+    vis.set_ee_pos("right_ee", right_ee_home_qpos)
+
+    scene_handle_list, workobjects_handle_list = _load_viser_environment(
+        vis, file_path=file_path)
+
+    return vis, scene_handle_list, workobjects_handle_list
+
+
+def viser_execute_traj(vis,
+                       trajectory,
+                       armlee_trigger=None,
+                       armree_trigger=None):
+    from loop_rate_limiters import RateLimiter
+    rate = RateLimiter(frequency=100, warn=True)
+    print(f"trajectory length: {len(trajectory)}")
+    idx = 0
+    lee_idx = 0
+    ree_idx = 0
+    while True:
+        if idx < len(trajectory):
+            full_qpos = trajectory[idx]
+            vis.set_qpos("robot", full_qpos)
+            if armlee_trigger is not None and lee_idx < len(
+                    armlee_trigger) and idx == armlee_trigger[lee_idx][0]:
+                vis.set_ee_pos("left_ee",
+                               np.asarray(armlee_trigger[lee_idx][1]))
+                lee_idx += 1
+            if armree_trigger is not None and ree_idx < len(
+                    armree_trigger) and idx == armree_trigger[ree_idx][0]:
+                vis.set_ee_pos("right_ee",
+                               np.asarray(armree_trigger[ree_idx][1]))
+                ree_idx += 1
+            idx += 1
+        else:
+            break
+        rate.sleep()
 
 
 if __name__ == "__main__":
@@ -179,42 +309,125 @@ if __name__ == "__main__":
     if not w1_manager.connect() and not w1_manager.is_enabled():
         raise RuntimeError("Failed to connect to W1 robot.")
 
-    # yapf: disable
-    w1_manager.set_home_qpos(np.deg2rad([0, 0, 0, 0, 0, 0,
-                                        5, -20, -5, -30, 0, -15, 0,
-                                        -5, 20, 5, 30, 0, 15, 0]),
-                            save_to_file=False)
-    # yapf: enable
-    w1_manager.go_home(1.)
-
     w1_manager.set_tcp("left_arm", np.eye(4))
     right_tcp_xpos = np.eye(4)
     right_tcp_xpos[:3, :3] = R.from_rotvec([0.0, 0.0, 180.],
                                            degrees=True).as_matrix()
     w1_manager.set_tcp("right_arm", xpos=right_tcp_xpos)
 
-    # w1_manager.enable_viser()
+    home_qpos = np.array([
+        0.785, -1.57, 0.785, 0.03490658503988659, 0.0, -0.6632251157578453,
+        2.1155, -0.2175, -1.0686, -1.8855, 0.0081, 0.1119, 0.6381, -2.1155,
+        0.2175, 1.0686, 1.8855, -0.0081, -0.1119, -0.6381
+    ])
+    left_ee_home_qpos = np.array([0.0] * 6)
+    right_ee_home_qpos = np.array([0.0] * 6)
+
+    w1_manager.set_home_qpos(home_qpos, save_to_file=False)
+
+    w1_manager.set_ee_qpos("left_arm_ee", left_ee_home_qpos)
+    w1_manager.set_ee_qpos("right_arm_ee", right_ee_home_qpos)
+    w1_manager.go_home(1)
 
     fcl_downward_env_path = f"{DATA_DIR}/environment/coffee_demo_downward.json"
     fcl_upward_env_path = f"{DATA_DIR}/environment/coffee_demo_upward.json"
     planner_downward_env_path = f"{DATA_DIR}/environment/expanded_coffee_demo_downward.json"
     planner_upward_env_path = f"{DATA_DIR}/environment/expanded_coffee_demo_upward.json"
 
-    test_single_task(task_dict=task_dict1,
-                     load_env=True,
-                     fcl_env_path=fcl_upward_env_path,
-                     planner_env_path=planner_upward_env_path)
-    # w1_manager.add_control_part()
-    # w1_manager.attach_cup_in_viser()
-    w1_manager.attach_object(obj_name="cup", which_arm="right")
-    test_single_task(task_dict=task_dict2, load_env=False)
-    # w1_manager.detach_cup_in_viser()
-    w1_manager.detach_object(obj_name="cup", which_arm="right")
-    test_single_task(task_dict=task_dict3, load_env=False)
-    test_single_task(task_dict=task_dict4, load_env=False)
-    # w1_manager.reload_coffee_machine_in_viser()
-    test_single_task(task_dict=task_dict5, load_env=False)
-    test_single_task(task_dict=task_dict6,
-                     load_env=True,
-                     fcl_env_path=fcl_downward_env_path,
-                     planner_env_path=planner_downward_env_path)
+    vis, scene_handle_list, workobjects_handle_list = load_viser(
+        file_path=fcl_upward_env_path)
+
+    trajectory, armlee_trigger, armree_trigger = None, None, None
+
+    res, trajectory, armlee_trigger, armree_trigger = \
+        test_multiple_task(home_qpos,
+                           left_ee_home_qpos,
+                           right_ee_home_qpos,
+                           task_dict=task_dict1,
+                           load_env=True,
+                           fcl_env_path=fcl_upward_env_path,
+                           planner_env_path=planner_upward_env_path)
+    viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
+    input("Press Enter to continue to next test...")
+    # compute transformation matrix between grasp object and arm7 link
+    res, cup_rotation, cup_translation = w1_manager.fcl_checker.get_grasp_object_pose(
+        "cup")
+    cup_pose = np.eye(4)
+    cup_pose[:3, :3] = cup_rotation
+    cup_pose[:3, 3] = cup_translation
+    cur_qpos = trajectory[-1]
+    torso_tf, head_tf, arml_tf, armr_tf = w1_manager._pin_kine.get_Kinematics(
+        cur_qpos)
+    arm7_T_object = np.linalg.inv(armr_tf[-1]) @ cup_pose
+
+    w1_manager.attach_object(obj_name="cup",
+                             which_arm="right",
+                             arm7_T_object=arm7_T_object)
+
+    vis.grab("right_arm", workobjects_handle_list[0])
+
+    res, trajectory, armlee_trigger, armree_trigger = \
+        test_multiple_task(np.asarray(trajectory[-1]),
+                           np.asarray(armlee_trigger[-1][1]),
+                           np.asarray(armree_trigger[-1][1]),
+                           task_dict=task_dict2,
+                           load_env=False,
+                           )
+    viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
+    input("Press Enter to continue to next test...")
+
+    torso_tf, head_tf, arml_tf, armr_tf = w1_manager._pin_kine.get_Kinematics(
+        cur_qpos)
+
+    w1_manager.detach_object(obj_name="cup",
+                             which_arm="right",
+                             arm7_transform=armr_tf[-1])
+
+    vis.release("right_arm")
+
+    res, trajectory, armlee_trigger, armree_trigger = \
+        test_multiple_task(np.asarray(trajectory[-1]),
+                           np.asarray(armlee_trigger[-1][1]),
+                           np.asarray(armree_trigger[-1][1]),
+                           task_dict=task_dict3,
+                           load_env=False,
+                           )
+    viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
+    input("Press Enter to continue to next test...")
+
+    res, trajectory, armlee_trigger, armree_trigger = \
+        test_multiple_task(np.asarray(trajectory[-1]),
+                           np.asarray(armlee_trigger[-1][1]),
+                           np.asarray(armree_trigger[-1][1]),
+                           task_dict=task_dict4,
+                           load_env=False,
+                           )
+
+    viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
+    input("Press Enter to continue to next test...")
+
+    res, trajectory, armlee_trigger, armree_trigger = \
+        test_multiple_task(np.asarray(trajectory[-1]),
+                           np.asarray(armlee_trigger[-1][1]),
+                           np.asarray(armree_trigger[-1][1]),
+                           task_dict=task_dict5,
+                           load_env=False,
+                           )
+    viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
+    input("Press Enter to continue to next test...")
+
+    res, trajectory, armlee_trigger, armree_trigger = \
+        test_multiple_task(np.asarray(trajectory[-1]),
+                     np.asarray(armlee_trigger[-1][1]),
+                     np.asarray(armree_trigger[-1][1]),
+                     task_dict=task_dict6,
+                     load_env=False)
+    for handle in scene_handle_list:
+        handle.remove()
+    for handle in workobjects_handle_list:
+        handle.remove()
+    _load_viser_environment(vis, fcl_downward_env_path)
+    viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
+    input("Press Enter to continue to next test...")
+
+    embed()
