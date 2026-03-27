@@ -139,9 +139,9 @@ private:
 
     // 输入整形器
     std::atomic<bool> enable_chassis_shaper_{false};  // 是否启用底盘速度输入整形器
-    bool enable_input_shaper_[ndof_robot] = {
-        true, true, true, true, true, true, true, true, true, true,
-        true, true, true, true, true, true, true, true, true, true};  // 每个关节是否启用输入整形器
+    bool enable_input_shaper_[ndof_robot] = {false, false, false, false, false, false, false,
+                                             false, false, false, false, false, false, false,
+                                             false, false, false, false, false, false};  // 每个关节是否启用输入整形器
     std::shared_ptr<EIInputShaper> chassis_shaper_;
     EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
     const double DiffChassisWidth = 0.4390;

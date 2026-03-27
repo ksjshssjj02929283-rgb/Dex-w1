@@ -260,6 +260,16 @@ RequestResponse PlannerManager::OnRequestStateInit() {
                 }
                 break;
             }
+            case RequestType::EnablePosLimitCheck: {
+                SetProperty(request);
+                response.re_run = true;
+                response.request_consumed = true;
+                runtime_data_.latest_processing_request_id = request.request_id;
+                runtime_data_.latest_processing_request_type = request.type;
+                runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+                ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
+                break;
+            }
             case RequestType::Empty:
                 // 空命令不处理
                 break;
@@ -431,6 +441,17 @@ RequestResponse PlannerManager::OnRequestStateError() {
         runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
         ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
         ChangeState(Status::Idle);
+        return response;
+    }
+    if (request.type == RequestType::EnablePosLimitCheck) {
+        SetProperty(request);
+        response.re_run = true;
+        response.request_consumed = true;
+        runtime_data_.latest_processing_request_id =
+            request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
+        runtime_data_.latest_processing_request_type = request.type;
+        runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+        ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
         return response;
     }
     if (request.type == RequestType::Empty) {

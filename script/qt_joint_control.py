@@ -49,9 +49,9 @@ class CustomTableWidget(QTableWidget):
 
                 delta_map = {
                     Qt.Key_Up:    +0.01,
-                    Qt.Key_Right: +0.1,
+                    Qt.Key_Right: +0.05,
                     Qt.Key_Down:  -0.01,
-                    Qt.Key_Left:  -0.1,
+                    Qt.Key_Left:  -0.05,
                 }
                 key = event.key()
                 if key in delta_map:
