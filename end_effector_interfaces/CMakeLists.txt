@@ -9,6 +9,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
 # Genrerate service and action interfaces first
 rosidl_generate_interfaces(${PROJECT_NAME}
@@ -19,12 +20,13 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/EEJointState.msg"
   "msg/EETactileState.msg"
   "msg/EEFeedback.msg"
-  DEPENDENCIES std_msgs
+  DEPENDENCIES std_msgs geometry_msgs
 )
-
+  
 # Export dependencies
 ament_export_dependencies(rosidl_default_runtime)
 ament_export_dependencies(std_msgs)
+ament_export_dependencies(geometry_msgs)
 
 ament_package()
 

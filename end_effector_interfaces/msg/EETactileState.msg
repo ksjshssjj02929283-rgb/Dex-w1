@@ -4,11 +4,9 @@
 string name
 
 # 阵列数据
-float64[] data
+geometry_msgs/Wrench[] distributed_data
 uint32 rows
 uint32 cols
 
-# 合力数据
-float64 x
-float64 y
-float64 z
+# 组合数据
+geometry_msgs/Wrench data
