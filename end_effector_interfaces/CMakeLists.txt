@@ -12,10 +12,13 @@ find_package(std_msgs REQUIRED)
 
 # Genrerate service and action interfaces first
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/EEJointControl.msg"
   "msg/EEJointControlMode.msg"
-  "msg/EEJointFeedback.msg"
+  "msg/EEJointControl.msg"
+  "msg/EEStatus.msg"
+  "msg/EEJointStatus.msg"
   "msg/EEJointState.msg"
+  "msg/EETactileState.msg"
+  "msg/EEFeedback.msg"
   DEPENDENCIES std_msgs
 )
 
