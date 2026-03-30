@@ -38,7 +38,7 @@ protected:
     TimePointSystem command_finished_time_{TimePointSystem::Invalid()};
     TimePointSystem last_log_time_{TimePointSystem::Invalid()};  // 上次打印日志的时间
     int frame_count_{0};                                         // 帧计数器
-    bool use_ruckig_ = true;
+    bool enable_streaming_ruckig_{true};
     double streaming_velocity_timeout_{0.1};  // Ruckig 速度超时时间，默认 100ms
 
     // 目标速度和加速度配置

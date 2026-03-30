@@ -81,6 +81,13 @@ struct JointCommand {
     }
 };
 
+// 安全检查配置结构体
+struct SafetyCheckConfig {
+    bool check_position_limit{true};  // 是否检查位置限位
+    bool check_velocity_limit{true};  // 是否检查速度限位
+    bool check_torque_limit{true};    // 是否检查力矩限位
+};
+
 struct RobotProperty {
     pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
@@ -88,7 +95,7 @@ struct RobotProperty {
     double global_speed_ratio{1.0};
     double safe_level{0.5};
     bool clear_error_flag{false};
-    bool enable_position_limit_check_{true};  // 位置限位检测开关，默认开启
+    SafetyCheckConfig safety_check_config;  // 安全检查配置
     VectorDof joint_stiffness = VectorDof::Constant(200.0);
     VectorDof joint_damping = VectorDof::Constant(20.0);
     double joint_integral_ratio = 0.01;
@@ -262,6 +269,8 @@ struct RobotParams {
     std::optional<Eigen::VectorXd> dyn_base_params_primary;    // 动力学基参数矩阵(非方阵)
     std::optional<Eigen::VectorXd> dyn_base_params_secondary;  // 动力学基参数矩阵(非方阵)
     TrajectoryBounds streaming_bounds;
+    bool enable_streaming_ruckig{true};     // 是否使用Ruckig轨迹生成器
+    SafetyCheckConfig safety_check_config;  // 安全检查配置
 };
 
 struct RobotModel {

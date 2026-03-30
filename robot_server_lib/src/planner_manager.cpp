@@ -62,10 +62,11 @@ void PlannerManager::LoopOnce() {
     } else {
         time_meta.measurement_time = TimePointSystem::Now();
         // 拖动模式下跳过位置限位检测（允许超出位置限位），但仍检测速度和力矩限位
-        bool skip_position_check =
-            !robot_property_.enable_position_limit_check_ ||
-            (robot_property_.run_mode == RunMode::Drag || robot_property_.run_mode == RunMode::DragImpedance);
-        if (!CheckSafety(measurement, robot_model_, robot_property_.error_code, !skip_position_check) &&
+        SafetyCheckConfig safety_config = robot_property_.safety_check_config;
+        safety_config.check_position_limit =
+            robot_property_.safety_check_config.check_position_limit &&
+            !(robot_property_.run_mode == RunMode::Drag || robot_property_.run_mode == RunMode::DragImpedance);
+        if (!CheckSafety(measurement, robot_model_, robot_property_.error_code, safety_config) &&
             manager_state_ != Status::Error) {
             runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
             ReportRequestStatus(runtime_data_.latest_processing_request_id,
@@ -780,7 +781,7 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
         case RequestType::EnablePosLimitCheck: {
             assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
             bool enable = std::get<bool>(request.data.value());
-            robot_property_.enable_position_limit_check_ = enable;
+            robot_property_.safety_check_config.check_position_limit = enable;
             LOG_INFO << "Set enable_position_limit_check to " << enable;
             return;
         }

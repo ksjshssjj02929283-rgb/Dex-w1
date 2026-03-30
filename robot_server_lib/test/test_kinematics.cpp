@@ -68,7 +68,11 @@ TEST(SRSKinematicsTest, CheckSafety) {
 
     ErrorCode error_code = ErrorCode::NoError;
 
-    bool result = CheckSafety(measurement, robot_model, error_code);
+    SafetyCheckConfig safety_config;
+    safety_config.check_position_limit = true;
+    safety_config.check_velocity_limit = true;
+    safety_config.check_torque_limit = true;
+    bool result = CheckSafety(measurement, robot_model, error_code, safety_config);
     EXPECT_TRUE(result);
     EXPECT_EQ(error_code, ErrorCode::NoError);
     std::cout << "CheckSafety with zero measurement: passed" << std::endl;

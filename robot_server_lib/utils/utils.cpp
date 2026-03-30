@@ -79,6 +79,25 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         }
     }
 
+    // 解析 enable_streaming_ruckig
+    if (config_json.contains("enable_streaming_ruckig") && config_json["enable_streaming_ruckig"].is_boolean()) {
+        params.enable_streaming_ruckig = config_json["enable_streaming_ruckig"].get<bool>();
+    }
+
+    // 解析安全检查配置
+    if (config_json.contains("safety_check_config")) {
+        const auto &scc = config_json["safety_check_config"];
+        if (scc.contains("enable_position_limit_check") && scc["enable_position_limit_check"].is_boolean()) {
+            params.safety_check_config.check_position_limit = scc["enable_position_limit_check"].get<bool>();
+        }
+        if (scc.contains("enable_torque_limit_check") && scc["enable_torque_limit_check"].is_boolean()) {
+            params.safety_check_config.check_torque_limit = scc["enable_torque_limit_check"].get<bool>();
+        }
+        if (scc.contains("enable_velocity_limit_check") && scc["enable_velocity_limit_check"].is_boolean()) {
+            params.safety_check_config.check_velocity_limit = scc["enable_velocity_limit_check"].get<bool>();
+        }
+    }
+
     // 解度析动力学基参数矩阵
     if (config_json.contains("dyn_base_params_primary")) {
         Eigen::VectorXd dyn_base_params_primary;
@@ -150,6 +169,9 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         parse_array("cart_damping_ratio", temp_vec);
         robot_property.cart_damping_ratio = temp_vec;
     }
+
+    // 设置安全检查配置
+    robot_property.safety_check_config = params.safety_check_config;
 
     robot_model.robot_property = robot_property;
 
