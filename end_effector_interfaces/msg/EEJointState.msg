@@ -4,16 +4,16 @@
 string name
 
 # 关节位置 [0,100]
-float64 position
+float32 position
 
 # 关节速度 [0,100]
-float64 velocity
+float32 velocity
 
 # 关节电流 [0,100]
-float64 current
+float32 current
 
 # 关节温度 deg
-float64 temperature
+float32 temperature
 
 # 关节状态 
 EEJointStatus status

@@ -6,10 +6,10 @@ std_msgs/Header header
 EEJointControlMode mode
 
 # 关节名称
-string[] name
+string joint_names
 
 # 关节位置 [0,100]
 # 关节速度 [-100,100]
 # 关节电流 [-100,100]
 # 力 [-100,100]
-float64[] value
+float32 values

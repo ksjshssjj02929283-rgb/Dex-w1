@@ -3,4 +3,5 @@ uint8 IDLE = 0       # 位置到位停止
 uint8 RUNNING = 1    # 正在展开/抓取
 uint8 STALL = 2      # 电机堵转停止
 uint8 ERROR = 3      # 电机报错（读取error_code）
+uint8 UNCONNECT = 100  # 串口未连接
 uint8 UNKNOWN = 255  # 未知异常
