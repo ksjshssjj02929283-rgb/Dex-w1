@@ -52,8 +52,12 @@ set(SRV_FILES
   "srv/AddNavPoint.srv"
   "srv/SampleNavPoint.srv"
   "srv/RemoveNavPoint.srv"
+  "srv/UpdateNavPoint.srv"
   "srv/GetNavPoint.srv"
   "srv/GetAllNavPoints.srv"
+  "srv/AddRoute.srv"
+  "srv/RemoveRoute.srv"
+  "srv/GetRoute.srv"
   "srv/NavToPoint.srv"
   "srv/GetCurrentTaskInfo.srv"
   "srv/SetPose.srv"
@@ -67,12 +71,21 @@ set(SRV_FILES
   "srv/GetString.srv"
   "srv/AddAreaInfo.srv"
   "srv/GetAreaInfoList.srv"
+  "srv/NavThroughPosesFile.srv"
+  "srv/LoadPoint.srv"
 )
 
-# 5) 生成接口（取代 ROS 1 的 add_message_files / add_service_files / generate_messages）
+# 5) 声明要生成的动作
+set(ACTION_FILES
+  "action/NavigateToPoint.action"
+  "action/NavigateRoute.action"
+)
+
+# 6) 生成接口（取代 ROS 1 的 add_message_files / add_service_files / generate_messages）
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${MSG_FILES}
   ${SRV_FILES}
+  ${ACTION_FILES}
   DEPENDENCIES
     std_msgs
     geometry_msgs
@@ -81,7 +94,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
     actionlib_msgs
 )
 
-# 6) 导出运行期依赖
+# 7) 导出运行期依赖
 ament_export_dependencies(
   rosidl_default_runtime
   std_msgs

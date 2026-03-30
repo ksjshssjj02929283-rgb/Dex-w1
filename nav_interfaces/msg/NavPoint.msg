@@ -2,15 +2,9 @@ std_msgs/Header header
 
 int32 id
 string name
-uint8 point_type
+string type  # 点位类型: CHARGING, STATION, PICKUP, PARKING, FREE_GOAL, LIFT
 
 float32 x
 float32 y
 float32 theta
-
-uint8 FREE_GOAL = 0 # 自由目标点
-uint8 STATION = 1   # 站点
-uint8 CHARGING = 2  # 充电点
-uint8 PARKING = 3   # 停车点
-uint8 PICKUP = 4    # 取货点
-uint8 LIFT = 5      # 电梯点
+float32 tolerance  # 导航到达精度（xy方向），0表示使用默认值

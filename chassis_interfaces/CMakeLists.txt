@@ -16,9 +16,9 @@ set(MSG_FILES
   "msg/ChassisMotorControl.msg"
 )
 
-set(SRV_FILES
-  "srv/SaveMap.srv"
-)
+# set(SRV_FILES
+#   "srv/SaveMap.srv"
+# )
 
 set(ACTION_FILES                 # <<< ADD >>>
   "action/AutoCharging.action"
@@ -27,7 +27,7 @@ set(ACTION_FILES                 # <<< ADD >>>
 # Generate interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${MSG_FILES}
-  ${SRV_FILES}
+  # ${SRV_FILES}
   ${ACTION_FILES}
   DEPENDENCIES 
     std_msgs
