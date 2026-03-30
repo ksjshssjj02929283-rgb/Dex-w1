@@ -45,11 +45,11 @@ class RobotServer : public RobotServerBase
     const int ndof_body_ = 18;                    // 机器人上半身自由度
     const int ndof_legs_ = 12;                      // 腿部自由度
 
-    std::string joint_name_[30] = {"WAIST", "BUTTOCK","NECK1","NECK2",
-        "LEFT_J1",  "LEFT_J2",  "LEFT_J3",  "LEFT_J4", "LEFT_J5",  "LEFT_J6",  "LEFT_J7",
-        "RIGHT_J1", "RIGHT_J2", "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7",
-        "LEFT_LEG_J1",  "LEFT_LEG_J2",  "LEFT_LEG_J3",  "LEFT_LEG_J4", "LEFT_LEG_J5",  "LEFT_LEG_J6",
-        "RIGHT_LEG_J1", "RIGHT_LEG_J2", "RIGHT_LEG_J3", "RIGHT_LEG_J4", "RIGHT_LEG_J5", "RIGHT_LEG_J6"};
+    std::string joint_name_[30] = {"WAIST_YAW", "WAIST_ROLL","HEAD_YAW_J1","HEAD_PITCH_J2",
+        "SHOULDER_PITCH_L_J1",  "SHOULDER_ROLL_L_J2",  "ELBOW_PITCH_L_J3",  "ELBOW_YAW_L_J4", "WRIST_PITCH_L_J5",  "WRIST_YAW_L_J6",  "WRIST_ROLL_L_J7",
+        "SHOULDER_PITCH_R_J1", "SHOULDER_ROLL_R_J2", "ELBOW_PITCH_R_J3", "ELBOW_YAW_R_J4", "WRIST_PITCH_R_J5", "WRIST_YAW_R_J6", "WRIST_ROLL_R_J7",
+        "HIP_PITCH_L_J1",  "HIP_ROLL_L_J2",  "HIP_YAW_L_J3",  "KNEE_PITCH_L_J4", "ANKLE_PITCH_L_J5",  "ANKLE_ROLL_L_J6",
+        "HIP_PITCH_R_J1", "HIP_ROLL_R_J2", "HIP_YAW_R_J3", "KNEE_PITCH_R_J4", "ANKLE_PITCH_R_J5", "ANKLE_ROLL_R_J6"};
 
     double torque_limit_Nm_[18] = {87.0, 87.0, 10.0, 10.0, 31.0, 31.0, 31.0, 31.0, 10.0,  10.0,  10.0,  31.0,  31.0, 31.0, 31.0, 10.0, 10.0, 10.0};
     double legs_stiffness_[12] = {200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0};
