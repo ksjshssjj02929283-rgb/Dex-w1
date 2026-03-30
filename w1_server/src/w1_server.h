@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>  // 新增
 
@@ -8,14 +9,18 @@
 #include "joint_interfaces/msg/joint_control.hpp"
 #include "joint_interfaces/msg/joint_position_control.hpp"
 #include "joint_interfaces/msg/joint_velocity_torque_limit_feedback.hpp"
+#include "robot_server_lib/NanoLog.hpp"
 #include "robot_server_lib/butterworth_filter.h"
 #include "robot_server_lib/ei_input_shaper.h"
-#include "robot_server_lib/force_sensor_reader.h"
 #include "robot_server_lib/robot_server_base.h"
+#include "robot_server_lib/sri_force_sensor.h"
+#include "robot_server_lib/utils.h"
 #include "shared_memory_def.h"
 #include "w1_utils.h"
 
 namespace robot_server_lib {
+
+enum class RobotMode { W1, A1, Arm };
 
 using JointControlMsg = joint_interfaces::msg::JointControl;
 using JointPositionControlMsg = joint_interfaces::msg::JointPositionControl;
@@ -26,7 +31,7 @@ using SetProperty = robot_server_interfaces::srv::SetProperty;
 
 class RobotServer : public RobotServerBase {
 public:
-    RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, bool is_a1_mode = false);
+    RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, RobotMode robot_mode = RobotMode::W1);
 
 private:
     void TorqueControlThreadFunc() override;
@@ -60,7 +65,8 @@ private:
     bool is_cmd_valid_{false};
     RobotControl robot_control_;
     RobotFeedback robot_feedback_;
-    PlannerManagerInfo manager_info_;
+    PlannerManagerInfo manager_info_{};
+    PlannerManagerCommand planner_cmd_{};
     bool is_torque_limit_reached_[ndof_robot] = {false};  // 达到力矩限制标志位
     // W1 模式下的默认关节名称，A1 模式下会动态调整
     std::string ecat_joint_name_[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",
@@ -76,22 +82,27 @@ private:
 
     RunMode previous_mode_{RunMode::Position};
     int switch_counter_ = 0;
-    const int max_switch_count_ = 200;    // 切换控制模式时的位置保持周期数
-    bool enable_ruckig_ = true;           // /control/joint接口是否使用 Ruckig 进行轨迹规划
-    bool enable_record_ = false;          // 是否启用调试日志
-    bool enable_chassis_shaper_ = false;  // 是否启用底盘速度输入整形器
-    int first_arm_joint_index_ = 6;       // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
+    const int max_switch_count_ = 200;  // 切换控制模式时的位置保持周期数
+    bool enable_ruckig_ = true;         // /control/joint接口是否使用 Ruckig 进行轨迹规划
+    bool enable_record_ = false;        // 是否启用调试日志
+    int first_arm_joint_index_ = 6;     // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
     const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
+    double streaming_timeout_ = 0.5;                // /control/joint_position streaming 超时时间
+    VectorDof joint_position_before_filter_ = VectorDof::Zero();
+    VectorDof joint_position_after_filter_ = VectorDof::Zero();
 
-    // A1 模式支持
-    bool is_a1_mode_ = false;  // A1 模式标志
-    int ndof_config_;          // 从配置读取的实际关节数 (W1=20, A1=14)
+    // 整形器开关状态追踪变量，用于检测状态变化以实现自动重置
+    bool prev_chassis_shaper_enabled_ = false;
 
-    // 虚拟关节转换函数（A1 模式使用）
+    // 机器人模式支持
+    RobotMode robot_mode_ = RobotMode::W1;  // 当前机器人模式
+    int ndof_config_;                       // 从配置读取的实际关节数 (W1=20, A1=14, Arm=7)
+
+    // 虚拟关节转换函数（A1/Arm 模式使用）
     void Expand14ToVirtual20(const RobotFeedback& real_feedback, RobotFeedback& virtual_feedback);
+    void Expand7ToVirtual20(const RobotFeedback& real_feedback, RobotFeedback& virtual_feedback);
     void ExtractVirtual20To14(const RobotControl& virtual_control, RobotControl& real_control);
-
-    std::shared_ptr<ButterworthFilter> butterworth_filter_[ndof_robot];
+    void ExtractVirtual20To7(const RobotControl& virtual_control, RobotControl& real_control);
 
     // 底盘控制目标变量（不直接写入共享内存）
     struct {
@@ -107,22 +118,42 @@ private:
         int chassis_neutral = 0;
     } chassis_control_target_;
 
-    // 底盘速度输入整形器
-    std::unique_ptr<EIInputShaper> chassis_shaper_;
-    EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::TWO_HUMP_EI;  // 输入整形器类型
+    // 力传感器相关
+    Vector3d sensor_force_;
+    Vector12d sensor_wrench_;
+    std::shared_ptr<SriForceSensor> primary_sensor_;
+    std::shared_ptr<SriForceSensor> secondary_sensor_;  // 暂未使用
+    bool primary_sensor_ready_ = false;
+    bool secondary_sensor_ready_ = false;
+
+    // 位置指令线性插值器 (1kHz)
+    utils::LinearInterpolator line_interpolator_;
+
+    // 巴特沃斯滤波器数组 (1kHz 线程中应用)
+    bool enable_butterworth_filter_[ndof_robot] = {true, true, true, true, true, true, true, true, true, true,
+                                                   true, true, true, true, true, true, true, true, true, true};
+    double butterworth_filter_frequency_[ndof_robot] = {
+        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
+        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0};  // 每个关节的巴特沃斯滤波器截止频率，单位Hz
+    std::shared_ptr<ButterworthFilter> butterworth_filter_[ndof_robot];
+
+    // 输入整形器
+    std::atomic<bool> enable_chassis_shaper_{false};  // 是否启用底盘速度输入整形器
+    bool enable_input_shaper_[ndof_robot] = {false, false, false, false, false, false, false,
+                                             false, false, false, false, false, false, false,
+                                             false, false, false, false, false, false};  // 每个关节是否启用输入整形器
+    std::shared_ptr<EIInputShaper> chassis_shaper_;
+    EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
     const double DiffChassisWidth = 0.4390;
     const double DiffChassisWheelD = 0.1730;    // 差速轮径，用于转RPM
     const double DiffChassisNatureFreq = 1.67;  // 底盘输入整形器自然频率，单位Hz
     // ramp率转换: 0.5m/s每周期
-    const double DiffChassisMaxRampRpm = 1.0 / (M_PI * DiffChassisWheelD) * 60.0;
-
-    // 力传感器相关
-    Vector3d sensor_force_;
-    Vector12d sensor_wrench_;
-    std::shared_ptr<ForceSensorReader> primary_sensor_;
-    std::shared_ptr<ForceSensorReader> secondary_sensor_;
-    bool primary_sensor_ready_ = false;
-    bool secondary_sensor_ready_ = false;
+    const double DiffChassisMaxRampRpm = 0.5 / (M_PI * DiffChassisWheelD) * 60.0;
+    std::shared_ptr<EIInputShaper> input_shapers_[ndof_robot];
+    EIInputShaper::Type input_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
+    const double input_shaper_max_ramp_rad_per_sec = 10 * M_PI;
+    double input_shaper_frequency_[ndof_robot] = {2.9,  2.9,  2.9,  3.5, 12.0, 12.0, 6.7,  9.5,  9.5,  12.0,
+                                                  12.0, 12.0, 12.0, 6.7, 9.5,  9.5,  12.0, 12.0, 12.0, 12.0};
 };
 
 }  // namespace robot_server_lib

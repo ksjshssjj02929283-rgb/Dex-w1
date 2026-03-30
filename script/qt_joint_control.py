@@ -1,3 +1,15 @@
+# 用法:
+#   python qt_joint_control.py              # 物理机模式
+#   python qt_joint_control.py --sim        # 仿真模式
+#   python qt_joint_control.py --step       # Step 模式
+#   python qt_joint_control.py --sim --step # 仿真 + Step 模式
+#
+# 操作:
+#   上/下键    : 调整位置/速度值
+#   左/右键    : 快速调整
+#   回车       : 确认下发 (velocity 列)
+#   点击"同步反馈数据到控制表": 从反馈同步到控制表
+
 import sys
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QTableWidget, QTableWidgetItem,
@@ -10,6 +22,7 @@ from sensor_msgs.msg import JointState
 from joint_interfaces.msg import JointVelocityTorqueLimitFeedback, JointPositionControl
 from PyQt5.QtCore import Qt
 import time  # 新增
+import argparse  # 新增
 
 class CustomTableWidget(QTableWidget):
     def __init__(self, send_data, parent=None):
@@ -36,9 +49,9 @@ class CustomTableWidget(QTableWidget):
 
                 delta_map = {
                     Qt.Key_Up:    +0.01,
-                    Qt.Key_Right: +0.1,
+                    Qt.Key_Right: +0.05,
                     Qt.Key_Down:  -0.01,
-                    Qt.Key_Left:  -0.1,
+                    Qt.Key_Left:  -0.05,
                 }
                 key = event.key()
                 if key in delta_map:
@@ -57,10 +70,11 @@ class CustomTableWidget(QTableWidget):
         super().keyPressEvent(event)
 
 class JointControlWidget(QWidget):
-    def __init__(self, ros_node):
+    def __init__(self, ros_node, step_mode=False):
         super().__init__()
         self.ros_node = ros_node
-        self.setFixedSize(1600, 700)
+        self.step_mode = step_mode
+        self.setWindowState(Qt.WindowMaximized)
 
         self.feedback_table = QTableWidget()
         self.control_table = CustomTableWidget(self.send_control_data)
@@ -70,6 +84,9 @@ class JointControlWidget(QWidget):
         self.sync_button.clicked.connect(self.sync_from_feedback)
 
         self.init_tables()
+
+        # 安装事件过滤器，点击空白处取消焦点
+        self.control_table.installEventFilter(self)
 
         layout = QHBoxLayout()
         left = QVBoxLayout()
@@ -100,6 +117,13 @@ class JointControlWidget(QWidget):
         self.motion_timer.timeout.connect(self.update_motion)
         self.motion_timer.start(10)  # 0.01s
 
+        # 滚动条同步滚动
+        self.feedback_vbar = self.feedback_table.verticalScrollBar()
+        self.control_vbar = self.control_table.verticalScrollBar()
+        self.feedback_vbar.valueChanged.connect(self.on_feedback_scroll)
+        self.control_vbar.valueChanged.connect(self.on_control_scroll)
+        self._syncing = False
+
     def init_tables(self):
         headers_feedback = ["name", "position", "velocity", "torque",
                             "pos_torque_limit", "neg_torque_limit"]
@@ -108,6 +132,20 @@ class JointControlWidget(QWidget):
         self.feedback_table.setHorizontalHeaderLabels(headers_feedback)
         self.control_table.setColumnCount(len(headers_control))
         self.control_table.setHorizontalHeaderLabels(headers_control)
+
+    def on_feedback_scroll(self, value):
+        if self._syncing:
+            return
+        self._syncing = True
+        self.control_vbar.setValue(value)
+        self._syncing = False
+
+    def on_control_scroll(self, value):
+        if self._syncing:
+            return
+        self._syncing = True
+        self.feedback_vbar.setValue(value)
+        self._syncing = False
 
     def onSelectionChanged(self):
         # 获取当前选中的单元格
@@ -123,6 +161,22 @@ class JointControlWidget(QWidget):
                     item = self.control_table.item(row, col)
                     if item and item != current_item:
                         item.setBackground(Qt.white)
+        else:
+            # 没有选中项时，清除所有焦点样式
+            for row in range(self.control_table.rowCount()):
+                for col in range(self.control_table.columnCount()):
+                    item = self.control_table.item(row, col)
+                    if item:
+                        item.setBackground(Qt.white)
+
+    def eventFilter(self, obj, event):
+        # 点击 control_table 空白处取消焦点
+        if obj == self.control_table and event.type() == event.MouseButtonPress:
+            item = self.control_table.itemAt(event.pos())
+            if item is None:
+                self.control_table.clearSelection()
+                self.onSelectionChanged()
+        return super().eventFilter(obj, event)
 
     def update_feedback_table(self):
         joint_data = self.ros_node.joint_states
@@ -204,6 +258,11 @@ class JointControlWidget(QWidget):
 
             # 修改 target_position 时启动/更新计划
             if changed_col == 1:  # position 列
+                # step 模式下直接一次性下发，不进行插值
+                if self.step_mode:
+                    self.motion_plans.pop(name, None)
+                    self.ros_node.publish_control([{'name': name, 'target_position': target_position}])
+                    return
                 # 若速度为0则直接一次性下发
                 if target_velocity <= 0.0:
                     self.motion_plans.pop(name, None)
@@ -286,14 +345,16 @@ class JointControlWidget(QWidget):
                 item.setText(new_text)
 
 class ROS2Node(Node):
-    def __init__(self, update_callback):
+    def __init__(self, update_callback, use_sim=False):
         super().__init__('joint_control_gui')
         self.update_callback = update_callback
         self.joint_states = []
         self.velocity_torque_limits = {}
-        self.create_subscription(JointState, '/feedback/joint', self.joint_state_callback, 10)
-        self.create_subscription(JointVelocityTorqueLimitFeedback, '/feedback/joint_velocity_torque_limit', self.limit_feedback_callback, 10)
-        self.position_control_pub = self.create_publisher(JointPositionControl, '/control/joint_position', 10)
+
+        suffix = '_sim' if use_sim else ''
+        self.create_subscription(JointState, f'/feedback/joint{suffix}', self.joint_state_callback, 10)
+        self.create_subscription(JointVelocityTorqueLimitFeedback, f'/feedback/joint_velocity_torque_limit{suffix}', self.limit_feedback_callback, 10)
+        self.position_control_pub = self.create_publisher(JointPositionControl, f'/control/joint_position{suffix}', 10)
 
     def joint_state_callback(self, msg):
         self.joint_states = []
@@ -330,17 +391,26 @@ def main():
     rclpy.init()
     app = QApplication(sys.argv)
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--sim', '-s', action='store_true', help='Use simulation topics')
+    parser.add_argument('--step', action='store_true', help='Step mode: directly publish target position without interpolation')
+    args = parser.parse_args()
+
+    use_sim = args.sim
+    step_mode = args.step
+
     node_holder = {}
 
     def update_callback():
         if 'widget' in node_holder:
             node_holder['widget'].update_feedback_table()
 
-    ros_node = ROS2Node(update_callback)
+    ros_node = ROS2Node(update_callback, use_sim=use_sim)
     node_holder['ros_node'] = ros_node
 
-    widget = JointControlWidget(ros_node)
+    widget = JointControlWidget(ros_node, step_mode=step_mode)
     node_holder['widget'] = widget
+    widget.setWindowTitle(f"Joint Control Interface{' [SIM]' if use_sim else ''}{' [STEP]' if step_mode else ''}")
     widget.show()
 
     qt_ros_timer = QTimer()

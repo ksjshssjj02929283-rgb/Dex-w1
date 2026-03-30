@@ -33,7 +33,7 @@ Eigen::VectorXd _InvDynamikBySymbol(const Eigen::VectorXd& q, const Eigen::Vecto
 }
 
 Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq,
-                                    const VectorDof& ddq, const Vector3d& gravity_acc_armbase, MotionGroup motion_group, bool use_lower_friction_factor)
+                                    const VectorDof& ddq, const Vector3d& gravity_acc_armbase, MotionGroup motion_group)
 {
     Eigen::VectorXd dyn_base_params(71), q_offset(7), q_arm(7), dq_arm(7), ddq_arm(7);
     bool is_anth = robot_model.params_ptr->robot_name == "W1Anthropomorphic" ? true : false;
@@ -72,18 +72,14 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDo
         }
         q_arm = q_arm + q_offset;
     }
-    double friction_ratio = 0.6;
-    if (use_lower_friction_factor)
-    {
-        friction_ratio = 0.9;
-    }
+    const double friction_ratio = 0.6;
     dyn_base_params[3]  *= friction_ratio; // J1摩擦系数需手动减少fv
     dyn_base_params[13] *= friction_ratio; // J2摩擦系数需手动减少fv
     dyn_base_params[24] *= friction_ratio; // J3摩擦系数需手动减少fv
     dyn_base_params[35] *= friction_ratio; // J4摩擦系数需手动减少fv
     dyn_base_params[46] *= friction_ratio; // J5摩擦系数需手动减少fv
-    dyn_base_params[57] *= friction_ratio; // J6摩擦系数需手动减少fv
-    dyn_base_params[68] *= friction_ratio; // J7摩擦系数需手动减少fv
+    dyn_base_params[57] *= 0.5; // J6摩擦系数需手动减少fv
+    dyn_base_params[68] *= 0.5; // J7摩擦系数需手动减少fv
     return _InvDynamikBySymbol(q_arm, dq_arm, ddq_arm, gravity_acc_armbase, dyn_base_params);
 }
 

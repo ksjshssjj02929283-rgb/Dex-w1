@@ -12,10 +12,20 @@ RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_s
     std::filesystem::create_directories(home_dir / "log");
     nanolog::initialize(nanolog::GuaranteedLogger(), (home_dir / "log/").string(), "robot_server" + interface_suffix,
                         10,
-                        10);                          // 每个日志文件最大20MB，最多保留10个日志文件
+                        10);  // 每个日志文件最大20MB，最多保留10个日志文件
+
+    // 初始化记录日志实例（用于记录关节数据等高频数据）
+    nanolog::LogManager::instance().get_or_create_logger("record",  // 日志实例名称
+                                                         nanolog::GuaranteedLogger(), (home_dir / "log/").string(),
+                                                         "robot_record" + interface_suffix,
+                                                         20,        // 每个日志文件最大20MB
+                                                         5,         // 保留5个日志文件
+                                                         "jsonl");  // 文件后缀
+
     nanolog::set_log_level(nanolog::LogLevel::INFO);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
-    RCLCPP_INFO(this->get_logger(), "Logs directory: %s",
-                ((home_dir / "log").string() + "/robot_server" + interface_suffix + ".txt").c_str());
+    RCLCPP_INFO(this->get_logger(), "Logs directory: %s, Records directory: %s",
+                ((home_dir / "log").string() + "/robot_server" + interface_suffix + ".txt").c_str(),
+                ((home_dir / "log").string() + "/robot_record" + interface_suffix + ".jsonl").c_str());
     LOG_INFO << "";
     LOG_INFO
         << "---------------------------------------Robot Server Initializing---------------------------------------";
@@ -76,6 +86,9 @@ void RobotServerBase::Run() {
 }
 
 void RobotServerBase::ManagerThreadFunc() {
+    if (!is_sim_) {
+        Setup_Realtime(80);
+    }
     PlannerManager planner_manager(this->robot_model_, this->manager_buffers_,
                                    std::bind(&RobotServerBase::ReportRequestStatus, this, std::placeholders::_1,
                                              std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
@@ -279,6 +292,12 @@ void RobotServerBase::MoveRobotCallback(
 }
 
 void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::SharedPtr streaming_msg) {
+    // 记录输入的关节位置（float -> double）
+    for (size_t i = 0; i < streaming_msg->position.size() && i < static_cast<size_t>(joint_position_input_.size());
+         ++i) {
+        joint_position_input_(i) = streaming_msg->position[i];
+    }
+
     std::ostringstream ss;
     for (const auto& v : streaming_msg->position) {
         ss << v << " ";
@@ -384,14 +403,14 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id,
     }
 }
 
-void RobotServerBase::Setup_Realtime() {
+void RobotServerBase::Setup_Realtime(int priority) {
     // 锁内存，避免分页抖动
     if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
         std::cerr << "mlockall failed: " << std::strerror(errno) << std::endl;
     }
     // 设置SCHED_FIFO实时调度
     sched_param sp{};
-    sp.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    sp.sched_priority = priority;
     if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0) {
         std::cerr << "sched_setscheduler failed: " << std::strerror(errno) << std::endl;
         LOG_CRIT << "sched_setscheduler failed, please run setcap!";

@@ -12,9 +12,19 @@ PlannerManager::PlannerManager(RobotModel robot_model,
 PlannerManager::~PlannerManager() = default;
 
 void PlannerManager::Initialize() {
+    // 从 robot_model 中加载机器人属性配置
+    robot_property_ = robot_model_.robot_property;
+
     // Initialize the runtime data
     runtime_data_.loop_counter = -1;
     runtime_data_.planner_request.request_id = -1;
+
+    // Initialize pre-allocated variables for PublishPlannerInfo
+    runtime_data_.publish_measurement_primary.resize(robot_model_.params_ptr->joints_primary.size());
+    runtime_data_.publish_measurement_secondary.resize(robot_model_.params_ptr->joints_secondary.size());
+    runtime_data_.publish_measurement_torso.resize(robot_model_.params_ptr->joints_torso.size());
+    runtime_data_.publish_ee_pose.resize(14);
+    runtime_data_.publish_torso_X_Z_RY.resize(3);
 
     auto &time_meta = runtime_data_.time_meta;
     time_meta.current_time = TimePointSystem::Now();
@@ -51,8 +61,11 @@ void PlannerManager::LoopOnce() {
         time_meta.measurement_time = TimePointSystem::Invalid();
     } else {
         time_meta.measurement_time = TimePointSystem::Now();
-        // 安全及错误检测 Safety check
-        if (!CheckMeasurementSafety(measurement, *robot_model_.params_ptr, robot_property_.error_code) &&
+        // 拖动模式下跳过位置限位检测（允许超出位置限位），但仍检测速度和力矩限位
+        bool skip_position_check =
+            !robot_property_.enable_position_limit_check_ ||
+            (robot_property_.run_mode == RunMode::Drag || robot_property_.run_mode == RunMode::DragImpedance);
+        if (!CheckSafety(measurement, robot_model_, robot_property_.error_code, !skip_position_check) &&
             manager_state_ != Status::Error) {
             runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
             ReportRequestStatus(runtime_data_.latest_processing_request_id,
@@ -108,6 +121,7 @@ void PlannerManager::LoopOnce() {
         }
         this->runtime_data_.joint_cmd.joint_stiffness = this->robot_property_.joint_stiffness;
         this->runtime_data_.joint_cmd.joint_damping = this->robot_property_.joint_damping;
+        this->runtime_data_.joint_cmd.joint_integral_ratio = this->robot_property_.joint_integral_ratio;
         // 如果提供了动力学参数, 则计算双臂前馈阻抗控制力 Compute the feedforward impedance control torque for both arms
         const auto &dyn_base_params_primary = this->robot_model_.params_ptr->dyn_base_params_primary;
         const auto &dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
@@ -153,6 +167,8 @@ void PlannerManager::LoopOnce() {
         PlannerManagerCommand planner_command{};
         planner_command.sequence_number = runtime_data_.loop_counter;
         planner_command.cmd = runtime_data_.joint_cmd;
+        // 位置模式下使用简化动力学计算（不加载动力学参数），提升性能
+        planner_command.use_simple_dynamics = (robot_property_.run_mode == RunMode::Position);
         manager_buffer_.planner_manager_command->AppendNewElement(planner_command);
     }
 
@@ -207,21 +223,62 @@ RequestResponse PlannerManager::OnRequestStateInit() {
     // If the measurement time is invalid, the new measurement is not here yet
     if (time_meta.measurement_time.is_invalid()) {
         manager_buffer_.planner_manager_command->Reset();  // 重置命令缓冲区 Reset the command buffer
-        if (request.type == RequestType::ClearError) {
-            //清除错误状态 Clear error state
-            response.re_run = true;
-            response.request_consumed = true;
-            robot_property_.clear_error_flag = true;
-            robot_property_.error_code = ErrorCode::NoError;  // 尝试清除错误码 Clear error code
-            runtime_data_.latest_processing_request_id =
-                request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
-            runtime_data_.latest_processing_request_type = request.type;
-            runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
-            ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
-        } else if (request.type != RequestType::Empty) {
-            runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
-            ReportRequestStatus(request.request_id, request.type, RequestStatus::ErrorDrop, manager_state_);
-            response.request_consumed = true;
+        switch (request.type) {
+            case RequestType::ClearError: {
+                // 清除错误状态 Clear error state
+                response.re_run = true;
+                response.request_consumed = true;
+                robot_property_.clear_error_flag = true;
+                robot_property_.error_code = ErrorCode::NoError;  // 尝试清除错误码 Clear error code
+                runtime_data_.latest_processing_request_id =
+                    request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
+                runtime_data_.latest_processing_request_type = request.type;
+                runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+                ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
+                break;
+            }
+            case RequestType::EnableSleep: {
+                // Sleep 模式下在 Init 状态也可以取消休眠
+                assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
+                bool enable_sleep = std::get<bool>(request.data.value());
+                if (!enable_sleep) {
+                    // 取消 Sleep 模式，恢复到 Position
+                    robot_property_.run_mode = RunMode::Position;
+                    response.re_run = true;
+                    response.request_consumed = true;
+                    runtime_data_.latest_processing_request_id = request.request_id;
+                    runtime_data_.latest_processing_request_type = request.type;
+                    runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+                    ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
+                    LOG_INFO << "Cancel Sleep mode in Init state, switched to Position mode";
+                } else {
+                    response.request_consumed = true;
+                    runtime_data_.latest_processing_request_id = request.request_id;
+                    runtime_data_.latest_processing_request_type = request.type;
+                    runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+                    ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
+                }
+                break;
+            }
+            case RequestType::EnablePosLimitCheck: {
+                SetProperty(request);
+                response.re_run = true;
+                response.request_consumed = true;
+                runtime_data_.latest_processing_request_id = request.request_id;
+                runtime_data_.latest_processing_request_type = request.type;
+                runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+                ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
+                break;
+            }
+            case RequestType::Empty:
+                // 空命令不处理
+                break;
+            default:
+                // 其他命令在 Init 状态下被拒绝
+                runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+                ReportRequestStatus(request.request_id, request.type, RequestStatus::ErrorDrop, manager_state_);
+                response.request_consumed = true;
+                break;
         }
 
         return response;
@@ -386,6 +443,17 @@ RequestResponse PlannerManager::OnRequestStateError() {
         ChangeState(Status::Idle);
         return response;
     }
+    if (request.type == RequestType::EnablePosLimitCheck) {
+        SetProperty(request);
+        response.re_run = true;
+        response.request_consumed = true;
+        runtime_data_.latest_processing_request_id =
+            request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
+        runtime_data_.latest_processing_request_type = request.type;
+        runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+        ReportRequestStatus(request.request_id, request.type, RequestStatus::Executed, manager_state_);
+        return response;
+    }
     if (request.type == RequestType::Empty) {
         // 如果是空命令则直接返回 If the request is empty, return directly
         return response;
@@ -517,6 +585,18 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
             LOG_INFO << "Set run mode to " << ToString(robot_property_.run_mode);
             return;
         }
+        case RequestType::EnableSleep: {
+            assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
+            bool enable_sleep = std::get<bool>(request.data.value());
+            if (enable_sleep) {
+                robot_property_.run_mode = RunMode::Sleep;
+                LOG_INFO << "Enable Sleep mode";
+            } else {
+                robot_property_.run_mode = RunMode::Position;
+                LOG_INFO << "Disable Sleep mode";
+            }
+            return;
+        }
         case RequestType::JointStiffness: {
             auto stiffness = std::get<Eigen::VectorXd>(request.data.value());
             LOG_INFO << "Received joint stiffness command: " << stiffness.transpose();
@@ -593,6 +673,21 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
             std::cout << "[INFO] Set joint damping to " << robot_property_.joint_damping.tail(ndof_arm).transpose()
                       << "\n";
             LOG_INFO << "Set joint damping to " << robot_property_.joint_damping.tail(ndof_arm).transpose();
+            return;
+        }
+        case RequestType::JointIntegralRatio: {
+            auto k_i_ratio = std::get<double>(request.data.value());
+            if (k_i_ratio < 0.0 || k_i_ratio > 1.0) {
+                std::stringstream ss;
+                ss << "[WARN] Invalid k_i_ratio value: " << k_i_ratio
+                   << ", must be in range [0, 1]. Command ignored.\n";
+                std::cout << ss.str();
+                LOG_WARN << ss.str();
+                return;
+            }
+            robot_property_.joint_integral_ratio = k_i_ratio;
+            std::cout << "[INFO] Set k_i_ratio to " << robot_property_.joint_integral_ratio << "\n";
+            LOG_INFO << "Set k_i_ratio to " << robot_property_.joint_integral_ratio;
             return;
         }
         case RequestType::CartStiffness: {
@@ -682,6 +777,13 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
             LOG_INFO << "Set safe level to " << robot_property_.safe_level;
             return;
         }
+        case RequestType::EnablePosLimitCheck: {
+            assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
+            bool enable = std::get<bool>(request.data.value());
+            robot_property_.enable_position_limit_check_ = enable;
+            LOG_INFO << "Set enable_position_limit_check to " << enable;
+            return;
+        }
         case RequestType::ClearError: {
             assert(!request.data.has_value());
             robot_property_.clear_error_flag = true;
@@ -741,7 +843,10 @@ void PlannerManager::OnEmergencyRequest() {
 void PlannerManager::PublishPlannerInfo() {
     PlannerManagerInfo info{};
     auto &measurement = runtime_data_.measurement;
-    Eigen::VectorXd measurement_primary, measurement_secondary, measurement_torso;
+    // Use pre-allocated member variables instead of creating temporary vectors
+    auto &measurement_primary = runtime_data_.publish_measurement_primary;
+    auto &measurement_secondary = runtime_data_.publish_measurement_secondary;
+    auto &measurement_torso = runtime_data_.publish_measurement_torso;
     PoseQuaternion ee_pose_primary, ee_pose_secondary, torso_pose;
     utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_primary, MotionGroup::Primary);
     utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_secondary,
@@ -753,13 +858,11 @@ void PlannerManager::PublishPlannerInfo() {
             idle_planner_->KinematicsSecondary()->GetFK(measurement_secondary, robot_property_.tcp_frame_secondary);
         torso_pose = idle_planner_->KinematicsTorso()->GetFK(measurement_torso);
     }
-    // 计算手臂末端位姿并存储 Compute end-effector pose and store
-    Eigen::VectorXd ee_pose(14);
+    auto &ee_pose = runtime_data_.publish_ee_pose;
     ee_pose << ee_pose_primary.ToVectorXd(), ee_pose_secondary.ToVectorXd();
     ee_pose = (ee_pose.array() * 1e4).round() / 1e4;  // 精确到小数点后四位
     info.ee_pose_measurement = ee_pose;
-    // 计算躯干末端位姿并存储 Compute torso pose and store
-    Eigen::VectorXd torso_X_Z_RY(3);
+    auto &torso_X_Z_RY = runtime_data_.publish_torso_X_Z_RY;
     torso_X_Z_RY << torso_pose.position[0], torso_pose.position[2],
         measurement_torso[0] + measurement_torso[1] + measurement_torso[2];
     info.torso_pose_measurement = torso_X_Z_RY;

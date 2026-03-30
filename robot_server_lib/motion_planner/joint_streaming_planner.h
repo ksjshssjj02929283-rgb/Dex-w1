@@ -26,6 +26,7 @@ protected:
     struct {
         Int64 request_id{-1};
         bool streaming_finished{false};
+        bool stopping{false};  // 是否正在执行停止命令
         std::optional<StreamingCommand> latest_cmd;
         std::optional<StreamingCommand> previous_cmd;
 
@@ -35,7 +36,14 @@ protected:
 
     TimePointSystem request_start_time_{TimePointSystem::Invalid()};
     TimePointSystem command_finished_time_{TimePointSystem::Invalid()};
-    bool no_ruckig_mode_ = false;
+    TimePointSystem last_log_time_{TimePointSystem::Invalid()};  // 上次打印日志的时间
+    int frame_count_{0};                                         // 帧计数器
+    bool use_ruckig_ = true;
+    double streaming_velocity_timeout_{0.1};  // Ruckig 速度超时时间，默认 100ms
+
+    // 目标速度和加速度配置
+    bool use_velocity_ = false;
+    bool use_acceleration_ = false;
 };
 
 }  // namespace robot_server_lib

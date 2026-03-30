@@ -66,19 +66,27 @@ bool MoveJointPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     const auto &move_request = std::get<MoveRequest>(request.data.value());
     const auto &target_q = move_request.value;
     double speed_ratio = robot_property_.global_speed_ratio;
+    double acc_ratio = 1.0;  // 加速度比例
     if (move_request.speed.has_value()) {
-        speed_ratio = speed_ratio * std::clamp(move_request.speed.value(), 0.01, 1.0);
+        speed_ratio = speed_ratio * std::clamp(move_request.speed.value(), 0.01, 2.0);
+    }
+    if (move_request.acceleration.has_value()) {
+        acc_ratio = std::clamp(move_request.acceleration.value(), 0.01, 2.0);
     }
     for (int i = 0; i < ndof_robot; ++i) {
         runtime_.input.max_velocity[i] = joint_bounds_.max_velocity * speed_ratio;
-        runtime_.input.max_acceleration[i] = joint_bounds_.max_acceleration * speed_ratio;
+        runtime_.input.max_acceleration[i] = joint_bounds_.max_acceleration * acc_ratio;
     }
 
     std::ostringstream oss;
     oss << target_q.transpose();
     LOG_INFO << "";
-    LOG_INFO << "Move Joint Request: id: " << request.request_id
+    LOG_INFO << "MoveJoint Request: id: " << request.request_id
              << " motion_group: " << ToString(move_request.motion_group) << " target_q: " << oss.str();
+    LOG_INFO << "MoveJoint speed: " << speed_ratio
+             << " (movejoint speed: " << (move_request.speed.has_value() ? move_request.speed.value() : 1.0)
+             << ", global speed ratio: " << robot_property_.global_speed_ratio << ")"
+             << ", acceleration: " << acc_ratio;
     JointPositionDof target_ndof = measurement.q_desired_pre;
     SetMotionGroup(move_request.motion_group);
     utils::MapJointToWholeBody(this->robot_model_, target_q, target_ndof, this->motion_group_);

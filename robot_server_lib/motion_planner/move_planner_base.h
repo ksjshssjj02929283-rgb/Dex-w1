@@ -9,12 +9,6 @@
 
 namespace robot_server_lib {
 
-struct TrajectoryBounds {
-    double max_velocity{1.0};
-    double max_acceleration{2.0};
-    double max_jerk{100000.0};
-};
-
 enum class ComputeCommandStatus {
     // The request is invalid and it should NOT be used
     // The state would be switched into error state
@@ -70,15 +64,19 @@ protected:
     std::shared_ptr<kinematics::KinematicsBase> kinematics_secondary_ptr_;
     std::shared_ptr<kinematics::TorsoKinematics> kinematics_torso_ptr_;
 
-    TrajectoryBounds streaming_bounds_{1.0 * M_PI, 3.0 * M_PI, 50.0 * M_PI};  // trajectory bounds, unit: rad
-    TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI, 1.0 * M_PI};       // trajectory bounds, unit: rad
+    TrajectoryBounds streaming_bounds_{1.0 * M_PI, 3.0 * M_PI, 10.0 * M_PI};  // trajectory bounds, unit: rad
+    TrajectoryBounds stop_bounds_{1.0 * M_PI, 3.0 * M_PI, 10.0 * M_PI};       // trajectory bounds, unit: rad
+    TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI, 2.0 * M_PI};       // trajectory bounds, unit: rad
 
     struct {
-        TrajectoryBounds translation{0.25, 0.25, 0.25};                 // cartesian space translation bounds, unit: m
+        TrajectoryBounds translation{0.5, 0.5, 0.5};                    // cartesian space translation bounds, unit: m
         TrajectoryBounds rotation{0.5 * M_PI, 0.5 * M_PI, 0.5 * M_PI};  // cartesian space rotation bounds, unit: rad
     } cartesian_bounds_;
 
     MotionGroup motion_group_;
+
+    static constexpr double DefaultStreamingTimeout = 10.0;  // 默认超时时间（秒）
+    double streaming_timeout_ = DefaultStreamingTimeout;     // 当前使用的超时时间
 
     int ndof_primary_{7};
     int ndof_secondary_{7};

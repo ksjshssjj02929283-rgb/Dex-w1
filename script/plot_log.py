@@ -1,3 +1,19 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+机器人日志绘图工具 - 用于可视化 robot_server 记录的数据
+使用方法:
+    python3 plot_log.py                           # 默认绘制 torso + arms + chassis (最近2秒)
+    python3 plot_log.py 5                         # 绘制最近5秒的数据
+    python3 plot_log.py --seconds=10              # 绘制最近10秒的数据
+    python3 plot_log.py --torso                   # 只绘制 torso 数据
+    python3 plot_log.py --chassis                 # 只绘制底盘数据 (差速轮速度)
+    python3 plot_log.py --hz                      # 显示频谱图
+    python3 plot_log.py --save                    # 保存图片到脚本目录
+    python3 plot_log.py --debug                   # 显示调试信息
+    python3 plot_log.py --a1                      # A1模式：只绘制手臂数据 (14个关节)
+"""
+
 import argparse
 import json
 import os
@@ -14,39 +30,32 @@ import matplotlib.ticker as mticker
 
 def parse_line(line, debug=False):
     """
-    解析单行：
-    - 提取 [] 中的时间戳
-    - 提取 {} 中的 JSON
+    解析单行 JSONL：{"timestamp": "秒.微秒", ...}
     返回: (timestamp: datetime, data: dict) 或 None
     """
     line = line.strip()
     if not line:
-        if debug:
-            print("[DEBUG] Empty line skipped")
         return None
 
-    # 提取时间戳
-    ts_match = re.search(r"\[(.*?)\]", line)
-    if not ts_match:
-        if debug:
-            print(f"[DEBUG] No timestamp found in line: {line[:80]}...")
-        return None
-    ts_str = ts_match.group(1)
     try:
-        # 形如 2025-12-02 15:07:32.170155
-        ts = datetime.fromisoformat(ts_str)
+        data = json.loads(line)
     except Exception as e:
         if debug:
-            print(f"[DEBUG] Failed to parse timestamp '{ts_str}': {e}")
+            print(f"[DEBUG] Failed to parse JSON: {e}")
         return None
 
-    # 提取 JSON
-    brace_idx = line.find("{")
-    if brace_idx == -1:
-        if debug:
-            print(f"[DEBUG] No JSON found in line: {line[:80]}...")
+    if "timestamp" not in data:
         return None
-    json_str = line[brace_idx:]
+
+    try:
+        ts_float = float(data["timestamp"])
+        ts = datetime.fromtimestamp(ts_float)
+    except Exception as e:
+        if debug:
+            print(f"[DEBUG] Failed to parse timestamp '{data['timestamp']}': {e}")
+        return None
+
+    return ts, data
     try:
         data = json.loads(json_str)
     except Exception as e:
@@ -54,7 +63,7 @@ def parse_line(line, debug=False):
             print(f"[DEBUG] Failed to parse JSON: {e}")
         return None
 
-    # 校验存在的数组长度是否为 20
+    # 校验存在的数组长度是否为 20（标准模式）或 14（A1模式）
     array_keys = [
         "joint_position",
         "joint_velocity",
@@ -65,9 +74,23 @@ def parse_line(line, debug=False):
     for k in array_keys:
         if k in data:
             arr = data[k]
-            if not isinstance(arr, list) or len(arr) != 20:
-                if debug:
-                    print(f"[DEBUG] Invalid array length for {k}: {len(arr) if isinstance(arr, list) else type(arr)}")
+            if not isinstance(arr, list) or len(arr) not in (20, 14):
+                print(f"[DEBUG] Invalid array length for {k}: {len(arr) if isinstance(arr, list) else type(arr)}")
+                return None
+
+    # 校验底盘数据键（如果存在）
+    chassis_keys = [
+        "chassis_target_left_velocity",
+        "chassis_target_right_velocity",
+        "chassis_cmd_left_velocity",
+        "chassis_cmd_right_velocity",
+        "chassis_feedback_left_velocity",
+        "chassis_feedback_right_velocity",
+    ]
+    for k in chassis_keys:
+        if k in data:
+            if not isinstance(data[k], (int, float)):
+                print(f"[DEBUG] Invalid chassis data type for {k}: {type(data[k])}")
                 return None
 
     return ts, data
@@ -82,12 +105,6 @@ def main():
 
     parser = argparse.ArgumentParser(description="Plot last N points from robot_server log.")
     parser.add_argument(
-        "--path",
-        type=str,
-        default="~/log/robot_server.txt",
-        help="Path to robot_server log file.",
-    )
-    parser.add_argument(
         "--n",
         type=int,
         default=5000,
@@ -101,18 +118,48 @@ def main():
     )
     parser.add_argument(
         "--save",
-        type=str,
-        default=None,
-        help="Save plots to the specified directory instead of showing.",
+        action="store_true",
+        help="Save plots to script directory instead of showing.",
     )
     parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging.",
     )
+    parser.add_argument(
+        "--torso",
+        action="store_true",
+        help="Only plot torso data (joint 0-5).",
+    )
+    parser.add_argument(
+        "--a1",
+        action="store_true",
+        help="A1 mode: only plot arms (joint 6-19, 14 joints).",
+    )
+    parser.add_argument(
+        "--arm",
+        action="store_true",
+        help="Arm mode: only plot arms (left + right, no torso or chassis).",
+    )
+    parser.add_argument(
+        "--hz",
+        action="store_true",
+        help="Show frequency spectrum for each joint.",
+    )
+    parser.add_argument(
+        "--chassis",
+        action="store_true",
+        help="Only plot chassis data (differential drive velocity).",
+    )
+    parser.add_argument(
+        "--joint",
+        type=int,
+        default=None,
+        help="Plot a single joint by index (0-19 for standard, 0-13 for A1 mode).",
+    )
     args = parser.parse_args()
 
-    log_path = Path(args.path).expanduser()
+    log_path = Path("~/log/robot_record.jsonl").expanduser()
     if not log_path.exists():
         print(f"Log file not found: {log_path}")
         return
@@ -147,22 +194,6 @@ def main():
         print("No valid samples found.")
         return
 
-    # 过滤：只保留包含至少一个关节数组的数据行
-    valid_samples = deque()
-    for ts, d in samples:
-        has_joint_data = any(k in d for k in ["joint_position", "joint_velocity", "joint_torque"])
-        if has_joint_data:
-            valid_samples.append((ts, d))
-
-    if args.debug:
-        print(f"[DEBUG] Samples with joint data: {len(valid_samples)} (filtered out {len(samples) - len(valid_samples)} non-joint entries)")
-
-    if not valid_samples:
-        print("No joint data samples found.")
-        return
-
-    samples = valid_samples
-
     # 按时间窗口过滤：以最后一条样本为基准，保留最近 args.seconds 秒的样本
     last_ts = samples[-1][0]
     cutoff = last_ts - timedelta(seconds=abs(args.seconds))
@@ -193,29 +224,69 @@ def main():
         return
 
     samples = filtered
+    start_timestamp = samples[0][0] # 获取记录开始的时间戳
 
     # 组装为时间序列（长度 = 样本条数），以保留样本的第一个时间为基点
     times = np.array([(s[0] - samples[0][0]).total_seconds() for s in samples], dtype=float)
     n = len(samples)
 
-    # 为每个键准备 Nx20 的数组，缺失数据用 NaN 填充
+    # 根据第一个有效样本确定关节数量（14=A1模式，20=标准模式）
+    joint_count = 14
+    for _, d in samples:
+        if "joint_position" in d and isinstance(d["joint_position"], list):
+            joint_count = len(d["joint_position"])
+            break
+
+    if args.debug:
+        print(f"[DEBUG] Joint count: {joint_count} ({'A1' if joint_count == 14 else 'Standard'} mode)")
+
+    # 为每个键准备 Nx关节数 的数组，缺失数据用 NaN 填充
     def build_array(key):
-        arr = np.full((n, 20), np.nan, dtype=float)
+        arr = np.full((n, joint_count), np.nan, dtype=float)
         for i, (_, d) in enumerate(samples):
             if key in d:
                 v = d[key]
-                if isinstance(v, list) and len(v) == 20:
+                if isinstance(v, list) and len(v) == joint_count:
                     arr[i, :] = np.array(v, dtype=float)
         return arr
 
     pos = build_array("joint_position")
     pos_cmd = build_array("joint_position_cmd")
+    pos_input = build_array("joint_position_input")
+    pos_before_filter = build_array("joint_position_before_filter")
+    pos_after_filter = build_array("joint_position_after_filter")
     tor = build_array("joint_torque")
     tor_ff = build_array("joint_torque_feedforward")
     vel = build_array("joint_velocity")
 
+    # 底盘数据解析（单个值，不是数组）
+    chassis_keys = [
+        "chassis_target_left_velocity",
+        "chassis_target_right_velocity",
+        "chassis_cmd_left_velocity",
+        "chassis_cmd_right_velocity",
+        "chassis_feedback_left_velocity",
+        "chassis_feedback_right_velocity",
+    ]
+
+    def build_chassis_array(key):
+        arr = np.full(n, np.nan, dtype=float)
+        for i, (_, d) in enumerate(samples):
+            if key in d:
+                v = d[key]
+                if isinstance(v, (int, float)):
+                    arr[i] = float(v)
+        return arr
+
+    chassis_data = {}
+    has_chassis_data = False
+    for key in chassis_keys:
+        chassis_data[key] = build_chassis_array(key)
+        if np.isfinite(chassis_data[key]).any():
+            has_chassis_data = True
+
     if args.debug:
-        print(f"[DEBUG] Data array shape: ({n}, 20)")
+        print(f"[DEBUG] Data array shape: ({n}, {joint_count})")
         print(f"[DEBUG] Position data - NaN count: {np.sum(~np.isfinite(pos))}, valid: {np.sum(np.isfinite(pos))}")
         print(f"[DEBUG] Torque data - NaN count: {np.sum(~np.isfinite(tor))}, valid: {np.sum(np.isfinite(tor))}")
         print(f"[DEBUG] Velocity data - NaN count: {np.sum(~np.isfinite(vel))}, valid: {np.sum(np.isfinite(vel))}")
@@ -234,52 +305,309 @@ def main():
     plt.rcParams['figure.max_open_warning'] = 100  # 允许更多图形
     plt.rcParams['figure.autolayout'] = False  # 手动调整布局
 
-    # 如果需要保存，使用非交互式后端
-    save_dir = args.save
-    if save_dir:
+    # 如果需要保存，使用非交互式后端，保存到脚本所在目录
+    save_dir = None
+    if args.save:
+        save_dir = Path(__file__).parent.resolve()
         os.makedirs(save_dir, exist_ok=True)
         plt.switch_backend('Agg')
 
-    # 每个手臂一张大图，每张图包含7个关节（每个关节一列，4行）
-    def plot_arm(arm_name, joint_indices, arm_side):
-        rows = 4  # position, torque, pos_error, tor_error
-        cols = len(joint_indices)  # 7个关节
-        # 将整张大图分辨率设置为 1920x1080 像素（每张大图）
-        # figsize 单位为英寸，dpi*figsize = 像素。这里使用 dpi=100 -> figsize=(19.2, 10.8)
-        fig, axes = plt.subplots(rows, cols, figsize=(19.2, 10.8), dpi=100, sharex=True)
+    # 底盘数据绘图函数
+    def plot_chassis(times_input, start_timestamp, show_hz=False):
+        if not has_chassis_data:
+            return None
+
+        rows = 4 if show_hz else 3
+        fig, axes = plt.subplots(rows, 1, figsize=(19.2, 10 if show_hz else 8), dpi=100)
+        fig.suptitle(f"Chassis (Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})", fontsize=11)
 
         # 将所有坐标轴刻度格式化为小数点后3位
         for ax in axes.flatten():
             ax.xaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
             ax.yaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
-        # 最大化显示
-        mng = plt.get_current_fig_manager()
-        try:
-            mng.window.state('zoomed')  # Windows
-        except:
-            try:
-                mng.window.showMaximized()  # Linux
-            except:
-                try:
-                    mng.frame.Maximize(True)  # macOS
-                except:
-                    pass
+
+        # 左轮速度对比
+        ax = axes[0]
+        if np.isfinite(chassis_data["chassis_target_left_velocity"]).any():
+            ax.plot(times, chassis_data["chassis_target_left_velocity"], label="target_left",
+                    color="tab:blue", linewidth=1.2)
+        if np.isfinite(chassis_data["chassis_cmd_left_velocity"]).any():
+            ax.plot(times, chassis_data["chassis_cmd_left_velocity"], label="cmd_left",
+                    color="tab:green", linewidth=1.2, linestyle="--")
+        if np.isfinite(chassis_data["chassis_feedback_left_velocity"]).any():
+            ax.plot(times, chassis_data["chassis_feedback_left_velocity"], label="feedback_left",
+                    color="tab:red", linewidth=1.2, linestyle=":")
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.set_ylabel("Left Velocity [rpm]", fontsize=9)
+        ax.legend(loc="best", fontsize=8)
+        ax.set_title("Left Wheel Velocity", fontsize=10)
+
+        # 右轮速度对比
+        ax = axes[1]
+        if np.isfinite(chassis_data["chassis_target_right_velocity"]).any():
+            ax.plot(times, chassis_data["chassis_target_right_velocity"], label="target_right",
+                    color="tab:blue", linewidth=1.2)
+        if np.isfinite(chassis_data["chassis_cmd_right_velocity"]).any():
+            ax.plot(times, chassis_data["chassis_cmd_right_velocity"], label="cmd_right",
+                    color="tab:green", linewidth=1.2, linestyle="--")
+        if np.isfinite(chassis_data["chassis_feedback_right_velocity"]).any():
+            ax.plot(times, chassis_data["chassis_feedback_right_velocity"], label="feedback_right",
+                    color="tab:red", linewidth=1.2, linestyle=":")
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.set_ylabel("Right Velocity [rpm]", fontsize=9)
+        ax.legend(loc="best", fontsize=8)
+        ax.set_title("Right Wheel Velocity", fontsize=10)
+
+        # 左右轮误差
+        ax = axes[2]
+        if np.isfinite(chassis_data["chassis_feedback_left_velocity"]).any():
+            left_err = chassis_data["chassis_cmd_left_velocity"] - chassis_data["chassis_feedback_left_velocity"]
+            ax.plot(times, left_err, label="left_error", color="tab:blue", linewidth=1.2)
+        if np.isfinite(chassis_data["chassis_feedback_right_velocity"]).any():
+            right_err = chassis_data["chassis_cmd_right_velocity"] - chassis_data["chassis_feedback_right_velocity"]
+            ax.plot(times, right_err, label="right_error", color="tab:red", linewidth=1.2)
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.set_ylabel("Velocity Error [rpm]", fontsize=9)
+        ax.set_xlabel("Time [s]", fontsize=9)
+        ax.legend(loc="best", fontsize=8)
+        ax.set_title("Velocity Error (cmd - feedback)", fontsize=10)
+
+        # 4) velocity error spectrum (FFT) - only if --hz enabled
+        if show_hz:
+            ax = axes[3]
+            # 左轮速度误差频谱
+            left_err = chassis_data["chassis_cmd_left_velocity"] - chassis_data["chassis_feedback_left_velocity"]
+            valid_left_mask = np.isfinite(left_err)
+            valid_left = left_err[valid_left_mask]
+            if valid_left.size >= 2:
+                valid_times_left = times[valid_left_mask]
+                time_diffs_left = np.diff(valid_times_left)
+                time_diffs_left = time_diffs_left[time_diffs_left > 0]
+                if len(time_diffs_left) >= 1:
+                    dt_left = np.mean(time_diffs_left)
+                else:
+                    dt_left = 0.001
+                fs = 1.0 / dt_left if dt_left > 0 else 1000.0
+                n_left = valid_left.size
+                left_centered = valid_left - np.mean(valid_left)
+                fft_vals_left = np.fft.fft(left_centered)
+                fft_freq_left = np.fft.fftfreq(n_left, d=dt_left)
+                left_mask = fft_freq_left > 0
+                fft_freq_left_pos = fft_freq_left[left_mask]
+                fft_mag_left = np.abs(fft_vals_left[left_mask])
+                fft_mag_left_norm = 2.0 / n_left * fft_mag_left
+                freq_mask_left = fft_freq_left_pos <= 10
+                ax.plot(fft_freq_left_pos[freq_mask_left], fft_mag_left_norm[freq_mask_left],
+                    label="left_error", color="tab:blue", linewidth=1.0)
+
+            # 右轮速度误差频谱
+            right_err = chassis_data["chassis_cmd_right_velocity"] - chassis_data["chassis_feedback_right_velocity"]
+            valid_right_mask = np.isfinite(right_err)
+            valid_right = right_err[valid_right_mask]
+            if valid_right.size >= 2:
+                valid_times_right = times[valid_right_mask]
+                time_diffs_right = np.diff(valid_times_right)
+                time_diffs_right = time_diffs_right[time_diffs_right > 0]
+                if len(time_diffs_right) >= 1:
+                    dt_right = np.mean(time_diffs_right)
+                else:
+                    dt_right = 0.001
+                n_right = valid_right.size
+                right_centered = valid_right - np.mean(valid_right)
+                fft_vals_right = np.fft.fft(right_centered)
+                fft_freq_right = np.fft.fftfreq(n_right, d=dt_right)
+                right_mask = fft_freq_right > 0
+                fft_freq_right_pos = fft_freq_right[right_mask]
+                fft_mag_right = np.abs(fft_vals_right[right_mask])
+                fft_mag_right_norm = 2.0 / n_right * fft_mag_right
+                freq_mask_right = fft_freq_right_pos <= 10
+                ax.plot(fft_freq_right_pos[freq_mask_right], fft_mag_right_norm[freq_mask_right],
+                    label="right_error", color="tab:red", linewidth=1.0)
+
+            ax.grid(True, alpha=0.3, linestyle=':')
+            ax.set_ylabel("FFT Magnitude", fontsize=9)
+            ax.set_xlabel("Frequency [Hz]", fontsize=9)
+            ax.legend(loc="best", fontsize=8)
+            ax.set_title("Velocity Error Spectrum (FFT)", fontsize=10)
+
+        return fig
+
+    # 单个关节绘图函数
+    def plot_single_joint(joint_idx, joint_count, times_input, start_timestamp, show_hz=False):
+        rows = 5 if show_hz else 4
+        fig, axes = plt.subplots(rows, 1, figsize=(19.2, 14 if show_hz else 11), dpi=100)
+
+        # 确定关节名称
+        if joint_count == 14:
+            # A1 模式
+            if joint_idx < 7:
+                joint_name = f"Left J{joint_idx + 1}"
+            else:
+                joint_name = f"Right J{joint_idx - 6}"
+        else:
+            # 标准模式
+            if joint_idx < 6:
+                joint_name = f"Torso J{joint_idx + 1}"
+            elif joint_idx < 13:
+                joint_name = f"Left J{joint_idx - 5}"
+            else:
+                joint_name = f"Right J{joint_idx - 12}"
+
+        fig.suptitle(f"{joint_name} (Index {joint_idx}, Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})", fontsize=11)
+
+        # 格式化坐标轴
+        for ax in axes.flatten():
+            ax.xaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
+            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
+
+        # 1) position (度)
+        ax = axes[0]
+        ax.plot(times, pos_deg[:, joint_idx], label="position", color="tab:blue", linewidth=1.2)
+        if np.isfinite(pos_cmd_deg[:, joint_idx]).any():
+            ax.plot(times, pos_cmd_deg[:, joint_idx], label="position_cmd",
+                   color="tab:green", linewidth=1.2, linestyle="--")
+        if np.isfinite(pos_input[:, joint_idx]).any():
+            ax.plot(times, np.degrees(pos_input[:, joint_idx]), label="position_input",
+                   color="tab:orange", linewidth=1.2, linestyle=":")
+        if np.isfinite(pos_before_filter[:, joint_idx]).any():
+            ax.plot(times, np.degrees(pos_before_filter[:, joint_idx]), label="position_before_filter",
+                   color="tab:purple", linewidth=1.2, linestyle="-.")
+        if np.isfinite(pos_after_filter[:, joint_idx]).any():
+            ax.plot(times, np.degrees(pos_after_filter[:, joint_idx]), label="position_after_filter",
+                   color="tab:cyan", linewidth=1.2, linestyle="-.")
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.tick_params(labelsize=8)
+        ax.set_ylabel("Position [deg]", fontsize=9)
+        ax.legend(loc="best", fontsize=8)
+        ax.set_title(f"{joint_name} - Position", fontsize=10)
+
+        # 2) position error
+        ax = axes[1]
+        if np.isfinite(pos_err_deg[:, joint_idx]).any():
+            ax.plot(times, pos_err_deg[:, joint_idx], label="pos_error",
+                   color="tab:purple", linewidth=1.2)
+            ax.legend(loc="best", fontsize=8)
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.tick_params(labelsize=8)
+        ax.set_ylabel("Pos Error [deg]", fontsize=9)
+        ax.set_title(f"{joint_name} - Position Error", fontsize=10)
+
+        # 3) velocity
+        ax = axes[2]
+        if np.isfinite(vel_deg[:, joint_idx]).any():
+            ax.plot(times, vel_deg[:, joint_idx], label="velocity",
+                   color="tab:brown", linewidth=1.2)
+            ax.legend(loc="best", fontsize=8)
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.tick_params(labelsize=8)
+        ax.set_ylabel("Velocity [deg/s]", fontsize=9)
+        ax.set_title(f"{joint_name} - Velocity", fontsize=10)
+
+        # 4) torque
+        ax = axes[3]
+        ax.plot(times, tor[:, joint_idx], label="torque", color="tab:red", linewidth=1.2)
+        ax.grid(True, alpha=0.3, linestyle=':')
+        ax.tick_params(labelsize=8)
+        ax.set_ylabel("Torque [Nm]", fontsize=9)
+        ax.set_xlabel("Time [s]", fontsize=9)
+        ax.legend(loc="best", fontsize=8)
+        ax.set_title(f"{joint_name} - Torque", fontsize=10)
+
+        # 5) position error spectrum (FFT) - only if --hz enabled
+        if show_hz:
+            ax = axes[4]
+            valid_err_mask = np.isfinite(pos_err_deg[:, joint_idx])
+            valid_err = pos_err_deg[:, joint_idx][valid_err_mask]
+            if valid_err.size >= 2:
+                valid_times = times[valid_err_mask]
+                time_diffs = np.diff(valid_times)
+                time_diffs = time_diffs[time_diffs > 0]
+                if len(time_diffs) >= 1:
+                    dt = np.mean(time_diffs)
+                else:
+                    dt = 0.001
+                fs = 1.0 / dt if dt > 0 else 1000.0
+                n = valid_err.size
+                err_centered = valid_err - np.mean(valid_err)
+                fft_vals = np.fft.fft(err_centered)
+                fft_freq = np.fft.fftfreq(n, d=dt)
+                err_mask = fft_freq > 0
+                fft_freq_err = fft_freq[err_mask]
+                fft_mag = np.abs(fft_vals[err_mask])
+                fft_mag_norm = 2.0 / n * fft_mag
+                freq_mask = fft_freq_err <= 10
+                ax.plot(fft_freq_err[freq_mask], fft_mag_norm[freq_mask],
+                    color="tab:purple", linewidth=1.0)
+                ax.grid(True, alpha=0.3, linestyle=':')
+                ax.tick_params(labelsize=8)
+                if fft_mag_norm[freq_mask].size > 0:
+                    peak_idx = np.argmax(fft_mag_norm[freq_mask])
+                    if fft_mag_norm[freq_mask][peak_idx] > 0.01 * fft_mag_norm[freq_mask].max():
+                        peak_freq = fft_freq_err[freq_mask][peak_idx]
+                        ax.axvline(x=peak_freq, color='tab:red', linestyle='--', alpha=0.7, linewidth=1)
+                        ax.annotate(f'{peak_freq:.1f}Hz',
+                                xy=(peak_freq, fft_mag_norm[freq_mask][peak_idx]),
+                                xytext=(peak_freq * 1.2, fft_mag_norm[freq_mask][peak_idx] * 0.8),
+                                fontsize=8, color='tab:red')
+                ax.set_xlim(0, 10)
+                ax.set_xlabel("Frequency [Hz]", fontsize=9)
+                ax.set_ylabel("Spectrum [deg]", fontsize=9)
+                ax.set_title(f"{joint_name} - Position Error Spectrum", fontsize=10)
+            else:
+                ax.text(0.5, 0.5, "No spectrum data",
+                    transform=ax.transAxes, ha="center", va="center",
+                    alpha=0.6, fontsize=10)
+                ax.set_xlabel("Frequency [Hz]", fontsize=9)
+
+        # 调整布局
+        fig.tight_layout(rect=[0.02, 0.02, 1, 0.98], h_pad=2, w_pad=2)
+        return fig
+
+    # 每个手臂一张大图，每张图包含7个关节
+    # 如果启用 --hz，则添加频谱图（第5行）
+    def plot_arm(arm_name, joint_indices, arm_side, times_input, start_timestamp, show_hz=False):
+        rows = 5 if show_hz else 4
+        cols = len(joint_indices)
+        fig, axes = plt.subplots(rows, cols, figsize=(19.2, 14 if show_hz else 11), dpi=100)
+        fig.suptitle(f"{arm_name} (Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})", fontsize=11)
+
+        # 将所有坐标轴刻度格式化为小数点后3位
+        for ax in axes.flatten():
+            ax.xaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
+            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter('%.3f'))
 
         for ci, j in enumerate(joint_indices):
             joint_num = ci + 1
-            col_title = f"{arm_side} J{joint_num}"
+            # torso 关节最后两个改名为 head1, head2
+            if arm_name == "Torso" and ci >= 4:
+                col_title = f"Head{ci - 3}"
+            else:
+                col_title = f"{arm_side} J{joint_num}"
 
             # 1) position（度）
             ax = axes[0, ci]
-            ax.plot(times, pos_deg[:, j], label="position (deg)", color="tab:blue", linewidth=1.2)
+            ax.plot(times, pos_deg[:, j], label="position", color="tab:blue", linewidth=1.2)
             if np.isfinite(pos_cmd_deg[:, j]).any():
-                ax.plot(times, pos_cmd_deg[:, j], label="position_cmd (deg)", 
+                ax.plot(times, pos_cmd_deg[:, j], label="position_cmd",
                        color="tab:green", linewidth=1.2, linestyle="--")
+            # 绘制 joint_position_input（来自 StreamingCommand）
+            if np.isfinite(pos_input[:, j]).any():
+                ax.plot(times, np.degrees(pos_input[:, j]), label="position_input",
+                       color="tab:orange", linewidth=1.2, linestyle=":")
+            # 绘制 joint_position_before_filter（滤波前的位置指令）
+            if np.isfinite(pos_before_filter[:, j]).any():
+                ax.plot(times, np.degrees(pos_before_filter[:, j]), label="position_before_filter",
+                       color="tab:purple", linewidth=1.2, linestyle="-.")
+            # 绘制 joint_position_after_filter（滤波后的位置指令）
+            if np.isfinite(pos_after_filter[:, j]).any():
+                ax.plot(times, np.degrees(pos_after_filter[:, j]), label="position_after_filter",
+                       color="tab:cyan", linewidth=1.2, linestyle="-.")
             ax.grid(True, alpha=0.3, linestyle=':')
-            ax.set_title(col_title, fontsize=12)
+            ax.tick_params(labelsize=7)
+            ax.set_title(col_title, fontsize=9)
             if ci == 0:
-                ax.set_ylabel("Position [rad]", fontsize=11)
-                ax.legend(loc="best", fontsize=9)
+                ax.set_ylabel("Position [deg]", fontsize=7)
+                ax.legend(loc="best", fontsize=7)
             else:
                 pass  # 仅首列显示图例
             # 强制 position 纵轴范围至少为 0.1（对已有数据有效）
@@ -301,46 +629,18 @@ def main():
             except Exception:
                 pass
 
-            # 2) torque
+            # 2) position error
             ax = axes[1, ci]
-            ax.plot(times, tor[:, j], label="torque", color="tab:red", linewidth=1.2)
-            if np.isfinite(tor_ff[:, j]).any():
-                ax.plot(times, tor_ff[:, j], label="torque_cmd", 
-                       color="tab:orange", linewidth=1.2, linestyle="--")
-            ax.grid(True, alpha=0.3, linestyle=':')
-            if ci == 0:
-                ax.set_ylabel("Torque [Nm]", fontsize=11)
-                ax.legend(loc="best", fontsize=9)
-            # 强制 torque 纵轴范围至少为 1.0（对已有数据有效）
-            try:
-                t_vals = np.hstack([
-                    tor[:, j][np.isfinite(tor[:, j])],
-                    tor_ff[:, j][np.isfinite(tor_ff[:, j])]
-                ])
-                if t_vals.size > 0:
-                    tmin = t_vals.min()
-                    tmax = t_vals.max()
-                    trange = tmax - tmin
-                    min_trange = 0.4
-                    if trange < min_trange:
-                        center = 0.5 * (tmax + tmin)
-                        half = 0.5 * min_trange
-                        ax.set_ylim(center - half, center + half)
-            except Exception:
-                pass
-
-            # 3) position error（度）
-            ax = axes[2, ci]
             if np.isfinite(pos_err_deg[:, j]).any():
-                ax.plot(times, pos_err_deg[:, j], label="pos_error (deg)", 
+                ax.plot(times, pos_err_deg[:, j], label="pos_error",
                        color="tab:purple", linewidth=1.2)
                 if ci == 0:
-                    ax.legend(loc="best", fontsize=9)
+                    ax.legend(loc="best", fontsize=7)
             else:
-                ax.text(0.5, 0.5, "No position error data", 
-                       transform=ax.transAxes, ha="center", va="center", 
+                ax.text(0.5, 0.5, "No position error data",
+                       transform=ax.transAxes, ha="center", va="center",
                        alpha=0.6, fontsize=10)
-            # 新增：强制 position error 纵轴范围至少为 0.1 度
+            # 强制 position error 纵轴范围至少为 0.1 度
             try:
                 pe_vals = pos_err_deg[:, j][np.isfinite(pos_err_deg[:, j])]
                 if pe_vals.size > 0:
@@ -355,22 +655,23 @@ def main():
             except Exception:
                 pass
             ax.grid(True, alpha=0.3, linestyle=':')
+            ax.tick_params(labelsize=7)
             if ci == 0:
-                ax.set_ylabel("Pos Error [deg]", fontsize=11)
+                ax.set_ylabel("Pos Error [deg]", fontsize=7)
 
-            # 4) velocity（deg/s）  — 用速度替换力矩偏差图，单位改为度/秒
-            ax = axes[3, ci]
+            # 3) velocity
+            ax = axes[2, ci]
             if np.isfinite(vel_deg[:, j]).any():
-                ax.plot(times, vel_deg[:, j], label="velocity (deg/s)", 
+                ax.plot(times, vel_deg[:, j], label="velocity",
                        color="tab:brown", linewidth=1.2)
                 if ci == 0:
-                    ax.legend(loc="best", fontsize=9)
+                    ax.legend(loc="best", fontsize=7)
             else:
-                ax.text(0.5, 0.5, "No velocity data", 
-                       transform=ax.transAxes, ha="center", va="center", 
+                ax.text(0.5, 0.5, "No velocity data",
+                       transform=ax.transAxes, ha="center", va="center",
                        alpha=0.6, fontsize=10)
             ax.grid(True, alpha=0.3, linestyle=':')
-            ax.set_xlabel("Time [s]", fontsize=11)
+            ax.tick_params(labelsize=7)
             # 强制 velocity 纵轴范围至少为 0.02 rad/s（对已有数据有效）
             try:
                 v_vals = vel_deg[:, j][np.isfinite(vel_deg[:, j])]
@@ -387,40 +688,204 @@ def main():
             except Exception:
                 pass
             if ci == 0:
-                ax.set_ylabel("Velocity [deg/s]", fontsize=11)
+                ax.set_ylabel("Velocity [deg/s]", fontsize=7)
 
-        # 调整布局，为标题留出更多空间，并进一步增大子图间的水平/垂直间距
-        fig.subplots_adjust(top=0.96, bottom=0.03, left=0.05, right=0.96,
-                     hspace=0.1, wspace=0.4)
+            # 4) torque
+            ax = axes[3, ci]
+            ax.plot(times, tor[:, j], label="torque", color="tab:red", linewidth=1.2)
+            ax.grid(True, alpha=0.3, linestyle=':')
+            ax.tick_params(labelsize=7)
+            if ci == 0:
+                ax.set_ylabel("Torque [Nm]", fontsize=7)
+                ax.legend(loc="best", fontsize=7)
+            # 强制 torque 纵轴范围至少为 1.0（对已有数据有效）
+            try:
+                t_vals = tor[:, j][np.isfinite(tor[:, j])]
+                if t_vals.size > 0:
+                    tmin = t_vals.min()
+                    tmax = t_vals.max()
+                    trange = tmax - tmin
+                    min_trange = 0.4
+                    if trange < min_trange:
+                        center = 0.5 * (tmax + tmin)
+                        half = 0.5 * min_trange
+                        ax.set_ylim(center - half, center + half)
+            except Exception:
+                pass
+
+            # 5) position error spectrum (FFT) - only if --hz enabled
+            if show_hz:
+                ax = axes[4, ci]
+                valid_err_mask = np.isfinite(pos_err_deg[:, j])
+                valid_err = pos_err_deg[:, j][valid_err_mask]
+                if valid_err.size >= 2:
+                    valid_times = times[valid_err_mask]
+                    time_diffs = np.diff(valid_times)
+                    time_diffs = time_diffs[time_diffs > 0]
+                    if len(time_diffs) >= 1:
+                        dt = np.mean(time_diffs)
+                    else:
+                        dt = 0.001
+                    fs = 1.0 / dt if dt > 0 else 1000.0
+                    n = valid_err.size
+                    err_centered = valid_err - np.mean(valid_err)
+                    fft_vals = np.fft.fft(err_centered)
+                    fft_freq = np.fft.fftfreq(n, d=dt)
+                    err_mask = fft_freq > 0
+                    fft_freq_err = fft_freq[err_mask]
+                    fft_mag = np.abs(fft_vals[err_mask])
+                    fft_mag_norm = 2.0 / n * fft_mag
+                    freq_mask = fft_freq_err <= 10
+                    ax.plot(fft_freq_err[freq_mask], fft_mag_norm[freq_mask],
+                        color="tab:purple", linewidth=1.0)
+                    ax.grid(True, alpha=0.3, linestyle=':')
+                    ax.tick_params(labelsize=7)
+                    if fft_mag_norm[freq_mask].size > 0:
+                        peak_idx = np.argmax(fft_mag_norm[freq_mask])
+                        if fft_mag_norm[freq_mask][peak_idx] > 0.01 * fft_mag_norm[freq_mask].max():
+                            peak_freq = fft_freq_err[freq_mask][peak_idx]
+                            ax.axvline(x=peak_freq, color='tab:red', linestyle='--', alpha=0.7, linewidth=1)
+                            ax.annotate(f'{peak_freq:.1f}Hz',
+                                    xy=(peak_freq, fft_mag_norm[freq_mask][peak_idx]),
+                                    xytext=(peak_freq * 1.2, fft_mag_norm[freq_mask][peak_idx] * 0.8),
+                                    fontsize=8, color='tab:red')
+                    ax.set_xlim(0, 10)
+                    ax.set_xlabel("(Hz)", fontsize=7, x=1.02, ha='left')
+                else:
+                    ax.text(0.5, 0.5, "No spectrum data",
+                        transform=ax.transAxes, ha="center", va="center",
+                        alpha=0.6, fontsize=10)
+                    ax.set_xlabel("(Hz)", fontsize=7, x=1.02, ha='left')
+                if ci == 0:
+                    ax.set_ylabel("Spectrum [deg]", fontsize=7)
+
+        # 调整布局
+        fig.tight_layout(rect=[0.02, 0.02, 1, 0.98], h_pad=2, w_pad=2)
         return fig
 
-    # 左臂：关节索引 6-12 (7个关节)
-    left_joints = list(range(6, 13))
-    # 右臂：关节索引 13-19 (7个关节)
-    right_joints = list(range(13, 20))
+    # A1模式：只有双臂14个关节（数据数组索引0-13，对应原始关节6-19）
+    if args.a1:
+        left_joints = list(range(7))
+        right_joints = list(range(7, 14))
+    else:
+        left_joints = list(range(6, 13))
+        right_joints = list(range(13, 20))
     # Torso：关节索引 0-5 (6个关节)
     torso_joints = list(range(6))
 
     figs = []
-    if args.debug:
-        print("[DEBUG] Creating Torso plot...")
-    figs.append(plot_arm("Torso", torso_joints, "Torso"))
-    if args.debug:
-        print("[DEBUG] Creating Left Arm plot...")
-    figs.append(plot_arm("Left Arm", left_joints, "Left"))
-    if args.debug:
-        print("[DEBUG] Creating Right Arm plot...")
-    figs.append(plot_arm("Right Arm", right_joints, "Right"))
+    # --joint 模式：只画单个关节图
+    if args.joint is not None:
+        if args.joint < 0 or args.joint >= joint_count:
+            print(f"Invalid joint index {args.joint}. Must be 0-{joint_count - 1} for current mode.")
+            return
+        if args.debug:
+            print(f"[DEBUG] Creating single joint plot for joint {args.joint}...")
+        figs.append(plot_single_joint(args.joint, joint_count, times, start_timestamp, show_hz=args.hz))
+    # --chassis 模式：只画底盘图
+    elif args.chassis:
+        if args.debug:
+            print("[DEBUG] Creating Chassis plot only...")
+        chassis_fig = plot_chassis(times, start_timestamp, show_hz=args.hz)
+        if chassis_fig is not None:
+            figs.append(chassis_fig)
+        else:
+            print("No chassis data found in log file.")
+            return
+    elif args.a1:
+        if args.debug:
+            print("[DEBUG] Creating A1 mode plots (arms only)...")
+        figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz))
+        figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz))
+    elif args.arm:
+        if args.debug:
+            print("[DEBUG] Creating Arm mode plots (arms only, no torso or chassis)...")
+        figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz))
+        figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz))
+    elif args.torso:
+        if args.debug:
+            print("[DEBUG] Creating Torso plot only...")
+        figs.append(plot_arm("Torso", torso_joints, "Torso", times, start_timestamp, show_hz=args.hz))
+    else:
+        if args.debug:
+            print("[DEBUG] Creating Torso plot...")
+        figs.append(plot_arm("Torso", torso_joints, "Torso", times, start_timestamp, show_hz=args.hz))
+        if args.debug:
+            print("[DEBUG] Creating Left Arm plot...")
+        figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz))
+        if args.debug:
+            print("[DEBUG] Creating Right Arm plot...")
+        figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz))
+
+        # 添加底盘数据绘图（如果存在）
+        chassis_fig = plot_chassis(times, start_timestamp, show_hz=args.hz)
+        if chassis_fig is not None:
+            figs.append(chassis_fig)
+            if args.debug:
+                print("[DEBUG] Creating Chassis plot...")
+
     if args.debug:
         print(f"[DEBUG] {len(figs)} figures created successfully")
 
     if save_dir:
+        # 动态生成文件名：torso, left_arm, right_arm, chassis
+        base_names = ["torso.png", "left_arm.png", "right_arm.png", "chassis.png"]
         for i, fig in enumerate(figs):
-            filenames = ["torso.png", "left_arm.png", "right_arm.png"]
-            fig.savefig(os.path.join(save_dir, filenames[i]), dpi=100)
-            print(f"Saved: {os.path.join(save_dir, filenames[i])}")
+            if i < len(base_names):
+                filename = base_names[i]
+            else:
+                filename = f"fig_{i}.png"
+            fig.savefig(os.path.join(save_dir, filename), dpi=100)
+            print(f"Saved: {os.path.join(save_dir, filename)}")
         plt.close('all')
     else:
+        # 添加滚轮缩放
+        def on_scroll(event):
+            if event.inaxes is None:
+                return
+            # 向上滚动缩小，向下滚动放大
+            scale_factor = 0.9 if event.button == 'up' else 1.1
+            ax = event.inaxes
+            xlim = ax.get_xlim()
+            ylim = ax.get_ylim()
+
+            # 以鼠标位置为中心缩放
+            mouse_x = event.xdata
+            mouse_y = event.ydata
+
+            if mouse_x is not None and mouse_y is not None:
+                # 计算鼠标在当前视图中的相对位置
+                x_ratio = (mouse_x - xlim[0]) / (xlim[1] - xlim[0])
+                y_ratio = (mouse_y - ylim[0]) / (ylim[1] - ylim[0])
+
+                # 计算新范围，保持鼠标相对位置不变
+                x_range = (xlim[1] - xlim[0]) * scale_factor
+                y_range = (ylim[1] - ylim[0]) * scale_factor
+
+                new_xlim = [mouse_x - x_range * x_ratio, mouse_x + x_range * (1 - x_ratio)]
+                new_ylim = [mouse_y - y_range * y_ratio, mouse_y + y_range * (1 - y_ratio)]
+            else:
+                x_range = (xlim[1] - xlim[0]) * scale_factor
+                y_range = (ylim[1] - ylim[0]) * scale_factor
+                x_center = (xlim[0] + xlim[1]) / 2
+                y_center = (ylim[0] + ylim[1]) / 2
+                new_xlim = [x_center - x_range/2, x_center + x_range/2]
+                new_ylim = [y_center - y_range/2, y_center + y_range/2]
+
+            ax.set_xlim(new_xlim)
+            ax.set_ylim(new_ylim)
+            plt.draw()
+
+        # 为所有打开的图形绑定事件
+        for fig in figs:
+            fig.canvas.mpl_connect('scroll_event', on_scroll)
+            # 默认全屏显示
+            try:
+                mng = fig.canvas.manager
+                mng.window.showMaximized()
+            except Exception:
+                pass
+
         plt.show()
 
 

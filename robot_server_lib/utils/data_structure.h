@@ -67,16 +67,15 @@ struct JointCommand {
     VectorDof position;
     VectorDof velocity;
     VectorDof acceleration;
-    VectorDof admittance_position;
     VectorDof torque_feedforward;
-    VectorDof joint_stiffness = VectorDof::Constant(100.0);
-    VectorDof joint_damping = VectorDof::Constant(10.0);
+    VectorDof joint_stiffness;
+    VectorDof joint_damping;
+    double joint_integral_ratio;
 
     std::string ToString() const {
         std::stringstream ss;
         ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose()
            << ", Acceleration: " << acceleration.transpose()
-           << ", Compliance Position: " << admittance_position.transpose()
            << ", Torque Feedforward: " << torque_feedforward.transpose();
         return ss.str();
     }
@@ -86,11 +85,13 @@ struct RobotProperty {
     pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     RunMode run_mode{RunMode::Position};
-    double global_speed_ratio{0.5};
+    double global_speed_ratio{1.0};
     double safe_level{0.5};
     bool clear_error_flag{false};
-    VectorDof joint_stiffness = VectorDof::Constant(100.0);
-    VectorDof joint_damping = VectorDof::Constant(10.0);
+    bool enable_position_limit_check_{true};  // 位置限位检测开关，默认开启
+    VectorDof joint_stiffness = VectorDof::Constant(200.0);
+    VectorDof joint_damping = VectorDof::Constant(20.0);
+    double joint_integral_ratio = 0.01;
     Vector12d cart_stiffness = Vector12d::Constant(200.0);
     Vector12d cart_damping_ratio = Vector12d::Constant(1.0);  // 阻尼比 范围0.5 ~ 1.5
     Vector12d cart_impedance_force = Vector12d::Zero();       // 预估笛卡尔阻抗力
@@ -146,6 +147,7 @@ struct PoseQuaternion {
 struct PlannerManagerCommand {
     std::int64_t sequence_number{-1};
     JointCommand cmd;
+    bool use_simple_dynamics{false};  // 是否使用简化动力学计算
 };
 
 struct TorqueCtrlCommand {
@@ -163,10 +165,15 @@ struct MoveRequest {
 
     std::optional<ReferenceFrame> reference_frame;
     std::optional<double> speed;
+    std::optional<double> acceleration;  // 加速度比例，范围 0.01 ~ 1.0
     std::optional<double> blend_tolerance;
-    std::optional<bool> optional_mode;
+    std::optional<bool> use_ruckig;
     std::optional<std::vector<int>> endpoint_index;
     std::optional<double> interval;
+    std::optional<double> streaming_timeout;
+    std::optional<double> streaming_velocity_timeout;  // Ruckig 速度超时时间，比 streaming_timeout 更短
+    std::optional<bool> use_velocity;                  // 是否使用目标速度输入
+    std::optional<bool> use_acceleration;              // 是否使用目标加速度输入
 };
 
 using PlannerData = std::variant<MoveRequest, PoseQuaternion, Vector3d, Vector6d, Eigen::VectorXd, bool, int, double>;
@@ -177,10 +184,18 @@ struct PlannerRequest {
     std::optional<PlannerData> data;  // start streaming指令无data
 };
 
+struct TrajectoryBounds {
+    double max_velocity{1.0};
+    double max_acceleration{2.0};
+    double max_jerk{100000.0};
+};
+
 struct StreamingCommand {
     Int64 request_id{-1};
     bool streaming_finished{false};
-    Eigen::VectorXd command;  // 用于存储流式数据
+    Eigen::VectorXd command;              // 用于存储流式数据
+    Eigen::VectorXd target_velocity;      // 目标速度
+    Eigen::VectorXd target_acceleration;  // 目标加速度
     TimePointSystem received_time{TimePointSystem::Invalid()};
 };
 
@@ -240,11 +255,13 @@ struct RobotParams {
     Eigen::VectorXd joint_max_velocity_limit_negative;        // 关节负向最大速度限制
     Eigen::VectorXd joint_max_torque_limit_positive;          // 关节正向最大力矩限制
     Eigen::VectorXd joint_max_torque_limit_negative;          // 关节负向最大力矩限制
+    Eigen::VectorXd joint_limit_margin_deg;  // 关节位置限位安全阈值（度），用于在硬限位基础上缩小范围
     Eigen::VectorXd joints_primary;
     Eigen::VectorXd joints_secondary;
     Eigen::VectorXd joints_torso;
     std::optional<Eigen::VectorXd> dyn_base_params_primary;    // 动力学基参数矩阵(非方阵)
     std::optional<Eigen::VectorXd> dyn_base_params_secondary;  // 动力学基参数矩阵(非方阵)
+    TrajectoryBounds streaming_bounds;
 };
 
 struct RobotModel {
@@ -252,6 +269,7 @@ struct RobotModel {
     std::shared_ptr<const pinocchio::Model> model_ptr;
     std::shared_ptr<const pinocchio::Model> primary_arm_model_ptr;
     std::shared_ptr<const pinocchio::Model> secondary_arm_model_ptr;
+    RobotProperty robot_property;
 
     RobotModel() = default;
     ~RobotModel() = default;

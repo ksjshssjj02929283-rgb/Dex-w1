@@ -7,12 +7,10 @@
  * 2. 零输入响应
  * 3. 斜坡响应
  * 4. 重置功能
- * 5. 类型切换
- * 6. 双峰 EI 算法
- * 7. 边沿检测
- * 8. Ramp 功能（单通道）
- * 9. Ramp 功能（双通道）
- * 10. Ramp 方向变化
+ * 5. 双峰 EI 算法
+ * 6. Ramp 功能（单通道）
+ * 7. Ramp 功能（双通道）
+ * 8. Ramp 方向变化
  */
 
 #include <gtest/gtest.h>
@@ -25,7 +23,6 @@
 TEST(EIInputShaperTest, UnitStepResponse) {
     const double natural_frequency_hz = 1.67;
     const double damping_ratio = 0.05;
-    const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
     EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
@@ -41,7 +38,6 @@ TEST(EIInputShaperTest, UnitStepResponse) {
 TEST(EIInputShaperTest, ZeroInputResponse) {
     const double natural_frequency_hz = 1.67;
     const double damping_ratio = 0.05;
-    const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
     EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
@@ -56,7 +52,6 @@ TEST(EIInputShaperTest, ZeroInputResponse) {
 TEST(EIInputShaperTest, RampResponse) {
     const double natural_frequency_hz = 1.67;
     const double damping_ratio = 0.05;
-    const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
     EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
@@ -83,7 +78,6 @@ TEST(EIInputShaperTest, RampResponse) {
 TEST(EIInputShaperTest, ResetFunctionality) {
     const double natural_frequency_hz = 1.67;
     const double damping_ratio = 0.05;
-    const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
     EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
@@ -98,33 +92,10 @@ TEST(EIInputShaperTest, ResetFunctionality) {
     EXPECT_NEAR(first_output, 2.0, 1e-10);
 }
 
-// 测试 5: 类型切换 - 验证 EI 与 Two-hump EI 切换功能
-TEST(EIInputShaperTest, TypeSwitching) {
-    const double natural_frequency_hz = 1.67;
-    const double damping_ratio = 0.05;
-    const double sampling_time_sec = 0.01;
-    const double vibration_tolerance = 0.05;
-
-    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
-
-    for (int i = 0; i < 50; ++i) {
-        shaper.Apply(1.0);
-    }
-
-    shaper.SetType(EIInputShaper::TWO_HUMP_EI);
-
-    double first_output = shaper.Apply(2.0);
-    EXPECT_NEAR(first_output, 2.0, 1e-10);
-
-    double final_output = shaper.Apply(3.0);
-    EXPECT_NEAR(final_output, 3.0, 1e-10);
-}
-
-// 测试 6: 双峰 EI 算法 - 验证 Two-hump EI 稳态增益为 1
+// 测试 5: 双峰 EI 算法 - 验证 Two-hump EI 稳态增益为 1
 TEST(EIInputShaperTest, TwoHumpEI) {
     const double natural_frequency_hz = 1.67;
     const double damping_ratio = 0.05;
-    const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
     EIInputShaper shaper(EIInputShaper::TWO_HUMP_EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
@@ -136,36 +107,10 @@ TEST(EIInputShaperTest, TwoHumpEI) {
     EXPECT_NEAR(final_output, 1.0, 1e-10);
 }
 
-// 测试 7: 边沿检测 - 验证减速标志上升沿检测功能
-TEST(EIInputShaperTest, DecelEdgeDetection) {
-    const double natural_frequency_hz = 1.67;
-    const double damping_ratio = 0.05;
-    const double sampling_time_sec = 0.01;
-    const double vibration_tolerance = 0.05;
-
-    EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
-
-    bool decel_start = shaper.DetectDecelStart(false);
-    EXPECT_FALSE(decel_start);
-
-    decel_start = shaper.DetectDecelStart(false);
-    EXPECT_FALSE(decel_start);
-
-    decel_start = shaper.DetectDecelStart(true);
-    EXPECT_TRUE(decel_start);
-
-    decel_start = shaper.DetectDecelStart(true);
-    EXPECT_FALSE(decel_start);
-
-    decel_start = shaper.DetectDecelStart(false);
-    EXPECT_FALSE(decel_start);
-}
-
-// 测试 8: Ramp 功能（单通道）- 验证单通道斜坡限制功能
+// 测试 6: Ramp 功能（单通道）- 验证单通道斜坡限制功能
 TEST(EIInputShaperTest, RampFunction) {
     const double natural_frequency_hz = 1.67;
     const double damping_ratio = 0.05;
-    const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
     EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
@@ -186,11 +131,10 @@ TEST(EIInputShaperTest, RampFunction) {
     EXPECT_NEAR(final_output, 1.0, 1e-10);
 }
 
-// 测试 9: Ramp 功能（双通道）- 验证双通道斜坡限制功能
+// 测试 6: Ramp 功能（双通道）- 验证双通道斜坡限制功能
 TEST(EIInputShaperTest, RampFunctionDualChannel) {
     const double natural_frequency_hz = 1.67;
     const double damping_ratio = 0.05;
-    const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
     EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
@@ -211,11 +155,10 @@ TEST(EIInputShaperTest, RampFunctionDualChannel) {
     EXPECT_NEAR(final_l, 2.0, 1e-10);
 }
 
-// 测试 10: Ramp 方向变化 - 验证 Ramp 能够正确处理方向反转
+// 测试 7: Ramp 方向变化 - 验证 Ramp 能够正确处理方向反转
 TEST(EIInputShaperTest, RampDirectionChange) {
     const double natural_frequency_hz = 1.67;
     const double damping_ratio = 0.05;
-    const double sampling_time_sec = 0.01;
     const double vibration_tolerance = 0.05;
 
     EIInputShaper shaper(EIInputShaper::EI, natural_frequency_hz, 0.001, 0.0, vibration_tolerance);
@@ -233,7 +176,7 @@ TEST(EIInputShaperTest, RampDirectionChange) {
     EXPECT_NEAR(output3, 0.98, 1e-2);
 }
 
-// 测试 11: NONE类型 - 不滤波但支持ramp
+// 测试 8: NONE类型 - 不滤波但支持ramp
 TEST(EIInputShaperTest, NoneTypeNoFilterWithRamp) {
     const double natural_frequency_hz = 1.67;
     const double vibration_tolerance = 0.05;

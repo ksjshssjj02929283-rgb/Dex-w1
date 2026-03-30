@@ -43,7 +43,7 @@ protected:
                              RequestType request_type,
                              RequestStatus request_status,
                              Status manager_state);
-    void Setup_Realtime();
+    void Setup_Realtime(int priority = 99);
 
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_server_state_publisher_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_server_state_real_subscriber_;
@@ -67,7 +67,14 @@ protected:
         request_handle_queue_{32};
     std::filesystem::path server_data_dir_ = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
     std::filesystem::path home_dir = std::filesystem::path(std::getenv("HOME"));
-
+    // 记录最新的 streaming command 输入的关节位置
+    VectorDof joint_position_input_;
+    // 预分配的JSON序列化缓冲区，避免每次循环分配
+    std::vector<double> json_position_buffer_;
+    std::vector<double> json_velocity_buffer_;
+    std::vector<double> json_effort_buffer_;
+    std::vector<double> json_sensor_wrench_buffer_;
+    std::vector<double> json_ee_pose_buffer_;
     struct {
         std::atomic_int64_t error_drop{-1};
         std::atomic_int64_t queued{-1};

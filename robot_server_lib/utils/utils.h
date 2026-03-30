@@ -50,27 +50,28 @@ inline std::size_t GetContainerSize(const T (&)[N]) {
 }
 
 template <typename VectorType>
-std::ostringstream VectorToJsonArrayString(const VectorType &vec, int start_index, int end_index) {
+std::ostringstream VectorToJsonArrayString(const VectorType &vec, int start_index, int count) {
     int total_size = static_cast<int>(GetContainerSize(vec));
     if (start_index < 0) start_index = 0;
-    if (end_index < 0 || end_index > total_size) end_index = total_size;
-    if (start_index > end_index) start_index = end_index;
+    if (count < 0 || start_index + count > total_size) count = total_size - start_index;
+    if (count < 0) count = 0;
 
     std::ostringstream ss;
     ss << "[";
-    for (int i = start_index; i < end_index; ++i) {
-        using ElemT = std::decay_t<decltype(vec[i])>;
+    for (int i = 0; i < count; ++i) {
+        int idx = start_index + i;
+        using ElemT = std::decay_t<decltype(vec[idx])>;
         if constexpr (std::is_integral_v<ElemT>) {
-            ss << static_cast<long long>(vec[i]);
+            ss << static_cast<long long>(vec[idx]);
         } else {
-            double v = static_cast<double>(vec[i]);
+            double v = static_cast<double>(vec[idx]);
             if (std::isfinite(v)) {
-                ss << std::fixed << std::setprecision(4) << v;
+                ss << std::fixed << std::setprecision(5) << v;
             } else {
                 ss << "null";
             }
         }
-        if (i < end_index - 1) ss << ",";
+        if (i < count - 1) ss << ",";
     }
     ss << "]";
     return ss;
@@ -87,7 +88,7 @@ std::ostringstream VectorToJsonArrayString(const VectorType &vec) {
         } else {
             double v = static_cast<double>(vec[i]);
             if (std::isfinite(v)) {
-                ss << std::fixed << std::setprecision(4) << v;
+                ss << std::fixed << std::setprecision(5) << v;
             } else {
                 ss << "null";
             }
@@ -114,6 +115,9 @@ bool GetJointFromWholeBody(const RobotModel &robot_model,
                            Eigen::VectorXd &q,
                            const MotionGroup &motion_group);
 
+// 根据 motion_group 获取对应的关节数量
+int GetJointCount(const RobotModel &robot_model, const MotionGroup &motion_group);
+
 Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary);
 
 // 浮点数近似相等判断 (绝对+相对容差)
@@ -130,5 +134,36 @@ inline int FloatCompare(double a, double b, double tol = 1e-9) noexcept {
     if (std::abs(diff) <= tol) return 0;
     return diff < 0 ? -1 : 1;
 }
+
+// 线性插值器：用于在高低频率控制线程间平滑过渡
+// 例如：250Hz规划层到1kHz力控层的插值
+class LinearInterpolator {
+public:
+    LinearInterpolator(int interpolation_steps);
+
+    // 执行一次插值计算，返回插值后的位置
+    // Call every control cycle (1kHz)
+    VectorDof Interpolate(const VectorDof &target_position);
+
+    bool TargetChanged(const VectorDof &target_position) const {
+        for (int i = 0; i < target_position.size(); ++i) {
+            if (!FloatEqual(target_position[i], target_position_[i])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 重置插值器状态
+    void Reset();
+
+private:
+    int interpolation_steps_;        // 插值步数 (例如 4 表示 250Hz->1kHz 的 4 个周期)
+    VectorDof pre_target_position_;  // 插值起始位置，也记录上一次的目标位置
+    VectorDof target_position_;      // 插值目标位置
+
+    int counter_ = 0;      // 当前插值计数器
+    bool inited_ = false;  // 是否已初始化
+};
 }  // namespace utils
 }  // namespace robot_server_lib

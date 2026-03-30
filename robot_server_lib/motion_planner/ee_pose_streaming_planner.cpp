@@ -38,8 +38,8 @@ ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasureme
         output_joint_cmd.acceleration.setZero();
         output_joint_cmd.torque_feedforward.setZero();
         auto time_interval = (time_meta.current_time.time_in_ns() - request_start_time_.time_in_ns()) * 1e-9;
-        return time_interval < StreamingCommandTimeout ? ComputeCommandStatus::TaskOngoing
-                                                       : ComputeCommandStatus::TaskFinished;
+        return time_interval < streaming_timeout_ ? ComputeCommandStatus::TaskOngoing
+                                                  : ComputeCommandStatus::TaskFinished;
     }
 
     const StreamingCommand &latest_cmd = runtime_.latest_cmd.value();
@@ -48,7 +48,7 @@ ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasureme
     bool is_timeout = false;
     if (latest_cmd.received_time.is_valid()) {
         auto time_interval = (time_meta.current_time.time_in_ns() - latest_cmd.received_time.time_in_ns()) * 1e-9;
-        is_timeout = time_interval > StreamingCommandTimeout;
+        is_timeout = time_interval > streaming_timeout_;
     }
     runtime_.streaming_finished = latest_cmd.streaming_finished || is_timeout;
 
@@ -113,6 +113,13 @@ bool EEPoseStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
     auto move_request = std::get<MoveRequest>(request.data.value());
     SetMotionGroup(move_request.motion_group);
+
+    // 超时时间设置
+    if (move_request.streaming_timeout.has_value()) {
+        streaming_timeout_ = move_request.streaming_timeout.value();
+    } else {
+        streaming_timeout_ = DefaultStreamingTimeout;
+    }
 
     runtime_.request_id = request.request_id;
     runtime_.streaming_finished = false;

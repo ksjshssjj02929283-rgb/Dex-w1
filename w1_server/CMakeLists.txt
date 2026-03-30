@@ -5,7 +5,7 @@ project(w1_server)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Release)
-set(W1_SERVER_VERSION "0.3.1")
+set(W1_SERVER_VERSION "0.4.0")
 
 # 如果系统安装了 ccache 则启用，否则保持不启用
 find_program(CCACHE_PROGRAM ccache)
@@ -137,43 +137,29 @@ install(
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# robot.cfg：如果目标已存在则跳过安装
-set(ROBOT_CFG_INSTALL_PATH
-    "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/robot.cfg"
+install(
+  FILES robot.cfg
+  DESTINATION share/${PROJECT_NAME}
+)
+install(
+  FILES chassis.cfg
+  DESTINATION share/${PROJECT_NAME}
 )
 
-if(EXISTS "${ROBOT_CFG_INSTALL_PATH}")
-  message(STATUS
-    "[${PROJECT_NAME}] robot.cfg already exists at install destination, skipping install."
-  )
-else()
-  message(STATUS
-    "[${PROJECT_NAME}] robot.cfg not found at install destination, will be installed."
-  )
-  install(
-    FILES robot.cfg
-    DESTINATION share/${PROJECT_NAME}
-  )
-endif()
-
-# chassis.cfg：临时增加底盘类型配置
-set(ROBOT_CFG_INSTALL_PATH
-    "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/chassis.cfg"
+# feedback 可执行文件
+add_executable(feedback tools/feedback.cpp)
+target_include_directories(feedback PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/utils>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../robot_server_lib/utils>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../robot_server_lib>
 )
-
-if(EXISTS "${ROBOT_CFG_INSTALL_PATH}")
-  message(STATUS
-    "[${PROJECT_NAME}] chassis.cfg already exists at install destination, skipping install."
-  )
-else()
-  message(STATUS
-    "[${PROJECT_NAME}] chassis.cfg not found at install destination, will be installed."
-  )
-  install(
-    FILES chassis.cfg
-    DESTINATION share/${PROJECT_NAME}
-  )
-endif()
+ament_target_dependencies(feedback PUBLIC robot_server_lib)
+target_link_libraries(feedback PUBLIC
+    Threads::Threads
+    rt
+    Eigen3::Eigen
+)
+install(TARGETS feedback DESTINATION lib/${PROJECT_NAME})
 
 
 ament_package()

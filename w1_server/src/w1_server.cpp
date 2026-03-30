@@ -7,19 +7,30 @@
 
 namespace robot_server_lib {
 
-RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, bool is_a1_mode)
-    : RobotServerBase(robot_cfg_path, is_sim), is_a1_mode_(is_a1_mode) {
+RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, RobotMode robot_mode)
+    : RobotServerBase(robot_cfg_path, is_sim),
+      robot_mode_(robot_mode),
+      line_interpolator_(manager_dt_micro / torque_ctrl_dt_micro) {
     LOG_INFO << "w1_server version: " << W1_SERVER_VERSION;
 
-    // 根据传入参数设置A1模式
-    if (is_a1_mode_) {
-        ndof_config_ = 14;
-        LOG_INFO << "A1 模式已启用，实际关节数: " << ndof_config_;
-        RCLCPP_INFO(this->get_logger(), "A1 模式已启用，实际关节数: %d", ndof_config_);
-    } else {
-        ndof_config_ = ndof_robot;
-        LOG_INFO << "W1 模式已启用，实际关节数: " << ndof_config_;
-        RCLCPP_INFO(this->get_logger(), "W1 模式已启用，实际关节数: %d", ndof_config_);
+    // 根据传入参数设置模式
+    switch (robot_mode_) {
+        case RobotMode::Arm:
+            ndof_config_ = 7;
+            LOG_INFO << "Arm 模式已启用，实际关节数: " << ndof_config_;
+            RCLCPP_INFO(this->get_logger(), "Arm 模式已启用，实际关节数: %d", ndof_config_);
+            break;
+        case RobotMode::A1:
+            ndof_config_ = 14;
+            LOG_INFO << "A1 模式已启用，实际关节数: " << ndof_config_;
+            RCLCPP_INFO(this->get_logger(), "A1 模式已启用，实际关节数: %d", ndof_config_);
+            break;
+        case RobotMode::W1:
+        default:
+            ndof_config_ = ndof_robot;
+            LOG_INFO << "W1 模式已启用，实际关节数: " << ndof_config_;
+            RCLCPP_INFO(this->get_logger(), "W1 模式已启用，实际关节数: %d", ndof_config_);
+            break;
     }
 
     // 创建 /feedback/joint 发布器
@@ -37,8 +48,8 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, bool
     position_control_subscriber_ = this->create_subscription<JointPositionControlMsg>(
         "/control/joint_position", 10, std::bind(&RobotServer::PositionControlCallback, this, std::placeholders::_1));
 
-    // A1 模式下不创建底盘订阅器
-    if (!is_a1_mode_) {
+    // A1/Arm 模式下不创建底盘订阅器
+    if (robot_mode_ == RobotMode::W1) {
         // 创建 /control/omni_chassis 订阅器
         omni_chassis_control_subscriber_ = this->create_subscription<ChassisWholeControlMsg>(
             "/control/omni_chassis", 10,
@@ -52,9 +63,12 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, bool
         // 创建 /control/cmd_vel 订阅器
         diff_chassis_control_subscriber_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "/control/cmd_vel", 10, std::bind(&RobotServer::DiffChassisControlCallback, this, std::placeholders::_1));
-        chassis_shaper_ = std::make_unique<EIInputShaper>(chassis_shaper_type_, DiffChassisNatureFreq, torque_ctrl_dt,
+        chassis_shaper_ = std::make_shared<EIInputShaper>(chassis_shaper_type_, DiffChassisNatureFreq, torque_ctrl_dt,
                                                           DiffChassisMaxRampRpm);
     }
+
+    // 初始化整形器状态追踪变量
+    prev_chassis_shaper_enabled_ = enable_chassis_shaper_.load();
 
     force_subscriber_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
         "force_array", rclcpp::QoS(10), std::bind(&RobotServer::ForceArrayCallback, this, std::placeholders::_1));
@@ -69,14 +83,25 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, bool
     // 创建定时器，定时发布feedback 定时器回调函数
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
 
+    // 初始化巴特沃斯滤波器和滤波开关
     for (int i = 0; i < ndof_robot; ++i) {
-        butterworth_filter_[i] = std::make_shared<ButterworthFilter>();
+        butterworth_filter_[i] = std::make_shared<ButterworthFilter>(butterworth_filter_frequency_[i]);
+        input_shapers_[i] = std::make_shared<EIInputShaper>(input_shaper_type_, input_shaper_frequency_[i],
+                                                            torque_ctrl_dt, input_shaper_max_ramp_rad_per_sec);
     }
 
     // 初始化力传感器
-    // primary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB2");
-    // secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");
-
+    // primary_sensor_ = std::make_shared<SriForceSensor>();
+    // if (!primary_sensor_->Init(460800)) {
+    //     RCLCPP_WARN(this->get_logger(), "Failed to initialize primary force sensor");
+    //     LOG_WARN << "Failed to initialize primary force sensor";
+    //     primary_sensor_ = nullptr;
+    // } else {
+    //     primary_sensor_ready_ = true;
+    //     RCLCPP_INFO(this->get_logger(), "Primary force sensor initialized successfully");
+    //     LOG_INFO << "Primary force sensor initialized successfully";
+    // }
+    // secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");  // 暂未使用
     this->Run();
 }
 
@@ -96,12 +121,23 @@ void RobotServer::ForceArrayCallback(const std_msgs::msg::Float64MultiArray::Sha
 void RobotServer::InitParamConfig() {
     auto config_path = server_data_dir_ / "w1_config.json";
 
-    const std::set<std::string> kAllowedRootKeys{"enable_ruckig", "enable_chassis_shaper"};
+    const std::set<std::string> kAllowedRootKeys{
+        "enable_ruckig", "enable_chassis_shaper",     "enable_input_shaper",         "input_shaper_frequency",
+        "enable_record", "enable_butterworth_filter", "butterworth_filter_frequency"};
 
     nlohmann::json root;
     if (!std::filesystem::exists(config_path)) {
         root["enable_ruckig"] = this->enable_ruckig_;
-        root["enable_chassis_shaper"] = this->enable_chassis_shaper_;
+        root["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
+        root["enable_input_shaper"] =
+            std::vector<bool>(this->enable_input_shaper_, this->enable_input_shaper_ + ndof_robot);
+        root["input_shaper_frequency"] =
+            std::vector<double>(this->input_shaper_frequency_, this->input_shaper_frequency_ + ndof_robot);
+        root["enable_record"] = this->enable_record_;
+        root["enable_butterworth_filter"] =
+            std::vector<bool>(this->enable_butterworth_filter_, this->enable_butterworth_filter_ + ndof_robot);
+        root["butterworth_filter_frequency"] =
+            std::vector<double>(this->butterworth_filter_frequency_, this->butterworth_filter_frequency_ + ndof_robot);
 
         std::ofstream ofs(config_path);
         ofs << root.dump(2);
@@ -131,27 +167,137 @@ void RobotServer::InitParamConfig() {
         need_rewrite = true;
     }
     if (!root.contains("enable_chassis_shaper")) {
-        root["enable_chassis_shaper"] = this->enable_chassis_shaper_;
+        root["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
+        need_rewrite = true;
+    }
+    if (!root.contains("enable_input_shaper")) {
+        root["enable_input_shaper"] =
+            std::vector<bool>(this->enable_input_shaper_, this->enable_input_shaper_ + ndof_robot);
+        need_rewrite = true;
+    }
+    if (!root.contains("input_shaper_frequency")) {
+        root["input_shaper_frequency"] =
+            std::vector<double>(this->input_shaper_frequency_, this->input_shaper_frequency_ + ndof_robot);
+        need_rewrite = true;
+    }
+    if (!root.contains("enable_record")) {
+        root["enable_record"] = this->enable_record_;
+        need_rewrite = true;
+    }
+    if (!root.contains("enable_butterworth_filter")) {
+        root["enable_butterworth_filter"] =
+            std::vector<bool>(this->enable_butterworth_filter_, this->enable_butterworth_filter_ + ndof_robot);
+        need_rewrite = true;
+    }
+    if (!root.contains("butterworth_filter_frequency")) {
+        root["butterworth_filter_frequency"] =
+            std::vector<double>(this->butterworth_filter_frequency_, this->butterworth_filter_frequency_ + ndof_robot);
         need_rewrite = true;
     }
 
     this->enable_ruckig_ = root.value("enable_ruckig", this->enable_ruckig_);
-    this->enable_chassis_shaper_ = root.value("enable_chassis_shaper", this->enable_chassis_shaper_);
+    this->enable_chassis_shaper_ = root.value("enable_chassis_shaper", this->enable_chassis_shaper_.load());
+    this->enable_record_ = root.value("enable_record", this->enable_record_);
+
+    // 读取 enable_input_shaper 数组
+    auto input_shaper_array = root.value(
+        "enable_input_shaper", std::vector<bool>(this->enable_input_shaper_, this->enable_input_shaper_ + ndof_robot));
+    for (int i = 0; i < ndof_robot && i < static_cast<int>(input_shaper_array.size()); ++i) {
+        this->enable_input_shaper_[i] = input_shaper_array[i];
+    }
+
+    // 读取 input_shaper_frequency 数组
+    auto torso_freq_array =
+        root.value("input_shaper_frequency",
+                   std::vector<double>(this->input_shaper_frequency_, this->input_shaper_frequency_ + ndof_robot));
+    for (int i = 0; i < ndof_robot && i < static_cast<int>(torso_freq_array.size()); ++i) {
+        this->input_shaper_frequency_[i] = torso_freq_array[i];
+    }
+
+    // 读取 enable_butterworth_filter 数组
+    auto filter_array =
+        root.value("enable_butterworth_filter",
+                   std::vector<bool>(this->enable_butterworth_filter_, this->enable_butterworth_filter_ + ndof_robot));
+    for (int i = 0; i < ndof_robot && i < static_cast<int>(filter_array.size()); ++i) {
+        this->enable_butterworth_filter_[i] = filter_array[i];
+    }
+
+    // 读取 butterworth_filter_frequency 数组
+    auto filter_freq_array = root.value(
+        "butterworth_filter_frequency",
+        std::vector<double>(this->butterworth_filter_frequency_, this->butterworth_filter_frequency_ + ndof_robot));
+    for (int i = 0; i < ndof_robot && i < static_cast<int>(filter_freq_array.size()); ++i) {
+        this->butterworth_filter_frequency_[i] = filter_freq_array[i];
+    }
 
     nlohmann::json root_clean;
     root_clean["enable_ruckig"] = this->enable_ruckig_;
-    root_clean["enable_chassis_shaper"] = this->enable_chassis_shaper_;
+    root_clean["enable_chassis_shaper"] = this->enable_chassis_shaper_.load();
+    root_clean["enable_input_shaper"] =
+        std::vector<bool>(this->enable_input_shaper_, this->enable_input_shaper_ + ndof_robot);
+    root_clean["input_shaper_frequency"] =
+        std::vector<double>(this->input_shaper_frequency_, this->input_shaper_frequency_ + ndof_robot);
+    root_clean["enable_record"] = this->enable_record_;
+    root_clean["enable_butterworth_filter"] =
+        std::vector<bool>(this->enable_butterworth_filter_, this->enable_butterworth_filter_ + ndof_robot);
+    root_clean["butterworth_filter_frequency"] =
+        std::vector<double>(this->butterworth_filter_frequency_, this->butterworth_filter_frequency_ + ndof_robot);
 
     if (need_rewrite) {
         std::ofstream ofs(config_path);
         ofs << root_clean.dump(2);
     }
 
-    RCLCPP_INFO(this->get_logger(), "Loaded w1_config.json from: %s (enable_ruckig=%s, enable_chassis_shaper=%s)",
+    // 生成 enable_input_shaper 数组的字符串表示
+    std::string input_shaper_str = "[";
+    for (int i = 0; i < ndof_robot; ++i) {
+        input_shaper_str += (this->enable_input_shaper_[i] ? "true" : "false");
+        if (i < ndof_robot - 1) input_shaper_str += ", ";
+    }
+    input_shaper_str += "]";
+
+    // 生成 input_shaper_frequency 数组的字符串表示
+    std::string input_shaper_frequency_str = "[";
+    for (int i = 0; i < ndof_robot; ++i) {
+        input_shaper_frequency_str += std::to_string(this->input_shaper_frequency_[i]);
+        if (i < ndof_robot - 1) input_shaper_frequency_str += ", ";
+    }
+    input_shaper_frequency_str += "]";
+
+    // 生成 enable_butterworth_filter 数组的字符串表示
+    std::string filter_str = "[";
+    for (int i = 0; i < ndof_robot; ++i) {
+        filter_str += (this->enable_butterworth_filter_[i] ? "true" : "false");
+        if (i < ndof_robot - 1) filter_str += ", ";
+    }
+    filter_str += "]";
+
+    // 生成 butterworth_filter_frequency 数组的字符串表示
+    std::string filter_freq_str = "[";
+    for (int i = 0; i < ndof_robot; ++i) {
+        filter_freq_str += std::to_string(this->butterworth_filter_frequency_[i]);
+        if (i < ndof_robot - 1) filter_freq_str += ", ";
+    }
+    filter_freq_str += "]";
+
+    RCLCPP_INFO(this->get_logger(),
+                "Loaded w1_config.json from: %s \n"
+                "enable_ruckig=%s, \n"
+                "enable_chassis_shaper=%s, \n"
+                "enable_input_shaper=%s, \n"
+                "input_shaper_frequency=%s, \n"
+                "enable_record=%s, \n"
+                "enable_butterworth_filter=%s, \n"
+                "butterworth_filter_frequency=%s)",
                 config_path.string().c_str(), this->enable_ruckig_ ? "true" : "false",
-                this->enable_chassis_shaper_ ? "true" : "false");
+                this->enable_chassis_shaper_.load() ? "true" : "false", input_shaper_str.c_str(),
+                input_shaper_frequency_str.c_str(), this->enable_record_ ? "true" : "false", filter_str.c_str(),
+                filter_freq_str.c_str());
     LOG_INFO << "Loaded w1_config.json from: " << config_path << ", enable_ruckig=" << this->enable_ruckig_
-             << ", enable_chassis_shaper=" << this->enable_chassis_shaper_;
+             << ", enable_chassis_shaper=" << this->enable_chassis_shaper_.load()
+             << ", enable_input_shaper=" << input_shaper_str
+             << ", input_shaper_frequency=" << input_shaper_frequency_str << ", enable_record=" << this->enable_record_
+             << ", enable_butterworth_filter=" << filter_str << ", butterworth_filter_frequency=" << filter_freq_str;
 }
 
 void RobotServer::TorqueControlThreadFunc() {
@@ -174,11 +320,11 @@ void RobotServer::TorqueControlThreadFunc() {
         // 读取力传感器数据
         Vector6d sensor_data_primary = Vector6d::Zero();
         Vector6d sensor_data_secondary = Vector6d::Zero();
-        if (primary_sensor_) {
-            primary_sensor_->Read(sensor_data_primary);
+        if (primary_sensor_ && primary_sensor_ready_) {
+            primary_sensor_->PeekLatest(&sensor_data_primary);
         }
-        if (secondary_sensor_) {
-            secondary_sensor_->Read(sensor_data_secondary);
+        if (secondary_sensor_ && secondary_sensor_ready_) {
+            secondary_sensor_->PeekLatest(&sensor_data_secondary);
         }
 
         // 叠加手动输入的力数据
@@ -188,9 +334,11 @@ void RobotServer::TorqueControlThreadFunc() {
         RobotFeedback feedback_temp{};
         bool ret = feedback_shm_instance.PeekLatest(&feedback_temp) && feedback_temp.cnt > 0;
 
-        // 如果A1 模式：将14关节反馈展开为20关节虚拟反馈
+        // 如果A1/Arm模式：将反馈展开为20关节虚拟反馈
         if (ret) {
-            if (is_a1_mode_) {
+            if (robot_mode_ == RobotMode::Arm) {
+                Expand7ToVirtual20(feedback_temp, robot_feedback_);
+            } else if (robot_mode_ == RobotMode::A1) {
                 Expand14ToVirtual20(feedback_temp, robot_feedback_);
             } else {
                 robot_feedback_ = feedback_temp;
@@ -203,20 +351,38 @@ void RobotServer::TorqueControlThreadFunc() {
         if (ret) {
             this->SwitchControlWord();
         }
-        // 如果开启了记录, 则在日志中记录数据
-        if (this->enable_record_ && manager_state_ == Status::Running && loop_counter % 4 == 0) {
-            int idx_offset = is_a1_mode_ ? first_arm_joint_index_ : 0;
-            LOG_INFO << "{ \"joint_position\": "
-                     << utils::VectorToJsonArrayString(robot_feedback_.position, idx_offset, ndof_robot).str()
-                     << ", \"joint_velocity\": "
-                     << utils::VectorToJsonArrayString(robot_feedback_.velocity, idx_offset, ndof_robot).str()
-                     << ", \"joint_torque\":"
-                     << utils::VectorToJsonArrayString(robot_feedback_.torque, idx_offset, ndof_robot).str()
-                     << ", \"joint_position_cmd\": "
-                     << utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_robot).str()
-                     << ", \"joint_torque_feedforward\": "
-                     << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, idx_offset, ndof_robot).str()
-                     << "}";
+        // 如果开启了记录, 则在独立的记录日志中记录数据
+        if (this->enable_record_ && manager_state_ == Status::Running && loop_counter % 1 == 0) {
+            int idx_offset = (robot_mode_ != RobotMode::W1) ? first_arm_joint_index_ : 0;
+            double timestamp_s = this->now().nanoseconds() / 1e9;
+            // 获取上一个周期的规划命令（用于日志记录）
+
+            nanolog::NanoLogLine logline(nanolog::LogLevel::CRIT, __FILE__, __func__, __LINE__, false);
+            logline << "{\"timestamp\": \"" << std::to_string(timestamp_s) << "\", "
+                    << "\"joint_position\": "
+                    << utils::VectorToJsonArrayString(robot_feedback_.position, idx_offset, ndof_config_).str()
+                    << ", \"joint_velocity\": "
+                    << utils::VectorToJsonArrayString(robot_feedback_.velocity, idx_offset, ndof_config_).str()
+                    << ", \"joint_torque\":"
+                    << utils::VectorToJsonArrayString(robot_feedback_.torque, idx_offset, ndof_config_).str()
+                    << ", \"joint_position_input\": "
+                    << utils::VectorToJsonArrayString(joint_position_before_filter_, idx_offset, ndof_config_).str()
+                    << ", \"joint_position_before_filter\": "
+                    << utils::VectorToJsonArrayString(joint_position_before_filter_, idx_offset, ndof_config_).str()
+                    << ", \"joint_position_after_filter\": "
+                    << utils::VectorToJsonArrayString(joint_position_after_filter_, idx_offset, ndof_config_).str()
+                    << ", \"joint_position_cmd\": "
+                    << utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str()
+                    << ", \"joint_torque_feedforward\": "
+                    << utils::VectorToJsonArrayString(robot_control_.torque_feedforward, idx_offset, ndof_config_).str()
+                    << ", \"chassis_target_left_velocity\": " << chassis_control_target_.chassis_left_velocity
+                    << ", \"chassis_target_right_velocity\": " << chassis_control_target_.chassis_right_velocity
+                    << ", \"chassis_cmd_left_velocity\": " << robot_control_.chassis_left_velocity
+                    << ", \"chassis_cmd_right_velocity\": " << robot_control_.chassis_right_velocity
+                    << ", \"chassis_feedback_left_velocity\": " << robot_feedback_.chassis_feedback.left_velocity
+                    << ", \"chassis_feedback_right_velocity\": " << robot_feedback_.chassis_feedback.right_velocity
+                    << "}";
+            nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
         }
         // 如果机器人就绪，则写入测量数据
         if (this->is_robot_ready_) {
@@ -253,17 +419,19 @@ void RobotServer::TorqueControlThreadFunc() {
         torque_controller_manager.LoopOnce();
 
         // 获取并写入控制数据: 关节位置, 速度, 关节力矩限制, 外部力矩
-        PlannerManagerCommand planner_cmd{};
         TorqueCtrlCommand torque_cmd{};
+        this->planner_cmd_ = PlannerManagerCommand{};  // 默认值，避免未写入时使用了旧数据
         this->is_cmd_valid_ = false;
         this->manager_buffers_.planner_manager_info->PeekLatest(&this->manager_info_);
-        if (this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd) &&
+        if (this->manager_buffers_.planner_manager_command->PeekLatest(&this->planner_cmd_) &&
             this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd)) {
             this->is_cmd_valid_ = true;
+            // 位置指令线性插值
+            VectorDof interpolated_position = line_interpolator_.Interpolate(this->planner_cmd_.cmd.position);
             JointMeasurement manager_measurement{};
             for (int i = 0; i < ndof_robot; ++i) {
-                this->robot_control_.position[i] = planner_cmd.cmd.position[i];
-                this->robot_control_.velocity[i] = planner_cmd.cmd.velocity[i];
+                this->robot_control_.position[i] = interpolated_position[i];
+                this->robot_control_.velocity[i] = this->planner_cmd_.cmd.velocity[i];
                 this->robot_control_.positive_torque_limit[i] = torque_limit_.positive_limit_Nm[i];
                 this->robot_control_.negative_torque_limit[i] = torque_limit_.negative_limit_Nm[i];
                 switch (this->manager_info_.robot_property.run_mode) {
@@ -279,6 +447,7 @@ void RobotServer::TorqueControlThreadFunc() {
                                 if (i >= first_arm_joint_index_) {
                                     manager_measurement.q_desired_pre[i] = robot_feedback_.position[i];
                                     this->robot_control_.position[i] = robot_feedback_.position[i];
+                                    line_interpolator_.Reset();
                                 }
                                 manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
                             }
@@ -357,12 +526,28 @@ void RobotServer::TorqueControlThreadFunc() {
                         assert(false && "Unknown RunMode");
                         break;
                 }
-                // 滤波关节位置指令
-                robot_control_.position[i] = butterworth_filter_[i]->Apply(robot_control_.position[i]);
+                joint_position_before_filter_[i] = this->robot_control_.position[i];
+                // 对所有关节应用巴特沃斯滤波 (在 EI 输入整形之前)
+                if (this->enable_butterworth_filter_[i]) {
+                    robot_control_.position[i] = butterworth_filter_[i]->Apply(robot_control_.position[i]);
+                } else {
+                    butterworth_filter_[i]
+                        ->Reset();  // 如果当前关节不启用滤波器，则重置滤波器状态，避免下次启用时的突变
+                }
+                joint_position_after_filter_[i] = this->robot_control_.position[i];
+
+                // 对所有关节应用 EI 输入整形
+                if (this->enable_input_shaper_[i]) {
+                    robot_control_.position[i] = input_shapers_[i]->Apply(robot_control_.position[i]);
+                } else {
+                    input_shapers_[i]->Reset();  // 如果当前关节不启用输入整形，则重置状态
+                }
             }
         } else {
+            line_interpolator_.Reset();
             for (int i = 0; i < ndof_robot; ++i) {
-                this->butterworth_filter_[i]->Reset();  // 重置滤波器状态
+                butterworth_filter_[i]->Reset();  // 重置滤波器状态
+                input_shapers_[i]->Reset();       // 重置输入整形器状态
             }
         }
         // 如果状态字发生变化了则打印
@@ -384,7 +569,11 @@ void RobotServer::TorqueControlThreadFunc() {
         }
 
         // 底盘控制：应用输入整形并写入共享内存
-        if (is_a1_mode_) {
+        if (robot_mode_ == RobotMode::Arm) {
+            RobotControl arm_control{};
+            ExtractVirtual20To7(robot_control_, arm_control);
+            control_shm_instance.AppendNewElement(arm_control);
+        } else if (robot_mode_ == RobotMode::A1) {
             RobotControl a1_control{};
             ExtractVirtual20To14(robot_control_, a1_control);
             control_shm_instance.AppendNewElement(a1_control);
@@ -394,7 +583,15 @@ void RobotServer::TorqueControlThreadFunc() {
 
             if (chassis_control_target_.chassis_mode == 1) {
                 // 差速模式：对左右轮速度应用输入整形
-                if (enable_chassis_shaper_) {
+                bool current_chassis_enabled = enable_chassis_shaper_.load();
+                if (current_chassis_enabled != prev_chassis_shaper_enabled_) {
+                    chassis_shaper_->Reset();
+                    prev_chassis_shaper_enabled_ = current_chassis_enabled;
+                    RCLCPP_INFO(this->get_logger(), "Chassis shaper %s, buffer reset",
+                                current_chassis_enabled ? "enabled" : "disabled");
+                }
+                // 应用整形
+                if (current_chassis_enabled) {
                     auto [shaper_left, shaper_right] = chassis_shaper_->Apply(
                         chassis_control_target_.chassis_left_velocity, chassis_control_target_.chassis_right_velocity);
                     robot_control_.chassis_left_velocity = shaper_left;
@@ -425,6 +622,19 @@ void RobotServer::TorqueControlThreadFunc() {
 
 void RobotServer::SwitchControlWord() {
     static bool inited = false;
+    // 0. Sleep 模式下进入QUICK_STOP，阻止写入measurement
+    if (this->manager_info_.robot_property.run_mode == RunMode::Sleep) {
+        this->is_robot_ready_ = false;
+        line_interpolator_.Reset();
+        robot_control_.robot_control_word = CTRLWORD_MOTOR_QUICK_STOP;
+        for (int i = 0; i < ndof_robot; i++) {
+            this->robot_control_.position[i] = this->robot_feedback_.position[i];
+            this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
+            this->robot_control_.negative_torque_limit[i] = this->torque_limit_.negative_limit_Nm[i];
+        }
+        return;
+    }
+    // 1. 根据状态字切换控制字
     switch (robot_feedback_.robot_status_word) {
         case STATUSWORD_MOTOR_READY:
             // ready状态is_robot_ready_置为true, 可以写入measurement, 生成cmd后再使能电机
@@ -433,6 +643,7 @@ void RobotServer::SwitchControlWord() {
             if (this->is_cmd_valid_) {
                 this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
             } else {
+                line_interpolator_.Reset();
                 for (int i = 0; i < ndof_robot; i++) {
                     this->robot_control_.position[i] = this->robot_feedback_.position[i];
                     this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
@@ -445,6 +656,7 @@ void RobotServer::SwitchControlWord() {
             inited = true;
             this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
             if (!this->is_cmd_valid_) {
+                line_interpolator_.Reset();
                 for (int i = 0; i < ndof_robot; i++) {
                     this->robot_control_.position[i] = this->robot_feedback_.position[i];
                     this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
@@ -456,6 +668,7 @@ void RobotServer::SwitchControlWord() {
         case STATUSWORD_MOTOR_FAULT:
         case STATUSWORD_MOTOR_QUICK_STOP:
         default:
+            line_interpolator_.Reset();
             for (int i = 0; i < ndof_robot; i++) {
                 this->robot_control_.position[i] = this->robot_feedback_.position[i];
                 this->robot_control_.positive_torque_limit[i] = this->torque_limit_.positive_limit_Nm[i];
@@ -463,22 +676,23 @@ void RobotServer::SwitchControlWord() {
             }
             break;
     }
-
+    // 2. 如果初次启动或者状态字是故障，则发送清除故障命令
     if (!inited || manager_info_.robot_property.clear_error_flag) {
         this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CLEAR_FAULT;
     }
 }
 
 void RobotServer::PublishThreadFunc() {
+    if (!is_sim_) {
+        Setup_Realtime(60);
+    }
     JointRawMeasurement raw_measurement;
     Eigen::VectorXd ee_pose;
     Eigen::VectorXd torso_X_Z_RY;
-    PlannerManagerCommand planner_cmd{};
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok()) {
         next_cycle_time_point += std::chrono::microseconds(publish_dt_micro);
         // Publish /feedback/robot_server_state
-
         this->robot_server_state_publisher_->publish(GetRobotServerStateMsg());
         std::this_thread::sleep_until(next_cycle_time_point);
     }
@@ -489,41 +703,54 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
 {
     auto robot_server_state_msg = std_msgs::msg::String();
     uint64_t timestamp_ns = this->now().nanoseconds();
-    // A1模式下数据在虚拟20关节表示中的6-19位置，需要提取
-    int idx_offset = is_a1_mode_ ? first_arm_joint_index_ : 0;
+    // A1/Arm模式下数据在虚拟20关节表示中的6-19位置，需要提取
+    int idx_offset = (robot_mode_ != RobotMode::W1) ? first_arm_joint_index_ : 0;
+    int cart_param_count = (robot_mode_ == RobotMode::Arm) ? 6 : static_cast<int>(this->manager_info_.robot_property.cart_stiffness.size());
     robot_server_state_msg.data =
         std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
         ", \"robot_type\":\"" + this->robot_model_.params_ptr->robot_name + "\"" +
         ", \"robot_version\":\"" + this->robot_model_.params_ptr->robot_version + "\"" +
-        ", \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
-        ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
-        ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
         ",\n  \"status\":\"" + ToString(this->manager_state_) + "\"" +
-        ", \"run_mode\":\"" + ToString(this->manager_info_.robot_property.run_mode) + "\"" +
+        ", \"robot_statusword\":" + utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
+        ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
+        ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, idx_offset, ndof_config_).str() +
+        ",\n  \"motor_error_code\":" + utils::MotorErrorcodeToJsonArrayString(this->robot_feedback_.motor_error_code, idx_offset, ndof_config_).str() +
+        ",\n  \"motor_temperature\":" + utils::VectorToJsonArrayString(this->robot_feedback_.motor_temperature, idx_offset, ndof_config_).str() +
+        ",\n  \"run_mode\":\"" + ToString(this->manager_info_.robot_property.run_mode) + "\"" +
         ", \"server_error_code\":\"" + ToString(this->manager_info_.robot_property.error_code) + "\"" +
         ", \"safe_level\":\"" + std::to_string(this->manager_info_.robot_property.safe_level) + "\"" +
         ", \"global_speed_ratio\":\"" + std::to_string(this->manager_info_.robot_property.global_speed_ratio) + "\"" +
-        ",\n  \"joint_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_stiffness, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_damping\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_damping, idx_offset, ndof_robot).str() +
-        ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness).str() +
-        ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio).str() +
-        ",\n  \"cart_impedance_force\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_impedance_force).str() +
-        ",\n  \"robot_statusword\":" + utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
-        ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
-        ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, idx_offset, ndof_robot).str() +
-        ",\n  \"motor_error_code\":" + utils::MotorErrorcodeToJsonArrayString(this->robot_feedback_.motor_error_code, idx_offset, ndof_robot).str() +
-        ",\n  \"motor_temperature\":" + utils::VectorToJsonArrayString(this->robot_feedback_.motor_temperature, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_position\":" + utils::VectorToJsonArrayString(this->robot_feedback_.position, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_position_cmd\":" + utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_velocity\":" + utils::VectorToJsonArrayString(this->robot_feedback_.velocity, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_velocity_cmd\":" + utils::VectorToJsonArrayString(this->robot_control_.velocity, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(this->robot_feedback_.torque, idx_offset, ndof_robot).str() +
-        ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(this->robot_control_.torque_feedforward, idx_offset, ndof_robot).str() +
+        ",\n  \"joint_position\":" + utils::VectorToJsonArrayString(this->robot_feedback_.position, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_position_cmd\":" + utils::VectorToJsonArrayString(robot_control_.position, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_velocity\":" + utils::VectorToJsonArrayString(this->robot_feedback_.velocity, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_velocity_cmd\":" + utils::VectorToJsonArrayString(this->robot_control_.velocity, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(this->robot_feedback_.torque, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(this->robot_control_.torque_feedforward, idx_offset, ndof_config_).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
-        ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(this->robot_control_.negative_torque_limit, idx_offset, ndof_robot).str() +
-        ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(this->robot_control_.positive_torque_limit, idx_offset, ndof_robot).str() +
-        ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_measurement).str() +
-        ",\n  \"torso_pose_X_Z_RY\":" + utils::VectorToJsonArrayString(this->manager_info_.torso_pose_measurement).str() + "}";
+        ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(this->robot_control_.negative_torque_limit, idx_offset, ndof_config_).str() +
+        ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(this->robot_control_.positive_torque_limit, idx_offset, ndof_config_).str() +
+        ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_measurement, 0, cart_param_count).str() +
+        ",\n  \"torso_pose_X_Z_RY\":" + utils::VectorToJsonArrayString(this->manager_info_.torso_pose_measurement, 0, cart_param_count).str() +
+        ",\n  \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+        ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
+        ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
+        ",\n  \"joint_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_stiffness, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_damping\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_damping, idx_offset, ndof_config_).str() +
+        ",\n  \"joint_integral_ratio\":" + std::to_string(this->manager_info_.robot_property.joint_integral_ratio) +
+        ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness, 0, cart_param_count).str() +
+        ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio, 0, cart_param_count).str() +
+        ",\n  \"cart_impedance_force\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_impedance_force, 0, cart_param_count).str() +
+        ",\n  \"chassis_status_word\":" + std::to_string(this->robot_feedback_.chassis_feedback.status_word) +
+        ", \"chassis_error_code_left\":" + std::to_string(this->robot_feedback_.chassis_feedback.error_code_left) +
+        ", \"chassis_error_code_right\":" + std::to_string(this->robot_feedback_.chassis_feedback.error_code_right) +
+        ",\n \"chassis_left_velocity\":" + std::to_string(this->robot_feedback_.chassis_feedback.left_velocity) +
+        ", \"chassis_right_velocity\":" + std::to_string(this->robot_feedback_.chassis_feedback.right_velocity) +
+        ", \"chassis_left_current\":" + std::to_string(this->robot_feedback_.chassis_feedback.left_current) +
+        ", \"chassis_right_current\":" + std::to_string(this->robot_feedback_.chassis_feedback.right_current) +
+        ",\n \"chassis_driver_temperature\":" + std::to_string(this->robot_feedback_.chassis_feedback.driver_temperature) +
+        ", \"chassis_left_temperature\":" + std::to_string(this->robot_feedback_.chassis_feedback.left_temperature) +
+        ", \"chassis_right_temperature\":" + std::to_string(this->robot_feedback_.chassis_feedback.right_temperature) +
+        "}";
     return robot_server_state_msg;
 }
 // clang-format on
@@ -538,8 +765,8 @@ void RobotServer::PublishFeedback() {
     feedback_msg.velocity.resize(ndof_config_);
     feedback_msg.effort.resize(ndof_config_);
 
-    // A1模式下数据在虚拟20关节表示中的6-19位置，需要提取
-    int idx_offset = is_a1_mode_ ? first_arm_joint_index_ : 0;
+    // A1/Arm模式下数据在虚拟20关节表示中的6-19位置，需要提取
+    int idx_offset = (robot_mode_ != RobotMode::W1) ? first_arm_joint_index_ : 0;
     for (int i = 0; i < ndof_config_; ++i) {
         feedback_msg.name[i] = ecat_joint_name_[idx_offset + i];
         feedback_msg.position[i] = robot_feedback_.position[idx_offset + i];
@@ -620,7 +847,7 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
             planner_request.type = RequestType::StartJointStreaming;
             MoveRequest move_request;
             move_request.motion_group = MotionGroup::WholeBody;
-            move_request.optional_mode = enable_ruckig_ ? false : true;  // true: no ruckig 模式, false: ruckig 模式
+            move_request.use_ruckig = enable_ruckig_;
             planner_request.data = move_request;
             streaming_request_id_ = StartStreaming(planner_request);
         }
@@ -640,9 +867,8 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
     bool position_valid = true;
     for (size_t i = 0; i < msg->name.size(); ++i) {
         for (int j = 0; j < ndof_robot; ++j) {
-            if (ecat_joint_name_[j] == msg->name[i]) {
-                if (std::abs(robot_control_temp.position[j] - msg->position[i]) > position_diff_threshold_ &&
-                    position_valid) {
+            if (ecat_joint_name_[j] == msg->name[i] && position_valid) {
+                if (std::abs(robot_control_temp.position[j] - msg->position[i]) > position_diff_threshold_) {
                     RCLCPP_WARN(
                         this->get_logger(),
                         "Control command for joint %s rejected: position difference %.4f exceeds threshold %.4f",
@@ -654,7 +880,7 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
                     position_valid = false;
                 }
                 robot_control_temp.position[j] = msg->position[i];
-                break;
+                break;  // 已经找到并处理了对应的关节，跳出内层循环继续处理下一个输入关节
             }
         }
     }
@@ -665,7 +891,8 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
             planner_request.type = RequestType::StartJointStreaming;
             MoveRequest move_request;
             move_request.motion_group = MotionGroup::WholeBody;
-            move_request.optional_mode = enable_ruckig_ ? false : true;  // true: no ruckig 模式, false: ruckig 模式
+            move_request.use_ruckig = enable_ruckig_;
+            move_request.streaming_timeout = streaming_timeout_;
             planner_request.data = move_request;
             streaming_request_id_ = StartStreaming(planner_request);
         }
@@ -679,6 +906,7 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
         }
     }
 }
+
 void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
     RCLCPP_INFO(this->get_logger(), "/control/debug message received: %s", msg->data.c_str());
     LOG_INFO << "/control/debug message received: " << msg->data;
@@ -686,22 +914,35 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
     try {
         const auto json_data = nlohmann::json::parse(msg->data);
 
-        auto get_bool_value = [](const nlohmann::json &obj, const char *key) -> bool {
-            if (!obj.contains(key)) return false;
+        auto get_bool_value = [](const nlohmann::json &obj, const char *key) -> std::optional<bool> {
+            if (!obj.contains(key)) return std::nullopt;
             const auto &v = obj[key];
             if (v.is_boolean()) return v.get<bool>();
             if (v.is_number_integer()) return v.get<int>() != 0;
-            return false;
+            return std::nullopt;
         };
 
         auto update_bool_param = [this, &json_data, &get_bool_value](const char *key, bool &param) {
-            param = get_bool_value(json_data, key);
-            RCLCPP_INFO(this->get_logger(), "%s set to %s", key, param ? "true" : "false");
-            LOG_INFO << key << " set to " << (param ? "true" : "false");
+            auto value = get_bool_value(json_data, key);
+            if (value.has_value()) {
+                param = value.value();
+                RCLCPP_INFO(this->get_logger(), "%s set to %s", key, param ? "true" : "false");
+                LOG_INFO << key << " set to " << (param ? "true" : "false");
+            }
+        };
+
+        auto update_atomic_bool_param = [this, &json_data, &get_bool_value](const char *key, std::atomic<bool> &param) {
+            auto value = get_bool_value(json_data, key);
+            if (value.has_value()) {
+                bool bool_value = value.value();
+                param.store(bool_value);
+                RCLCPP_INFO(this->get_logger(), "%s set to %s", key, bool_value ? "true" : "false");
+                LOG_INFO << key << " set to " << (bool_value ? "true" : "false");
+            }
         };
 
         update_bool_param("enable_record", this->enable_record_);
-        update_bool_param("enable_chassis_shaper", this->enable_chassis_shaper_);
+        update_atomic_bool_param("enable_chassis_shaper", this->enable_chassis_shaper_);
 
     } catch (const std::exception &e) {
         RCLCPP_WARN(this->get_logger(), "Failed to parse /control/debug JSON: %s", e.what());
@@ -769,6 +1010,46 @@ void RobotServer::ExtractVirtual20To14(const RobotControl &virtual_control, Robo
     // A1无底盘控制，跳过底盘控制字段
 
     // 双臂 (0-13) <- virtual[6-19]，左臂virtual[6-12]->real[0-6]，右臂virtual[13-19]->real[7-13]
+    for (int i = 0; i < ndof_config_; ++i) {
+        real_control.position[i] = virtual_control.position[first_arm_joint_index_ + i];
+        real_control.velocity[i] = virtual_control.velocity[first_arm_joint_index_ + i];
+        real_control.acceleration[i] = virtual_control.acceleration[first_arm_joint_index_ + i];
+        real_control.torque_feedforward[i] = virtual_control.torque_feedforward[first_arm_joint_index_ + i];
+        real_control.torque_external[i] = virtual_control.torque_external[first_arm_joint_index_ + i];
+        real_control.positive_velocity_limit[i] = virtual_control.positive_velocity_limit[first_arm_joint_index_ + i];
+        real_control.negative_velocity_limit[i] = virtual_control.negative_velocity_limit[first_arm_joint_index_ + i];
+        real_control.positive_torque_limit[i] = virtual_control.positive_torque_limit[first_arm_joint_index_ + i];
+        real_control.negative_torque_limit[i] = virtual_control.negative_torque_limit[first_arm_joint_index_ + i];
+    }
+}
+
+// Arm 模式虚拟关节转换函数：将7关节反馈扩展为20关节虚拟反馈
+void RobotServer::Expand7ToVirtual20(const RobotFeedback &real_feedback, RobotFeedback &virtual_feedback) {
+    // 复制基本字段
+    virtual_feedback.cnt = real_feedback.cnt;
+    virtual_feedback.robot_status_word = real_feedback.robot_status_word;
+    virtual_feedback.robot_error_code = real_feedback.robot_error_code;
+
+    // 躯干 (0-5) 和右臂 (13-19) 的电机状态保持为0
+    // 左臂 (6-12) <- real[0-6]
+    for (int i = 0; i < ndof_config_; ++i) {
+        virtual_feedback.al_status[first_arm_joint_index_ + i] = real_feedback.al_status[i];
+        virtual_feedback.motor_error_code[first_arm_joint_index_ + i] = real_feedback.motor_error_code[i];
+        virtual_feedback.motor_temperature[first_arm_joint_index_ + i] = real_feedback.motor_temperature[i];
+        virtual_feedback.position[first_arm_joint_index_ + i] = real_feedback.position[i];
+        virtual_feedback.velocity[first_arm_joint_index_ + i] = real_feedback.velocity[i];
+        virtual_feedback.torque[first_arm_joint_index_ + i] = real_feedback.torque[i];
+    }
+}
+
+// Arm 模式虚拟关节转换函数：将20关节虚拟控制提取为7关节实际控制
+void RobotServer::ExtractVirtual20To7(const RobotControl &virtual_control, RobotControl &real_control) {
+    // 复制基本字段
+    real_control.cnt = virtual_control.cnt;
+    real_control.robot_control_word = virtual_control.robot_control_word;
+    // Arm无底盘控制，跳过底盘控制字段
+
+    // 左臂 (0-6) <- virtual[6-12]
     for (int i = 0; i < ndof_config_; ++i) {
         real_control.position[i] = virtual_control.position[first_arm_joint_index_ + i];
         real_control.velocity[i] = virtual_control.velocity[first_arm_joint_index_ + i];

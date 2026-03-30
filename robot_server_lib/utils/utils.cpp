@@ -63,6 +63,21 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     parse_array("joint_max_velocity_limit_negative", params.joint_max_velocity_limit_negative);
     parse_array("joint_max_torque_limit_positive", params.joint_max_torque_limit_positive);
     parse_array("joint_max_torque_limit_negative", params.joint_max_torque_limit_negative);
+    parse_array("joint_limit_margin_deg", params.joint_limit_margin_deg);
+
+    // 解析流式运动限制参数
+    if (config_json.contains("streaming_bounds")) {
+        const auto &sb = config_json["streaming_bounds"];
+        if (sb.contains("max_velocity") && sb["max_velocity"].is_number()) {
+            params.streaming_bounds.max_velocity = sb["max_velocity"].get<double>();
+        }
+        if (sb.contains("max_acceleration") && sb["max_acceleration"].is_number()) {
+            params.streaming_bounds.max_acceleration = sb["max_acceleration"].get<double>();
+        }
+        if (sb.contains("max_jerk") && sb["max_jerk"].is_number()) {
+            params.streaming_bounds.max_jerk = sb["max_jerk"].get<double>();
+        }
+    }
 
     // 解度析动力学基参数矩阵
     if (config_json.contains("dyn_base_params_primary")) {
@@ -99,6 +114,44 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     robot_model.primary_arm_model_ptr = std::make_shared<pinocchio::Model>(left_arm_model);
     robot_model.secondary_arm_model_ptr = std::make_shared<pinocchio::Model>(right_arm_model);
     robot_model.params_ptr = std::make_shared<RobotParams>(params);
+
+    // 解析 RobotProperty 配置参数
+    RobotProperty robot_property;
+    Eigen::VectorXd temp_vec;
+
+    if (config_json.contains("joint_stiffness")) {
+        parse_array("joint_stiffness", temp_vec);
+        robot_property.joint_stiffness = temp_vec;
+    }
+
+    if (config_json.contains("joint_damping")) {
+        parse_array("joint_damping", temp_vec);
+        robot_property.joint_damping = temp_vec;
+    }
+
+    if (config_json.contains("joint_integral_ratio") && config_json["joint_integral_ratio"].is_number()) {
+        robot_property.joint_integral_ratio = config_json["joint_integral_ratio"].get<double>();
+    }
+
+    if (config_json.contains("safe_level") && config_json["safe_level"].is_number()) {
+        robot_property.safe_level = config_json["safe_level"].get<double>();
+    }
+
+    if (config_json.contains("global_speed_ratio") && config_json["global_speed_ratio"].is_number()) {
+        robot_property.global_speed_ratio = config_json["global_speed_ratio"].get<double>();
+    }
+
+    if (config_json.contains("cart_stiffness")) {
+        parse_array("cart_stiffness", temp_vec);
+        robot_property.cart_stiffness = temp_vec;
+    }
+
+    if (config_json.contains("cart_damping_ratio")) {
+        parse_array("cart_damping_ratio", temp_vec);
+        robot_property.cart_damping_ratio = temp_vec;
+    }
+
+    robot_model.robot_property = robot_property;
 
     return robot_model;
 }
@@ -257,6 +310,23 @@ bool GetJointFromWholeBody(const RobotModel &robot_model,
     return true;
 }
 
+int GetJointCount(const RobotModel &robot_model, const MotionGroup &motion_group) {
+    switch (motion_group) {
+        case MotionGroup::Primary:
+            return robot_model.params_ptr->joints_primary.size();
+        case MotionGroup::Secondary:
+            return robot_model.params_ptr->joints_secondary.size();
+        case MotionGroup::BothArms:
+            return robot_model.params_ptr->joints_primary.size() + robot_model.params_ptr->joints_secondary.size();
+        case MotionGroup::WholeBody:
+            return ndof_robot;
+        case MotionGroup::Torso:
+            return robot_model.params_ptr->joints_torso.size();
+        default:
+            return ndof_robot;
+    }
+}
+
 PlannerRequest ParseSetPropertyRequest(
     const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request) {
     PlannerRequest planner_request;
@@ -292,6 +362,8 @@ PlannerRequest ParseSetPropertyRequest(
             planner_request.data = parse_int(request->value);
             break;
         case RequestType::EnableDrag:
+        case RequestType::EnableSleep:
+        case RequestType::EnablePosLimitCheck:
             planner_request.data = parse_bool(request->value);
             break;
         case RequestType::JointStiffness:
@@ -299,6 +371,9 @@ PlannerRequest ParseSetPropertyRequest(
         case RequestType::CartStiffness:
         case RequestType::CartDampingRatio:
             planner_request.data = utils::StringToVectorXd(request->value);
+            break;
+        case RequestType::JointIntegralRatio:
+            planner_request.data = std::clamp(std::stod(request->value), 0.00, 1.0);
             break;
         default:
             planner_request.type = RequestType::Empty;
@@ -351,24 +426,35 @@ PlannerRequest ParseMoveRequest(
         const auto input_config_json = json::parse(input_request->config);
 
         auto set_double = [&](const char *key, std::optional<double> &dst) {
-            if (input_config_json.contains(key)) dst.emplace(input_config_json[key].get<double>());
+            if (input_config_json.contains(key)) {
+                dst.emplace(input_config_json[key].get<double>());
+                LOG_INFO << "Parsed config: " << key << " = " << dst.value();
+            }
         };
         auto set_bool = [&](const char *key, std::optional<bool> &dst) {
-            if (input_config_json.contains(key)) dst.emplace(input_config_json[key].get<bool>());
+            if (input_config_json.contains(key)) {
+                dst.emplace(input_config_json[key].get<bool>());
+                LOG_INFO << "Parsed config: " << key << " = " << (dst.value() ? "true" : "false");
+            }
         };
-        set_bool("optional_mode", move_request.optional_mode);
+        set_bool("use_ruckig", move_request.use_ruckig);
+        set_bool("use_velocity", move_request.use_velocity);
+        set_bool("use_acceleration", move_request.use_acceleration);
         set_double("speed", move_request.speed);
+        set_double("acceleration", move_request.acceleration);
         set_double("blend_tolerance", move_request.blend_tolerance);
         set_double("interval", move_request.interval);
         if (input_config_json.contains("reference_frame")) {
             const auto ref =
                 magic_enum::enum_cast<ReferenceFrame>(input_config_json["reference_frame"].get<std::string>());
             move_request.reference_frame.emplace(ref.value_or(ReferenceFrame::Unknown));
+            LOG_INFO << "Parsed config: reference_frame = " << input_config_json["reference_frame"].get<std::string>();
         }
         if (input_config_json.contains("endpoint_index")) {
             std::vector<int> endpoint_index;
             for (const auto &item : input_config_json["endpoint_index"]) endpoint_index.push_back(item.get<int>());
             move_request.endpoint_index.emplace(std::move(endpoint_index));
+            LOG_INFO << "Parsed config: endpoint_index = " << move_request.endpoint_index.value().size() << " points";
         }
     }
     planner_request.data = move_request;
@@ -392,10 +478,10 @@ StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interf
 
 Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary) {
     // 最小力/力矩阈值(去除摩擦力), 和最大力/力矩值
-    constexpr double force_threshold = 2;
+    constexpr double force_threshold = 1.0;
     constexpr double torque_threshold = 0.1;
-    constexpr double force_max = 80.0;
-    constexpr double torque_max = 4.0;
+    constexpr double force_max = 100.0;
+    constexpr double torque_max = 10.0;
 
     auto deadzone_saturate = [](double x, double th, double mx) noexcept -> double {
         double y = std::max(0.0, std::abs(x) - th);
@@ -418,6 +504,50 @@ Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench
     sensor_wrench.head<6>() = process6(wrench_primary);
     sensor_wrench.tail<6>() = process6(wrench_secondary);
     return sensor_wrench;
+}
+
+// 线性插值器实现：用于在高低频率控制线程间平滑过渡
+LinearInterpolator::LinearInterpolator(int interpolation_steps) : interpolation_steps_(interpolation_steps) {
+    assert(interpolation_steps_ > 0 && "interpolation_steps must be > 0");
+    pre_target_position_.setZero();
+}
+
+VectorDof LinearInterpolator::Interpolate(const VectorDof &target_position) {
+    if (!inited_) {
+        // 首次调用，初始化
+        counter_ = 0;
+        inited_ = true;
+        target_position_ = target_position;
+        pre_target_position_ = target_position;
+        return target_position_;
+    }
+    // 如果目标位置发生变化，更新起始位置并重置计数器
+    if (TargetChanged(target_position)) {
+        counter_ = 0;
+        pre_target_position_ = target_position_;
+        target_position_ = target_position;
+    }
+
+    if (counter_ < interpolation_steps_) {
+        // 线性插值: alpha 从 1/interpolation_steps_ 到 1.0
+        double alpha = static_cast<double>(counter_ + 1) / interpolation_steps_;
+        VectorDof result = pre_target_position_ + (target_position - pre_target_position_) * alpha;
+        counter_++;
+        return result;
+    } else {
+        // 如果没变化且插值周期完成，更新起始位置为当前目标位置
+        counter_ = interpolation_steps_;
+        pre_target_position_ = target_position_;
+        return pre_target_position_;
+    }
+}
+
+void LinearInterpolator::Reset() {
+    if (!inited_) return;
+    pre_target_position_.setZero();
+    target_position_.setZero();
+    counter_ = 0;
+    inited_ = false;
 }
 
 }  // namespace utils
