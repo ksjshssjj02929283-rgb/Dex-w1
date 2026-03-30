@@ -16,20 +16,28 @@ set(MSG_FILES
   "msg/ChassisMotorControl.msg"
 )
 
-set(SRV_FILES
-  "srv/SaveMap.srv"
+# set(SRV_FILES
+#   "srv/SaveMap.srv"
+# )
+
+set(ACTION_FILES                 # <<< ADD >>>
+  "action/AutoCharging.action"
 )
 
 # Generate interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${MSG_FILES}
-  ${SRV_FILES}
-  DEPENDENCIES std_msgs
+  # ${SRV_FILES}
+  ${ACTION_FILES}
+  DEPENDENCIES 
+    std_msgs
+    action_msgs
 )
 
 # Export dependencies
 ament_export_dependencies(rosidl_default_runtime)
 ament_export_dependencies(std_msgs)
+ament_export_dependencies(action_msgs) 
 
 ament_package()
 

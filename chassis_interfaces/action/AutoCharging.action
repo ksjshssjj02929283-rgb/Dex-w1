@@ -1,0 +1,13 @@
+# ===== Goal =====
+# 是否强制回充（忽略电量等判断）
+bool force
+
+---
+# ===== Result =====
+bool success
+string message
+
+---
+# ===== Feedback =====
+string current_state      # Navigating / Docking / Charging / Checking / Finished 待扩展
+int32 retry_count

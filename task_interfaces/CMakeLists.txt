@@ -13,6 +13,7 @@ find_package(std_msgs REQUIRED)
 # Genrerate service and action interfaces first
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RobotTask.msg"
+  "srv/SwitchPolicy.srv"
   DEPENDENCIES std_msgs
 )
 
