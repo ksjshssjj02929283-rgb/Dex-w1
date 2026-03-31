@@ -1,4 +1,5 @@
 import sys
+import json
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QScrollArea
@@ -6,7 +7,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QTimer
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import JointState
+from std_msgs.msg import String
 from joint_interfaces.msg import JointPositionControl
 from PyQt5.QtCore import Qt
 
@@ -206,19 +207,43 @@ class ROS2Node(Node):
         super().__init__('joint_control_gui')
         self.update_callback = update_callback
         self.joint_states = []
-        self.create_subscription(JointState, '/hardware/joint_state', self.joint_state_callback, 10)
+        self.joint_names = []
+        self.create_subscription(String, '/feedback/robot_server_state', self.robot_status_callback, 10)
         self.position_control_pub = self.create_publisher(JointPositionControl, '/hardware/joint_position_control', 10)
 
-    def joint_state_callback(self, msg):
-        self.joint_states = []
-        for i, name in enumerate(msg.name):
-            self.joint_states.append({
-                'name': name,
-                'position': msg.position[i] if i < len(msg.position) else 0.0,
-                'velocity': msg.velocity[i] if i < len(msg.velocity) else 0.0,
-                'torque': msg.effort[i] if i < len(msg.effort) else 0.0,
-            })
-        self.update_callback()
+    def robot_status_callback(self, msg):
+        try:
+            data = json.loads(msg.data)
+            self.joint_names = data.get('joint_names', [])
+            body_pos = data.get('body_joint_position', [])
+            body_vel = data.get('body_joint_velocity', [])
+            body_tor = data.get('body_joint_torque', [])
+            leg_pos = data.get('leg_joint_position', [])
+            leg_vel = data.get('leg_joint_velocity', [])
+            leg_tor = data.get('leg_joint_torque', [])
+
+            ndof_body = len(body_pos)
+
+            self.joint_states = []
+            for i, name in enumerate(self.joint_names):
+                if i < ndof_body:
+                    self.joint_states.append({
+                        'name': name,
+                        'position': body_pos[i] if i < len(body_pos) else 0.0,
+                        'velocity': body_vel[i] if i < len(body_vel) else 0.0,
+                        'torque': body_tor[i] if i < len(body_tor) else 0.0,
+                    })
+                else:
+                    leg_idx = i - ndof_body
+                    self.joint_states.append({
+                        'name': name,
+                        'position': leg_pos[leg_idx] if leg_idx < len(leg_pos) else 0.0,
+                        'velocity': leg_vel[leg_idx] if leg_idx < len(leg_vel) else 0.0,
+                        'torque': leg_tor[leg_idx] if leg_idx < len(leg_tor) else 0.0,
+                    })
+            self.update_callback()
+        except Exception as e:
+            self.get_logger().warn(f'Failed to parse robot status: {e}')
 
     def publish_control(self, control_data):
         msg = JointPositionControl()

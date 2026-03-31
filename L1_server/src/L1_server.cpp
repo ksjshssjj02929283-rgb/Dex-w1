@@ -125,7 +125,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     // 创建 /hardware/joint_state 发布器
     joint_state_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/hardware/joint_state", 10);
 
-    // 创建 /hardware/robot_status 发布器
+    // 创建 /feedback/robot_server_state 发布器
     robot_status_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state", 10);
 
     // 创建 /hardware/joint_command 订阅器 输入为28自由度, 16上半身+12腿部
@@ -168,22 +168,28 @@ void RobotServer::JointPositionControlCallback(const joint_interfaces::msg::Join
 
 void RobotServer::JointCommandCallback(const JointCommandMsg::SharedPtr msg)
 {
-    // 将指令写入成员变量
-    for (int i = 0; i < this->ndof_body_; ++i)
-    {
-        robot_control_.position[i] = msg->position[i];
-        robot_control_.velocity[i] = msg->velocity[i];
-        robot_control_.torque_feedforward[i] = msg->torque_feedforward[i];
+    auto robot_control_temp = robot_control_;
+    for (size_t i = 0; i < msg->name.size(); ++i) {
+        for (int j = 0; j < ndof_body_ + ndof_legs_; ++j) {
+            if (joint_name_[j] == msg->name[i]) {
+                if (j < ndof_body_) {
+                    robot_control_temp.position[j] = msg->position[i];
+                    robot_control_temp.velocity[j] = msg->velocity[i];
+                    robot_control_temp.torque_feedforward[j] = msg->torque_feedforward[i];
+                }
+                else {
+                    int leg_index = j - ndof_body_;
+                    robot_control_temp.leg_control[leg_index].joint_position = msg->position[i];
+                    robot_control_temp.leg_control[leg_index].joint_velocity = msg->velocity[i];
+                    robot_control_temp.leg_control[leg_index].joint_torque = msg->torque[i];
+                    robot_control_temp.leg_control[leg_index].joint_torque_feedforward = msg->torque_feedforward[i];
+                    robot_control_temp.leg_control[leg_index].joint_Kp = msg->stiffness[i];
+                    robot_control_temp.leg_control[leg_index].joint_Kd = msg->damping[i];
+                }
+            }
+        }
     }
-    for (int i = 0; i < this->ndof_legs_; ++i)
-    {
-        robot_control_.leg_control[i].joint_position = msg->position[i + ndof_body_];
-        robot_control_.leg_control[i].joint_velocity = msg->velocity[i + ndof_body_];
-        robot_control_.leg_control[i].joint_torque = msg->torque[i + ndof_body_];
-        robot_control_.leg_control[i].joint_torque_feedforward = msg->torque_feedforward[i + ndof_body_];
-        robot_control_.leg_control[i].joint_Kp = msg->stiffness[i + ndof_body_];
-        robot_control_.leg_control[i].joint_Kd = msg->damping[i + ndof_body_];
-    }
+    robot_control_ = robot_control_temp;
 }
 
 // 处理反馈数据和发送控制命令的实时线程函数
@@ -379,8 +385,16 @@ std::string RobotServer::GetRobotStatusString()
         leg_stiffness[i] = robot_control_.leg_control[i].joint_Kp;
         leg_damping[i] = robot_control_.leg_control[i].joint_Kd;
     }
+    // 构建关节名称 JSON 数组
+    std::string joint_names_str = "[";
+    for (int i = 0; i < ndof_body_ + ndof_legs_; ++i) {
+        if (i > 0) joint_names_str += ",";
+        joint_names_str += "\"" + joint_name_[i] + "\"";
+    }
+    joint_names_str += "]";
     auto status_string =
         std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
+        ",\n  \"joint_names\":" + joint_names_str +
         ",\n  \"robot_statusword\":" + utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
         ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
         ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, 0, ndof_body_ + ndof_legs_).str() +
