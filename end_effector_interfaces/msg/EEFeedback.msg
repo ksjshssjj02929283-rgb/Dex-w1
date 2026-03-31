@@ -6,7 +6,7 @@ std_msgs/Header header
 string ee_name
 
 # 整个末端执行器的状态
-EEStatus status
+uint8 status
 
 # 关节状态 
 EEJointState[] joint_states

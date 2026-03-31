@@ -3,7 +3,7 @@
 std_msgs/Header header
 
 # 关节控制模式
-EEJointControlMode mode
+uint8 mode
 
 # 关节名称
 string joint_names

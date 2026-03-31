@@ -16,7 +16,7 @@ float32 current
 float32 temperature
 
 # 关节状态 
-EEJointStatus status
+uint8 status
 
 # 关节状态码
 uint8 error_code
