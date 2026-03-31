@@ -3,9 +3,6 @@ uint8 IDLE = 0         # 位置到位停止（所有关节都IDLE）
 uint8 RUNNING = 1      # 正在展开/抓取（至少一个关节RUNNING）
 uint8 ERROR = 2        # 电机报错（至少一个关节ERROR）
 
-uint8 GRIP = 3         # 夹住物体
-uint8 DROP = 4         # 夹住的物体掉落
-
 uint8 UNCONNECT = 100  # 串口未连接（至少一个关节UNCONNECT）
 
 uint8 UNKNOWN = 255    # 未知异常（至少一个关节UNKNOWN）
