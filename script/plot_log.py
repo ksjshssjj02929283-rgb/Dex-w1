@@ -3,7 +3,7 @@
 """
 机器人日志绘图工具 - 用于可视化 robot_server 记录的数据
 使用方法:
-    python3 plot_log.py                           # 默认绘制 torso + arms + chassis (最近2秒)
+    python3 plot_log.py                           # 默认绘制 torso + arms + chassis (最近5秒)
     python3 plot_log.py 5                         # 绘制最近5秒的数据
     python3 plot_log.py --seconds=10              # 绘制最近10秒的数据
     python3 plot_log.py --torso                   # 只绘制 torso 数据
@@ -12,6 +12,7 @@
     python3 plot_log.py --save                    # 保存图片到脚本目录
     python3 plot_log.py --debug                   # 显示调试信息
     python3 plot_log.py --a1                      # A1模式：只绘制手臂数据 (14个关节)
+    python3 plot_log.py --pos                     # 只显示位置曲线 (需配合 --torso/--arm 等)
 """
 
 import argparse
@@ -113,8 +114,8 @@ def main():
     parser.add_argument(
         "--seconds",
         type=float,
-        default=2.0,
-        help="Time window in seconds to plot from the end (default: 2.0).",
+        default=5.0,
+        help="Time window in seconds to plot from the end (default: 5.0).",
     )
     parser.add_argument(
         "--save",
@@ -156,6 +157,11 @@ def main():
         type=int,
         default=None,
         help="Plot a single joint by index (0-19 for standard, 0-13 for A1 mode).",
+    )
+    parser.add_argument(
+        "--pos",
+        action="store_true",
+        help="Only plot position data (single plot with all joints).",
     )
     args = parser.parse_args()
 
@@ -433,9 +439,18 @@ def main():
         return fig
 
     # 单个关节绘图函数
-    def plot_single_joint(joint_idx, joint_count, times_input, start_timestamp, show_hz=False):
-        rows = 5 if show_hz else 4
-        fig, axes = plt.subplots(rows, 1, figsize=(19.2, 14 if show_hz else 11), dpi=100)
+    def plot_single_joint(joint_idx, joint_count, times_input, start_timestamp, show_hz=False, show_pos_only=False):
+        if show_pos_only:
+            rows = 1
+            fig_height = 5
+        else:
+            rows = 5 if show_hz else 4
+            fig_height = 14 if show_hz else 11
+        fig, axes = plt.subplots(rows, 1, figsize=(19.2, fig_height), dpi=100)
+
+        # 处理 1D 数组的情况（当 rows=1 时）
+        if rows == 1:
+            axes = np.array([axes])
 
         # 确定关节名称
         if joint_count == 14:
@@ -482,64 +497,65 @@ def main():
         ax.set_title(f"{joint_name} - Position", fontsize=10)
 
         # 2) position error
-        ax = axes[1]
-        if np.isfinite(pos_err_deg[:, joint_idx]).any():
-            ax.plot(times, pos_err_deg[:, joint_idx], label="pos_error",
-                   color="tab:purple", linewidth=1.2)
+        if not show_pos_only:
+            ax = axes[1]
+            if np.isfinite(pos_err_deg[:, joint_idx]).any():
+                ax.plot(times, pos_err_deg[:, joint_idx], label="pos_error",
+                       color="tab:purple", linewidth=1.2)
+                ax.legend(loc="best", fontsize=8)
+            ax.grid(True, alpha=0.3, linestyle=':')
+            ax.tick_params(labelsize=8)
+            ax.set_ylabel("Pos Error [deg]", fontsize=9)
+            ax.set_title(f"{joint_name} - Position Error", fontsize=10)
+
+            # 3) velocity
+            ax = axes[2]
+            if np.isfinite(vel_deg[:, joint_idx]).any():
+                ax.plot(times, vel_deg[:, joint_idx], label="velocity",
+                       color="tab:brown", linewidth=1.2)
+                ax.legend(loc="best", fontsize=8)
+            ax.grid(True, alpha=0.3, linestyle=':')
+            ax.tick_params(labelsize=8)
+            ax.set_ylabel("Velocity [deg/s]", fontsize=9)
+            ax.set_title(f"{joint_name} - Velocity", fontsize=10)
+
+            # 4) torque
+            ax = axes[3]
+            ax.plot(times, tor[:, joint_idx], label="torque", color="tab:red", linewidth=1.2)
+            ax.grid(True, alpha=0.3, linestyle=':')
+            ax.tick_params(labelsize=8)
+            ax.set_ylabel("Torque [Nm]", fontsize=9)
+            ax.set_xlabel("Time [s]", fontsize=9)
             ax.legend(loc="best", fontsize=8)
-        ax.grid(True, alpha=0.3, linestyle=':')
-        ax.tick_params(labelsize=8)
-        ax.set_ylabel("Pos Error [deg]", fontsize=9)
-        ax.set_title(f"{joint_name} - Position Error", fontsize=10)
+            ax.set_title(f"{joint_name} - Torque", fontsize=10)
 
-        # 3) velocity
-        ax = axes[2]
-        if np.isfinite(vel_deg[:, joint_idx]).any():
-            ax.plot(times, vel_deg[:, joint_idx], label="velocity",
-                   color="tab:brown", linewidth=1.2)
-            ax.legend(loc="best", fontsize=8)
-        ax.grid(True, alpha=0.3, linestyle=':')
-        ax.tick_params(labelsize=8)
-        ax.set_ylabel("Velocity [deg/s]", fontsize=9)
-        ax.set_title(f"{joint_name} - Velocity", fontsize=10)
-
-        # 4) torque
-        ax = axes[3]
-        ax.plot(times, tor[:, joint_idx], label="torque", color="tab:red", linewidth=1.2)
-        ax.grid(True, alpha=0.3, linestyle=':')
-        ax.tick_params(labelsize=8)
-        ax.set_ylabel("Torque [Nm]", fontsize=9)
-        ax.set_xlabel("Time [s]", fontsize=9)
-        ax.legend(loc="best", fontsize=8)
-        ax.set_title(f"{joint_name} - Torque", fontsize=10)
-
-        # 5) position error spectrum (FFT) - only if --hz enabled
-        if show_hz:
-            ax = axes[4]
-            valid_err_mask = np.isfinite(pos_err_deg[:, joint_idx])
-            valid_err = pos_err_deg[:, joint_idx][valid_err_mask]
-            if valid_err.size >= 2:
-                valid_times = times[valid_err_mask]
-                time_diffs = np.diff(valid_times)
-                time_diffs = time_diffs[time_diffs > 0]
-                if len(time_diffs) >= 1:
-                    dt = np.mean(time_diffs)
-                else:
-                    dt = 0.001
-                fs = 1.0 / dt if dt > 0 else 1000.0
-                n = valid_err.size
-                err_centered = valid_err - np.mean(valid_err)
-                fft_vals = np.fft.fft(err_centered)
-                fft_freq = np.fft.fftfreq(n, d=dt)
-                err_mask = fft_freq > 0
-                fft_freq_err = fft_freq[err_mask]
-                fft_mag = np.abs(fft_vals[err_mask])
-                fft_mag_norm = 2.0 / n * fft_mag
-                freq_mask = fft_freq_err <= 10
-                ax.plot(fft_freq_err[freq_mask], fft_mag_norm[freq_mask],
-                    color="tab:purple", linewidth=1.0)
-                ax.grid(True, alpha=0.3, linestyle=':')
-                ax.tick_params(labelsize=8)
+            # 5) position error spectrum (FFT) - only if --hz enabled
+            if show_hz:
+                ax = axes[4]
+                valid_err_mask = np.isfinite(pos_err_deg[:, joint_idx])
+                valid_err = pos_err_deg[:, joint_idx][valid_err_mask]
+                if valid_err.size >= 2:
+                    valid_times = times[valid_err_mask]
+                    time_diffs = np.diff(valid_times)
+                    time_diffs = time_diffs[time_diffs > 0]
+                    if len(time_diffs) >= 1:
+                        dt = np.mean(time_diffs)
+                    else:
+                        dt = 0.001
+                    fs = 1.0 / dt if dt > 0 else 1000.0
+                    n = valid_err.size
+                    err_centered = valid_err - np.mean(valid_err)
+                    fft_vals = np.fft.fft(err_centered)
+                    fft_freq = np.fft.fftfreq(n, d=dt)
+                    err_mask = fft_freq > 0
+                    fft_freq_err = fft_freq[err_mask]
+                    fft_mag = np.abs(fft_vals[err_mask])
+                    fft_mag_norm = 2.0 / n * fft_mag
+                    freq_mask = fft_freq_err <= 10
+                    ax.plot(fft_freq_err[freq_mask], fft_mag_norm[freq_mask],
+                        color="tab:purple", linewidth=1.0)
+                    ax.grid(True, alpha=0.3, linestyle=':')
+                    ax.tick_params(labelsize=8)
                 if fft_mag_norm[freq_mask].size > 0:
                     peak_idx = np.argmax(fft_mag_norm[freq_mask])
                     if fft_mag_norm[freq_mask][peak_idx] > 0.01 * fft_mag_norm[freq_mask].max():
@@ -565,11 +581,21 @@ def main():
 
     # 每个手臂一张大图，每张图包含7个关节
     # 如果启用 --hz，则添加频谱图（第5行）
-    def plot_arm(arm_name, joint_indices, arm_side, times_input, start_timestamp, show_hz=False):
-        rows = 5 if show_hz else 4
+    # 如果启用 --pos，则只显示第1行（position）
+    def plot_arm(arm_name, joint_indices, arm_side, times_input, start_timestamp, show_hz=False, show_pos_only=False):
+        if show_pos_only:
+            rows = 1
+            fig_height = 4
+        else:
+            rows = 5 if show_hz else 4
+            fig_height = 14 if show_hz else 11
         cols = len(joint_indices)
-        fig, axes = plt.subplots(rows, cols, figsize=(19.2, 14 if show_hz else 11), dpi=100)
+        fig, axes = plt.subplots(rows, cols, figsize=(19.2, fig_height), dpi=100)
         fig.suptitle(f"{arm_name} (Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})", fontsize=11)
+
+        # 处理 1D 数组的情况（当 rows=1 时）
+        if rows == 1:
+            axes = axes.reshape(1, cols)
 
         # 将所有坐标轴刻度格式化为小数点后3位
         for ax in axes.flatten():
@@ -630,74 +656,77 @@ def main():
                 pass
 
             # 2) position error
-            ax = axes[1, ci]
-            if np.isfinite(pos_err_deg[:, j]).any():
-                ax.plot(times, pos_err_deg[:, j], label="pos_error",
-                       color="tab:purple", linewidth=1.2)
+            if not show_pos_only:
+                ax = axes[1, ci]
+                if np.isfinite(pos_err_deg[:, j]).any():
+                    ax.plot(times, pos_err_deg[:, j], label="pos_error",
+                           color="tab:purple", linewidth=1.2)
+                    if ci == 0:
+                        ax.legend(loc="best", fontsize=7)
+                else:
+                    ax.text(0.5, 0.5, "No position error data",
+                           transform=ax.transAxes, ha="center", va="center",
+                           alpha=0.6, fontsize=10)
+                # 强制 position error 纵轴范围至少为 0.1 度
+                try:
+                    pe_vals = pos_err_deg[:, j][np.isfinite(pos_err_deg[:, j])]
+                    if pe_vals.size > 0:
+                        pmin = pe_vals.min()
+                        pmax = pe_vals.max()
+                        prank = pmax - pmin
+                        min_perr_range = 0.04
+                        if prank < min_perr_range:
+                            center = 0.5 * (pmax + pmin)
+                            half = 0.5 * min_perr_range
+                            ax.set_ylim(center - half, center + half)
+                except Exception:
+                    pass
+                ax.grid(True, alpha=0.3, linestyle=':')
+                ax.tick_params(labelsize=7)
                 if ci == 0:
-                    ax.legend(loc="best", fontsize=7)
-            else:
-                ax.text(0.5, 0.5, "No position error data",
-                       transform=ax.transAxes, ha="center", va="center",
-                       alpha=0.6, fontsize=10)
-            # 强制 position error 纵轴范围至少为 0.1 度
-            try:
-                pe_vals = pos_err_deg[:, j][np.isfinite(pos_err_deg[:, j])]
-                if pe_vals.size > 0:
-                    pmin = pe_vals.min()
-                    pmax = pe_vals.max()
-                    prank = pmax - pmin
-                    min_perr_range = 0.04
-                    if prank < min_perr_range:
-                        center = 0.5 * (pmax + pmin)
-                        half = 0.5 * min_perr_range
-                        ax.set_ylim(center - half, center + half)
-            except Exception:
-                pass
-            ax.grid(True, alpha=0.3, linestyle=':')
-            ax.tick_params(labelsize=7)
-            if ci == 0:
-                ax.set_ylabel("Pos Error [deg]", fontsize=7)
+                    ax.set_ylabel("Pos Error [deg]", fontsize=7)
 
             # 3) velocity
-            ax = axes[2, ci]
-            if np.isfinite(vel_deg[:, j]).any():
-                ax.plot(times, vel_deg[:, j], label="velocity",
-                       color="tab:brown", linewidth=1.2)
+            if not show_pos_only:
+                ax = axes[2, ci]
+                if np.isfinite(vel_deg[:, j]).any():
+                    ax.plot(times, vel_deg[:, j], label="velocity",
+                           color="tab:brown", linewidth=1.2)
+                    if ci == 0:
+                        ax.legend(loc="best", fontsize=7)
+                else:
+                    ax.text(0.5, 0.5, "No velocity data",
+                           transform=ax.transAxes, ha="center", va="center",
+                           alpha=0.6, fontsize=10)
+                ax.grid(True, alpha=0.3, linestyle=':')
+                ax.tick_params(labelsize=7)
+                # 强制 velocity 纵轴范围至少为 0.02 rad/s（对已有数据有效）
+                try:
+                    v_vals = vel_deg[:, j][np.isfinite(vel_deg[:, j])]
+                    if v_vals.size > 0:
+                        vmin = v_vals.min()
+                        vmax = v_vals.max()
+                        vrange = vmax - vmin
+                        # 保持当前数值门限不变（单位现在为 deg/s）
+                        min_vrange = 0.4
+                        if vrange < min_vrange:
+                            center = 0.5 * (vmax + vmin)
+                            half = 0.5 * min_vrange
+                            ax.set_ylim(center - half, center + half)
+                except Exception:
+                    pass
                 if ci == 0:
-                    ax.legend(loc="best", fontsize=7)
-            else:
-                ax.text(0.5, 0.5, "No velocity data",
-                       transform=ax.transAxes, ha="center", va="center",
-                       alpha=0.6, fontsize=10)
-            ax.grid(True, alpha=0.3, linestyle=':')
-            ax.tick_params(labelsize=7)
-            # 强制 velocity 纵轴范围至少为 0.02 rad/s（对已有数据有效）
-            try:
-                v_vals = vel_deg[:, j][np.isfinite(vel_deg[:, j])]
-                if v_vals.size > 0:
-                    vmin = v_vals.min()
-                    vmax = v_vals.max()
-                    vrange = vmax - vmin
-                    # 保持当前数值门限不变（单位现在为 deg/s）
-                    min_vrange = 0.4
-                    if vrange < min_vrange:
-                        center = 0.5 * (vmax + vmin)
-                        half = 0.5 * min_vrange
-                        ax.set_ylim(center - half, center + half)
-            except Exception:
-                pass
-            if ci == 0:
-                ax.set_ylabel("Velocity [deg/s]", fontsize=7)
+                    ax.set_ylabel("Velocity [deg/s]", fontsize=7)
 
             # 4) torque
-            ax = axes[3, ci]
-            ax.plot(times, tor[:, j], label="torque", color="tab:red", linewidth=1.2)
-            ax.grid(True, alpha=0.3, linestyle=':')
-            ax.tick_params(labelsize=7)
-            if ci == 0:
-                ax.set_ylabel("Torque [Nm]", fontsize=7)
-                ax.legend(loc="best", fontsize=7)
+            if not show_pos_only:
+                ax = axes[3, ci]
+                ax.plot(times, tor[:, j], label="torque", color="tab:red", linewidth=1.2)
+                ax.grid(True, alpha=0.3, linestyle=':')
+                ax.tick_params(labelsize=7)
+                if ci == 0:
+                    ax.set_ylabel("Torque [Nm]", fontsize=7)
+                    ax.legend(loc="best", fontsize=7)
             # 强制 torque 纵轴范围至少为 1.0（对已有数据有效）
             try:
                 t_vals = tor[:, j][np.isfinite(tor[:, j])]
@@ -781,7 +810,7 @@ def main():
             return
         if args.debug:
             print(f"[DEBUG] Creating single joint plot for joint {args.joint}...")
-        figs.append(plot_single_joint(args.joint, joint_count, times, start_timestamp, show_hz=args.hz))
+        figs.append(plot_single_joint(args.joint, joint_count, times, start_timestamp, show_hz=args.hz, show_pos_only=args.pos))
     # --chassis 模式：只画底盘图
     elif args.chassis:
         if args.debug:
@@ -795,27 +824,27 @@ def main():
     elif args.a1:
         if args.debug:
             print("[DEBUG] Creating A1 mode plots (arms only)...")
-        figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz))
-        figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz))
+        figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz, show_pos_only=args.pos))
+        figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz, show_pos_only=args.pos))
     elif args.arm:
         if args.debug:
             print("[DEBUG] Creating Arm mode plots (arms only, no torso or chassis)...")
-        figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz))
-        figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz))
+        figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz, show_pos_only=args.pos))
+        figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz, show_pos_only=args.pos))
     elif args.torso:
         if args.debug:
             print("[DEBUG] Creating Torso plot only...")
-        figs.append(plot_arm("Torso", torso_joints, "Torso", times, start_timestamp, show_hz=args.hz))
+        figs.append(plot_arm("Torso", torso_joints, "Torso", times, start_timestamp, show_hz=args.hz, show_pos_only=args.pos))
     else:
         if args.debug:
             print("[DEBUG] Creating Torso plot...")
-        figs.append(plot_arm("Torso", torso_joints, "Torso", times, start_timestamp, show_hz=args.hz))
+        figs.append(plot_arm("Torso", torso_joints, "Torso", times, start_timestamp, show_hz=args.hz, show_pos_only=args.pos))
         if args.debug:
             print("[DEBUG] Creating Left Arm plot...")
-        figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz))
+        figs.append(plot_arm("Left Arm", left_joints, "Left", times, start_timestamp, show_hz=args.hz, show_pos_only=args.pos))
         if args.debug:
             print("[DEBUG] Creating Right Arm plot...")
-        figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz))
+        figs.append(plot_arm("Right Arm", right_joints, "Right", times, start_timestamp, show_hz=args.hz, show_pos_only=args.pos))
 
         # 添加底盘数据绘图（如果存在）
         chassis_fig = plot_chassis(times, start_timestamp, show_hz=args.hz)
