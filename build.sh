@@ -4,6 +4,11 @@ source /opt/ros/humble/setup.bash
 
 # 构建类型：Release（默认）或 RelWithDebInfo（开发模式，编译更快）
 BUILD_TYPE=${BUILD_TYPE:-Release}
+# colcon 包级并发和单包编译并发默认保守一些，避免大文件编译时被系统直接杀掉
+COLCON_PARALLEL_WORKERS=${COLCON_PARALLEL_WORKERS:-2}
+CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL:-4}
+export CMAKE_BUILD_PARALLEL_LEVEL
+export MAKEFLAGS="-j${CMAKE_BUILD_PARALLEL_LEVEL} -l${CMAKE_BUILD_PARALLEL_LEVEL}"
 
 # === 1. 检查 ROS 环境 ===
 if [ -z "$ROS_DISTRO" ]; then
@@ -30,7 +35,8 @@ fi
 
 cd "${WORKSPACE_DIR}/.."
 PACKAGES=$(find dexe_robot_server -name "package.xml" -exec sh -c 'dirname {} | xargs basename' \; | sort -u | tr '\n' ' ')
-colcon build --parallel-workers $(nproc) --cmake-args -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DENABLE_TORQUE_CONTROL_SIMULATION=OFF --packages-select $PACKAGES
+echo "🔧 colcon并发包数: ${COLCON_PARALLEL_WORKERS}, 单包编译并发: ${CMAKE_BUILD_PARALLEL_LEVEL}"
+colcon build --parallel-workers "${COLCON_PARALLEL_WORKERS}" --cmake-args -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DENABLE_TORQUE_CONTROL_SIMULATION=OFF --packages-select $PACKAGES
 
 # 复制到 /opt 并配置运行时库路径
 OPT_DIR=/opt/w1_server
@@ -64,3 +70,5 @@ fi
     echo "$OPT_DIR/robot_server_interfaces/lib"
     echo "$OPT_DIR/robot_server_lib/lib"
 } | sudo tee /etc/ld.so.conf.d/w1_server.conf
+
+sudo ldconfig

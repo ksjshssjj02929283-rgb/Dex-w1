@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 #   ./run_w1.sh          # 默认启动 W1 模式 (20关节)
 #   ./run_w1.sh a1       # 启动 A1 模式 (14关节)
 #   ./run_w1.sh --a1     # 同上
@@ -16,8 +18,21 @@ elif [[ "$1" == "--arm" ]] || [[ "$1" == "arm" ]]; then
     ARM_MODE=true
 fi
 
-SUDO_PASS=123456
-echo "$SUDO_PASS" | sudo -S setcap 'cap_sys_nice=eip cap_ipc_lock=ep' ../install/w1_server/lib/w1_server/w1_server
+W1_BIN="../install/w1_server/lib/w1_server/w1_server"
+CAP_MODE=${CAP_MODE:-workspace_safe}
+
+if [ "$CAP_MODE" = "enable" ]; then
+    echo "🔐 CAP_MODE=enable：将为 w1_server 设置 setcap（需要 sudo 密码）"
+    sudo -v
+    sudo setcap 'cap_sys_nice=eip cap_ipc_lock=ep' "$W1_BIN"
+else
+    # 对工作区 install 目录下的二进制，默认移除 capability，避免触发 secure-exec 后忽略 LD_LIBRARY_PATH。
+    if getcap "$W1_BIN" 2>/dev/null | grep -q 'cap_'; then
+        echo "🔐 检测到 $W1_BIN 已设置 capability；为避免动态库加载失败，将移除 capability（需要 sudo 密码）"
+        sudo -v
+        sudo setcap -r "$W1_BIN"
+    fi
+fi
 
 source ../install/setup.bash
 
