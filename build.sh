@@ -16,6 +16,13 @@ else
   echo "ERROR: $BIN 不存在，检查构建是否成功以及目标名是否为 L1_server"
 fi
 
+# 设置 feedback 权限（复制后设置）
+if [ -f "install/L1_server/lib/L1_server/feedback" ]; then
+  sudo setcap 'cap_sys_nice,cap_ipc_lock=+ep' "install/L1_server/lib/L1_server/feedback" || true
+  echo "setcap applied to install/L1_server/lib/L1_server/feedback:"; getcap -v "install/L1_server/lib/L1_server/feedback" || true
+else
+  echo "ERROR: install/L1_server/lib/L1_server/feedback 不存在，检查构建是否成功以及目标名是否为 feedback"
+fi
 # 复制到 /opt 并配置运行时库路径
 sudo rm -rf /opt/L1_server
 sudo cp -r install /opt/L1_server

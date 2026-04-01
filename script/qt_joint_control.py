@@ -2,38 +2,67 @@ import sys
 import json
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QScrollArea
+    QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QScrollArea, QLineEdit, QStyledItemDelegate
 )
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, Qt, QEvent
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-from joint_interfaces.msg import JointPositionControl
-from PyQt5.QtCore import Qt
+from joint_interfaces.msg import JointCommand
+
+
+class CommitDelegate(QStyledItemDelegate):
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Enter, Qt.Key_Return):
+            self.commitData.emit(obj)
+            return True
+        return super().eventFilter(obj, event)
+
 
 class CustomTableWidget(QTableWidget):
     def __init__(self, send_data, parent=None):
         super().__init__(parent)
         self.send_msg = send_data
         self.current_cell = None
+        delegate = CommitDelegate(self)
+        self.setItemDelegate(delegate)
+        self.itemChanged.connect(self._on_item_changed)
+
+    def _on_item_changed(self, item):
+        if item.column() in (2, 3) and item.text() != "/":
+            row = item.row()
+            col = item.column()
+            try:
+                value = float(item.text())
+                if col == 2:
+                    value = max(0.0, min(500.0, value))
+                    item.setText(f"{value:.2f}")
+                elif col == 3:
+                    value = max(0.0, min(100.0, value))
+                    item.setText(f"{value:.2f}")
+                self.send_msg(row, col)
+            except ValueError:
+                pass
 
     def keyPressEvent(self, event):
         current_item = self.currentItem()
         if current_item:
-            try:
-                current_value = float(current_item.text())
-                model = self.model()
-                row = current_item.row()
-                col = current_item.column()
+            model = self.model()
+            row = current_item.row()
+            col = current_item.column()
 
-                # 仅回车提交position列
-                if event.key() in (Qt.Key_Enter, Qt.Key_Return):
-                    if col == 1:  # target_position
-                        current_value = max(-3.14, min(3.14, current_value))  # 手动输入回车也限幅
+            if event.key() in (Qt.Key_Enter, Qt.Key_Return):
+                if col == 1:
+                    try:
+                        current_value = float(current_item.text())
+                        current_value = max(-3.14, min(3.14, current_value))
                         current_item.setText(f"{current_value:.2f}")
-                        self.send_msg(row, col)
-                    return
+                    except ValueError:
+                        current_item.setText("0.00")
+                    self.send_msg(row, col)
+                return
 
+            if col == 1:
                 delta_map = {
                     Qt.Key_Up:    +0.01,
                     Qt.Key_Right: +0.1,
@@ -42,33 +71,36 @@ class CustomTableWidget(QTableWidget):
                 }
                 key = event.key()
                 if key in delta_map:
+                    try:
+                        current_value = float(current_item.text())
+                    except ValueError:
+                        current_value = 0.0
                     current_value += delta_map[key]
-                    if col == 1:  # target_position 限幅
-                        current_value = max(-3.14, min(3.14, current_value))
+                    current_value = max(-3.14, min(3.14, current_value))
                     current_item.setText(f"{current_value:.2f}")
                     self.send_msg(row, col)
                     index = model.index(row, col)
                     model.dataChanged.emit(index, index)
                     return
-            except ValueError:
-                pass
+
+            return
         super().keyPressEvent(event)
+
 
 class JointControlWidget(QWidget):
     def __init__(self, ros_node):
         super().__init__()
         self.ros_node = ros_node
+        self.change_pos = 3
 
         self.feedback_table = QTableWidget()
         self.control_table = CustomTableWidget(self.send_control_data)
-        self.control_table.itemChanged.connect(self.onControlItemChanged)
 
         self.sync_button = QPushButton("同步反馈数据到控制表")
         self.sync_button.clicked.connect(self.sync_from_feedback)
 
         self.init_tables()
 
-        # 创建垂直滚动区域，放置两个表格
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
 
@@ -96,60 +128,37 @@ class JointControlWidget(QWidget):
         self.setWindowTitle("Joint Control Interface")
         self.showMaximized()
 
-        self.control_table.itemSelectionChanged.connect(self.onSelectionChanged)
-
-        # 同步滚动
         self.feedback_table.verticalScrollBar().valueChanged.connect(
             self.control_table.verticalScrollBar().setValue)
         self.control_table.verticalScrollBar().valueChanged.connect(
             self.feedback_table.verticalScrollBar().setValue)
-
-        self.change_pos=3
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_feedback_table)
         self.timer.start(500)
 
     def init_tables(self):
-        headers_feedback = ["name", "position", "velocity", "torque"]
-        headers_control = ["name", "target_position"]
-        self.feedback_table.setColumnCount(len(headers_feedback))
-        self.feedback_table.setHorizontalHeaderLabels(headers_feedback)
-        self.control_table.setColumnCount(len(headers_control))
-        self.control_table.setHorizontalHeaderLabels(headers_control)
-
-    def onSelectionChanged(self):
-        # 获取当前选中的单元格
-        selected_items = self.control_table.selectedItems()
-        if selected_items:
-            current_item = selected_items[0]
-            current_item.setBackground(Qt.green)
-            #print(f"onSelectionChanged:{current_item}\r\n")
-
-            # 清除其他单元格的焦点样式
-            for row in range(self.control_table.rowCount()):
-                for col in range(self.control_table.columnCount()):
-                    item = self.control_table.item(row, col)
-                    if item and item != current_item:
-                        item.setBackground(Qt.white)
-        else:
-            # 没有选中任何单元格时，清除所有焦点样式
-            for row in range(self.control_table.rowCount()):
-                for col in range(self.control_table.columnCount()):
-                    item = self.control_table.item(row, col)
-                    if item:
-                        item.setBackground(Qt.white)
+        self.feedback_table.setColumnCount(6)
+        self.feedback_table.setHorizontalHeaderLabels(["name", "position", "velocity", "torque", "stiffness", "damping"])
+        self.control_table.setColumnCount(4)
+        self.control_table.setHorizontalHeaderLabels(["name", "target_position", "stiffness", "damping"])
 
     def update_feedback_table(self):
         joint_data = self.ros_node.joint_states
         self.feedback_table.setRowCount(len(joint_data))
         for row, joint in enumerate(joint_data):
             name = joint['name']
+            stiffness_val = joint.get('stiffness')
+            damping_val = joint.get('damping')
+            stiffness_str = f"{stiffness_val:.2f}" if stiffness_val is not None else "/"
+            damping_str = f"{damping_val:.2f}" if damping_val is not None else "/"
             values = [
                 name,
                 f"{joint.get('position', 0.0):.2f}",
                 f"{joint.get('velocity', 0.0):.2f}",
                 f"{joint.get('torque', 0.0):.2f}",
+                stiffness_str,
+                damping_str,
             ]
             for col, val in enumerate(values):
                 self.feedback_table.setItem(row, col, QTableWidgetItem(val))
@@ -162,14 +171,23 @@ class JointControlWidget(QWidget):
         rows = self.feedback_table.rowCount()
         self.control_table.setRowCount(rows)
         for row in range(rows):
+            stiffness_val = self.feedback_table.item(row, 4).text()
+            damping_val = self.feedback_table.item(row, 5).text()
+            if stiffness_val == "/" or damping_val == "/":
+                stiffness_str = "/"
+                damping_str = "/"
+            else:
+                stiffness_str = stiffness_val
+                damping_str = damping_val
             values = [
-                self.feedback_table.item(row, 0).text(),  # name
-                self.feedback_table.item(row, 1).text(),  # 初始 target_position
+                self.feedback_table.item(row, 0).text(),
+                self.feedback_table.item(row, 1).text(),
+                stiffness_str,
+                damping_str,
             ]
             for col, val in enumerate(values):
                 item = QTableWidgetItem(val)
-                # name 禁止手动编辑
-                if col == 0:
+                if col == 0 or col == 1 or val == "/":
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 self.control_table.setItem(row, col, item)
         self.control_table.resizeColumnsToContents()
@@ -180,27 +198,28 @@ class JointControlWidget(QWidget):
         try:
             name_item = self.control_table.item(changed_row, 0)
             pos_item = self.control_table.item(changed_row, 1)
+            stiffness_item = self.control_table.item(changed_row, 2)
+            damping_item = self.control_table.item(changed_row, 3)
             if not (name_item and pos_item):
                 return
             name = name_item.text()
             target_position = float(pos_item.text())
+            stiffness = 0.0
+            if stiffness_item and stiffness_item.text() != "/":
+                stiffness = float(stiffness_item.text())
+            damping = 0.0
+            if damping_item and damping_item.text() != "/":
+                damping = float(damping_item.text())
 
-            # 直接下发位置指令
-            self.ros_node.publish_control([{'name': name, 'target_position': target_position}])
+            self.ros_node.publish_control([{
+                'name': name,
+                'position': target_position,
+                'stiffness': stiffness,
+                'damping': damping
+            }])
         except Exception as e:
             print(f"Error parsing control data row {changed_row}: {e}")
 
-    def onControlItemChanged(self, item):
-        # 仅对 position 列 (索引1) 手动输入进行限幅
-        if item and item.column() == 1:
-            try:
-                v = float(item.text())
-            except ValueError:
-                v = 0.0
-            v = max(-3.14, min(3.14, v))
-            new_text = f"{v:.2f}"
-            if item.text() != new_text:
-                item.setText(new_text)
 
 class ROS2Node(Node):
     def __init__(self, update_callback):
@@ -209,7 +228,7 @@ class ROS2Node(Node):
         self.joint_states = []
         self.joint_names = []
         self.create_subscription(String, '/feedback/robot_server_state', self.robot_status_callback, 10)
-        self.position_control_pub = self.create_publisher(JointPositionControl, '/hardware/joint_position_control', 10)
+        self.joint_cmd_pub = self.create_publisher(JointCommand, '/hardware/joint_command', 10)
 
     def robot_status_callback(self, msg):
         try:
@@ -218,20 +237,28 @@ class ROS2Node(Node):
             body_pos = data.get('body_joint_position', [])
             body_vel = data.get('body_joint_velocity', [])
             body_tor = data.get('body_joint_torque', [])
+            body_stiffness = data.get('body_stiffness', [])
+            body_damping = data.get('body_damping', [])
             leg_pos = data.get('leg_joint_position', [])
             leg_vel = data.get('leg_joint_velocity', [])
             leg_tor = data.get('leg_joint_torque', [])
+            leg_stiffness = data.get('leg_stiffness', [])
+            leg_damping = data.get('leg_damping', [])
 
             ndof_body = len(body_pos)
 
             self.joint_states = []
             for i, name in enumerate(self.joint_names):
                 if i < ndof_body:
+                    stiffness = body_stiffness[i] if i < len(body_stiffness) else None
+                    damping = body_damping[i] if i < len(body_damping) else None
                     self.joint_states.append({
                         'name': name,
                         'position': body_pos[i] if i < len(body_pos) else 0.0,
                         'velocity': body_vel[i] if i < len(body_vel) else 0.0,
                         'torque': body_tor[i] if i < len(body_tor) else 0.0,
+                        'stiffness': stiffness,
+                        'damping': damping,
                     })
                 else:
                     leg_idx = i - ndof_body
@@ -240,20 +267,33 @@ class ROS2Node(Node):
                         'position': leg_pos[leg_idx] if leg_idx < len(leg_pos) else 0.0,
                         'velocity': leg_vel[leg_idx] if leg_idx < len(leg_vel) else 0.0,
                         'torque': leg_tor[leg_idx] if leg_idx < len(leg_tor) else 0.0,
+                        'stiffness': leg_stiffness[leg_idx] if leg_idx < len(leg_stiffness) else 100.0,
+                        'damping': leg_damping[leg_idx] if leg_idx < len(leg_damping) else 10.0,
                     })
             self.update_callback()
         except Exception as e:
             self.get_logger().warn(f'Failed to parse robot status: {e}')
 
     def publish_control(self, control_data):
-        msg = JointPositionControl()
+        msg = JointCommand()
         msg.name = []
         msg.position = []
+        msg.velocity = []
+        msg.torque = []
+        msg.torque_feedforward = []
+        msg.stiffness = []
+        msg.damping = []
         for item in control_data:
             name = item['name']
             msg.name.append(name)
-            msg.position.append(item['target_position'])
-        self.position_control_pub.publish(msg)
+            msg.position.append(item.get('position', 0.0))
+            msg.velocity.append(0.0)
+            msg.torque.append(0.0)
+            msg.torque_feedforward.append(0.0)
+            msg.stiffness.append(item.get('stiffness', 0.0))
+            msg.damping.append(item.get('damping', 0.0))
+        self.joint_cmd_pub.publish(msg)
+
 
 def main():
     rclpy.init()
@@ -277,6 +317,7 @@ def main():
     qt_ros_timer.start(10)
 
     sys.exit(app.exec_())
+
 
 if __name__ == '__main__':
     main()

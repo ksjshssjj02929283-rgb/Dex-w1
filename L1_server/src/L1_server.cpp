@@ -396,14 +396,14 @@ std::string RobotServer::GetRobotStatusString()
         std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
         ",\n  \"joint_names\":" + joint_names_str +
         ",\n  \"robot_statusword\":" + utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
-        ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
+        ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(this->robot_control_.robot_control_word).str() +
         ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, 0, ndof_body_ + ndof_legs_).str() +
         ",\n  \"motor_error_code\":" + utils::MotorErrorcodeToJsonArrayString(this->robot_feedback_.motor_error_code, 0, ndof_body_ + ndof_legs_).str() +
-        ",\n  \"body_joint_position_cmd\":" + utils::VectorToJsonArrayString(robot_control_.position, 0, ndof_body_).str() +
+        ",\n  \"body_joint_position_cmd\":" + utils::VectorToJsonArrayString(this->robot_control_.position, 0, ndof_body_).str() +
         ",\n  \"body_joint_position\":" + utils::VectorToJsonArrayString(this->robot_feedback_.position, 0, ndof_body_).str() +
         ",\n  \"body_joint_velocity\":" + utils::VectorToJsonArrayString(this->robot_feedback_.velocity, 0, ndof_body_).str() +
         ",\n  \"body_joint_torque\":" + utils::VectorToJsonArrayString(this->robot_feedback_.torque, 0, ndof_body_).str() +
-        ",\n  \"leg_joint_position_cmd\":" + utils::VectorToJsonArrayString(robot_control_.position, ndof_body_, ndof_body_ + ndof_legs_).str() +
+        ",\n  \"leg_joint_position_cmd\":" + utils::VectorToJsonArrayString(this->robot_control_.position, ndof_body_, ndof_body_ + ndof_legs_).str() +
         ",\n  \"leg_joint_position\":" + utils::VectorToJsonArrayString(leg_position, 0, ndof_legs_).str() +
         ",\n  \"leg_joint_velocity\":" + utils::VectorToJsonArrayString(leg_velocity, 0, ndof_legs_).str() +
         ",\n  \"leg_joint_torque\":" + utils::VectorToJsonArrayString(leg_torque, 0, ndof_legs_).str() +

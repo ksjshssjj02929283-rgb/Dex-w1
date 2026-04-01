@@ -147,4 +147,19 @@ else()
   )
 endif()
 
+# feedback 可执行文件
+add_executable(feedback tools/feedback.cpp)
+target_include_directories(feedback PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/utils>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../robot_server_lib/utils>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../robot_server_lib>
+)
+ament_target_dependencies(feedback PUBLIC robot_server_lib)
+target_link_libraries(feedback PUBLIC
+    Threads::Threads
+    rt
+    Eigen3::Eigen
+)
+install(TARGETS feedback DESTINATION lib/${PROJECT_NAME})
+
 ament_package()
