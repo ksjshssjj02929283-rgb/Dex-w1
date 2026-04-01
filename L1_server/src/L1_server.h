@@ -33,7 +33,6 @@ class RobotServer : public RobotServerBase
     std::string GetRobotStatusString();
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;
-    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_status_publisher_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr debug_subscriber_;
     rclcpp::Subscription<joint_interfaces::msg::JointCommand>::SharedPtr joint_command_subscriber_;
     rclcpp::Subscription<joint_interfaces::msg::JointPositionControl>::SharedPtr joint_position_control_subscriber_;

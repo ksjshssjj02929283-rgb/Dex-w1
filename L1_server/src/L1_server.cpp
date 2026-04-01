@@ -125,9 +125,6 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     // 创建 /hardware/joint_state 发布器
     joint_state_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/hardware/joint_state", 10);
 
-    // 创建 /feedback/robot_server_state 发布器
-    robot_status_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state", 10);
-
     // 创建 /hardware/joint_command 订阅器 输入为28自由度, 16上半身+12腿部
     joint_command_subscriber_ = this->create_subscription<JointCommandMsg>(
         "/hardware/joint_command", 10, std::bind(&RobotServer::JointCommandCallback, this, std::placeholders::_1));
@@ -318,11 +315,6 @@ void RobotServer::JointStatePublisher()
         joint_state_msg.effort[i + this->ndof_body_] = robot_feedback_.leg_feedback_[i].joint_torque;
     }
     this->joint_state_publisher_->publish(joint_state_msg);
-
-    // 发布 robot status string
-    auto robot_status_msg = std_msgs::msg::String();
-    robot_status_msg.data = this->GetRobotStatusString();
-    this->robot_status_publisher_->publish(robot_status_msg);
 }
 
 void RobotServer::JointStatePublisherThreadFunc()
