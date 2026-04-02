@@ -49,7 +49,7 @@ kill_process() {
 kill_process "sim_server"
 kill_process "w1_server"
 
-taskset -c 5 ros2 run sim_server sim_server > /dev/null 2>&1 &
+taskset -c 7 ros2 run sim_server sim_server > /dev/null 2>&1 &
 taskset -c 6 script/set_max_position_following_error_window.sh > /dev/null 2>&1 &
 
 if [ "$A1_MODE" = true ]; then
