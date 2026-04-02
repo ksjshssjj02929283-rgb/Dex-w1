@@ -1,4 +1,7 @@
 # CHANGELOG
+## [V0.4.1]
+### Fix
+  - 修复了基于全身IK move_line中的一个浮点数累加计算bug
 
 ## [V0.4.0]
 ### Feat
