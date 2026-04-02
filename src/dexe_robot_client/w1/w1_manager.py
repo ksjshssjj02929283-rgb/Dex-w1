@@ -5292,7 +5292,7 @@ class W1Manager:
             for left_xpos in left_xpos_sample_array[1:-1]:
                 cur_dist += np.linalg.norm(left_xpos[:3, 3] -
                                            cur_left_xpos[:3, 3])
-                if cur_dist >= left_prefix_dist_list[idx]:
+                if cur_dist >= left_prefix_dist_list[idx] + 1e-6:
                     idx += 1
                 left_qvel_limits_list_.append(left_qvel_limits_array[idx])
                 cur_left_xpos = left_xpos
@@ -5309,7 +5309,7 @@ class W1Manager:
             for right_xpos in right_xpos_sample_array[1:-1]:
                 cur_dist += np.linalg.norm(right_xpos[:3, 3] -
                                            cur_right_xpos[:3, 3])
-                if cur_dist >= right_prefix_dist_list[idx]:
+                if cur_dist >= right_prefix_dist_list[idx] + 1e-6:
                     idx += 1
                 right_qvel_limits_list_.append(right_qvel_limits_array[idx])
                 cur_right_xpos = right_xpos
