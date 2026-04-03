@@ -8,8 +8,10 @@ All rights reserved.
 
 import json
 import numpy as np
+import pinocchio as pin
 from ...end_effector_client.end_effector_type import EndEffectorType
-from ...common import get_logger, DATA_DIR, W1ArmType, W1Version
+from ...common import get_logger, DATA_DIR, W1ArmType, W1Version, get_pin2real_idx
+from ..path_planner.utils.robot_type import get_robot_urdf, RobotType
 
 
 class W1Params:
@@ -40,6 +42,14 @@ class W1Params:
         else:
             raise ValueError(
                 f"Unsupport end effector type: {self._end_effector_type.name}.")
+
+        if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
+            robot_urdf = get_robot_urdf(RobotType.W1V02_1)
+        else:
+            robot_urdf = get_robot_urdf(RobotType.W1V02_2)
+
+        self._pin_model = pin.buildModelFromUrdf(robot_urdf)
+        self._pin2real_idx = get_pin2real_idx(robot_urdf)
 
         self.torso_dofs = 4
         self.head_dofs = 2
@@ -81,34 +91,16 @@ class W1Params:
         self.arm_ee_names = ["left_arm_ee", "right_arm_ee"]
 
         # Kinematics Params
-        self.torso_ub = np.deg2rad([90., 155., 90., 170.])
-        self.torso_lb = np.deg2rad([-90., -155., -110., -170.])
-        self.head_ub = np.deg2rad([90., 25.])
-        self.head_lb = np.deg2rad([-90., -45.])
-
-        if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
-            self.left_arm_ub = np.deg2rad(
-                [170., 90., 170., 90., 170., 45., 60.])
-            self.left_arm_lb = np.deg2rad(
-                [-170., -120., -170., -135., -170., -45., -90.])
-            self.right_arm_ub = np.deg2rad(
-                [170., 120., 170., 135., 170., 45., 90.])
-            self.right_arm_lb = np.deg2rad(
-                [-170., -90., -170., -90., -170., -45., -60.])
-        else:
-            self.left_arm_ub = np.deg2rad(
-                [170., 90., 170., 90., 170., 90., 170.])
-            self.left_arm_lb = np.deg2rad(
-                [-170., -120., -170., -135., -170., -90., -170.])
-            self.right_arm_ub = np.deg2rad(
-                [170., 120., 170., 135., 170., 90., 170.])
-            self.right_arm_lb = np.deg2rad(
-                [-170., -90., -170., -90., -170., -90., -170.])
-
-        self.qpos_ub = np.r_[self.torso_ub, self.head_ub, self.left_arm_ub,
-                             self.right_arm_ub]
-        self.qpos_lb = np.r_[self.torso_lb, self.head_lb, self.left_arm_lb,
-                             self.right_arm_lb]
+        self.qpos_lb = self._pin_model.lowerPositionLimit[self._pin2real_idx]
+        self.qpos_ub = self._pin_model.upperPositionLimit[self._pin2real_idx]
+        self.torso_lb = self.qpos_lb[self.torso_index]
+        self.torso_ub = self.qpos_ub[self.torso_index]
+        self.head_lb = self.qpos_lb[self.head_index]
+        self.head_ub = self.qpos_ub[self.head_index]
+        self.left_arm_lb = self.qpos_lb[self.left_arm_index]
+        self.left_arm_ub = self.qpos_ub[self.left_arm_index]
+        self.right_arm_lb = self.qpos_lb[self.right_arm_index]
+        self.right_arm_ub = self.qpos_ub[self.right_arm_index]
 
         # yapf: disable
         self.default_qvel = np.array([0.3] * self.full_body_dofs)
