@@ -2,6 +2,7 @@
 
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>  // 新增
+#include <numeric>
 
 #include "joint_interfaces/msg/joint_command.hpp"
 #include "joint_interfaces/msg/joint_position_control.hpp"
@@ -33,6 +34,7 @@ private:
     std::string GetRobotStatusString();
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_status_publisher_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr debug_subscriber_;
     rclcpp::Subscription<joint_interfaces::msg::JointCommand>::SharedPtr joint_command_subscriber_;
     rclcpp::Subscription<joint_interfaces::msg::JointPositionControl>::SharedPtr joint_position_control_subscriber_;

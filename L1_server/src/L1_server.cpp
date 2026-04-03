@@ -113,6 +113,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     // 创建 /hardware/joint_state 发布器
     joint_state_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/hardware/joint_state", 10);
 
+    // 创建 /feedback/robot_server_state 发布器
+    robot_status_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state", 10);
+
     // 创建 /hardware/joint_command 订阅器 输入为28自由度, 16上半身+12腿部
     joint_command_subscriber_ = this->create_subscription<JointCommandMsg>(
         "/hardware/joint_command", 10, std::bind(&RobotServer::JointCommandCallback, this, std::placeholders::_1));
@@ -311,15 +314,15 @@ RobotFeedback RobotServer::ConvertAnkleMotorsToPitchRoll(const RobotFeedback& ro
 RobotControl RobotServer::ConvertPitchRollToAnkleMotors(const RobotControl& robot_control) {
     RobotControl result = robot_control;
 
-    const double ankle_pitch_left = robot_control.leg_control[4].joint_position;
-    const double ankle_roll_left = robot_control.leg_control[5].joint_position;
+    const double ankle_pitch_left = std::clamp(robot_control.leg_control[4].joint_position, -1.0472, 0.61087);
+    const double ankle_roll_left = std::clamp(robot_control.leg_control[5].joint_position, -0.2618, 0.2618);
     const double ankle_k_pitch_left = robot_control.leg_control[4].joint_Kp;
     const double ankle_k_roll_left = robot_control.leg_control[5].joint_Kp;
     const double ankle_d_pitch_left = robot_control.leg_control[4].joint_Kd;
     const double ankle_d_roll_left = robot_control.leg_control[5].joint_Kd;
 
-    const double ankle_pitch_right = robot_control.leg_control[10].joint_position;
-    const double ankle_roll_right = robot_control.leg_control[11].joint_position;
+    const double ankle_pitch_right = std::clamp(robot_control.leg_control[10].joint_position, -1.0472, 0.61087);
+    const double ankle_roll_right = std::clamp(robot_control.leg_control[11].joint_position, -0.2618, 0.2618);
     const double ankle_tau_pitch_right = robot_control.leg_control[10].joint_torque;
     const double ankle_tau_roll_right = robot_control.leg_control[11].joint_torque;
     const double ankle_k_pitch_right = robot_control.leg_control[10].joint_Kp;
@@ -398,6 +401,11 @@ void RobotServer::JointStatePublisher() {
         joint_state_msg.effort[i + this->ndof_body_] = robot_feedback_.leg_feedback_[i].joint_torque;
     }
     this->joint_state_publisher_->publish(joint_state_msg);
+
+    // 发布 robot status string
+    auto robot_status_msg = std_msgs::msg::String();
+    robot_status_msg.data = this->GetRobotStatusString();
+    this->robot_status_publisher_->publish(robot_status_msg);
 }
 
 void RobotServer::JointStatePublisherThreadFunc() {
