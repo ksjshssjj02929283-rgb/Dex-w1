@@ -6,25 +6,6 @@
 namespace robot_server_lib {
 namespace utils {
 
-AnkleActuatorParams::AnkleActuatorParams() : l_bar(0), l_rod(0), alpha_offset_rad(0), l_bar_sq(0), l_rod_sq(0) {}
-
-AnkleActuatorParams::AnkleActuatorParams(const Eigen::Vector3d& r_ai_0,
-                                         const Eigen::Vector3d& r_ci_0_initial,
-                                         double l_bar,
-                                         double l_rod,
-                                         double alpha_offset_rad)
-    : r_ai_0(r_ai_0), r_ci_0_initial(r_ci_0_initial), l_bar(l_bar), l_rod(l_rod), alpha_offset_rad(alpha_offset_rad) {
-    if (l_bar <= 1e-9) {
-        throw std::runtime_error("l_bar必须大于零");
-    }
-    l_bar_sq = l_bar * l_bar;
-    l_rod_sq = l_rod * l_rod;
-}
-
-AnkleIKSolution::AnkleIKSolution() : theta_1_rad(0), success_1(false), theta_2_rad(0), success_2(false) {}
-
-PMAnkle::PMAnkle() { PMAnkleInit(); }
-
 Eigen::Matrix3d Rx(double angle_rad) {
     return Eigen::AngleAxisd(angle_rad, Eigen::Vector3d::UnitX()).toRotationMatrix();
 }
@@ -33,9 +14,44 @@ Eigen::Matrix3d Ry(double angle_rad) {
     return Eigen::AngleAxisd(angle_rad, Eigen::Vector3d::UnitY()).toRotationMatrix();
 }
 
-std::pair<double, bool> CalculateSingleThetaIInternal(double q_pitch_rad,
-                                                      double q_roll_rad,
-                                                      const AnkleActuatorParams& params) {
+PMAnkle::PMAnkle(bool is_left_) : is_left_(is_left_) {
+    Eigen::Vector3d r_a_1_vec, r_c_1_vec, r_a_2_vec, r_c_2_vec;
+    double l_bar_1, l_rod_1, l_bar_2, l_rod_2, alpha_1_rad, alpha_2_rad;
+
+    if (is_left_) {
+        r_a_1_vec = Eigen::Vector3d(-46, 0, 257.94);
+        r_c_1_vec = Eigen::Vector3d(-46, -59, 0.0);
+        l_bar_1 = 60;
+        l_rod_1 = 268.354;
+        alpha_1_rad = 0.1745;
+
+        r_a_2_vec = Eigen::Vector3d(-46, 0, 177.94);
+        r_c_2_vec = Eigen::Vector3d(-46, 59, 0.0);
+        l_bar_2 = 60;
+        l_rod_2 = 188.355;
+        alpha_2_rad = -0.1745;
+
+    } else {
+        r_a_1_vec = Eigen::Vector3d(-46, 0, 257.94);
+        r_c_1_vec = Eigen::Vector3d(-46, 59, 0.0);
+        l_bar_1 = 60;
+        l_rod_1 = 268.354;
+        alpha_1_rad = -0.1745;
+
+        r_a_2_vec = Eigen::Vector3d(-46, 0, 177.94);
+        r_c_2_vec = Eigen::Vector3d(-46, -59, 0.0);
+        l_bar_2 = 60;
+        l_rod_2 = 188.355;
+        alpha_2_rad = 0.1745;
+    }
+
+    params_1_ = AnkleActuatorParams(true, r_a_1_vec, r_c_1_vec, l_bar_1, l_rod_1, alpha_1_rad);
+    params_2_ = AnkleActuatorParams(false, r_a_2_vec, r_c_2_vec, l_bar_2, l_rod_2, alpha_2_rad);
+}
+
+std::pair<double, bool> PMAnkle::CalculateSingleThetaIInternal(double q_pitch_rad,
+                                                               double q_roll_rad,
+                                                               const AnkleActuatorParams& params) {
     const Eigen::Vector3d& r_ai = params.r_ai_0;
     Eigen::Matrix3d x_rot = Ry(q_pitch_rad) * Rx(q_roll_rad);
     Eigen::Vector3d r_ci = x_rot * params.r_ci_0_initial;
@@ -79,52 +95,37 @@ std::pair<double, bool> CalculateSingleThetaIInternal(double q_pitch_rad,
     arg_asin = std::max(-1.0, std::min(1.0, arg_asin));
 
     double theta_i_rad = std::asin(arg_asin);
+    // 根据实际电机转向异或取反theta_i_rad
+    if (is_left_ == params.is_first_actuator) {
+        theta_i_rad = -theta_i_rad;
+    }
     theta_i_rad += params.alpha_offset_rad;
 
     return {theta_i_rad, true};
 }
 
-AnkleIKSolution CalculateAnkleIKBothActuators(double q_pitch_rad,
-                                              double q_roll_rad,
-                                              const AnkleActuatorParams& params_1,
-                                              const AnkleActuatorParams& params_2) {
+AnkleIKSolution PMAnkle::CalculateAnkleIKBothActuators(double q_pitch_rad, double q_roll_rad) {
     AnkleIKSolution solution;
 
-    auto result_1 = CalculateSingleThetaIInternal(q_pitch_rad, q_roll_rad, params_1);
+    auto result_1 = CalculateSingleThetaIInternal(q_pitch_rad, q_roll_rad, params_1_);
     solution.theta_1_rad = result_1.first;
     solution.success_1 = result_1.second;
 
-    auto result_2 = CalculateSingleThetaIInternal(q_pitch_rad, q_roll_rad, params_2);
+    auto result_2 = CalculateSingleThetaIInternal(q_pitch_rad, q_roll_rad, params_2_);
     solution.theta_2_rad = result_2.first;
     solution.success_2 = result_2.second;
 
     return solution;
 }
 
-void PMAnkle::PMAnkleInit() {
-    Eigen::Vector3d r_a_1_vec(ext_params.pm_ankle_a_1[0], ext_params.pm_ankle_a_1[1], ext_params.pm_ankle_a_1[2]);
-    Eigen::Vector3d r_c_1_vec(ext_params.pm_ankle_c_1[0], ext_params.pm_ankle_c_1[1], ext_params.pm_ankle_c_1[2]);
-    double l_bar_1 = ext_params.pm_ankle_bar_rod_1[0];
-    double l_rod_1 = ext_params.pm_ankle_bar_rod_1[1];
-    double alpha_1_rad = -0.1745;
-    params_1 = AnkleActuatorParams(r_a_1_vec, r_c_1_vec, l_bar_1, l_rod_1, alpha_1_rad);
-
-    Eigen::Vector3d r_a_2_vec(ext_params.pm_ankle_a_2[0], ext_params.pm_ankle_a_2[1], ext_params.pm_ankle_a_2[2]);
-    Eigen::Vector3d r_c_2_vec(ext_params.pm_ankle_c_2[0], ext_params.pm_ankle_c_2[1], ext_params.pm_ankle_c_2[2]);
-    double l_bar_2 = ext_params.pm_ankle_bar_rod_2[0];
-    double l_rod_2 = ext_params.pm_ankle_bar_rod_2[1];
-    double alpha_2_rad = -0.1745;
-    params_2 = AnkleActuatorParams(r_a_2_vec, r_c_2_vec, l_bar_2, l_rod_2, alpha_2_rad);
-}
-
 AnkleIKSolution PMAnkle::GetAnkleMotorAngles(double q_pitch_rad, double q_roll_rad) {
-    return CalculateAnkleIKBothActuators(q_pitch_rad, q_roll_rad, params_1, params_2);
+    return CalculateAnkleIKBothActuators(q_pitch_rad, q_roll_rad);
 }
 
-Eigen::Vector2d ComputeNumericalJacobianSingle(double q_pitch,
-                                               double q_roll,
-                                               const AnkleActuatorParams& params,
-                                               double eps) {
+Eigen::Vector2d PMAnkle::ComputeNumericalJacobianSingle(double q_pitch,
+                                                        double q_roll,
+                                                        const AnkleActuatorParams& params,
+                                                        double eps) {
     auto compute_theta = [&](double qp, double qr) -> double {
         auto result = CalculateSingleThetaIInternal(qp, qr, params);
         return result.first;
@@ -139,29 +140,27 @@ Eigen::Vector2d ComputeNumericalJacobianSingle(double q_pitch,
     return J;
 }
 
-Eigen::Matrix2d ComputeAnkleJacobian(double q_pitch,
-                                     double q_roll,
-                                     const AnkleActuatorParams& params_1,
-                                     const AnkleActuatorParams& params_2,
-                                     double eps) {
+Eigen::Matrix2d PMAnkle::ComputeAnkleJacobian(double q_pitch, double q_roll, double eps) {
     Eigen::Matrix2d J;
-    J.row(0) = ComputeNumericalJacobianSingle(q_pitch, q_roll, params_1, eps);
-    J.row(1) = ComputeNumericalJacobianSingle(q_pitch, q_roll, params_2, eps);
+    J.row(0) = ComputeNumericalJacobianSingle(q_pitch, q_roll, params_1_, eps);
+    J.row(1) = ComputeNumericalJacobianSingle(q_pitch, q_roll, params_2_, eps);
     return J;
+}
+
+Eigen::Matrix2d PMAnkle::ComputeJacobian(double q_pitch_rad, double q_roll_rad) {
+    return ComputeAnkleJacobian(q_pitch_rad, q_roll_rad);
 }
 
 Eigen::Vector2d PMAnkle::GetAnklePoseFromMotorAngles(double theta_1_rad, double theta_2_rad) {
     auto residual = [&](const Eigen::Vector2d& q) -> Eigen::Vector2d {
-        auto ik = CalculateAnkleIKBothActuators(q(0), q(1), params_1, params_2);
+        auto ik = CalculateAnkleIKBothActuators(q(0), q(1));
         Eigen::Vector2d f;
         f(0) = ik.theta_1_rad - theta_1_rad;
         f(1) = ik.theta_2_rad - theta_2_rad;
         return f;
     };
 
-    auto jacobian = [&](const Eigen::Vector2d& q) -> Eigen::Matrix2d {
-        return ComputeAnkleJacobian(q(0), q(1), params_1, params_2);
-    };
+    auto jacobian = [&](const Eigen::Vector2d& q) -> Eigen::Matrix2d { return ComputeAnkleJacobian(q(0), q(1)); };
 
     Eigen::Vector2d q = Eigen::Vector2d::Zero();
     double eps = 1e-6;
@@ -188,7 +187,7 @@ Eigen::Vector2d PMAnkle::GetTaskTorquesFromMotorTorques(double q_pitch_rad,
                                                         double q_roll_rad,
                                                         double tau_motor_1,
                                                         double tau_motor_2) {
-    Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad, params_1, params_2);
+    Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad);
     Eigen::Vector2d tau_motor(tau_motor_1, tau_motor_2);
     return J.inverse().transpose() * tau_motor;
 }
@@ -197,7 +196,7 @@ Eigen::Vector2d PMAnkle::GetTaskVelocitiesFromMotorVelocities(double q_pitch_rad
                                                               double q_roll_rad,
                                                               double vel_motor_1,
                                                               double vel_motor_2) {
-    Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad, params_1, params_2);
+    Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad);
     Eigen::Vector2d vel_motor(vel_motor_1, vel_motor_2);
     return J * vel_motor;
 }
@@ -206,7 +205,7 @@ Eigen::Vector2d PMAnkle::GetMotorStiffnessFromTaskStiffness(double q_pitch_rad,
                                                             double q_roll_rad,
                                                             double k_pitch,
                                                             double k_roll) {
-    Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad, params_1, params_2);
+    Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad);
     Eigen::Matrix2d J_inv = J.inverse();
     Eigen::Vector2d k_motor;
     k_motor(0) = k_pitch * J_inv(0, 0) * J_inv(0, 0) + k_roll * J_inv(0, 1) * J_inv(0, 1);
@@ -218,7 +217,7 @@ Eigen::Vector2d PMAnkle::GetMotorDampingFromTaskDamping(double q_pitch_rad,
                                                         double q_roll_rad,
                                                         double d_pitch,
                                                         double d_roll) {
-    Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad, params_1, params_2);
+    Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad);
     Eigen::Matrix2d J_inv = J.inverse();
     Eigen::Vector2d d_motor;
     d_motor(0) = d_pitch * J_inv(0, 0) * J_inv(0, 0) + d_roll * J_inv(0, 1) * J_inv(0, 1);

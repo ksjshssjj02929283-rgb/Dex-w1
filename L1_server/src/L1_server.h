@@ -61,8 +61,8 @@ private:
 
     std::thread joint_state_publisher_thread_;  // 100Hz关节状态发布线程
 
-    utils::PMAnkle pm_ankle_left_;
-    utils::PMAnkle pm_ankle_right_;
+    utils::PMAnkle pm_ankle_left_{true};
+    utils::PMAnkle pm_ankle_right_{false};
 };
 
 }  // namespace robot_server_lib

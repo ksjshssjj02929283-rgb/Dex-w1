@@ -6,17 +6,9 @@
 namespace robot_server_lib {
 namespace utils {
 
-struct ExternalParameters {
-    double pm_ankle_a_1[3] = {-46, 0, 257.94};
-    double pm_ankle_c_1[3] = {-46, 59, 0.0};
-    double pm_ankle_bar_rod_1[2] = {60, 268.354};
-
-    double pm_ankle_a_2[3] = {-46, 0, 177.94};
-    double pm_ankle_c_2[3] = {-46, -59, 0.0};
-    double pm_ankle_bar_rod_2[2] = {60, 188.355};
-};
-
 struct AnkleActuatorParams {
+    bool is_first_actuator;
+
     Eigen::Vector3d r_ai_0;
     Eigen::Vector3d r_ci_0_initial;
 
@@ -27,13 +19,27 @@ struct AnkleActuatorParams {
     double l_bar_sq;
     double l_rod_sq;
 
-    AnkleActuatorParams();
+    AnkleActuatorParams()
+        : is_first_actuator(true), l_bar(0), l_rod(0), alpha_offset_rad(0), l_bar_sq(0), l_rod_sq(0) {}
 
-    AnkleActuatorParams(const Eigen::Vector3d& r_ai_0,
+    AnkleActuatorParams(bool is_first_actuator,
+                        const Eigen::Vector3d& r_ai_0,
                         const Eigen::Vector3d& r_ci_0_initial,
                         double l_bar,
                         double l_rod,
-                        double alpha_offset_rad = 0.0);
+                        double alpha_offset_rad)
+        : is_first_actuator(is_first_actuator),
+          r_ai_0(r_ai_0),
+          r_ci_0_initial(r_ci_0_initial),
+          l_bar(l_bar),
+          l_rod(l_rod),
+          alpha_offset_rad(alpha_offset_rad) {
+        if (l_bar <= 1e-9) {
+            throw std::runtime_error("l_bar必须大于零");
+        }
+        l_bar_sq = l_bar * l_bar;
+        l_rod_sq = l_rod * l_rod;
+    }
 };
 
 struct AnkleIKSolution {
@@ -42,18 +48,16 @@ struct AnkleIKSolution {
     double theta_2_rad;
     bool success_2;
 
-    AnkleIKSolution();
+    AnkleIKSolution() : theta_1_rad(0), success_1(false), theta_2_rad(0), success_2(false) {}
 };
 
 class PMAnkle {
 public:
-    ExternalParameters ext_params;
-    AnkleActuatorParams params_1;
-    AnkleActuatorParams params_2;
+    AnkleActuatorParams params_1_;
+    AnkleActuatorParams params_2_;
+    bool is_left_;
 
-    PMAnkle();
-
-    void PMAnkleInit();
+    PMAnkle(bool is_left_);
 
     AnkleIKSolution GetAnkleMotorAngles(double q_pitch_rad, double q_roll_rad);
 
@@ -78,27 +82,23 @@ public:
                                                    double q_roll_rad,
                                                    double d_pitch,
                                                    double d_roll);
+
+    Eigen::Matrix2d ComputeJacobian(double q_pitch_rad, double q_roll_rad);
+
+private:
+    std::pair<double, bool> CalculateSingleThetaIInternal(double q_pitch_rad,
+                                                          double q_roll_rad,
+                                                          const AnkleActuatorParams& params);
+
+    AnkleIKSolution CalculateAnkleIKBothActuators(double q_pitch_rad, double q_roll_rad);
+
+    Eigen::Vector2d ComputeNumericalJacobianSingle(double q_pitch,
+                                                   double q_roll,
+                                                   const AnkleActuatorParams& params,
+                                                   double eps = 1e-6);
+
+    Eigen::Matrix2d ComputeAnkleJacobian(double q_pitch, double q_roll, double eps = 1e-6);
 };
-
-std::pair<double, bool> CalculateSingleThetaIInternal(double q_pitch_rad,
-                                                      double q_roll_rad,
-                                                      const AnkleActuatorParams& params);
-
-AnkleIKSolution CalculateAnkleIKBothActuators(double q_pitch_rad,
-                                              double q_roll_rad,
-                                              const AnkleActuatorParams& params_1,
-                                              const AnkleActuatorParams& params_2);
-
-Eigen::Vector2d ComputeNumericalJacobianSingle(double q_pitch,
-                                               double q_roll,
-                                               const AnkleActuatorParams& params,
-                                               double eps = 1e-6);
-
-Eigen::Matrix2d ComputeAnkleJacobian(double q_pitch,
-                                     double q_roll,
-                                     const AnkleActuatorParams& params_1,
-                                     const AnkleActuatorParams& params_2,
-                                     double eps = 1e-6);
 
 }  // namespace utils
 }  // namespace robot_server_lib
