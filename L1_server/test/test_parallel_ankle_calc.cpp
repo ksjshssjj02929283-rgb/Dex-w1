@@ -22,10 +22,8 @@ TEST(PMAnkleTest, InverseKinematics) {
     EXPECT_TRUE(solution.success_2) << "IK solution 2 failed";
 
     std::cout << "IK: q_pitch=" << q_pitch << ", q_roll=" << q_roll << std::endl;
-    std::cout << "IK: theta_1=" << solution.theta_1_rad << " rad (" << solution.theta_1_rad * 180.0 / M_PI << " deg)"
-              << std::endl;
-    std::cout << "IK: theta_2=" << solution.theta_2_rad << " rad (" << solution.theta_2_rad * 180.0 / M_PI << " deg)"
-              << std::endl;
+    std::cout << "IK: theta_1=" << solution.theta_1_rad << " rad (" << solution.theta_1_rad * 180.0 / M_PI << " deg)" << std::endl;
+    std::cout << "IK: theta_2=" << solution.theta_2_rad << " rad (" << solution.theta_2_rad * 180.0 / M_PI << " deg)" << std::endl;
 }
 
 TEST(PMAnkleTest, ForwardKinematics) {
@@ -41,12 +39,9 @@ TEST(PMAnkleTest, ForwardKinematics) {
 
     auto fk_result = ankle.GetAnklePoseFromMotorAngles(ik_solution.theta_1_rad, ik_solution.theta_2_rad);
 
-    std::cout << "FK: theta_1=" << ik_solution.theta_1_rad << " rad, theta_2=" << ik_solution.theta_2_rad << " rad"
-              << std::endl;
-    std::cout << "FK: recovered q_pitch=" << fk_result(0) << " rad (" << fk_result(0) * 180.0 / M_PI << " deg)"
-              << std::endl;
-    std::cout << "FK: recovered q_roll=" << fk_result(1) << " rad (" << fk_result(1) * 180.0 / M_PI << " deg)"
-              << std::endl;
+    std::cout << "FK: theta_1=" << ik_solution.theta_1_rad << " rad, theta_2=" << ik_solution.theta_2_rad << " rad" << std::endl;
+    std::cout << "FK: recovered q_pitch=" << fk_result(0) << " rad (" << fk_result(0) * 180.0 / M_PI << " deg)" << std::endl;
+    std::cout << "FK: recovered q_roll=" << fk_result(1) << " rad (" << fk_result(1) * 180.0 / M_PI << " deg)" << std::endl;
 
     EXPECT_NEAR(fk_result(0), q_pitch, 1e-6) << "FK IK mismatch for pitch";
     EXPECT_NEAR(fk_result(1), q_roll, 1e-6) << "FK IK mismatch for roll";
@@ -57,7 +52,13 @@ TEST(PMAnkleTest, ForwardKinematicsVariousAngles) {
     ankle.PMAnkleInit();
 
     std::vector<std::pair<double, double>> test_angles = {
-        {0.0, 0.0}, {0.1, 0.0}, {0.0, 0.1}, {-0.1, 0.0}, {0.0, -0.1}, {0.05, 0.08}, {-0.03, 0.06},
+        {0.0, 0.0},
+        {0.1, 0.0},
+        {0.0, 0.1},
+        {-0.1, 0.0},
+        {0.0, -0.1},
+        {0.05, 0.08},
+        {-0.03, 0.06},
     };
 
     for (const auto& [q_pitch, q_roll] : test_angles) {
@@ -76,8 +77,8 @@ TEST(PMAnkleTest, ForwardKinematicsVariousAngles) {
         EXPECT_NEAR(fk_result(0), q_pitch, 1e-5) << "FK IK mismatch for pitch=" << q_pitch;
         EXPECT_NEAR(fk_result(1), q_roll, 1e-5) << "FK IK mismatch for roll=" << q_roll;
 
-        std::cout << "Test q_pitch=" << q_pitch << ", q_roll=" << q_roll << " -> pitch_err=" << pitch_err
-                  << ", roll_err=" << roll_err << std::endl;
+        std::cout << "Test q_pitch=" << q_pitch << ", q_roll=" << q_roll
+                  << " -> pitch_err=" << pitch_err << ", roll_err=" << roll_err << std::endl;
     }
 }
 
@@ -216,7 +217,12 @@ TEST(PMAnkleTest, StiffnessDampingConversionVariousAngles) {
     ankle.PMAnkleInit();
 
     std::vector<std::pair<double, double>> test_angles = {
-        {0.0, 0.0}, {0.1, 0.0}, {0.0, 0.1}, {-0.1, 0.0}, {0.0, -0.1}, {0.05, 0.08},
+        {0.0, 0.0},
+        {0.1, 0.0},
+        {0.0, 0.1},
+        {-0.1, 0.0},
+        {0.0, -0.1},
+        {0.05, 0.08},
     };
 
     double k_pitch = 100.0;
@@ -228,9 +234,9 @@ TEST(PMAnkleTest, StiffnessDampingConversionVariousAngles) {
         auto k_motor = ankle.GetMotorStiffnessFromTaskStiffness(q_pitch, q_roll, k_pitch, k_roll);
         auto d_motor = ankle.GetMotorDampingFromTaskDamping(q_pitch, q_roll, d_pitch, d_roll);
 
-        std::cout << "Angle q_pitch=" << q_pitch << ", q_roll=" << q_roll << " -> k_motor_1=" << k_motor(0)
-                  << ", k_motor_2=" << k_motor(1) << ", d_motor_1=" << d_motor(0) << ", d_motor_2=" << d_motor(1)
-                  << std::endl;
+        std::cout << "Angle q_pitch=" << q_pitch << ", q_roll=" << q_roll
+                  << " -> k_motor_1=" << k_motor(0) << ", k_motor_2=" << k_motor(1)
+                  << ", d_motor_1=" << d_motor(0) << ", d_motor_2=" << d_motor(1) << std::endl;
 
         EXPECT_TRUE(std::isfinite(k_motor(0))) << "k_motor_1 is not finite at q_pitch=" << q_pitch;
         EXPECT_TRUE(std::isfinite(k_motor(1))) << "k_motor_2 is not finite at q_roll=" << q_roll;

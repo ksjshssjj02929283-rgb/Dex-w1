@@ -1,0 +1,34 @@
+<mujoco model="serial_actuators">
+ <actuator>
+  <motor name="motor_WAIST_YAW" joint="WAIST_YAW" gear="1" ctrllimited="true" ctrlrange="-140.0 140.0" />
+  <motor name="motor_WAIST_ROLL" joint="WAIST_ROLL" gear="1" ctrllimited="true" ctrlrange="-140.0 140.0" />
+  <motor name="motor_HIP_PITCH_L_J1" joint="HIP_PITCH_L_J1" gear="1" ctrllimited="true" ctrlrange="-360.0 360.0" />
+  <motor name="motor_HIP_ROLL_L_J2" joint="HIP_ROLL_L_J2" gear="1" ctrllimited="true" ctrlrange="-128.0 128.0" />
+  <motor name="motor_HIP_YAW_L_J3" joint="HIP_YAW_L_J3" gear="1" ctrllimited="true" ctrlrange="-128.0 128.0" />
+  <motor name="motor_KNEE_PITCH_L_J4" joint="KNEE_PITCH_L_J4" gear="1" ctrllimited="true" ctrlrange="-360.0 360.0" />
+  <motor name="motor_ANKLE_PITCH_L_J5" joint="ANKLE_PITCH_L_J5" gear="1" ctrllimited="true" ctrlrange="-96.0 96.0" />
+  <motor name="motor_ANKLE_ROLL_L_J6" joint="ANKLE_ROLL_L_J6" gear="1" ctrllimited="true" ctrlrange="-96.0 96.0" />
+  <motor name="motor_HIP_PITCH_R_J1" joint="HIP_PITCH_R_J1" gear="1" ctrllimited="true" ctrlrange="-360.0 360.0" />
+  <motor name="motor_HIP_ROLL_R_J2" joint="HIP_ROLL_R_J2" gear="1" ctrllimited="true" ctrlrange="-128.0 128.0" />
+  <motor name="motor_HIP_YAW_R_J3" joint="HIP_YAW_R_J3" gear="1" ctrllimited="true" ctrlrange="-128.0 128.0" />
+  <motor name="motor_KNEE_PITCH_R_J4" joint="KNEE_PITCH_R_J4" gear="1" ctrllimited="true" ctrlrange="-360.0 360.0" />
+  <motor name="motor_ANKLE_PITCH_R_J5" joint="ANKLE_PITCH_R_J5" gear="1" ctrllimited="true" ctrlrange="-96.0 96.0" />
+  <motor name="motor_ANKLE_ROLL_R_J6" joint="ANKLE_ROLL_R_J6" gear="1" ctrllimited="true" ctrlrange="-96.0 96.0" />
+  <motor name="motor_SHOULDER_PITCH_R_J1" joint="SHOULDER_PITCH_R_J1" gear="1" ctrllimited="true" ctrlrange="-51.0 51.0" />
+  <motor name="motor_SHOULDER_ROLL_R_J2" joint="SHOULDER_ROLL_R_J2" gear="1" ctrllimited="true" ctrlrange="-51.0 51.0" />
+  <motor name="motor_ELBOW_PITCH_R_J3" joint="ELBOW_PITCH_R_J3" gear="1" ctrllimited="true" ctrlrange="-51.0 51.0" />
+  <motor name="motor_ELBOW_YAW_R_J4" joint="ELBOW_YAW_R_J4" gear="1" ctrllimited="true" ctrlrange="-51.0 51.0" />
+  <motor name="motor_WRIST_PITCH_R_J5" joint="WRIST_PITCH_R_J5" gear="1" ctrllimited="true" ctrlrange="-14.0 14.0" />
+  <motor name="motor_WRIST_YAW_R_J6" joint="WRIST_YAW_R_J6" gear="1" ctrllimited="true" ctrlrange="-14.0 14.0" />
+  <motor name="motor_WRIST_ROLL_R_J7" joint="WRIST_ROLL_R_J7" gear="1" ctrllimited="true" ctrlrange="-14.0 14.0" />
+  <motor name="motor_HEAD_YAW_J1" joint="HEAD_YAW_J1" gear="1" ctrllimited="true" ctrlrange="-14.0 14.0" />
+  <motor name="motor_HEAD_PITCH_J2" joint="HEAD_PITCH_J2" gear="1" ctrllimited="true" ctrlrange="-14.0 14.0" />
+  <motor name="motor_SHOULDER_PITCH_L_J1" joint="SHOULDER_PITCH_L_J1" gear="1" ctrllimited="true" ctrlrange="-51.0 51.0" />
+  <motor name="motor_SHOULDER_ROLL_L_J2" joint="SHOULDER_ROLL_L_J2" gear="1" ctrllimited="true" ctrlrange="-51.0 51.0" />
+  <motor name="motor_ELBOW_PITCH_L_J3" joint="ELBOW_PITCH_L_J3" gear="1" ctrllimited="true" ctrlrange="-51.0 51.0" />
+  <motor name="motor_ELBOW_YAW_L_J4" joint="ELBOW_YAW_L_J4" gear="1" ctrllimited="true" ctrlrange="-51.0 51.0" />
+  <motor name="motor_WRIST_PITCH_L_J5" joint="WRIST_PITCH_L_J5" gear="1" ctrllimited="true" ctrlrange="-14.0 14.0" />
+  <motor name="motor_WRIST_YAW_L_J6" joint="WRIST_YAW_L_J6" gear="1" ctrllimited="true" ctrlrange="-14.0 14.0" />
+  <motor name="motor_WRIST_ROLL_L_J7" joint="WRIST_ROLL_L_J7" gear="1" ctrllimited="true" ctrlrange="-14.0 14.0" />
+ </actuator>
+</mujoco>

@@ -1,0 +1,19 @@
+<mujoco model="armr3">
+  <default>
+    <default class="visual">
+      <geom group="2" type="mesh" contype="0" conaffinity="0"/>
+    </default>
+    <default class="collision">
+      <geom group="3" type="mesh"/>
+    </default>
+  </default>
+  <asset>
+    <mesh file="armr3.obj"/>
+  </asset>
+  <worldbody>
+    <body name="armr3">
+      <geom mesh="armr3" class="visual"/>
+      <geom mesh="armr3" class="collision"/>
+    </body>
+  </worldbody>
+</mujoco>

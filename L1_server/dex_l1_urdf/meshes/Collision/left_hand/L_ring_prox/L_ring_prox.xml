@@ -1,0 +1,19 @@
+<mujoco model="L_ring_prox">
+  <default>
+    <default class="visual">
+      <geom group="2" type="mesh" contype="0" conaffinity="0"/>
+    </default>
+    <default class="collision">
+      <geom group="3" type="mesh"/>
+    </default>
+  </default>
+  <asset>
+    <mesh file="L_ring_prox.obj"/>
+  </asset>
+  <worldbody>
+    <body name="L_ring_prox">
+      <geom mesh="L_ring_prox" class="visual"/>
+      <geom mesh="L_ring_prox" class="collision"/>
+    </body>
+  </worldbody>
+</mujoco>

@@ -1,0 +1,19 @@
+<mujoco model="right_leg_j1">
+  <default>
+    <default class="visual">
+      <geom group="2" type="mesh" contype="0" conaffinity="0"/>
+    </default>
+    <default class="collision">
+      <geom group="3" type="mesh"/>
+    </default>
+  </default>
+  <asset>
+    <mesh file="right_leg_j1.obj"/>
+  </asset>
+  <worldbody>
+    <body name="right_leg_j1">
+      <geom mesh="right_leg_j1" class="visual"/>
+      <geom mesh="right_leg_j1" class="collision"/>
+    </body>
+  </worldbody>
+</mujoco>

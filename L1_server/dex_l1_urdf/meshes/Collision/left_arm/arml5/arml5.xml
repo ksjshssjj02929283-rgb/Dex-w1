@@ -1,0 +1,19 @@
+<mujoco model="arml5">
+  <default>
+    <default class="visual">
+      <geom group="2" type="mesh" contype="0" conaffinity="0"/>
+    </default>
+    <default class="collision">
+      <geom group="3" type="mesh"/>
+    </default>
+  </default>
+  <asset>
+    <mesh file="arml5.obj"/>
+  </asset>
+  <worldbody>
+    <body name="arml5">
+      <geom mesh="arml5" class="visual"/>
+      <geom mesh="arml5" class="collision"/>
+    </body>
+  </worldbody>
+</mujoco>

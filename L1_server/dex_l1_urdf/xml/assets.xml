@@ -1,0 +1,33 @@
+<mujoco model="assets">
+ <mesh name="torso_base_link" file="../meshes/Visual/torso/optimized_stl/torso4.stl" />
+ <mesh name="waist_yaw_link" file="../meshes/Visual/legs/buttock.stl" />
+ <mesh name="waist_roll_link" file="../meshes/Visual/legs/legs_base_link.stl" />
+ <mesh name="hip_pitch_l_j1_link" file="../meshes/Visual/legs/left_leg_j1.stl" />
+ <mesh name="hip_roll_l_j2_link" file="../meshes/Visual/legs/left_leg_j2.stl" />
+ <mesh name="hip_yaw_l_j3_link" file="../meshes/Visual/legs/left_leg_j3.stl" />
+ <mesh name="knee_pitch_l_j4_link" file="../meshes/Visual/legs/left_leg_j4.stl" />
+ <mesh name="ankle_pitch_l_j5_link" file="../meshes/Visual/legs/left_leg_j5.stl" />
+ <mesh name="ankle_roll_l_j6_link" file="../meshes/Visual/legs/left_leg_j6.stl" />
+ <mesh name="hip_pitch_r_j1_link" file="../meshes/Visual/legs/right_leg_j1.stl" />
+ <mesh name="hip_roll_r_j2_link" file="../meshes/Visual/legs/right_leg_j2.stl" />
+ <mesh name="hip_yaw_r_j3_link" file="../meshes/Visual/legs/right_leg_j3.stl" />
+ <mesh name="knee_pitch_r_j4_link" file="../meshes/Visual/legs/right_leg_j4.stl" />
+ <mesh name="ankle_pitch_r_j5_link" file="../meshes/Visual/legs/right_leg_j5.stl" />
+ <mesh name="ankle_roll_r_j6_link" file="../meshes/Visual/legs/right_leg_j6.stl" />
+ <mesh name="head_yaw_j1_link" file="../meshes/Visual/head/head1.stl" />
+ <mesh name="head_pitch_j2_link" file="../meshes/Visual/head/head2.stl" />
+ <mesh name="shoulder_pitch_l_j1_link" file="../meshes/Visual/left_arm/arml1.stl" />
+ <mesh name="shoulder_roll_l_j2_link" file="../meshes/Visual/left_arm/arml2.stl" />
+ <mesh name="elbow_pitch_l_j3_link" file="../meshes/Visual/left_arm/arml3.stl" />
+ <mesh name="elbow_yaw_l_j4_link" file="../meshes/Visual/left_arm/arml4.stl" />
+ <mesh name="wrist_pitch_l_j5_link" file="../meshes/Visual/left_arm/arml5.stl" />
+ <mesh name="wrist_yaw_l_j6_link" file="../meshes/Visual/left_arm/arml6.stl" />
+ <mesh name="wrist_roll_l_j7_link" file="../meshes/Visual/left_arm/arml7.stl" />
+ <mesh name="shoulder_pitch_r_j1_link" file="../meshes/Visual/right_arm/armr1.stl" />
+ <mesh name="shoulder_roll_r_j2_link" file="../meshes/Visual/right_arm/armr2.stl" />
+ <mesh name="elbow_pitch_r_j3_link" file="../meshes/Visual/right_arm/armr3.stl" />
+ <mesh name="elbow_yaw_r_j4_link" file="../meshes/Visual/right_arm/armr4.stl" />
+ <mesh name="wrist_pitch_r_j5_link" file="../meshes/Visual/right_arm/armr5.stl" />
+ <mesh name="wrist_yaw_r_j6_link" file="../meshes/Visual/right_arm/armr6.stl" />
+ <mesh name="wrist_roll_r_j7_link" file="../meshes/Visual/right_arm/armr7.stl" />
+</mujoco>

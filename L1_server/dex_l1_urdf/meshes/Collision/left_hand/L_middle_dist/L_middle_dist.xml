@@ -1,0 +1,19 @@
+<mujoco model="L_middle_dist">
+  <default>
+    <default class="visual">
+      <geom group="2" type="mesh" contype="0" conaffinity="0"/>
+    </default>
+    <default class="collision">
+      <geom group="3" type="mesh"/>
+    </default>
+  </default>
+  <asset>
+    <mesh file="L_middle_dist.obj"/>
+  </asset>
+  <worldbody>
+    <body name="L_middle_dist">
+      <geom mesh="L_middle_dist" class="visual"/>
+      <geom mesh="L_middle_dist" class="collision"/>
+    </body>
+  </worldbody>
+</mujoco>
