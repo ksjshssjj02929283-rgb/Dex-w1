@@ -162,4 +162,19 @@ target_link_libraries(feedback PUBLIC
 )
 install(TARGETS feedback DESTINATION lib/${PROJECT_NAME})
 
+# 测试
+find_package(ament_cmake_gtest REQUIRED)
+enable_testing()
+file(GLOB TEST_SRCS test/*.cpp)
+foreach(test_src ${TEST_SRCS})
+  get_filename_component(test_name ${test_src} NAME_WE)
+  ament_add_gtest(${test_name} ${test_src})
+  target_include_directories(${test_name} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/utils
+    ${EIGEN3_INCLUDE_DIR}
+  )
+  target_sources(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils/parallel_ankle_calc.cpp)
+  ament_target_dependencies(${test_name} robot_server_lib)
+endforeach()
+
 ament_package()

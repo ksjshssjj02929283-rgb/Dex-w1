@@ -4,8 +4,7 @@
 
 #include "L1_server.h"
 
-int main(int argc, char* argv[])
-{
+int main(int argc, char* argv[]) {
     const auto package_share_path = ament_index_cpp::get_package_share_directory("L1_server");
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot.cfg";
 
