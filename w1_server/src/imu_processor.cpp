@@ -176,30 +176,36 @@ bool ImuProcessor::ComputeImuBias() {
         return false;
     }
 
-    // ==================== 重估重力方向和大小 ====================
-    // 1) 从实测数据中提取重力方向
-    Eigen::Vector3d z = acc_avg.normalized();  // 重力方向（单位向量）
+    // ==================== 估计 IMU 安装姿态（roll/pitch）及偏置 ====================
+    // 设计原则：固定重力幅值（使用配置参数 gravity_magnitude_，不从数据中重估）。
+    //   理由：在斜坡上静止时 acc_avg.norm() ≈ g（重力大小不变，仅方向偏离水平面），
+    //         重新估计重力大小并覆盖预设值会破坏 GetRefinedImuData 的去重力一致性。
+    //   Yaw 不可观：加速度计仅约束重力方向（2 个自由度），yaw 固定为 0（仅估计 roll+pitch）。
 
-    // 2) 从实测数据中提取重力大小
-    const double g_estimated = acc_avg.norm();  // 重估的重力大小
+    // 1) 从实测加速度均值提取重力在 IMU 坐标系的单位方向
+    //    静止时：acc_avg ≈ R_GtoI_ * [0, 0, g]，故 acc_avg.normalized() = R_GtoI_.col(2)
+    Eigen::Vector3d z = acc_avg.normalized();
 
-    RCLCPP_INFO(rclcpp::get_logger("ImuProcessor"),
-                "Gravity estimation: preset=%.4f m/s², estimated=%.4f m/s², diff=%.4f m/s²", g_preset, g_estimated,
-                std::abs(g_estimated - g_preset));
+    // 2) 计算等效 roll/pitch（用于日志和斜坡告警）
+    const double roll_est  = std::atan2(acc_avg.y(), acc_avg.z());
+    const double pitch_est = std::atan2(-acc_avg.x(),
+                                         std::sqrt(acc_avg.y() * acc_avg.y() + acc_avg.z() * acc_avg.z()));
+    // 倾角（IMU Z 轴偏离世界 Z 轴的角度）
+    const double tilt_deg = std::acos(std::min(1.0, std::abs(z.z()))) * 180.0 / M_PI;
+    if (tilt_deg > 5.0) {
+        LOG_WARN << "IMU initialized on a slope! tilt=" << tilt_deg << " deg. "
+                 << "R_ItoG_ aligns to slope normal, not true horizontal. "
+                 << "Yaw error on flat ground ≈ sin(tilt) * ωx. "
+                 << "Please re-initialize on flat ground.";
+    }
 
-    // 3) 构造稳健的正交基（用于定义世界坐标系）
-
-    // 选择与 z 不共线的参考向量
+    // 3) 构造稳健的正交基（yaw=0：X 轴沿 IMU X 轴在重力坐标系水平面的投影）
     Eigen::Vector3d e = (std::abs(z.x()) < 0.9) ? Eigen::Vector3d::UnitX() : Eigen::Vector3d::UnitY();
-
-    // 去掉 z 分量并归一化
     Eigen::Vector3d x = (e - z * (z.dot(e))).normalized();
     Eigen::Vector3d y = z.cross(x).normalized();
+    x = y.cross(z);  // 重新正交化，消除累计误差
 
-    // 重新正交化（消除累计误差）
-    x = y.cross(z);
-
-    // 4) 组装并用极分解投影到 SO(3)
+    // 4) 组装矩阵并通过 SVD 极分解投影到 SO(3)
     Eigen::Matrix3d R;
     R.col(0) = x;
     R.col(1) = y;
@@ -213,26 +219,26 @@ bool ImuProcessor::ComputeImuBias() {
         Ro = U * svd.matrixV().transpose();
     }
 
-    // 5) 保存旋转与偏置
+    // 5) 保存旋转矩阵（R_GtoI_：世界系→IMU系；R_ItoG_：IMU系→世界系）
     R_GtoI_ = Ro;
     R_ItoG_ = R_GtoI_.transpose();
 
+    // 6) 陀螺零偏：静止均值
     gyro_bias_ = gyr_avg;
 
-    // 更新重力向量为重估值（用于后续去重力计算）
-    gravity_vector_ = Eigen::Vector3d(0.0, 0.0, g_estimated);
+    // 7) 加速度零偏：使用固定重力幅值（gravity_vector_ 不在此处修改，始终为 SetGravityMagnitude() 预设值）
+    //    acc_bias = acc_avg - R_GtoI_ * [0, 0, g_fixed]^T
+    const Eigen::Vector3d gravity_in_imu = R_GtoI_ * Eigen::Vector3d(0.0, 0.0, gravity_magnitude_);
+    acc_bias_ = acc_avg - gravity_in_imu;
 
-    // 使用实测的重力向量（方向+大小）计算加速度零偏
-    // gravity_in_world = [0, 0, g_estimated]
-    Eigen::Vector3d gravity_estimated_vec(0.0, 0.0, g_estimated);
-    acc_bias_ = acc_avg - R_GtoI_ * gravity_estimated_vec;
-
-    LOG_WARN << "Compute imu bias success. "
+    LOG_WARN << "IMU bias computed (g_fixed=" << gravity_magnitude_ << " m/s²). "
+             << "roll=" << roll_est * 180.0 / M_PI << " deg, "
+             << "pitch=" << pitch_est * 180.0 / M_PI << " deg, "
+             << "tilt=" << tilt_deg << " deg, "
              << "acc_std=[" << acc_std.x() << ", " << acc_std.y() << ", " << acc_std.z() << "], "
              << "gyr_std=[" << gyr_std.x() << ", " << gyr_std.y() << ", " << gyr_std.z() << "], "
              << "acc_bias=[" << acc_bias_.x() << ", " << acc_bias_.y() << ", " << acc_bias_.z() << "], "
-             << "gyro_bias=[" << gyro_bias_.x() << ", " << gyro_bias_.y() << ", " << gyro_bias_.z() << "], "
-             << "g_estimated=" << g_estimated << " m/s²";
+             << "gyro_bias=[" << gyro_bias_.x() << ", " << gyro_bias_.y() << ", " << gyro_bias_.z() << "]";
     return true;
 }
 
