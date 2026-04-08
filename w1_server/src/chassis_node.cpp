@@ -8,6 +8,22 @@
 using json = nlohmann::json;
 namespace chassis_node {
 
+// 内部辅助：找到 chassis_params.yaml 并构建 NodeOptions
+static rclcpp::NodeOptions MakeChassisOptions() {
+    rclcpp::NodeOptions opts;
+    const auto pkg = ament_index_cpp::get_package_share_directory("w1_server");
+    const auto yaml_path = std::filesystem::path(pkg) / "config" / "chassis_params.yaml";
+    if (std::filesystem::exists(yaml_path)) {
+        opts.arguments({"--ros-args", "--params-file", yaml_path.string()});
+        std::cout << "[ChassisNode] params loaded from: " << yaml_path << std::endl;
+    } else {
+        std::cout << "[ChassisNode] " << yaml_path << " not found, using compiled defaults." << std::endl;
+    }
+    return opts;
+}
+
+ChassisNode::ChassisNode() : ChassisNode(MakeChassisOptions()) {}
+
 ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("chassis_node", options) {
     // 声明参数
     wheel_track_ = this->declare_parameter<double>("wheel_track", 0.4390);  // 轮距 b（示例值）
@@ -15,6 +31,7 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("cha
     base_frame_ = this->declare_parameter<std::string>("base_frame", "base_footprint");
     odom_rate_hz_ = this->declare_parameter<double>("odom_rate_hz", 100.0);
     use_imu_yaw_ = this->declare_parameter<bool>("use_imu_yaw", true);
+    use_ekf_fusion_ = this->declare_parameter<bool>("use_ekf_fusion", false);
 
     odom_factor_ = this->declare_parameter<double>("odom_factor", 1.0);
     imu_factor_ = this->declare_parameter<double>("imu_factor", 1.0);
@@ -33,6 +50,21 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("cha
     omega_deadzone_ = this->declare_parameter<double>("omega_deadzone", 0.008);  // 角速度死区 (rad/s)
     imu_timeout_ = this->declare_parameter<double>("imu_timeout", 0.1);          // IMU超时时间 (s)
 
+    // EKF 参数
+    ekf_params_.q_xy    = this->declare_parameter<double>("ekf_q_xy",    1e-4);
+    ekf_params_.q_theta = this->declare_parameter<double>("ekf_q_theta", 1e-3);
+    ekf_params_.q_v     = this->declare_parameter<double>("ekf_q_v",     0.04);
+    ekf_params_.q_omega = this->declare_parameter<double>("ekf_q_omega", 0.01);
+    ekf_params_.r_v           = this->declare_parameter<double>("ekf_r_v",           0.05);
+    ekf_params_.r_omega       = this->declare_parameter<double>("ekf_r_omega",       0.01);
+    ekf_params_.r_v_aerial    = this->declare_parameter<double>("ekf_r_v_aerial",    100.0);
+    ekf_params_.r_omega_aerial= this->declare_parameter<double>("ekf_r_omega_aerial",100.0);
+    ekf_params_.aerial_chi2_threshold = this->declare_parameter<double>("ekf_aerial_chi2_threshold", 9.21);
+    ekf_params_.p0_xy    = this->declare_parameter<double>("ekf_p0_xy",    0.01);
+    ekf_params_.p0_theta = this->declare_parameter<double>("ekf_p0_theta", 0.01);
+    ekf_params_.p0_v     = this->declare_parameter<double>("ekf_p0_v",     1.0);
+    ekf_params_.p0_omega = this->declare_parameter<double>("ekf_p0_omega", 1.0);
+
     // 模型配置文件路径 ==================
     const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
 
@@ -42,9 +74,10 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("cha
     LoadChassisConfig(robot_cfg_path);
 
     imu_processor_ = std::make_unique<ImuProcessor>();
-
     imu_processor_->SetGravityMagnitude(gravity_magnitude_);
     imu_processor_->SetParam(imu_max_buff_size_, acc_excite_threshold_, gyro_excite_threshold_, imu_reinit_duration_);
+
+    ekf_ = std::make_unique<ChassisEkf>(ekf_params_);
 
     // 订阅 IMU
     imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
@@ -67,8 +100,10 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("cha
     callback_handle_ =
         this->add_on_set_parameters_callback(std::bind(&ChassisNode::parametersCallback, this, std::placeholders::_1));
 
-    RCLCPP_INFO(this->get_logger(), "ChassisNode started. track=%.3f m, rate=%.1f Hz, frames: %s -> %s", wheel_track_,
-                odom_rate_hz_, odom_frame_.c_str(), base_frame_.c_str());
+    RCLCPP_INFO(this->get_logger(),
+                "ChassisNode started. track=%.3f m, rate=%.1f Hz, frames: %s -> %s, ekf=%s",
+                wheel_track_, odom_rate_hz_, odom_frame_.c_str(), base_frame_.c_str(),
+                use_ekf_fusion_ ? "ON" : "OFF");
 }
 
 void ChassisNode::LoadChassisConfig(const std::filesystem::path &cfg_path) {
@@ -118,11 +153,15 @@ void ChassisNode::ResetOdometry() {
     speed_v_y_ = 0.0;
     omega_r_ = 0.0;
     is_stopped_ = true;
+    is_aerial_ = false;
     prev_chassis_data_.reset();
     curr_chassis_data_.reset();
     prev_imu_.reset();
     curr_imu_.reset();
     is_imu_inited_ = false;
+    if (ekf_) {
+        ekf_->Reset();
+    }
     RCLCPP_INFO(this->get_logger(), "Odometry reset.");
 }
 
@@ -162,17 +201,18 @@ void ChassisNode::IntegrateImuOnce(const sensor_msgs::msg::Imu &imu) {
 
     std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
 
-    // 更新当前 IMU（用于速度发布）
+    // 更新当前 IMU（用于速度发布及 EKF 输入）
     curr_imu_ = std::make_shared<sensor_msgs::msg::Imu>(imu);
-
-    // 更新 IMU 时间戳
-    last_imu_time_ = imu.header.stamp;
-
-    // 更新 IMU 时间戳
     last_imu_time_ = imu.header.stamp;
 
     // 第一次：仅缓存，不积分
     if (!prev_imu_) {
+        prev_imu_ = curr_imu_;
+        return;
+    }
+
+    // EKF 模式：不在这里积分 theta，由 IntegrateOdomOnce 中 EKF::Step 统一处理
+    if (use_ekf_fusion_) {
         prev_imu_ = curr_imu_;
         return;
     }
@@ -236,8 +276,8 @@ void ChassisNode::onTimer() {
     bool ret = feedback_shm_instance.PeekLatest(&feedback_data);
     const auto &chassis_data = feedback_data.chassis_feedback;
     PublishOmniMotorFeedback(chassis_data);
-    if (use_imu_yaw_ && !is_imu_inited_) {
-        // RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Waiting for chassis initialized ...");
+    // 非 EKF 模式且 IMU 未初始化时，等待 IMU
+    if (use_imu_yaw_ && !use_ekf_fusion_ && !is_imu_inited_) {
         return;
     }
     if (chassis_model_ == 0)
@@ -312,6 +352,44 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data) {
         std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
         is_stopped_ = is_stopped;
     }
+
+    // ===== EKF 融合路径 =====
+    if (use_ekf_fusion_ && ekf_) {
+        double omega_z_imu = 0.0;
+        bool imu_valid = false;
+        {
+            std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
+            if (curr_imu_ != nullptr && imu_available) {
+                omega_z_imu = curr_imu_->angular_velocity.z * imu_factor_;
+                imu_valid = true;
+            }
+        }
+
+        is_aerial_ = ekf_->Step(dt,
+                                speed_avg * odom_factor_,
+                                omega_enc,
+                                omega_z_imu,
+                                imu_valid);
+
+        {
+            std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
+            odom_x_     = ekf_->GetX();
+            odom_y_     = ekf_->GetY();
+            odom_theta_ = ekf_->GetTheta();
+        }
+        speed_v_ = ekf_->GetV();
+        omega_r_ = ekf_->GetOmega();
+
+        if (is_aerial_) {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                                 "Aerial/slip detected! Encoder unreliable, expanding covariance.");
+        }
+
+        prev_chassis_data_ = curr_chassis_data_;
+        curr_chassis_data_.reset();
+        return;
+    }
+    // ===== 非EKF路径（原有逻辑） =====
 
     // 记录积分前的角度
     // 记录积分前的角度
@@ -572,13 +650,19 @@ void ChassisNode::PublishOdometry() {
     odom_msg.twist.twist.angular.y = 0.0;
     odom_msg.twist.twist.angular.z = omega_r_;
 
-    // 可选：协方差（示例，按需调整）
-    // auto & Pc = odom_msg.pose.covariance;
-    // auto & Tc = odom_msg.twist.covariance;
-    // Pc[0] = Pc[7] = 0.02 * 0.02;   // x,y
-    // Pc[35]= 0.02 * 0.02;           // yaw
-    // Tc[0] = Tc[7] = 0.05 * 0.05;   // vx, vy
-    // Tc[35]= 0.05 * 0.05;           // wz
+    // 填充协方差
+    if (use_ekf_fusion_ && ekf_) {
+        // EKF 状态协方差：从 EKF 对角线获取
+        const auto &P       = ekf_->GetCovariance();
+        const double scale  = is_aerial_ ? 100.0 : 1.0;
+        auto &Pc            = odom_msg.pose.covariance;
+        auto &Tc            = odom_msg.twist.covariance;
+        Pc[0]  = P(0, 0) * scale;  // x-x
+        Pc[7]  = P(1, 1) * scale;  // y-y
+        Pc[35] = P(2, 2) * scale;  // yaw-yaw
+        Tc[0]  = P(3, 3) * scale;  // vx-vx
+        Tc[35] = P(4, 4) * scale;  // wz-wz
+    }
 
     odom_pub_->publish(odom_msg);
 
@@ -646,6 +730,33 @@ rcl_interfaces::msg::SetParametersResult ChassisNode::parametersCallback(
         } else if (changed_parameter.get_name() == "use_imu_yaw") {
             use_imu_yaw_ = changed_parameter.as_bool();
             RCLCPP_INFO(this->get_logger(), "Updated use_imu_yaw: %s", use_imu_yaw_ ? "true" : "false");
+            // 切换航向源：清除 IMU 缓存，不重置里程计
+            {
+                std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
+                curr_imu_.reset();
+                prev_imu_.reset();
+            }
+        } else if (changed_parameter.get_name() == "use_ekf_fusion") {
+            use_ekf_fusion_ = changed_parameter.as_bool();
+            RCLCPP_INFO(this->get_logger(), "Updated use_ekf_fusion: %s", use_ekf_fusion_ ? "true" : "false");
+        } else if (changed_parameter.get_name() == "ekf.q_xy") {
+            ekf_params_.q_xy = changed_parameter.as_double();
+            if (ekf_) ekf_->SetParams(ekf_params_);
+        } else if (changed_parameter.get_name() == "ekf.q_theta") {
+            ekf_params_.q_theta = changed_parameter.as_double();
+            if (ekf_) ekf_->SetParams(ekf_params_);
+        } else if (changed_parameter.get_name() == "ekf.q_v") {
+            ekf_params_.q_v = changed_parameter.as_double();
+            if (ekf_) ekf_->SetParams(ekf_params_);
+        } else if (changed_parameter.get_name() == "ekf.q_omega") {
+            ekf_params_.q_omega = changed_parameter.as_double();
+            if (ekf_) ekf_->SetParams(ekf_params_);
+        } else if (changed_parameter.get_name() == "ekf.r_v") {
+            ekf_params_.r_v = changed_parameter.as_double();
+            if (ekf_) ekf_->SetParams(ekf_params_);
+        } else if (changed_parameter.get_name() == "ekf.r_omega") {
+            ekf_params_.r_omega = changed_parameter.as_double();
+            if (ekf_) ekf_->SetParams(ekf_params_);
         } else if (changed_parameter.get_name() == "speed_deadzone") {
             speed_deadzone_ = changed_parameter.as_double();
             RCLCPP_INFO(this->get_logger(), "Updated speed_deadzone: %.5f m/s", speed_deadzone_);
@@ -657,7 +768,7 @@ rcl_interfaces::msg::SetParametersResult ChassisNode::parametersCallback(
             RCLCPP_INFO(this->get_logger(), "Updated imu_timeout: %.3f s", imu_timeout_);
         }
     }
-    ResetOdometry();  // 参数变更后重置里程计
+    // 不再无条件 ResetOdometry()，避免每次参数更新都清零里程计
     return result;
 }
 
