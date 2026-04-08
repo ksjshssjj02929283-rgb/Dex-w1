@@ -11,6 +11,7 @@
 #include <nlohmann/json.hpp>
 #include <rclcpp/rclcpp.hpp>
 
+#include "chassis_ekf.h"
 #include "chassis_interfaces/msg/chassis_motor_control.hpp"
 #include "imu_processor.h"
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
@@ -20,7 +21,8 @@ namespace chassis_node {
 
 class ChassisNode : public rclcpp::Node {
 public:
-    explicit ChassisNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
+    ChassisNode();  ///< 自动从 share/w1_server/config/chassis_params.yaml 加载参数
+    explicit ChassisNode(const rclcpp::NodeOptions& options);
     ~ChassisNode() override = default;
 
     // 禁止拷贝与赋值
@@ -72,9 +74,12 @@ private:
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr callback_handle_;
 
     std::unique_ptr<ImuProcessor> imu_processor_;
+    std::unique_ptr<ChassisEkf>   ekf_;
 
-    bool use_imu_yaw_ = true;  // 是否使用IMU航向
-    bool is_imu_inited_ = false;
+    bool use_imu_yaw_    = true;   // 是否使用IMU航向（非EKF直接积分模式）
+    bool use_ekf_fusion_ = false;  // 是否使用 EKF 融合
+    bool is_imu_inited_  = false;
+    bool is_aerial_      = false;  // 悬空/打滑检测结果（由 EKF 填写）
 
     // 底盘模型
     int chassis_model_ = 0;
@@ -107,22 +112,25 @@ private:
 
     // param
     double odom_factor_ = 1.0;
-    double imu_factor_ = 1.0;
+    double imu_factor_  = 1.0;
 
     // IMU初始化参数
-    int imu_max_buff_size_ = 1500;
-    double acc_excite_threshold_ = 0.015;
-    double gyro_excite_threshold_ = 0.002;
-    double imu_reinit_duration_ = 3600.0;
-    double gravity_magnitude_ = 9.7887;
+    int    imu_max_buff_size_      = 1500;
+    double acc_excite_threshold_   = 0.015;
+    double gyro_excite_threshold_  = 0.002;
+    double imu_reinit_duration_    = 3600.0;
+    double gravity_magnitude_      = 9.7887;
 
     // 死区参数
     double speed_deadzone_ = 5e-3;  // m/s
     double omega_deadzone_ = 5e-3;  // rad/s
-    double imu_timeout_ = 0.1;      // s
+    double imu_timeout_    = 0.1;   // s
 
     // IMU 超时检测
     rclcpp::Time last_imu_time_{0, 0, RCL_ROS_TIME};
+
+    // EKF 参数
+    ChassisEkf::Params ekf_params_;
 
     std::mutex imu_yaw_mutex_;
 };

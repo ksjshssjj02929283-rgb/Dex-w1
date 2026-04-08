@@ -148,6 +148,10 @@ install(
   FILES robot_config.yaml
   DESTINATION share/${PROJECT_NAME}
 )
+install(
+  DIRECTORY config/
+  DESTINATION share/${PROJECT_NAME}/config
+)
 
 # feedback 可执行文件
 add_executable(feedback tools/feedback.cpp)
