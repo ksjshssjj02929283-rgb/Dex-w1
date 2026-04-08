@@ -1,6 +1,7 @@
 #pragma once
 #include "cartesian_impedance_controller.h"
 #include "inverse_dynamics.h"
+#include "joint_impedance_controller.h"
 #include "torque_controller_base.h"
 
 namespace robot_server_lib {
@@ -15,8 +16,7 @@ public:
 
 protected:
     VectorDof idle_q_;
-    VectorDof integral_error_ = VectorDof::Zero();  // 积分误差累计
-    double error_integral_max_ = 0.1;               // 积分误差限幅
+    std::shared_ptr<dynamics::JointImpedanceController> joint_impedance_controller_{nullptr};
 };
 
 }  // namespace robot_server_lib

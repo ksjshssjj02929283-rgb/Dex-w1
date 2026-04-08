@@ -117,6 +117,7 @@ void RobotServerBase::PublishThreadFunc() {
     JointRawMeasurement raw_measurement;
     PlannerManagerCommand planner_cmd{};
     PlannerManagerInfo planner_info{};
+    TorqueCtrlCommand torque_cmd{};
     auto next_cycle_time_point = std::chrono::steady_clock::now();
 
     while (rclcpp::ok()) {
@@ -128,6 +129,7 @@ void RobotServerBase::PublishThreadFunc() {
         if (this->robot_buffers_.joint_raw_measurement->PeekLatest(&raw_measurement) &&
             this->manager_buffers_.planner_manager_info->PeekLatest(&planner_info) &&
             this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd)) {
+            this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd);
             robot_server_state_msg.data = GetRobotServerStateJson(
                 timestamp_ns,
                 std::vector<double>(raw_measurement.position.data(),
@@ -140,12 +142,14 @@ void RobotServerBase::PublishThreadFunc() {
                                     raw_measurement.sensor_wrench.data() + raw_measurement.sensor_wrench.size()),
                 std::vector<double>(planner_info.ee_pose_measurement.data(),
                                     planner_info.ee_pose_measurement.data() + planner_info.ee_pose_measurement.size()),
+                torque_cmd,
                 planner_info);
         } else if (!TORQUE_CONTROL && is_sim_) {
             JointMeasurement joint_measurement;
             if (this->manager_buffers_.joint_measurement->PeekLatest(&joint_measurement) &&
                 this->manager_buffers_.planner_manager_info->PeekLatest(&planner_info) &&
                 this->manager_buffers_.planner_manager_command->PeekLatest(&planner_cmd)) {
+                this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd);
                 robot_server_state_msg.data = GetRobotServerStateJson(
                     timestamp_ns,
                     std::vector<double>(joint_measurement.position.data(),
@@ -159,6 +163,7 @@ void RobotServerBase::PublishThreadFunc() {
                     std::vector<double>(
                         planner_info.ee_pose_measurement.data(),
                         planner_info.ee_pose_measurement.data() + planner_info.ee_pose_measurement.size()),
+                    torque_cmd,
                     planner_info);
             } else {
                 robot_server_state_msg.data = GetRobotServerStateJson(timestamp_ns);
@@ -178,6 +183,7 @@ std::string RobotServerBase::GetRobotServerStateJson(uint64_t timestamp_ns,
                                                      const std::optional<std::vector<double>>& effort,
                                                      const std::optional<std::vector<double>>& sensor_wrench,
                                                      const std::optional<std::vector<double>>& ee_pose,
+                                                     const std::optional<TorqueCtrlCommand>& torque_cmd,
                                                      const std::optional<PlannerManagerInfo>& planner_info) {
     std::string json = "{\"timestamp\":" + std::to_string(timestamp_ns) + ",\"status\":\"" +
                        ToString(this->manager_state_) + "\"" + ", \"robot_type\":\"" +
@@ -202,6 +208,20 @@ std::string RobotServerBase::GetRobotServerStateJson(uint64_t timestamp_ns,
                 ",\n \"ee_pose\":" + ee_pose_ss.str() + ",\n \"force_sensor\":" + joint_sensor_wrench_ss.str() +
                 ",\n \"joint_position\":" + joint_position_ss.str() +
                 ",\n \"joint_velocity\":" + joint_velocity_ss.str() + ",\n \"joint_torque\":" + joint_torque_ss.str();
+        if (torque_cmd.has_value()) {
+            std::ostringstream q_desired_base_ss = utils::VectorToJsonArrayString(torque_cmd->q_desired_base);
+            std::ostringstream q_desired_compliant_ss =
+                utils::VectorToJsonArrayString(torque_cmd->q_desired_compliant);
+            std::ostringstream compliance_offset_ss =
+                utils::VectorToJsonArrayString(torque_cmd->joint_compliance_offset);
+            std::vector<int> force_trigger_state(torque_cmd->force_trigger_state.begin(),
+                                                 torque_cmd->force_trigger_state.end());
+            std::ostringstream force_trigger_state_ss = utils::VectorToJsonArrayString(force_trigger_state);
+            json += ",\n \"joint_desired_base\":" + q_desired_base_ss.str() +
+                    ",\n \"joint_desired_compliant\":" + q_desired_compliant_ss.str() +
+                    ",\n \"joint_compliance_offset\":" + compliance_offset_ss.str() +
+                    ",\n \"force_trigger_state\":" + force_trigger_state_ss.str();
+        }
     }
     json += "}";
     return json;

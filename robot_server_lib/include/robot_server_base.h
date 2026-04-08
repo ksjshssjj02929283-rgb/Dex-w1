@@ -88,6 +88,7 @@ private:
                                         const std::optional<std::vector<double>>& effort = std::nullopt,
                                         const std::optional<std::vector<double>>& sensor_wrench = std::nullopt,
                                         const std::optional<std::vector<double>>& ee_pose = std::nullopt,
+                                        const std::optional<TorqueCtrlCommand>& torque_cmd = std::nullopt,
                                         const std::optional<PlannerManagerInfo>& planner_info = std::nullopt);
 };
 }  // namespace robot_server_lib
