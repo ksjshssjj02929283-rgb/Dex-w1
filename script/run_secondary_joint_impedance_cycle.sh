@@ -10,8 +10,25 @@ ACTION_TYPE="robot_server_interfaces/action/MoveRobot"
 SET_PROPERTY_SERVICE="/control/set_property"
 SET_PROPERTY_TYPE="robot_server_interfaces/srv/SetProperty"
 MOVE_CONFIG='{"speed":0.5,"acceleration":0.5}'
+MOVE_SPEED="$(python3 - <<'PY'
+import json
+cfg = json.loads('''{"speed":0.5,"acceleration":0.5}''')
+print(cfg["speed"])
+PY
+)"
+MOVE_ACCELERATION="$(python3 - <<'PY'
+import json
+cfg = json.loads('''{"speed":0.5,"acceleration":0.5}''')
+print(cfg["acceleration"])
+PY
+)"
 LOG_PATH="${HOME}/log/robot_record.jsonl"
 FINAL_TARGET="0,1.58,0,0,0,0,0"
+REPORT_DIR="${HOME}/dexe_robot_server_data"
+REPORT_TS="$(date +%Y%m%d_%H%M%S)"
+REPORT_PATH="${REPORT_DIR}/secondary_joint_impedance_cycle_${REPORT_TS}.md"
+RUN_MODE_NAME="Torque"
+SUMMARY_ROWS=""
 
 declare -a GROUP_1=(
   "0.78,1.58,0,0,0,0,0"
@@ -111,9 +128,10 @@ summarize_group_error() {
   local logical_joint="$2"
   local start_ts="$3"
   local end_ts="$4"
+  local summary_line
 
   print_step "${group_name} error summary"
-  python3 - "${LOG_PATH}" "${group_name}" "${logical_joint}" "${start_ts}" "${end_ts}" <<'PY'
+  summary_line="$(python3 - "${LOG_PATH}" "${group_name}" "${logical_joint}" "${start_ts}" "${end_ts}" <<'PY'
 import json
 import math
 import sys
@@ -183,10 +201,39 @@ if not errors_deg:
 avg_err = sum(errors_deg) / len(errors_deg)
 max_err = max(errors_deg)
 print(
-    f"{group_name}: right joint {logical_joint}, "
-    f"samples={len(errors_deg)}, avg_abs_error_deg={avg_err:.6f}, max_abs_error_deg={max_err:.6f}"
+    f"{group_name}|right joint {logical_joint}|{len(errors_deg)}|{avg_err:.6f}|{max_err:.6f}"
 )
 PY
+)" || return 1
+
+  IFS='|' read -r group_label joint_label sample_count avg_err max_err <<< "${summary_line}"
+  echo "${group_label}: ${joint_label}, samples=${sample_count}, avg_abs_error_deg=${avg_err}, max_abs_error_deg=${max_err}"
+  SUMMARY_ROWS+=$'| '"${group_label}"$' | '"${joint_label}"$' | '"${sample_count}"$' | '"${avg_err}"$' | '"${max_err}"$' |\n'
+}
+
+write_report() {
+  mkdir -p "${REPORT_DIR}" || return 1
+
+  cat > "${REPORT_PATH}" <<EOF
+# Secondary Joint Impedance Cycle Report
+
+- Timestamp: ${REPORT_TS}
+- Run mode: ${RUN_MODE_NAME}
+- Motion group: Secondary
+- Move type: MoveJoint
+- Speed: ${MOVE_SPEED}
+- Acceleration: ${MOVE_ACCELERATION}
+- Final target: [${FINAL_TARGET}]
+
+## Error Summary
+
+| Group | Joint | Samples | Average Abs Error (deg) | Max Abs Error (deg) |
+| --- | --- | ---: | ---: | ---: |
+${SUMMARY_ROWS}
+EOF
+
+  echo
+  echo "Report saved to: ${REPORT_PATH}"
 }
 
 main() {
@@ -200,6 +247,8 @@ main() {
 
   print_step "Return to final target"
   run_move_joint "${FINAL_TARGET}" || exit 1
+
+  write_report || exit 1
 }
 
 main "$@"
