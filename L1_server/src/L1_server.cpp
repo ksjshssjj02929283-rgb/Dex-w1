@@ -157,16 +157,20 @@ void RobotServer::JointCommandCallback(const JointCommandMsg::SharedPtr msg) {
     for (size_t i = 0; i < msg->name.size(); ++i) {
         for (int j = 0; j < ndof_body_ + ndof_legs_; ++j) {
             if (joint_name_[j] == msg->name[i]) {
+                int sign = 1;
+                if (IsJointInMinusList(joint_name_[j])) {
+                    sign = -1;
+                }
                 if (j < ndof_body_) {
-                    robot_control_temp.position[j] = msg->position[i];
-                    robot_control_temp.velocity[j] = msg->velocity[i];
-                    robot_control_temp.torque_feedforward[j] = msg->torque_feedforward[i];
+                    robot_control_temp.position[j] = sign * msg->position[i];
+                    robot_control_temp.velocity[j] = sign * msg->velocity[i];
+                    robot_control_temp.torque_feedforward[j] = sign * msg->torque_feedforward[i];
                 } else {
                     int leg_index = j - ndof_body_;
-                    robot_control_temp.leg_control[leg_index].joint_position = msg->position[i];
-                    robot_control_temp.leg_control[leg_index].joint_velocity = msg->velocity[i];
-                    robot_control_temp.leg_control[leg_index].joint_torque = msg->torque[i];
-                    robot_control_temp.leg_control[leg_index].joint_torque_feedforward = msg->torque_feedforward[i];
+                    robot_control_temp.leg_control[leg_index].joint_position = sign * msg->position[i];
+                    robot_control_temp.leg_control[leg_index].joint_velocity = sign * msg->velocity[i];
+                    robot_control_temp.leg_control[leg_index].joint_torque = sign * msg->torque[i];
+                    robot_control_temp.leg_control[leg_index].joint_torque_feedforward = sign * msg->torque_feedforward[i];
                     robot_control_temp.leg_control[leg_index].joint_Kp = msg->stiffness[i];
                     robot_control_temp.leg_control[leg_index].joint_Kd = msg->damping[i];
                 }
@@ -247,7 +251,7 @@ void RobotServer::JointControlThreadFunc() {
                      << utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str()
                      << ", control word changed to "
                      << utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str()
-                     << " robot status: " << this->GetRobotStatusString();
+                     << " robot status: " << InvertJointSignFromJsonString(this->GetRobotStatusString());
             last_status_word_ = robot_feedback_.robot_status_word;
             last_control_word_ = robot_control_.robot_control_word;
         }
@@ -388,17 +392,20 @@ void RobotServer::JointStatePublisher() {
     joint_state_msg.position.resize(this->ndof_body_ + this->ndof_legs_);
     joint_state_msg.velocity.resize(this->ndof_body_ + this->ndof_legs_);
     joint_state_msg.effort.resize(this->ndof_body_ + this->ndof_legs_);
+    int sign = 1;
     for (int i = 0; i < this->ndof_body_; ++i) {
         joint_state_msg.name[i] = this->joint_name_[i];
-        joint_state_msg.position[i] = robot_feedback_.position[i];
-        joint_state_msg.velocity[i] = robot_feedback_.velocity[i];
-        joint_state_msg.effort[i] = robot_feedback_.torque[i];
+        IsJointInMinusList(joint_state_msg.name[i]) ? sign = -1 : sign = 1;
+        joint_state_msg.position[i] = sign * robot_feedback_.position[i];
+        joint_state_msg.velocity[i] = sign * robot_feedback_.velocity[i];
+        joint_state_msg.effort[i] = sign * robot_feedback_.torque[i];
     }
     for (int i = 0; i < this->ndof_legs_; ++i) {
         joint_state_msg.name[i + this->ndof_body_] = this->joint_name_[i + this->ndof_body_];
-        joint_state_msg.position[i + this->ndof_body_] = robot_feedback_.leg_feedback_[i].joint_position;
-        joint_state_msg.velocity[i + this->ndof_body_] = robot_feedback_.leg_feedback_[i].joint_velocity;
-        joint_state_msg.effort[i + this->ndof_body_] = robot_feedback_.leg_feedback_[i].joint_torque;
+        IsJointInMinusList(joint_name_[i + this->ndof_body_]) ? sign = -1 : sign = 1;
+        joint_state_msg.position[i + this->ndof_body_] = sign * robot_feedback_.leg_feedback_[i].joint_position;
+        joint_state_msg.velocity[i + this->ndof_body_] = sign * robot_feedback_.leg_feedback_[i].joint_velocity;
+        joint_state_msg.effort[i + this->ndof_body_] = sign * robot_feedback_.leg_feedback_[i].joint_torque;
     }
     this->joint_state_publisher_->publish(joint_state_msg);
 
@@ -444,6 +451,32 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
     }
 }
 
+std::string RobotServer::InvertJointSignFromJsonString(std::string status_string) {
+    //将string变为json
+    auto json_obj = nlohmann::json::parse(status_string);
+    //获取joint_names
+    auto joint_names = json_obj["joint_names"];
+    //遍历joint name
+    for (size_t i = 0; i < joint_names.size(); ++i) {
+        std::string joint_name = joint_names[i].get<std::string>();
+        if (IsJointInMinusList(joint_name)) {
+            //判断是上半身还是下半身
+            if (i < ndof_body_) {
+                json_obj["body_joint_position"][i] = -json_obj["body_joint_position"][i].get<double>();
+                json_obj["body_joint_velocity"][i] = -json_obj["body_joint_velocity"][i].get<double>();
+                json_obj["body_joint_torque"][i] = -json_obj["body_joint_torque"][i].get<double>();
+            } else {
+                json_obj["leg_joint_position"][i - ndof_body_] = -json_obj["leg_joint_position"][i - ndof_body_].get<double>();
+
+                json_obj["leg_joint_velocity"][i - ndof_body_] = -json_obj["leg_joint_velocity"][i - ndof_body_].get<double>();
+                json_obj["leg_joint_torque"][i - ndof_body_] = -json_obj["leg_joint_torque"][i - ndof_body_].get<double>();
+            }
+        }
+    }
+    //转换回string
+    return json_obj.dump();
+}
+
 std::string RobotServer::GetRobotStatusString() {
     uint64_t timestamp_ns = this->now().nanoseconds();
     // 构建腿部位置数组
@@ -487,7 +520,7 @@ std::string RobotServer::GetRobotStatusString() {
         ",\n  \"leg_joint_torque\":" + utils::VectorToJsonArrayString(leg_torque, 0, ndof_legs_).str() +
         ",\n  \"leg_stiffness\":" + utils::VectorToJsonArrayString(leg_stiffness, 0, ndof_legs_).str() +
         ",\n  \"leg_damping\":" + utils::VectorToJsonArrayString(leg_damping, 0, ndof_legs_).str() + "\n}";
-    return status_string;
+    return InvertJointSignFromJsonString(status_string);
 }
 
 }  // namespace robot_server_lib

@@ -24,6 +24,17 @@ private:
     void JointControlThreadFunc();
     void JointStatePublisherThreadFunc();  // 100Hz关节状态发布线程
 
+    // 判断关节name是否在joint_minus_中，如果在则返回true
+    bool IsJointInMinusList(const std::string& joint_name) {
+        for (const auto& name : joint_minus_) {
+            if (name == joint_name) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
     void JointCommandCallback(const joint_interfaces::msg::JointCommand::SharedPtr msg);
     void JointPositionControlCallback(const joint_interfaces::msg::JointPositionControl::SharedPtr msg);
     void JointStatePublisher();
@@ -31,6 +42,7 @@ private:
     RobotFeedback ConvertAnkleMotorsToPitchRoll(const RobotFeedback& robot_feedback);
     RobotControl ConvertPitchRollToAnkleMotors(const RobotControl& robot_control);
     void DebugCallback(const std_msgs::msg::String::SharedPtr msg);
+    std::string InvertJointSignFromJsonString(std::string status_string);
     std::string GetRobotStatusString();
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;
@@ -47,12 +59,19 @@ private:
     const int ndof_legs_ = 12;  // 腿部自由度
 
     std::string joint_name_[30] = {
-        "WAIST_YAW",          "WAIST_ROLL",          "HEAD_YAW_J1",        "HEAD_PITCH_J2",    "SHOULDER_PITCH_L_J1",
-        "SHOULDER_ROLL_L_J2", "ELBOW_PITCH_L_J3",    "ELBOW_YAW_L_J4",     "WRIST_PITCH_L_J5", "WRIST_YAW_L_J6",
-        "WRIST_ROLL_L_J7",    "SHOULDER_PITCH_R_J1", "SHOULDER_ROLL_R_J2", "ELBOW_PITCH_R_J3", "ELBOW_YAW_R_J4",
-        "WRIST_PITCH_R_J5",   "WRIST_YAW_R_J6",      "WRIST_ROLL_R_J7",    "HIP_PITCH_L_J1",   "HIP_ROLL_L_J2",
-        "HIP_YAW_L_J3",       "KNEE_PITCH_L_J4",     "ANKLE_PITCH_L_J5",   "ANKLE_ROLL_L_J6",  "HIP_PITCH_R_J1",
-        "HIP_ROLL_R_J2",      "HIP_YAW_R_J3",        "KNEE_PITCH_R_J4",    "ANKLE_PITCH_R_J5", "ANKLE_ROLL_R_J6"};
+        "HEAD_YAW_J1",   "HEAD_PITCH_J2",                 
+        "SHOULDER_PITCH_R_J1", "SHOULDER_ROLL_R_J2", "ELBOW_PITCH_R_J3", "ELBOW_YAW_R_J4", "WRIST_PITCH_R_J5", "WRIST_YAW_R_J6", "WRIST_ROLL_R_J7",     
+        "SHOULDER_PITCH_L_J1", "SHOULDER_ROLL_L_J2", "ELBOW_PITCH_L_J3", "ELBOW_YAW_L_J4", "WRIST_PITCH_L_J5", "WRIST_YAW_L_J6", "WRIST_ROLL_L_J7",     
+        "WAIST_YAW",    "WAIST_ROLL", 
+        "HIP_PITCH_R_J1", "HIP_ROLL_R_J2", "HIP_YAW_R_J3", "KNEE_PITCH_R_J4", "ANKLE_PITCH_R_J5", "ANKLE_ROLL_R_J6",
+        "HIP_PITCH_L_J1", "HIP_ROLL_L_J2", "HIP_YAW_L_J3", "KNEE_PITCH_L_J4", "ANKLE_PITCH_L_J5", "ANKLE_ROLL_L_J6"
+    };
+
+    std::string joint_minus_[30] = {
+        "HEAD_PITCH_J2", "SHOULDER_PITCH_R_J1", "ELBOW_PITCH_R_J3", "WRIST_PITCH_R_J5", 
+        "WAIST_YAW",    "WAIST_ROLL", 
+        "HIP_PITCH_L_J1", "HIP_ROLL_L_J2", "KNEE_PITCH_L_J4", "ANKLE_PITCH_L_J5", 
+        "HIP_ROLL_R_J2", "ANKLE_PITCH_R_J5"};
 
     double torque_limit_Nm_[18] = {87.0, 87.0, 10.0, 10.0, 31.0, 31.0, 31.0, 31.0, 10.0,
                                    10.0, 10.0, 31.0, 31.0, 31.0, 31.0, 10.0, 10.0, 10.0};
