@@ -9,7 +9,9 @@ ACTION_NAME="/control/move_robot"
 ACTION_TYPE="robot_server_interfaces/action/MoveRobot"
 SET_PROPERTY_SERVICE="/control/set_property"
 SET_PROPERTY_TYPE="robot_server_interfaces/srv/SetProperty"
-MOVE_CONFIG='{"speed":0.1,"acceleration":0.5}'
+MOVE_CONFIG='{"speed":0.5,"acceleration":0.5}'
+LOG_PATH="${HOME}/log/robot_record.jsonl"
+FINAL_TARGET="0,1.58,0,0,0,0,0"
 
 declare -a GROUP_1=(
   "0.78,1.58,0,0,0,0,0"
@@ -84,8 +86,14 @@ run_move_joint() {
 
 run_group_three_times() {
   local group_name="$1"
+  local logical_joint="$2"
+  local start_ts
+  local end_ts
+  shift
   shift
   local -a pair=("$@")
+
+  start_ts="$(date +%s.%N)"
 
   for round in 1 2 3; do
     print_step "${group_name} round ${round}/3"
@@ -93,30 +101,105 @@ run_group_three_times() {
       run_move_joint "${target}" || return 1
     done
   done
+
+  end_ts="$(date +%s.%N)"
+  summarize_group_error "${group_name}" "${logical_joint}" "${start_ts}" "${end_ts}" || return 1
 }
 
-plot_right_arm_selected_joints() {
-  print_step "Plot right arm joints 1/2/4/6"
-  (
-    cd "${SCRIPT_DIR}" || exit 1
-    python3 plot_log.py --a1 --joint 7 &
-    python3 plot_log.py --a1 --joint 8 &
-    python3 plot_log.py --a1 --joint 10 &
-    python3 plot_log.py --a1 --joint 12 &
-    wait
-  )
+summarize_group_error() {
+  local group_name="$1"
+  local logical_joint="$2"
+  local start_ts="$3"
+  local end_ts="$4"
+
+  print_step "${group_name} error summary"
+  python3 - "${LOG_PATH}" "${group_name}" "${logical_joint}" "${start_ts}" "${end_ts}" <<'PY'
+import json
+import math
+import sys
+from pathlib import Path
+
+log_path = Path(sys.argv[1]).expanduser()
+group_name = sys.argv[2]
+logical_joint = int(sys.argv[3])
+start_ts = float(sys.argv[4])
+end_ts = float(sys.argv[5])
+
+if not log_path.exists():
+    print(f"[ERROR] Log file not found: {log_path}")
+    sys.exit(1)
+
+def map_joint_index(joint_count: int, logical_joint_num: int) -> int:
+    if joint_count == 14:
+        return 6 + logical_joint_num
+    if joint_count == 20:
+        return 12 + logical_joint_num
+    raise ValueError(f"Unsupported joint_count: {joint_count}")
+
+errors_deg = []
+joint_index = None
+
+with log_path.open("r", encoding="utf-8", errors="ignore") as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            data = json.loads(line)
+        except Exception:
+            continue
+
+        try:
+            ts = float(data["timestamp"])
+        except Exception:
+            continue
+
+        if ts < start_ts or ts > end_ts:
+            continue
+
+        pos = data.get("joint_position")
+        pos_cmd = data.get("joint_position_cmd")
+        if not isinstance(pos, list) or not isinstance(pos_cmd, list) or len(pos) != len(pos_cmd):
+            continue
+
+        if joint_index is None:
+            joint_index = map_joint_index(len(pos), logical_joint)
+
+        if joint_index >= len(pos):
+            print(f"[ERROR] Joint index {joint_index} out of range for joint_count {len(pos)}")
+            sys.exit(1)
+
+        try:
+            err_deg = math.degrees(float(pos_cmd[joint_index]) - float(pos[joint_index]))
+        except Exception:
+            continue
+        if math.isfinite(err_deg):
+            errors_deg.append(abs(err_deg))
+
+if not errors_deg:
+    print(f"[ERROR] No valid error samples found for {group_name}")
+    sys.exit(1)
+
+avg_err = sum(errors_deg) / len(errors_deg)
+max_err = max(errors_deg)
+print(
+    f"{group_name}: right joint {logical_joint}, "
+    f"samples={len(errors_deg)}, avg_abs_error_deg={avg_err:.6f}, max_abs_error_deg={max_err:.6f}"
+)
+PY
 }
 
 main() {
   print_step "Enable joint impedance"
   send_set_property "SwitchRunMode" "1" || exit 1
 
-  run_group_three_times "Group 1" "${GROUP_1[@]}" || exit 1
-  run_group_three_times "Group 2" "${GROUP_2[@]}" || exit 1
-  run_group_three_times "Group 3" "${GROUP_3[@]}" || exit 1
-  run_group_three_times "Group 4" "${GROUP_4[@]}" || exit 1
+  run_group_three_times "Group 1" "1" "${GROUP_1[@]}" || exit 1
+  run_group_three_times "Group 2" "2" "${GROUP_2[@]}" || exit 1
+  run_group_three_times "Group 3" "4" "${GROUP_3[@]}" || exit 1
+  run_group_three_times "Group 4" "6" "${GROUP_4[@]}" || exit 1
 
-  plot_right_arm_selected_joints
+  print_step "Return to final target"
+  run_move_joint "${FINAL_TARGET}" || exit 1
 }
 
 main "$@"
