@@ -4,11 +4,13 @@ set -u
 set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROBOT_CFG_PATH="/home/dex/dexe/dexe_robot_server/w1_server/robot.cfg"
 
 ACTION_NAME="/control/move_robot"
 ACTION_TYPE="robot_server_interfaces/action/MoveRobot"
 SET_PROPERTY_SERVICE="/control/set_property"
 SET_PROPERTY_TYPE="robot_server_interfaces/srv/SetProperty"
+MOTION_GROUP="Secondary"
 MOVE_CONFIG='{"speed":0.5,"acceleration":0.5}'
 MOVE_SPEED="$(python3 - <<'PY'
 import json
@@ -27,7 +29,9 @@ FINAL_TARGET="0,1.58,0,0,0,0,0"
 REPORT_DIR="${HOME}/dexe_robot_server_data"
 REPORT_TS="$(date +%Y%m%d_%H%M%S)"
 REPORT_PATH="${REPORT_DIR}/secondary_joint_impedance_cycle_${REPORT_TS}.md"
-RUN_MODE_NAME="Torque"
+RUN_MODE_VALUE="1"
+ARM_LABEL=""
+ARM_STIFFNESS_LINE=""
 SUMMARY_ROWS=""
 
 declare -a GROUP_1=(
@@ -70,7 +74,7 @@ send_set_property() {
 
 run_move_joint() {
   local target_csv="$1"
-  local goal="{motion_group: Secondary, type: MoveJoint, target: [${target_csv}], config: '${MOVE_CONFIG}'}"
+  local goal="{motion_group: ${MOTION_GROUP}, type: MoveJoint, target: [${target_csv}], config: '${MOVE_CONFIG}'}"
   local output_file
   output_file="$(mktemp)"
 
@@ -131,7 +135,7 @@ summarize_group_error() {
   local summary_line
 
   print_step "${group_name} error summary"
-  summary_line="$(python3 - "${LOG_PATH}" "${group_name}" "${logical_joint}" "${start_ts}" "${end_ts}" <<'PY'
+  summary_line="$(python3 - "${LOG_PATH}" "${group_name}" "${logical_joint}" "${start_ts}" "${end_ts}" "${MOTION_GROUP}" <<'PY'
 import json
 import math
 import sys
@@ -142,6 +146,7 @@ group_name = sys.argv[2]
 logical_joint = int(sys.argv[3])
 start_ts = float(sys.argv[4])
 end_ts = float(sys.argv[5])
+motion_group = sys.argv[6]
 
 if not log_path.exists():
     print(f"[ERROR] Log file not found: {log_path}")
@@ -149,9 +154,17 @@ if not log_path.exists():
 
 def map_joint_index(joint_count: int, logical_joint_num: int) -> int:
     if joint_count == 14:
-        return 6 + logical_joint_num
+        if motion_group == "Primary":
+            return logical_joint_num - 1
+        if motion_group == "Secondary":
+            return 6 + logical_joint_num
+        raise ValueError(f"Unsupported motion_group: {motion_group}")
     if joint_count == 20:
-        return 12 + logical_joint_num
+        if motion_group == "Primary":
+            return 5 + logical_joint_num
+        if motion_group == "Secondary":
+            return 12 + logical_joint_num
+        raise ValueError(f"Unsupported motion_group: {motion_group}")
     raise ValueError(f"Unsupported joint_count: {joint_count}")
 
 errors_deg = []
@@ -201,7 +214,7 @@ if not errors_deg:
 avg_err = sum(errors_deg) / len(errors_deg)
 max_err = max(errors_deg)
 print(
-    f"{group_name}|right joint {logical_joint}|{len(errors_deg)}|{avg_err:.6f}|{max_err:.6f}"
+    f"{group_name}|{motion_group} joint {logical_joint}|{len(errors_deg)}|{avg_err:.6f}|{max_err:.6f}"
 )
 PY
 )" || return 1
@@ -213,17 +226,53 @@ PY
 
 write_report() {
   mkdir -p "${REPORT_DIR}" || return 1
+  ARM_STIFFNESS_LINE="$(python3 - "${ROBOT_CFG_PATH}" "${MOTION_GROUP}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+cfg_path = Path(sys.argv[1])
+motion_group = sys.argv[2]
+if not cfg_path.exists():
+    print("unavailable (robot.cfg not found)")
+    sys.exit(0)
+
+try:
+    data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    stiffness = data.get("joint_stiffness", [])
+    if not isinstance(stiffness, list) or len(stiffness) < 20:
+        print("unavailable (joint_stiffness invalid)")
+        sys.exit(0)
+    if motion_group == "Primary":
+        arm_stiffness = stiffness[6:13]
+    elif motion_group == "Secondary":
+        arm_stiffness = stiffness[13:20]
+    else:
+        print(f"unavailable (unsupported motion_group: {motion_group})")
+        sys.exit(0)
+    print("[" + ", ".join(str(v) for v in arm_stiffness) + "]")
+except Exception as exc:
+    print(f"unavailable ({exc})")
+PY
+)"
+
+  if [[ "${MOTION_GROUP}" == "Primary" ]]; then
+    ARM_LABEL="Left"
+  else
+    ARM_LABEL="Right"
+  fi
 
   cat > "${REPORT_PATH}" <<EOF
-# Secondary Joint Impedance Cycle Report
+# ${MOTION_GROUP} Joint Impedance Cycle Report
 
 - Timestamp: ${REPORT_TS}
-- Run mode: ${RUN_MODE_NAME}
-- Motion group: Secondary
+- SwitchRunMode: ${RUN_MODE_VALUE}
+- Motion group: ${MOTION_GROUP}
 - Move type: MoveJoint
 - Speed: ${MOVE_SPEED}
 - Acceleration: ${MOVE_ACCELERATION}
 - Final target: [${FINAL_TARGET}]
+- ${ARM_LABEL} arm joint stiffness from ${ROBOT_CFG_PATH}: ${ARM_STIFFNESS_LINE}
 
 ## Error Summary
 
@@ -238,7 +287,7 @@ EOF
 
 main() {
   print_step "Enable joint impedance"
-  send_set_property "SwitchRunMode" "1" || exit 1
+  send_set_property "SwitchRunMode" "${RUN_MODE_VALUE}" || exit 1
 
   run_group_three_times "Group 1" "1" "${GROUP_1[@]}" || exit 1
   run_group_three_times "Group 2" "2" "${GROUP_2[@]}" || exit 1
