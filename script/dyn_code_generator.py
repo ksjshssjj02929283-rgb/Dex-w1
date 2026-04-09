@@ -37,6 +37,7 @@ class RobotUnifiedDynamicsGenerator:
     # -------------------------------------------------
     def generate_all(self):
         self.generate_M_term_code()
+        self.generate_inv_dyn_code()
 
     # -------------------------------------------------
 
@@ -84,7 +85,6 @@ class RobotUnifiedDynamicsGenerator:
         T_se = sympybotics.symcode.Subexprs()
         T_se._subexp_iv = self.rbt._H_se
         tau_code = T_se.get(tau_expr)
-        print(tau_code)
 
         # 构造替换映射与函数签名（包含 dyn_base_params 与 gravity_acc）
         q_subs = {q: f'q[{i}]' for i, q in enumerate(self.rbtdef.q)}
