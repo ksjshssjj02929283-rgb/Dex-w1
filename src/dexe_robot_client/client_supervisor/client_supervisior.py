@@ -100,7 +100,8 @@ class RobotClientSupervisor(object):
 
         # Init other clients
         for _, v in self._client_map.items():
-            v.initialize(executor=self._executor)
+            if hasattr(v, "initialize"):
+                v.initialize(executor=self._executor)
 
         # Start background thread for supervision
         self._bg_thread = threading.Thread(target=self._bg_thread_loop)

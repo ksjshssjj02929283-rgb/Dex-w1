@@ -276,7 +276,7 @@ class W1Manager:
             except Exception as e:
                 self.logger.error(
                     f"Failed to initialize end effector clients: {e}")
-                raise
+                # raise
 
         # Build client list based on navigation and end effector usage
         self._clients = [self._robot_client_sim, self._robot_client_real]
@@ -394,14 +394,21 @@ class W1Manager:
             except Exception as e:
                 self.logger.error(f"Failed to stop sim client supervisor: {e}")
 
+            if self._executor is not None:
+                self._executor.shutdown()
+                self._executor = None
+
             if self._node_thread is not None:
                 self._running = False
                 self._node_thread.join(timeout=5.)
                 self._node_thread = None
 
-            if self._executor is not None:
-                self._executor.shutdown()
-                self._executor = None
+            if self._executor:
+                for node in self._client:
+                    try:
+                        self._executor.remove_node(node)
+                    except Exception:
+                        pass
 
             for node in self._clients:
                 try:
@@ -475,11 +482,12 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
+        timeout_sec = 2
         if self.is_connected(timeout_sec):
             return StatusCode.SUCCESS
         return StatusCode.FAIL
 
-    def is_connected(self, timeout_sec: float = 0.1) -> StatusCode:
+    def is_connected(self, timeout_sec: float = 0.5) -> StatusCode:
         """检查所有client是否处于连接状态
 
         Args:
@@ -488,6 +496,7 @@ class W1Manager:
         Returns:
             StatusCode: 
         """
+        timeout_sec = 2
         robot_client = self.target_supervisor.robot_client._client
         left_ee_client = self.target_supervisor.client_map.get(
             "left_arm_ee", None)
