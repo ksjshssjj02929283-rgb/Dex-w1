@@ -4,7 +4,7 @@ set -u
 set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROBOT_CFG_PATH="/home/dex/dexe/dexe_robot_server/w1_server/robot.cfg"
+ROBOT_CFG_PATH="${SCRIPT_DIR}/../w1_server/robot.cfg"
 
 ACTION_NAME="/control/move_robot"
 ACTION_TYPE="robot_server_interfaces/action/MoveRobot"
