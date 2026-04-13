@@ -32,6 +32,8 @@ REPORT_PATH="${REPORT_DIR}/secondary_joint_impedance_cycle_${REPORT_TS}.md"
 RUN_MODE_VALUE="1"
 ARM_LABEL=""
 ARM_STIFFNESS_LINE=""
+ARM_DAMPING_LINE=""
+JOINT_INTEGRAL_RATIO_LINE=""
 SUMMARY_ROWS=""
 
 declare -a GROUP_1=(
@@ -226,35 +228,65 @@ PY
 
 write_report() {
   mkdir -p "${REPORT_DIR}" || return 1
-  ARM_STIFFNESS_LINE="$(python3 - "${ROBOT_CFG_PATH}" "${MOTION_GROUP}" <<'PY'
+  CFG_REPORT_LINES="$(python3 - "${ROBOT_CFG_PATH}" "${MOTION_GROUP}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 cfg_path = Path(sys.argv[1])
 motion_group = sys.argv[2]
+
+def select_arm_values(values, motion_group_name):
+    if not isinstance(values, list) or len(values) < 20:
+        return None
+    if motion_group_name == "Primary":
+        return values[6:13]
+    if motion_group_name == "Secondary":
+        return values[13:20]
+    return None
+
 if not cfg_path.exists():
+    print("unavailable (robot.cfg not found)")
+    print("unavailable (robot.cfg not found)")
     print("unavailable (robot.cfg not found)")
     sys.exit(0)
 
 try:
     data = json.loads(cfg_path.read_text(encoding="utf-8"))
     stiffness = data.get("joint_stiffness", [])
-    if not isinstance(stiffness, list) or len(stiffness) < 20:
-        print("unavailable (joint_stiffness invalid)")
-        sys.exit(0)
-    if motion_group == "Primary":
-        arm_stiffness = stiffness[6:13]
-    elif motion_group == "Secondary":
-        arm_stiffness = stiffness[13:20]
+    damping = data.get("joint_damping", [])
+    integral_ratio = data.get("joint_integral_ratio", None)
+
+    arm_stiffness = select_arm_values(stiffness, motion_group)
+    if arm_stiffness is None:
+        stiffness_line = "unavailable (joint_stiffness invalid)"
     else:
-        print(f"unavailable (unsupported motion_group: {motion_group})")
-        sys.exit(0)
-    print("[" + ", ".join(str(v) for v in arm_stiffness) + "]")
+        stiffness_line = "[" + ", ".join(str(v) for v in arm_stiffness) + "]"
+
+    arm_damping = select_arm_values(damping, motion_group)
+    if arm_damping is None:
+        damping_line = "unavailable (joint_damping invalid)"
+    else:
+        damping_line = "[" + ", ".join(str(v) for v in arm_damping) + "]"
+
+    if isinstance(integral_ratio, (int, float)):
+        integral_ratio_line = str(integral_ratio)
+    else:
+        integral_ratio_line = "unavailable (joint_integral_ratio invalid)"
+
+    print(stiffness_line)
+    print(damping_line)
+    print(integral_ratio_line)
 except Exception as exc:
+    print(f"unavailable ({exc})")
+    print(f"unavailable ({exc})")
     print(f"unavailable ({exc})")
 PY
 )"
+  mapfile -t CFG_REPORT_ARRAY <<< "${CFG_REPORT_LINES}"
+  ARM_STIFFNESS_LINE="${CFG_REPORT_ARRAY[0]:-unavailable}"
+  ARM_DAMPING_LINE="${CFG_REPORT_ARRAY[1]:-unavailable}"
+  JOINT_INTEGRAL_RATIO_LINE="${CFG_REPORT_ARRAY[2]:-unavailable}"
 
   if [[ "${MOTION_GROUP}" == "Primary" ]]; then
     ARM_LABEL="Left"
@@ -273,6 +305,8 @@ PY
 - Acceleration: ${MOVE_ACCELERATION}
 - Final target: [${FINAL_TARGET}]
 - ${ARM_LABEL} arm joint stiffness from ${ROBOT_CFG_PATH}: ${ARM_STIFFNESS_LINE}
+- ${ARM_LABEL} arm joint damping from ${ROBOT_CFG_PATH}: ${ARM_DAMPING_LINE}
+- Joint integral ratio from ${ROBOT_CFG_PATH}: ${JOINT_INTEGRAL_RATIO_LINE}
 
 ## Error Summary
 
