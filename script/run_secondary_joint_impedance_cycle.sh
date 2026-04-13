@@ -207,23 +207,23 @@ with log_path.open("r", encoding="utf-8", errors="ignore") as f:
         except Exception:
             continue
         if math.isfinite(err_deg):
-            errors_deg.append(abs(err_deg))
+            errors_deg.append(err_deg)
 
 if not errors_deg:
     print(f"[ERROR] No valid error samples found for {group_name}")
     sys.exit(1)
 
-avg_err = sum(errors_deg) / len(errors_deg)
-max_err = max(errors_deg)
+rmse_err = math.sqrt(sum(err * err for err in errors_deg) / len(errors_deg))
+max_err = max(abs(err) for err in errors_deg)
 print(
-    f"{group_name}|{motion_group} joint {logical_joint}|{len(errors_deg)}|{avg_err:.6f}|{max_err:.6f}"
+    f"{group_name}|{motion_group} joint {logical_joint}|{len(errors_deg)}|{rmse_err:.6f}|{max_err:.6f}"
 )
 PY
 )" || return 1
 
-  IFS='|' read -r group_label joint_label sample_count avg_err max_err <<< "${summary_line}"
-  echo "${group_label}: ${joint_label}, samples=${sample_count}, avg_abs_error_deg=${avg_err}, max_abs_error_deg=${max_err}"
-  SUMMARY_ROWS+=$'| '"${group_label}"$' | '"${joint_label}"$' | '"${sample_count}"$' | '"${avg_err}"$' | '"${max_err}"$' |\n'
+  IFS='|' read -r group_label joint_label sample_count rmse_err max_err <<< "${summary_line}"
+  echo "${group_label}: ${joint_label}, samples=${sample_count}, rmse_error_deg=${rmse_err}, max_abs_error_deg=${max_err}"
+  SUMMARY_ROWS+=$'| '"${group_label}"$' | '"${joint_label}"$' | '"${sample_count}"$' | '"${rmse_err}"$' | '"${max_err}"$' |\n'
 }
 
 write_report() {
@@ -310,7 +310,7 @@ PY
 
 ## Error Summary
 
-| Group | Joint | Samples | Average Abs Error (deg) | Max Abs Error (deg) |
+| Group | Joint | Samples | RMSE Error (deg) | Max Abs Error (deg) |
 | --- | --- | ---: | ---: | ---: |
 ${SUMMARY_ROWS}
 EOF
