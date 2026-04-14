@@ -10,7 +10,7 @@ ACTION_NAME="/control/move_robot"
 ACTION_TYPE="robot_server_interfaces/action/MoveRobot"
 SET_PROPERTY_SERVICE="/control/set_property"
 SET_PROPERTY_TYPE="robot_server_interfaces/srv/SetProperty"
-MOTION_GROUP="Secondary"
+MOTION_GROUP="Secondary" # Primary or Secondary
 MOVE_CONFIG='{"speed":0.5,"acceleration":0.5}'
 MOVE_SPEED="$(python3 - <<'PY'
 import json
@@ -53,6 +53,27 @@ declare -a GROUP_4=(
   "0,1.58,0,1.58,0,0.64,0"
 )
 
+transform_target_csv() {
+  local target_csv="$1"
+
+  if [[ "${MOTION_GROUP}" != "Primary" ]]; then
+    echo "${target_csv}"
+    return 0
+  fi
+
+  python3 - "${target_csv}" <<'PY'
+import sys
+
+values = [item.strip() for item in sys.argv[1].split(",")]
+converted = []
+for raw in values:
+    value = float(raw)
+    negated = -value
+    converted.append(f"{negated:g}")
+print(",".join(converted))
+PY
+}
+
 print_step() {
   echo
   echo "==== $1 ===="
@@ -76,11 +97,13 @@ send_set_property() {
 
 run_move_joint() {
   local target_csv="$1"
-  local goal="{motion_group: ${MOTION_GROUP}, type: MoveJoint, target: [${target_csv}], config: '${MOVE_CONFIG}'}"
+  local effective_target_csv
+  effective_target_csv="$(transform_target_csv "${target_csv}")" || return 1
+  local goal="{motion_group: ${MOTION_GROUP}, type: MoveJoint, target: [${effective_target_csv}], config: '${MOVE_CONFIG}'}"
   local output_file
   output_file="$(mktemp)"
 
-  echo "Sending goal: [${target_csv}]"
+  echo "Sending goal: [${effective_target_csv}]"
   ros2 action send_goal "${ACTION_NAME}" "${ACTION_TYPE}" "${goal}" --feedback >"${output_file}" 2>&1
   local rc=$?
   cat "${output_file}"
@@ -98,7 +121,7 @@ run_move_joint() {
   fi
 
   if ! grep -Eqi "SUCCEEDED|STATUS_SUCCEEDED|Goal finished.*succeed" "${output_file}"; then
-    echo "[ERROR] Could not confirm success result for goal [${target_csv}]"
+    echo "[ERROR] Could not confirm success result for goal [${effective_target_csv}]"
     rm -f "${output_file}"
     return 1
   fi
@@ -303,7 +326,7 @@ PY
 - Move type: MoveJoint
 - Speed: ${MOVE_SPEED}
 - Acceleration: ${MOVE_ACCELERATION}
-- Final target: [${FINAL_TARGET}]
+- Final target: [$(transform_target_csv "${FINAL_TARGET}")]
 - ${ARM_LABEL} arm joint stiffness from ${ROBOT_CFG_PATH}: ${ARM_STIFFNESS_LINE}
 - ${ARM_LABEL} arm joint damping from ${ROBOT_CFG_PATH}: ${ARM_DAMPING_LINE}
 - Joint integral ratio from ${ROBOT_CFG_PATH}: ${JOINT_INTEGRAL_RATIO_LINE}
