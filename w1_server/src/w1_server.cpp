@@ -470,6 +470,14 @@ void RobotServer::TorqueControlThreadFunc() {
                         break;
                     case RunMode::Torque:
                         previous_mode_ = this->manager_info_.robot_property.run_mode;
+                        this->robot_control_.positive_torque_limit[i] = std::clamp(
+                            torque_cmd.torque[i] +
+                                torque_limit_.positive_limit_Nm[i] * this->manager_info_.robot_property.safe_level,
+                            0.1 * torque_limit_.positive_limit_Nm[i], torque_limit_.positive_limit_Nm[i]);
+                        this->robot_control_.negative_torque_limit[i] = std::clamp(
+                            -torque_cmd.torque[i] +
+                                torque_limit_.negative_limit_Nm[i] * this->manager_info_.robot_property.safe_level,
+                            0.1 * torque_limit_.negative_limit_Nm[i], torque_limit_.negative_limit_Nm[i]);
                         this->robot_control_.torque_feedforward[i] = torque_cmd.torque[i];
                         this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
                         break;
