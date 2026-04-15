@@ -14,11 +14,8 @@ from rcl_interfaces.srv import SetParameters, GetParameters
 from rcl_interfaces.msg import ParameterType
 from rclpy.parameter import Parameter
 from geometry_msgs.msg import Polygon, Point32
-from rcl_interfaces.srv import SetParameters, GetParameters
-from rcl_interfaces.msg import ParameterType
-from rclpy.parameter import Parameter
-from geometry_msgs.msg import Polygon, Point32
 from std_msgs.msg import Bool
+from chassis_msgs.action import AutoCharging
 
 from ..common import get_logger
 
@@ -43,7 +40,10 @@ class NavigationClient(ABC, Node):
         self._set_nav_client = None
         self._set_ctrl_publisher = None
         self._get_pos_subscriber = None
-        self._set_chassis_charging_client = None
+        self._auto_charging_action_client = None
+        self._auto_charging_goal_handle = None
+        self._auto_charging_result_future = None
+        self._auto_charging_status = "IDLE"
         self._cancel_control_client = None
         self._controller_set_param_client = None
         self._local_costmap_set_param_client = None
@@ -60,6 +60,7 @@ class NavigationClient(ABC, Node):
         self._nav_goal_handle = None
         self._nav_result_future = None
         self._nav_status = "IDLE"  # 或 NAVIGATING / SUCCEEDED / FAILED / CANCELLED
+        self._last_reported_nav_state = None
         self._nav_result = None  # 存储最后的导航结果
         self._nav_task_id = 0  # 导航任务ID，用于区分不同的导航任务
         self._last_control_status = None
@@ -252,8 +253,14 @@ class NavigationClient(ABC, Node):
                 - "FAILED": 失败
                 - "CANCELLED": 已取消
         """
-        # 触发 ROS2 回调（非常重要）
-        self.spin_once()
+        if self._nav_status != self._last_reported_nav_state:
+            now_sec = self.get_clock().now().nanoseconds / 1e9
+            self.get_logger().info(
+                f"get_nav_state observed state={self._nav_status}, "
+                f"task_id={self._nav_task_id}, "
+                f"timestamp={now_sec:.3f}, "
+                f"thread={threading.current_thread().name}")
+            self._last_reported_nav_state = self._nav_status
 
         return self._nav_status
 
@@ -294,28 +301,57 @@ class NavigationClient(ABC, Node):
                 f"Error cancelling navigation goal: {str(e)}")
             return False
 
-    def set_chassis_auto_charging(self) -> bool:
-        """调用回充服务"""
-        if not self._set_chassis_charging_client.wait_for_service(
+    def _auto_charging_feedback_callback(self, feedback_msg):
+        self.get_logger().info(
+            f"Auto charging feedback: state={feedback_msg.current_state}, "
+            f"retry={feedback_msg.retry_count}")
+        self._auto_charging_status = feedback_msg.current_state
+
+    def set_chassis_auto_charging(self, force: bool = False) -> bool:
+        """调用回充action（非阻塞，只下发goal）"""
+        if self._auto_charging_action_client is None:
+            self.get_logger().error(
+                "Auto charging action client not initialized")
+            return False
+
+        if not self._auto_charging_action_client.wait_for_server(
                 timeout_sec=1.0):
+            self.get_logger().error("Auto charging action server not available")
             return False
 
-        request = Trigger.Request()
-        future = self._set_chassis_charging_client.call_async(request)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+        goal_msg = AutoCharging.Goal()
+        goal_msg.force = force
 
-        if future.done():
-            try:
-                response = future.result()
-                self.get_logger().info(
-                    f"Cancel control response: {response.message}")
-                return response.success
-            except Exception as e:
-                self.get_logger().error(f"Service call failed: {e}")
-                return False
-        else:
-            self.get_logger().error("Service call timed out.")
-            return False
+        self._auto_charging_result_future = self._auto_charging_action_client.send_goal_async(
+            goal_msg, feedback_callback=self._auto_charging_feedback_callback)
+        self._auto_charging_result_future.add_done_callback(
+            self._auto_charging_goal_done_callback)
+
+        self.get_logger().info("Auto charging goal sent")
+        return True
+
+    def _auto_charging_goal_done_callback(self, future):
+        try:
+            goal_handle = future.result()
+            if goal_handle.accepted:
+                self.get_logger().info("Auto charging goal accepted")
+                self._auto_charging_goal_handle = goal_handle
+                result_future = goal_handle.get_result_async()
+                result_future.add_done_callback(
+                    self._auto_charging_result_done_callback)
+            else:
+                self.get_logger().error("Auto charging goal rejected")
+                self._auto_charging_status = "IDLE"
+        except Exception as e:
+            self.get_logger().error(f"Auto charging goal handle error: {e}")
+
+    def _auto_charging_result_done_callback(self, future):
+        try:
+            result = future.result()
+            self.get_logger().info(f"Auto charging completed: {result.message}")
+            self._auto_charging_status = "IDLE"
+        except Exception as e:
+            self.get_logger().error(f"Auto charging result error: {e}")
 
     def get_control_status(self) -> str:
         """
@@ -568,7 +604,9 @@ class NavigationClient(ABC, Node):
 
             if result.status == GoalStatus.STATUS_SUCCEEDED:
                 self._nav_status = "SUCCEEDED"
-                self.get_logger().info("Goal reached successfully.")
+                self.get_logger().info(
+                    f"Goal reached successfully. Timestamp: {self.get_clock().now().nanoseconds / 1e9:.3f}"
+                )
             elif result.status == GoalStatus.STATUS_CANCELED:
                 self._nav_status = "CANCELLED"
                 self.get_logger().info("Goal was cancelled.")

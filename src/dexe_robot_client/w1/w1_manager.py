@@ -75,6 +75,7 @@ class W1Manager:
         self.chassis_client = None
         self._chassis_client_sim = None
         self._chassis_client_real = None
+        self._last_reported_nav_status = None
 
         self._clients = []
 
@@ -776,7 +777,14 @@ class W1Manager:
         if not self._has_chassis_client():
             self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL, "NOT_INITIALIZED"
-        return StatusCode.SUCCESS, self._get_chassis_client().get_nav_state()
+        nav_status = self._get_chassis_client().get_nav_state()
+        if nav_status != self._last_reported_nav_status:
+            now_sec = time.time()
+            self.logger.info(f"get_nav_status observed state={nav_status}, "
+                             f"timestamp={now_sec:.3f}, "
+                             f"thread={threading.current_thread().name}")
+            self._last_reported_nav_status = nav_status
+        return StatusCode.SUCCESS, nav_status
 
     def get_control_status(self) -> str:
         """获取底盘控制状态"""
