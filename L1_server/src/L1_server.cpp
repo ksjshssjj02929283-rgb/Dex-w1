@@ -177,6 +177,7 @@ void RobotServer::JointCommandCallback(const JointCommandMsg::SharedPtr msg) {
             }
         }
     }
+    last_command_timestamp_ = msg->header.stamp;
     robot_control_ = robot_control_temp;
 }
 
@@ -190,6 +191,9 @@ void RobotServer::JointControlThreadFunc() {
     Int64 loop_counter = 0;
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok()) {
+        rclcpp::Time current_time = this->get_clock()->now();
+        rclcpp::Time last_time(last_joint_command_stamp_);
+        rclcpp::Duration diff = current_time - last_time;
         loop_counter++;
         next_cycle_time_point += std::chrono::microseconds(torque_ctrl_dt_micro);
         // 根据状态写入机器人控制字
@@ -240,6 +244,14 @@ void RobotServer::JointControlThreadFunc() {
                 LOG_CRIT << "Robot is not ready, shm status: " << ret
                          << ", statusword: " << robot_feedback_.robot_status_word;
             }
+        }
+        // 如果指令超时则腿部指令置零
+        if (last_joint_command_stamp_.sec == 0 && last_joint_command_stamp_.nanosec == 0 || diff.nanoseconds() > static_cast<int64_t>(command_timeout_ms_) * 1000000LL) {
+            std::fill(robot_control_.legs_position, robot_control_.legs_position + 12, 0.0);
+            std::fill(robot_control_.legs_velocity, robot_control_.legs_velocity + 12, 0.0);
+            std::fill(robot_control_.legs_torque, robot_control_.legs_torque + 12, 0.0);
+            std::fill(robot_control_.legs_stiffness, robot_control_.legs_stiffness + 12, 0.0);
+            std::fill(robot_control_.legs_damping, robot_control_.legs_damping + 12, 0.0);
         }
         // 如果状态字发生变化了则打印
         static int16_t last_status_word_ = -1;
