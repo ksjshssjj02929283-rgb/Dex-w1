@@ -500,7 +500,7 @@ StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interf
 
 Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary) {
     // 最小力/力矩阈值(去除摩擦力), 和最大力/力矩值
-    constexpr double force_threshold = 1.0;
+    constexpr double force_threshold = 0.5;
     constexpr double torque_threshold = 0.1;
     constexpr double force_max = 100.0;
     constexpr double torque_max = 10.0;
@@ -526,6 +526,57 @@ Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench
     sensor_wrench.head<6>() = process6(wrench_primary);
     sensor_wrench.tail<6>() = process6(wrench_secondary);
     return sensor_wrench;
+}
+
+int UpdateBinaryHysteresisState(double signal_norm, int previous_state, double enter_threshold, double exit_threshold) {
+    if (enter_threshold < exit_threshold) {
+        std::swap(enter_threshold, exit_threshold);
+    }
+    if (signal_norm >= enter_threshold) {
+        return 1;
+    }
+    if (signal_norm <= exit_threshold) {
+        return 0;
+    }
+    return previous_state != 0 ? 1 : 0;
+}
+
+double UpdateBlendAlpha(double current_alpha,
+                        int target_state,
+                        double rise_time_constant,
+                        double fall_time_constant,
+                        double dt) {
+    const double clamped_current = std::clamp(current_alpha, 0.0, 1.0);
+    const double target_alpha = target_state != 0 ? 1.0 : 0.0;
+    const double time_constant = target_state != 0 ? rise_time_constant : fall_time_constant;
+    if (dt <= 0.0) {
+        return clamped_current;
+    }
+    if (time_constant <= 0.0) {
+        return target_alpha;
+    }
+
+    const double step = 1.0 - std::exp(-dt / time_constant);
+    return std::clamp(clamped_current + (target_alpha - clamped_current) * step, 0.0, 1.0);
+}
+
+void BlendMotionGroupJointValues(const RobotModel &robot_model,
+                                 MotionGroup motion_group,
+                                 double alpha,
+                                 const VectorDof &default_values,
+                                 const VectorDof &force_values,
+                                 VectorDof *blended_values) {
+    if (blended_values == nullptr) {
+        return;
+    }
+
+    const double clamped_alpha = std::clamp(alpha, 0.0, 1.0);
+    Eigen::VectorXd default_arm;
+    Eigen::VectorXd force_arm;
+    GetJointFromWholeBody(robot_model, default_values, default_arm, motion_group);
+    GetJointFromWholeBody(robot_model, force_values, force_arm, motion_group);
+    const Eigen::VectorXd blended_arm = (1.0 - clamped_alpha) * default_arm + clamped_alpha * force_arm;
+    MapJointToWholeBody(robot_model, blended_arm, *blended_values, motion_group);
 }
 
 // 线性插值器实现：用于在高低频率控制线程间平滑过渡

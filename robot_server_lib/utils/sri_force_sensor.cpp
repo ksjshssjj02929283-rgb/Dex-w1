@@ -32,7 +32,7 @@ SriForceSensor::~SriForceSensor() {
 
 // 串口方法
 const char* SriForceSensor::FindSerialPort() {
-    const char* candidates[] = {"/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyUSB2"};
+    const char* candidates[] = { "/dev/ttyUSB2"};
     for (const auto& device : candidates) {
         if (access(device, F_OK) == 0) {
             printf("Found SRI force sensor at: %s\n", device);

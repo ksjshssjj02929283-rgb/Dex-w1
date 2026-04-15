@@ -4,14 +4,16 @@ set -u
 set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROBOT_CFG_PATH="${SCRIPT_DIR}/../w1_server/robot.cfg"
+ROBOT_CFG_PATH="$(cd "${SCRIPT_DIR}/../../install/w1_server/share/w1_server" 2>/dev/null && pwd)/robot.cfg"
 
 ACTION_NAME="/control/move_robot"
 ACTION_TYPE="robot_server_interfaces/action/MoveRobot"
 SET_PROPERTY_SERVICE="/control/set_property"
 SET_PROPERTY_TYPE="robot_server_interfaces/srv/SetProperty"
-MOTION_GROUP="Secondary" # Primary or Secondary
-MOVE_CONFIG='{"speed":0.5,"acceleration":0.5}'
+DEBUG_TOPIC="/control/debug"
+DEBUG_MSG_TYPE="std_msgs/msg/String"
+MOTION_GROUP="Primary" # Primary or Secondary
+MOVE_CONFIG='{"speed":0.3,"acceleration":0.5}'
 MOVE_SPEED="$(python3 - <<'PY'
 import json
 cfg = json.loads('''{"speed":0.5,"acceleration":0.5}''')
@@ -95,6 +97,26 @@ send_set_property() {
   return 0
 }
 
+enable_record_logging() {
+  local debug_payload='{"enable_record": true}'
+  local output_file
+  output_file="$(mktemp)"
+
+  echo "Enabling record logging"
+  ros2 topic pub --once "${DEBUG_TOPIC}" "${DEBUG_MSG_TYPE}" "{data: '${debug_payload}'}" >"${output_file}" 2>&1
+  local rc=$?
+  cat "${output_file}"
+  rm -f "${output_file}"
+
+  if [[ ${rc} -ne 0 ]]; then
+    echo "[ERROR] Failed to enable record logging"
+    return 1
+  fi
+
+  sleep 1
+  return 0
+}
+
 run_move_joint() {
   local target_csv="$1"
   local effective_target_csv
@@ -158,6 +180,7 @@ summarize_group_error() {
   local start_ts="$3"
   local end_ts="$4"
   local summary_line
+  local summary_status
 
   print_step "${group_name} error summary"
   summary_line="$(python3 - "${LOG_PATH}" "${group_name}" "${logical_joint}" "${start_ts}" "${end_ts}" "${MOTION_GROUP}" <<'PY'
@@ -242,7 +265,16 @@ print(
     f"{group_name}|{motion_group} joint {logical_joint}|{len(errors_deg)}|{rmse_err:.6f}|{max_err:.6f}"
 )
 PY
-)" || return 1
+)"
+  summary_status=$?
+  if [[ ${summary_status} -ne 0 ]]; then
+    if [[ -n "${summary_line}" ]]; then
+      echo "${summary_line}"
+    else
+      echo "[ERROR] Failed to summarize ${group_name}"
+    fi
+    return 1
+  fi
 
   IFS='|' read -r group_label joint_label sample_count rmse_err max_err <<< "${summary_line}"
   echo "${group_label}: ${joint_label}, samples=${sample_count}, rmse_error_deg=${rmse_err}, max_abs_error_deg=${max_err}"
@@ -251,22 +283,12 @@ PY
 
 write_report() {
   mkdir -p "${REPORT_DIR}" || return 1
-  CFG_REPORT_LINES="$(python3 - "${ROBOT_CFG_PATH}" "${MOTION_GROUP}" <<'PY'
+CFG_REPORT_LINES="$(python3 - "${ROBOT_CFG_PATH}" "${MOTION_GROUP}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 cfg_path = Path(sys.argv[1])
-motion_group = sys.argv[2]
-
-def select_arm_values(values, motion_group_name):
-    if not isinstance(values, list) or len(values) < 20:
-        return None
-    if motion_group_name == "Primary":
-        return values[6:13]
-    if motion_group_name == "Secondary":
-        return values[13:20]
-    return None
 
 if not cfg_path.exists():
     print("unavailable (robot.cfg not found)")
@@ -280,17 +302,15 @@ try:
     damping = data.get("joint_damping", [])
     integral_ratio = data.get("joint_integral_ratio", None)
 
-    arm_stiffness = select_arm_values(stiffness, motion_group)
-    if arm_stiffness is None:
+    if not isinstance(stiffness, list) or not stiffness:
         stiffness_line = "unavailable (joint_stiffness invalid)"
     else:
-        stiffness_line = "[" + ", ".join(str(v) for v in arm_stiffness) + "]"
+        stiffness_line = "[" + ", ".join(str(v) for v in stiffness) + "]"
 
-    arm_damping = select_arm_values(damping, motion_group)
-    if arm_damping is None:
+    if not isinstance(damping, list) or not damping:
         damping_line = "unavailable (joint_damping invalid)"
     else:
-        damping_line = "[" + ", ".join(str(v) for v in arm_damping) + "]"
+        damping_line = "[" + ", ".join(str(v) for v in damping) + "]"
 
     if isinstance(integral_ratio, (int, float)):
         integral_ratio_line = str(integral_ratio)
@@ -311,12 +331,6 @@ PY
   ARM_DAMPING_LINE="${CFG_REPORT_ARRAY[1]:-unavailable}"
   JOINT_INTEGRAL_RATIO_LINE="${CFG_REPORT_ARRAY[2]:-unavailable}"
 
-  if [[ "${MOTION_GROUP}" == "Primary" ]]; then
-    ARM_LABEL="Left"
-  else
-    ARM_LABEL="Right"
-  fi
-
   cat > "${REPORT_PATH}" <<EOF
 # ${MOTION_GROUP} Joint Impedance Cycle Report
 
@@ -327,8 +341,8 @@ PY
 - Speed: ${MOVE_SPEED}
 - Acceleration: ${MOVE_ACCELERATION}
 - Final target: [$(transform_target_csv "${FINAL_TARGET}")]
-- ${ARM_LABEL} arm joint stiffness from ${ROBOT_CFG_PATH}: ${ARM_STIFFNESS_LINE}
-- ${ARM_LABEL} arm joint damping from ${ROBOT_CFG_PATH}: ${ARM_DAMPING_LINE}
+- All joint stiffness from ${ROBOT_CFG_PATH}: ${ARM_STIFFNESS_LINE}
+- All joint damping from ${ROBOT_CFG_PATH}: ${ARM_DAMPING_LINE}
 - Joint integral ratio from ${ROBOT_CFG_PATH}: ${JOINT_INTEGRAL_RATIO_LINE}
 
 ## Error Summary
@@ -343,6 +357,9 @@ EOF
 }
 
 main() {
+  print_step "Enable record logging"
+  enable_record_logging || exit 1
+
   print_step "Enable joint impedance"
   send_set_property "SwitchRunMode" "${RUN_MODE_VALUE}" || exit 1
 
