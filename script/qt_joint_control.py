@@ -276,6 +276,8 @@ class ROS2Node(Node):
 
     def publish_control(self, control_data):
         msg = JointCommand()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'joint_command'
         msg.name = []
         msg.position = []
         msg.velocity = []

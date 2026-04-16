@@ -170,7 +170,8 @@ void RobotServer::JointCommandCallback(const JointCommandMsg::SharedPtr msg) {
                     robot_control_temp.leg_control[leg_index].joint_position = sign * msg->position[i];
                     robot_control_temp.leg_control[leg_index].joint_velocity = sign * msg->velocity[i];
                     robot_control_temp.leg_control[leg_index].joint_torque = sign * msg->torque[i];
-                    robot_control_temp.leg_control[leg_index].joint_torque_feedforward = sign * msg->torque_feedforward[i];
+                    robot_control_temp.leg_control[leg_index].joint_torque_feedforward =
+                        sign * msg->torque_feedforward[i];
                     robot_control_temp.leg_control[leg_index].joint_Kp = msg->stiffness[i];
                     robot_control_temp.leg_control[leg_index].joint_Kd = msg->damping[i];
                 }
@@ -246,7 +247,8 @@ void RobotServer::JointControlThreadFunc() {
             }
         }
         // 如果指令超时则腿部指令置零
-        if (last_command_timestamp_.sec == 0 && last_command_timestamp_.nanosec == 0 || diff.nanoseconds() > static_cast<int64_t>(command_timeout_ms_) * 1000000LL) {
+        if (last_command_timestamp_.sec == 0 && last_command_timestamp_.nanosec == 0 ||
+            diff.nanoseconds() > static_cast<int64_t>(command_timeout_ms_) * 1000000LL) {
             for (int i = 0; i < 12; i++) {
                 robot_control_.leg_control[i].joint_position = 0.0;
                 robot_control_.leg_control[i].joint_velocity = 0.0;
@@ -266,6 +268,9 @@ void RobotServer::JointControlThreadFunc() {
                      << ", control word changed to "
                      << utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str()
                      << " robot status: " << InvertJointSignFromJsonString(this->GetRobotStatusString());
+            RCLCPP_INFO(this->get_logger(), "Status word: %s, control word: %s",
+                        utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str(),
+                        utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str().c_str());
             last_status_word_ = robot_feedback_.robot_status_word;
             last_control_word_ = robot_control_.robot_control_word;
         }
@@ -480,10 +485,13 @@ std::string RobotServer::InvertJointSignFromJsonString(std::string status_string
                 json_obj["body_joint_velocity"][i] = -json_obj["body_joint_velocity"][i].get<double>();
                 json_obj["body_joint_torque"][i] = -json_obj["body_joint_torque"][i].get<double>();
             } else {
-                json_obj["leg_joint_position"][i - ndof_body_] = -json_obj["leg_joint_position"][i - ndof_body_].get<double>();
+                json_obj["leg_joint_position"][i - ndof_body_] =
+                    -json_obj["leg_joint_position"][i - ndof_body_].get<double>();
 
-                json_obj["leg_joint_velocity"][i - ndof_body_] = -json_obj["leg_joint_velocity"][i - ndof_body_].get<double>();
-                json_obj["leg_joint_torque"][i - ndof_body_] = -json_obj["leg_joint_torque"][i - ndof_body_].get<double>();
+                json_obj["leg_joint_velocity"][i - ndof_body_] =
+                    -json_obj["leg_joint_velocity"][i - ndof_body_].get<double>();
+                json_obj["leg_joint_torque"][i - ndof_body_] =
+                    -json_obj["leg_joint_torque"][i - ndof_body_].get<double>();
             }
         }
     }
