@@ -192,7 +192,7 @@ void RobotServer::JointControlThreadFunc() {
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok()) {
         rclcpp::Time current_time = this->get_clock()->now();
-        rclcpp::Time last_time(last_joint_command_stamp_);
+        rclcpp::Time last_time(last_command_timestamp_);
         rclcpp::Duration diff = current_time - last_time;
         loop_counter++;
         next_cycle_time_point += std::chrono::microseconds(torque_ctrl_dt_micro);
@@ -246,12 +246,14 @@ void RobotServer::JointControlThreadFunc() {
             }
         }
         // 如果指令超时则腿部指令置零
-        if (last_joint_command_stamp_.sec == 0 && last_joint_command_stamp_.nanosec == 0 || diff.nanoseconds() > static_cast<int64_t>(command_timeout_ms_) * 1000000LL) {
-            std::fill(robot_control_.legs_position, robot_control_.legs_position + 12, 0.0);
-            std::fill(robot_control_.legs_velocity, robot_control_.legs_velocity + 12, 0.0);
-            std::fill(robot_control_.legs_torque, robot_control_.legs_torque + 12, 0.0);
-            std::fill(robot_control_.legs_stiffness, robot_control_.legs_stiffness + 12, 0.0);
-            std::fill(robot_control_.legs_damping, robot_control_.legs_damping + 12, 0.0);
+        if (last_command_timestamp_.sec == 0 && last_command_timestamp_.nanosec == 0 || diff.nanoseconds() > static_cast<int64_t>(command_timeout_ms_) * 1000000LL) {
+            for (int i = 0; i < 12; i++) {
+                robot_control_.leg_control[i].joint_position = 0.0;
+                robot_control_.leg_control[i].joint_velocity = 0.0;
+                robot_control_.leg_control[i].joint_torque = 0.0;
+                robot_control_.leg_control[i].joint_Kp = 0.0;
+                robot_control_.leg_control[i].joint_Kd = 0.0;
+            }
         }
         // 如果状态字发生变化了则打印
         static int16_t last_status_word_ = -1;
