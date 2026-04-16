@@ -306,8 +306,8 @@ def plot_results(results, start_timestamp, save_path, show_aligned):
     rows = int(math.ceil(joint_count / cols))
     fig, axes = plt.subplots(rows, cols, figsize=(8.5 * cols, 3.2 * rows), dpi=110, squeeze=False)
     fig.suptitle(
-        "关节位置跟踪性能 "
-        f"(日志起点: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})",
+        "Joint Position Tracking Performance "
+        f"(Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})",
         fontsize=12,
     )
 
@@ -318,7 +318,7 @@ def plot_results(results, start_timestamp, save_path, show_aligned):
             pos_t = item["aligned_times"]
             pos_y = np.degrees(item["aligned_pos"])
             title_suffix = (
-                f"已对齐, 时延={item['delay_seconds']:.4f}s, "
+                f"Aligned, delay={item['delay_seconds']:.4f}s, "
                 f"RMS={item['aligned_rms_deg']:.4f} deg"
             )
         else:
@@ -326,16 +326,16 @@ def plot_results(results, start_timestamp, save_path, show_aligned):
             cmd_y = np.degrees(item["cmd"])
             pos_t = item["times"]
             pos_y = np.degrees(item["pos"])
-            title_suffix = f"原始曲线, RMS={item['raw_rms_deg']:.4f} deg"
+            title_suffix = f"Raw, RMS={item['raw_rms_deg']:.4f} deg"
 
         ax.plot(cmd_t, cmd_y, label="joint_position_cmd", linewidth=1.2)
         ax.plot(pos_t, pos_y, label="joint_position", linewidth=1.2)
         ax.set_title(
-            f"关节 {item['joint']} ({title_suffix})",
+            f"Joint {item['joint']} ({title_suffix})",
             fontsize=9,
         )
-        ax.set_xlabel("时间 [s]")
-        ax.set_ylabel("位置 [deg]")
+        ax.set_xlabel("Time [s]")
+        ax.set_ylabel("Position [deg]")
         ax.grid(True, linestyle=":", alpha=0.35)
         ax.legend(loc="best", fontsize=8)
 
