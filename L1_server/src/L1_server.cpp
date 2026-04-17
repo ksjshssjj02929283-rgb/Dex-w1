@@ -245,14 +245,23 @@ void RobotServer::JointControlThreadFunc() {
                 LOG_CRIT << "Robot is not ready, shm status: " << ret
                          << ", statusword: " << robot_feedback_.robot_status_word;
             }
+            for (int i = 0; i < 12; i++) {
+                robot_control_.leg_control[i].joint_position = robot_feedback_.leg_feedback_[i].joint_position;
+                robot_control_.leg_control[i].joint_velocity = 0.0;
+                robot_control_.leg_control[i].joint_torque = 0.0;
+                robot_control_.leg_control[i].joint_torque_feedforward = 0.0;
+                robot_control_.leg_control[i].joint_Kp = 0.0;
+                robot_control_.leg_control[i].joint_Kd = 0.0;
+            }
         }
         // 如果指令超时则腿部指令置零
         if (last_command_timestamp_.sec == 0 && last_command_timestamp_.nanosec == 0 ||
             diff.nanoseconds() > static_cast<int64_t>(command_timeout_ms_) * 1000000LL) {
             for (int i = 0; i < 12; i++) {
-                robot_control_.leg_control[i].joint_position = 0.0;
+                robot_control_.leg_control[i].joint_position = robot_feedback_.leg_feedback_[i].joint_position;
                 robot_control_.leg_control[i].joint_velocity = 0.0;
                 robot_control_.leg_control[i].joint_torque = 0.0;
+                robot_control_.leg_control[i].joint_torque_feedforward = 0.0;
                 robot_control_.leg_control[i].joint_Kp = 0.0;
                 robot_control_.leg_control[i].joint_Kd = 0.0;
             }
@@ -261,7 +270,8 @@ void RobotServer::JointControlThreadFunc() {
         static int16_t last_status_word_ = -1;
         static int16_t last_control_word_ = -1;
         if (robot_feedback_.robot_status_word != last_status_word_ ||
-            robot_control_.robot_control_word != last_control_word_) {
+            robot_control_.robot_control_word != last_control_word_ ||
+            loop_counter % 2000 == 0) {
             LOG_INFO << "";
             LOG_INFO << "Status word changed to "
                      << utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str()
@@ -430,8 +440,9 @@ void RobotServer::WriteFeedbackToControl() {
         robot_control_.leg_control[i].joint_position = robot_feedback_.leg_feedback_[i].joint_position;
         robot_control_.leg_control[i].joint_velocity = 0.0;
         robot_control_.leg_control[i].joint_torque = 0.0;
-        robot_control_.leg_control[i].joint_Kp = this->legs_stiffness_[i];  // 腿部刚度初始值
-        robot_control_.leg_control[i].joint_Kd = this->legs_damping_[i];    // 腿部阻尼初始值
+        robot_control_.leg_control[i].joint_torque_feedforward = 0.0;
+        robot_control_.leg_control[i].joint_Kp = 0.0;  // 腿部刚度初始值
+        robot_control_.leg_control[i].joint_Kd = 0.0;    // 腿部阻尼初始值
     }
 }
 
