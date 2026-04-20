@@ -3,34 +3,24 @@
 """
 从 robot_server 的 JSONL 日志中评估关节位置跟踪性能。
 
-本脚本主要比较 joint_position_cmd 和 joint_position，并额外统计 joint_position_input 到 joint_position 的平均时延。对每个关节执行：
+本脚本比较 joint_position_cmd 和 joint_position。对每个关节执行：
 1. 从日志中读取成对的指令/反馈采样点；
 2. 互相关计算前先对两路信号去均值；
 3. 使用互相关估计整数采样点级别的时延；
 4. 根据估计出的时延平移指令曲线，使其与实际位置曲线对齐；
-5. 对 joint_position_cmd 计算平移前 RMS、平移后 RMS、平移后最大绝对误差；
-6. 对 joint_position_input 只计算相对 joint_position 的平均时延；
-7. 将原始曲线、平移后的曲线、RMS 结果和日志副本保存到 ~/log/evaluate_performance/时间戳目录。
+5. 分别计算平移前和平移后的 RMS 误差；
+6. 计算对齐后的最大差值绝对值；
+7. 额外计算 joint_position_input 和 joint_position_cmd 的平均时延；
+8. 绘图时同时显示 joint_position_cmd、joint_position_input 和 joint_position；
+9. 将原始曲线、平移后的曲线、RMS 结果和日志副本保存到 ~/log/evaluate_performance/时间戳目录。
 
 使用示例：
     python3 script/evaluate_performance.py
     python3 script/evaluate_performance.py --seconds 10
     python3 script/evaluate_performance.py --joint 6
-    python3 script/evaluate_performance.py --joint 6-11
-    python3 script/evaluate_performance.py --a1 --joint 0-5
     python3 script/evaluate_performance.py --joint arms
     python3 script/evaluate_performance.py --log ~/log/robot_record.jsonl --max-lag 0.5
     python3 script/evaluate_performance.py --output-dir ~/log/evaluate_performance
-    
-W1
-0-5   躯干/头颈等
-6-12  左臂 7 个关节
-13-19 右臂 7 个关节
-
-A1
-0-6   左臂 7 个关节
-7-13  右臂 7 个关节
-
 """
 
 import argparse
@@ -69,24 +59,22 @@ def parse_line(line, debug=False):
     pos = data.get("joint_position")
     cmd = data.get("joint_position_cmd")
     pos_input = data.get("joint_position_input")
-    if not (
-        isinstance(pos, list)
-        and isinstance(cmd, list)
-        and isinstance(pos_input, list)
-        and len(pos) == len(cmd) == len(pos_input)
-    ):
+    if not isinstance(pos, list) or not isinstance(cmd, list) or len(pos) != len(cmd):
         return None
 
     try:
         pos_arr = np.asarray(pos, dtype=float)
         cmd_arr = np.asarray(cmd, dtype=float)
-        input_arr = np.asarray(pos_input, dtype=float)
+        if isinstance(pos_input, list) and len(pos_input) == len(pos):
+            input_arr = np.asarray(pos_input, dtype=float)
+        else:
+            input_arr = np.full_like(pos_arr, np.nan, dtype=float)
     except Exception as exc:
         if debug:
             print(f"[DEBUG] 关节数组转换失败: {exc}")
         return None
 
-    if pos_arr.ndim != 1 or cmd_arr.ndim != 1 or input_arr.ndim != 1 or pos_arr.size == 0:
+    if pos_arr.ndim != 1 or cmd_arr.ndim != 1 or pos_arr.size == 0:
         return None
 
     return ts, cmd_arr, input_arr, pos_arr
@@ -133,12 +121,8 @@ def filter_by_seconds(samples, seconds, debug=False):
 
 
 def build_arrays(samples):
-    """将采样点整理为时间数组和 Nx关节数 的 cmd/input/实际位置矩阵。"""
-    joint_count = min(
-        cmd.size
-        for _, cmd, pos_input, pos in samples
-        if cmd.size == pos_input.size == pos.size
-    )
+    """将采样点整理为时间数组和 Nx关节数 的指令/输入/实际位置矩阵。"""
+    joint_count = min(cmd.size for _, cmd, _, pos in samples if cmd.size == pos.size)
     usable = [
         (ts, cmd[:joint_count], pos_input[:joint_count], pos[:joint_count])
         for ts, cmd, pos_input, pos in samples
@@ -212,31 +196,40 @@ def estimate_delay_by_xcorr(cmd, pos, dt, max_lag_seconds=None):
     return best_lag, delay_seconds, best_corr, cmd, pos
 
 
-def aligned_series(times, cmd, pos, lag):
+def aligned_series(times, cmd, input_series, pos, lag):
     """根据估计出的 lag 对齐指令曲线和实际位置曲线，并返回重叠区间。"""
     if lag >= 0:
         aligned_times = times[lag:]
         aligned_cmd_times = times[: times.size - lag] + (times[lag] - times[0] if lag > 0 else 0.0)
         aligned_cmd = cmd[: cmd.size - lag]
+        aligned_input = input_series[: input_series.size - lag]
         aligned_pos = pos[lag:]
     else:
         lead = -lag
         aligned_times = times[: times.size - lead]
         aligned_cmd_times = times[lead:] - (times[lead] - times[0])
         aligned_cmd = cmd[lead:]
+        aligned_input = input_series[lead:]
         aligned_pos = pos[: pos.size - lead]
 
     valid = np.isfinite(aligned_cmd) & np.isfinite(aligned_pos)
-    return aligned_times[valid], aligned_cmd_times[valid], aligned_cmd[valid], aligned_pos[valid]
+    return (
+        aligned_times[valid],
+        aligned_cmd_times[valid],
+        aligned_cmd[valid],
+        aligned_input[valid],
+        aligned_pos[valid],
+    )
 
 
-def compute_joint_metrics(times, cmd_matrix, pos_matrix, joint_indices, max_lag_seconds, debug=False):
+def compute_joint_metrics(times, cmd_matrix, input_matrix, pos_matrix, joint_indices, max_lag_seconds, debug=False):
     """逐关节估计时延，并计算平移前/平移后的 RMS 与最大绝对误差。"""
     dt = median_sample_time(times)
     results = []
 
     for joint in joint_indices:
         raw_cmd = cmd_matrix[:, joint]
+        raw_input = input_matrix[:, joint]
         raw_pos = pos_matrix[:, joint]
         try:
             lag, delay_seconds, corr, cmd_valid, pos_valid = estimate_delay_by_xcorr(
@@ -251,13 +244,14 @@ def compute_joint_metrics(times, cmd_matrix, pos_matrix, joint_indices, max_lag_
 
         valid = np.isfinite(raw_cmd) & np.isfinite(raw_pos)
         joint_times = times[valid]
+        input_valid = raw_input[valid]
 
         raw_err = cmd_valid - pos_valid
         raw_rms_rad = float(np.sqrt(np.mean(raw_err * raw_err)))
         raw_max_abs_rad = float(np.max(np.abs(raw_err)))
 
-        t_aligned, cmd_time_aligned, cmd_aligned, pos_aligned = aligned_series(
-            joint_times, cmd_valid, pos_valid, lag
+        t_aligned, cmd_time_aligned, cmd_aligned, input_aligned, pos_aligned = aligned_series(
+            joint_times, cmd_valid, input_valid, pos_valid, lag
         )
         aligned_err = cmd_aligned - pos_aligned
         aligned_rms_rad = float(np.sqrt(np.mean(aligned_err * aligned_err)))
@@ -281,10 +275,12 @@ def compute_joint_metrics(times, cmd_matrix, pos_matrix, joint_indices, max_lag_
                 "aligned_max_abs_deg": float(np.degrees(aligned_max_abs_rad)),
                 "times": joint_times,
                 "cmd": cmd_valid,
+                "input": input_valid,
                 "pos": pos_valid,
                 "aligned_times": t_aligned,
                 "aligned_cmd_times": cmd_time_aligned,
                 "aligned_cmd": cmd_aligned,
+                "aligned_input": input_aligned,
                 "aligned_pos": pos_aligned,
             }
         )
@@ -292,33 +288,17 @@ def compute_joint_metrics(times, cmd_matrix, pos_matrix, joint_indices, max_lag_
     return results, dt
 
 
-def mean_delay_stats(delay_results):
-    """计算一组时延结果的平均时延和平均采样点。"""
-    if delay_results:
-        delay_values = np.asarray([item["delay_seconds"] for item in delay_results], dtype=float)
-        lag_values = np.asarray([item["lag_samples"] for item in delay_results], dtype=float)
-        return float(np.mean(delay_values)), float(np.mean(lag_values))
-    return math.nan, math.nan
-
-
-def compute_input_delay_summary(
-    times,
-    input_matrix,
-    pos_matrix,
-    joint_indices,
-    max_lag_seconds,
-    debug=False,
-):
-    """计算 joint_position_input 相对 joint_position 的逐关节时延和平均时延。"""
+def compute_average_input_delay(times, input_matrix, cmd_matrix, joint_indices, max_lag_seconds, debug=False):
+    """计算 joint_position_input 和 joint_position_cmd 的逐关节时延及平均时延。"""
     dt = median_sample_time(times)
     input_delay_results = []
 
     for joint in joint_indices:
         raw_input = input_matrix[:, joint]
-        raw_pos = pos_matrix[:, joint]
+        raw_cmd = cmd_matrix[:, joint]
         try:
             lag, delay_seconds, corr, _, _ = estimate_delay_by_xcorr(
-                raw_input, raw_pos, dt, max_lag_seconds=max_lag_seconds
+                raw_input, raw_cmd, dt, max_lag_seconds=max_lag_seconds
             )
         except ValueError as exc:
             if debug:
@@ -334,62 +314,49 @@ def compute_input_delay_summary(
             }
         )
 
-    mean_delay_seconds, mean_lag_samples = mean_delay_stats(input_delay_results)
+    non_negative_delays = [item["delay_seconds"] for item in input_delay_results if item["delay_seconds"] >= 0.0]
+    if non_negative_delays:
+        mean_delay_seconds = float(np.mean(non_negative_delays))
+    else:
+        mean_delay_seconds = math.nan
 
-    return {
-        "results": input_delay_results,
-        "mean_delay_seconds": mean_delay_seconds,
-        "mean_lag_samples": mean_lag_samples,
-    }
+    return input_delay_results, mean_delay_seconds
 
 
-def print_summary(results, dt):
+def print_summary(results, dt, input_delay_results, mean_input_delay_seconds):
     if not results:
         print("没有关节生成有效评估结果。")
         return
 
     print(f"采样周期中位数: {dt:.6f} s" if np.isfinite(dt) else "采样周期中位数: 未知")
-    print("关节 | cmd时延采样点 | cmd时延_s | 相关系数 | 原始RMS_deg | 对齐RMS_deg | 对齐最大绝对误差_deg")
-    print("-" * 104)
+    print("joint_position_cmd vs joint_position:")
+    print("关节 | 时延采样点 | 时延_s | 相关系数 | 原始RMS_deg | 对齐RMS_deg | 对齐最大绝对差_deg")
+    print("-" * 100)
     for item in results:
         print(
             f"{item['joint']:>5d} | "
-            f"{item['lag_samples']:>14d} | "
-            f"{item['delay_seconds']:>9.4f} | "
+            f"{item['lag_samples']:>11d} | "
+            f"{item['delay_seconds']:>7.4f} | "
             f"{item['corr']:>5.3f} | "
             f"{item['raw_rms_deg']:>11.4f} | "
             f"{item['aligned_rms_deg']:>11.4f} | "
-            f"{item['aligned_max_abs_deg']:>20.4f}"
+            f"{item['aligned_max_abs_deg']:>18.4f}"
         )
 
     if results:
         raw_rms_values = np.asarray([item["raw_rms_deg"] for item in results], dtype=float)
         aligned_rms_values = np.asarray([item["aligned_rms_deg"] for item in results], dtype=float)
-        print("-" * 104)
+        print("-" * 100)
         print(f"选中关节平均原始 RMS: {np.mean(raw_rms_values):.4f} deg")
         print(f"选中关节平均对齐 RMS: {np.mean(aligned_rms_values):.4f} deg")
 
-
-def print_input_delay_summary(input_delay_summary):
-    """打印 joint_position_input 相对 joint_position 的时延统计。"""
-    input_results = input_delay_summary["results"]
-    if not input_results:
-        print("joint_position_input 平均时延: 无有效结果")
-        return
-
-    print("joint_position_input 相对 joint_position 的逐关节平均时延:")
-    print("关节 | input平均时延采样点 | input平均时延_s | input相关系数")
-    print("-" * 68)
-    for item in input_results:
-        print(
-            f"{item['joint']:>5d} | "
-            f"{item['lag_samples']:>16d} | "
-            f"{item['delay_seconds']:>11.4f} | "
-            f"{item['corr']:>11.5f}"
-        )
-    print("-" * 68)
-    print(f"全部选中关节 joint_position_input 平均时延: {input_delay_summary['mean_delay_seconds']:.4f} s")
-    print(f"全部选中关节 joint_position_input 平均时延采样点: {input_delay_summary['mean_lag_samples']:.2f}")
+    if input_delay_results:
+        print("")
+        print("joint_position_input vs joint_position_cmd:")
+        print(f"平均时延: {mean_input_delay_seconds:.6f} s (忽略负时延)")
+    else:
+        print("")
+        print("joint_position_input vs joint_position_cmd: 未计算出有效平均时延。")
 
 
 def plot_results(results, start_timestamp, save_path, show_aligned):
@@ -418,6 +385,8 @@ def plot_results(results, start_timestamp, save_path, show_aligned):
         if show_aligned:
             cmd_t = item["aligned_cmd_times"]
             cmd_y = np.degrees(item["aligned_cmd"])
+            input_t = item["aligned_cmd_times"]
+            input_y = np.degrees(item["aligned_input"])
             pos_t = item["aligned_times"]
             pos_y = np.degrees(item["aligned_pos"])
             title_suffix = (
@@ -427,11 +396,15 @@ def plot_results(results, start_timestamp, save_path, show_aligned):
         else:
             cmd_t = item["times"]
             cmd_y = np.degrees(item["cmd"])
+            input_t = item["times"]
+            input_y = np.degrees(item["input"])
             pos_t = item["times"]
             pos_y = np.degrees(item["pos"])
             title_suffix = f"Raw, RMS={item['raw_rms_deg']:.4f} deg"
 
         ax.plot(cmd_t, cmd_y, label="joint_position_cmd", linewidth=1.2)
+        if np.any(np.isfinite(input_y)):
+            ax.plot(input_t, input_y, label="joint_position_input", linewidth=1.0, linestyle="--")
         ax.plot(pos_t, pos_y, label="joint_position", linewidth=1.2)
         ax.set_title(
             f"Joint {item['joint']} ({title_suffix})",
@@ -471,8 +444,18 @@ def copy_log_to_report(log_path, report_dir):
     return dst_path
 
 
-def write_metrics(results, input_delay_summary, dt, report_dir, log_path, start_timestamp, args, joint_indices):
-    """将 cmd RMS 指标和 input 平均时延写入报告目录。"""
+def write_metrics(
+    results,
+    input_delay_results,
+    mean_input_delay_seconds,
+    dt,
+    report_dir,
+    log_path,
+    start_timestamp,
+    args,
+    joint_indices,
+):
+    """将平移前/平移后的 RMS 指标写入报告目录。"""
     metrics_path = report_dir / "rms_result.txt"
     raw_rms_values = np.asarray([item["raw_rms_deg"] for item in results], dtype=float)
     aligned_rms_values = np.asarray([item["aligned_rms_deg"] for item in results], dtype=float)
@@ -484,18 +467,17 @@ def write_metrics(results, input_delay_summary, dt, report_dir, log_path, start_
         f"日志数据起点: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}",
         f"采样周期中位数: {dt:.6f} s" if np.isfinite(dt) else "采样周期中位数: 未知",
         f"时间窗口: 最近 {args.seconds} s" if args.seconds > 0 else "时间窗口: 全部保留数据",
-        f"运行模式: {'A1 14关节' if args.a1 else '标准20关节'}",
         f"关节选择参数: {args.joint}",
         f"实际评估关节索引: {joint_indices}",
         f"最大互相关搜索时延: {args.max_lag} s" if args.max_lag > 0 else "最大互相关搜索时延: 完整信号",
         "",
         "说明:",
-        "figure1.png: 原始 joint_position_cmd 与 joint_position 曲线",
-        "figure2.png: 根据 joint_position_cmd 与 joint_position 的互相关估计时延平移后的曲线",
-        "RMS 与最大误差单位: deg",
-        "joint_position_input 仅用于统计相对 joint_position 的平均时延",
+        "figure1.png: 原始 joint_position_cmd、joint_position_input 与 joint_position 曲线",
+        "figure2.png: 根据 joint_position_cmd 与 joint_position 的互相关估计时延平移后的曲线，包含 joint_position_input",
+        "RMS 单位: deg",
         "",
-        "关节 | cmd时延采样点 | cmd时延_s | cmd相关系数 | 原始样本数 | 对齐样本数 | 原始RMS | 对齐RMS | 对齐最大绝对误差",
+        "joint_position_cmd vs joint_position:",
+        "关节 | 时延采样点 | 时延_s | 相关系数 | 原始样本数 | 对齐样本数 | 对齐前RMS | 对齐后RMS | 对齐后最大绝对差",
         "-" * 120,
     ]
 
@@ -509,7 +491,7 @@ def write_metrics(results, input_delay_summary, dt, report_dir, log_path, start_
             f"{item['aligned_sample_count']:>10d} | "
             f"{item['raw_rms_deg']:>8.4f} | "
             f"{item['aligned_rms_deg']:>8.4f} | "
-            f"{item['aligned_max_abs_deg']:>18.4f}"
+            f"{item['aligned_max_abs_deg']:>12.4f}"
         )
 
     lines.extend(
@@ -518,49 +500,42 @@ def write_metrics(results, input_delay_summary, dt, report_dir, log_path, start_
             f"选中关节平均原始 RMS: {np.mean(raw_rms_values):.4f} deg",
             f"选中关节平均对齐 RMS: {np.mean(aligned_rms_values):.4f} deg",
             "",
-            "joint_position_input 相对 joint_position 的逐关节平均时延统计",
-            "-" * 72,
-            "关节 | input平均时延采样点 | input平均时延_s | input相关系数",
+            "joint_position_input vs joint_position_cmd:",
         ]
     )
-
-    for item in input_delay_summary["results"]:
-        lines.append(
-            f"{item['joint']:>5d} | "
-            f"{item['lag_samples']:>16d} | "
-            f"{item['delay_seconds']:>11.4f} | "
-            f"{item['corr']:>11.5f}"
-        )
-
-    lines.extend(
-        [
-            "-" * 72,
-            f"全部选中关节 joint_position_input 平均时延: {input_delay_summary['mean_delay_seconds']:.4f} s",
-            f"全部选中关节 joint_position_input 平均时延采样点: {input_delay_summary['mean_lag_samples']:.2f}",
-        ]
-    )
+    if input_delay_results:
+        lines.append(f"平均时延: {mean_input_delay_seconds:.6f} s")
+        lines.append("说明: 平均时延基于 joint_position_input 相对 joint_position_cmd 的互相关结果，统计时会忽略负时延。")
+        lines.append("关节 | 时延采样点 | 时延_s | 相关系数")
+        lines.append("-" * 60)
+        for item in input_delay_results:
+            lines.append(
+                f"{item['joint']:>5d} | "
+                f"{item['lag_samples']:>11d} | "
+                f"{item['delay_seconds']:>7.4f} | "
+                f"{item['corr']:>8.5f}"
+            )
+    else:
+        lines.append("未计算出有效平均时延。")
 
     metrics_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"RMS 结果已保存: {metrics_path}")
     return metrics_path
 
 
-def arm_joint_indices(joint_count, a1_mode=False):
-    """根据运行模式返回双臂关节索引。"""
-    if a1_mode:
-        if joint_count != 14:
-            raise ValueError(f"A1 模式需要 14 个关节，当前 joint_count={joint_count}。")
+def arm_joint_indices(joint_count):
+    """根据日志关节数量推断双臂关节索引。"""
+    if joint_count == 20:
+        return list(range(6, 20))
+    if joint_count == 14:
         return list(range(joint_count))
-
-    if joint_count != 20:
-        raise ValueError(f"标准模式需要 20 个关节，当前 joint_count={joint_count}；A1 日志请添加 --a1。")
-    return list(range(6, 20))
+    raise ValueError(f"无法从 joint_count={joint_count} 推断双臂关节索引，请使用 --joint 手动指定。")
 
 
-def parse_joint_indices(joint_arg, joint_count, a1_mode=False):
+def parse_joint_indices(joint_arg, joint_count):
     """解析 --joint 参数，支持 arms、all、单个索引、逗号列表和闭区间范围。"""
     if joint_arg is None or joint_arg.lower() == "arms":
-        return arm_joint_indices(joint_count, a1_mode=a1_mode)
+        return arm_joint_indices(joint_count)
     if joint_arg.lower() == "all":
         return list(range(joint_count))
 
@@ -587,7 +562,7 @@ def parse_joint_indices(joint_arg, joint_count, a1_mode=False):
 def main():
     global np
 
-    parser = argparse.ArgumentParser(description="评估 joint_position_cmd 与 joint_position 的位置跟踪性能，并统计 joint_position_input 平均时延。")
+    parser = argparse.ArgumentParser(description="评估 joint_position_cmd 与 joint_position 的位置跟踪性能。")
     parser.add_argument(
         "--log",
         type=Path,
@@ -610,19 +585,13 @@ def main():
         "--joint",
         type=str,
         default="arms",
-        help="关节选择：arms、all、单个索引、逗号列表，或 6-11 这种闭区间范围；标准模式索引0-19，A1模式索引0-13。",
-    )
-    parser.add_argument(
-        "--a1",
-        "--A1",
-        action="store_true",
-        help="A1 模式：按 14 个双臂关节分析；若日志是20关节，则自动截取原始关节6-19作为A1索引0-13。",
+        help="关节选择：arms、all、单个索引、逗号列表，或 6-12 这种闭区间范围，默认 arms；20关节取6-19，14关节取0-13。",
     )
     parser.add_argument(
         "--max-lag",
         type=float,
-        default=1.0,
-        help="互相关搜索的最大绝对时延，单位秒；设置 <=0 表示搜索完整信号，默认 1.0。",
+        default=0.5,
+        help="互相关搜索的最大绝对时延，单位秒；设置 <=0 表示搜索完整信号，默认 0.5。",
     )
     parser.add_argument(
         "--output-dir",
@@ -648,45 +617,26 @@ def main():
     samples = read_samples(log_path, args.n, debug=args.debug)
     samples = filter_by_seconds(samples, args.seconds, debug=args.debug)
     if not samples:
-        print("没有找到同时包含 joint_position_cmd、joint_position_input、joint_position 的有效采样点。", file=sys.stderr)
+        print("没有找到有效的 joint_position_cmd/joint_position 成对采样点。", file=sys.stderr)
         return 1
 
     times, cmd_matrix, input_matrix, pos_matrix, start_timestamp = build_arrays(samples)
     joint_count = cmd_matrix.shape[1]
-
-    if args.a1:
-        if joint_count == 20:
-            cmd_matrix = cmd_matrix[:, 6:20]
-            input_matrix = input_matrix[:, 6:20]
-            pos_matrix = pos_matrix[:, 6:20]
-            joint_count = 14
-        elif joint_count != 14:
-            print(f"A1 模式需要 14 或 20 个关节数据，当前 joint_count={joint_count}。", file=sys.stderr)
-            return 1
-    elif joint_count != 20:
-        print(f"标准模式需要 20 个关节数据，当前 joint_count={joint_count}；A1 日志请添加 --a1。", file=sys.stderr)
-        return 1
-
-    joint_indices = parse_joint_indices(args.joint, joint_count, a1_mode=args.a1)
+    joint_indices = parse_joint_indices(args.joint, joint_count)
     max_lag_seconds = None if args.max_lag <= 0 else args.max_lag
 
     if args.debug:
-        print(f"[DEBUG] 运行模式: {'A1' if args.a1 else '标准'}")
         print(f"[DEBUG] 关节数量: {joint_count}")
         print(f"[DEBUG] 选中关节: {joint_indices}")
         print(f"[DEBUG] 时间范围: {times[0]:.6f}s 到 {times[-1]:.6f}s")
 
-    results, dt = compute_joint_metrics(times, cmd_matrix, pos_matrix, joint_indices, max_lag_seconds, debug=args.debug)
-    input_delay_summary = compute_input_delay_summary(
-        times,
-        input_matrix,
-        pos_matrix,
-        joint_indices,
-        max_lag_seconds,
-        debug=args.debug,
+    results, dt = compute_joint_metrics(
+        times, cmd_matrix, input_matrix, pos_matrix, joint_indices, max_lag_seconds, debug=args.debug
     )
-    print_summary(results, dt)
-    print_input_delay_summary(input_delay_summary)
+    input_delay_results, mean_input_delay_seconds = compute_average_input_delay(
+        times, input_matrix, cmd_matrix, joint_indices, max_lag_seconds, debug=args.debug
+    )
+    print_summary(results, dt, input_delay_results, mean_input_delay_seconds)
     if not results:
         return 1
 
@@ -694,7 +644,17 @@ def main():
     figure1_path = report_dir / "figure1.png"
     figure2_path = report_dir / "figure2.png"
     copy_log_to_report(log_path, report_dir)
-    write_metrics(results, input_delay_summary, dt, report_dir, log_path, start_timestamp, args, joint_indices)
+    write_metrics(
+        results,
+        input_delay_results,
+        mean_input_delay_seconds,
+        dt,
+        report_dir,
+        log_path,
+        start_timestamp,
+        args,
+        joint_indices,
+    )
 
     try:
         plot_results(results, start_timestamp, save_path=figure1_path, show_aligned=False)
