@@ -53,6 +53,7 @@ private:
 
     RobotControl robot_control_;
     RobotFeedback robot_feedback_;
+    double ankle_motor_torque_[4];
 
     builtin_interfaces::msg::Time last_command_timestamp_{};
     int command_timeout_ms_ = 200;

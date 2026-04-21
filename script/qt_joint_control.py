@@ -92,6 +92,7 @@ class JointControlWidget(QWidget):
         super().__init__()
         self.ros_node = ros_node
         self.change_pos = 3
+        self.leg_ankle_motor_torque = []
 
         self.feedback_table = QTableWidget()
         self.control_table = CustomTableWidget(self.send_control_data)
@@ -138,20 +139,34 @@ class JointControlWidget(QWidget):
         self.timer.start(500)
 
     def init_tables(self):
-        self.feedback_table.setColumnCount(6)
-        self.feedback_table.setHorizontalHeaderLabels(["name", "position", "velocity", "torque", "stiffness", "damping"])
+        self.feedback_table.setColumnCount(7)
+        self.feedback_table.setHorizontalHeaderLabels(["name", "position", "velocity", "torque", "stiffness", "damping", "ankle_motor_torque"])
         self.control_table.setColumnCount(4)
         self.control_table.setHorizontalHeaderLabels(["name", "target_position", "stiffness", "damping"])
 
     def update_feedback_table(self):
         joint_data = self.ros_node.joint_states
         self.feedback_table.setRowCount(len(joint_data))
+        ndof_body = len(self.ros_node.joint_names) - 12  # Assuming 12 leg joints
+        ankle_motor_torques = self.ros_node.leg_ankle_motor_torque
+        ankle_mapping = {4: 0, 5: 1, 10: 2, 11: 3}  # leg_idx -> ankle_motor_torque index
         for row, joint in enumerate(joint_data):
             name = joint['name']
             stiffness_val = joint.get('stiffness')
             damping_val = joint.get('damping')
             stiffness_str = f"{stiffness_val:.2f}" if stiffness_val is not None else "/"
             damping_str = f"{damping_val:.2f}" if damping_val is not None else "/"
+
+            leg_idx = row - ndof_body if row >= ndof_body else -1
+            if leg_idx in ankle_mapping and leg_idx < len(ankle_motor_torques):
+                ankle_idx = ankle_mapping[leg_idx]
+                if ankle_idx < len(ankle_motor_torques):
+                    ankle_torque_str = f"{ankle_motor_torques[ankle_idx]:.2f}"
+                else:
+                    ankle_torque_str = "/"
+            else:
+                ankle_torque_str = "/"
+
             values = [
                 name,
                 f"{joint.get('position', 0.0):.2f}",
@@ -159,6 +174,7 @@ class JointControlWidget(QWidget):
                 f"{joint.get('torque', 0.0):.2f}",
                 stiffness_str,
                 damping_str,
+                ankle_torque_str,
             ]
             for col, val in enumerate(values):
                 self.feedback_table.setItem(row, col, QTableWidgetItem(val))
@@ -227,6 +243,7 @@ class ROS2Node(Node):
         self.update_callback = update_callback
         self.joint_states = []
         self.joint_names = []
+        self.leg_ankle_motor_torque = []
         self.create_subscription(String, '/feedback/robot_server_state', self.robot_status_callback, 10)
         self.joint_cmd_pub = self.create_publisher(JointCommand, '/hardware/joint_command', 10)
 
@@ -244,6 +261,7 @@ class ROS2Node(Node):
             leg_tor = data.get('leg_joint_torque', [])
             leg_stiffness = data.get('leg_stiffness', [])
             leg_damping = data.get('leg_damping', [])
+            self.leg_ankle_motor_torque = data.get('leg_ankle_motor_torque', [])
 
             ndof_body = len(body_pos)
 

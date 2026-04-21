@@ -188,8 +188,22 @@ Eigen::Vector2d PMAnkle::GetTaskTorquesFromMotorTorques(double q_pitch_rad,
                                                         double tau_motor_1,
                                                         double tau_motor_2) {
     Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad);
-    Eigen::Vector2d tau_motor(tau_motor_1, tau_motor_2);
+    double tau_1 = (is_left_ == params_1_.is_first_actuator) ? -tau_motor_1 : tau_motor_1;
+    double tau_2 = (is_left_ == params_2_.is_first_actuator) ? -tau_motor_2 : tau_motor_2;
+    Eigen::Vector2d tau_motor(tau_1, tau_2);
     return J.inverse().transpose() * tau_motor;
+}
+
+Eigen::Vector2d PMAnkle::GetMotorTorquesFromTaskTorques(double q_pitch_rad,
+                                                        double q_roll_rad,
+                                                        double tau_task_pitch,
+                                                        double tau_task_roll) {
+    Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad);
+    Eigen::Vector2d tau_task(tau_task_pitch, tau_task_roll);
+    Eigen::Vector2d tau_motor = J.transpose() * tau_task;
+    double tau_motor_1 = (is_left_ == params_1_.is_first_actuator) ? -tau_motor(0) : tau_motor(0);
+    double tau_motor_2 = (is_left_ == params_2_.is_first_actuator) ? -tau_motor(1) : tau_motor(1);
+    return Eigen::Vector2d(tau_motor_1, tau_motor_2);
 }
 
 Eigen::Vector2d PMAnkle::GetTaskVelocitiesFromMotorVelocities(double q_pitch_rad,
@@ -197,8 +211,10 @@ Eigen::Vector2d PMAnkle::GetTaskVelocitiesFromMotorVelocities(double q_pitch_rad
                                                               double vel_motor_1,
                                                               double vel_motor_2) {
     Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad);
-    Eigen::Vector2d vel_motor(vel_motor_1, vel_motor_2);
-    return J * vel_motor;
+    double vel_1 = (is_left_ == params_1_.is_first_actuator) ? -vel_motor_1 : vel_motor_1;
+    double vel_2 = (is_left_ == params_2_.is_first_actuator) ? -vel_motor_2 : vel_motor_2;
+    Eigen::Vector2d vel_motor(vel_1, vel_2);
+    return J.inverse() * vel_motor;
 }
 
 Eigen::Vector2d PMAnkle::GetMotorStiffnessFromTaskStiffness(double q_pitch_rad,

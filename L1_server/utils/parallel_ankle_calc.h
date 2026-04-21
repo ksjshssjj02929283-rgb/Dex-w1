@@ -68,6 +68,11 @@ public:
                                                    double tau_motor_1,
                                                    double tau_motor_2);
 
+    Eigen::Vector2d GetMotorTorquesFromTaskTorques(double q_pitch_rad,
+                                                    double q_roll_rad,
+                                                    double tau_task_pitch,
+                                                    double tau_task_roll);
+
     Eigen::Vector2d GetTaskVelocitiesFromMotorVelocities(double q_pitch_rad,
                                                          double q_roll_rad,
                                                          double vel_motor_1,
