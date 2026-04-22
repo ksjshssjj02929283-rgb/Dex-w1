@@ -212,28 +212,30 @@ Eigen::Vector2d PMAnkle::GetTaskVelocitiesFromMotorVelocities(double q_pitch_rad
     return J.inverse() * vel_motor;
 }
 
-Eigen::Vector2d PMAnkle::GetMotorStiffnessFromTaskStiffness(double q_pitch_rad,
+Eigen::Matrix2d PMAnkle::GetMotorStiffnessMatrixFromTaskStiffness(double q_pitch_rad,
                                                             double q_roll_rad,
                                                             double k_pitch,
                                                             double k_roll) {
     Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad);
     Eigen::Matrix2d J_inv = J.inverse();
-    Eigen::Vector2d k_motor;
-    k_motor(0) = k_pitch * J_inv(0, 0) * J_inv(0, 0) + k_roll * J_inv(0, 1) * J_inv(0, 1);
-    k_motor(1) = k_pitch * J_inv(1, 0) * J_inv(1, 0) + k_roll * J_inv(1, 1) * J_inv(1, 1);
-    return k_motor;
+    Eigen::Matrix2d K_task;
+    K_task << k_pitch, 0,
+              0, k_roll;
+    Eigen::Matrix2d K_motor = J_inv.transpose() * K_task * J_inv;
+    return K_motor;
 }
 
-Eigen::Vector2d PMAnkle::GetMotorDampingFromTaskDamping(double q_pitch_rad,
+Eigen::Matrix2d PMAnkle::GetMotorDampingMatrixFromTaskDamping(double q_pitch_rad,
                                                         double q_roll_rad,
                                                         double d_pitch,
                                                         double d_roll) {
     Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad);
     Eigen::Matrix2d J_inv = J.inverse();
-    Eigen::Vector2d d_motor;
-    d_motor(0) = d_pitch * J_inv(0, 0) * J_inv(0, 0) + d_roll * J_inv(0, 1) * J_inv(0, 1);
-    d_motor(1) = d_pitch * J_inv(1, 0) * J_inv(1, 0) + d_roll * J_inv(1, 1) * J_inv(1, 1);
-    return d_motor;
+    Eigen::Matrix2d D_task;
+    D_task << d_pitch, 0,
+              0, d_roll;
+    Eigen::Matrix2d D_motor = J_inv.transpose() * D_task * J_inv;
+    return D_motor;
 }
 
 }  // namespace utils

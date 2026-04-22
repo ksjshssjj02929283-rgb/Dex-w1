@@ -156,17 +156,19 @@ TEST(PMAnkleTest, MotorStiffnessFromTaskStiffness) {
             double k_pitch = 100.0;
             double k_roll = 80.0;
 
-            auto k_motor = ankle.GetMotorStiffnessFromTaskStiffness(q_pitch, q_roll, k_pitch, k_roll);
+            auto k_motor = ankle.GetMotorStiffnessMatrixFromTaskStiffness(q_pitch, q_roll, k_pitch, k_roll);
 
-            std::cout << "Motor Stiffness from Task Stiffness (is_left=" << is_left << "):" << std::endl;
+            std::cout << "Motor Stiffness Matrix from Task Stiffness (is_left=" << is_left << "):" << std::endl;
             std::cout << "Input: q_pitch=" << q_pitch << ", q_roll=" << q_roll << std::endl;
             std::cout << "Input: k_pitch=" << k_pitch << ", k_roll=" << k_roll << std::endl;
-            std::cout << "Output: k_motor_1=" << k_motor(0) << ", k_motor_2=" << k_motor(1) << std::endl;
+            std::cout << "Output matrix:\n" << k_motor << std::endl;
 
-            EXPECT_TRUE(std::isfinite(k_motor(0))) << "k_motor_1 is not finite, is_left=" << is_left;
-            EXPECT_TRUE(std::isfinite(k_motor(1))) << "k_motor_2 is not finite, is_left=" << is_left;
-            EXPECT_GT(k_motor(0), 0.0) << "k_motor_1 should be positive, is_left=" << is_left;
-            EXPECT_GT(k_motor(1), 0.0) << "k_motor_2 should be positive, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(k_motor(0,0))) << "k_motor(0,0) is not finite, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(k_motor(0,1))) << "k_motor(0,1) is not finite, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(k_motor(1,0))) << "k_motor(1,0) is not finite, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(k_motor(1,1))) << "k_motor(1,1) is not finite, is_left=" << is_left;
+            EXPECT_GT(k_motor(0,0), 0.0) << "k_motor(0,0) should be positive, is_left=" << is_left;
+            EXPECT_GT(k_motor(1,1), 0.0) << "k_motor(1,1) should be positive, is_left=" << is_left;
         }
     }
 }
@@ -178,17 +180,19 @@ TEST(PMAnkleTest, MotorDampingFromTaskDamping) {
             double d_pitch = 10.0;
             double d_roll = 8.0;
 
-            auto d_motor = ankle.GetMotorDampingFromTaskDamping(q_pitch, q_roll, d_pitch, d_roll);
+            auto d_motor = ankle.GetMotorDampingMatrixFromTaskDamping(q_pitch, q_roll, d_pitch, d_roll);
 
-            std::cout << "Motor Damping from Task Damping (is_left=" << is_left << "):" << std::endl;
+            std::cout << "Motor Damping Matrix from Task Damping (is_left=" << is_left << "):" << std::endl;
             std::cout << "Input: q_pitch=" << q_pitch << ", q_roll=" << q_roll << std::endl;
             std::cout << "Input: d_pitch=" << d_pitch << ", d_roll=" << d_roll << std::endl;
-            std::cout << "Output: d_motor_1=" << d_motor(0) << ", d_motor_2=" << d_motor(1) << std::endl;
+            std::cout << "Output matrix:\n" << d_motor << std::endl;
 
-            EXPECT_TRUE(std::isfinite(d_motor(0))) << "d_motor_1 is not finite, is_left=" << is_left;
-            EXPECT_TRUE(std::isfinite(d_motor(1))) << "d_motor_2 is not finite, is_left=" << is_left;
-            EXPECT_GT(d_motor(0), 0.0) << "d_motor_1 should be positive, is_left=" << is_left;
-            EXPECT_GT(d_motor(1), 0.0) << "d_motor_2 should be positive, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(d_motor(0,0))) << "d_motor(0,0) is not finite, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(d_motor(0,1))) << "d_motor(0,1) is not finite, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(d_motor(1,0))) << "d_motor(1,0) is not finite, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(d_motor(1,1))) << "d_motor(1,1) is not finite, is_left=" << is_left;
+            EXPECT_GT(d_motor(0,0), 0.0) << "d_motor(0,0) should be positive, is_left=" << is_left;
+            EXPECT_GT(d_motor(1,1), 0.0) << "d_motor(1,1) should be positive, is_left=" << is_left;
         }
     }
 }

@@ -393,25 +393,25 @@ RobotControl RobotServer::ConvertPitchRollToAnkleMotors(const RobotControl& robo
     result.leg_control[10].joint_position = motor_angles_right.theta_1_rad;
     result.leg_control[11].joint_position = motor_angles_right.theta_2_rad;
 
-    Eigen::Vector2d ankle_k_left = pm_ankle_left_.GetMotorStiffnessFromTaskStiffness(
+    Eigen::Matrix2d ankle_k_left = pm_ankle_left_.GetMotorStiffnessMatrixFromTaskStiffness(
         ankle_pitch_left, ankle_roll_left, ankle_k_pitch_left, ankle_k_roll_left);
-    Eigen::Vector2d ankle_k_right = pm_ankle_right_.GetMotorStiffnessFromTaskStiffness(
+    Eigen::Matrix2d ankle_k_right = pm_ankle_right_.GetMotorStiffnessMatrixFromTaskStiffness(
         ankle_pitch_right, ankle_roll_right, ankle_k_pitch_right, ankle_k_roll_right);
 
-    result.leg_control[4].joint_Kp = ankle_k_left(0);
-    result.leg_control[5].joint_Kp = ankle_k_left(1);
-    result.leg_control[10].joint_Kp = ankle_k_right(0);
-    result.leg_control[11].joint_Kp = ankle_k_right(1);
+    result.leg_control[4].joint_Kp = ankle_k_left(0, 0);
+    result.leg_control[5].joint_Kp = ankle_k_left(1, 1);
+    result.leg_control[10].joint_Kp = ankle_k_right(0, 0);
+    result.leg_control[11].joint_Kp = ankle_k_right(1, 1);
 
-    Eigen::Vector2d ankle_d_left = pm_ankle_left_.GetMotorDampingFromTaskDamping(ankle_pitch_left, ankle_roll_left,
+    Eigen::Matrix2d ankle_d_left = pm_ankle_left_.GetMotorDampingMatrixFromTaskDamping(ankle_pitch_left, ankle_roll_left,
                                                                                  ankle_d_pitch_left, ankle_d_roll_left);
-    Eigen::Vector2d ankle_d_right = pm_ankle_right_.GetMotorDampingFromTaskDamping(
+    Eigen::Matrix2d ankle_d_right = pm_ankle_right_.GetMotorDampingMatrixFromTaskDamping(
         ankle_pitch_right, ankle_roll_right, ankle_d_pitch_right, ankle_d_roll_right);
 
-    result.leg_control[4].joint_Kd = ankle_d_left(0);
-    result.leg_control[5].joint_Kd = ankle_d_left(1);
-    result.leg_control[10].joint_Kd = ankle_d_right(0);
-    result.leg_control[11].joint_Kd = ankle_d_right(1);
+    result.leg_control[4].joint_Kd = ankle_d_left(0, 0);
+    result.leg_control[5].joint_Kd = ankle_d_left(1, 1);
+    result.leg_control[10].joint_Kd = ankle_d_right(0, 0);
+    result.leg_control[11].joint_Kd = ankle_d_right(1, 1);
 
     Eigen::Vector2d ankle_tau_left = pm_ankle_left_.GetMotorTorquesFromTaskTorques(
         ankle_pitch_left, ankle_roll_left, ankle_tau_pitch_left, ankle_tau_roll_left);
@@ -428,10 +428,17 @@ RobotControl RobotServer::ConvertPitchRollToAnkleMotors(const RobotControl& robo
     Eigen::Vector2d ankle_ff_right = pm_ankle_right_.GetMotorTorquesFromTaskTorques(
         ankle_pitch_right, ankle_roll_right, ankle_ff_pitch_right, ankle_ff_roll_right);
 
-    result.leg_control[4].joint_torque_feedforward = ankle_ff_left(0);
-    result.leg_control[5].joint_torque_feedforward = ankle_ff_left(1);
-    result.leg_control[10].joint_torque_feedforward = ankle_ff_right(0);
-    result.leg_control[11].joint_torque_feedforward = ankle_ff_right(1);
+    // 计算电机角度误差（使用原始的电机角度反馈值）
+    const double motor1_left_error = motor_angles_left.theta_1_rad - ankle_motor_position_fb_[0];
+    const double motor2_left_error = motor_angles_left.theta_2_rad - ankle_motor_position_fb_[1];
+    const double motor1_right_error = motor_angles_right.theta_1_rad - ankle_motor_position_fb_[2];
+    const double motor2_right_error = motor_angles_right.theta_2_rad - ankle_motor_position_fb_[3];
+
+    // 将交叉耦合项加到前馈力矩中
+    result.leg_control[4].joint_torque_feedforward = ankle_ff_left(0) + ankle_k_left(0, 1) * motor2_left_error;
+    result.leg_control[5].joint_torque_feedforward = ankle_ff_left(1) + ankle_k_left(1, 0) * motor1_left_error;
+    result.leg_control[10].joint_torque_feedforward = ankle_ff_right(0) + ankle_k_right(0, 1) * motor2_right_error;
+    result.leg_control[11].joint_torque_feedforward = ankle_ff_right(1) + ankle_k_right(1, 0) * motor1_right_error;
 
     return result;
 }

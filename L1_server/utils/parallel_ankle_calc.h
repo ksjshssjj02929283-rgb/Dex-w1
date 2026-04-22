@@ -78,12 +78,12 @@ public:
                                                          double vel_motor_1,
                                                          double vel_motor_2);
 
-    Eigen::Vector2d GetMotorStiffnessFromTaskStiffness(double q_pitch_rad,
+    Eigen::Matrix2d GetMotorStiffnessMatrixFromTaskStiffness(double q_pitch_rad,
                                                        double q_roll_rad,
                                                        double k_pitch,
                                                        double k_roll);
 
-    Eigen::Vector2d GetMotorDampingFromTaskDamping(double q_pitch_rad,
+    Eigen::Matrix2d GetMotorDampingMatrixFromTaskDamping(double q_pitch_rad,
                                                    double q_roll_rad,
                                                    double d_pitch,
                                                    double d_roll);
