@@ -102,6 +102,7 @@ struct RobotProperty {
     Vector12d cart_stiffness = Vector12d::Constant(200.0);
     Vector12d cart_damping_ratio = Vector12d::Constant(1.0);  // 阻尼比 范围0.5 ~ 1.5
     Vector12d cart_impedance_force = Vector12d::Zero();       // 预估笛卡尔阻抗力
+    bool enable_force_compliance{true};  // 是否启用外力传感器叠加 -J^T * W_ext
     ErrorCode error_code{ErrorCode::NoError};
 };
 
@@ -155,6 +156,7 @@ struct PlannerManagerCommand {
     std::int64_t sequence_number{-1};
     JointCommand cmd;
     bool use_simple_dynamics{false};  // 是否使用简化动力学计算
+    bool enable_force_compliance{true};  // 是否允许力传感器更新关节柔顺偏置
 };
 
 struct TorqueCtrlCommand {
@@ -252,6 +254,13 @@ struct TorqueControlBuffer {
     }
 };
 
+struct ForceSensorCompensationConfig {
+    double tool_mass_g{0.0};
+    Vector3d com_mm{Vector3d::Zero()};
+    Vector6d w_bias{Vector6d::Zero()};
+    bool enable_tool_gravity_compensation{false};
+};
+
 // 机器人配置文件参数
 struct RobotParams {
     std::filesystem::path urdf_path;
@@ -275,6 +284,7 @@ struct RobotParams {
     TrajectoryBounds streaming_bounds;
     bool enable_streaming_ruckig{true};     // 是否使用Ruckig轨迹生成器
     SafetyCheckConfig safety_check_config;  // 安全检查配置
+    ForceSensorCompensationConfig force_sensor_compensation;
 };
 
 struct RobotModel {

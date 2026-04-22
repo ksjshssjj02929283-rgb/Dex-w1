@@ -72,6 +72,7 @@ enum class RequestType {
     JointIntegralRatio,
     CartStiffness,
     CartDampingRatio,
+    EnableForceCompliance,
     // Move Request
     MoveJoint,
     MoveLine,

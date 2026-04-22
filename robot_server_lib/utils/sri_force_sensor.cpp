@@ -109,51 +109,6 @@ void SriForceSensor::ClosePort(int fd) {
     }
 }
 
-// 零位校准方法
-void SriForceSensor::ProcessCalibrationData(float fx, float fy, float fz, float mx, float my, float mz) {
-    if (!mIsCalibrating) {
-        return;
-    }
-
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - mCalibrationStartTime).count();
-
-    if (elapsed >= 500) {
-        if (mCalibrationSampleCount > 0) {
-            for (int i = 0; i < 6; i++) {
-                mZeroOffset[i] = mCalibrationSum[i] / mCalibrationSampleCount;
-            }
-            printf(
-                "[Info] SRI force sensor: Zero calibration completed: samples=%d, offset=%.4f, %.4f, %.4f, %.4f, %.4f, "
-                "%.4f\n",
-                mCalibrationSampleCount, mZeroOffset[0], mZeroOffset[1], mZeroOffset[2], mZeroOffset[3], mZeroOffset[4],
-                mZeroOffset[5]);
-            LOG_INFO << "Zero calibration completed: samples=" << mCalibrationSampleCount
-                     << ", offset=" << mZeroOffset[0] << ", " << mZeroOffset[1] << ", " << mZeroOffset[2] << ", "
-                     << mZeroOffset[3] << ", " << mZeroOffset[4] << ", " << mZeroOffset[5];
-        }
-        mIsCalibrating = false;
-        return;
-    }
-
-    mCalibrationSum[0] += fx;
-    mCalibrationSum[1] += fy;
-    mCalibrationSum[2] += fz;
-    mCalibrationSum[3] += mx;
-    mCalibrationSum[4] += my;
-    mCalibrationSum[5] += mz;
-    mCalibrationSampleCount++;
-}
-
-void SriForceSensor::ApplyZeroOffset(float& fx, float& fy, float& fz, float& mx, float& my, float& mz) {
-    fx -= mZeroOffset[0];
-    fy -= mZeroOffset[1];
-    fz -= mZeroOffset[2];
-    mx -= mZeroOffset[3];
-    my -= mZeroOffset[4];
-    mz -= mZeroOffset[5];
-}
-
 // 解析方法
 uint8_t SriForceSensor::MyCRC_GetCRC8(uint8_t* pDat, uint8_t bytes) {
     uint8_t CRC8_POLY = 0x8C;
@@ -248,11 +203,13 @@ void* SriForceSensor::ReadThread(void* param) {
 void SriForceSensor::ReadLoop() {
     printf("[Info] SRI force sensor: Read thread started\n");
     LOG_INFO << "SRI force sensor: Read thread started";
+    bool read_error_logged = false;
     while (true) {
         if (m_serial_fd < 0) break;
 
         int recvDataLen = ReadData(m_serial_fd, mReadBuffer, REC_DATA_LEN);
         if (recvDataLen > 0) {
+            read_error_logged = false;
             // 只解析最后一个有效帧
             float fx = 0, fy = 0, fz = 0, mx = 0, my = 0, mz = 0;
             int found = 0;
@@ -280,21 +237,16 @@ void SriForceSensor::ReadLoop() {
                 offset = newOffset;
             }
 
-            if (found) {
-                // 校准
-                if (mIsCalibrating) {
-                    ProcessCalibrationData(fx, fy, fz, mx, my, mz);
-                } else {
-                    // 应用零位偏移并写入 buffer
-                    ApplyZeroOffset(fx, fy, fz, mx, my, mz);
-                    if (buffer_) {
-                        robot_server_lib::Vector6d vec;
-                        vec << fx, fy, fz, mx, my, mz;
-                        buffer_->AppendNewElement(vec);
-                    }
-                }
+            if (found && buffer_) {
+                robot_server_lib::Vector6d vec;
+                vec << fx, fy, fz, mx, my, mz;
+                buffer_->AppendNewElement(vec);
             }
         } else {
+            if (recvDataLen < 0 && !read_error_logged) {
+                LOG_WARN << "SRI force sensor serial read failed, fd=" << m_serial_fd;
+                read_error_logged = true;
+            }
             usleep(50);
         }
     }
@@ -335,22 +287,8 @@ bool SriForceSensor::Init(int baudrate) {
         return false;
     }
 
-    // 等待数据开始流动
-    usleep(100000);
-
-    // 启动零位校准
-    mIsCalibrating = true;
-    mCalibrationSampleCount = 0;
-    memset(mCalibrationSum, 0, sizeof(mCalibrationSum));
-    mCalibrationStartTime = std::chrono::steady_clock::now();
-
-    // 等待校准完成
-    while (mIsCalibrating) {
-        usleep(10000);
-    }
-
     printf("[Info] SRI force sensor: Initialized successfully\n");
-    LOG_INFO << "SRI force sensor initialized successfully";
+    LOG_INFO << "SRI force sensor initialized successfully, internal zero calibration disabled";
     return true;
 }
 
@@ -372,4 +310,4 @@ bool SriForceSensor::PeekLatest(robot_server_lib::Vector6d* output) {
     return false;
 }
 
-bool SriForceSensor::IsCalibrating() const { return mIsCalibrating; }
+bool SriForceSensor::IsCalibrating() const { return false; }

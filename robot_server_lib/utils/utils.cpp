@@ -65,6 +65,35 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     parse_array("joint_max_torque_limit_negative", params.joint_max_torque_limit_negative);
     parse_array("joint_limit_margin_deg", params.joint_limit_margin_deg);
 
+    if (config_json.contains("tool_mass") && config_json["tool_mass"].is_number()) {
+        params.force_sensor_compensation.tool_mass_g = config_json["tool_mass"].get<double>();
+    }
+    if (config_json.contains("com_mm") && config_json["com_mm"].is_array()) {
+        const auto &arr = config_json["com_mm"];
+        if (arr.size() == 3) {
+            for (size_t i = 0; i < 3; ++i) {
+                params.force_sensor_compensation.com_mm[static_cast<int>(i)] = arr[i].get<double>();
+            }
+        } else {
+            LOG_WARN << "robot.cfg com_mm size is " << static_cast<int>(arr.size()) << ", expected 3, using default";
+        }
+    }
+    if (config_json.contains("w_bias") && config_json["w_bias"].is_array()) {
+        const auto &arr = config_json["w_bias"];
+        if (arr.size() == 6) {
+            for (size_t i = 0; i < 6; ++i) {
+                params.force_sensor_compensation.w_bias[static_cast<int>(i)] = arr[i].get<double>();
+            }
+        } else {
+            LOG_WARN << "robot.cfg w_bias size is " << static_cast<int>(arr.size()) << ", expected 6, using default";
+        }
+    }
+    if (config_json.contains("enable_tool_gravity_compensation") &&
+        config_json["enable_tool_gravity_compensation"].is_boolean()) {
+        params.force_sensor_compensation.enable_tool_gravity_compensation =
+            config_json["enable_tool_gravity_compensation"].get<bool>();
+    }
+
     // 解析流式运动限制参数
     if (config_json.contains("streaming_bounds")) {
         const auto &sb = config_json["streaming_bounds"];
@@ -168,6 +197,10 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     if (config_json.contains("cart_damping_ratio")) {
         parse_array("cart_damping_ratio", temp_vec);
         robot_property.cart_damping_ratio = temp_vec;
+    }
+
+    if (config_json.contains("enable_force_compliance") && config_json["enable_force_compliance"].is_boolean()) {
+        robot_property.enable_force_compliance = config_json["enable_force_compliance"].get<bool>();
     }
 
     // 设置安全检查配置
@@ -386,6 +419,7 @@ PlannerRequest ParseSetPropertyRequest(
         case RequestType::EnableDrag:
         case RequestType::EnableSleep:
         case RequestType::EnablePosLimitCheck:
+        case RequestType::EnableForceCompliance:
             planner_request.data = parse_bool(request->value);
             break;
         case RequestType::JointStiffness:
@@ -498,33 +532,40 @@ StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interf
     return streaming_command;
 }
 
-Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary) {
-    // 最小力/力矩阈值(去除摩擦力), 和最大力/力矩值
-    constexpr double force_threshold = 0.5;
-    constexpr double torque_threshold = 0.1;
-    constexpr double force_max = 100.0;
-    constexpr double torque_max = 10.0;
+Vector6d MapSriSensorWrenchToEndEffector(const Vector6d &raw_wrench) {
+    // 传感器原始输出: [-fx, -fy, fz, Mx, My, Mz]（力矩方向遵循右手系）
+    // 末端坐标系:     [Fx, Fy, Fz, Mx, My, Mz]
+    Vector6d mapped_wrench;
+    mapped_wrench << -raw_wrench[0], -raw_wrench[1], raw_wrench[2], raw_wrench[3], raw_wrench[4], raw_wrench[5];
+    return mapped_wrench;
+}
 
-    auto deadzone_saturate = [](double x, double th, double mx) noexcept -> double {
-        double y = std::max(0.0, std::abs(x) - th);
-        if (y > mx) y = mx;
-        return std::copysign(y, x);
-    };
+Vector6d CompensateToolGravity(const Vector6d &mapped_wrench,
+                               const Matrix3d &rotation_world_from_ee,
+                               const ForceSensorCompensationConfig &config) {
+    constexpr double gravity = 9.81;
+    const double mass_kg = config.tool_mass_g / 1000.0;
+    const Vector3d com_m = config.com_mm / 1000.0;
+    const Vector3d gravity_world(0.0, 0.0, -gravity);
+    const Vector3d force_gravity_ee = rotation_world_from_ee.transpose() * (mass_kg * gravity_world);
+    const Vector3d torque_gravity_ee = com_m.cross(force_gravity_ee);
 
-    auto process6 = [&](const Vector6d &w) noexcept -> Vector6d {
-        Vector6d out;
-        for (int i = 0; i < 6; ++i) {
-            const bool is_force = i < 3;
-            const double th = is_force ? force_threshold : torque_threshold;
-            const double mx = is_force ? force_max : torque_max;
-            out[i] = deadzone_saturate(w[i], th, mx);
-        }
-        return out;
-    };
+    Vector6d gravity_wrench;
+    gravity_wrench.head<3>() = force_gravity_ee;
+    gravity_wrench.tail<3>() = torque_gravity_ee;
+    return mapped_wrench - config.w_bias - gravity_wrench;
+}
 
+Vector12d GetSensorWrench(const Vector6d &wrench_primary,
+                          const Vector6d &wrench_secondary,
+                          const Matrix3d &primary_rotation_world_from_ee,
+                          const ForceSensorCompensationConfig &primary_config) {
     Vector12d sensor_wrench;
-    sensor_wrench.head<6>() = process6(wrench_primary);
-    sensor_wrench.tail<6>() = process6(wrench_secondary);
+    const Vector6d primary_mapped = MapSriSensorWrenchToEndEffector(wrench_primary);
+    sensor_wrench.head<6>() = primary_config.enable_tool_gravity_compensation
+                                  ? CompensateToolGravity(primary_mapped, primary_rotation_world_from_ee, primary_config)
+                                  : primary_mapped;
+    sensor_wrench.tail<6>() = MapSriSensorWrenchToEndEffector(wrench_secondary);
     return sensor_wrench;
 }
 

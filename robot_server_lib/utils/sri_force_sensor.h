@@ -57,7 +57,7 @@ public:
     SriForceSensor();
     ~SriForceSensor();
 
-    // 初始化：自动查找串口、解析、零位校准
+    // 初始化：自动查找串口并启动解析线程
     bool Init(int baudrate = 460800);
     // 关闭串口
     void Close();
@@ -65,7 +65,7 @@ public:
     // 读取最新力传感器数据 (fx, fy, fz, mx, my, mz)
     bool PeekLatest(robot_server_lib::Vector6d* output);
 
-    // 是否正在校准
+    // 兼容旧接口；当前不再做传感器内部零位校准
     bool IsCalibrating() const;
 
 private:
@@ -76,13 +76,6 @@ private:
 
     // 数据输出 buffer
     std::shared_ptr<robot_server_lib::SingleWriterLatestBuffer<robot_server_lib::Vector6d>> buffer_;
-
-    // 零位校准相关
-    bool mIsCalibrating = false;
-    int mCalibrationSampleCount = 0;
-    float mZeroOffset[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-    float mCalibrationSum[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-    std::chrono::steady_clock::time_point mCalibrationStartTime;
 
     // 串口方法
     int OpenPort(const char* device);
@@ -109,10 +102,6 @@ private:
 
     // CRC校验
     uint8_t MyCRC_GetCRC8(uint8_t* pDat, uint8_t bytes);
-
-    // 零位校准方法
-    void ProcessCalibrationData(float fx, float fy, float fz, float mx, float my, float mz);
-    void ApplyZeroOffset(float& fx, float& fy, float& fz, float& mx, float& my, float& mz);
 
     // 辅助方法
     const char* FindSerialPort();

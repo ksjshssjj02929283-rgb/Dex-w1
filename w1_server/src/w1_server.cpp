@@ -5,6 +5,8 @@
 #include <nlohmann/json.hpp>
 #include <system_error>
 
+#include "robot_server_lib/pinocchio_api.h"
+
 namespace robot_server_lib {
 
 RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, RobotMode robot_mode)
@@ -79,6 +81,16 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, Robo
 
     // 参数初始化
     InitParamConfig();
+    const auto &force_config = this->robot_model_.params_ptr->force_sensor_compensation;
+    LOG_INFO << "Force sensor compensation config: enable_tool_gravity_compensation="
+             << static_cast<int>(force_config.enable_tool_gravity_compensation)
+             << ", tool_mass_g=" << force_config.tool_mass_g << ", com_mm=[" << force_config.com_mm.transpose()
+             << "], w_bias=[" << force_config.w_bias.transpose() << "]";
+    if (force_config.enable_tool_gravity_compensation) {
+        LOG_INFO << "Force sensor mode: map SRI wrench, subtract w_bias, subtract tool gravity";
+    } else {
+        LOG_INFO << "Force sensor mode: map SRI wrench only, w_bias and tool gravity compensation disabled";
+    }
 
     // 创建定时器，定时发布feedback 定时器回调函数
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
@@ -310,6 +322,7 @@ void RobotServer::TorqueControlThreadFunc() {
     auto &control_shm_instance = ControlSharedMemory::GetInstance();
 
     Int64 loop_counter = 0;
+    Int64 last_primary_sensor_read_warn_loop = -1000;
     this->is_robot_ready_ = false;
     auto next_cycle_time_point = std::chrono::steady_clock::now();
 
@@ -321,7 +334,13 @@ void RobotServer::TorqueControlThreadFunc() {
         Vector6d sensor_data_primary = Vector6d::Zero();
         Vector6d sensor_data_secondary = Vector6d::Zero();
         if (primary_sensor_ && primary_sensor_ready_) {
-            primary_sensor_->PeekLatest(&sensor_data_primary);
+            if (!primary_sensor_->PeekLatest(&sensor_data_primary) &&
+                loop_counter - last_primary_sensor_read_warn_loop >= 1000) {
+                LOG_WARN << "Primary force sensor PeekLatest failed, primary_sensor_ready="
+                         << static_cast<int>(primary_sensor_ready_)
+                         << ", using zero raw wrench for this cycle before mapping/compensation";
+                last_primary_sensor_read_warn_loop = loop_counter;
+            }
         }
         if (secondary_sensor_ && secondary_sensor_ready_) {
             secondary_sensor_->PeekLatest(&sensor_data_secondary);
@@ -388,8 +407,19 @@ void RobotServer::TorqueControlThreadFunc() {
         if (this->is_robot_ready_) {
             // 关节反馈数据写入测量数据
             JointRawMeasurement raw_measurement{};
+            Matrix3d primary_rotation_world_from_ee = Matrix3d::Identity();
+            VectorDof feedback_q = VectorDof::Zero();
+            for (int i = 0; i < ndof_robot; ++i) {
+                feedback_q[i] = robot_feedback_.position[i];
+            }
+            Eigen::VectorXd primary_q;
+            if (utils::GetJointFromWholeBody(this->robot_model_, feedback_q, primary_q, MotionGroup::Primary)) {
+                primary_rotation_world_from_ee =
+                    pinocchio::GetFK(*this->robot_model_.primary_arm_model_ptr, primary_q).block<3, 3>(0, 0);
+            }
             raw_measurement.sensor_wrench = sensor_wrench_ =
-                utils::GetSensorWrench(sensor_data_primary, sensor_data_secondary);
+                utils::GetSensorWrench(sensor_data_primary, sensor_data_secondary, primary_rotation_world_from_ee,
+                                       this->robot_model_.params_ptr->force_sensor_compensation);
 
             for (int i = 0; i < ndof_robot; ++i) {
                 raw_measurement.position[i] = robot_feedback_.position[i];
@@ -486,7 +516,7 @@ void RobotServer::TorqueControlThreadFunc() {
                         this->robot_control_.torque_feedforward[i] = torque_cmd.torque_feedforward[i];
                         if (this->robot_model_.IsDynamicParamsAvailable()) {
                             // 位置等于反馈位置
-                            if (manager_bufsrifers_.joint_measurement->PeekLatest(&manager_measurement)) {
+                            if (manager_buffers_.joint_measurement->PeekLatest(&manager_measurement)) {
                                 if (i >= first_arm_joint_index_) {
                                     manager_measurement.q_desired_pre[i] = robot_feedback_.position[i];
                                 }

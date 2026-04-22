@@ -47,7 +47,8 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
         case TorqueControllerState::Operating: {
             auto impedance_output =
                 joint_impedance_controller_->UpdateTorqueCommand(feedback_q, feedback_dq, cmd_q, cmd_dq,
-                                                                 raw_measurement.sensor_wrench, K_p, K_v, K_i_ratio);
+                                                                 raw_measurement.sensor_wrench, K_p, K_v, K_i_ratio,
+                                                                 input_cmd.enable_force_compliance);
             torque_joint_impedance = impedance_output.torque_joint;
             output_cmd.torque_feedforward =
                 dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero(),

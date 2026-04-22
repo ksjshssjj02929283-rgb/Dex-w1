@@ -118,7 +118,16 @@ bool GetJointFromWholeBody(const RobotModel &robot_model,
 // 根据 motion_group 获取对应的关节数量
 int GetJointCount(const RobotModel &robot_model, const MotionGroup &motion_group);
 
-Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary);
+Vector6d MapSriSensorWrenchToEndEffector(const Vector6d &raw_wrench);
+
+Vector6d CompensateToolGravity(const Vector6d &mapped_wrench,
+                               const Matrix3d &rotation_world_from_ee,
+                               const ForceSensorCompensationConfig &config);
+
+Vector12d GetSensorWrench(const Vector6d &wrench_primary,
+                          const Vector6d &wrench_secondary,
+                          const Matrix3d &primary_rotation_world_from_ee,
+                          const ForceSensorCompensationConfig &primary_config);
 
 // 浮点数近似相等判断 (绝对+相对容差)
 inline bool FloatEqual(double a, double b, double tol = 1e-9) noexcept {

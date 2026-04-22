@@ -170,6 +170,9 @@ void PlannerManager::LoopOnce() {
         planner_command.cmd = runtime_data_.joint_cmd;
         // 位置模式下使用简化动力学计算（不加载动力学参数），提升性能
         planner_command.use_simple_dynamics = (robot_property_.run_mode == RunMode::Position);
+        // 拖拽模式强制关闭外力项；其他模式由 enable_force_compliance 属性控制
+        planner_command.enable_force_compliance =
+            (robot_property_.run_mode != RunMode::Drag) && robot_property_.enable_force_compliance;
         manager_buffer_.planner_manager_command->AppendNewElement(planner_command);
     }
 
@@ -261,7 +264,8 @@ RequestResponse PlannerManager::OnRequestStateInit() {
                 }
                 break;
             }
-            case RequestType::EnablePosLimitCheck: {
+            case RequestType::EnablePosLimitCheck:
+            case RequestType::EnableForceCompliance: {
                 SetProperty(request);
                 response.re_run = true;
                 response.request_consumed = true;
@@ -444,7 +448,7 @@ RequestResponse PlannerManager::OnRequestStateError() {
         ChangeState(Status::Idle);
         return response;
     }
-    if (request.type == RequestType::EnablePosLimitCheck) {
+    if (request.type == RequestType::EnablePosLimitCheck || request.type == RequestType::EnableForceCompliance) {
         SetProperty(request);
         response.re_run = true;
         response.request_consumed = true;
@@ -783,6 +787,13 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
             bool enable = std::get<bool>(request.data.value());
             robot_property_.safety_check_config.check_position_limit = enable;
             LOG_INFO << "Set enable_position_limit_check to " << enable;
+            return;
+        }
+        case RequestType::EnableForceCompliance: {
+            assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
+            bool enable = std::get<bool>(request.data.value());
+            robot_property_.enable_force_compliance = enable;
+            LOG_INFO << "Set enable_force_compliance to " << enable;
             return;
         }
         case RequestType::ClearError: {
