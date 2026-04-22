@@ -298,6 +298,11 @@ RobotFeedback RobotServer::ConvertAnkleMotorsToPitchRoll(const RobotFeedback& ro
     ankle_motor_torque_[2] = robot_feedback.leg_feedback_[10].joint_torque;
     ankle_motor_torque_[3] = robot_feedback.leg_feedback_[11].joint_torque;
 
+    ankle_motor_position_fb_[0] = robot_feedback.leg_feedback_[4].joint_position;
+    ankle_motor_position_fb_[1] = robot_feedback.leg_feedback_[5].joint_position;
+    ankle_motor_position_fb_[2] = robot_feedback.leg_feedback_[10].joint_position;
+    ankle_motor_position_fb_[3] = robot_feedback.leg_feedback_[11].joint_position;
+    
     const double ankle_motor1_left = robot_feedback.leg_feedback_[4].joint_position;
     const double ankle_motor2_left = robot_feedback.leg_feedback_[5].joint_position;
     const double ankle_vel_motor1_left = robot_feedback.leg_feedback_[4].joint_velocity;
@@ -352,6 +357,11 @@ RobotFeedback RobotServer::ConvertAnkleMotorsToPitchRoll(const RobotFeedback& ro
 RobotControl RobotServer::ConvertPitchRollToAnkleMotors(const RobotControl& robot_control) {
     RobotControl result = robot_control;
 
+    ankle_motor_position_cmd_[0] = robot_control.leg_control[4].joint_position;
+    ankle_motor_position_cmd_[1] = robot_control.leg_control[5].joint_position;
+    ankle_motor_position_cmd_[2] = robot_control.leg_control[10].joint_position;
+    ankle_motor_position_cmd_[3] = robot_control.leg_control[11].joint_position;
+    
     const double ankle_pitch_left = std::clamp(robot_control.leg_control[4].joint_position, -1.0472, 0.61087);
     const double ankle_roll_left = std::clamp(robot_control.leg_control[5].joint_position, -0.2618, 0.2618);
     const double ankle_tau_pitch_left = robot_control.leg_control[4].joint_torque;
@@ -558,6 +568,14 @@ std::string RobotServer::GetRobotStatusString() {
         ankle_motor_torque_[0], ankle_motor_torque_[1],
         ankle_motor_torque_[2], ankle_motor_torque_[3]
     };
+    std::vector<double> leg_ankle_motor_position_fb = {
+        ankle_motor_position_fb_[0], ankle_motor_position_fb_[1],
+        ankle_motor_position_fb_[2], ankle_motor_position_fb_[3]
+    };
+    std::vector<double> leg_ankle_motor_position_cmd = {
+        ankle_motor_position_cmd_[0], ankle_motor_position_cmd_[1],
+        ankle_motor_position_cmd_[2], ankle_motor_position_cmd_[3]
+    };
     // 构建关节名称 JSON 数组
     std::string joint_names_str = "[";
     for (int i = 0; i < ndof_body_ + ndof_legs_; ++i) {
@@ -589,7 +607,9 @@ std::string RobotServer::GetRobotStatusString() {
         ",\n  \"leg_joint_torque\":" + utils::VectorToJsonArrayString(leg_torque, 0, ndof_legs_).str() +
         ",\n  \"leg_stiffness\":" + utils::VectorToJsonArrayString(leg_stiffness, 0, ndof_legs_).str() +
         ",\n  \"leg_damping\":" + utils::VectorToJsonArrayString(leg_damping, 0, ndof_legs_).str() +
-        ",\n  \"leg_ankle_motor_torque\":" + utils::VectorToJsonArrayString(leg_ankle_motor_torque, 0, 4).str() + "\n}";
+        ",\n  \"leg_ankle_motor_torque\":" + utils::VectorToJsonArrayString(leg_ankle_motor_torque, 0, 4).str() + 
+        ",\n  \"leg_ankle_motor_position_fb\":" + utils::VectorToJsonArrayString(leg_ankle_motor_position_fb, 0, 4).str() + 
+        ",\n  \"leg_ankle_motor_position_cmd\":" + utils::VectorToJsonArrayString(leg_ankle_motor_position_cmd, 0, 4).str() + "\n}";
     return InvertJointSignFromJsonString(status_string);
 }
 

@@ -135,7 +135,7 @@ class JointControlWidget(QWidget):
             self.feedback_table.verticalScrollBar().setValue)
 
         self.timer = QTimer()
-        self.timer.timeout.connect(self.update_feedback_table)
+        #self.timer.timeout.connect(self.update_feedback_table)
         self.timer.start(500)
 
     def init_tables(self):
@@ -147,9 +147,8 @@ class JointControlWidget(QWidget):
     def update_feedback_table(self):
         joint_data = self.ros_node.joint_states
         self.feedback_table.setRowCount(len(joint_data))
-        ndof_body = len(self.ros_node.joint_names) - 12  # Assuming 12 leg joints
         ankle_motor_torques = self.ros_node.leg_ankle_motor_torque
-        ankle_mapping = {4: 0, 5: 1, 10: 2, 11: 3}  # leg_idx -> ankle_motor_torque index
+        ankle_names = ["ANKLE_PITCH_L_J5", "ANKLE_ROLL_L_J6", "ANKLE_PITCH_R_J5", "ANKLE_ROLL_R_J6"]
         for row, joint in enumerate(joint_data):
             name = joint['name']
             stiffness_val = joint.get('stiffness')
@@ -157,9 +156,8 @@ class JointControlWidget(QWidget):
             stiffness_str = f"{stiffness_val:.2f}" if stiffness_val is not None else "/"
             damping_str = f"{damping_val:.2f}" if damping_val is not None else "/"
 
-            leg_idx = row - ndof_body if row >= ndof_body else -1
-            if leg_idx in ankle_mapping and leg_idx < len(ankle_motor_torques):
-                ankle_idx = ankle_mapping[leg_idx]
+            if name in ankle_names:
+                ankle_idx = ankle_names.index(name)
                 if ankle_idx < len(ankle_motor_torques):
                     ankle_torque_str = f"{ankle_motor_torques[ankle_idx]:.2f}"
                 else:
