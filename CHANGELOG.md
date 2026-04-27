@@ -2,6 +2,10 @@
 
 ## [Unrelease]
 
+## [V0.4.3]
+### Fix
+- 修复w1_params先于资产检查导致的bug
+
 ## [V0.4.2]
 ### Fix
 - w1_params从URDF中读取关节极限
