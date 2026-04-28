@@ -4,7 +4,10 @@ chassis_node:
     # ================================================================
     # 底盘物理参数
     # ================================================================
-    wheel_track: 0.4390       # 差速轮距 b (m)
+    wheel_track: 0.4390       # 几何轴距 b (m)，卷尺测量
+    wheel_radius: 0.0865        # 轮半径 r (m)，173mm直径的初始值；左右相同
+    wheel_track_eff: 0.4390     # 有效轴距 b_eff (m)，标定后通常略大于 wheel_track
+                                # 标定方法见: document/diff_odom_calib.md
     odom_frame:  "odom"       # 里程计坐标系名
     base_frame:  "base_footprint"  # 机体坐标系名
     odom_rate_hz: 100.0       # 里程计发布频率 (Hz)
