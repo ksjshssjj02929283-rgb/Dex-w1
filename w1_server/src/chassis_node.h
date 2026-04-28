@@ -103,8 +103,9 @@ private:
     static constexpr double CHASSIS_SIZE_L = 460.0;        // 前后轮间距（wheelbase）
     static constexpr double CHASSIS_SIZE_W = 345.0;        // 左右轮间距（track）
     static constexpr double OMNI_CHASSIS_WHEEL_D = 107.0;  // 轮径
-    // 差速底盘参数定义 （单位：mm，角度：rad）
-    static constexpr double DIFF_CHASSIS_WHEEL_D = 173.0;
+    // 差速底盘轮参（标定值，单位：m）
+    double wheel_radius_  = 0.0865;  // 轮半径 r（左右相同）
+    double wheel_track_eff_ = 0.4390;  // 有效轴距 b_eff（独立于几何轴距）
     // 发布用的速度
     double speed_v_ = 0.0;
     double omega_r_ = 0.0;

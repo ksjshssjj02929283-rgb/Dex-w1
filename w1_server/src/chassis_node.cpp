@@ -26,7 +26,9 @@ ChassisNode::ChassisNode() : ChassisNode(MakeChassisOptions()) {}
 
 ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("chassis_node", options) {
     // 声明参数
-    wheel_track_ = this->declare_parameter<double>("wheel_track", 0.4390);  // 轮距 b（示例值）
+    wheel_track_     = this->declare_parameter<double>("wheel_track",     0.4390);  // 几何轴距 (m)
+    wheel_radius_    = this->declare_parameter<double>("wheel_radius",    0.0865);  // 轮半径 (m)
+    wheel_track_eff_ = this->declare_parameter<double>("wheel_track_eff", wheel_track_);  // 有效轴距 (m)
     odom_frame_ = this->declare_parameter<std::string>("odom_frame", "odom");
     base_frame_ = this->declare_parameter<std::string>("base_frame", "base_footprint");
     odom_rate_hz_ = this->declare_parameter<double>("odom_rate_hz", 100.0);
@@ -313,17 +315,17 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data) {
         return;
     }
 
-    // 获取轮速数据
-    const double v_l = curr_chassis_data_->left_velocity * 0.001 * DIFF_CHASSIS_WHEEL_D * M_PI / 60.0;
-    const double v_r = curr_chassis_data_->right_velocity * 0.001 * DIFF_CHASSIS_WHEEL_D * M_PI / 60.0;
-    const double v_l_prev = prev_chassis_data_->left_velocity * 0.001 * DIFF_CHASSIS_WHEEL_D * M_PI / 60.0;
-    const double v_r_prev = prev_chassis_data_->right_velocity * 0.001 * DIFF_CHASSIS_WHEEL_D * M_PI / 60.0;
+    // 获取轮速数据（RPM → m/s，左右轮半径相同）
+    constexpr double kRpmToRads = 2.0 * M_PI / 60.0;
+    const double v_l      = curr_chassis_data_->left_velocity  * kRpmToRads * wheel_radius_;
+    const double v_r      = curr_chassis_data_->right_velocity * kRpmToRads * wheel_radius_;
+    const double v_l_prev = prev_chassis_data_->left_velocity  * kRpmToRads * wheel_radius_;
+    const double v_r_prev = prev_chassis_data_->right_velocity * kRpmToRads * wheel_radius_;
 
-    // 预先计算平均线速度和角速度（梯形积分）
-    // 预先计算平均线速度和角速度（梯形积分）
+    // 预先计算平均线速度和角速度（梯形积分，omega 使用有效轴距 b_eff）
     const double speed_avg = 0.5 * (0.5 * (v_l + v_r) + 0.5 * (v_l_prev + v_r_prev));
-    const double omega_enc = (v_r - v_l) / wheel_track_;
-    const double omega_enc_prev = (v_r_prev - v_l_prev) / wheel_track_;
+    const double omega_enc = (v_r - v_l) / wheel_track_eff_;
+    const double omega_enc_prev = (v_r_prev - v_l_prev) / wheel_track_eff_;
     const double omega_enc_avg = 0.5 * (omega_enc + omega_enc_prev);
 
     // 检查 IMU 可用性
@@ -718,7 +720,13 @@ rcl_interfaces::msg::SetParametersResult ChassisNode::parametersCallback(
             RCLCPP_INFO(this->get_logger(), "Updated gravity_magnitude: %.4f", gravity_magnitude_);
         } else if (changed_parameter.get_name() == "wheel_track") {
             wheel_track_ = changed_parameter.as_double();
-            RCLCPP_INFO(this->get_logger(), "Updated wheel_track: %.3f", wheel_track_);
+            RCLCPP_INFO(this->get_logger(), "Updated wheel_track: %.4f m", wheel_track_);
+        } else if (changed_parameter.get_name() == "wheel_radius") {
+            wheel_radius_ = changed_parameter.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated wheel_radius: %.5f m", wheel_radius_);
+        } else if (changed_parameter.get_name() == "wheel_track_eff") {
+            wheel_track_eff_ = changed_parameter.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated wheel_track_eff: %.4f m", wheel_track_eff_);
         } else if (changed_parameter.get_name() == "odom_rate_hz") {
             odom_rate_hz_ = changed_parameter.as_double();
             RCLCPP_INFO(this->get_logger(), "Updated odom_rate_hz: %.1f", odom_rate_hz_);
