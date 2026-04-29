@@ -8,4 +8,7 @@ uint8 PARKING = 3   # 停车点
 uint8 PICKUP = 4    # 取货点
 uint8 LIFT = 5      # 电梯点
 ---
-bool success
+bool    success
+float32 x
+float32 y
+float32 theta    # yaw (rad)
