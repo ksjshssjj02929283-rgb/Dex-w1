@@ -22,6 +22,7 @@ set(MSG_FILES
   "msg/Path.msg"
   "msg/PathPose.msg"
   "msg/AreaInfo.msg"
+  "msg/AreaInfoArray.msg"
   "msg/DTLane.msg"
   "msg/Lane.msg"
   "msg/LaneArray.msg"
@@ -43,6 +44,7 @@ set(MSG_FILES
   "msg/NavigationStatus.msg"
   "msg/ChangeTopology.msg"
   "msg/TopologyLine.msg"
+  "msg/Route.msg"
 )
 
 # 4) 声明要生成的服务
@@ -58,6 +60,7 @@ set(SRV_FILES
   "srv/AddRoute.srv"
   "srv/RemoveRoute.srv"
   "srv/GetRoute.srv"
+  "srv/GetAllRoutes.srv"
   "srv/NavToPoint.srv"
   "srv/GetCurrentTaskInfo.srv"
   "srv/SetPose.srv"
@@ -71,6 +74,8 @@ set(SRV_FILES
   "srv/GetString.srv"
   "srv/AddAreaInfo.srv"
   "srv/GetAreaInfoList.srv"
+  "srv/GetAllAreas.srv"
+  "srv/RemoveAreaInfo.srv"
   "srv/NavThroughPosesFile.srv"
   "srv/LoadPoint.srv"
 )
