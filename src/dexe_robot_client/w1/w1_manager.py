@@ -86,12 +86,12 @@ class W1Manager:
         self._w1_version = w1_version
         self._end_effector_type = end_effector_type
 
-        self.w1_params = W1Params(self._arm_type, self._w1_version,
-                                  self._end_effector_type)
-
         res, file_path = download_w1_urdf(arm_type, w1_version,
                                           end_effector_type)
         res, file_path = download_w1_urdf(arm_type, w1_version, None)
+
+        self.w1_params = W1Params(self._arm_type, self._w1_version,
+                                  self._end_effector_type)
 
         # 在主线程中正常退出时自动调用
         atexit.register(self._destroy_clients)
