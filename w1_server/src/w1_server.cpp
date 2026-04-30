@@ -70,16 +70,16 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     }
 
     // 初始化力传感器
-    // primary_sensor_ = std::make_shared<SriForceSensor>();
-    // if (!primary_sensor_->Init(460800)) {
-    //     RCLCPP_WARN(this->get_logger(), "Failed to initialize primary force sensor");
-    //     LOG_WARN << "Failed to initialize primary force sensor";
-    //     primary_sensor_ = nullptr;
-    // } else {
-    //     primary_sensor_ready_ = true;
-    //     RCLCPP_INFO(this->get_logger(), "Primary force sensor initialized successfully");
-    //     LOG_INFO << "Primary force sensor initialized successfully";
-    // }
+    primary_sensor_ = std::make_shared<SriForceSensor>();
+    if (!primary_sensor_->Init(460800)) {
+        RCLCPP_WARN(this->get_logger(), "Failed to initialize primary force sensor");
+        LOG_WARN << "Failed to initialize primary force sensor";
+        primary_sensor_ = nullptr;
+    } else {
+        primary_sensor_ready_ = true;
+        RCLCPP_INFO(this->get_logger(), "Primary force sensor initialized successfully");
+        LOG_INFO << "Primary force sensor initialized successfully";
+    }
     // secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");  // 暂未使用
     this->Run();
 }

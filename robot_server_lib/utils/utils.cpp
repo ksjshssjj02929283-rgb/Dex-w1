@@ -695,33 +695,35 @@ StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interf
     return streaming_command;
 }
 
-Vector12d GetSensorWrench(const Vector6d& wrench_primary, const Vector6d& wrench_secondary) {
-    // 最小力/力矩阈值(去除摩擦力), 和最大力/力矩值
-    constexpr double force_threshold = 1.0;
-    constexpr double torque_threshold = 0.1;
-    constexpr double force_max = 100.0;
-    constexpr double torque_max = 10.0;
-
-    auto deadzone_saturate = [](double x, double th, double mx) noexcept -> double {
-        double y = std::max(0.0, std::abs(x) - th);
-        if (y > mx) y = mx;
-        return std::copysign(y, x);
-    };
-
-    auto process6 = [&](const Vector6d& w) noexcept -> Vector6d {
-        Vector6d out;
-        for (int i = 0; i < 6; ++i) {
-            const bool is_force = i < 3;
-            const double th = is_force ? force_threshold : torque_threshold;
-            const double mx = is_force ? force_max : torque_max;
-            out[i] = deadzone_saturate(w[i], th, mx);
-        }
-        return out;
-    };
-
+Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary) {
+//     // 最小力/力矩阈值(去除摩擦力), 和最大力/力矩值
+//     constexpr double force_threshold = 1.0;
+//     constexpr double torque_threshold = 0.1;
+//     constexpr double force_max = 100.0;
+//     constexpr double torque_max = 10.0;
+// 
+//     auto deadzone_saturate = [](double x, double th, double mx) noexcept -> double {
+//         double y = std::max(0.0, std::abs(x) - th);
+//         if (y > mx) y = mx;
+//         return std::copysign(y, x);
+//     };
+// 
+//     auto process6 = [&](const Vector6d &w) noexcept -> Vector6d {
+//         Vector6d out;
+//         for (int i = 0; i < 6; ++i) {
+//             const bool is_force = i < 3;
+//             const double th = is_force ? force_threshold : torque_threshold;
+//             const double mx = is_force ? force_max : torque_max;
+//             out[i] = deadzone_saturate(w[i], th, mx);
+//         }
+//         return out;
+//     };
+// 
     Vector12d sensor_wrench;
-    sensor_wrench.head<6>() = process6(wrench_primary);
-    sensor_wrench.tail<6>() = process6(wrench_secondary);
+//     sensor_wrench.head<6>() = process6(wrench_primary);
+//     sensor_wrench.tail<6>() = process6(wrench_secondary);
+    sensor_wrench.head<6>() = wrench_primary;
+    sensor_wrench.tail<6>() = wrench_secondary;
     return sensor_wrench;
 }
 
