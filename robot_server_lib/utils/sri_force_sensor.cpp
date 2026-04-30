@@ -32,7 +32,7 @@ SriForceSensor::~SriForceSensor() {
 
 // 串口方法
 const char* SriForceSensor::FindSerialPort() {
-    const char* candidates[] = {"/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyUSB2"};
+    const char* candidates[] = {"/dev/ttyUSB2"};
     for (const auto& device : candidates) {
         if (access(device, F_OK) == 0) {
             printf("Found SRI force sensor at: %s\n", device);
@@ -218,12 +218,12 @@ int SriForceSensor::ParseFrame(const unsigned char* data,
 
     float f[6];
     for (int i = 0; i < 3; i++) {
-        f[i] = (forceInt32[i] & 0x10000) ? -(float)((forceInt32[i] & 0xffff) / 10.0)
-                                         : (float)((forceInt32[i] & 0xffff) / 10.0);
+        f[i] = (forceInt32[i] & 0x10000) ? -(float)((forceInt32[i] & 0xffff) / 100.0)
+                                         : (float)((forceInt32[i] & 0xffff) / 100.0);
     }
     for (int i = 3; i < 6; i++) {
-        f[i] = (forceInt32[i] & 0x0800) ? -(float)((forceInt32[i] & 0x07ff) / 10.0)
-                                        : (float)((forceInt32[i] & 0x07ff) / 10.0);
+        f[i] = (forceInt32[i] & 0x0800) ? -(float)((forceInt32[i] & 0x07ff) / 100.0)
+                                        : (float)((forceInt32[i] & 0x07ff) / 100.0);
     }
 
     fx = f[0];
@@ -339,7 +339,7 @@ bool SriForceSensor::Init(int baudrate) {
     usleep(100000);
 
     // 启动零位校准
-    mIsCalibrating = true;
+    mIsCalibrating = false;
     mCalibrationSampleCount = 0;
     memset(mCalibrationSum, 0, sizeof(mCalibrationSum));
     mCalibrationStartTime = std::chrono::steady_clock::now();
