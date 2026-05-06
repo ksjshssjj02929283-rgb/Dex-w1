@@ -45,6 +45,9 @@ set(MSG_FILES
   "msg/ChangeTopology.msg"
   "msg/TopologyLine.msg"
   "msg/Route.msg"
+  "msg/RouteEndpoint.msg"
+  "msg/RouteJunction.msg"
+  "msg/RouteEdge.msg"
 )
 
 # 4) 声明要生成的服务
@@ -78,6 +81,12 @@ set(SRV_FILES
   "srv/RemoveAreaInfo.srv"
   "srv/NavThroughPosesFile.srv"
   "srv/LoadPoint.srv"
+  "srv/AddRouteJunction.srv"
+  "srv/RemoveRouteJunction.srv"
+  "srv/AddRouteEdge.srv"
+  "srv/RemoveRouteEdge.srv"
+  "srv/UpdateRouteEdge.srv"
+  "srv/GetRouteGraph.srv"
 )
 
 # 5) 声明要生成的动作

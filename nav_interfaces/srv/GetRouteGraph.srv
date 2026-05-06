@@ -1,0 +1,4 @@
+---
+bool success
+nav_interfaces/RouteJunction[] junctions
+nav_interfaces/RouteEdge[]     edges
