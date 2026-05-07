@@ -7,7 +7,7 @@ PACKAGE_NAME=${PROJECT_DIR//_/-}
 echo "Running file installation for $PACKAGE_NAME..."
 
 
-mkdir -p "$CURDIR/debian/$PACKAGE_NAME/home/dexforce/w1/$PACKAGE_NAME"
+mkdir -p "$CURDIR/debian/$PACKAGE_NAME/home/dexforce/w1/$PROJECT_DIR"
 mkdir -p "$CURDIR/debian/$PACKAGE_NAME/home/dexforce/w1/install"
 
 if [ ! -d "$CURDIR/install" ]; then
@@ -15,7 +15,7 @@ if [ ! -d "$CURDIR/install" ]; then
     exit 1
 fi
 
-find "$CURDIR/install" -maxdepth 1 -type f -exec cp {} "$CURDIR/debian/$PACKAGE_NAME/home/dexforce/w1/$PACKAGE_NAME/" \;
+find "$CURDIR/install" -maxdepth 1 -type f -exec cp {} "$CURDIR/debian/$PACKAGE_NAME/home/dexforce/w1/$PROJECT_DIR/" \;
 find "$CURDIR/install" -maxdepth 1 -mindepth 1 -type d -exec cp -r {} "$CURDIR/debian/$PACKAGE_NAME/home/dexforce/w1/install/" \;
 
 # --- 自动生成 postinst:整棵 /home/dexforce/w1 chown 回 dexforce ---
@@ -27,6 +27,8 @@ set -e
 chown -R dexforce:dexforce /home/dexforce/w1
 EOF
 chmod 0755 "$DEBIAN_DIR/postinst"
+cp "$DEBIAN_DIR/postinst" "$CURDIR/postinst.sh"
+chmod 0755 "$CURDIR/postinst.sh"
 
 # --- 自动生成 control:固定版本号 ---
 cat > "$DEBIAN_DIR/control" <<EOF
