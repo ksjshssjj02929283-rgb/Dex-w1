@@ -4,20 +4,32 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
+#include <array>
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
-#include <filesystem>
+#include <cstring>
 #include <iostream>
-#include <sstream>
 #include <thread>
 
-#include "NanoLog.hpp"
 #include "shared_memory_def.h"
 
 volatile std::sig_atomic_t g_stop_flag = 0;
-const int ndof_robot = 20;                      // 机器人实际关节数，Arm/A1 模式下只使用前 7/14 个
-static double prev_position[ndof_robot] = {0};  // 上一次的位置
+static double prev_position[20] = {0};
+
+std::string w1_joint_name_[20] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",    "NECK2",   "LEFT_J1",
+                                  "LEFT_J2",  "LEFT_J3",  "LEFT_J4",  "LEFT_J5",  "LEFT_J6",  "LEFT_J7", "RIGHT_J1",
+                                  "RIGHT_J2", "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
+
+std::string a1_joint_name_[16] = {"NECK1",    "NECK2",    "LEFT_J1",  "LEFT_J2",  "LEFT_J3",  "LEFT_J4",
+                                  "LEFT_J5",  "LEFT_J6",  "LEFT_J7",  "RIGHT_J1", "RIGHT_J2", "RIGHT_J3",
+                                  "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
+
+std::string dual_arm_joint_name_[14] = {"LEFT_J1",  "LEFT_J2",  "LEFT_J3",  "LEFT_J4",  "LEFT_J5",
+                                        "LEFT_J6",  "LEFT_J7",  "RIGHT_J1", "RIGHT_J2", "RIGHT_J3",
+                                        "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
+
+std::string single_arm_joint_name_[7] = {"LEFT_J1", "LEFT_J2", "LEFT_J3", "LEFT_J4", "LEFT_J5", "LEFT_J6", "LEFT_J7"};
 
 void signal_handler(int signal) {
     if (signal == SIGINT) {
@@ -26,11 +38,9 @@ void signal_handler(int signal) {
 }
 
 static void setup_realtime() {
-    // 锁内存，避免分页抖动
     if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
         std::cerr << "mlockall failed: " << std::strerror(errno) << std::endl;
     }
-    // 设置SCHED_FIFO实时调度
     sched_param sp{};
     sp.sched_priority = sched_get_priority_max(SCHED_FIFO);
     if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0) {
@@ -38,68 +48,67 @@ static void setup_realtime() {
     }
 }
 
-// Feedbacker: 写入RobotFeedback，读取RobotControl
 int main(int argc, char* argv[]) {
     setup_realtime();
 
-    // 检查是否需要记录日志和机器人模式
-    bool record = false;
-    int ndof = ndof_robot;  // 默认 20 关节 (W1 模式)
+    int ndof = sizeof(w1_joint_name_) / sizeof(w1_joint_name_[0]);
+    std::string* joint_names = w1_joint_name_;
+    std::string mode = "w1";
+
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
-        if (arg == "--record") {
-            record = true;
-        } else if (arg == "--a1" || arg == "a1") {
-            ndof = 14;  // A1 模式 14 关节
-        } else if (arg == "--arm" || arg == "arm") {
-            ndof = 7;  // Arm 模式 7 关节
+        if (arg == "--a1" || arg == "a1") {
+            ndof = sizeof(a1_joint_name_) / sizeof(a1_joint_name_[0]);
+            joint_names = a1_joint_name_;
+            mode = "a1";
+        } else if (arg == "--single" || arg == "single" || arg == "--arm" || arg == "arm") {
+            ndof = sizeof(single_arm_joint_name_) / sizeof(single_arm_joint_name_[0]);
+            joint_names = single_arm_joint_name_;
+            mode = "single";
+        } else if (arg == "--dual" || arg == "dual") {
+            ndof = sizeof(dual_arm_joint_name_) / sizeof(dual_arm_joint_name_[0]);
+            joint_names = dual_arm_joint_name_;
+            mode = "dual";
         }
     }
 
-    // 如果需要记录日志，初始化日志系统
-    if (record) {
-        const char* home_dir = std::getenv("HOME");
-        std::filesystem::path log_dir = std::filesystem::path(home_dir) / "log";
-        std::filesystem::create_directories(log_dir);
-        nanolog::initialize(nanolog::GuaranteedLogger(), (log_dir / "").string(), "feedbacker", 10);
-        nanolog::set_log_level(nanolog::LogLevel::INFO);
-    }
+    std::cout << "Starting feedback in " << mode << " mode with " << ndof << " joints" << std::endl;
 
     std::signal(SIGINT, signal_handler);
     auto& fb_shm = FeedbackSharedMemory::GetInstance();
     auto& ctrl_shm = ControlSharedMemory::GetInstance();
 
+    int loop_counter = 0;
     while (!g_stop_flag) {
-        // 读取控制指令
-        RobotFeedback fb;
-        RobotControl ctrl;
-        ctrl.position[0] = 0.5;
-        ctrl.position[1] = -1.0;
-        ctrl.position[2] = 0.5;
-        if (ctrl_shm.PeekLatest(&ctrl)) {
-            // 如果需要记录日志，只记录速度数据
-            if (record) {
-                std::ostringstream ss;
-                ss << "vel: ";
-                for (int i = 0; i < ndof; i++) {
-                    ss << ctrl.velocity[i];
-                    if (i < ndof - 1) ss << ", ";
-                }
-                LOG_INFO << ss.str();
+        loop_counter++;
+        RobotFeedback fb{};
+        RobotControl ctrl{};
+        ctrl.joint_control[0].joint_position = 0.5;
+        ctrl.joint_control[1].joint_position = -1.0;
+        ctrl.joint_control[2].joint_position = 0.5;
+        ctrl_shm.PeekLatest(&ctrl);
+
+        fb.robot_status_word = 2;
+        for (int i = 0; i < ndof; i++) {
+            int reverse_idx = ndof - 1 - i;
+            std::strncpy(fb.joint_feedback[i].joint_name, joint_names[reverse_idx].c_str(),
+                         sizeof(fb.joint_feedback[i].joint_name) - 1);
+            fb.joint_feedback[i].joint_name[sizeof(fb.joint_feedback[i].joint_name) - 1] = '\0';
+            fb.joint_feedback[i].joint_status_word = 8;
+            fb.joint_feedback[i].joint_position = ctrl.joint_control[reverse_idx].joint_position;
+            fb.joint_feedback[i].joint_velocity =
+                (ctrl.joint_control[reverse_idx].joint_position - prev_position[reverse_idx]) * 1000.0;
+            prev_position[reverse_idx] = ctrl.joint_control[reverse_idx].joint_position;
+            fb.joint_feedback[i].joint_torque = ctrl.joint_control[reverse_idx].joint_torque_feedforward;
+        }
+        if (loop_counter % 100 == 0) {
+            std::cout << "--- " << mode << " Mode Joint Names & Positions ---" << std::endl;
+            for (int i = 0; i < ndof; i++) {
+                std::cout << "  " << fb.joint_feedback[i].joint_name << ": " << fb.joint_feedback[i].joint_position
+                          << std::endl;
             }
         }
-
-        // 构造反馈数据并写入
-        fb.robot_status_word = 2;  // robot ready
-        for (int i = 0; i < ndof; i++) {
-            fb.position[i] = ctrl.position[i];
-            // 计算速度：位置差分 / 0.001s (1ms周期)
-            fb.velocity[i] = (ctrl.position[i] - prev_position[i]) * 1000.0;
-            prev_position[i] = ctrl.position[i];
-            fb.torque[i] = ctrl.torque_feedforward[i];
-        }
-        if (fb_shm.AppendNewElement(fb)) {
-        }
+        fb_shm.AppendNewElement(fb);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }

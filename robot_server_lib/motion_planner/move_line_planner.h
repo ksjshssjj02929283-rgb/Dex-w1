@@ -20,20 +20,20 @@ public:
 
     ~MoveLinePlanner() override;
 
-    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
-                                        const TimeMetaInfo &time_meta,
-                                        JointCommand &joint_cmd) override;
+    ComputeCommandStatus ComputeCommand(const JointMeasurement& measurement,
+                                        const TimeMetaInfo& time_meta,
+                                        JointCommand& joint_cmd) override;
 
-    bool ResetForNewTrajectory(const PlannerRequest &request,
-                               const JointMeasurement &measurement,
-                               const TimeMetaInfo &time_meta) override;
+    bool ResetForNewTrajectory(const PlannerRequest& request,
+                               const JointMeasurement& measurement,
+                               const TimeMetaInfo& time_meta) override;
 
 protected:
-    LineGeometry CalcLineGeometry(const PoseQuaternion &pose_start, const PoseQuaternion &pose_end);
+    LineGeometry CalcLineGeometry(const PoseQuaternion& pose_start, const PoseQuaternion& pose_end);
 
     void ConfigRuckig();
 
-    bool ComputeOutputJoint(JointPositionDof &q_ndof);
+    bool ComputeOutputJoint(JointPositionDof& q_ndof);
 
     PoseQuaternion ComputeOutputPose(LineGeometry line, double ruckig_trans_position, double ruckig_rot_position);
 

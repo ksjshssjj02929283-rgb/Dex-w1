@@ -11,11 +11,11 @@ class SRSKinematics : public KinematicsBase {
 public:
     SRSKinematics(bool is_left, bool is_anthropmorphic);
     ~SRSKinematics() override;
-    PoseQuaternion GetFK(const Eigen::VectorXd &q_in,
-                         const pinocchio::SE3 &tcp_frame = pinocchio::SE3::Identity()) override;
-    bool GetIK(const PoseQuaternion &pose_in,
-               Eigen::VectorXd &q_in_and_out,
-               const pinocchio::SE3 &tcp_frame = pinocchio::SE3::Identity()) override;
+    PoseQuaternion GetFK(const Eigen::VectorXd& q_in,
+                         const pinocchio::SE3& tcp_frame = pinocchio::SE3::Identity()) override;
+    bool GetIK(const PoseQuaternion& pose_in,
+               Eigen::VectorXd& q_in_and_out,
+               const pinocchio::SE3& tcp_frame = pinocchio::SE3::Identity()) override;
 
     std::pair<Eigen::VectorXd, Eigen::VectorXd> GetQposLimits() const override;
 

@@ -10,11 +10,11 @@ public:
     TorqueControllerBase(RobotModel robot_model);
     virtual ~TorqueControllerBase();
 
-    virtual bool ComputeCommand(const JointRawMeasurement &raw_measurement,
-                                const PlannerManagerCommand &input_cmd,
-                                TorqueCtrlCommand &output_cmd) = 0;
+    virtual bool ComputeCommand(const JointRawMeasurement& raw_measurement,
+                                const PlannerManagerCommand& input_cmd,
+                                TorqueCtrlCommand& output_cmd) = 0;
 
-    virtual bool ResetForNewEpisode(const JointRawMeasurement &raw_measurement, const TorqueControllerState &state) = 0;
+    virtual bool ResetForNewEpisode(const JointRawMeasurement& raw_measurement, const TorqueControllerState& state) = 0;
 
 protected:
     RobotModel robot_model_;

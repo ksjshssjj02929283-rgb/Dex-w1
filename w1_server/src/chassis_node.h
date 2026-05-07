@@ -20,12 +20,12 @@ namespace chassis_node {
 
 class ChassisNode : public rclcpp::Node {
 public:
-    explicit ChassisNode(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
+    explicit ChassisNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
     ~ChassisNode() override = default;
 
     // 禁止拷贝与赋值
-    ChassisNode(const ChassisNode &) = delete;
-    ChassisNode &operator=(const ChassisNode &) = delete;
+    ChassisNode(const ChassisNode&) = delete;
+    ChassisNode& operator=(const ChassisNode&) = delete;
 
     void ResetOdometry();
 
@@ -37,24 +37,24 @@ private:
     void onTimer();
 
     // 里程计积分（统一的中间航向角积分）
-    void IntegrateImuOnce(const sensor_msgs::msg::Imu &imu);
+    void IntegrateImuOnce(const sensor_msgs::msg::Imu& imu);
 
-    void IntegrateOdomOnce(const ChassisFeedback &chassis_data);
-    void IntegrateOmniOdomOnce(const ChassisFeedback &chassis_data);
+    void IntegrateOdomOnce(const ChassisFeedback& chassis_data);
+    void IntegrateOmniOdomOnce(const ChassisFeedback& chassis_data);
 
-    rcl_interfaces::msg::SetParametersResult parametersCallback(const std::vector<rclcpp::Parameter> &parameters);
+    rcl_interfaces::msg::SetParametersResult parametersCallback(const std::vector<rclcpp::Parameter>& parameters);
 
     //  发布全向底盘反馈信息
-    void PublishOmniMotorFeedback(const ChassisFeedback &chassis_data);
+    void PublishOmniMotorFeedback(const ChassisFeedback& chassis_data);
 
     // 发布里程计与 TF
     void PublishOdometry();
 
     // 辅助函数
-    bool IsImuAvailable(const rclcpp::Time &curr_time);
+    bool IsImuAvailable(const rclcpp::Time& curr_time);
 
     // 读取机器人模型 差速/全向
-    void LoadChassisConfig(const std::filesystem::path &cfg_path);
+    void LoadChassisConfig(const std::filesystem::path& cfg_path);
 
 private:
     // 参数

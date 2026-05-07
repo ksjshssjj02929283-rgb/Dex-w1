@@ -3,8 +3,8 @@
 namespace robot_server_lib {
 
 template <typename T, std::uint64_t BufferCapacity>
-void SingleReadWriteLatestQueue<T, BufferCapacity>::tryWrapLatestAndReader(std::uint32_t &latest,
-                                                                           std::uint32_t &reader) {
+void SingleReadWriteLatestQueue<T, BufferCapacity>::tryWrapLatestAndReader(std::uint32_t& latest,
+                                                                           std::uint32_t& reader) {
     static constexpr std::uint32_t kWrappingRatio = 107;
     static constexpr std::uint32_t kWrappingNumber = kWrappingRatio * BufferCapacity;
     constexpr std::uint32_t kWrapSubtraction = kWrappingNumber - BufferCapacity;
@@ -19,7 +19,7 @@ void SingleReadWriteLatestQueue<T, BufferCapacity>::tryWrapLatestAndReader(std::
 }
 
 template <typename T, std::uint64_t BufferCapacity>
-bool SingleReadWriteLatestQueue<T, BufferCapacity>::AppendNewElement(const T &element) {
+bool SingleReadWriteLatestQueue<T, BufferCapacity>::AppendNewElement(const T& element) {
     std::uint64_t latest_and_reader = latest_and_reader_.load(std::memory_order_acquire);
     std::uint32_t latest, reader;
     utils::decodeTwoUint32FromUint64(latest_and_reader, latest, reader);
@@ -66,7 +66,7 @@ bool SingleReadWriteLatestQueue<T, BufferCapacity>::AppendNewElement(const T &el
 }
 
 template <typename T, std::uint64_t BufferCapacity>
-bool SingleReadWriteLatestQueue<T, BufferCapacity>::PeekLatest(T *element_output) {
+bool SingleReadWriteLatestQueue<T, BufferCapacity>::PeekLatest(T* element_output) {
     bool read_ok = true;
     std::uint32_t latest = 0;
     std::uint32_t reader = 0;
@@ -109,7 +109,7 @@ bool SingleReadWriteLatestQueue<T, BufferCapacity>::PeekLatest(T *element_output
 template <typename T, std::uint64_t BufferCapacity>
 void SingleReadWriteLatestQueue<T, BufferCapacity>::Reset() {
     // 清空环形缓冲区内容与有效位
-    for (auto &slot : ring_buffer_) {
+    for (auto& slot : ring_buffer_) {
         slot.data = T{};
         slot.valid = false;
     }
@@ -118,7 +118,7 @@ void SingleReadWriteLatestQueue<T, BufferCapacity>::Reset() {
 }
 
 template <typename T, std::int64_t ConcurrentReadersHint>
-bool SingleWriterLatestBuffer<T, ConcurrentReadersHint>::PeekLatest(T *out) {
+bool SingleWriterLatestBuffer<T, ConcurrentReadersHint>::PeekLatest(T* out) {
     std::int64_t current_active = active_.load(std::memory_order_acquire);
     if (current_active < 0) return false;  // Not written even once
 
@@ -159,7 +159,7 @@ bool SingleWriterLatestBuffer<T, ConcurrentReadersHint>::PeekLatest(T *out) {
 }
 
 template <typename T, std::int64_t ConcurrentReadersHint>
-bool SingleWriterLatestBuffer<T, ConcurrentReadersHint>::AppendNewElement(const T &to_write) {
+bool SingleWriterLatestBuffer<T, ConcurrentReadersHint>::AppendNewElement(const T& to_write) {
     const std::int64_t current_active = active_.load(std::memory_order_acquire);
     std::int64_t next_active = current_active + 1;
     while (true) {
@@ -203,10 +203,10 @@ bool SingleWriterLatestBuffer<T, ConcurrentReadersHint>::AppendNewElement(const 
 template <typename T, std::int64_t ConcurrentReadersHint>
 void SingleWriterLatestBuffer<T, ConcurrentReadersHint>::Reset() {
     // 清空元素内容
-    for (auto &e : elements_) e = T{};
+    for (auto& e : elements_) e = T{};
 
     // 清空版本与引用计数
-    for (auto &vr : version_refcount_) vr.store(0u, std::memory_order_relaxed);
+    for (auto& vr : version_refcount_) vr.store(0u, std::memory_order_relaxed);
 
     // 重置 active
     active_.store(-1, std::memory_order_release);

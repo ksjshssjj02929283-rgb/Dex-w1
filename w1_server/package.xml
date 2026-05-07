@@ -11,6 +11,7 @@
   <depend>ament_index_cpp</depend>
   <depend>eigen</depend>
   <depend>eigen3_cmake_module</depend>
+  <depend>yaml-cpp</depend>
   <depend>pinocchio</depend>
   <depend>nav_msgs</depend>
   <depend>tf2_ros</depend>

@@ -5,7 +5,7 @@
 
 namespace robot_server_lib {
 
-inline const char *ToString(TorqueControllerState state) {
+inline const char* ToString(TorqueControllerState state) {
     switch (state) {
         case TorqueControllerState::Init:
             return "Init";

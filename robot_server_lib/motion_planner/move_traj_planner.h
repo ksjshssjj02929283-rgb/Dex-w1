@@ -12,16 +12,16 @@ public:
     explicit MoveTrajPlanner(RobotModel model, double controller_dt, bool wait_trajectory_upon_finish);
     ~MoveTrajPlanner() override;
 
-    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
-                                        const TimeMetaInfo &time_meta,
-                                        JointCommand &output_joint_cmd) override;
+    ComputeCommandStatus ComputeCommand(const JointMeasurement& measurement,
+                                        const TimeMetaInfo& time_meta,
+                                        JointCommand& output_joint_cmd) override;
 
-    bool ResetForNewTrajectory(const PlannerRequest &request,
-                               const JointMeasurement &measurement,
-                               const TimeMetaInfo &time_meta) override;
+    bool ResetForNewTrajectory(const PlannerRequest& request,
+                               const JointMeasurement& measurement,
+                               const TimeMetaInfo& time_meta) override;
 
     // 根据 timepoint 返回插值后的关节位置/速度/加速度，并判定阶段或完成状态
-    ComputeCommandStatus GetInterpolatedPosition(JointCommand &joint_cmd, double timepoint);
+    ComputeCommandStatus GetInterpolatedPosition(JointCommand& joint_cmd, double timepoint);
 
 private:
     const bool wait_trajectory_upon_finish_;

@@ -19,10 +19,10 @@ public:
     ~SingleReadWriteLatestQueue() = default;
 
     // Append a new element into the queue as the latest one.
-    bool AppendNewElement(const T &element);
+    bool AppendNewElement(const T& element);
     // Read the latest element and store it into element_out. This method
     // return false only if no element has been appended.
-    bool PeekLatest(T *element_output);
+    bool PeekLatest(T* element_output);
     // Reset the queue to initial state.
     void Reset();
 
@@ -63,7 +63,7 @@ private:
     // Note: latest_and_reader_ should be init to encode(0, kInvalidReader)
 
     // For wrapping
-    void tryWrapLatestAndReader(std::uint32_t &latest, std::uint32_t &reader);
+    void tryWrapLatestAndReader(std::uint32_t& latest, std::uint32_t& reader);
 };
 
 // SingleWriterLatestBuffer 是一个线程安全的缓冲区，允许一个写入者和多个读取者
@@ -74,10 +74,10 @@ public:
     ~SingleWriterLatestBuffer() = default;
     // 读取最新数据。它会读取 active_
     // 指向的槽位，并增加该槽位的引用计数，确保数据在读取期间不会被覆盖。
-    bool PeekLatest(T *output);
+    bool PeekLatest(T* output);
     // 写入新数据。它会寻找一个没有读者正在读取的槽位（version_refcount_ == 0），写入数据后更新
     // active_ 指向新数据。
-    bool AppendNewElement(const T &to_write);
+    bool AppendNewElement(const T& to_write);
     // 重置缓冲区
     void Reset();
 

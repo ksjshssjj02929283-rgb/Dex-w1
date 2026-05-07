@@ -21,9 +21,9 @@ MoveLinePlanner::MoveLinePlanner(RobotModel robot_model, double controller_dt, b
 
 MoveLinePlanner::~MoveLinePlanner() = default;
 
-ComputeCommandStatus MoveLinePlanner::ComputeCommand(const JointMeasurement &measurement,
-                                                     const TimeMetaInfo &time_meta,
-                                                     JointCommand &joint_cmd) {
+ComputeCommandStatus MoveLinePlanner::ComputeCommand(const JointMeasurement& measurement,
+                                                     const TimeMetaInfo& time_meta,
+                                                     JointCommand& joint_cmd) {
     auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
     JointPositionDof q_ndof = measurement.q_desired_pre;
     if (!ComputeOutputJoint(q_ndof)) {
@@ -68,12 +68,12 @@ ComputeCommandStatus MoveLinePlanner::ComputeCommand(const JointMeasurement &mea
     }
 }
 
-bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request,
-                                            const JointMeasurement &measurement,
-                                            const TimeMetaInfo &time_meta) {
+bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest& request,
+                                            const JointMeasurement& measurement,
+                                            const TimeMetaInfo& time_meta) {
     assert(request.data.has_value());
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
-    const auto &move_request = std::get<MoveRequest>(request.data.value());
+    const auto& move_request = std::get<MoveRequest>(request.data.value());
     SetMotionGroup(move_request.motion_group);
     double speed_ratio = robot_property_.global_speed_ratio;
     if (move_request.speed.has_value()) {
@@ -159,7 +159,7 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest &request,
     return true;
 }
 
-LineGeometry MoveLinePlanner::CalcLineGeometry(const PoseQuaternion &pose_start, const PoseQuaternion &pose_end) {
+LineGeometry MoveLinePlanner::CalcLineGeometry(const PoseQuaternion& pose_start, const PoseQuaternion& pose_end) {
     LineGeometry line;
     line.pose_start = pose_start;
     line.pose_target = pose_end;
@@ -207,7 +207,7 @@ void MoveLinePlanner::ConfigRuckig() {
     }
 }
 
-bool MoveLinePlanner::ComputeOutputJoint(JointPositionDof &q_ndof) {
+bool MoveLinePlanner::ComputeOutputJoint(JointPositionDof& q_ndof) {
     if (line_primary_.has_value()) {
         PoseQuaternion pose_cmd =
             ComputeOutputPose(*line_primary_, runtime_.output.new_position[Trans], runtime_.output.new_position[Rot]);

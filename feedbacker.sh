@@ -1,25 +1,44 @@
-#   ./feedbacker.sh          # 默认启动 W1 模式 (20关节)
-#   ./feedbacker.sh --a1     # 启动 A1 模式 (14关节)
-#   ./feedbacker.sh --arm    # 启动 Arm 模式 (仅机械臂, 7关节)
+#!/bin/bash
+#   ./feedbacker.sh              # 默认启动 W1 模式 (20关节)
+#   ./feedbacker.sh --a1         # 启动 A1 模式 (16关节)
+#   ./feedbacker.sh --single     # 启动 Single Arm 模式 (7关节)
+#   ./feedbacker.sh --dual       # 启动 Dual Arm 模式 (14关节)
 
 # 切换到脚本所在目录
 cd "$(dirname "$0")"
 
 # 解析参数
 
-A1_MODE=false
-ARM_MODE=false
+MODE=""
 FEEDBACK_ARGS=""
 
-if [[ "$1" == "--a1" ]] || [[ "$1" == "a1" ]]; then
-    A1_MODE=true
-    FEEDBACK_ARGS="--a1"
-    shift
-elif [[ "$1" == "--arm" ]] || [[ "$1" == "arm" ]]; then
-    ARM_MODE=true
-    FEEDBACK_ARGS="--arm"
-    shift
-fi
+case "$1" in
+    --a1|a1)
+        MODE="a1"
+        FEEDBACK_ARGS="--a1"
+        shift
+        ;;
+    --single|single)
+        MODE="single"
+        FEEDBACK_ARGS="--single"
+        shift
+        ;;
+    --dual|dual)
+        MODE="dual"
+        FEEDBACK_ARGS="--dual"
+        shift
+        ;;
+    --arm|arm)
+        MODE="single"
+        FEEDBACK_ARGS="--single"
+        shift
+        ;;
+    *)
+        MODE="w1"
+        ;;
+esac
+
+echo "Starting feedback in $MODE mode..."
 
 # 剩余参数传递给 feedback
 if [ $# -gt 0 ]; then

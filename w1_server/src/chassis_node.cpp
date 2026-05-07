@@ -1,14 +1,14 @@
 #include "chassis_node.h"
 
 #include <tf2/LinearMath/Quaternion.h>
+#include <yaml-cpp/yaml.h>
 
 #include <cmath>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-using json = nlohmann::json;
 namespace chassis_node {
 
-ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("chassis_node", options) {
+ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : rclcpp::Node("chassis_node", options) {
     // 声明参数
     wheel_track_ = this->declare_parameter<double>("wheel_track", 0.4390);  // 轮距 b（示例值）
     odom_frame_ = this->declare_parameter<std::string>("odom_frame", "odom");
@@ -36,7 +36,7 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("cha
     // 模型配置文件路径 ==================
     const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
 
-    const auto robot_cfg_path = std::filesystem::path(package_share_path) / "chassis.cfg";
+    const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
 
     // ================== 2. 加载配置 ==================
     LoadChassisConfig(robot_cfg_path);
@@ -71,41 +71,40 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions &options) : rclcpp::Node("cha
                 odom_rate_hz_, odom_frame_.c_str(), base_frame_.c_str());
 }
 
-void ChassisNode::LoadChassisConfig(const std::filesystem::path &cfg_path) {
+void ChassisNode::LoadChassisConfig(const std::filesystem::path& cfg_path) {
     if (!std::filesystem::exists(cfg_path)) {
-        RCLCPP_FATAL(this->get_logger(), "robot.cfg not found: %s", cfg_path.c_str());
-        throw std::runtime_error("robot.cfg not found");
+        RCLCPP_FATAL(this->get_logger(), "robot_config.yaml not found: %s", cfg_path.c_str());
+        throw std::runtime_error("robot_config.yaml not found");
     }
 
-    std::ifstream ifs(cfg_path);
-    if (!ifs.is_open()) {
-        RCLCPP_FATAL(this->get_logger(), "Failed to open chassis cfg: %s", cfg_path.c_str());
-        throw std::runtime_error("failed to open chassis cfg");
-    }
-
-    json config_json;
+    YAML::Node config;
     try {
-        ifs >> config_json;
-    } catch (const json::parse_error &e) {
-        RCLCPP_FATAL(this->get_logger(), "JSON parse error in %s: %s", cfg_path.c_str(), e.what());
+        config = YAML::LoadFile(cfg_path.string());
+    } catch (const YAML::Exception& e) {
+        RCLCPP_FATAL(this->get_logger(), "YAML parse error in %s: %s", cfg_path.c_str(), e.what());
         throw;
     }
 
-    // ---------- robot_name ----------
-    if (!config_json.contains("robot_name")) {
-        RCLCPP_FATAL(this->get_logger(), "robot.cfg missing field: robot_name");
-        throw std::runtime_error("robot_name missing");
+    // ---------- chassis_config ----------
+    if (!config["chassis_config"]) {
+        RCLCPP_FATAL(this->get_logger(), "robot_config.yaml missing field: chassis_config");
+        throw std::runtime_error("chassis_config missing");
     }
 
-    const std::string robot_name = config_json["robot_name"].get<std::string>();
+    if (!config["chassis_config"]["chassis_type"]) {
+        RCLCPP_FATAL(this->get_logger(), "robot_config.yaml missing field: chassis_config.chassis_type");
+        throw std::runtime_error("chassis_config.chassis_type missing");
+    }
 
-    if (robot_name == "omni") {
+    const std::string chassis_type = config["chassis_config"]["chassis_type"].as<std::string>();
+
+    if (chassis_type == "omni") {
         chassis_model_ = 1;
-    } else if (robot_name == "diff_drive") {
+    } else if (chassis_type == "diff_drive") {
         chassis_model_ = 0;
     } else {
-        RCLCPP_FATAL(this->get_logger(), "Unknown robot_name: %s (expect omni / diff_drive)", robot_name.c_str());
-        throw std::runtime_error("unknown robot_name");
+        RCLCPP_FATAL(this->get_logger(), "Unknown chassis_type: %s (expect omni / diff_drive)", chassis_type.c_str());
+        throw std::runtime_error("unknown chassis_type");
     }
 }
 
@@ -153,7 +152,7 @@ void ChassisNode::ImuMsgCallback(const sensor_msgs::msg::Imu::SharedPtr msg) {
 }
 
 // IMU 回调：在这里进行角度积分（时间戳最准确）
-void ChassisNode::IntegrateImuOnce(const sensor_msgs::msg::Imu &imu) {
+void ChassisNode::IntegrateImuOnce(const sensor_msgs::msg::Imu& imu) {
     const double wz = imu.angular_velocity.z;
     if (!std::isfinite(wz)) {
         curr_imu_.reset();  // 当IMU数据无效时，重置当前IMU
@@ -210,7 +209,7 @@ void ChassisNode::IntegrateImuOnce(const sensor_msgs::msg::Imu &imu) {
 }
 
 // 检查 IMU 是否可用
-bool ChassisNode::IsImuAvailable(const rclcpp::Time &curr_time) {
+bool ChassisNode::IsImuAvailable(const rclcpp::Time& curr_time) {
     if (!use_imu_yaw_ || curr_imu_ == nullptr) {
         return false;
     }
@@ -231,10 +230,10 @@ bool ChassisNode::IsImuAvailable(const rclcpp::Time &curr_time) {
 
 // 主循环：消费反馈（如果有），按时间积分后发布
 void ChassisNode::onTimer() {
-    auto &feedback_shm_instance = FeedbackSharedMemory::GetInstance();
+    auto& feedback_shm_instance = FeedbackSharedMemory::GetInstance();
     RobotFeedback feedback_data{};
     bool ret = feedback_shm_instance.PeekLatest(&feedback_data);
-    const auto &chassis_data = feedback_data.chassis_feedback;
+    const auto& chassis_data = feedback_data.chassis_feedback;
     PublishOmniMotorFeedback(chassis_data);
     if (use_imu_yaw_ && !is_imu_inited_) {
         // RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Waiting for chassis initialized ...");
@@ -247,7 +246,7 @@ void ChassisNode::onTimer() {
     PublishOdometry();
 }
 
-void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data) {
+void ChassisNode::IntegrateOdomOnce(const ChassisFeedback& chassis_data) {
     bool valid_data = (chassis_data.timestamp > 0);
     if (!valid_data) {
         // RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Waiting for valid chassis data ...");
@@ -385,7 +384,7 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback &chassis_data) {
     curr_chassis_data_.reset();
 }
 
-void ChassisNode::PublishOmniMotorFeedback(const ChassisFeedback &chassis_data) {
+void ChassisNode::PublishOmniMotorFeedback(const ChassisFeedback& chassis_data) {
     chassis_interfaces::msg::ChassisMotorControl motor_msg;
     rclcpp::Time curr_time = rclcpp::Clock().now();
     motor_msg.header.stamp = curr_time;
@@ -397,7 +396,7 @@ void ChassisNode::PublishOmniMotorFeedback(const ChassisFeedback &chassis_data) 
     }
     omni_motor_pub_->publish(motor_msg);
 }
-void ChassisNode::IntegrateOmniOdomOnce(const ChassisFeedback &chassis_data) {
+void ChassisNode::IntegrateOmniOdomOnce(const ChassisFeedback& chassis_data) {
     bool valid_data = (chassis_data.timestamp > 0);
     if (!valid_data) {
         return;
@@ -596,12 +595,12 @@ void ChassisNode::PublishOdometry() {
 }
 
 rcl_interfaces::msg::SetParametersResult ChassisNode::parametersCallback(
-    const std::vector<rclcpp::Parameter> &parameters) {
+    const std::vector<rclcpp::Parameter>& parameters) {
     rcl_interfaces::msg::SetParametersResult result;
     result.successful = true;
     result.reason = "Parameters updated successfully";
 
-    for (const auto &changed_parameter : parameters) {
+    for (const auto& changed_parameter : parameters) {
         if (changed_parameter.get_name() == "odom_factor") {
             odom_factor_ = changed_parameter.as_double();
             RCLCPP_INFO(this->get_logger(), "Updated odom_factor: %.3f", odom_factor_);

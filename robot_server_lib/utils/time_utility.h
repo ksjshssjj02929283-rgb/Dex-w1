@@ -12,8 +12,8 @@ public:
     TimePointBase() = default;
     ~TimePointBase() = default;
 
-    static bool IsValid(const TimePointBase &timepoint) { return timepoint.time_in_ns_ >= 0; }
-    static bool IsInvalid(const TimePointBase &timepoint) { return timepoint.time_in_ns_ < 0; }
+    static bool IsValid(const TimePointBase& timepoint) { return timepoint.time_in_ns_ >= 0; }
+    static bool IsInvalid(const TimePointBase& timepoint) { return timepoint.time_in_ns_ < 0; }
 
     // raw repr
     [[nodiscard]] std::int64_t time_in_ns() const { return time_in_ns_; }
@@ -35,7 +35,7 @@ public:
         const auto now = std::chrono::system_clock::now();
         return TimePointSystem{std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count()};
     }
-    static const TimePointSystem &Invalid() {
+    static const TimePointSystem& Invalid() {
         static const TimePointSystem invalid;
         assert(invalid.is_invalid());
         return invalid;
@@ -55,7 +55,7 @@ public:
         const auto now = shared_time_in_ns.load(std::memory_order_relaxed);
         return TimePointManual{now};
     }
-    static const TimePointManual &Invalid() {
+    static const TimePointManual& Invalid() {
         static const TimePointManual invalid(-1);
         assert(invalid.is_invalid());
         return invalid;

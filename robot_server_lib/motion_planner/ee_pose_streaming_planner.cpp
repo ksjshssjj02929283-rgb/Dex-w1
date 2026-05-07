@@ -17,9 +17,9 @@ EEPoseStreamingPlanner::EEPoseStreamingPlanner(
 
 EEPoseStreamingPlanner::~EEPoseStreamingPlanner() = default;
 
-ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasurement &measurement,
-                                                            const TimeMetaInfo &time_meta,
-                                                            JointCommand &output_joint_cmd) {
+ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasurement& measurement,
+                                                            const TimeMetaInfo& time_meta,
+                                                            JointCommand& output_joint_cmd) {
     if (!runtime_.streaming_finished) {
         StreamingCommand cmd_buffer;
         bool received = streaming_buffer_->PeekLatest(&cmd_buffer);
@@ -42,7 +42,7 @@ ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasureme
                                                   : ComputeCommandStatus::TaskFinished;
     }
 
-    const StreamingCommand &latest_cmd = runtime_.latest_cmd.value();
+    const StreamingCommand& latest_cmd = runtime_.latest_cmd.value();
 
     // 检查是否超时, 如果超时则认为流式命令结束
     bool is_timeout = false;
@@ -106,9 +106,9 @@ ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasureme
     }
 }
 
-bool EEPoseStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
-                                                   const JointMeasurement &measurement,
-                                                   const TimeMetaInfo &time_meta) {
+bool EEPoseStreamingPlanner::ResetForNewTrajectory(const PlannerRequest& request,
+                                                   const JointMeasurement& measurement,
+                                                   const TimeMetaInfo& time_meta) {
     assert(request.data.has_value());
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
     auto move_request = std::get<MoveRequest>(request.data.value());
@@ -138,7 +138,7 @@ bool EEPoseStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request
     return true;
 }
 
-bool EEPoseStreamingPlanner::ToJointStreamingCommand(StreamingCommand &cmd, const JointMeasurement &measurement) {
+bool EEPoseStreamingPlanner::ToJointStreamingCommand(StreamingCommand& cmd, const JointMeasurement& measurement) {
     Eigen::VectorXd joint_cmd;
     utils::GetJointFromWholeBody(this->robot_model_, measurement.q_desired_pre, joint_cmd, this->motion_group_);
     JointPositionDof joint_cmd_ndof = measurement.q_desired_pre;

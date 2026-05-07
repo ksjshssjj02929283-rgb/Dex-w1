@@ -14,12 +14,12 @@ class KinematicsBase {
 public:
     virtual ~KinematicsBase() = default;
 
-    virtual PoseQuaternion GetFK(const Eigen::VectorXd &q_in,
-                                 const pinocchio::SE3 &tcp_frame = pinocchio::SE3::Identity()) = 0;
+    virtual PoseQuaternion GetFK(const Eigen::VectorXd& q_in,
+                                 const pinocchio::SE3& tcp_frame = pinocchio::SE3::Identity()) = 0;
 
-    virtual bool GetIK(const PoseQuaternion &pose,
-                       Eigen::VectorXd &q_in_and_out,
-                       const pinocchio::SE3 &tcp_frame = pinocchio::SE3::Identity()) = 0;
+    virtual bool GetIK(const PoseQuaternion& pose,
+                       Eigen::VectorXd& q_in_and_out,
+                       const pinocchio::SE3& tcp_frame = pinocchio::SE3::Identity()) = 0;
 
     virtual std::pair<Eigen::VectorXd, Eigen::VectorXd> GetQposLimits() const = 0;
 };

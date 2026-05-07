@@ -3,11 +3,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Release)
 
-# 如果系统安装了 ccache 则启用，否则保持不启用
-find_program(CCACHE_PROGRAM ccache)
-if(CCACHE_PROGRAM)
-  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+# ccache 支持（默认关闭，如需启用请设置 ENABLE_CCACHE=ON）
+option(ENABLE_CCACHE "Enable ccache" OFF)
+if(ENABLE_CCACHE)
+  find_program(CCACHE_PROGRAM ccache)
+  if(CCACHE_PROGRAM)
+    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+  endif()
 endif()
 
 project(robot_server_lib)
@@ -21,6 +24,7 @@ option(ENABLE_TORQUE_CONTROL_SIMULATION "Enable torque control" OFF)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(PythonInterp 3.6 REQUIRED)
+find_package(yaml-cpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -64,7 +68,9 @@ aux_source_directory(kinematics LIB_SRCS)
 aux_source_directory(dynamics LIB_SRCS)
 aux_source_directory(motion_planner LIB_SRCS)
 aux_source_directory(torque_controller LIB_SRCS)
-aux_source_directory(utils LIB_SRCS)
+
+add_subdirectory(utils)
+
 add_library(${PROJECT_NAME} ${LIB_SRCS})
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -80,9 +86,11 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 
 target_link_libraries(${PROJECT_NAME}
+  robot_server_utils
   DexeRP
   fmt::fmt
   spdlog::spdlog
+  yaml-cpp
   nlohmann_json::nlohmann_json
   pinocchio::pinocchio
   ruckig::ruckig
@@ -109,6 +117,7 @@ ament_target_dependencies(robot_server_lib
 install(
   TARGETS
     robot_server_lib
+    robot_server_utils
   EXPORT export_robot_server_lib
   DESTINATION lib
 )
@@ -136,7 +145,7 @@ install(
 
 # 添加头文件导出
 ament_export_targets(export_robot_server_lib HAS_LIBRARY_TARGET)
-ament_export_libraries(robot_server_lib)
+ament_export_libraries(robot_server_lib robot_server_utils)
 ament_export_include_directories(include)
 
 option(BUILD_TESTING "Build tests" ON)
@@ -148,7 +157,7 @@ if(BUILD_TESTING)
   foreach(test_src ${TEST_SRCS})
     get_filename_component(test_name ${test_src} NAME_WE)
     ament_add_gtest(${test_name} ${test_src})
-    target_link_libraries(${test_name} robot_server_lib)
+    target_link_libraries(${test_name} robot_server_lib robot_server_utils)
   endforeach()
 endif()
 

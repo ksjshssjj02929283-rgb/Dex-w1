@@ -34,31 +34,31 @@ TEST(SRSKinematicsTest, Kinematics) {
 
 TEST(SRSKinematicsTest, GetAllJointLimitsFromURDF) {
     const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
-    const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot.cfg";
+    const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 
-    const auto &model = *robot_model.model_ptr;
-    const auto &joint_names = robot_model.params_ptr->joint_command_sequence_by_name;
+    const auto& model = *robot_model.model_ptr;
 
-    Eigen::VectorXd lb = dynamics::MapToParamOrder(model, model.lowerPositionLimit, joint_names);
-    Eigen::VectorXd ub = dynamics::MapToParamOrder(model, model.upperPositionLimit, joint_names);
+    Eigen::VectorXd lb = model.lowerPositionLimit;
+    Eigen::VectorXd ub = model.upperPositionLimit;
 
-    std::cout << "All Joint Limits (Param Order, " << ndof_robot << " joints):" << std::endl;
+    std::cout << "All Joint Limits (URDF order, " << ndof_robot << " joints):" << std::endl;
     for (int i = 0; i < ndof_robot; ++i) {
-        std::cout << "  Joint " << i << " (" << joint_names[i] << "): [" << lb[i] << ", " << ub[i] << "]" << std::endl;
+        std::cout << "  Joint " << i << " (" << model.names[i + 1] << "): [" << lb[i] << ", " << ub[i] << "]"
+                  << std::endl;
     }
 
     EXPECT_EQ(lb.size(), ndof_robot);
     EXPECT_EQ(ub.size(), ndof_robot);
 
     for (int i = 0; i < ndof_robot; ++i) {
-        EXPECT_LE(lb[i], ub[i]) << "Joint " << i << " (" << joint_names[i] << ") lower > upper";
+        EXPECT_LE(lb[i], ub[i]) << "Joint " << i << " (" << model.names[i + 1] << ") lower > upper";
     }
 }
 
 TEST(SRSKinematicsTest, CheckSafety) {
     const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
-    const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot.cfg";
+    const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 
     JointMeasurement measurement;

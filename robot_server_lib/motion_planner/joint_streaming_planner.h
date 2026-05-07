@@ -12,12 +12,12 @@ public:
                           std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer,
                           double controller_dt);
     ~JointStreamingPlanner() override;
-    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
-                                        const TimeMetaInfo &time_meta,
-                                        JointCommand &output_joint_cmd) override;
-    bool ResetForNewTrajectory(const PlannerRequest &request,
-                               const JointMeasurement &measurement,
-                               const TimeMetaInfo &time_meta) override;
+    ComputeCommandStatus ComputeCommand(const JointMeasurement& measurement,
+                                        const TimeMetaInfo& time_meta,
+                                        JointCommand& output_joint_cmd) override;
+    bool ResetForNewTrajectory(const PlannerRequest& request,
+                               const JointMeasurement& measurement,
+                               const TimeMetaInfo& time_meta) override;
 
 protected:
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer_;
@@ -38,8 +38,7 @@ protected:
     TimePointSystem command_finished_time_{TimePointSystem::Invalid()};
     TimePointSystem last_log_time_{TimePointSystem::Invalid()};  // 上次打印日志的时间
     int frame_count_{0};                                         // 帧计数器
-    bool enable_streaming_ruckig_{true};
-    double streaming_velocity_timeout_{0.1};  // Ruckig 速度超时时间，默认 100ms
+    double streaming_velocity_timeout_{0.1};                     // Ruckig 速度超时时间，默认 100ms
 
     // 目标速度和加速度配置
     bool use_velocity_ = false;

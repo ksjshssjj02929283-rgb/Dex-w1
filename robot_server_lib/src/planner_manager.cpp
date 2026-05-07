@@ -13,20 +13,20 @@ PlannerManager::~PlannerManager() = default;
 
 void PlannerManager::Initialize() {
     // 从 robot_model 中加载机器人属性配置
-    robot_property_ = robot_model_.robot_property;
+    robot_property_ = robot_model_.robot_property_default;
 
     // Initialize the runtime data
     runtime_data_.loop_counter = -1;
     runtime_data_.planner_request.request_id = -1;
 
     // Initialize pre-allocated variables for PublishPlannerInfo
-    runtime_data_.publish_measurement_primary.resize(robot_model_.params_ptr->joints_primary.size());
-    runtime_data_.publish_measurement_secondary.resize(robot_model_.params_ptr->joints_secondary.size());
-    runtime_data_.publish_measurement_torso.resize(robot_model_.params_ptr->joints_torso.size());
+    runtime_data_.publish_measurement_primary.resize(robot_model_.params_ptr->joints_primary_names.size());
+    runtime_data_.publish_measurement_secondary.resize(robot_model_.params_ptr->joints_secondary_names.size());
+    runtime_data_.publish_measurement_torso.resize(robot_model_.params_ptr->joints_torso_names.size());
     runtime_data_.publish_ee_pose.resize(14);
     runtime_data_.publish_torso_X_Z_RY.resize(3);
 
-    auto &time_meta = runtime_data_.time_meta;
+    auto& time_meta = runtime_data_.time_meta;
     time_meta.current_time = TimePointSystem::Now();
     time_meta.measurement_time = TimePointSystem::Invalid();
     time_meta.episode_index = 0;
@@ -49,10 +49,10 @@ void PlannerManager::Initialize() {
 }
 
 void PlannerManager::LoopOnce() {
-    auto &time_meta = runtime_data_.time_meta;
-    auto &request = runtime_data_.planner_request;
-    auto &emergency_request = runtime_data_.emergency_request;
-    auto &measurement = runtime_data_.measurement;
+    auto& time_meta = runtime_data_.time_meta;
+    auto& request = runtime_data_.planner_request;
+    auto& emergency_request = runtime_data_.emergency_request;
+    auto& measurement = runtime_data_.measurement;
     runtime_data_.loop_counter++;
 
     // 尝试获取最新的关节测量值 Try to peek the latest joint measurement
@@ -124,8 +124,8 @@ void PlannerManager::LoopOnce() {
         this->runtime_data_.joint_cmd.joint_damping = this->robot_property_.joint_damping;
         this->runtime_data_.joint_cmd.joint_integral_ratio = this->robot_property_.joint_integral_ratio;
         // 如果提供了动力学参数, 则计算双臂前馈阻抗控制力 Compute the feedforward impedance control torque for both arms
-        const auto &dyn_base_params_primary = this->robot_model_.params_ptr->dyn_base_params_primary;
-        const auto &dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
+        const auto& dyn_base_params_primary = this->robot_model_.params_ptr->dyn_base_params_primary;
+        const auto& dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
         if (dyn_base_params_primary.has_value()) {
             Eigen::VectorXd tau_ff_pri, q_cmd_primary, q_feedback_primary, dq_feedback_primary, dq_cmd_primary;
             Vector6d F_imp_pri;
@@ -212,13 +212,16 @@ void PlannerManager::LoopOnce() {
 
 RequestResponse PlannerManager::OnRequestStateInit() {
     RequestResponse response{};
-    const auto &time_meta = runtime_data_.time_meta;
-    const auto &request = runtime_data_.planner_request;
-    auto &measurement = runtime_data_.measurement;
-    auto &joint_cmd = runtime_data_.joint_cmd;
+    const auto& time_meta = runtime_data_.time_meta;
+    const auto& request = runtime_data_.planner_request;
+    auto& measurement = runtime_data_.measurement;
+    auto& joint_cmd = runtime_data_.joint_cmd;
 
     // 切换 current_planner_ switch to nullptr
     current_planner_ = nullptr;
+    if (robot_property_.run_mode != RunMode::Sleep) {
+        robot_property_.run_mode = RunMode::Position;  // init状态除了Sleep模式默认切换位置模式
+    }
 
     // 如果measurement_time无效则说明还未初始化完成, 还不能切换Idle
     // If the measurement time is invalid, the new measurement is not here yet
@@ -299,9 +302,9 @@ RequestResponse PlannerManager::OnRequestStateInit() {
 
 RequestResponse PlannerManager::OnRequestStateIdle() {
     RequestResponse response{};
-    const auto &time_meta = runtime_data_.time_meta;
-    const auto &request = runtime_data_.planner_request;
-    const auto &measurement = runtime_data_.measurement;
+    const auto& time_meta = runtime_data_.time_meta;
+    const auto& request = runtime_data_.planner_request;
+    const auto& measurement = runtime_data_.measurement;
     if (time_meta.measurement_time.is_invalid())  // 如果measurement_time无效则说明测量数据错误, 不能继续运行
     {
         ChangeState(Status::Init);
@@ -343,9 +346,9 @@ RequestResponse PlannerManager::OnRequestStateIdle() {
 
 RequestResponse PlannerManager::OnRequestStateRunning() {
     RequestResponse response{};
-    const auto &time_meta = runtime_data_.time_meta;
-    const auto &request = runtime_data_.planner_request;
-    const auto &measurement = runtime_data_.measurement;
+    const auto& time_meta = runtime_data_.time_meta;
+    const auto& request = runtime_data_.planner_request;
+    const auto& measurement = runtime_data_.measurement;
     if (time_meta.measurement_time.is_invalid())  // 如果measurement_time无效则说明测量数据错误, 不能继续运行
     {
         ChangeState(Status::Init);
@@ -417,7 +420,7 @@ RequestResponse PlannerManager::OnRequestStateRunning() {
 
 RequestResponse PlannerManager::OnRequestStateError() {
     RequestResponse response{};
-    const auto &request = runtime_data_.planner_request;
+    const auto& request = runtime_data_.planner_request;
     if (runtime_data_.time_meta.measurement_time
             .is_invalid())  // 如果measurement_time无效则说明测量数据错误, 不能继续运行
     {
@@ -431,7 +434,7 @@ RequestResponse PlannerManager::OnRequestStateError() {
 
     // 处理错误状态，重置或清除错误 Handle error state, reset or clear errors
     if (request.type == RequestType::ClearError) {
-        //清除错误状态 Clear error state
+        // 清除错误状态 Clear error state
         response.re_run = true;
         response.request_consumed = true;
         robot_property_.clear_error_flag = true;
@@ -498,15 +501,14 @@ RequestResponse PlannerManager::OnRequest() {
 
 void PlannerManager::ChangeState(Status new_state) {
     assert(manager_state_ != new_state);
-    auto &time_meta = runtime_data_.time_meta;
+    auto& time_meta = runtime_data_.time_meta;
     time_meta.episode_index += 1;
     time_meta.episode_start_time = time_meta.current_time;
     manager_state_ = new_state;
     ReportRequestStatus(-1, RequestType::Empty, RequestStatus::Unknown, manager_state_);
 }
 
-void PlannerManager::SetProperty(const PlannerRequest &request) {
-    // todo: 数据格式错误转error的处理
+void PlannerManager::SetProperty(const PlannerRequest& request) {
     switch (request.type) {
         case RequestType::TcpPrimary: {
             assert(request.data.has_value() && std::holds_alternative<PoseQuaternion>(request.data.value()));
@@ -533,8 +535,10 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
                     robot_property_.run_mode = RunMode::Position;
                     break;
                 case 1:
-                    if (this->robot_model_.IsDynamicParamsAvailable())  // 无动力学参数不能开启力控
-                    {
+                    if (!robot_property_.allow_force_control) {
+                        std::cout << "[WARN] Force control is not allowed by configuration.\n";
+                        LOG_WARN << "Force control is not allowed by configuration.";
+                    } else if (this->robot_model_.IsDynamicParamsAvailable()) {
                         robot_property_.run_mode = RunMode::Torque;
                     } else {
                         std::cout << "[WARN] Dynamic parameters not available, cannot enable torque control mode.\n";
@@ -542,11 +546,18 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
                     }
                     break;
                 case 2:
-                    robot_property_.run_mode = RunMode::Drag;  // 在server层处理开启哪种拖动模式
+                    if (!robot_property_.allow_force_control) {
+                        std::cout << "[WARN] Force control is not allowed by configuration.\n";
+                        LOG_WARN << "Force control is not allowed by configuration.";
+                    } else {
+                        robot_property_.run_mode = RunMode::Drag;
+                    }
                     break;
                 case 3:
-                    if (this->robot_model_.IsDynamicParamsAvailable())  // 无动力学参数不能开启阻抗控制
-                    {
+                    if (!robot_property_.allow_force_control) {
+                        std::cout << "[WARN] Force control is not allowed by configuration.\n";
+                        LOG_WARN << "Force control is not allowed by configuration.";
+                    } else if (this->robot_model_.IsDynamicParamsAvailable()) {
                         robot_property_.run_mode = RunMode::CartesianImpedance;
                     } else {
                         std::cout << "[WARN] Dynamic parameters not available, cannot enable impedance control mode.\n";
@@ -554,8 +565,10 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
                     }
                     break;
                 case 4:
-                    if (this->robot_model_.IsDynamicParamsAvailable())  // 无动力学参数不能开启阻抗控制
-                    {
+                    if (!robot_property_.allow_force_control) {
+                        std::cout << "[WARN] Force control is not allowed by configuration.\n";
+                        LOG_WARN << "Force control is not allowed by configuration.";
+                    } else if (this->robot_model_.IsDynamicParamsAvailable()) {
                         robot_property_.run_mode = RunMode::DragImpedance;
                     } else {
                         std::cout
@@ -574,6 +587,11 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
         case RequestType::EnableDrag: {
             assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
             bool enable_drag = std::get<bool>(request.data.value());
+            if (enable_drag && !robot_property_.allow_force_control) {
+                std::cout << "[WARN] Force control is not allowed by configuration.\n";
+                LOG_WARN << "Force control is not allowed by configuration.";
+                return;
+            }
             static auto previous_mode = robot_property_.run_mode;
             if (enable_drag) {
                 if (robot_property_.run_mode != RunMode::Drag) {
@@ -601,8 +619,8 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
         case RequestType::JointStiffness: {
             auto stiffness = std::get<Eigen::VectorXd>(request.data.value());
             LOG_INFO << "Received joint stiffness command: " << stiffness.transpose();
-            auto ndof_arm = this->robot_model_.params_ptr->joints_primary.size() +
-                            this->robot_model_.params_ptr->joints_secondary.size();
+            auto ndof_arm = this->robot_model_.params_ptr->joints_primary_names.size() +
+                            this->robot_model_.params_ptr->joints_secondary_names.size();
             if (stiffness.size() == 1) {
                 if (stiffness[0] < -FloatZeroTol) {
                     std::stringstream ss;
@@ -640,8 +658,8 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
         case RequestType::JointDamping: {
             auto damping = std::get<Eigen::VectorXd>(request.data.value());
             LOG_INFO << "Received joint damping command: " << damping.transpose();
-            auto ndof_arm = this->robot_model_.params_ptr->joints_primary.size() +
-                            this->robot_model_.params_ptr->joints_secondary.size();
+            auto ndof_arm = this->robot_model_.params_ptr->joints_primary_names.size() +
+                            this->robot_model_.params_ptr->joints_secondary_names.size();
             if (damping.size() == 1) {
                 if (damping[0] < -FloatZeroTol) {
                     std::stringstream ss;
@@ -778,11 +796,108 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
             LOG_INFO << "Set safe level to " << robot_property_.safe_level;
             return;
         }
+        case RequestType::EnableStreamingRuckig: {
+            assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
+            bool enable = std::get<bool>(request.data.value());
+            robot_property_.enable_streaming_ruckig = enable;
+            LOG_INFO << "Set enable_streaming_ruckig to " << enable;
+            return;
+        }
+        case RequestType::JointStreamingBounds: {
+            auto bounds = std::get<Eigen::VectorXd>(request.data.value());
+            LOG_INFO << "Received joint streaming bounds command: " << bounds.transpose();
+            if (bounds.size() == 3) {
+                robot_property_.joint_streaming_bounds.max_velocity = bounds[0];
+                robot_property_.joint_streaming_bounds.max_acceleration = bounds[1];
+                robot_property_.joint_streaming_bounds.max_jerk = bounds[2];
+                LOG_INFO << "Set joint streaming bounds to [V: " << bounds[0] << ", A: " << bounds[1]
+                         << ", J: " << bounds[2] << "]";
+            } else {
+                std::stringstream ss;
+                ss << "[WARN] Invalid joint streaming bounds size: " << bounds.size()
+                   << ", expected size: 3. Command ignored.\n";
+                std::cout << ss.str();
+                LOG_WARN << ss.str();
+            }
+            return;
+        }
+        case RequestType::EnableButterworthFilter: {
+            auto enable = std::get<Eigen::VectorXd>(request.data.value());
+            LOG_INFO << "Received butterworth filter enable command: " << enable.transpose();
+            if (enable.size() == 1) {
+                for (int i = 0; i < ndof_robot; ++i) {
+                    robot_property_.enable_butterworth_filter[i] = enable[0] != 0;
+                }
+            } else {
+                if (enable.size() == ndof_robot) {
+                    for (int i = 0; i < ndof_robot; ++i) {
+                        robot_property_.enable_butterworth_filter[i] = enable[i] != 0;
+                    }
+                } else {
+                    std::stringstream ss;
+                    ss << "[WARN] Invalid butterworth filter enable size: " << enable.size()
+                       << ", expected size: " << ndof_robot << " or 1. Command ignored.\n";
+                    std::cout << ss.str();
+                    LOG_WARN << ss.str();
+                    return;
+                }
+            }
+            std::cout << "[INFO] Set butterworth filter enable to ";
+            for (int i = 0; i < ndof_robot; ++i) {
+                std::cout << (robot_property_.enable_butterworth_filter[i] ? "true" : "false") << " ";
+            }
+            std::cout << "\n";
+            LOG_INFO << "Set butterworth filter enable";
+            return;
+        }
+        case RequestType::EnableInputShaper: {
+            auto enable = std::get<Eigen::VectorXd>(request.data.value());
+            LOG_INFO << "Received input shaper enable command: " << enable.transpose();
+            if (enable.size() == 1) {
+                for (int i = 0; i < ndof_robot; ++i) {
+                    robot_property_.enable_input_shaper[i] = enable[0] != 0;
+                }
+            } else {
+                if (enable.size() == ndof_robot) {
+                    for (int i = 0; i < ndof_robot; ++i) {
+                        robot_property_.enable_input_shaper[i] = enable[i] != 0;
+                    }
+                } else {
+                    std::stringstream ss;
+                    ss << "[WARN] Invalid input shaper enable size: " << enable.size()
+                       << ", expected size: " << ndof_robot << " or 1. Command ignored.\n";
+                    std::cout << ss.str();
+                    LOG_WARN << ss.str();
+                    return;
+                }
+            }
+            std::cout << "[INFO] Set input shaper enable to ";
+            for (int i = 0; i < ndof_robot; ++i) {
+                std::cout << (robot_property_.enable_input_shaper[i] ? "true" : "false") << " ";
+            }
+            std::cout << "\n";
+            LOG_INFO << "Set input shaper enable";
+            return;
+        }
         case RequestType::EnablePosLimitCheck: {
             assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
             bool enable = std::get<bool>(request.data.value());
             robot_property_.safety_check_config.check_position_limit = enable;
             LOG_INFO << "Set enable_position_limit_check to " << enable;
+            return;
+        }
+        case RequestType::EnableChassisShaper: {
+            assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
+            bool enable = std::get<bool>(request.data.value());
+            robot_property_.enable_chassis_shaper = enable;
+            LOG_INFO << "Set enable_chassis_shaper to " << enable;
+            return;
+        }
+        case RequestType::EnableRecord: {
+            assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
+            bool enable = std::get<bool>(request.data.value());
+            robot_property_.enable_record = enable;
+            LOG_INFO << "Set enable_record to " << enable;
             return;
         }
         case RequestType::ClearError: {
@@ -797,14 +912,14 @@ void PlannerManager::SetProperty(const PlannerRequest &request) {
     }
 }
 
-void PlannerManager::ConsumeRequest(PlannerRequest *request) {
+void PlannerManager::ConsumeRequest(PlannerRequest* request) {
     request->request_id = -1;            // Reset request ID
     request->type = RequestType::Empty;  // Reset request type
 }
 
 void PlannerManager::OnEmergencyRequest() {
-    auto &request = runtime_data_.planner_request;
-    auto &emergency_request = runtime_data_.emergency_request;
+    auto& request = runtime_data_.planner_request;
+    auto& emergency_request = runtime_data_.emergency_request;
     switch (emergency_request.type) {
         case RequestType::StopMove:
             LOG_INFO << "New emergency request received with request ID: " << emergency_request.request_id
@@ -843,11 +958,11 @@ void PlannerManager::OnEmergencyRequest() {
 
 void PlannerManager::PublishPlannerInfo() {
     PlannerManagerInfo info{};
-    auto &measurement = runtime_data_.measurement;
+    auto& measurement = runtime_data_.measurement;
     // Use pre-allocated member variables instead of creating temporary vectors
-    auto &measurement_primary = runtime_data_.publish_measurement_primary;
-    auto &measurement_secondary = runtime_data_.publish_measurement_secondary;
-    auto &measurement_torso = runtime_data_.publish_measurement_torso;
+    auto& measurement_primary = runtime_data_.publish_measurement_primary;
+    auto& measurement_secondary = runtime_data_.publish_measurement_secondary;
+    auto& measurement_torso = runtime_data_.publish_measurement_torso;
     PoseQuaternion ee_pose_primary, ee_pose_secondary, torso_pose;
     utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_primary, MotionGroup::Primary);
     utils::GetJointFromWholeBody(this->robot_model_, measurement.position, measurement_secondary,
@@ -859,11 +974,12 @@ void PlannerManager::PublishPlannerInfo() {
             idle_planner_->KinematicsSecondary()->GetFK(measurement_secondary, robot_property_.tcp_frame_secondary);
         torso_pose = idle_planner_->KinematicsTorso()->GetFK(measurement_torso);
     }
-    auto &ee_pose = runtime_data_.publish_ee_pose;
+    auto& ee_pose = runtime_data_.publish_ee_pose;
     ee_pose << ee_pose_primary.ToVectorXd(), ee_pose_secondary.ToVectorXd();
-    ee_pose = (ee_pose.array() * 1e4).round() / 1e4;  // 精确到小数点后四位
+    ee_pose = (ee_pose.array() * 1e5).round() / 1e5;  // 精确到小数点后五位
+
     info.ee_pose_measurement = ee_pose;
-    auto &torso_X_Z_RY = runtime_data_.publish_torso_X_Z_RY;
+    auto& torso_X_Z_RY = runtime_data_.publish_torso_X_Z_RY;
     torso_X_Z_RY << torso_pose.position[0], torso_pose.position[2],
         measurement_torso[0] + measurement_torso[1] + measurement_torso[2];
     info.torso_pose_measurement = torso_X_Z_RY;

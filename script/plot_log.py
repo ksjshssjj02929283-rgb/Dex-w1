@@ -259,7 +259,7 @@ def main():
     pos = build_array("joint_position")
     pos_cmd = build_array("joint_position_cmd")
     pos_input = build_array("joint_position_input")
-    pos_before_filter = build_array("joint_position_before_filter")
+    pos_after_ruckig = build_array("joint_position_after_ruckig")
     pos_after_filter = build_array("joint_position_after_filter")
     tor = build_array("joint_torque")
     tor_ff = build_array("joint_torque_feedforward")
@@ -484,8 +484,8 @@ def main():
         if np.isfinite(pos_input[:, joint_idx]).any():
             ax.plot(times, np.degrees(pos_input[:, joint_idx]), label="position_input",
                    color="tab:orange", linewidth=1.2, linestyle=":")
-        if np.isfinite(pos_before_filter[:, joint_idx]).any():
-            ax.plot(times, np.degrees(pos_before_filter[:, joint_idx]), label="position_before_filter",
+        if np.isfinite(pos_after_ruckig[:, joint_idx]).any():
+            ax.plot(times, np.degrees(pos_after_ruckig[:, joint_idx]), label="joint_position_after_ruckig",
                    color="tab:purple", linewidth=1.2, linestyle="-.")
         if np.isfinite(pos_after_filter[:, joint_idx]).any():
             ax.plot(times, np.degrees(pos_after_filter[:, joint_idx]), label="position_after_filter",
@@ -620,13 +620,13 @@ def main():
             if np.isfinite(pos_input[:, j]).any():
                 ax.plot(times, np.degrees(pos_input[:, j]), label="position_input",
                        color="tab:orange", linewidth=1.2, linestyle=":")
-            # 绘制 joint_position_before_filter（滤波前的位置指令）
-            if np.isfinite(pos_before_filter[:, j]).any():
-                ax.plot(times, np.degrees(pos_before_filter[:, j]), label="position_before_filter",
+            # 绘制 joint_position_after_ruckig（滤波前的位置指令）
+            if np.isfinite(pos_after_ruckig[:, j]).any():
+                ax.plot(times, np.degrees(pos_after_ruckig[:, j]), label="joint_position_after_ruckig",
                        color="tab:purple", linewidth=1.2, linestyle="-.")
             # 绘制 joint_position_after_filter（滤波后的位置指令）
             if np.isfinite(pos_after_filter[:, j]).any():
-                ax.plot(times, np.degrees(pos_after_filter[:, j]), label="position_after_filter",
+                ax.plot(times, np.degrees(pos_after_filter[:, j]), label="joint_position_after_filter",
                        color="tab:cyan", linewidth=1.2, linestyle="-.")
             ax.grid(True, alpha=0.3, linestyle=':')
             ax.tick_params(labelsize=7)

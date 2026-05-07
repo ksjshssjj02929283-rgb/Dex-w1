@@ -35,12 +35,12 @@ public:
     explicit BoundedQueue(std::uint64_t capacity);
     ~BoundedQueue() = default;
     // No-copy/assign/move, as usual in concurrent code
-    BoundedQueue(const BoundedQueue &) = delete;
-    BoundedQueue(BoundedQueue &&) = delete;
+    BoundedQueue(const BoundedQueue&) = delete;
+    BoundedQueue(BoundedQueue&&) = delete;
 
     // Actual interface
-    bool EnQueue(const T &element);
-    bool DeQueue(T *element_output = nullptr);
+    bool EnQueue(const T& element);
+    bool DeQueue(T* element_output = nullptr);
     std::uint64_t ElementSize();
     std::uint64_t capacity() const;
 };

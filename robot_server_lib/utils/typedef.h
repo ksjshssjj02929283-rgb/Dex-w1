@@ -72,6 +72,12 @@ enum class RequestType {
     JointIntegralRatio,
     CartStiffness,
     CartDampingRatio,
+    EnableStreamingRuckig,
+    JointStreamingBounds,
+    EnableButterworthFilter,
+    EnableInputShaper,
+    EnableChassisShaper,
+    EnableRecord,
     // Move Request
     MoveJoint,
     MoveLine,
@@ -114,7 +120,7 @@ enum class RequestStatus {
 };
 
 template <typename E, typename = std::enable_if_t<std::is_enum_v<E>>>
-inline const char *ToString(E e) {
+inline const char* ToString(E e) {
     auto sv = magic_enum::enum_name(e);
     return sv.empty() ? "Unknown" : sv.data();
 }

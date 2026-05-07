@@ -1,5 +1,6 @@
 import os
 import json
+import yaml
 import numpy as np
 from scipy.linalg import pinv
 from ament_index_python.packages import get_package_share_directory
@@ -170,9 +171,9 @@ class JointZeroCalibrate:
 
     def _init_robot_model(self, arm):
         package_share_path = get_package_share_directory("w1_server")
-        robot_cfg_path = Path(package_share_path) / "robot.cfg"
+        robot_cfg_path = Path(package_share_path) / "robot_config.yaml"
         with open(robot_cfg_path, 'r') as f:
-            cfg = json.load(f)
+            cfg = yaml.safe_load(f)
         if arm == "left":
             self.robot_name = cfg.get("left_arm_name")
         elif arm == "right":

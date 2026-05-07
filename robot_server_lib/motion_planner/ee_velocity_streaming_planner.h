@@ -11,12 +11,12 @@ public:
                                double controller_dt);
     ~EEVelocityStreamingPlanner() override;
 
-    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
-                                        const TimeMetaInfo &time_meta,
-                                        JointCommand &output_joint_cmd) override;
-    bool ResetForNewTrajectory(const PlannerRequest &request,
-                               const JointMeasurement &measurement,
-                               const TimeMetaInfo &time_meta) override;
+    ComputeCommandStatus ComputeCommand(const JointMeasurement& measurement,
+                                        const TimeMetaInfo& time_meta,
+                                        JointCommand& output_joint_cmd) override;
+    bool ResetForNewTrajectory(const PlannerRequest& request,
+                               const JointMeasurement& measurement,
+                               const TimeMetaInfo& time_meta) override;
 
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer_;
 
@@ -35,7 +35,8 @@ private:
     pinocchio::Model pinocchio_model_;
     TimePointSystem request_start_time_{TimePointSystem::Invalid()};
     ReferenceFrame reference_frame_{ReferenceFrame::WorldBase};
-    int arm_base_id_{-1};
+    int primary_arm_base_id_{-1};
+    int secondary_arm_base_id_{-1};
 };
 
 }  // namespace robot_server_lib

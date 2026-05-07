@@ -4,6 +4,7 @@ import math
 import time
 from datetime import datetime
 import json
+import yaml
 import threading
 from pathlib import Path
 import rclpy
@@ -70,7 +71,7 @@ class DynParamIdentifier(Node):
         )
         self.traj = traj
         self.robot_cfg_path = (
-            Path(get_package_share_directory("w1_server")) / "robot.cfg"
+            Path(get_package_share_directory("w1_server")) / "robot_config.yaml"
         )
         # 初始化状态变量
         self.joint_name = None
@@ -86,7 +87,7 @@ class DynParamIdentifier(Node):
         self.movej_started = False
         self._stop_flag = threading.Event()
         with open(self.robot_cfg_path, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
+            cfg = yaml.safe_load(f)
         robot_name = cfg.get("robot_name", "")
         robot_type = "w1_anth" if robot_name == "W1Anthropomorphic" else "w1_indst"
         self.robot_name = robot_name
@@ -1667,7 +1668,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
             # 构造确认弹窗（中文纯文字，无图标，置顶模态）
             msg = (
-                "将写入左右臂辨识参数到机器人配置文件 robot.cfg：\n\n"
+                "将写入左右臂辨识参数到机器人配置文件 robot.yaml：\n\n"
                 f"- 左臂字段：dyn_base_params_primary（{len(beta_left)}维）\n"
                 f"- 右臂字段：dyn_base_params_secondary（{len(beta_right)}维）\n\n"
                 "是否确认写入？"
@@ -1689,11 +1690,11 @@ class DynParamGUI(QtWidgets.QMainWindow):
             # 读取配置并写入两臂
             cfg_path = str(self.dyn.robot_cfg_path)
             with open(cfg_path, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
+                cfg = yaml.safe_load(f)
             cfg["dyn_base_params_primary"] = beta_left
             cfg["dyn_base_params_secondary"] = beta_right
             with open(cfg_path, "w", encoding="utf-8") as f:
-                json.dump(cfg, f, ensure_ascii=False, indent=4)
+                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False)
             self.log_msg(
                 f"已写入左右臂辨识参数到机器人配置文件{cfg_path}, 重启服务后配置生效."
             )

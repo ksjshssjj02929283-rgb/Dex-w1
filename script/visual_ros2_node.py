@@ -5,6 +5,7 @@ from ament_index_python.packages import get_package_share_directory
 from pathlib import Path
 import rclpy
 import json
+import yaml
 import signal
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -45,11 +46,10 @@ class VisualRos2Node(Node):
         self.vis_sim.display(q0)
 
     def parse_robot_cfg(self):
-        # 读取 robot 部分
         package_share_path = get_package_share_directory("w1_server")
-        robot_cfg_path = Path(package_share_path) / "robot.cfg"
+        robot_cfg_path = Path(package_share_path) / "robot_config.yaml"
         with open(robot_cfg_path, 'r') as f:
-            cfg = json.load(f)
+            cfg = yaml.safe_load(f)
         self.robot_name = cfg.get("robot_name")
 
     def _subscriber_robot_server_state_sim_callback(self, msg):

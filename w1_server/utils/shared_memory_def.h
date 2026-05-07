@@ -8,8 +8,8 @@
 #include <cstring>
 #include <iostream>
 
-#define FEEDBACK_SHM_KEY 0x1001
-#define CONTROL_SHM_KEY 0x2001
+#define FEEDBACK_SHM_KEY 0x1002
+#define CONTROL_SHM_KEY 0x2002
 #define MAX_JOINT_NUM 32
 #define OMNI_MOTOR_NUM 4
 
@@ -17,8 +17,8 @@ struct ChassisFeedback {
     int64_t timestamp;
     double left_velocity;
     double right_velocity;
-    double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};   //底盘电机控制速度
-    double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};  //底盘电机控制方向
+    double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};   // 底盘电机控制速度
+    double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};  // 底盘电机控制方向
     uint16_t status_word;
     uint16_t error_code_left;
     uint16_t error_code_right;
@@ -29,17 +29,50 @@ struct ChassisFeedback {
     double right_temperature = 0;
 };
 
+struct ChassisControl {
+    uint64_t cnt = 0;
+
+    int chassis_mode = 0;  // 底盘控制模式. 1：差速，2：全向电机控制
+    // 差速底盘控制
+    double chassis_left_velocity = 0.0;
+    double chassis_right_velocity = 0.0;
+    // 用于全向底盘电机控制的全局变量,左前、右前、左后、右后
+    double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};   // 底盘电机控制速度
+    double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};  // 底盘电机控制方向
+    int chassis_estop = 0;
+    int chassis_neutral = 0;
+};
+
+struct JointFeedback {
+    char joint_name[10] = {};    // 关节名 / ID
+    uint16_t joint_status_word;  // 状态字
+    uint16_t joint_error_code;   // 错误码
+    double joint_position;       // 位置
+    double joint_velocity;       // 速度
+    double joint_torque;         // 力矩
+    double joint_sensor_torque;  // 力矩传感器
+    double joint_temperature;    // 温度
+};
+
+struct JointControl {
+    char joint_name[10] = {};            // 关节名 / ID
+    uint16_t joint_mode;                 // 控制模式（默认 0）
+    double joint_position;               // 给定位置 (rad)
+    double joint_velocity;               // 给定速度 (rad/s)
+    double joint_torque;                 // 给定力矩 (Nm)
+    double joint_torque_feedforward;     // 力矩前馈 (Nm)
+    double joint_Kp;                     // 刚度
+    double joint_Kd;                     // 阻尼
+    double joint_positive_torque_limit;  // 正向力矩限制
+    double joint_negative_torque_limit;  // 负向力矩限制
+};
+
 struct RobotFeedback {
     uint64_t cnt = 0;
     uint16_t robot_status_word = 0x0000;
     uint8_t al_status[MAX_JOINT_NUM] = {0};
-    uint16_t motor_error_code[MAX_JOINT_NUM] = {0};
-    uint8_t motor_temperature[MAX_JOINT_NUM] = {0};
-    uint16_t robot_error_code = 0x0000;
     // 关节反馈
-    double position[MAX_JOINT_NUM] = {0};
-    double velocity[MAX_JOINT_NUM] = {0};
-    double torque[MAX_JOINT_NUM] = {0};
+    JointFeedback joint_feedback[MAX_JOINT_NUM];
     // 底盘反馈
     ChassisFeedback chassis_feedback;
 };
@@ -48,30 +81,9 @@ struct RobotControl {
     uint64_t cnt = 0;
     uint16_t robot_control_word = 0x0000;
     // 关节控制
-    double position[MAX_JOINT_NUM] = {0};
-    double velocity[MAX_JOINT_NUM] = {0};
-    double acceleration[MAX_JOINT_NUM] = {0};
-    double torque_feedforward[MAX_JOINT_NUM] = {0};
-    double torque_external[MAX_JOINT_NUM] = {0};
-    double positive_velocity_limit[MAX_JOINT_NUM] = {0};
-    double negative_velocity_limit[MAX_JOINT_NUM] = {0};
-    double positive_torque_limit[MAX_JOINT_NUM] = {25.0};
-    double negative_torque_limit[MAX_JOINT_NUM] = {25.0};
+    JointControl joint_control[MAX_JOINT_NUM];
     // 底盘控制
-    int chassis_mode = 0;  //底盘控制模式. 0：全向整车控制，1：差速，2：全向电机控制
-    // 全向整车控制
-    int chassis_whole_mode = 0;
-    double chassis_velocity = 0.0;
-    double chassis_direction = 0.0;
-    // 差速底盘控制
-    double chassis_left_velocity = 0.0;
-    double chassis_right_velocity = 0.0;
-    // 用于全向底盘电机控制的全局变量,左前、右前、左后、右后
-    double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};   //底盘电机控制速度
-    double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};  //底盘电机控制方向
-    int chassis_estop = 0;
-    int chassis_neutral = 0;
-    uint64_t chassis_cnt = 0;
+    ChassisControl chassis_control;
 };
 
 inline void decodeTwoUint32FromUint64(std::uint64_t v, std::uint32_t& latest, std::uint32_t& reader) {

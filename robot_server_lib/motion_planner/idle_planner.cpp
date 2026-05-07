@@ -6,9 +6,9 @@ IdlePlanner::IdlePlanner(RobotModel robot_model) : MotionPlannerBase(robot_model
 
 IdlePlanner::~IdlePlanner() = default;
 
-ComputeCommandStatus IdlePlanner::ComputeCommand(const JointMeasurement &measurement,
-                                                 const TimeMetaInfo &time_meta,
-                                                 JointCommand &joint_cmd) {
+ComputeCommandStatus IdlePlanner::ComputeCommand(const JointMeasurement& measurement,
+                                                 const TimeMetaInfo& time_meta,
+                                                 JointCommand& joint_cmd) {
     joint_cmd.position = idle_position_ = measurement.q_desired_pre;
     joint_cmd.velocity.setZero();
     joint_cmd.acceleration.setZero();
@@ -16,9 +16,9 @@ ComputeCommandStatus IdlePlanner::ComputeCommand(const JointMeasurement &measure
     return ComputeCommandStatus::TaskOngoing;
 }
 
-ComputeCommandStatus IdlePlanner::ComputeStopCommand(const JointMeasurement &measurement,
-                                                     const TimeMetaInfo &time_meta,
-                                                     JointCommand &joint_cmd) {
+ComputeCommandStatus IdlePlanner::ComputeStopCommand(const JointMeasurement& measurement,
+                                                     const TimeMetaInfo& time_meta,
+                                                     JointCommand& joint_cmd) {
     joint_cmd.position = idle_position_ = measurement.q_desired_pre;
     joint_cmd.velocity.setZero();
     joint_cmd.acceleration.setZero();
@@ -26,9 +26,9 @@ ComputeCommandStatus IdlePlanner::ComputeStopCommand(const JointMeasurement &mea
     return ComputeCommandStatus::TaskOngoing;
 }
 
-bool IdlePlanner::ResetForNewTrajectory(const PlannerRequest &request,
-                                        const JointMeasurement &measurement,
-                                        const TimeMetaInfo &time_meta) {
+bool IdlePlanner::ResetForNewTrajectory(const PlannerRequest& request,
+                                        const JointMeasurement& measurement,
+                                        const TimeMetaInfo& time_meta) {
     idle_position_ = measurement.q_desired_pre;
 
     Eigen::VectorXd q_idle;

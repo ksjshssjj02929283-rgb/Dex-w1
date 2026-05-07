@@ -6,7 +6,7 @@ template <typename T>
 BoundedQueue<T>::BoundedQueue(std::uint64_t capacity) : ring_buffer_(capacity) {}
 
 template <typename T>
-bool BoundedQueue<T>::EnQueue(const T &element) {
+bool BoundedQueue<T>::EnQueue(const T& element) {
     const auto buffer_capacity = capacity();
     std::uint64_t current_begin = 0;
     std::uint64_t new_reserve_end = 0;
@@ -60,7 +60,7 @@ bool BoundedQueue<T>::EnQueue(const T &element) {
 }
 
 template <typename T>
-bool BoundedQueue<T>::DeQueue(T *element_output) {
+bool BoundedQueue<T>::DeQueue(T* element_output) {
     const std::uint64_t buffer_capacity = capacity();
     std::uint64_t new_begin = 0;
     std::uint64_t old_begin_place = 0;

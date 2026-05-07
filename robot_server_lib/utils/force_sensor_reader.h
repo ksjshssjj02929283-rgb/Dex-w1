@@ -19,7 +19,7 @@ namespace robot_server_lib {
 
 class ForceSensorReader {
 public:
-    explicit ForceSensorReader(const std::string &port, int baud = 921600)
+    explicit ForceSensorReader(const std::string& port, int baud = 921600)
         : port_(port), baud_(baud), fd_(-1), zero_calibrated_(false) {
         Initialize();
     }
@@ -114,7 +114,7 @@ public:
         std::array<double, 6> mean{};
         for (int i = 0; i < 6; ++i) {
             double s = 0;
-            for (auto &r : buf) s += r[i];
+            for (auto& r : buf) s += r[i];
             mean[i] = s / buf.size();
         }
         zero_frame_ = mean;
@@ -125,7 +125,7 @@ public:
     // 尝试读取一帧（非阻塞 + 整体超时，避免死等）
     // M4313SXX 数据帧格式: 0x55 0xAA | 0x14 | ID | Fx(2) | Fy(2) | Fz(2) | Mx(2) | My(2) | Mz(2) | Status(2) | Sum |
     // 0x0A 共 20 字节 (0x14 = 20)
-    bool ReadFrameOnce(std::array<double, 6> &out, int attempts = 3) {
+    bool ReadFrameOnce(std::array<double, 6>& out, int attempts = 3) {
         if (fd_ < 0) return false;
 
         uint8_t buf[32];
@@ -237,7 +237,7 @@ public:
     }
 
     // 非阻塞读取并自动做零点补偿，返回是否有新数据
-    bool Read(Vector6d &out) {
+    bool Read(Vector6d& out) {
         if (!zero_calibrated_ || !sensor_ready_) return false;
         std::array<double, 6> tmp{};
         if (!ReadFrameOnce(tmp)) return false;
@@ -246,7 +246,7 @@ public:
     }
 
 private:
-    bool SendCommand(const uint8_t *cmd, size_t len) {
+    bool SendCommand(const uint8_t* cmd, size_t len) {
         if (fd_ < 0) return false;
         ssize_t w = ::write(fd_, cmd, len);
         tcdrain(fd_);

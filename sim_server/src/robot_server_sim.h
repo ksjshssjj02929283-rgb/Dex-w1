@@ -31,10 +31,6 @@ protected:
         bool is_updated = false;
     } real_robot_sync_;
     Int64 streaming_request_id_{-1};
-    const std::string ecat_joint_name_[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",
-                                                      "NECK2",    "LEFT_J1",  "LEFT_J2",  "LEFT_J3",  "LEFT_J4",
-                                                      "LEFT_J5",  "LEFT_J6",  "LEFT_J7",  "RIGHT_J1", "RIGHT_J2",
-                                                      "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
 };
 
 }  // namespace robot_server_lib

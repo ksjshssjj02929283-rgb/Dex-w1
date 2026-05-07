@@ -11,15 +11,15 @@ public:
                            double controller_dt);
     ~EEPoseStreamingPlanner() override;
 
-    ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
-                                        const TimeMetaInfo &time_meta,
-                                        JointCommand &output_joint_cmd) override;
-    bool ResetForNewTrajectory(const PlannerRequest &request,
-                               const JointMeasurement &measurement,
-                               const TimeMetaInfo &time_meta) override;
+    ComputeCommandStatus ComputeCommand(const JointMeasurement& measurement,
+                                        const TimeMetaInfo& time_meta,
+                                        JointCommand& output_joint_cmd) override;
+    bool ResetForNewTrajectory(const PlannerRequest& request,
+                               const JointMeasurement& measurement,
+                               const TimeMetaInfo& time_meta) override;
 
 protected:
-    bool ToJointStreamingCommand(StreamingCommand &cmd, const JointMeasurement &measurement);
+    bool ToJointStreamingCommand(StreamingCommand& cmd, const JointMeasurement& measurement);
 
     std::shared_ptr<SingleWriterLatestBuffer<StreamingCommand>> streaming_buffer_;
     ruckig::Ruckig<ndof_robot> ruckig_otg_;

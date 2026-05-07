@@ -23,7 +23,7 @@ namespace robot_server_lib {
 namespace utils {
 
 template <typename VectorType>
-std::ostringstream MotorStatusToJsonArrayString(const VectorType &vec, int start_index, int count) {
+std::ostringstream MotorStatusToJsonArrayString(const VectorType& vec, int start_index, int count) {
     int total_size = static_cast<int>(GetContainerSize(vec));
     if (start_index < 0) start_index = 0;
     if (count < 0 || start_index + count > total_size) count = total_size - start_index;
@@ -62,7 +62,7 @@ std::ostringstream MotorStatusToJsonArrayString(const VectorType &vec, int start
     return ss;
 }
 
-inline std::ostringstream RobotStatuswordToJsonString(const int &status_word) {
+inline std::ostringstream RobotStatuswordToJsonString(const int& status_word) {
     std::ostringstream ss;
     switch (status_word) {
         case 0:
@@ -87,7 +87,7 @@ inline std::ostringstream RobotStatuswordToJsonString(const int &status_word) {
     return ss;
 }
 
-inline std::ostringstream RobotControlwordToJsonString(const int &control_word) {
+inline std::ostringstream RobotControlwordToJsonString(const int& control_word) {
     std::ostringstream ss;
     std::vector<std::string> flags;
 
@@ -112,7 +112,7 @@ inline std::ostringstream RobotControlwordToJsonString(const int &control_word) 
 }
 
 template <typename VectorType>
-std::ostringstream MotorErrorcodeToJsonArrayString(const VectorType &vec, int start_index, int count) {
+std::ostringstream MotorErrorcodeToJsonArrayString(const VectorType& vec, int start_index, int count) {
     int total_size = static_cast<int>(GetContainerSize(vec));
     if (start_index < 0) start_index = 0;
     if (count < 0 || start_index + count > total_size) count = total_size - start_index;

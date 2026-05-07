@@ -134,7 +134,7 @@ void RobotServer::PublishFeedback() {
     JointRawMeasurement raw_measurement{};
     if (this->robot_buffers_.joint_raw_measurement->PeekLatest(&raw_measurement)) {
         for (int i = 0; i < ndof_robot; ++i) {
-            feedback_msg.name[i] = ecat_joint_name_[i];
+            feedback_msg.name[i] = this->robot_model_.params_ptr->joint_names[i];
             feedback_msg.position[i] = raw_measurement.position[i];
             feedback_msg.velocity[i] = raw_measurement.velocity[i];
             feedback_msg.effort[i] = raw_measurement.effort[i];
@@ -145,7 +145,7 @@ void RobotServer::PublishFeedback() {
     JointMeasurement joint_measurement{};
     if (this->manager_buffers_.joint_measurement->PeekLatest(&joint_measurement)) {
         for (int i = 0; i < ndof_robot; ++i) {
-            feedback_msg.name[i] = ecat_joint_name_[i];
+            feedback_msg.name[i] = this->robot_model_.params_ptr->joint_names[i];
             feedback_msg.position[i] = joint_measurement.position[i];
             feedback_msg.velocity[i] = joint_measurement.velocity[i];
             feedback_msg.effort[i] = joint_measurement.effort[i];
@@ -178,7 +178,7 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
     auto robot_control_temp = q_cmd.cmd;
     for (size_t i = 0; i < msg->name.size(); ++i) {
         for (int j = 0; j < ndof_robot; ++j) {
-            if (ecat_joint_name_[j] == msg->name[i]) {
+            if (this->robot_model_.params_ptr->joint_names[j] == msg->name[i]) {
                 robot_control_temp.position[j] = msg->position[i];
                 break;
             }
@@ -189,7 +189,6 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
         planner_request.type = RequestType::StartJointStreaming;
         MoveRequest move_request;
         move_request.motion_group = MotionGroup::WholeBody;
-        move_request.use_ruckig = false;
         planner_request.data = move_request;
         streaming_request_id_ = StartStreaming(planner_request);
     }
@@ -212,7 +211,7 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
     auto robot_control_temp = q_cmd.cmd;
     for (size_t i = 0; i < msg->name.size(); ++i) {
         for (int j = 0; j < ndof_robot; ++j) {
-            if (ecat_joint_name_[j] == msg->name[i]) {
+            if (this->robot_model_.params_ptr->joint_names[j] == msg->name[i]) {
                 robot_control_temp.position[j] = msg->position[i];
                 break;
             }
@@ -223,7 +222,6 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
         planner_request.type = RequestType::StartJointStreaming;
         MoveRequest move_request;
         move_request.motion_group = MotionGroup::WholeBody;
-        move_request.use_ruckig = false;
         planner_request.data = move_request;
         streaming_request_id_ = StartStreaming(planner_request);
     }

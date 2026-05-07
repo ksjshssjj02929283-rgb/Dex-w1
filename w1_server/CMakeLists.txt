@@ -5,7 +5,7 @@ project(w1_server)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Release)
-set(W1_SERVER_VERSION "0.4.0")
+set(W1_SERVER_VERSION "0.4.2")
 
 # 如果系统安装了 ccache 则启用，否则保持不启用
 find_program(CCACHE_PROGRAM ccache)
@@ -55,6 +55,7 @@ find_package(pinocchio REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 # Other ROS 2 packages
 find_package(chassis_interfaces REQUIRED)
@@ -125,6 +126,7 @@ ament_target_dependencies(${PROJECT_NAME}
   joint_interfaces
   robot_server_interfaces
   robot_server_lib
+  yaml-cpp
 )
 
 target_link_libraries(${PROJECT_NAME}
@@ -138,11 +140,7 @@ install(
 )
 
 install(
-  FILES robot.cfg
-  DESTINATION share/${PROJECT_NAME}
-)
-install(
-  FILES chassis.cfg
+  FILES robot_config.yaml
   DESTINATION share/${PROJECT_NAME}
 )
 

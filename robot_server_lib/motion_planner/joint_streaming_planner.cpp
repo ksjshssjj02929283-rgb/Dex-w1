@@ -8,24 +8,19 @@ JointStreamingPlanner::JointStreamingPlanner(
     double controller_dt)
     : MotionPlannerBase(robot_model), streaming_buffer_(streaming_buffer), ruckig_otg_(controller_dt_) {
     controller_dt_ = controller_dt;
-    // 从配置读取流式运动限制参数
-    streaming_bounds_ = robot_model.params_ptr->streaming_bounds;
-    enable_streaming_ruckig_ = robot_model.params_ptr->enable_streaming_ruckig;
-    LOG_INFO << "JointStreamingPlanner initialized with streaming bounds: Velocity: " << streaming_bounds_.max_velocity
-             << ", Acceleration: " << streaming_bounds_.max_acceleration << ", Jerk: " << streaming_bounds_.max_jerk
-             << ", enable_streaming_ruckig: " << (enable_streaming_ruckig_ ? "true" : "false");
     for (auto i = 0; i < ndof_robot; i++) {
-        runtime_.input.max_velocity[i] = streaming_bounds_.max_velocity;
-        runtime_.input.max_acceleration[i] = streaming_bounds_.max_acceleration;
-        runtime_.input.max_jerk[i] = streaming_bounds_.max_jerk;
+        runtime_.input.max_velocity[i] = this->robot_model_.robot_property_default.joint_streaming_bounds.max_velocity;
+        runtime_.input.max_acceleration[i] =
+            this->robot_model_.robot_property_default.joint_streaming_bounds.max_acceleration;
+        runtime_.input.max_jerk[i] = this->robot_model_.robot_property_default.joint_streaming_bounds.max_jerk;
     }
 }
 
 JointStreamingPlanner::~JointStreamingPlanner() = default;
 
-ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasurement &measurement,
-                                                           const TimeMetaInfo &time_meta,
-                                                           JointCommand &output_joint_cmd) {
+ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasurement& measurement,
+                                                           const TimeMetaInfo& time_meta,
+                                                           JointCommand& output_joint_cmd) {
     if (!runtime_.streaming_finished) {
         StreamingCommand cmd_buffer;
         bool received = streaming_buffer_->PeekLatest(&cmd_buffer);
@@ -101,7 +96,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
                                                   : ComputeCommandStatus::TaskFinished;
     }
 
-    const StreamingCommand &latest_cmd = runtime_.latest_cmd.value();
+    const StreamingCommand& latest_cmd = runtime_.latest_cmd.value();
 
     // 如果有有效输入指令则检查指令是否超时, 如果超时则认为流式命令结束
     bool is_timeout = false;
@@ -113,7 +108,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
     }
     runtime_.streaming_finished = latest_cmd.streaming_finished || is_timeout;
 
-    if (!enable_streaming_ruckig_) {
+    if (!robot_property_.enable_streaming_ruckig) {
         // 直接输出最新命令作为关节命令
         bool robot_stopped = true;
         for (auto i = 0; i < ndof_robot; i++) {
@@ -225,9 +220,9 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
     }
 }
 
-bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
-                                                  const JointMeasurement &measurement,
-                                                  const TimeMetaInfo &time_meta) {
+bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest& request,
+                                                  const JointMeasurement& measurement,
+                                                  const TimeMetaInfo& time_meta) {
     assert(request.data.has_value());
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
 
@@ -235,18 +230,18 @@ bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
     auto move_request = std::get<MoveRequest>(request.data.value());
     SetMotionGroup(move_request.motion_group);
 
-    // 是否启用Ruckig
-    if (move_request.use_ruckig.has_value()) {
-        enable_streaming_ruckig_ = move_request.use_ruckig.value();
-    } else {
-        enable_streaming_ruckig_ = true;
-    }
-
     // 超时时间设置
     if (move_request.streaming_timeout.has_value()) {
         streaming_timeout_ = move_request.streaming_timeout.value();
     } else {
         streaming_timeout_ = DefaultStreamingTimeout;
+    }
+
+    // 从参数中更新最大速度、加速度、 加加速度
+    for (auto i = 0; i < ndof_robot; i++) {
+        runtime_.input.max_velocity[i] = this->robot_property_.joint_streaming_bounds.max_velocity;
+        runtime_.input.max_acceleration[i] = this->robot_property_.joint_streaming_bounds.max_acceleration;
+        runtime_.input.max_jerk[i] = this->robot_property_.joint_streaming_bounds.max_jerk;
     }
 
     // Ruckig 速度超时时间设置（比 streaming_timeout 更短，用于快速停止）

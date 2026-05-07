@@ -3,14 +3,14 @@
 namespace robot_server_lib {
 namespace kinematics {
 
-NumericalKinematics::NumericalKinematics(const pinocchio::Model &model)
+NumericalKinematics::NumericalKinematics(const pinocchio::Model& model)
     : KinematicsBase(), model_(model), data_(model), ndof_(model.nv) {
     // Initialize the kinematics with the provided parameters
 }
 
 NumericalKinematics::~NumericalKinematics() = default;
 
-PoseQuaternion NumericalKinematics::GetFK(const Eigen::VectorXd &q_in, const pinocchio::SE3 &tcp_frame) {
+PoseQuaternion NumericalKinematics::GetFK(const Eigen::VectorXd& q_in, const pinocchio::SE3& tcp_frame) {
     pinocchio::SE3 pose;
     pinocchio::forwardKinematics(model_, data_, q_in);
     pose = data_.oMi[model_.nv] * tcp_frame;
@@ -21,9 +21,9 @@ PoseQuaternion NumericalKinematics::GetFK(const Eigen::VectorXd &q_in, const pin
     return pose_out;
 }
 
-bool NumericalKinematics::GetIK(const PoseQuaternion &pose_in,
-                                Eigen::VectorXd &q_in_and_out,
-                                const pinocchio::SE3 &tcp_frame) {
+bool NumericalKinematics::GetIK(const PoseQuaternion& pose_in,
+                                Eigen::VectorXd& q_in_and_out,
+                                const pinocchio::SE3& tcp_frame) {
     assert(q_in_and_out.size() == this->ndof_);
 
     // remove the TCP frame from the pose
@@ -59,7 +59,7 @@ bool NumericalKinematics::GetIK(const PoseQuaternion &pose_in,
     }
 
     for (int i = 0; i < q_in_and_out.size(); ++i) {
-        //遍历每个关节， 如果变化量超过阈值则返回false
+        // 遍历每个关节， 如果变化量超过阈值则返回false
         if (std::abs(q_in[i] - q_in_and_out[i]) > threshold_) return false;
     }
     return true;

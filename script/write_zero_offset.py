@@ -55,7 +55,7 @@ def _get_motor_index_and_check_status(expected_count: int) -> list:
 def _get_motor_position_deg_by_index(motor_index_list: list) -> list:
     qpos_list = []
     for motor_index in motor_index_list:
-        result = subprocess.run(['ethercat', 'upload', '-p', str(motor_index), '0x6064', '0'], capture_output=True, text=True)
+        result = subprocess.run(['ethercat', 'upload', '-p', str(motor_index), '0x6064', '0', '-t', 'uint32'], capture_output=True, text=True)
         stdout = result.stdout
         pulse = int(stdout.split(' ')[1])
         qpos_list.append(_pulse_to_degree(pulse))
@@ -72,7 +72,7 @@ def _write_zero_offset(is_left: bool, index_list: list, zero_offset_list: list, 
         index = index_list[joint_id]
         offset = zero_offset_list[i_local]
 
-        result = subprocess.run(['ethercat', 'upload', '-p', str(index), '0x3b75', '0'], capture_output=True, text=True)
+        result = subprocess.run(['ethercat', 'upload', '-p', str(index), '0x3b75', '0', '-t', 'uint32'], capture_output=True, text=True)
         pre_offset = int(result.stdout.split(' ')[1])
         pre_offset_list.append(pre_offset)
 

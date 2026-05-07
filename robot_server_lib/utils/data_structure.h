@@ -88,6 +88,18 @@ struct SafetyCheckConfig {
     bool check_torque_limit{true};    // 是否检查力矩限位
 };
 
+struct TrajectoryBounds {
+    double max_velocity{1.0};
+    double max_acceleration{2.0};
+    double max_jerk{100000.0};
+
+    std::string ToString() const {
+        std::stringstream ss;
+        ss << "[" << max_velocity << ", " << max_acceleration << ", " << max_jerk << "]";
+        return ss.str();
+    }
+};
+
 struct RobotProperty {
     pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
@@ -95,6 +107,7 @@ struct RobotProperty {
     double global_speed_ratio{1.0};
     double safe_level{0.5};
     bool clear_error_flag{false};
+    bool allow_force_control{false};
     SafetyCheckConfig safety_check_config;  // 安全检查配置
     VectorDof joint_stiffness = VectorDof::Constant(200.0);
     VectorDof joint_damping = VectorDof::Constant(20.0);
@@ -103,6 +116,14 @@ struct RobotProperty {
     Vector12d cart_damping_ratio = Vector12d::Constant(1.0);  // 阻尼比 范围0.5 ~ 1.5
     Vector12d cart_impedance_force = Vector12d::Zero();       // 预估笛卡尔阻抗力
     ErrorCode error_code{ErrorCode::NoError};
+    TrajectoryBounds joint_streaming_bounds;     // joint streaming轨迹限制
+    bool enable_streaming_ruckig{true};          // /control/joint接口是否使用Ruckig轨迹规划
+    bool enable_chassis_shaper{false};           // 是否启用底盘速度输入整形器
+    bool enable_record{false};                   // 是否启用调试日志
+    bool enable_butterworth_filter[ndof_robot];  // 是否使用Butterworth滤波器
+    bool enable_input_shaper[ndof_robot];        // 是否使用输入整形器
+    VectorDof butterworth_filter_frequency = VectorDof::Constant(3.0);  // 输入滤波器频率
+    VectorDof input_shaper_frequency = VectorDof::Constant(6.0);        // 输入整形器频率
 };
 
 struct PlannerManagerInfo {
@@ -116,11 +137,11 @@ struct PoseQuaternion {
     Eigen::Quaterniond orientation{Eigen::Quaterniond::Identity()};
 
     PoseQuaternion() = default;
-    explicit PoseQuaternion(const Eigen::Matrix4d &mat) {
+    explicit PoseQuaternion(const Eigen::Matrix4d& mat) {
         position = mat.block<3, 1>(0, 3);
         orientation = Eigen::Quaterniond(mat.block<3, 3>(0, 0));
     }
-    explicit PoseQuaternion(const Eigen::Vector3d &pos, const Eigen::Quaterniond &ori)
+    explicit PoseQuaternion(const Eigen::Vector3d& pos, const Eigen::Quaterniond& ori)
         : position(pos), orientation(ori) {}
 
     std::string ToString() const {
@@ -137,14 +158,14 @@ struct PoseQuaternion {
     }
 
     // 组合两个位姿：等价于 4x4 变换矩阵相乘 (T = T1 * T2)
-    PoseQuaternion operator*(const PoseQuaternion &other) const {
+    PoseQuaternion operator*(const PoseQuaternion& other) const {
         PoseQuaternion res;
         res.orientation = orientation * other.orientation;
         res.position = position + orientation * other.position;
         return res;
     }
 
-    PoseQuaternion &operator*=(const PoseQuaternion &other) {
+    PoseQuaternion& operator*=(const PoseQuaternion& other) {
         position = position + orientation * other.position;
         orientation = orientation * other.orientation;
         return *this;
@@ -173,8 +194,6 @@ struct MoveRequest {
     std::optional<ReferenceFrame> reference_frame;
     std::optional<double> speed;
     std::optional<double> acceleration;  // 加速度比例，范围 0.01 ~ 1.0
-    std::optional<double> blend_tolerance;
-    std::optional<bool> use_ruckig;
     std::optional<std::vector<int>> endpoint_index;
     std::optional<double> interval;
     std::optional<double> streaming_timeout;
@@ -189,12 +208,6 @@ struct PlannerRequest {
     Int64 request_id{-1};
     RequestType type{RequestType::Empty};
     std::optional<PlannerData> data;  // start streaming指令无data
-};
-
-struct TrajectoryBounds {
-    double max_velocity{1.0};
-    double max_acceleration{2.0};
-    double max_jerk{100000.0};
 };
 
 struct StreamingCommand {
@@ -257,20 +270,18 @@ struct RobotParams {
     std::string robot_version;
     std::string left_arm_name;
     std::string right_arm_name;
-    std::vector<std::string> joint_command_sequence_by_name;  // 关节指令顺序
-    Eigen::VectorXd joint_max_velocity_limit_positive;        // 关节正向最大速度限制
-    Eigen::VectorXd joint_max_velocity_limit_negative;        // 关节负向最大速度限制
-    Eigen::VectorXd joint_max_torque_limit_positive;          // 关节正向最大力矩限制
-    Eigen::VectorXd joint_max_torque_limit_negative;          // 关节负向最大力矩限制
+    Eigen::VectorXd joint_velocity_limit;  // 关节最大速度限制（正负对称）
+    Eigen::VectorXd joint_torque_limit;    // 关节最大力矩限制（正负对称）
     Eigen::VectorXd joint_limit_margin_deg;  // 关节位置限位安全阈值（度），用于在硬限位基础上缩小范围
-    Eigen::VectorXd joints_primary;
-    Eigen::VectorXd joints_secondary;
-    Eigen::VectorXd joints_torso;
+    std::vector<std::string> joints_primary_names;
+    std::vector<std::string> joints_secondary_names;
+    std::vector<std::string> joints_torso_names;
+    std::vector<std::string> joint_names;                      // 所有关节名称（URDF顺序，不含universe）
+    std::vector<std::string> joints_a1;                        // A1模式关节名称
+    std::vector<std::string> joints_single_arm;                // 单臂模式关节名称
+    std::vector<std::string> joints_dual_arm;                  // 双臂模式关节名称
     std::optional<Eigen::VectorXd> dyn_base_params_primary;    // 动力学基参数矩阵(非方阵)
     std::optional<Eigen::VectorXd> dyn_base_params_secondary;  // 动力学基参数矩阵(非方阵)
-    TrajectoryBounds streaming_bounds;
-    bool enable_streaming_ruckig{true};     // 是否使用Ruckig轨迹生成器
-    SafetyCheckConfig safety_check_config;  // 安全检查配置
 };
 
 struct RobotModel {
@@ -278,7 +289,7 @@ struct RobotModel {
     std::shared_ptr<const pinocchio::Model> model_ptr;
     std::shared_ptr<const pinocchio::Model> primary_arm_model_ptr;
     std::shared_ptr<const pinocchio::Model> secondary_arm_model_ptr;
-    RobotProperty robot_property;
+    RobotProperty robot_property_default;
 
     RobotModel() = default;
     ~RobotModel() = default;

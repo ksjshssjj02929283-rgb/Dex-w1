@@ -4,6 +4,8 @@
  * @copyright Copyright (C) 2025 DexForce Technology Co., Ltd. All Rights Reserved.
  */
 #pragma once
+#include <yaml-cpp/yaml.h>
+
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -25,22 +27,20 @@
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "data_structure.h"
 
-using json = nlohmann::json;
-
 namespace robot_server_lib {
 namespace utils {
 RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path);
 
-void SetMax(std::atomic_int64_t &maximum_value, std::int64_t value);
+void SetMax(std::atomic_int64_t& maximum_value, std::int64_t value);
 
-PoseQuaternion VectorXdToPoseQuaternion(const Eigen::VectorXd &vec);
+PoseQuaternion VectorXdToPoseQuaternion(const Eigen::VectorXd& vec);
 
-PoseQuaternion StringToPoseQuaternion(const std::string &str);
+PoseQuaternion StringToPoseQuaternion(const std::string& str);
 
-Vector3d StringToVector3d(const std::string &str);
+Vector3d StringToVector3d(const std::string& str);
 
 template <typename T>
-inline std::size_t GetContainerSize(const T &c) {
+inline std::size_t GetContainerSize(const T& c) {
     return static_cast<std::size_t>(c.size());
 }
 
@@ -50,7 +50,7 @@ inline std::size_t GetContainerSize(const T (&)[N]) {
 }
 
 template <typename VectorType>
-std::ostringstream VectorToJsonArrayString(const VectorType &vec, int start_index, int count) {
+std::ostringstream VectorToJsonArrayString(const VectorType& vec, int start_index, int count) {
     int total_size = static_cast<int>(GetContainerSize(vec));
     if (start_index < 0) start_index = 0;
     if (count < 0 || start_index + count > total_size) count = total_size - start_index;
@@ -78,7 +78,7 @@ std::ostringstream VectorToJsonArrayString(const VectorType &vec, int start_inde
 }
 
 template <typename VectorType>
-std::ostringstream VectorToJsonArrayString(const VectorType &vec) {
+std::ostringstream VectorToJsonArrayString(const VectorType& vec) {
     std::ostringstream ss;
     ss << "[";
     for (size_t i = 0; i < vec.size(); ++i) {
@@ -105,20 +105,20 @@ StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interf
 PlannerRequest ParseMoveRequest(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>> action_handle);
 
-bool MapJointToWholeBody(const RobotModel &robot_model,
-                         const Eigen::VectorXd &q,
-                         JointPositionDof &q_ndof,
-                         const MotionGroup &motion_group);
+bool MapJointToWholeBody(const RobotModel& robot_model,
+                         const Eigen::VectorXd& q,
+                         JointPositionDof& q_ndof,
+                         const MotionGroup& motion_group);
 
-bool GetJointFromWholeBody(const RobotModel &robot_model,
-                           const JointPositionDof &q_ndof,
-                           Eigen::VectorXd &q,
-                           const MotionGroup &motion_group);
+bool GetJointFromWholeBody(const RobotModel& robot_model,
+                           const JointPositionDof& q_ndof,
+                           Eigen::VectorXd& q,
+                           const MotionGroup& motion_group);
 
 // 根据 motion_group 获取对应的关节数量
-int GetJointCount(const RobotModel &robot_model, const MotionGroup &motion_group);
+int GetJointCount(const RobotModel& robot_model, const MotionGroup& motion_group);
 
-Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary);
+Vector12d GetSensorWrench(const Vector6d& wrench_primary, const Vector6d& wrench_secondary);
 
 // 浮点数近似相等判断 (绝对+相对容差)
 inline bool FloatEqual(double a, double b, double tol = 1e-9) noexcept {
@@ -143,9 +143,9 @@ public:
 
     // 执行一次插值计算，返回插值后的位置
     // Call every control cycle (1kHz)
-    VectorDof Interpolate(const VectorDof &target_position);
+    VectorDof Interpolate(const VectorDof& target_position);
 
-    bool TargetChanged(const VectorDof &target_position) const {
+    bool TargetChanged(const VectorDof& target_position) const {
         for (int i = 0; i < target_position.size(); ++i) {
             if (!FloatEqual(target_position[i], target_position_[i])) {
                 return true;

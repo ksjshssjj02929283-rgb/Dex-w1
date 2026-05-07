@@ -16,9 +16,9 @@ MoveJointPlanner::MoveJointPlanner(RobotModel robot_model, double controller_dt,
 
 MoveJointPlanner::~MoveJointPlanner() = default;
 
-ComputeCommandStatus MoveJointPlanner::ComputeCommand(const JointMeasurement &measurement,
-                                                      const TimeMetaInfo &time_meta,
-                                                      JointCommand &joint_cmd) {
+ComputeCommandStatus MoveJointPlanner::ComputeCommand(const JointMeasurement& measurement,
+                                                      const TimeMetaInfo& time_meta,
+                                                      JointCommand& joint_cmd) {
     auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
     switch (status) {
         case ruckig::Working: {
@@ -57,14 +57,14 @@ ComputeCommandStatus MoveJointPlanner::ComputeCommand(const JointMeasurement &me
     }
 }
 
-bool MoveJointPlanner::ResetForNewTrajectory(const PlannerRequest &request,
-                                             const JointMeasurement &measurement,
-                                             const TimeMetaInfo &time_meta) {
+bool MoveJointPlanner::ResetForNewTrajectory(const PlannerRequest& request,
+                                             const JointMeasurement& measurement,
+                                             const TimeMetaInfo& time_meta) {
     assert(request.data.has_value());
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
 
-    const auto &move_request = std::get<MoveRequest>(request.data.value());
-    const auto &target_q = move_request.value;
+    const auto& move_request = std::get<MoveRequest>(request.data.value());
+    const auto& target_q = move_request.value;
     double speed_ratio = robot_property_.global_speed_ratio;
     double acc_ratio = 1.0;  // 加速度比例
     if (move_request.speed.has_value()) {

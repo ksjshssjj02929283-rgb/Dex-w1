@@ -20,7 +20,7 @@
 
 namespace robot_server_lib {
 
-enum class RobotMode { W1, A1, Arm };
+enum class RobotMode { W1, A1, SingleArm, DualArm, Unknown };
 
 using JointControlMsg = joint_interfaces::msg::JointControl;
 using JointPositionControlMsg = joint_interfaces::msg::JointPositionControl;
@@ -31,13 +31,12 @@ using SetProperty = robot_server_interfaces::srv::SetProperty;
 
 class RobotServer : public RobotServerBase {
 public:
-    RobotServer(std::filesystem::path robot_cfg_path, bool is_sim, RobotMode robot_mode = RobotMode::W1);
+    RobotServer(std::filesystem::path robot_cfg_path, bool is_sim);
 
 private:
     void TorqueControlThreadFunc() override;
     void PublishThreadFunc() override;
     Int64 StartStreaming(const PlannerRequest planner_request);
-    void InitParamConfig();  // 初始化/读写 torque_limit_ 的 JSON 配置
     void SwitchControlWord();
 
     void ControlCallback(const JointControlMsg::SharedPtr msg);
@@ -68,41 +67,34 @@ private:
     PlannerManagerInfo manager_info_{};
     PlannerManagerCommand planner_cmd_{};
     bool is_torque_limit_reached_[ndof_robot] = {false};  // 达到力矩限制标志位
-    // W1 模式下的默认关节名称，A1 模式下会动态调整
-    std::string ecat_joint_name_[ndof_robot] = {"ANKLE",    "KNEE",     "BUTTOCK",  "WAIST",    "NECK1",
-                                                "NECK2",    "LEFT_J1",  "LEFT_J2",  "LEFT_J3",  "LEFT_J4",
-                                                "LEFT_J5",  "LEFT_J6",  "LEFT_J7",  "RIGHT_J1", "RIGHT_J2",
-                                                "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
-    struct {
-        double positive_limit_Nm[ndof_robot]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 31.0, 31.0, 31.0, 31.0,
-                                             10.0,  10.0,  10.0,  31.0,  31.0, 31.0, 31.0, 10.0, 10.0, 10.0};
-        double negative_limit_Nm[ndof_robot]{100.0, 100.0, 100.0, 100.0, 10.0, 10.0, 31.0, 31.0, 31.0, 31.0,
-                                             10.0,  10.0,  10.0,  31.0,  31.0, 31.0, 31.0, 10.0, 10.0, 10.0};
-    } torque_limit_;  // 关节力矩限制参数默认值, 单位: Nm
 
     RunMode previous_mode_{RunMode::Position};
     int switch_counter_ = 0;
-    const int max_switch_count_ = 200;  // 切换控制模式时的位置保持周期数
-    bool enable_ruckig_ = true;         // /control/joint接口是否使用 Ruckig 进行轨迹规划
-    bool enable_record_ = false;        // 是否启用调试日志
-    int first_arm_joint_index_ = 6;     // 左臂第一个关节在整体关节数组中的索引 (W1:6, A1:0)
+    const int max_switch_count_ = 200;              // 切换控制模式时的位置保持周期数
     const double position_diff_threshold_ = 1.578;  // /control/joint 位置控制命令阈值，超过该值认为是异常命令
     double streaming_timeout_ = 0.5;                // /control/joint_position streaming 超时时间
     VectorDof joint_position_before_filter_ = VectorDof::Zero();
     VectorDof joint_position_after_filter_ = VectorDof::Zero();
 
-    // 整形器开关状态追踪变量，用于检测状态变化以实现自动重置
-    bool prev_chassis_shaper_enabled_ = false;
-
     // 机器人模式支持
-    RobotMode robot_mode_ = RobotMode::W1;  // 当前机器人模式
-    int ndof_config_;                       // 从配置读取的实际关节数 (W1=20, A1=14, Arm=7)
+    RobotMode robot_mode_ = RobotMode::W1;   // 当前机器人模式
+    int ndof_config_;                        // 从配置读取的实际关节数 (W1=20, A1=14, Arm=7)
+    bool robot_mode_auto_detected_ = false;  // 模式是否已自动检测
 
-    // 虚拟关节转换函数（A1/Arm 模式使用）
-    void Expand14ToVirtual20(const RobotFeedback& real_feedback, RobotFeedback& virtual_feedback);
-    void Expand7ToVirtual20(const RobotFeedback& real_feedback, RobotFeedback& virtual_feedback);
-    void ExtractVirtual20To14(const RobotControl& virtual_control, RobotControl& real_control);
-    void ExtractVirtual20To7(const RobotControl& virtual_control, RobotControl& real_control);
+    // 根据反馈数据自动检测机器人模式
+    RobotMode DetectRobotModeFromFeedback(const RobotFeedback& feedback);
+
+    // 判断是否为手臂关节
+    bool IsArmJoint(int joint_index) const;
+
+    // 获取当前模式下第一个手臂关节在全关节列表中的索引
+    int GetFirstJointIndex() const;
+
+    // 虚拟关节转换函数：根据模式从虚拟控制提取实际控制数据并写入关节名称
+    void SortControlByJointName(RobotControl& control);
+
+    // 根据关节名称重新排列反馈数据到标准顺序
+    bool SortFeedbackByJointName(RobotFeedback& feedback);
 
     // 底盘控制目标变量（不直接写入共享内存）
     struct {
@@ -130,18 +122,9 @@ private:
     utils::LinearInterpolator line_interpolator_;
 
     // 巴特沃斯滤波器数组 (1kHz 线程中应用)
-    bool enable_butterworth_filter_[ndof_robot] = {true, true, true, true, true, true, true, true, true, true,
-                                                   true, true, true, true, true, true, true, true, true, true};
-    double butterworth_filter_frequency_[ndof_robot] = {
-        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
-        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0};  // 每个关节的巴特沃斯滤波器截止频率，单位Hz
     std::shared_ptr<ButterworthFilter> butterworth_filter_[ndof_robot];
 
     // 输入整形器
-    std::atomic<bool> enable_chassis_shaper_{false};  // 是否启用底盘速度输入整形器
-    bool enable_input_shaper_[ndof_robot] = {false, false, false, false, false, false, false,
-                                             false, false, false, false, false, false, false,
-                                             false, false, false, false, false, false};  // 每个关节是否启用输入整形器
     std::shared_ptr<EIInputShaper> chassis_shaper_;
     EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
     const double DiffChassisWidth = 0.4390;
@@ -152,8 +135,6 @@ private:
     std::shared_ptr<EIInputShaper> input_shapers_[ndof_robot];
     EIInputShaper::Type input_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
     const double input_shaper_max_ramp_rad_per_sec = 10 * M_PI;
-    double input_shaper_frequency_[ndof_robot] = {2.9,  2.9,  2.9,  3.5, 12.0, 12.0, 6.7,  9.5,  9.5,  12.0,
-                                                  12.0, 12.0, 12.0, 6.7, 9.5,  9.5,  12.0, 12.0, 12.0, 12.0};
 };
 
 }  // namespace robot_server_lib

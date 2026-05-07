@@ -15,18 +15,6 @@ namespace dynamics
 // use_simple_dynamics: 是否使用简化动力学计算（跳过动力学参数，仅使用 pinocchio rnea）
 Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, bool use_simple_dynamics = false);
 
-// 计算正动力学
-Eigen::VectorXd ForwardDynamics(const pinocchio::Model& model, const Eigen::VectorXd& q, const Eigen::VectorXd& dq,
-                                const Eigen::VectorXd& torque_cmd, const std::vector<std::string>& joint_command_sequence_by_name);
-
-// 将数据从joint_command_sequence_by_name顺序映射到URDF顺序
-Eigen::VectorXd MapToUrdfOrder(const pinocchio::Model& model, const Eigen::VectorXd& input,
-                               const std::vector<std::string>& joint_command_sequence_by_name);
-
-// 将数据从URDF顺序映射到joint_command_sequence_by_name顺序
-Eigen::VectorXd MapToParamOrder(const pinocchio::Model& model, const Eigen::VectorXd& input,
-                                const std::vector<std::string>& joint_command_sequence_by_name);
-
 // 由符号计算生成的逆动力学计算函数
 Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq,
                                    const VectorDof& ddq, const Vector3d& gravity_acc_armbase, MotionGroup motion_group);

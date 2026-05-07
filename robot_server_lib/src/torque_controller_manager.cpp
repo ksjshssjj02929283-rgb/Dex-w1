@@ -165,7 +165,7 @@ ProcessResponse TorqueControllerManager::OperatingProcess() {
         return response;
     }
     assert(TimePointSystem::IsValid(runtime_data_.raw_measurement.time_point));
-    const auto &received_cmd_time = runtime_data_.input_joint_cmd.time_point;
+    const auto& received_cmd_time = runtime_data_.input_joint_cmd.time_point;
     const Int64 received_cmd_seq = runtime_data_.input_joint_cmd.cmd.sequence_number;
 
     if (current_episode_index_ == runtime_data_.time_meta.episode_index) {

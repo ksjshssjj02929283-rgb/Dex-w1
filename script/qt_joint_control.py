@@ -78,7 +78,6 @@ class JointControlWidget(QWidget):
 
         self.feedback_table = QTableWidget()
         self.control_table = CustomTableWidget(self.send_control_data)
-        self.control_table.itemChanged.connect(self.onControlItemChanged)
 
         self.sync_button = QPushButton("同步反馈数据到控制表")
         self.sync_button.clicked.connect(self.sync_from_feedback)
@@ -110,12 +109,6 @@ class JointControlWidget(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_feedback_table)
         self.timer.start(500)
-
-        # 运动计划: { name: {start_pos, target_pos, velocity, start_time, total_time} }
-        self.motion_plans = {}
-        self.motion_timer = QTimer()
-        self.motion_timer.timeout.connect(self.update_motion)
-        self.motion_timer.start(10)  # 0.01s
 
         # 滚动条同步滚动
         self.feedback_vbar = self.feedback_table.verticalScrollBar()
@@ -219,130 +212,18 @@ class JointControlWidget(QWidget):
     def send_control_data(self, changed_row, changed_col):
         if changed_row is None or changed_col is None:
             return
+        if changed_col != 1:
+            return
         try:
             name_item = self.control_table.item(changed_row, 0)
             pos_item = self.control_table.item(changed_row, 1)
-            vel_item = self.control_table.item(changed_row, 2)
-            if not (name_item and pos_item and vel_item):
+            if not (name_item and pos_item):
                 return
             name = name_item.text()
             target_position = float(pos_item.text())
-            target_velocity = float(vel_item.text())
-            target_velocity = max(0.01, min(0.2, target_velocity))
-
-            # 修改 target_velocity 时不立即下发位置，只调整当前计划速度
-            if changed_col == 2:  # velocity 列
-                if name in self.motion_plans:
-                    now = time.time()
-                    plan = self.motion_plans[name]
-                    elapsed = now - plan['start_time']
-                    if plan['total_time'] > 0:
-                        ratio = min(elapsed / plan['total_time'], 1.0)
-                        current_pos = plan['start_pos'] + (plan['target_pos'] - plan['start_pos']) * ratio
-                    else:
-                        current_pos = plan['target_pos']
-                    remaining_dist = plan['target_pos'] - current_pos
-                    if abs(remaining_dist) < 1e-6 or target_velocity <= 0.0:
-                        # 结束计划，等下一次位置修改再处理
-                        self.motion_plans.pop(name, None)
-                    else:
-                        new_total = abs(remaining_dist) / target_velocity
-                        self.motion_plans[name] = {
-                            'start_pos': current_pos,
-                            'target_pos': plan['target_pos'],
-                            'velocity': target_velocity,
-                            'start_time': now,
-                            'total_time': new_total,
-                        }
-                return
-
-            # 修改 target_position 时启动/更新计划
-            if changed_col == 1:  # position 列
-                # step 模式下直接一次性下发，不进行插值
-                if self.step_mode:
-                    self.motion_plans.pop(name, None)
-                    self.ros_node.publish_control([{'name': name, 'target_position': target_position}])
-                    return
-                # 若速度为0则直接一次性下发
-                if target_velocity <= 0.0:
-                    self.motion_plans.pop(name, None)
-                    self.ros_node.publish_control([{'name': name, 'target_position': target_position}])
-                    return
-                self.start_motion_plan(name, target_position, target_velocity)
+            self.ros_node.publish_control([{'name': name, 'target_position': target_position}])
         except Exception as e:
             print(f"Error parsing control data row {changed_row}: {e}")
-
-    def get_current_feedback_position(self, name):
-        for js in self.ros_node.joint_states:
-            if js['name'] == name:
-                return js.get('position', 0.0)
-        return 0.0
-
-    def start_motion_plan(self, name, target_pos, velocity):
-        current_time = time.time()
-        # 若已有计划，先计算当前位置作为新的起点
-        if name in self.motion_plans:
-            plan = self.motion_plans[name]
-            elapsed = current_time - plan['start_time']
-            if plan['total_time'] > 0:
-                ratio = min(elapsed / plan['total_time'], 1.0)
-                current_pos = plan['start_pos'] + (plan['target_pos'] - plan['start_pos']) * ratio
-            else:
-                current_pos = plan['target_pos']
-        else:
-            current_pos = self.get_current_feedback_position(name)
-
-        distance = target_pos - current_pos
-        if abs(distance) < 1e-6 or velocity <= 0.0:
-            # 直接到达
-            self.motion_plans.pop(name, None)
-            self.ros_node.publish_control([{'name': name, 'target_position': target_pos}])
-            return
-
-        total_time = abs(distance) / velocity
-        self.motion_plans[name] = {
-            'start_pos': current_pos,
-            'target_pos': target_pos,
-            'velocity': velocity,
-            'start_time': current_time,
-            'total_time': total_time,
-        }
-
-    def update_motion(self):
-        if not self.motion_plans:
-            return
-        now = time.time()
-        publish_items = []
-        finished = []
-        for name, plan in self.motion_plans.items():
-            dt = now - plan['start_time']
-            if plan['total_time'] <= 0:
-                pos = plan['target_pos']
-                finished.append(name)
-            else:
-                ratio = dt / plan['total_time']
-                if ratio >= 1.0:
-                    pos = plan['target_pos']
-                    finished.append(name)
-                else:
-                    pos = plan['start_pos'] + (plan['target_pos'] - plan['start_pos']) * ratio
-            publish_items.append({'name': name, 'target_position': pos})
-        if publish_items:
-            self.ros_node.publish_control(publish_items)
-        for name in finished:
-            self.motion_plans.pop(name, None)
-
-    def onControlItemChanged(self, item):
-        # 仅对 velocity 列 (索引2) 手动输入进行限幅
-        if item and item.column() == 2:
-            try:
-                v = float(item.text())
-            except ValueError:
-                v = 0.10
-            v = max(0.01, min(0.2, v))
-            new_text = f"{v:.2f}"
-            if item.text() != new_text:
-                item.setText(new_text)
 
 class ROS2Node(Node):
     def __init__(self, update_callback, use_sim=False):

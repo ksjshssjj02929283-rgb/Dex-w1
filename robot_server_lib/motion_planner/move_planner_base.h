@@ -35,19 +35,19 @@ public:
     virtual ~MotionPlannerBase() = default;
 
     // Compute the next joint command in current episode
-    virtual ComputeCommandStatus ComputeCommand(const JointMeasurement &measurement,
-                                                const TimeMetaInfo &time_meta,
-                                                JointCommand &joint_cmd) = 0;
+    virtual ComputeCommandStatus ComputeCommand(const JointMeasurement& measurement,
+                                                const TimeMetaInfo& time_meta,
+                                                JointCommand& joint_cmd) = 0;
 
-    virtual ComputeCommandStatus ComputeStopCommand(const JointMeasurement &measurement,
-                                                    const TimeMetaInfo &time_meta,
-                                                    JointCommand &joint_cmd);
+    virtual ComputeCommandStatus ComputeStopCommand(const JointMeasurement& measurement,
+                                                    const TimeMetaInfo& time_meta,
+                                                    JointCommand& joint_cmd);
 
-    virtual bool ResetForNewTrajectory(const PlannerRequest &request,
-                                       const JointMeasurement &measurement,
-                                       const TimeMetaInfo &time_meta) = 0;
+    virtual bool ResetForNewTrajectory(const PlannerRequest& request,
+                                       const JointMeasurement& measurement,
+                                       const TimeMetaInfo& time_meta) = 0;
 
-    void SetRobotProperty(const RobotProperty &property);
+    void SetRobotProperty(const RobotProperty& property);
 
     std::shared_ptr<kinematics::KinematicsBase> KinematicsPrimary() const { return kinematics_primary_ptr_; }
     std::shared_ptr<kinematics::KinematicsBase> KinematicsSecondary() const { return kinematics_secondary_ptr_; }
@@ -64,9 +64,10 @@ protected:
     std::shared_ptr<kinematics::KinematicsBase> kinematics_secondary_ptr_;
     std::shared_ptr<kinematics::TorsoKinematics> kinematics_torso_ptr_;
 
-    TrajectoryBounds streaming_bounds_{1.0 * M_PI, 3.0 * M_PI, 10.0 * M_PI};  // trajectory bounds, unit: rad
-    TrajectoryBounds stop_bounds_{1.0 * M_PI, 3.0 * M_PI, 10.0 * M_PI};       // trajectory bounds, unit: rad
-    TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI, 2.0 * M_PI};       // trajectory bounds, unit: rad
+    TrajectoryBounds joint_streaming_bounds_{1.0 * M_PI, 3.0 * M_PI,
+                                             10.0 * M_PI};               // joint streaming trajectory bounds, unit: rad
+    TrajectoryBounds stop_bounds_{1.0 * M_PI, 3.0 * M_PI, 10.0 * M_PI};  // trajectory bounds, unit: rad
+    TrajectoryBounds joint_bounds_{1.0 * M_PI, 1.0 * M_PI, 2.0 * M_PI};  // trajectory bounds, unit: rad
 
     struct {
         TrajectoryBounds translation{0.5, 0.5, 0.5};                    // cartesian space translation bounds, unit: m

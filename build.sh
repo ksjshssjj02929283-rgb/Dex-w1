@@ -5,32 +5,24 @@ source /opt/ros/humble/setup.bash
 # 构建类型：Release（默认）或 RelWithDebInfo（开发模式，编译更快）
 BUILD_TYPE=${BUILD_TYPE:-Release}
 
+# colcon 包级并发和单包编译并发默认保守一些，避免大文件编译时被系统直接杀掉
+COLCON_PARALLEL_WORKERS=${COLCON_PARALLEL_WORKERS:-2}
+CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL:-4}
+export CMAKE_BUILD_PARALLEL_LEVEL
+
 # === 1. 检查 ROS 环境 ===
 if [ -z "$ROS_DISTRO" ]; then
     echo "❌ 请先 source 对应ROS环境，例如："
     echo "   source /opt/ros/humble/setup.bash"
     exit 1
 fi
-echo "✅ ROS版本: $ROS_DISTRO"
 
-# 输出环境中已有的ROS包名字, 检查是否有robot_server_interfaces包
-if ros2 pkg list | grep -q "robot_server_interfaces"; then
-    echo "✅ 找到 robot_server_interfaces 包, 跳过dexe_interface包编译。"
-else
-    echo "⚠️ 未找到 robot_server_interfaces 包, 需要重新编译 dexe_interface 包。"
-    if [ -f "${WORKSPACE_DIR}/.gitmodules" ]; then
-        echo "🔄 检测到 .gitmodules，正在同步子模块..."
-        git submodule sync --recursive
-        git submodule update --init --recursive
-        echo "✅ 子模块已更新完成。"
-    else
-        echo "ℹ️ 未检测到 .gitmodules，跳过子模块更新。"
-    fi
+if [ -f "${WORKSPACE_DIR}/.gitmodules" ]; then
+    git submodule sync --recursive
+    git submodule update --init --recursive
 fi
-
 cd "${WORKSPACE_DIR}/.."
-PACKAGES=$(find dexe_robot_server -name "package.xml" -exec sh -c 'dirname {} | xargs basename' \; | sort -u | tr '\n' ' ')
-colcon build --parallel-workers $(nproc) --cmake-args -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DENABLE_TORQUE_CONTROL_SIMULATION=OFF --packages-select $PACKAGES
+colcon build --parallel-workers "${COLCON_PARALLEL_WORKERS}" --cmake-args -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DENABLE_TORQUE_CONTROL_SIMULATION=OFF -DCMAKE_CXX_COMPILER_LAUNCHER= -DCMAKE_C_COMPILER_LAUNCHER= --base-paths dexe_robot_server --packages-up-to robot_server_lib w1_server sim_server
 
 # 复制到 /opt 并配置运行时库路径
 OPT_DIR=/opt/w1_server

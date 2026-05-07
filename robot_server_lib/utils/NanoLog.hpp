@@ -48,32 +48,32 @@ struct NonGuaranteedLogger;
 // 日志实例管理器，支持多实例日志
 class LogManager {
 public:
-    static LogManager &instance();
+    static LogManager& instance();
 
     // 创建或获取命名日志实例
     // file_suffix: 日志文件后缀，默认 "txt"，可设置为 "jsonl" 等
-    NanoLogger *get_or_create_logger(const std::string &name,
+    NanoLogger* get_or_create_logger(const std::string& name,
                                      GuaranteedLogger gl,
-                                     const std::string &log_directory,
-                                     const std::string &log_file_name,
+                                     const std::string& log_directory,
+                                     const std::string& log_file_name,
                                      uint32_t roll_size_mb,
                                      uint32_t max_files,
-                                     const std::string &file_suffix = "txt");
+                                     const std::string& file_suffix = "txt");
 
     // 获取用于 LOG 宏的默认日志实例
-    NanoLogger *get_default_logger();
+    NanoLogger* get_default_logger();
 
     // 获取默认原子指针（用于 LOG 宏）
-    std::atomic<NanoLogger *> *get_default_atomic_logger();
+    std::atomic<NanoLogger*>* get_default_atomic_logger();
 
     // 向指定名称的日志实例写入一行日志
-    void write_to_logger(const std::string &name, NanoLogLine &&logline);
+    void write_to_logger(const std::string& name, NanoLogLine&& logline);
 
 private:
     LogManager() = default;
     std::map<std::string, std::unique_ptr<NanoLogger>> loggers_;
-    NanoLogger *default_logger_ = nullptr;
-    std::atomic<NanoLogger *> atomic_default_logger_{nullptr};
+    NanoLogger* default_logger_ = nullptr;
+    std::atomic<NanoLogger*> atomic_default_logger_{nullptr};
 };
 
 enum class LogLevel : uint8_t { DEBUG, INFO, WARN, CRIT };
@@ -88,30 +88,30 @@ public:
     static bool s_enable_timestamp;
 
     // 构造函数：enable_timestamp 参数控制该日志行是否输出时间戳（默认继承静态配置）
-    NanoLogLine(LogLevel level, char const *file, char const *function, uint32_t line, bool enable_timestamp = true);
+    NanoLogLine(LogLevel level, char const* file, char const* function, uint32_t line, bool enable_timestamp = true);
     ~NanoLogLine();
 
-    NanoLogLine(NanoLogLine &&) = default;
-    NanoLogLine &operator=(NanoLogLine &&) = default;
+    NanoLogLine(NanoLogLine&&) = default;
+    NanoLogLine& operator=(NanoLogLine&&) = default;
 
-    void stringify(std::ostream &os);
+    void stringify(std::ostream& os);
 
-    NanoLogLine &operator<<(char arg);
-    NanoLogLine &operator<<(int32_t arg);
-    NanoLogLine &operator<<(uint32_t arg);
-    NanoLogLine &operator<<(int64_t arg);
-    NanoLogLine &operator<<(uint64_t arg);
-    NanoLogLine &operator<<(double arg);
-    NanoLogLine &operator<<(std::string const &arg);
+    NanoLogLine& operator<<(char arg);
+    NanoLogLine& operator<<(int32_t arg);
+    NanoLogLine& operator<<(uint32_t arg);
+    NanoLogLine& operator<<(int64_t arg);
+    NanoLogLine& operator<<(uint64_t arg);
+    NanoLogLine& operator<<(double arg);
+    NanoLogLine& operator<<(std::string const& arg);
 
     template <size_t N>
-    NanoLogLine &operator<<(const char (&arg)[N]) {
+    NanoLogLine& operator<<(const char (&arg)[N]) {
         encode(string_literal_t(arg));
         return *this;
     }
 
     // std::vector<double>
-    NanoLogLine &operator<<(const std::vector<double> &vec) {
+    NanoLogLine& operator<<(const std::vector<double>& vec) {
         (*this) << "[";
         for (size_t i = 0; i < vec.size(); ++i) {
             (*this) << vec[i];
@@ -124,7 +124,7 @@ public:
     }
 
     // std::vector<int>
-    NanoLogLine &operator<<(const std::vector<int> &vec) {
+    NanoLogLine& operator<<(const std::vector<int>& vec) {
         (*this) << "[";
         for (size_t i = 0; i < vec.size(); ++i) {
             (*this) << static_cast<int32_t>(vec[i]);
@@ -137,7 +137,7 @@ public:
     }
 
     template <typename Derived>
-    NanoLogLine &operator<<(const Eigen::EigenBase<Derived> &expr) {
+    NanoLogLine& operator<<(const Eigen::EigenBase<Derived>& expr) {
         // 无括号，无对齐，元素与行之间都用 ", " 分隔
         static const Eigen::IOFormat kFmt(Eigen::StreamPrecision, Eigen::DontAlignCols, ", ", ", ", "", "", "", "");
         std::ostringstream oss;
@@ -146,7 +146,7 @@ public:
     }
 
     template <typename Derived>
-    NanoLogLine &operator<<(const Eigen::QuaternionBase<Derived> &q) {
+    NanoLogLine& operator<<(const Eigen::QuaternionBase<Derived>& q) {
         // 同样去掉括号
         std::ostringstream oss;
         oss << q.x() << ", " << q.y() << ", " << q.z() << ", " << q.w();
@@ -154,24 +154,24 @@ public:
     }
 
     template <typename Arg>
-    typename std::enable_if<std::is_same<Arg, char const *>::value, NanoLogLine &>::type operator<<(Arg const &arg) {
+    typename std::enable_if<std::is_same<Arg, char const*>::value, NanoLogLine&>::type operator<<(Arg const& arg) {
         encode(arg);
         return *this;
     }
 
     template <typename Arg>
-    typename std::enable_if<std::is_same<Arg, char *>::value, NanoLogLine &>::type operator<<(Arg const &arg) {
+    typename std::enable_if<std::is_same<Arg, char*>::value, NanoLogLine&>::type operator<<(Arg const& arg) {
         encode(arg);
         return *this;
     }
 
     struct string_literal_t {
-        explicit string_literal_t(char const *s) : m_s(s) {}
-        char const *m_s;
+        explicit string_literal_t(char const* s) : m_s(s) {}
+        char const* m_s;
     };
 
 private:
-    char *buffer();
+    char* buffer();
 
     template <typename Arg>
     void encode(Arg arg);
@@ -179,12 +179,12 @@ private:
     template <typename Arg>
     void encode(Arg arg, uint8_t type_id);
 
-    void encode(char *arg);
-    void encode(char const *arg);
+    void encode(char* arg);
+    void encode(char const* arg);
     void encode(string_literal_t arg);
-    void encode_c_string(char const *arg, size_t length);
+    void encode_c_string(char const* arg, size_t length);
     void resize_buffer_if_needed(size_t additional_bytes);
-    void stringify(std::ostream &os, char *start, char const *const end);
+    void stringify(std::ostream& os, char* start, char const* const end);
 
 private:
     size_t m_bytes_used;
@@ -199,7 +199,7 @@ struct NanoLog {
      * Ideally this should have been operator+=
      * Could not get that to compile, so here we are...
      */
-    bool operator==(NanoLogLine &);
+    bool operator==(NanoLogLine&);
 };
 
 void set_log_level(LogLevel level);
@@ -238,24 +238,24 @@ struct GuaranteedLogger {};
  * Rotation happens when nanolog.txt exceeds roll size.
  */
 void initialize(GuaranteedLogger gl,
-                std::string const &log_directory,
-                std::string const &log_file_name,
+                std::string const& log_directory,
+                std::string const& log_file_name,
                 uint32_t log_file_roll_size_mb);
 void initialize(NonGuaranteedLogger ngl,
-                std::string const &log_directory,
-                std::string const &log_file_name,
+                std::string const& log_directory,
+                std::string const& log_file_name,
                 uint32_t log_file_roll_size_mb);
 
 // New overloads with fixed rolling file count
 void initialize(GuaranteedLogger gl,
-                std::string const &log_directory,
-                std::string const &log_file_name,
+                std::string const& log_directory,
+                std::string const& log_file_name,
                 uint32_t log_file_roll_size_mb,
                 uint32_t max_files);
 
 void initialize(NonGuaranteedLogger ngl,
-                std::string const &log_directory,
-                std::string const &log_file_name,
+                std::string const& log_directory,
+                std::string const& log_file_name,
                 uint32_t log_file_roll_size_mb,
                 uint32_t max_files);
 

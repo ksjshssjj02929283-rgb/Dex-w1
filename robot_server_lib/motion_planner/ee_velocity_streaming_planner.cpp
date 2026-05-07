@@ -12,9 +12,9 @@ EEVelocityStreamingPlanner::EEVelocityStreamingPlanner(
 
 EEVelocityStreamingPlanner::~EEVelocityStreamingPlanner() = default;
 
-ComputeCommandStatus EEVelocityStreamingPlanner::ComputeCommand(const JointMeasurement &measurement,
-                                                                const TimeMetaInfo &time_meta,
-                                                                JointCommand &output_joint_cmd) {
+ComputeCommandStatus EEVelocityStreamingPlanner::ComputeCommand(const JointMeasurement& measurement,
+                                                                const TimeMetaInfo& time_meta,
+                                                                JointCommand& output_joint_cmd) {
     if (!runtime_.streaming_finished) {
         StreamingCommand cmd_buffer;
         bool received = streaming_buffer_->PeekLatest(&cmd_buffer);
@@ -48,7 +48,7 @@ ComputeCommandStatus EEVelocityStreamingPlanner::ComputeCommand(const JointMeasu
                                                   : ComputeCommandStatus::TaskFinished;
     }
 
-    const StreamingCommand &latest_cmd = runtime_.latest_cmd.value();
+    const StreamingCommand& latest_cmd = runtime_.latest_cmd.value();
 
     // 检查是否超时
     bool is_timeout = false;
@@ -93,24 +93,17 @@ ComputeCommandStatus EEVelocityStreamingPlanner::ComputeCommand(const JointMeasu
                 input_velocity_secondary.head<3>() = transform_secondary.linear() * input_velocity_secondary.head<3>();
                 input_velocity_secondary.tail<3>() = transform_secondary.linear() * input_velocity_secondary.tail<3>();
             } else if (reference_frame_ == ReferenceFrame::WorldBase) {
-                const auto &joint_command_sequence_by_name =
-                    this->robot_model_.params_ptr->joint_command_sequence_by_name;
-
                 // Primary arm transformation
-                Eigen::VectorXd q_desired_urdf_primary = dynamics::MapToUrdfOrder(
-                    *this->robot_model_.primary_arm_model_ptr, desired_q_primary, joint_command_sequence_by_name);
                 auto primary_armbase_pose_in_worldbase = pinocchio::GetFkByFrameId(
-                    *this->robot_model_.primary_arm_model_ptr, q_desired_urdf_primary, this->arm_base_id_);
+                    *this->robot_model_.primary_arm_model_ptr, desired_q_primary, this->primary_arm_base_id_);
                 input_velocity_primary.head<3>() =
                     primary_armbase_pose_in_worldbase.rotation().transpose() * input_velocity_primary.head<3>();
                 input_velocity_primary.tail<3>() =
                     primary_armbase_pose_in_worldbase.rotation().transpose() * input_velocity_primary.tail<3>();
 
                 // Secondary arm transformation
-                Eigen::VectorXd q_desired_urdf_secondary = dynamics::MapToUrdfOrder(
-                    *this->robot_model_.secondary_arm_model_ptr, desired_q_secondary, joint_command_sequence_by_name);
                 auto secondary_armbase_pose_in_worldbase = pinocchio::GetFkByFrameId(
-                    *this->robot_model_.secondary_arm_model_ptr, q_desired_urdf_secondary, this->arm_base_id_);
+                    *this->robot_model_.secondary_arm_model_ptr, desired_q_secondary, this->secondary_arm_base_id_);
                 input_velocity_secondary.head<3>() =
                     secondary_armbase_pose_in_worldbase.rotation().transpose() * input_velocity_secondary.head<3>();
                 input_velocity_secondary.tail<3>() =
@@ -159,12 +152,10 @@ ComputeCommandStatus EEVelocityStreamingPlanner::ComputeCommand(const JointMeasu
                 input_velocity.head<3>() = transform.linear() * input_velocity.head<3>();
                 input_velocity.tail<3>() = transform.linear() * input_velocity.tail<3>();
             } else if (reference_frame_ == ReferenceFrame::WorldBase) {
-                const auto &joint_command_sequence_by_name =
-                    this->robot_model_.params_ptr->joint_command_sequence_by_name;
-                Eigen::VectorXd q_desired_urdf = dynamics::MapToUrdfOrder(
-                    *this->robot_model_.model_ptr, measurement.q_desired_pre, joint_command_sequence_by_name);
+                int arm_base_id =
+                    (motion_group_ == MotionGroup::Primary) ? this->primary_arm_base_id_ : this->secondary_arm_base_id_;
                 auto armbase_pose_in_worldbase =
-                    pinocchio::GetFkByFrameId(*this->robot_model_.model_ptr, q_desired_urdf, this->arm_base_id_);
+                    pinocchio::GetFkByFrameId(*this->robot_model_.model_ptr, measurement.q_desired_pre, arm_base_id);
                 input_velocity.head<3>() = armbase_pose_in_worldbase.rotation().transpose() * input_velocity.head<3>();
                 input_velocity.tail<3>() = armbase_pose_in_worldbase.rotation().transpose() * input_velocity.tail<3>();
             }
@@ -210,9 +201,9 @@ ComputeCommandStatus EEVelocityStreamingPlanner::ComputeCommand(const JointMeasu
     }
 }
 
-bool EEVelocityStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &request,
-                                                       const JointMeasurement &measurement,
-                                                       const TimeMetaInfo &time_meta) {
+bool EEVelocityStreamingPlanner::ResetForNewTrajectory(const PlannerRequest& request,
+                                                       const JointMeasurement& measurement,
+                                                       const TimeMetaInfo& time_meta) {
     assert(request.data.has_value());
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
     auto move_request = std::get<MoveRequest>(request.data.value());
@@ -229,29 +220,27 @@ bool EEVelocityStreamingPlanner::ResetForNewTrajectory(const PlannerRequest &req
     runtime_.streaming_finished = false;
     runtime_.latest_cmd = std::nullopt;
 
-    int first_arm_joint_id;
     if (motion_group_ == MotionGroup::Primary) {
         runtime_.qdot_solved_primary.setZero(ndof_primary_);
         runtime_.qdot_solved = runtime_.qdot_solved_primary;  // Backward compatibility
         this->pinocchio_model_ = *this->robot_model_.primary_arm_model_ptr;
-        first_arm_joint_id = this->robot_model_.params_ptr->joints_primary[0];
     } else if (motion_group_ == MotionGroup::Secondary) {
         runtime_.qdot_solved_secondary.setZero(ndof_secondary_);
         runtime_.qdot_solved = runtime_.qdot_solved_secondary;  // Backward compatibility
         this->pinocchio_model_ = *this->robot_model_.secondary_arm_model_ptr;
-        first_arm_joint_id = this->robot_model_.params_ptr->joints_secondary[0];
     } else if (motion_group_ == MotionGroup::BothArms) {
         runtime_.qdot_solved_primary.setZero(ndof_primary_);
         runtime_.qdot_solved_secondary.setZero(ndof_secondary_);
         runtime_.qdot_solved.setZero(ndof_primary_ + ndof_secondary_);  // Combined
-        first_arm_joint_id = this->robot_model_.params_ptr->joints_primary[0];
     } else {
         LOG_CRIT << "EEVelocityStreamingPlanner: Unsupported motion group.";
         return false;
     }
-    this->arm_base_id_ = robot_model_.model_ptr->getFrameId(
-                             robot_model_.params_ptr->joint_command_sequence_by_name[first_arm_joint_id]) -
-                         1;
+
+    this->primary_arm_base_id_ =
+        robot_model_.model_ptr->getFrameId(this->robot_model_.params_ptr->joints_primary_names[0]) - 1;
+    this->secondary_arm_base_id_ =
+        robot_model_.model_ptr->getFrameId(this->robot_model_.params_ptr->joints_secondary_names[0]) - 1;
 
     // 默认为eeframe速度控制, 默认单臂控制
     if (move_request.reference_frame.has_value()) {

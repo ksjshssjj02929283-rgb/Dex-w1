@@ -9,7 +9,6 @@ namespace dynamics {
 
 CartesianImpedanceController::CartesianImpedanceController(const RobotModel &robot_model, MotionGroup motion_group)
     : robot_model_(robot_model), motion_group_(motion_group) {
-    this->robot_model_.params_ptr->joints_primary.size();
     if (this->motion_group_ == MotionGroup::Primary) {
         this->pinocchio_model_ = *this->robot_model_.primary_arm_model_ptr;
         this->ndof_ = this->pinocchio_model_.nv;

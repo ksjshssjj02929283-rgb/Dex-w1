@@ -4,9 +4,9 @@ namespace robot_server_lib {
 
 TorqueControllerInvDynamic::TorqueControllerInvDynamic(RobotModel robot_model) : TorqueControllerBase(robot_model) {}
 
-bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_measurement,
-                                                const PlannerManagerCommand &input_cmd,
-                                                TorqueCtrlCommand &output_cmd) {
+bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_measurement,
+                                                const PlannerManagerCommand& input_cmd,
+                                                TorqueCtrlCommand& output_cmd) {
     VectorDof feedback_q = raw_measurement.position;
     VectorDof feedback_dq = raw_measurement.velocity;
     VectorDof cmd_q = input_cmd.cmd.position;
@@ -62,8 +62,8 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement &raw_m
     return true;
 }
 
-bool TorqueControllerInvDynamic::ResetForNewEpisode(const JointRawMeasurement &raw_measurement,
-                                                    const TorqueControllerState &state) {
+bool TorqueControllerInvDynamic::ResetForNewEpisode(const JointRawMeasurement& raw_measurement,
+                                                    const TorqueControllerState& state) {
     state_ = state;
     integral_error_.setZero();  // 重置积分误差
     if (state_ == TorqueControllerState::Idle) {

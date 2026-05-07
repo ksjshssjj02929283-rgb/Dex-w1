@@ -12,7 +12,7 @@ SRSKinematics::SRSKinematics(bool is_left, bool is_anthropmorphic) : KinematicsB
 
 SRSKinematics::~SRSKinematics() = default;
 
-PoseQuaternion SRSKinematics::GetFK(const Eigen::VectorXd &q_in, const pinocchio::SE3 &tcp_frame) {
+PoseQuaternion SRSKinematics::GetFK(const Eigen::VectorXd& q_in, const pinocchio::SE3& tcp_frame) {
     // 0) 检查关节位置是否在限制范围内
     auto [qmin, qmax] = GetQposLimits();
     bool out_of_limits = false;
@@ -72,9 +72,9 @@ PoseQuaternion SRSKinematics::GetFK(const Eigen::VectorXd &q_in, const pinocchio
 
 std::pair<Eigen::VectorXd, Eigen::VectorXd> SRSKinematics::GetQposLimits() const { return w1_kine_->GetQposLimits(); }
 
-bool SRSKinematics::GetIK(const PoseQuaternion &pose_in,
-                          Eigen::VectorXd &q_in_and_out,
-                          const pinocchio::SE3 &tcp_frame) {
+bool SRSKinematics::GetIK(const PoseQuaternion& pose_in,
+                          Eigen::VectorXd& q_in_and_out,
+                          const pinocchio::SE3& tcp_frame) {
     // 1) 把 pinocchio::SE3 转为库中使用的 Mat4d (row-major)
     DexeRP::Mat4d tcp;
     Eigen::Matrix4d tcp_eig = tcp_frame.toHomogeneousMatrix();  // use toHomogeneousMatrix()

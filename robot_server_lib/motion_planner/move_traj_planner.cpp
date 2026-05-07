@@ -12,9 +12,9 @@ MoveTrajPlanner::MoveTrajPlanner(RobotModel model, double controller_dt, bool wa
 
 MoveTrajPlanner::~MoveTrajPlanner() = default;
 
-ComputeCommandStatus MoveTrajPlanner::ComputeCommand(const JointMeasurement &measurement,
-                                                     const TimeMetaInfo &time_meta,
-                                                     JointCommand &output_joint_cmd) {
+ComputeCommandStatus MoveTrajPlanner::ComputeCommand(const JointMeasurement& measurement,
+                                                     const TimeMetaInfo& time_meta,
+                                                     JointCommand& output_joint_cmd) {
     // 推进时间
     runtime_.timepoint += controller_dt_;
     ComputeCommandStatus ret = GetInterpolatedPosition(output_joint_cmd, runtime_.timepoint);
@@ -37,7 +37,7 @@ ComputeCommandStatus MoveTrajPlanner::ComputeCommand(const JointMeasurement &mea
     return ret;
 }
 
-ComputeCommandStatus MoveTrajPlanner::GetInterpolatedPosition(JointCommand &joint_cmd, double timepoint) {
+ComputeCommandStatus MoveTrajPlanner::GetInterpolatedPosition(JointCommand& joint_cmd, double timepoint) {
     double t = std::max(0.0, std::min(timepoint, runtime_.total_duration));
 
     int point_idx = static_cast<int>(t / runtime_.interval);
@@ -48,8 +48,8 @@ ComputeCommandStatus MoveTrajPlanner::GetInterpolatedPosition(JointCommand &join
     double alpha = runtime_.interval > 0.0 ? (local_t / runtime_.interval) : 0.0;
     alpha = std::clamp(alpha, 0.0, 1.0);
 
-    const Eigen::VectorXd &p0 = runtime_.target_traj[point_idx];
-    const Eigen::VectorXd &p1 = runtime_.target_traj[point_idx + 1];
+    const Eigen::VectorXd& p0 = runtime_.target_traj[point_idx];
+    const Eigen::VectorXd& p1 = runtime_.target_traj[point_idx + 1];
 
     Eigen::VectorXd position = (1.0 - alpha) * p0 + alpha * p1;
     Eigen::VectorXd velocity = (p1 - p0) / runtime_.interval;
@@ -80,7 +80,7 @@ ComputeCommandStatus MoveTrajPlanner::GetInterpolatedPosition(JointCommand &join
         if (utils::FloatEqual(t, end_time)) reached = true;
 
         if (reached) {
-            const Eigen::VectorXd &pend = runtime_.target_traj[end_id];
+            const Eigen::VectorXd& pend = runtime_.target_traj[end_id];
             Eigen::VectorXd vnext = Eigen::VectorXd::Zero(runtime_.traj_dof);
             if (end_id + 1 < runtime_.traj_npoints)
                 vnext = (runtime_.target_traj[end_id + 1] - runtime_.target_traj[end_id]) / runtime_.interval;
@@ -101,9 +101,9 @@ ComputeCommandStatus MoveTrajPlanner::GetInterpolatedPosition(JointCommand &join
     return ComputeCommandStatus::TaskOngoing;
 }
 
-bool MoveTrajPlanner::ResetForNewTrajectory(const PlannerRequest &request,
-                                            const JointMeasurement &measurement,
-                                            const TimeMetaInfo &time_meta) {
+bool MoveTrajPlanner::ResetForNewTrajectory(const PlannerRequest& request,
+                                            const JointMeasurement& measurement,
+                                            const TimeMetaInfo& time_meta) {
     assert(request.data.has_value());
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
 

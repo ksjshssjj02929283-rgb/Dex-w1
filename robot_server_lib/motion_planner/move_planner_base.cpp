@@ -25,9 +25,9 @@ MotionPlannerBase::MotionPlannerBase(RobotModel robot_model) {
     assert(kinematics_primary_ptr_ && kinematics_secondary_ptr_ && kinematics_torso_ptr_);
 }
 
-ComputeCommandStatus MotionPlannerBase::ComputeStopCommand(const JointMeasurement &measurement,
-                                                           const TimeMetaInfo &time_meta,
-                                                           JointCommand &joint_cmd) {
+ComputeCommandStatus MotionPlannerBase::ComputeStopCommand(const JointMeasurement& measurement,
+                                                           const TimeMetaInfo& time_meta,
+                                                           JointCommand& joint_cmd) {
     bool stop_finished = true;
     auto output_velocity = joint_cmd.velocity;
     bool robot_stopped = true;
@@ -53,6 +53,6 @@ ComputeCommandStatus MotionPlannerBase::ComputeStopCommand(const JointMeasuremen
     }
 }
 
-void MotionPlannerBase::SetRobotProperty(const RobotProperty &property) { robot_property_ = property; }
+void MotionPlannerBase::SetRobotProperty(const RobotProperty& property) { robot_property_ = property; }
 
 }  // namespace robot_server_lib
