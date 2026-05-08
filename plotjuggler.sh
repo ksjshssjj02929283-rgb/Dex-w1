@@ -1,4 +1,5 @@
 #!/bin/bash
+source /opt/w1_server/setup.bash
 
 ARCH=$(uname -m)
 

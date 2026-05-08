@@ -44,9 +44,9 @@ enum class RunMode {
     Position,            // position controls
     Torque,              // torque control
     Drag,                // zero-stiff control
-    Sleep,               // sleep mode, motors disabled
     CartesianImpedance,  // impedance control
     DragImpedance,       // mixed drag and impedance control
+    Sleep,               // sleep mode, motors disabled
     Unknown
 };
 
@@ -87,7 +87,6 @@ enum class RequestType {
     StartEEVelocityStreaming,
     // Emergency Request
     StopMove,
-    ResetToInit,
 
     Unknown
 };

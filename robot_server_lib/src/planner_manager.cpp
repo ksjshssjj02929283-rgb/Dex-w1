@@ -128,7 +128,6 @@ void PlannerManager::LoopOnce() {
         const auto& dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
         if (dyn_base_params_primary.has_value()) {
             Eigen::VectorXd tau_ff_pri, q_cmd_primary, q_feedback_primary, dq_feedback_primary, dq_cmd_primary;
-            Vector6d F_imp_pri;
             utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_primary,
                                          MotionGroup::Primary);
             utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_primary,
@@ -138,15 +137,13 @@ void PlannerManager::LoopOnce() {
             utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.velocity, dq_cmd_primary,
                                          MotionGroup::Primary);
 
-            auto ret_pri = impedance_ctrl_primary_->UpdateTorqueCommand(
-                q_feedback_primary, dq_feedback_primary, q_cmd_primary, dq_cmd_primary, tau_ff_pri, F_imp_pri);
+            auto ret_pri = impedance_ctrl_primary_->UpdateTorqueCommand(q_feedback_primary, dq_feedback_primary,
+                                                                        q_cmd_primary, dq_cmd_primary, tau_ff_pri);
             utils::MapJointToWholeBody(this->robot_model_, tau_ff_pri, this->runtime_data_.joint_cmd.torque_feedforward,
                                        MotionGroup::Primary);
-            this->robot_property_.cart_impedance_force.head(6) = F_imp_pri;
         }
         if (dyn_base_params_secondary.has_value()) {
             Eigen::VectorXd tau_ff_sec, q_cmd_secondary, q_feedback_secondary, dq_feedback_secondary, dq_cmd_secondary;
-            Vector6d F_imp_sec;
             utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_secondary,
                                          MotionGroup::Secondary);
             utils::GetJointFromWholeBody(this->robot_model_, measurement.velocity, dq_feedback_secondary,
@@ -156,10 +153,9 @@ void PlannerManager::LoopOnce() {
             utils::GetJointFromWholeBody(this->robot_model_, this->runtime_data_.joint_cmd.velocity, dq_cmd_secondary,
                                          MotionGroup::Secondary);
             auto ret_sec = impedance_ctrl_secondary_->UpdateTorqueCommand(
-                q_feedback_secondary, dq_feedback_secondary, q_cmd_secondary, dq_cmd_secondary, tau_ff_sec, F_imp_sec);
+                q_feedback_secondary, dq_feedback_secondary, q_cmd_secondary, dq_cmd_secondary, tau_ff_sec);
             utils::MapJointToWholeBody(this->robot_model_, tau_ff_sec, this->runtime_data_.joint_cmd.torque_feedforward,
                                        MotionGroup::Secondary);
-            this->robot_property_.cart_impedance_force.tail(6) = F_imp_sec;
         }
     }
 
@@ -529,12 +525,13 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
         }
         case RequestType::SwitchRunMode: {
             assert(request.data.has_value() && std::holds_alternative<int>(request.data.value()));
-            int mode = std::get<int>(request.data.value());
-            switch (mode) {
-                case 0:
+            const int mode = std::get<int>(request.data.value());
+            const auto run_mode = static_cast<RunMode>(mode);
+            switch (run_mode) {
+                case RunMode::Position:
                     robot_property_.run_mode = RunMode::Position;
                     break;
-                case 1:
+                case RunMode::Torque:
                     if (!robot_property_.allow_force_control) {
                         std::cout << "[WARN] Force control is not allowed by configuration.\n";
                         LOG_WARN << "Force control is not allowed by configuration.";
@@ -545,7 +542,7 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
                         LOG_WARN << "Dynamic parameters not available, cannot enable torque control.";
                     }
                     break;
-                case 2:
+                case RunMode::Drag:
                     if (!robot_property_.allow_force_control) {
                         std::cout << "[WARN] Force control is not allowed by configuration.\n";
                         LOG_WARN << "Force control is not allowed by configuration.";
@@ -553,7 +550,7 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
                         robot_property_.run_mode = RunMode::Drag;
                     }
                     break;
-                case 3:
+                case RunMode::CartesianImpedance:
                     if (!robot_property_.allow_force_control) {
                         std::cout << "[WARN] Force control is not allowed by configuration.\n";
                         LOG_WARN << "Force control is not allowed by configuration.";
@@ -564,7 +561,7 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
                         LOG_WARN << "Dynamic parameters not available, cannot enable impedance control mode.";
                     }
                     break;
-                case 4:
+                case RunMode::DragImpedance:
                     if (!robot_property_.allow_force_control) {
                         std::cout << "[WARN] Force control is not allowed by configuration.\n";
                         LOG_WARN << "Force control is not allowed by configuration.";

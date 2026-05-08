@@ -31,10 +31,8 @@ TEST(CartesianImpedanceControllerTest, TestCartesianImpedanceController) {
     dynamics::CartesianImpedanceController impedance_controller(robot_model, MotionGroup::Primary);
 
     Eigen::VectorXd feedback_q(7), feedback_dq(7), cmd_q(7), tau_command(7);
-    Vector6d F_imp;
     feedback_q << 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5;
     feedback_dq << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
     cmd_q << 0.51, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5;
-    impedance_controller.UpdateTorqueCommand(feedback_q, feedback_dq, cmd_q, Eigen::VectorXd::Zero(7), tau_command,
-                                             F_imp);
+    impedance_controller.UpdateTorqueCommand(feedback_q, feedback_dq, cmd_q, Eigen::VectorXd::Zero(7), tau_command);
 }

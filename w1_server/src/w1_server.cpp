@@ -564,6 +564,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ", \"server_error_code\":\"" + ToString(this->manager_info_.robot_property.error_code) + "\"" +
         ", \"safe_level\":\"" + std::to_string(this->manager_info_.robot_property.safe_level) + "\"" +
         ", \"global_speed_ratio\":\"" + std::to_string(this->manager_info_.robot_property.global_speed_ratio) + "\"" +
+        ",\n  \"joint_name\":" + utils::VectorToJsonArrayString(this->robot_model_.params_ptr->joint_names, index_offset, ndof_config_).str() +
         ",\n  \"joint_position\":" + utils::VectorToJsonArrayString(position_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_position_cmd\":" + utils::VectorToJsonArrayString(position_cmd_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_velocity\":" + utils::VectorToJsonArrayString(velocity_arr_, index_offset, ndof_config_).str() +
@@ -591,7 +592,6 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_integral_ratio\":" + std::to_string(this->manager_info_.robot_property.joint_integral_ratio) +
         ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness, 0, this->robot_mode_ == RobotMode::SingleArm? 6 : 12).str() +
         ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio, 0, this->robot_mode_ == RobotMode::SingleArm? 6 : 12).str() +
-        ",\n  \"cart_impedance_force\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_impedance_force, 0, this->robot_mode_ == RobotMode::SingleArm? 6 : 12).str() +
         ",\n  \"chassis_status_word\":" + std::to_string(this->robot_feedback_.chassis_feedback.status_word) +
         ", \"chassis_error_code_left\":" + std::to_string(this->robot_feedback_.chassis_feedback.error_code_left) +
         ", \"chassis_error_code_right\":" + std::to_string(this->robot_feedback_.chassis_feedback.error_code_right) +

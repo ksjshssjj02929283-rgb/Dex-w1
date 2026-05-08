@@ -24,8 +24,7 @@ bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &fe
                                                        const Eigen::VectorXd &feedback_dq,
                                                        const Eigen::VectorXd &cmd_q,
                                                        const Eigen::VectorXd &cmd_dq,
-                                                       Eigen::VectorXd &tau_command,
-                                                       Vector6d &cart_impedance_force) {
+                                                       Eigen::VectorXd &tau_command) {
     Eigen::VectorXd tau_task(this->ndof_), tau_nullspace(this->ndof_);
     tau_task.setZero();
     tau_nullspace.setZero();
@@ -135,7 +134,6 @@ bool CartesianImpedanceController::UpdateTorqueCommand(const Eigen::VectorXd &fe
                  << ", tau_task: " << ss_tau_task.str() << ", tau_nullspace: " << ss_tau_nullspace.str()
                  << ", tau_command: " << ss_tau_command.str() << ", dq: " << ss_dq.str();
     }
-    cart_impedance_force = F_impedance_before_inertia_full_;
     return true;
 }
 

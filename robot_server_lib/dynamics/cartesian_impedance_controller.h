@@ -20,8 +20,7 @@ public:
                              const Eigen::VectorXd &feedback_dq,
                              const Eigen::VectorXd &cmd_q,
                              const Eigen::VectorXd &cmd_dq,
-                             Eigen::VectorXd &tau_command,
-                             Vector6d &cart_impedance_force);
+                             Eigen::VectorXd &tau_command);
 
     Eigen::VectorXd SaturateTorqueRate(const Eigen::VectorXd &tau_target, const Eigen::VectorXd &tau);
 

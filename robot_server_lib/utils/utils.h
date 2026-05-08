@@ -63,13 +63,15 @@ std::ostringstream VectorToJsonArrayString(const VectorType& vec, int start_inde
         using ElemT = std::decay_t<decltype(vec[idx])>;
         if constexpr (std::is_integral_v<ElemT>) {
             ss << static_cast<long long>(vec[idx]);
-        } else {
+        } else if constexpr (std::is_convertible_v<ElemT, double>) {
             double v = static_cast<double>(vec[idx]);
             if (std::isfinite(v)) {
                 ss << std::fixed << std::setprecision(5) << v;
             } else {
                 ss << "null";
             }
+        } else {
+            ss << "\"" << vec[idx] << "\"";
         }
         if (i < count - 1) ss << ",";
     }
@@ -85,13 +87,15 @@ std::ostringstream VectorToJsonArrayString(const VectorType& vec) {
         using ElemT = std::decay_t<decltype(vec[i])>;
         if constexpr (std::is_integral_v<ElemT>) {
             ss << static_cast<long long>(vec[i]);
-        } else {
+        } else if constexpr (std::is_convertible_v<ElemT, double>) {
             double v = static_cast<double>(vec[i]);
             if (std::isfinite(v)) {
                 ss << std::fixed << std::setprecision(5) << v;
             } else {
                 ss << "null";
             }
+        } else {
+            ss << "\"" << vec[i] << "\"";
         }
         if (i != vec.size() - 1) ss << ",";
     }
