@@ -190,6 +190,13 @@ class RobotClient(ABC):
         return self.send_set_property_request(PropertyType.EnableSleep,
                                               set_enable)
 
+    def set_pos_limit_check(self, set_enable: bool) -> int:
+        """async interface - setting position limit check
+        异步接口 - 开关位置限位检测
+        """
+        return self.send_set_property_request(PropertyType.EnablePosLimitCheck,
+                                              set_enable)
+
     def set_safe_level(self, safe_level: float) -> int:
         """async interface - setting robot safe level
         异步接口 - 设置机器人安全级别, 仅真实机器人生效
@@ -211,7 +218,7 @@ class RobotClient(ABC):
             - int: request id 指令号, 可用于等待对应运动指令完成等
         """
         return self.send_set_property_request(PropertyType.SwitchRunMode,
-                                              run_mode.value - 1)
+                                              run_mode.value)
 
     def set_joint_stiffness(self, stiffness: Union[float, list[float]]) -> int:
         """async interface - setting joint stiffness
@@ -304,6 +311,44 @@ class RobotClient(ABC):
                 return -1
         return self.send_set_property_request(PropertyType.CartDampingRatio,
                                               damping_ratio)
+
+    def set_streaming_ruckig(self, set_enable: bool) -> int:
+        """async interface - setting streaming ruckig
+        异步接口 - 开关关节流控制的 Ruckig 轨迹规划
+        """
+        return self.send_set_property_request(
+            PropertyType.EnableStreamingRuckig, set_enable)
+
+    def set_joint_streaming_bounds(self, max_velocity: float,
+                                   max_acceleration: float,
+                                   max_jerk: float) -> int:
+        """async interface - setting joint streaming bounds
+        异步接口 - 设置关节流控制的速度/加速度/jerk 上限
+        """
+        return self.send_set_property_request(
+            PropertyType.JointStreamingBounds,
+            [max_velocity, max_acceleration, max_jerk])
+
+    def set_butterworth_filter(self, enable: Union[bool, list[float]]) -> int:
+        """async interface - setting butterworth filter
+        异步接口 - 开关 Butterworth 滤波器, 支持单值或逐关节配置
+        """
+        return self.send_set_property_request(
+            PropertyType.EnableButterworthFilter, enable)
+
+    def set_input_shaper(self, enable: Union[bool, list[float]]) -> int:
+        """async interface - setting input shaper
+        异步接口 - 开关输入整形器, 支持单值或逐关节配置
+        """
+        return self.send_set_property_request(PropertyType.EnableInputShaper,
+                                              enable)
+
+    def set_chassis_shaper(self, set_enable: bool) -> int:
+        """async interface - setting chassis shaper
+        异步接口 - 开关底盘速度输入整形器
+        """
+        return self.send_set_property_request(PropertyType.EnableChassisShaper,
+                                              set_enable)
 
     """ ---------------------------------------------------------------------------
     User interfaces - Move requests
