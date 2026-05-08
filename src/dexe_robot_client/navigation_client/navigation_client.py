@@ -5,7 +5,7 @@ import math
 from abc import ABC, abstractmethod
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Twist
 from action_msgs.msg import GoalStatus
 from scipy.spatial.transform import Rotation as R
 from nav2_msgs.action import NavigateToPose
@@ -39,6 +39,7 @@ class NavigationClient(ABC, Node):
         self._set_nav_publisher = None
         self._set_nav_client = None
         self._set_ctrl_publisher = None
+        self._cmd_vel_publisher = None
         self._get_pos_subscriber = None
         self._auto_charging_action_client = None
         self._auto_charging_goal_handle = None
@@ -453,6 +454,51 @@ class NavigationClient(ABC, Node):
 
         self._set_ctrl_publisher.publish(chassis_position)
         return True
+
+    def chassis_undocking(self) -> bool:
+        """发布出桩梯形速度，沿 base_link 正 x 方向运动 2s。
+
+        速度曲线：最大线速度 0.3m/s，加速度 0.3m/s^2，1s 加速后 1s 减速。
+        """
+        if self._cmd_vel_publisher is None:
+            self.get_logger().error("Cmd vel publisher not initialized.")
+            return False
+
+        max_velocity = 0.3
+        acceleration = 0.3
+        duration = 2.0
+        publish_rate = 50.0
+        dt = 1.0 / publish_rate
+        start_time = time.time()
+
+        self.get_logger().info(
+            "Start chassis undocking: max_velocity=0.3m/s, "
+            "acceleration=0.3m/s^2, duration=2.0s")
+
+        try:
+            while rclpy.ok():
+                elapsed = time.time() - start_time
+                if elapsed >= duration:
+                    break
+
+                remaining_time = duration - elapsed
+                velocity = min(max_velocity, acceleration * elapsed,
+                               acceleration * remaining_time)
+
+                cmd_vel = Twist()
+                cmd_vel.linear.x = velocity
+                self._cmd_vel_publisher.publish(cmd_vel)
+                time.sleep(dt)
+
+            stop_cmd = Twist()
+            self._cmd_vel_publisher.publish(stop_cmd)
+            self.get_logger().info("Chassis undocking completed.")
+            return True
+        except Exception as e:
+            stop_cmd = Twist()
+            self._cmd_vel_publisher.publish(stop_cmd)
+            self.get_logger().error(f"Chassis undocking failed: {e}")
+            return False
 
     def set_goal_tolerance(self, xy_tolerance: float,
                            yaw_tolerance: float) -> bool:

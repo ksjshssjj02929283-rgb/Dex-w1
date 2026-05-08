@@ -729,6 +729,17 @@ class W1Manager:
             base_position)
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
+    def chassis_undocking(self) -> StatusCode:
+        """底盘出桩，向 control/cmd_vel 发布 2s 梯形线速度。"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        res = self._get_chassis_client().chassis_undocking()
+        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
+
     def get_current_chassis_pose(self) -> tuple[StatusCode, np.ndarray]:
         """获取底盘当前位姿[x(m), y(m), yaw(angle)]"""
         if not self._use_nav:

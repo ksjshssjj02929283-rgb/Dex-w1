@@ -1,6 +1,6 @@
 from .navigation_client import NavigationClient
 from ..common import get_logger
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Twist
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
@@ -24,11 +24,15 @@ class ChassisClient(NavigationClient):
                 PoseStamped, f"/control_sim/nav2_pose", 10)
             self._set_ctrl_publisher = self.create_publisher(
                 PoseStamped, f"/control_sim/ctrl_pose", 10)
+            self._cmd_vel_publisher = self.create_publisher(
+                Twist, f"/control_sim/cmd_vel", 10)
         else:
             self._set_nav_publisher = self.create_publisher(
                 PoseStamped, f"/control/nav2_pose", 10)
             self._set_ctrl_publisher = self.create_publisher(
                 PoseStamped, f"/control/ctrl_pose", 10)
+            self._cmd_vel_publisher = self.create_publisher(
+                Twist, f"/control/cmd_vel", 10)
 
     def _init_subscriber(self, is_sim: bool):
         if is_sim:
