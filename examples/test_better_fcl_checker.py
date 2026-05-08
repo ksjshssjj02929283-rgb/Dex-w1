@@ -1,17 +1,17 @@
 from dexe_robot_client.w1 import RobotType, Planner_Pin
 from dexe_robot_client.w1.path_planner.better_fcl_checker import FCLChecker
-from dexe_robot_client.end_effector_client import EndEffectorType
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
 import numpy as np
 import time
 from IPython import embed
 
 if __name__ == "__main__":
     planner_pin = Planner_Pin(robot_type=RobotType.W1V02_1,
-                              end_effector_type=EndEffectorType.BRAINCO_HAND)
+                              end_effector_type=EndEffectorType.BrainCo_Revo1_R)
 
     fcl_checker = FCLChecker.init_from_W1Manager(
         robot_type=RobotType.W1V02_1,
-        end_effector_type=EndEffectorType.BRAINCO_HAND)
+        end_effector_type=EndEffectorType.BrainCo_Revo1_R)
 
     # fcl_checker.add_obstacle(
     #     "box", "table", np.array([0.8, 0, 0.8]), np.array([1, 0, 0, 0]), size=np.array([1, 2, 0.06])

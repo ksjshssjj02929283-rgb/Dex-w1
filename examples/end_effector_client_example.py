@@ -10,11 +10,12 @@ import rclpy
 import threading
 from rclpy.executors import MultiThreadedExecutor
 
-from dexe_robot_client.end_effector_client import create_end_effector_client, EndEffectorType
+from dexe_rp.utils.type import EndEffectorType
+from dexe_robot_client.end_effector_client import create_end_effector_client
 from dexe_robot_client.common import get_logger
 
 
-def main(is_sim=True, end_effector_type=EndEffectorType.BRAINCO_HAND):
+def main(is_sim=True, end_effector_type=EndEffectorType.BrainCo_Revo1_R):
     rclpy.init()
 
     left_node = create_end_effector_client(is_left=True,
@@ -45,7 +46,7 @@ def main(is_sim=True, end_effector_type=EndEffectorType.BRAINCO_HAND):
 
 
 if __name__ == "__main__":
-    main(is_sim=True, end_effector_type=EndEffectorType.BRAINCO_HAND)
-    # main(is_sim=True, end_effector_type=EndEffectorType.LINKER_HAND)
+    main(is_sim=True, end_effector_type=EndEffectorType.BrainCo_Revo1_R)
+    # main(is_sim=True, end_effector_type=EndEffectorType.Linker_L6)
     # main(is_sim = True,
-    #      end_effector_type = EndEffectorType.PGC_GRIPPER)
+    #      end_effector_type = EndEffectorType.DH_PGC_140_50)

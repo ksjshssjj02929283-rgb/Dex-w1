@@ -6,38 +6,41 @@
 
 import json
 import numpy as np
-from ...end_effector_client.end_effector_type import EndEffectorType
-from ...common import get_logger, DATA_DIR, W1ArmType, W1Version
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
+from ...common import get_logger, DATA_DIR
 
 
 class W1Params:
 
     def __init__(self,
-                 arm_type: W1ArmType,
-                 w1_version: W1Version = W1Version.V2,
+                 arm_type: ArmType,
+                 w1_version: W1Version = W1Version.V024,
                  end_effector_type: EndEffectorType = None):
         self.logger = get_logger()
 
         self._arm_type = arm_type
 
         self._w1_version = w1_version
-        if self._w1_version != W1Version.V2:
+        if self._w1_version != W1Version.V024:
             raise ValueError(
                 f"W1Version {self._w1_version.name} are not support.")
 
         self.arm_ee_dofs = None
         self._end_effector_type = end_effector_type
+        ee_dofs_map = {
+            EndEffectorType.BrainCo_Revo1_R: 6,
+            EndEffectorType.Linker_L6: 6,
+            EndEffectorType.DH_PGC_140_50: 1,
+        }
         if self._end_effector_type is None:
-            self.logger.info(f"No movable end effector.")
-        elif self._end_effector_type == EndEffectorType.BRAINCO_HAND:
-            self.arm_ee_dofs = 6
-        elif self._end_effector_type == EndEffectorType.LINKER_HAND:
-            self.arm_ee_dofs = 6
-        elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
-            self.arm_ee_dofs = 1
+            self.logger.info("No movable end effector.")
         else:
-            raise ValueError(
-                f"Unsupport end effector type: {self._end_effector_type.name}.")
+            try:
+                self.arm_ee_dofs = ee_dofs_map[self._end_effector_type]
+            except KeyError as exc:
+                raise ValueError(
+                    f"Unsupported end effector type: {self._end_effector_type.name}."
+                ) from exc
 
         self.torso_dofs = 4
         self.head_dofs = 2
@@ -84,7 +87,7 @@ class W1Params:
         self.head_ub = np.deg2rad([90., 25.])
         self.head_lb = np.deg2rad([-90., -45.])
 
-        if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
+        if self._arm_type == ArmType.ANTHROPOMORPHIC:
             self.left_arm_ub = np.deg2rad(
                 [170., 90., 170., 90., 170., 45., 60.])
             self.left_arm_lb = np.deg2rad(

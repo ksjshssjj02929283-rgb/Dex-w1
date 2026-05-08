@@ -4,7 +4,7 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
-from .end_effector_type import EndEffectorType
+from dexe_rp.utils.type import EndEffectorType
 from .brainco_hand_client import BrainCoHandClient
 from .linker_hand_client import LinkerHandClient
 from .pgc_gripper_client import PGCGripperClient
@@ -13,9 +13,12 @@ from .pgc_gripper_client import PGCGripperClient
 def create_end_effector_client(is_left: bool, is_sim: bool,
                                end_effector_type: EndEffectorType):
     client_map = {
-        EndEffectorType.BRAINCO_HAND: BrainCoHandClient,
-        EndEffectorType.LINKER_HAND: LinkerHandClient,
-        EndEffectorType.PGC_GRIPPER: PGCGripperClient,
+        EndEffectorType.BrainCo_Revo1_R: BrainCoHandClient,
+        EndEffectorType.Linker_L6: LinkerHandClient,
+        EndEffectorType.Linker_L20: None,
+        EndEffectorType.DH_PGC_140_50: PGCGripperClient,
+        EndEffectorType.DH_AG_160_95: None,
+        EndEffectorType.PaXini_Dex_H13: None,
         None: None,
     }
 

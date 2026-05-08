@@ -5,18 +5,18 @@
 # ----------------------------------------------------------------------------
 
 import numpy as np
-from dexe_robot_client.common import W1Version, W1ArmType, get_logger
-from dexe_robot_client.end_effector_client import EndEffectorType
+from dexe_robot_client.common import get_logger
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
 from dexe_robot_client.w1 import W1Manager
-from dexe_rp import SRSConfig
+from dexe_rp import SRSAKinematics
 
 
 def arm_angle_motion():
     """利用SRSKinematics实现手臂冗余运动的示例"""
     w1_manager = W1Manager(is_sim=True,
-                           arm_type=W1ArmType.ANTHROPOMORPHIC,
-                           w1_version=W1Version.V2,
-                           end_effector_type=EndEffectorType.BRAINCO_HAND)
+                           arm_type=ArmType.ANTHROPOMORPHIC,
+                           w1_version=W1Version.V024,
+                           end_effector_type=EndEffectorType.BrainCo_Revo1_R)
     if not w1_manager.connect() and not w1_manager.is_enabled():
         return
     # yapf: disable
@@ -43,7 +43,9 @@ def arm_angle_motion():
     left_qpos_seed = cur_left_qpos
     left_qpos_list = []
     for psi in left_psi_list:
-        srs_cfg = SRSConfig(left_qpos_seed, psi)
+        srs_cfg = SRSAKinematics.Config(is_left=True,
+                                        qpos=left_qpos_seed,
+                                        arm_angle=psi)
         res, qpos = w1_manager.kine.left_arm_kine.get_ik(cur_left_xpos, srs_cfg)
         if not res:
             get_logger().error("ik failed")
@@ -64,7 +66,9 @@ def arm_angle_motion():
     right_qpos_seed = cur_right_qpos
     right_qpos_list = []
     for psi in right_psi_list:
-        srs_cfg = SRSConfig(right_qpos_seed, psi)
+        srs_cfg = SRSAKinematics.Config(is_left=False,
+                                        qpos=right_qpos_seed,
+                                        arm_angle=psi)
         res, qpos = w1_manager.kine.right_arm_kine.get_ik(
             cur_right_xpos, srs_cfg)
         if not res:

@@ -12,12 +12,23 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from end_effector_interfaces.msg import EEJointFeedback
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
+
+# Allow running this file directly without "-m" while keeping package imports.
+if __package__ is None or __package__ == "":
+    import os
+    import sys
+
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    package_root = os.path.dirname(current_dir)
+    workspace_src = os.path.dirname(package_root)
+    if workspace_src not in sys.path:
+        sys.path.insert(0, workspace_src)
 
 from ..common import (get_logger, generate_w1_urdf, download_w1_urdf,
-                      download_environment, W1Version, W1ArmType,
-                      get_robot_sim2real_idx, get_robot_real2sim_idx,
-                      get_ee_sim2real_idx, get_ee_real2sim_idx)
-from ..end_effector_client import EndEffectorType
+                      download_environment, get_robot_sim2real_idx,
+                      get_robot_real2sim_idx, get_ee_sim2real_idx,
+                      get_ee_real2sim_idx)
 
 
 # python3 -m dexe_robot_client.sim_server.viser_server
@@ -26,11 +37,11 @@ class ViserServer:
     DEFAULT_CONFIG = {
         "robot_topic": "/feedback/robot_server_state_sim",
         "ee_topics": {
-            EndEffectorType.BRAINCO_HAND: {
+            EndEffectorType.BrainCo_Revo1_R: {
                 "left": "/feedback_sim/hand/left",
                 "right": "/feedback_sim/hand/right",
             },
-            EndEffectorType.PGC_GRIPPER: {
+            EndEffectorType.DH_PGC_140_50: {
                 "left": "/feedback_sim/gripper/left",
                 "right": "/feedback_sim/gripper/right",
             }
@@ -38,8 +49,8 @@ class ViserServer:
     }
 
     def __init__(self,
-                 arm_type: W1ArmType,
-                 w1_version: W1Version = W1Version.V2,
+                 arm_type: ArmType,
+                 w1_version: W1Version = W1Version.V024,
                  end_effector_type: EndEffectorType = None,
                  config: dict = None):
         self.logger = get_logger()
@@ -197,9 +208,9 @@ if __name__ == "__main__":
     rclpy.init()
 
     try:
-        server = ViserServer(arm_type=W1ArmType.ANTHROPOMORPHIC,
-                             w1_version=W1Version.V2,
-                             end_effector_type=EndEffectorType.BRAINCO_HAND)
+        server = ViserServer(arm_type=ArmType.ANTHROPOMORPHIC,
+                             w1_version=W1Version.V024,
+                             end_effector_type=EndEffectorType.BrainCo_Revo1_R)
         server.run()
     except Exception as e:
         print(f"Unexpected error: {e}")

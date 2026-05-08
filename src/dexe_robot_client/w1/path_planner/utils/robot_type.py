@@ -1,9 +1,8 @@
 from enum import Enum, auto
 import os
-import pathlib
 import numpy as np
 from ....common.config import ASSETS_DIR, DATA_DIR, MODEL_DIR, ENVIRONMENT_DIR
-from ....end_effector_client import EndEffectorType
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
 
 SINGLE_ARM_DIM = 7
 DUAL_ARM_DIM = 14
@@ -186,7 +185,7 @@ def get_robot_urdf(robot_type: RobotType,
                 "Unsupported robot type. Please use W1V02_1 or W1V02_2.")
     else:
         if isinstance(ee_type, EndEffectorType):
-            if ee_type == EndEffectorType.BRAINCO_HAND:
+            if ee_type == EndEffectorType.BrainCo_Revo1_R:
                 if robot_type == RobotType.W1V02_1:
                     return RobotURDF.W1V02_1_BRAINCO.value
                 elif robot_type == RobotType.W1V02_2:
@@ -195,7 +194,7 @@ def get_robot_urdf(robot_type: RobotType,
                     raise ValueError(
                         "Unsupported robot type. Please use W1V02_1 or W1V02_2."
                     )
-            elif ee_type == EndEffectorType.PGC_GRIPPER:
+            elif ee_type == EndEffectorType.DH_PGC_140_50:
                 if robot_type == RobotType.W1V02_1:
                     return RobotURDF.W1V02_1_PGC.value
                 elif robot_type == RobotType.W1V02_2:
@@ -204,7 +203,7 @@ def get_robot_urdf(robot_type: RobotType,
                     raise ValueError(
                         "Unsupported robot type. Please use W1V02_1 or W1V02_2."
                     )
-            elif ee_type == EndEffectorType.LINKER_HAND:
+            elif ee_type == EndEffectorType.Linker_L6:
                 if robot_type == RobotType.W1V02_1:
                     return RobotURDF.W1V02_1_LINKER.value
                 elif robot_type == RobotType.W1V02_2:
@@ -302,7 +301,7 @@ def get_torso_full_path(robot_type: RobotType = None):
 def get_ee_full_path(robot_type: RobotType, ee_type: EndEffectorType):
     if ee_type is None:
         return [], []
-    if ee_type == EndEffectorType.BRAINCO_HAND:
+    if ee_type == EndEffectorType.BrainCo_Revo1_R:
         if robot_type == RobotType.W1V02_1:
             return [RobotEE.BRAINCO_LEFT_HAND.value + "/" + name for name in BRAINCO_LEFT_LINK_NAMES], \
                      [RobotEE.BRAINCO_RIGHT_HAND.value + "/" + name for name in BRAINCO_RIGHT_LINK_NAMES]
@@ -313,7 +312,7 @@ def get_ee_full_path(robot_type: RobotType, ee_type: EndEffectorType):
             raise ValueError(
                 f"Unsupported robot type: {robot_type}. Please use W1V02_1 or W1V02_2."
             )
-    elif ee_type == EndEffectorType.PGC_GRIPPER:
+    elif ee_type == EndEffectorType.DH_PGC_140_50:
         if robot_type == RobotType.W1V02_1:
             return [RobotEE.PGC_LEFT_HAND.value + "/" + name for name in PGC_LEFT_LINK_NAMES], \
                      [RobotEE.PGC_RIGHT_HAND.value + "/" + name for name in PGC_RIGHT_LINK_NAMES]
@@ -324,7 +323,7 @@ def get_ee_full_path(robot_type: RobotType, ee_type: EndEffectorType):
             raise ValueError(
                 f"Unsupported robot type: {robot_type}. Please use W1V02_1 or W1V02_2."
             )
-    elif ee_type == EndEffectorType.LINKER_HAND:
+    elif ee_type == EndEffectorType.Linker_L6:
         if robot_type == RobotType.W1V02_1:
             return [RobotEE.LINKER_LEFT_HAND.value + "/" + name for name in LINKER_LEFT_LINK_NAMES], \
                         [RobotEE.LINKER_RIGHT_HAND.value + "/" + name for name in LINKER_RIGHT_LINK_NAMES]
@@ -337,7 +336,7 @@ def get_ee_full_path(robot_type: RobotType, ee_type: EndEffectorType):
             )
     else:
         raise ValueError(
-            f"Unsupported end effector type: {ee_type}. Please use PGC_GRIPPER or BRAINCO_HAND or LINKER_HAND."
+            f"Unsupported end effector type: {ee_type}. Please use DH_PGC_140_50 or BRAINCO_REVO1_R or LINKER_L6."
         )
 
 
@@ -355,13 +354,13 @@ def get_ee_joint_names(ee_type: EndEffectorType = None):
     """
     if ee_type is None:
         return FLANGE_JOINT_NAMES[0], FLANGE_JOINT_NAMES[1]
-    if ee_type == EndEffectorType.BRAINCO_HAND:
+    if ee_type == EndEffectorType.BrainCo_Revo1_R:
         return BRAINCO_BASE_JOINT_NAMES[0], BRAINCO_BASE_JOINT_NAMES[1]
-    elif ee_type == EndEffectorType.PGC_GRIPPER:
+    elif ee_type == EndEffectorType.DH_PGC_140_50:
         return PGC_BASE_JOINT_NAMES[0], PGC_BASE_JOINT_NAMES[1]
-    elif ee_type == EndEffectorType.LINKER_HAND:
+    elif ee_type == EndEffectorType.Linker_L6:
         return LINKER_BASE_JOINT_NAMES[0], LINKER_BASE_JOINT_NAMES[1]
     else:
         raise ValueError(
-            "Unsupported end effector type. Please use BRAINCO_HAND or PGC_GRIPPER or LINKER_HAND."
+            "Unsupported end effector type. Please use BRAINCO_REVO1_R or DH_PGC_140_50 or LINKER_L6."
         )

@@ -5,25 +5,18 @@
 # ----------------------------------------------------------------------------
 
 import rclpy
-from dexe_robot_client.common import W1Version, W1ArmType
-from dexe_robot_client.end_effector_client import EndEffectorType
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
 from dexe_robot_client.sim_server import DexsimServer
 
 
 def main():
     rclpy.init()
-    dexsim_server = DexsimServer(arm_type=W1ArmType.ANTHROPOMORPHIC,
-                                 w1_version=W1Version.V2,
-                                 end_effector_type=EndEffectorType.BRAINCO_HAND)
-
-    # dexsim_server = DexsimServer(arm_type = W1ArmType.INDUSTRIAL,
-    #                              w1_version = W1Version.V2,
-    #                              end_effector_type = EndEffectorType.PGC_GRIPPER)
-
-    # Used to generate assebled urdf without end effector
-    # dexsim_server = DexsimServer(arm_type = W1ArmType.ANTHROPOMORPHIC,
-    #                             w1_version = W1Version.V2,
-    #                             end_effector_type = None)
+    arm_type = ArmType.ANTHROPOMORPHIC  # ArmType.INDUSTRIAL
+    w1_version = W1Version.V024  # W1Version.V023, W1Version.V024i, W1Version.V023i
+    end_effector_type = EndEffectorType.BrainCo_Revo1_R  # None, EndEffectorType.DH_PGC_140_50
+    dexsim_server = DexsimServer(arm_type=arm_type,
+                                 w1_version=w1_version,
+                                 end_effector_type=end_effector_type)
 
     try:
         dexsim_server.run()

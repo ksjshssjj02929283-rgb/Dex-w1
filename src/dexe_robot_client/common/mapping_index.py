@@ -7,7 +7,7 @@
 from enum import Enum, auto
 from typing import List
 import pinocchio
-from ..end_effector_client import EndEffectorType
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
 
 
 class RealRobotIdx(Enum):
@@ -256,11 +256,11 @@ def get_real_idx(end_effector_type: EndEffectorType = None):
     """
     if end_effector_type is None:
         real_robot_idx = RealRobotIdx
-    if end_effector_type == EndEffectorType.BRAINCO_HAND:
+    if end_effector_type == EndEffectorType.BrainCo_Revo1_R:
         real_robot_idx = RealRobotIdx_Brainco
-    if end_effector_type == EndEffectorType.PGC_GRIPPER:
+    if end_effector_type == EndEffectorType.DH_PGC_140_50:
         real_robot_idx = RealRobotIdx_PGC
-    if end_effector_type == EndEffectorType.LINKER_HAND:
+    if end_effector_type == EndEffectorType.Linker_L6:
         real_robot_idx = RealRobotIdx_Linker
 
     real_names = [realjoint.name for realjoint in real_robot_idx]
@@ -296,7 +296,7 @@ def get_real_idx(end_effector_type: EndEffectorType = None):
     if end_effector_type is None:
         return torso_idx, head_idx, left_arm_idx, right_arm_idx
 
-    if end_effector_type == EndEffectorType.BRAINCO_HAND:
+    if end_effector_type == EndEffectorType.BrainCo_Revo1_R:
         left_thumb_prox_idx, left_thumb_dist_idx = real_dict[
             "LEFT_THUMBCMC"], real_dict["LEFT_THUMBMCP"]
         left_index_prox_idx, left_index_dist_idx = real_dict[
@@ -335,7 +335,7 @@ def get_real_idx(end_effector_type: EndEffectorType = None):
 
         return torso_idx, head_idx, left_arm_idx, right_arm_idx, left_hand_idx, right_hand_idx
 
-    if end_effector_type == EndEffectorType.PGC_GRIPPER:
+    if end_effector_type == EndEffectorType.DH_PGC_140_50:
         left_finger1_idx, left_finger2_idx = real_dict[
             "LEFT_FINGER1"], real_dict["LEFT_FINGER2"]
         right_finger1_idx, right_finger2_idx = real_dict[
@@ -345,7 +345,7 @@ def get_real_idx(end_effector_type: EndEffectorType = None):
 
         return torso_idx, head_idx, left_arm_idx, right_arm_idx, left_hand_idx, right_hand_idx
 
-    if end_effector_type == EndEffectorType.LINKER_HAND:
+    if end_effector_type == EndEffectorType.Linker_L6:
         left_thumb_prox_base_idx, left_thumb_prox_idx, left_thumb_dist_idx = \
             real_dict["LEFT_THUMBCMC"], real_dict["LEFT_THUMBMCP"], real_dict["LEFT_THUMBPIP"]
         left_index_prox_idx, left_index_dist_idx = \
@@ -549,10 +549,10 @@ def get_ee_sim2real_idx(sim_joint_names: List[str], is_left: bool,
     sim_dict = {name: idx for idx, name in enumerate(sim_joint_names)}
 
     idx_class_map = {
-        (EndEffectorType.BRAINCO_HAND, True): LeftBrainCoHandIdx,
-        (EndEffectorType.BRAINCO_HAND, False): RightBrainCoHandIdx,
-        (EndEffectorType.PGC_GRIPPER, True): LeftPGCGripperIdx,
-        (EndEffectorType.PGC_GRIPPER, False): RightPGCGripperIdx,
+        (EndEffectorType.BrainCo_Revo1_R, True): LeftBrainCoHandIdx,
+        (EndEffectorType.BrainCo_Revo1_R, False): RightBrainCoHandIdx,
+        (EndEffectorType.DH_PGC_140_50, True): LeftPGCGripperIdx,
+        (EndEffectorType.DH_PGC_140_50, False): RightPGCGripperIdx,
     }
 
     idx_class = None

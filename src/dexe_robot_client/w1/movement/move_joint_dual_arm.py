@@ -16,7 +16,7 @@ from ...common import get_logger, time_consuming, StatusCode
 
 from ..path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm
 
-from dexe_rp import DexforceW1Kinematics, SRSConfig
+from dexe_rp import DexforceW1Kinematics, SRSAKinematics
 
 
 class DualArmMoveJointW1(DualArmMovementBaseW1):
