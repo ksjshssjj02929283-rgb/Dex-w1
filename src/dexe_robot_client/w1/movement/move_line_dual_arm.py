@@ -17,7 +17,7 @@ from ...common import get_logger, time_consuming, StatusCode
 
 from ..path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm
 
-from dexe_rp import DexforceW1Kinematics, SRSConfig
+from dexe_rp import DexforceW1Kinematics, SRSAKinematics
 
 
 class DualArmMoveLineW1(DualArmMovementBaseW1):
@@ -725,7 +725,9 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                                 "Left arm ik solution not found in plan_dual_arm_multiple_task."
                             )
                             return StatusCode.IK_FAIL, None, None, None
-                        srs_cfg = SRSConfig(left_qpos_seed, left_ref_psi)
+                        srs_cfg = SRSAKinematics.Config(is_left=True,
+                                                        qpos=left_qpos_seed,
+                                                        arm_angle=left_ref_psi)
                         res_ik, arml_ik_qpos = arml_kine.get_ik(
                             target_arml_xpos, srs_cfg)
                         if not res_ik:
@@ -906,7 +908,9 @@ class DualArmMoveLineW1(DualArmMovementBaseW1):
                                 "Right arm ik solution not found in plan_dual_arm_multiple_task."
                             )
                             return StatusCode.IK_FAIL, None, None, None
-                        srs_cfg = SRSConfig(right_qpos_seed, right_ref_psi)
+                        srs_cfg = SRSAKinematics.Config(is_left=False,
+                                                        qpos=right_qpos_seed,
+                                                        arm_angle=right_ref_psi)
                         res_ik, armr_ik_qpos = armr_kine.get_ik(
                             target_armr_xpos, srs_cfg)
                         if not res_ik:

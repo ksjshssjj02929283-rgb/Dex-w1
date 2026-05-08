@@ -79,14 +79,13 @@ def generate_calib_pose(
 
 
 if __name__ == "__main__":
-    from dexe_robot_client.common import W1ArmType, W1Version
-    from dexe_robot_client.end_effector_client.end_effector_type import EndEffectorType
+    from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
     from dexe_robot_client.w1 import W1Manager, PathRnBezier, PathType
 
     w1_manager = W1Manager(is_sim=True,
-                           arm_type=W1ArmType.ANTHROPOMORPHIC,
-                           w1_version=W1Version.V2,
-                           end_effector_type=EndEffectorType.BRAINCO_HAND)
+                           arm_type=ArmType.ANTHROPOMORPHIC,
+                           w1_version=W1Version.V024,
+                           end_effector_type=EndEffectorType.BrainCo_Revo1_R)
 
     init_qpos = np.array(
         [-0.5, -0.5, 0.9169, -1.3845, -1.8167, 0.3516, -0.7812])

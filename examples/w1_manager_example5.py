@@ -1,7 +1,6 @@
 import os
 import numpy as np
-from dexe_robot_client.end_effector_client import EndEffectorType
-from dexe_robot_client.common import W1Version, W1ArmType
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
 from dexe_robot_client.w1 import W1Manager
 from dexe_robot_client.w1.path_planner.utils.robot_type import *
 from dexe_robot_client.common.mapping_index import *
@@ -150,11 +149,11 @@ def move_linear_full_body(task_dict=None):
 
 if __name__ == "__main__":
     robot_type = RobotType.W1V02_1
-    robot_ee_type = EndEffectorType.BRAINCO_HAND
+    robot_ee_type = EndEffectorType.BrainCo_Revo1_R
     # robot_ee_type = None
     w1_manager = W1Manager(is_sim=True,
-                           arm_type=W1ArmType.ANTHROPOMORPHIC,
-                           w1_version=W1Version.V2,
+                           arm_type=ArmType.ANTHROPOMORPHIC,
+                           w1_version=W1Version.V024,
                            end_effector_type=robot_ee_type)
     if not w1_manager.connect() and not w1_manager.is_enabled():
         raise RuntimeError("Failed to connect to W1 robot.")

@@ -1,23 +1,23 @@
 import numpy as np
 from copy import deepcopy
 import time
-
-from ...common import get_logger, W1ArmType, W1Version
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
+from ...common import get_logger
 from ..utils.w1_params import W1Params
-from ...end_effector_client import EndEffectorType
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from ..kinematics.pin_ik_whole_body import PinIKWholeBody
 from .utils.robot_type import *
-from dexe_rp import DexforceW1Kinematics, SRSConfig
+from dexe_rp import DexforceW1Kinematics, SRSAKinematics
 
 
 class CartesianToJointPlanner:
 
     def __init__(
             self,
-            arm_type: W1ArmType = W1ArmType.ANTHROPOMORPHIC,
-            w1_version: W1Version = W1Version.V2,
-            end_effector_type: EndEffectorType = EndEffectorType.BRAINCO_HAND):
+            arm_type: ArmType = ArmType.ANTHROPOMORPHIC,
+            w1_version: W1Version = W1Version.V024,
+            end_effector_type: EndEffectorType = EndEffectorType.BrainCo_Revo1_R
+    ):
         self.logger = get_logger()
 
         self._arm_type = arm_type
@@ -34,16 +34,16 @@ class CartesianToJointPlanner:
     def _init_kine_solver(self):
         ik_nearst_weight = np.array([2., 2., 2., 1., 1., 1., 1.])
         self.kine = DexforceW1Kinematics(
-            self._arm_type == W1ArmType.ANTHROPOMORPHIC)
+            self._arm_type == ArmType.ANTHROPOMORPHIC)
         self.kine.left_arm_kine.set_ik_nearest_weight(ik_nearst_weight)
         self.kine.right_arm_kine.set_ik_nearest_weight(ik_nearst_weight)
         self.kine.set_user_qpos_limits(self.w1_params.qpos_lb,
                                        self.w1_params.qpos_ub)
 
-        if self._w1_version == W1Version.V2:
-            if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
+        if self._w1_version == W1Version.V024:
+            if self._arm_type == ArmType.ANTHROPOMORPHIC:
                 robot_type = RobotType.W1V02_1
-            elif self._arm_type == W1ArmType.INDUSTRIAL:
+            elif self._arm_type == ArmType.INDUSTRIAL:
                 robot_type = RobotType.W1V02_2
             else:
                 raise ValueError(f"Unsupported arm type: {self._arm_type}")

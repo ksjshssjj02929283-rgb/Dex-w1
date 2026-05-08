@@ -7,21 +7,20 @@
 import numpy as np
 from copy import deepcopy
 
-from dexe_robot_client.end_effector_client import EndEffectorType
-from dexe_robot_client.common import W1Version, W1ArmType
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
 from dexe_robot_client.w1 import W1Manager, xpos_to_user_pose, user_pose_to_xpos
 
 
 def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
     """move_joint_full_body()的使用示例"""
     if move_with_ee:
-        end_effector_type = EndEffectorType.BRAINCO_HAND
+        end_effector_type = EndEffectorType.BrainCo_Revo1_R
     else:
         end_effector_type = None
 
     w1_manager = W1Manager(is_sim=is_sim,
-                           arm_type=W1ArmType.ANTHROPOMORPHIC,
-                           w1_version=W1Version.V2,
+                           arm_type=ArmType.ANTHROPOMORPHIC,
+                           w1_version=W1Version.V024,
                            end_effector_type=end_effector_type)
     if not w1_manager.connect() and not w1_manager.is_enabled():
         return
@@ -90,13 +89,13 @@ def move_full_body_example2(move_with_ee: bool,
                             is_local: bool = False):
     """move_linear_full_body()的使用示例"""
     if move_with_ee:
-        end_effector_type = EndEffectorType.BRAINCO_HAND
+        end_effector_type = EndEffectorType.BrainCo_Revo1_R
     else:
         end_effector_type = None
 
     w1_manager = W1Manager(is_sim=is_sim,
-                           arm_type=W1ArmType.ANTHROPOMORPHIC,
-                           w1_version=W1Version.V2,
+                           arm_type=ArmType.ANTHROPOMORPHIC,
+                           w1_version=W1Version.V024,
                            end_effector_type=end_effector_type)
     if not w1_manager.connect() and not w1_manager.is_enabled():
         return

@@ -13,10 +13,9 @@ from typing import Tuple, List
 
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
-
-from ..common import time_consuming, get_logger, W1ArmType, W1Version, download_w1_urdf, StatusCode
+from ..common import time_consuming, get_logger, download_w1_urdf, StatusCode
 from ..common.mapping_index import *
-from ..end_effector_client import EndEffectorType, create_end_effector_client
+from ..end_effector_client import create_end_effector_client
 from ..navigation_client import ChassisClient
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
@@ -28,7 +27,9 @@ from .path_planner.utils.robot_type import *
 from .path_planner.hybrid_planner import HybridPlanner
 from .utils.w1_params import W1Params
 
-from dexe_rp import DexforceW1Kinematics, SRSConfig
+from dexe_rp import DexforceW1Kinematics
+from dexe_rp.utils.type import W1Version, ArmType, EndEffectorType
+from dexe_rp.toolkits import get_urdf_path
 
 from ..client_supervisor.client_supervisior import RobotClientSupervisor
 from .mgr_util.robot_client_wrapper import RobotClientWrapper, GripperClientWrapper
@@ -54,10 +55,10 @@ class W1Manager:
 
     def __init__(self,
                  is_sim: bool,
-                 arm_type: W1ArmType,
-                 w1_version: W1Version = W1Version.V2,
+                 w1_version: W1Version = W1Version.V024,
                  end_effector_type: EndEffectorType = None,
-                 use_nav: bool = False):
+                 use_nav: bool = False,
+                 **kwargs):
         self.logger = get_logger()
         self.TIME_STEP = 0.01  # 100Hz
 
@@ -80,7 +81,8 @@ class W1Manager:
         self._node_thread = None
 
         self._is_sim = None
-        self._arm_type = arm_type
+        self._arm_type = ArmType.INDUSTRIAL if "i" in w1_version.name.lower(
+        ) else ArmType.ANTHROPOMORPHIC
         self._w1_version = w1_version
         self._end_effector_type = end_effector_type
 
@@ -88,7 +90,11 @@ class W1Manager:
                                   self._end_effector_type)
 
         # Download URDF files
-        self._download_urdf_files(arm_type, w1_version, end_effector_type)
+        self._download_urdf_files(
+            robot_type="w1",
+            version=self._w1_version.name.lower(),
+            left_end_effector_type=self._end_effector_type,
+            right_end_effector_type=self._end_effector_type)
 
         # Register cleanup function
         atexit.register(self._destroy_clients)
@@ -103,12 +109,12 @@ class W1Manager:
 
     @property
     def robot_client(self):
-        """根据当前模式动态返回目标 robot client"""
+        """根据当前模式动态返回目标机器人客户端"""
         return self._robot_client_sim if self._is_sim else self._robot_client_real
 
     @property
     def left_ee_client(self):
-        """根据当前模式动态返回目标 left ee client"""
+        """根据当前模式动态返回目标左臂末端执行器的客户端. 如果末端执行器类型为 None 则返回 None"""
         if self._end_effector_type is None:
             self.logger.error(
                 "End effector type is None, no EE client available.")
@@ -117,7 +123,7 @@ class W1Manager:
 
     @property
     def right_ee_client(self):
-        """根据当前模式动态返回目标 right ee client"""
+        """根据当前模式动态返回目标右臂末端执行器的客户端. 如果末端执行器类型为 None 则返回 None"""
         if self._end_effector_type is None:
             self.logger.error(
                 "End effector type is None, no EE client available.")
@@ -126,7 +132,7 @@ class W1Manager:
 
     @property
     def chassis_client(self):
-        """根据当前模式动态返回目标 chassis client"""
+        """根据当前模式动态返回目标底盘客户端. 如果 use_nav=False 则返回 None"""
         if not self._use_nav:
             self.logger.error(
                 "Navigation function is disabled, no chassis client available.")
@@ -143,18 +149,33 @@ class W1Manager:
         """根据当前模式动态返回目标 supervisor_view"""
         return self.supervisor_view_sim if self._is_sim else self.supervisor_view_real
 
-    def _download_urdf_files(self, arm_type, w1_version, end_effector_type):
-        """Download URDF files."""
-        res, file_path = download_w1_urdf(arm_type, w1_version,
-                                          end_effector_type)
-        if not res:
-            raise RuntimeError(
-                f"Failed to download URDF for {arm_type}, {w1_version}, {end_effector_type}"
-            )
-        res, file_path = download_w1_urdf(arm_type, w1_version, None)
-        if not res:
-            raise RuntimeError(
-                f"Failed to download URDF for {arm_type}, {w1_version}, None")
+    def _download_urdf_files(
+        self,
+        robot_type: str = "w1",
+        version: str = "v024",
+        left_end_effector_type: EndEffectorType = EndEffectorType.
+        BrainCo_Revo1_R,
+        right_end_effector_type: EndEffectorType = EndEffectorType.
+        BrainCo_Revo1_R
+    ) -> tuple[str, str]:
+        """下载URDF文件并返回URDF路径
+
+        Args:
+            robot_type (str, optional): 机器人类型. Defaults to "w1".
+            version (str, optional): W1版本. Defaults to "v024".
+            left_end_effector_type (EndEffectorType, optional): 左臂末端执行器类型. Defaults to EndEffectorType.BrainCo_Revo1_R.
+            right_end_effector_type (EndEffectorType, optional): 右臂末端执行器类型. Defaults to EndEffectorType.BrainCo_Revo1_R.
+
+        Returns:
+            tuple[str, str]: w1_urdf_path, w1_with_ee_urdf_path
+        """
+        w1_urdf_path, w1_with_ee_urdf_path = get_urdf_path(
+            robot_type=robot_type,
+            version=version,
+            left_gripper=left_end_effector_type,
+            right_gripper=right_end_effector_type)
+
+        return w1_urdf_path, w1_with_ee_urdf_path
 
     def _initialize_components(self, is_sim):
         """Initialize all components."""
@@ -179,13 +200,13 @@ class W1Manager:
                                      end_effector_type=self._end_effector_type)
         self._init_client_supervisor()
 
-    def _get_robot_type(self, arm_type: W1ArmType, w1_version: W1Version):
-        if w1_version != W1Version.V2:
+    def _get_robot_type(self, arm_type: ArmType, w1_version: W1Version):
+        if w1_version != W1Version.V024:
             raise ValueError(f"Not supported w1 version: {w1_version}")
 
         robot_type_map = {
-            W1ArmType.ANTHROPOMORPHIC: RobotType.W1V02_1,
-            W1ArmType.INDUSTRIAL: RobotType.W1V02_2,
+            ArmType.ANTHROPOMORPHIC: RobotType.W1V02_1,
+            ArmType.INDUSTRIAL: RobotType.W1V02_2,
         }
 
         if arm_type not in robot_type_map:
@@ -194,16 +215,16 @@ class W1Manager:
         return robot_type_map[arm_type]
 
     def _init_fcl_checker(self,
-                          arm_type: W1ArmType,
-                          w1_version: W1Version = W1Version.V2,
+                          arm_type: ArmType,
+                          w1_version: W1Version = W1Version.V024,
                           end_effector_type: EndEffectorType = None):
         fcl_robot_type = self._get_robot_type(arm_type, w1_version)
         self.fcl_checker = FCLChecker(fcl_robot_type, end_effector_type)
         self.fcl_checker.enable_visualize()
 
     def _init_pinocchio(self,
-                        arm_type: W1ArmType = W1ArmType.ANTHROPOMORPHIC,
-                        w1_version: W1Version = W1Version.V2,
+                        arm_type: ArmType = ArmType.ANTHROPOMORPHIC,
+                        w1_version: W1Version = W1Version.V024,
                         end_effector_type: EndEffectorType = None):
         """
         Initialize the pinocchio model and data for the robot.
@@ -214,8 +235,8 @@ class W1Manager:
                                      end_effector_type=end_effector_type)
 
     def _init_planner(self,
-                      arm_type: W1ArmType,
-                      w1_version: W1Version.V2,
+                      arm_type: ArmType,
+                      w1_version: W1Version = W1Version.V024,
                       end_effector_type: EndEffectorType = None):
         planner_robot_type = self._get_robot_type(arm_type, w1_version)
 
@@ -227,8 +248,8 @@ class W1Manager:
         self.hybrid_planner = HybridPlanner()
 
     def _init_cartesian_planner(self,
-                                arm_type: W1ArmType,
-                                w1_version: W1Version,
+                                arm_type: ArmType,
+                                w1_version: W1Version = W1Version.V024,
                                 end_effector_type: EndEffectorType = None):
         self.cartesian_joint_planner = CartesianToJointPlanner(
             arm_type, w1_version, end_effector_type)
@@ -429,7 +450,7 @@ class W1Manager:
     def _init_kine_solver(self):
         ik_nearest_weight = np.array([2., 2., 2., 1., 1., 1., 1.])
         self.kine = DexforceW1Kinematics(
-            self._arm_type == W1ArmType.ANTHROPOMORPHIC)
+            self._arm_type == ArmType.ANTHROPOMORPHIC)
         self.kine.left_arm_kine.set_ik_nearest_weight(ik_nearest_weight)
         self.kine.right_arm_kine.set_ik_nearest_weight(ik_nearest_weight)
         self.kine.set_user_qpos_limits(self.w1_params.qpos_lb,

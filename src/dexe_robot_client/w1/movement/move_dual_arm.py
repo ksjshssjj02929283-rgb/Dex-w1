@@ -16,7 +16,7 @@ from ...common.mapping_index import get_real_idx
 
 from ..path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm
 
-from dexe_rp import DexforceW1Kinematics, SRSConfig
+from dexe_rp import DexforceW1Kinematics, SRSAKinematics
 
 
 class DualArmMovementBaseW1(object):
@@ -188,7 +188,9 @@ class DualArmMovementBaseW1(object):
                         "Cannot find valid ik solution for left arm target pose in move_dual_arm_single_task"
                     )
                     return StatusCode.IK_FAIL
-                srs_cfg = SRSConfig(left_qpos_seed, left_ref_psi)
+                srs_cfg = SRSAKinematics.Config(is_left=True,
+                                                qpos=left_qpos_seed,
+                                                arm_angle=left_ref_psi)
                 res, arml_ik_qpos = arml_kine.get_ik(target_arml_xpos, srs_cfg)
                 if not res:
                     left_ref_psi += 5. / 180. * np.pi
@@ -239,7 +241,9 @@ class DualArmMovementBaseW1(object):
                         "Cannot find valid ik solution for right arm target pose in move_dual_arm_single_task"
                     )
                     return StatusCode.IK_FAIL
-                srs_cfg = SRSConfig(right_qpos_seed, right_ref_psi)
+                srs_cfg = SRSAKinematics.Config(is_left=False,
+                                                qpos=right_qpos_seed,
+                                                arm_angle=right_ref_psi)
                 res, armr_ik_qpos = armr_kine.get_ik(target_armr_xpos, srs_cfg)
                 if not res:
                     right_ref_psi += 5. / 180. * np.pi
@@ -665,7 +669,9 @@ class DualArmMovementBaseW1(object):
                                 "Cannot find valid ik solution for left arm target pose in move_single_arm"
                             )
                             return StatusCode.IK_FAIL
-                        srs_cfg = SRSConfig(left_qpos_seed, left_ref_psi)
+                        srs_cfg = SRSAKinematics.Config(is_left=True,
+                                                        qpos=left_qpos_seed,
+                                                        arm_angle=left_ref_psi)
                         res_ik, arml_ik_qpos = arml_kine.get_ik(
                             target_arml_xpos, srs_cfg)
                         if not res_ik:
@@ -791,7 +797,9 @@ class DualArmMovementBaseW1(object):
                                 "Cannot find valid ik solution for right arm target pose in move_single_arm"
                             )
                             return StatusCode.IK_FAIL
-                        srs_cfg = SRSConfig(right_qpos_seed, right_ref_psi)
+                        srs_cfg = SRSAKinematics.Config(is_left=False,
+                                                        qpos=right_qpos_seed,
+                                                        arm_angle=right_ref_psi)
                         res_ik, armr_ik_qpos = armr_kine.get_ik(
                             target_armr_xpos, srs_cfg)
                         if not res_ik:

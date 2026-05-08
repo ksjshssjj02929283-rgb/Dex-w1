@@ -16,7 +16,7 @@ from copy import deepcopy
 from ...common import LOG_DIR
 from dataclasses import dataclass
 
-from ...end_effector_client import EndEffectorType
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
 from .utils.robot_type import *
 from ...common import get_logger
 
@@ -67,18 +67,19 @@ class FCLChecker:
         self.obstacles_dict = {}
 
         self.use_ee = False
+        self.end_effector_type = None
+        self.armlee_full_path, self.armree_full_path = [], []
         if end_effector_type is not None:
-            if isinstance(end_effector_type, EndEffectorType):
-                self.armlee_full_path, self.armree_full_path = get_ee_full_path(
-                    robot_type, end_effector_type)
-                # self.arml_full_path.append(self.ee_full_path[0])
-                # self.armr_full_path.append(self.ee_full_path[1])
-                self.end_effector_type = end_effector_type
-                self.use_ee = True
-            else:
+            if not isinstance(end_effector_type, EndEffectorType):
+                valid_types = ", ".join(eet.name for eet in EndEffectorType)
                 raise ValueError(
-                    f"Unsupported End Effector Type: {end_effector_type}. Please use PGC_GRIPPER or BRAINCO_HAND or LINKER_HAND."
-                )
+                    f"Unsupported end effector type: {end_effector_type}. "
+                    f"Please use one of: {valid_types}.")
+
+            self.armlee_full_path, self.armree_full_path = get_ee_full_path(
+                robot_type, end_effector_type)
+            self.end_effector_type = end_effector_type
+            self.use_ee = True
 
         self.arml_attached = False
         self.armr_attached = False

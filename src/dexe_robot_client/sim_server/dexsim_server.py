@@ -12,20 +12,21 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from end_effector_interfaces.msg import EEJointFeedback
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
 
 from ..common import (get_logger, generate_w1_urdf, download_w1_urdf,
-                      download_environment, W1Version, W1ArmType,
-                      get_robot_sim2real_idx, get_robot_real2sim_idx,
-                      get_ee_sim2real_idx, get_ee_real2sim_idx)
-from ..end_effector_client import EndEffectorType
+                      download_environment, get_robot_sim2real_idx,
+                      get_robot_real2sim_idx, get_ee_sim2real_idx,
+                      get_ee_real2sim_idx)
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
 
 
 # TODO: set_current_qpos太慢，频率约10Hz
 class DexsimServer:
 
     def __init__(self,
-                 arm_type: W1ArmType,
-                 w1_version: W1Version = W1Version.V2,
+                 arm_type: ArmType,
+                 w1_version: W1Version = W1Version.V024,
                  end_effector_type: EndEffectorType = None):
         self.logger = get_logger()
         self._end_effector_type = end_effector_type
@@ -55,11 +56,11 @@ class DexsimServer:
 
         if self._end_effector_type is not None:
             ee_topics = {
-                EndEffectorType.BRAINCO_HAND: {
+                EndEffectorType.BrainCo_Revo1_R: {
                     "left": "/feedback_sim/hand/left",
                     "right": "/feedback_sim/hand/right",
                 },
-                EndEffectorType.PGC_GRIPPER: {
+                EndEffectorType.DH_PGC_140_50: {
                     "left": "/feedback_sim/gripper/left",
                     "right": "/feedback_sim/gripper/right",
                 }
@@ -67,7 +68,7 @@ class DexsimServer:
 
             self._left_ee_node = Node("left_ee_node")
             self._right_ee_node = Node("right_ee_node")
-            if self._end_effector_type == EndEffectorType.BRAINCO_HAND:
+            if self._end_effector_type == EndEffectorType.BrainCo_Revo1_R:
                 self._sub_left_ee = self._left_ee_node.create_subscription(
                     EEJointFeedback, ee_topics[self._end_effector_type]["left"],
                     self._subscriber_left_ee_callback, 10)
@@ -77,7 +78,7 @@ class DexsimServer:
                     ee_topics[self._end_effector_type]["right"],
                     self._subscriber_right_ee_callback, 10)
 
-            elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
+            elif self._end_effector_type == EndEffectorType.DH_PGC_140_50:
                 self._sub_left_ee = self._left_ee_node.create_subscription(
                     EEJointFeedback, ee_topics[self._end_effector_type]["left"],
                     self._subscriber_left_ee_callback, 10)

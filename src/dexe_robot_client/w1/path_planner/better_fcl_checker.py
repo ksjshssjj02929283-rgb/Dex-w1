@@ -16,7 +16,7 @@ from copy import deepcopy
 from ...common import LOG_DIR
 from dataclasses import dataclass
 
-from ...end_effector_client import EndEffectorType
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
 from .utils.robot_type import *
 from ...common import get_logger
 

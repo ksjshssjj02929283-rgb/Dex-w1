@@ -133,15 +133,15 @@ class GridRRT:
     def set_end_effector_qpos(self, armlee_qpos: np.ndarray,
                               armree_qpos: np.ndarray):
         if self.use_ee:
-            if self.end_effector_type == EndEffectorType.BRAINCO_HAND:
+            if self.end_effector_type == EndEffectorType.BrainCo_Revo1_R:
                 if armlee_qpos.shape != (6,) or armree_qpos.shape != (6,):
                     raise ValueError(
-                        f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                        f"For BRAINCO_REVO1_R, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
                     )
-            if self.end_effector_type == EndEffectorType.PGC_GRIPPER:
+            if self.end_effector_type == EndEffectorType.DH_PGC_140_50:
                 if armlee_qpos.shape != (2,) or armree_qpos.shape != (2,):
                     raise ValueError(
-                        f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                        f"For DH_PGC_140_50, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
                     )
             self.armlee_qpos = armlee_qpos
             self.armree_qpos = armree_qpos
@@ -459,15 +459,15 @@ class Coordination:
     def set_end_effector_qpos(self, armlee_qpos: np.ndarray,
                               armree_qpos: np.ndarray):
         if self.use_ee:
-            if self.end_effector_type == EndEffectorType.BRAINCO_HAND:
+            if self.end_effector_type == EndEffectorType.BrainCo_Revo1_R:
                 if armlee_qpos.shape != (6,) or armree_qpos.shape != (6,):
                     raise ValueError(
-                        f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                        f"For BRAINCO_REVO1_R, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
                     )
-            if self.end_effector_type == EndEffectorType.PGC_GRIPPER:
+            if self.end_effector_type == EndEffectorType.DH_PGC_140_50:
                 if armlee_qpos.shape != (2,) or armree_qpos.shape != (2,):
                     raise ValueError(
-                        f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                        f"For DH_PGC_140_50, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
                     )
             self.armlee_qpos = armlee_qpos
             self.armree_qpos = armree_qpos

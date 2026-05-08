@@ -13,8 +13,7 @@ import numpy as np
 from functools import wraps
 from .logger import get_logger
 from .config import DOWNLOAD_DIR, ASSETS_DIR, MODEL_DIR, ENVIRONMENT_DIR, URL_PREFIX
-from .robot_type import W1ArmType, W1Version
-from ..end_effector_client import EndEffectorType
+from dexe_rp.utils.type import ArmType, W1Version, EndEffectorType
 
 
 # 函数运行耗时装饰器
@@ -83,21 +82,21 @@ def download_and_unzip_file(url: str) -> bool:
 
 # TODO: 做唯一性检查
 def generate_w1_urdf(
-        arm_type: W1ArmType,
-        w1_version: W1Version = W1Version.V2,
+        arm_type: ArmType,
+        w1_version: W1Version = W1Version.V024,
         end_effector_type: EndEffectorType = None) -> tuple[bool, str]:
     logger = get_logger()
 
     name = "W1"
 
-    if w1_version != W1Version.V2:
+    if w1_version != W1Version.V024:
         logger.error(f"{w1_version.name} are not support.")
         return False, None
 
-    name += "_V2"
-    if arm_type == W1ArmType.ANTHROPOMORPHIC:
+    name += "_V024"
+    if arm_type == ArmType.ANTHROPOMORPHIC:
         name += "_A"
-    elif arm_type == W1ArmType.INDUSTRIAL:
+    elif arm_type == ArmType.INDUSTRIAL:
         name += "_I"
     else:
         logger.error(f"{arm_type.name} are not support.")
@@ -105,9 +104,9 @@ def generate_w1_urdf(
 
     if end_effector_type is None:
         pass
-    elif end_effector_type == EndEffectorType.BRAINCO_HAND:
+    elif end_effector_type == EndEffectorType.BrainCo_Revo1_R:
         name += "_BRAINCO"
-    elif end_effector_type == EndEffectorType.PGC_GRIPPER:
+    elif end_effector_type == EndEffectorType.DH_PGC_140_50:
         name += "_PGC"
     else:
         logger.error(f"{end_effector_type.name} are not support.")
@@ -127,18 +126,18 @@ def generate_w1_urdf(
     urdf_manager.add_component("torso", str(ASSETS_DIR / "torso/torso.urdf"))
     urdf_manager.add_component("head", str(ASSETS_DIR / "head/head.urdf"))
 
-    if arm_type == W1ArmType.ANTHROPOMORPHIC:
+    if arm_type == ArmType.ANTHROPOMORPHIC:
         urdf_manager.add_component("left_arm",
                                    str(ASSETS_DIR / "left_arm_a/left_arm.urdf"))
         urdf_manager.add_component(
             "right_arm", str(ASSETS_DIR / "right_arm_a/right_arm.urdf"))
-    elif arm_type == W1ArmType.INDUSTRIAL:
+    elif arm_type == ArmType.INDUSTRIAL:
         urdf_manager.add_component("left_arm",
                                    str(ASSETS_DIR / "left_arm_i/left_arm.urdf"))
         urdf_manager.add_component(
             "right_arm", str(ASSETS_DIR / "right_arm_i/right_arm.urdf"))
 
-    if end_effector_type == EndEffectorType.BRAINCO_HAND:
+    if end_effector_type == EndEffectorType.BrainCo_Revo1_R:
         left_hand_attach_xpos = np.array([[-1, 0, 0, 0], [0, 0, 1, 0],
                                           [0, 1, 0, 0.02], [0, 0, 0, 1]])
         urdf_manager.add_component("left_hand",
@@ -152,7 +151,7 @@ def generate_w1_urdf(
                                    str(ASSETS_DIR /
                                        "right_brainco/right_hand.urdf"),
                                    transform=right_hand_attach_xpos)
-    elif end_effector_type == EndEffectorType.PGC_GRIPPER:
+    elif end_effector_type == EndEffectorType.DH_PGC_140_50:
         urdf_manager.add_component("left_hand",
                                    str(ASSETS_DIR / "left_pgc/left_hand.urdf"),
                                    transform=np.eye(4))
@@ -171,21 +170,21 @@ def generate_w1_urdf(
 
 
 def download_w1_urdf(
-        arm_type: W1ArmType,
-        w1_version: W1Version = W1Version.V2,
+        arm_type: ArmType,
+        w1_version: W1Version = W1Version.V024,
         end_effector_type: EndEffectorType = None) -> tuple[bool, str]:
     logger = get_logger()
 
     name = "W1"
 
-    if w1_version != W1Version.V2:
+    if w1_version != W1Version.V024:
         logger.error(f"{w1_version.name} are not support.")
         return False, None
 
     name += "_V2"
-    if arm_type == W1ArmType.ANTHROPOMORPHIC:
+    if arm_type == ArmType.ANTHROPOMORPHIC:
         name += "_A"
-    elif arm_type == W1ArmType.INDUSTRIAL:
+    elif arm_type == ArmType.INDUSTRIAL:
         name += "_I"
     else:
         logger.error(f"{arm_type.name} are not support.")
@@ -193,7 +192,7 @@ def download_w1_urdf(
 
     if end_effector_type is None:
         pass
-    elif end_effector_type == EndEffectorType.BRAINCO_HAND:
+    elif end_effector_type == EndEffectorType.BrainCo_Revo1_R:
         name += "_BRAINCO"
         end_effector_folder_path = MODEL_DIR / "simplified_brainco"
         if not end_effector_folder_path.exists():
@@ -205,7 +204,7 @@ def download_w1_urdf(
                        zip_path=DOWNLOAD_DIR,
                        unzip_path=MODEL_DIR)
 
-    elif end_effector_type == EndEffectorType.PGC_GRIPPER:
+    elif end_effector_type == EndEffectorType.DH_PGC_140_50:
         name += "_PGC"
         end_effector_folder_path = MODEL_DIR / "simplified_pgc"
         if not end_effector_folder_path.exists():
@@ -216,7 +215,7 @@ def download_w1_urdf(
             unzip_file(filename=file_name,
                        zip_path=DOWNLOAD_DIR,
                        unzip_path=MODEL_DIR)
-    elif end_effector_type == EndEffectorType.LINKER_HAND:
+    elif end_effector_type == EndEffectorType.Linker_L6:
         name += "_LINKER"
         end_effector_folder_path = MODEL_DIR / "simplified_linker"
         if not end_effector_folder_path.exists():

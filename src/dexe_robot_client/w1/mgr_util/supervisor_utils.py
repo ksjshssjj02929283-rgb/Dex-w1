@@ -14,7 +14,7 @@ from ...common import get_logger, DATA_DIR, StatusCode
 from .supervisor_view import SupervisorViewW1
 
 from ..path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm
-from dexe_rp import DexforceW1Kinematics, SRSConfig
+from dexe_rp import DexforceW1Kinematics, SRSAKinematics
 
 
 class StaticUtilityW1(object):
@@ -221,7 +221,10 @@ class StaticUtilityW1(object):
             if not use_nearest:
                 res, ref_psi = arm_kine.calc_arm_angle(cur_qseed)
                 if res:
-                    srs_cfg = SRSConfig(cur_qseed, ref_psi)
+                    srs_cfg = SRSAKinematics.Config(
+                        is_left=(name == "left_arm"),
+                        qpos=cur_qseed,
+                        arm_angle=ref_psi)
                     res_ik, cur_qpos = arm_kine.get_ik(cur_xpos, srs_cfg)
                     if not res_ik:
                         use_nearest = True

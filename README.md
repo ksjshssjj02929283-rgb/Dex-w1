@@ -65,14 +65,12 @@ python3 ./examples/run_dexsim_server.py # Modify params according to your config
 
 #### Run examples
 ```python
-from dexe_robot_client.end_effector_client import EndEffectorType 
-from dexe_robot_client.common import W1Version, W1ArmType
+from dexe_rp.utils.type import W1Version, ArmType, EndEffectorType
 from dexe_robot_client.w1 import W1Manager
 
 w1_manager = W1Manager(is_sim = True,
-                        arm_type=W1ArmType.ANTHROPOMORPHIC, 
-                        w1_version=W1Version.V2, 
-                        end_effector_type = EndEffectorType.BRAINCO_HAND)
+                        w1_version=W1Version.V024, 
+                        end_effector_type = EndEffectorType.BrainCo_Revo1_R)
 
 if not w1_manager.connect() and not w1_manager.is_enabled():
     return
