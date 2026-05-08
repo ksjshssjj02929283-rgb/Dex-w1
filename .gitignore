@@ -18,3 +18,5 @@ launch.json
 setting.json
 py.typed
 .idea/*
+
+.codex
