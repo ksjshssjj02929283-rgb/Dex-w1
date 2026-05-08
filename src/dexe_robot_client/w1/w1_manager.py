@@ -981,12 +981,14 @@ class W1Manager:
             return (StatusCode.SUCCESS if res else StatusCode.FAIL), value
 
         robot_info = self.robot_client.get_info()
-        if robot_info.joint_position is None:
+        if robot_info.joint_position_cmd is None and robot_info.joint_position is None:
             self.logger.error(
                 f"Get current robot info failed, status: {robot_info.status}.")
             return StatusCode.ROBOT_STATUS_INVALID, None
-
-        cur_qpos = np.array(robot_info.joint_position)
+        if robot_info.joint_position_cmd is None:
+            cur_qpos = np.array(robot_info.joint_position)
+        else:
+            cur_qpos = np.array(robot_info.joint_position_cmd)
 
         if name == "full_body":
             return StatusCode.SUCCESS, cur_qpos
