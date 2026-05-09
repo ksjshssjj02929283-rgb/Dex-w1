@@ -717,6 +717,22 @@ class W1Manager:
             base_position)
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
+    def move_chassis_road_navigation(self,
+                                     waypoints: list,
+                                     frame_id: str = "map",
+                                     timeout_sec: float = 10.0,
+                                     behavior_tree: str = "") -> StatusCode:
+        """路网/多路点导航，waypoints 为 [x, y, yaw_rad] 列表。"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        res = self._get_chassis_client().set_chassis_road_navigation(
+            waypoints, frame_id, timeout_sec, behavior_tree)
+        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
+
     def move_chassis_ctrl(self, base_position: np.ndarray) -> StatusCode:
         """移动底盘至目标位置，使用底盘控制接口"""
         if not self._use_nav:
@@ -729,7 +745,7 @@ class W1Manager:
             base_position)
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
-    def chassis_undocking(self) -> StatusCode:
+    def chassis_undocking(self, forward: bool = True) -> StatusCode:
         """底盘出桩，向 control/cmd_vel 发布 2s 梯形线速度。"""
         if not self._use_nav:
             self.logger.error("Navigation function is disabled.")
@@ -737,7 +753,7 @@ class W1Manager:
         if not self._has_chassis_client():
             self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL
-        res = self._get_chassis_client().chassis_undocking()
+        res = self._get_chassis_client().chassis_undocking(forward)
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def get_current_chassis_pose(self) -> tuple[StatusCode, np.ndarray]:
@@ -796,6 +812,40 @@ class W1Manager:
                              f"thread={threading.current_thread().name}")
             self._last_reported_nav_status = nav_status
         return StatusCode.SUCCESS, nav_status
+
+    def get_road_navigation_status(self) -> tuple[StatusCode, str]:
+        """获取当前路网/多路点导航状态。"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL, "DISABLED"
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL, "NOT_INITIALIZED"
+        return StatusCode.SUCCESS, self._get_chassis_client(
+        ).get_road_navigation_status()
+
+    def get_road_navigation_result(self) -> tuple[StatusCode, bool, str]:
+        """获取最近一次路网/多路点导航结果。"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL, False, "DISABLED"
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL, False, "NOT_INITIALIZED"
+        success, message = self._get_chassis_client(
+        ).get_road_navigation_result()
+        return StatusCode.SUCCESS, success, message
+
+    def cancel_road_navigation(self) -> StatusCode:
+        """取消当前路网/多路点导航任务。"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        res = self._get_chassis_client().cancel_road_navigation()
+        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def get_control_status(self) -> str:
         """获取底盘控制状态"""
@@ -864,10 +914,11 @@ class W1Manager:
 
         self.logger.info("Sending request to cancel navigation and control...")
         nav_cancel_ok = self._get_chassis_client().cancel_chassis_nav2()
+        road_nav_cancel_ok = self._get_chassis_client().cancel_road_navigation()
         control_cancel_ok = self._get_chassis_client().cancel_chassis_control()
 
         # 只要有一个成功，就认为取消指令已尽力发送
-        if nav_cancel_ok or control_cancel_ok:
+        if nav_cancel_ok or road_nav_cancel_ok or control_cancel_ok:
             return StatusCode.SUCCESS
         return StatusCode.FAIL
 

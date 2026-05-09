@@ -3,7 +3,7 @@ from ..common import get_logger
 from geometry_msgs.msg import PoseStamped, Twist
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 from rclpy.action import ActionClient
-from nav2_msgs.action import NavigateToPose
+from nav2_msgs.action import NavigateThroughPoses, NavigateToPose
 from std_srvs.srv import Trigger
 from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.parameter import Parameter
@@ -49,6 +49,8 @@ class ChassisClient(NavigationClient):
 
             self._set_nav_client = ActionClient(self, NavigateToPose,
                                                 'navigate_to_pose')
+            self._road_nav_action_client = ActionClient(
+                self, NavigateThroughPoses, '/navigate_through_poses')
             self._get_status_client = self.create_client(
                 Trigger, 'control/get_control_status')
             self._cancel_control_client = self.create_client(

@@ -8,7 +8,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Twist
 from action_msgs.msg import GoalStatus
 from scipy.spatial.transform import Rotation as R
-from nav2_msgs.action import NavigateToPose
+from nav2_msgs.action import NavigateThroughPoses, NavigateToPose
 from std_srvs.srv import Trigger
 from rcl_interfaces.srv import SetParameters, GetParameters
 from rcl_interfaces.msg import ParameterType
@@ -34,6 +34,8 @@ class NavigationClient(ABC, Node):
     AUTO_CHARGING_TERMINAL_STATUSES = {
         "SUCCEEDED", "CANCELED", "ABORTED", "REJECTED", "FAILED_TO_SEND"
     }
+
+    ROAD_NAV_STATUS_NAMES = AUTO_CHARGING_STATUS_NAMES
 
     def __init__(self,
                  name: str,
@@ -83,6 +85,16 @@ class NavigationClient(ABC, Node):
         self._last_reported_nav_state = None
         self._nav_result = None  # 存储最后的导航结果
         self._nav_task_id = 0  # 导航任务ID，用于区分不同的导航任务
+        self._road_nav_action_client = None
+        self._road_nav_goal_handle = None
+        self._road_nav_send_goal_future = None
+        self._road_nav_result_future = None
+        self._road_nav_cancel_future = None
+        self._road_nav_status = "IDLE"
+        self._road_nav_done = False
+        self._road_nav_success = False
+        self._last_road_nav_feedback = None
+        self._last_road_nav_result_message = ""
         self._last_control_status = None
         self._last_control_status_success = False
         # control status 防抖 + 防陈旧
@@ -321,6 +333,141 @@ class NavigationClient(ABC, Node):
                 f"Error cancelling navigation goal: {str(e)}")
             return False
 
+    def _create_road_nav_pose(self, x: float, y: float, yaw_rad: float,
+                              frame_id: str) -> PoseStamped:
+        """创建 NavigateThroughPoses 路点，yaw 使用弧度。"""
+        pose = PoseStamped()
+        pose.header.frame_id = frame_id
+        pose.header.stamp = self.get_clock().now().to_msg()
+        pose.pose.position.x = float(x)
+        pose.pose.position.y = float(y)
+        pose.pose.position.z = 0.0
+
+        half_yaw = float(yaw_rad) * 0.5
+        pose.pose.orientation.z = math.sin(half_yaw)
+        pose.pose.orientation.w = math.cos(half_yaw)
+        return pose
+
+    def set_chassis_road_navigation(self,
+                                    waypoints: list,
+                                    frame_id: str = "map",
+                                    timeout_sec: float = 10.0,
+                                    behavior_tree: str = "") -> bool:
+        """发送路网/多路点导航任务，非阻塞返回是否成功发出。
+
+        waypoints 中每个路点为 [x, y, yaw_rad] 或 (x, y, yaw_rad)。
+        yaw_rad 使用弧度，和 Nav2 NavigateThroughPoses 原生接口一致。
+        """
+        if self._road_nav_action_client is None:
+            self.get_logger().error(
+                "NavigateThroughPoses action client not initialized")
+            return False
+        if not waypoints:
+            self.get_logger().error("Road navigation waypoints is empty")
+            return False
+
+        action_name = getattr(self._road_nav_action_client, "_action_name",
+                              "/navigate_through_poses")
+        self.get_logger().info(
+            f"Waiting for NavigateThroughPoses action server: {action_name}")
+        self._road_nav_status = "WAITING_SERVER"
+        if not self._road_nav_action_client.wait_for_server(
+                timeout_sec=timeout_sec):
+            self.get_logger().error(
+                "NavigateThroughPoses action server is not available")
+            self._road_nav_status = "FAILED_TO_SEND"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return False
+
+        try:
+            goal = NavigateThroughPoses.Goal()
+            goal.poses = [
+                self._create_road_nav_pose(x, y, yaw, frame_id)
+                for x, y, yaw in waypoints
+            ]
+            goal.behavior_tree = behavior_tree
+        except (TypeError, ValueError) as e:
+            self.get_logger().error(
+                f"Invalid road navigation waypoints: {e}")
+            self._road_nav_status = "FAILED_TO_SEND"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return False
+
+        self.get_logger().info(f"Sending {len(goal.poses)} road nav poses")
+        for index, (x, y, yaw) in enumerate(waypoints, start=1):
+            self.get_logger().info(
+                f"  {index}: x={float(x):.3f}, y={float(y):.3f}, yaw={float(yaw):.3f} rad"
+            )
+
+        self._road_nav_done = False
+        self._road_nav_success = False
+        self._road_nav_status = "ACCEPTED"
+        self._road_nav_goal_handle = None
+        self._road_nav_result_future = None
+        self._road_nav_cancel_future = None
+        self._last_road_nav_feedback = None
+        self._last_road_nav_result_message = ""
+
+        try:
+            self._road_nav_send_goal_future = \
+                self._road_nav_action_client.send_goal_async(
+                    goal,
+                    feedback_callback=self._road_nav_feedback_callback)
+            self._road_nav_send_goal_future.add_done_callback(
+                self._road_nav_goal_done_callback)
+            return True
+        except Exception as e:
+            self.get_logger().error(
+                f"Failed to send NavigateThroughPoses goal: {e}")
+            self._road_nav_status = "FAILED_TO_SEND"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return False
+
+    def get_road_navigation_status(self) -> str:
+        """获取当前路网/多路点导航状态。"""
+        return self._road_nav_status
+
+    def get_road_navigation_result(self) -> tuple[bool, str]:
+        """获取最近一次路网/多路点导航结果。"""
+        return self._road_nav_success, self._last_road_nav_result_message
+
+    def cancel_road_navigation(self) -> bool:
+        """取消当前路网/多路点导航任务。"""
+        if self._road_nav_goal_handle is None and self._road_nav_status in {
+                "ACCEPTED", "WAITING_SERVER"
+        }:
+            self.get_logger().info(
+                "Waiting for road navigation goal to be accepted before cancelling..."
+            )
+            start_time = time.time()
+            while time.time() - start_time < 1.0:
+                self.spin_once(timeout_sec=0.05)
+                if self._road_nav_goal_handle is not None:
+                    break
+                time.sleep(0.05)
+
+        if self._road_nav_goal_handle is None:
+            self.get_logger().warning(
+                "No accepted NavigateThroughPoses goal to cancel")
+            return False
+
+        try:
+            self._road_nav_status = "CANCELING"
+            self._road_nav_cancel_future = \
+                self._road_nav_goal_handle.cancel_goal_async()
+            self._road_nav_cancel_future.add_done_callback(
+                self._road_nav_cancel_done_callback)
+            self.get_logger().info(
+                "NavigateThroughPoses cancel request sent")
+            return True
+        except Exception as e:
+            self.get_logger().error(
+                f"Failed to cancel NavigateThroughPoses goal: {e}")
+            return False
+
     def _auto_charging_feedback_callback(self, feedback_msg):
         feedback = feedback_msg.feedback
         self._last_auto_charging_feedback = feedback
@@ -465,6 +612,71 @@ class NavigationClient(ABC, Node):
             self._auto_charging_success = False
             self._auto_charging_done = True
 
+    def _road_nav_feedback_callback(self, feedback_msg):
+        feedback = feedback_msg.feedback
+        self._last_road_nav_feedback = feedback
+        if self._road_nav_status not in {"CANCELING"}:
+            self._road_nav_status = "EXECUTING"
+        self.get_logger().info(
+            "NavigateThroughPoses feedback: "
+            f"poses_remaining={feedback.number_of_poses_remaining}, "
+            f"distance_remaining={feedback.distance_remaining:.3f} m")
+
+    def _road_nav_goal_done_callback(self, future):
+        try:
+            goal_handle = future.result()
+        except Exception as e:
+            self.get_logger().error(
+                f"NavigateThroughPoses goal send failed: {e}")
+            self._road_nav_status = "FAILED_TO_SEND"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().error("NavigateThroughPoses goal was rejected")
+            self._road_nav_done = True
+            self._road_nav_success = False
+            self._road_nav_status = "REJECTED"
+            return
+
+        self._road_nav_goal_handle = goal_handle
+        self._road_nav_status = "ACCEPTED"
+        self.get_logger().info("NavigateThroughPoses goal accepted")
+        self._road_nav_result_future = goal_handle.get_result_async()
+        self._road_nav_result_future.add_done_callback(
+            self._road_nav_result_done_callback)
+
+    def _road_nav_cancel_done_callback(self, future):
+        try:
+            response = future.result()
+            self.get_logger().info(
+                f"NavigateThroughPoses cancel response: goals_canceling={len(response.goals_canceling)}"
+            )
+        except Exception as e:
+            self.get_logger().error(
+                f"NavigateThroughPoses cancel failed: {e}")
+
+    def _road_nav_result_done_callback(self, future):
+        try:
+            response = future.result()
+            self._road_nav_status = self.ROAD_NAV_STATUS_NAMES.get(
+                response.status, "UNKNOWN")
+            self._road_nav_success = self._road_nav_status == "SUCCEEDED"
+            self._last_road_nav_result_message = self._road_nav_status
+            if self._road_nav_success:
+                self.get_logger().info("NavigateThroughPoses succeeded")
+            else:
+                self.get_logger().error(
+                    f"NavigateThroughPoses finished with status={self._road_nav_status}({response.status})"
+                )
+            self._road_nav_done = True
+        except Exception as e:
+            self.get_logger().error(f"NavigateThroughPoses result error: {e}")
+            self._road_nav_status = "UNKNOWN"
+            self._road_nav_success = False
+            self._road_nav_done = True
+
     def get_control_status(self) -> str:
         """
         获取当前缓存的底层控制状态（不触发服务调用）
@@ -566,10 +778,11 @@ class NavigationClient(ABC, Node):
         self._set_ctrl_publisher.publish(chassis_position)
         return True
 
-    def chassis_undocking(self) -> bool:
-        """发布出桩梯形速度，沿 base_link 正 x 方向运动 2s。
+    def chassis_undocking(self, forward: bool = True) -> bool:
+        """发布出桩梯形速度，沿 base_link x 方向运动 2s。
 
         速度曲线：最大线速度 0.3m/s，加速度 0.3m/s^2，1s 加速后 1s 减速。
+        forward 为 True 时正 x 前进，False 时负 x 后退。
         """
         if self._cmd_vel_publisher is None:
             self.get_logger().error("Cmd vel publisher not initialized.")
@@ -582,8 +795,10 @@ class NavigationClient(ABC, Node):
         accel_time_sec = max_speed / acceleration
         period_sec = 1.0 / publish_rate_hz
         start_time = time.monotonic()
+        direction = 1.0 if forward else -1.0
 
-        self.get_logger().info("Start undocking velocity command")
+        self.get_logger().info(
+            f"Start undocking velocity command, forward={forward}")
 
         try:
             while rclpy.ok():
@@ -599,7 +814,7 @@ class NavigationClient(ABC, Node):
                         max_speed - acceleration * (elapsed - accel_time_sec))
 
                 cmd_vel = Twist()
-                cmd_vel.linear.x = speed
+                cmd_vel.linear.x = direction * speed
                 self._cmd_vel_publisher.publish(cmd_vel)
                 time.sleep(period_sec)
 
