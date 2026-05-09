@@ -836,17 +836,6 @@ class W1Manager:
         ).get_road_navigation_result()
         return StatusCode.SUCCESS, success, message
 
-    def cancel_road_navigation(self) -> StatusCode:
-        """取消当前路网/多路点导航任务。"""
-        if not self._use_nav:
-            self.logger.error("Navigation function is disabled.")
-            return StatusCode.FAIL
-        if not self._has_chassis_client():
-            self.logger.error("Chassis client has not initialized")
-            return StatusCode.FAIL
-        res = self._get_chassis_client().cancel_road_navigation()
-        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
-
     def get_control_status(self) -> str:
         """获取底盘控制状态"""
         if not self._use_nav:

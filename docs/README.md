@@ -15,7 +15,7 @@
 - 底层 action 使用 Nav2 `nav2_msgs.action.NavigateThroughPoses`，action 名为 `/navigate_through_poses`。
 - `W1Manager.move_chassis_road_navigation(waypoints, frame_id="map", timeout_sec=10.0, behavior_tree="")` 非阻塞发送路点任务；每个路点格式为 `[x, y, yaw_rad]`，yaw 单位为弧度。
 - `W1Manager.get_road_navigation_status()` 返回当前状态字符串，可能为 `IDLE`、`WAITING_SERVER`、`ACCEPTED`、`EXECUTING`、`CANCELING`、`SUCCEEDED`、`CANCELED`、`ABORTED`、`REJECTED`、`FAILED_TO_SEND`。
-- `W1Manager.get_road_navigation_result()` 返回最近一次路网导航是否成功及结果状态；`W1Manager.cancel_road_navigation()` 用于取消已接受的路网导航 goal。
+- `W1Manager.get_road_navigation_result()` 返回最近一次路网导航是否成功及结果状态。
 - `W1Manager.cancel_chassis_motion()` 会同时尝试取消单点导航、路网导航和底盘控制任务。
 
 ## 底盘回充接口
