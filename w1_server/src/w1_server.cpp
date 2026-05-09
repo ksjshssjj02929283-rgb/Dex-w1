@@ -984,6 +984,9 @@ bool RobotServer::SortFeedbackByJointName(RobotFeedback& feedback) {
         return false;
     }
 
+    // 只有在成功匹配时才重置日志标志
+    has_logged_sort_feedback_error_ = false;
+
     // 将排序后的数据复制回反馈结构
     for (int i = 0; i < ndof_robot; ++i) {
         feedback.joint_feedback[i] = sorted_joints[i];
@@ -1047,6 +1050,7 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         ndof_config_ = ndof_robot;
         LOG_INFO << "自动检测到 W1 模式，实际关节数: " << ndof_config_;
         RCLCPP_INFO(this->get_logger(), "自动检测到 W1 模式，实际关节数: %d", ndof_config_);
+        has_logged_unknown_mode_ = false;
         return RobotMode::W1;
     }
     if (is_exact_match(robot_model_.params_ptr->joints_dual_arm)) {
@@ -1054,6 +1058,7 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         ndof_config_ = robot_model_.params_ptr->joints_dual_arm.size();
         LOG_INFO << "自动检测到 DualArm 模式，实际关节数: " << ndof_config_;
         RCLCPP_INFO(this->get_logger(), "自动检测到 DualArm 模式，实际关节数: %d", ndof_config_);
+        has_logged_unknown_mode_ = false;
         return RobotMode::DualArm;
     }
     if (is_exact_match(robot_model_.params_ptr->joints_a1)) {
@@ -1061,6 +1066,7 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         ndof_config_ = robot_model_.params_ptr->joints_a1.size();
         LOG_INFO << "自动检测到 A1 模式，实际关节数: " << ndof_config_;
         RCLCPP_INFO(this->get_logger(), "自动检测到 A1 模式，实际关节数: %d", ndof_config_);
+        has_logged_unknown_mode_ = false;
         return RobotMode::A1;
     }
     if (is_exact_match(robot_model_.params_ptr->joints_single_arm)) {
@@ -1068,6 +1074,7 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         ndof_config_ = robot_model_.params_ptr->joints_single_arm.size();
         LOG_INFO << "自动检测到 SingleArm 模式，实际关节数: " << ndof_config_;
         RCLCPP_INFO(this->get_logger(), "自动检测到 SingleArm 模式，实际关节数: %d", ndof_config_);
+        has_logged_unknown_mode_ = false;
         return RobotMode::SingleArm;
     }
 
