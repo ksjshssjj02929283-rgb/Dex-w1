@@ -69,6 +69,9 @@ class CartesianToJointPlanner:
     def set_whole_body_ik_cost_type(self, cost_type: str):
         self.whole_body_ik_solver.set_cost_function(cost_type=cost_type)
 
+    def set_whole_body_ik_focus_point(self, focus_point: np.ndarray):
+        self.whole_body_ik_solver.set_focus_point(focus_point)
+
     def set_arm_tcp(self, name: str, pose: np.ndarray):
         if name == "left_arm":
             self.left_tcp = pose
