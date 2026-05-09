@@ -1,5 +1,5 @@
 cd "$(dirname "$0")"
-source ../../install/setup.bash
+source /opt/w1_server/setup.bash
 
 CONFIG_FILE="$HOME/dexe_robot_server_data/robot_config.yaml"
 

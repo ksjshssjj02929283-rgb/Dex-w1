@@ -77,9 +77,11 @@ private:
     VectorDof joint_position_after_filter_ = VectorDof::Zero();
 
     // 机器人模式支持
-    RobotMode robot_mode_ = RobotMode::W1;   // 当前机器人模式
-    int ndof_config_;                        // 从配置读取的实际关节数 (W1=20, A1=14, Arm=7)
-    bool robot_mode_auto_detected_ = false;  // 模式是否已自动检测
+    RobotMode robot_mode_ = RobotMode::W1;         // 当前机器人模式
+    int ndof_config_;                              // 从配置读取的实际关节数 (W1=20, A1=14, Arm=7)
+    bool robot_mode_auto_detected_ = false;        // 模式是否已自动检测
+    bool has_logged_unknown_mode_ = false;         // 是否已记录未知模式警告
+    bool has_logged_sort_feedback_error_ = false;  // 是否已记录反馈排序错误警告
 
     // 根据反馈数据自动检测机器人模式
     RobotMode DetectRobotModeFromFeedback(const RobotFeedback& feedback);

@@ -853,10 +853,14 @@ bool RobotServer::SortFeedbackByJointName(RobotFeedback& feedback) {
     }
 
     if (valid_count != ndof_config_) {
-        RCLCPP_ERROR(this->get_logger(), "SortFeedbackByJointName: joint name count mismatch. Expected %d, got %d",
-                     ndof_config_, valid_count);
-        LOG_CRIT << "SortFeedbackByJointName: joint name count mismatch. Expected " << ndof_config_ << ", got "
-                 << valid_count;
+        RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                              "SortFeedbackByJointName: joint name count mismatch. Expected %d, got %d", ndof_config_,
+                              valid_count);
+        if (!has_logged_sort_feedback_error_) {
+            LOG_CRIT << "SortFeedbackByJointName: joint name count mismatch. Expected " << ndof_config_ << ", got "
+                     << valid_count;
+            has_logged_sort_feedback_error_ = true;
+        }
         return false;
     }
 
@@ -881,12 +885,19 @@ bool RobotServer::SortFeedbackByJointName(RobotFeedback& feedback) {
     }
 
     if (matched_count != ndof_config_) {
-        RCLCPP_ERROR(this->get_logger(), "SortFeedbackByJointName: matched count mismatch. Expected %d, matched %d",
-                     ndof_config_, matched_count);
-        LOG_CRIT << "SortFeedbackByJointName: matched count mismatch. Expected " << ndof_config_ << ", matched "
-                 << matched_count;
+        RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                              "SortFeedbackByJointName: matched count mismatch. Expected %d, matched %d", ndof_config_,
+                              matched_count);
+        if (!has_logged_sort_feedback_error_) {
+            LOG_CRIT << "SortFeedbackByJointName: matched count mismatch. Expected " << ndof_config_ << ", matched "
+                     << matched_count;
+            has_logged_sort_feedback_error_ = true;
+        }
         return false;
     }
+
+    // 只有在成功匹配时才重置日志标志
+    has_logged_sort_feedback_error_ = false;
 
     // 将排序后的数据复制回反馈结构
     for (int i = 0; i < ndof_robot; ++i) {
@@ -953,6 +964,7 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         ndof_config_ = ndof_robot;
         LOG_INFO << "自动检测到 W1 模式，实际关节数: " << ndof_config_;
         RCLCPP_INFO(this->get_logger(), "自动检测到 W1 模式，实际关节数: %d", ndof_config_);
+        has_logged_unknown_mode_ = false;
         return RobotMode::W1;
     }
     if (is_exact_match(robot_model_.params_ptr->joints_dual_arm)) {
@@ -960,6 +972,7 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         ndof_config_ = robot_model_.params_ptr->joints_dual_arm.size();
         LOG_INFO << "自动检测到 DualArm 模式，实际关节数: " << ndof_config_;
         RCLCPP_INFO(this->get_logger(), "自动检测到 DualArm 模式，实际关节数: %d", ndof_config_);
+        has_logged_unknown_mode_ = false;
         return RobotMode::DualArm;
     }
     if (is_exact_match(robot_model_.params_ptr->joints_a1)) {
@@ -967,6 +980,7 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         ndof_config_ = robot_model_.params_ptr->joints_a1.size();
         LOG_INFO << "自动检测到 A1 模式，实际关节数: " << ndof_config_;
         RCLCPP_INFO(this->get_logger(), "自动检测到 A1 模式，实际关节数: %d", ndof_config_);
+        has_logged_unknown_mode_ = false;
         return RobotMode::A1;
     }
     if (is_exact_match(robot_model_.params_ptr->joints_single_arm)) {
@@ -974,11 +988,15 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         ndof_config_ = robot_model_.params_ptr->joints_single_arm.size();
         LOG_INFO << "自动检测到 SingleArm 模式，实际关节数: " << ndof_config_;
         RCLCPP_INFO(this->get_logger(), "自动检测到 SingleArm 模式，实际关节数: %d", ndof_config_);
+        has_logged_unknown_mode_ = false;
         return RobotMode::SingleArm;
     }
 
-    LOG_WARN << "未匹配到任何已知模式";
-    RCLCPP_WARN(this->get_logger(), "未匹配到任何已知模式");
+    if (!has_logged_unknown_mode_) {
+        LOG_WARN << "未匹配到任何已知模式";
+        has_logged_unknown_mode_ = true;
+    }
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "未匹配到任何已知模式");
     return RobotMode::Unknown;
 }
 
