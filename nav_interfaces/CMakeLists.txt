@@ -48,6 +48,8 @@ set(MSG_FILES
   "msg/RouteEndpoint.msg"
   "msg/RouteJunction.msg"
   "msg/RouteEdge.msg"
+  "msg/RoutePlanSegment.msg"
+  "msg/RoutePlan.msg"
 )
 
 # 4) 声明要生成的服务
