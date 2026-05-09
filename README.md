@@ -57,12 +57,6 @@ python3 ./brainco_hand/brainco_sim_server.py
 # python3 ./pgc_gripper/pgc_sim_server.py
 ```
 
-#### Run dexsim visualizer
-```bash
-cd dexe_robot_client
-python3 ./examples/run_dexsim_server.py # Modify params according to your config
-```
-
 #### Run examples
 ```python
 from dexe_rp.utils.type import W1Version, ArmType, EndEffectorType

@@ -25,8 +25,8 @@ if __package__ is None or __package__ == "":
     if workspace_src not in sys.path:
         sys.path.insert(0, workspace_src)
 
-from ..common import (get_logger, generate_w1_urdf, download_w1_urdf,
-                      download_environment, get_robot_sim2real_idx,
+from ..common import (get_logger, download_w1_urdf,
+                      download_environment_assets, get_robot_sim2real_idx,
                       get_robot_real2sim_idx, get_ee_sim2real_idx,
                       get_ee_real2sim_idx)
 

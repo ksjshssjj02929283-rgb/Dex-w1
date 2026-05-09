@@ -4,7 +4,6 @@
 # All rights reserved.
 # ----------------------------------------------------------------------------
 
-from .dexsim_server import DexsimServer
 from .viser_server import ViserServer
 
-__all__ = ["DexsimServer", "ViserServer"]
+__all__ = ["ViserServer"]
