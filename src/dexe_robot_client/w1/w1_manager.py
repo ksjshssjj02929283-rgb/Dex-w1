@@ -5079,7 +5079,8 @@ class W1Manager:
                                   cartesian_step: float = 0.005,
                                   speed_ratio: float = 1.0,
                                   use_collision_validator: bool = True,
-                                  movement_mode: str = "eager"):
+                                  movement_mode: str = "eager",
+                                  eye_focus_point: np.ndarray = None):
         """
         This function is used to plan linear trajectory of end effector in Cartesian space,
             and use whole body ik to solve the corresponding joint trajectory. 
@@ -5097,12 +5098,30 @@ class W1Manager:
             )
             return StatusCode.INPUT_INVALID, None, None, None
 
+        if eye_focus_point is not None:
+            if not isinstance(eye_focus_point, np.ndarray) or np.atleast_2d(
+                    eye_focus_point).shape != (1, 3):
+                self.logger.error(
+                    "eye_focus_point should be a numpy array with shape (3,) or (1, 3)."
+                )
+                return StatusCode.INPUT_INVALID, None, None, None
+            else:
+                eye_focus_point = eye_focus_point.reshape(3,)
+                self.cartesian_joint_planner.set_whole_body_ik_focus_point(
+                    eye_focus_point)
+        else:
+            self.cartesian_joint_planner.set_whole_body_ik_focus_point(None)
+
         left_parse_res, left_pos_raw_array, left_qvel_limits_array, _ = \
             self._parse_waypoints_from_dict("left_arm", waypoints_dict, speed_ratio, is_cartesian=True)
         right_parse_res, right_pos_raw_array, right_qvel_limits_array, _ = \
             self._parse_waypoints_from_dict("right_arm", waypoints_dict, speed_ratio, is_cartesian=True)
+        left_arm_static_flag, right_arm_static_flag = False, False
         if left_parse_res == StatusCode.INPUT_EMPTY or right_parse_res == StatusCode.INPUT_EMPTY:
-            return StatusCode.SUCCESS, np.atleast_2d(start_qpos), None, None
+            if left_parse_res == StatusCode.INPUT_EMPTY:
+                left_arm_static_flag = True
+            if right_parse_res == StatusCode.INPUT_EMPTY:
+                right_arm_static_flag = True
         elif left_parse_res.value < 0 or right_parse_res.value < 0:
             return StatusCode.FAIL, None, None, None
 
@@ -5113,22 +5132,31 @@ class W1Manager:
                                                        start_qpos,
                                                        is_local=False)
 
-        left_pos_raw_list = [start_left_xpos] + \
-            [user_pose_to_xpos(pose[:3], pose[3:]) for pose in left_pos_raw_array]
-        right_pos_raw_list = [start_right_xpos] + \
-            [user_pose_to_xpos(pose[:3], pose[3:]) for pose in right_pos_raw_array]
-
-        left_qvel_limits_array = np.vstack(
-            (self.w1_params.default_qvel[self.w1_params.index_infos["left_arm"]
-                                         ["index"]], left_qvel_limits_array))
-        right_qvel_limits_array = np.vstack(
-            (self.w1_params.default_qvel[self.w1_params.index_infos["right_arm"]
-                                         ["index"]], right_qvel_limits_array))
+        if not left_arm_static_flag:
+            left_pos_raw_list = [start_left_xpos] + \
+                [user_pose_to_xpos(pose[:3], pose[3:]) for pose in left_pos_raw_array]
+            left_qvel_limits_array = np.vstack((self.w1_params.default_qvel[
+                self.w1_params.index_infos["left_arm"]["index"]],
+                                                left_qvel_limits_array))
+        else:
+            left_pos_raw_list = [start_left_xpos]
+            left_qvel_limits_array = np.atleast_2d(self.w1_params.default_qvel[
+                self.w1_params.index_infos["left_arm"]["index"]])
+        if not right_arm_static_flag:
+            right_pos_raw_list = [start_right_xpos] + \
+                [user_pose_to_xpos(pose[:3], pose[3:]) for pose in right_pos_raw_array]
+            right_qvel_limits_array = np.vstack((self.w1_params.default_qvel[
+                self.w1_params.index_infos["right_arm"]["index"]],
+                                                 right_qvel_limits_array))
+        else:
+            right_pos_raw_list = [start_right_xpos]
+            right_qvel_limits_array = np.atleast_2d(self.w1_params.default_qvel[
+                self.w1_params.index_infos["right_arm"]["index"]])
 
         if movement_mode == "sync_point_by_point":
             if len(left_pos_raw_list) != len(right_pos_raw_list):
                 self.logger.error(
-                    "The number of left arm waypoints and right arm waypoints should be the same."
+                    "In sync_point_by_point mode, The number of left arm waypoints and right arm waypoints should be the same."
                 )
                 return StatusCode.DIM_MISMATCH, None, None, None
 
@@ -5198,28 +5226,36 @@ class W1Manager:
                 return StatusCode.PLAN_PATH_FAIL, None, None, None
 
         if movement_mode == "eager":
-            left_bezier_planner = PathR3xSO3Bezier(left_pos_raw_list)
-            if not left_bezier_planner.calc_path(PathType.Bezier5thCartesian,
-                                                 0.01):
-                self.logger.error("Left arm bezier path planning failed.")
-                return StatusCode.PLAN_PATH_FAIL, None, None, None
+            if not left_arm_static_flag:
+                left_bezier_planner = PathR3xSO3Bezier(left_pos_raw_list)
+                if not left_bezier_planner.calc_path(
+                        PathType.Bezier5thCartesian, 0.01):
+                    self.logger.error("Left arm bezier path planning failed.")
+                    return StatusCode.PLAN_PATH_FAIL, None, None, None
+                res, left_xpos_sample_array = self._interpolate_bezier_path(
+                    left_bezier_planner, cartesian_step)
+                if res != StatusCode.SUCCESS:
+                    self.logger.error(
+                        "Left arm bezier path interpolation failed.")
+                    return StatusCode.PLAN_PATH_FAIL, None, None, None
+            else:
+                left_xpos_sample_array = np.array(left_pos_raw_list)
 
-            right_bezier_planner = PathR3xSO3Bezier(right_pos_raw_list)
-            if not right_bezier_planner.calc_path(PathType.Bezier5thCartesian,
-                                                  0.01):
-                self.logger.error("Right arm bezier path planning failed.")
-                return StatusCode.PLAN_PATH_FAIL, None, None, None
+            if not right_arm_static_flag:
+                right_bezier_planner = PathR3xSO3Bezier(right_pos_raw_list)
+                if not right_bezier_planner.calc_path(
+                        PathType.Bezier5thCartesian, 0.01):
+                    self.logger.error("Right arm bezier path planning failed.")
+                    return StatusCode.PLAN_PATH_FAIL, None, None, None
 
-            res, left_xpos_sample_array = self._interpolate_bezier_path(
-                left_bezier_planner, cartesian_step)
-            if res != StatusCode.SUCCESS:
-                self.logger.error("Left arm bezier path interpolation failed.")
-                return StatusCode.PLAN_PATH_FAIL, None, None, None
-            res, right_xpos_sample_array = self._interpolate_bezier_path(
-                right_bezier_planner, cartesian_step)
-            if res != StatusCode.SUCCESS:
-                self.logger.error("Right arm bezier path interpolation failed.")
-                return StatusCode.PLAN_PATH_FAIL, None, None, None
+                res, right_xpos_sample_array = self._interpolate_bezier_path(
+                    right_bezier_planner, cartesian_step)
+                if res != StatusCode.SUCCESS:
+                    self.logger.error(
+                        "Right arm bezier path interpolation failed.")
+                    return StatusCode.PLAN_PATH_FAIL, None, None, None
+            else:
+                right_xpos_sample_array = np.array(right_pos_raw_list)
 
             # pad the shorter one to make them have the same number of waypoints
             left_len = left_xpos_sample_array.shape[0]
@@ -5242,6 +5278,10 @@ class W1Manager:
             right_xpos_sample_array = list(right_xpos_sample_array)
 
         if movement_mode == "sync_endpoint":
+            if left_arm_static_flag or right_arm_static_flag:
+                self.logger.error(
+                    "In sync_endpoint mode, both arms should not be static.")
+                return StatusCode.INPUT_INVALID, None, None, None
             left_interpolate_num_list = self._cal_path_seg_interpolate_num(
                 left_pos_raw_list, cartesian_step)
             right_interpolate_num_list = self._cal_path_seg_interpolate_num(
@@ -5358,6 +5398,11 @@ class W1Manager:
                 "Whole body joint traj planning failed in plan_linear_whole_body_ik."
             )
             return StatusCode.PLAN_TRAJ_FAIL, None, None, None
+
+        # combine the start qpos
+        full_body_joint_traj = np.vstack([start_qpos, full_body_joint_traj])
+        qvel_limits_array_ = np.vstack(
+            [qvel_limits_array_[0], qvel_limits_array_])
 
         res, full_body_joint_traj_ = self.cartesian_joint_planner.generate_dense_whole_body_joint_traj(
             whole_body_joint_traj=full_body_joint_traj,

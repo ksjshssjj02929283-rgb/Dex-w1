@@ -16,20 +16,19 @@ class TrackFrameTF:
                                 [0, 0.707, -0.707, 0], [0, 0, 0, 1]])
     TELEOP_HEAD_EE = np.array([[0, 0, -1, 0], [0, -1, 0, -0.1], [-1, 0, 0, 0],
                                [0, 0, 0, 1]])
-    STANDARD_LEFT_EE = np.identity(4)
     STANDARD_LEFT_EE = np.array(
         [[2.22044605e-16, 4.37905770e-47, -1.00000000e+00, -6.60000000e-02],
          [-1.42829983e-31, 1.00000000e+00, 3.69778549e-32, 0.00000000e+00],
          [1.00000000e+00, -1.74073880e-32, 2.22044605e-16, 0.00000000e+00],
          [0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
-    STANDARD_RIGHT_EE = np.identity(4)
     STANDARD_RIGHT_EE = np.array(
         [[2.22044605e-16, 6.56858655e-47, -1.00000000e+00, -6.60000000e-02],
          [-4.42223702e-32, 1.00000000e+00, 3.69778549e-32, -2.22044605e-16],
          [1.00000000e+00, -1.74073880e-32, 2.22044605e-16, 4.93038066e-32],
          [0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
 
-    STANDARD_HEAD_EE = np.identity(4)
+    STANDARD_HEAD_EE = np.array([[1, 0, 0, 0.091], [0, 1, 0, -0.051],
+                                 [0, 0, 1, 0.0], [0, 0, 0, 1]])
 
 
 class PinIKWholeBody:
@@ -67,7 +66,7 @@ class PinIKWholeBody:
 
         self.supported_cost_types = [
             "teleoperate_straight", "teleoperate_bend", "standard",
-            "standard_bend_backward"
+            "standard_bend_backward", "standard_strict"
         ]
 
         if cost_type in self.supported_cost_types:
@@ -94,6 +93,8 @@ class PinIKWholeBody:
         self._add_track_frame(custom_left_ee_tf=custom_left_ee_tf,
                               custom_right_ee_tf=custom_right_ee_tf,
                               custom_head_ee_tf=custom_head_ee_tf)
+
+        self.focus_point = None
 
         self._create_pin_casadi()
         self._create_trans_rot_error()
@@ -214,6 +215,20 @@ class PinIKWholeBody:
                     [casadi.vertcat(*calc_head_rot_err)])
         }
 
+    def set_focus_point(self, position: np.ndarray):
+        if position is None:
+            self.focus_point = None
+            self.set_cost_function(cost_type=self.cost_type)
+            return True
+
+        if np.atleast_2d(position).shape != (1, 3):
+            self.logger.error("Focus point must be a 3D position vector.")
+            self.focus_point = None
+            return False
+        self.focus_point = position
+        self.set_cost_function(cost_type=self.cost_type)
+        return True
+
     def set_cost_function(self, cost_type: str):
         """
         Set the cost function of the IK numerical solver's optimization problem
@@ -248,6 +263,16 @@ class PinIKWholeBody:
             "param_right_tf": self.param_right_tf,
             "param_head_tf": self.param_head_tf
         }
+
+        if cost_type not in self.supported_cost_types:
+            self.logger.error(
+                f"Invalid cost type. Supported cost types are: {self.supported_cost_types}"
+            )
+            raise ValueError(
+                f"Invalid cost type. Supported cost types are: {self.supported_cost_types}"
+            )
+        else:
+            self.cost_type = cost_type
 
         if cost_type == "standard" or cost_type == "standard_bend_backward" or cost_type == "standard_strict":
             self.translational_cost = casadi.sumsqr(
@@ -377,6 +402,15 @@ class PinIKWholeBody:
             self.arm7_cost = casadi.sumsqr(
                 casadi.vertcat(arml7_cost, armr7_cost))
 
+            arml4_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[9] - self.var_q[9])))
+            armr4_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[16] - self.robot_.model.upperPositionLimit[16])))
+            self.arm4_cost = casadi.sumsqr(
+                casadi.vertcat(arml4_cost, armr4_cost))
+
             left_angle_cost = 1 / (1 + casadi.exp(-25 * (-2 - self.cq[7])))
             right_angle_cost = 1 / (1 + casadi.exp(-25 * (self.cq[14] - 2)))
             angle_cost = [left_angle_cost, right_angle_cost]
@@ -388,6 +422,21 @@ class PinIKWholeBody:
                 (0.55 -
                  (self.param_left_tf[0, 3] + self.param_right_tf[0, 3]) / 2)))
 
+            # focus point cost
+            if self.focus_point is None:
+                self.focus_point_cost_func = casadi.Function(
+                    "focus_point_cost", [self.cq], [0])
+            else:
+                focus_direction = self.focus_point - self.cdata.oMf[
+                    self.head_id].translation
+                focus_direction = focus_direction / (
+                    casadi.norm_2(focus_direction) + 1e-6)
+                head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
+                focus_point_cost = 10 * (
+                    1 - casadi.dot(focus_direction, head_forward))
+                self.focus_point_cost_func = casadi.Function(
+                    "focus_point_cost", [self.cq], [focus_point_cost])
+
             # yapf: disable
             self.opti.minimize(
                 800 * self.translational_cost
@@ -397,8 +446,9 @@ class PinIKWholeBody:
                 + self.waist_straight_weight * casadi.sumsqr(self.var_q[0] + self.var_q[1] + self.var_q[2])  # upper body straight cost
                 + 10 * casadi.sumsqr(self.var_q[0:3] -
                                    self.var_q_last[0:3])  # move arms first cost
-                + 10 * (self.arm6_cost + self.arm7_cost)
+                + 10 * (self.arm6_cost + self.arm7_cost + self.arm4_cost)
                 + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
+                + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q))
             )
             # yapf: enable
 
@@ -468,6 +518,15 @@ class PinIKWholeBody:
             self.arm7_cost = casadi.sumsqr(
                 casadi.vertcat(arml7_cost, armr7_cost))
 
+            arml4_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[9] - self.var_q[9])))
+            armr4_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[16] - self.robot_.model.upperPositionLimit[16])))
+            self.arm4_cost = casadi.sumsqr(
+                casadi.vertcat(arml4_cost, armr4_cost))
+
             left_angle_cost = 1 / (1 + casadi.exp(-25 * (-2 - self.cq[7])))
             right_angle_cost = 1 / (1 + casadi.exp(-25 * (self.cq[14] - 2)))
             angle_cost = [left_angle_cost, right_angle_cost]
@@ -479,6 +538,21 @@ class PinIKWholeBody:
                 (0.6 -
                  (self.param_left_tf[0, 3] + self.param_right_tf[0, 3]) / 2)))
 
+            # focus point cost
+            if self.focus_point is None:
+                self.focus_point_cost_func = casadi.Function(
+                    "focus_point_cost", [self.cq], [0])
+            else:
+                focus_direction = self.focus_point - self.cdata.oMf[
+                    self.head_id].translation
+                focus_direction = focus_direction / (
+                    casadi.norm_2(focus_direction) + 1e-6)
+                head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
+                focus_point_cost = 10 * (
+                    1 - casadi.dot(focus_direction, head_forward))
+                self.focus_point_cost_func = casadi.Function(
+                    "focus_point_cost", [self.cq], [focus_point_cost])
+
             # yapf: disable
             self.opti.minimize(
                 800 * self.translational_cost
@@ -488,8 +562,9 @@ class PinIKWholeBody:
                 + waist_straight_weight * casadi.sumsqr(self.var_q[0] + self.var_q[1] + self.var_q[2])  # upper body straight cost
                 + 10 * casadi.sumsqr(self.var_q[0:3] -
                                    self.var_q_last[0:3])  # move arms first cost
-                + 10 * (self.arm6_cost + self.arm7_cost)
+                + 10 * (self.arm6_cost + self.arm7_cost + self.arm4_cost)
                 + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
+                + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q))
             )
             # yapf: enable
 
@@ -563,6 +638,15 @@ class PinIKWholeBody:
             self.arm7_cost = casadi.sumsqr(
                 casadi.vertcat(arml7_cost, armr7_cost))
 
+            arml4_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.robot_.model.lowerPositionLimit[9] - self.var_q[9])))
+            armr4_cost = 1 / (1 + casadi.exp(
+                -50 *
+                (self.var_q[16] - self.robot_.model.upperPositionLimit[16])))
+            self.arm4_cost = casadi.sumsqr(
+                casadi.vertcat(arml4_cost, armr4_cost))
+
             left_angle_cost = 1 / (1 + casadi.exp(-25 * (-2 - self.cq[7])))
             right_angle_cost = 1 / (1 + casadi.exp(-25 * (self.cq[14] - 2)))
             angle_cost = [left_angle_cost, right_angle_cost]
@@ -574,6 +658,21 @@ class PinIKWholeBody:
                 (0.55 -
                  (self.param_left_tf[0, 3] + self.param_right_tf[0, 3]) / 2)))
 
+            # focus point cost
+            if self.focus_point is None:
+                self.focus_point_cost_func = casadi.Function(
+                    "focus_point_cost", [self.cq], [0])
+            else:
+                focus_direction = self.focus_point - self.cdata.oMf[
+                    self.head_id].translation
+                focus_direction = focus_direction / (
+                    casadi.norm_2(focus_direction) + 1e-6)
+                head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
+                focus_point_cost = 10 * (
+                    1 - casadi.dot(focus_direction, head_forward))
+                self.focus_point_cost_func = casadi.Function(
+                    "focus_point_cost", [self.cq], [focus_point_cost])
+
             # yapf: disable
             self.opti.minimize(
                 1000 * self.translational_cost
@@ -583,8 +682,9 @@ class PinIKWholeBody:
                 + self.waist_straight_weight * casadi.sumsqr(self.var_q[0] + self.var_q[1] + self.var_q[2])  # upper body straight cost
                 + 10 * casadi.sumsqr(self.var_q[0:3] -
                                    self.var_q_last[0:3])  # move arms first cost
-                + 10 * (self.arm6_cost + self.arm7_cost)
+                + 10 * (self.arm6_cost + self.arm7_cost + self.arm4_cost)
                 + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
+                + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q))
             )
 
     def solve_ik(self,

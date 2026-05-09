@@ -9,7 +9,7 @@ All rights reserved.
 import os
 import numpy as np
 from dexe_robot_client.end_effector_client import EndEffectorType
-from dexe_robot_client.common import W1Version, W1ArmType
+from dexe_robot_client.common import W1Version, W1ArmType, StatusCode
 from dexe_robot_client.w1 import W1Manager
 from dexe_robot_client.w1.path_planner.utils.robot_type import *
 from dexe_robot_client.common.mapping_index import *
@@ -21,6 +21,7 @@ from dexe_robot_client.w1.utils.unit_conversion import *
 
 from dexe_rp import W1Vis, pos_wxyz_to_homogeneous, Box, Sphere, Mesh, Material, rotation_to_wxyz
 import json
+import time
 from loop_rate_limiters import RateLimiter
 import pinocchio as pin
 """
@@ -69,6 +70,49 @@ task_dict1 = {
         [0, [0, 0, 0, 0, 0, 0], 0],
         [0, [0, 0, 0, 0, 0, 0], 0],
     ],
+    "right_arm": [[
+        327.98307847234963, -278.47036078530897, 874.8493253064357,
+        -94.09570210016686, 5.182980338841701, -38.68261345931179
+    ],],
+    "right_arm_speed_ratio": [1.,],
+    "right_arm_ee": [[0, [0, 0, 0, 0, 0, 0], 0],],
+}
+
+task_dict2 = {
+    "left_arm": [
+        [
+            679.9198531530203, 211.4320180584595, 865.1478794238351,
+            -96.60238969929269, -0.026788773568079554, -89.9509593855713
+        ],
+        [
+            446.53378545410254, 452.7028675398074, 960.8044457900112,
+            -96.60238969929269, -0.026788773568079554, -89.9509593855713
+        ],
+        [
+            576.4796879945455, 275.0487732686348, 895.2109706535736,
+            -96.14503296968499, -2.4193587940941716, -111.12878664548232
+        ],
+        [
+            466.53378545410254, 452.7028675398074, 960.8044457900112,
+            -96.60238969929269, -0.026788773568079554, -89.9509593855713
+        ],
+    ],
+    "left_arm_speed_ratio": [1., 1., 1., 1.],
+    "left_arm_ee": [
+        [0, [0, 0, 0, 0, 0, 0], 0],
+        [0, [0, 0, 0, 0, 0, 0], 0],
+        [0, [0, 0, 0, 0, 0, 0], 0],
+        [0, [0, 0, 0, 0, 0, 0], 0],
+    ],
+    "right_arm": [],
+    "right_arm_speed_ratio": [],
+    "right_arm_ee": [],
+}
+
+task_dict3 = {
+    "left_arm": [],
+    "left_arm_speed_ratio": [],
+    "left_arm_ee": [],
     "right_arm": [[
         327.98307847234963, -278.47036078530897, 874.8493253064357,
         -94.09570210016686, 5.182980338841701, -38.68261345931179
@@ -139,15 +183,18 @@ def viser_execute_traj(vis,
         rate.sleep()
 
 
-def test_plan_linear_whole_body_ik(start_qpos, start_left_arm_ee_qpos,
-                                   start_right_arm_ee_qpos, task_dict):
+def test_plan_linear_whole_body_ik(start_qpos,
+                                   start_left_arm_ee_qpos,
+                                   start_right_arm_ee_qpos,
+                                   task_dict,
+                                   movement_mode="eager"):
     res, trajectory, armlee_trigger, armree_trigger = \
         w1_manager.plan_linear_whole_body_ik(start_qpos,
                                              start_left_arm_ee_qpos,
                                              start_right_arm_ee_qpos,
                                              task_dict,
                                              use_collision_validator=False,
-                                             movement_mode="eager")
+                                             movement_mode=movement_mode)
     return res, trajectory, armlee_trigger, armree_trigger
 
 
@@ -186,23 +233,52 @@ if __name__ == "__main__":
     vis, scene_handle_list, workobjects_handle_list = load_viser()
 
     input("Press Enter to start linear whole body IK test...")
+    time.sleep(1)
+
+    # res, trajectory, armlee_trigger, armree_trigger = test_plan_linear_whole_body_ik(
+    #     start_qpos=home_qpos,
+    #     start_left_arm_ee_qpos=left_ee_home_qpos,
+    #     start_right_arm_ee_qpos=right_ee_home_qpos,
+    #     task_dict=task_dict1,
+    #     movement_mode="eager")
+    # if res == StatusCode.SUCCESS:
+    #     viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
+
+    #     left_arm_user_pose = xpos_to_user_pose(
+    #         w1_manager.get_xpos("left_arm", trajectory[-1], False)[1])
+    #     right_arm_user_pose = xpos_to_user_pose(
+    #         w1_manager.get_xpos("right_arm", trajectory[-1], False)[1])
+    #     left_arm_target_pose = task_dict1["left_arm"][-1]
+    #     right_arm_target_pose = task_dict1["right_arm"][-1]
+    #     print(f"left_arm_user_pose: {left_arm_user_pose}")
+    #     print(f"left_arm_target_pose: {left_arm_target_pose}")
+    #     print(f"right_arm_user_pose: {right_arm_user_pose}")
+    #     print(f"right_arm_target_pose: {right_arm_target_pose}")
+    # else:
+    #     print("Plan failed for task_dict1.")
 
     res, trajectory, armlee_trigger, armree_trigger = test_plan_linear_whole_body_ik(
         start_qpos=home_qpos,
         start_left_arm_ee_qpos=left_ee_home_qpos,
         start_right_arm_ee_qpos=right_ee_home_qpos,
-        task_dict=task_dict1)
-    viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
+        task_dict=task_dict2,
+        movement_mode="eager")
+    if res == StatusCode.SUCCESS:
+        viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
+    else:
+        print("Plan failed for task_dict2.")
 
-    left_arm_user_pose = xpos_to_user_pose(
-        w1_manager.get_xpos("left_arm", trajectory[-1], False)[1])
-    right_arm_user_pose = xpos_to_user_pose(
-        w1_manager.get_xpos("right_arm", trajectory[-1], False)[1])
-    left_arm_target_pose = task_dict1["left_arm"][-1]
-    right_arm_target_pose = task_dict1["right_arm"][-1]
-    print(f"left_arm_user_pose: {left_arm_user_pose}")
-    print(f"left_arm_target_pose: {left_arm_target_pose}")
-    print(f"right_arm_user_pose: {right_arm_user_pose}")
-    print(f"right_arm_target_pose: {right_arm_target_pose}")
+    print("===============================")
+
+    res, trajectory, armlee_trigger, armree_trigger = test_plan_linear_whole_body_ik(
+        start_qpos=home_qpos,
+        start_left_arm_ee_qpos=left_ee_home_qpos,
+        start_right_arm_ee_qpos=right_ee_home_qpos,
+        task_dict=task_dict3,
+        movement_mode="eager")
+    if res == StatusCode.SUCCESS:
+        viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
+    else:
+        print("Plan failed for task_dict3.")
 
     embed()

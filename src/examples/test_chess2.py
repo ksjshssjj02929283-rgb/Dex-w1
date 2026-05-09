@@ -520,7 +520,8 @@ def test_plan_linear_whole_body_ik(start_qpos, start_left_arm_ee_qpos,
                                              start_right_arm_ee_qpos,
                                              task_dict,
                                              use_collision_validator=False,
-                                             movement_mode="sync_point_by_point")
+                                             movement_mode="sync_point_by_point",
+                                             eye_focus_point=np.array([0.6, 0.0, 0.8]))
     return res, trajectory, armlee_trigger, armree_trigger
 
 
