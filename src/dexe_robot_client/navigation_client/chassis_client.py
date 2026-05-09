@@ -8,7 +8,7 @@ from std_srvs.srv import Trigger
 from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.parameter import Parameter
 from std_msgs.msg import Bool
-from chassis_msgs.action import AutoCharging
+from chassis_interfaces.action import AutoCharging
 
 
 class ChassisClient(NavigationClient):
@@ -53,8 +53,8 @@ class ChassisClient(NavigationClient):
                 Trigger, 'control/get_control_status')
             self._cancel_control_client = self.create_client(
                 Trigger, 'control/cancel_chassis_control')
-            self._auto_charging_action_client = self.create_action_client(
-                AutoCharging, 'auto_charging')
+            self._auto_charging_action_client = ActionClient(
+                self, AutoCharging, '/auto_charging')
 
             self._controller_set_param_client = self.create_client(
                 SetParameters, '/controller_server/set_parameters')

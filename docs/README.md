@@ -7,5 +7,11 @@
 
 ## 底盘出桩接口
 - `W1Manager.chassis_undocking()` 会通过 `ChassisClient.chassis_undocking()` 发布 `geometry_msgs/Twist` 到 `/control/cmd_vel`。
-- 当前出桩速度曲线沿 `base_link` 正 x 方向：最大线速度 `0.3m/s`，加速度 `0.3m/s^2`，持续 `2s`，结束后主动发布零速度。
+- 当前出桩速度曲线沿 `base_link` 正 x 方向：最大线速度 `0.3m/s`，加速度 `0.3m/s^2`，持续 `2s`，发布频率 `20Hz`，结束后主动发布零速度。
 - 调用前需要 `W1Manager(use_nav=True)` 且处于 real mode；导航客户端当前仅支持真实底盘模式。
+
+## 底盘回充接口
+- 回充 action 使用 `chassis_interfaces.action.AutoCharging`，action 名为 `/auto_charging`。
+- `W1Manager.set_auto_charging()` 默认以 `force=True`、`timeout_sec=10.0` 非阻塞发送回充 goal。
+- `W1Manager.get_auto_charging_status()` 返回当前状态字符串，可能为 `IDLE`、`WAITING_SERVER`、`ACCEPTED`、`EXECUTING`、`CANCELING`、`SUCCEEDED`、`CANCELED`、`ABORTED`、`REJECTED`、`FAILED_TO_SEND`。
+- `W1Manager.get_auto_charging_result()` 返回最近一次回充是否成功及结果消息；`W1Manager.cancel_auto_charging()` 用于取消已接受的回充 goal。

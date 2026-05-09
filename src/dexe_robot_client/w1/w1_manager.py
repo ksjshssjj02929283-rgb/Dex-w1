@@ -816,7 +816,41 @@ class W1Manager:
         if not self._has_chassis_client():
             self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL
-        res = self._get_chassis_client().set_chassis_auto_charging()
+        res = self._get_chassis_client().set_chassis_auto_charging(
+            force=True, timeout_sec=10.0)
+        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
+
+    def get_auto_charging_status(self) -> tuple[StatusCode, str]:
+        """获取当前回充状态"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL, "DISABLED"
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL, "NOT_INITIALIZED"
+        return StatusCode.SUCCESS, self._get_chassis_client(
+        ).get_auto_charging_status()
+
+    def get_auto_charging_result(self) -> tuple[StatusCode, bool, str]:
+        """获取最近一次回充结果"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL, False, "DISABLED"
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL, False, "NOT_INITIALIZED"
+        success, message = self._get_chassis_client().get_auto_charging_result()
+        return StatusCode.SUCCESS, success, message
+
+    def cancel_auto_charging(self) -> StatusCode:
+        """取消当前回充任务"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        res = self._get_chassis_client().cancel_auto_charging()
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def cancel_chassis_motion(self) -> StatusCode:
