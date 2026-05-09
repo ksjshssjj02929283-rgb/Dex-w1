@@ -177,7 +177,15 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
     runtime_.previous_cmd = latest_cmd;
 
     // Ruckig进行轨迹计算
+    runtime_.input.synchronization = ruckig::Synchronization::Time;
     auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
+
+    // 如果同步计算失败（例如目标不可达导致的错误 -111），则尝试禁用同步重新计算
+    if (status == ruckig::Result::ErrorSynchronizationCalculation) {
+        LOG_WARN << "JointStreamingPlanner: Synchronization failed, retrying without synchronization.";
+        runtime_.input.synchronization = ruckig::Synchronization::None;
+        status = ruckig_otg_.update(runtime_.input, runtime_.output);
+    }
 
     // Ruckig输出
     if (status == ruckig::Working) {

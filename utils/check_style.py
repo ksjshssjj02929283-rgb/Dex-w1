@@ -38,11 +38,13 @@ PYTHON_EXCLUDE_DIRS = [
     ".git",
     "third_party",
     "script",
+    "deb_build",
+    "install",
 ]
 
 CPP_EXCLUDE_DIRS = [
     "build", "install", "log", ".git", "third_party",
-    "robot_server_lib/dynamics", "lib"
+    "robot_server_lib/dynamics", "lib", "deb_build"
 ]
 
 

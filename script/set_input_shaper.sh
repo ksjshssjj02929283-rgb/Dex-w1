@@ -1,5 +1,5 @@
 cd "$(dirname "$0")"
-source ../../install/setup.bash
+source /opt/w1_server/setup.bash
 
 CONFIG_FILE="$HOME/dexe_robot_server_data/robot_config.yaml"
 
@@ -77,6 +77,20 @@ case "$1" in
         fi
         ;;
     true|false)
+        # 更新配置文件
+        if [ -f "$CONFIG_FILE" ]; then
+            # 替换所有关节下的 input_shaper 使能状态
+            # 使用 sed 匹配 input_shaper: 后面的 enabled: 行并修改
+            sed -i "/input_shaper:/!b;n;s/enabled: .*/enabled: $1/" "$CONFIG_FILE"
+            if [ $? -eq 0 ]; then
+                echo "Updated input_shaper enabled to $1 in $CONFIG_FILE"
+            else
+                echo "Warning: Failed to update config file"
+            fi
+        else
+            echo "Warning: Config file not found: $CONFIG_FILE"
+        fi
+
         if [ "$1" = "true" ]; then
             VALUE="1"
         else
