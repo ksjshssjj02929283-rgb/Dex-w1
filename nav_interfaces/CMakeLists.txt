@@ -89,6 +89,8 @@ set(SRV_FILES
   "srv/RemoveRouteEdge.srv"
   "srv/UpdateRouteEdge.srv"
   "srv/GetRouteGraph.srv"
+  "srv/TransformAssets.srv"
+  "srv/ResetMapOriginByXYYaw.srv"
 )
 
 # 5) 声明要生成的动作
