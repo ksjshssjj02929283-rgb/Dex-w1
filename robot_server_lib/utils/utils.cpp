@@ -695,7 +695,7 @@ StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interf
     return streaming_command;
 }
 
-Vector12d GetSensorWrench(const Vector6d &wrench_primary, const Vector6d &wrench_secondary) {
+Vector12d GetSensorWrench(const Vector6d& wrench_primary, const Vector6d& wrench_secondary) {
     //     // 最小力/力矩阈值(去除摩擦力), 和最大力/力矩值
     //     constexpr double force_threshold = 1.0;
     //     constexpr double torque_threshold = 0.1;
