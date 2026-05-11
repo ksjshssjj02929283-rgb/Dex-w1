@@ -1,5 +1,5 @@
 cd "$(dirname "$0")"
-source ../../install/setup.bash
+source /opt/w1_server/setup.bash
 
 CONFIG_FILE="$HOME/dexe_robot_server_data/robot_config.yaml"
 
@@ -18,7 +18,6 @@ if [ $# -eq 0 ]; then
     echo "  $0 true                    - Enable streaming ruckig"
     echo "  $0 false                   - Disable streaming ruckig"
     echo "  $0 3.14 9.42 157.0         - Set joint streaming bounds"
-    echo "  $0 '3.14, 9.42, 157.0'     - Set joint streaming bounds (comma-separated)"
     exit 1
 fi
 

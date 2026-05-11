@@ -63,7 +63,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 2.9
     joint_impedance_control:
       stiffness: 200.0
@@ -79,7 +79,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 2.9
     joint_impedance_control:
       stiffness: 200.0
@@ -95,7 +95,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 2.9
     joint_impedance_control:
       stiffness: 200.0
@@ -111,7 +111,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 3.5
     joint_impedance_control:
       stiffness: 200.0
@@ -127,7 +127,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 12
 
   - name: "NECK2"
@@ -139,7 +139,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 12
     joint_impedance_control:
       stiffness: 200.0
@@ -155,7 +155,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 6.7
     joint_impedance_control:
       stiffness: 170.0
@@ -171,7 +171,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 9.5
     joint_impedance_control:
       stiffness: 200.0
@@ -187,7 +187,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 9.5
     joint_impedance_control:
       stiffness: 170.0
@@ -203,7 +203,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 12
     joint_impedance_control:
       stiffness: 30.0
@@ -219,7 +219,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 12
     joint_impedance_control:
       stiffness: 30.0
@@ -235,7 +235,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 12
     joint_impedance_control:
       stiffness: 30.0
@@ -251,7 +251,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 12
     joint_impedance_control:
       stiffness: 160.0
@@ -267,7 +267,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 6.7
     joint_impedance_control:
       stiffness: 160.0
@@ -283,7 +283,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 9.5
     joint_impedance_control:
       stiffness: 200.0
@@ -299,7 +299,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 9.5
     joint_impedance_control:
       stiffness: 160.0
@@ -315,7 +315,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 12
     joint_impedance_control:
       stiffness: 30.0
@@ -331,7 +331,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 12
     joint_impedance_control:
       stiffness: 30.0
@@ -347,7 +347,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 12
     joint_impedance_control:
       stiffness: 30.0
@@ -363,7 +363,7 @@ joints:
       enabled: true
       frequency: 3
     input_shaper:
-      enabled: false
+      enabled: true
       frequency: 12
     joint_impedance_control:
       stiffness: 30.0

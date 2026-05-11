@@ -1,5 +1,7 @@
 .vscode/
+*.deb
 build/
+deb_build/
 install/
 log/
 __pycache__/

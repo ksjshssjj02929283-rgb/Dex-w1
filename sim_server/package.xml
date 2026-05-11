@@ -1,7 +1,7 @@
 <?xml version="3.0"?>
 <package format="3">
   <name>sim_server</name>
-  <version>1.0.1</version>
+  <version>0.4.2</version>
   <description>W1 robot control messages</description>
   <maintainer email="zhangyinan@dexforce.com">Zhang Yinan</maintainer>
   <license>MIT</license>
