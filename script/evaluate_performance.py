@@ -33,6 +33,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 np = None
+DEFAULT_RMS_WINDOW_SECONDS = 0.1
 
 
 def parse_line(line, debug=False):
@@ -222,6 +223,29 @@ def aligned_series(times, cmd, input_series, pos, lag):
     )
 
 
+def sliding_rms_curve(err, dt, window_seconds=DEFAULT_RMS_WINDOW_SECONDS):
+    """计算滑窗 RMS 曲线；窗口前缀阶段使用当前可用样本，避免前段缺失。"""
+    if err.size == 0:
+        return np.asarray([], dtype=float)
+
+    if np.isfinite(dt) and dt > 0 and window_seconds > 0:
+        window_samples = max(1, int(round(window_seconds / dt)))
+    else:
+        window_samples = 1
+
+    squared = err * err
+    cumsum = np.cumsum(squared)
+    rms = np.empty_like(err, dtype=float)
+
+    for i in range(err.size):
+        start = max(0, i - window_samples + 1)
+        total = cumsum[i] - (cumsum[start - 1] if start > 0 else 0.0)
+        count = i - start + 1
+        rms[i] = math.sqrt(total / count)
+
+    return rms
+
+
 def compute_joint_metrics(times, cmd_matrix, input_matrix, pos_matrix, joint_indices, max_lag_seconds, debug=False):
     """逐关节估计时延，并计算平移前/平移后的 RMS 与最大绝对误差。"""
     dt = median_sample_time(times)
@@ -249,6 +273,7 @@ def compute_joint_metrics(times, cmd_matrix, input_matrix, pos_matrix, joint_ind
         raw_err = cmd_valid - pos_valid
         raw_rms_rad = float(np.sqrt(np.mean(raw_err * raw_err)))
         raw_max_abs_rad = float(np.max(np.abs(raw_err)))
+        raw_rms_curve_rad = sliding_rms_curve(raw_err, dt)
 
         t_aligned, cmd_time_aligned, cmd_aligned, input_aligned, pos_aligned = aligned_series(
             joint_times, cmd_valid, input_valid, pos_valid, lag
@@ -256,6 +281,7 @@ def compute_joint_metrics(times, cmd_matrix, input_matrix, pos_matrix, joint_ind
         aligned_err = cmd_aligned - pos_aligned
         aligned_rms_rad = float(np.sqrt(np.mean(aligned_err * aligned_err)))
         aligned_max_abs_rad = float(np.max(np.abs(aligned_err)))
+        aligned_rms_curve_rad = sliding_rms_curve(aligned_err, dt)
 
         results.append(
             {
@@ -273,6 +299,10 @@ def compute_joint_metrics(times, cmd_matrix, input_matrix, pos_matrix, joint_ind
                 "aligned_rms_deg": float(np.degrees(aligned_rms_rad)),
                 "aligned_max_abs_rad": aligned_max_abs_rad,
                 "aligned_max_abs_deg": float(np.degrees(aligned_max_abs_rad)),
+                "raw_rms_curve_rad": raw_rms_curve_rad,
+                "raw_rms_curve_deg": np.degrees(raw_rms_curve_rad),
+                "aligned_rms_curve_rad": aligned_rms_curve_rad,
+                "aligned_rms_curve_deg": np.degrees(aligned_rms_curve_rad),
                 "times": joint_times,
                 "cmd": cmd_valid,
                 "input": input_valid,
@@ -424,6 +454,54 @@ def plot_results(results, start_timestamp, save_path, show_aligned):
     print(f"图片已保存: {save_path}")
 
 
+def plot_rms_curves(results, start_timestamp, save_path, window_seconds):
+    """绘制每个关节平移前和平移后的滑窗 RMS 曲线。"""
+    import matplotlib
+
+    if "matplotlib.pyplot" not in sys.modules:
+        matplotlib.use("Agg")
+
+    import matplotlib.pyplot as plt
+
+    joint_count = len(results)
+    if joint_count == 0:
+        return
+
+    cols = 2 if joint_count > 1 else 1
+    rows = int(math.ceil(joint_count / cols))
+    fig, axes = plt.subplots(rows, cols, figsize=(8.5 * cols, 3.2 * rows), dpi=110, squeeze=False)
+    fig.suptitle(
+        "Sliding RMS Curves Before/After Alignment "
+        f"(Window={window_seconds:.3f}s, Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})",
+        fontsize=12,
+    )
+
+    for ax, item in zip(axes.flatten(), results):
+        raw_t = item["times"]
+        raw_rms = item["raw_rms_curve_deg"]
+        aligned_t = item["aligned_times"]
+        aligned_rms = item["aligned_rms_curve_deg"]
+
+        ax.plot(raw_t, raw_rms, label="raw sliding RMS", linewidth=1.2)
+        ax.plot(aligned_t, aligned_rms, label="aligned sliding RMS", linewidth=1.2)
+        ax.set_title(
+            f"Joint {item['joint']} (Raw={item['raw_rms_deg']:.4f} deg, Aligned={item['aligned_rms_deg']:.4f} deg)",
+            fontsize=9,
+        )
+        ax.set_xlabel("Time [s]")
+        ax.set_ylabel("RMS [deg]")
+        ax.grid(True, linestyle=":", alpha=0.35)
+        ax.legend(loc="best", fontsize=8)
+
+    for ax in axes.flatten()[joint_count:]:
+        ax.axis("off")
+
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(save_path)
+    plt.close(fig)
+    print(f"图片已保存: {save_path}")
+
+
 def create_report_dir(base_dir):
     """在输出目录下创建以当前时间命名的报告子目录。"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -454,6 +532,7 @@ def write_metrics(
     start_timestamp,
     args,
     joint_indices,
+    rms_window_seconds,
 ):
     """将平移前/平移后的 RMS 指标写入报告目录。"""
     metrics_path = report_dir / "rms_result.txt"
@@ -474,6 +553,7 @@ def write_metrics(
         "说明:",
         "figure1.png: 原始 joint_position_cmd、joint_position_input 与 joint_position 曲线",
         "figure2.png: 根据 joint_position_cmd 与 joint_position 的互相关估计时延平移后的曲线，包含 joint_position_input",
+        f"figure3_rms.png: 平移前后滑窗 RMS 曲线对比图，窗口 {rms_window_seconds:.3f} s",
         "RMS 单位: deg",
         "",
         "joint_position_cmd vs joint_position:",
@@ -643,6 +723,7 @@ def main():
     report_dir = create_report_dir(args.output_dir)
     figure1_path = report_dir / "figure1.png"
     figure2_path = report_dir / "figure2.png"
+    figure3_rms_path = report_dir / "figure3_rms.png"
     copy_log_to_report(log_path, report_dir)
     write_metrics(
         results,
@@ -654,11 +735,13 @@ def main():
         start_timestamp,
         args,
         joint_indices,
+        DEFAULT_RMS_WINDOW_SECONDS,
     )
 
     try:
         plot_results(results, start_timestamp, save_path=figure1_path, show_aligned=False)
         plot_results(results, start_timestamp, save_path=figure2_path, show_aligned=True)
+        plot_rms_curves(results, start_timestamp, save_path=figure3_rms_path, window_seconds=DEFAULT_RMS_WINDOW_SECONDS)
     except ModuleNotFoundError as exc:
         if exc.name == "matplotlib":
             print(
