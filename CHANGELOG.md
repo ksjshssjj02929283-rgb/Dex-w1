@@ -2,6 +2,9 @@
 
 ## [Unrelease]
 
+### Feat
+- 支持dexe_rp提供的DoubleS轨迹规划算法和calc_next_iks算法
+
 ## [V0.4.3]
 ### Fix
 - 修复w1_params先于资产检查导致的bug

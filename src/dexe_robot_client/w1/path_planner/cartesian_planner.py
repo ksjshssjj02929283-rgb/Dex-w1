@@ -7,17 +7,14 @@ All rights reserved.
 '''
 
 import numpy as np
-from copy import deepcopy
-import time
 
 from ...common import get_logger, W1ArmType, W1Version
 from ..utils.w1_params import W1Params
 from ...end_effector_client import EndEffectorType
-from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from ..path_planner.blend_path import PathR3xSO3Bezier
 from .utils.robot_type import *
 from .planner_pinocchio import Planner_Pin
-from dexe_rp import DexforceW1Kinematics, SRSConfig
+from dexe_rp import DexforceW1Kinematics
 
 
 class CartesianPlanner:
@@ -41,7 +38,7 @@ class CartesianPlanner:
         self._init_arml_base_T_armr_base()
 
     def _init_kine_solver(self):
-        ik_nearst_weight = np.array([2., 2., 2., 1., 1., 1., 1.])
+        ik_nearst_weight = np.array([2., 2., 2., 0., 1., 1., 1.])
         self.kine = DexforceW1Kinematics(
             self._arm_type == W1ArmType.ANTHROPOMORPHIC)
         self.kine.left_arm_kine.set_ik_nearest_weight(ik_nearst_weight)
@@ -165,17 +162,18 @@ class CartesianPlanner:
             self.logger.error(f"Invalid arm name: {name}")
             return False, None, None
 
-        prefix_dist_list = [0.]
-        for idx in range(len(waypoint_list) - 1):
-            dist = np.linalg.norm(waypoint_list[idx + 1][:3, 3] -
-                                  waypoint_list[idx][:3, 3])
-            prefix_dist_list.append(prefix_dist_list[-1] + dist)
-        total_dist = prefix_dist_list[-1]
+        # prefix_dist_list = [0.]
+        # for idx in range(len(waypoint_list) - 1):
+        #     dist = np.linalg.norm(waypoint_list[idx + 1][:3, 3] -
+        #                           waypoint_list[idx][:3, 3])
+        #     prefix_dist_list.append(prefix_dist_list[-1] + dist)
+        # total_dist = prefix_dist_list[-1]
 
         path = PathR3xSO3Bezier(np.array(waypoint_list))
         if not path.calc_path():
             return False, None, None
         pose_sample_array = path.get_sample_by_step(cartesian_step)
+
         if name == "left_arm":
             left_pose_sample_array = pose_sample_array
             right_pose_sample_array = self.generate_right_arm_traj_from_left(

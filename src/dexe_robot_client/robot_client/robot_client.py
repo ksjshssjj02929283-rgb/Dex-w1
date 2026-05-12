@@ -396,7 +396,7 @@ class RobotClient(ABC):
             motion_type=MotionType.MoveJoint,
             motion_group=motion_group,
             motion_target=motion_target,
-            kwargs=kwargs,
+            **kwargs,
         )
 
         return self.send_move_robot_request(move_joint_request)
@@ -413,7 +413,7 @@ class RobotClient(ABC):
         request_id = self.move_joint_async(
             motion_target=motion_target,
             motion_group=motion_group,
-            kwargs=kwargs,
+            **kwargs,
         )
         self.wait_request_finish(request_id)
         return request_id
@@ -444,7 +444,7 @@ class RobotClient(ABC):
             motion_type=MotionType.MoveLine,
             motion_group=motion_group,
             motion_target=motion_target,
-            kwargs=kwargs,
+            **kwargs,
         )
 
         return self.send_move_robot_request(move_line_request)
@@ -467,7 +467,7 @@ class RobotClient(ABC):
         request_id = self.move_line_async(
             motion_group=motion_group,
             motion_target=motion_target,
-            kwargs=kwargs,
+            **kwargs,
         )
         self.wait_request_finish(request_id)
         return request_id
@@ -510,7 +510,7 @@ class RobotClient(ABC):
             motion_target=motion_target,
             endpoint_index=endpoint_index,
             interval=interval,
-            kwargs=kwargs,
+            **kwargs,
         )
 
         return self.send_move_robot_request(move_joint_request)
