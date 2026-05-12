@@ -6,6 +6,7 @@ print_usage() {
     echo ""
     echo "Available property types:"
     echo "  echo            - Echo robot server state topic once"
+    echo "  force           - Monitor force_sensor and raw_force_sensor at 10Hz"
     echo "  log             - Print robot server log"
     echo "  clear_error     - Clear errors (no value needed)"
     echo "  drag            - Enable/Disable drag mode (value: 0 or 1)"
@@ -22,6 +23,7 @@ print_usage() {
     echo ""
     echo "Examples:"
     echo "  ./set_property.sh echo"
+    echo "  ./set_property.sh force"
     echo "  ./set_property.sh yaml"
     echo "  ./set_property.sh log"
     echo "  ./set_property.sh watch"
@@ -65,6 +67,23 @@ case $PROPERTY_KEY in
     echo)
         echo "Echoing robot server state..."
         ros2 topic echo /feedback/robot_server_state --field data --once
+        exit 0
+        ;;
+    force)
+        if ! command -v jq >/dev/null 2>&1; then
+            echo "Error: jq is required for force monitoring."
+            exit 1
+        fi
+        echo "Monitoring force sensor data at 10Hz..."
+        ros2 topic echo /feedback/robot_server_state std_msgs/msg/String --field data \
+            | sed '/^---$/d' \
+            | jq --unbuffered -c '{force_sensor: .force_sensor, raw_force_sensor: .raw_force_sensor}' \
+            | while read -r line; do
+                echo "------------------------------------------------"
+                echo "force_sensor: $(echo "$line" | jq -c '.force_sensor'),"
+                echo "raw_force_sensor: $(echo "$line" | jq -c '.raw_force_sensor')"
+                sleep 0.1
+            done
         exit 0
         ;;
     log)

@@ -115,6 +115,7 @@ private:
     // 力传感器相关
     Vector3d sensor_force_;
     Vector12d sensor_wrench_;
+    Vector12d raw_sensor_wrench_;
     std::shared_ptr<SriForceSensor> primary_sensor_;
     std::shared_ptr<SriForceSensor> secondary_sensor_;  // 暂未使用
     bool primary_sensor_ready_ = false;
