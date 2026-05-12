@@ -144,10 +144,10 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
             tool_gravity_magnitude_ = node["gravity_magnitude"].as<double>();
         }
         if (node["model_sign"]) {
-            tool_model_sign_ = node["model_sign"].as<int>();
+        tool_model_sign_ = node["model_sign"].as<int>();
         }
         tool_com_m_ = com_mm.head<3>() / 1000.0;
-        tool_w_bias_ = w_bias.head<6>();
+        tool_w_bias_ = MapSriRawWrenchToEE(w_bias.head<6>());
         tool_gravity_compensation_enabled_ = true;
         RCLCPP_INFO(this->get_logger(), "Tool gravity compensation enabled, mass_kg=%.4f, gravity=%.4f, model_sign=%d",
                     tool_mass_kg_, tool_gravity_magnitude_, tool_model_sign_);

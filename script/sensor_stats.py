@@ -39,7 +39,7 @@ class SensorStatsNode(Node):
         self._received += 1
         try:
             data = json.loads(msg.data)
-            force_sensor = np.asarray(data["force_sensor"], dtype=float)
+            force_sensor = np.asarray(data.get("raw_force_sensor", data["force_sensor"]), dtype=float)
             if force_sensor.size < 12:
                 return
 
