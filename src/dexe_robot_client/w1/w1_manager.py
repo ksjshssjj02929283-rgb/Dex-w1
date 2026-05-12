@@ -36,7 +36,15 @@ from .path_planner.hybrid_planner import HybridPlanner
 from .utils.w1_params import W1Params
 from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 
-from dexe_rp import DexforceW1Kinematics, SRSConfig
+from dexe_rp import DexforceW1Kinematics, StatusType, SRSAKinematics, SRSIKinematics
+from dexe_rp import (StatusType, TrajectoryConstraint,
+                     create_double_s_traj_along_blend_path, create_blend_path,
+                     BlendType, R2, R2Tangent, R4, R4Tangent, R7, R7Tangent,
+                     R20, R20Tangent, SE3, R3xSO3, R3xSO3Tangent, calc_next_iks,
+                     calc_nearest_iks)
+
+USE_TOPPRA = False
+calc_iks_func = calc_next_iks
 
 
 class W1Manager:
@@ -85,6 +93,14 @@ class W1Manager:
         self._arm_type = arm_type
         self._w1_version = w1_version
         self._end_effector_type = end_effector_type
+
+        self.logger.info(
+            f"Initialize W1 manager: \narm type: {arm_type}\nw1 version: {w1_version}\nend effector type: {end_effector_type}\nuse_nav: {use_nav}"
+        )
+        if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
+            self.SRSConfig = SRSAKinematics.Config
+        else:
+            self.SRSConfig = SRSIKinematics.Config
 
         res, file_path = download_w1_urdf(arm_type, w1_version,
                                           end_effector_type)
@@ -283,7 +299,7 @@ class W1Manager:
             for node in self._clients:
                 self._executor.add_node(node)
             self._node_thread = threading.Thread(target=self._executor.spin,
-                                                 daemon=False)
+                                                 daemon=True)
             self._node_thread.start()
         except Exception as e:
             self._destroy_clients()
@@ -324,7 +340,7 @@ class W1Manager:
         self.logger.info(f"Ros2 node destroyed.")
 
     def _init_kine_solver(self):
-        ik_nearest_weight = np.array([2., 2., 2., 1., 1., 1., 1.])
+        ik_nearest_weight = np.array([2., 2., 2., 0., 1., 1., 1.])
         self.kine = DexforceW1Kinematics(
             self._arm_type == W1ArmType.ANTHROPOMORPHIC)
         self.kine.left_arm_kine.set_ik_nearest_weight(ik_nearest_weight)
@@ -985,7 +1001,8 @@ class W1Manager:
             self.logger.error(
                 f"Get current robot info failed, status: {robot_info.status}.")
             return StatusCode.ROBOT_STATUS_INVALID, None
-        if robot_info.joint_position_cmd is None:
+        if robot_info.joint_position_cmd is None or len(
+                robot_info.joint_position_cmd) == 0:
             cur_qpos = np.array(robot_info.joint_position)
         else:
             cur_qpos = np.array(robot_info.joint_position_cmd)
@@ -1052,8 +1069,9 @@ class W1Manager:
             if arm_kine is None:
                 return StatusCode.NAME_MISMATCH, None
 
-            res, value = arm_kine.get_fk(qpos)
-            return (StatusCode.SUCCESS if res else StatusCode.FK_FAIL), value
+            res_status, value = arm_kine.get_fk(qpos)
+            return (StatusCode.SUCCESS if res_status.type == StatusType.Success
+                    else StatusCode.FK_FAIL), value
         else:
             if not self._check_qpos_dimension("full_body", qpos):
                 return StatusCode.DIM_MISMATCH, None
@@ -1072,10 +1090,9 @@ class W1Manager:
             StatusCode: 
         """
         # TODO: set tcp in robot client too
-
+        self.logger.info(f"Set {name} tcp: {xpos.tolist()}")
         self.cartesian_planner.set_arm_tcp(name, xpos)
         self.cartesian_joint_planner.set_arm_tcp(name, xpos)
-
         res = self.kine.set_tcp(name, xpos)
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
@@ -1273,18 +1290,45 @@ class W1Manager:
         if not self._check_qpos_limits(name, qpos_array):
             return StatusCode.EXCEED_LIMIT, None
 
+        index = self.w1_params.index_infos[name]["index"]
+        if qvel_limits_array is None:
+            qvel_limits_array = np.array([self.w1_params.default_qvel[index]] *
+                                         qpos_array.shape[0])
+
+        # case: 发两个完全一样的点
         step = weighted_norm(np.deg2rad([1.] * qpos_array[0].shape[0]))
         if qpos_array.shape[0] == 2 and weighted_norm(qpos_array[1] -
                                                       qpos_array[0]) < step:
             return StatusCode.SUCCESS, qpos_array
 
-        if is_sparse:
-            path = PathRnBezier(qpos_array)
-            if not path.calc_path():
+        if name == "full_body":
+            Rn = R20
+            RnTangent = R20Tangent
+        elif name == "torso":
+            Rn = R4
+            RnTangent = R4Tangent
+        elif name == "head":
+            Rn = R2
+            RnTangent = R2Tangent
+        elif name == "left_arm":
+            Rn = R7
+            RnTangent = R7Tangent
+        elif name == "right_arm":
+            Rn = R7
+            RnTangent = R7Tangent
+
+        waypoints = [Rn(qpos) for qpos in qpos_array]
+        blend_type = BlendType.Bezier5th
+        blend_tolerance = 0.005
+        if USE_TOPPRA and is_sparse:
+            self.logger.debug("Use Toppra for joint traj")
+            res1, path = create_blend_path(waypoints, blend_type,
+                                           blend_tolerance)
+            if res1 != StatusType.Success:
                 return StatusCode.PLAN_PATH_FAIL, None
-            qpos_sample_array = path.get_sample_by_step(step)
-            if qpos_sample_array is None:
-                return StatusCode.PLAN_PATH_FAIL, None
+            path_point_list = path.sample_by_step(step)
+            qpos_sample_array = np.array(
+                [pp.config.coeffs() for pp in path_point_list])
 
             # vel align
             prefix_dist_list = [0.]
@@ -1307,6 +1351,28 @@ class W1Manager:
             qpos_array = qpos_sample_array
             qvel_limits_array = np.array(qvel_limits_list)
 
+        elif not USE_TOPPRA and is_sparse:
+            path_vel_start = 0.0
+            path_acc_start = 0.0
+            path_vel_end = 0.0
+            path_acc_end = 0.0
+            traj_constraints = []
+            acc_limits = self.w1_params.max_qacc[index]
+            jerk_limits = self.w1_params.max_qjerk[index]
+            for vel_limits in qvel_limits_array:
+                traj_constraints.append(
+                    TrajectoryConstraint(RnTangent(vel_limits.tolist()),
+                                         RnTangent(acc_limits.tolist()),
+                                         RnTangent(jerk_limits.tolist())))
+            res, path, traj = create_double_s_traj_along_blend_path(
+                waypoints, blend_type, blend_tolerance, path_vel_start,
+                path_acc_start, path_vel_end, path_acc_end, traj_constraints)
+            if res != StatusType.Success:
+                return StatusCode.PLAN_TRAJ_FAIL, None
+            traj_point_list = traj.sample_by_step(self.TIME_STEP)
+            pos_array = np.array([tp.pos.coeffs() for tp in traj_point_list])
+            return StatusCode.SUCCESS, pos_array
+        self.logger.debug("Use Toppra for joint traj")
         dofs = self.w1_params.index_infos[name]["dofs"]
         index = self.w1_params.index_infos[name]["index"]
         pos_limits = np.vstack(
@@ -1345,28 +1411,42 @@ class W1Manager:
         if arm_kine is None:
             return StatusCode.NAME_MISMATCH, None
 
-        # cartesian interpolation
-        path = PathR3xSO3Bezier(np.array(xpos_list))
-        if not path.calc_path():
-            return StatusCode.PLAN_PATH_FAIL, None
-        if len(xpos_list) == 2 and path.get_length() < cartesian_step:
-            xpos_sample_array = np.array(xpos_list)
-        else:
-            xpos_sample_array = path.get_sample_by_step(cartesian_step)
-            if xpos_sample_array is None:
-                return StatusCode.PLAN_PATH_FAIL, None
+        # case: 发两个完全一样的点
+        if len(xpos_list) == 2 and np.allclose(
+                xpos_list[0], xpos_list[1], atol=1e-4):
+            res, qpos_list = calc_iks_func(arm_kine, qpos_seed, xpos_list)
+            if res.type != StatusType.Success:
+                return StatusCode.IK_FAIL, None
+            return self.plan_joint_traj(name, np.array(qpos_list), False,
+                                        qvel_limits_array)
 
-        prefix_dist_list = [0.]
-        for idx in range(len(xpos_list) - 1):
-            dist = np.linalg.norm(xpos_list[idx + 1][:3, 3] -
-                                  xpos_list[idx][:3, 3])
-            prefix_dist_list.append(prefix_dist_list[-1] + dist)
-
-        # vel align
-        # TODO: use ee vel rather than qvel
+        index = self.w1_params.index_infos[name]["index"]
         if qvel_limits_array is None:
-            qvel_limits_array_ = None
-        else:
+            qvel_limits_array = np.array([self.w1_params.default_qvel[index]] *
+                                         len(xpos_list))
+
+        waypoints = [R3xSO3(SE3(xpos).coeffs()) for xpos in xpos_list]
+        blend_type = BlendType.Bezier5th
+        blend_tolerance = 0.005
+
+        if USE_TOPPRA:
+            self.logger.debug("Use Toppra for cartesian traj")
+            # cartesian interpolation
+            res1, path = create_blend_path(waypoints, blend_type,
+                                           blend_tolerance)
+            if res1 != StatusType.Success:
+                return StatusCode.PLAN_PATH_FAIL, None
+            path_point_list = path.sample_by_step(cartesian_step)
+            xpos_sample_array = np.array(
+                [SE3(pp.config.coeffs()).transform() for pp in path_point_list])
+
+            prefix_dist_list = [0.]
+            for idx in range(len(xpos_list) - 1):
+                dist = np.linalg.norm(xpos_list[idx + 1][:3, 3] -
+                                      xpos_list[idx][:3, 3])
+                prefix_dist_list.append(prefix_dist_list[-1] + dist)
+
+            # vel align
             idx = 0
             qvel_limits_list_ = [qvel_limits_array[idx]]
             cur_xpos = xpos_sample_array[0]
@@ -1379,43 +1459,43 @@ class W1Manager:
                 qvel_limits_list_.append(qvel_limits_array[idx])
                 cur_xpos = xpos
             qvel_limits_list_.append(qvel_limits_array[-1])
-        qvel_limits_array_ = np.array(qvel_limits_list_)
+            qvel_limits_array_ = np.array(qvel_limits_list_)
 
-        # solve ik
-        qpos_list = []
-        cur_qseed = qpos_seed
-        for i, cur_xpos in enumerate(xpos_sample_array):
-            use_nearest = (i != 0)
-
-            if not use_nearest:
-                res, ref_psi = arm_kine.calc_arm_angle(cur_qseed)
-                if res:
-                    srs_cfg = SRSConfig(cur_qseed, ref_psi)
-                    res_ik, cur_qpos = arm_kine.get_ik(cur_xpos, srs_cfg)
-                    if not res_ik:
-                        use_nearest = True
-                else:
-                    use_nearest = True
-
-            if use_nearest:
-                res_ik, cur_qpos = arm_kine.get_nearest_ik(xpos=cur_xpos,
-                                                           qpos_seed=cur_qseed)
-
-            if not res_ik:
-                self.logger.error(
-                    f"{name} solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}."
-                )
+            # solve ik
+            res2, qpos_list = calc_iks_func(arm_kine, qpos_seed,
+                                            xpos_sample_array)
+            if res2.type != StatusType.Success:
                 return StatusCode.IK_FAIL, None
-            if not np.allclose(cur_qpos, cur_qseed, atol=np.deg2rad(90)):
-                self.logger.error(f"{name} qpos traj is not continues\n" + \
-                                  f"cur_qpos(deg): {np.rad2deg(cur_qpos)}\n" + \
-                                  f"cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
-                return StatusCode.IK_FAIL, None
-            qpos_list.append(cur_qpos)
-            cur_qseed = cur_qpos
 
-        return self.plan_joint_traj(name, np.array(qpos_list), False,
-                                    qvel_limits_array_)
+            return self.plan_joint_traj(name, np.array(qpos_list), False,
+                                        qvel_limits_array_)
+        else:
+            self.logger.debug("Use Double-S for cartesian traj")
+            path_vel_start = 0.0
+            path_acc_start = 0.0
+            path_vel_end = 0.0
+            path_acc_end = 0.0
+            traj_constraints = []
+            for qvel_limits in qvel_limits_array:
+                speed_ratio = qvel_limits[0] / self.w1_params.default_qvel[
+                    index][0]
+                traj_constraints.append(
+                    TrajectoryConstraint(
+                        R3xSO3Tangent(speed_ratio * self.w1_params.default_vel),
+                        R3xSO3Tangent(self.w1_params.max_acc),
+                        R3xSO3Tangent(self.w1_params.max_jerk)))
+            res1, path, traj = create_double_s_traj_along_blend_path(
+                waypoints, blend_type, blend_tolerance, path_vel_start,
+                path_acc_start, path_vel_end, path_acc_end, traj_constraints)
+            if res1 != StatusType.Success:
+                return StatusCode.PLAN_TRAJ_FAIL, None
+            traj_point_list = traj.sample_by_step(self.TIME_STEP)
+            pose_array = np.array(
+                [SE3(tp.pos.coeffs()).transform() for tp in traj_point_list])
+            res2, qpos_traj = calc_iks_func(arm_kine, qpos_seed, pose_array)
+            if res2.type != StatusType.Success:
+                return StatusCode.IK_FAIL, None
+            return StatusCode.SUCCESS, np.array(qpos_traj)
 
     def plan_arm_ee_trigger(self,
                             arm_ee_state_list: list) -> tuple[StatusCode, list]:
@@ -1826,8 +1906,9 @@ class W1Manager:
                 cur_arm_qpos = cur_qpos
 
             # In local frame
-            res_fk, cur_xpos = self._get_arm_kine(name).get_fk(cur_arm_qpos)
-            if not res_fk:
+            res_fk_status, cur_xpos = self._get_arm_kine(name).get_fk(
+                cur_arm_qpos)
+            if res_fk_status.type != StatusType.Success:
                 self.logger.error(f"{name} solve fk failed!")
                 return StatusCode.FK_FAIL, None
             xpos_raw_list = [
@@ -1918,8 +1999,9 @@ class W1Manager:
             else:
                 cur_arm_qpos = cur_qpos
 
-            res_fk, cur_xpos = self._get_arm_kine(name).get_fk(cur_arm_qpos)
-            if not res_fk:
+            res_fk_status, cur_xpos = self._get_arm_kine(name).get_fk(
+                cur_arm_qpos)
+            if res_fk_status.type != StatusType.Success:
                 self.logger.error(f"{name} solve fk failed!")
                 return StatusCode.FK_FAIL, None, None
             pos_raw_array_ = np.vstack(
@@ -2288,45 +2370,54 @@ class W1Manager:
             [left_qvel_limits_array_, right_qvel_limits_array_])
 
         # solve ik
-        left_qpos_list = []
-        cur_left_qseed = left_qpos_seed
-        for cur_left_xpos in left_xpos_sample_array:
-            res_left_ik, cur_left_qpos = left_arm_kine.get_nearest_ik(
-                xpos=cur_left_xpos, qpos_seed=cur_left_qseed)
-            if not res_left_ik:
-                self.logger.error(
-                    f"Left arm solve ik failed, cur_qseed(deg): {np.rad2deg(cur_left_qseed)}."
-                )
-                return StatusCode.IK_FAIL, None, None
-            if not np.allclose(
-                    cur_left_qpos, cur_left_qseed, atol=np.deg2rad(90)):
-                self.logger.error(f"Left arm qpos traj is not continus\n" + \
-                                  f"cur_qpos(deg): {np.rad2deg(cur_left_qpos)}\n" + \
-                                  f"cur_qseed(deg): {np.rad2deg(cur_left_qseed)}.")
-                return StatusCode.IK_FAIL, None, None
-            left_qpos_list.append(cur_left_qpos)
-            cur_left_qseed = cur_left_qpos
+        # left_qpos_list = []
+        # cur_left_qseed = left_qpos_seed
+        # for cur_left_xpos in left_xpos_sample_array:
+        #     res_left_ik_status, cur_left_qpos = left_arm_kine.get_nearest_ik(
+        #         xpos=cur_left_xpos, qpos_seed=cur_left_qseed)
+        #     if res_left_ik_status.type != StatusType.Success:
+        #         self.logger.error(
+        #             f"Left arm solve ik failed, cur_qseed(deg): {np.rad2deg(cur_left_qseed)}."
+        #         )
+        #         return StatusCode.IK_FAIL, None, None
+        #     if not np.allclose(
+        #             cur_left_qpos, cur_left_qseed, atol=np.deg2rad(90)):
+        #         self.logger.error(f"Left arm qpos traj is not continus\n" + \
+        #                           f"cur_qpos(deg): {np.rad2deg(cur_left_qpos)}\n" + \
+        #                           f"cur_qseed(deg): {np.rad2deg(cur_left_qseed)}.")
+        #         return StatusCode.IK_FAIL, None, None
+        #     left_qpos_list.append(cur_left_qpos)
+        #     cur_left_qseed = cur_left_qpos
+        res_left, left_qpos_list = calc_iks_func(left_arm_kine, left_qpos_seed,
+                                                 left_xpos_sample_array)
+        if res_left.type != StatusType.Success:
+            return StatusCode.IK_FAIL, None, None
 
         left_qpos_array = np.array(left_qpos_list)
 
-        right_qpos_list = []
-        cur_right_qseed = right_qpos_seed
-        for cur_right_xpos in right_xpos_sample_array:
-            res_right_ik, cur_right_qpos = right_arm_kine.get_nearest_ik(
-                xpos=cur_right_xpos, qpos_seed=cur_right_qseed)
-            if not res_right_ik:
-                self.logger.error(
-                    f"Right arm solve ik failed, cur_qseed(deg): {np.rad2deg(cur_right_qseed)}."
-                )
-                return StatusCode.IK_FAIL, None, None
-            if not np.allclose(
-                    cur_right_qpos, cur_right_qseed, atol=np.deg2rad(90)):
-                self.logger.error(f"Right arm qpos traj is not continus\n" + \
-                                  f"cur_qpos(deg): {np.rad2deg(cur_right_qpos)}\n" + \
-                                  f"cur_qseed(deg): {np.rad2deg(cur_right_qseed)}.")
-                return StatusCode.IK_FAIL, None, None
-            right_qpos_list.append(cur_right_qpos)
-            cur_right_qseed = cur_right_qpos
+        # right_qpos_list = []
+        # cur_right_qseed = right_qpos_seed
+        # for cur_right_xpos in right_xpos_sample_array:
+        #     res_right_ik_status, cur_right_qpos = right_arm_kine.get_nearest_ik(
+        #         xpos=cur_right_xpos, qpos_seed=cur_right_qseed)
+        #     if res_right_ik_status.type != StatusType.Success:
+        #         self.logger.error(
+        #             f"Right arm solve ik failed, cur_qseed(deg): {np.rad2deg(cur_right_qseed)}."
+        #         )
+        #         return StatusCode.IK_FAIL, None, None
+        #     if not np.allclose(
+        #             cur_right_qpos, cur_right_qseed, atol=np.deg2rad(90)):
+        #         self.logger.error(f"Right arm qpos traj is not continus\n" + \
+        #                           f"cur_qpos(deg): {np.rad2deg(cur_right_qpos)}\n" + \
+        #                           f"cur_qseed(deg): {np.rad2deg(cur_right_qseed)}.")
+        #         return StatusCode.IK_FAIL, None, None
+        #     right_qpos_list.append(cur_right_qpos)
+        #     cur_right_qseed = cur_right_qpos
+        res_right, right_qpos_list = calc_iks_func(right_arm_kine,
+                                                   right_qpos_seed,
+                                                   right_xpos_sample_array)
+        if res_right.type != StatusType.Success:
+            return StatusCode.IK_FAIL, None, None
 
         right_qpos_array = np.array(right_qpos_list)
 
@@ -2442,14 +2533,14 @@ class W1Manager:
             cur_left_arm_qpos = cur_left_qpos
             cur_right_arm_qpos = cur_right_qpos
 
-        res_left_fk, cur_left_xpos = self._get_arm_kine("left_arm").get_fk(
-            cur_left_arm_qpos)
-        if not res_left_fk:
+        res_left_fk_status, cur_left_xpos = self._get_arm_kine(
+            "left_arm").get_fk(cur_left_arm_qpos)
+        if res_left_fk_status.type != StatusType.Success:
             self.logger.error("left_arm solve fk failed!")
             return StatusCode.FK_FAIL, None, None
-        res_right_fk, cur_right_xpos = self._get_arm_kine("right_arm").get_fk(
-            cur_right_arm_qpos)
-        if not res_right_fk:
+        res_right_fk_status, cur_right_xpos = self._get_arm_kine(
+            "right_arm").get_fk(cur_right_arm_qpos)
+        if res_right_fk_status.type != StatusType.Success:
             self.logger.error("right_arm solve fk failed!")
             return StatusCode.FK_FAIL, None, None
         left_xpos_raw_list = [
@@ -3282,21 +3373,9 @@ class W1Manager:
         if res.value < 0:
             return res
         cur_qseed = cur_qpos[self.w1_params.index_infos[name]["index"]]
-        for cur_xpos in xpos_sample_array:
-            res_ik, qpos = arm_kine.get_nearest_ik(xpos=cur_xpos,
-                                                   qpos_seed=cur_qseed)
-            if not res_ik:
-                self.logger.error(
-                    f"{name} solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}."
-                )
-                return StatusCode.IK_FAIL
-            if not np.allclose(qpos, cur_qseed, atol=np.deg2rad(90)):
-                self.logger.error(f"{name} qpos traj is not continues\n" + \
-                                  f"cur_qpos(deg): {np.rad2deg(cur_qpos)}\n" + \
-                                  f"cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
-                return StatusCode.IK_FAIL
-            qpos_list.append(qpos)
-            cur_qseed = qpos
+        res, qpos_list = calc_iks_func(arm_kine, cur_qseed, xpos_sample_array)
+        if res.type != StatusType.Success:
+            return StatusCode.IK_FAIL, None
 
         speed_ratio_list = [speed_ratio] * len(qpos_list)
         default_qvel = self.w1_params.default_qvel[
@@ -3593,9 +3672,10 @@ class W1Manager:
                         "Cannot find valid ik solution for left arm target pose in move_dual_arm_single_task"
                     )
                     return StatusCode.IK_FAIL, None, None, None
-                srs_cfg = SRSConfig(left_qpos_seed, left_ref_psi)
-                res, arml_ik_qpos = arml_kine.get_ik(target_arml_xpos, srs_cfg)
-                if res.type.value < 0:
+                srs_cfg = self.SRSConfig(True, left_qpos_seed, left_ref_psi)
+                res_ik_status, arml_ik_qpos = arml_kine.get_ik(
+                    target_arml_xpos, srs_cfg)
+                if res_ik_status.type != StatusType.Success:
                     left_ref_psi += 5. / 180. * np.pi
                     continue
                 else:
@@ -3645,9 +3725,10 @@ class W1Manager:
                         "Cannot find valid ik solution for right arm target pose in move_dual_arm_single_task"
                     )
                     return StatusCode.IK_FAIL, None, None, None
-                srs_cfg = SRSConfig(right_qpos_seed, right_ref_psi)
-                res, armr_ik_qpos = armr_kine.get_ik(target_armr_xpos, srs_cfg)
-                if res.type.value < 0:
+                srs_cfg = self.SRSConfig(False, right_qpos_seed, right_ref_psi)
+                res_ik_status, armr_ik_qpos = armr_kine.get_ik(
+                    target_armr_xpos, srs_cfg)
+                if res_ik_status.type != StatusType.Success:
                     right_ref_psi += 5. / 180. * np.pi
                     continue
                 else:
@@ -4154,10 +4235,11 @@ class W1Manager:
                                 "Left arm ik solution not found in plan_dual_arm_multiple_task."
                             )
                             return StatusCode.IK_FAIL, None, None, None
-                        srs_cfg = SRSConfig(left_qpos_seed, left_ref_psi)
-                        res_ik, arml_ik_qpos = arml_kine.get_ik(
+                        srs_cfg = self.SRSConfig(True, left_qpos_seed,
+                                                 left_ref_psi)
+                        res_ik_status, arml_ik_qpos = arml_kine.get_ik(
                             target_arml_xpos, srs_cfg)
-                        if res_ik.type.value < 0:
+                        if res_ik_status.type != StatusType.Success:
                             left_ref_psi += 5. / 180. * np.pi
                             continue
                         else:
@@ -4319,10 +4401,11 @@ class W1Manager:
                                 "Right arm ik solution not found in plan_dual_arm_multiple_task."
                             )
                             return StatusCode.IK_FAIL, None, None, None
-                        srs_cfg = SRSConfig(right_qpos_seed, right_ref_psi)
-                        res_ik, armr_ik_qpos = armr_kine.get_ik(
+                        srs_cfg = self.SRSConfig(False, right_qpos_seed,
+                                                 right_ref_psi)
+                        res_ik_status, armr_ik_qpos = armr_kine.get_ik(
                             target_armr_xpos, srs_cfg)
-                        if res_ik.type.value < 0:
+                        if res_ik_status.type != StatusType.Success:
                             right_ref_psi += 5. / 180. * np.pi
                             continue
                         else:
@@ -4686,8 +4769,8 @@ class W1Manager:
         cur_torso_qpos = start_qpos[self.real_torso_idx]
         cur_arml_qpos = start_qpos[self.real_arml_idx]
         cur_armr_qpos = start_qpos[self.real_armr_idx]
-        res, cur_arml_pose = arml_kine.get_fk(cur_arml_qpos)
-        res, cur_armr_pose = armr_kine.get_fk(cur_armr_qpos)
+        res_status, cur_arml_pose = arml_kine.get_fk(cur_arml_qpos)
+        res_status, cur_armr_pose = armr_kine.get_fk(cur_armr_qpos)
 
         cur_arml_base_tf, cur_armr_base_tf = self._pin_kine.get_arm_base_tf(
             real_qpos=start_qpos)
@@ -5080,7 +5163,9 @@ class W1Manager:
                                   speed_ratio: float = 1.0,
                                   use_collision_validator: bool = True,
                                   movement_mode: str = "eager",
-                                  eye_focus_point: np.ndarray = None):
+                                  eye_focus_point: np.ndarray = None,
+                                  is_torso_lean_backward: bool = False,
+                                  torso_lean_backward_threshold: float = None):
         """
         This function is used to plan linear trajectory of end effector in Cartesian space,
             and use whole body ik to solve the corresponding joint trajectory. 
@@ -5097,6 +5182,16 @@ class W1Manager:
                 f"Unsupported movement mode: {movement_mode}, please choose from ['eager', 'sync_endpoint', 'sync_point_by_point']"
             )
             return StatusCode.INPUT_INVALID, None, None, None
+
+        if is_torso_lean_backward:
+            if torso_lean_backward_threshold is not None:
+                self.cartesian_joint_planner.set_whole_body_ik_lean_backward_threshold(
+                    torso_lean_backward_threshold)
+            else:
+                self.cartesian_joint_planner.set_whole_body_ik_cost_type(
+                    "standard_lean_backward")
+        else:
+            self.cartesian_joint_planner.set_whole_body_ik_cost_type("standard")
 
         if eye_focus_point is not None:
             if not isinstance(eye_focus_point, np.ndarray) or np.atleast_2d(
@@ -5380,8 +5475,12 @@ class W1Manager:
         left_last_target_xpos = left_xpos_sample_array[-1]
         right_last_target_xpos = right_xpos_sample_array[-1] @ np.linalg.inv(
             self.cartesian_joint_planner.right_tcp)
-        self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
-            "standard_strict")
+        if not is_torso_lean_backward:
+            self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
+                "standard_strict")
+        else:
+            self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
+                "standard_lean_backward_strict")
         res, full_body_last_qpos = self.cartesian_joint_planner.whole_body_ik_solver.solve_ik(
             left_ee_target=left_last_target_xpos,
             right_ee_target=right_last_target_xpos,
@@ -5390,8 +5489,12 @@ class W1Manager:
             [full_body_joint_traj, full_body_last_qpos])
         qvel_limits_array_ = np.vstack(
             [qvel_limits_array_, qvel_limits_array_[-1]])
-        self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
-            "standard")
+        if not is_torso_lean_backward:
+            self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
+                "standard")
+        else:
+            self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
+                "standard_lean_backward")
 
         if not res:
             self.logger.error(

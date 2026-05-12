@@ -213,7 +213,7 @@ class RobotClientRos2(Node, RobotClient):
 
             target_str = (str(np.round(request.value, 4))
                           if request.value is not None else "None")
-            self.logger.info(
+            self.logger.debug(
                 f"Movement request_id: {self.latest_sent_id} {request.type.name} {request.motion_group.name if request.motion_group is not None else ''} accepted, target: {target_str}"
             )
             self._move_request_id_returned = False
