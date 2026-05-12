@@ -137,6 +137,9 @@ def map_sri_raw_wrench_to_ee(raw: np.ndarray) -> np.ndarray:
     return np.concatenate([force, torque])
 
 
+KNOWN_W_BIAS_EE = map_sri_raw_wrench_to_ee(KNOWN_W_BIAS)
+
+
 def array_to_list(value: np.ndarray) -> List[float]:
     return [float(x) for x in np.asarray(value).reshape(-1)]
 
@@ -166,7 +169,8 @@ class ToolGravityNode(Node):
             return
         
         try:
-            force_sensor = np.asarray(data["force_sensor"], dtype=float)
+            key = "raw_force_sensor" if self.wrench_format == "raw_sri" and "raw_force_sensor" in data else "force_sensor"
+            force_sensor = np.asarray(data[key], dtype=float)
         except (KeyError, ValueError, TypeError) as e:
             self._record_error("force_sensor_parse", str(e))
             return
@@ -356,8 +360,8 @@ def estimate_tool_parameters(
     model_sign: int,
 ) -> Dict[str, object]:
     mass = KNOWN_MASS
-    force_bias = KNOWN_FORCE_BIAS.copy()
-    torque_bias = KNOWN_TORQUE_BIAS.copy()
+    force_bias = KNOWN_W_BIAS_EE[:3].copy()
+    torque_bias = KNOWN_W_BIAS_EE[3:6].copy()
 
     g_world = np.array([0.0, 0.0, -gravity], dtype=float)
     forces_expected = []
