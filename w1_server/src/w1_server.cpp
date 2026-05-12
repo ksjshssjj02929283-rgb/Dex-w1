@@ -119,6 +119,8 @@ void RobotServer::ForceArrayCallback(const std_msgs::msg::Float64MultiArray::Sha
 void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path& robot_cfg_path) {
     tool_gravity_compensation_enabled_ = false;
     tool_mass_kg_ = 0.0;
+    tool_gravity_magnitude_ = kDefaultGravity;
+    tool_model_sign_ = 1;
     tool_com_m_.setZero();
     tool_w_bias_.setZero();
 
@@ -138,10 +140,17 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
         }
 
         tool_mass_kg_ = node["mass_kg"].as<double>();
+        if (node["gravity_magnitude"]) {
+            tool_gravity_magnitude_ = node["gravity_magnitude"].as<double>();
+        }
+        if (node["model_sign"]) {
+            tool_model_sign_ = node["model_sign"].as<int>();
+        }
         tool_com_m_ = com_mm.head<3>() / 1000.0;
         tool_w_bias_ = w_bias.head<6>();
         tool_gravity_compensation_enabled_ = true;
-        RCLCPP_INFO(this->get_logger(), "Tool gravity compensation enabled, mass_kg=%.4f", tool_mass_kg_);
+        RCLCPP_INFO(this->get_logger(), "Tool gravity compensation enabled, mass_kg=%.4f, gravity=%.4f, model_sign=%d",
+                    tool_mass_kg_, tool_gravity_magnitude_, tool_model_sign_);
     } catch (const YAML::Exception& e) {
         RCLCPP_WARN(this->get_logger(), "Failed to load tool gravity compensation config: %s", e.what());
     }
@@ -168,20 +177,22 @@ Eigen::Matrix3d RobotServer::GetEERotationWorldFromEE(int arm_index) const {
     return q.toRotationMatrix();
 }
 
-Vector6d RobotServer::ApplyToolGravityCompensation(const Vector6d& wrench_ee, int arm_index) const {
+Vector6d RobotServer::ApplyToolGravityCompensation(const Vector6d& raw_wrench, int arm_index) const {
+    const Vector6d wrench_ee = MapSriRawWrenchToEE(raw_wrench);
     if (!tool_gravity_compensation_enabled_) {
         return wrench_ee;
     }
 
     const Eigen::Matrix3d rotation_world_from_ee = GetEERotationWorldFromEE(arm_index);
-    const Vector3d gravity_world(0.0, 0.0, -kDefaultGravity);
-    const Vector3d gravity_force_ee = rotation_world_from_ee.transpose() * (tool_mass_kg_ * gravity_world);
+    const Vector3d gravity_world(0.0, 0.0, -tool_gravity_magnitude_);
+    const Vector3d expected_force_ee =
+        static_cast<double>(tool_model_sign_) * rotation_world_from_ee.transpose() * (tool_mass_kg_ * gravity_world);
 
-    Vector6d gravity_wrench_ee;
-    gravity_wrench_ee.head<3>() = gravity_force_ee;
-    gravity_wrench_ee.tail<3>() = tool_com_m_.cross(gravity_force_ee);
+    Vector6d expected_wrench_ee;
+    expected_wrench_ee.head<3>() = expected_force_ee + tool_w_bias_.head<3>();
+    expected_wrench_ee.tail<3>() = tool_com_m_.cross(expected_force_ee) + tool_w_bias_.tail<3>();
 
-    return wrench_ee - tool_w_bias_ - gravity_wrench_ee;
+    return wrench_ee - expected_wrench_ee;
 }
 
 void RobotServer::TorqueControlThreadFunc() {
@@ -215,12 +226,12 @@ void RobotServer::TorqueControlThreadFunc() {
         if (primary_sensor_ && primary_sensor_ready_) {
             primary_sensor_->PeekLatest(&sensor_data_primary);
             primary_sensor_->PeekLatestRaw(&raw_sensor_data_primary);
-            sensor_data_primary = ApplyToolGravityCompensation(MapSriRawWrenchToEE(sensor_data_primary), 0);
+            sensor_data_primary = ApplyToolGravityCompensation(raw_sensor_data_primary, 0);
         }
         if (secondary_sensor_ && secondary_sensor_ready_) {
             secondary_sensor_->PeekLatest(&sensor_data_secondary);
             secondary_sensor_->PeekLatestRaw(&raw_sensor_data_secondary);
-            sensor_data_secondary = ApplyToolGravityCompensation(MapSriRawWrenchToEE(sensor_data_secondary), 1);
+            sensor_data_secondary = ApplyToolGravityCompensation(raw_sensor_data_secondary, 1);
         }
 
         // 叠加手动输入的力数据

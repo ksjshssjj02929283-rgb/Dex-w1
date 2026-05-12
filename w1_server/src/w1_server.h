@@ -52,7 +52,7 @@ private:
     std_msgs::msg::String GetRobotServerStateMsg();
     void LoadToolGravityCompensationConfig(const std::filesystem::path& robot_cfg_path);
     Vector6d MapSriRawWrenchToEE(const Vector6d& raw_wrench) const;
-    Vector6d ApplyToolGravityCompensation(const Vector6d& wrench_ee, int arm_index) const;
+    Vector6d ApplyToolGravityCompensation(const Vector6d& raw_wrench, int arm_index) const;
     Eigen::Matrix3d GetEERotationWorldFromEE(int arm_index) const;
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;
@@ -126,6 +126,8 @@ private:
     Vector12d raw_sensor_wrench_;
     bool tool_gravity_compensation_enabled_ = false;
     double tool_mass_kg_ = 0.0;
+    double tool_gravity_magnitude_ = 9.79;
+    int tool_model_sign_ = 1;
     Vector3d tool_com_m_ = Vector3d::Zero();
     Vector6d tool_w_bias_ = Vector6d::Zero();
     std::shared_ptr<SriForceSensor> primary_sensor_;
