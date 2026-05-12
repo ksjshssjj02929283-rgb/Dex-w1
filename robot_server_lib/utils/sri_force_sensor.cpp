@@ -67,7 +67,7 @@ int SriForceSensor::SetPara(int serialfd, int speed) {
     tty.c_cflag |= CS8;
     tty.c_cflag |= PARENB;
     tty.c_cflag &= ~PARODD;
-    tty.c_cflag |= CSTOPB;
+    tty.c_cflag &= ~CSTOPB;
     tcflush(serialfd, TCIFLUSH);
     tty.c_cc[VTIME] = 1;
     tty.c_cc[VMIN] = 1;
@@ -96,7 +96,7 @@ int SriForceSensor::ReadData(int fd, unsigned char* data, int datalength) {
     FD_ZERO(&readset);
     FD_SET(fd, &readset);
 
-    struct timeval tv = {0, 10};
+    struct timeval tv = {0, 20000};
     if (select(fd + 1, &readset, nullptr, nullptr, &tv) <= 0) {
         return 0;
     }
@@ -248,44 +248,71 @@ void* SriForceSensor::ReadThread(void* param) {
 void SriForceSensor::ReadLoop() {
     printf("[Info] SRI force sensor: Read thread started\n");
     LOG_INFO << "SRI force sensor: Read thread started";
+    auto last_abnormal_log_time = std::chrono::steady_clock::now() - std::chrono::seconds(5);
+    auto log_read_abnormal = [&last_abnormal_log_time]() {
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_abnormal_log_time >= std::chrono::seconds(1)) {
+            printf("[Warn] Force sensor data read abnormal\n");
+            LOG_WARN << "Force sensor data read abnormal";
+            last_abnormal_log_time = now;
+        }
+    };
+    std::vector<unsigned char> rx_buffer;
+    rx_buffer.reserve(REC_DATA_LEN);
     while (true) {
         if (m_serial_fd < 0) break;
 
         int recvDataLen = ReadData(m_serial_fd, mReadBuffer, REC_DATA_LEN);
         if (recvDataLen > 0) {
-            // 只解析最后一个有效帧
-            float fx = 0, fy = 0, fz = 0, mx = 0, my = 0, mz = 0;
-            int found = 0;
+            rx_buffer.insert(rx_buffer.end(), mReadBuffer, mReadBuffer + recvDataLen);
 
-            int offset = 0;
-            while (offset + 14 <= recvDataLen) {
-                float tfx, tfy, tfz, tmx, tmy, tmz;
-                int newOffset = ParseFrame(mReadBuffer, recvDataLen, offset, tfx, tfy, tfz, tmx, tmy, tmz);
-                if (newOffset < 0) {
+            if (rx_buffer.size() > REC_DATA_LEN) {
+                rx_buffer.erase(rx_buffer.begin(), rx_buffer.end() - 1024);
+            }
+
+            float fx = 0, fy = 0, fz = 0, mx = 0, my = 0, mz = 0;
+            bool found = false;
+
+            while (true) {
+                auto header = std::search(rx_buffer.begin(), rx_buffer.end(), std::begin("ªU") - 1,
+                                          std::end("ªU") - 1);
+                if (header == rx_buffer.end()) {
+                    if (rx_buffer.size() > 1) {
+                        rx_buffer.erase(rx_buffer.begin(), rx_buffer.end() - 1);
+                    }
                     break;
                 }
-                if (newOffset == offset) {
-                    offset++;
-                    continue;
+
+                if (header != rx_buffer.begin()) {
+                    rx_buffer.erase(rx_buffer.begin(), header);
                 }
 
-                // 更新最新值
-                fx = tfx;
-                fy = tfy;
-                fz = tfz;
-                mx = tmx;
-                my = tmy;
-                mz = tmz;
-                found = 1;
-                offset = newOffset;
+                if (rx_buffer.size() < 14) {
+                    break;
+                }
+
+                float tfx, tfy, tfz, tmx, tmy, tmz;
+                int newOffset = ParseFrame(rx_buffer.data(), static_cast<int>(rx_buffer.size()), 0, tfx, tfy, tfz, tmx, tmy, tmz);
+                if (newOffset == 14) {
+                    fx = tfx;
+                    fy = tfy;
+                    fz = tfz;
+                    mx = tmx;
+                    my = tmy;
+                    mz = tmz;
+                    found = true;
+                    rx_buffer.erase(rx_buffer.begin(), rx_buffer.begin() + 14);
+                } else if (newOffset > 0) {
+                    rx_buffer.erase(rx_buffer.begin(), rx_buffer.begin() + 1);
+                } else {
+                    break;
+                }
             }
 
             if (found) {
-                // 校准
                 if (mIsCalibrating) {
                     ProcessCalibrationData(fx, fy, fz, mx, my, mz);
                 } else {
-                    // 应用零位偏移并写入 buffer
                     ApplyZeroOffset(fx, fy, fz, mx, my, mz);
                     if (buffer_) {
                         robot_server_lib::Vector6d vec;
@@ -293,8 +320,11 @@ void SriForceSensor::ReadLoop() {
                         buffer_->AppendNewElement(vec);
                     }
                 }
+            } else if (rx_buffer.size() >= 14) {
+                log_read_abnormal();
             }
         } else {
+            log_read_abnormal();
             usleep(50);
         }
     }
