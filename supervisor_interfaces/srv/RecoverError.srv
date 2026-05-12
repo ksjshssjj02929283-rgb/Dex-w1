@@ -1,0 +1,9 @@
+# Recover Error Service
+# 执行系统指令
+
+int32 error_code
+---
+# 接口调用成功状态
+bool success
+# 接口调用返回消息
+string message
