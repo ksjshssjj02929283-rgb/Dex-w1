@@ -4,6 +4,22 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <set>
+#include <yaml-cpp/yaml.h>
+
+namespace {
+constexpr double kDefaultGravity = 9.79;
+
+bool ReadYamlVector(const YAML::Node& node, int expected_size, Eigen::VectorXd& out) {
+    if (!node || !node.IsSequence() || static_cast<int>(node.size()) != expected_size) {
+        return false;
+    }
+    out = Eigen::VectorXd::Zero(expected_size);
+    for (int i = 0; i < expected_size; ++i) {
+        out[i] = node[i].as<double>();
+    }
+    return true;
+}
+}  // namespace
 
 namespace robot_server_lib {
 
@@ -16,6 +32,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     sensor_force_.setZero();
     sensor_wrench_.setZero();
     raw_sensor_wrench_.setZero();
+    LoadToolGravityCompensationConfig(robot_cfg_path);
 
     // 创建 /feedback/joint 发布器
     feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint", 10);
@@ -68,7 +85,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
 
     // 初始化力传感器
     primary_sensor_ = std::make_shared<SriForceSensor>();
-    if (!primary_sensor_->Init(460800, robot_cfg_path)) {
+    if (!primary_sensor_->Init(460800)) {
         RCLCPP_WARN(this->get_logger(), "Failed to initialize primary force sensor");
         LOG_WARN << "Failed to initialize primary force sensor";
         primary_sensor_ = nullptr;
@@ -93,6 +110,74 @@ void RobotServer::ForceArrayCallback(const std_msgs::msg::Float64MultiArray::Sha
                 sensor_force_[2]);
 }
 
+void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path& robot_cfg_path) {
+    tool_gravity_compensation_enabled_ = false;
+    tool_mass_kg_ = 0.0;
+    tool_com_m_.setZero();
+    tool_w_bias_.setZero();
+
+    try {
+        const auto config = YAML::LoadFile(robot_cfg_path.string());
+        const auto node = config["tool_gravity_compensation"];
+        if (!node) {
+            return;
+        }
+
+        Eigen::VectorXd com_mm;
+        Eigen::VectorXd w_bias;
+        if (!ReadYamlVector(node["com_mm"], 3, com_mm) || !ReadYamlVector(node["w_bias"], 6, w_bias) ||
+            !node["mass_kg"]) {
+            RCLCPP_WARN(this->get_logger(), "Invalid tool_gravity_compensation config, disabled");
+            return;
+        }
+
+        tool_mass_kg_ = node["mass_kg"].as<double>();
+        tool_com_m_ = com_mm.head<3>() / 1000.0;
+        tool_w_bias_ = w_bias.head<6>();
+        tool_gravity_compensation_enabled_ = true;
+        RCLCPP_INFO(this->get_logger(), "Tool gravity compensation enabled, mass_kg=%.4f", tool_mass_kg_);
+    } catch (const YAML::Exception& e) {
+        RCLCPP_WARN(this->get_logger(), "Failed to load tool gravity compensation config: %s", e.what());
+    }
+}
+
+Vector6d RobotServer::MapSriRawWrenchToEE(const Vector6d& raw_wrench) const {
+    Vector6d wrench_ee;
+    wrench_ee << -raw_wrench[0], -raw_wrench[1], raw_wrench[2], -raw_wrench[3], -raw_wrench[4], raw_wrench[5];
+    return wrench_ee;
+}
+
+Eigen::Matrix3d RobotServer::GetEERotationWorldFromEE(int arm_index) const {
+    const auto& ee_pose = this->manager_info_.ee_pose_measurement;
+    const int offset = arm_index * 7;
+    if (ee_pose.size() < offset + 7) {
+        return Eigen::Matrix3d::Identity();
+    }
+
+    Eigen::Quaterniond q(ee_pose[offset + 3], ee_pose[offset + 4], ee_pose[offset + 5], ee_pose[offset + 6]);
+    if (q.norm() <= FloatZeroTol) {
+        return Eigen::Matrix3d::Identity();
+    }
+    q.normalize();
+    return q.toRotationMatrix();
+}
+
+Vector6d RobotServer::ApplyToolGravityCompensation(const Vector6d& wrench_ee, int arm_index) const {
+    if (!tool_gravity_compensation_enabled_) {
+        return wrench_ee;
+    }
+
+    const Eigen::Matrix3d rotation_world_from_ee = GetEERotationWorldFromEE(arm_index);
+    const Vector3d gravity_world(0.0, 0.0, -kDefaultGravity);
+    const Vector3d gravity_force_ee = rotation_world_from_ee.transpose() * (tool_mass_kg_ * gravity_world);
+
+    Vector6d gravity_wrench_ee;
+    gravity_wrench_ee.head<3>() = gravity_force_ee;
+    gravity_wrench_ee.tail<3>() = tool_com_m_.cross(gravity_force_ee);
+
+    return wrench_ee - tool_w_bias_ - gravity_wrench_ee;
+}
+
 void RobotServer::TorqueControlThreadFunc() {
     if (!is_sim_) {
         Setup_Realtime();
@@ -109,6 +194,7 @@ void RobotServer::TorqueControlThreadFunc() {
     while (rclcpp::ok()) {
         loop_counter++;
         next_cycle_time_point += std::chrono::microseconds(torque_ctrl_dt_micro);
+        this->manager_buffers_.planner_manager_info->PeekLatest(&this->manager_info_);
 
         // 读取力传感器数据
         Vector6d sensor_data_primary = Vector6d::Zero();
@@ -118,10 +204,12 @@ void RobotServer::TorqueControlThreadFunc() {
         if (primary_sensor_ && primary_sensor_ready_) {
             primary_sensor_->PeekLatest(&sensor_data_primary);
             primary_sensor_->PeekLatestRaw(&raw_sensor_data_primary);
+            sensor_data_primary = ApplyToolGravityCompensation(MapSriRawWrenchToEE(sensor_data_primary), 0);
         }
         if (secondary_sensor_ && secondary_sensor_ready_) {
             secondary_sensor_->PeekLatest(&sensor_data_secondary);
             secondary_sensor_->PeekLatestRaw(&raw_sensor_data_secondary);
+            sensor_data_secondary = ApplyToolGravityCompensation(MapSriRawWrenchToEE(sensor_data_secondary), 1);
         }
 
         // 叠加手动输入的力数据

@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <ctime>
-#include <filesystem>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -59,7 +58,7 @@ public:
     ~SriForceSensor();
 
     // 初始化：自动查找串口、解析、零位校准
-    bool Init(int baudrate = 460800, const std::filesystem::path& robot_cfg_path = {});
+    bool Init(int baudrate = 460800);
     // 关闭串口
     void Close();
 
@@ -79,13 +78,6 @@ private:
     // 数据输出 buffer
     std::shared_ptr<robot_server_lib::SingleWriterLatestBuffer<robot_server_lib::Vector6d>> buffer_;
     std::shared_ptr<robot_server_lib::SingleWriterLatestBuffer<robot_server_lib::Vector6d>> raw_buffer_;
-
-    // 工具重力补偿参数
-    bool tool_gravity_compensation_enabled_ = false;
-    double tool_mass_kg_ = 0.0;
-    robot_server_lib::Vector3d tool_com_m_ = robot_server_lib::Vector3d::Zero();
-    robot_server_lib::Vector6d tool_w_bias_ = robot_server_lib::Vector6d::Zero();
-    robot_server_lib::Vector6d tool_gravity_wrench_ = robot_server_lib::Vector6d::Zero();
 
     // 零位校准相关
     bool mIsCalibrating = false;
@@ -123,8 +115,6 @@ private:
     // 零位校准方法
     void ProcessCalibrationData(float fx, float fy, float fz, float mx, float my, float mz);
     void ApplyZeroOffset(float& fx, float& fy, float& fz, float& mx, float& my, float& mz);
-    void LoadToolGravityCompensationConfig(const std::filesystem::path& robot_cfg_path);
-    robot_server_lib::Vector6d ApplyToolGravityCompensation(const robot_server_lib::Vector6d& wrench) const;
 
     // 辅助方法
     const char* FindSerialPort();
