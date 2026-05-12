@@ -25,6 +25,7 @@ print_usage() {
     echo "  left            - Move left arm (7 joints, value: '[j1,j2,...]' or home/standby)"
     echo "  right           - Move right arm (7 joints, value: '[j1,j2,...]' or home/standby)"
     echo "  stop_move       - Stop current movement"
+    echo "  force           - Monitor force_sensor and raw_force_sensor at 10Hz"
     echo "  log             - Print robot server log"
     echo "  clear           - Clear errors (no value needed)"
     echo "  drag            - Enable/Disable drag mode (value: 0 or 1)"
@@ -59,6 +60,7 @@ print_usage() {
     echo "Examples:"
     echo "  ./set_w1.sh echo"
     echo "  ./set_w1.sh echo_sim"
+    echo "  ./set_property.sh force"
     echo "  ./set_w1.sh clone ethercat"
     echo "  ./set_w1.sh clone interface"
     echo "  ./set_w1.sh home"
@@ -150,6 +152,23 @@ case $PROPERTY_KEY in
     echo_sim)
         echo "Echoing robot server state sim..."
         ros2 topic echo /feedback/robot_server_state_sim --field data --once
+        exit 0
+        ;;
+    force)
+        if ! command -v jq >/dev/null 2>&1; then
+            echo "Error: jq is required for force monitoring."
+            exit 1
+        fi
+        echo "Monitoring force sensor data at 10Hz..."
+        ros2 topic echo /feedback/robot_server_state std_msgs/msg/String --field data \
+            | sed '/^---$/d' \
+            | jq --unbuffered -c '{force_sensor: .force_sensor, raw_force_sensor: .raw_force_sensor}' \
+            | while read -r line; do
+                echo "------------------------------------------------"
+                echo "force_sensor: $(echo "$line" | jq -c '.force_sensor'),"
+                echo "raw_force_sensor: $(echo "$line" | jq -c '.raw_force_sensor')"
+                sleep 0.1
+            done
         exit 0
         ;;
     clone)

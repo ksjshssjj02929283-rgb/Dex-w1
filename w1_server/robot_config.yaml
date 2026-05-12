@@ -51,6 +51,14 @@ enable_record: false
 safe_level: 0.5
 global_speed_ratio: 1.0
 
+# === 工具重力补偿参数 ===
+# com_mm: 工具质心在力传感器坐标系下的位置，单位 mm
+# w_bias: [Fx,Fy,Fz,Mx,My,Mz]，力单位 N，力矩单位 N/m
+tool_gravity_compensation:
+  com_mm: [56.72691, 17.72389, -0.47806]
+  w_bias: [13.22340, -21.48320, -24.07190, 0.16010, -0.46700, -0.66110]
+  mass_kg: 1.061
+  
 # === 底盘配置 ===
 # 底盘类型: omni (全向轮) / diff_drive (差速驱动)
 chassis_config:

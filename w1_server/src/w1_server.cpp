@@ -13,6 +13,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
 
     // 先初始化ndof_config_, 后续再自动识别模式
     ndof_config_ = ndof_robot;
+    sensor_force_.setZero();
+    sensor_wrench_.setZero();
+    raw_sensor_wrench_.setZero();
 
     // 创建 /feedback/joint 发布器
     feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint", 10);
@@ -71,7 +74,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
 
     // 初始化力传感器
     primary_sensor_ = std::make_shared<SriForceSensor>();
-    if (!primary_sensor_->Init(460800)) {
+    if (!primary_sensor_->Init(460800, robot_cfg_path)) {
         RCLCPP_WARN(this->get_logger(), "Failed to initialize primary force sensor");
         LOG_WARN << "Failed to initialize primary force sensor";
         primary_sensor_ = nullptr;
@@ -121,11 +124,15 @@ void RobotServer::TorqueControlThreadFunc() {
         // 读取力传感器数据
         Vector6d sensor_data_primary = Vector6d::Zero();
         Vector6d sensor_data_secondary = Vector6d::Zero();
+        Vector6d raw_sensor_data_primary = Vector6d::Zero();
+        Vector6d raw_sensor_data_secondary = Vector6d::Zero();
         if (primary_sensor_ && primary_sensor_ready_) {
             primary_sensor_->PeekLatest(&sensor_data_primary);
+            primary_sensor_->PeekLatestRaw(&raw_sensor_data_primary);
         }
         if (secondary_sensor_ && secondary_sensor_ready_) {
             secondary_sensor_->PeekLatest(&sensor_data_secondary);
+            secondary_sensor_->PeekLatestRaw(&raw_sensor_data_secondary);
         }
 
         // 叠加手动输入的力数据
@@ -211,6 +218,7 @@ void RobotServer::TorqueControlThreadFunc() {
             JointRawMeasurement raw_measurement{};
             raw_measurement.sensor_wrench = sensor_wrench_ =
                 utils::GetSensorWrench(sensor_data_primary, sensor_data_secondary);
+            raw_sensor_wrench_ = utils::GetSensorWrench(raw_sensor_data_primary, raw_sensor_data_secondary);
 
             for (int i = 0; i < ndof_robot; ++i) {
                 raw_measurement.position[i] = robot_feedback_.joint_feedback[i].joint_position;
@@ -636,6 +644,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(torque_ff_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_torque_sensor\":" + utils::VectorToJsonArrayString(torque_sensor_arr_, index_offset, ndof_config_).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
+        ",\n  \"raw_force_sensor\":" + utils::VectorToJsonArrayString(raw_sensor_wrench_).str() +
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(negative_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(positive_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_measurement, 0, this->robot_mode_ == RobotMode::SingleArm? 7 : 14).str() +
