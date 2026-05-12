@@ -14,6 +14,8 @@ tool_gravity_compensation:
   com_mm: [56.72691, 17.72389, -0.47806]
   w_bias: [13.22340, -21.48320, -24.07190, 0.16010, -0.46700, -0.66110]
   mass_kg: 1.061
+  gravity_magnitude: 9.79
+  model_sign: 1
 
 # === 记录配置 ===
 enable_record: false
