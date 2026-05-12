@@ -259,6 +259,7 @@ void SriForceSensor::ReadLoop() {
     };
     std::vector<unsigned char> rx_buffer;
     rx_buffer.reserve(REC_DATA_LEN);
+    const unsigned char frame_header[] = {0xAA, 0x55};
     while (true) {
         if (m_serial_fd < 0) break;
 
@@ -274,8 +275,7 @@ void SriForceSensor::ReadLoop() {
             bool found = false;
 
             while (true) {
-                auto header = std::search(rx_buffer.begin(), rx_buffer.end(), std::begin("ªU") - 1,
-                                          std::end("ªU") - 1);
+                auto header = std::search(rx_buffer.begin(), rx_buffer.end(), frame_header, frame_header + 2);
                 if (header == rx_buffer.end()) {
                     if (rx_buffer.size() > 1) {
                         rx_buffer.erase(rx_buffer.begin(), rx_buffer.end() - 1);
