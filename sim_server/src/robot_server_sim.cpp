@@ -19,9 +19,22 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : Ro
     this->robot_server_state_real_subscriber_ = this->create_subscription<std_msgs::msg::String>(
         "/feedback/robot_server_state", 10, [this](const std_msgs::msg::String::SharedPtr msg) {
             auto json_msg = nlohmann::json::parse(msg->data);
-            if (json_msg.contains("joint_position")) {
+            if (json_msg.contains("joint_position") && json_msg.contains("joint_name")) {
                 std::vector<double> joint_pos = json_msg["joint_position"].get<std::vector<double>>();
-                auto temp = Eigen::Map<robot_server_lib::VectorDof>(joint_pos.data(), joint_pos.size());
+                std::vector<std::string> joint_names = json_msg["joint_name"].get<std::vector<std::string>>();
+
+                robot_server_lib::VectorDof temp = robot_server_lib::VectorDof::Zero();
+                for (int j = 0; j < ndof_robot; ++j) {
+                    const auto& target_name = this->robot_model_.params_ptr->joint_names[j];
+                    auto it = std::find(joint_names.begin(), joint_names.end(), target_name);
+                    if (it != joint_names.end()) {
+                        size_t index = std::distance(joint_names.begin(), it);
+                        if (index < joint_pos.size()) {
+                            temp[j] = joint_pos[index];
+                        }
+                    }
+                }
+
                 if (!this->real_robot_sync_.joint_position.isApprox(temp, 0.005)) {
                     this->real_robot_sync_.joint_position = temp;
                     this->real_robot_sync_.is_updated = true;

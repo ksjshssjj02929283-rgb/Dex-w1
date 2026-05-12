@@ -135,6 +135,13 @@ void RobotServer::TorqueControlThreadFunc() {
             } else {
                 ret = false;
             }
+        } else {
+            robot_feedback_.robot_status_word = 0;
+            for (int i = 0; i < MAX_JOINT_NUM; ++i) {
+                robot_feedback_.al_status[i] = 0;
+                robot_feedback_.joint_feedback[i].joint_error_code = 0;
+                robot_feedback_.joint_feedback[i].joint_temperature = 0;
+            }
         }
 
         // 根据状态写入机器人控制字

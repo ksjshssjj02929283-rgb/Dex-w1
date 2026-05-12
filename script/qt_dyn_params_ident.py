@@ -50,18 +50,12 @@ class DynParamIdentifier(Node):
         self.joint_publisher = self.create_publisher(
             JointPositionControl, "/control/joint_position", 10
         )
-        self.subscription = self.create_subscription(
-            JointState, "/feedback/joint", self._joint_state_callback, 10
-        )
         self.robot_state_subscription = self.create_subscription(
             String, "/feedback/robot_server_state", self._robot_state_callback, 10
         )
         self.set_property_srv = self.create_client(SetProperty, "/control/set_property")
         self.joint_publisher_sim = self.create_publisher(
             JointPositionControl, "/control/joint_position_sim", 10
-        )
-        self.subscription_sim = self.create_subscription(
-            JointState, "/feedback/joint_sim", self._joint_state_callback_sim, 10
         )
         self.robot_state_subscription_sim = self.create_subscription(
             String,
@@ -73,6 +67,8 @@ class DynParamIdentifier(Node):
         self.robot_cfg_path = (
             Path(get_package_share_directory("w1_server")) / "robot_config.yaml"
         )
+        self.joint_full_names = ["ANKLE", "KNEE", "BUTTOCK", "WAIST", "NECK1", "NECK2", "LEFT_J1", "LEFT_J2", "LEFT_J3", "LEFT_J4", "LEFT_J5", "LEFT_J6", "LEFT_J7", "RIGHT_J1", "RIGHT_J2", "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"]
+
         # 初始化状态变量
         self.joint_name = None
         self.timestamp = None
@@ -500,28 +496,57 @@ class DynParamIdentifier(Node):
             self.timestamp = state["timestamp"]
         if "status" in state:
             self.status = state["status"]
-        if "joint_position" in state:
-            self.joint_position = [float(x) for x in state["joint_position"]]
-        if "joint_torque" in state:
-            self.joint_torque = [float(x) for x in state["joint_torque"]]
-
-    def _joint_state_callback(self, msg):
-        self._last_msg_time = self.get_clock().now().nanoseconds / 1e9
-        self.joint_name = msg.name
-
-    def _joint_state_callback_sim(self, msg):
-        self._last_msg_time_sim = self.get_clock().now().nanoseconds / 1e9
-        self.joint_name = msg.name
+        
+        if "joint_name" in state and "joint_position" in state:
+            msg_joint_names = state["joint_name"]
+            msg_joint_positions = [float(x) for x in state["joint_position"]]
+            msg_joint_torques = [float(x) for x in state.get("joint_torque", [])]
+            
+            full_pos = []
+            full_tau = []
+            for name in self.joint_full_names:
+                if name in msg_joint_names:
+                    idx = msg_joint_names.index(name)
+                    full_pos.append(msg_joint_positions[idx])
+                    if idx < len(msg_joint_torques):
+                        full_tau.append(msg_joint_torques[idx])
+                    else:
+                        full_tau.append(0.0)
+                else:
+                    full_pos.append(0.0)
+                    full_tau.append(0.0)
+            
+            self.joint_name = self.joint_full_names
+            self.joint_position = full_pos
+            self.joint_torque = full_tau
 
     def _robot_state_callback_sim(self, msg):
         self._last_msg_time_sim = self.get_clock().now().nanoseconds / 1e9
         state = json.loads(msg.data)
         if "status" in state:
             self.status_sim = state["status"]
-        if "joint_position" in state:
-            self.joint_position_sim = [float(x) for x in state["joint_position"]]
-        if "joint_torque" in state:
-            self.joint_torque_sim = [float(x) for x in state["joint_torque"]]
+        
+        if "joint_name" in state and "joint_position" in state:
+            msg_joint_names = state["joint_name"]
+            msg_joint_positions = [float(x) for x in state["joint_position"]]
+            msg_joint_torques = [float(x) for x in state.get("joint_torque", [])]
+            
+            full_pos = []
+            full_tau = []
+            for name in self.joint_full_names:
+                if name in msg_joint_names:
+                    idx = msg_joint_names.index(name)
+                    full_pos.append(msg_joint_positions[idx])
+                    if idx < len(msg_joint_torques):
+                        full_tau.append(msg_joint_torques[idx])
+                    else:
+                        full_tau.append(0.0)
+                else:
+                    full_pos.append(0.0)
+                    full_tau.append(0.0)
+            
+            self.joint_position_sim = full_pos
+            self.joint_torque_sim = full_tau
 
 
 import sympy, sympybotics, scipy.signal, lmi_sdp, subprocess

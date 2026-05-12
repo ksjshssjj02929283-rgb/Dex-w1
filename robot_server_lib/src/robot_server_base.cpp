@@ -5,9 +5,9 @@
 namespace robot_server_lib {
 
 RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_sim)
-    : Node("robot_server"), is_sim_(is_sim) {
+    : Node(is_sim ? "robot_server_sim" : "robot_server"), is_sim_(is_sim) {
     std::string interface_suffix = (is_sim_) ? "_sim" : "";
-
+    Node("robot_server" + interface_suffix);
     // 初始化日志系统 Initialize the logging system, 固定路径为 ~/log
     std::filesystem::create_directories(home_dir / "log");
     nanolog::initialize(nanolog::GuaranteedLogger(), (home_dir / "log/").string(), "robot_server" + interface_suffix,
@@ -192,16 +192,28 @@ std::string RobotServerBase::GetRobotServerStateJson(uint64_t timestamp_ns,
         std::ostringstream joint_sensor_wrench_ss = utils::VectorToJsonArrayString(sensor_wrench.value());
         std::ostringstream ee_pose_ss = utils::VectorToJsonArrayString(ee_pose.value());
 
-        json += "\n ,\"run_mode\":\"" + std::string(ToString(planner_info->robot_property.run_mode)) + "\"" +
-                ", \"server_error_code\":\"" + ToString(manager_info.robot_property.error_code) + "\"" +
-                ", \"safe_level\":\"" + std::to_string(manager_info.robot_property.safe_level) + "\"" +
-                ", \"global_speed_ratio\":\"" + std::to_string(manager_info.robot_property.global_speed_ratio) + "\"" +
-                "\n ,\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
-                ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
-                ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
-                ",\n \"ee_pose\":" + ee_pose_ss.str() + ",\n \"force_sensor\":" + joint_sensor_wrench_ss.str() +
-                ",\n \"joint_position\":" + joint_position_ss.str() +
-                ",\n \"joint_velocity\":" + joint_velocity_ss.str() + ",\n \"joint_torque\":" + joint_torque_ss.str();
+        json +=
+            "\n ,\"run_mode\":\"" + std::string(ToString(planner_info->robot_property.run_mode)) + "\"" +
+            ", \"server_error_code\":\"" + ToString(manager_info.robot_property.error_code) + "\"" +
+            ", \"safe_level\":\"" + std::to_string(manager_info.robot_property.safe_level) + "\"" +
+            ", \"global_speed_ratio\":\"" + std::to_string(manager_info.robot_property.global_speed_ratio) + "\"" +
+            "\n ,\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+            ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
+            ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
+            ",\n \"joint_name\":" + utils::VectorToJsonArrayString(this->robot_model_.params_ptr->joint_names).str() +
+            ",\n \"joint_position\":" + joint_position_ss.str() + ",\n \"joint_velocity\":" + joint_velocity_ss.str() +
+            ",\n \"joint_torque\":" + joint_torque_ss.str() + ",\n \"ee_pose\":" + ee_pose_ss.str() +
+            ",\n \"force_sensor\":" + joint_sensor_wrench_ss.str() +
+            ",\n \"enable_record\":" + std::to_string(planner_info->robot_property.enable_record) +
+            ",\n \"joint_stiffness\":" +
+            utils::VectorToJsonArrayString(planner_info->robot_property.joint_stiffness).str() +
+            ",\n \"joint_damping\":" +
+            utils::VectorToJsonArrayString(planner_info->robot_property.joint_damping).str() +
+            ",\n \"joint_integral_ratio\":" + std::to_string(planner_info->robot_property.joint_integral_ratio) +
+            ",\n \"cart_stiffness\":" +
+            utils::VectorToJsonArrayString(planner_info->robot_property.cart_stiffness).str() +
+            ",\n \"cart_damping_ratio\":" +
+            utils::VectorToJsonArrayString(planner_info->robot_property.cart_damping_ratio).str();
     }
     json += "}";
     return json;

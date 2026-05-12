@@ -6,12 +6,16 @@ print_usage() {
     echo ""
     echo "Available property types:"
     echo "  echo            - Echo robot server state topic once"
+    echo "  echo_sim        - Echo robot server state sim topic once"
+    echo "  clone           - Clone dexe_ethercat repository to ~/w1"
+    echo "  home            - Move robot to home joint position"
+    echo "  standby         - Move robot to standby joint position"
+    echo "  left            - Move left arm (7 joints, value: '[j1,j2,...]' or home/standby)"
+    echo "  right           - Move right arm (7 joints, value: '[j1,j2,...]' or home/standby)"
+    echo "  stop_move       - Stop current movement"
     echo "  log             - Print robot server log"
     echo "  clear_error     - Clear errors (no value needed)"
     echo "  drag            - Enable/Disable drag mode (value: 0 or 1)"
-    echo "  pos_limit       - Enable/Disable position limit check (value: 0 or 1)"
-    echo "  run_mode        - Switch run mode (value: mode number, e.g., 3)"
-    echo "  safe_level      - Set safety level (value: float, e.g., 0.3)"
     echo "  start           - Start dexe-system.service"
     echo "  stop            - Stop dexe-system.service"
     echo "  restart         - Restart dexe-system.service"
@@ -19,6 +23,9 @@ print_usage() {
     echo "  state           - Monitor feedback state (python3 script/monitor_feedback.py)"
     echo "  shm             - Monitor shared memory (python3 script/monitor_shm.py)"
     echo "  yaml            - Edit robot_config.yaml (vim ~/dexe_robot_server_data/robot_config.yaml)"
+    echo "  pos_limit       - Enable/Disable position limit check (value: 0 or 1)"
+    echo "  run_mode        - Switch run mode (value: mode number, e.g., 3)"
+    echo "  safe_level      - Set safety level (value: float, e.g., 0.3)"
     echo ""
     echo "Examples:"
     echo "  ./set_property.sh echo"
@@ -65,6 +72,72 @@ case $PROPERTY_KEY in
     echo)
         echo "Echoing robot server state..."
         ros2 topic echo /feedback/robot_server_state --field data --once
+        exit 0
+        ;;
+    echo_sim)
+        echo "Echoing robot server state sim..."
+        ros2 topic echo /feedback/robot_server_state_sim --field data --once
+        exit 0
+        ;;
+    clone)
+        echo "Cloning dexe_ethercat to ~/w1..."
+        mkdir -p ~/w1
+        git clone http://192.168.3.16/dexembodied/dexe_ethercat.git ~/w1/dexe_ethercat
+        exit 0
+        ;;
+    home)
+        echo "Moving robot to home position..."
+        ros2 action send_goal /control/move_robot robot_server_interfaces/action/MoveRobot "{motion_group: WholeBody, type: MoveJoint, target: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], config: '{\"speed\":0.1,\"acceleration\":0.1}'}"
+        exit 0
+        ;;
+    standby)
+        echo "Moving robot to standby position..."
+        ros2 action send_goal /control/move_robot robot_server_interfaces/action/MoveRobot "{motion_group: WholeBody, type: MoveJoint, target: [0.6, -1.2, 0.6, 0.0, 0.0, 0.0, 0.25, -1.4, 0.0, -0.6, 0.0, 0.0, 0.0, -0.25, 1.4, 0.0, 0.6, 0.0, 0.0, 0.0], config: '{\"speed\":0.1,\"acceleration\":0.1}'}"
+        exit 0
+        ;;    
+    left)
+        # Shift all arguments to gather the target array
+        shift
+        TARGET_VALUE="$*"
+        
+        # Check for special values
+        if [ "$TARGET_VALUE" == "home" ]; then
+            TARGET_VALUE="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]"
+        elif [ "$TARGET_VALUE" == "standby" ]; then
+            TARGET_VALUE="[0.25, -1.4, 0.0, -0.6, 0.0, 0.0, 0.0]"
+        fi
+
+        # Ensure it starts and ends with [ ]
+        if [[ ! "$TARGET_VALUE" =~ ^\[.*\]$ ]]; then
+            TARGET_VALUE="[$TARGET_VALUE]"
+        fi
+        echo "Moving left arm to $TARGET_VALUE..."
+        ros2 action send_goal /control/move_robot robot_server_interfaces/action/MoveRobot "{motion_group: Primary, type: MoveJoint, target: $TARGET_VALUE, config: '{\"speed\":0.1,\"acceleration\":0.1}'}"
+        exit 0
+        ;;
+    right)
+        # Shift all arguments to gather the target array
+        shift
+        TARGET_VALUE="$*"
+
+        # Check for special values
+        if [ "$TARGET_VALUE" == "home" ]; then
+            TARGET_VALUE="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]"
+        elif [ "$TARGET_VALUE" == "standby" ]; then
+            TARGET_VALUE="[-0.25, 1.4, 0.0, 0.6, 0.0, 0.0, 0.0]"
+        fi
+        
+        # Ensure it starts and ends with [ ]
+        if [[ ! "$TARGET_VALUE" =~ ^\[.*\]$ ]]; then
+            TARGET_VALUE="[$TARGET_VALUE]"
+        fi
+        echo "Moving right arm to $TARGET_VALUE..."
+        ros2 action send_goal /control/move_robot robot_server_interfaces/action/MoveRobot "{motion_group: Secondary, type: MoveJoint, target: $TARGET_VALUE, config: '{\"speed\":0.1,\"acceleration\":0.1}'}"
+        exit 0
+        ;;
+    stop_move)
+        echo "Stopping movement..."
+        ros2 action send_goal /control/move_robot robot_server_interfaces/action/MoveRobot "{motion_group: Arm, type: StopMove, target: [], config: ''}"
         exit 0
         ;;
     log)

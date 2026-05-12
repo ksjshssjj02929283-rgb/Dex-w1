@@ -11,7 +11,7 @@ cd .. && rm -rf SymPyBotics
 # 安装pylmi_sdp
 pip install -i https://mirrors.aliyun.com/pypi/simple/ pylmi_sdp
 # 安装dsdp
-sudo apt install dsdp
+sudo apt install -y dsdp
 ```
 
 ## 可能遇到的问题

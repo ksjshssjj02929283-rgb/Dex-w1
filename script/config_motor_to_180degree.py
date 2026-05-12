@@ -52,7 +52,7 @@ def change_to_180_degree(pos):
     result = subprocess.run(command, capture_output=True, text=True)
 
     # read 0x6064
-    command = ['ethercat', 'upload', '-p', str(pos), '0x6064', '0']
+    command = ['ethercat', 'upload', '-p', str(pos), '0x6064', '0', '-t', 'uint32']
     result = subprocess.run(command, capture_output=True, text=True)
     stdout = result.stdout
     qpos = int(stdout.split(' ')[1])
@@ -69,7 +69,7 @@ def change_to_180_degree(pos):
     result = subprocess.run(command, capture_output=True, text=True)
 
     # read 0x6064
-    command = ['ethercat', 'upload', '-p', str(pos), '0x6064', '0']
+    command = ['ethercat', 'upload', '-p', str(pos), '0x6064', '0', '-t', 'uint32']
     result = subprocess.run(command, capture_output=True, text=True)
     stdout = result.stdout
     qpos = int(stdout.split(' ')[1])
@@ -93,7 +93,7 @@ def check_180_degree(config):
     for pos in pos_list:
         print(pos)
 
-        command = ['ethercat', 'upload', '-p', str(pos), '0x6064', '0']
+        command = ['ethercat', 'upload', '-p', str(pos), '0x6064', '0', '-t', 'uint32']
 
         result = subprocess.run(command, capture_output=True, text=True)
         stdout = result.stdout
@@ -115,7 +115,7 @@ def save_zero_offset():
             pos = int(line.strip())
             print(pos)
 
-            command = ['ethercat', 'upload', '-p', str(pos), '0x3b75', '0']
+            command = ['ethercat', 'upload', '-p', str(pos), '0x3b75', '0', '-t', 'uint32']
 
             result = subprocess.run(command, capture_output=True, text=True)
             stdout = result.stdout
