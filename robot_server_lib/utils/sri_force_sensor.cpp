@@ -2,23 +2,6 @@
 
 #include <pthread.h>
 
-#include <yaml-cpp/yaml.h>
-
-namespace {
-constexpr double kDefaultGravity = 9.79;
-
-bool ReadVector(const YAML::Node& node, int expected_size, Eigen::VectorXd& out) {
-    if (!node || !node.IsSequence() || static_cast<int>(node.size()) != expected_size) {
-        return false;
-    }
-    out = Eigen::VectorXd::Zero(expected_size);
-    for (int i = 0; i < expected_size; ++i) {
-        out[i] = node[i].as<double>();
-    }
-    return true;
-}
-}  // namespace
-
 void Setup_Realtime(int priority) {
     // 锁内存，避免分页抖动
     if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
@@ -169,54 +152,6 @@ void SriForceSensor::ApplyZeroOffset(float& fx, float& fy, float& fz, float& mx,
     mx -= mZeroOffset[3];
     my -= mZeroOffset[4];
     mz -= mZeroOffset[5];
-}
-
-void SriForceSensor::LoadToolGravityCompensationConfig(const std::filesystem::path& robot_cfg_path) {
-    tool_gravity_compensation_enabled_ = false;
-    tool_mass_kg_ = 0.0;
-    tool_com_m_.setZero();
-    tool_w_bias_.setZero();
-    tool_gravity_wrench_.setZero();
-
-    if (robot_cfg_path.empty()) {
-        return;
-    }
-
-    try {
-        const auto config = YAML::LoadFile(robot_cfg_path.string());
-        const auto node = config["tool_gravity_compensation"];
-        if (!node) {
-            return;
-        }
-
-        Eigen::VectorXd com_mm;
-        Eigen::VectorXd w_bias;
-        if (!ReadVector(node["com_mm"], 3, com_mm) || !ReadVector(node["w_bias"], 6, w_bias)) {
-            LOG_WARN << "Invalid tool_gravity_compensation vector size, disabled";
-            return;
-        }
-
-        tool_mass_kg_ = node["mass_kg"] ? node["mass_kg"].as<double>() : 0.0;
-        tool_com_m_ = com_mm.head<3>() / 1000.0;
-        tool_w_bias_ = w_bias.head<6>();
-
-        const robot_server_lib::Vector3d gravity_force(0.0, 0.0, -tool_mass_kg_ * kDefaultGravity);
-        tool_gravity_wrench_.head<3>() = gravity_force;
-        tool_gravity_wrench_.tail<3>() = tool_com_m_.cross(gravity_force);
-        tool_gravity_compensation_enabled_ = true;
-
-        LOG_INFO << "Tool gravity compensation enabled: mass_kg=" << tool_mass_kg_;
-    } catch (const YAML::Exception& e) {
-        LOG_WARN << "Failed to load tool gravity compensation config: " << e.what();
-    }
-}
-
-robot_server_lib::Vector6d SriForceSensor::ApplyToolGravityCompensation(
-    const robot_server_lib::Vector6d& wrench) const {
-    if (!tool_gravity_compensation_enabled_) {
-        return wrench;
-    }
-    return wrench - tool_w_bias_ - tool_gravity_wrench_;
 }
 
 // 解析方法
@@ -388,7 +323,7 @@ void SriForceSensor::ReadLoop() {
                     if (buffer_) {
                         robot_server_lib::Vector6d vec;
                         vec << fx, fy, fz, mx, my, mz;
-                        buffer_->AppendNewElement(ApplyToolGravityCompensation(vec));
+                        buffer_->AppendNewElement(vec);
                     }
                 }
             } else if (rx_buffer.size() >= 14) {
@@ -403,7 +338,7 @@ void SriForceSensor::ReadLoop() {
     LOG_INFO << "SRI force sensor: Read thread stopped";
 }
 
-bool SriForceSensor::Init(int baudrate, const std::filesystem::path& robot_cfg_path) {
+bool SriForceSensor::Init(int baudrate) {
     // 查找串口
     const char* port = FindSerialPort();
     if (port == nullptr) {
@@ -415,7 +350,6 @@ bool SriForceSensor::Init(int baudrate, const std::filesystem::path& robot_cfg_p
     // 创建 buffer
     buffer_ = std::make_shared<robot_server_lib::SingleWriterLatestBuffer<robot_server_lib::Vector6d>>();
     raw_buffer_ = std::make_shared<robot_server_lib::SingleWriterLatestBuffer<robot_server_lib::Vector6d>>();
-    LoadToolGravityCompensationConfig(robot_cfg_path);
 
     // 打开串口
     m_serial_fd = OpenPort(port);
