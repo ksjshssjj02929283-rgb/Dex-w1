@@ -653,7 +653,9 @@ def main() -> None:
             samples.append(sample)
             print(
                 f"已采集 #{sample.index}: count={sample.count}, "
-                f"wrench_ee_mean={np.array2string(sample.wrench_ee_mean, precision=4)}"
+                f"raw_wrench_mean={np.array2string(sample.raw_wrench_mean, precision=4)}, "
+                f"wrench_ee_mean={np.array2string(sample.wrench_ee_mean, precision=4)}, "
+                f"ee_pose_mean={np.array2string(sample.ee_pose_mean, precision=5)}"
             )
 
         result = estimate_tool_parameters(samples, gravity, args.model_sign)
