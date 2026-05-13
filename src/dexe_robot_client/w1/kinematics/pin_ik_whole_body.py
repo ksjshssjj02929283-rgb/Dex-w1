@@ -345,10 +345,25 @@ class PinIKWholeBody:
             # TODO： tune the weight of waist joint regularization
             regularization_cost = 10 * casadi.sumsqr(self.var_q[3])
 
+            # self.opti.subject_to(
+            #     self.opti.bounded(self.robot_.model.lowerPositionLimit,
+            #                       self.var_q,
+            #                       self.robot_.model.upperPositionLimit))
+            lower = self.robot_.model.lowerPositionLimit
+            upper = self.robot_.model.upperPositionLimit
+
+            margin = 0.01 * (upper - lower)
+
+            inner_lower = lower + margin
+            inner_upper = upper - margin
+
             self.opti.subject_to(
-                self.opti.bounded(self.robot_.model.lowerPositionLimit,
-                                  self.var_q,
-                                  self.robot_.model.upperPositionLimit))
+                self.opti.bounded(
+                    inner_lower,
+                    self.var_q,
+                    inner_upper
+                )
+            )
 
             self.opti.subject_to(self.var_q[0] + self.var_q[1] + self.var_q[2]
                                  >= 0)  # torso leaning forward constraint
@@ -464,10 +479,25 @@ class PinIKWholeBody:
         if cost_type == "standard_bend_backward":
             regularization_cost = 10 * casadi.sumsqr(self.var_q[3])
 
+            # self.opti.subject_to(
+            #     self.opti.bounded(self.robot_.model.lowerPositionLimit,
+            #                       self.var_q,
+            #                       self.robot_.model.upperPositionLimit))
+            lower = self.robot_.model.lowerPositionLimit
+            upper = self.robot_.model.upperPositionLimit
+
+            margin = 0.01 * (upper - lower)
+
+            inner_lower = lower + margin
+            inner_upper = upper - margin
+
             self.opti.subject_to(
-                self.opti.bounded(self.robot_.model.lowerPositionLimit,
-                                  self.var_q,
-                                  self.robot_.model.upperPositionLimit))
+                self.opti.bounded(
+                    inner_lower,
+                    self.var_q,
+                    inner_upper
+                )
+            )
 
             self.opti.subject_to(self.var_q[0] + self.var_q[1] + self.var_q[2]
                                  >= 0)  # torso leaning forward constraint
@@ -581,10 +611,25 @@ class PinIKWholeBody:
             # TODO： tune the weight of waist joint regularization
             regularization_cost = 10 * casadi.sumsqr(self.var_q[3])
 
+            # self.opti.subject_to(
+            #     self.opti.bounded(self.robot_.model.lowerPositionLimit,
+            #                       self.var_q,
+            #                       self.robot_.model.upperPositionLimit))
+            lower = self.robot_.model.lowerPositionLimit
+            upper = self.robot_.model.upperPositionLimit
+
+            margin = 0.01 * (upper - lower)
+
+            inner_lower = lower + margin
+            inner_upper = upper - margin
+
             self.opti.subject_to(
-                self.opti.bounded(self.robot_.model.lowerPositionLimit,
-                                  self.var_q,
-                                  self.robot_.model.upperPositionLimit))
+                self.opti.bounded(
+                    inner_lower,
+                    self.var_q,
+                    inner_upper
+                )
+            )
 
             self.opti.subject_to(self.var_q[0] + self.var_q[1] + self.var_q[2]
                                  >= 0)  # torso leaning forward constraint
@@ -700,10 +745,25 @@ class PinIKWholeBody:
             # TODO： tune the weight of waist joint regularization
             regularization_cost = 10 * casadi.sumsqr(self.var_q[3])
 
+            # self.opti.subject_to(
+            #     self.opti.bounded(self.robot_.model.lowerPositionLimit,
+            #                       self.var_q,
+            #                       self.robot_.model.upperPositionLimit))
+            lower = self.robot_.model.lowerPositionLimit
+            upper = self.robot_.model.upperPositionLimit
+
+            margin = 0.01 * (upper - lower)
+
+            inner_lower = lower + margin
+            inner_upper = upper - margin
+
             self.opti.subject_to(
-                self.opti.bounded(self.robot_.model.lowerPositionLimit,
-                                  self.var_q,
-                                  self.robot_.model.upperPositionLimit))
+                self.opti.bounded(
+                    inner_lower,
+                    self.var_q,
+                    inner_upper
+                )
+            )
 
             self.opti.subject_to(self.var_q[0] + self.var_q[1] + self.var_q[2]
                                  >= self.lean_backward_threshold)  # torso leaning forward constraint
@@ -819,10 +879,25 @@ class PinIKWholeBody:
             # TODO： tune the weight of waist joint regularization
             regularization_cost = 10 * casadi.sumsqr(self.var_q[3])
 
+            # self.opti.subject_to(
+            #     self.opti.bounded(self.robot_.model.lowerPositionLimit,
+            #                       self.var_q,
+            #                       self.robot_.model.upperPositionLimit))
+            lower = self.robot_.model.lowerPositionLimit
+            upper = self.robot_.model.upperPositionLimit
+
+            margin = 0.01 * (upper - lower)
+
+            inner_lower = lower + margin
+            inner_upper = upper - margin
+
             self.opti.subject_to(
-                self.opti.bounded(self.robot_.model.lowerPositionLimit,
-                                  self.var_q,
-                                  self.robot_.model.upperPositionLimit))
+                self.opti.bounded(
+                    inner_lower,
+                    self.var_q,
+                    inner_upper
+                )
+            )
 
             self.opti.subject_to(self.var_q[0] + self.var_q[1] + self.var_q[2]
                                  >= self.lean_backward_threshold)  # torso leaning forward constraint
