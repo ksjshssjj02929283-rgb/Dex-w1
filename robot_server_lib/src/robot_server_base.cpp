@@ -5,9 +5,8 @@
 namespace robot_server_lib {
 
 RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_sim)
-    : Node(is_sim ? "robot_server_sim" : "robot_server"), is_sim_(is_sim) {
+    : Node(is_sim ? "robot_server_sim" : "robot_server_real"), is_sim_(is_sim) {
     std::string interface_suffix = (is_sim_) ? "_sim" : "";
-    Node("robot_server" + interface_suffix);
     // 初始化日志系统 Initialize the logging system, 固定路径为 ~/log
     std::filesystem::create_directories(home_dir / "log");
     nanolog::initialize(nanolog::GuaranteedLogger(), (home_dir / "log/").string(), "robot_server" + interface_suffix,
@@ -377,11 +376,11 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id,
             utils::SetMax(this->latest_report_id_.finished, request_id);
             if (request_type >= RequestType::MoveJoint) {
                 std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> handle_temp;
-                if (this->request_handle_queue_.DeQueue(&handle_temp)) {
-                    auto result_msg = std::make_shared<MoveRobot::Result>();
-                    result_msg->request_id = request_id;
-                    result_msg->success = true;
-                    handle_temp->succeed(result_msg);
+                    if (this->request_handle_queue_.DeQueue(&handle_temp)) {
+                        auto result_msg = std::make_shared<MoveRobot::Result>();
+                        result_msg->request_id = request_id;
+                        result_msg->success = true;
+                            handle_temp->succeed(result_msg);
                 }
             }
             break;
@@ -392,11 +391,11 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id,
             utils::SetMax(this->latest_report_id_.finished, request_id);
             if (request_type >= RequestType::MoveJoint) {
                 std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> handle_temp;
-                if (this->request_handle_queue_.DeQueue(&handle_temp)) {
-                    auto result_msg = std::make_shared<MoveRobot::Result>();
-                    result_msg->request_id = request_id;
-                    result_msg->success = true;
-                    handle_temp->succeed(result_msg);
+                    if (this->request_handle_queue_.DeQueue(&handle_temp)) {
+                        auto result_msg = std::make_shared<MoveRobot::Result>();
+                        result_msg->request_id = request_id;
+                        result_msg->success = true;
+                            handle_temp->succeed(result_msg);
                 }
             }
             break;
@@ -404,10 +403,10 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id,
             utils::SetMax(this->latest_report_id_.error_drop, request_id);
             if (request_type >= RequestType::MoveJoint) {
                 std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> handle_temp;
-                if (this->request_handle_queue_.DeQueue(&handle_temp)) {
-                    auto result_msg = std::make_shared<MoveRobot::Result>();
-                    result_msg->request_id = request_id;
-                    result_msg->success = false;
+                    if (this->request_handle_queue_.DeQueue(&handle_temp)) {
+                        auto result_msg = std::make_shared<MoveRobot::Result>();
+                        result_msg->request_id = request_id;
+                        result_msg->success = false;
                     handle_temp->succeed(result_msg);
                 }
             }

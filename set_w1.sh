@@ -27,6 +27,9 @@ print_usage() {
     echo "  pos_limit       - Enable/Disable position limit check (value: 0 or 1)"
     echo "  run_mode        - Switch run mode (value: mode number, e.g., 3)"
     echo "  safe_level      - Set safety level (value: float, e.g., 0.3)"
+    echo "  ruckig          - Enable/Disable ruckig (value: true or false)"
+    echo "  filter          - Enable/Disable butterworth filter (value: true or false)"
+    echo "  zvd             - Enable/Disable input shaper (value: true or false)"
 
     echo ""
     echo "Examples:"
@@ -66,6 +69,21 @@ case $PROPERTY_KEY in
         ;;
     safe_level)
         PROPERTY_TYPE="SafeLevel"
+        ;;
+    ruckig)
+        echo "Running set_ruckig.sh $VALUE..."
+        ./script/set_ruckig.sh "$VALUE"
+        exit 0
+        ;;
+    filter)
+        echo "Running set_butterworth_filter.sh $VALUE..."
+        ./script/set_butterworth_filter.sh "$VALUE"
+        exit 0
+        ;;
+    zvd)
+        echo "Running set_input_shaper.sh $VALUE..."
+        ./script/set_input_shaper.sh "$VALUE"
+        exit 0
         ;;
     clear_error)
         PROPERTY_TYPE="ClearError"
