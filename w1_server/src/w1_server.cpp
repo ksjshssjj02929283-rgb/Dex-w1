@@ -963,8 +963,6 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         return true;
     };
 
-    RCLCPP_INFO(this->get_logger(), "反馈关节数: %zu", feedback_joint_names.size());
-
     if (is_exact_match(robot_model_.params_ptr->joint_names)) {
         robot_mode_ = RobotMode::W1;
         ndof_config_ = ndof_robot;

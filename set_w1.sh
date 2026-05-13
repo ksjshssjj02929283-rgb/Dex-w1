@@ -7,7 +7,8 @@ print_usage() {
     echo "Available property types:"
     echo "  echo            - Echo robot server state topic once"
     echo "  echo_sim        - Echo robot server state sim topic once"
-    echo "  clone           - Clone dexe_ethercat repository to ~/w1"
+    echo "  clone ethercat  - Clone dexe_ethercat repository to ~/w1"
+    echo "  clone interface - Clone dexe_interfaces repository to ~/w1"
     echo "  home            - Move robot to home joint position"
     echo "  standby         - Move robot to standby joint position"
     echo "  left            - Move left arm (7 joints, value: '[j1,j2,...]' or home/standby)"
@@ -22,14 +23,15 @@ print_usage() {
     echo "  watch           - Watch EtherCAT status (watch -n 0.1 ethercat sl)"
     echo "  state           - Monitor feedback state (python3 script/monitor_feedback.py)"
     echo "  shm             - Monitor shared memory (python3 script/monitor_shm.py)"
-    echo "  yaml            - Edit robot_config.yaml (vim ~/dexe_robot_server_data/robot_config.yaml)"
+    echo "  config          - Edit robot_config.yaml (vim ~/dexe_robot_server_data/robot_config.yaml)"
     echo "  pos_limit       - Enable/Disable position limit check (value: 0 or 1)"
     echo "  run_mode        - Switch run mode (value: mode number, e.g., 3)"
     echo "  safe_level      - Set safety level (value: float, e.g., 0.3)"
+
     echo ""
     echo "Examples:"
     echo "  ./set_property.sh echo"
-    echo "  ./set_property.sh yaml"
+    echo "  ./set_property.sh config"
     echo "  ./set_property.sh log"
     echo "  ./set_property.sh watch"
     echo "  ./set_property.sh state"
@@ -80,9 +82,17 @@ case $PROPERTY_KEY in
         exit 0
         ;;
     clone)
-        echo "Cloning dexe_ethercat to ~/w1..."
-        mkdir -p ~/w1
-        git clone http://192.168.3.16/dexembodied/dexe_ethercat.git ~/w1/dexe_ethercat
+        if [ "$VALUE" == "ethercat" ]; then
+            echo "Cloning dexe_ethercat to ~/w1..."
+            mkdir -p ~/w1
+            git clone http://192.168.3.16/dexembodied/dexe_ethercat.git ~/w1/dexe_ethercat
+        elif [ "$VALUE" == "interface" ]; then
+            echo "Cloning dexe_interfaces to ~/w1..."
+            mkdir -p ~/w1
+            git clone http://192.168.3.16/dexembodied/dexe_interfaces.git ~/w1/dexe_interfaces
+        else
+            echo "Usage: ./set_w1.sh clone [ethercat|interface]"
+        fi
         exit 0
         ;;
     home)
@@ -151,6 +161,8 @@ case $PROPERTY_KEY in
     start)
         echo "Starting dexe-system.service..."
         sudo systemctl start dexe-system.service
+        echo "Watching EtherCAT status..."
+        watch -n 0.1 ethercat sl
         exit 0
         ;;
     stop)
@@ -161,6 +173,8 @@ case $PROPERTY_KEY in
     restart)
         echo "Restarting dexe-system.service..."
         sudo systemctl restart dexe-system.service
+        echo "Watching EtherCAT status..."
+        watch -n 0.1 ethercat sl
         exit 0
         ;;
     watch)
@@ -178,7 +192,7 @@ case $PROPERTY_KEY in
         python3 script/monitor_shm.py
         exit 0
         ;;
-    yaml)
+    config)
         echo "Editing robot_config.yaml..."
         vim ~/dexe_robot_server_data/robot_config.yaml
         exit 0

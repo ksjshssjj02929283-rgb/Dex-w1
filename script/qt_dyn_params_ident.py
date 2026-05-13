@@ -65,7 +65,7 @@ class DynParamIdentifier(Node):
         )
         self.traj = traj
         self.robot_cfg_path = (
-            Path(get_package_share_directory("w1_server")) / "robot_config.yaml"
+            Path.home() / "dexe_robot_server_data/robot_config.yaml"
         )
         self.joint_full_names = ["ANKLE", "KNEE", "BUTTOCK", "WAIST", "NECK1", "NECK2", "LEFT_J1", "LEFT_J2", "LEFT_J3", "LEFT_J4", "LEFT_J5", "LEFT_J6", "LEFT_J7", "RIGHT_J1", "RIGHT_J2", "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"]
 
@@ -1715,11 +1715,37 @@ class DynParamGUI(QtWidgets.QMainWindow):
             # 读取配置并写入两臂
             cfg_path = str(self.dyn.robot_cfg_path)
             with open(cfg_path, "r", encoding="utf-8") as f:
-                cfg = yaml.safe_load(f)
-            cfg["dyn_base_params_primary"] = beta_left
-            cfg["dyn_base_params_secondary"] = beta_right
+                content = f.read()
+            
+            beta_left_list = [float(x) for x in beta_left]
+            beta_right_list = [float(x) for x in beta_right]
+            
+            def format_float_list(flist):
+                return "[" + ", ".join(map(str, flist)) + "]"
+
+            import re
+            
+            # 使用正则表达式匹配并替换整个 [ ... ] 结构，包括可能跨行的部分
+            # pattern 解释：匹配键名后，匹配直到遇到闭合方括号 ] 的所有内容
+            primary_pattern = r"(dyn_base_params_primary:\s*)\[.*?\]"
+            secondary_pattern = r"(dyn_base_params_secondary:\s*)\[.*?\]"
+            
+            new_content = content
+            if re.search(primary_pattern, content, re.DOTALL):
+                new_content = re.sub(primary_pattern, 
+                                   f"\\1{format_float_list(beta_left_list)}", 
+                                   new_content, flags=re.DOTALL)
+                self.log_msg("已更新 dyn_base_params_primary")
+            
+            if re.search(secondary_pattern, new_content, re.DOTALL):
+                new_content = re.sub(secondary_pattern, 
+                                   f"\\1{format_float_list(beta_right_list)}", 
+                                   new_content, flags=re.DOTALL)
+                self.log_msg("已更新 dyn_base_params_secondary")
+
             with open(cfg_path, "w", encoding="utf-8") as f:
-                yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False)
+                f.write(new_content)
+            
             self.log_msg(
                 f"已写入左右臂辨识参数到机器人配置文件{cfg_path}, 重启服务后配置生效."
             )

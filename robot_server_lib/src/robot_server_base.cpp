@@ -292,15 +292,17 @@ void RobotServerBase::MoveRobotCallback(
         : this->manager_buffers_.request_queue->EnQueue(planner_request);
 
     this->request_handle_queue_.EnQueue(request_handle);
-    RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, arm = %s, is emergency request: %s",
+    RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, arm = %s, is emergency request: %s, config: %s",
                 planner_request.request_id, request_handle->get_goal()->type.c_str(),
                 request_handle->get_goal()->motion_group.c_str(),
-                planner_request.type >= RequestType::StopMove ? "true" : "false");
+                planner_request.type >= RequestType::StopMove ? "true" : "false",
+                request_handle->get_goal()->config.c_str());
 
     LOG_INFO << "Request_id = " << planner_request.request_id
              << ", Received, type = " << request_handle->get_goal()->type
              << ", arm = " << request_handle->get_goal()->motion_group
-             << ", is emergency request: " << (planner_request.type >= RequestType::StopMove ? "true" : "false");
+             << ", is emergency request: " << (planner_request.type >= RequestType::StopMove ? "true" : "false")
+             << ", config: " << request_handle->get_goal()->config;
 }
 
 void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::SharedPtr streaming_msg) {
