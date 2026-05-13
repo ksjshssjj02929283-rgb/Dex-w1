@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Online tool gravity compensation identification (joint estimation of mass, COM, and bias)."""
+"""Online tool COM identification with known mass and known wrench bias."""
 
 import argparse
 import json
@@ -22,6 +22,8 @@ from std_msgs.msg import String
 DEFAULT_STATE_TOPIC = "/feedback/robot_server_state"
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "tool_gravity_compensation_data"
 DEFAULT_GRAVITY = 9.79  # m/s^2
+DEFAULT_KNOWN_MASS = 1.061  # kg
+DEFAULT_W_BIAS_RAW_SRI = np.array([13.2234, -21.4832, -24.0719, 0.1601, -0.4670, -0.6611], dtype=float)
 
 
 @dataclass
@@ -353,102 +355,52 @@ def estimate_tool_parameters(
     samples: List[CapturedSample],
     gravity: float,
     model_sign: int,
+    known_mass: float,
+    w_bias_raw_sri: np.ndarray,
 ) -> Dict[str, object]:
-    """Joint estimation of mass, force_bias, COM, and torque_bias from multi-pose data.
+    """Estimate only COM with known mass and known wrench bias."""
+    known_mass = float(known_mass)
+    w_bias_ee = map_sri_raw_wrench_to_ee(np.asarray(w_bias_raw_sri, dtype=float))
+    force_bias = w_bias_ee[:3].copy()
+    torque_bias = w_bias_ee[3:6].copy()
 
-    Model (EE frame):
-        F_measured = m * sign * R^T @ g_world + f_bias       ... (force eqn)
-        M_measured = com x (m * sign * R^T @ g_world) + m_bias  ... (torque eqn)
-
-    Stage 1: estimate mass (1) + force_bias (3) = 4 unknowns from 3N force equations
-    Stage 2: estimate COM (3) + torque_bias (3) = 6 unknowns from 3N torque equations
-    """
     g_world = np.array([0.0, 0.0, -gravity], dtype=float)
-    n = len(samples)
-
-    # Compute gravity direction in EE frame for each sample
-    g_ee_list = []  # unit gravity in EE, scaled by g magnitude later
-    for sample in samples:
-        g_ee = float(model_sign) * sample.rotation_world_from_ee.T @ g_world
-        g_ee_list.append(g_ee)
-    g_ee_arr = np.vstack(g_ee_list)  # (N, 3)
-
+    forces_expected_arr = np.vstack(
+        [float(model_sign) * sample.rotation_world_from_ee.T @ (known_mass * g_world) for sample in samples]
+    )
     forces_measured_arr = np.vstack([s.wrench_ee_mean[:3] for s in samples])
     torques_measured_arr = np.vstack([s.wrench_ee_mean[3:6] for s in samples])
 
-    # === Stage 1: F_measured = m * g_ee + f_bias ===
-    # Unknowns: [m, f_bias_x, f_bias_y, f_bias_z]
-    # For each sample i: F_i = m * g_ee_i + f_bias
-    # -> [g_ee_ix, 1, 0, 0] [m]       [Fx_i]
-    #    [g_ee_iy, 0, 1, 0] [fbx]   =  [Fy_i]
-    #    [g_ee_iz, 0, 0, 1] [fby]      [Fz_i]
-    #                       [fbz]
-    A_force = np.zeros((3 * n, 4))
-    b_force = np.zeros(3 * n)
-    for i in range(n):
-        row = 3 * i
-        A_force[row:row+3, 0] = g_ee_arr[i]       # mass column
-        A_force[row:row+3, 1:4] = np.eye(3)       # bias columns
-        b_force[row:row+3] = forces_measured_arr[i]
-
-    sol_force, _, rank_force, sv_force = np.linalg.lstsq(A_force, b_force, rcond=None)
-    mass = sol_force[0]
-    force_bias = sol_force[1:4]
-
-    # Force residual
-    forces_expected_arr = mass * g_ee_arr
     force_residual = forces_measured_arr - (forces_expected_arr + force_bias)
 
-    # === Stage 2: M_measured = com x (m * g_ee) + m_bias ===
-    # Let F_expected_i = m * g_ee_i (known from stage 1)
-    # M_i = com x F_i + m_bias = -skew(F_i) @ com + m_bias
-    # Unknowns: [com_x, com_y, com_z, mbias_x, mbias_y, mbias_z]
-    A_torque = np.zeros((3 * n, 6))
-    b_torque = np.zeros(3 * n)
-    for i in range(n):
-        row = 3 * i
-        A_torque[row:row+3, 0:3] = -skew(forces_expected_arr[i])  # COM columns
-        A_torque[row:row+3, 3:6] = np.eye(3)                      # torque bias columns
-        b_torque[row:row+3] = torques_measured_arr[i]
+    blocks = []
+    targets = []
+    for expected_force, measured_torque in zip(forces_expected_arr, torques_measured_arr):
+        blocks.append(-skew(expected_force))
+        targets.append(measured_torque - torque_bias)
+    A_torque = np.vstack(blocks)
+    b_torque = np.concatenate(targets)
+    com, _, rank_torque, sv_torque = np.linalg.lstsq(A_torque, b_torque, rcond=None)
 
-    sol_torque, _, rank_torque, sv_torque = np.linalg.lstsq(A_torque, b_torque, rcond=None)
-    com = sol_torque[0:3]
-    torque_bias = sol_torque[3:6]
-
-    # Torque residual
-    torque_pred_arr = np.zeros_like(torques_measured_arr)
-    for i in range(n):
-        torque_pred_arr[i] = np.cross(com, forces_expected_arr[i]) + torque_bias
+    torque_pred_arr = np.vstack([np.cross(com, f) + torque_bias for f in forces_expected_arr])
     torque_residual_arr = torques_measured_arr - torque_pred_arr
 
-    # Mass consistency check (per-sample)
     compensated_force_norm = np.linalg.norm(forces_measured_arr - force_bias, axis=1)
     mass_estimates = compensated_force_norm / gravity
 
-    # Convert estimated bias back to raw SRI format for robot_config.yaml
-    w_bias_ee = np.concatenate([force_bias, torque_bias])
-    w_bias_raw_sri = np.array([
-        -w_bias_ee[0], -w_bias_ee[1], w_bias_ee[2],
-        -w_bias_ee[3], -w_bias_ee[4], w_bias_ee[5],
-    ], dtype=float)
-
-    condition_force = float(np.linalg.cond(A_force)) if A_force.size else float("inf")
     condition_torque = float(np.linalg.cond(A_torque)) if A_torque.size else float("inf")
 
     return {
         "gravity_magnitude": float(gravity),
-        "estimated_mass": float(mass),
+        "known_mass": known_mass,
         "model_sign": int(model_sign),
         "com_m": array_to_list(com),
         "com_mm": array_to_list(com * 1000.0),
-        "force_bias_estimated": array_to_list(force_bias),
-        "torque_bias_estimated": array_to_list(torque_bias),
+        "force_bias_known": array_to_list(force_bias),
+        "torque_bias_known": array_to_list(torque_bias),
         "w_bias_raw_sri": array_to_list(w_bias_raw_sri),
-        "rank_force": int(rank_force),
         "rank_torque": int(rank_torque),
-        "condition_force": condition_force,
         "condition_torque": condition_torque,
-        "singular_values_force": array_to_list(sv_force),
         "singular_values_torque": array_to_list(sv_torque),
         "force_rms": float(np.sqrt(np.mean(force_residual**2))),
         "torque_rms": float(np.sqrt(np.mean(torque_residual_arr**2))),
@@ -489,17 +441,17 @@ def sample_to_json(sample: CapturedSample) -> Dict[str, object]:
 def print_result(result: Dict[str, object]) -> None:
     print("\n========== Tool Gravity Compensation Result ==========")
     print(f"gravity_magnitude: {result['gravity_magnitude']:.6f} m/s^2")
-    print(f"estimated_mass:    {result['estimated_mass']:.6f} kg")
+    print(f"known_mass:        {result['known_mass']:.6f} kg")
     print(f"model_sign:        {result['model_sign']}")
     print(f"com_m (estimated): {np.array(result['com_m'])}")
     print(f"com_mm (estimated):{np.array(result['com_mm'])}")
-    print(f"force_bias [N]  (estimated):  {np.array(result['force_bias_estimated'])}")
-    print(f"torque_bias [Nm](estimated):  {np.array(result['torque_bias_estimated'])}")
-    print(f"w_bias_raw_sri (for yaml):     {np.array(result['w_bias_raw_sri'])}")
+    print(f"force_bias [N]  (known, EE):  {np.array(result['force_bias_known'])}")
+    print(f"torque_bias [Nm](known, EE):  {np.array(result['torque_bias_known'])}")
+    print(f"w_bias_raw_sri (known):       {np.array(result['w_bias_raw_sri'])}")
     print(f"force_rms:         {result['force_rms']:.6f} N")
     print(f"torque_rms:        {result['torque_rms']:.6f} Nm")
-    print(f"rank  force/torque: {result['rank_force']} / {result['rank_torque']}")
-    print(f"cond  force/torque: {result['condition_force']:.6g} / {result['condition_torque']:.6g}")
+    print(f"rank_torque:       {result['rank_torque']}")
+    print(f"condition_torque:  {result['condition_torque']:.6g}")
     mass_diag = result["mass_consistency"]
     print(
         "mass consistency: "
@@ -516,7 +468,7 @@ def print_result(result: Dict[str, object]) -> None:
     print(f"tool_gravity_compensation:")
     print(f"  com_mm: [{com_mm[0]:.5f}, {com_mm[1]:.5f}, {com_mm[2]:.5f}]")
     print(f"  w_bias: [{w_bias_raw[0]:.5f}, {w_bias_raw[1]:.5f}, {w_bias_raw[2]:.5f}, {w_bias_raw[3]:.5f}, {w_bias_raw[4]:.5f}, {w_bias_raw[5]:.5f}]")
-    print(f"  mass_kg: {result['estimated_mass']:.6f}")
+    print(f"  mass_kg: {result['known_mass']:.6f}")
     print(f"  gravity_magnitude: {result['gravity_magnitude']}")
     print(f"  model_sign: {result['model_sign']}")
     print("======================================================\n")
@@ -555,19 +507,25 @@ def run_self_test() -> None:
             )
         )
 
-    result = estimate_tool_parameters(samples, gravity, model_sign)
+    result = estimate_tool_parameters(
+        samples,
+        gravity,
+        model_sign,
+        known_mass=true_mass,
+        w_bias_raw_sri=np.array([
+            -true_force_bias[0], -true_force_bias[1], true_force_bias[2],
+            -true_torque_bias[0], -true_torque_bias[1], true_torque_bias[2],
+        ]),
+    )
     com_err = np.linalg.norm(np.array(result["com_m"]) - true_com)
-    mass_err = abs(result["estimated_mass"] - true_mass)
-    fbias_err = np.linalg.norm(np.array(result["force_bias_estimated"]) - true_force_bias)
-    tbias_err = np.linalg.norm(np.array(result["torque_bias_estimated"]) - true_torque_bias)
     print_result(result)
-    print(f"self-test errors: mass={mass_err:.6e}, com={com_err:.6e}, f_bias={fbias_err:.6e}, t_bias={tbias_err:.6e}")
-    if com_err > 1e-8 or mass_err > 1e-8 or fbias_err > 1e-8 or tbias_err > 1e-8:
+    print(f"self-test com_err={com_err:.6e}")
+    if com_err > 1e-8:
         raise RuntimeError("Synthetic self-test failed.")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Identify tool mass, COM, and sensor bias online from multi-pose data.")
+    parser = argparse.ArgumentParser(description="Identify tool COM online with known mass and known wrench bias.")
     parser.add_argument("--arm", choices=["primary", "secondary"], default="primary")
     parser.add_argument("--state-topic", default=DEFAULT_STATE_TOPIC)
     parser.add_argument(
@@ -577,12 +535,17 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Interpretation of force_sensor data. "
             "Default raw_sri means force_sensor is interpreted as "
-            "[-Fx, -Fy, Fz, Mx, My, Mz]. "
+            "[-Fx, -Fy, Fz, -Mx, -My, Mz]. "
             "Use state_mapped only when the input is already EE-frame wrench [Fx, Fy, Fz, Mx, My, Mz]."
         ),
     )
     parser.add_argument("--gravity", type=float, default=DEFAULT_GRAVITY,
                         help=f"Fixed gravity magnitude in m/s^2 (default: {DEFAULT_GRAVITY}).")
+    parser.add_argument("--known-mass", type=float, default=DEFAULT_KNOWN_MASS,
+                        help=f"Known tool mass in kg (default: {DEFAULT_KNOWN_MASS}).")
+    parser.add_argument("--w-bias", type=float, nargs=6, default=DEFAULT_W_BIAS_RAW_SRI.tolist(),
+                        metavar=("FX", "FY", "FZ", "MX", "MY", "MZ"),
+                        help="Known wrench bias in raw SRI sensor order. Default matches robot_config.yaml.")
     parser.add_argument("--avg-duration", type=float, default=1.0)
     parser.add_argument("--min-samples", type=int, default=6)
     parser.add_argument("--model-sign", type=int, choices=[-1, 1], default=1)
@@ -597,6 +560,8 @@ def parse_args() -> argparse.Namespace:
             parser.error("--min-samples must be at least 2.")
         if args.gravity <= 0.0:
             parser.error("--gravity must be positive.")
+        if args.known_mass <= 0.0:
+            parser.error("--known-mass must be positive.")
     return args
 
 
@@ -624,11 +589,11 @@ def main() -> None:
 
         print("\n开始工具重力补偿采集。")
         print("操作: 摆好一个静止姿态后按 Enter 采样；输入 q 后回车结束并拟合。")
-        print(f"当前设置: arm={args.arm}, avg_duration={args.avg_duration:.3f}s")
-        print(f"将从多位姿数据中联合估计: 质量(mass) + 力零偏(force_bias) + 质心(COM) + 力矩零偏(torque_bias)")
-        print(f"建议采集 >= 10 个姿态差异较大的位姿以获得可靠估计")
+        print(f"当前设置: arm={args.arm}, known_mass={args.known_mass:.6f} kg, avg_duration={args.avg_duration:.3f}s")
+        print(f"已知 wrench 零偏(raw SRI): {np.array(args.w_bias, dtype=float)}")
+        print("将只估计工具质心偏移 COM。建议采集 >= 6 个姿态差异较大的位姿。")
         if args.wrench_format == "raw_sri":
-            print("当前 force_sensor 按原始 SRI 数组处理: 将执行 [-Fx,-Fy,Fz,Mx,My,Mz] -> [Fx,Fy,Fz,Mx,My,Mz] 映射。")
+            print("当前 force_sensor 按原始 SRI 数组处理: 将执行 [-Fx,-Fy,Fz,-Mx,-My,Mz] -> [Fx,Fy,Fz,Mx,My,Mz] 映射。")
         else:
             print("当前 force_sensor 作为 EE 坐标系 wrench 直接使用，不再做二次映射。")
             print("辨识时请确保运行时工具重力补偿关闭，否则发布出来的是已补偿数据。")
@@ -658,7 +623,13 @@ def main() -> None:
                 f"ee_pose_mean={np.array2string(sample.ee_pose_mean, precision=5)}"
             )
 
-        result = estimate_tool_parameters(samples, gravity, args.model_sign)
+        result = estimate_tool_parameters(
+            samples,
+            gravity,
+            args.model_sign,
+            known_mass=args.known_mass,
+            w_bias_raw_sri=np.array(args.w_bias, dtype=float),
+        )
         print_result(result)
 
         args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -673,13 +644,15 @@ def main() -> None:
                 "state_topic": args.state_topic,
                 "wrench_format": args.wrench_format,
                 "gravity": args.gravity,
+                "known_mass": args.known_mass,
+                "w_bias_raw_sri": array_to_list(np.array(args.w_bias, dtype=float)),
                 "avg_duration": args.avg_duration,
                 "min_samples": args.min_samples,
                 "model_sign": args.model_sign,
                 "wrench_mapping": (
                     "state_mapped: use force_sensor directly as EE wrench"
                     if args.wrench_format == "state_mapped"
-                    else "raw_sri: [-Fx,-Fy,Fz,Mx,My,Mz] -> [Fx,Fy,Fz,Mx,My,Mz]"
+                    else "raw_sri: [-Fx,-Fy,Fz,-Mx,-My,Mz] -> [Fx,Fy,Fz,Mx,My,Mz]"
                 ),
             },
             "result": result,
