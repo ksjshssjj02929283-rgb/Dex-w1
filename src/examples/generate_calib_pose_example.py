@@ -112,9 +112,9 @@ if __name__ == "__main__":
     total_qpos = []
     arm_kine = w1_manager._get_arm_kine("left_arm")
     for pose in total_pose:
-        res_ik, cur_qpos = arm_kine.get_nearest_ik(xpos=pose,
-                                                   qpos_seed=init_qpos)
-        if not res_ik:
+        res_ik_status, cur_qpos = arm_kine.get_nearest_ik(xpos=pose,
+                                                          qpos_seed=init_qpos)
+        if res_ik_status.value < 0:
             exit(-2)
         total_qpos.append(cur_qpos)
 

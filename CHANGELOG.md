@@ -2,6 +2,18 @@
 
 ## [Unrelease]
 
+## [V0.5.0]
+### Feat
+- 支持dexe_rp提供的DoubleS轨迹规划算法和calc_next_iks算法
+- 新增设置振动抑制相关的接口
+
+### Improve
+- 优化基于全身IK的move_line，增加eye_focus功能、单臂缺省输入、避开肘部极限等功能
+
+### Fix
+- get_current_qpos修改当前值为指令值, 防止出现累积偏差
+- 修复run_mode值与server不一致的情况
+
 ## [V0.4.3]
 ### Fix
 - 修复w1_params先于资产检查导致的bug

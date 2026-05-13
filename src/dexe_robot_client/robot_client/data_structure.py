@@ -17,11 +17,13 @@ enum for various states and request types
 
 
 class RunMode(Enum):
-    Position = auto()  # position controls
+    Position = 0  # position controls
     Torque = auto()  # joint impedance control
     Drag = auto()  # zero-stiff control
     CartesianImpedance = auto()  # cartesian impedance control
     DragImpedance = auto()  # drag with impedance control
+    Sleep = auto()  # sleep mode, motors disabled
+    Unknown = auto()
 
 
 class Status(Enum):
@@ -29,6 +31,7 @@ class Status(Enum):
     Idle = auto()
     Running = auto()
     Error = auto()
+    Unknown = auto()
 
 
 class PropertyType(Enum):
@@ -40,11 +43,17 @@ class PropertyType(Enum):
     SwitchRunMode = auto()  # run mode
     EnableDrag = auto()
     EnableSleep = auto()  # sleep mode, motors disabled
+    EnablePosLimitCheck = auto()  # position limit check
     JointStiffness = auto()  # joint stiffness
     JointDamping = auto()  # joint damping
     JointIntegralRatio = auto()  # joint integral ratio (K_i = K_p * k_i_ratio)
     CartStiffness = auto()  # cartesian stiffness
     CartDampingRatio = auto()  # cartesian damping ratio 0.7~1.3
+    EnableStreamingRuckig = auto()  # joint streaming ruckig
+    JointStreamingBounds = auto()  # joint streaming bounds
+    EnableButterworthFilter = auto()  # butterworth filter enable
+    EnableInputShaper = auto()  # input shaper enable
+    EnableChassisShaper = auto()  # chassis shaper enable
 
 
 class MotionType(Enum):
