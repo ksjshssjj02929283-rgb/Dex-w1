@@ -111,6 +111,13 @@ class W1Params:
         self.max_qacc = np.array([1., 1., 1., 1., 40., 40.,
                                   10., 10., 10., 20., 40., 40., 40.,
                                   10., 10., 10., 20., 40., 40., 40.])
+        self.max_qjerk = 10.0 * self.max_qacc
+
+        self.default_vel = np.array([0.1, 0.1, 0.1, np.pi/4, np.pi/4, np.pi/4])
+        self.min_vel = np.array([0.01, 0.01, 0.01, np.pi/80, np.pi/80, np.pi/80])
+        self.max_vel = 5.0 * self.default_vel
+        self.max_acc = 5.0 * self.max_vel
+        self.max_jerk = 10.0 * self.max_acc
 
         self.home_qpos = np.deg2rad([45, -90, 45, 0, 0, 0,
                                      5, -45, -5, -90, 0, -15, 0,
@@ -133,6 +140,8 @@ class W1Params:
         with open(file_path, "rb") as f:
             json_data = json.load(f)
             self._update_from_dict(json_data)
+
+        self.max_qjerk = 10.0 * self.max_qacc
 
     def _update_from_dict(self, data: dict) -> bool:
         home_qpos = data.get("home_qpos")

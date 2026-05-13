@@ -213,7 +213,7 @@ class RobotClientRos2(Node, RobotClient):
 
             target_str = (str(np.round(request.value, 4))
                           if request.value is not None else "None")
-            self.logger.info(
+            self.logger.debug(
                 f"Movement request_id: {self.latest_sent_id} {request.type.name} {request.motion_group.name if request.motion_group is not None else ''} accepted, target: {target_str}"
             )
             self._move_request_id_returned = False
@@ -325,11 +325,10 @@ class RobotClientRos2(Node, RobotClient):
 
         # status
         if "status" in state:
-            try:
+            if state["status"] in Status.__members__:
                 self.status = Status[state["status"]]
-            except Exception:
-                self.logger.warning(
-                    f"Unknown status received: {state.get('status')}")
+            else:
+                self.status = Status.Unknown
         if "robot_type" in state:
             robot_type_str = state["robot_type"]
             # 使用正则表达式拆分机器人型号和臂型, 规则为首字母大写后跟数字为机器人型号, 后面跟大写字母开头的臂型字符串
@@ -348,7 +347,10 @@ class RobotClientRos2(Node, RobotClient):
         if "robot_controlword" in state:
             self.robot_controlword = state["robot_controlword"]
         if "run_mode" in state:
-            self.run_mode = state["run_mode"]
+            if state["run_mode"] in RunMode.__members__:
+                self.run_mode = RunMode[state["run_mode"]]
+            else:
+                self.run_mode = RunMode.Unknown
         if "safe_level" in state:
             self.safe_level = state["safe_level"]
         if "global_speed_ratio" in state:

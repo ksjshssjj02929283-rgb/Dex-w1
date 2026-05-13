@@ -8,7 +8,6 @@ All rights reserved.
 
 import numpy as np
 from copy import deepcopy
-import time
 
 from ...common import get_logger, W1ArmType, W1Version
 from ..utils.w1_params import W1Params
@@ -16,7 +15,7 @@ from ...end_effector_client import EndEffectorType
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from ..kinematics.pin_ik_whole_body import PinIKWholeBody
 from .utils.robot_type import *
-from dexe_rp import DexforceW1Kinematics, SRSConfig
+from dexe_rp import DexforceW1Kinematics, StatusType, calc_nearest_iks
 
 
 class CartesianToJointPlanner:
@@ -40,7 +39,7 @@ class CartesianToJointPlanner:
         self.right_tcp = np.eye(4)
 
     def _init_kine_solver(self):
-        ik_nearst_weight = np.array([2., 2., 2., 1., 1., 1., 1.])
+        ik_nearst_weight = np.array([2., 2., 2., 0., 1., 1., 1.])
         self.kine = DexforceW1Kinematics(
             self._arm_type == W1ArmType.ANTHROPOMORPHIC)
         self.kine.left_arm_kine.set_ik_nearest_weight(ik_nearst_weight)
@@ -68,6 +67,12 @@ class CartesianToJointPlanner:
 
     def set_whole_body_ik_cost_type(self, cost_type: str):
         self.whole_body_ik_solver.set_cost_function(cost_type=cost_type)
+
+    def set_whole_body_ik_focus_point(self, focus_point: np.ndarray):
+        self.whole_body_ik_solver.set_focus_point(focus_point)
+
+    def set_whole_body_ik_lean_backward_threshold(self, threshold: float):
+        self.whole_body_ik_solver.set_lean_backward_threshold(threshold)
 
     def set_arm_tcp(self, name: str, pose: np.ndarray):
         if name == "left_arm":
@@ -102,28 +107,31 @@ class CartesianToJointPlanner:
         Note:
             - Suppose the input trajectory is dense enough.
         """
-        # if end_effector_traj.ndim != 2 or end_effector_traj.shape[1] != 6:
-        #     raise ValueError("end_effector_traj must be of shape (N, 6)")
-        cur_qseed = deepcopy(start_qpos)
-        joint_qpos_list = []
+        # cur_qseed = deepcopy(start_qpos)
+        # joint_qpos_list = []
         arm_kine = self._get_arm_kine(name)
-        for pose in end_effector_traj:
-            res_ik, cur_qpos = arm_kine.get_nearest_ik(xpos=pose,
-                                                       qpos_seed=cur_qseed)
-            if not res_ik:
-                self.logger.error(
-                    f"{name} Cartesian_to_joint_planner : solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}."
-                )
-                return False, None
-            if not np.allclose(cur_qpos, cur_qseed, atol=np.deg2rad(90.0)):
-                self.logger.error(f"{name} Cartesian_to_joint_planner, solving ik failed since qpos traj is not continues\n" + \
-                                  f"cur_qpos(deg): {np.rad2deg(cur_qpos)}\n" + \
-                                  f"cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
-                return False, None
-            joint_qpos_list.append(cur_qpos)
-            cur_qseed = cur_qpos
-        joint_qpos_array = np.array(joint_qpos_list)
-        return True, joint_qpos_array
+        # for pose in end_effector_traj:
+        #     res_ik, cur_qpos = arm_kine.get_nearest_ik(xpos=pose,
+        #                                                qpos_seed=cur_qseed)
+        #     if not res_ik:
+        #         self.logger.error(
+        #             f"{name} Cartesian_to_joint_planner : solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}."
+        #         )
+        #         return False, None
+        #     if not np.allclose(cur_qpos, cur_qseed, atol=np.deg2rad(90.0)):
+        #         self.logger.error(f"{name} Cartesian_to_joint_planner, solving ik failed since qpos traj is not continues\n" + \
+        #                           f"cur_qpos(deg): {np.rad2deg(cur_qpos)}\n" + \
+        #                           f"cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
+        #         return False, None
+        #     joint_qpos_list.append(cur_qpos)
+        #     cur_qseed = cur_qpos
+        # joint_qpos_array = np.array(joint_qpos_list)
+        # return True, joint_qpos_array
+        res, qpos_list = calc_nearest_iks(arm_kine, start_qpos,
+                                          end_effector_traj)
+        if res.type != StatusType.Success:
+            return False, None
+        return True, np.array(qpos_list)
 
     from dexe_robot_client.common import time_consuming
 
