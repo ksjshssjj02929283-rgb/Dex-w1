@@ -173,7 +173,6 @@ class CartesianPlanner:
         if not path.calc_path():
             return False, None, None
         pose_sample_array = path.get_sample_by_step(cartesian_step)
-
         if name == "left_arm":
             left_pose_sample_array = pose_sample_array
             right_pose_sample_array = self.generate_right_arm_traj_from_left(
