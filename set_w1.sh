@@ -70,20 +70,54 @@ case $PROPERTY_KEY in
         exit 0
         ;;
     force)
-        if ! command -v jq >/dev/null 2>&1; then
-            echo "Error: jq is required for force monitoring."
-            exit 1
-        fi
         echo "Monitoring force sensor data at 10Hz..."
-        ros2 topic echo /feedback/robot_server_state std_msgs/msg/String --field data \
-            | sed '/^---$/d' \
-            | jq --unbuffered -c '{force_sensor: .force_sensor, raw_force_sensor: .raw_force_sensor}' \
-            | while read -r line; do
-                echo "------------------------------------------------"
-                echo "force_sensor: $(echo "$line" | jq -c '.force_sensor'),"
-                echo "raw_force_sensor: $(echo "$line" | jq -c '.raw_force_sensor')"
-                sleep 0.1
-            done
+        python3 - <<'PY'
+import json
+import threading
+
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+
+
+class ForceMonitor(Node):
+    def __init__(self):
+        super().__init__("force_monitor")
+        self.latest = None
+        self.lock = threading.Lock()
+        self.create_subscription(String, "/feedback/robot_server_state", self.callback, 10)
+        self.create_timer(0.1, self.print_latest)
+
+    def callback(self, msg):
+        try:
+            data = json.loads(msg.data)
+            latest = (data.get("force_sensor", []), data.get("raw_force_sensor", []))
+        except Exception:
+            return
+        with self.lock:
+            self.latest = latest
+
+    def print_latest(self):
+        with self.lock:
+            latest = self.latest
+        if latest is None:
+            return
+        force_sensor, raw_force_sensor = latest
+        print("------------------------------------------------", flush=True)
+        print(f"force_sensor: {json.dumps(force_sensor, separators=(',', ':'))},", flush=True)
+        print(f"raw_force_sensor: {json.dumps(raw_force_sensor, separators=(',', ':'))}", flush=True)
+
+
+rclpy.init()
+node = ForceMonitor()
+try:
+    rclpy.spin(node)
+except KeyboardInterrupt:
+    pass
+finally:
+    node.destroy_node()
+    rclpy.shutdown()
+PY
         exit 0
         ;;
     log)

@@ -9,11 +9,11 @@ allow_force_control: true
 
 # === 工具重力补偿参数 ===
 # com_mm: 工具质心在力传感器坐标系下的位置，单位 mm
-# w_bias: SRI原始数组 [Fx,Fy,Fz,Mx,My,Mz]，力单位 N，力矩单位 N*m
+# w_bias: [Fx,Fy,Fz,Mx,My,Mz]，力单位 N，力矩单位 N*m
 tool_gravity_compensation:
   com_mm: [56.72691, 17.72389, -0.47806]
   w_bias: [13.22340, -21.48320, -24.07190, 0.16010, -0.46700, -0.66110]
-  mass_kg: 0
+  mass_kg: 1.061
   gravity_magnitude: 9.79
   model_sign: 1
 
