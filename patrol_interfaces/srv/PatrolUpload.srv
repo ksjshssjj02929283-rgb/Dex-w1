@@ -1,0 +1,5 @@
+# Patrol task identifier, for example 20260514_103000_patrol01.
+string task_id
+---
+# Whether the upload trigger was accepted by the service.
+bool accepted

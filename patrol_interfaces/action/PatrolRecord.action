@@ -1,0 +1,41 @@
+# Goal
+# Patrol task identifier, for example 20260514_103000_patrol01.
+string task_id
+# Robot identifier used by the upstream platform.
+string robot_code
+# Planned patrol recording duration in seconds.
+float32 patrol_duration
+# Patrol points or track points for this task.
+PatrolPoint[] point_track
+
+---
+# Feedback
+# State values should be fixed in implementation, for example accepted/recording/saving/uploading/retrying.
+string state
+# Current or final local video path.
+string video_path
+# Current retry or upload attempt count.
+int32 attempt
+# Human readable progress message.
+string message
+
+---
+# Result
+# True only when the patrol recording flow completes successfully.
+bool success
+# Echo of the task identifier.
+string task_id
+# Echo of the robot identifier.
+string robot_code
+# Final local video path used for troubleshooting or follow-up cleanup.
+string video_path
+# Business code returned by the remote upload endpoint.
+int32 upload_code
+# Business message returned by the remote upload endpoint.
+string upload_message
+# Total number of upload retries performed locally.
+int32 retry_count
+# Local execution error code, such as encode_failed or upload_http_error.
+string error_code
+# Human readable error description.
+string error_message
