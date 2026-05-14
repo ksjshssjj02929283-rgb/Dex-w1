@@ -97,6 +97,7 @@ set(SRV_FILES
 set(ACTION_FILES
   "action/NavigateToPoint.action"
   "action/NavigateRoute.action"
+  "action/ExecuteMissionBt.action"
 )
 
 # 6) 生成接口（取代 ROS 1 的 add_message_files / add_service_files / generate_messages）
