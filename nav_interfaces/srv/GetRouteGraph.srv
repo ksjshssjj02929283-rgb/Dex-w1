@@ -2,3 +2,7 @@
 bool success
 nav_interfaces/RouteJunction[] junctions
 nav_interfaces/RouteEdge[]     edges
+# D034: 被边引用的 NavPoint 坐标（type=="nav" 端点）
+# 复用 RouteJunction 格式表达（id/x/y/yaw）：id = NavPoint.name；避免新增 msg 类型
+# 消费方拿到边数据后无需额外调用 GetAllNavPoints 即可定位 nav 端点坐标
+nav_interfaces/RouteJunction[] nav_points
