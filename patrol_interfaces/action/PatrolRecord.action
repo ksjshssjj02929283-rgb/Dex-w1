@@ -9,17 +9,6 @@ float32 patrol_duration
 PatrolPoint[] point_track
 
 ---
-# Feedback
-# State values should be fixed in implementation, for example accepted/recording/saving/uploading/retrying.
-string state
-# Current or final local video path.
-string video_path
-# Current retry or upload attempt count.
-int32 attempt
-# Human readable progress message.
-string message
-
----
 # Result
 # True only when the patrol recording flow completes successfully.
 bool success
@@ -39,3 +28,14 @@ int32 retry_count
 string error_code
 # Human readable error description.
 string error_message
+
+---
+# Feedback
+# State values should be fixed in implementation, for example accepted/recording/saving/uploading/retrying.
+string state
+# Current or final local video path.
+string video_path
+# Current retry or upload attempt count.
+int32 attempt
+# Human readable progress message.
+string message
