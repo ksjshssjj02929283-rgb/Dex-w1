@@ -400,7 +400,7 @@ RequestResponse PlannerManager::OnRequestStateRunning() {
     current_planner_->episode_index = time_meta.episode_index;
     // 如果进入Running时为拖动模式, 强制将拖拽模式切换为位置模式 Force switch drag mode to position mode
     if (robot_property_.run_mode == RunMode::Drag) {
-        robot_property_.run_mode = RunMode::Position;
+        robot_property_.run_mode = previous_run_mode_;
     }
     current_planner_->SetRobotProperty(robot_property_);
     current_planner_->ResetForNewTrajectory(request, measurement, time_meta);
@@ -547,6 +547,9 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
                         std::cout << "[WARN] Force control is not allowed by configuration.\n";
                         LOG_WARN << "Force control is not allowed by configuration.";
                     } else {
+                        if (robot_property_.run_mode != RunMode::Drag) {
+                            previous_run_mode_ = robot_property_.run_mode;
+                        }
                         robot_property_.run_mode = RunMode::Drag;
                     }
                     break;
@@ -589,14 +592,13 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
                 LOG_WARN << "Force control is not allowed by configuration.";
                 return;
             }
-            static auto previous_mode = robot_property_.run_mode;
             if (enable_drag) {
                 if (robot_property_.run_mode != RunMode::Drag) {
-                    previous_mode = robot_property_.run_mode;  // 保存之前的模式 Save the previous mode
+                    previous_run_mode_ = robot_property_.run_mode;  // 保存之前的模式 Save the previous mode
                 }
                 robot_property_.run_mode = RunMode::Drag;
             } else {
-                robot_property_.run_mode = previous_mode;
+                robot_property_.run_mode = previous_run_mode_;
             }
             LOG_INFO << "Set run mode to " << ToString(robot_property_.run_mode);
             return;

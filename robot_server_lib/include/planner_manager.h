@@ -29,6 +29,7 @@ private:
 
     // Property
     RobotProperty robot_property_;
+    RunMode previous_run_mode_{RunMode::Position};
 
     // StateMachine
     Status manager_state_{Status::Init};

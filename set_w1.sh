@@ -15,7 +15,7 @@ print_usage() {
     echo "  right           - Move right arm (7 joints, value: '[j1,j2,...]' or home/standby)"
     echo "  stop_move       - Stop current movement"
     echo "  log             - Print robot server log"
-    echo "  clear_error     - Clear errors (no value needed)"
+    echo "  clear          - Clear errors (no value needed)"
     echo "  drag            - Enable/Disable drag mode (value: 0 or 1)"
     echo "  start           - Start dexe-system.service"
     echo "  stop            - Stop dexe-system.service"
@@ -39,7 +39,7 @@ print_usage() {
     echo "  ./set_property.sh watch"
     echo "  ./set_property.sh state"
     echo "  ./set_property.sh shm"
-    echo "  ./set_property.sh clear_error"
+    echo "  ./set_property.sh clear"
     echo "  ./set_property.sh drag 1"
     echo "  ./set_property.sh pos_limit 0"
     echo "  ./set_property.sh run_mode 3"
@@ -85,7 +85,7 @@ case $PROPERTY_KEY in
         ./script/set_input_shaper.sh "$VALUE"
         exit 0
         ;;
-    clear_error)
+    clear)
         PROPERTY_TYPE="ClearError"
         VALUE=""
         ;;
@@ -222,7 +222,7 @@ case $PROPERTY_KEY in
         ;;
 esac
 
-# 如果不是 clear_error 且没有提供 value，则报错
+# 如果不是 clear 且没有提供 value，则报错
 if [ "$PROPERTY_TYPE" != "ClearError" ] && [ -z "$VALUE" ]; then
     echo "Error: Value is required for $PROPERTY_TYPE"
     print_usage
