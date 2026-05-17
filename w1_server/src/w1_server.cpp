@@ -157,22 +157,20 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
 }
 
 Vector6d RobotServer::MapSriRawWrenchToEE(const Vector6d& raw_wrench) const {
-    // sensor +X = armree +Z, sensor +Y = -armree X, sensor +Z = -armree Y
     Vector6d wrench_ee;
-    wrench_ee << -raw_wrench[1], -raw_wrench[2], raw_wrench[0],
-                 -raw_wrench[4], -raw_wrench[5], raw_wrench[3];
+    wrench_ee << -raw_wrench[0], -raw_wrench[1], raw_wrench[2], -raw_wrench[3], -raw_wrench[4], raw_wrench[5];
     return wrench_ee;
 }
 
 Eigen::Matrix3d RobotServer::GetEERotationWorldFromEE(int arm_index) const {
-    const auto& ee_pose = this->manager_info_.ee_pose_measurement;
+    const auto& ee_pose_world = this->manager_info_.ee_pose_world_measurement;
     const int offset = arm_index * 7;
-    if (ee_pose.size() < offset + 7) {
+    if (ee_pose_world.size() < offset + 7) {
         return Eigen::Matrix3d::Identity();
     }
 
-    // ee_pose format: [x, y, z, qx, qy, qz, qw]; Eigen::Quaterniond ctor is (w, x, y, z)
-    Eigen::Quaterniond q(ee_pose[offset + 6], ee_pose[offset + 3], ee_pose[offset + 4], ee_pose[offset + 5]);
+    Eigen::Quaterniond q(ee_pose_world[offset + 3], ee_pose_world[offset + 4], ee_pose_world[offset + 5],
+                         ee_pose_world[offset + 6]);
     if (q.norm() <= FloatZeroTol) {
         return Eigen::Matrix3d::Identity();
     }
@@ -750,6 +748,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(negative_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(positive_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_measurement, 0, this->robot_mode_ == RobotMode::SingleArm? 7 : 14).str() +
+        ",\n  \"ee_pose_world\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_world_measurement, 0, this->robot_mode_ == RobotMode::SingleArm? 7 : 14).str() +
         ",\n  \"torso_pose_X_Z_RY\":" + utils::VectorToJsonArrayString(this->manager_info_.torso_pose_measurement).str() +
         ",\n  \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
         ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +

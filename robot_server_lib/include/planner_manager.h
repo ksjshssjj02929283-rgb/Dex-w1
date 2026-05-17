@@ -76,6 +76,7 @@ private:
         Eigen::VectorXd publish_measurement_secondary;
         Eigen::VectorXd publish_measurement_torso;
         Eigen::VectorXd publish_ee_pose;
+        Eigen::VectorXd publish_ee_pose_world;
         Eigen::VectorXd publish_torso_X_Z_RY;
     } runtime_data_;
 

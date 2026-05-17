@@ -129,6 +129,10 @@ struct RobotProperty {
 
 struct PlannerManagerInfo {
     Eigen::VectorXd ee_pose_measurement;
+    // 末端在 URDF 根 (base_link, 与世界系等价: z 朝上) 下的位姿，
+    // 布局与 ee_pose_measurement 相同: [x,y,z,qw,qx,qy,qz] x2 (primary, secondary)。
+    // 用于工具重力补偿等需要 world 重力方向的场景。
+    Eigen::VectorXd ee_pose_world_measurement;
     Eigen::VectorXd torso_pose_measurement;
     RobotProperty robot_property;
 };
