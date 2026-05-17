@@ -215,8 +215,8 @@ class ToolGravityNode(Node):
             
             # Handle both quaternion (7-value) and Euler angle (6-value) formats
             if len(pose) == 7:
-                # Quaternion format: [x, y, z, qw, qx, qy, qz]
-                rotation = quat_wxyz_to_rot(pose[3:7])
+                # ee_pose format: [x, y, z, qx, qy, qz, qw]; quat_wxyz_to_rot expects [w, x, y, z]
+                rotation = quat_wxyz_to_rot(pose[[6, 3, 4, 5]])
             elif len(pose) == 6:
                 # Euler angle format: [x, y, z, rx, ry, rz]
                 rotation = euler_xyz_to_rot(pose[3:6])
@@ -327,9 +327,9 @@ def capture_sample(node: ToolGravityNode, index: int, duration_sec: float) -> Ca
     
     pose_len = poses.shape[1]
     if pose_len == 7:
-        # Quaternion format: average using quaternion algebra
-        quat_mean = average_quaternions_wxyz(poses[:, 3:7])
-        pose_mean = np.concatenate([poses[:, :3].mean(axis=0), quat_mean])
+        # ee_pose format: [x, y, z, qx, qy, qz, qw]; average and reorder to [w, x, y, z]
+        quat_mean = average_quaternions_wxyz(poses[:, [6, 3, 4, 5]])
+        pose_mean = np.concatenate([poses[:, :3].mean(axis=0), poses[:, 3:7].mean(axis=0)])
         rotation = quat_wxyz_to_rot(quat_mean)
     elif pose_len == 6:
         # Euler angle format: simple averaging (valid for small sample windows)
@@ -616,10 +616,13 @@ def main() -> None:
                 print(f"采样失败: {exc}")
                 continue
             samples.append(sample)
+            w_bias_ee = map_sri_raw_wrench_to_ee(np.array(args.w_bias, dtype=float))
+            wrench_ee_bias_compensated = sample.wrench_ee_mean - w_bias_ee
             print(
                 f"已采集 #{sample.index}: count={sample.count}, "
                 f"raw_wrench_mean={np.array2string(sample.raw_wrench_mean, precision=4)}, "
                 f"wrench_ee_mean={np.array2string(sample.wrench_ee_mean, precision=4)}, "
+                f"wrench_ee_bias_compensated_mean={np.array2string(wrench_ee_bias_compensated, precision=4)}, "
                 f"ee_pose_mean={np.array2string(sample.ee_pose_mean, precision=5)}"
             )
 

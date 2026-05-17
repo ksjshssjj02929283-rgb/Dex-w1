@@ -163,7 +163,8 @@ Eigen::Matrix3d RobotServer::GetEERotationWorldFromEE(int arm_index) const {
         return Eigen::Matrix3d::Identity();
     }
 
-    Eigen::Quaterniond q(ee_pose[offset + 3], ee_pose[offset + 4], ee_pose[offset + 5], ee_pose[offset + 6]);
+    // ee_pose format: [x, y, z, qx, qy, qz, qw]; Eigen::Quaterniond ctor is (w, x, y, z)
+    Eigen::Quaterniond q(ee_pose[offset + 6], ee_pose[offset + 3], ee_pose[offset + 4], ee_pose[offset + 5]);
     if (q.norm() <= FloatZeroTol) {
         return Eigen::Matrix3d::Identity();
     }
