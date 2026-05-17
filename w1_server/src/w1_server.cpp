@@ -151,8 +151,10 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
 }
 
 Vector6d RobotServer::MapSriRawWrenchToEE(const Vector6d& raw_wrench) const {
+    // sensor +X = armree +Z, sensor +Y = -armree X, sensor +Z = -armree Y
     Vector6d wrench_ee;
-    wrench_ee << -raw_wrench[0], -raw_wrench[1], raw_wrench[2], -raw_wrench[3], -raw_wrench[4], raw_wrench[5];
+    wrench_ee << -raw_wrench[1], -raw_wrench[2], raw_wrench[0],
+                 -raw_wrench[4], -raw_wrench[5], raw_wrench[3];
     return wrench_ee;
 }
 
