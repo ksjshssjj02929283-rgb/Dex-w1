@@ -33,7 +33,6 @@ class StateSample:
     ee_pose: np.ndarray
     raw_wrench: np.ndarray
     wrench_ee: np.ndarray
-    rotation_world_from_ee: np.ndarray
 
 
 @dataclass
@@ -125,12 +124,16 @@ def average_quaternions_wxyz(quaternions: np.ndarray) -> np.ndarray:
 
 
 def map_sri_raw_wrench_to_ee(raw: np.ndarray) -> np.ndarray:
-    """Map raw SRI order [-Fx, -Fy, Fz, -Mx, -My, Mz] to EE [Fx, Fy, Fz, Mx, My, Mz]."""
+    """Map raw SRI sensor wrench to armree (EE) frame.
+
+    Rotation determined empirically from URDF + standstill data:
+        sensor +X = armree +Z, sensor +Y = -armree X, sensor +Z = -armree Y
+    """
     raw = np.asarray(raw, dtype=float)
     if raw.shape != (6,):
         raise ValueError(f"Expected 6D wrench, got shape {raw.shape}.")
-    force = np.array([-raw[0], -raw[1], raw[2]], dtype=float)
-    torque = np.array([-raw[3], -raw[4], raw[5]], dtype=float)
+    force = np.array([-raw[1], -raw[2], raw[0]], dtype=float)
+    torque = np.array([-raw[4], -raw[5], raw[3]], dtype=float)
     return np.concatenate([force, torque])
 
 
@@ -213,23 +216,12 @@ class ToolGravityNode(Node):
             else:
                 raise ValueError(f"Unsupported wrench format: {self.wrench_format}")
             
-            # Handle both quaternion (7-value) and Euler angle (6-value) formats
-            if len(pose) == 7:
-                # ee_pose format: [x, y, z, qx, qy, qz, qw]; quat_wxyz_to_rot expects [w, x, y, z]
-                rotation = quat_wxyz_to_rot(pose[[6, 3, 4, 5]])
-            elif len(pose) == 6:
-                # Euler angle format: [x, y, z, rx, ry, rz]
-                rotation = euler_xyz_to_rot(pose[3:6])
-            else:
-                raise ValueError(f"Unexpected pose format: {len(pose)} values")
-            
             sample = StateSample(
                 arrival_time=time.monotonic(),
                 timestamp=timestamp,
                 ee_pose=pose.copy(),
                 raw_wrench=raw_wrench.copy(),
                 wrench_ee=wrench_ee,
-                rotation_world_from_ee=rotation,
             )
             with self._lock:
                 self._state_samples.append(sample)
@@ -492,7 +484,7 @@ def run_self_test() -> None:
         R = np.eye(3) + math.sin(angle) * K + (1.0 - math.cos(angle)) * (K @ K)
         F = model_sign * R.T @ (true_mass * np.array([0.0, 0.0, -gravity]))
         wrench = np.concatenate([F + true_force_bias, np.cross(true_com, F) + true_torque_bias])
-        pose = np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+        pose = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0])  # [x,y,z,qx,qy,qz,qw], identity
         samples.append(
             CapturedSample(
                 index=i + 1,
