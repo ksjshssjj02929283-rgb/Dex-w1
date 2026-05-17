@@ -1067,9 +1067,12 @@ void PlannerManager::PublishPlannerInfo() {
     PoseQuaternion ee_pose_world_primary, ee_pose_world_secondary;
     if (this->manager_state_ == Status::Idle || this->manager_state_ == Status::Running) {
         const auto& whole_model = *robot_model_.model_ptr;
-        // armlee/armree 在 URDF 中是固定关节的 child link，pinocchio 把它们注册成 frame
-        const int armlee_frame_id = whole_model.getFrameId("armlee");
-        const int armree_frame_id = whole_model.getFrameId("armree");
+        // armlee/armree 在 URDF 中既是固定关节名也是 child link 名, pinocchio 会注册多个同名 frame,
+        // 必须显式指定 FrameType 否则 getFrameId 抛 invalid_argument. 这里取 link 对应的 BODY.
+        const int armlee_frame_id =
+            static_cast<int>(whole_model.getFrameId("armlee", pinocchio::BODY));
+        const int armree_frame_id =
+            static_cast<int>(whole_model.getFrameId("armree", pinocchio::BODY));
         if (armlee_frame_id < static_cast<int>(whole_model.frames.size()) &&
             armree_frame_id < static_cast<int>(whole_model.frames.size())) {
             pinocchio::SE3 oM_armlee =
