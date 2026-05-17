@@ -24,6 +24,7 @@ void PlannerManager::Initialize() {
     runtime_data_.publish_measurement_secondary.resize(robot_model_.params_ptr->joints_secondary_names.size());
     runtime_data_.publish_measurement_torso.resize(robot_model_.params_ptr->joints_torso_names.size());
     runtime_data_.publish_ee_pose.resize(14);
+    runtime_data_.publish_ee_pose_world.resize(14);
     runtime_data_.publish_torso_X_Z_RY.resize(3);
 
     auto& time_meta = runtime_data_.time_meta;
@@ -976,6 +977,34 @@ void PlannerManager::PublishPlannerInfo() {
     ee_pose = (ee_pose.array() * 1e5).round() / 1e5;  // 精确到小数点后五位
 
     info.ee_pose_measurement = ee_pose;
+
+    // 计算末端在 world (URDF 根 base_link, z 朝上) 下的位姿，
+    // 用于工具重力补偿等需要真实 world 重力方向的场景。
+    // 注: ee_pose_measurement 是 armlbase->TCP，受 torso 关节姿态影响，不能直接当作 world->ee 使用。
+    auto& ee_pose_world = runtime_data_.publish_ee_pose_world;
+    PoseQuaternion ee_pose_world_primary, ee_pose_world_secondary;
+    if (this->manager_state_ == Status::Idle || this->manager_state_ == Status::Running) {
+        const auto& whole_model = *robot_model_.model_ptr;
+        // armlee/armree 在 URDF 中是固定关节的 child link，pinocchio 把它们注册成 frame
+        const int armlee_frame_id = whole_model.getFrameId("armlee");
+        const int armree_frame_id = whole_model.getFrameId("armree");
+        if (armlee_frame_id < static_cast<int>(whole_model.frames.size()) &&
+            armree_frame_id < static_cast<int>(whole_model.frames.size())) {
+            pinocchio::SE3 oM_armlee =
+                pinocchio::GetFkByFrameId(whole_model, measurement.position, armlee_frame_id);
+            pinocchio::SE3 oM_armree =
+                pinocchio::GetFkByFrameId(whole_model, measurement.position, armree_frame_id);
+            // TCP 偏移与 ee_pose_measurement 保持一致语义: T_world_tcp = T_world_ee * T_ee_tcp
+            pinocchio::SE3 oM_tcp_primary = oM_armlee * robot_property_.tcp_frame;
+            pinocchio::SE3 oM_tcp_secondary = oM_armree * robot_property_.tcp_frame_secondary;
+            ee_pose_world_primary = PoseQuaternion(oM_tcp_primary.toHomogeneousMatrix());
+            ee_pose_world_secondary = PoseQuaternion(oM_tcp_secondary.toHomogeneousMatrix());
+        }
+    }
+    ee_pose_world << ee_pose_world_primary.ToVectorXd(), ee_pose_world_secondary.ToVectorXd();
+    ee_pose_world = (ee_pose_world.array() * 1e5).round() / 1e5;
+    info.ee_pose_world_measurement = ee_pose_world;
+
     auto& torso_X_Z_RY = runtime_data_.publish_torso_X_Z_RY;
     torso_X_Z_RY << torso_pose.position[0], torso_pose.position[2],
         measurement_torso[0] + measurement_torso[1] + measurement_torso[2];

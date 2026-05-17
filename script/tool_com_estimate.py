@@ -33,6 +33,7 @@ class StateSample:
     ee_pose: np.ndarray
     raw_wrench: np.ndarray
     wrench_ee: np.ndarray
+    rotation_world_from_ee: np.ndarray
 
 
 @dataclass
@@ -124,20 +125,52 @@ def average_quaternions_wxyz(quaternions: np.ndarray) -> np.ndarray:
 
 
 def map_sri_raw_wrench_to_ee(raw: np.ndarray) -> np.ndarray:
-    """Map raw SRI sensor wrench to armree (EE) frame.
-
-    Rotation determined empirically from URDF + standstill data:
-        sensor +X = armree +Z, sensor +Y = -armree X, sensor +Z = -armree Y
-    """
+    """Map raw SRI order [-Fx, -Fy, Fz, -Mx, -My, Mz] to EE [Fx, Fy, Fz, Mx, My, Mz]."""
     raw = np.asarray(raw, dtype=float)
     if raw.shape != (6,):
         raise ValueError(f"Expected 6D wrench, got shape {raw.shape}.")
-    force = np.array([-raw[1], -raw[2], raw[0]], dtype=float)
-    torque = np.array([-raw[4], -raw[5], raw[3]], dtype=float)
+    force = np.array([-raw[0], -raw[1], raw[2]], dtype=float)
+    torque = np.array([-raw[3], -raw[4], raw[5]], dtype=float)
     return np.concatenate([force, torque])
 
 
 
+
+
+def rot_to_quat_wxyz(rot: np.ndarray) -> np.ndarray:
+    """3x3 rotation matrix -> quaternion (w, x, y, z)."""
+    rot = np.asarray(rot, dtype=float)
+    trace = rot[0, 0] + rot[1, 1] + rot[2, 2]
+    if trace > 0.0:
+        s = 0.5 / math.sqrt(trace + 1.0)
+        w = 0.25 / s
+        x = (rot[2, 1] - rot[1, 2]) * s
+        y = (rot[0, 2] - rot[2, 0]) * s
+        z = (rot[1, 0] - rot[0, 1]) * s
+    else:
+        if rot[0, 0] > rot[1, 1] and rot[0, 0] > rot[2, 2]:
+            s = 2.0 * math.sqrt(1.0 + rot[0, 0] - rot[1, 1] - rot[2, 2])
+            w = (rot[2, 1] - rot[1, 2]) / s
+            x = 0.25 * s
+            y = (rot[0, 1] + rot[1, 0]) / s
+            z = (rot[0, 2] + rot[2, 0]) / s
+        elif rot[1, 1] > rot[2, 2]:
+            s = 2.0 * math.sqrt(1.0 + rot[1, 1] - rot[0, 0] - rot[2, 2])
+            w = (rot[0, 2] - rot[2, 0]) / s
+            x = (rot[0, 1] + rot[1, 0]) / s
+            y = 0.25 * s
+            z = (rot[1, 2] + rot[2, 1]) / s
+        else:
+            s = 2.0 * math.sqrt(1.0 + rot[2, 2] - rot[0, 0] - rot[1, 1])
+            w = (rot[1, 0] - rot[0, 1]) / s
+            x = (rot[0, 2] + rot[2, 0]) / s
+            y = (rot[1, 2] + rot[2, 1]) / s
+            z = 0.25 * s
+    q = np.array([w, x, y, z], dtype=float)
+    n = np.linalg.norm(q)
+    if n <= 0.0:
+        raise ValueError("Quaternion norm is zero in rot_to_quat_wxyz.")
+    return q / n
 
 
 def array_to_list(value: np.ndarray) -> List[float]:
@@ -167,32 +200,39 @@ class ToolGravityNode(Node):
         except json.JSONDecodeError as e:
             self._record_error("json_decode", str(e))
             return
-        
+
         try:
             key = "raw_force_sensor" if self.wrench_format == "raw_sri" and "raw_force_sensor" in data else "force_sensor"
             force_sensor = np.asarray(data[key], dtype=float)
         except (KeyError, ValueError, TypeError) as e:
             self._record_error("force_sensor_parse", str(e))
             return
-        
+
         try:
             ee_pose = np.asarray(data["ee_pose"], dtype=float)
         except (KeyError, ValueError, TypeError) as e:
             self._record_error("ee_pose_parse", str(e))
             return
 
+        # ee_pose_world 是 base_link (z 朝上 world) 下的末端位姿，专门用于工具重力补偿。
+        # 老版本 server 没有这个字段时退回 ee_pose 并提示一次。
+        try:
+            ee_pose_world = np.asarray(data["ee_pose_world"], dtype=float)
+        except (KeyError, ValueError, TypeError):
+            ee_pose_world = None
+
         try:
             timestamp = float(data.get("timestamp", 0.0))
-            
+
             if force_sensor.size < 12:
                 raise ValueError(f"force_sensor has {force_sensor.size} values, expected 12.")
-            
+
             # Extract wrench for correct arm
             if self.arm == "primary":
                 raw_wrench = force_sensor[:6]
             else:
                 raw_wrench = force_sensor[6:12]
-            
+
             # Support both 14-value (7+7 quat) and 12-value (6+6 euler/RPY) formats
             if ee_pose.size >= 14:
                 # Original format: 7 values per arm (x,y,z,qw,qx,qy,qz)
@@ -215,20 +255,44 @@ class ToolGravityNode(Node):
                 wrench_ee = map_sri_raw_wrench_to_ee(raw_wrench)
             else:
                 raise ValueError(f"Unsupported wrench format: {self.wrench_format}")
-            
+
+            # 重力补偿用的旋转必须是 world->ee, 优先用 ee_pose_world; 否则退回 ee_pose 并告警
+            rotation = None
+            rotation_source = "ee_pose(fallback)"
+            if ee_pose_world is not None and ee_pose_world.size >= 14:
+                pose_world = ee_pose_world[:7] if self.arm == "primary" else ee_pose_world[7:14]
+                # 全 0 表示 server 端 manager_state 不在 Idle/Running, 视为缺失
+                if np.linalg.norm(pose_world[3:7]) > 1e-6:
+                    rotation = quat_wxyz_to_rot(pose_world[3:7])
+                    rotation_source = "ee_pose_world"
+
+            if rotation is None:
+                if not getattr(self, "_warned_no_world_pose", False):
+                    print("[WARN] ee_pose_world 不可用, 退回使用 ee_pose. "
+                          "若 server 是旧版本将得到错误的重力补偿结果, 请升级 server.")
+                    self._warned_no_world_pose = True
+                # 老版本兼容: 仍按之前的方式从 ee_pose 取旋转 (注意这是 armlbase->ee, 不是 world->ee)
+                if len(pose) == 7:
+                    rotation = quat_wxyz_to_rot(pose[3:7])
+                elif len(pose) == 6:
+                    rotation = euler_xyz_to_rot(pose[3:6])
+                else:
+                    raise ValueError(f"Unexpected pose format: {len(pose)} values")
+
             sample = StateSample(
                 arrival_time=time.monotonic(),
                 timestamp=timestamp,
                 ee_pose=pose.copy(),
                 raw_wrench=raw_wrench.copy(),
                 wrench_ee=wrench_ee,
+                rotation_world_from_ee=rotation,
             )
             with self._lock:
                 self._state_samples.append(sample)
             self._parsed_count += 1
-            
+
             if self._parsed_count == 1:
-                print(f"[DEBUG] 成功解析第一条消息! force_sensor: {force_sensor.shape}, ee_pose: {ee_pose.shape}, pose_format={'quat' if len(pose)==7 else 'euler'}")
+                print(f"[DEBUG] 成功解析第一条消息! force_sensor: {force_sensor.shape}, ee_pose: {ee_pose.shape}, pose_format={'quat' if len(pose)==7 else 'euler'}, rotation_source={rotation_source}")
         except Exception as e:
             self._record_error("processing", str(e))
     
@@ -316,19 +380,20 @@ def capture_sample(node: ToolGravityNode, index: int, duration_sec: float) -> Ca
     raw = np.vstack([sample.raw_wrench for sample in samples])
     wrench = np.vstack([sample.wrench_ee for sample in samples])
     poses = np.vstack([sample.ee_pose for sample in samples])
-    
+
     pose_len = poses.shape[1]
     if pose_len == 7:
-        # ee_pose format: [x, y, z, qx, qy, qz, qw]; average and reorder to [w, x, y, z]
-        quat_mean = average_quaternions_wxyz(poses[:, [6, 3, 4, 5]])
-        pose_mean = np.concatenate([poses[:, :3].mean(axis=0), poses[:, 3:7].mean(axis=0)])
-        rotation = quat_wxyz_to_rot(quat_mean)
+        quat_mean = average_quaternions_wxyz(poses[:, 3:7])
+        pose_mean = np.concatenate([poses[:, :3].mean(axis=0), quat_mean])
     elif pose_len == 6:
-        # Euler angle format: simple averaging (valid for small sample windows)
         pose_mean = poses.mean(axis=0)
-        rotation = euler_xyz_to_rot(pose_mean[3:6])
     else:
         raise ValueError(f"Unexpected pose format in capture: {pose_len} values")
+
+    # 重力补偿用的旋转直接由每条 StateSample 的 rotation_world_from_ee 平均得到,
+    # 不再从 ee_pose 反推 (ee_pose 的旋转是 armlbase->ee, 与 world->ee 不同).
+    rotation_quats = np.vstack([rot_to_quat_wxyz(sample.rotation_world_from_ee) for sample in samples])
+    rotation = quat_wxyz_to_rot(average_quaternions_wxyz(rotation_quats))
 
     return CapturedSample(
         index=index,
@@ -484,7 +549,7 @@ def run_self_test() -> None:
         R = np.eye(3) + math.sin(angle) * K + (1.0 - math.cos(angle)) * (K @ K)
         F = model_sign * R.T @ (true_mass * np.array([0.0, 0.0, -gravity]))
         wrench = np.concatenate([F + true_force_bias, np.cross(true_com, F) + true_torque_bias])
-        pose = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0])  # [x,y,z,qx,qy,qz,qw], identity
+        pose = np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
         samples.append(
             CapturedSample(
                 index=i + 1,
