@@ -26,7 +26,7 @@ from ..navigation_client import ChassisClient
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
-from .path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm
+from .path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm, check_SE3_dense_waypoints
 from .path_planner.cartesian_planner import CartesianPlanner
 from .path_planner.cartesian_to_joint_planner import CartesianToJointPlanner
 from .path_planner.fcl_checker import FCLChecker
@@ -5175,6 +5175,17 @@ class W1Manager:
             - If there is not end-effectors, start_left_arm_ee_qpos and start_right_arm_ee_qpos can be set to None
             - Arms' teaching point should be in chassis base-link frame
         """
+
+        self.logger.debug(
+            f"plan_linear_whole_body_ik() input cur_qpos: {start_qpos}")
+        self.logger.debug(
+            f"plan_linear_whole_body_ik() input cur_ee_qpos: {start_left_arm_ee_qpos}, {start_right_arm_ee_qpos}"
+        )
+        self.logger.debug("plan_linear_whole_body_ik() input waypoints_dict:")
+        self.logger.debug(waypoints_dict)
+        self.logger.debug(
+            f"plan_linear_whole_body_ik() input speed_ratio: {speed_ratio}")
+
         if movement_mode not in [
                 "eager", "sync_endpoint", "sync_point_by_point"
         ]:
@@ -5322,33 +5333,39 @@ class W1Manager:
 
         if movement_mode == "eager":
             if not left_arm_static_flag:
-                left_bezier_planner = PathR3xSO3Bezier(left_pos_raw_list)
-                if not left_bezier_planner.calc_path(
-                        PathType.Bezier5thCartesian, 0.01):
-                    self.logger.error("Left arm bezier path planning failed.")
-                    return StatusCode.PLAN_PATH_FAIL, None, None, None
-                res, left_xpos_sample_array = self._interpolate_bezier_path(
-                    left_bezier_planner, cartesian_step)
-                if res != StatusCode.SUCCESS:
-                    self.logger.error(
-                        "Left arm bezier path interpolation failed.")
-                    return StatusCode.PLAN_PATH_FAIL, None, None, None
+                if not check_SE3_dense_waypoints(left_pos_raw_list):
+                    left_bezier_planner = PathR3xSO3Bezier(left_pos_raw_list)
+                    if not left_bezier_planner.calc_path(
+                            PathType.Bezier5thCartesian, 0.01):
+                        self.logger.error("Left arm bezier path planning failed.")
+                        return StatusCode.PLAN_PATH_FAIL, None, None, None
+                    res, left_xpos_sample_array = self._interpolate_bezier_path(
+                        left_bezier_planner, cartesian_step)
+                    if res != StatusCode.SUCCESS:
+                        self.logger.error(
+                            "Left arm bezier path interpolation failed.")
+                        return StatusCode.PLAN_PATH_FAIL, None, None, None
+                else:
+                    left_xpos_sample_array = np.array(left_pos_raw_list)
             else:
                 left_xpos_sample_array = np.array(left_pos_raw_list)
 
             if not right_arm_static_flag:
-                right_bezier_planner = PathR3xSO3Bezier(right_pos_raw_list)
-                if not right_bezier_planner.calc_path(
-                        PathType.Bezier5thCartesian, 0.01):
-                    self.logger.error("Right arm bezier path planning failed.")
-                    return StatusCode.PLAN_PATH_FAIL, None, None, None
+                if not check_SE3_dense_waypoints(right_pos_raw_list):
+                    right_bezier_planner = PathR3xSO3Bezier(right_pos_raw_list)
+                    if not right_bezier_planner.calc_path(
+                            PathType.Bezier5thCartesian, 0.01):
+                        self.logger.error("Right arm bezier path planning failed.")
+                        return StatusCode.PLAN_PATH_FAIL, None, None, None
 
-                res, right_xpos_sample_array = self._interpolate_bezier_path(
-                    right_bezier_planner, cartesian_step)
-                if res != StatusCode.SUCCESS:
-                    self.logger.error(
-                        "Right arm bezier path interpolation failed.")
-                    return StatusCode.PLAN_PATH_FAIL, None, None, None
+                    res, right_xpos_sample_array = self._interpolate_bezier_path(
+                        right_bezier_planner, cartesian_step)
+                    if res != StatusCode.SUCCESS:
+                        self.logger.error(
+                            "Right arm bezier path interpolation failed.")
+                        return StatusCode.PLAN_PATH_FAIL, None, None, None
+                else:
+                    right_xpos_sample_array = np.array(right_pos_raw_list)
             else:
                 right_xpos_sample_array = np.array(right_pos_raw_list)
 
