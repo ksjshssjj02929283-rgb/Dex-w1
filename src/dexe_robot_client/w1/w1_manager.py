@@ -5470,6 +5470,12 @@ class W1Manager:
             start_qpos=start_qpos,
             left_end_effector_traj=np.asarray(left_xpos_sample_array),
             right_end_effector_traj=np.asarray(right_xpos_sample_array))
+        
+        if not res:
+            self.logger.error(
+                "Whole body joint traj planning failed in plan_linear_whole_body_ik."
+            )
+            return StatusCode.PLAN_TRAJ_FAIL, None, None, None
 
         # resolve for the last target
         left_last_target_xpos = left_xpos_sample_array[-1]
