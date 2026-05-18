@@ -95,6 +95,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
         LOG_INFO << "Primary force sensor initialized successfully";
     }
     // secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");  // 暂未使用
+    if (!primary_sensor_ready_ && !secondary_sensor_ready_) {
+        tool_gravity_compensation_enabled_ = false;
+    }
     this->Run();
 }
 
@@ -213,19 +216,21 @@ void RobotServer::TorqueControlThreadFunc() {
         Vector6d sensor_data_secondary = Vector6d::Zero();
         Vector6d raw_sensor_data_primary = Vector6d::Zero();
         Vector6d raw_sensor_data_secondary = Vector6d::Zero();
-        if (primary_sensor_ && primary_sensor_ready_) {
-            primary_sensor_->PeekLatest(&sensor_data_primary);
-            primary_sensor_->PeekLatestRaw(&raw_sensor_data_primary);
+        const bool primary_wrench_valid =
+            primary_sensor_ && primary_sensor_ready_ && primary_sensor_->PeekLatestRaw(&raw_sensor_data_primary);
+        const bool secondary_wrench_valid =
+            secondary_sensor_ && secondary_sensor_ready_ && secondary_sensor_->PeekLatestRaw(&raw_sensor_data_secondary);
+        if (primary_wrench_valid) {
             sensor_data_primary = ApplyToolGravityCompensation(raw_sensor_data_primary, 0);
         }
-        if (secondary_sensor_ && secondary_sensor_ready_) {
-            secondary_sensor_->PeekLatest(&sensor_data_secondary);
-            secondary_sensor_->PeekLatestRaw(&raw_sensor_data_secondary);
+        if (secondary_wrench_valid) {
             sensor_data_secondary = ApplyToolGravityCompensation(raw_sensor_data_secondary, 1);
         }
 
-        // 叠加手动输入的力数据
-        sensor_data_primary.head<3>() += sensor_force_;
+        // 叠加手动输入的力数据；没有六维力传感器时保持控制律输入 wrench 为零。
+        if (primary_wrench_valid) {
+            sensor_data_primary.head<3>() += sensor_force_;
+        }
 
         // 使用临时变量接收共享内存数据
         RobotFeedback feedback_temp{};
