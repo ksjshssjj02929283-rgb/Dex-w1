@@ -2,6 +2,8 @@
 WORKSPACE_DIR=$(dirname "$0")
 source /opt/ros/humble/setup.bash
 
+SUDO_PASS=123456
+
 # 构建类型：Release（默认）或 RelWithDebInfo（开发模式，编译更快）
 BUILD_TYPE=${BUILD_TYPE:-Release}
 
@@ -26,8 +28,8 @@ colcon build --parallel-workers "${COLCON_PARALLEL_WORKERS}" --cmake-args -DCMAK
 
 # 复制到 /opt 并配置运行时库路径
 OPT_DIR=/opt/w1_server
-sudo rm -rf $OPT_DIR
-sudo cp -r install $OPT_DIR
+echo "$SUDO_PASS" | sudo -S rm -rf $OPT_DIR
+echo "$SUDO_PASS" | sudo -S cp -r install $OPT_DIR
 
 # 设置 w1_server 权限（复制后设置）
 if [ -f "$OPT_DIR/w1_server/lib/w1_server/w1_server" ]; then

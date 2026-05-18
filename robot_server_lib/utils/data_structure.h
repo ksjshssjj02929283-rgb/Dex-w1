@@ -275,6 +275,8 @@ struct RobotParams {
     std::vector<std::string> joints_primary_names;
     std::vector<std::string> joints_secondary_names;
     std::vector<std::string> joints_torso_names;
+    std::string ee_primary_name;                               // 主臂末端执行器名称
+    std::string ee_secondary_name;                             // 从臂末端执行器名称
     std::vector<std::string> joint_names;                      // 所有关节名称（URDF顺序，不含universe）
     std::vector<std::string> joints_a1;                        // A1模式关节名称
     std::vector<std::string> joints_single_arm;                // 单臂模式关节名称

@@ -7,6 +7,7 @@ PKG_VERSION=$(grep 'set(W1_SERVER_VERSION' w1_server/CMakeLists.txt | sed -e 's/
 PKG_NAME="dexe-robot-server"
 PKG_ARCH="arm64"
 PKG_DIR="deb_build"
+PKG_BUILD_DATE=$(date +%Y%m%d)
 LIB_INSTALL_PREFIX="/opt/w1_server"
 SCRIPTS_INSTALL_PREFIX="/home/dexforce/w1/dexe_robot_server"
 
@@ -32,6 +33,20 @@ if [ -d "script" ]; then
     cp -r script ${PKG_DIR}${SCRIPTS_INSTALL_PREFIX}/
 fi
 cp *.sh ${PKG_DIR}${SCRIPTS_INSTALL_PREFIX}/
+
+echo "Step 2.2: Pruning non-runtime files for smaller package..."
+
+# 删除 Python 缓存，不影响运行。
+find "${PKG_DIR}" -type d -name '__pycache__' -prune -exec rm -rf {} +
+find "${PKG_DIR}" -type f -name '*.pyc' -delete
+
+# 删除静态库/调试残留，运行时动态链接不依赖这些文件。
+find "${PKG_DIR}${LIB_INSTALL_PREFIX}" -type f \( -name '*.a' -o -name '*.la' -o -name '*.pdb' \) -delete
+
+# 删除开发期头文件、CMake 包配置和 pkgconfig，仅运行环境不需要。
+find "${PKG_DIR}${LIB_INSTALL_PREFIX}" -type d -path '*/include' -prune -exec rm -rf {} +
+find "${PKG_DIR}${LIB_INSTALL_PREFIX}" -type d -path '*/share/*/cmake' -prune -exec rm -rf {} +
+find "${PKG_DIR}${LIB_INSTALL_PREFIX}" -type d \( -path '*/lib/pkgconfig' -o -path '*/share/pkgconfig' \) -prune -exec rm -rf {} +
 
 echo "Step 3: Creating control file..."
 cat <<INFO > ${PKG_DIR}/DEBIAN/control
@@ -73,6 +88,6 @@ POST
 chmod 755 ${PKG_DIR}/DEBIAN/postinst
 
 echo "Step 5: Building DEB package..."
-DEB_FILE="${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}.deb"
+DEB_FILE="${PKG_NAME}_${PKG_VERSION}_${PKG_BUILD_DATE}_${PKG_ARCH}.deb"
 dpkg-deb --build ${PKG_DIR} ${DEB_FILE}
 echo "✅ Success! Package created: ${DEB_FILE}"

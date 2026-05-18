@@ -1,9 +1,8 @@
 import os
 import time
 import subprocess
-import numpy as np
-from config import read_config_file
-
+import re
+import sys
 
 def to_complement_hex(value, bits=32):
     # 若是负数，获取补码表示
@@ -14,31 +13,44 @@ def to_complement_hex(value, bits=32):
     hex_value = hex(value)
     return hex_value
 
-def check_firmware_version(config):
+def get_motor_indices():
+    """获取所有 ZeroErr Driver 的电机索引"""
+    try:
+        result = subprocess.run(['ethercat', 'sl'], capture_output=True, text=True, check=True)
+    except Exception as e:
+        print(f'执行 "ethercat sl" 失败: {e}')
+        sys.exit(1)
+
+    motor_indices = []
+    for line in result.stdout.splitlines():
+        if 'ZeroErr Driver' in line:
+            # 匹配行首的数字（索引）
+            m = re.match(r'^\s*(\d+)\s+', line)
+            if m:
+                motor_indices.append(int(m.group(1)))
+    
+    if not motor_indices:
+        print("未检测到任何 ZeroErr Driver 电机。")
+        sys.exit(1)
+    
+    print(f"检测到电机索引: {motor_indices}")
+    return motor_indices
+
+def check_firmware_version(motor_indices):
     version_ok = True
-
-    pos_list = list(config.values())
-    print(pos_list)
-
-    for pos in pos_list:
-
-        print(pos)
-
+    for pos in motor_indices:
         command = ['ethercat', 'upload', '-p', str(pos), '0x2422', '0']
-        print(command)
-
         result = subprocess.run(command, capture_output=True, text=True)
         stdout = result.stdout
-        stderr = result.stderr
+        
+        if not stdout.strip():
+            print(f"无法读取电机 {pos} 的固件版本")
+            continue
 
-        print(stdout)
         version = stdout.split(' ')[1]
-        #print(version)
-
         if int(version) != 550113100 and int(version) != 150113100:
-            print('WRONG FIRMWARE VERSION: position:%d version:%s\n' % (pos, version))
+            print('WRONG FIRMWARE VERSION: position:%d version:%s' % (pos, version))
             version_ok = False
-
     return version_ok
 
 def change_to_180_degree(pos):
@@ -85,74 +97,28 @@ def change_to_180_degree(pos):
 
     #time.sleep(5)
 
-def check_180_degree(config):
+def check_180_degree(motor_indices):
     qpos_ok = True
-    pos_list = list(config.values())
-    print(pos_list)
-
-    for pos in pos_list:
-        print(pos)
-
+    for pos in motor_indices:
         command = ['ethercat', 'upload', '-p', str(pos), '0x6064', '0', '-t', 'uint32']
-
         result = subprocess.run(command, capture_output=True, text=True)
         stdout = result.stdout
-        stderr = result.stderr
-
-        qpos = int(stdout.split(' ')[1])
-        print(qpos)
-
-        #if int(version) != 550113100 and int(version) != 150113100:
-        #    print('WRONG FIRMWARE VERSION: position:%d version:%s\n' % (pos, version))
-        #    version_ok = False
-
+        if stdout.strip():
+            qpos = int(stdout.split(' ')[1])
+            print(f"电机 {pos} 当前位置: {qpos}")
     return qpos_ok
 
-def save_zero_offset():
-    offset_list = []
-    with open('zeroerr_position_list.txt','r') as fp:
-        for line in fp:
-            pos = int(line.strip())
-            print(pos)
-
-            command = ['ethercat', 'upload', '-p', str(pos), '0x3b75', '0', '-t', 'uint32']
-
-            result = subprocess.run(command, capture_output=True, text=True)
-            stdout = result.stdout
-            stderr = result.stderr
-
-            offset = int(stdout.split(' ')[1])
-            print(offset)
-
-            offset_list.append(offset)
-
-    with open('v2_zero_offset.txt', 'w') as fp:
-        for offset in offset_list:
-            fp.write('%d,' % offset)
-        fp.write('0,0,0,0,0,0,0,0,0,0,0,0\n')
-
-#从运行参数读取config文件path
-def get_config_path():
-    import sys
-    if len(sys.argv) > 1:
-        config_path = sys.argv[1]
-    else:
-        print(f"Config file {config_path} does not exist.")
-        sys.exit(1)
-
-    return config_path
-
 if __name__ == '__main__':
+    # 不需要配置文件，直接通过 ethercat sl 获取电机列表
+    motor_indices = get_motor_indices()
 
-    config_path = get_config_path()
-    config = read_config_file(config_path)
+    # 检查固件版本
+    check_firmware_version(motor_indices)
 
-    check_firmware_version(config)
-
-    pos_list = list(config.values())
-    print(pos_list)
-    for pos in pos_list:
+    # 依次设置每个电机到 180 度零点
+    for pos in motor_indices:
+        print(f"正在配置电机 {pos}...")
         change_to_180_degree(pos)
-    time.sleep(5)
-
-    check_180_degree(config)
+    
+    time.sleep(2)
+    check_180_degree(motor_indices)

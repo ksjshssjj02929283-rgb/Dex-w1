@@ -23,7 +23,9 @@ print_usage() {
     echo "  watch           - Watch EtherCAT status (watch -n 0.1 ethercat sl)"
     echo "  state           - Monitor feedback state (python3 script/monitor_feedback.py)"
     echo "  shm             - Monitor shared memory (python3 script/monitor_shm.py)"
-    echo "  config          - Edit robot_config.yaml (vim ~/dexe_robot_server_data/robot_config.yaml)"
+    echo "  control         - Joint control GUI (python3 script/qt_joint_control.py)"
+    echo "  dyn             - Dynamic parameter identification GUI (python3 script/qt_dyn_params_ident.py)"
+    echo "  config          - Edit robot_config.yaml (gedit/vim ~/dexe_robot_server_data/robot_config.yaml)"
     echo "  pos_limit       - Enable/Disable position limit check (value: 0 or 1)"
     echo "  run_mode        - Switch run mode (value: mode number, e.g., 3)"
     echo "  safe_level      - Set safety level (value: float, e.g., 0.3)"
@@ -71,18 +73,18 @@ case $PROPERTY_KEY in
         PROPERTY_TYPE="SafeLevel"
         ;;
     ruckig)
-        echo "Running set_ruckig.sh $VALUE..."
-        ./script/set_ruckig.sh "$VALUE"
+        echo "Running set_ruckig.sh ${@:2}..."
+        ./script/set_ruckig.sh "${@:2}"
         exit 0
         ;;
     filter)
-        echo "Running set_butterworth_filter.sh $VALUE..."
-        ./script/set_butterworth_filter.sh "$VALUE"
+        echo "Running set_butterworth_filter.sh ${@:2}..."
+        ./script/set_butterworth_filter.sh "${@:2}"
         exit 0
         ;;
     zvd)
-        echo "Running set_input_shaper.sh $VALUE..."
-        ./script/set_input_shaper.sh "$VALUE"
+        echo "Running set_input_shaper.sh ${@:2}..."
+        ./script/set_input_shaper.sh "${@:2}"
         exit 0
         ;;
     clear)
@@ -210,9 +212,23 @@ case $PROPERTY_KEY in
         python3 script/monitor_shm.py
         exit 0
         ;;
+    control)
+        echo "Starting Joint Control GUI..."
+        python3 script/qt_joint_control.py
+        exit 0
+        ;;
+    dyn)
+        echo "Starting Dynamic Parameter Identification GUI..."
+        python3 script/qt_dyn_params_ident.py
+        exit 0
+        ;;
     config)
         echo "Editing robot_config.yaml..."
-        vim ~/dexe_robot_server_data/robot_config.yaml
+        if [ -n "$DISPLAY" ]; then
+            gedit ~/dexe_robot_server_data/robot_config.yaml
+        else
+            vim ~/dexe_robot_server_data/robot_config.yaml
+        fi
         exit 0
         ;;
     *)

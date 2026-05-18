@@ -61,7 +61,7 @@ def _get_motor_position_deg_by_index(motor_index_list: list) -> list:
         qpos_list.append(_pulse_to_degree(pulse))
     return qpos_list
 
-def _write_zero_offset(is_left: bool, index_list: list, zero_offset_list: list, joint_ids: list):
+def _write_zero_offset(index_list: list, zero_offset_list: list, joint_ids: list):
     target_joint_ids = joint_ids
     if len(zero_offset_list) != len(target_joint_ids):
         raise ValueError(f"offset_list 长度应为 {len(target_joint_ids)}，当前为 {len(zero_offset_list)}")
@@ -72,15 +72,20 @@ def _write_zero_offset(is_left: bool, index_list: list, zero_offset_list: list, 
         index = index_list[joint_id]
         offset = zero_offset_list[i_local]
 
+        # 1. 读取当前电机内部存储的零位偏移量 (SDO 0x3b75:00)
         result = subprocess.run(['ethercat', 'upload', '-p', str(index), '0x3b75', '0', '-t', 'uint32'], capture_output=True, text=True)
         pre_offset = int(result.stdout.split(' ')[1])
         pre_offset_list.append(pre_offset)
 
+        # 2. 计算新的偏移量：将角度偏差转换为脉冲值并叠加到原偏移量上
+        # 换算公式: pulse = degree * (2^18 / 360) = degree * (262144 / 360)
         new_offset = int(pre_offset + offset / 360.0 * 262144)
         new_offset_list.append(new_offset)
 
+        # 3. 写入新的零位偏移量到电机 RAM
         result = subprocess.run(['ethercat', 'download', '-p', str(index), '0x3b75', '0', _to_complement_hex(new_offset)], capture_output=True, text=True)
 
+        # 4. 执行持久化保存命令 (SDO 0x1010:01 写入 "save" 对应的十六进制 0x65766173)
         result = subprocess.run(['ethercat', 'download', '-p', str(index), '0x1010', '1', '0x65766173'], capture_output=True, text=True)
 
     print(f"pre_offset:", pre_offset_list)
@@ -88,20 +93,11 @@ def _write_zero_offset(is_left: bool, index_list: list, zero_offset_list: list, 
     time.sleep(2)
     print("Zero offsets updated!")
 
-def set_zero_offset_w1(is_left: bool, zero_offsets_deg: list, joint_ids: list) -> bool:
-    motor_index_list = _get_motor_index_and_check_status(20)
+def set_zero_offset(zero_offsets_deg: list, joint_ids: list, expected_motor_count: int = 20) -> bool:
+    motor_index_list = _get_motor_index_and_check_status(expected_motor_count)
     qpos_list = _get_motor_position_deg_by_index(motor_index_list)
     print("Current motor positions (deg) before calibration:", qpos_list)
-    _write_zero_offset(is_left, motor_index_list, zero_offsets_deg, joint_ids)
-    qpos_list = _get_motor_position_deg_by_index(motor_index_list)
-    print("Current motor positions (deg) after calibration:", qpos_list)
-    return True
-
-def set_zero_offset_a1(is_left: bool, zero_offsets_deg: list) -> bool:
-    motor_index_list = _get_motor_index_and_check_status(14)
-    qpos_list = _get_motor_position_deg_by_index(motor_index_list)
-    print("Current motor positions (deg) before calibration:", qpos_list)
-    _write_zero_offset(is_left, motor_index_list, zero_offsets_deg, list(range(7)))
+    _write_zero_offset(motor_index_list, zero_offsets_deg, joint_ids)
     qpos_list = _get_motor_position_deg_by_index(motor_index_list)
     print("Current motor positions (deg) after calibration:", qpos_list)
     return True
@@ -112,25 +108,58 @@ def load_zero_offsets(is_left: bool) -> list:
         data = json.load(f)
     return data['zero_offset']
 
+def load_torso_offsets() -> list:
+    json_path = f'{DEXE_RP_DATA_PATH}/W1_V02.json'
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+    return data['zero_offset']
+
 def main():
     a1_mode = '--a1' in sys.argv or 'a1' in sys.argv
 
     if a1_mode:
         print("=== A1 模式 ===")
+        # A1 物理顺序可能为: 头部(0-1) -> 左臂(2-8) -> 右臂(9-15)
+        # 总电机数预期为 16 (基于头部2 + 左右各7)
+        # 如果没有头部，则左臂(0-6), 右臂(7-13), 总数 14
+        
+        # 自动探测总电机数
+        import re
+        result = subprocess.run(['ethercat', 'sl'], capture_output=True, text=True, check=True)
+        motor_count = len(re.findall(r'ZeroErr Driver', result.stdout))
+        print(f"Detected {motor_count} ZeroErr Drivers on bus.")
+
+        if motor_count == 16:
+            # 头部(0,1) -> 左臂(2-8) -> 右臂(9-15)
+            left_ids = list(range(2, 9))
+            right_ids = list(range(9, 16))
+        else:
+            # 默认 fallback: 左臂(0-6) -> 右臂(7-13)
+            left_ids = list(range(7))
+            right_ids = list(range(7, 14))
+
         left_zero_offsets = load_zero_offsets(is_left=True)
-        set_zero_offset_a1(is_left=True, zero_offsets_deg=left_zero_offsets)
+        set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=left_ids, expected_motor_count=motor_count)
 
         right_zero_offsets = load_zero_offsets(is_left=False)
-        set_zero_offset_a1(is_left=False, zero_offsets_deg=right_zero_offsets)
+        set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=right_ids, expected_motor_count=motor_count)
     else:
         print("=== W1 模式 ===")
+        # 物理顺序: 躯干(0-5) -> 左臂(6-12) -> 右臂(13-19)
+        # 躯干校准 (Joint IDs: 0, 1, 2, 3, 4, 5)
+        joint_ids = list(range(6))
+        torso_zero_offsets = load_torso_offsets()
+        set_zero_offset(zero_offsets_deg=torso_zero_offsets, joint_ids=joint_ids)
+
+        # 左臂校准 (Joint IDs: 6, 7, 8, 9, 10, 11, 12)
         joint_ids = list(range(6, 13))
         left_zero_offsets = load_zero_offsets(is_left=True)
-        set_zero_offset_w1(is_left=True, zero_offsets_deg=left_zero_offsets, joint_ids=joint_ids)
+        set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=joint_ids)
 
-        joint_ids = list(range(7))
+        # 右臂校准 (Joint IDs: 13, 14, 15, 16, 17, 18, 19)
+        joint_ids = list(range(13, 20))
         right_zero_offsets = load_zero_offsets(is_left=False)
-        set_zero_offset_w1(is_left=False, zero_offsets_deg=right_zero_offsets, joint_ids=joint_ids)
+        set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=joint_ids)
 
 if __name__ == '__main__':
     main()

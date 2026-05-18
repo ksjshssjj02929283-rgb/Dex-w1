@@ -376,11 +376,11 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id,
             utils::SetMax(this->latest_report_id_.finished, request_id);
             if (request_type >= RequestType::MoveJoint) {
                 std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> handle_temp;
-                    if (this->request_handle_queue_.DeQueue(&handle_temp)) {
-                        auto result_msg = std::make_shared<MoveRobot::Result>();
-                        result_msg->request_id = request_id;
-                        result_msg->success = true;
-                            handle_temp->succeed(result_msg);
+                if (this->request_handle_queue_.DeQueue(&handle_temp)) {
+                    auto result_msg = std::make_shared<MoveRobot::Result>();
+                    result_msg->request_id = request_id;
+                    result_msg->success = true;
+                    handle_temp->succeed(result_msg);
                 }
             }
             break;
@@ -391,11 +391,11 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id,
             utils::SetMax(this->latest_report_id_.finished, request_id);
             if (request_type >= RequestType::MoveJoint) {
                 std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> handle_temp;
-                    if (this->request_handle_queue_.DeQueue(&handle_temp)) {
-                        auto result_msg = std::make_shared<MoveRobot::Result>();
-                        result_msg->request_id = request_id;
-                        result_msg->success = true;
-                            handle_temp->succeed(result_msg);
+                if (this->request_handle_queue_.DeQueue(&handle_temp)) {
+                    auto result_msg = std::make_shared<MoveRobot::Result>();
+                    result_msg->request_id = request_id;
+                    result_msg->success = true;
+                    handle_temp->succeed(result_msg);
                 }
             }
             break;
@@ -403,10 +403,10 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id,
             utils::SetMax(this->latest_report_id_.error_drop, request_id);
             if (request_type >= RequestType::MoveJoint) {
                 std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> handle_temp;
-                    if (this->request_handle_queue_.DeQueue(&handle_temp)) {
-                        auto result_msg = std::make_shared<MoveRobot::Result>();
-                        result_msg->request_id = request_id;
-                        result_msg->success = false;
+                if (this->request_handle_queue_.DeQueue(&handle_temp)) {
+                    auto result_msg = std::make_shared<MoveRobot::Result>();
+                    result_msg->request_id = request_id;
+                    result_msg->success = false;
                     handle_temp->succeed(result_msg);
                 }
             }

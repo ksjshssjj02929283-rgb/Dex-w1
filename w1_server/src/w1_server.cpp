@@ -748,6 +748,12 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
                 }
                 robot_control_temp.joint_control[j].joint_position = msg->position[i];
                 break;  // 已经找到并处理了对应的关节，跳出内层循环继续处理下一个输入关节
+            } else if (robot_model_.params_ptr->ee_primary_name == msg->name[i]) {
+                // 单独处理末端执行器位置命令
+                break;
+            } else if (robot_model_.params_ptr->ee_secondary_name == msg->name[i]) {
+                // 单独处理末端执行器位置命令
+                break;
             }
         }
     }

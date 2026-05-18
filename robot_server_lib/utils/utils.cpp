@@ -48,25 +48,33 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                                      params.right_arm_name / (params.right_arm_name + ".urdf");
     }
 
-    std::vector<std::string> joint_names_primary;
-    std::vector<std::string> joint_names_secondary;
-    std::vector<std::string> joint_names_torso;
-    if (config["joints_primary_names"] && config["joints_primary_names"].IsSequence()) {
-        for (const auto& item : config["joints_primary_names"]) {
-            joint_names_primary.push_back(item.as<std::string>());
+    auto parse_string_list = [&](const char* key, std::vector<std::string>& dst) {
+        if (!config[key]) {
+            return;
         }
-    }
-    if (config["joints_secondary_names"] && config["joints_secondary_names"].IsSequence()) {
-        for (const auto& item : config["joints_secondary_names"]) {
-            joint_names_secondary.push_back(item.as<std::string>());
+        if (config[key].IsSequence()) {
+            for (const auto& item : config[key]) {
+                dst.push_back(item.as<std::string>());
+            }
+            return;
         }
-    }
-    if (config["joints_torso_names"] && config["joints_torso_names"].IsSequence()) {
-        for (const auto& item : config["joints_torso_names"]) {
-            joint_names_torso.push_back(item.as<std::string>());
+        if (config[key].IsScalar()) {
+            dst.push_back(config[key].as<std::string>());
         }
-    }
+    };
 
+    parse_string_list("joints_primary_names", params.joints_primary_names);
+    parse_string_list("joints_secondary_names", params.joints_secondary_names);
+    parse_string_list("joints_torso_names", params.joints_torso_names);
+    parse_string_list("joints_a1", params.joints_a1);
+    parse_string_list("joints_single_arm", params.joints_single_arm);
+    parse_string_list("joints_dual_arm", params.joints_dual_arm);
+    if (config["ee_primary_name"]) {
+        params.ee_primary_name = config["ee_primary_name"].as<std::string>();
+    }
+    if (config["ee_secondary_name"]) {
+        params.ee_secondary_name = config["ee_secondary_name"].as<std::string>();
+    }
     pinocchio::Model model, left_arm_model, right_arm_model;
     pinocchio::urdf::buildModel(params.urdf_path, model);
     pinocchio::urdf::buildModel(params.left_arm_urdf_path, left_arm_model);
@@ -77,32 +85,6 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         if (joint != "universe") {
             int idx = model.getJointId(joint) - 1;
             joint_name_to_index[joint] = idx;
-        }
-    }
-
-    params.joints_primary_names = joint_names_primary;
-    params.joints_secondary_names = joint_names_secondary;
-    params.joints_torso_names = joint_names_torso;
-
-    // 解析 A1/单臂/双臂模式关节名称
-    if (config["joints_a1"] && config["joints_a1"].IsSequence()) {
-        for (const auto& item : config["joints_a1"]) {
-            params.joints_a1.push_back(item.as<std::string>());
-        }
-    }
-    if (config["joints_single_arm"] && config["joints_single_arm"].IsSequence()) {
-        for (const auto& item : config["joints_single_arm"]) {
-            params.joints_single_arm.push_back(item.as<std::string>());
-        }
-    }
-    if (config["joints_dual_arm"] && config["joints_dual_arm"].IsSequence()) {
-        for (const auto& item : config["joints_dual_arm"]) {
-            params.joints_dual_arm.push_back(item.as<std::string>());
-        }
-    }
-
-    for (const auto& joint : model.names) {
-        if (joint != "universe") {
             params.joint_names.push_back(joint);
         }
     }
