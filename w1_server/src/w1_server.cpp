@@ -730,8 +730,15 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
     auto robot_control_temp = robot_control_;
     bool position_valid = true;
     for (size_t i = 0; i < msg->name.size(); ++i) {
+        const std::string& target_name = msg->name[i];
+        std::string mapped_name = target_name;
+        if (target_name == robot_model_.params_ptr->ee_primary_name) {
+            mapped_name = "NECK1";
+        } else if (target_name == robot_model_.params_ptr->ee_secondary_name) {
+            mapped_name = "NECK2";
+        }
         for (int j = 0; j < ndof_robot; ++j) {
-            if (robot_model_.params_ptr->joint_names[j] == msg->name[i] && position_valid) {
+            if (robot_model_.params_ptr->joint_names[j] == mapped_name && position_valid) {
                 if (std::abs(robot_control_temp.joint_control[j].joint_position - msg->position[i]) >
                     position_diff_threshold_) {
                     RCLCPP_WARN(
@@ -748,12 +755,6 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
                 }
                 robot_control_temp.joint_control[j].joint_position = msg->position[i];
                 break;  // 已经找到并处理了对应的关节，跳出内层循环继续处理下一个输入关节
-            } else if (robot_model_.params_ptr->ee_primary_name == msg->name[i]) {
-                // 单独处理末端执行器位置命令
-                break;
-            } else if (robot_model_.params_ptr->ee_secondary_name == msg->name[i]) {
-                // 单独处理末端执行器位置命令
-                break;
             }
         }
     }
