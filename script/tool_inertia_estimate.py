@@ -31,6 +31,9 @@ DEFAULT_ROBOT_CONFIG = Path(__file__).resolve().parent.parent / "w1_server" / "r
 DEFAULT_DT = 0.01
 DEFAULT_WF = 0.12 * np.pi
 DEFAULT_L = 3
+DEFAULT_TOOL_MASS_KG = 1.061
+DEFAULT_TOOL_COM_MM = "56.72691,17.72389,-0.47806"
+DEFAULT_TOOL_W_BIAS_RAW_SRI = "13.22340,-21.48320,-24.07190,0.16010,-0.46700,-0.66110"
 
 
 @dataclass
@@ -480,9 +483,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--dt", type=float, default=DEFAULT_DT)
     parser.add_argument("--robot-type", choices=["w1_anth", "w1_indst"], default="w1_anth")
-    parser.add_argument("--mass", type=float, required=True, help="Tool mass in kg, stored for diagnostics.")
-    parser.add_argument("--com-mm", required=True, help="Tool COM in flange/EE frame, mm: x,y,z")
-    parser.add_argument("--w-bias", required=True, help="Sensor zero bias in raw_sri order, same format as tool_com_estimate.py w_bias.")
+    parser.add_argument(
+        "--mass",
+        type=float,
+        default=DEFAULT_TOOL_MASS_KG,
+        help=f"Tool mass in kg (default hardcoded: {DEFAULT_TOOL_MASS_KG}).",
+    )
+    parser.add_argument(
+        "--com-mm",
+        default=DEFAULT_TOOL_COM_MM,
+        help=f"Tool COM in flange/EE frame, mm: x,y,z (default hardcoded: {DEFAULT_TOOL_COM_MM}).",
+    )
+    parser.add_argument(
+        "--w-bias",
+        default=DEFAULT_TOOL_W_BIAS_RAW_SRI,
+        help=(
+            "Sensor zero bias in raw_sri order, same format as tool_com_estimate.py w_bias "
+            f"(default hardcoded: {DEFAULT_TOOL_W_BIAS_RAW_SRI})."
+        ),
+    )
     parser.add_argument(
         "--wrench-format",
         choices=["raw_sri", "state_mapped"],
