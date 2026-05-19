@@ -102,17 +102,32 @@ def set_zero_offset(zero_offsets_deg: list, joint_ids: list, expected_motor_coun
     print("Current motor positions (deg) after calibration:", qpos_list)
     return True
 
-def load_zero_offsets(is_left: bool) -> list:
+def load_zero_offsets(is_left: bool) -> tuple[list, bool]:
     json_path = f'{DEXE_RP_DATA_PATH}/W1_V02_L.json' if is_left else f'{DEXE_RP_DATA_PATH}/W1_V02_R.json'
     with open(json_path, 'r') as f:
         data = json.load(f)
-    return data['zero_offset']
+    return data['zero_offset'], data.get('is_calibrated', False)
 
-def load_torso_offsets() -> list:
+def load_torso_offsets() -> tuple[list, bool]:
     json_path = f'{DEXE_RP_DATA_PATH}/W1_V02.json'
     with open(json_path, 'r') as f:
         data = json.load(f)
-    return data['zero_offset']
+    return data['zero_offset'], data.get('is_calibrated', False)
+
+def _update_calibration_status(is_left: bool = None, is_torso: bool = False):
+    if is_torso:
+        json_path = f'{DEXE_RP_DATA_PATH}/W1_V02.json'
+    else:
+        json_path = f'{DEXE_RP_DATA_PATH}/W1_V02_L.json' if is_left else f'{DEXE_RP_DATA_PATH}/W1_V02_R.json'
+    
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+    
+    data['is_calibrated'] = True
+    
+    with open(json_path, 'w') as f:
+        json.dump(data, f, indent=4)
+    print(f"Updated {json_path} with is_calibrated = true")
 
 def main():
     a1_mode = '--a1' in sys.argv or 'a1' in sys.argv
@@ -134,32 +149,52 @@ def main():
             left_ids = list(range(2, 9))
             right_ids = list(range(9, 16))
         else:
-            # 默认 fallback: 左臂(0-6) -> 右臂(7-13)
+            # 左臂(0-6) -> 右臂(7-13)
             left_ids = list(range(7))
             right_ids = list(range(7, 14))
 
-        left_zero_offsets = load_zero_offsets(is_left=True)
-        set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=left_ids, expected_motor_count=motor_count)
+        left_zero_offsets, left_calibrated = load_zero_offsets(is_left=True)
+        if not left_calibrated:
+            set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=left_ids, expected_motor_count=motor_count)
+            _update_calibration_status(is_left=True)
+        else:
+            print("Left arm already calibrated, skipping.")
 
-        right_zero_offsets = load_zero_offsets(is_left=False)
-        set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=right_ids, expected_motor_count=motor_count)
+        right_zero_offsets, right_calibrated = load_zero_offsets(is_left=False)
+        if not right_calibrated:
+            set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=right_ids, expected_motor_count=motor_count)
+            _update_calibration_status(is_left=False)
+        else:
+            print("Right arm already calibrated, skipping.")
     else:
         print("=== W1 模式 ===")
         # 物理顺序: 躯干(0-5) -> 左臂(6-12) -> 右臂(13-19)
         # 躯干校准 (Joint IDs: 0, 1, 2, 3, 4, 5)
         joint_ids = list(range(6))
-        torso_zero_offsets = load_torso_offsets()
-        set_zero_offset(zero_offsets_deg=torso_zero_offsets, joint_ids=joint_ids)
+        torso_zero_offsets, torso_calibrated = load_torso_offsets()
+        if not torso_calibrated:
+            set_zero_offset(zero_offsets_deg=torso_zero_offsets, joint_ids=joint_ids)
+            _update_calibration_status(is_torso=True)
+        else:
+            print("Torso already calibrated, skipping.")
 
         # 左臂校准 (Joint IDs: 6, 7, 8, 9, 10, 11, 12)
         joint_ids = list(range(6, 13))
-        left_zero_offsets = load_zero_offsets(is_left=True)
-        set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=joint_ids)
+        left_zero_offsets, left_calibrated = load_zero_offsets(is_left=True)
+        if not left_calibrated:
+            set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=joint_ids)
+            _update_calibration_status(is_left=True)
+        else:
+            print("Left arm already calibrated, skipping.")
 
         # 右臂校准 (Joint IDs: 13, 14, 15, 16, 17, 18, 19)
         joint_ids = list(range(13, 20))
-        right_zero_offsets = load_zero_offsets(is_left=False)
-        set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=joint_ids)
+        right_zero_offsets, right_calibrated = load_zero_offsets(is_left=False)
+        if not right_calibrated:
+            set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=joint_ids)
+            _update_calibration_status(is_left=False)
+        else:
+            print("Right arm already calibrated, skipping.")
 
 if __name__ == '__main__':
     main()

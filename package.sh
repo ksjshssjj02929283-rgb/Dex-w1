@@ -7,7 +7,8 @@ PKG_VERSION=$(grep 'set(W1_SERVER_VERSION' w1_server/CMakeLists.txt | sed -e 's/
 PKG_NAME="dexe-robot-server"
 PKG_ARCH="arm64"
 PKG_DIR="deb_build"
-PKG_BUILD_DATE=$(date +%Y%m%d)
+GIT_HASH=$(git rev-parse --short HEAD)
+GIT_DATE=$(git log -1 --format=%cd --date=format:'%Y%m%d')
 LIB_INSTALL_PREFIX="/opt/w1_server"
 SCRIPTS_INSTALL_PREFIX="/home/dexforce/w1/dexe_robot_server"
 
@@ -88,6 +89,6 @@ POST
 chmod 755 ${PKG_DIR}/DEBIAN/postinst
 
 echo "Step 5: Building DEB package..."
-DEB_FILE="${PKG_NAME}_${PKG_VERSION}_${PKG_BUILD_DATE}_${PKG_ARCH}.deb"
+DEB_FILE="${PKG_NAME}-${PKG_VERSION}-${GIT_DATE}-${GIT_HASH}-${PKG_ARCH}.deb"
 dpkg-deb --build ${PKG_DIR} ${DEB_FILE}
 echo "✅ Success! Package created: ${DEB_FILE}"

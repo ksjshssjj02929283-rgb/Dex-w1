@@ -27,11 +27,12 @@ print_usage() {
     echo "  dyn             - Dynamic parameter identification GUI (python3 script/qt_dyn_params_ident.py)"
     echo "  config          - Edit robot_config.yaml (gedit/vim ~/dexe_robot_server_data/robot_config.yaml)"
     echo "  pos_limit       - Enable/Disable position limit check (value: 0 or 1)"
-    echo "  run_mode        - Switch run mode (value: mode number, e.g., 3)"
+    echo "  mode            - Switch run mode (value: mode number, e.g., 3)"
     echo "  safe_level      - Set safety level (value: float, e.g., 0.3)"
     echo "  ruckig          - Enable/Disable ruckig (value: true or false)"
     echo "  filter          - Enable/Disable butterworth filter (value: true or false)"
     echo "  zvd             - Enable/Disable input shaper (value: true or false)"
+    echo "  hardware        - Cat /etc/dexe_robot/hardware.yaml"
 
     echo ""
     echo "Examples:"
@@ -44,7 +45,7 @@ print_usage() {
     echo "  ./set_property.sh clear"
     echo "  ./set_property.sh drag 1"
     echo "  ./set_property.sh pos_limit 0"
-    echo "  ./set_property.sh run_mode 3"
+    echo "  ./set_property.sh mode 1"
     echo "  ./set_property.sh safe_level 0.3"
     echo "  ./set_property.sh restart"
 }
@@ -66,7 +67,7 @@ case $PROPERTY_KEY in
     pos_limit)
         PROPERTY_TYPE="EnablePosLimitCheck"
         ;;
-    run_mode)
+    mode)
         PROPERTY_TYPE="SwitchRunMode"
         ;;
     safe_level)
@@ -220,6 +221,11 @@ case $PROPERTY_KEY in
     dyn)
         echo "Starting Dynamic Parameter Identification GUI..."
         python3 script/qt_dyn_params_ident.py
+        exit 0
+        ;;
+    hardware)
+        echo "Cat /etc/dexe_robot/hardware.yaml..."
+        cat /etc/dexe_robot/hardware.yaml
         exit 0
         ;;
     config)
