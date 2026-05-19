@@ -21,6 +21,7 @@ from std_msgs.msg import String
 
 DEFAULT_STATE_TOPIC = "/feedback/robot_server_state"
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "tool_gravity_compensation_data"
+DEFAULT_ROBOT_CONFIG = Path(__file__).resolve().parent.parent / "w1_server" / "robot_config.yaml"
 DEFAULT_GRAVITY = 9.79  # m/s^2
 DEFAULT_KNOWN_MASS = 1.061  # kg
 
@@ -553,6 +554,56 @@ def print_result(result: Dict[str, object]) -> None:
     print("======================================================\n")
 
 
+def format_yaml_float(value: object, precision: int = 5) -> str:
+    text = f"{float(value):.{precision}f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def format_yaml_float_list(values: object, precision: int = 5) -> str:
+    return "[" + ", ".join(format_yaml_float(v, precision) for v in values) + "]"
+
+
+def robot_config_block_from_result(result: Dict[str, object]) -> str:
+    return (
+        "tool_gravity_compensation:\n"
+        f"  com_mm: {format_yaml_float_list(result['com_mm'], 5)}\n"
+        f"  w_bias: {format_yaml_float_list(result['w_bias_raw_sri_estimated'], 5)}\n"
+        f"  mass_kg: {format_yaml_float(result['known_mass'], 6)}\n"
+        f"  gravity_magnitude: {format_yaml_float(result['gravity_magnitude'], 6)}\n"
+        f"  model_sign: {int(result['model_sign'])}\n"
+    )
+
+
+def update_robot_config(config_path: Path, result: Dict[str, object]) -> None:
+    config_path = config_path.expanduser()
+    if not config_path.exists():
+        raise FileNotFoundError(f"robot_config.yaml not found: {config_path}")
+
+    text = config_path.read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+    block = robot_config_block_from_result(result)
+
+    start = None
+    for i, line in enumerate(lines):
+        if line.strip() == "tool_gravity_compensation:" and line[:1] not in (" ", "\t"):
+            start = i
+            break
+
+    if start is None:
+        new_text = text.rstrip() + "\n\n" + block
+    else:
+        end = start + 1
+        while end < len(lines) and (lines[end].startswith((" ", "\t")) or not lines[end].strip()):
+            end += 1
+        replacement = block
+        if end < len(lines) and not replacement.endswith("\n\n"):
+            replacement += "\n"
+        new_text = "".join(lines[:start]) + replacement + "".join(lines[end:])
+
+    config_path.write_text(new_text, encoding="utf-8")
+    print(f"robot_config.yaml 已自动更新: {config_path}")
+
+
 def run_self_test() -> None:
     rng = np.random.default_rng(7)
     gravity = 9.79
@@ -624,6 +675,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-samples", type=int, default=6)
     parser.add_argument("--model-sign", type=int, choices=[-1, 1], default=1)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--robot-config",
+        type=Path,
+        default=DEFAULT_ROBOT_CONFIG,
+        help=(
+            "robot_config.yaml to update after fitting "
+            f"(default: {DEFAULT_ROBOT_CONFIG}). Use ~/dexe_robot_server_data/robot_config.yaml "
+            "to update the runtime config directly."
+        ),
+    )
+    parser.add_argument(
+        "--no-update-robot-config",
+        action="store_true",
+        help="Do not write estimated parameters back to robot_config.yaml.",
+    )
     parser.add_argument("--self-test", action="store_true", help="Run synthetic fitting test and exit.")
     args = parser.parse_args()
 
@@ -720,6 +786,8 @@ def main() -> None:
                 "avg_duration": args.avg_duration,
                 "min_samples": args.min_samples,
                 "model_sign": args.model_sign,
+                "robot_config": str(args.robot_config.expanduser()),
+                "update_robot_config": not args.no_update_robot_config,
                 "wrench_mapping": (
                     "state_mapped: use force_sensor directly as EE wrench"
                     if args.wrench_format == "state_mapped"
@@ -732,6 +800,9 @@ def main() -> None:
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, ensure_ascii=False)
         print(f"结果已保存: {out_path}")
+
+        if not args.no_update_robot_config:
+            update_robot_config(args.robot_config, result)
     finally:
         executor.shutdown()
         node.destroy_node()
