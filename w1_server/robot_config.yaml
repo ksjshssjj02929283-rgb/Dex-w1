@@ -165,9 +165,9 @@ joints:
       enabled: true
       frequency: 6.7
     joint_impedance_control:
-      stiffness: 170.0
-      damping: 10.0
-      integral_ratio: 0.05
+      stiffness: 900.0
+      damping: 70.0
+      integral_ratio: 0.02
 
   - name: "LEFT_J2"
     index: 7
@@ -181,9 +181,9 @@ joints:
       enabled: true
       frequency: 9.5
     joint_impedance_control:
-      stiffness: 200.0
-      damping: 20.0
-      integral_ratio: 0.05
+      stiffness: 750.0
+      damping: 62.0
+      integral_ratio: 0.03
 
   - name: "LEFT_J3"
     index: 8
@@ -197,9 +197,9 @@ joints:
       enabled: true
       frequency: 9.5
     joint_impedance_control:
-      stiffness: 170.0
-      damping: 15.0
-      integral_ratio: 0.05
+      stiffness: 650.0
+      damping: 35.0
+      integral_ratio: 0.03
 
   - name: "LEFT_J4"
     index: 9
@@ -213,9 +213,9 @@ joints:
       enabled: true
       frequency: 12
     joint_impedance_control:
-      stiffness: 30.0
-      damping: 30.0
-      integral_ratio: 0.05
+      stiffness: 600.0
+      damping: 33.0
+      integral_ratio: 0.03
 
   - name: "LEFT_J5"
     index: 10
@@ -261,8 +261,8 @@ joints:
       enabled: true
       frequency: 12
     joint_impedance_control:
-      stiffness: 160.0
-      damping: 10.0
+      stiffness: 20.0
+      damping: 1.5
       integral_ratio: 0.05
 
   - name: "RIGHT_J1"
@@ -277,9 +277,9 @@ joints:
       enabled: true
       frequency: 6.7
     joint_impedance_control:
-      stiffness: 160.0
-      damping: 20.0
-      integral_ratio: 0.05
+      stiffness: 900.0
+      damping: 70.0
+      integral_ratio: 0.02
 
   - name: "RIGHT_J2"
     index: 14
@@ -293,9 +293,9 @@ joints:
       enabled: true
       frequency: 9.5
     joint_impedance_control:
-      stiffness: 200.0
-      damping: 15.0
-      integral_ratio: 0.05
+      stiffness: 750.0
+      damping: 62.0
+      integral_ratio: 0.03
 
   - name: "RIGHT_J3"
     index: 15
@@ -309,9 +309,9 @@ joints:
       enabled: true
       frequency: 9.5
     joint_impedance_control:
-      stiffness: 160.0
-      damping: 30.0
-      integral_ratio: 0.05
+      stiffness: 650.0
+      damping: 35.0
+      integral_ratio: 0.03
 
   - name: "RIGHT_J4"
     index: 16
@@ -325,9 +325,9 @@ joints:
       enabled: true
       frequency: 12
     joint_impedance_control:
-      stiffness: 30.0
-      damping: 2.0
-      integral_ratio: 0.05
+      stiffness: 600.0
+      damping: 33.0
+      integral_ratio: 0.03
 
   - name: "RIGHT_J5"
     index: 17
@@ -373,6 +373,6 @@ joints:
       enabled: true
       frequency: 12
     joint_impedance_control:
-      stiffness: 30.0
-      damping: 2.0
+      stiffness: 20.0
+      damping: 1.5
       integral_ratio: 0.05

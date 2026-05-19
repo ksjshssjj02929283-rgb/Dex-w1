@@ -272,36 +272,37 @@ Int64 RobotServerBase::MakeNewRequestID(const PlannerRequest& planner_request) {
 
 void RobotServerBase::MoveRobotCallback(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>> request_handle) {
+    RCLCPP_INFO(this->get_logger(), "Executing MoveRobotCallback for ID generation... UUID: %s",
+                rclcpp_action::to_string(request_handle->get_goal_id()).c_str());
     PlannerRequest planner_request = utils::ParseMoveRequest(request_handle);
     auto request_id = MakeNewRequestID(planner_request);
-
-    // Publish feedback with request id
-    auto feedback = std::make_shared<MoveRobot::Feedback>();
-    feedback->request_id = request_id;
-    request_handle->publish_feedback(feedback);
 
     if (request_id < 0) {
         RCLCPP_WARN(this->get_logger(), "MakeNewRequestID < 0, failed to queue move robot request");
         LOG_CRIT << "MakeNewRequestID < 0, failed to queue move robot request";
-        return;
+    } else {
+        planner_request.request_id = request_id;
+        planner_request.type >= RequestType::StopMove
+            ? this->manager_buffers_.emergency_request_queue->EnQueue(planner_request)
+            : this->manager_buffers_.request_queue->EnQueue(planner_request);
+
+        this->request_handle_queue_.EnQueue(request_handle);
+        RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, arm = %s, is emergency request: %s, config: %s",
+                    planner_request.request_id, request_handle->get_goal()->type.c_str(),
+                    request_handle->get_goal()->motion_group.c_str(),
+                    planner_request.type >= RequestType::StopMove ? "true" : "false",
+                    request_handle->get_goal()->config.c_str());
+
+        LOG_INFO << "Request_id = " << planner_request.request_id
+                 << ", Received, type = " << request_handle->get_goal()->type
+                 << ", arm = " << request_handle->get_goal()->motion_group
+                 << ", is emergency request: " << (planner_request.type >= RequestType::StopMove ? "true" : "false")
+                 << ", config: " << request_handle->get_goal()->config;
     }
-    planner_request.request_id = request_id;
-    planner_request.type >= RequestType::StopMove
-        ? this->manager_buffers_.emergency_request_queue->EnQueue(planner_request)
-        : this->manager_buffers_.request_queue->EnQueue(planner_request);
-
-    this->request_handle_queue_.EnQueue(request_handle);
-    RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, arm = %s, is emergency request: %s, config: %s",
-                planner_request.request_id, request_handle->get_goal()->type.c_str(),
-                request_handle->get_goal()->motion_group.c_str(),
-                planner_request.type >= RequestType::StopMove ? "true" : "false",
-                request_handle->get_goal()->config.c_str());
-
-    LOG_INFO << "Request_id = " << planner_request.request_id
-             << ", Received, type = " << request_handle->get_goal()->type
-             << ", arm = " << request_handle->get_goal()->motion_group
-             << ", is emergency request: " << (planner_request.type >= RequestType::StopMove ? "true" : "false")
-             << ", config: " << request_handle->get_goal()->config;
+    // Publish feedback with request id
+    auto feedback = std::make_shared<MoveRobot::Feedback>();
+    feedback->request_id = request_id;
+    request_handle->publish_feedback(feedback);
 }
 
 void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::SharedPtr streaming_msg) {
