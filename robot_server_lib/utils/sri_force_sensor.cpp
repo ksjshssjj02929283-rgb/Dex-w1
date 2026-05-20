@@ -2,6 +2,8 @@
 
 #include <pthread.h>
 
+#include <utility>
+
 void Setup_Realtime(int priority) {
     // 锁内存，避免分页抖动
     if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
@@ -109,6 +111,43 @@ void SriForceSensor::ClosePort(int fd) {
     }
 }
 
+void SriForceSensor::SetToolGravityCompensationForZeroCalibration(
+    bool enabled,
+    double tool_mass_kg,
+    const robot_server_lib::Vector3d& tool_com_m,
+    double gravity_magnitude,
+    int model_sign,
+    std::function<robot_server_lib::Matrix3d()> rotation_world_from_sensor_provider) {
+    mToolGravityCompensationForZeroEnabled = enabled && tool_mass_kg > 0.0 && gravity_magnitude > 0.0;
+    mToolMassKg = tool_mass_kg;
+    mToolGravityMagnitude = gravity_magnitude;
+    mToolModelSign = model_sign;
+    mToolComM = tool_com_m;
+    mRotationWorldFromSensorProvider = std::move(rotation_world_from_sensor_provider);
+}
+
+robot_server_lib::Vector6d SriForceSensor::ComputeToolGravityWrenchRawForZeroCalibration() const {
+    robot_server_lib::Vector6d wrench_raw = robot_server_lib::Vector6d::Zero();
+    if (!mToolGravityCompensationForZeroEnabled) {
+        return wrench_raw;
+    }
+
+    robot_server_lib::Matrix3d rotation_world_from_sensor = robot_server_lib::Matrix3d::Identity();
+    if (mRotationWorldFromSensorProvider) {
+        rotation_world_from_sensor = mRotationWorldFromSensorProvider();
+    }
+
+    const robot_server_lib::Vector3d gravity_world(0.0, 0.0, -mToolGravityMagnitude);
+    const robot_server_lib::Vector3d expected_force_sensor =
+        static_cast<double>(mToolModelSign) * rotation_world_from_sensor.transpose() * (mToolMassKg * gravity_world);
+    const robot_server_lib::Vector3d expected_torque_sensor = mToolComM.cross(expected_force_sensor);
+
+    // SRI原始顺序/符号: raw = [-Fx, -Fy, Fz, -Mx, -My, Mz]。
+    wrench_raw << -expected_force_sensor[0], -expected_force_sensor[1], expected_force_sensor[2],
+        -expected_torque_sensor[0], -expected_torque_sensor[1], expected_torque_sensor[2];
+    return wrench_raw;
+}
+
 // 零位校准方法
 void SriForceSensor::ProcessCalibrationData(float fx, float fy, float fz, float mx, float my, float mz) {
     if (!mIsCalibrating) {
@@ -123,25 +162,32 @@ void SriForceSensor::ProcessCalibrationData(float fx, float fy, float fz, float 
             for (int i = 0; i < 6; i++) {
                 mZeroOffset[i] = mCalibrationSum[i] / mCalibrationSampleCount;
             }
+            mZeroOffsetSampleCount = mCalibrationSampleCount;
+            mZeroOffsetValid = true;
+            const robot_server_lib::Vector6d tool_gravity_wrench_raw =
+                ComputeToolGravityWrenchRawForZeroCalibration();
             printf(
                 "[Info] SRI force sensor: Zero calibration completed: samples=%d, offset=%.4f, %.4f, %.4f, %.4f, %.4f, "
-                "%.4f\n",
+                "%.4f, tool_gravity_raw=%.4f, %.4f, %.4f, %.4f, %.4f, %.4f\n",
                 mCalibrationSampleCount, mZeroOffset[0], mZeroOffset[1], mZeroOffset[2], mZeroOffset[3], mZeroOffset[4],
-                mZeroOffset[5]);
+                mZeroOffset[5], tool_gravity_wrench_raw[0], tool_gravity_wrench_raw[1], tool_gravity_wrench_raw[2],
+                tool_gravity_wrench_raw[3], tool_gravity_wrench_raw[4], tool_gravity_wrench_raw[5]);
             LOG_INFO << "Zero calibration completed: samples=" << mCalibrationSampleCount
                      << ", offset=" << mZeroOffset[0] << ", " << mZeroOffset[1] << ", " << mZeroOffset[2] << ", "
-                     << mZeroOffset[3] << ", " << mZeroOffset[4] << ", " << mZeroOffset[5];
+                     << mZeroOffset[3] << ", " << mZeroOffset[4] << ", " << mZeroOffset[5]
+                     << ", tool_gravity_raw=" << tool_gravity_wrench_raw.transpose();
         }
         mIsCalibrating = false;
         return;
     }
 
-    mCalibrationSum[0] += fx;
-    mCalibrationSum[1] += fy;
-    mCalibrationSum[2] += fz;
-    mCalibrationSum[3] += mx;
-    mCalibrationSum[4] += my;
-    mCalibrationSum[5] += mz;
+    const robot_server_lib::Vector6d tool_gravity_wrench_raw = ComputeToolGravityWrenchRawForZeroCalibration();
+    mCalibrationSum[0] += fx - static_cast<float>(tool_gravity_wrench_raw[0]);
+    mCalibrationSum[1] += fy - static_cast<float>(tool_gravity_wrench_raw[1]);
+    mCalibrationSum[2] += fz - static_cast<float>(tool_gravity_wrench_raw[2]);
+    mCalibrationSum[3] += mx - static_cast<float>(tool_gravity_wrench_raw[3]);
+    mCalibrationSum[4] += my - static_cast<float>(tool_gravity_wrench_raw[4]);
+    mCalibrationSum[5] += mz - static_cast<float>(tool_gravity_wrench_raw[5]);
     mCalibrationSampleCount++;
 }
 
@@ -376,13 +422,24 @@ bool SriForceSensor::Init(int baudrate) {
     usleep(100000);
 
     // 启动零位校准
-    mIsCalibrating = false;
+    mIsCalibrating = true;
     mCalibrationSampleCount = 0;
+    mZeroOffsetSampleCount = 0;
+    mZeroOffsetValid = false;
     memset(mCalibrationSum, 0, sizeof(mCalibrationSum));
     mCalibrationStartTime = std::chrono::steady_clock::now();
 
     // 等待校准完成
+    constexpr int calibration_timeout_ms = 2000;
     while (mIsCalibrating) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - mCalibrationStartTime).count();
+        if (elapsed >= calibration_timeout_ms) {
+            printf("[Warn] SRI force sensor: Zero calibration timeout, samples=%d\n", mCalibrationSampleCount);
+            LOG_WARN << "SRI force sensor zero calibration timeout, samples=" << mCalibrationSampleCount;
+            mIsCalibrating = false;
+            break;
+        }
         usleep(10000);
     }
 
@@ -415,5 +472,18 @@ bool SriForceSensor::PeekLatestRaw(robot_server_lib::Vector6d* output) {
     }
     return false;
 }
+
+bool SriForceSensor::GetZeroOffset(robot_server_lib::Vector6d* output) const {
+    if (!output) {
+        return false;
+    }
+
+    *output << mZeroOffset[0], mZeroOffset[1], mZeroOffset[2], mZeroOffset[3], mZeroOffset[4], mZeroOffset[5];
+    return true;
+}
+
+bool SriForceSensor::HasValidZeroOffset() const { return mZeroOffsetValid; }
+
+int SriForceSensor::GetZeroOffsetSampleCount() const { return mZeroOffsetSampleCount; }
 
 bool SriForceSensor::IsCalibrating() const { return mIsCalibrating; }

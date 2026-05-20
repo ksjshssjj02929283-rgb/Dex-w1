@@ -6,7 +6,7 @@ print_usage() {
     echo ""
     echo "Available property types:"
     echo "  echo            - Echo robot server state topic once"
-    echo "  force           - Monitor force_sensor and raw_force_sensor at 10Hz"
+    echo "  force           - Monitor force_sensor, raw_force_sensor, and force_sensor_bias at 10Hz"
     echo "  log             - Print robot server log"
     echo "  clear_error     - Clear errors (no value needed)"
     echo "  drag            - Enable/Disable drag mode (value: 0 or 1)"
@@ -91,7 +91,11 @@ class ForceMonitor(Node):
     def callback(self, msg):
         try:
             data = json.loads(msg.data)
-            latest = (data.get("force_sensor", []), data.get("raw_force_sensor", []))
+            latest = (
+                data.get("force_sensor", []),
+                data.get("raw_force_sensor", []),
+                data.get("force_sensor_bias", []),
+            )
         except Exception:
             return
         with self.lock:
@@ -102,10 +106,11 @@ class ForceMonitor(Node):
             latest = self.latest
         if latest is None:
             return
-        force_sensor, raw_force_sensor = latest
+        force_sensor, raw_force_sensor, force_sensor_bias = latest
         print("------------------------------------------------", flush=True)
         print(f"force_sensor: {json.dumps(force_sensor, separators=(',', ':'))},", flush=True)
-        print(f"raw_force_sensor: {json.dumps(raw_force_sensor, separators=(',', ':'))}", flush=True)
+        print(f"raw_force_sensor: {json.dumps(raw_force_sensor, separators=(',', ':'))},", flush=True)
+        print(f"force_sensor_bias: {json.dumps(force_sensor_bias, separators=(',', ':'))}", flush=True)
 
 
 rclpy.init()
