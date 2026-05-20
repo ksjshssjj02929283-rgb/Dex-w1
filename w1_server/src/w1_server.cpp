@@ -32,6 +32,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     sensor_force_.setZero();
     sensor_wrench_.setZero();
     raw_sensor_wrench_.setZero();
+    sensor_zero_offset_.setZero();
     LoadToolGravityCompensationConfig(robot_cfg_path);
 
     // 创建 /feedback/joint 发布器
@@ -91,14 +92,29 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
 
     // 初始化力传感器
     primary_sensor_ = std::make_shared<SriForceSensor>();
+    primary_sensor_->SetToolGravityCompensationForZeroCalibration(
+        tool_gravity_compensation_enabled_, tool_mass_kg_, tool_com_m_, tool_gravity_magnitude_, tool_model_sign_,
+        [this]() { return GetEERotationWorldFromEE(0); });
     if (!primary_sensor_->Init(460800)) {
         RCLCPP_WARN(this->get_logger(), "Failed to initialize primary force sensor");
         LOG_WARN << "Failed to initialize primary force sensor";
         primary_sensor_ = nullptr;
     } else {
         primary_sensor_ready_ = true;
+        Vector6d primary_zero_offset = Vector6d::Zero();
+        primary_sensor_->GetZeroOffset(&primary_zero_offset);
+        sensor_zero_offset_.head<6>() = primary_zero_offset;
+        sensor_zero_offset_valid_[0] = primary_sensor_->HasValidZeroOffset();
+        sensor_zero_offset_samples_[0] = primary_sensor_->GetZeroOffsetSampleCount();
         RCLCPP_INFO(this->get_logger(), "Primary force sensor initialized successfully");
+        RCLCPP_INFO(this->get_logger(),
+                    "Primary force sensor zero offset: valid=%d, samples=%d, [%.4f, %.4f, %.4f, %.4f, %.4f, %.4f]",
+                    sensor_zero_offset_valid_[0], sensor_zero_offset_samples_[0],
+                    primary_zero_offset[0], primary_zero_offset[1], primary_zero_offset[2], primary_zero_offset[3],
+                    primary_zero_offset[4], primary_zero_offset[5]);
         LOG_INFO << "Primary force sensor initialized successfully";
+        LOG_INFO << "Primary force sensor zero offset: valid=" << sensor_zero_offset_valid_[0]
+                 << ", samples=" << sensor_zero_offset_samples_[0] << ", offset=" << primary_zero_offset.transpose();
     }
     // secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");  // 暂未使用
     if (!primary_sensor_ready_ && !secondary_sensor_ready_) {
@@ -125,7 +141,6 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
     tool_gravity_magnitude_ = kDefaultGravity;
     tool_model_sign_ = 1;
     tool_com_m_.setZero();
-    tool_w_bias_.setZero();
 
     try {
         const auto config = YAML::LoadFile(robot_cfg_path.string());
@@ -135,9 +150,7 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
         }
 
         Eigen::VectorXd com_mm;
-        Eigen::VectorXd w_bias;
-        if (!ReadYamlVector(node["com_mm"], 3, com_mm) || !ReadYamlVector(node["w_bias"], 6, w_bias) ||
-            !node["mass_kg"]) {
+        if (!ReadYamlVector(node["com_mm"], 3, com_mm) || !node["mass_kg"]) {
             RCLCPP_WARN(this->get_logger(), "Invalid tool_gravity_compensation config, disabled");
             return;
         }
@@ -147,10 +160,9 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
             tool_gravity_magnitude_ = node["gravity_magnitude"].as<double>();
         }
         if (node["model_sign"]) {
-        tool_model_sign_ = node["model_sign"].as<int>();
+            tool_model_sign_ = node["model_sign"].as<int>();
         }
         tool_com_m_ = com_mm.head<3>() / 1000.0;
-        tool_w_bias_ = MapSriRawWrenchToEE(w_bias.head<6>());
         tool_gravity_compensation_enabled_ = true;
         RCLCPP_INFO(this->get_logger(), "Tool gravity compensation enabled, mass_kg=%.4f, gravity=%.4f, model_sign=%d",
                     tool_mass_kg_, tool_gravity_magnitude_, tool_model_sign_);
@@ -193,8 +205,8 @@ Vector6d RobotServer::ApplyToolGravityCompensation(const Vector6d& raw_wrench, i
         static_cast<double>(tool_model_sign_) * rotation_world_from_ee.transpose() * (tool_mass_kg_ * gravity_world);
 
     Vector6d expected_wrench_ee;
-    expected_wrench_ee.head<3>() = expected_force_ee + tool_w_bias_.head<3>();
-    expected_wrench_ee.tail<3>() = tool_com_m_.cross(expected_force_ee) + tool_w_bias_.tail<3>();
+    expected_wrench_ee.head<3>() = expected_force_ee;
+    expected_wrench_ee.tail<3>() = tool_com_m_.cross(expected_force_ee);
 
     return wrench_ee - expected_wrench_ee;
 }
@@ -225,17 +237,35 @@ void RobotServer::TorqueControlThreadFunc() {
         // 读取力传感器数据
         Vector6d sensor_data_primary = Vector6d::Zero();
         Vector6d sensor_data_secondary = Vector6d::Zero();
+        Vector6d zeroed_sensor_data_primary = Vector6d::Zero();
+        Vector6d zeroed_sensor_data_secondary = Vector6d::Zero();
         Vector6d raw_sensor_data_primary = Vector6d::Zero();
         Vector6d raw_sensor_data_secondary = Vector6d::Zero();
         const bool primary_wrench_valid =
-            primary_sensor_ && primary_sensor_ready_ && primary_sensor_->PeekLatestRaw(&raw_sensor_data_primary);
+            primary_sensor_ && primary_sensor_ready_ && primary_sensor_->PeekLatest(&zeroed_sensor_data_primary);
         const bool secondary_wrench_valid =
-            secondary_sensor_ && secondary_sensor_ready_ && secondary_sensor_->PeekLatestRaw(&raw_sensor_data_secondary);
+            secondary_sensor_ && secondary_sensor_ready_ && secondary_sensor_->PeekLatest(&zeroed_sensor_data_secondary);
+        if (primary_sensor_ && primary_sensor_ready_) {
+            primary_sensor_->PeekLatestRaw(&raw_sensor_data_primary);
+            Vector6d primary_zero_offset = Vector6d::Zero();
+            primary_sensor_->GetZeroOffset(&primary_zero_offset);
+            sensor_zero_offset_.head<6>() = primary_zero_offset;
+            sensor_zero_offset_valid_[0] = primary_sensor_->HasValidZeroOffset();
+            sensor_zero_offset_samples_[0] = primary_sensor_->GetZeroOffsetSampleCount();
+        }
+        if (secondary_sensor_ && secondary_sensor_ready_) {
+            secondary_sensor_->PeekLatestRaw(&raw_sensor_data_secondary);
+            Vector6d secondary_zero_offset = Vector6d::Zero();
+            secondary_sensor_->GetZeroOffset(&secondary_zero_offset);
+            sensor_zero_offset_.tail<6>() = secondary_zero_offset;
+            sensor_zero_offset_valid_[1] = secondary_sensor_->HasValidZeroOffset();
+            sensor_zero_offset_samples_[1] = secondary_sensor_->GetZeroOffsetSampleCount();
+        }
         if (primary_wrench_valid) {
-            sensor_data_primary = ApplyToolGravityCompensation(raw_sensor_data_primary, 0);
+            sensor_data_primary = ApplyToolGravityCompensation(zeroed_sensor_data_primary, 0);
         }
         if (secondary_wrench_valid) {
-            sensor_data_secondary = ApplyToolGravityCompensation(raw_sensor_data_secondary, 1);
+            sensor_data_secondary = ApplyToolGravityCompensation(zeroed_sensor_data_secondary, 1);
         }
 
         // 叠加手动输入的力数据；没有六维力传感器时保持控制律输入 wrench 为零。
@@ -750,6 +780,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_torque_sensor\":" + utils::VectorToJsonArrayString(torque_sensor_arr_, index_offset, ndof_config_).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
         ",\n  \"raw_force_sensor\":" + utils::VectorToJsonArrayString(raw_sensor_wrench_).str() +
+        ",\n  \"force_sensor_bias\":" + utils::VectorToJsonArrayString(sensor_zero_offset_).str() +
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(negative_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(positive_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_measurement, 0, this->robot_mode_ == RobotMode::SingleArm? 7 : 14).str() +

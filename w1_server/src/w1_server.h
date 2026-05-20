@@ -124,12 +124,14 @@ private:
     Vector3d sensor_force_;
     Vector12d sensor_wrench_;
     Vector12d raw_sensor_wrench_;
+    Vector12d sensor_zero_offset_;
+    bool sensor_zero_offset_valid_[2] = {false, false};
+    int sensor_zero_offset_samples_[2] = {0, 0};
     bool tool_gravity_compensation_enabled_ = false;
     double tool_mass_kg_ = 0.0;
     double tool_gravity_magnitude_ = 9.79;
     int tool_model_sign_ = 1;
     Vector3d tool_com_m_ = Vector3d::Zero();
-    Vector6d tool_w_bias_ = Vector6d::Zero();
     std::shared_ptr<SriForceSensor> primary_sensor_;
     std::shared_ptr<SriForceSensor> secondary_sensor_;  // 暂未使用
     bool primary_sensor_ready_ = false;

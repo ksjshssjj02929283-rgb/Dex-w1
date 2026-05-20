@@ -65,6 +65,20 @@ public:
     // 读取最新力传感器数据 (fx, fy, fz, mx, my, mz)
     bool PeekLatest(robot_server_lib::Vector6d* output);
     bool PeekLatestRaw(robot_server_lib::Vector6d* output);
+    bool GetZeroOffset(robot_server_lib::Vector6d* output) const;
+    bool HasValidZeroOffset() const;
+    int GetZeroOffsetSampleCount() const;
+
+    // 设置零位校准时使用的工具自重补偿参数。
+    // tool_com_m: 工具质心在力传感器/EE坐标系下的位置，单位 m。
+    // rotation_world_from_sensor_provider: 可选，返回 world->sensor/EE 的旋转矩阵；为空时按单位阵处理。
+    void SetToolGravityCompensationForZeroCalibration(
+        bool enabled,
+        double tool_mass_kg,
+        const robot_server_lib::Vector3d& tool_com_m,
+        double gravity_magnitude = 9.79,
+        int model_sign = 1,
+        std::function<robot_server_lib::Matrix3d()> rotation_world_from_sensor_provider = nullptr);
 
     // 是否正在校准
     bool IsCalibrating() const;
@@ -82,9 +96,18 @@ private:
     // 零位校准相关
     bool mIsCalibrating = false;
     int mCalibrationSampleCount = 0;
+    int mZeroOffsetSampleCount = 0;
+    bool mZeroOffsetValid = false;
     float mZeroOffset[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     float mCalibrationSum[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     std::chrono::steady_clock::time_point mCalibrationStartTime;
+
+    bool mToolGravityCompensationForZeroEnabled = false;
+    double mToolMassKg = 0.0;
+    double mToolGravityMagnitude = 9.79;
+    int mToolModelSign = 1;
+    robot_server_lib::Vector3d mToolComM = robot_server_lib::Vector3d::Zero();
+    std::function<robot_server_lib::Matrix3d()> mRotationWorldFromSensorProvider;
 
     // 串口方法
     int OpenPort(const char* device);
@@ -115,6 +138,7 @@ private:
     // 零位校准方法
     void ProcessCalibrationData(float fx, float fy, float fz, float mx, float my, float mz);
     void ApplyZeroOffset(float& fx, float& fy, float& fz, float& mx, float& my, float& mz);
+    robot_server_lib::Vector6d ComputeToolGravityWrenchRawForZeroCalibration() const;
 
     // 辅助方法
     const char* FindSerialPort();
