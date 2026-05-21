@@ -94,7 +94,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     primary_sensor_ = std::make_shared<SriForceSensor>();
     primary_sensor_->SetToolGravityCompensationForZeroCalibration(
         tool_gravity_compensation_enabled_, tool_mass_kg_, tool_com_m_, tool_gravity_magnitude_, tool_model_sign_,
-        [this]() { return GetEERotationWorldFromEE(0); });
+        [this]() -> std::optional<Eigen::Matrix3d> {
+            return GetEERotationWorldFromEE(0);
+        });
     if (!primary_sensor_->Init(460800)) {
         RCLCPP_WARN(this->get_logger(), "Failed to initialize primary force sensor");
         LOG_WARN << "Failed to initialize primary force sensor";
