@@ -70,6 +70,12 @@ public:
     bool HasValidZeroOffset() const;
     int GetZeroOffsetSampleCount() const;
 
+    // Try to finalize the zero offset using accumulated samples and the
+    // current rotation provider. Returns true on the tick that finalization
+    // succeeds; false if already finalized or conditions are not yet met.
+    // Safe to call from the control loop every tick.
+    bool TryFinalizeBias();
+
     // 设置零位校准时的工具自重补偿参数
     // rotation_world_from_ee_provider: 返回 R_world_from_EE 的旋转矩阵
     void SetToolGravityCompensationForZeroCalibration(
@@ -108,6 +114,9 @@ private:
     int mToolModelSign = 1;
     robot_server_lib::Vector3d mToolComM = robot_server_lib::Vector3d::Zero();
     std::function<std::optional<robot_server_lib::Matrix3d>()> mRotationWorldFromEEProvider;
+
+    mutable std::mutex mCalibrationMutex;
+    static constexpr int kMinCalibrationSamples = 500;  // ~500ms @ 1kHz
 
     // 串口方法
     int OpenPort(const char* device);
