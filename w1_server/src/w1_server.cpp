@@ -166,17 +166,17 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
 }
 
 
-Eigen::Matrix3d RobotServer::GetEERotationWorldFromEE(int arm_index) const {
+std::optional<Eigen::Matrix3d> RobotServer::GetEERotationWorldFromEE(int arm_index) const {
     const auto& ee_pose_world = this->manager_info_.ee_pose_world_measurement;
     const int offset = arm_index * 7;
     if (ee_pose_world.size() < offset + 7) {
-        return Eigen::Matrix3d::Identity();
+        return std::nullopt;
     }
 
     Eigen::Quaterniond q(ee_pose_world[offset + 3], ee_pose_world[offset + 4], ee_pose_world[offset + 5],
                          ee_pose_world[offset + 6]);
-    if (q.norm() <= FloatZeroTol) {
-        return Eigen::Matrix3d::Identity();
+    if (!q.coeffs().allFinite() || q.norm() <= FloatZeroTol) {
+        return std::nullopt;
     }
     q.normalize();
     return q.toRotationMatrix();
