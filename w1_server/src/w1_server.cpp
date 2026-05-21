@@ -187,7 +187,11 @@ Vector6d RobotServer::ApplyToolGravityCompensation(const Vector6d& wrench_ee, in
         return wrench_ee;
     }
 
-    const Eigen::Matrix3d rotation_world_from_ee = GetEERotationWorldFromEE(arm_index);
+    const auto rotation_world_from_ee_opt = GetEERotationWorldFromEE(arm_index);
+    if (!rotation_world_from_ee_opt) {
+        return wrench_ee;
+    }
+    const Eigen::Matrix3d& rotation_world_from_ee = *rotation_world_from_ee_opt;
     const Vector3d gravity_world(0.0, 0.0, -tool_gravity_magnitude_);
     const Vector3d expected_force_ee =
         static_cast<double>(tool_model_sign_) * rotation_world_from_ee.transpose() * (tool_mass_kg_ * gravity_world);
