@@ -155,38 +155,13 @@ robot_server_lib::Vector6d SriForceSensor::ComputeToolGravityWrenchEE() const {
 
 // 零位校准方法
 void SriForceSensor::ProcessCalibrationData(float fx, float fy, float fz, float mx, float my, float mz) {
+    std::lock_guard<std::mutex> lock(mCalibrationMutex);
     if (!mIsCalibrating) {
         return;
     }
-
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - mCalibrationStartTime).count();
-
-    if (elapsed >= 500) {
-        if (mCalibrationSampleCount > 0) {
-            for (int i = 0; i < 6; i++) {
-                mZeroOffset[i] = mCalibrationSum[i] / mCalibrationSampleCount;
-            }
-            mZeroOffsetSampleCount = mCalibrationSampleCount;
-            mZeroOffsetValid = true;
-            printf(
-                "[Info] SRI force sensor: Zero calibration completed: samples=%d, bias_ee=%.4f, %.4f, %.4f, %.4f, %.4f, %.4f\n",
-                mCalibrationSampleCount, mZeroOffset[0], mZeroOffset[1], mZeroOffset[2], mZeroOffset[3], mZeroOffset[4],
-                mZeroOffset[5]);
-            LOG_INFO << "Zero calibration completed: samples=" << mCalibrationSampleCount
-                     << ", bias_ee=" << mZeroOffset[0] << ", " << mZeroOffset[1] << ", " << mZeroOffset[2] << ", "
-                     << mZeroOffset[3] << ", " << mZeroOffset[4] << ", " << mZeroOffset[5];
-        }
-        mIsCalibrating = false;
-        return;
-    }
-
-    // 转换到 EE 坐标系，减去工具重力，得到纯传感器零偏
     const robot_server_lib::Vector6d wrench_ee = MapSriRawToEE(fx, fy, fz, mx, my, mz);
-    const robot_server_lib::Vector6d tool_gravity_ee = ComputeToolGravityWrenchEE();
-    const robot_server_lib::Vector6d bias_sample = wrench_ee - tool_gravity_ee;
-    for (int i = 0; i < 6; i++) {
-        mCalibrationSum[i] += static_cast<float>(bias_sample[i]);
+    for (int i = 0; i < 6; ++i) {
+        mCalibrationSum[i] += static_cast<float>(wrench_ee[i]);
     }
     mCalibrationSampleCount++;
 }
