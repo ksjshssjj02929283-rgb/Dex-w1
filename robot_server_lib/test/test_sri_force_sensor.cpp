@@ -55,3 +55,90 @@ TEST(SRISerialTest, OpenPortAndReadData) {
     // 期望至少读到一些数据（2000Hz * 5s = 10000，容错取 5000）
     EXPECT_GE(count, 5000) << "Too few reads received in 5 seconds";
 }
+
+#include <optional>
+#include <Eigen/Geometry>
+
+namespace {
+// Feed n calibration frames with the given raw float channels.
+void FeedCalibrationFrames(SriForceSensor& s, int n,
+                           float fx, float fy, float fz,
+                           float mx, float my, float mz) {
+    for (int i = 0; i < n; ++i) {
+        s.ProcessCalibrationData(fx, fy, fz, mx, my, mz);
+    }
+}
+}  // namespace
+
+TEST(SriForceSensorBias, FinalizeRequiresEnoughSamples) {
+    SriForceSensor s;
+    s.BeginCalibrationForTest();
+    s.SetToolGravityCompensationForZeroCalibration(
+        false /*enabled=false → no gravity needed*/, 0.0,
+        robot_server_lib::Vector3d::Zero(), 9.79, 1,
+        []() -> std::optional<robot_server_lib::Matrix3d> { return std::nullopt; });
+
+    EXPECT_FALSE(s.TryFinalizeBias());  // zero samples
+    FeedCalibrationFrames(s, 100, 1.0f, 2.0f, 3.0f, 0.1f, 0.2f, 0.3f);
+    EXPECT_FALSE(s.TryFinalizeBias());  // below kMinCalibrationSamples
+    EXPECT_TRUE(s.IsCalibrating());
+
+    FeedCalibrationFrames(s, 500, 1.0f, 2.0f, 3.0f, 0.1f, 0.2f, 0.3f);
+    EXPECT_TRUE(s.TryFinalizeBias());
+    EXPECT_TRUE(s.HasValidZeroOffset());
+    EXPECT_FALSE(s.IsCalibrating());
+    EXPECT_GE(s.GetZeroOffsetSampleCount(), 500);
+}
+
+TEST(SriForceSensorBias, WaitsForValidRotation) {
+    SriForceSensor s;
+    s.BeginCalibrationForTest();
+    bool r_valid = false;
+    s.SetToolGravityCompensationForZeroCalibration(
+        true, 1.0, robot_server_lib::Vector3d::Zero(), 9.79, 1,
+        [&]() -> std::optional<robot_server_lib::Matrix3d> {
+            if (!r_valid) return std::nullopt;
+            return robot_server_lib::Matrix3d::Identity();
+        });
+
+    FeedCalibrationFrames(s, 1000, 0.0f, 0.0f, -9.79f, 0.0f, 0.0f, 0.0f);
+    EXPECT_FALSE(s.TryFinalizeBias());  // R still nullopt
+    EXPECT_FALSE(s.HasValidZeroOffset());
+    EXPECT_TRUE(s.IsCalibrating());
+
+    r_valid = true;
+    EXPECT_TRUE(s.TryFinalizeBias());
+    EXPECT_TRUE(s.HasValidZeroOffset());
+}
+
+TEST(SriForceSensorBias, GravityDisabledFinalizesOnSamplesAlone) {
+    SriForceSensor s;
+    s.BeginCalibrationForTest();
+    s.SetToolGravityCompensationForZeroCalibration(
+        false, 0.0, robot_server_lib::Vector3d::Zero(), 9.79, 1,
+        []() -> std::optional<robot_server_lib::Matrix3d> { return std::nullopt; });
+
+    FeedCalibrationFrames(s, 500, 1.0f, 2.0f, 3.0f, 0.1f, 0.2f, 0.3f);
+    EXPECT_TRUE(s.TryFinalizeBias());
+    EXPECT_TRUE(s.HasValidZeroOffset());
+}
+
+TEST(SriForceSensorBias, PeekLatestBlockedUntilFinalized) {
+    SriForceSensor s;
+    s.BeginCalibrationForTest();
+    robot_server_lib::Vector6d out;
+    EXPECT_FALSE(s.PeekLatest(&out));
+}
+
+TEST(SriForceSensorBias, TryFinalizeReturnsTrueOnceOnly) {
+    SriForceSensor s;
+    s.BeginCalibrationForTest();
+    s.SetToolGravityCompensationForZeroCalibration(
+        false, 0.0, robot_server_lib::Vector3d::Zero(), 9.79, 1,
+        []() -> std::optional<robot_server_lib::Matrix3d> { return std::nullopt; });
+
+    FeedCalibrationFrames(s, 500, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    EXPECT_TRUE(s.TryFinalizeBias());
+    EXPECT_FALSE(s.TryFinalizeBias());  // already finalized → false
+    EXPECT_FALSE(s.TryFinalizeBias());  // still false on subsequent calls
+}

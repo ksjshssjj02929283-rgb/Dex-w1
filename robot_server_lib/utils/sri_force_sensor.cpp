@@ -503,3 +503,16 @@ bool SriForceSensor::HasValidZeroOffset() const { return mZeroOffsetValid; }
 int SriForceSensor::GetZeroOffsetSampleCount() const { return mZeroOffsetSampleCount; }
 
 bool SriForceSensor::IsCalibrating() const { return mIsCalibrating; }
+
+void SriForceSensor::BeginCalibrationForTest() {
+    std::lock_guard<std::mutex> lock(mCalibrationMutex);
+    for (int i = 0; i < 6; ++i) {
+        mCalibrationSum[i] = 0.0f;
+        mZeroOffset[i] = 0.0f;
+    }
+    mCalibrationSampleCount = 0;
+    mZeroOffsetSampleCount = 0;
+    mZeroOffsetValid = false;
+    mIsCalibrating = true;
+    mCalibrationStartTime = std::chrono::steady_clock::now();
+}
