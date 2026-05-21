@@ -51,8 +51,7 @@ private:
     void PublishImu();
     std_msgs::msg::String GetRobotServerStateMsg();
     void LoadToolGravityCompensationConfig(const std::filesystem::path& robot_cfg_path);
-    Vector6d MapSriRawWrenchToEE(const Vector6d& raw_wrench) const;
-    Vector6d ApplyToolGravityCompensation(const Vector6d& raw_wrench, int arm_index) const;
+    Vector6d ApplyToolGravityCompensation(const Vector6d& wrench_ee, int arm_index) const;
     Eigen::Matrix3d GetEERotationWorldFromEE(int arm_index) const;
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;

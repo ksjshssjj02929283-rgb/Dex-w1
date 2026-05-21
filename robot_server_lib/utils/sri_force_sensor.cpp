@@ -111,41 +111,42 @@ void SriForceSensor::ClosePort(int fd) {
     }
 }
 
+robot_server_lib::Vector6d SriForceSensor::MapSriRawToEE(float fx, float fy, float fz, float mx, float my, float mz) {
+    robot_server_lib::Vector6d wrench_ee;
+    wrench_ee << -fx, -fy, fz, -mx, -my, mz;
+    return wrench_ee;
+}
+
 void SriForceSensor::SetToolGravityCompensationForZeroCalibration(
     bool enabled,
     double tool_mass_kg,
     const robot_server_lib::Vector3d& tool_com_m,
     double gravity_magnitude,
     int model_sign,
-    std::function<robot_server_lib::Matrix3d()> rotation_world_from_sensor_provider) {
+    std::function<robot_server_lib::Matrix3d()> rotation_world_from_ee_provider) {
     mToolGravityCompensationForZeroEnabled = enabled && tool_mass_kg > 0.0 && gravity_magnitude > 0.0;
     mToolMassKg = tool_mass_kg;
     mToolGravityMagnitude = gravity_magnitude;
     mToolModelSign = model_sign;
     mToolComM = tool_com_m;
-    mRotationWorldFromSensorProvider = std::move(rotation_world_from_sensor_provider);
+    mRotationWorldFromEEProvider = std::move(rotation_world_from_ee_provider);
 }
 
-robot_server_lib::Vector6d SriForceSensor::ComputeToolGravityWrenchRawForZeroCalibration() const {
-    robot_server_lib::Vector6d wrench_raw = robot_server_lib::Vector6d::Zero();
+robot_server_lib::Vector6d SriForceSensor::ComputeToolGravityWrenchEE() const {
     if (!mToolGravityCompensationForZeroEnabled) {
-        return wrench_raw;
+        return robot_server_lib::Vector6d::Zero();
     }
-
-    robot_server_lib::Matrix3d rotation_world_from_sensor = robot_server_lib::Matrix3d::Identity();
-    if (mRotationWorldFromSensorProvider) {
-        rotation_world_from_sensor = mRotationWorldFromSensorProvider();
+    robot_server_lib::Matrix3d R = robot_server_lib::Matrix3d::Identity();
+    if (mRotationWorldFromEEProvider) {
+        R = mRotationWorldFromEEProvider();
     }
-
     const robot_server_lib::Vector3d gravity_world(0.0, 0.0, -mToolGravityMagnitude);
-    const robot_server_lib::Vector3d expected_force_sensor =
-        static_cast<double>(mToolModelSign) * rotation_world_from_sensor.transpose() * (mToolMassKg * gravity_world);
-    const robot_server_lib::Vector3d expected_torque_sensor = mToolComM.cross(expected_force_sensor);
-
-    // SRI原始顺序/符号: raw = [-Fx, -Fy, Fz, -Mx, -My, Mz]。
-    wrench_raw << -expected_force_sensor[0], -expected_force_sensor[1], expected_force_sensor[2],
-        -expected_torque_sensor[0], -expected_torque_sensor[1], expected_torque_sensor[2];
-    return wrench_raw;
+    const robot_server_lib::Vector3d force_ee =
+        static_cast<double>(mToolModelSign) * R.transpose() * (mToolMassKg * gravity_world);
+    robot_server_lib::Vector6d wrench_ee;
+    wrench_ee.head<3>() = force_ee;
+    wrench_ee.tail<3>() = mToolComM.cross(force_ee);
+    return wrench_ee;
 }
 
 // 零位校准方法
@@ -164,40 +165,32 @@ void SriForceSensor::ProcessCalibrationData(float fx, float fy, float fz, float 
             }
             mZeroOffsetSampleCount = mCalibrationSampleCount;
             mZeroOffsetValid = true;
-            const robot_server_lib::Vector6d tool_gravity_wrench_raw =
-                ComputeToolGravityWrenchRawForZeroCalibration();
             printf(
-                "[Info] SRI force sensor: Zero calibration completed: samples=%d, offset=%.4f, %.4f, %.4f, %.4f, %.4f, "
-                "%.4f, tool_gravity_raw=%.4f, %.4f, %.4f, %.4f, %.4f, %.4f\n",
+                "[Info] SRI force sensor: Zero calibration completed: samples=%d, bias_ee=%.4f, %.4f, %.4f, %.4f, %.4f, %.4f\n",
                 mCalibrationSampleCount, mZeroOffset[0], mZeroOffset[1], mZeroOffset[2], mZeroOffset[3], mZeroOffset[4],
-                mZeroOffset[5], tool_gravity_wrench_raw[0], tool_gravity_wrench_raw[1], tool_gravity_wrench_raw[2],
-                tool_gravity_wrench_raw[3], tool_gravity_wrench_raw[4], tool_gravity_wrench_raw[5]);
+                mZeroOffset[5]);
             LOG_INFO << "Zero calibration completed: samples=" << mCalibrationSampleCount
-                     << ", offset=" << mZeroOffset[0] << ", " << mZeroOffset[1] << ", " << mZeroOffset[2] << ", "
-                     << mZeroOffset[3] << ", " << mZeroOffset[4] << ", " << mZeroOffset[5]
-                     << ", tool_gravity_raw=" << tool_gravity_wrench_raw.transpose();
+                     << ", bias_ee=" << mZeroOffset[0] << ", " << mZeroOffset[1] << ", " << mZeroOffset[2] << ", "
+                     << mZeroOffset[3] << ", " << mZeroOffset[4] << ", " << mZeroOffset[5];
         }
         mIsCalibrating = false;
         return;
     }
 
-    const robot_server_lib::Vector6d tool_gravity_wrench_raw = ComputeToolGravityWrenchRawForZeroCalibration();
-    mCalibrationSum[0] += fx - static_cast<float>(tool_gravity_wrench_raw[0]);
-    mCalibrationSum[1] += fy - static_cast<float>(tool_gravity_wrench_raw[1]);
-    mCalibrationSum[2] += fz - static_cast<float>(tool_gravity_wrench_raw[2]);
-    mCalibrationSum[3] += mx - static_cast<float>(tool_gravity_wrench_raw[3]);
-    mCalibrationSum[4] += my - static_cast<float>(tool_gravity_wrench_raw[4]);
-    mCalibrationSum[5] += mz - static_cast<float>(tool_gravity_wrench_raw[5]);
+    // 转换到 EE 坐标系，减去工具重力，得到纯传感器零偏
+    const robot_server_lib::Vector6d wrench_ee = MapSriRawToEE(fx, fy, fz, mx, my, mz);
+    const robot_server_lib::Vector6d tool_gravity_ee = ComputeToolGravityWrenchEE();
+    const robot_server_lib::Vector6d bias_sample = wrench_ee - tool_gravity_ee;
+    for (int i = 0; i < 6; i++) {
+        mCalibrationSum[i] += static_cast<float>(bias_sample[i]);
+    }
     mCalibrationSampleCount++;
 }
 
-void SriForceSensor::ApplyZeroOffset(float& fx, float& fy, float& fz, float& mx, float& my, float& mz) {
-    fx -= mZeroOffset[0];
-    fy -= mZeroOffset[1];
-    fz -= mZeroOffset[2];
-    mx -= mZeroOffset[3];
-    my -= mZeroOffset[4];
-    mz -= mZeroOffset[5];
+void SriForceSensor::ApplyZeroOffset(robot_server_lib::Vector6d& wrench_ee) {
+    for (int i = 0; i < 6; i++) {
+        wrench_ee[i] -= mZeroOffset[i];
+    }
 }
 
 // 解析方法
@@ -365,11 +358,10 @@ void SriForceSensor::ReadLoop() {
                         raw_buffer_->AppendNewElement(raw_vec);
                     }
 
-                    ApplyZeroOffset(fx, fy, fz, mx, my, mz);
+                    robot_server_lib::Vector6d wrench_ee = MapSriRawToEE(fx, fy, fz, mx, my, mz);
+                    ApplyZeroOffset(wrench_ee);
                     if (buffer_) {
-                        robot_server_lib::Vector6d vec;
-                        vec << fx, fy, fz, mx, my, mz;
-                        buffer_->AppendNewElement(vec);
+                        buffer_->AppendNewElement(wrench_ee);
                     }
                 }
             } else if (rx_buffer.size() >= 14) {
