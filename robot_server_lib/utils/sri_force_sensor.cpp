@@ -123,7 +123,7 @@ void SriForceSensor::SetToolGravityCompensationForZeroCalibration(
     const robot_server_lib::Vector3d& tool_com_m,
     double gravity_magnitude,
     int model_sign,
-    std::function<robot_server_lib::Matrix3d()> rotation_world_from_ee_provider) {
+    std::function<std::optional<robot_server_lib::Matrix3d>()> rotation_world_from_ee_provider) {
     mToolGravityCompensationForZeroEnabled = enabled && tool_mass_kg > 0.0 && gravity_magnitude > 0.0;
     mToolMassKg = tool_mass_kg;
     mToolGravityMagnitude = gravity_magnitude;
@@ -136,10 +136,14 @@ robot_server_lib::Vector6d SriForceSensor::ComputeToolGravityWrenchEE() const {
     if (!mToolGravityCompensationForZeroEnabled) {
         return robot_server_lib::Vector6d::Zero();
     }
-    robot_server_lib::Matrix3d R = robot_server_lib::Matrix3d::Identity();
-    if (mRotationWorldFromEEProvider) {
-        R = mRotationWorldFromEEProvider();
+    if (!mRotationWorldFromEEProvider) {
+        return robot_server_lib::Vector6d::Zero();
     }
+    const auto R_opt = mRotationWorldFromEEProvider();
+    if (!R_opt) {
+        return robot_server_lib::Vector6d::Zero();
+    }
+    const robot_server_lib::Matrix3d& R = *R_opt;
     const robot_server_lib::Vector3d gravity_world(0.0, 0.0, -mToolGravityMagnitude);
     const robot_server_lib::Vector3d force_ee =
         static_cast<double>(mToolModelSign) * R.transpose() * (mToolMassKg * gravity_world);

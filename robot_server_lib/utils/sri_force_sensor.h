@@ -24,6 +24,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -77,7 +78,7 @@ public:
         const robot_server_lib::Vector3d& tool_com_m,
         double gravity_magnitude = 9.79,
         int model_sign = 1,
-        std::function<robot_server_lib::Matrix3d()> rotation_world_from_ee_provider = nullptr);
+        std::function<std::optional<robot_server_lib::Matrix3d>()> rotation_world_from_ee_provider = nullptr);
 
     // 是否正在校准
     bool IsCalibrating() const;
@@ -106,7 +107,7 @@ private:
     double mToolGravityMagnitude = 9.79;
     int mToolModelSign = 1;
     robot_server_lib::Vector3d mToolComM = robot_server_lib::Vector3d::Zero();
-    std::function<robot_server_lib::Matrix3d()> mRotationWorldFromEEProvider;
+    std::function<std::optional<robot_server_lib::Matrix3d>()> mRotationWorldFromEEProvider;
 
     // 串口方法
     int OpenPort(const char* device);
