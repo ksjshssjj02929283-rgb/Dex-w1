@@ -81,10 +81,11 @@ public:
     // Production code should use Init() instead.
     void BeginCalibrationForTest();
 
-    // Accumulate one raw frame into the calibration sums. Public so unit
-    // tests can drive calibration without spinning up the serial read
-    // thread; production code calls this from ReadLoop().
-    void ProcessCalibrationData(float fx, float fy, float fz, float mx, float my, float mz);
+    // Test-only helper: feed one calibration frame from outside the read
+    // thread. Forwards to the private ProcessCalibrationData.
+    void ProcessCalibrationDataForTest(float fx, float fy, float fz, float mx, float my, float mz) {
+        ProcessCalibrationData(fx, fy, fz, mx, my, mz);
+    }
 
     // 设置零位校准时的工具自重补偿参数
     // rotation_world_from_ee_provider: 返回 R_world_from_EE 的旋转矩阵
@@ -155,6 +156,7 @@ private:
     uint8_t MyCRC_GetCRC8(uint8_t* pDat, uint8_t bytes);
 
     // 零位校准方法
+    void ProcessCalibrationData(float fx, float fy, float fz, float mx, float my, float mz);
     void ApplyZeroOffset(robot_server_lib::Vector6d& wrench_ee);
     static robot_server_lib::Vector6d MapSriRawToEE(float fx, float fy, float fz, float mx, float my, float mz);
     robot_server_lib::Vector6d ComputeToolGravityWrenchEE() const;

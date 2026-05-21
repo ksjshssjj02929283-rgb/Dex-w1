@@ -65,7 +65,7 @@ void FeedCalibrationFrames(SriForceSensor& s, int n,
                            float fx, float fy, float fz,
                            float mx, float my, float mz) {
     for (int i = 0; i < n; ++i) {
-        s.ProcessCalibrationData(fx, fy, fz, mx, my, mz);
+        s.ProcessCalibrationDataForTest(fx, fy, fz, mx, my, mz);
     }
 }
 }  // namespace
