@@ -384,10 +384,12 @@ void SriForceSensor::ReadLoop() {
                         raw_buffer_->AppendNewElement(raw_vec);
                     }
 
-                    robot_server_lib::Vector6d wrench_ee = MapSriRawToEE(fx, fy, fz, mx, my, mz);
-                    ApplyZeroOffset(wrench_ee);
-                    if (buffer_) {
-                        buffer_->AppendNewElement(wrench_ee);
+                    if (mZeroOffsetValid) {
+                        robot_server_lib::Vector6d wrench_ee = MapSriRawToEE(fx, fy, fz, mx, my, mz);
+                        ApplyZeroOffset(wrench_ee);
+                        if (buffer_) {
+                            buffer_->AppendNewElement(wrench_ee);
+                        }
                     }
                 }
             } else if (rx_buffer.size() >= 14) {
@@ -471,6 +473,9 @@ void SriForceSensor::Close() {
 }
 
 bool SriForceSensor::PeekLatest(robot_server_lib::Vector6d* output) {
+    if (!HasValidZeroOffset()) {
+        return false;
+    }
     if (buffer_ && output) {
         return buffer_->PeekLatest(output);
     }
