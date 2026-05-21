@@ -439,27 +439,20 @@ bool SriForceSensor::Init(int baudrate) {
     // 等待数据开始流动
     usleep(100000);
 
-    // 启动零位校准
-    mIsCalibrating = true;
-    mCalibrationSampleCount = 0;
-    mZeroOffsetSampleCount = 0;
-    mZeroOffsetValid = false;
-    memset(mCalibrationSum, 0, sizeof(mCalibrationSum));
-    mCalibrationStartTime = std::chrono::steady_clock::now();
-
-    // 等待校准完成
-    constexpr int calibration_timeout_ms = 2000;
-    while (mIsCalibrating) {
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - mCalibrationStartTime).count();
-        if (elapsed >= calibration_timeout_ms) {
-            printf("[Warn] SRI force sensor: Zero calibration timeout, samples=%d\n", mCalibrationSampleCount);
-            LOG_WARN << "SRI force sensor zero calibration timeout, samples=" << mCalibrationSampleCount;
-            mIsCalibrating = false;
-            break;
-        }
-        usleep(10000);
+    // 启动零位校准 (在锁内初始化以避免与读取线程的竞争)
+    {
+        std::lock_guard<std::mutex> lock(mCalibrationMutex);
+        memset(mCalibrationSum, 0, sizeof(mCalibrationSum));
+        memset(mZeroOffset, 0, sizeof(mZeroOffset));
+        mCalibrationSampleCount = 0;
+        mZeroOffsetSampleCount = 0;
+        mZeroOffsetValid = false;
+        mIsCalibrating = true;
+        mCalibrationStartTime = std::chrono::steady_clock::now();
     }
+
+    // 校准结束由控制循环中的 TryFinalizeBias() 异步完成 (它可以使用真实的 R 来减去重力)，
+    // 因此 Init() 不再阻塞等待校准完成。
 
     printf("[Info] SRI force sensor: Initialized successfully\n");
     LOG_INFO << "SRI force sensor initialized successfully";
