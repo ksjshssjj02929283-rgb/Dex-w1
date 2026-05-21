@@ -166,6 +166,53 @@ void SriForceSensor::ProcessCalibrationData(float fx, float fy, float fz, float 
     mCalibrationSampleCount++;
 }
 
+bool SriForceSensor::TryFinalizeBias() {
+    std::lock_guard<std::mutex> lock(mCalibrationMutex);
+    if (!mIsCalibrating) {
+        return false;
+    }
+    if (mCalibrationSampleCount < kMinCalibrationSamples) {
+        return false;
+    }
+
+    robot_server_lib::Vector6d tool_gravity_ee = robot_server_lib::Vector6d::Zero();
+    if (mToolGravityCompensationForZeroEnabled) {
+        if (!mRotationWorldFromEEProvider) {
+            return false;
+        }
+        const auto R_opt = mRotationWorldFromEEProvider();
+        if (!R_opt) {
+            return false;
+        }
+        const robot_server_lib::Matrix3d& R = *R_opt;
+        const robot_server_lib::Vector3d gravity_world(0.0, 0.0, -mToolGravityMagnitude);
+        const robot_server_lib::Vector3d force_ee =
+            static_cast<double>(mToolModelSign) * R.transpose() * (mToolMassKg * gravity_world);
+        tool_gravity_ee.head<3>() = force_ee;
+        tool_gravity_ee.tail<3>() = mToolComM.cross(force_ee);
+    }
+
+    for (int i = 0; i < 6; ++i) {
+        const float mean = mCalibrationSum[i] /
+                           static_cast<float>(mCalibrationSampleCount);
+        mZeroOffset[i] = mean - static_cast<float>(tool_gravity_ee[i]);
+    }
+    mZeroOffsetSampleCount = mCalibrationSampleCount;
+    mZeroOffsetValid = true;
+    mIsCalibrating = false;
+
+    // Restore observability log line that ProcessCalibrationData used to emit.
+    printf(
+        "[Info] SRI force sensor: Zero calibration completed: samples=%d, bias_ee=%.4f, %.4f, %.4f, %.4f, %.4f, %.4f\n",
+        mZeroOffsetSampleCount, mZeroOffset[0], mZeroOffset[1], mZeroOffset[2], mZeroOffset[3], mZeroOffset[4],
+        mZeroOffset[5]);
+    LOG_INFO << "Zero calibration completed: samples=" << mZeroOffsetSampleCount
+             << ", bias_ee=" << mZeroOffset[0] << ", " << mZeroOffset[1] << ", " << mZeroOffset[2] << ", "
+             << mZeroOffset[3] << ", " << mZeroOffset[4] << ", " << mZeroOffset[5];
+
+    return true;
+}
+
 void SriForceSensor::ApplyZeroOffset(robot_server_lib::Vector6d& wrench_ee) {
     for (int i = 0; i < 6; i++) {
         wrench_ee[i] -= mZeroOffset[i];
