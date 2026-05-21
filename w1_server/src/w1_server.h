@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <optional>
 #include <geometry_msgs/msg/twist.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
@@ -52,7 +53,7 @@ private:
     std_msgs::msg::String GetRobotServerStateMsg();
     void LoadToolGravityCompensationConfig(const std::filesystem::path& robot_cfg_path);
     Vector6d ApplyToolGravityCompensation(const Vector6d& wrench_ee, int arm_index) const;
-    Eigen::Matrix3d GetEERotationWorldFromEE(int arm_index) const;
+    std::optional<Eigen::Matrix3d> GetEERotationWorldFromEE(int arm_index) const;
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
