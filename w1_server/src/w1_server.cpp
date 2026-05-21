@@ -165,11 +165,6 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
     }
 }
 
-Vector6d RobotServer::MapSriRawWrenchToEE(const Vector6d& raw_wrench) const {
-    Vector6d wrench_ee;
-    wrench_ee << -raw_wrench[0], -raw_wrench[1], raw_wrench[2], -raw_wrench[3], -raw_wrench[4], raw_wrench[5];
-    return wrench_ee;
-}
 
 Eigen::Matrix3d RobotServer::GetEERotationWorldFromEE(int arm_index) const {
     const auto& ee_pose_world = this->manager_info_.ee_pose_world_measurement;
@@ -187,8 +182,7 @@ Eigen::Matrix3d RobotServer::GetEERotationWorldFromEE(int arm_index) const {
     return q.toRotationMatrix();
 }
 
-Vector6d RobotServer::ApplyToolGravityCompensation(const Vector6d& raw_wrench, int arm_index) const {
-    const Vector6d wrench_ee = MapSriRawWrenchToEE(raw_wrench);
+Vector6d RobotServer::ApplyToolGravityCompensation(const Vector6d& wrench_ee, int arm_index) const {
     if (!tool_gravity_compensation_enabled_) {
         return wrench_ee;
     }
