@@ -96,7 +96,6 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
         LOG_WARN << "Failed to initialize primary force sensor";
         primary_sensor_ = nullptr;
     } else {
-        primary_sensor_ready_ = true;
         Vector6d primary_zero_offset = Vector6d::Zero();
         primary_sensor_->GetZeroOffset(&primary_zero_offset);
         sensor_zero_offset_.head<6>() = primary_zero_offset;
@@ -113,7 +112,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
                  << ", samples=" << sensor_zero_offset_samples_[0] << ", offset=" << primary_zero_offset.transpose();
     }
     // secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");  // 暂未使用
-    if (!primary_sensor_ready_ && !secondary_sensor_ready_) {
+    if (!primary_sensor_ && !secondary_sensor_) {
         tool_gravity_compensation_enabled_ = false;
     }
     this->Run();
@@ -222,6 +221,32 @@ void RobotServer::TorqueControlThreadFunc() {
         loop_counter++;
         next_cycle_time_point += std::chrono::microseconds(torque_ctrl_dt_micro);
         this->manager_buffers_.planner_manager_info->PeekLatest(&this->manager_info_);
+
+        // 力传感器零偏延迟结算: 等到 EE 位姿可用后才完成校准并去除工具重力, 然后镜像 ready 标志.
+        if (primary_sensor_) {
+            if (primary_sensor_->TryFinalizeBias()) {
+                RCLCPP_INFO(this->get_logger(),
+                            "Primary force sensor zero offset finalized; samples=%d",
+                            primary_sensor_->GetZeroOffsetSampleCount());
+                LOG_INFO << "Primary force sensor zero offset finalized; samples="
+                         << primary_sensor_->GetZeroOffsetSampleCount();
+            }
+            primary_sensor_ready_ = primary_sensor_->HasValidZeroOffset();
+        } else {
+            primary_sensor_ready_ = false;
+        }
+        if (secondary_sensor_) {
+            if (secondary_sensor_->TryFinalizeBias()) {
+                RCLCPP_INFO(this->get_logger(),
+                            "Secondary force sensor zero offset finalized; samples=%d",
+                            secondary_sensor_->GetZeroOffsetSampleCount());
+                LOG_INFO << "Secondary force sensor zero offset finalized; samples="
+                         << secondary_sensor_->GetZeroOffsetSampleCount();
+            }
+            secondary_sensor_ready_ = secondary_sensor_->HasValidZeroOffset();
+        } else {
+            secondary_sensor_ready_ = false;
+        }
 
         // 读取力传感器数据
         Vector6d sensor_data_primary = Vector6d::Zero();
