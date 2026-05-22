@@ -16,6 +16,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(action_msgs REQUIRED)
 find_package(actionlib_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 
 # 3) 声明要生成的消息
 set(MSG_FILES
@@ -50,6 +51,10 @@ set(MSG_FILES
   "msg/RouteEdge.msg"
   "msg/RoutePlanSegment.msg"
   "msg/RoutePlan.msg"
+  "msg/RoomBehavior.msg"
+  "msg/RoomInfo.msg"
+  "msg/RoomInfoArray.msg"
+  "msg/TaskProgress.msg"
 )
 
 # 4) 声明要生成的服务
@@ -82,6 +87,7 @@ set(SRV_FILES
   "srv/GetAreaInfoList.srv"
   "srv/GetAllAreas.srv"
   "srv/RemoveAreaInfo.srv"
+  "srv/UpdateAreaInfo.srv"
   "srv/NavThroughPosesFile.srv"
   "srv/LoadPoint.srv"
   "srv/AddRouteJunction.srv"
@@ -92,6 +98,12 @@ set(SRV_FILES
   "srv/GetRouteGraph.srv"
   "srv/TransformAssets.srv"
   "srv/ResetMapOriginByXYYaw.srv"
+  "srv/AddRoom.srv"
+  "srv/RemoveRoom.srv"
+  "srv/UpdateRoom.srv"
+  "srv/GetAllRooms.srv"
+  "srv/GetRoomByName.srv"
+  "srv/GetRoomAtPose.srv"
 )
 
 # 5) 声明要生成的动作
@@ -113,6 +125,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
     nav_msgs
     action_msgs
     actionlib_msgs
+    builtin_interfaces
 )
 
 # 7) 导出运行期依赖
@@ -123,6 +136,7 @@ ament_export_dependencies(
   nav_msgs
   action_msgs
   actionlib_msgs
+  builtin_interfaces
 )
 
 ament_package()
