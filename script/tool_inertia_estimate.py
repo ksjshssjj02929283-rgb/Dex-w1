@@ -43,11 +43,12 @@ DEFAULT_L = 3
 DEFAULT_TOOL_MASS_KG = 1.061
 DEFAULT_TOOL_COM_MM = "-0.15804154,0.70721872,50.33428542"
 DEFAULT_TOOL_W_BIAS_RAW_SRI = None  # None 表示从 server 状态自动读取
-DEFAULT_EXCITATION_DURATION = 30.0
-DEFAULT_EXCITATION_AMPLITUDES = "0.20,0.18,0.25"
-DEFAULT_EXCITATION_FREQUENCIES = "0.35,0.50,0.70"
+DEFAULT_EXCITATION_DURATION = 120.0
+DEFAULT_EXCITATION_AMPLITUDES = "0.30,0.20,0.15"
+DEFAULT_EXCITATION_FREQUENCIES = "0.40,0.65,0.90"
 DEFAULT_EXCITATION_PHASES = "0.0,1.57079632679,1.0471975512"
 DEFAULT_EXCITATION_RAMP = 2.0
+DEFAULT_FILTER_FC_HZ = 5.0
 
 
 @dataclass
@@ -1019,10 +1020,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--filter-fc",
         type=float,
-        default=8.0,
+        default=DEFAULT_FILTER_FC_HZ,
         help=(
-            "运动学和力传感器共用的零相位 Butterworth 截止频率, 单位 Hz, 默认 8.0。"
-            "应高于激励主频且高于其谐波, 否则角加速度信号会被衰减; "
+            "运动学和力传感器共用的零相位 Butterworth 截止频率, 单位 Hz, "
+            f"默认 {DEFAULT_FILTER_FC_HZ}。应高于激励主频且高于其谐波, 否则角加速度信号会被衰减; "
             "传 0 或负数则用 qt_dyn_params_ident 默认值 (1.8 Hz, 仅与该脚本兼容用)。"
         ),
     )
