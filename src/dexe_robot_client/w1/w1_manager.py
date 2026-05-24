@@ -5508,6 +5508,11 @@ class W1Manager:
             left_ee_target=left_last_target_xpos,
             right_ee_target=right_last_target_xpos,
             cur_qpos=full_body_joint_traj[-1])
+        if not res:
+            self.logger.error(
+                "Whole body joint traj planning failed in plan_linear_whole_body_ik when solve for strict pose error."
+            )
+            return StatusCode.PLAN_TRAJ_FAIL, None, None, None
         full_body_joint_traj = np.vstack(
             [full_body_joint_traj, full_body_last_qpos])
         qvel_limits_array_ = np.vstack(
@@ -5519,11 +5524,7 @@ class W1Manager:
             self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
                 "standard_lean_backward")
 
-        if not res:
-            self.logger.error(
-                "Whole body joint traj planning failed in plan_linear_whole_body_ik."
-            )
-            return StatusCode.PLAN_TRAJ_FAIL, None, None, None
+        
 
         # combine the start qpos
         full_body_joint_traj = np.vstack([start_qpos, full_body_joint_traj])

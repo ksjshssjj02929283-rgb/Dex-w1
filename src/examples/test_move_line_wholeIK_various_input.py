@@ -120,6 +120,19 @@ task_dict3 = {
     "right_arm_speed_ratio": [1.,],
     "right_arm_ee": [[0, [0, 0, 0, 0, 0, 0], 0],],
 }
+task_dict4 = {
+    "left_arm": [
+        [327.16, 122.77000000000001, 1055.27, -126.99, 6.85, -148.31],
+                [414.67, 418.42, 1186.65, -73.64, 7.05, -102.47]
+    ],
+    "left_arm_speed_ratio": [2., 4.],
+    "left_arm_ee": [
+        [0, [5, 100, 40, 45, 99, 99], 0], [0, [20, 100, 34, 36, 97, 99], 0]
+    ],
+    "right_arm": [],
+    "right_arm_speed_ratio": [],
+    "right_arm_ee": [],
+}
 
 
 def _load_viser_environment(vis):
@@ -214,10 +227,10 @@ if __name__ == "__main__":
 
     # yapf: disable
     home_qpos = np.array([
-        0.785, -1.57, 0.9, 0.0,
-        0.0, -0.4,
-        -1.57, -0.785, 1.57, -0.785, 0.0, 0.0, 0.0,
-        1.57, 0.785, -1.57, 0.785, 0.0, 0.0, 0.0
+        0.75208, -1.5042, 0.84099, -0.27491,
+        0.23677, -0.74303,
+        -0.20456, -0.60359, 0.56416, -2.1541, 0.84951, 0.036475, -0.70027,
+        0.81832, 1.0132, -0.22782, 1.3407, -0.67076, 0.46283, -0.12135
     ])
     # yapf: enable
 
@@ -235,50 +248,63 @@ if __name__ == "__main__":
     input("Press Enter to start linear whole body IK test...")
     time.sleep(1)
 
+    res, trajectory, armlee_trigger, armree_trigger = test_plan_linear_whole_body_ik(
+        start_qpos=home_qpos,
+        start_left_arm_ee_qpos=left_ee_home_qpos,
+        start_right_arm_ee_qpos=right_ee_home_qpos,
+        task_dict=task_dict1,
+        movement_mode="eager")
+    if res == StatusCode.SUCCESS:
+        viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
+
+        left_arm_user_pose = xpos_to_user_pose(
+            w1_manager.get_xpos("left_arm", trajectory[-1], False)[1])
+        right_arm_user_pose = xpos_to_user_pose(
+            w1_manager.get_xpos("right_arm", trajectory[-1], False)[1])
+        left_arm_target_pose = task_dict1["left_arm"][-1]
+        right_arm_target_pose = task_dict1["right_arm"][-1]
+        print(f"left_arm_user_pose: {left_arm_user_pose}")
+        print(f"left_arm_target_pose: {left_arm_target_pose}")
+        print(f"right_arm_user_pose: {right_arm_user_pose}")
+        print(f"right_arm_target_pose: {right_arm_target_pose}")
+    else:
+        print("Plan failed for task_dict1.")
+
     # res, trajectory, armlee_trigger, armree_trigger = test_plan_linear_whole_body_ik(
     #     start_qpos=home_qpos,
     #     start_left_arm_ee_qpos=left_ee_home_qpos,
     #     start_right_arm_ee_qpos=right_ee_home_qpos,
-    #     task_dict=task_dict1,
+    #     task_dict=task_dict2,
     #     movement_mode="eager")
     # if res == StatusCode.SUCCESS:
     #     viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
-
-    #     left_arm_user_pose = xpos_to_user_pose(
-    #         w1_manager.get_xpos("left_arm", trajectory[-1], False)[1])
-    #     right_arm_user_pose = xpos_to_user_pose(
-    #         w1_manager.get_xpos("right_arm", trajectory[-1], False)[1])
-    #     left_arm_target_pose = task_dict1["left_arm"][-1]
-    #     right_arm_target_pose = task_dict1["right_arm"][-1]
-    #     print(f"left_arm_user_pose: {left_arm_user_pose}")
-    #     print(f"left_arm_target_pose: {left_arm_target_pose}")
-    #     print(f"right_arm_user_pose: {right_arm_user_pose}")
-    #     print(f"right_arm_target_pose: {right_arm_target_pose}")
     # else:
-    #     print("Plan failed for task_dict1.")
+    #     print("Plan failed for task_dict2.")
 
-    res, trajectory, armlee_trigger, armree_trigger = test_plan_linear_whole_body_ik(
-        start_qpos=home_qpos,
-        start_left_arm_ee_qpos=left_ee_home_qpos,
-        start_right_arm_ee_qpos=right_ee_home_qpos,
-        task_dict=task_dict2,
-        movement_mode="eager")
-    if res == StatusCode.SUCCESS:
-        viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
-    else:
-        print("Plan failed for task_dict2.")
+    # print("===============================")
 
-    print("===============================")
+    # res, trajectory, armlee_trigger, armree_trigger = test_plan_linear_whole_body_ik(
+    #     start_qpos=home_qpos,
+    #     start_left_arm_ee_qpos=left_ee_home_qpos,
+    #     start_right_arm_ee_qpos=right_ee_home_qpos,
+    #     task_dict=task_dict3,
+    #     movement_mode="eager")
+    # if res == StatusCode.SUCCESS:
+    #     viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
+    # else:
+    #     print("Plan failed for task_dict3.")
 
-    res, trajectory, armlee_trigger, armree_trigger = test_plan_linear_whole_body_ik(
-        start_qpos=home_qpos,
-        start_left_arm_ee_qpos=left_ee_home_qpos,
-        start_right_arm_ee_qpos=right_ee_home_qpos,
-        task_dict=task_dict3,
-        movement_mode="eager")
-    if res == StatusCode.SUCCESS:
-        viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
-    else:
-        print("Plan failed for task_dict3.")
+    # for i in range(500):
+    #     res, trajectory, armlee_trigger, armree_trigger = test_plan_linear_whole_body_ik(
+    #         start_qpos=home_qpos,
+    #         start_left_arm_ee_qpos=left_ee_home_qpos,
+    #         start_right_arm_ee_qpos=right_ee_home_qpos,
+    #         task_dict=task_dict4,
+    #         movement_mode="eager")
+    #     if res == StatusCode.SUCCESS:
+    #         viser_execute_traj(vis, trajectory, armlee_trigger, armree_trigger)
+    #     else:
+    #         print("Plan failed for task_dict2.")
+    #         break
 
     embed()

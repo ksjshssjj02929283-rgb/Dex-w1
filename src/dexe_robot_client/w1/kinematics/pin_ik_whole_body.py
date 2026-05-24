@@ -189,21 +189,45 @@ class PinIKWholeBody:
                     [casadi.vertcat(*calc_head_z_trans_err)])
         }
 
-        calc_head_rot_err = [
-            cpin.log3(self.cdata.oMf[self.left_id].rotation
-                      @ self.cleft_tf[:3, :3].T),
-            cpin.log3(self.cdata.oMf[self.right_id].rotation
-                      @ self.cright_tf[:3, :3].T),
-            cpin.log3(
-                self.cdata.oMf[self.head_id].rotation @ self.chead_tf[:3, :3].T)
-        ]
+        # calc_head_rot_err = [
+        #     cpin.log3(self.cdata.oMf[self.left_id].rotation
+        #               @ self.cleft_tf[:3, :3].T),
+        #     cpin.log3(self.cdata.oMf[self.right_id].rotation
+        #               @ self.cright_tf[:3, :3].T),
+        #     cpin.log3(
+        #         self.cdata.oMf[self.head_id].rotation @ self.chead_tf[:3, :3].T)
+        # ]
 
-        calc_no_head_rot_err = [
-            cpin.log3(self.cdata.oMf[self.left_id].rotation
-                      @ self.cleft_tf[:3, :3].T),
-            cpin.log3(self.cdata.oMf[self.right_id].rotation
-                      @ self.cright_tf[:3, :3].T)
+        # calc_no_head_rot_err = [
+        #     cpin.log3(self.cdata.oMf[self.left_id].rotation
+        #               @ self.cleft_tf[:3, :3].T),
+        #     cpin.log3(self.cdata.oMf[self.right_id].rotation
+        #               @ self.cright_tf[:3, :3].T)
+        # ]
+        left_R_current = self.cdata.oMf[self.left_id].rotation
+        right_R_current = self.cdata.oMf[self.right_id].rotation
+        head_R_current = self.cdata.oMf[self.head_id].rotation
+        left_R_target = self.cleft_tf[:3, :3]
+        right_R_target = self.cright_tf[:3, :3]
+        head_R_target = self.chead_tf[:3, :3]
+
+        left_rotation_err = [
+            left_R_current[:, 0] - left_R_target[:, 0],
+            left_R_current[:, 1] - left_R_target[:, 1],
+            left_R_current[:, 2] - left_R_target[:, 2]
         ]
+        right_rotation_err = [
+            right_R_current[:, 0] - right_R_target[:, 0],
+            right_R_current[:, 1] - right_R_target[:, 1],
+            right_R_current[:, 2] - right_R_target[:, 2]
+        ]
+        head_rotation_err = [
+            head_R_current[:, 0] - head_R_target[:, 0],
+            head_R_current[:, 1] - head_R_target[:, 1],
+            head_R_current[:, 2] - head_R_target[:, 2]
+        ]
+        calc_head_rot_err = left_rotation_err + right_rotation_err + head_rotation_err
+        calc_no_head_rot_err = left_rotation_err + right_rotation_err
 
         self.rotational_error_dict = {
             "standard":
@@ -1041,7 +1065,6 @@ class PinIKWholeBody:
             return True, solution_q
         except Exception as e:
             self.logger.error(f"IK solver failed: {e}")
-            self.opti.debug.show_infeasibilities()
             print(f"var_q: {self.opti.debug.value(self.var_q)}")
             print(f"left_ee_target: {left_ee_target}")
             print(f"right_ee_target: {right_ee_target}")
