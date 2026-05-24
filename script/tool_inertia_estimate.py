@@ -202,13 +202,33 @@ def butter_filtfilt(order: int, wn: float, signal: np.ndarray) -> np.ndarray:
     return scipy.signal.filtfilt(b, a, signal, method="pad")
 
 
-def diff_and_filter_q(q_raw: np.ndarray, dt: float, wf: float = DEFAULT_WF, harmonics: int = DEFAULT_L) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def butter_filtfilt_2d(signal: np.ndarray, fc_hz: float, dt: float, order: int = 3) -> np.ndarray:
+    """对 (N, K) 数组按列做零相位 Butterworth 滤波。"""
+    if fc_hz <= 0:
+        return signal.copy()
+    wc = fc_hz * 2.0 * math.pi * dt
+    out = np.empty_like(signal)
+    for k in range(signal.shape[1]):
+        out[:, k] = butter_filtfilt(order, wc, signal[:, k])
+    return out
+
+
+def diff_and_filter_q(
+    q_raw: np.ndarray,
+    dt: float,
+    wf: float = DEFAULT_WF,
+    harmonics: int = DEFAULT_L,
+    fc_hz: Optional[float] = None,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """由位置序列生成 q/dq/ddq。
 
-    DEFAULT_WF 和 DEFAULT_L 来自 qt_dyn_params_ident.py, 用于估算滤波截止频率。
-    如果手腕激励比原动力学辨识轨迹更快, 后续应把滤波截止频率做成可调参数。
+    fc_hz 显式传入时, 直接使用该截止频率; 否则按 DEFAULT_WF/DEFAULT_L 估算
+    (用于和 qt_dyn_params_ident.py 默认行为兼容)。
     """
-    fc = 10.0 * (wf / (2.0 * np.pi) * harmonics)
+    if fc_hz is not None and fc_hz > 0:
+        fc = float(fc_hz)
+    else:
+        fc = 10.0 * (wf / (2.0 * np.pi) * harmonics)
     wc = fc * 2.0 * math.pi * dt
     q = np.zeros_like(q_raw)
     dq = np.zeros_like(q_raw)
@@ -374,13 +394,14 @@ def prepare_fit_arrays(
     w_bias_ee: np.ndarray,
     trim_start_sec: float,
     trim_end_sec: float,
+    filter_fc_hz: Optional[float] = None,
 ) -> Dict[str, np.ndarray]:
     """把原始采样数据整理为惯量拟合需要的数组。
 
     处理步骤:
-    1. 从 q_raw 生成 q/dq/ddq。
+    1. 从 q_raw 生成 q/dq/ddq, 滤波截止频率由 filter_fc_hz 控制。
     2. 由 q/dq 计算法兰系角速度 omega 和角加速度 alpha。
-    3. 对六维力扣除零偏。
+    3. 对六维力扣除零偏, 并用同一截止频率做零相位滤波, 与运动学保持频谱对齐。
     4. 从法兰力矩中扣除 com x force, 剩余部分主要用于拟合旋转惯量。
     """
     if len(samples) < 20:
@@ -388,8 +409,14 @@ def prepare_fit_arrays(
     q_raw = np.vstack([sample.q_raw for sample in samples])
     wrench = np.vstack([sample.wrench_ee for sample in samples])
     q_actual = get_actual_q(q_raw, arm, robot_type)
-    q, dq, ddq = diff_and_filter_q(q_actual, dt)
+    q, dq, ddq = diff_and_filter_q(q_actual, dt, fc_hz=filter_fc_hz)
     _, omega, alpha = compute_body_omega_alpha(q, dq, dt)
+
+    if filter_fc_hz is not None and filter_fc_hz > 0:
+        wrench = np.hstack([
+            butter_filtfilt_2d(wrench[:, :3], filter_fc_hz, dt),
+            butter_filtfilt_2d(wrench[:, 3:6], filter_fc_hz, dt),
+        ])
 
     force_unbiased = wrench[:, :3] - w_bias_ee[:3]
     torque_unbiased = wrench[:, 3:6] - w_bias_ee[3:6]
@@ -822,6 +849,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--trim-start", type=float, default=1.0, help="拟合前裁掉开头秒数，避开启动瞬态。")
     parser.add_argument("--trim-end", type=float, default=1.0, help="拟合前裁掉结尾秒数，避开停止瞬态。")
+    parser.add_argument(
+        "--filter-fc",
+        type=float,
+        default=8.0,
+        help=(
+            "运动学和力传感器共用的零相位 Butterworth 截止频率, 单位 Hz, 默认 8.0。"
+            "应高于激励主频且高于其谐波, 否则角加速度信号会被衰减; "
+            "传 0 或负数则用 qt_dyn_params_ident 默认值 (1.8 Hz, 仅与该脚本兼容用)。"
+        ),
+    )
     parser.add_argument("--self-test", action="store_true", help="运行合成数据自测试后退出。")
     args = parser.parse_args()
     if args.self_test:
@@ -864,6 +901,10 @@ def main() -> None:
     print(f"六维力零偏来源:    {w_bias_source}")
     if args.w_bias:
         print(f"六维力零偏 w_bias: {args.w_bias}")
+    if args.filter_fc and args.filter_fc > 0:
+        print(f"零相位滤波截止:    {args.filter_fc:.2f} Hz (运动学+力传感器共用)")
+    else:
+        print(f"零相位滤波截止:    qt_dyn_params_ident 默认 (~1.8 Hz)")
     if args.input:
         print("运动模式:          离线拟合，不下发运动")
     elif args.no_excitation:
@@ -905,7 +946,18 @@ def main() -> None:
             "未能从 server 状态中读取 force_sensor_bias，请通过 --w-bias 手动指定零偏。"
         )
     print("开始处理 q/dq/ddq、末端角速度/角加速度和六维力残差...")
-    arrays = prepare_fit_arrays(samples, args.arm, args.robot_type, args.dt, com_m, w_bias_ee, args.trim_start, args.trim_end)
+    filter_fc = args.filter_fc if args.filter_fc and args.filter_fc > 0 else None
+    arrays = prepare_fit_arrays(
+        samples,
+        args.arm,
+        args.robot_type,
+        args.dt,
+        com_m,
+        w_bias_ee,
+        args.trim_start,
+        args.trim_end,
+        filter_fc_hz=filter_fc,
+    )
     print(f"开始拟合 ^F I_C，有效样本数: {len(arrays['omega'])}")
     result = fit_inertia_from_rotational_terms(arrays["omega"], arrays["alpha"], arrays["torque_rot"])
     payload = result_to_json(result, args, len(arrays["omega"]), w_bias_ee)
