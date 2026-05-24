@@ -92,6 +92,31 @@ class ToolInertiaEstimateTest(unittest.TestCase):
         np.testing.assert_allclose(result["theta"], true_theta, atol=1e-10)
         self.assertTrue(result["physical"]["positive_definite"])
 
+    def test_sensor_bias_ee_to_raw_sri_roundtrip(self):
+        """EE 系零偏 -> raw_sri -> EE 系应还原原值。"""
+        bias_ee = np.array([-11.272, 26.590, -22.423, 0.649, 0.722, -0.713])
+        raw_sri = tie.sensor_bias_ee_to_raw_sri(bias_ee)
+        # map_sri_raw_wrench_to_ee 是 map_raw_sri_bias_to_ee 的底层
+        bias_ee_back = tie.map_raw_sri_bias_to_ee(raw_sri)
+        np.testing.assert_allclose(bias_ee_back, bias_ee, atol=1e-12)
+
+    def test_parse_sensor_bias_ee_primary(self):
+        """从 state dict 中正确提取 primary 臂的 force_sensor_bias。"""
+        bias_12 = list(range(12))
+        data = {"force_sensor_bias": bias_12}
+        result = tie._parse_sensor_bias_ee(data, "primary")
+        np.testing.assert_array_equal(result, np.arange(6, dtype=float))
+
+    def test_parse_sensor_bias_ee_secondary(self):
+        bias_12 = list(range(12))
+        data = {"force_sensor_bias": bias_12}
+        result = tie._parse_sensor_bias_ee(data, "secondary")
+        np.testing.assert_array_equal(result, np.arange(6, 12, dtype=float))
+
+    def test_parse_sensor_bias_ee_missing(self):
+        """字段缺失时返回 None。"""
+        self.assertIsNone(tie._parse_sensor_bias_ee({}, "primary"))
+
 
 if __name__ == "__main__":
     unittest.main()

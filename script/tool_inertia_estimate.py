@@ -42,7 +42,7 @@ DEFAULT_WF = 0.12 * np.pi
 DEFAULT_L = 3
 DEFAULT_TOOL_MASS_KG = 1.061
 DEFAULT_TOOL_COM_MM = "56.72691,17.72389,-0.47806"
-DEFAULT_TOOL_W_BIAS_RAW_SRI = "13.22340,-21.48320,-24.07190,0.16010,-0.46700,-0.66110"
+DEFAULT_TOOL_W_BIAS_RAW_SRI = None  # None 表示从 server 状态自动读取
 DEFAULT_EXCITATION_DURATION = 30.0
 DEFAULT_EXCITATION_AMPLITUDES = "0.20,0.18,0.25"
 DEFAULT_EXCITATION_FREQUENCIES = "0.35,0.50,0.70"
@@ -410,16 +410,53 @@ def prepare_fit_arrays(
     }
 
 
-def samples_from_jsonl(path: Path, arm: str, wrench_format: str) -> List[DynamicSample]:
-    """读取离线 JSONL 采样文件，便于反复调整滤波和拟合参数。"""
+def _parse_sensor_bias_ee(data: Dict[str, object], arm: str) -> Optional[np.ndarray]:
+    """从 robot_server_state JSON 中提取单臂的 force_sensor_bias (EE系)。
+
+    server 发布的 force_sensor_bias 已经是 EE 系，直接取对应臂的 6 个值即可。
+    primary -> [0:6], secondary -> [6:12]
+    """
+    raw = data.get("force_sensor_bias")
+    if raw is None:
+        return None
+    try:
+        arr = np.asarray(raw, dtype=float)
+    except (ValueError, TypeError):
+        return None
+    if arr.size < 6:
+        return None
+    if arr.size >= 12:
+        return arr[:6].copy() if arm == "primary" else arr[6:12].copy()
+    return arr[:6].copy()
+
+
+def sensor_bias_ee_to_raw_sri(bias_ee: np.ndarray) -> np.ndarray:
+    """把 EE 系零偏反映射回 raw_sri 顺序。
+
+    map_sri_raw_wrench_to_ee: ee = [-raw[0], -raw[1], raw[2], -raw[3], -raw[4], raw[5]]
+    逆变换:                   raw = [-ee[0],  -ee[1], ee[2],  -ee[3],  -ee[4], ee[5]]
+    """
+    b = np.asarray(bias_ee, dtype=float)
+    return np.array([-b[0], -b[1], b[2], -b[3], -b[4], b[5]], dtype=float)
+
+
+def samples_from_jsonl(path: Path, arm: str, wrench_format: str) -> Tuple[List[DynamicSample], Optional[np.ndarray]]:
+    """读取离线 JSONL 采样文件，便于反复调整滤波和拟合参数。
+
+    返回 (samples, bias_ee)，bias_ee 取自文件中第一条含 force_sensor_bias 的记录；
+    若文件中没有该字段则返回 None。
+    """
     samples = []
+    bias_ee: Optional[np.ndarray] = None
     with path.open("r", encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue
             data = json.loads(line)
             samples.append(sample_from_state_dict(data, arm, wrench_format))
-    return samples
+            if bias_ee is None:
+                bias_ee = _parse_sensor_bias_ee(data, arm)
+    return samples, bias_ee
 
 
 def sample_to_json(sample: DynamicSample) -> Dict[str, object]:
@@ -491,10 +528,13 @@ class ToolInertiaNode:
                 except Exception as exc:
                     self.outer.errors.append(f"解析 joint_position/joint_name 失败: {exc}")
                     return
+                sensor_bias_ee = _parse_sensor_bias_ee(data, arm)
                 with self.outer.lock:
                     self.outer.samples.append(sample)
                     self.outer.latest_joint_position = joint_position.copy()
                     self.outer.latest_joint_name = joint_name
+                    if sensor_bias_ee is not None:
+                        self.outer.latest_sensor_bias_ee = sensor_bias_ee
 
             def publish_joint_position(self, target_position: np.ndarray):
                 msg = JointPositionControl()
@@ -510,6 +550,7 @@ class ToolInertiaNode:
         self.errors: Deque[str] = deque(maxlen=20)
         self.latest_joint_position: Optional[np.ndarray] = None
         self.latest_joint_name: List[str] = []
+        self.latest_sensor_bias_ee: Optional[np.ndarray] = None
         self.node = _Node(self)
 
     def latest_age(self) -> Optional[float]:
@@ -532,12 +573,16 @@ class ToolInertiaNode:
         with self.lock:
             return list(self.latest_joint_name)
 
+    def get_sensor_bias_ee(self) -> Optional[np.ndarray]:
+        with self.lock:
+            return self.latest_sensor_bias_ee.copy() if self.latest_sensor_bias_ee is not None else None
+
     def publish_joint_position(self, target_position: np.ndarray) -> None:
         self.node.publish_joint_position(target_position)
 
 
-def capture_online(args: argparse.Namespace) -> List[DynamicSample]:
-    """在线采集动态激励数据。"""
+def capture_online(args: argparse.Namespace) -> Tuple[List[DynamicSample], Optional[np.ndarray]]:
+    """在线采集动态激励数据。返回 (samples, bias_ee)，bias_ee 来自 server 的 force_sensor_bias 字段。"""
     import rclpy
     from rclpy.executors import MultiThreadedExecutor
 
@@ -567,7 +612,7 @@ def capture_online(args: argparse.Namespace) -> List[DynamicSample]:
             samples = wrapper.snapshot_since(start)
             if not samples:
                 raise RuntimeError("没有采集到样本。")
-            return samples
+            return samples, wrapper.get_sensor_bias_ee()
 
         base_position = wrapper.get_joint_position()
         if base_position is None:
@@ -620,7 +665,7 @@ def capture_online(args: argparse.Namespace) -> List[DynamicSample]:
         samples = wrapper.snapshot_since(start)
         if not samples:
             raise RuntimeError("没有采集到样本。")
-        return samples
+        return samples, wrapper.get_sensor_bias_ee()
     finally:
         executor.shutdown()
         wrapper.node.destroy_node()
@@ -635,10 +680,13 @@ def write_jsonl(path: Path, samples: Iterable[DynamicSample]) -> None:
             f.write(json.dumps(sample_to_json(sample), ensure_ascii=False) + "\n")
 
 
-def result_to_json(result: Dict[str, object], args: argparse.Namespace, sample_count: int) -> Dict[str, object]:
+def result_to_json(result: Dict[str, object], args: argparse.Namespace, sample_count: int, w_bias_ee: np.ndarray) -> Dict[str, object]:
     """组织结果 JSON。字段名保留英文，便于后续程序读取。"""
     inertia = np.asarray(result["inertia_com"], dtype=float)
     theta = np.asarray(result["theta"], dtype=float)
+    w_bias_raw_sri = (
+        sensor_bias_ee_to_raw_sri(w_bias_ee) if args.wrench_format == "raw_sri" else w_bias_ee
+    )
     return {
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "sample_count": int(sample_count),
@@ -650,7 +698,7 @@ def result_to_json(result: Dict[str, object], args: argparse.Namespace, sample_c
         "mass_kg": args.mass,
         "com_m": array_to_list(parse_float_list(args.com_mm, 3, "--com-mm") / 1000.0),
         "com_mm": array_to_list(parse_float_list(args.com_mm, 3, "--com-mm")),
-        "w_bias_raw_sri": array_to_list(parse_float_list(args.w_bias, 6, "--w-bias")),
+        "w_bias_raw_sri": array_to_list(w_bias_raw_sri),
         "theta_order": ["Ixx", "Iyy", "Izz", "Ixy", "Ixz", "Iyz"],
         "theta": array_to_list(theta),
         "inertia_com_kg_m2": inertia.tolist(),
@@ -733,10 +781,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--w-bias",
-        default=DEFAULT_TOOL_W_BIAS_RAW_SRI,
+        default=None,
         help=(
             "六维力零偏，raw_sri 顺序，格式同 tool_com_estimate.py 的 w_bias，"
-            f"默认硬编码: {DEFAULT_TOOL_W_BIAS_RAW_SRI}。"
+            "例如 '13.22,-21.48,-24.07,0.16,-0.47,-0.66'。"
+            "不填时自动从 server 状态的 force_sensor_bias 字段读取。"
         ),
     )
     parser.add_argument(
@@ -786,7 +835,8 @@ def parse_args() -> argparse.Namespace:
     if args.excitation_ramp < 0.0:
         parser.error("--excitation-ramp 不能为负数。")
     parse_float_list(args.com_mm, 3, "--com-mm")
-    parse_float_list(args.w_bias, 6, "--w-bias")
+    if args.w_bias is not None:
+        parse_float_list(args.w_bias, 6, "--w-bias")
     amplitudes = parse_float_list(args.excitation_amplitudes, 3, "--excitation-amplitudes")
     frequencies = parse_float_list(args.excitation_frequencies, 3, "--excitation-frequencies")
     parse_float_list(args.excitation_phases, 3, "--excitation-phases")
@@ -810,7 +860,10 @@ def main() -> None:
     print(f"六维力格式:        {args.wrench_format}")
     print(f"工具质量:          {args.mass:.6f} kg")
     print(f"质心偏移 com_mm:   {args.com_mm}")
-    print(f"六维力零偏 w_bias: {args.w_bias}")
+    w_bias_source = "命令行" if args.w_bias else "自动从 server 读取"
+    print(f"六维力零偏来源:    {w_bias_source}")
+    if args.w_bias:
+        print(f"六维力零偏 w_bias: {args.w_bias}")
     if args.input:
         print("运动模式:          离线拟合，不下发运动")
     elif args.no_excitation:
@@ -826,22 +879,36 @@ def main() -> None:
 
     if args.input:
         print(f"读取离线采集文件: {args.input.expanduser()}")
-        samples = samples_from_jsonl(args.input.expanduser(), args.arm, args.wrench_format)
+        samples, bias_ee_from_data = samples_from_jsonl(args.input.expanduser(), args.arm, args.wrench_format)
         capture_path = args.input.expanduser()
     else:
-        samples = capture_online(args)
+        samples, bias_ee_from_data = capture_online(args)
         capture_path = args.output_dir / f"tool_inertia_capture_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
         write_jsonl(capture_path, samples)
         print(f"采集数据已保存: {capture_path}")
 
     com_m = parse_float_list(args.com_mm, 3, "--com-mm") / 1000.0
-    w_bias_raw = parse_float_list(args.w_bias, 6, "--w-bias")
-    w_bias_ee = map_raw_sri_bias_to_ee(w_bias_raw) if args.wrench_format == "raw_sri" else w_bias_raw
+    if args.w_bias:
+        w_bias_raw = parse_float_list(args.w_bias, 6, "--w-bias")
+        w_bias_ee = map_raw_sri_bias_to_ee(w_bias_raw) if args.wrench_format == "raw_sri" else w_bias_raw
+        print(f"使用命令行零偏 (raw_sri): {array_to_list(w_bias_raw)}")
+    elif bias_ee_from_data is not None:
+        w_bias_ee = bias_ee_from_data
+        if args.wrench_format == "raw_sri":
+            w_bias_raw = sensor_bias_ee_to_raw_sri(w_bias_ee)
+            print(f"自动读取零偏 (EE系):     {array_to_list(w_bias_ee)}")
+            print(f"自动读取零偏 (raw_sri):  {array_to_list(w_bias_raw)}")
+        else:
+            print(f"自动读取零偏 (EE系):     {array_to_list(w_bias_ee)}")
+    else:
+        raise RuntimeError(
+            "未能从 server 状态中读取 force_sensor_bias，请通过 --w-bias 手动指定零偏。"
+        )
     print("开始处理 q/dq/ddq、末端角速度/角加速度和六维力残差...")
     arrays = prepare_fit_arrays(samples, args.arm, args.robot_type, args.dt, com_m, w_bias_ee, args.trim_start, args.trim_end)
     print(f"开始拟合 ^F I_C，有效样本数: {len(arrays['omega'])}")
     result = fit_inertia_from_rotational_terms(arrays["omega"], arrays["alpha"], arrays["torque_rot"])
-    payload = result_to_json(result, args, len(arrays["omega"]))
+    payload = result_to_json(result, args, len(arrays["omega"]), w_bias_ee)
     payload["capture_path"] = str(capture_path)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
