@@ -6,6 +6,13 @@
   离线滤波并通过中心差分得到 dq/ddq。
 - 默认使用补偿前 raw_force_sensor, 避免运行时工具重力补偿消掉待辨识信号。
 - 输出惯量为 ^F I_C: 绕工具质心 C, 方向表达在末端法兰/EE 坐标系 F。
+- 力/力矩约定与 tool_com_estimate.py 一致 (tool-on-sensor):
+      F_meas ≈  m R^T g_W - m a_C^F        (静止时 F_meas = m R^T g_W)
+      M_meas ≈  com x F_unbiased - (I alpha + omega x I omega)
+  因此拟合用的旋转动力学残差是
+      I alpha + omega x I omega = com x F_unbiased - T_unbiased
+  (符号易错: tool_com_estimate.py 在静止情形得到 T_meas = com x F_meas,
+   旋转项的符号必须与之一致, 否则惯量出现负对角元。)
 """
 
 import argparse
@@ -268,6 +275,26 @@ def compute_body_omega_alpha(q: np.ndarray, dq: np.ndarray, dt: float) -> Tuple[
     return rotations_arr, omega_body, alpha_body
 
 
+def torque_rotational_component(
+    torque_unbiased: np.ndarray,
+    force_unbiased: np.ndarray,
+    com_m: np.ndarray,
+) -> np.ndarray:
+    """从扣零偏后的法兰系六维力中分离出旋转动力学项。
+
+    采用 tool-on-sensor 约定（与 tool_com_estimate.py 一致）:
+        F_meas = m * R^T g_W - m a_C^F + bias_F
+        M_meas = -[I alpha + omega x I omega] + com x F_unbiased + bias_T
+
+    扣零偏后整理得到:
+        I alpha + omega x I omega = com x F_unbiased - T_unbiased
+
+    这里 com_m = r_FC, 即从法兰原点指向工具质心的向量, 表达在法兰系。
+    """
+    com_m = np.asarray(com_m, dtype=float).reshape(3)
+    return np.cross(com_m, force_unbiased) - torque_unbiased
+
+
 def theta_to_inertia_matrix(theta: np.ndarray) -> np.ndarray:
     """把 6 个独立惯量参数还原为对称 3x3 惯量矩阵。"""
     theta = np.asarray(theta, dtype=float).reshape(6)
@@ -366,7 +393,7 @@ def prepare_fit_arrays(
 
     force_unbiased = wrench[:, :3] - w_bias_ee[:3]
     torque_unbiased = wrench[:, 3:6] - w_bias_ee[3:6]
-    torque_rot = torque_unbiased - np.cross(np.asarray(com_m, dtype=float), force_unbiased)
+    torque_rot = torque_rotational_component(torque_unbiased, force_unbiased, com_m)
 
     si = max(0, int(round(trim_start_sec / dt)))
     ei = len(samples) - max(0, int(round(trim_end_sec / dt)))
