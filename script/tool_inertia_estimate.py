@@ -41,7 +41,7 @@ DEFAULT_DT = 0.01
 DEFAULT_WF = 0.12 * np.pi
 DEFAULT_L = 3
 DEFAULT_TOOL_MASS_KG = 1.061
-DEFAULT_TOOL_COM_MM = "56.72691,17.72389,-0.47806"
+DEFAULT_TOOL_COM_MM = "-0.15804154,0.70721872,50.33428542"
 DEFAULT_TOOL_W_BIAS_RAW_SRI = None  # None 表示从 server 状态自动读取
 DEFAULT_EXCITATION_DURATION = 30.0
 DEFAULT_EXCITATION_AMPLITUDES = "0.20,0.18,0.25"
@@ -52,12 +52,18 @@ DEFAULT_EXCITATION_RAMP = 2.0
 
 @dataclass
 class DynamicSample:
-    """单个动态采样点: 7 轴关节位置和映射到 EE/F 坐标系的六维力。"""
+    """单个动态采样点: 7 轴关节位置和映射到 EE/F 坐标系的六维力。
+
+    rotation_world_from_ee 来自 server 的 ee_pose_world, 与 tool_com_estimate.py
+    保持一致: 这是 URDF ee_link 系到 world 系的旋转。如果消息里没有该字段, 字段为
+    None, 由后端检查。
+    """
 
     arrival_time: float
     timestamp: float
     q_raw: np.ndarray
     wrench_ee: np.ndarray
+    rotation_world_from_ee: Optional[np.ndarray] = None
 
 
 def skew(v: np.ndarray) -> np.ndarray:
@@ -295,6 +301,72 @@ def compute_body_omega_alpha(q: np.ndarray, dq: np.ndarray, dt: float) -> Tuple[
     return rotations_arr, omega_body, alpha_body
 
 
+def quat_wxyz_to_rot(q: np.ndarray) -> np.ndarray:
+    """四元数 (w, x, y, z) -> 3x3 旋转矩阵, 与 tool_com_estimate.py 一致。"""
+    q = np.asarray(q, dtype=float).reshape(4)
+    w, x, y, z = q
+    n = math.sqrt(w * w + x * x + y * y + z * z)
+    if n <= 0.0:
+        raise ValueError("四元数模为 0。")
+    w, x, y, z = w / n, x / n, y / n, z / n
+    return np.array(
+        [
+            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+        ],
+        dtype=float,
+    )
+
+
+def body_omega_alpha_from_rotations(
+    rotations_world_from_ee: np.ndarray,
+    dt: float,
+    fc_hz: Optional[float] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """直接由 ^W R_E(t) 计算 ee_link 系的角速度 omega 和角加速度 alpha.
+
+    这与 tool_com_estimate.py / server 重力补偿使用同一个 ee_link 系, 避免 DH 与
+    URDF 之间的常值旋转差异。
+
+    步骤:
+      1. omega_world(t) ≈ vee( dR/dt · R^T ) 用中心差分实现;
+      2. omega_body = R^T omega_world;
+      3. alpha_body 由 omega_body 中心差分得到;
+      4. 可选 Butterworth 零相位滤波。
+    """
+    rotations = np.asarray(rotations_world_from_ee, dtype=float)
+    n = rotations.shape[0]
+    if n < 5:
+        raise ValueError("旋转序列至少需要 5 帧。")
+    omega_world = np.zeros((n, 3))
+    for i in range(n):
+        if i == 0:
+            r_minus = rotations[0]
+            r_plus = rotations[1]
+            denom = dt
+        elif i == n - 1:
+            r_minus = rotations[-2]
+            r_plus = rotations[-1]
+            denom = dt
+        else:
+            r_minus = rotations[i - 1]
+            r_plus = rotations[i + 1]
+            denom = 2.0 * dt
+        d_r = (r_plus - r_minus) / denom
+        skew_w = d_r @ rotations[i].T
+        omega_world[i] = np.array(
+            [skew_w[2, 1] - skew_w[1, 2], skew_w[0, 2] - skew_w[2, 0], skew_w[1, 0] - skew_w[0, 1]]
+        ) * 0.5
+    if fc_hz is not None and fc_hz > 0:
+        omega_world = butter_filtfilt_2d(omega_world, fc_hz, dt)
+    omega_body = np.einsum("nij,nj->ni", np.transpose(rotations, (0, 2, 1)), omega_world)
+    alpha_body = np.vstack([central_diff(omega_body[:, j], dt, 2) for j in range(3)]).T
+    if fc_hz is not None and fc_hz > 0:
+        alpha_body = butter_filtfilt_2d(alpha_body, fc_hz, dt)
+    return omega_body, alpha_body
+
+
 def torque_rotational_component(
     torque_unbiased: np.ndarray,
     force_unbiased: np.ndarray,
@@ -399,18 +471,26 @@ def prepare_fit_arrays(
     """把原始采样数据整理为惯量拟合需要的数组。
 
     处理步骤:
-    1. 从 q_raw 生成 q/dq/ddq, 滤波截止频率由 filter_fc_hz 控制。
-    2. 由 q/dq 计算法兰系角速度 omega 和角加速度 alpha。
-    3. 对六维力扣除零偏, 并用同一截止频率做零相位滤波, 与运动学保持频谱对齐。
-    4. 从法兰力矩中扣除 com x force, 剩余部分主要用于拟合旋转惯量。
+    1. 从 server 提供的 ^W R_E(t) 直接得到 ee_link 系下 omega/alpha (与 wrench 同坐标系)。
+    2. 对六维力扣除零偏, 并用同一截止频率做零相位滤波, 与运动学保持频谱对齐。
+    3. 从 ee_link 力矩中扣除 com x force, 剩余部分主要用于拟合旋转惯量。
+
+    关键: 不再用 DH 链回算 EE 旋转。DH 模型的 frame7 与 URDF 的 ee_link 之间
+    存在常值旋转 (jointEE 的 rpy 0 -π/2 0 等), 用 DH 算 omega/alpha 会与 wrench
+    所在 ee_link 系错位, 导致最小二乘出现负对角元/非物理解。
     """
     if len(samples) < 20:
         raise ValueError("动态采样点至少需要 20 个。")
-    q_raw = np.vstack([sample.q_raw for sample in samples])
+    if any(s.rotation_world_from_ee is None for s in samples):
+        raise ValueError(
+            "样本缺少 rotation_world_from_ee (ee_pose_world)。请使用包含 ee_pose_world "
+            "字段的 server 状态采集数据, 或重新在线采集。"
+        )
     wrench = np.vstack([sample.wrench_ee for sample in samples])
-    q_actual = get_actual_q(q_raw, arm, robot_type)
-    q, dq, ddq = diff_and_filter_q(q_actual, dt, fc_hz=filter_fc_hz)
-    _, omega, alpha = compute_body_omega_alpha(q, dq, dt)
+    rotations = np.asarray(
+        [sample.rotation_world_from_ee for sample in samples], dtype=float
+    )
+    omega, alpha = body_omega_alpha_from_rotations(rotations, dt, fc_hz=filter_fc_hz)
 
     if filter_fc_hz is not None and filter_fc_hz > 0:
         wrench = np.hstack([
@@ -427,9 +507,6 @@ def prepare_fit_arrays(
     if ei <= si + 10:
         raise ValueError("首尾裁剪后剩余样本太少，请缩短 --trim-start/--trim-end 或增加采集时长。")
     return {
-        "q": q[si:ei],
-        "dq": dq[si:ei],
-        "ddq": ddq[si:ei],
         "wrench_ee": wrench[si:ei],
         "omega": omega[si:ei],
         "alpha": alpha[si:ei],
@@ -487,19 +564,23 @@ def samples_from_jsonl(path: Path, arm: str, wrench_format: str) -> Tuple[List[D
 
 
 def sample_to_json(sample: DynamicSample) -> Dict[str, object]:
-    return {
+    out: Dict[str, object] = {
         "timestamp": sample.timestamp,
         "q_raw": array_to_list(sample.q_raw),
         "wrench_ee": array_to_list(sample.wrench_ee),
     }
+    if sample.rotation_world_from_ee is not None:
+        out["rotation_world_from_ee"] = sample.rotation_world_from_ee.tolist()
+    return out
 
 
 def sample_from_state_dict(data: Dict[str, object], arm: str, wrench_format: str) -> DynamicSample:
-    """从 robot_server_state JSON 字段中提取单臂 q 和六维力。
+    """从 robot_server_state JSON 字段中提取单臂 q、六维力, 以及 world->ee 旋转。
 
     q 的切片规则与 qt_dyn_params_ident.py 一致:
         primary   -> joint_position[6:13]
         secondary -> joint_position[13:20]
+    旋转优先取 ee_pose_world (与 tool_com_estimate.py 保持一致, 即 ee_link 系到 world)。
     """
     timestamp_raw = float(data.get("timestamp", 0.0))
     timestamp = timestamp_raw * 1e-9 if timestamp_raw > 1e12 else timestamp_raw
@@ -522,7 +603,22 @@ def sample_from_state_dict(data: Dict[str, object], arm: str, wrench_format: str
         wrench_ee = map_sri_raw_wrench_to_ee(raw) if wrench_format == "raw_sri" else raw.copy()
     if wrench_ee.size != 6:
         raise ValueError(f"无法提取 6 维力数据，实际 size={wrench_ee.size}。")
-    return DynamicSample(time.monotonic(), timestamp, q_raw.copy(), wrench_ee.copy())
+
+    rotation = None
+    if "rotation_world_from_ee" in data:
+        rotation = np.asarray(data["rotation_world_from_ee"], dtype=float).reshape(3, 3)
+    else:
+        ee_pose_world_raw = data.get("ee_pose_world")
+        if ee_pose_world_raw is not None:
+            try:
+                ee_pose_world = np.asarray(ee_pose_world_raw, dtype=float)
+            except (ValueError, TypeError):
+                ee_pose_world = None
+            if ee_pose_world is not None and ee_pose_world.size >= 14:
+                pose_world = ee_pose_world[:7] if arm == "primary" else ee_pose_world[7:14]
+                if np.linalg.norm(pose_world[3:7]) > 1e-6:
+                    rotation = quat_wxyz_to_rot(pose_world[3:7])
+    return DynamicSample(time.monotonic(), timestamp, q_raw.copy(), wrench_ee.copy(), rotation)
 
 
 class ToolInertiaNode:
@@ -548,6 +644,12 @@ class ToolInertiaNode:
                     sample = sample_from_state_dict(data, arm, wrench_format)
                 except Exception as exc:
                     self.outer.errors.append(str(exc))
+                    return
+                if sample.rotation_world_from_ee is None:
+                    self.outer.errors.append(
+                        "robot_server_state 没有 ee_pose_world (或四元数为 0), "
+                        "无法以 ee_link 系直接计算 omega/alpha。请升级 server 至发布 ee_pose_world 的版本。"
+                    )
                     return
                 try:
                     joint_position = np.asarray(data["joint_position"], dtype=float)
@@ -767,7 +869,14 @@ def print_result(payload: Dict[str, object]) -> None:
 
 
 def run_self_test() -> None:
-    """合成数据自测试: 已知惯量 -> 生成力矩 -> 反解惯量。"""
+    """合成数据自测试: 已知惯量 -> 生成力矩 -> 反解惯量。
+
+    包含两部分:
+      A. 直接 LS: 给定 omega/alpha, 验证回归求解正确;
+      B. 旋转积分 + 旋转法兰系下的 prepare_fit_arrays 端到端测试, 验证
+         body_omega_alpha_from_rotations 在与 wrench 同一系内能复原惯量,
+         即捕获 "DH/URDF 帧错位" 类回归。
+    """
     rng = np.random.default_rng(42)
     theta_true = np.array([0.018, 0.026, 0.031, 0.002, -0.003, 0.004])
     inertia_true = theta_to_inertia_matrix(theta_true)
@@ -776,9 +885,67 @@ def run_self_test() -> None:
     torque = np.vstack([inertia_true @ alpha[i] + np.cross(omega[i], inertia_true @ omega[i]) for i in range(omega.shape[0])])
     result = fit_inertia_from_rotational_terms(omega, alpha, torque)
     err = np.linalg.norm(np.asarray(result["theta"]) - theta_true)
-    print(f"自测试: theta_err={err:.6e}, torque_rms={result['torque_rms']:.6e}")
+    print(f"自测试 A (LS): theta_err={err:.6e}, torque_rms={result['torque_rms']:.6e}")
     if err > 1e-10:
-        raise RuntimeError("合成数据惯量自测试失败。")
+        raise RuntimeError("合成数据惯量自测试 A 失败。")
+
+    dt = 0.005
+    n = 4000
+    t = np.arange(n) * dt
+    omega_world_axis = np.array(
+        [
+            np.sin(2.0 * np.pi * 0.4 * t) * 0.6,
+            np.sin(2.0 * np.pi * 0.5 * t + 0.7) * 0.5,
+            np.sin(2.0 * np.pi * 0.6 * t + 1.3) * 0.4,
+        ]
+    ).T
+    rotations = np.zeros((n, 3, 3))
+    rotations[0] = np.eye(3)
+    for i in range(1, n):
+        w = omega_world_axis[i - 1]
+        theta_step = np.linalg.norm(w) * dt
+        if theta_step < 1e-12:
+            rotations[i] = rotations[i - 1]
+            continue
+        axis = w / np.linalg.norm(w)
+        K = skew(axis)
+        d_r = np.eye(3) + math.sin(theta_step) * K + (1.0 - math.cos(theta_step)) * (K @ K)
+        rotations[i] = d_r @ rotations[i - 1]
+
+    com = np.array([0.001, -0.002, 0.05])
+    mass = 1.0
+    g_world = np.array([0.0, 0.0, -9.81])
+
+    omega_b, alpha_b = body_omega_alpha_from_rotations(rotations, dt, fc_hz=None)
+    wrench = np.zeros((n, 6))
+    for i in range(n):
+        force = mass * (rotations[i].T @ g_world) - mass * np.zeros(3)
+        torque_rot = inertia_true @ alpha_b[i] + np.cross(omega_b[i], inertia_true @ omega_b[i])
+        torque = np.cross(com, force) - torque_rot
+        wrench[i, :3] = force
+        wrench[i, 3:6] = torque
+
+    samples = [
+        DynamicSample(0.0, 0.0, np.zeros(7), wrench[i].copy(), rotations[i].copy())
+        for i in range(n)
+    ]
+    arrays = prepare_fit_arrays(
+        samples,
+        arm="primary",
+        robot_type="w1_anth",
+        dt=dt,
+        com_m=com,
+        w_bias_ee=np.zeros(6),
+        trim_start_sec=0.5,
+        trim_end_sec=0.5,
+        filter_fc_hz=None,
+    )
+    result_b = fit_inertia_from_rotational_terms(arrays["omega"], arrays["alpha"], arrays["torque_rot"])
+    theta_b = np.asarray(result_b["theta"])
+    err_b = np.linalg.norm(theta_b - theta_true)
+    print(f"自测试 B (rotation->prepare_fit): theta_err={err_b:.6e}, torque_rms={result_b['torque_rms']:.6e}")
+    if err_b > 1e-3:
+        raise RuntimeError(f"端到端自测试 B 失败, theta={theta_b}")
 
 
 def parse_args() -> argparse.Namespace:
