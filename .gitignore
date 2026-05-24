@@ -11,7 +11,7 @@ __pycache__/
 nano_logs/
 script/dyn_params_ident/recdata/
 CLAUDE.md
-AGENT.md
+AGENTS.md
 dexe_robot_client/
 findings.md
 progress.md
