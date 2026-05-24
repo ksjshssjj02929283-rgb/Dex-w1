@@ -1063,9 +1063,11 @@ void PlannerManager::PublishPlannerInfo() {
     // 计算末端在 world (URDF 根 base_link, z 朝上) 下的位姿，
     // 用于工具重力补偿等需要真实 world 重力方向的场景。
     // 注: ee_pose_measurement 是 armlbase->TCP，受 torso 关节姿态影响，不能直接当作 world->ee 使用。
+    // 注意: 仅在 Idle/Running 状态下写入真实 FK; 其它状态保持 size=0, 让下游 (例如力传感器零偏结算)
+    // 能可靠区分 "未就绪" 和 "已就绪", 而不是看到默认构造的 (0,0,0, 1,0,0,0) 占位身份四元数.
     auto& ee_pose_world = runtime_data_.publish_ee_pose_world;
-    PoseQuaternion ee_pose_world_primary, ee_pose_world_secondary;
     if (this->manager_state_ == Status::Idle || this->manager_state_ == Status::Running) {
+        PoseQuaternion ee_pose_world_primary, ee_pose_world_secondary;
         const auto& whole_model = *robot_model_.model_ptr;
         // armlee/armree 在 URDF 中既是固定关节名也是 child link 名, pinocchio 会注册多个同名 frame,
         // 必须显式指定 FrameType 否则 getFrameId 抛 invalid_argument. 这里取 link 对应的 BODY.
@@ -1085,10 +1087,13 @@ void PlannerManager::PublishPlannerInfo() {
             ee_pose_world_primary = PoseQuaternion(oM_tcp_primary.toHomogeneousMatrix());
             ee_pose_world_secondary = PoseQuaternion(oM_tcp_secondary.toHomogeneousMatrix());
         }
+        ee_pose_world << ee_pose_world_primary.ToVectorXd(), ee_pose_world_secondary.ToVectorXd();
+        ee_pose_world = (ee_pose_world.array() * 1e5).round() / 1e5;
+        info.ee_pose_world_measurement = ee_pose_world;
+    } else {
+        // Init/Error 状态下不写 ee_pose_world_measurement, info.ee_pose_world_measurement 保持默认 size=0.
+        // (publish_ee_pose_world 是预分配的 14 维变量, 不动它的容量, 只是不拷贝到 info.)
     }
-    ee_pose_world << ee_pose_world_primary.ToVectorXd(), ee_pose_world_secondary.ToVectorXd();
-    ee_pose_world = (ee_pose_world.array() * 1e5).round() / 1e5;
-    info.ee_pose_world_measurement = ee_pose_world;
 
     auto& torso_X_Z_RY = runtime_data_.publish_torso_X_Z_RY;
     torso_X_Z_RY << torso_pose.position[0], torso_pose.position[2],
