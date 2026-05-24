@@ -176,6 +176,8 @@ bool SriForceSensor::TryFinalizeBias() {
     }
 
     robot_server_lib::Vector6d tool_gravity_ee = robot_server_lib::Vector6d::Zero();
+    Eigen::Vector3d rpy_log = Eigen::Vector3d::Zero();
+    bool gravity_subtracted = false;
     if (mToolGravityCompensationForZeroEnabled) {
         if (!mRotationWorldFromEEProvider) {
             return false;
@@ -190,6 +192,8 @@ bool SriForceSensor::TryFinalizeBias() {
             static_cast<double>(mToolModelSign) * R.transpose() * (mToolMassKg * gravity_world);
         tool_gravity_ee.head<3>() = force_ee;
         tool_gravity_ee.tail<3>() = mToolComM.cross(force_ee);
+        rpy_log = R.eulerAngles(0, 1, 2);  // intrinsic XYZ, only for log
+        gravity_subtracted = true;
     }
 
     for (int i = 0; i < 6; ++i) {
@@ -203,12 +207,15 @@ bool SriForceSensor::TryFinalizeBias() {
 
     // Restore observability log line that ProcessCalibrationData used to emit.
     printf(
-        "[Info] SRI force sensor: Zero calibration completed: samples=%d, bias_ee=%.4f, %.4f, %.4f, %.4f, %.4f, %.4f\n",
+        "[Info] SRI force sensor: Zero calibration completed: samples=%d, bias_ee=%.4f, %.4f, %.4f, %.4f, %.4f, %.4f, "
+        "gravity_subtracted=%d, R_finalize_rpy_xyz=%.4f, %.4f, %.4f\n",
         mZeroOffsetSampleCount, mZeroOffset[0], mZeroOffset[1], mZeroOffset[2], mZeroOffset[3], mZeroOffset[4],
-        mZeroOffset[5]);
+        mZeroOffset[5], gravity_subtracted ? 1 : 0, rpy_log[0], rpy_log[1], rpy_log[2]);
     LOG_INFO << "Zero calibration completed: samples=" << mZeroOffsetSampleCount
              << ", bias_ee=" << mZeroOffset[0] << ", " << mZeroOffset[1] << ", " << mZeroOffset[2] << ", "
-             << mZeroOffset[3] << ", " << mZeroOffset[4] << ", " << mZeroOffset[5];
+             << mZeroOffset[3] << ", " << mZeroOffset[4] << ", " << mZeroOffset[5]
+             << ", gravity_subtracted=" << (gravity_subtracted ? 1 : 0)
+             << ", R_finalize_rpy_xyz=" << rpy_log[0] << ", " << rpy_log[1] << ", " << rpy_log[2];
 
     return true;
 }

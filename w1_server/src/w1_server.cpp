@@ -168,6 +168,12 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
 
 
 std::optional<Eigen::Matrix3d> RobotServer::GetEERotationWorldFromEE(int arm_index) const {
+    // PlannerManager 在 manager_state_ ∈ {Init, Error} 时仍然把 14 维 ee_pose_world_measurement
+    // 写入 buffer, 但里面是默认构造的 (0,0,0, 1,0,0,0) —— 看起来 valid 实际是占位 identity.
+    // 不加这条门, 力传感器零偏会在 R=I 假设下结算, 残留 ~m·g 的工具重力分量.
+    if (this->manager_state_ != Status::Idle && this->manager_state_ != Status::Running) {
+        return std::nullopt;
+    }
     const auto& ee_pose_world = this->manager_info_.ee_pose_world_measurement;
     const int offset = arm_index * 7;
     if (ee_pose_world.size() < offset + 7) {
