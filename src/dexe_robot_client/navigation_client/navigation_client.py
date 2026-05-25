@@ -74,7 +74,6 @@ class NavigationClient(ABC, Node):
         self.spin_once(timeout_sec=timeout_sec)
 
         self.create_timer(0.1, self._check_connection_status)
-        self.create_timer(0.5, self.refresh_control_status)
 
     def _check_connection_status(self):
         """定时检查消息是否超时"""
@@ -169,7 +168,7 @@ class NavigationClient(ABC, Node):
         Returns:
             bool: 如果检测到障碍物则返回 True，否则返回 False。
         """
-        self.spin_once()
+        # self.spin_once()
         return self._has_obstacle
 
     def get_chassis_position(self) -> tuple[bool, np.ndarray]:
@@ -253,7 +252,7 @@ class NavigationClient(ABC, Node):
                 - "CANCELLED": 已取消
         """
         # 触发 ROS2 回调（非常重要）
-        self.spin_once()
+        # self.spin_once()
 
         return self._nav_status
 
@@ -317,26 +316,43 @@ class NavigationClient(ABC, Node):
             self.get_logger().error("Service call timed out.")
             return False
 
-    def get_control_status(self) -> str:
+    def get_control_status(self, consume: bool = True) -> str:
         """
-        获取当前缓存的底层控制状态（不触发服务调用）
+        获取当前底盘控制状态（供上层业务轮询调用）。
 
+        每次调用会先处理已到达的异步响应和缓存，再触发一次异步状态刷新。
+        终态可以按需在返回后从本地缓存消费掉，避免上层重复读取同一终态。
+
+        Args:
+            consume (bool): 如果为 True，当返回 SUCCEED/SUCCEEDED/FAILED 等终态后，
+                会重置本地缓存为 IDLE。
         Returns:
             str:
                 - "IDLE"
                 - "CONTROL"
+                - "SUCCEED"
+                - "SUCCEEDED"
+                - "FAILED"
                 - "CANCEL CONTROL"
                 - "UNKNOWN"
         """
-        self.spin_once()
+        self._spin_once_if_not_executed(timeout_sec=0.01)
 
         if self._last_control_status_success and self._last_control_status_time:
-            # 防止返回陈旧状态
             if (time.time() - self._last_control_status_time
                ) <= self._control_status_timeout:
-                return self._last_control_status
+                status = self._last_control_status
+                if consume and status in [
+                        "SUCCEED", "SUCCEEDED", "FAILED", "CANCEL CONTROL",
+                        "CANCELLED"
+                ]:
+                    self._last_control_status = "IDLE"
+                self.refresh_control_status()
+                return status
 
+        self.refresh_control_status()
         return "UNKNOWN"
+
 
     def refresh_control_status(self) -> bool:
         """
@@ -731,3 +747,4 @@ class NavigationClient(ABC, Node):
 
         self.get_logger().info(f"Parameter '{name}' verified successfully.")
         return True
+
