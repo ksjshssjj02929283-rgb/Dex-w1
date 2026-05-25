@@ -5557,3 +5557,135 @@ class W1Manager:
                 return StatusCode.COLLISION_FAIL, None, None, None
 
         return StatusCode.SUCCESS, full_body_joint_traj_, left_arm_ee_trigger_list, right_arm_ee_trigger_list
+
+
+    def plan_linear_dual_arm(self,
+                             start_qpos: np.ndarray, 
+                             start_left_arm_ee_pos: np.ndarray, 
+                             start_right_arm_ee_pos: np.ndarray,
+                             task_dict: dict, 
+                             path_blend_tolerance: float = 0.01,
+                             is_local: bool = True, 
+                             use_collision_validator: bool = True):
+        """
+        task_dict: {"left_arm": [[user_pose1],[user_pose2],],
+                    "left_arm_speed_ratio": [speed1, speed2,],
+                    "left_arm_start_speed_ratio": speed_start,
+                    "left_arm_end_speed_ratio": speed_end,
+
+                    "right_arm": [[user_pose1],[user_pose2],],
+                    "right_arm_speed_ratio": [speed1, speed2,],
+                    "right_arm_start_speed_ratio": speed_start,
+                    "right_arm_end_speed_ratio": speed_end
+                    }
+        """
+        def _calc_path_vel(speed_ratio, tangent):
+            vel = speed_ratio * self.w1_params.default_vel
+            path_vel = 1e3
+            for i in range(6):
+                temp = max(abs(tangent[i]), 1e-6)
+                path_vel = min(path_vel, vel[i] / temp)
+            return path_vel
+
+        def _plan_linear_single_arm(name, start_qpos, task_dict, path_blend_tolerance, is_local):
+            arm_kine = self._get_arm_kine(name)
+
+            pose_list = task_dict.get(name, None)
+            if pose_list is None or pose_list == []:
+                self.logger.debug(f"No task for {name} in task_dict.")
+                return StatusCode.SUCCESS, np.array(start_qpos[self.w1_params.index_infos[name]["index"]])
+            
+            speed_ratio_list = task_dict.get(f"{name}_speed_ratio", None)
+            if speed_ratio_list is None:
+                speed_ratio_list = [1.0] * len(pose_list)
+            if len(speed_ratio_list) != len(pose_list):
+                self.logger.error(
+                    f"The length of {name}_speed_ratio should be the same as the number of waypoints for {name}."
+                )
+                return StatusCode.INPUT_INVALID, None
+            
+            start_speed_ratio = task_dict.get(f"{name}_start_speed_ratio", 0.0)
+            end_speed_ratio = task_dict.get(f"{name}_end_speed_ratio", 0.0)
+            
+            xpos_list = [user_pose_to_xpos(pose[:3], pose[3:]) for pose in pose_list]
+            if not is_local:
+                res, T_chassis_arm_base = self.kine.get_fk(f"{name}_base", start_qpos)
+                if not res:
+                    return StatusCode.FK_FAIL, None
+                xpos_list = [np.linalg.inv(T_chassis_arm_base) @ xpos for xpos in xpos_list]
+
+            res1, start_xpos = arm_kine.get_fk(start_qpos[self.w1_params.index_infos[name]["index"]]);
+            if not res1:
+                return StatusCode.FK_FAIL, None
+
+            if not np.allclose(start_xpos, xpos_list[0], atol=0.001):
+                xpos_list = [start_xpos] + xpos_list
+                speed_ratio_list = [speed_ratio_list[0]] + speed_ratio_list
+            if len(xpos_list) < 2:
+                return StatusCode.SUCCESS, np.array(start_qpos[self.w1_params.index_infos[name]["index"]])
+
+            waypoints = [R3xSO3(SE3(xpos).coeffs()) for xpos in xpos_list]
+
+            tangent_start = (R3xSO3(SE3(xpos_list[1]).coeffs()) - R3xSO3(SE3(xpos_list[0]).coeffs())).coeffs()
+            tangent_start /= np.linalg.norm(tangent_start[:3])
+            path_vel_start = _calc_path_vel(start_speed_ratio, tangent_start)
+            path_acc_start = 0.0
+
+            tangent_end = (R3xSO3(SE3(xpos_list[-1]).coeffs()) - R3xSO3(SE3(xpos_list[-2]).coeffs())).coeffs()
+            tangent_end /= np.linalg.norm(tangent_end[:3])
+            path_vel_end = _calc_path_vel(end_speed_ratio, tangent_end)
+            path_acc_end = 0.0
+
+            traj_constraints = [TrajectoryConstraint(R3xSO3Tangent(speed_ratio * self.w1_params.default_vel),
+                                                         R3xSO3Tangent(self.w1_params.max_acc),
+                                                         R3xSO3Tangent(self.w1_params.max_jerk))
+                                    for speed_ratio in speed_ratio_list]
+            res2, path, traj = create_double_s_traj_along_blend_path(waypoints, 
+                                                                     BlendType.Bezier5th, 
+                                                                     path_blend_tolerance, 
+                                                                     path_vel_start, path_acc_start,
+                                                                     path_vel_end, path_acc_end,
+                                                                     traj_constraints)
+            if res2 != StatusType.Success:
+                return StatusCode.PLAN_TRAJ_FAIL, None
+            
+            num = np.ceil(traj.get_duration() / self.TIME_STEP) + 1
+            traj_point_list = traj.sample_by_num(int(num))
+            xpos_array = np.array([SE3(tp.pos.coeffs()).transform() for tp in traj_point_list])
+
+            res3, qpos_traj = calc_iks_func(arm_kine, start_qpos[self.w1_params.index_infos[name]["index"]], xpos_array)
+            if res3.type != StatusType.Success:
+                return StatusCode.IK_FAIL, None
+            return StatusCode.SUCCESS, np.array(qpos_traj)
+
+        res1, left_apos_traj = _plan_linear_single_arm("left_arm", 
+                                                        start_qpos, 
+                                                        task_dict, 
+                                                        path_blend_tolerance, 
+                                                        is_local)
+        if res1 != StatusCode.SUCCESS:
+            self.logger.error("left arm traj planning failed.")
+            return res1, None
+        
+        res2, right_apos_traj = _plan_linear_single_arm("right_arm", 
+                                                        start_qpos, 
+                                                        task_dict, 
+                                                        path_blend_tolerance, 
+                                                        is_local)
+        if res2 != StatusCode.SUCCESS:
+            self.logger.error("right arm traj planning failed.")
+            return res2, None
+    
+        torso_qpos_traj = np.array([start_qpos[self.w1_params.index_infos["torso"]["index"]].tolist()])
+        head_qpos_traj = np.array([start_qpos[self.w1_params.index_infos["head"]["index"]].tolist()])
+        res3, qpos_traj = self._qpos_align(torso_qpos_traj,
+                                           head_qpos_traj,
+                                            left_apos_traj,
+                                            right_apos_traj)
+        if not res3:
+            return StatusCode.INPUT_INVALID, None
+        
+        if use_collision_validator:
+            if self._is_traj_collision(qpos_traj, start_left_arm_ee_pos, start_right_arm_ee_pos) != StatusCode.FAIL:
+                return StatusCode.COLLISION_FAIL, None
+        return StatusCode.SUCCESS, qpos_traj
