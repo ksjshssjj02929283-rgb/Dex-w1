@@ -4,6 +4,7 @@ from geometry_msgs.msg import PoseStamped
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
+from nav_interfaces.action import PreciseControl
 from std_srvs.srv import Trigger
 from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.parameter import Parameter
@@ -23,19 +24,17 @@ class ChassisClient(NavigationClient):
         if is_sim:
             self._set_nav_publisher = self.create_publisher(
                 PoseStamped, f"/control_sim/nav2_pose", 10)
-            self._set_ctrl_publisher = self.create_publisher(
-                PoseStamped, f"/control_sim/ctrl_pose", 10)
         else:
             self._set_nav_publisher = self.create_publisher(
                 PoseStamped, f"/control/nav2_pose", 10)
-            self._set_ctrl_publisher = self.create_publisher(
-                PoseStamped, f"/control/ctrl_pose", 10)
 
     def _init_subscriber(self, is_sim: bool):
         if is_sim:
             self._get_pos_subscriber = self.create_subscription(
                 PoseStamped, f"/feedback_sim/chassis_pose",
                 self._chassis_feedback_callback, 10)
+            self._set_ctrl_client = ActionClient(self, PreciseControl,
+                                                 'control/precise_control')
         else:
             self._get_pos_subscriber = self.create_subscription(
                 PoseStamped, f"/feedback/chassis_pose",
@@ -46,10 +45,8 @@ class ChassisClient(NavigationClient):
 
             self._set_nav_client = ActionClient(self, NavigateToPose,
                                                 'navigate_to_pose')
-            self._get_status_client = self.create_client(
-                Trigger, 'control/get_control_status')
-            self._cancel_control_client = self.create_client(
-                Trigger, 'control/cancel_chassis_control')
+            self._set_ctrl_client = ActionClient(self, PreciseControl,
+                                                 'control/precise_control')
             self._set_chassis_charging_client = self.create_client(
                 Trigger, 'auto_charging')
 

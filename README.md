@@ -92,9 +92,9 @@ More examlpes see `dexe_robot_client/examples`.
 
 ## 🧭 Navigation Client
 
-`NavigationClient.get_control_status()` 用于阻塞式查询底盘控制状态。该接口不会通过定时器后台轮询服务；上层每次调用时都会请求一次 `control/get_control_status` Trigger 服务，并同步等待本次服务响应，避免底层一次性 `SUCCEED` 状态被后台查询提前消费。
+`NavigationClient.set_chassis_control_position(position)` 使用 `control/precise_control` (`nav_interfaces/action/PreciseControl`) action 发送底盘精控目标，不再发布 `/control/ctrl_pose`，也不再调用 `control/get_control_status` 或 `control/cancel_chassis_control` Trigger 服务。
 
-`get_control_status(timeout_sec=1.0)` 使用独立临时 node 和独立 `SingleThreadedExecutor` 等待服务响应，避免主客户端 executor 阻塞影响状态查询。服务不可用、服务调用超时、服务异常或响应 `success=False` 时返回 `"UNKNOWN"`。
+目标仍基于 `base_link`：`position` 为 `[x, 0, yaw]`，`yaw` 单位为度，`x` 和 `yaw` 不能同时非零。已有精控任务活跃时，新目标会返回 `False`；`get_control_status()` 读取 action feedback/result 维护的本地状态缓存，`cancel_chassis_control()` 通过当前 action goal handle 发送取消请求。
 
 
 ## 🏷️ Others

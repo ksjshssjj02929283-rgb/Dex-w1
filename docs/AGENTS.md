@@ -15,6 +15,7 @@
 - 如果改动影响用户入口，也应同步更新仓库根目录 `README.md`。
 - 文档应说明实际行为、失败返回、接口语义和关键约束，避免只写泛化模板。
 - 后续修改 `src/dexe_robot_client/navigation_client/` 的 topic、service、action、消息类型或 Nav2 参数依赖时，应同步维护 `docs/README.md` 中的 ROS/Nav2 接口依赖清单和最小 apt 安装命令。
+- `navigation_client` 的底盘精控接口使用 `control/precise_control` (`nav_interfaces/action/PreciseControl`)；文档需说明目标仍基于 `base_link`，状态来自 action feedback/result，本地状态缓存由客户端维护。
 - 如果新增依赖会拉起完整 Nav2 栈或可能影响 OMPL 安装方式，应在 `dependencies/README.md` 中说明冲突风险和推荐安装边界。
 
 ## 构建约束

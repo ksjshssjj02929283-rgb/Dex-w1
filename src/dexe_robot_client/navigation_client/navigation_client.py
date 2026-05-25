@@ -9,6 +9,7 @@ from geometry_msgs.msg import PoseStamped
 from action_msgs.msg import GoalStatus
 from scipy.spatial.transform import Rotation as R
 from nav2_msgs.action import NavigateToPose
+from nav_interfaces.action import PreciseControl
 from std_srvs.srv import Trigger
 from rcl_interfaces.srv import SetParameters, GetParameters
 from rcl_interfaces.msg import ParameterType
@@ -41,10 +42,9 @@ class NavigationClient(ABC, Node):
         self._connection_timeout = 1.0
         self._set_nav_publisher = None
         self._set_nav_client = None
-        self._set_ctrl_publisher = None
+        self._set_ctrl_client = None
         self._get_pos_subscriber = None
         self._set_chassis_charging_client = None
-        self._cancel_control_client = None
         self._controller_set_param_client = None
         self._local_costmap_set_param_client = None
         self._global_costmap_set_param_client = None
@@ -62,12 +62,16 @@ class NavigationClient(ABC, Node):
         self._nav_status = "IDLE"  # 或 NAVIGATING / SUCCEEDED / FAILED / CANCELLED
         self._nav_result = None  # 存储最后的导航结果
         self._nav_task_id = 0  # 导航任务ID，用于区分不同的导航任务
-        self._last_control_status = None
-        self._last_control_status_success = False
-        # control status 防抖 + 防陈旧
-        self._control_status_requesting = False
+        self._control_lock = threading.Lock()
+        self._control_goal_handle = None
+        self._control_result_future = None
+        self._control_status = "IDLE"
+        self._control_result = None
+        self._control_task_id = 0
+        self._last_control_status = "IDLE"
+        self._last_control_status_success = True
         self._last_control_status_time = None
-        self._control_status_timeout = 1.0  # 秒，超过认为状态陈旧
+        self._control_terminal_states = {"SUCCEEDED", "FAILED", "CANCELLED"}
 
         self._init_subscriber(is_sim)
         self._init_publisher(is_sim)
@@ -318,84 +322,71 @@ class NavigationClient(ABC, Node):
 
     def get_control_status(self, consume: bool = True) -> str:
         """
-        获取当前底盘控制状态（供上层业务轮询调用）。
-
-        每次调用会先处理已到达的异步响应和缓存，再触发一次异步状态刷新。
-        终态可以按需在返回后从本地缓存消费掉，避免上层重复读取同一终态。
+        获取当前底盘控制 action 状态（供上层业务轮询调用）。
 
         Args:
-            consume (bool): 如果为 True，当返回 SUCCEED/SUCCEEDED/FAILED 等终态后，
-                会重置本地缓存为 IDLE。
+            consume (bool): 如果为 True，返回终态后会重置本地缓存为 IDLE。
+
         Returns:
             str:
                 - "IDLE"
                 - "CONTROL"
-                - "SUCCEED"
                 - "SUCCEEDED"
                 - "FAILED"
-                - "CANCEL CONTROL"
-                - "UNKNOWN"
+                - "CANCELLED"
+                - action feedback 中的 current_status
         """
         self._spin_once_if_not_executed(timeout_sec=0.01)
 
-        if self._last_control_status_success and self._last_control_status_time:
-            if (time.time() - self._last_control_status_time
-               ) <= self._control_status_timeout:
-                status = self._last_control_status
-                if consume and status in [
-                        "SUCCEED", "SUCCEEDED", "FAILED", "CANCEL CONTROL",
-                        "CANCELLED"
-                ]:
-                    self._last_control_status = "IDLE"
-                self.refresh_control_status()
-                return status
-
-        self.refresh_control_status()
-        return "UNKNOWN"
-
+        with self._control_lock:
+            status = self._control_status
+            if consume and status in self._control_terminal_states:
+                self._control_status = "IDLE"
+                self._last_control_status = "IDLE"
+            return status
 
     def refresh_control_status(self) -> bool:
         """
-        主动向底层控制节点请求一次状态（异步，带 in-flight 防抖）
+        兼容旧接口：处理一次 action 回调并返回是否存在有效本地状态。
+
         Returns:
-            bool: 请求是否成功发出
+            bool: 当前是否有可读状态。
         """
-        # 防止请求堆积
-        if self._control_status_requesting:
-            return False
-
-        if not hasattr(self, '_get_status_client') or \
-        not self._get_status_client.wait_for_service(timeout_sec=0.2):
-            return False
-
-        request = Trigger.Request()
-        try:
-            self._control_status_requesting = True
-            future = self._get_status_client.call_async(request)
-            future.add_done_callback(self._on_get_control_status_response)
-            return True
-        except Exception as e:
-            self._control_status_requesting = False
-            self.get_logger().error(f"Failed to refresh control status: {e}")
-            return False
+        self._spin_once_if_not_executed(timeout_sec=0.01)
+        with self._control_lock:
+            return self._control_status != "UNKNOWN"
 
     def cancel_chassis_control(self) -> bool:
-        """请求取消当前的控制任务。
+        """取消当前底盘控制 action（非阻塞）。
 
         返回:
-            bool: 如果服务调用成功则为 True。
+            bool: 如果取消请求成功发出则为 True。
         """
-        if not hasattr(
-                self, '_cancel_control_client'
-        ) or not self._cancel_control_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().error("Cancel control service not available.")
+        with self._control_lock:
+            goal_handle = self._control_goal_handle
+            current_task_id = self._control_task_id
+            status = self._control_status
+
+        if goal_handle is None and status == "CONTROL":
+            start_time = time.time()
+            while time.time() - start_time < 1.0:
+                self._spin_once_if_not_executed(timeout_sec=0.05)
+                with self._control_lock:
+                    goal_handle = self._control_goal_handle
+                    current_task_id = self._control_task_id
+                if goal_handle is not None:
+                    break
+                time.sleep(0.02)
+
+        if goal_handle is None:
+            self.get_logger().warning("No active control goal to cancel.")
             return False
 
-        # 非阻塞调用：发送请求后立即返回，结果由回调处理
-        request = Trigger.Request()
         try:
-            future = self._cancel_control_client.call_async(request)
-            future.add_done_callback(self._on_cancel_control_response)
+            cancel_future = goal_handle.cancel_goal_async()
+            cancel_future.add_done_callback(
+                lambda future: self._on_control_cancel_response(
+                    future, current_task_id))
             self.get_logger().info("Cancel control request sent.")
             return True
         except Exception as e:
@@ -413,25 +404,70 @@ class NavigationClient(ABC, Node):
         Returns:
             bool: 如果目标发送成功则为 True。
         """
-        chassis_position = PoseStamped()
-        chassis_position.header.frame_id = "base_link"
-        chassis_position.pose.position.x = position[0]
-        chassis_position.pose.position.y = 0.0
-        chassis_position.pose.position.z = 0.0
-
-        rotation = R.from_euler('xyz', [0, 0, position[2]], degrees=True)
-        quat_arry = rotation.as_quat()
-
-        chassis_position.pose.orientation.x = quat_arry[0]
-        chassis_position.pose.orientation.y = quat_arry[1]
-        chassis_position.pose.orientation.z = quat_arry[2]
-        chassis_position.pose.orientation.w = quat_arry[3]
         if position[0] != 0.0 and position[2] != 0:
             self.get_logger().info(
                 "illegal position, x and yaw should not be set together.")
             return False
 
-        self._set_ctrl_publisher.publish(chassis_position)
+        with self._control_lock:
+            has_active_control = (self._control_goal_handle is not None or
+                                  self._control_status not in {
+                                      "IDLE", *self._control_terminal_states
+                                  })
+        if has_active_control:
+            self.get_logger().warning(
+                "Precise control goal is active; cancel it before sending a new one."
+            )
+            return False
+
+        if self._set_ctrl_client is None:
+            self.get_logger().error(
+                "PreciseControl action client not initialized.")
+            return False
+
+        if not self._set_ctrl_client.wait_for_server(timeout_sec=1.0):
+            self.get_logger().error(
+                "PreciseControl action server not available.")
+            return False
+
+        control_goal = PreciseControl.Goal()
+        control_goal.target_pose = PoseStamped()
+        control_goal.target_pose.header.frame_id = "base_link"
+        control_goal.target_pose.pose.position.x = float(position[0])
+        control_goal.target_pose.pose.position.y = 0.0
+        control_goal.target_pose.pose.position.z = 0.0
+
+        rotation = R.from_euler('xyz', [0, 0, position[2]], degrees=True)
+        quat_arry = rotation.as_quat()
+
+        control_goal.target_pose.pose.orientation.x = quat_arry[0]
+        control_goal.target_pose.pose.orientation.y = quat_arry[1]
+        control_goal.target_pose.pose.orientation.z = quat_arry[2]
+        control_goal.target_pose.pose.orientation.w = quat_arry[3]
+
+        with self._control_lock:
+            self._control_task_id += 1
+            current_task_id = self._control_task_id
+            self._control_goal_handle = None
+            self._control_result = None
+            self._control_status = "CONTROL"
+            self._last_control_status = "CONTROL"
+            self._last_control_status_success = True
+            self._last_control_status_time = time.time()
+
+        try:
+            send_future = self._set_ctrl_client.send_goal_async(
+                control_goal,
+                feedback_callback=lambda feedback_msg: self.
+                _on_control_feedback(feedback_msg, current_task_id))
+            send_future.add_done_callback(
+                lambda future: self._on_control_goal_response(
+                    future, current_task_id))
+        except Exception as e:
+            self._set_control_status("FAILED", current_task_id)
+            self._clear_control_goal(current_task_id)
+            self.get_logger().error(f"Failed to send precise control goal: {e}")
+            return False
         return True
 
     def set_goal_tolerance(self, xy_tolerance: float,
@@ -539,6 +575,12 @@ class NavigationClient(ABC, Node):
         r"""Spin the node once with a timeout of 0.1 sec."""
         rclpy.spin_once(self, timeout_sec=timeout_sec)
 
+    def _spin_once_if_not_executed(self, timeout_sec: float = 0.01):
+        try:
+            self.spin_once(timeout_sec=timeout_sec)
+        except RuntimeError as e:
+            self.get_logger().debug(f"spin_once skipped: {e}")
+
     def spin(self):
         r"""Continuously spin the node while rclpy is running."""
         while rclpy.ok():
@@ -615,34 +657,116 @@ class NavigationClient(ABC, Node):
         except Exception as e:
             self.get_logger().error(f"Error in cancel response: {str(e)}")
 
-    def _on_cancel_control_response(self, future):
-        """Callback for cancel control service response (non-blocking)."""
+    def _on_control_goal_response(self, future, task_id):
+        """Callback for precise control goal response."""
+        with self._control_lock:
+            if task_id != self._control_task_id:
+                return
+
         try:
-            response = future.result()
-            self.get_logger().info(
-                f"Cancel control response: {response.message}")
+            goal_handle = future.result()
+            if not goal_handle.accepted:
+                self._set_control_status("FAILED", task_id)
+                self._clear_control_goal(task_id)
+                self.get_logger().error("Precise control goal was rejected.")
+                return
+
+            with self._control_lock:
+                if task_id != self._control_task_id:
+                    return
+                self._control_goal_handle = goal_handle
+
+            self.get_logger().info("Precise control goal accepted.")
+            result_future = goal_handle.get_result_async()
+            with self._control_lock:
+                if task_id == self._control_task_id:
+                    self._control_result_future = result_future
+            result_future.add_done_callback(
+                lambda result_future: self._on_control_result(
+                    result_future, task_id))
         except Exception as e:
-            self.get_logger().error(f"Error in cancel control response: {e}")
+            self._set_control_status("FAILED", task_id)
+            self._clear_control_goal(task_id)
+            self.get_logger().error(
+                f"Error in precise control goal response: {e}")
 
-    def _on_get_control_status_response(self, future):
-        """Callback for get_control_status async response (non-blocking)."""
-        self._control_status_requesting = False
+    def _on_control_feedback(self, feedback_msg, task_id):
+        """Callback for precise control feedback."""
+        with self._control_lock:
+            if task_id != self._control_task_id:
+                return
+            status = feedback_msg.feedback.current_status
+            if status:
+                self._control_status = status
+                self._last_control_status = status
+                self._last_control_status_time = time.time()
+                self._last_control_status_success = True
+
+    def _on_control_result(self, future, task_id):
+        """Callback for precise control result."""
+        with self._control_lock:
+            if task_id != self._control_task_id:
+                return
 
         try:
-            response = future.result()
+            result = future.result()
+            with self._control_lock:
+                if task_id != self._control_task_id:
+                    return
+                self._control_result = result
 
-            # 记录时间戳
+            if result.status == GoalStatus.STATUS_CANCELED:
+                self._set_control_status("CANCELLED", task_id)
+                self._clear_control_goal(task_id)
+                self.get_logger().info("Precise control goal was cancelled.")
+            elif result.status == GoalStatus.STATUS_SUCCEEDED and result.result.success:
+                self._set_control_status("SUCCEEDED", task_id)
+                self._clear_control_goal(task_id)
+                self.get_logger().info(
+                    f"Precise control succeeded: {result.result.message}")
+            else:
+                self._set_control_status("FAILED", task_id)
+                self._clear_control_goal(task_id)
+                self.get_logger().error(
+                    f"Precise control failed with status {result.status}: "
+                    f"{result.result.message}")
+        except Exception as e:
+            self._set_control_status("FAILED", task_id)
+            self._clear_control_goal(task_id)
+            self.get_logger().error(
+                f"Error getting precise control result: {e}")
+
+    def _on_control_cancel_response(self, future, task_id):
+        """Callback for precise control cancel response."""
+        with self._control_lock:
+            if task_id != self._control_task_id:
+                return
+
+        try:
+            future.result()
+        except Exception as e:
+            self.get_logger().error(
+                f"Error in precise control cancel response: {e}")
+            return
+
+        self._set_control_status("CANCELLING", task_id)
+        self.get_logger().info("Precise control goal cancel request accepted.")
+
+    def _set_control_status(self, status: str, task_id: int = None):
+        with self._control_lock:
+            if task_id is not None and task_id != self._control_task_id:
+                return
+            self._control_status = status
+            self._last_control_status = status
+            self._last_control_status_success = status != "UNKNOWN"
             self._last_control_status_time = time.time()
 
-            # 直接缓存（假设底层返回的就是合法状态）
-            self._last_control_status = response.message
-            self._last_control_status_success = bool(response.success)
-
-            # self.get_logger().info(f"Control status updated: {response.message}")
-        except Exception as e:
-            self._last_control_status_success = False
-            self.get_logger().error(
-                f"Error in get control status response: {e}")
+    def _clear_control_goal(self, task_id: int = None):
+        with self._control_lock:
+            if task_id is not None and task_id != self._control_task_id:
+                return
+            self._control_goal_handle = None
+            self._control_result_future = None
 
     def _get_param(self, client, name: str):
         if not client.wait_for_service(timeout_sec=0.5):
@@ -747,4 +871,3 @@ class NavigationClient(ABC, Node):
 
         self.get_logger().info(f"Parameter '{name}' verified successfully.")
         return True
-
