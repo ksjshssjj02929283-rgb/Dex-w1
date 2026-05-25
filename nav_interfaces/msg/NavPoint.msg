@@ -2,7 +2,7 @@ std_msgs/Header header
 
 int32 id
 string name
-string type  # 点位类型: CHARGING, STATION, PICKUP, PARKING, FREE_GOAL, LIFT
+string type  # 点位类型: CHARGING, STATION, DOORWAIT, PARKING, FREE_GOAL, LIFT
 
 float32 x
 float32 y

@@ -16,12 +16,14 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(action_msgs REQUIRED)
 find_package(actionlib_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 
 # 3) 声明要生成的消息
 set(MSG_FILES
   "msg/Path.msg"
   "msg/PathPose.msg"
   "msg/AreaInfo.msg"
+  "msg/AreaInfoArray.msg"
   "msg/DTLane.msg"
   "msg/Lane.msg"
   "msg/LaneArray.msg"
@@ -43,6 +45,16 @@ set(MSG_FILES
   "msg/NavigationStatus.msg"
   "msg/ChangeTopology.msg"
   "msg/TopologyLine.msg"
+  "msg/Route.msg"
+  "msg/RouteEndpoint.msg"
+  "msg/RouteJunction.msg"
+  "msg/RouteEdge.msg"
+  "msg/RoutePlanSegment.msg"
+  "msg/RoutePlan.msg"
+  "msg/RoomBehavior.msg"
+  "msg/RoomInfo.msg"
+  "msg/RoomInfoArray.msg"
+  "msg/TaskProgress.msg"
 )
 
 # 4) 声明要生成的服务
@@ -58,6 +70,7 @@ set(SRV_FILES
   "srv/AddRoute.srv"
   "srv/RemoveRoute.srv"
   "srv/GetRoute.srv"
+  "srv/GetAllRoutes.srv"
   "srv/NavToPoint.srv"
   "srv/GetCurrentTaskInfo.srv"
   "srv/SetPose.srv"
@@ -71,8 +84,25 @@ set(SRV_FILES
   "srv/GetString.srv"
   "srv/AddAreaInfo.srv"
   "srv/GetAreaInfoList.srv"
+  "srv/GetAllAreas.srv"
+  "srv/RemoveAreaInfo.srv"
+  "srv/UpdateAreaInfo.srv"
   "srv/NavThroughPosesFile.srv"
   "srv/LoadPoint.srv"
+  "srv/AddRouteJunction.srv"
+  "srv/RemoveRouteJunction.srv"
+  "srv/AddRouteEdge.srv"
+  "srv/RemoveRouteEdge.srv"
+  "srv/UpdateRouteEdge.srv"
+  "srv/GetRouteGraph.srv"
+  "srv/TransformAssets.srv"
+  "srv/ResetMapOriginByXYYaw.srv"
+  "srv/AddRoom.srv"
+  "srv/RemoveRoom.srv"
+  "srv/UpdateRoom.srv"
+  "srv/GetAllRooms.srv"
+  "srv/GetRoomByName.srv"
+  "srv/GetRoomAtPose.srv"
 )
 
 # 5) 声明要生成的动作
@@ -80,6 +110,7 @@ set(ACTION_FILES
   "action/NavigateToPoint.action"
   "action/NavigateRoute.action"
   "action/PreciseControl.action"
+  "action/ExecuteMissionBt.action"
 )
 
 # 6) 生成接口（取代 ROS 1 的 add_message_files / add_service_files / generate_messages）
@@ -93,6 +124,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
     nav_msgs
     action_msgs
     actionlib_msgs
+    builtin_interfaces
 )
 
 # 7) 导出运行期依赖
@@ -103,6 +135,7 @@ ament_export_dependencies(
   nav_msgs
   action_msgs
   actionlib_msgs
+  builtin_interfaces
 )
 
 ament_package()
