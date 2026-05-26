@@ -6,7 +6,8 @@ X 轴随时间增长, 整段历史都会保留 (不做滚动窗口裁剪).
 可选曲线 (开关式, 用一个或多个):
     --force_sensor              滤波后六维力 (12 维, primary/secondary 各 6 维)
     --raw_force_sensor          原始六维力
-    --force_sensor_inertia      工具惯量补偿 wrench (primary, EE 系, 6 维: Fx Fy Fz Tx Ty Tz)
+    --force_sensor_inertia      工具惯量补偿 wrench (primary, EE 系, 6 维 Fx Fy Fz Tx Ty Tz)
+                                单独占一个子图, 6 条曲线同框
 
 不指定任何开关时默认绘制 force_sensor + raw_force_sensor.
 
@@ -29,7 +30,6 @@ from matplotlib.animation import FuncAnimation
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import String
-
 
 DEFAULT_STATE_TOPIC = "/feedback/robot_server_state"
 SIX_AXIS_LABELS = ["Fx [N]", "Fy [N]", "Fz [N]", "Tx [Nm]", "Ty [Nm]", "Tz [Nm]"]
@@ -117,13 +117,17 @@ def parse_args() -> argparse.Namespace:
 
 def build_panels(args, arms: List[str]) -> List[Tuple[str, str]]:
     """返回 panel 列表, 每项 (kind, label).
-    kind ∈ {"six_axis_0".."six_axis_5"} — 共用一组 6 个面板 (Fx Fy Fz Tx Ty Tz),
-    force_sensor / raw_force_sensor / force_sensor_inertia 都画在对应分量上.
+    kind:
+      - "six_axis_0".."six_axis_5": Fx Fy Fz Tx Ty Tz, 由 --force_sensor / --raw_force_sensor 共用
+      - "inertia_0".."inertia_5": 工具惯量补偿 wrench 的 6 个分量, 每个分量一张独立子图
     """
     panels: List[Tuple[str, str]] = []
-    if args.force_sensor or args.raw_force_sensor or args.force_sensor_inertia:
+    if args.force_sensor or args.raw_force_sensor:
         for i, lbl in enumerate(SIX_AXIS_LABELS):
             panels.append((f"six_axis_{i}", lbl))
+    if args.force_sensor_inertia:
+        for i, lbl in enumerate(SIX_AXIS_LABELS):
+            panels.append((f"inertia_{i}", f"inertia {lbl}"))
     return panels
 
 
@@ -133,11 +137,14 @@ def build_figure(args, arms: List[str], panels: List[Tuple[str, str]]):
         nrows, ncols = 1, n
     elif n <= 6:
         nrows, ncols = 2, 3
-    elif n == 7:
+    elif n <= 8:
         nrows, ncols = 2, 4
+    elif n <= 12:
+        nrows, ncols = 3, 4
     else:
-        nrows, ncols = 2, 4
-    fig, ax_grid = plt.subplots(nrows, ncols, figsize=(3.4 * ncols, 3.6 * nrows), squeeze=False)
+        ncols = 4
+        nrows = (n + ncols - 1) // ncols
+    fig, ax_grid = plt.subplots(nrows, ncols, figsize=(3.4 * ncols, 3.0 * nrows), squeeze=False)
     axes = ax_grid.flatten()
 
     lines: Dict[Tuple, plt.Line2D] = {}
@@ -156,11 +163,11 @@ def build_figure(args, arms: List[str], panels: List[Tuple[str, str]]):
                     l, = ax.plot([], [], color=color, linewidth=1.0, linestyle="--", alpha=0.7,
                                  label=f"{prefix}raw_force_sensor".strip())
                     lines[(arm, "raw", axis_idx)] = l
-            # 工具惯量补偿 wrench 仅 primary 一组, 不分 arm
-            if args.force_sensor_inertia and "primary" in arms:
-                l, = ax.plot([], [], color="tab:green", linewidth=1.4, linestyle=":",
-                             label="force_sensor_inertia")
-                lines[("inertia", axis_idx)] = l
+        elif kind.startswith("inertia_"):
+            axis_idx = int(kind.split("_")[-1])
+            l, = ax.plot([], [], color="tab:green", linewidth=1.4,
+                         label="force_sensor_inertia")
+            lines[("inertia", axis_idx)] = l
         ax.set_title(label)
         ax.grid(True, alpha=0.3)
         ax.axhline(0.0, color="gray", linewidth=0.6, alpha=0.5)
@@ -247,7 +254,11 @@ def main() -> None:
                         y = raw[:, sl][:, axis_idx]
                         lines[(arm, "raw", axis_idx)].set_data(t, y)
                         series_list.append(y)
-                if args.force_sensor_inertia and "primary" in arms and inertia.shape[0] == t.size:
+                update_axis_ylim(ax, series_list)
+            elif kind.startswith("inertia_"):
+                axis_idx = int(kind.split("_")[-1])
+                series_list = []
+                if inertia.shape[0] == t.size and inertia.shape[1] >= 6:
                     y = inertia[:, axis_idx]
                     lines[("inertia", axis_idx)].set_data(t, y)
                     series_list.append(y)
