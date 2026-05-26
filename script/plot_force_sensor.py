@@ -6,15 +6,14 @@ X 轴随时间增长, 整段历史都会保留 (不做滚动窗口裁剪).
 可选曲线 (开关式, 用一个或多个):
     --force_sensor              滤波后六维力 (12 维, primary/secondary 各 6 维)
     --raw_force_sensor          原始六维力
-    --tool_inertia_force_norm   工具惯量补偿力范数 (标量, EE 系)
-    --tool_inertia_torque_norm  工具惯量补偿力矩范数 (标量, EE 系)
+    --force_sensor_inertia      工具惯量补偿 wrench (primary, EE 系, 6 维: Fx Fy Fz Tx Ty Tz)
 
 不指定任何开关时默认绘制 force_sensor + raw_force_sensor.
 
 用法:
     python3 plot_force_sensor.py --force_sensor --raw_force_sensor
-    python3 plot_force_sensor.py --tool_inertia_force_norm --tool_inertia_torque_norm
-    python3 plot_force_sensor.py --force_sensor --tool_inertia_force_norm --arm both
+    python3 plot_force_sensor.py --force_sensor_inertia
+    python3 plot_force_sensor.py --force_sensor --force_sensor_inertia --arm primary
 """
 
 import argparse
@@ -49,8 +48,7 @@ class StateSubscriber(Node):
         self.t_buf: List[float] = []
         self.force_buf: List[np.ndarray] = []
         self.raw_buf: List[np.ndarray] = []
-        self.inertia_force_norm_buf: List[float] = []
-        self.inertia_torque_norm_buf: List[float] = []
+        self.inertia_wrench_buf: List[np.ndarray] = []  # primary 工具惯量 wrench, 6 维
         self.t0 = time.monotonic()
         self.received = 0
         self.parsed = 0
@@ -69,49 +67,48 @@ class StateSubscriber(Node):
             else:
                 force = np.zeros(12)
                 raw = np.zeros(12)
-            f_norm = float(data.get("tool_inertia_force_norm", float("nan")))
-            t_norm = float(data.get("tool_inertia_torque_norm", float("nan")))
+            inertia = np.asarray(data.get("force_sensor_inertia", []), dtype=float)
+            if inertia.size < 6:
+                inertia = np.full(6, np.nan)
+            else:
+                inertia = inertia[:6]
             t = time.monotonic() - self.t0
             with self._lock:
                 self.t_buf.append(t)
                 self.force_buf.append(force[:12].copy())
                 self.raw_buf.append(raw[:12].copy())
-                self.inertia_force_norm_buf.append(f_norm)
-                self.inertia_torque_norm_buf.append(t_norm)
+                self.inertia_wrench_buf.append(inertia.copy())
             self.parsed += 1
         except Exception:
             pass
 
-    def snapshot(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def snapshot(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         with self._lock:
             if not self.t_buf:
                 empty12 = np.empty((0, 12))
+                empty6 = np.empty((0, 6))
                 empty1 = np.empty(0)
-                return (empty1, empty12, empty12, empty1, empty1)
+                return (empty1, empty12, empty12, empty6)
             t = np.asarray(self.t_buf, dtype=float)
             force = np.asarray(self.force_buf, dtype=float)
             raw = np.asarray(self.raw_buf, dtype=float)
-            f_norm = np.asarray(self.inertia_force_norm_buf, dtype=float)
-            tq_norm = np.asarray(self.inertia_torque_norm_buf, dtype=float)
-        return t, force, raw, f_norm, tq_norm
+            inertia = np.asarray(self.inertia_wrench_buf, dtype=float)
+        return t, force, raw, inertia
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="实时绘制 robot_server_state 中力相关字段")
     parser.add_argument("--force_sensor", action="store_true", help="绘制 force_sensor (滤波后)")
     parser.add_argument("--raw_force_sensor", action="store_true", help="绘制 raw_force_sensor (原始)")
-    parser.add_argument("--tool_inertia_force_norm", action="store_true",
-                        help="绘制工具惯量补偿力范数 (标量, EE 系)")
-    parser.add_argument("--tool_inertia_torque_norm", action="store_true",
-                        help="绘制工具惯量补偿力矩范数 (标量, EE 系)")
+    parser.add_argument("--force_sensor_inertia", action="store_true",
+                        help="绘制工具惯量补偿 wrench (primary, EE 系, 6 维)")
     parser.add_argument("--arm", choices=["primary", "secondary", "both"], default="primary",
-                        help="选择手臂 (仅对六维力字段生效)")
+                        help="选择手臂 (仅对六维力字段生效; force_sensor_inertia 只有 primary)")
     parser.add_argument("--interval", type=float, default=50.0, help="刷新间隔 (毫秒), 默认 50ms")
     parser.add_argument("--state-topic", default=DEFAULT_STATE_TOPIC)
     args = parser.parse_args()
 
-    if not (args.force_sensor or args.raw_force_sensor
-            or args.tool_inertia_force_norm or args.tool_inertia_torque_norm):
+    if not (args.force_sensor or args.raw_force_sensor or args.force_sensor_inertia):
         # 默认: force_sensor + raw_force_sensor
         args.force_sensor = True
         args.raw_force_sensor = True
@@ -120,16 +117,13 @@ def parse_args() -> argparse.Namespace:
 
 def build_panels(args, arms: List[str]) -> List[Tuple[str, str]]:
     """返回 panel 列表, 每项 (kind, label).
-    kind ∈ {"six_axis_fx".."six_axis_tz", "inertia_f", "inertia_t"}.
+    kind ∈ {"six_axis_0".."six_axis_5"} — 共用一组 6 个面板 (Fx Fy Fz Tx Ty Tz),
+    force_sensor / raw_force_sensor / force_sensor_inertia 都画在对应分量上.
     """
     panels: List[Tuple[str, str]] = []
-    if args.force_sensor or args.raw_force_sensor:
+    if args.force_sensor or args.raw_force_sensor or args.force_sensor_inertia:
         for i, lbl in enumerate(SIX_AXIS_LABELS):
             panels.append((f"six_axis_{i}", lbl))
-    if args.tool_inertia_force_norm:
-        panels.append(("inertia_f", "|F_inertia| [N]"))
-    if args.tool_inertia_torque_norm:
-        panels.append(("inertia_t", "|T_inertia| [Nm]"))
     return panels
 
 
@@ -162,12 +156,11 @@ def build_figure(args, arms: List[str], panels: List[Tuple[str, str]]):
                     l, = ax.plot([], [], color=color, linewidth=1.0, linestyle="--", alpha=0.7,
                                  label=f"{prefix}raw_force_sensor".strip())
                     lines[(arm, "raw", axis_idx)] = l
-        elif kind == "inertia_f":
-            l, = ax.plot([], [], color="tab:green", linewidth=1.4, label="tool_inertia_force_norm")
-            lines[("inertia_f",)] = l
-        elif kind == "inertia_t":
-            l, = ax.plot([], [], color="tab:red", linewidth=1.4, label="tool_inertia_torque_norm")
-            lines[("inertia_t",)] = l
+            # 工具惯量补偿 wrench 仅 primary 一组, 不分 arm
+            if args.force_sensor_inertia and "primary" in arms:
+                l, = ax.plot([], [], color="tab:green", linewidth=1.4, linestyle=":",
+                             label="force_sensor_inertia")
+                lines[("inertia", axis_idx)] = l
         ax.set_title(label)
         ax.grid(True, alpha=0.3)
         ax.axhline(0.0, color="gray", linewidth=0.6, alpha=0.5)
@@ -204,7 +197,7 @@ def main() -> None:
     args = parse_args()
     arms = ["primary", "secondary"] if args.arm == "both" else [args.arm]
     want_six_axis = args.force_sensor or args.raw_force_sensor
-    want_inertia = args.tool_inertia_force_norm or args.tool_inertia_torque_norm
+    want_inertia = args.force_sensor_inertia
 
     rclpy.init()
     node = StateSubscriber(args.state_topic, want_six_axis, want_inertia)
@@ -230,15 +223,9 @@ def main() -> None:
     fig, axes, lines = build_figure(args, arms, panels)
 
     def update(_frame):
-        t, force, raw, f_norm, tq_norm = node.snapshot()
+        t, force, raw, inertia = node.snapshot()
         if t.size == 0:
             return list(lines.values())
-
-        # 工具惯量 norm: 负值是 "本周期未运行" 的哨兵, 用 NaN 屏蔽以中断曲线
-        f_norm_clean = f_norm.copy()
-        tq_norm_clean = tq_norm.copy()
-        f_norm_clean[f_norm_clean < 0] = np.nan
-        tq_norm_clean[tq_norm_clean < 0] = np.nan
 
         t_min = float(t[0])
         t_max = float(t[-1])
@@ -260,13 +247,11 @@ def main() -> None:
                         y = raw[:, sl][:, axis_idx]
                         lines[(arm, "raw", axis_idx)].set_data(t, y)
                         series_list.append(y)
+                if args.force_sensor_inertia and "primary" in arms and inertia.shape[0] == t.size:
+                    y = inertia[:, axis_idx]
+                    lines[("inertia", axis_idx)].set_data(t, y)
+                    series_list.append(y)
                 update_axis_ylim(ax, series_list)
-            elif kind == "inertia_f":
-                lines[("inertia_f",)].set_data(t, f_norm_clean)
-                update_axis_ylim(ax, [f_norm_clean])
-            elif kind == "inertia_t":
-                lines[("inertia_t",)].set_data(t, tq_norm_clean)
-                update_axis_ylim(ax, [tq_norm_clean])
             ax.set_xlim(t_min, t_max)
 
         return list(lines.values())
