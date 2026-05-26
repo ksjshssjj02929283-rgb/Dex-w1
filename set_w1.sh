@@ -180,8 +180,7 @@ class ForceMonitor(Node):
                 data.get("force_sensor", []),
                 data.get("raw_force_sensor", []),
                 data.get("force_sensor_bias", []),
-                data.get("tool_inertia_force_norm", None),
-                data.get("tool_inertia_torque_norm", None),
+                data.get("force_sensor_inertia", []),
                 data.get("tool_inertia_filter_cutoff_hz", None),
             )
         except Exception:
@@ -195,16 +194,15 @@ class ForceMonitor(Node):
         if latest is None:
             return
         (force_sensor, raw_force_sensor, force_sensor_bias,
-         tool_inertia_force_norm, tool_inertia_torque_norm, tool_inertia_filter_cutoff_hz) = latest
+         force_sensor_inertia, tool_inertia_filter_cutoff_hz) = latest
         print("------------------------------------------------", flush=True)
         print(f"force_sensor: {json.dumps(force_sensor, separators=(',', ':'))},", flush=True)
         print(f"raw_force_sensor: {json.dumps(raw_force_sensor, separators=(',', ':'))},", flush=True)
         print(f"force_sensor_bias: {json.dumps(force_sensor_bias, separators=(',', ':'))}", flush=True)
-        # 工具惯量补偿诊断: -1 = 本周期未运行 (首拍/失效/未启用), >=0 = 本周期实际扣减的范数
-        f_str = f"{tool_inertia_force_norm:.6f}" if tool_inertia_force_norm is not None else "n/a"
-        t_str = f"{tool_inertia_torque_norm:.6f}" if tool_inertia_torque_norm is not None else "n/a"
+        # 工具惯量补偿: 6 维 (Fx Fy Fz τx τy τz, EE 系) — 失效或首拍时全 0 (与"静止≈0"在数值上一致,
+        # 真正的"未运行"通过 force_sensor 全 0 的安全策略间接体现)
         c_str = f"{tool_inertia_filter_cutoff_hz:.2f}Hz" if tool_inertia_filter_cutoff_hz is not None else "n/a"
-        print(f"tool_inertia_force_norm: {f_str}, tool_inertia_torque_norm: {t_str}, "
+        print(f"force_sensor_inertia: {json.dumps(force_sensor_inertia, separators=(',', ':'))}, "
               f"tool_inertia_filter_cutoff_hz: {c_str}", flush=True)
 
 

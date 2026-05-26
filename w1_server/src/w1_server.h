@@ -167,11 +167,11 @@ private:
     Eigen::VectorXd inertia_dq_primary_buf_ = Eigen::VectorXd::Zero(7);
     int inertia_primary_joint_id_[7] = {-1, -1, -1, -1, -1, -1, -1};  // wb-model joint id, -1=未解析
     bool inertia_primary_joint_id_resolved_ = false;
-    // 运行时诊断: 最近一次实际扣除的惯量补偿 wrench 范数 (EE 系).
-    // 由 1 kHz 控制线程写入, 由 100 Hz publish 线程读取, 用 atomic 即可.
-    // <0 表示本周期未运行 (前置条件不满足或首拍跳过).
-    std::atomic<double> tool_inertia_force_norm_{-1.0};
-    std::atomic<double> tool_inertia_torque_norm_{-1.0};
+    // 运行时诊断: 最近一次实际扣除的惯量补偿 wrench (EE 系, 6 维: Fx Fy Fz τx τy τz).
+    // 由 1 kHz 控制线程写入, 由 100 Hz publish 线程读取.
+    // 本周期未运行时 (前置条件不满足或首拍跳过) 显式写零, 与"静止时扣减≈0"在数值上
+    // 不可区分; "未运行"的语义靠下游 sensor_data 也被清零的安全策略间接体现.
+    std::array<std::atomic<double>, 6> tool_inertia_wrench_ee_{};
     std::shared_ptr<SriForceSensor> primary_sensor_;
     std::shared_ptr<SriForceSensor> secondary_sensor_;  // 暂未使用
     bool primary_sensor_ready_ = false;

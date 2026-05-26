@@ -312,10 +312,11 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
                                                           bool* applied) {
     if (applied) *applied = false;
     // 防御性早退 (wiring 已做过滤, 这里冗余以便函数本身可独立调用).
-    // 早退时写 sentinel 以免 publish 线程读到上一次的有效值.
+    // 早退时把 wrench 数组置零, 避免 publish 线程读到上一次的有效值.
     auto early_return = [&]() {
-        tool_inertia_force_norm_.store(-1.0, std::memory_order_relaxed);
-        tool_inertia_torque_norm_.store(-1.0, std::memory_order_relaxed);
+        for (int i = 0; i < 6; ++i) {
+            tool_inertia_wrench_ee_[i].store(0.0, std::memory_order_relaxed);
+        }
     };
     if (!tool_inertia_compensation_enabled_ || !tool_gravity_compensation_enabled_) {
         early_return();
@@ -356,8 +357,9 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
         prev_ee_linvel_armbase_ = v_ee_armbase;
         prev_dq_primary_ = dq7;
         tool_inertia_first_sample_ = false;
-        tool_inertia_force_norm_.store(-1.0, std::memory_order_relaxed);
-        tool_inertia_torque_norm_.store(-1.0, std::memory_order_relaxed);
+        for (int i = 0; i < 6; ++i) {
+            tool_inertia_wrench_ee_[i].store(0.0, std::memory_order_relaxed);
+        }
         return wrench_ee;
     }
 
@@ -413,9 +415,10 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
     expected_inertia_wrench_ee.tail<3>() =
         static_cast<double>(tool_model_sign_) * (R_a_e.transpose() * tau_about_ee_armbase);
 
-    // 诊断: 暴露本周期实际扣除的惯量 wrench 范数 (EE 系) 给 publish 线程.
-    tool_inertia_force_norm_.store(expected_inertia_wrench_ee.head<3>().norm(), std::memory_order_relaxed);
-    tool_inertia_torque_norm_.store(expected_inertia_wrench_ee.tail<3>().norm(), std::memory_order_relaxed);
+    // 诊断: 暴露本周期实际扣除的惯量 wrench (EE 系, 6 维) 给 publish 线程.
+    for (int i = 0; i < 6; ++i) {
+        tool_inertia_wrench_ee_[i].store(expected_inertia_wrench_ee[i], std::memory_order_relaxed);
+    }
 
     if (applied) *applied = true;
     return wrench_ee - expected_inertia_wrench_ee;
@@ -431,9 +434,10 @@ void RobotServer::ResetToolInertiaCompensationState() {
     for (auto& f : joint_accel_filter_) {
         if (f) f->Reset();
     }
-    // 诊断 sentinel: -1 表示本周期未运行 (publish 线程据此区分 "0 N" 与 "未跑")
-    tool_inertia_force_norm_.store(-1.0, std::memory_order_relaxed);
-    tool_inertia_torque_norm_.store(-1.0, std::memory_order_relaxed);
+    // 失效路径下把诊断 wrench 置零, 避免 publish 线程读到过期数据.
+    for (int i = 0; i < 6; ++i) {
+        tool_inertia_wrench_ee_[i].store(0.0, std::memory_order_relaxed);
+    }
 }
 
 void RobotServer::TorqueControlThreadFunc() {
@@ -1138,8 +1142,13 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n \"chassis_driver_temperature\":" + std::to_string(this->robot_feedback_.chassis_feedback.driver_temperature) +
         ", \"chassis_left_temperature\":" + std::to_string(this->robot_feedback_.chassis_feedback.left_temperature) +
         ", \"chassis_right_temperature\":" + std::to_string(this->robot_feedback_.chassis_feedback.right_temperature) +
-        ",\n  \"tool_inertia_force_norm\":" + std::to_string(this->tool_inertia_force_norm_.load(std::memory_order_relaxed)) +
-        ", \"tool_inertia_torque_norm\":" + std::to_string(this->tool_inertia_torque_norm_.load(std::memory_order_relaxed)) +
+        ",\n  \"force_sensor_inertia\":[" +
+        std::to_string(this->tool_inertia_wrench_ee_[0].load(std::memory_order_relaxed)) + "," +
+        std::to_string(this->tool_inertia_wrench_ee_[1].load(std::memory_order_relaxed)) + "," +
+        std::to_string(this->tool_inertia_wrench_ee_[2].load(std::memory_order_relaxed)) + "," +
+        std::to_string(this->tool_inertia_wrench_ee_[3].load(std::memory_order_relaxed)) + "," +
+        std::to_string(this->tool_inertia_wrench_ee_[4].load(std::memory_order_relaxed)) + "," +
+        std::to_string(this->tool_inertia_wrench_ee_[5].load(std::memory_order_relaxed)) + "]" +
         ", \"tool_inertia_filter_cutoff_hz\":" + std::to_string(this->tool_inertia_filter_cutoff_hz_) +
         "}";
     return robot_server_state_msg;
