@@ -4,7 +4,7 @@
 数据处理约定:
 - q 使用 /feedback/robot_server_state 里的 joint_position。
 - dq 使用同一条 robot_server_state 里的 joint_velocity (电机 feedback 关节角速度)。
-- 末端角速度由 J_omega(q) * dq_feedback 得到，角加速度由 joint_velocity 差分后投影得到。
+- 末端角速度由 J_omega(q) * dq_feedback 得到，角加速度由这条末端角速度序列差分得到。
 - 默认使用同一条 robot_server_state 里的补偿前 raw_force_sensor, 避免运行时工具重力补偿消掉待辨识信号。
 - 输出惯量为 ^F I_C: 绕工具质心 C, 方向表达在末端法兰/EE 坐标系 F。
 - 力/力矩约定与 tool_com_estimate.py 一致 (tool-on-sensor):
@@ -324,8 +324,9 @@ def compute_body_omega_alpha_from_joint_feedback(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """由 robot_server_state 的 joint_velocity 计算 EE/F 系 omega 和 alpha。
 
-    joint_velocity 是电机反馈关节角速度。这里先对 joint_velocity 做中心差分
-    得到关节角加速度, 再用 DH 关节轴把关节速度/加速度投到末端角速度/角加速度。
+    joint_velocity 是电机反馈关节角速度。这里先由 J_omega(q) * dq_feedback
+    得到末端角速度, 再对这条末端角速度序列做中心差分得到角加速度。
+    这样保留了 J_omega(q) 随姿态变化带来的项, 与 server 端惯量补偿链路一致。
     最后应用 URDF jointEE 的固定旋转, 显式旋到传感器 wrench 使用的 ee_link/F 系。
     """
     q_raw = np.asarray(q_raw, dtype=float)
@@ -333,21 +334,18 @@ def compute_body_omega_alpha_from_joint_feedback(
     if q_raw.shape != dq_raw.shape or q_raw.ndim != 2 or q_raw.shape[1] != 7:
         raise ValueError("q_raw 和 dq_raw 必须都是 shape=(N, 7)。")
     q_model = np.vstack([get_actual_q(q_raw[i], arm, robot_type) for i in range(q_raw.shape[0])])
-    ddq_raw = np.vstack([central_diff(dq_raw[:, j], dt, 2) for j in range(7)]).T
 
     rotations = []
     omega_base = []
-    alpha_base = []
     for i in range(q_model.shape[0]):
         rotation_dh, axes_base = ee_rotation_and_joint_axes(q_model[i])
         rotation_ee = rotation_dh @ dh_frame_to_ee_rotation()
         rotations.append(rotation_ee)
         omega_base.append(axes_base.T @ dq_raw[i])
-        alpha_base.append(axes_base.T @ ddq_raw[i])
 
     rotations_arr = np.asarray(rotations)
     omega_base_arr = np.asarray(omega_base)
-    alpha_base_arr = np.asarray(alpha_base)
+    alpha_base_arr = np.vstack([central_diff(omega_base_arr[:, j], dt, 2) for j in range(3)]).T
 
     omega_body = np.einsum("nij,nj->ni", np.transpose(rotations_arr, (0, 2, 1)), omega_base_arr)
     alpha_body = np.einsum("nij,nj->ni", np.transpose(rotations_arr, (0, 2, 1)), alpha_base_arr)
@@ -527,14 +525,15 @@ def prepare_fit_arrays(
     """把原始采样数据整理为惯量拟合需要的数组。
 
     处理步骤:
-    1. 从 server 的 joint_velocity 得到关节角速度, 并由 joint_velocity 差分得到关节角加速度。
-       二者经 DH 关节轴投到末端, 再旋到 EE/F 系。
+    1. 从 server 的 joint_velocity 得到末端角速度, 并由末端角速度序列差分得到角加速度。
+       二者再旋到 EE/F 系。
     2. 对六维力扣除零偏, 并用同一截止频率做零相位滤波, 与运动学保持频谱对齐。
     3. 从 ee_link 力矩中扣除 com x force, 剩余部分主要用于拟合旋转惯量。
 
     关键: joint_velocity 是电机 feedback 的关节角速度, 不是由 joint_position 离线
-    差分得到的速度。DH frame7 还会经过 URDF jointEE 固定旋转后再进入回归,
-    与 wrench_ee、com_m 和输出的 ^F I_C 保持同一 EE/F 坐标系。
+    差分得到的速度。角加速度从末端角速度差分得到, 因而包含 J_omega(q) 的姿态变化项。
+    DH frame7 还会经过 URDF jointEE 固定旋转后再进入回归, 与 wrench_ee、com_m
+    和输出的 ^F I_C 保持同一 EE/F 坐标系。
     """
     if len(samples) < 20:
         raise ValueError("动态采样点至少需要 20 个。")
