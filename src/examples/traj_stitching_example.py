@@ -6,6 +6,9 @@ All rights reserved.
 ----------------------------------------------------------------------------
 '''
 
+import threading
+import queue
+import time
 import numpy as np
 from dexe_robot_client.end_effector_client import EndEffectorType
 from dexe_robot_client.common import W1Version, W1ArmType, time_consuming, StatusCode
@@ -41,51 +44,66 @@ def main(is_sim=True):
     pose_left_arm6 = (np.array(pose_left_arm5) + np.array([-50,0,0,-10,0,0])).tolist()
 
     pose_list = [pose_left_arm1, pose_left_arm2, pose_left_arm3, pose_left_arm4, pose_left_arm5, pose_left_arm6]
-    qpos_traj = []
-    start_qpos_ = start_qpos
-    start_speed_ratio_ = 0.0
-    end_speed_ratio_ = 0.5
-    for i in range(6):
-        res, qpos_traj_ = w1_manager.plan_linear_single_arm(is_left=True, 
-                                                            start_qpos=start_qpos_, 
-                                                            waypoints_list=[pose_list[i]],
-                                                            speed_ratio_list=[1.0],
-                                                            start_speed_ratio=start_speed_ratio_,
-                                                            end_speed_ratio=end_speed_ratio_,
-                                                            path_blend_tolerance=0.01,
-                                                            is_local=False)
-        if res != StatusCode.SUCCESS:
-            return
-        qpos_traj += qpos_traj_[1:].tolist()
 
-        start_qpos_[6:13] = qpos_traj_[-1]
-        start_speed_ratio_ = end_speed_ratio_
-        if i == 5:
-            end_speed_ratio_ = 0.0
-        else:
-            end_speed_ratio_ = 0.5
+    streaming_buffer = queue.Queue()
+    finish_token = object()
+    streaming_period = w1_manager.TIME_STEP
 
-    qpos_traj = np.array(qpos_traj)
-    w1_manager.robot_client.start_joint_streaming_request(MotionGroup.Primary, use_velocity=False)
-    for qpos in qpos_traj:
-        w1_manager.robot_client.send_streaming_command(qpos.tolist(), streaming_finished=False)
-        w1_manager.robot_client.wait_second(w1_manager.TIME_STEP)
-    w1_manager.robot_client.send_streaming_command(qpos_traj[-1].tolist(), streaming_finished=True)
+    def control_thread():
+        w1_manager.robot_client.start_joint_streaming_request(MotionGroup.Primary, use_velocity=False)
+        last_qpos = np.array(start_qpos[6:13], dtype=float).tolist()
+        while True:
+            start_time = time.monotonic()
+            try:
+                qpos = streaming_buffer.get_nowait()
+            except queue.Empty:
+                qpos = last_qpos
 
-    # from matplotlib import pyplot as plt
-    # traj = qpos_traj
-    # vel_traj = np.diff(traj, axis=0)/w1_manager.TIME_STEP
+            if qpos is finish_token:
+                w1_manager.robot_client.send_streaming_command(last_qpos, streaming_finished=True)
+                break
 
-    # fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-    # for i in range(7):
-    #     axes[0].plot(traj[:,i], label=f"joint {i+1}")
-    # axes[0].legend()
-    # axes[0].grid()
-    # for i in range(7):
-    #     axes[1].plot(vel_traj[:,i], label=f"joint {i+1}")
-    # axes[1].legend()
-    # axes[1].grid()
-    # plt.show()
+            last_qpos = qpos
+            w1_manager.robot_client.send_streaming_command(qpos, streaming_finished=False)
+            elapsed = time.monotonic() - start_time
+            if elapsed < streaming_period:
+                w1_manager.robot_client.wait_second(streaming_period - elapsed)
+
+    def planning_thread():
+        start_qpos_ = np.array(start_qpos, dtype=float, copy=True)
+        start_speed_ratio_ = 0.0
+        end_speed_ratio_ = 1.0
+
+        try:
+            for i, pose in enumerate(pose_list):
+                res, qpos_traj_ = w1_manager.plan_linear_single_arm(is_left=True,
+                                                                     start_qpos=start_qpos_,
+                                                                     waypoints_list=[pose],
+                                                                     speed_ratio_list=[1.0],
+                                                                     start_speed_ratio=start_speed_ratio_,
+                                                                     end_speed_ratio=end_speed_ratio_,
+                                                                     path_blend_tolerance=0.01,
+                                                                     is_local=False)
+                if res != StatusCode.SUCCESS:
+                    print(f"plan_linear_single_arm failed at segment {i}: {res}")
+                    break
+
+                for qpos in qpos_traj_[1:]:
+                    streaming_buffer.put(qpos.tolist())
+
+                start_qpos_[6:13] = qpos_traj_[-1]
+                start_speed_ratio_ = end_speed_ratio_
+                end_speed_ratio_ = 0.0 if i == len(pose_list) - 1 else 0.5
+        finally:
+            streaming_buffer.put(finish_token)
+
+    control_worker = threading.Thread(target=control_thread)
+    planning_worker = threading.Thread(target=planning_thread)
+
+    control_worker.start()
+    planning_worker.start()
+    planning_worker.join()
+    control_worker.join()
 
 if __name__ == "__main__":
     main(is_sim=True)
