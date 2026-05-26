@@ -1,6 +1,8 @@
 #pragma once
 
 #include <atomic>
+#include <array>
+#include <memory>
 #include <optional>
 #include <geometry_msgs/msg/twist.hpp>
 #include <sensor_msgs/msg/imu.hpp>
@@ -52,7 +54,23 @@ private:
     void PublishImu();
     std_msgs::msg::String GetRobotServerStateMsg();
     void LoadToolGravityCompensationConfig(const std::filesystem::path& robot_cfg_path);
-    Vector6d ApplyToolGravityCompensation(const Vector6d& wrench_ee, int arm_index) const;
+    // 返回扣减后的 wrench. 如果重力补偿已启用且本周期成功扣到, *applied 置 true; 否则 false.
+    // applied=false 的情况包括: 补偿未启用 (用户主动选择), 或 manager_state ∈ {Init, Error}
+    // 导致 EE 旋转不可用. 调用方据此决定是否要清零下游 wrench.
+    Vector6d ApplyToolGravityCompensation(const Vector6d& wrench_ee, int arm_index, bool* applied = nullptr) const;
+    // 工具动力学(惯性)补偿: 仅对 primary 臂生效, 在重力补偿之后调用.
+    // wrench_ee 已经是 EE 坐标系下的 6 维力旋量 (经过零偏与重力补偿).
+    // 注意: q/dq 必须是 size==7 的预分配 VectorXd, 用 dynamic VectorXd 是为了
+    // 直接绑定到 pinocchio_api 的 const VectorXd& 形参, 避免每周期临时构造分配.
+    // 返回扣减后的 wrench. 如果惯量补偿已启用且本周期成功扣到, *applied 置 true; 否则 false
+    // (首拍跳过, 防御性早退, 或函数本身被 wiring 的 should_run_inertia 拦截前).
+    Vector6d ApplyToolInertiaCompensationPrimary(const Vector6d& wrench_ee,
+                                                 const Eigen::VectorXd& feedback_q_primary,
+                                                 const Eigen::VectorXd& feedback_dq_primary,
+                                                 bool* applied = nullptr);
+    // 重置惯量补偿的所有运行时状态 (滤波器 + 历史 + 首拍标志).
+    // 在反馈失效或首次启用时调用, 确保下次有效样本不会带入旧滤波状态.
+    void ResetToolInertiaCompensationState();
     std::optional<Eigen::Matrix3d> GetEERotationWorldFromEE(int arm_index) const;
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;
@@ -132,6 +150,28 @@ private:
     double tool_gravity_magnitude_ = 9.79;
     int tool_model_sign_ = 1;
     Vector3d tool_com_m_ = Vector3d::Zero();
+    // 工具惯量补偿状态 (primary only)
+    bool tool_inertia_compensation_enabled_ = false;
+    Eigen::Matrix3d tool_inertia_com_ = Eigen::Matrix3d::Zero();
+    // 当前实际生效的滤波器截止频率 (Hz). 由 yaml 的 inertia_compensation_filter_hz 加载.
+    // 注: 真正决定滤波行为的是 ee_accel_filter_/joint_accel_filter_ 内部的 IIR 系数,
+    // 此成员只用于日志与发布 JSON 显示, 运行时改它不会改滤波器, 必须重建对象.
+    double tool_inertia_filter_cutoff_hz_ = 5.0;
+    bool tool_inertia_first_sample_ = true;
+    Vector3d prev_ee_linvel_armbase_ = Vector3d::Zero();
+    Eigen::Matrix<double, 7, 1> prev_dq_primary_ = Eigen::Matrix<double, 7, 1>::Zero();
+    std::array<std::shared_ptr<ButterworthFilter>, 3> ee_accel_filter_;  // EE 线加速度滤波 (armbase 三轴)
+    std::array<std::shared_ptr<ButterworthFilter>, 7> joint_accel_filter_;  // 关节加速度滤波 (7 轴)
+    // 预分配缓冲: 1 kHz 线程内绑定到 pinocchio_api 的 const VectorXd& 形参, 避免重复 new
+    Eigen::VectorXd inertia_q_primary_buf_ = Eigen::VectorXd::Zero(7);
+    Eigen::VectorXd inertia_dq_primary_buf_ = Eigen::VectorXd::Zero(7);
+    int inertia_primary_joint_id_[7] = {-1, -1, -1, -1, -1, -1, -1};  // wb-model joint id, -1=未解析
+    bool inertia_primary_joint_id_resolved_ = false;
+    // 运行时诊断: 最近一次实际扣除的惯量补偿 wrench 范数 (EE 系).
+    // 由 1 kHz 控制线程写入, 由 100 Hz publish 线程读取, 用 atomic 即可.
+    // <0 表示本周期未运行 (前置条件不满足或首拍跳过).
+    std::atomic<double> tool_inertia_force_norm_{-1.0};
+    std::atomic<double> tool_inertia_torque_norm_{-1.0};
     std::shared_ptr<SriForceSensor> primary_sensor_;
     std::shared_ptr<SriForceSensor> secondary_sensor_;  // 暂未使用
     bool primary_sensor_ready_ = false;
