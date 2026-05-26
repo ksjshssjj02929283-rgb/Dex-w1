@@ -154,14 +154,14 @@ private:
     bool tool_inertia_compensation_enabled_ = false;
     Eigen::Matrix3d tool_inertia_com_ = Eigen::Matrix3d::Zero();
     // 当前实际生效的滤波器截止频率 (Hz). 由 yaml 的 inertia_compensation_filter_hz 加载.
-    // 注: 真正决定滤波行为的是 ee_accel_filter_/joint_accel_filter_ 内部的 IIR 系数,
+    // 注: 真正决定滤波行为的是 ee_accel_filter_/omega_diff_filter_ 内部的 IIR 系数,
     // 此成员只用于日志与发布 JSON 显示, 运行时改它不会改滤波器, 必须重建对象.
     double tool_inertia_filter_cutoff_hz_ = 5.0;
     bool tool_inertia_first_sample_ = true;
     Vector3d prev_ee_linvel_armbase_ = Vector3d::Zero();
-    Eigen::Matrix<double, 7, 1> prev_dq_primary_ = Eigen::Matrix<double, 7, 1>::Zero();
-    std::array<std::shared_ptr<ButterworthFilter>, 3> ee_accel_filter_;  // EE 线加速度滤波 (armbase 三轴)
-    std::array<std::shared_ptr<ButterworthFilter>, 7> joint_accel_filter_;  // 关节加速度滤波 (7 轴)
+    Vector3d prev_omega_armbase_ = Vector3d::Zero();
+    std::array<std::shared_ptr<ButterworthFilter>, 3> ee_accel_filter_;   // EE 线加速度滤波
+    std::array<std::shared_ptr<ButterworthFilter>, 3> omega_diff_filter_; // EE 角速度差分(=α)滤波
     // 预分配缓冲: 1 kHz 线程内绑定到 pinocchio_api 的 const VectorXd& 形参, 避免重复 new
     Eigen::VectorXd inertia_q_primary_buf_ = Eigen::VectorXd::Zero(7);
     Eigen::VectorXd inertia_dq_primary_buf_ = Eigen::VectorXd::Zero(7);

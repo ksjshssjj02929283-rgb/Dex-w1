@@ -118,3 +118,160 @@ $$
 | EE 位姿 ${}^A T_E$ | `pinocchio::GetFK(primary_arm_model_ptr, q)` | 取 `oMf[ee_link]`, 用其旋转部分作为 ${}^A\!R_E$ |
 | 控制周期 $\Delta t$ | `torque_ctrl_dt` = 1 ms | 1 kHz 力矩控制线程 |
 
+### 3.4 运动学量
+
+每周期算:
+
+$$
+\begin{bmatrix} {}^A\!\boldsymbol{v}_{ee} \\ {}^A\!\boldsymbol{\omega} \end{bmatrix}
+= {}^A J \cdot {}^P\!\dot{q}
+$$
+
+线加速度: ${}^A\!\boldsymbol{v}_{ee}$ 后向差分再做二阶临界阻尼 IIR (`ee_accel_filter_`):
+
+$$
+{}^A\!\boldsymbol{a}_{ee, k} = \mathrm{LPF}\!\left(\frac{{}^A\!\boldsymbol{v}_{ee, k} - {}^A\!\boldsymbol{v}_{ee, k-1}}{\Delta t}\right)
+$$
+
+角加速度: 直接对 ${}^A\!\boldsymbol{\omega}$ 后向差分再 LPF (`omega_diff_filter_`):
+
+$$
+{}^A\!\boldsymbol{\alpha}_{k} = \mathrm{LPF}\!\left(\frac{{}^A\!\boldsymbol{\omega}_{k} - {}^A\!\boldsymbol{\omega}_{k-1}}{\Delta t}\right)
+$$
+
+注意: 早期实现曾采用 $\boldsymbol{\alpha} = J_\omega \cdot \ddot{q}$ (其中 $\ddot{q}$ 是 $\dot{q}$ 微分滤波), 这种写法**少了 $\dot{J}_\omega \cdot \dot{q}$ 项** — 当 $\dot{q}$ 不为零且姿态变化时, 会引入与 $\dot{J}_\omega \cdot \dot{q}$ 同量级的偏差. 改为对 $\boldsymbol{\omega}$ 直接微分后, 该修正项隐含在 $\boldsymbol{\omega}$ 自身的时间导数里, 数值上与 $J\ddot{q} + \dot{J}\dot{q}$ 一致, 且与线加速度路径滤波延迟对称. 滤波器从 7 路 (joint_accel) 改为 3 路 (omega).
+
+工具 COM 在 arm-base 系下的位置偏移与惯量旋转:
+
+$$
+{}^A\!r_C = {}^A\!R_E \cdot {}^E\!r_C, \qquad
+{}^A I_C = {}^A\!R_E \cdot {}^E I_C \cdot \big({}^A\!R_E\big)^T
+$$
+
+工具 COM 加速度 (含切向 + 向心 + 平动):
+
+$$
+{}^A\!\boldsymbol{a}_C = {}^A\!\boldsymbol{a}_{ee} + {}^A\!\boldsymbol{\alpha} \times {}^A\!r_C + {}^A\!\boldsymbol{\omega} \times \big({}^A\!\boldsymbol{\omega} \times {}^A\!r_C\big)
+$$
+
+驱动工具运动所需的合力 / 合力矩 (在 arm-base 系, 力矩取在 EE 原点):
+
+$$
+{}^A\!\boldsymbol{F} = m \cdot {}^A\!\boldsymbol{a}_C
+$$
+
+$$
+{}^A\!\boldsymbol{\tau}_{\!E} = {}^A I_C \cdot {}^A\!\boldsymbol{\alpha} + {}^A\!\boldsymbol{\omega} \times \big({}^A I_C \cdot {}^A\!\boldsymbol{\omega}\big) + {}^A\!r_C \times {}^A\!\boldsymbol{F}
+$$
+
+### 3.5 符号约定 (核心)
+
+这一节是 **2026-05-26 修复后的新约定**, 对应 `w1_server.cpp::ApplyToolInertiaCompensationPrimary` 中 `expected_inertia_wrench_ee` 的语义. 历史符号 bug 见第 6 节.
+
+#### 3.5.1 离线辨识脚本的物理模型
+
+`script/tool_inertia_estimate.py:379` 给出 (无外力时) 法兰处的传感器读数模型:
+
+$$
+\boldsymbol{F}_{\mathrm{meas}} \;\approx\; m \cdot {}^E\!R_W^{\!T}\, \boldsymbol{g}_W \;-\; m \cdot {}^E\!\boldsymbol{a}_C \;+\; \mathrm{bias}_F
+$$
+
+$$
+\boldsymbol{M}_{\mathrm{meas}} \;\approx\; -\big({}^E I_C \,{}^E\!\boldsymbol{\alpha} + {}^E\!\boldsymbol{\omega} \times {}^E I_C \,{}^E\!\boldsymbol{\omega}\big) \;+\; {}^E\!r_C \times \boldsymbol{F}_{\mathrm{unbiased}} \;+\; \mathrm{bias}_T
+$$
+
+物理解读: 加速工具需要 `+m·a_C` 的合力; 由牛顿第三定律, 工具反作用到传感器上的就是 `-m·a_C`. 重力项符号为 `+m·g` (静止时传感器测得 = +mg), 惯性项符号为 `-`.
+
+#### 3.5.2 C++ 中 expected_inertia_wrench_ee 的定义
+
+定义为 **"传感器读数中由工具惯性产生的那一份分量"** (与 `ApplyToolGravityCompensation` 的 `expected_wrench_ee` 同视角):
+
+$$
+\boldsymbol{w}_{\mathrm{exp,inertia}}^E \;=\; \mathrm{sign} \cdot {}^E\!R_A \cdot \begin{bmatrix} -{}^A\!\boldsymbol{F} \\ -{}^A\!\boldsymbol{\tau}_{\!E} \end{bmatrix}
+$$
+
+负号来源就是上式中的牛顿第三定律. 然后扣减:
+
+$$
+\boldsymbol{w}_{ee} \leftarrow \boldsymbol{w}_{ee} - \boldsymbol{w}_{\mathrm{exp,inertia}}^E
+$$
+
+数学上等价于 $\boldsymbol{w}_{ee} \leftarrow \boldsymbol{w}_{ee} + \mathrm{sign}\cdot {}^E\!R_A \cdot [{}^A\!\boldsymbol{F};\,{}^A\!\boldsymbol{\tau}_{\!E}]$, 即把"工具被加速所需的合力"加回 wrench, 抵消掉传感器中工具反作用造成的负号读数. 实际代码保持减法以与重力补偿同结构.
+
+#### 3.5.3 为什么 force_sensor_inertia 字段是 -[F; τ] 而不是 +[F; τ]
+
+发布到 `/feedback/robot_server_state.force_sensor_inertia` 的就是 `expected_inertia_wrench_ee`. 这个值与 `force_sensor` / `raw_force_sensor` **同视角同符号**:
+- 工具加速向 +z → COM 加速度向 +z → 工具反作用拉传感器向 -z → `force_sensor_inertia.z < 0` ✓
+- 与 `force_sensor` 在没有外力时应该呈现的工具惯性残差**符号一致**, 上层做差就是真实外力.
+
+### 3.6 实现位置
+
+- `RobotServer::ApplyToolInertiaCompensationPrimary` (w1_server.cpp): 公式 + 滤波器更新, 接受可选 `bool* applied`
+- `RobotServer::ResetToolInertiaCompensationState`: 清滤波器历史 + prev 状态 + 诊断字段置零
+- 调用点: `TorqueControlThreadFunc` 中, 重力补偿 + force_array 注入 + 反馈排序之后, 写下游测量之前. 用 `should_run_inertia` 单一布尔门控所有前置条件, 任一不满足走 Reset 路径.
+
+### 3.7 验证
+
+实测数据 (`script/inertia_analyse/20260526_164600.json`, 无外力 2289 样本):
+
+| 指标 | RMS (N + N·m, 6 维范数) |
+|---|---|
+| 重力补偿后, 惯量补偿前 | 0.8652 |
+| 修复后惯量补偿后 | **0.7293** (↓ 15.7%) |
+| 修复前惯量补偿后 (符号反) | 1.0889 (↑ 25.9%) |
+
+修复后 RMS 仍未降到 0, 说明除符号外还有其它残差源 (α 估计的 $\dot{J}\dot{q}$ 项已经修了, 剩下可能是: 编码器速度量化 / 滤波相位延迟与真实运动不完全对齐 / `inertia_com_kg_m2` 标定残差等). 这些是后续 cutoff 调优 + 标定改进的问题, 不再属于符号性 bug.
+
+离线 sanity check: `script/inertia_analyse/check_sign_fix.py` 可重放任意采集 JSON 验证当前符号约定下补偿 RMS 是否下降.
+
+## 4 失效安全策略
+
+补偿"启用了但本周期没成功扣到" 视为失效, 对应臂的 `sensor_data` 整体置零, 让下游 `JointImpedanceController::ComputeExternalTorque` 的 `isZero` 短路使 `torque_ext = 0`. 失效路径包括:
+
+- `manager_state_ ∈ {Init, Error}` 导致 ${}^W\!R_E$ 不可用 (重力补偿失效)
+- 反馈失效 / `SortFeedbackByJointName` 失败 (惯量补偿失效)
+- 首拍 / Reset 后第一拍 (惯量补偿主动跳过)
+- 防御性早退 (size 不匹配 / Jacobian shape 异常)
+
+未启用 (用户没配 `inertia_com_kg_m2`, 或 secondary 无传感器) **不视为失效**, 不触发清零.
+
+代码位置: `TorqueControlThreadFunc` 中 `primary_compensation_failed` / `secondary_compensation_failed` 判定, throttled WARN 日志 1 Hz.
+
+效果: 力矩模式下任一补偿失效都不会把"工具自重 / 惯性反作用"误当外力反馈进控制律. 位置模式不读 sensor_wrench, 失效与否无影响.
+
+## 5 运行时诊断
+
+发布到 `/feedback/robot_server_state` JSON:
+
+| 字段 | 单位 | 含义 |
+|---|---|---|
+| `force_sensor` (12 维) | N / N·m | primary[0:6] + secondary[6:12], 经过零偏 + 重力补偿 + 惯量补偿 + 失效清零的最终值. **力矩模式下消费的就是这个**. |
+| `raw_force_sensor` (12 维) | N / N·m | 完全原始, 连零偏都没扣 |
+| `force_sensor_bias` (12 维) | N / N·m | 零偏标定值 (EE 系) |
+| `force_sensor_inertia` (6 维) | N / N·m | primary 惯量补偿这一周期实际从 wrench 中扣减的量 (= `expected_inertia_wrench_ee`). 静止 ≈ 0; 失效 / 首拍显式置零. 与 `force_sensor` 同视角同符号. |
+| `tool_inertia_filter_cutoff_hz` | Hz | 当前生效的 LPF 截止, 由 yaml 加载 |
+
+监控工具:
+- `./set_w1.sh force` 每 100 ms 打印上述字段
+- `script/plot_force_sensor.py --force_sensor --force_sensor_inertia` 实时 6 分量曲线对比
+
+## 6 历史: 2026-05-26 符号 bug 复盘
+
+**现象**: 实机定量分析显示重力补偿后 RMS 0.8652, 惯量补偿后 RMS 1.0889 (反而升高), 对模型 `after = before − k·inertia` 拟合得 `k ≈ -1.48`. 符号方向反了.
+
+**根因**: 写代码时把"加速工具需要的合力 $m\boldsymbol{a}_C$"当成了"传感器读数中应该看到的工具惯性分量". 这两者在牛顿第三定律下等大反向. 重力补偿那一支因为公式简单 (直接 $+m\boldsymbol{g}$), 直觉对了; 惯量补偿涉及"运动方程 → 反作用 → 传感器" 的二次符号转换, 我跳过了显式推导.
+
+**为什么没在审查 / 测试阶段发现**:
+- 离线辨识脚本里 `F_meas = +mg − m·a_C` 的符号约定是现成的, 但我对齐"参考点 + 坐标基"的语义时没把整个公式抄来核对符号
+- reviewer prompt 只让检查"代码 vs 设计是否一致", 没要求"用第一性原理 / 已知物理公式代回去验证"
+- 静止 / 慢动测试中 $|\boldsymbol{F}_{\text{inertia}}| \sim 1\,\mathrm{N}$ 叠在 0.5 N 噪声上, 视觉无法区分"叠加" vs "抵消"
+- 没做带运动的合成单元测试 (例如纯线加速度沿 +z, 手算 expected 应为 $-m a_z\hat{z}$)
+
+**修复**: `expected_inertia_wrench_ee` 的两个分量赋值取负号; 同时把 α 估计从 $J_\omega \ddot{q}$ 改成 $\dot{\boldsymbol{\omega}}$ 直接微分 (顺手补 $\dot{J}\dot{q}$ 项).
+
+**护栏建议** (尚未实施):
+1. 把惯量公式抽成纯函数, 用合成 case 写 GoogleTest (固定姿态 + 已知 a_C → 断言符号)
+2. C++ 文件头引用 `tool_inertia_estimate.py:379` 的 F_meas/M_meas 公式作为 ground truth, 注释里强制显式写"传感器视角符号"
+3. 任何新补偿模块 (柯氏力 / 空气阻力 / 弹簧元件) 必须先写"传感器读数模型"再写代码
+
+

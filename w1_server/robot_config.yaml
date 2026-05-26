@@ -55,9 +55,9 @@ enable_record: false
 safe_level: 0.5
 global_speed_ratio: 1.0
 
-# === 工具重力补偿参数 ===
-# com_mm: 工具质心在力传感器坐标系下的位置，单位 mm
-# w_bias: [Fx,Fy,Fz,Mx,My,Mz]，力单位 N，力矩单位 N/m
+# === 工具补偿参数 ===
+# 坐标系约定: com_mm 与 inertia_com_kg_m2 都在 EE/法兰系下表达
+# 惯量张量 (单位 kg·m^2), 不是关于 EE 原点的. 改坐标系/参考点后必须重新生成.
 tool_gravity_compensation:
   com_mm: [-0.15804154,0.70721872,50.33428542]   # COM 相对 EE 原点的偏移, 单位 mm, 在 EE 系下
   mass_kg: 1.061

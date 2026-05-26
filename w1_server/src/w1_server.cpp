@@ -254,7 +254,7 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
     for (auto& f : ee_accel_filter_) {
         f = std::make_shared<ButterworthFilter>(cutoff_hz);
     }
-    for (auto& f : joint_accel_filter_) {
+    for (auto& f : omega_diff_filter_) {
         f = std::make_shared<ButterworthFilter>(cutoff_hz);
     }
     ResetToolInertiaCompensationState();
@@ -353,9 +353,9 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
     // 首拍: 仅记录历史并暖滤波器 (Apply(0) 让滤波器以 0 作为初值开始), 直接跳过本周期补偿.
     if (tool_inertia_first_sample_) {
         for (int i = 0; i < 3; ++i) ee_accel_filter_[i]->Apply(0.0);
-        for (int i = 0; i < 7; ++i) joint_accel_filter_[i]->Apply(0.0);
+        for (int i = 0; i < 3; ++i) omega_diff_filter_[i]->Apply(0.0);
         prev_ee_linvel_armbase_ = v_ee_armbase;
-        prev_dq_primary_ = dq7;
+        prev_omega_armbase_ = w_ee_armbase;
         tool_inertia_first_sample_ = false;
         for (int i = 0; i < 6; ++i) {
             tool_inertia_wrench_ee_[i].store(0.0, std::memory_order_relaxed);
@@ -371,20 +371,18 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
             a_ee_armbase[i] = ee_accel_filter_[i]->Apply(a_raw[i]);
         }
     }
-    // 关节加速度: 对 dq 做后向差分, 再 Butterworth 低通滤波
-    // (按用户要求, α 由 feedback dq 微分再过滤得到)
-    Eigen::Matrix<double, 7, 1> ddq_filtered;
+    // EE 角加速度: 直接对 ω = J_ω · dq 做后向差分再 Butterworth 低通滤波.
+    // 这条等价于 α = J_ω·ddq + J̇_ω·dq, 隐含包含 J̇·dq 修正项 (用 ddq · J_ω 缺这一项),
+    // 与 v_ee 那条链路对称, 滤波延迟一致.
+    Vector3d alpha_ee_armbase;
     {
-        const Eigen::Matrix<double, 7, 1> ddq_raw = (dq7 - prev_dq_primary_) / kDt;
-        for (int i = 0; i < 7; ++i) {
-            ddq_filtered[i] = joint_accel_filter_[i]->Apply(ddq_raw[i]);
+        const Vector3d alpha_raw = (w_ee_armbase - prev_omega_armbase_) / kDt;
+        for (int i = 0; i < 3; ++i) {
+            alpha_ee_armbase[i] = omega_diff_filter_[i]->Apply(alpha_raw[i]);
         }
     }
     prev_ee_linvel_armbase_ = v_ee_armbase;
-    prev_dq_primary_ = dq7;
-
-    // α (末端角加速度, arm-base 对齐) = J_omega * ddq_filtered
-    const Vector3d alpha_ee_armbase = J_armbase.bottomRows<3>() * ddq_filtered;
+    prev_omega_armbase_ = w_ee_armbase;
 
     // EE 旋转 (从 EE 到 arm-base): 直接由 arm-only 模型的 FK 取得.
     // 注意 GetEERotationWorldFromEE 返回的是 global<-ee, 对于 W1 这与 armbase<-ee 一般不同
@@ -405,15 +403,21 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
     // 工具产生的反作用力旋量 (arm-base 坐标, 等效在 EE 原点处):
     //   F_a = m * a_C
     //   τ_a (about EE origin) = I_C_a * α + ω × (I_C_a * ω) + r_C × (m * a_C)
+    // 这两个是"驱动工具运动需要的力/力矩"(物体的运动方程左边).
     const Vector3d F_armbase = tool_mass_kg_ * a_C_armbase;
     const Vector3d tau_about_ee_armbase =
         I_C_armbase * alpha_ee_armbase + w_ee_armbase.cross(I_C_armbase * w_ee_armbase) + r_C_armbase.cross(F_armbase);
 
-    // 旋到 EE 坐标, 应用 model_sign
+    // expected_inertia_wrench_ee = "传感器中应出现的工具惯性分量" (与 ApplyToolGravityCompensation
+    // 的 expected_wrench_ee 同一视角): 由牛顿第三定律, 这等于 -[F; τ] (即工具反作用回到传感器的方向),
+    // 旋到 EE 系并应用 model_sign. 与离线辨识脚本 tool_inertia_estimate.py 的约定:
+    //     F_meas ≈ m R^T g - m a_C            (重力补偿后残差 ≈ -m a_C)
+    //     M_meas ≈ -(I α + ω × I ω) + com × F_unbiased
+    // 完全一致 — 重力补偿后的 wrench - expected_inertia ≈ 0.
     Vector6d expected_inertia_wrench_ee;
-    expected_inertia_wrench_ee.head<3>() = static_cast<double>(tool_model_sign_) * (R_a_e.transpose() * F_armbase);
+    expected_inertia_wrench_ee.head<3>() = -static_cast<double>(tool_model_sign_) * (R_a_e.transpose() * F_armbase);
     expected_inertia_wrench_ee.tail<3>() =
-        static_cast<double>(tool_model_sign_) * (R_a_e.transpose() * tau_about_ee_armbase);
+        -static_cast<double>(tool_model_sign_) * (R_a_e.transpose() * tau_about_ee_armbase);
 
     // 诊断: 暴露本周期实际扣除的惯量 wrench (EE 系, 6 维) 给 publish 线程.
     for (int i = 0; i < 6; ++i) {
@@ -427,11 +431,11 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
 void RobotServer::ResetToolInertiaCompensationState() {
     tool_inertia_first_sample_ = true;
     prev_ee_linvel_armbase_.setZero();
-    prev_dq_primary_.setZero();
+    prev_omega_armbase_.setZero();
     for (auto& f : ee_accel_filter_) {
         if (f) f->Reset();
     }
-    for (auto& f : joint_accel_filter_) {
+    for (auto& f : omega_diff_filter_) {
         if (f) f->Reset();
     }
     // 失效路径下把诊断 wrench 置零, 避免 publish 线程读到过期数据.
