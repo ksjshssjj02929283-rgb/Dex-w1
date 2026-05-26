@@ -272,9 +272,92 @@ def rot_y(theta: float) -> np.ndarray:
     return np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]], dtype=float)
 
 
+def rot_x(theta: float) -> np.ndarray:
+    c, s = math.cos(theta), math.sin(theta)
+    return np.array([[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]], dtype=float)
+
+
+def rot_z(theta: float) -> np.ndarray:
+    c, s = math.cos(theta), math.sin(theta)
+    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=float)
+
+
+def rpy_to_rot(roll: float, pitch: float, yaw: float) -> np.ndarray:
+    """URDF fixed-axis RPY rotation."""
+    return rot_z(yaw) @ rot_y(pitch) @ rot_x(roll)
+
+
+def axis_angle_rot(axis: np.ndarray, theta: float) -> np.ndarray:
+    axis = np.asarray(axis, dtype=float).reshape(3)
+    norm = np.linalg.norm(axis)
+    if norm <= 0.0:
+        raise ValueError("关节轴向量不能为 0。")
+    axis = axis / norm
+    k = skew(axis)
+    return np.eye(3) + math.sin(theta) * k + (1.0 - math.cos(theta)) * (k @ k)
+
+
 def dh_frame_to_ee_rotation() -> np.ndarray:
     """URDF jointEE fixed rotation: parent arm7/DH frame -> child ee_link."""
     return rot_y(-math.pi / 2.0)
+
+
+def urdf_arm_joint_specs(arm: str, robot_type: str) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
+    """返回 arm-only URDF 的关节 origin RPY、axis 和末端 fixed joint 旋转。
+
+    这里刻意跟 server 端 Pinocchio arm_model 使用同一套 URDF 语义:
+    joint_position/joint_velocity 是 URDF 关节变量, 不再叠加 DH offset。
+    """
+    is_primary = arm == "primary"
+    is_anth = robot_type in ("w1_anth", "W1Anthropomorphic", "anth")
+    common_rpy = [
+        (0.0, 0.0, 0.0),
+        (math.pi / 2.0, 0.0, math.pi),
+        (math.pi / 2.0, -math.pi / 2.0, math.pi),
+        (math.pi / 2.0, 0.0, 0.0),
+        (-math.pi / 2.0, math.pi, 0.0),
+        (math.pi / 2.0, 0.0, 0.0),
+        (-math.pi / 2.0, math.pi if is_anth else 0.0, math.pi / 2.0 if is_anth else 0.0),
+    ]
+    if is_primary:
+        axes = [
+            (0.0, 0.0, 1.0),
+            (0.0, 0.0, 1.0),
+            (0.0, 0.0, 1.0),
+            (0.0, 0.0, 1.0),
+            (0.0, 0.0, 1.0),
+            (0.0, 0.0, -1.0),
+            (0.0, 0.0, 1.0),
+        ]
+    else:
+        axes = [
+            (0.0, 0.0, 1.0),
+            (0.0, 0.0, 1.0),
+            (0.0, 0.0, 1.0),
+            (0.0, 0.0, -1.0),
+            (0.0, 0.0, 1.0),
+            (0.0, 0.0, 1.0),
+            (0.0, 0.0, 1.0),
+        ]
+    ee_rpy = (0.0, -math.pi / 2.0, 0.0) if is_anth else (0.0, 0.0, 0.0)
+    return (
+        [rpy_to_rot(*rpy) for rpy in common_rpy],
+        [np.asarray(axis, dtype=float) for axis in axes],
+        rpy_to_rot(*ee_rpy),
+    )
+
+
+def urdf_ee_rotation_and_joint_axes(q: np.ndarray, arm: str, robot_type: str) -> Tuple[np.ndarray, np.ndarray]:
+    """用 arm-only URDF origin/axis 计算 ^B R_E 和各关节轴, 对齐 server Pinocchio 链。"""
+    origin_rotations, axes_local, rotation_parent_from_ee_fixed = urdf_arm_joint_specs(arm, robot_type)
+    rotation = np.eye(3)
+    axes_base = []
+    for i in range(7):
+        rotation = rotation @ origin_rotations[i]
+        axes_base.append(rotation @ axes_local[i])
+        rotation = rotation @ axis_angle_rot(axes_local[i], float(q[i]))
+    rotation_ee = rotation @ rotation_parent_from_ee_fixed
+    return rotation_ee, np.vstack(axes_base)
 
 
 def ee_rotation_and_joint_axes(q: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -324,22 +407,20 @@ def compute_body_omega_alpha_from_joint_feedback(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """由 robot_server_state 的 joint_velocity 计算 EE/F 系 omega 和 alpha。
 
-    joint_velocity 是电机反馈关节角速度。这里先由 J_omega(q) * dq_feedback
+    joint_velocity 是电机反馈关节角速度。这里按 server 使用的 arm-only URDF
+    origin/axis 链路, 直接由 J_omega(q) * dq_feedback
     得到末端角速度, 再对这条末端角速度序列做中心差分得到角加速度。
     这样保留了 J_omega(q) 随姿态变化带来的项, 与 server 端惯量补偿链路一致。
-    最后应用 URDF jointEE 的固定旋转, 显式旋到传感器 wrench 使用的 ee_link/F 系。
+    omega/alpha 最终表达在传感器 wrench 使用的 ee_link/F 系。
     """
     q_raw = np.asarray(q_raw, dtype=float)
     dq_raw = np.asarray(dq_raw, dtype=float)
     if q_raw.shape != dq_raw.shape or q_raw.ndim != 2 or q_raw.shape[1] != 7:
         raise ValueError("q_raw 和 dq_raw 必须都是 shape=(N, 7)。")
-    q_model = np.vstack([get_actual_q(q_raw[i], arm, robot_type) for i in range(q_raw.shape[0])])
-
     rotations = []
     omega_base = []
-    for i in range(q_model.shape[0]):
-        rotation_dh, axes_base = ee_rotation_and_joint_axes(q_model[i])
-        rotation_ee = rotation_dh @ dh_frame_to_ee_rotation()
+    for i in range(q_raw.shape[0]):
+        rotation_ee, axes_base = urdf_ee_rotation_and_joint_axes(q_raw[i], arm, robot_type)
         rotations.append(rotation_ee)
         omega_base.append(axes_base.T @ dq_raw[i])
 
@@ -532,8 +613,8 @@ def prepare_fit_arrays(
 
     关键: joint_velocity 是电机 feedback 的关节角速度, 不是由 joint_position 离线
     差分得到的速度。角加速度从末端角速度差分得到, 因而包含 J_omega(q) 的姿态变化项。
-    DH frame7 还会经过 URDF jointEE 固定旋转后再进入回归, 与 wrench_ee、com_m
-    和输出的 ^F I_C 保持同一 EE/F 坐标系。
+    q/dq 使用 URDF 关节变量, 不再走 DH offset；末端旋转直接包含 URDF fixed EE joint,
+    与 wrench_ee、com_m 和输出的 ^F I_C 保持同一 EE/F 坐标系。
     """
     if len(samples) < 20:
         raise ValueError("动态采样点至少需要 20 个。")
