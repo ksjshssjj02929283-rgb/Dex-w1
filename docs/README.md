@@ -72,14 +72,14 @@ sudo apt install ros-humble-navigation2
 - `position` 仍为 `[x, 0, yaw]`，`yaw` 单位为度。
 - `target_pose.header.frame_id` 仍为 `base_link`。
 - `x` 和 `yaw` 不能同时非零，否则接口返回 `False`。
-- 已有精控 action 活跃时，新目标会直接返回 `False`；上层应先调用 `cancel_chassis_control()` 或等待终态后再发送下一次精控目标。
+- 发送行为与导航一致：客户端不因本地旧 goal handle 或旧状态拦截新目标；每次发送都会递增任务 ID，旧 action 回调到达时会被忽略。若底层仍有精控 action 活跃，是否接受新目标由 `control/precise_control` action server 决定。
 
 状态和取消语义：
 
-- `get_control_status(consume=True)` 读取本地 action 状态缓存，不再主动请求服务；该方法会先 `spin_once` 一次以处理已到达的 action feedback/result。
+- `get_control_status(consume=True)` 读取本地 action 状态缓存，不再主动请求服务，也不在接口内部调用 `rclpy.spin_once()`；状态更新依赖外部 executor 处理 action feedback/result。`consume` 参数仅为兼容旧调用保留，当前不会把终态重置为 `"IDLE"`，语义与 `get_nav_state()` 保持一致。
 - 发送目标后本地状态先置为 `"CONTROL"`；收到 action feedback 时使用 `Feedback.current_status` 更新状态。
 - action result 成功时状态为 `"SUCCEEDED"`，取消时为 `"CANCELLED"`，失败、拒绝或异常时为 `"FAILED"`。
-- `consume=True` 时，读取到 `"SUCCEEDED"`、`"FAILED"`、`"CANCELLED"` 后会把本地状态重置为 `"IDLE"`，避免上层重复消费同一个终态。
-- `cancel_chassis_control()` 通过当前 action goal handle 调用 `cancel_goal_async()`，不再调用 Trigger 取消服务。
+- 收到 `"SUCCEEDED"`、`"FAILED"`、`"CANCELLED"` 终态 feedback/result 后会释放本地 goal handle，允许后续继续发送新的精控 action。
+- `cancel_chassis_control()` 通过当前 action goal handle 调用 `cancel_goal_async()`，不再调用 Trigger 取消服务；如果 goal response 尚未被外部 executor 处理导致本地还没有 goal handle，会返回 `False`，避免在业务线程里嵌套 spin。
 
-实现上使用 `_control_lock` 保护 goal handle、任务 ID、结果和状态缓存。新任务会递增 `_control_task_id`，旧 action 回调到达时会被忽略，避免旧 feedback/result 覆盖新任务状态。
+实现上使用 `_control_lock` 保护 goal handle、任务 ID、结果和状态缓存。新任务会递增 `_control_task_id`，旧 action 回调到达时会被忽略，避免旧 feedback/result 覆盖新任务状态；发送入口不做本地活跃任务拦截，保持与导航 action 相同的异步发送模型。

@@ -71,6 +71,7 @@ class NavigationClient(ABC, Node):
         self._last_control_status = "IDLE"
         self._last_control_status_success = True
         self._last_control_status_time = None
+        self._last_logged_control_status = None
         self._control_terminal_states = {"SUCCEEDED", "FAILED", "CANCELLED"}
 
         self._init_subscriber(is_sim)
@@ -322,10 +323,10 @@ class NavigationClient(ABC, Node):
 
     def get_control_status(self, consume: bool = True) -> str:
         """
-        获取当前底盘控制 action 状态（供上层业务轮询调用）。
+        获取当前底盘控制 action 状态，语义与 get_nav_state() 保持一致。
 
         Args:
-            consume (bool): 如果为 True，返回终态后会重置本地缓存为 IDLE。
+            consume (bool): 兼容旧接口参数，当前不消费终态。
 
         Returns:
             str:
@@ -336,23 +337,19 @@ class NavigationClient(ABC, Node):
                 - "CANCELLED"
                 - action feedback 中的 current_status
         """
-        self._spin_once_if_not_executed(timeout_sec=0.01)
-
         with self._control_lock:
             status = self._control_status
-            if consume and status in self._control_terminal_states:
-                self._control_status = "IDLE"
-                self._last_control_status = "IDLE"
-            return status
+
+        self._log_control_status_once(status)
+        return status
 
     def refresh_control_status(self) -> bool:
         """
-        兼容旧接口：处理一次 action 回调并返回是否存在有效本地状态。
+        兼容旧接口：返回是否存在有效本地状态。
 
         Returns:
             bool: 当前是否有可读状态。
         """
-        self._spin_once_if_not_executed(timeout_sec=0.01)
         with self._control_lock:
             return self._control_status != "UNKNOWN"
 
@@ -365,18 +362,6 @@ class NavigationClient(ABC, Node):
         with self._control_lock:
             goal_handle = self._control_goal_handle
             current_task_id = self._control_task_id
-            status = self._control_status
-
-        if goal_handle is None and status == "CONTROL":
-            start_time = time.time()
-            while time.time() - start_time < 1.0:
-                self._spin_once_if_not_executed(timeout_sec=0.05)
-                with self._control_lock:
-                    goal_handle = self._control_goal_handle
-                    current_task_id = self._control_task_id
-                if goal_handle is not None:
-                    break
-                time.sleep(0.02)
 
         if goal_handle is None:
             self.get_logger().warning("No active control goal to cancel.")
@@ -407,17 +392,6 @@ class NavigationClient(ABC, Node):
         if position[0] != 0.0 and position[2] != 0:
             self.get_logger().info(
                 "illegal position, x and yaw should not be set together.")
-            return False
-
-        with self._control_lock:
-            has_active_control = (self._control_goal_handle is not None or
-                                  self._control_status not in {
-                                      "IDLE", *self._control_terminal_states
-                                  })
-        if has_active_control:
-            self.get_logger().warning(
-                "Precise control goal is active; cancel it before sending a new one."
-            )
             return False
 
         if self._set_ctrl_client is None:
@@ -468,6 +442,9 @@ class NavigationClient(ABC, Node):
             self._clear_control_goal(current_task_id)
             self.get_logger().error(f"Failed to send precise control goal: {e}")
             return False
+        self.get_logger().info(
+            f"Precise control goal sent: x={position[0]}, yaw={position[2]}deg, frame=base_link"
+        )
         return True
 
     def set_goal_tolerance(self, xy_tolerance: float,
@@ -696,11 +673,11 @@ class NavigationClient(ABC, Node):
             if task_id != self._control_task_id:
                 return
             status = feedback_msg.feedback.current_status
-            if status:
-                self._control_status = status
-                self._last_control_status = status
-                self._last_control_status_time = time.time()
-                self._last_control_status_success = True
+
+        if status:
+            self._set_control_status(status, task_id)
+            if status in self._control_terminal_states:
+                self._clear_control_goal(task_id)
 
     def _on_control_result(self, future, task_id):
         """Callback for precise control result."""
@@ -760,6 +737,19 @@ class NavigationClient(ABC, Node):
             self._last_control_status = status
             self._last_control_status_success = status != "UNKNOWN"
             self._last_control_status_time = time.time()
+            should_log = status != self._last_logged_control_status
+            if should_log:
+                self._last_logged_control_status = status
+
+        if should_log:
+            self.get_logger().info(f"Precise control status: {status}")
+
+    def _log_control_status_once(self, status: str):
+        with self._control_lock:
+            if status == self._last_logged_control_status:
+                return
+            self._last_logged_control_status = status
+        self.get_logger().info(f"Precise control status: {status}")
 
     def _clear_control_goal(self, task_id: int = None):
         with self._control_lock:

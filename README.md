@@ -94,7 +94,7 @@ More examlpes see `dexe_robot_client/examples`.
 
 `NavigationClient.set_chassis_control_position(position)` 使用 `control/precise_control` (`nav_interfaces/action/PreciseControl`) action 发送底盘精控目标，不再发布 `/control/ctrl_pose`，也不再调用 `control/get_control_status` 或 `control/cancel_chassis_control` Trigger 服务。
 
-目标仍基于 `base_link`：`position` 为 `[x, 0, yaw]`，`yaw` 单位为度，`x` 和 `yaw` 不能同时非零。已有精控任务活跃时，新目标会返回 `False`；`get_control_status()` 读取 action feedback/result 维护的本地状态缓存，`cancel_chassis_control()` 通过当前 action goal handle 发送取消请求。
+目标仍基于 `base_link`：`position` 为 `[x, 0, yaw]`，`yaw` 单位为度，`x` 和 `yaw` 不能同时非零。控制发送行为与导航一致，不因本地旧 goal handle 或旧状态拦截新目标；`get_control_status()` 像 `get_nav_state()` 一样返回 action feedback/result 维护的本地状态，不消费终态；`cancel_chassis_control()` 通过当前 action goal handle 发送取消请求。
 
 
 ## 🏷️ Others
