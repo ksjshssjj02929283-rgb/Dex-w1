@@ -1,3 +1,7 @@
+# 注意: 真机实际加载的是 ~/dexe_robot_server_data/robot_config.yaml.
+# 启动时 main.cpp:CheckConfig 会把"用户 yaml 缺的字段"从这里 merge 过去 (补缺不覆盖).
+# 修改本文件中的值后, 想让真机生效要么删用户 yaml 触发重建, 要么手动编辑用户 yaml 同步.
+
 # === 机器人基本配置 ===
 robot_name: "W1Anthropomorphic"
 robot_version: "V02"  # 可选项: V02, V03
@@ -7,13 +11,21 @@ right_arm_name: "W1RightArmAnthropomorphic"
 # === 是否允许开启力控 ===
 allow_force_control: true
 
-# === 工具重力补偿参数 ===
-# com_mm: 工具质心在力传感器坐标系下的位置，单位 mm
+# === 工具补偿参数 ===
+# 坐标系约定: com_mm 与 inertia_com_kg_m2 都在 EE/法兰系下表达
+# 惯量张量 (单位 kg·m^2), 不是关于 EE 原点的. 改坐标系/参考点后必须重新生成.
 tool_gravity_compensation:
-  com_mm: [56.72691, 17.72389, -0.47806]
+  com_mm: [-0.15804154,0.70721872,50.33428542]   # COM 相对 EE 原点的偏移, 单位 mm, 在 EE 系下
   mass_kg: 1.061
   gravity_magnitude: 9.79
+  inertia_com_kg_m2: [[0.0004746173, 0.00017142768, 0.0021696025],
+                     [0.00017142768, 0.0024981689, 0.0010806907],
+                     [0.0021696025, 0.0010806907, 0.0035492561]]   # I_C^EE, 关于 COM, EE 系基
   model_sign: 1
+  # 末端加速度 / 关节加速度的低通截止 (Hz), 用于在线惯量补偿. 默认 5.0 与脚本一致.
+  # 静止时 G1 诊断字段 (tool_inertia_force_norm/torque_norm) 显示噪声偏大 -> 调低 (3 ~ 4)
+  # 快速运动跟踪不上 -> 调高 (8 ~ 10). 合法区间 [0.5, 100].
+  inertia_compensation_filter_hz: 5.0
 
 # === 记录配置 ===
 enable_record: false

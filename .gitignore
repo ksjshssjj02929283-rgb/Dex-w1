@@ -11,6 +11,8 @@ nano_logs/
 script/dyn_params_ident_data/recdata/
 CLAUDE.md
 AGENTS.md
+.claude/
+.codex/
 dexe_robot_client/
 findings.md
 progress.md
