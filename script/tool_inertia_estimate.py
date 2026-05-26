@@ -12,8 +12,10 @@
       M_meas ≈  com x F_unbiased + (I alpha + omega x I omega)
   因此拟合用的旋转动力学残差是
       I alpha + omega x I omega = T_unbiased - com x F_unbiased
-  (符号易错: tool_com_estimate.py 在静止情形得到 T_meas = com x F_meas,
-   动态旋转项的符号必须与 server 惯量补偿扣除的 wrench 一致, 否则惯量出现负对角元。)
+  (符号关键: 静止时 tool_com_estimate.py 验证的是 T_unb = com x F_unb,
+   动态旋转项的符号必须与 server 惯量补偿扣除的 wrench 一致;
+   com x F 项必须在等号同侧、与转动项 I alpha + omega x I omega 同号相加;
+   写成减号会把整组 theta 整体反号, 表现为 Iyy/Izz 出现负值、三角不等式失败。)
 """
 
 import argparse
