@@ -28,7 +28,7 @@ tool_gravity_compensation:
   inertia_compensation_filter_hz: 5.0
 
 # === 记录配置 ===
-enable_record: false
+enable_record: true
 
 # === 底盘配置 ===
 # 底盘类型: omni (全向轮) / diff_drive (差速驱动)
