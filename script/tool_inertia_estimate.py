@@ -142,30 +142,51 @@ def theta_to_inertia_matrix(theta: np.ndarray) -> np.ndarray:
     )
 
 
-def inertia_regressor_row(omega: np.ndarray, alpha: np.ndarray) -> np.ndarray:
-    """tau_rot = I α + ω × (I ω) = Y_I(ω,α) · [Ixx, Iyy, Izz, Ixy, Ixz, Iyz]."""
+def inertia_regressor_row(omega: np.ndarray, alpha: np.ndarray,
+                         param_mask: Optional[np.ndarray] = None) -> np.ndarray:
+    """tau_rot = I α + ω × (I ω) = Y_I(ω,α) · θ.
+
+    θ default: [Ixx, Iyy, Izz, Ixy, Ixz, Iyz] (6 params).
+    param_mask: bool array of length 6, True = include column.
+    """
     cols = []
-    for basis_theta in np.eye(6):
+    for k, basis_theta in enumerate(np.eye(6)):
+        if param_mask is not None and not param_mask[k]:
+            continue
         basis_i = theta_to_inertia_matrix(basis_theta)
         cols.append(basis_i @ alpha + np.cross(omega, basis_i @ omega))
     return np.column_stack(cols)
 
 
+# 完整 6-param 顺序
+_PARAM_NAMES = ["Ixx", "Iyy", "Izz", "Ixy", "Ixz", "Iyz"]
+# 约束 Ixz=Iyz=0 → 仅拟合 Ixx, Iyy, Izz, Ixy
+_PARAM_MASK_XZ_YZ_ZERO = np.array([True, True, True, True, False, False], dtype=bool)
+
+
 def fit_inertia_from_rotational_terms(
     omega: np.ndarray, alpha: np.ndarray, torque_residual: np.ndarray,
+    constrain_xz_yz_zero: bool = False,
 ) -> Dict[str, object]:
     omega = np.asarray(omega, dtype=float)
     alpha = np.asarray(alpha, dtype=float)
     torque_residual = np.asarray(torque_residual, dtype=float)
     if omega.shape != alpha.shape or omega.shape != torque_residual.shape or omega.shape[1] != 3:
         raise ValueError("omega、alpha、torque_residual 都必须是 shape=(N, 3)。")
-    blocks = [inertia_regressor_row(omega[i], alpha[i]) for i in range(omega.shape[0])]
+    param_mask = _PARAM_MASK_XZ_YZ_ZERO if constrain_xz_yz_zero else None
+    blocks = [inertia_regressor_row(omega[i], alpha[i], param_mask) for i in range(omega.shape[0])]
     y = np.vstack(blocks)
     b = torque_residual.reshape(-1)
-    theta, _, rank, singular_values = np.linalg.lstsq(y, b, rcond=None)
-    inertia = theta_to_inertia_matrix(theta)
-    pred = (y @ theta).reshape((-1, 3))
+    theta_partial, _, rank, singular_values = np.linalg.lstsq(y, b, rcond=None)
+    pred = (y @ theta_partial).reshape((-1, 3))
     err = torque_residual - pred
+    # 还原 6 维 theta (约束模式下缺失的列用 0 补齐)
+    if constrain_xz_yz_zero:
+        theta_full = np.zeros(6)
+        theta_full[param_mask] = theta_partial
+    else:
+        theta_full = theta_partial
+    inertia = theta_to_inertia_matrix(theta_full)
     eigvals = np.linalg.eigvalsh(inertia)
     physical = {
         "symmetric": bool(np.allclose(inertia, inertia.T)),
@@ -177,9 +198,11 @@ def fit_inertia_from_rotational_terms(
         ),
         "eigenvalues": array_to_list(eigvals),
     }
+    n_cols = int(param_mask.sum()) if param_mask is not None else 6
     return {
-        "theta": theta,
+        "theta": theta_full,
         "inertia_com": inertia,
+        "constrained": constrain_xz_yz_zero,
         "rank": int(rank),
         "condition_number": float(np.linalg.cond(y)) if y.size else float("inf"),
         "singular_values": singular_values,
@@ -517,20 +540,22 @@ def result_to_json(
 ) -> Dict[str, object]:
     inertia = np.asarray(result["inertia_com"], dtype=float)
     theta = np.asarray(result["theta"], dtype=float)
+    n_params = 4 if result.get("constrained") else 6
     return {
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "sample_count": int(sample_count),
         "arm": args.arm,
         "dt": args.dt,
+        "constrained": bool(result.get("constrained", False)),
         "wrench_source": "force_sensor_gravity (server 端已扣零偏 + 已扣工具静态重力, F 系)",
         "kinematics_source": "ee_omega_ee_frame / ee_alpha_ee_frame (server 端 1 kHz Butterworth 滤波后, F 系)",
         "mass_kg": args.mass,
         "com_m": array_to_list(parse_float_list(args.com_mm, 3, "--com-mm") / 1000.0),
         "com_mm": array_to_list(parse_float_list(args.com_mm, 3, "--com-mm")),
-        "theta_order": ["Ixx", "Iyy", "Izz", "Ixy", "Ixz", "Iyz"],
+        "theta_order": _PARAM_NAMES,
         "theta": array_to_list(theta),
         "inertia_com_kg_m2": inertia.tolist(),
-        "rank": result["rank"],
+        "rank": f"{result['rank']} / {n_params}",
         "condition_number": result["condition_number"],
         "singular_values": array_to_list(np.asarray(result["singular_values"], dtype=float)),
         "torque_rms": result["torque_rms"],
@@ -550,13 +575,12 @@ def print_result(payload: Dict[str, object]) -> None:
     print(f"参数向量:          {np.array(payload['theta'])}")
     print(f"^F I_C kg*m^2:\n{np.array(payload['inertia_com_kg_m2'])}")
     print(f"力矩残差 RMS:      {float(payload['torque_rms']):.6g} Nm")
-    print(f"回归矩阵秩:        {payload['rank']} / 6")
+    print(f"约束模式:          {'Ixz=Iyz=0 (4 params)' if payload.get('constrained') else '无约束 (6 params)'}")
+    print(f"回归矩阵秩:        {payload['rank']}")
     print(f"条件数:            {float(payload['condition_number']):.6g}")
     physical = payload["physical"]
     print(f"正定检查:          {physical['positive_definite']}")
     print(f"三角不等式检查:    {physical['triangle_inequality']}")
-    if payload["rank"] < 6:
-        print("警告: 回归矩阵秩小于 6, 末端旋转激励不足, 部分惯量参数不可观。")
     if float(payload["condition_number"]) > 1e4:
         print("警告: 条件数较大, 建议增加绕多个方向的旋转激励。")
     print("\n===== robot_config.yaml 建议字段 =====")
@@ -606,6 +630,7 @@ def run_self_test() -> None:
                                 trim_start_sec=0.5, trim_end_sec=0.5, dt=dt)
     result = fit_inertia_from_rotational_terms(
         arrays["omega"], arrays["alpha"], arrays["torque_rot"],
+        constrain_xz_yz_zero=False,  # self-test 使用全 6-param 验证
     )
     err = np.linalg.norm(np.asarray(result["theta"]) - theta_true)
     print(f"self-test: theta_err={err:.6e}, torque_rms={result['torque_rms']:.6e}")
@@ -640,6 +665,11 @@ def parse_args() -> argparse.Namespace:
                         help=("可选: 仅对 wrench 再做一次零相位 Butterworth (Hz)。"
                               "默认 0 = 不再滤; server 已 1 kHz Butterworth, "
                               "再滤会引入相位偏移, 谨慎使用。"))
+    parser.add_argument(
+        "--no-constrain-xz-yz", dest="constrain_xz_yz_zero",
+        action="store_false", default=True,
+        help="关闭 Ixz = Iyz = 0 物理约束 (恢复 6-param LS)。",
+    )
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
@@ -713,8 +743,10 @@ def main() -> None:
         extra_filter_fc_hz=extra_fc,
     )
     print(f"开始拟合 ^F I_C, 有效样本数: {len(arrays['omega'])}")
+    constrain = getattr(args, "constrain_xz_yz_zero", False)
     result = fit_inertia_from_rotational_terms(
         arrays["omega"], arrays["alpha"], arrays["torque_rot"],
+        constrain_xz_yz_zero=constrain,
     )
     payload = result_to_json(result, args, len(arrays["omega"]))
     payload["capture_path"] = str(capture_path)
