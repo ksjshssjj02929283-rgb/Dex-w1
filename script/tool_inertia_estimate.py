@@ -42,9 +42,12 @@ DEFAULT_DT = 0.01
 DEFAULT_TOOL_MASS_KG = 1.061
 DEFAULT_TOOL_COM_MM = "-0.15804154,0.70721872,50.33428542"
 DEFAULT_EXCITATION_DURATION = 120.0
-DEFAULT_EXCITATION_AMPLITUDES = "0.30,0.20,0.15"
-DEFAULT_EXCITATION_FREQUENCIES = "0.40,0.65,0.90"
-DEFAULT_EXCITATION_PHASES = "0.0,1.57079632679,1.0471975512"
+# 激励关节数: 取 4 时同时激励 J4/J5/J6/J7 (绕 EE x/y/z 更均衡, 改善 Ixx 可观性).
+# 幅值从 J4 往 J7 递减, 避免末端摆动幅度过大.
+EXCITATION_JOINT_COUNT = 4
+DEFAULT_EXCITATION_AMPLITUDES = "0.15,0.30,0.20,0.15"
+DEFAULT_EXCITATION_FREQUENCIES = "0.30,0.40,0.65,0.90"
+DEFAULT_EXCITATION_PHASES = "0.0,1.57079632679,1.0471975512,0.52359877559"
 DEFAULT_EXCITATION_RAMP = 2.0
 
 
@@ -62,8 +65,10 @@ class DynamicSample:
 
 def parse_float_list(text: str, expected: int, name: str) -> np.ndarray:
     values = [float(item.strip()) for item in text.replace(";", ",").split(",") if item.strip()]
-    if len(values) != expected:
+    if expected > 0 and len(values) != expected:
         raise ValueError(f"{name} 需要 {expected} 个逗号分隔的数值，实际得到 {len(values)} 个。")
+    if expected < 0 and not values:
+        raise ValueError(f"{name} 不能为空。")
     return np.asarray(values, dtype=float)
 
 
@@ -85,15 +90,20 @@ def smooth_excitation_envelope(t: float, duration: float, ramp_sec: float) -> fl
     return math.sin(0.5 * math.pi * ratio) ** 2
 
 
-def arm_wrist_indices(arm: str) -> List[int]:
-    """全身关节数组中所选手臂 J5/J6/J7 索引。"""
-    return [10, 11, 12] if arm == "primary" else [17, 18, 19]
+def arm_wrist_indices(arm: str, count: int = 3) -> List[int]:
+    """全身关节数组中所选手臂倒数 count 个腕部关节索引。
+
+    count=3 → J5/J6/J7
+    count=4 → J4/J5/J6/J7
+    """
+    j7 = 12 if arm == "primary" else 19
+    return list(range(j7 - count + 1, j7 + 1))
 
 
-def wrist_indices_for_position(position: np.ndarray, arm: str) -> List[int]:
+def wrist_indices_for_position(position: np.ndarray, arm: str, count: int = 3) -> List[int]:
     if np.asarray(position).size == 7:
-        return [4, 5, 6]
-    return arm_wrist_indices(arm)
+        return list(range(7 - count, 7))
+    return arm_wrist_indices(arm, count)
 
 
 def generate_wrist_excitation_target(
@@ -101,9 +111,10 @@ def generate_wrist_excitation_target(
     amplitudes: np.ndarray, frequencies: np.ndarray, phases: np.ndarray, ramp_sec: float,
 ) -> np.ndarray:
     target = np.asarray(base_position, dtype=float).copy()
+    count = len(amplitudes)
     envelope = smooth_excitation_envelope(t, duration, ramp_sec)
     offsets = envelope * amplitudes * np.sin(2.0 * np.pi * frequencies * t + phases)
-    for idx, offset in zip(wrist_indices_for_position(target, arm), offsets):
+    for idx, offset in zip(wrist_indices_for_position(target, arm, count), offsets):
         target[idx] += offset
     return target
 
@@ -450,12 +461,16 @@ def capture_online(args: argparse.Namespace) -> List[DynamicSample]:
         if not wrapper.get_joint_name():
             raise RuntimeError("没有获取到 joint_name, 无法发布 JointPositionControl 自动激励。")
 
-        amplitudes = parse_float_list(args.excitation_amplitudes, 3, "--excitation-amplitudes")
-        frequencies = parse_float_list(args.excitation_frequencies, 3, "--excitation-frequencies")
-        phases = parse_float_list(args.excitation_phases, 3, "--excitation-phases")
-        wrist_indices = wrist_indices_for_position(base_position, args.arm)
-        if max(wrist_indices) >= base_position.size:
-            raise RuntimeError(f"当前关节数组长度 {base_position.size} 不支持 {args.arm} 的 J5/J6/J7 激励。")
+        amplitudes = parse_float_list(args.excitation_amplitudes, -1, "--excitation-amplitudes")
+        frequencies = parse_float_list(args.excitation_frequencies, -1, "--excitation-frequencies")
+        phases = parse_float_list(args.excitation_phases, -1, "--excitation-phases")
+        if not (len(amplitudes) == len(frequencies) == len(phases) and len(amplitudes) in (3, 4)):
+            raise RuntimeError(
+                "excitation 幅值/频率/相位数组长度必须相等且为 3 (J5/J6/J7) 或 4 (J4/J5/J6/J7)。")
+        excitation_count = len(amplitudes)
+        wrist_indices = wrist_indices_for_position(base_position, args.arm, excitation_count)
+        if not wrist_indices or max(wrist_indices) >= base_position.size:
+            raise RuntimeError(f"关节数组长度 {base_position.size} 不支持 {excitation_count} 关节激励。")
 
         print("数据已连接, 将启动推荐腕部激励。")
         print(f"中心姿态取当前反馈位置; 激励关节索引: {wrist_indices}")
@@ -638,9 +653,12 @@ def parse_args() -> argparse.Namespace:
     if args.excitation_ramp < 0.0:
         parser.error("--excitation-ramp 不能为负数。")
     parse_float_list(args.com_mm, 3, "--com-mm")
-    amplitudes = parse_float_list(args.excitation_amplitudes, 3, "--excitation-amplitudes")
-    frequencies = parse_float_list(args.excitation_frequencies, 3, "--excitation-frequencies")
-    parse_float_list(args.excitation_phases, 3, "--excitation-phases")
+    amplitudes = parse_float_list(args.excitation_amplitudes, -1, "--excitation-amplitudes")
+    frequencies = parse_float_list(args.excitation_frequencies, -1, "--excitation-frequencies")
+    phases = parse_float_list(args.excitation_phases, -1, "--excitation-phases")
+    if not (len(amplitudes) == len(frequencies) == len(phases) and len(amplitudes) in (3, 4)):
+        parser.error(
+            "excitation 幅值/频率/相位数组长度必须相等且为 3 (J5/J6/J7) 或 4 (J4/J5/J6/J7)。")
     if np.any(amplitudes < 0.0):
         parser.error("--excitation-amplitudes 不能包含负数。")
     if np.any(frequencies <= 0.0):
