@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <set>
 #include <yaml-cpp/yaml.h>
@@ -18,6 +19,17 @@ constexpr double kDefaultGravity = 9.79;
 constexpr double kDefaultInertiaCompCutoffHz = 5.0;
 constexpr double kMinInertiaCompCutoffHz = 0.5;
 constexpr double kMaxInertiaCompCutoffHz = 100.0;  // 1 kHz 采样的 10%
+
+// 把 primary 的 3 维 atomic ω/α 快照成 6 维 (primary[0:3] + secondary[3:6]) 给 publish 用.
+// secondary 段当前永远是 NaN, VectorToJsonArrayString 会把 NaN 输出为 JSON null.
+inline std::array<double, 6> SnapshotEEKinematicsArray6(
+    const std::array<std::atomic<double>, 3>& primary) {
+    std::array<double, 6> out{};
+    for (int i = 0; i < 3; ++i) out[i] = primary[i].load(std::memory_order_relaxed);
+    const double nan_v = std::numeric_limits<double>::quiet_NaN();
+    for (int i = 3; i < 6; ++i) out[i] = nan_v;
+    return out;
+}
 
 bool ReadYamlVector(const YAML::Node& node, int expected_size, Eigen::VectorXd& out) {
     if (!node || !node.IsSequence() || static_cast<int>(node.size()) != expected_size) {
@@ -58,6 +70,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     ndof_config_ = ndof_robot;
     sensor_force_.setZero();
     sensor_wrench_.setZero();
+    sensor_wrench_gravity_.setZero();
     raw_sensor_wrench_.setZero();
     sensor_zero_offset_.setZero();
     LoadToolGravityCompensationConfig(robot_cfg_path);
@@ -311,6 +324,12 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
         for (int i = 0; i < 6; ++i) {
             tool_inertia_wrench_ee_[i].store(0.0, std::memory_order_relaxed);
         }
+        // ω/α 同步标记无效: 与"惯量补偿未跑"语义同生同灭, 让 script 看到 NaN 直接 drop.
+        const double nan_v = std::numeric_limits<double>::quiet_NaN();
+        for (int i = 0; i < 3; ++i) {
+            ee_omega_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            ee_alpha_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+        }
     };
     if (!tool_inertia_compensation_enabled_ || !tool_gravity_compensation_enabled_) {
         early_return();
@@ -353,6 +372,11 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
         tool_inertia_first_sample_ = false;
         for (int i = 0; i < 6; ++i) {
             tool_inertia_wrench_ee_[i].store(0.0, std::memory_order_relaxed);
+        }
+        const double nan_v = std::numeric_limits<double>::quiet_NaN();
+        for (int i = 0; i < 3; ++i) {
+            ee_omega_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            ee_alpha_F_primary_[i].store(nan_v, std::memory_order_relaxed);
         }
         return wrench_ee;
     }
@@ -418,6 +442,15 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
         tool_inertia_wrench_ee_[i].store(expected_inertia_wrench_ee[i], std::memory_order_relaxed);
     }
 
+    // 发布 ω/α (F = ee_link 系) 给离线辨识脚本. ω/α 是自由向量, 直接 R^T 乘即可
+    // (α_F = R^T α_ab 与 d/dt(ω_F) 在连续时间下严格相等, 差项 -ω_F × ω_F = 0).
+    const Vector3d w_ee_F = R_a_e.transpose() * w_ee_armbase;
+    const Vector3d alpha_ee_F = R_a_e.transpose() * alpha_ee_armbase;
+    for (int i = 0; i < 3; ++i) {
+        ee_omega_F_primary_[i].store(w_ee_F[i], std::memory_order_relaxed);
+        ee_alpha_F_primary_[i].store(alpha_ee_F[i], std::memory_order_relaxed);
+    }
+
     if (applied) *applied = true;
     return wrench_ee - expected_inertia_wrench_ee;
 }
@@ -432,9 +465,15 @@ void RobotServer::ResetToolInertiaCompensationState() {
     for (auto& f : omega_diff_filter_) {
         if (f) f->Reset();
     }
-    // 失效路径下把诊断 wrench 置零, 避免 publish 线程读到过期数据.
+    // 失效路径下把诊断 wrench 置零, 避免 publish 线程读到过期数据. ω/α 写 NaN
+    // (与"惯量补偿未运行"语义一致, 让 script 一眼丢弃, 不与"静止" (=0) 混淆).
     for (int i = 0; i < 6; ++i) {
         tool_inertia_wrench_ee_[i].store(0.0, std::memory_order_relaxed);
+    }
+    const double nan_v = std::numeric_limits<double>::quiet_NaN();
+    for (int i = 0; i < 3; ++i) {
+        ee_omega_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+        ee_alpha_F_primary_[i].store(nan_v, std::memory_order_relaxed);
     }
 }
 
@@ -522,6 +561,9 @@ void RobotServer::TorqueControlThreadFunc() {
             sensor_data_secondary =
                 ApplyToolGravityCompensation(zeroed_sensor_data_secondary, 1, &gravity_applied_secondary);
         }
+
+        // 诊断字段: 保留"零偏后 + 重力补偿后, 惯量补偿前"的六维力.
+        sensor_wrench_gravity_ = utils::GetSensorWrench(sensor_data_primary, sensor_data_secondary);
 
         // 叠加手动输入的力数据；没有六维力传感器时保持控制律输入 wrench 为零。
         if (primary_wrench_valid) {
@@ -1050,6 +1092,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(torque_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(torque_ff_arr_, index_offset, ndof_config_).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
+        ",\n  \"force_sensor_gravity\":" + utils::VectorToJsonArrayString(sensor_wrench_gravity_).str() +
         ",\n  \"raw_force_sensor\":" + utils::VectorToJsonArrayString(raw_sensor_wrench_).str() +
         ",\n  \"force_sensor_bias\":" + utils::VectorToJsonArrayString(sensor_zero_offset_).str() +
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(negative_torque_limit_arr_, index_offset, ndof_config_).str() +
@@ -1090,6 +1133,10 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         std::to_string(this->tool_inertia_wrench_ee_[3].load(std::memory_order_relaxed)) + "," +
         std::to_string(this->tool_inertia_wrench_ee_[4].load(std::memory_order_relaxed)) + "," +
         std::to_string(this->tool_inertia_wrench_ee_[5].load(std::memory_order_relaxed)) + "]" +
+        // ω/α 在 F = ee_link 系, 6 维布局: primary[0:3] + secondary[3:6]; secondary 暂未支持, 写 NaN
+        // (经 VectorToJsonArrayString 输出为 JSON null, 让下游 (script) 能区分"未支持"与"恰好为零").
+        ",\n  \"ee_omega_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotEEKinematicsArray6(this->ee_omega_F_primary_)).str() +
+        ",\n  \"ee_alpha_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotEEKinematicsArray6(this->ee_alpha_F_primary_)).str() +
         ", \"tool_inertia_filter_cutoff_hz\":" + std::to_string(this->tool_inertia_filter_cutoff_hz_) +
         "}";
     return robot_server_state_msg;
