@@ -163,6 +163,7 @@ _PARAM_NAMES = ["Ixx", "Iyy", "Izz", "Ixy", "Ixz", "Iyz"]
 # 约束 Ixz=Iyz=0 → 仅拟合 Ixx, Iyy, Izz, Ixy
 _PARAM_MASK_XZ_YZ_ZERO = np.array([True, True, True, True, False, False], dtype=bool)
 _TRIANGLE_IZZ_LE_IXX_IYY = np.array([1.0, 1.0, -1.0, 0.0], dtype=float)
+_TRIANGLE_CHECK_TOL = 1e-10
 
 
 def solve_lstsq_with_lower_halfspace(
@@ -192,6 +193,15 @@ def solve_lstsq_with_lower_halfspace(
     kkt_rhs = np.concatenate([rhs, np.zeros(1)])
     active_solution, _, _, _ = np.linalg.lstsq(kkt, kkt_rhs, rcond=None)
     return active_solution[:-1], True, int(rank), singular_values
+
+
+def inertia_triangle_inequality_ok(inertia: np.ndarray, tol: float = _TRIANGLE_CHECK_TOL) -> bool:
+    ixx, iyy, izz = float(inertia[0, 0]), float(inertia[1, 1]), float(inertia[2, 2])
+    return bool(
+        ixx + iyy + tol >= izz
+        and ixx + izz + tol >= iyy
+        and iyy + izz + tol >= ixx
+    )
 
 
 def fit_inertia_from_rotational_terms(
@@ -227,11 +237,7 @@ def fit_inertia_from_rotational_terms(
     physical = {
         "symmetric": bool(np.allclose(inertia, inertia.T)),
         "positive_definite": bool(np.all(eigvals > 0.0)),
-        "triangle_inequality": bool(
-            inertia[0, 0] + inertia[1, 1] >= inertia[2, 2]
-            and inertia[0, 0] + inertia[2, 2] >= inertia[1, 1]
-            and inertia[1, 1] + inertia[2, 2] >= inertia[0, 0]
-        ),
+        "triangle_inequality": inertia_triangle_inequality_ok(inertia),
         "eigenvalues": array_to_list(eigvals),
     }
     n_cols = int(param_mask.sum()) if param_mask is not None else 6
