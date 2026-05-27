@@ -277,6 +277,16 @@ def prepare_fit_arrays(
     omega = np.vstack([s.omega_F for s in samples])
     alpha = np.vstack([s.alpha_F for s in samples])
 
+    # ω/α 来自 server pinocchio FK → URDF ee_link 系.
+    # force_sensor_gravity 与 com 来自 MapSriRawToEE → SRI-EE 系.
+    # 两者差一个 R_z(180°) (传感器相对于法兰绕 z 旋转 180° 安装):
+    #   v_SRI = R_z(180°) · v_URDF = [-v_x, -v_y, v_z]
+    # 把 ω/α 旋到 SRI-EE 系, 与 wrench/com 统一坐标系.
+    omega[:, 0] *= -1.0
+    omega[:, 1] *= -1.0
+    alpha[:, 0] *= -1.0
+    alpha[:, 1] *= -1.0
+
     if not np.all(np.isfinite(omega)) or not np.all(np.isfinite(alpha)):
         n_bad = int(np.sum(~np.isfinite(omega).all(axis=1) | ~np.isfinite(alpha).all(axis=1)))
         raise ValueError(
