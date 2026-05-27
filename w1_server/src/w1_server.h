@@ -141,6 +141,7 @@ private:
     // 力传感器相关
     Vector3d sensor_force_;
     Vector12d sensor_wrench_;
+    Vector12d sensor_wrench_gravity_;
     Vector12d raw_sensor_wrench_;
     Vector12d sensor_zero_offset_;
     bool sensor_zero_offset_valid_[2] = {false, false};
@@ -172,6 +173,11 @@ private:
     // 本周期未运行时 (前置条件不满足或首拍跳过) 显式写零, 与"静止时扣减≈0"在数值上
     // 不可区分; "未运行"的语义靠下游 sensor_data 也被清零的安全策略间接体现.
     std::array<std::atomic<double>, 6> tool_inertia_wrench_ee_{};
+    // 运行时诊断: 末端角速度/角加速度 (F = ee_link 系, 3 维: x y z), 仅 primary.
+    // 由 ComputeAndPublishEEKinematicsPrimary 在 1 kHz 写入, publish 线程读取.
+    // 反馈失效或首拍跳过时写 NaN, 让下游消费者 (e.g. tool_inertia_estimate.py) 一眼丢弃.
+    std::array<std::atomic<double>, 3> ee_omega_F_primary_{};
+    std::array<std::atomic<double>, 3> ee_alpha_F_primary_{};
     std::shared_ptr<SriForceSensor> primary_sensor_;
     std::shared_ptr<SriForceSensor> secondary_sensor_;  // 暂未使用
     bool primary_sensor_ready_ = false;

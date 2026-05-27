@@ -246,6 +246,7 @@ $$
 | 字段 | 单位 | 含义 |
 |---|---|---|
 | `force_sensor` (12 维) | N / N·m | primary[0:6] + secondary[6:12], 经过零偏 + 重力补偿 + 惯量补偿 + 失效清零的最终值. **力矩模式下消费的就是这个**. |
+| `force_sensor_gravity` (12 维) | N / N·m | primary[0:6] + secondary[6:12], 经过零偏 + 工具重力补偿后、惯量补偿前的值. 不包含 `force_array` 手动注入力. |
 | `raw_force_sensor` (12 维) | N / N·m | 完全原始, 连零偏都没扣 |
 | `force_sensor_bias` (12 维) | N / N·m | 零偏标定值 (EE 系) |
 | `force_sensor_inertia` (6 维) | N / N·m | primary 惯量补偿这一周期实际从 wrench 中扣减的量 (= `expected_inertia_wrench_ee`). 静止 ≈ 0; 失效 / 首拍显式置零. 与 `force_sensor` 同视角同符号. |
@@ -273,5 +274,4 @@ $$
 1. 把惯量公式抽成纯函数, 用合成 case 写 GoogleTest (固定姿态 + 已知 a_C → 断言符号)
 2. C++ 文件头引用 `tool_inertia_estimate.py:379` 的 F_meas/M_meas 公式作为 ground truth, 注释里强制显式写"传感器视角符号"
 3. 任何新补偿模块 (柯氏力 / 空气阻力 / 弹簧元件) 必须先写"传感器读数模型"再写代码
-
 
