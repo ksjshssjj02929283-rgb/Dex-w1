@@ -162,6 +162,36 @@ def inertia_regressor_row(omega: np.ndarray, alpha: np.ndarray,
 _PARAM_NAMES = ["Ixx", "Iyy", "Izz", "Ixy", "Ixz", "Iyz"]
 # 约束 Ixz=Iyz=0 → 仅拟合 Ixx, Iyy, Izz, Ixy
 _PARAM_MASK_XZ_YZ_ZERO = np.array([True, True, True, True, False, False], dtype=bool)
+_TRIANGLE_IZZ_LE_IXX_IYY = np.array([1.0, 1.0, -1.0, 0.0], dtype=float)
+
+
+def solve_lstsq_with_lower_halfspace(
+    y: np.ndarray,
+    b: np.ndarray,
+    lower_bound_normal: np.ndarray,
+    tol: float = 1e-12,
+) -> Tuple[np.ndarray, bool, int, np.ndarray]:
+    """Solve min ||Yθ-b|| with one constraint: normal·θ >= 0.
+
+    The unconstrained LS solution is used unless it violates the halfspace. When
+    it violates, solve the active equality normal·θ = 0 via a small KKT system.
+    """
+    theta, _, rank, singular_values = np.linalg.lstsq(y, b, rcond=None)
+    normal = np.asarray(lower_bound_normal, dtype=float).reshape(-1)
+    if normal.size != theta.size:
+        raise ValueError("lower_bound_normal size must match the fitted parameter count.")
+    if float(normal @ theta) >= -tol:
+        return theta, False, int(rank), singular_values
+
+    h = y.T @ y
+    rhs = y.T @ b
+    kkt = np.block([
+        [h, normal[:, None]],
+        [normal[None, :], np.zeros((1, 1))],
+    ])
+    kkt_rhs = np.concatenate([rhs, np.zeros(1)])
+    active_solution, _, _, _ = np.linalg.lstsq(kkt, kkt_rhs, rcond=None)
+    return active_solution[:-1], True, int(rank), singular_values
 
 
 def fit_inertia_from_rotational_terms(
@@ -177,7 +207,13 @@ def fit_inertia_from_rotational_terms(
     blocks = [inertia_regressor_row(omega[i], alpha[i], param_mask) for i in range(omega.shape[0])]
     y = np.vstack(blocks)
     b = torque_residual.reshape(-1)
-    theta_partial, _, rank, singular_values = np.linalg.lstsq(y, b, rcond=None)
+    triangle_constraint_active = False
+    if constrain_xz_yz_zero:
+        theta_partial, triangle_constraint_active, rank, singular_values = (
+            solve_lstsq_with_lower_halfspace(y, b, _TRIANGLE_IZZ_LE_IXX_IYY)
+        )
+    else:
+        theta_partial, _, rank, singular_values = np.linalg.lstsq(y, b, rcond=None)
     pred = (y @ theta_partial).reshape((-1, 3))
     err = torque_residual - pred
     # 还原 6 维 theta (约束模式下缺失的列用 0 补齐)
@@ -203,6 +239,7 @@ def fit_inertia_from_rotational_terms(
         "theta": theta_full,
         "inertia_com": inertia,
         "constrained": constrain_xz_yz_zero,
+        "triangle_constraint_active": triangle_constraint_active,
         "rank": int(rank),
         "condition_number": float(np.linalg.cond(y)) if y.size else float("inf"),
         "singular_values": singular_values,
@@ -547,6 +584,7 @@ def result_to_json(
         "arm": args.arm,
         "dt": args.dt,
         "constrained": bool(result.get("constrained", False)),
+        "triangle_constraint_active": bool(result.get("triangle_constraint_active", False)),
         "wrench_source": "force_sensor_gravity (server 端已扣零偏 + 已扣工具静态重力, F 系)",
         "kinematics_source": "ee_omega_ee_frame / ee_alpha_ee_frame (server 端 1 kHz Butterworth 滤波后, F 系)",
         "mass_kg": args.mass,
@@ -575,7 +613,13 @@ def print_result(payload: Dict[str, object]) -> None:
     print(f"参数向量:          {np.array(payload['theta'])}")
     print(f"^F I_C kg*m^2:\n{np.array(payload['inertia_com_kg_m2'])}")
     print(f"力矩残差 RMS:      {float(payload['torque_rms']):.6g} Nm")
-    print(f"约束模式:          {'Ixz=Iyz=0 (4 params)' if payload.get('constrained') else '无约束 (6 params)'}")
+    if payload.get("constrained"):
+        constraint_text = "Ixz=Iyz=0, Izz<=Ixx+Iyy (4 params)"
+        if payload.get("triangle_constraint_active"):
+            constraint_text += " [triangle active]"
+    else:
+        constraint_text = "无约束 (6 params)"
+    print(f"约束模式:          {constraint_text}")
     print(f"回归矩阵秩:        {payload['rank']}")
     print(f"条件数:            {float(payload['condition_number']):.6g}")
     physical = payload["physical"]
