@@ -11,7 +11,7 @@
     T_g = -(I_C α_F + ω_F × I_C ω_F) + com × F_g
 =>  I_C α_F + ω_F × I_C ω_F = com × F_g - T_g
 
-Ixz = Iyz = 0 硬约束 (工具沿 z 轴展开) → 4-param LS.
+Ixy = Ixz = Iyz = 0 硬约束 (工具关于 x-z / y-z 面对称) → 3-param diagonal LS.
 
 输出: ^F I_C, kg·m^2.
 """
@@ -38,6 +38,7 @@ except Exception:  # pragma: no cover
 DEFAULT_STATE_TOPIC = "/feedback/robot_server_state"
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "tool_inertia_data"
 DEFAULT_DT = 0.01
+DEFAULT_FILTER_FC_HZ = 5.0
 DEFAULT_TOOL_MASS_KG = 1.061
 DEFAULT_TOOL_COM_MM = "-0.15804154,0.70721872,50.33428542"
 DEFAULT_EXCITATION_DURATION = 120.0
@@ -131,15 +132,15 @@ def butter_filtfilt_2d(signal: np.ndarray, fc_hz: float, dt: float, order: int =
 def theta_to_inertia_matrix(theta: np.ndarray) -> np.ndarray:
     t = np.asarray(theta, dtype=float).ravel()
     return np.array(
-        [[t[0], t[3], 0.0],
-         [t[3], t[1], 0.0],
+        [[t[0], 0.0, 0.0],
+         [0.0, t[1], 0.0],
          [0.0, 0.0, t[2]]],
         dtype=float,
     )
 
 
 def _inertia_regressor_cols(omega: np.ndarray, alpha: np.ndarray) -> np.ndarray:
-    """4 cols: Ixx, Iyy, Izz, Ixy (Ixz=Iyz=0 hard-constrained)."""
+    """3 cols: Ixx, Iyy, Izz (Ixy=Ixz=Iyz=0 hard-constrained)."""
     cols = []
     basis = np.zeros((3, 3))
     # Ixx
@@ -153,17 +154,13 @@ def _inertia_regressor_cols(omega: np.ndarray, alpha: np.ndarray) -> np.ndarray:
     # Izz
     basis[2, 2] = 1.0
     cols.append(basis @ alpha + np.cross(omega, basis @ omega))
-    basis[2, 2] = 0.0
-    # Ixy
-    basis[0, 1] = basis[1, 0] = 1.0
-    cols.append(basis @ alpha + np.cross(omega, basis @ omega))
     return np.column_stack(cols)
 
 
 def fit_inertia(
     omega: np.ndarray, alpha: np.ndarray, torque_rot: np.ndarray,
 ) -> Dict[str, object]:
-    """4-param LS: I·α + ω×I·ω = torque_rot  (Ixz=Iyz=0)."""
+    """3-param diagonal LS: I·α + ω×I·ω = torque_rot  (Ixy=Ixz=Iyz=0)."""
     omega = np.asarray(omega, dtype=float)
     alpha = np.asarray(alpha, dtype=float)
     torque_rot = np.asarray(torque_rot, dtype=float)
@@ -172,7 +169,7 @@ def fit_inertia(
         raise ValueError("omega, alpha, torque_rot 都必须是 shape=(N, 3)。")
 
     rows = [_inertia_regressor_cols(omega[i], alpha[i]) for i in range(n)]
-    y = np.vstack(rows)                        # (3N, 4)
+    y = np.vstack(rows)                        # (3N, 3)
     b = torque_rot.reshape(-1)                 # (3N,)
 
     theta, _, rank, sv = np.linalg.lstsq(y, b, rcond=None)
@@ -182,7 +179,7 @@ def fit_inertia(
     I_est = theta_to_inertia_matrix(theta)
     eigvals = np.linalg.eigvalsh(I_est)
     return {
-        "theta": theta,                        # [Ixx, Iyy, Izz, Ixy]
+        "theta": theta,                        # [Ixx, Iyy, Izz]
         "inertia_com": I_est,
         "rank": int(rank),
         "condition_number": float(np.linalg.cond(y)) if y.size else float("inf"),
@@ -488,10 +485,10 @@ def result_to_json(
         "kinematics_source": "ee_omega/alpha_ee_frame (server 1 kHz Butterworth, F 系)",
         "mass_kg": args.mass,
         "com_mm": array_to_list(com_mm),
-        "theta_order": ["Ixx", "Iyy", "Izz", "Ixy"],
+        "theta_order": ["Ixx", "Iyy", "Izz"],
         "theta": array_to_list(theta),
         "inertia_com_kg_m2": inertia.tolist(),
-        "rank": f"{result['rank']} / 4",
+        "rank": f"{result['rank']} / 3",
         "condition_number": result["condition_number"],
         "torque_rms": result["torque_rms"],
         "physical": result["physical"],
@@ -529,8 +526,8 @@ def print_result(payload: Dict[str, object]) -> None:
 
 def run_self_test() -> None:
     rng = np.random.default_rng(42)
-    I_true = np.array([[0.018, 0.002, 0.0],
-                       [0.002, 0.026, 0.0],
+    I_true = np.array([[0.018, 0.0,   0.0],
+                       [0.0,   0.026, 0.0],
                        [0.0,   0.0,   0.031]], dtype=float)
     com = np.array([0.001, -0.002, 0.05])
     mass = 1.0
@@ -557,7 +554,7 @@ def run_self_test() -> None:
     torque_rot = torque_rotational_component(T_g, F_g, com)
     result = fit_inertia(omega, alpha, torque_rot)
     theta = np.asarray(result["theta"])
-    err = np.linalg.norm(theta - np.array([0.018, 0.026, 0.031, 0.002]))
+    err = np.linalg.norm(theta - np.array([0.018, 0.026, 0.031]))
     print(f"self-test: theta_err={err:.6e}  torque_rms={result['torque_rms']:.6e}")
     if err > 1e-10:
         raise RuntimeError(f"self-test 失败: theta={theta}")
@@ -588,8 +585,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--excitation-ramp", type=float, default=DEFAULT_EXCITATION_RAMP)
     parser.add_argument("--trim-start", type=float, default=1.0)
     parser.add_argument("--trim-end", type=float, default=1.0)
-    parser.add_argument("--filter-fc", type=float, default=0.0,
-                        help="可选: 仅对 wrench 再做零相位 Butterworth (Hz)。默认 0。")
+    parser.add_argument("--filter-fc", type=float, default=DEFAULT_FILTER_FC_HZ,
+                        help="可选: 仅对 wrench 再做零相位 Butterworth (Hz)。默认 5 Hz。")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
