@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Record and plot robot force-sensor state fields.
+"""Record, plot, and analyse robot force-sensor state fields.
 
 Records are written to script/force_sensor/force_analyse_data/<timestamp>.json
-by default. Use --record to capture data from /feedback/robot_server_state and
---plot to visualize an existing record. Plotting without a path uses the latest
-record in the default output directory.
+by default. Use --record to capture data from /feedback/robot_server_state,
+--plot to visualize an existing record, and --analyse to compute RMS from the
+latest recording. Plotting without a path uses the latest record in the default
+output directory.
 """
 
 from __future__ import annotations
@@ -284,12 +285,36 @@ def plot(args: argparse.Namespace) -> None:
     plt.show()
 
 
+ANALYSE_FIELDS = [
+    "raw_force_sensor",
+    "force_sensor",
+    "force_sensor_gravity",
+]
+
+
+def analyse(args: argparse.Namespace) -> None:
+    path = args.path or latest_recording(args.output_dir)
+    payload = load_payload(path)
+    samples = payload["samples"]
+    print(f"RMS vs zero — {path.name}  ({len(samples)} samples, {args.arm} arm)\n")
+
+    for field in ANALYSE_FIELDS:
+        matrix = field_matrix(samples, field, args.arm)
+        print(f"{field}:")
+        for axis_idx, label in enumerate(AXIS_LABELS):
+            values = [row[axis_idx] for row in matrix]
+            rms = (sum(v * v for v in values) / len(values)) ** 0.5
+            print(f"  {label:8s}  {rms:.6f}")
+        print()
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Record or plot robot force sensor fields.")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--record", action="store_true", help="record force fields to an offline JSON file")
     mode.add_argument("--plot", action="store_true", help="plot an offline JSON record")
-    parser.add_argument("path", nargs="?", type=Path, help="recording JSON for --plot; default is latest recording")
+    mode.add_argument("--analyse", action="store_true", help="compute RMS vs zero for the latest recording")
+    parser.add_argument("path", nargs="?", type=Path, help="recording JSON for --plot or --analyse; default is latest recording")
     parser.add_argument("--state-topic", default=DEFAULT_STATE_TOPIC, help=f"default: {DEFAULT_STATE_TOPIC}")
     parser.add_argument("--duration", type=float, default=0.0, help="record duration in seconds; 0 means until Ctrl-C")
     parser.add_argument(
@@ -319,6 +344,8 @@ def main() -> None:
     args = parse_args()
     if args.record:
         record(args)
+    elif args.analyse:
+        analyse(args)
     else:
         plot(args)
 
