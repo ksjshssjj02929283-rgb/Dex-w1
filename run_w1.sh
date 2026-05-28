@@ -22,4 +22,4 @@ kill_process "w1_server"
 
 taskset -c 7 ros2 run sim_server sim_server > /dev/null 2>&1 &
 taskset -c 6 script/set_max_position_following_error_window.sh > /dev/null 2>&1 &
-taskset -c 6 ros2 run w1_server w1_server 
+taskset -c 6 ros2 run w1_server w1_server
