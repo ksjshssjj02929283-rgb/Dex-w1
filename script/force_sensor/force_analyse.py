@@ -66,7 +66,7 @@ def float_list(value: object, name: str, min_size: int = 1) -> List[float]:
     if value is None:
         raise ValueError(f"missing {name}")
     try:
-        values = [float(item) for item in value]  # type: ignore[union-attr]
+        values = [float(item) for item in value if item is not None]  # type: ignore[union-attr]
     except TypeError as exc:
         raise ValueError(f"{name} must be a numeric list") from exc
     if len(values) < min_size:
@@ -82,7 +82,10 @@ def extract_force_sample(data: Mapping[str, object], t: float = 0.0) -> Dict[str
     for field in FORCE_FIELDS:
         sample[field] = float_list(data.get(field), field, 6)
     for field in EE_FIELDS:
-        sample[field] = float_list(data.get(field), field, 3)
+        try:
+            sample[field] = float_list(data.get(field), field, 3)
+        except (ValueError, TypeError):
+            pass
     return sample
 
 
@@ -126,10 +129,13 @@ def ee_field_matrix(samples: Sequence[Mapping[str, object]], field: str, arm: st
     idx = ee_arm_slice(arm)
     matrix: List[List[float]] = []
     for sample in samples:
-        values = float_list(sample.get(field), field, 3)
+        try:
+            values = float_list(sample.get(field), field, 3)
+        except (ValueError, TypeError):
+            continue
         selected = values[idx]
         if len(selected) < 3:
-            raise ValueError(f"{field} for {arm} arm needs 3 values, got {len(selected)}")
+            continue
         matrix.append(selected[:3])
     return matrix
 
@@ -314,36 +320,41 @@ def plot(args: argparse.Namespace) -> None:
     fig.suptitle(f"{path.name} — force ({args.arm})")
     fig.tight_layout(rect=[0.0, 0.08, 1.0, 0.95])
 
-    # EE fields figure (3 axes × 2 fields)
+    # EE fields figure (3 axes × 2 fields) — only if EE data is present
     ee_matrices = {
         field: ee_field_matrix(samples, field, args.arm)
         for field in EE_FIELDS
     }
-    fig_ee, axes_ee_grid = plt.subplots(1, 3, figsize=(14, 4), sharex=True)
-    axes_ee = list(axes_ee_grid.flatten())
-    lines_by_ee_axis: List[List[plt.Line2D]] = [[] for _ in range(3)]
+    if any(len(m) > 0 for m in ee_matrices.values()):
+        fig_ee, axes_ee_grid = plt.subplots(1, 3, figsize=(14, 4), sharex=True)
+        axes_ee = list(axes_ee_grid.flatten())
+        lines_by_ee_axis: List[List[plt.Line2D]] = [[] for _ in range(3)]
 
-    for axis_idx, ax in enumerate(axes_ee):
-        for field in EE_FIELDS:
-            y = [row[axis_idx] for row in ee_matrices[field]]
-            (line,) = ax.plot(
-                t,
-                y,
-                label=FIELD_LABELS[field],
-                color=FIELD_COLORS[field],
-                linewidth=1.2,
-                alpha=0.85,
-            )
-            lines_by_ee_axis[axis_idx].append(line)
-        ax.set_title(EE_AXIS_LABELS[axis_idx])
-        ax.set_xlabel("time [s]")
-        ax.grid(True, alpha=0.3)
-        ax.axhline(0.0, color="gray", linewidth=0.6, alpha=0.5)
-        ax.legend(loc="upper left", fontsize=8)
-        update_ylim(ax, lines_by_ee_axis[axis_idx])
+        for axis_idx, ax in enumerate(axes_ee):
+            for field in EE_FIELDS:
+                matrix = ee_matrices[field]
+                if not matrix:
+                    continue
+                y = [row[axis_idx] for row in matrix]
+                (line,) = ax.plot(
+                    t[:len(matrix)],
+                    y,
+                    label=FIELD_LABELS[field],
+                    color=FIELD_COLORS[field],
+                    linewidth=1.2,
+                    alpha=0.85,
+                )
+                lines_by_ee_axis[axis_idx].append(line)
+            ax.set_title(EE_AXIS_LABELS[axis_idx])
+            ax.set_xlabel("time [s]")
+            ax.grid(True, alpha=0.3)
+            ax.axhline(0.0, color="gray", linewidth=0.6, alpha=0.5)
+            ax.legend(loc="upper left", fontsize=8)
+            update_ylim(ax, lines_by_ee_axis[axis_idx])
 
-    fig_ee.suptitle(f"{path.name} — EE kinematics ({args.arm})")
-    fig_ee.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+        fig_ee.suptitle(f"{path.name} — EE kinematics ({args.arm})")
+        fig_ee.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+
     plt.show()
 
 
