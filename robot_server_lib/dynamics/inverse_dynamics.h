@@ -12,8 +12,8 @@ namespace dynamics
 {
 
 // 计算逆动力学
-// use_simple_dynamics: 是否使用简化动力学计算（跳过动力学参数，仅使用 pinocchio rnea）
-Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq, const VectorDof& ddq, bool use_simple_dynamics = false);
+Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq,
+                                const VectorDof& ddq);
 
 // 由符号计算生成的逆动力学计算函数
 Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq,

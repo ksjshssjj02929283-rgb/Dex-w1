@@ -1,5 +1,6 @@
 cd "$(dirname "$0")"
-source /opt/w1_server/setup.bash
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "${SCRIPT_DIR}/../../install/setup.bash"
 
 CONFIG_FILE="$HOME/dexe_robot_server_data/robot_config.yaml"
 

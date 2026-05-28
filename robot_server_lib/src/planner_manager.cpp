@@ -4,8 +4,9 @@ namespace robot_server_lib {
 
 PlannerManager::PlannerManager(RobotModel robot_model,
                                PlannerManagerBuffers buffer,
-                               std::function<void(Int64, RequestType, RequestStatus, Status)> report_request_status)
-    : robot_model_(robot_model), manager_buffer_(buffer), ReportRequestStatus(report_request_status) {
+                               std::function<void(Int64, RequestType, RequestStatus, Status)> report_request_status,
+                               bool is_sim)
+    : robot_model_(robot_model), manager_buffer_(buffer), ReportRequestStatus(report_request_status), is_sim_(is_sim) {
     Initialize();
 }
 
@@ -123,10 +124,11 @@ void PlannerManager::LoopOnce() {
         this->runtime_data_.joint_cmd.joint_stiffness = this->robot_property_.joint_stiffness;
         this->runtime_data_.joint_cmd.joint_damping = this->robot_property_.joint_damping;
         this->runtime_data_.joint_cmd.joint_integral_ratio = this->robot_property_.joint_integral_ratio;
-        // 如果提供了动力学参数, 则计算双臂前馈阻抗控制力 Compute the feedforward impedance control torque for both arms
+        // 如果提供了动力学参数, 且非仿真模式则计算双臂前馈阻抗控制力 Compute the feedforward impedance control torque
+        // for both arms
         const auto& dyn_base_params_primary = this->robot_model_.params_ptr->dyn_base_params_primary;
         const auto& dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
-        if (dyn_base_params_primary.has_value()) {
+        if (!is_sim_ && dyn_base_params_primary.has_value()) {
             Eigen::VectorXd tau_ff_pri, q_cmd_primary, q_feedback_primary, dq_feedback_primary, dq_cmd_primary;
             utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_primary,
                                          MotionGroup::Primary);
@@ -142,7 +144,7 @@ void PlannerManager::LoopOnce() {
             utils::MapJointToWholeBody(this->robot_model_, tau_ff_pri, this->runtime_data_.joint_cmd.torque_feedforward,
                                        MotionGroup::Primary);
         }
-        if (dyn_base_params_secondary.has_value()) {
+        if (!is_sim_ && dyn_base_params_secondary.has_value()) {
             Eigen::VectorXd tau_ff_sec, q_cmd_secondary, q_feedback_secondary, dq_feedback_secondary, dq_cmd_secondary;
             utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_secondary,
                                          MotionGroup::Secondary);
@@ -164,8 +166,6 @@ void PlannerManager::LoopOnce() {
         PlannerManagerCommand planner_command{};
         planner_command.sequence_number = runtime_data_.loop_counter;
         planner_command.cmd = runtime_data_.joint_cmd;
-        // 位置模式下使用简化动力学计算（不加载动力学参数），提升性能
-        planner_command.use_simple_dynamics = (robot_property_.run_mode == RunMode::Position);
         manager_buffer_.planner_manager_command->AppendNewElement(planner_command);
     }
 
@@ -694,18 +694,54 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
             return;
         }
         case RequestType::JointIntegralRatio: {
-            auto k_i_ratio = std::get<double>(request.data.value());
-            if (k_i_ratio < 0.0 || k_i_ratio > 1.0) {
-                std::stringstream ss;
-                ss << "[WARN] Invalid k_i_ratio value: " << k_i_ratio
-                   << ", must be in range [0, 1]. Command ignored.\n";
-                std::cout << ss.str();
-                LOG_WARN << ss.str();
+            Eigen::VectorXd k_i_ratio_vec;
+            if (std::holds_alternative<double>(request.data.value())) {
+                double val = std::get<double>(request.data.value());
+                k_i_ratio_vec = Eigen::VectorXd::Constant(1, val);
+            } else if (std::holds_alternative<Eigen::VectorXd>(request.data.value())) {
+                k_i_ratio_vec = std::get<Eigen::VectorXd>(request.data.value());
+            } else {
+                LOG_WARN << "Invalid data type for JointIntegralRatio";
                 return;
             }
-            robot_property_.joint_integral_ratio = k_i_ratio;
-            std::cout << "[INFO] Set k_i_ratio to " << robot_property_.joint_integral_ratio << "\n";
-            LOG_INFO << "Set k_i_ratio to " << robot_property_.joint_integral_ratio;
+
+            auto ndof_arm = this->robot_model_.params_ptr->joints_primary_names.size() +
+                            this->robot_model_.params_ptr->joints_secondary_names.size();
+
+            if (k_i_ratio_vec.size() == 1) {
+                double val = k_i_ratio_vec[0];
+                if (val < 0.0 || val > 1.0) {
+                    std::stringstream ss;
+                    ss << "[WARN] Invalid k_i_ratio value: " << val << ", must be in range [0, 1]. Command ignored.\n";
+                    std::cout << ss.str();
+                    LOG_WARN << ss.str();
+                    return;
+                }
+                robot_property_.joint_integral_ratio.setConstant(val);
+            } else {
+                if (k_i_ratio_vec.size() == ndof_arm) {
+                    if ((k_i_ratio_vec.array() < 0.0).any() || (k_i_ratio_vec.array() > 1.0).any()) {
+                        std::stringstream ss;
+                        ss << "[WARN] Invalid k_i_ratio value in: " << k_i_ratio_vec.transpose()
+                           << ", all values must be in range [0, 1]. Command ignored.\n";
+                        std::cout << ss.str();
+                        LOG_WARN << ss.str();
+                        return;
+                    }
+                    // 按顺序赋值给tail部分关节
+                    robot_property_.joint_integral_ratio.tail(k_i_ratio_vec.size()) = k_i_ratio_vec;
+                } else {
+                    std::stringstream ss;
+                    ss << "[WARN] Invalid k_i_ratio size: " << k_i_ratio_vec.size() << ", expected size: " << ndof_arm
+                       << " or 1. Command ignored.\n";
+                    std::cout << ss.str();
+                    LOG_WARN << ss.str();
+                    return;
+                }
+            }
+            std::cout << "[INFO] Set k_i_ratio to " << robot_property_.joint_integral_ratio.tail(ndof_arm).transpose()
+                      << "\n";
+            LOG_INFO << "Set k_i_ratio to " << robot_property_.joint_integral_ratio.tail(ndof_arm).transpose();
             return;
         }
         case RequestType::CartStiffness: {

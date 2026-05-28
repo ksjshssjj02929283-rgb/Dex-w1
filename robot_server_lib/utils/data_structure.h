@@ -70,13 +70,14 @@ struct JointCommand {
     VectorDof torque_feedforward;
     VectorDof joint_stiffness;
     VectorDof joint_damping;
-    double joint_integral_ratio;
+    VectorDof joint_integral_ratio;
 
     std::string ToString() const {
         std::stringstream ss;
         ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose()
            << ", Acceleration: " << acceleration.transpose()
-           << ", Torque Feedforward: " << torque_feedforward.transpose();
+           << ", Torque Feedforward: " << torque_feedforward.transpose()
+           << ", Integral Ratio: " << joint_integral_ratio.transpose();
         return ss.str();
     }
 };
@@ -111,7 +112,7 @@ struct RobotProperty {
     SafetyCheckConfig safety_check_config;  // 安全检查配置
     VectorDof joint_stiffness = VectorDof::Constant(200.0);
     VectorDof joint_damping = VectorDof::Constant(20.0);
-    double joint_integral_ratio = 0.01;
+    VectorDof joint_integral_ratio = VectorDof::Constant(0.01);
     Vector12d cart_stiffness = Vector12d::Constant(200.0);
     Vector12d cart_damping_ratio = Vector12d::Constant(1.0);  // 阻尼比 范围0.5 ~ 1.5
     ErrorCode error_code{ErrorCode::NoError};
@@ -174,7 +175,6 @@ struct PoseQuaternion {
 struct PlannerManagerCommand {
     std::int64_t sequence_number{-1};
     JointCommand cmd;
-    bool use_simple_dynamics{false};  // 是否使用简化动力学计算
 };
 
 struct TorqueCtrlCommand {
@@ -262,27 +262,25 @@ struct TorqueControlBuffer {
 
 // 机器人配置文件参数
 struct RobotParams {
-    std::filesystem::path urdf_path;
-    std::filesystem::path left_arm_urdf_path;
-    std::filesystem::path right_arm_urdf_path;
-    std::string robot_name;
+    std::string robot_type;
     std::string robot_version;
-    std::string left_arm_name;
-    std::string right_arm_name;
+    std::string left_hand_type;
+    std::string right_hand_type;
     Eigen::VectorXd joint_velocity_limit;  // 关节最大速度限制（正负对称）
     Eigen::VectorXd joint_torque_limit;    // 关节最大力矩限制（正负对称）
     Eigen::VectorXd joint_limit_margin_deg;  // 关节位置限位安全阈值（度），用于在硬限位基础上缩小范围
     std::vector<std::string> joints_primary_names;
     std::vector<std::string> joints_secondary_names;
     std::vector<std::string> joints_torso_names;
-    std::string ee_primary_name;                               // 主臂末端执行器名称
-    std::string ee_secondary_name;                             // 从臂末端执行器名称
-    std::vector<std::string> joint_names;                      // 所有关节名称（URDF顺序，不含universe）
-    std::vector<std::string> joints_a1;                        // A1模式关节名称
-    std::vector<std::string> joints_single_arm;                // 单臂模式关节名称
-    std::vector<std::string> joints_dual_arm;                  // 双臂模式关节名称
-    std::optional<Eigen::VectorXd> dyn_base_params_primary;    // 动力学基参数矩阵(非方阵)
-    std::optional<Eigen::VectorXd> dyn_base_params_secondary;  // 动力学基参数矩阵(非方阵)
+    std::string ee_primary_name;           // 主臂末端执行器名称
+    std::string ee_secondary_name;         // 从臂末端执行器名称
+    std::vector<std::string> joint_names;  // 所有关节名称（URDF顺序，不含universe）
+    std::unordered_map<std::string, std::string> ros2_to_urdf_map;  // 逻辑名称到URDF名称的映射
+    std::vector<std::string> joints_a1;                             // A1模式关节名称
+    std::vector<std::string> joints_single_arm;                     // 单臂模式关节名称
+    std::vector<std::string> joints_dual_arm;                       // 双臂模式关节名称
+    std::optional<Eigen::VectorXd> dyn_base_params_primary;         // 动力学基参数矩阵(非方阵)
+    std::optional<Eigen::VectorXd> dyn_base_params_secondary;       // 动力学基参数矩阵(非方阵)
 };
 
 struct RobotModel {

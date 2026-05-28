@@ -91,7 +91,7 @@ ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasureme
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
-            robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
+            robot_stopped = robot_stopped && std::abs(measurement.velocity[i]) < IdleVelocityThreshold;
         }
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
         if (runtime_.streaming_finished && robot_stopped) {

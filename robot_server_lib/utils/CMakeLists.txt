@@ -25,6 +25,15 @@ ament_target_dependencies(${PROJECT_NAME}
   pinocchio
 )
 
+target_link_libraries(${PROJECT_NAME}
+  pinocchio::pinocchio
+)
+
+target_compile_definitions(${PROJECT_NAME} PUBLIC
+    BOOST_MPL_CFG_NO_PREPROCESSED_HEADERS
+    BOOST_MPL_LIMIT_LIST_SIZE=30
+)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(${PROJECT_NAME} PRIVATE
     -Wall -Wextra -Wpedantic -Wno-psabi -Wno-reorder -Wno-dev

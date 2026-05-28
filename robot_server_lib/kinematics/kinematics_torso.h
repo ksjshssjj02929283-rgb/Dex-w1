@@ -26,8 +26,6 @@ public:
                Eigen::VectorXd& q_in_and_out,
                const pinocchio::SE3& tcp_frame = pinocchio::SE3::Identity()) override;
 
-    std::pair<Eigen::VectorXd, Eigen::VectorXd> GetQposLimits() const override;
-
     PoseQuaternion GetTorsoPose(const Eigen::VectorXd& XZRY);
 
 private:

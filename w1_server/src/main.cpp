@@ -89,6 +89,36 @@ static void CheckConfig(const std::filesystem::path& default_cfg_path, const std
     }
 }
 
+static void SyncHardwareConfig(const std::filesystem::path& robot_cfg_path) {
+    const std::string external_cfg_path = std::string(std::getenv("HOME")) + "/.cache/dexe_data/config.yaml";
+    if (!std::filesystem::exists(external_cfg_path)) {
+        std::cout << "[INFO] External hardware config not found, skipping sync." << std::endl;
+        return;
+    }
+
+    try {
+        YAML::Node external_config = YAML::LoadFile(external_cfg_path);
+        YAML::Node robot_config = YAML::LoadFile(robot_cfg_path.string());
+
+        bool modified = false;
+        for (auto const& it : external_config) {
+            std::string key = it.first.as<std::string>();
+            robot_config[key] = it.second;
+            modified = true;
+        }
+
+        if (modified) {
+            std::ofstream fout(robot_cfg_path.string());
+            fout << robot_config;
+            fout.close();
+            std::cout << "[INFO] Synchronized all hardware fields from " << external_cfg_path << " to "
+                      << robot_cfg_path << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[ERROR] Failed to sync hardware config: " << e.what() << std::endl;
+    }
+}
+
 static void SetupRealtimeThread(int priority) {
     pthread_t this_thread = pthread_self();
     struct sched_param param;
@@ -107,13 +137,16 @@ int main(int argc, char* argv[]) {
 
     std::filesystem::path user_cfg_path;
     user_cfg_path = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data" / cfg_file;
-
     if (!std::filesystem::exists(user_cfg_path.parent_path())) {
         std::filesystem::create_directories(user_cfg_path.parent_path());
         std::cout << "[INFO] Created data directory: " << user_cfg_path.parent_path() << std::endl;
     }
-
     CheckConfig(robot_cfg_path, user_cfg_path);
+
+    SyncHardwareConfig(robot_cfg_path);
+    if (std::filesystem::exists(user_cfg_path)) {
+        SyncHardwareConfig(user_cfg_path);
+    }
     std::cout << "[INFO] Mode: 自动检测模式（根据实际机器人关节配置）" << std::endl;
     // 初始化RCLCPP
     rclcpp::init(argc, argv);

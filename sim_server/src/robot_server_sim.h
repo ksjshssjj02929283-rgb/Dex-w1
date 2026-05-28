@@ -1,13 +1,11 @@
 #pragma once
 
-#include "joint_interfaces/msg/joint_control.hpp"
 #include "joint_interfaces/msg/joint_position_control.hpp"
 #include "joint_interfaces/msg/joint_velocity_torque_limit_feedback.hpp"
 #include "robot_server_lib/robot_server_base.h"
 
 namespace robot_server_lib {
 
-using JointControlMsg = joint_interfaces::msg::JointControl;
 using JointPositionControlMsg = joint_interfaces::msg::JointPositionControl;
 
 class RobotServer : public RobotServerBase {
@@ -18,12 +16,10 @@ protected:
     void RobotThreadFunc() override;
     void ManagerThreadFunc() override;
     void PublishFeedback();
-    void ControlCallback(const JointControlMsg::SharedPtr msg);
     void PositionControlCallback(const JointPositionControlMsg::SharedPtr msg);
     Int64 StartStreaming(const PlannerRequest planner_request);
     rclcpp::TimerBase::SharedPtr control_timer_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;
-    rclcpp::Subscription<JointControlMsg>::SharedPtr control_subscriber_;
     rclcpp::Subscription<JointPositionControlMsg>::SharedPtr position_control_subscriber_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_server_state_real_subscriber_;
     struct {

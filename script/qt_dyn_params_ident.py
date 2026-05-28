@@ -6,6 +6,7 @@ from datetime import datetime
 import json
 import yaml
 import threading
+import warnings
 from pathlib import Path
 import rclpy
 from rclpy.node import Node
@@ -17,11 +18,11 @@ from sensor_msgs.msg import JointState
 import numpy as np
 import matplotlib
 
+warnings.filterwarnings("ignore", category=SyntaxWarning)
 matplotlib.use("Qt5Agg")
 from PyQt5 import QtWidgets, QtCore
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from ament_index_python.packages import get_package_share_directory
 
 DEFAULT_DT = 0.01
 DEFAULT_NDOF = 7
@@ -67,6 +68,7 @@ class DynParamIdentifier(Node):
         self.robot_cfg_path = (
             Path.home() / "dexe_robot_server_data/robot_config.yaml"
         )
+        # 默认关节列表
         self.joint_full_names = ["ANKLE", "KNEE", "BUTTOCK", "WAIST", "NECK1", "NECK2", "LEFT_J1", "LEFT_J2", "LEFT_J3", "LEFT_J4", "LEFT_J5", "LEFT_J6", "LEFT_J7", "RIGHT_J1", "RIGHT_J2", "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"]
 
         # 初始化状态变量
@@ -84,13 +86,15 @@ class DynParamIdentifier(Node):
         self._stop_flag = threading.Event()
         with open(self.robot_cfg_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
-        robot_name = cfg.get("robot_name", "")
-        robot_type = "w1_anth" if robot_name == "W1Anthropomorphic" else "w1_indst"
-        self.robot_name = robot_name
+        
+        self.robot_name = cfg.get("robot_type", "")
+        self.version = cfg.get("version", "")
+        version_prefix = self.version[:3]
+        robot_version_key = f"{self.robot_name}_{version_prefix}"
         project_root = Path(__file__).resolve().parent
-        self.traj_dir = project_root / "dyn_params_ident_data" / "trajectories"
-        self.rec_dir = project_root / "dyn_params_ident_data" / "recdata" / robot_type
-        self.traj_path = os.path.join(self.traj_dir, f"{self.traj}.dat")
+        self.traj_dir = project_root / "dyn_params_ident_data" / "trajectories" / robot_version_key
+        self.rec_dir = project_root / "dyn_params_ident_data" / "recdata"
+        self.traj_path = os.path.join(self.traj_dir, "left", f"{self.traj}.dat")
         # 创建定时器检查连接状态
         self._last_msg_time = None
         self._last_msg_time_sim = None
@@ -98,10 +102,10 @@ class DynParamIdentifier(Node):
         self.create_timer(0.1, self._check_connection_status)
         # 创建calculator
         self.calculator_left = DynParamCalculator(
-            robot_type=robot_type, is_left=True, logger=self.log_msg
+            robot_type=robot_version_key, is_left=True, logger=self.log_msg
         )
         self.calculator_right = DynParamCalculator(
-            robot_type=robot_type, is_left=False, logger=self.log_msg
+            robot_type=robot_version_key, is_left=False, logger=self.log_msg
         )
 
     def _sleep_until(self, target_time):
@@ -191,7 +195,6 @@ class DynParamIdentifier(Node):
                 next_t = self._fixed_rate_next(next_t, local_dt)
                 self._sleep_until(next_t)
         else:
-            q_ref = -q_ref  # 右臂角度相反
             # 运动到第一个点
             target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]] # fmt: skip
             if not self.move_joint(is_sim=True, target_position=target_position):
@@ -242,7 +245,7 @@ class DynParamIdentifier(Node):
                 self.log_msg("收到停止指令，终止剩余真机采集。")
                 return False
             self.traj = traj_name
-            self.traj_path = os.path.join(self.traj_dir, f"{self.traj}.dat")
+            self.traj_path = os.path.join(self.traj_dir, "left", f"{self.traj}.dat")
             rec_path = os.path.join(left_dir, f"rbtlog_{self.traj}.dat")
             if not self._run_real_capture_once(self.traj_path, rec_path):
                 return False
@@ -254,14 +257,15 @@ class DynParamIdentifier(Node):
                     self.log_msg("收到停止指令，终止剩余真机采集。")
                     return False
                 self.traj = traj_name
-                self.traj_path = os.path.join(self.traj_dir, f"{self.traj}.dat")
+                self.traj_path = os.path.join(self.traj_dir, "right", f"{self.traj}.dat")
                 rec_path = os.path.join(right_dir, f"rbtlog_{self.traj}.dat")
                 if not self._run_real_capture_once(self.traj_path, rec_path):
                     return False
         # 恢复初始状态
         self.is_left = orig_is_left
         self.traj = orig_traj
-        self.traj_path = os.path.join(self.traj_dir, f"{self.traj}.dat")
+        side_dir = "left" if self.is_left else "right"
+        self.traj_path = os.path.join(self.traj_dir, side_dir, f"{self.traj}.dat")
         if not self._stop_flag.is_set():
             time.sleep(1)  # 发送结束后等待1s
             self.log_msg("所有轨迹采集完成, 返回初始姿态。")
@@ -305,7 +309,6 @@ class DynParamIdentifier(Node):
                 next_t = self._fixed_rate_next(next_t, self.dt)
                 self._sleep_until(next_t)
         else:
-            q_ref = -q_ref  # 右臂角度相反
             # 运动到第一个点
             self.log_msg("正在运动到右臂轨迹起始点...")
             target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]] # fmt: skip
@@ -434,7 +437,7 @@ class DynParamIdentifier(Node):
         rec_filename = f"rbtlog_{self.traj}.dat"
         side_dir = "left" if self.is_left else "right"
         rec_path = os.path.join(self.rec_dir, side_dir, rec_filename)
-        traj_path = os.path.join(self.traj_dir, f"{self.traj}.dat")
+        traj_path = os.path.join(self.traj_dir, side_dir, f"{self.traj}.dat")
 
         t_raw, q_raw, tau_raw, t_ref, q_ref = read_data(
             self.ndof, self.dt, rec_path, traj_path
@@ -456,7 +459,7 @@ class DynParamIdentifier(Node):
         for j in range(min(len(ax_handles), n_joints)):
             ax1 = ax_handles[j]
             ax1.clear()
-            ref_series = q_ref_cut[:, j] if self.is_left else -q_ref_cut[:, j]
+            ref_series = q_ref_cut[:, j]
             ax1.plot(
                 t_ref_cut,
                 ref_series,
@@ -563,9 +566,9 @@ class DynParamCalculator:
     def __init__(self, robot_type, is_left, logger):
         self.log_msg = logger
         project_root = Path(__file__).resolve().parent
-        self.traj_dir = project_root / "dyn_params_ident_data" / "trajectories"
-        self.rec_dir = project_root / "dyn_params_ident_data" / "recdata" / robot_type
-        self.is_anth = robot_type == "w1_anth"
+        self.traj_dir = project_root / "dyn_params_ident_data" / "trajectories" / robot_type
+        self.rec_dir = project_root / "dyn_params_ident_data" / "recdata"
+        self.is_v02 = robot_type == "w1_v02"
         self.is_left = is_left
         self.robot_type = robot_type
         self.ndof = DEFAULT_NDOF
@@ -576,6 +579,7 @@ class DynParamCalculator:
         self.solutions_beta_starextra = None
         self.rbt = None
 
+    # todo: 补充v03模型
     def create_robot_model(self, robot_type):
         # 构建机器人模型, 并计算基础参数集
         self.rbtdef_num = sympybotics.RobotDef(
@@ -651,6 +655,7 @@ class DynParamCalculator:
         with open(out_path, 'w') as f:
             f.write(header_cpp + func_src_c)
 
+    # todo: 补充v03模型
     def generate_mass_matrix_code(self):
         import re
         from sympybotics.symcode import code_to_func
@@ -847,19 +852,15 @@ class DynParamCalculator:
 
     def get_actual_q(self, q_raw):
         if self.is_left:
-            if self.is_anth:
+            if self.is_v02:
                 joint_offset = np.array(
                     [0.0, 0.0, -np.pi / 2.0, 0.0, 0.0, -np.pi / 2.0, 0.0]
                 )
-            else:
-                joint_offset = np.array([0.0, 0.0, -np.pi / 2.0, 0.0, 0.0, 0.0, 0.0])
         else:
-            if self.is_anth:
+            if self.is_v02:
                 joint_offset = np.array(
                     [0.0, 0.0, np.pi / 2.0, 0.0, 0.0, np.pi / 2.0, 0.0]
                 )
-            else:
-                joint_offset = np.array([0.0, 0.0, np.pi / 2.0, 0.0, 0.0, 0.0, 0.0])
         return q_raw + joint_offset
 
     def process_regression_data(self, traj):
@@ -872,7 +873,7 @@ class DynParamCalculator:
         rec_filename = f"rbtlog_{traj}.dat"
         sub_dir = "left" if self.is_left else "right"
         rec_path = os.path.join(self.rec_dir, sub_dir, rec_filename)
-        traj_path = os.path.join(self.traj_dir, f"{traj}.dat")
+        traj_path = os.path.join(self.traj_dir, sub_dir, f"{traj}.dat")
         t_raw, q_raw, tau_raw, t_ref, q_ref = read_data(
             self.ndof, self.dt, rec_path, traj_path
         )
@@ -1324,11 +1325,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self._last_detected_url = None
 
         try:
-            robot_type = (
-                "灵巧手" if self.dyn.robot_name == "W1Anthropomorphic" else "二指夹"
-            )
             self.robot_label = QtWidgets.QLabel(
-                f"机器人类型：{self.dyn.robot_name} - {robot_type}"
+                f"机器人：{self.dyn.robot_name}_{self.dyn.version[:3]}"
             )
             lf = self.robot_label.font()
             lf.setBold(True)
@@ -1372,7 +1370,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         traj_map = {"轨迹1": "traj1", "轨迹2": "traj2"}
         self.dyn.traj = traj_map.get(traj_text, "traj1")
         self.dyn.is_left = self.arm_combo.currentText() == "左臂"
-        self.dyn.traj_path = os.path.join(self.dyn.traj_dir, f"{self.dyn.traj}.dat")
+        side = "left" if self.dyn.is_left else "right"
+        self.dyn.traj_path = os.path.join(self.dyn.traj_dir, side, f"{self.dyn.traj}.dat")
 
     def disable_buttons(self, disabled=True):
         # 除停止按钮外均禁用/启用；部分按钮受状态标志控制
@@ -1691,9 +1690,13 @@ class DynParamGUI(QtWidgets.QMainWindow):
             beta_left = self._get_current_beta(True)
             beta_right = self._get_current_beta(False)
 
+            version_prefix = self.dyn.version[:3]
+            robot_version_key = f"{self.dyn.robot_name}_{version_prefix}"
+
             # 构造确认弹窗（中文纯文字，无图标，置顶模态）
             msg = (
                 "将写入左右臂辨识参数到机器人配置文件 robot.yaml：\n\n"
+                f"- 版本段：{robot_version_key}\n"
                 f"- 左臂字段：dyn_base_params_primary（{len(beta_left)}维）\n"
                 f"- 右臂字段：dyn_base_params_secondary（{len(beta_right)}维）\n\n"
                 "是否确认写入？"
@@ -1724,24 +1727,22 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 return "[" + ", ".join(map(str, flist)) + "]"
 
             import re
-            
-            # 使用正则表达式匹配并替换整个 [ ... ] 结构，包括可能跨行的部分
-            # pattern 解释：匹配键名后，匹配直到遇到闭合方括号 ] 的所有内容
-            primary_pattern = r"(dyn_base_params_primary:\s*)\[.*?\]"
-            secondary_pattern = r"(dyn_base_params_secondary:\s*)\[.*?\]"
+
+            primary_pattern = rf"({robot_version_key}:.*?dyn_base_params_primary:\s*)\[.*?\]"
+            secondary_pattern = rf"({robot_version_key}:.*?dyn_base_params_secondary:\s*)\[.*?\]"
             
             new_content = content
             if re.search(primary_pattern, content, re.DOTALL):
                 new_content = re.sub(primary_pattern, 
                                    f"\\1{format_float_list(beta_left_list)}", 
                                    new_content, flags=re.DOTALL)
-                self.log_msg("已更新 dyn_base_params_primary")
+                self.log_msg(f"已更新 {robot_version_key} -> dyn_base_params_primary")
             
             if re.search(secondary_pattern, new_content, re.DOTALL):
                 new_content = re.sub(secondary_pattern, 
                                    f"\\1{format_float_list(beta_right_list)}", 
                                    new_content, flags=re.DOTALL)
-                self.log_msg("已更新 dyn_base_params_secondary")
+                self.log_msg(f"已更新 {robot_version_key} -> dyn_base_params_secondary")
 
             with open(cfg_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
@@ -1918,7 +1919,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
             except Exception:
                 pass
 
-            # 右臂参考（按现有逻辑，右臂取反显示）
             try:
                 self.right_fig.clear()
                 axes_right = [
@@ -1928,7 +1928,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 for i in range(min(ndof, q_ref.shape[1])):
                     ax = axes_right[i]
                     ax.clear()
-                    series = -q_ref[:, i]
+                    series = q_ref[:, i]
                     ax.plot(
                         t_ref,
                         series,

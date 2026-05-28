@@ -5,7 +5,7 @@ project(w1_server)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Release)
-set(W1_SERVER_VERSION "0.4.2")
+set(W1_SERVER_VERSION "0.4.3")
 
 # 如果系统安装了 ccache 则启用，否则保持不启用
 find_program(CCACHE_PROGRAM ccache)
@@ -132,6 +132,11 @@ ament_target_dependencies(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
   pinocchio::pinocchio
   ruckig::ruckig
+)
+
+target_compile_definitions(${PROJECT_NAME} PUBLIC
+    BOOST_MPL_CFG_NO_PREPROCESSED_HEADERS
+    BOOST_MPL_LIMIT_LIST_SIZE=30
 )
 
 install(

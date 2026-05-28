@@ -16,7 +16,8 @@ class PlannerManager {
 public:
     PlannerManager(RobotModel robot_model,
                    PlannerManagerBuffers buffer,
-                   std::function<void(Int64, RequestType, RequestStatus, Status)> report_request_status);
+                   std::function<void(Int64, RequestType, RequestStatus, Status)> report_request_status,
+                   bool is_sim = false);
 
     ~PlannerManager();
 
@@ -26,6 +27,8 @@ private:
     RobotModel robot_model_;
 
     std::function<void(Int64, RequestType, RequestStatus, Status)> ReportRequestStatus;
+
+    bool is_sim_{false};
 
     // Property
     RobotProperty robot_property_;

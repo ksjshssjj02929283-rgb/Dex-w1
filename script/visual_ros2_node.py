@@ -29,17 +29,12 @@ class VisualRos2Node(Node):
         self.create_subscription(String, "/feedback/robot_server_state_sim", self._subscriber_robot_server_state_sim_callback, 10)
 
     def _init_visualization(self):
-        self.parse_robot_cfg()
-
-        package_share_path = get_package_share_directory("robot_server_lib")
-        urdf_path = (
-            Path(package_share_path)
-            / "robot_models"
-            / self.robot_name
-            / (self.robot_name + ".urdf")
+        self.robot_cfg_path = (
+            Path.home() / "dexe_robot_server_data/robot_config.yaml"
         )
-        mesh_dir = urdf_path.parent
-        self.robot = pin.RobotWrapper.BuildFromURDF(urdf_path, mesh_dir)
+        self.parse_robot_cfg()
+        mesh_dir = Path(self.urdf_path).parent
+        self.robot = pin.RobotWrapper.BuildFromURDF(self.urdf_path, mesh_dir)
         self.vis_sim = MeshcatVisualizer(self.robot.model, self.robot.collision_model, self.robot.visual_model)
         self.vis_sim.initViewer(open=False)
         self.vis_sim.loadViewerModel()
@@ -51,11 +46,14 @@ class VisualRos2Node(Node):
         self.vis_sim.display(self.q)
 
     def parse_robot_cfg(self):
-        package_share_path = get_package_share_directory("w1_server")
-        robot_cfg_path = Path(package_share_path) / "robot_config.yaml"
-        with open(robot_cfg_path, 'r') as f:
+        with open(self.robot_cfg_path, 'r') as f:
             cfg = yaml.safe_load(f)
         self.robot_name = cfg.get("robot_name")
+        self.urdf_path = cfg.get("file_path", {}).get("robot_urdf")
+        # 读取 ros2 到 urdf 的名字映射
+        self.ros2_to_urdf_map = cfg.get("ros2_to_urdf_map", {})
+        # 同时建立反向映射，方便查找
+        self.urdf_to_ros2_map = {v: k for k, v in self.ros2_to_urdf_map.items()}
 
     def _subscriber_robot_server_state_sim_callback(self, msg):
         try:
@@ -75,12 +73,23 @@ class VisualRos2Node(Node):
             
             # 按照 URDF 顺序填充 q
             for name in self.urdf_joint_names:
-                if name in joint_map:
-                    # 获取该关节在 q 中的起始索引 (pinocchio 内部索引)
-                    joint_id = self.robot.model.getJointId(name)
-                    idx_q = self.robot.model.joints[joint_id].idx_q
-                    nq = self.robot.model.joints[joint_id].nq
-                    self.q[idx_q : idx_q + nq] = joint_map[name]
+                # 检查 URDF 关节名是否在映射表中（作为值存在）
+                ros2_name = self.urdf_to_ros2_map.get(name)
+                
+                # 如果在映射表中找到了 ros2 名，且该名在当前状态中
+                if ros2_name and ros2_name in joint_map:
+                    val = joint_map[ros2_name]
+                elif name in joint_map: # 回退方案：如果名字直接匹配
+                    val = joint_map[name]
+                else:
+                    continue
+
+                # 获取该关节在 q 中的起始索引 (pinocchio 内部索引)
+                joint_id = self.robot.model.getJointId(name)
+                idx_q = self.robot.model.joints[joint_id].idx_q
+                nq = self.robot.model.joints[joint_id].nq
+                self.q[idx_q : idx_q + nq] = val
+                
             # 更新可视化
             if self.vis_sim is not None:
                 self.vis_sim.display(self.q)

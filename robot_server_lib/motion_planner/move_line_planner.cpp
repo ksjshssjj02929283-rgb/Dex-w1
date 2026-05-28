@@ -48,7 +48,7 @@ ComputeCommandStatus MoveLinePlanner::ComputeCommand(const JointMeasurement& mea
                 joint_cmd.velocity[i] = 0.0;
                 joint_cmd.acceleration[i] = 0.0;
                 joint_cmd.torque_feedforward[i] = 0.0;
-                robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
+                robot_stopped = robot_stopped && std::abs(measurement.velocity[i]) < IdleVelocityThreshold;
             }
             if (wait_trajectory_upon_finish_) {
                 if (robot_stopped) {
@@ -89,10 +89,22 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest& request,
     }
     switch (move_request.motion_group) {
         case MotionGroup::BothArms: {
-            assert(14 == move_request.value.size());
+            if (14 != move_request.value.size()) {
+                LOG_CRIT << "MoveRequest value size mismatch for BothArms! Expected: 14, Actual: "
+                         << move_request.value.size();
+                std::cout << "[Error] MoveRequest value size mismatch for BothArms! Expected: 14, Actual: "
+                          << move_request.value.size() << "\n";
+                exit(EXIT_FAILURE);
+            }
             Eigen::VectorXd q_start;
             utils::GetJointFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
-            assert(q_start.size() == ndof_primary_ + ndof_secondary_);
+            if (q_start.size() != ndof_primary_ + ndof_secondary_) {
+                LOG_CRIT << "q_start size mismatch for BothArms! Expected: " << (ndof_primary_ + ndof_secondary_)
+                         << ", Actual: " << q_start.size();
+                std::cout << "[Error] q_start size mismatch for BothArms! Expected: "
+                          << (ndof_primary_ + ndof_secondary_) << ", Actual: " << q_start.size() << "\n";
+                exit(EXIT_FAILURE);
+            }
             PoseQuaternion pose_start =
                 kinematics_primary_ptr_->GetFK(q_start.head(ndof_primary_), robot_property_.tcp_frame);
             PoseQuaternion pose_start_secondary =
@@ -109,10 +121,22 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest& request,
             break;
         }
         case MotionGroup::Primary: {
-            assert(7 == move_request.value.size());
+            if (7 != move_request.value.size()) {
+                LOG_CRIT << "MoveRequest value size mismatch for Primary! Expected: 7, Actual: "
+                         << move_request.value.size();
+                std::cout << "[Error] MoveRequest value size mismatch for Primary! Expected: 7, Actual: "
+                          << move_request.value.size() << "\n";
+                exit(EXIT_FAILURE);
+            }
             Eigen::VectorXd q_start;
             utils::GetJointFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
-            assert(q_start.size() == ndof_primary_);
+            if (q_start.size() != ndof_primary_) {
+                LOG_CRIT << "q_start size mismatch for Primary! Expected: " << ndof_primary_
+                         << ", Actual: " << q_start.size();
+                std::cout << "[Error] q_start size mismatch for Primary! Expected: " << ndof_primary_
+                          << ", Actual: " << q_start.size() << "\n";
+                exit(EXIT_FAILURE);
+            }
             PoseQuaternion pose_start = kinematics_primary_ptr_->GetFK(q_start, robot_property_.tcp_frame);
             PoseQuaternion pose_target = utils::VectorXdToPoseQuaternion(move_request.value);
             LOG_INFO << "Primary arm motion plan: start: " << pose_start.ToString()
@@ -123,10 +147,22 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest& request,
             break;
         }
         case MotionGroup::Secondary: {
-            assert(7 == move_request.value.size());
+            if (7 != move_request.value.size()) {
+                LOG_CRIT << "MoveRequest value size mismatch for Secondary! Expected: 7, Actual: "
+                         << move_request.value.size();
+                std::cout << "[Error] MoveRequest value size mismatch for Secondary! Expected: 7, Actual: "
+                          << move_request.value.size() << "\n";
+                exit(EXIT_FAILURE);
+            }
             Eigen::VectorXd q_start;
             utils::GetJointFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
-            assert(q_start.size() == ndof_secondary_);
+            if (q_start.size() != ndof_secondary_) {
+                LOG_CRIT << "q_start size mismatch for Secondary! Expected: " << ndof_secondary_
+                         << ", Actual: " << q_start.size();
+                std::cout << "[Error] q_start size mismatch for Secondary! Expected: " << ndof_secondary_
+                          << ", Actual: " << q_start.size() << "\n";
+                exit(EXIT_FAILURE);
+            }
             PoseQuaternion pose_start = kinematics_secondary_ptr_->GetFK(q_start, robot_property_.tcp_frame_secondary);
             PoseQuaternion pose_target = utils::VectorXdToPoseQuaternion(move_request.value);
             LOG_INFO << "Secondary arm motion plan: start: " << pose_start.ToString()
@@ -137,10 +173,22 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest& request,
             break;
         }
         case MotionGroup::Torso: {
-            assert(3 == move_request.value.size());
+            if (3 != move_request.value.size()) {
+                LOG_CRIT << "MoveRequest value size mismatch for Torso! Expected: 3, Actual: "
+                         << move_request.value.size();
+                std::cout << "[Error] MoveRequest value size mismatch for Torso! Expected: 3, Actual: "
+                          << move_request.value.size() << "\n";
+                exit(EXIT_FAILURE);
+            }
             Eigen::VectorXd q_start;
             utils::GetJointFromWholeBody(this->robot_model_, measurement.q_desired_pre, q_start, this->motion_group_);
-            assert(q_start.size() == ndof_torso_);
+            if (q_start.size() != ndof_torso_) {
+                LOG_CRIT << "q_start size mismatch for Torso! Expected: " << ndof_torso_
+                         << ", Actual: " << q_start.size();
+                std::cout << "[Error] q_start size mismatch for Torso! Expected: " << ndof_torso_
+                          << ", Actual: " << q_start.size() << "\n";
+                exit(EXIT_FAILURE);
+            }
             PoseQuaternion pose_start = kinematics_torso_ptr_->GetFK(q_start);
             PoseQuaternion pose_target = kinematics_torso_ptr_->GetTorsoPose(move_request.value);
             line_primary_ = std::nullopt;
@@ -152,7 +200,9 @@ bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest& request,
             break;
         }
         default:
-            assert(false && "Unknown MotionGroup type");
+            LOG_CRIT << "Unknown MotionGroup type in MoveLinePlanner::SetTarget";
+            std::cout << "[Error] Unknown MotionGroup type in MoveLinePlanner::SetTarget\n";
+            exit(EXIT_FAILURE);
             break;
     }
     ConfigRuckig();

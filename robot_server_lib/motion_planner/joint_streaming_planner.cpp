@@ -117,7 +117,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
-            robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
+            robot_stopped = robot_stopped && std::abs(measurement.velocity[i]) < IdleVelocityThreshold;
         }
         if (!command_finished_time_.is_valid()) {
             command_finished_time_ = TimePointSystem::Now();
@@ -204,7 +204,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
-            robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
+            robot_stopped = robot_stopped && std::abs(measurement.velocity[i]) < IdleVelocityThreshold;
         }
         if (!command_finished_time_.is_valid()) {
             command_finished_time_ = TimePointSystem::Now();

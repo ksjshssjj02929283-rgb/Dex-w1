@@ -99,4 +99,4 @@ echo "  source ${WORKSPACE_DIR}/install/setup.bash"
 echo
 echo "For deployed runtime environment, run:"
 echo "  source /opt/ros/humble/setup.bash"
-echo "  source /opt/w1_server/setup.bash"
+echo "  source ${WORKSPACE_DIR}/install/setup.bash"

@@ -20,8 +20,6 @@ public:
     virtual bool GetIK(const PoseQuaternion& pose,
                        Eigen::VectorXd& q_in_and_out,
                        const pinocchio::SE3& tcp_frame = pinocchio::SE3::Identity()) = 0;
-
-    virtual std::pair<Eigen::VectorXd, Eigen::VectorXd> GetQposLimits() const = 0;
 };
 }  // namespace kinematics
 }  // namespace robot_server_lib

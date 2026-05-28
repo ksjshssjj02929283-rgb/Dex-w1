@@ -16,11 +16,11 @@ using namespace robot_server_lib;
 
 TEST(JointMappingTest, MapJointToWholeBody_Primary) {
     std::cout << "\n=== MapJointToWholeBody_Primary Test ===" << std::endl;
-    const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
+    const auto package_share_path = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 
-    std::cout << "Robot: " << robot_model.params_ptr->robot_name << std::endl;
+    std::cout << "Robot: " << robot_model.params_ptr->robot_type << std::endl;
     std::cout << "Primary joints: " << robot_model.params_ptr->joints_primary_names.size() << std::endl;
     std::cout << "Joint names: ";
     for (const auto& name : robot_model.params_ptr->joints_primary_names) {
@@ -71,7 +71,7 @@ TEST(JointMappingTest, MapJointToWholeBody_Secondary) {
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 
-    std::cout << "Robot: " << robot_model.params_ptr->robot_name << std::endl;
+    std::cout << "Robot: " << robot_model.params_ptr->robot_type << std::endl;
     std::cout << "Secondary joints: " << robot_model.params_ptr->joints_secondary_names.size() << std::endl;
     std::cout << "Joint names: ";
     for (const auto& name : robot_model.params_ptr->joints_secondary_names) {
@@ -122,7 +122,7 @@ TEST(JointMappingTest, MapJointToWholeBody_BothArms) {
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 
-    std::cout << "Robot: " << robot_model.params_ptr->robot_name << std::endl;
+    std::cout << "Robot: " << robot_model.params_ptr->robot_type << std::endl;
     std::cout << "Primary joints: " << robot_model.params_ptr->joints_primary_names.size() << std::endl;
     std::cout << "Secondary joints: " << robot_model.params_ptr->joints_secondary_names.size() << std::endl;
 
@@ -217,7 +217,7 @@ TEST(JointMappingTest, GetJointFromWholeBody_Primary) {
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 
-    std::cout << "Robot: " << robot_model.params_ptr->robot_name << std::endl;
+    std::cout << "Robot: " << robot_model.params_ptr->robot_type << std::endl;
 
     JointPositionDof q_ndof = JointPositionDof::Zero();
     q_ndof[6] = 0.1;
@@ -260,7 +260,7 @@ TEST(JointMappingTest, GetJointFromWholeBody_Secondary) {
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 
-    std::cout << "Robot: " << robot_model.params_ptr->robot_name << std::endl;
+    std::cout << "Robot: " << robot_model.params_ptr->robot_type << std::endl;
 
     JointPositionDof q_ndof = JointPositionDof::Zero();
     q_ndof[13] = 0.11;
@@ -363,7 +363,7 @@ TEST(JointMappingTest, RoundTrip_Primary) {
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 
-    std::cout << "Robot: " << robot_model.params_ptr->robot_name << std::endl;
+    std::cout << "Robot: " << robot_model.params_ptr->robot_type << std::endl;
 
     Eigen::VectorXd q_primary_original(7);
     q_primary_original << 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7;
@@ -400,7 +400,7 @@ TEST(JointMappingTest, RoundTrip_Secondary) {
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 
-    std::cout << "Robot: " << robot_model.params_ptr->robot_name << std::endl;
+    std::cout << "Robot: " << robot_model.params_ptr->robot_type << std::endl;
 
     Eigen::VectorXd q_secondary_original(7);
     q_secondary_original << 0.11, 0.22, 0.33, 0.44, 0.55, 0.66, 0.77;
@@ -438,7 +438,7 @@ TEST(JointMappingTest, RoundTrip_BothArms) {
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 
-    std::cout << "Robot: " << robot_model.params_ptr->robot_name << std::endl;
+    std::cout << "Robot: " << robot_model.params_ptr->robot_type << std::endl;
 
     Eigen::VectorXd q_both_original(14);
     q_both_original << 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.11, 0.22, 0.33, 0.44, 0.55, 0.66, 0.77;

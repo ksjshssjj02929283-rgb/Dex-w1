@@ -13,7 +13,7 @@ void PrintModelInfo(const Model& model) {
 Eigen::Matrix4d GetFK(const Model& model, const Eigen::VectorXd& q) {
     SE3 pose;
     Data data(model);
-    int frame_id = model.getFrameId("ee_link");
+    int frame_id = model.nframes - 1;
     forwardKinematics(model, data, q);
     updateFramePlacements(model, data);
     pose = data.oMf[frame_id];
@@ -24,9 +24,9 @@ Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q, Re
     int nv = model.nv;
     Eigen::MatrixXd J = Eigen::MatrixXd::Zero(6, nv);
 
-    int ee_frame_id = model.getFrameId("ee_link");
-    if (ee_frame_id == -1) {
-        assert(false && "Frame 'ee_link' not found in model!");
+    int ee_frame_id = model.nframes - 1;
+    if (ee_frame_id < 0) {
+        assert(false && "No frames found in model!");
         return J;
     }
 
@@ -44,10 +44,10 @@ Eigen::MatrixXd GetJacobianMatrixDot(const Model& model,
                                      const Eigen::VectorXd& dq,
                                      ReferenceFrame frame) {
     Data data(model);
-    int ee_frame_id = model.getFrameId("ee_link");
+    int ee_frame_id = model.nframes - 1;
     Eigen::MatrixXd J_dot(6, model.nv);
-    if (ee_frame_id == -1) {
-        assert(false && "Frame 'ee_link' not found in model!");
+    if (ee_frame_id < 0) {
+        assert(false && "No frames found in model!");
         return J_dot;
     }
 

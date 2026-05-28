@@ -9,43 +9,64 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     RobotModel robot_model;
     if (!std::filesystem::exists(robot_cfg_path)) {
         LOG_CRIT << "Robot configuration file not found: " << robot_cfg_path;
-        assert(false && "Robot configuration file not found");
+        std::cout << "[Error] Robot configuration file not found: " << robot_cfg_path << "\n";
+        exit(EXIT_FAILURE);
     }
     try {
         config = YAML::LoadFile(robot_cfg_path.string());
     } catch (const YAML::Exception& e) {
         LOG_CRIT << "Can't parse robot_config.yaml: " << e.what();
         std::cout << "[Error] Can't parse robot_config.yaml: " << e.what() << "\n";
-        assert(false && "Can't parse robot_config.yaml");
+        exit(EXIT_FAILURE);
     }
-    const auto package_share_path = ament_index_cpp::get_package_share_directory("robot_server_lib");
-    if (!config["robot_name"]) {
-        LOG_CRIT << "robot_config.yaml missing 'robot_name' field";
-        std::cout << "[Error] robot_config.yaml missing 'robot_name' field\n";
-        assert(false && "robot_config.yaml missing 'robot_name' field");
-    }
-    params.robot_name = config["robot_name"].as<std::string>();
-
-    if (config["robot_version"]) {
-        params.robot_version = config["robot_version"].as<std::string>();
+    if (config["robot_type"]) {
+        params.robot_type = config["robot_type"].as<std::string>();
     } else {
-        LOG_CRIT << "robot_config.yaml missing 'robot_version' field, using default empty string";
-        std::cout << "[Error] robot_config.yaml missing 'robot_version' field\n";
-        assert(false && "robot_config.yaml missing 'robot_version' field");
+        LOG_CRIT << "robot_config.yaml missing 'robot_type' field";
+        std::cout << "[Error] robot_config.yaml missing 'robot_type' field\n";
+        exit(EXIT_FAILURE);
     }
 
-    params.urdf_path =
-        std::filesystem::path(package_share_path) / "robot_models" / params.robot_name / (params.robot_name + ".urdf");
-
-    if (config["left_arm_name"]) {
-        params.left_arm_name = config["left_arm_name"].as<std::string>();
-        params.left_arm_urdf_path = std::filesystem::path(package_share_path) / "robot_models" / params.left_arm_name /
-                                    (params.left_arm_name + ".urdf");
+    if (config["version"]) {
+        params.robot_version = config["version"].as<std::string>();
+    } else {
+        LOG_CRIT << "robot_config.yaml missing 'version' field";
+        std::cout << "[Error] robot_config.yaml missing 'version' field\n";
+        exit(EXIT_FAILURE);
     }
-    if (config["right_arm_name"]) {
-        params.right_arm_name = config["right_arm_name"].as<std::string>();
-        params.right_arm_urdf_path = std::filesystem::path(package_share_path) / "robot_models" /
-                                     params.right_arm_name / (params.right_arm_name + ".urdf");
+
+    YAML::Node version_cfg;
+    if (params.robot_version.size() >= 3) {
+        std::string version_prefix = params.robot_version.substr(0, 3);
+        std::string full_version_key = params.robot_type + "_" + version_prefix;
+        if (config[full_version_key]) {
+            version_cfg = config[full_version_key];
+            std::cout << "[INFO] Robot type: " << params.robot_type << ", Robot version: " << params.robot_version
+                      << ", Using version config: " << full_version_key << "\n";
+            LOG_INFO << "Robot type: " << params.robot_type << ", Robot version: " << params.robot_version
+                     << ", Using version config: " << full_version_key;
+        } else {
+            LOG_CRIT << "Version config " << full_version_key << " not found in config file";
+            std::cout << "[Error] Version config " << full_version_key << " not found in config file\n";
+            exit(EXIT_FAILURE);
+        }
+    } else {
+        LOG_CRIT << "Invalid robot version format: " << params.robot_version;
+        std::cout << "[Error] Invalid robot version format: " << params.robot_version << "\n";
+        exit(EXIT_FAILURE);
+    }
+
+    if (config["left_hand_type"]) {
+        params.left_hand_type = config["left_hand_type"].as<std::string>();
+    }
+    if (config["right_hand_type"]) {
+        params.right_hand_type = config["right_hand_type"].as<std::string>();
+    }
+
+    if (config["ros2_to_urdf_map"] && config["ros2_to_urdf_map"].IsMap()) {
+        for (auto it = config["ros2_to_urdf_map"].begin(); it != config["ros2_to_urdf_map"].end(); ++it) {
+            params.ros2_to_urdf_map[it->first.as<std::string>()] = it->second.as<std::string>();
+        }
     }
 
     auto parse_string_list = [&](const char* key, std::vector<std::string>& dst) {
@@ -75,27 +96,49 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     if (config["ee_secondary_name"]) {
         params.ee_secondary_name = config["ee_secondary_name"].as<std::string>();
     }
-    pinocchio::Model model, left_arm_model, right_arm_model;
-    pinocchio::urdf::buildModel(params.urdf_path, model);
-    pinocchio::urdf::buildModel(params.left_arm_urdf_path, left_arm_model);
-    pinocchio::urdf::buildModel(params.right_arm_urdf_path, right_arm_model);
 
-    std::unordered_map<std::string, int> joint_name_to_index;
-    for (const auto& joint : model.names) {
-        if (joint != "universe") {
-            int idx = model.getJointId(joint) - 1;
-            joint_name_to_index[joint] = idx;
-            params.joint_names.push_back(joint);
+    std::filesystem::path robot_urdf_path;
+    std::filesystem::path primary_arm_urdf_path;
+    std::filesystem::path secondary_arm_urdf_path;
+
+    if (config["file_path"] && config["file_path"]["robot_urdf"]) {
+        robot_urdf_path = config["file_path"]["robot_urdf"].as<std::string>();
+        if (!std::filesystem::exists(robot_urdf_path)) {
+            LOG_CRIT << "Robot URDF file not found: " << robot_urdf_path;
+            std::cout << "[Error] Robot URDF file not found: " << robot_urdf_path << "\n";
+            exit(EXIT_FAILURE);
         }
-    }
+        primary_arm_urdf_path = robot_urdf_path.parent_path() / "left_arm.urdf";
+        secondary_arm_urdf_path = robot_urdf_path.parent_path() / "right_arm.urdf";
 
-    if (config["dyn_base_params_primary"]) {
+        if (!std::filesystem::exists(primary_arm_urdf_path)) {
+            LOG_CRIT << "Primary arm URDF file not found: " << primary_arm_urdf_path;
+            std::cout << "[Error] Primary arm URDF file not found: " << primary_arm_urdf_path << "\n";
+            exit(EXIT_FAILURE);
+        }
+        if (!std::filesystem::exists(secondary_arm_urdf_path)) {
+            LOG_CRIT << "Secondary arm URDF file not found: " << secondary_arm_urdf_path;
+            std::cout << "[Error] Secondary arm URDF file not found: " << secondary_arm_urdf_path << "\n";
+            exit(EXIT_FAILURE);
+        }
+        std::cout << "[INFO] Robot_urdf_path: " << robot_urdf_path << "\n";
+    } else {
+        LOG_CRIT << "Robot_config.yaml missing 'file_path.robot_urdf' field";
+        std::cout << "[Error] robot_config.yaml missing 'file_path.robot_urdf' field\n";
+        exit(EXIT_FAILURE);
+    }
+    pinocchio::Model model, left_arm_model, right_arm_model;
+    pinocchio::urdf::buildModel(robot_urdf_path, model);
+    pinocchio::urdf::buildModel(primary_arm_urdf_path, left_arm_model);
+    pinocchio::urdf::buildModel(secondary_arm_urdf_path, right_arm_model);
+
+    if (version_cfg["dyn_base_params_primary"]) {
         auto parse_array = [&](const std::string& key, Eigen::VectorXd& dst) {
-            if (config[key] && config[key].IsSequence()) {
-                const auto size = config[key].size();
+            if (version_cfg[key] && version_cfg[key].IsSequence()) {
+                const auto size = version_cfg[key].size();
                 dst = Eigen::VectorXd::Zero(size);
                 for (size_t i = 0; i < size; ++i) {
-                    dst[i] = config[key][i].as<double>();
+                    dst[i] = version_cfg[key][i].as<double>();
                 }
             }
         };
@@ -106,13 +149,13 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         std::cout << "Use dafault dynamic model in urdf\n";
         LOG_INFO << "Use dafault dynamic model in urdf";
     }
-    if (config["dyn_base_params_secondary"]) {
+    if (version_cfg["dyn_base_params_secondary"]) {
         auto parse_array = [&](const std::string& key, Eigen::VectorXd& dst) {
-            if (config[key] && config[key].IsSequence()) {
-                const auto size = config[key].size();
+            if (version_cfg[key] && version_cfg[key].IsSequence()) {
+                const auto size = version_cfg[key].size();
                 dst = Eigen::VectorXd::Zero(size);
                 for (size_t i = 0; i < size; ++i) {
-                    dst[i] = config[key][i].as<double>();
+                    dst[i] = version_cfg[key][i].as<double>();
                 }
             }
         };
@@ -135,26 +178,27 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
 
     RobotProperty robot_property;
 
-    if (config["allow_force_control"]) {
-        robot_property.allow_force_control = config["allow_force_control"].as<bool>();
+    if (version_cfg["allow_force_control"]) {
+        robot_property.allow_force_control = version_cfg["allow_force_control"].as<bool>();
     }
 
-    if (config["joint_streaming_bounds"] && config["joint_streaming_bounds"].IsMap()) {
-        if (config["joint_streaming_bounds"]["max_velocity"]) {
+    if (version_cfg["joint_streaming_bounds"] && version_cfg["joint_streaming_bounds"].IsMap()) {
+        if (version_cfg["joint_streaming_bounds"]["max_velocity"]) {
             robot_property.joint_streaming_bounds.max_velocity =
-                config["joint_streaming_bounds"]["max_velocity"].as<double>();
+                version_cfg["joint_streaming_bounds"]["max_velocity"].as<double>();
         }
-        if (config["joint_streaming_bounds"]["max_acceleration"]) {
+        if (version_cfg["joint_streaming_bounds"]["max_acceleration"]) {
             robot_property.joint_streaming_bounds.max_acceleration =
-                config["joint_streaming_bounds"]["max_acceleration"].as<double>();
+                version_cfg["joint_streaming_bounds"]["max_acceleration"].as<double>();
         }
-        if (config["joint_streaming_bounds"]["max_jerk"]) {
-            robot_property.joint_streaming_bounds.max_jerk = config["joint_streaming_bounds"]["max_jerk"].as<double>();
+        if (version_cfg["joint_streaming_bounds"]["max_jerk"]) {
+            robot_property.joint_streaming_bounds.max_jerk =
+                version_cfg["joint_streaming_bounds"]["max_jerk"].as<double>();
         }
     }
 
-    if (config["enable_streaming_ruckig"]) {
-        robot_property.enable_streaming_ruckig = config["enable_streaming_ruckig"].as<bool>();
+    if (version_cfg["enable_streaming_ruckig"]) {
+        robot_property.enable_streaming_ruckig = version_cfg["enable_streaming_ruckig"].as<bool>();
     }
 
     if (config["enable_record"]) {
@@ -165,8 +209,9 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         robot_property.enable_chassis_shaper = config["chassis_config"]["enable_chassis_shaper"].as<bool>();
     }
 
-    if (config["joints"] && config["joints"].IsSequence()) {
-        for (const auto& joint_config : config["joints"]) {
+    if (version_cfg["joints"] && version_cfg["joints"].IsSequence()) {
+        int joint_idx = 0;
+        for (const auto& joint_config : version_cfg["joints"]) {
             std::string joint_name;
             if (joint_config["name"]) {
                 joint_name = joint_config["name"].as<std::string>();
@@ -174,11 +219,28 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                 continue;
             }
 
-            auto it = joint_name_to_index.find(joint_name);
-            if (it == joint_name_to_index.end()) {
-                continue;
+            // 校验配置文件中的名称与URDF中的名称及顺序是否一致 (考虑映射)
+            std::string urdf_name;
+            if (params.ros2_to_urdf_map.count(joint_name)) {
+                urdf_name = params.ros2_to_urdf_map.at(joint_name);
             }
-            int joint_idx = it->second;
+
+            if (joint_idx + 1 >= static_cast<int>(model.names.size())) {
+                LOG_CRIT << "Config has more joints than URDF! Surplus joint in config: " << joint_name;
+                std::cout << "[Error] Config has more joints than URDF! Surplus joint in config: " << joint_name
+                          << "\n";
+                exit(EXIT_FAILURE);
+            }
+
+            if (model.names[joint_idx + 1] != urdf_name) {
+                LOG_CRIT << "Joint name/order mismatch! Index: " << joint_idx << ", Config: " << joint_name
+                         << " (mapped: " << urdf_name << "), URDF (Pinocchio): " << model.names[joint_idx + 1];
+                std::cout << "[Error] Joint name/order mismatch! Index: " << joint_idx << ", Config: " << joint_name
+                          << " (mapped: " << urdf_name << "), URDF (Pinocchio): " << model.names[joint_idx + 1] << "\n";
+                exit(EXIT_FAILURE);
+            }
+
+            params.joint_names.push_back(joint_name);
 
             if (joint_config["velocity_limit"]) {
                 params.joint_velocity_limit[joint_idx] = joint_config["velocity_limit"].as<double>();
@@ -202,7 +264,7 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                         joint_config["joint_impedance_control"]["damping"].as<double>();
                 }
                 if (joint_config["joint_impedance_control"]["integral_ratio"]) {
-                    robot_property.joint_integral_ratio =
+                    robot_property.joint_integral_ratio[joint_idx] =
                         joint_config["joint_impedance_control"]["integral_ratio"].as<double>();
                 }
             }
@@ -227,6 +289,15 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                         joint_config["input_shaper"]["frequency"].as<double>();
                 }
             }
+            joint_idx++;
+        }
+        // 校验总数是否一致
+        if (joint_idx != static_cast<int>(model.names.size()) - 1) {
+            LOG_CRIT << "Total joint count mismatch! Config count: " << joint_idx
+                     << ", URDF count (Pinocchio): " << model.names.size() - 1;
+            std::cout << "[Error] Total joint count mismatch! Config count: " << joint_idx
+                      << ", URDF count (Pinocchio): " << model.names.size() - 1 << "\n";
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -238,43 +309,35 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         robot_property.global_speed_ratio = config["global_speed_ratio"].as<double>();
     }
 
-    if (config["cart_stiffness"] && config["cart_stiffness"].IsSequence()) {
-        const auto size = config["cart_stiffness"].size();
+    if (version_cfg["cart_stiffness"] && version_cfg["cart_stiffness"].IsSequence()) {
+        const auto size = version_cfg["cart_stiffness"].size();
         robot_property.cart_stiffness = Eigen::VectorXd::Zero(size);
         for (size_t i = 0; i < size; ++i) {
-            robot_property.cart_stiffness[i] = config["cart_stiffness"][i].as<double>();
+            robot_property.cart_stiffness[i] = version_cfg["cart_stiffness"][i].as<double>();
         }
     }
 
-    if (config["cart_damping_ratio"] && config["cart_damping_ratio"].IsSequence()) {
-        const auto size = config["cart_damping_ratio"].size();
+    if (version_cfg["cart_damping_ratio"] && version_cfg["cart_damping_ratio"].IsSequence()) {
+        const auto size = version_cfg["cart_damping_ratio"].size();
         robot_property.cart_damping_ratio = Eigen::VectorXd::Zero(size);
         for (size_t i = 0; i < size; ++i) {
-            robot_property.cart_damping_ratio[i] = config["cart_damping_ratio"][i].as<double>();
+            robot_property.cart_damping_ratio[i] = version_cfg["cart_damping_ratio"][i].as<double>();
         }
     }
 
-    if (config["safety_check_config"] && config["safety_check_config"].IsMap()) {
-        if (config["safety_check_config"]["enable_position_limit_check"]) {
+    if (version_cfg["safety_check_config"] && version_cfg["safety_check_config"].IsMap()) {
+        if (version_cfg["safety_check_config"]["enable_position_limit_check"]) {
             robot_property.safety_check_config.check_position_limit =
-                config["safety_check_config"]["enable_position_limit_check"].as<bool>();
+                version_cfg["safety_check_config"]["enable_position_limit_check"].as<bool>();
         }
-        if (config["safety_check_config"]["enable_torque_limit_check"]) {
+        if (version_cfg["safety_check_config"]["enable_torque_limit_check"]) {
             robot_property.safety_check_config.check_torque_limit =
-                config["safety_check_config"]["enable_torque_limit_check"].as<bool>();
+                version_cfg["safety_check_config"]["enable_torque_limit_check"].as<bool>();
         }
-        if (config["safety_check_config"]["enable_velocity_limit_check"]) {
+        if (version_cfg["safety_check_config"]["enable_velocity_limit_check"]) {
             robot_property.safety_check_config.check_velocity_limit =
-                config["safety_check_config"]["enable_velocity_limit_check"].as<bool>();
+                version_cfg["safety_check_config"]["enable_velocity_limit_check"].as<bool>();
         }
-    }
-
-    if (params.robot_version == "V03") {
-        robot_property.allow_force_control = false;
-        robot_property.safety_check_config.check_position_limit = false;
-        std::cout
-            << "[INFO] V03 detected: allow_force_control set to false, enable_position_limit_check set to false\n";
-        LOG_CRIT << "V03 detected: allow_force_control set to false, enable_position_limit_check set to false";
     }
 
     robot_model.params_ptr = std::make_shared<RobotParams>(params);
@@ -370,12 +433,7 @@ bool MapJointToWholeBody(const RobotModel& robot_model,
             break;
         }
         case MotionGroup::WholeBody: {
-            const auto& model = *robot_model.model_ptr;
-            for (const auto& joint_name : model.names) {
-                if (joint_name != "universe") {
-                    joints_names.push_back(joint_name);
-                }
-            }
+            joints_names = robot_model.params_ptr->joint_names;
             break;
         }
         case MotionGroup::Torso: {
@@ -384,17 +442,27 @@ bool MapJointToWholeBody(const RobotModel& robot_model,
         }
         case MotionGroup::Unknown:
         default:
-            assert(false && "Unknown MotionGroup type");
+            LOG_CRIT << "Unknown MotionGroup type in MapJointToWholeBody";
+            std::cout << "[Error] Unknown MotionGroup type in MapJointToWholeBody\n";
+            exit(EXIT_FAILURE);
             break;
     }
 
-    assert(q.size() == static_cast<int>(joints_names.size()) && "Target q size must match joints names size");
+    if (q.size() != static_cast<int>(joints_names.size())) {
+        LOG_CRIT << "Target q size mismatch! Expected: " << joints_names.size() << ", Actual: " << q.size();
+        std::cout << "[Error] Target q size mismatch! Expected: " << joints_names.size() << ", Actual: " << q.size()
+                  << "\n";
+        exit(EXIT_FAILURE);
+    }
 
-    const auto& model = *robot_model.model_ptr;
     for (size_t i = 0; i < joints_names.size(); ++i) {
-        int joint_id = model.getJointId(joints_names[i]) - 1;
-        if (joint_id >= 0 && joint_id < q_ndof.size()) {
-            q_ndof[joint_id] = q[i];
+        auto it = std::find(robot_model.params_ptr->joint_names.begin(), robot_model.params_ptr->joint_names.end(),
+                            joints_names[i]);
+        if (it != robot_model.params_ptr->joint_names.end()) {
+            int joint_id = std::distance(robot_model.params_ptr->joint_names.begin(), it);
+            if (joint_id >= 0 && joint_id < q_ndof.size()) {
+                q_ndof[joint_id] = q[i];
+            }
         }
     }
     return true;
@@ -421,12 +489,7 @@ bool GetJointFromWholeBody(const RobotModel& robot_model,
             break;
         }
         case MotionGroup::WholeBody: {
-            const auto& model = *robot_model.model_ptr;
-            for (const auto& joint_name : model.names) {
-                if (joint_name != "universe") {
-                    joints_names.push_back(joint_name);
-                }
-            }
+            joints_names = robot_model.params_ptr->joint_names;
             break;
         }
         case MotionGroup::Torso: {
@@ -435,17 +498,22 @@ bool GetJointFromWholeBody(const RobotModel& robot_model,
         }
         case MotionGroup::Unknown:
         default:
-            assert(false && "Unknown MotionGroup type");
+            LOG_CRIT << "Unknown MotionGroup type in GetJointFromWholeBody";
+            std::cout << "[Error] Unknown MotionGroup type in GetJointFromWholeBody\n";
+            exit(EXIT_FAILURE);
             break;
     }
 
     q = Eigen::VectorXd::Zero(joints_names.size());
 
-    const auto& model = *robot_model.model_ptr;
     for (size_t i = 0; i < joints_names.size(); ++i) {
-        int joint_id = model.getJointId(joints_names[i]) - 1;
-        if (joint_id >= 0 && joint_id < q_ndof.size()) {
-            q[i] = q_ndof[joint_id];
+        auto it = std::find(robot_model.params_ptr->joint_names.begin(), robot_model.params_ptr->joint_names.end(),
+                            joints_names[i]);
+        if (it != robot_model.params_ptr->joint_names.end()) {
+            int joint_id = std::distance(robot_model.params_ptr->joint_names.begin(), it);
+            if (joint_id >= 0 && joint_id < q_ndof.size()) {
+                q[i] = q_ndof[joint_id];
+            }
         }
     }
     return true;

@@ -38,7 +38,7 @@ ComputeCommandStatus MoveJointPlanner::ComputeCommand(const JointMeasurement& me
                 joint_cmd.velocity[i] = 0;
                 joint_cmd.acceleration[i] = 0;
                 joint_cmd.torque_feedforward[i] = 0;
-                robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
+                robot_stopped = robot_stopped && std::abs(measurement.velocity[i]) < IdleVelocityThreshold;
             }
             if (wait_trajectory_upon_finish_) {
                 if (robot_stopped) {

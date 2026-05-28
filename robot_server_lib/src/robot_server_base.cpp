@@ -90,7 +90,8 @@ void RobotServerBase::ManagerThreadFunc() {
     }
     PlannerManager planner_manager(this->robot_model_, this->manager_buffers_,
                                    std::bind(&RobotServerBase::ReportRequestStatus, this, std::placeholders::_1,
-                                             std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
+                                             std::placeholders::_2, std::placeholders::_3, std::placeholders::_4),
+                                   this->is_sim_);
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok()) {
         next_cycle_time_point += std::chrono::microseconds(manager_dt_micro);
@@ -180,7 +181,7 @@ std::string RobotServerBase::GetRobotServerStateJson(uint64_t timestamp_ns,
                                                      const std::optional<PlannerManagerInfo>& planner_info) {
     std::string json = "{\"timestamp\":" + std::to_string(timestamp_ns) + ",\"status\":\"" +
                        ToString(this->manager_state_) + "\"" + ", \"robot_type\":\"" +
-                       this->robot_model_.params_ptr->robot_name + "\"" + ", \"robot_version\":\"" +
+                       this->robot_model_.params_ptr->robot_type + "\"" + ", \"robot_version\":\"" +
                        this->robot_model_.params_ptr->robot_version + "\"";
     PlannerManagerInfo manager_info;
     this->manager_buffers_.planner_manager_info->PeekLatest(&manager_info);
@@ -208,7 +209,8 @@ std::string RobotServerBase::GetRobotServerStateJson(uint64_t timestamp_ns,
             utils::VectorToJsonArrayString(planner_info->robot_property.joint_stiffness).str() +
             ",\n \"joint_damping\":" +
             utils::VectorToJsonArrayString(planner_info->robot_property.joint_damping).str() +
-            ",\n \"joint_integral_ratio\":" + std::to_string(planner_info->robot_property.joint_integral_ratio) +
+            ",\n \"joint_integral_ratio\":" +
+            utils::VectorToJsonArrayString(planner_info->robot_property.joint_integral_ratio).str() +
             ",\n \"cart_stiffness\":" +
             utils::VectorToJsonArrayString(planner_info->robot_property.cart_stiffness).str() +
             ",\n \"cart_damping_ratio\":" +

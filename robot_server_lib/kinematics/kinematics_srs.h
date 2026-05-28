@@ -17,7 +17,7 @@ public:
                Eigen::VectorXd& q_in_and_out,
                const pinocchio::SE3& tcp_frame = pinocchio::SE3::Identity()) override;
 
-    std::pair<Eigen::VectorXd, Eigen::VectorXd> GetQposLimits() const override;
+    std::pair<Eigen::VectorXd, Eigen::VectorXd> GetQposLimits() const;
 
 private:
     std::shared_ptr<DexeRP::Kinematics::SRSKinematics> w1_kine_;

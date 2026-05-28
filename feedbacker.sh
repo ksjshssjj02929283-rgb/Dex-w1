@@ -58,4 +58,4 @@ kill_process_exact() {
 kill_process_exact "feedback"
 
 # 启动 feedback（默认不记录日志，使用 --record 开启日志记录）
-/opt/w1_server/w1_server/lib/w1_server/feedback $FEEDBACK_ARGS
+../install/w1_server/lib/w1_server/feedback $FEEDBACK_ARGS

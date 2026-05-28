@@ -215,12 +215,11 @@ void RobotServer::TorqueControlThreadFunc() {
             this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
         } else {
             this->robot_buffers_.joint_raw_measurement->Reset();
-            if (loop_counter % 5000 == 0) {
-                RCLCPP_WARN(this->get_logger(), "Robot is not ready, shm status: %d, statusword: %s", ret,
-                            utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
-                LOG_CRIT << "Robot is not ready, shm status: " << ret
-                         << ", statusword: " << robot_feedback_.robot_status_word;
-            }
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                                 "Robot is not ready, shm status: %d, statusword: %s", ret,
+                                 utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
+            LOG_CRIT_THROTTLE(5000) << "Robot is not ready, shm status: " << ret
+                                    << ", statusword: " << robot_feedback_.robot_status_word;
         }
 
         // 力控计算处理
@@ -556,7 +555,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
 
     robot_server_state_msg.data =
         std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
-        ", \"robot_type\":\"" + this->robot_model_.params_ptr->robot_name + "\"" +
+        ", \"robot_type\":\"" + this->robot_model_.params_ptr->robot_type + "\"" +
         ", \"robot_version\":\"" + this->robot_model_.params_ptr->robot_version + "\"" +
         ", \"robot_mode\":\"" + ToString(this->robot_mode_) + "\"" +
         ",\n  \"status\":\"" + ToString(this->manager_state_) + "\"" +
@@ -595,7 +594,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ", \"enable_chassis_shaper\":" + std::to_string(this->manager_info_.robot_property.enable_chassis_shaper) +
         ",\n  \"joint_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_stiffness, index_offset, ndof_config_).str() +
         ",\n  \"joint_damping\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_damping, index_offset, ndof_config_).str() +
-        ",\n  \"joint_integral_ratio\":" + std::to_string(this->manager_info_.robot_property.joint_integral_ratio) +
+        ",\n  \"joint_integral_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_integral_ratio, index_offset, ndof_config_).str() +
         ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness, 0, this->robot_mode_ == RobotMode::SingleArm? 6 : 12).str() +
         ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio, 0, this->robot_mode_ == RobotMode::SingleArm? 6 : 12).str() +
         ",\n  \"chassis_status_word\":" + std::to_string(this->robot_feedback_.chassis_feedback.status_word) +
@@ -865,14 +864,11 @@ bool RobotServer::SortFeedbackByJointName(RobotFeedback& feedback) {
     }
 
     if (valid_count != ndof_config_) {
-        RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+        RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                               "SortFeedbackByJointName: joint name count mismatch. Expected %d, got %d", ndof_config_,
                               valid_count);
-        if (!has_logged_sort_feedback_error_) {
-            LOG_CRIT << "SortFeedbackByJointName: joint name count mismatch. Expected " << ndof_config_ << ", got "
-                     << valid_count;
-            has_logged_sort_feedback_error_ = true;
-        }
+        LOG_CRIT_THROTTLE(5000) << "SortFeedbackByJointName: joint name count mismatch. Expected " << ndof_config_
+                                << ", got " << valid_count;
         return false;
     }
 
@@ -880,12 +876,11 @@ bool RobotServer::SortFeedbackByJointName(RobotFeedback& feedback) {
     std::array<JointFeedback, MAX_JOINT_NUM> sorted_joints{};
     int matched_count = 0;
 
-    // 遍历标准关节名称顺序的前 ndof_config_ 个
     for (int target_idx = 0; target_idx < ndof_robot; ++target_idx) {
         const std::string& target_name = robot_model_.params_ptr->joint_names[target_idx];
 
         // 在反馈数据中查找匹配的关节名称
-        for (int src_idx = 0; src_idx < ndof_robot; ++src_idx) {
+        for (int src_idx = 0; src_idx < MAX_JOINT_NUM; ++src_idx) {
             std::string src_name(feedback.joint_feedback[src_idx].joint_name);
             if (src_name == target_name) {
                 // 找到匹配，复制数据到目标位置
@@ -897,19 +892,13 @@ bool RobotServer::SortFeedbackByJointName(RobotFeedback& feedback) {
     }
 
     if (matched_count != ndof_config_) {
-        RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+        RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                               "SortFeedbackByJointName: matched count mismatch. Expected %d, matched %d", ndof_config_,
                               matched_count);
-        if (!has_logged_sort_feedback_error_) {
-            LOG_CRIT << "SortFeedbackByJointName: matched count mismatch. Expected " << ndof_config_ << ", matched "
-                     << matched_count;
-            has_logged_sort_feedback_error_ = true;
-        }
+        LOG_CRIT_THROTTLE(5000) << "SortFeedbackByJointName: matched count mismatch. Expected " << ndof_config_
+                                << ", matched " << matched_count;
         return false;
     }
-
-    // 只有在成功匹配时才重置日志标志
-    has_logged_sort_feedback_error_ = false;
 
     // 将排序后的数据复制回反馈结构
     for (int i = 0; i < ndof_robot; ++i) {
@@ -974,7 +963,6 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         ndof_config_ = ndof_robot;
         LOG_INFO << "自动检测到 W1 模式，实际关节数: " << ndof_config_;
         RCLCPP_INFO(this->get_logger(), "自动检测到 W1 模式，实际关节数: %d", ndof_config_);
-        has_logged_unknown_mode_ = false;
         return RobotMode::W1;
     }
     if (is_exact_match(robot_model_.params_ptr->joints_dual_arm)) {
@@ -982,7 +970,6 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         ndof_config_ = robot_model_.params_ptr->joints_dual_arm.size();
         LOG_INFO << "自动检测到 DualArm 模式，实际关节数: " << ndof_config_;
         RCLCPP_INFO(this->get_logger(), "自动检测到 DualArm 模式，实际关节数: %d", ndof_config_);
-        has_logged_unknown_mode_ = false;
         return RobotMode::DualArm;
     }
     if (is_exact_match(robot_model_.params_ptr->joints_a1)) {
@@ -990,7 +977,6 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         ndof_config_ = robot_model_.params_ptr->joints_a1.size();
         LOG_INFO << "自动检测到 A1 模式，实际关节数: " << ndof_config_;
         RCLCPP_INFO(this->get_logger(), "自动检测到 A1 模式，实际关节数: %d", ndof_config_);
-        has_logged_unknown_mode_ = false;
         return RobotMode::A1;
     }
     if (is_exact_match(robot_model_.params_ptr->joints_single_arm)) {
@@ -998,15 +984,11 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         ndof_config_ = robot_model_.params_ptr->joints_single_arm.size();
         LOG_INFO << "自动检测到 SingleArm 模式，实际关节数: " << ndof_config_;
         RCLCPP_INFO(this->get_logger(), "自动检测到 SingleArm 模式，实际关节数: %d", ndof_config_);
-        has_logged_unknown_mode_ = false;
         return RobotMode::SingleArm;
     }
 
-    if (!has_logged_unknown_mode_) {
-        LOG_WARN << "未匹配到任何已知模式";
-        has_logged_unknown_mode_ = true;
-    }
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "未匹配到任何已知模式");
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "未匹配到任何已知模式");
+    LOG_WARN_THROTTLE(5000) << "未匹配到任何已知模式";
     return RobotMode::Unknown;
 }
 

@@ -42,24 +42,31 @@ PYTHON_EXCLUDE_DIRS = [
     "install",
 ]
 
+PYTHON_EXCLUDE_FILES = [
+    "commit_format.py",
+]
+
 CPP_EXCLUDE_DIRS = [
     "build", "install", "log", ".git", "third_party",
     "robot_server_lib/dynamics", "lib", "deb_build"
 ]
 
 
-def _glob_files(exclude_directories, extensions):
+def _glob_files(exclude_directories, extensions, exclude_files=None):
     """
     Find files with certain extensions in the root directory recursively,
-    excluding specified directories.
+    excluding specified directories and files.
 
     Args:
         exclude_directories: list of directories to exclude, relative to the root repo directory.
         extensions: list of extensions, e.g. ["cpp", "h"].
+        exclude_files: list of specific filenames to exclude.
 
     Return:
         List of file paths.
     """
+    if exclude_files is None:
+        exclude_files = []
     pwd = Path(os.path.dirname(os.path.abspath(__file__)))
     root_dir = pwd.parent
 
@@ -74,12 +81,17 @@ def _glob_files(exclude_directories, extensions):
     filtered_files = []
     for file_path in all_files:
         is_excluded = False
+        # Check directories
         for exclude_path in exclude_paths:
             if exclude_path.is_dir() and exclude_path in file_path.parents:
                 is_excluded = True
                 break
-        if not is_excluded:
-            filtered_files.append(str(file_path))
+        if is_excluded:
+            continue
+        # Check specific files
+        if file_path.name in exclude_files:
+            continue
+        filtered_files.append(str(file_path))
 
     return sorted(list(set(filtered_files)))
 
@@ -325,15 +337,13 @@ if __name__ == "__main__":
     pwd = Path(os.path.dirname(os.path.abspath(__file__)))
     python_style_config = str(pwd.parent / ".style.yapf")
 
-    cpp_ignored_files = []
-    cpp_files = _glob_files(
-        CPP_EXCLUDE_DIRS,
-        ["h", "hpp", "cpp", "cuh", "cu", "isph", "ispc", "h.in"])
-    # cpp_files = _filter_files(cpp_files, cpp_ignored_files)
-
     # Check or apply style
-    cpp_formatter = CppFormatter(cpp_files, clang_format_bin=clang_format_bin)
-    python_formatter = PythonFormatter(_glob_files(PYTHON_EXCLUDE_DIRS, ["py"]),
+    cpp_formatter = CppFormatter(
+        _glob_files(CPP_EXCLUDE_DIRS,
+                    ["h", "hpp", "cpp", "cuh", "cu", "isph", "ispc", "h.in"]),
+        clang_format_bin=clang_format_bin)
+    python_formatter = PythonFormatter(_glob_files(
+        PYTHON_EXCLUDE_DIRS, ["py"], exclude_files=PYTHON_EXCLUDE_FILES),
                                        style_config=python_style_config)
 
     changed_files = []

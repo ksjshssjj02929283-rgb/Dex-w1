@@ -15,7 +15,7 @@ TEST(InvDynSymbolTest, InvDynSymbol) {
                         10);                          // 每个日志文件最大20MB，最多保留10个日志文件
     nanolog::set_log_level(nanolog::LogLevel::INFO);  // options: DEBUG, INFO, WARN, CRIT 高频过程数据打印设置为DEBUG
 
-    const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
+    const auto package_share_path = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
     if (!std::filesystem::exists(robot_cfg_path)) {
         std::cerr << "robot_config.yaml not found!" << std::endl;

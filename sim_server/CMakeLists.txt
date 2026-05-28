@@ -105,6 +105,11 @@ target_link_libraries(${PROJECT_NAME}
   ruckig::ruckig
 )
 
+target_compile_definitions(${PROJECT_NAME} PUBLIC
+    BOOST_MPL_CFG_NO_PREPROCESSED_HEADERS
+    BOOST_MPL_LIMIT_LIST_SIZE=30
+)
+
 install(TARGETS ${PROJECT_NAME}
   DESTINATION lib/${PROJECT_NAME}
 )

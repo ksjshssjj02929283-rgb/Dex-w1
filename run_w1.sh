@@ -1,11 +1,10 @@
 #!/bin/bash
 
 cd "$(dirname "$0")"
+WORKSPACE_DIR=$(pwd)
+INSTALL_DIR="$(cd "${WORKSPACE_DIR}/../install" && pwd 2>/dev/null || echo "${WORKSPACE_DIR}/../install")"
 
-SUDO_PASS=123456
-echo "$SUDO_PASS" | sudo -S setcap 'cap_sys_nice=eip cap_ipc_lock=ep' /opt/w1_server/w1_server/lib/w1_server/w1_server
-
-source /opt/w1_server/setup.bash
+source ../install/setup.bash
 
 # Function to kill process by name
 kill_process() {
@@ -15,6 +14,20 @@ kill_process() {
         kill -9 $pids
     fi
 }
+
+# 在 install 目录中对二进制提权
+sudo_setcap() {
+  sudo setcap "$1" "$2" 2>/dev/null
+  sudo getcap -v "$2" 2>/dev/null
+}
+if [ -f "$INSTALL_DIR/w1_server/lib/w1_server/w1_server" ]; then
+  sudo_setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$INSTALL_DIR/w1_server/lib/w1_server/w1_server" || true
+  echo "setcap applied to $INSTALL_DIR/w1_server/lib/w1_server/w1_server:"; getcap -v "$INSTALL_DIR/w1_server/lib/w1_server/w1_server" || true
+fi
+if [ -f "$INSTALL_DIR/w1_server/lib/w1_server/feedback" ]; then
+  sudo_setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$INSTALL_DIR/w1_server/lib/w1_server/feedback" || true
+  echo "setcap applied to $INSTALL_DIR/w1_server/lib/w1_server/feedback:"; getcap -v "$INSTALL_DIR/w1_server/lib/w1_server/feedback" || true
+fi
 
 # 如果已经运行了则kill掉
 kill_process "sim_server"

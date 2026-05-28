@@ -28,6 +28,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 
 #include <Eigen/Dense>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <iosfwd>
 #include <map>
@@ -259,6 +260,20 @@ void initialize(NonGuaranteedLogger ngl,
                 uint32_t log_file_roll_size_mb,
                 uint32_t max_files);
 
+// 日志节流状态，用于 THROTTLE 宏
+struct ThrottleState {
+    std::chrono::steady_clock::time_point last_log_time;
+
+    bool should_log(int interval_ms) noexcept {
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_log_time >= std::chrono::milliseconds(interval_ms)) {
+            last_log_time = now;
+            return true;
+        }
+        return false;
+    }
+};
+
 }  // namespace nanolog
 
 #define NANO_LOG(LEVEL) nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__)
@@ -266,5 +281,31 @@ void initialize(NonGuaranteedLogger ngl,
 #define LOG_INFO nanolog::is_logged(nanolog::LogLevel::INFO) && NANO_LOG(nanolog::LogLevel::INFO)
 #define LOG_WARN nanolog::is_logged(nanolog::LogLevel::WARN) && NANO_LOG(nanolog::LogLevel::WARN)
 #define LOG_CRIT nanolog::is_logged(nanolog::LogLevel::CRIT) && NANO_LOG(nanolog::LogLevel::CRIT)
+
+// 节流日志宏：interval_ms 内最多输出一次，自动管理静态状态
+#define LOG_CRIT_THROTTLE(interval_ms)                                                                  \
+    static nanolog::ThrottleState _nano_throttle_##__LINE__;                                            \
+    nanolog::is_logged(nanolog::LogLevel::CRIT) && _nano_throttle_##__LINE__.should_log(interval_ms) && \
+        NANO_LOG(nanolog::LogLevel::CRIT)
+
+#define LOG_WARN_THROTTLE(interval_ms)                                                                  \
+    static nanolog::ThrottleState _nano_throttle_##__LINE__;                                            \
+    nanolog::is_logged(nanolog::LogLevel::WARN) && _nano_throttle_##__LINE__.should_log(interval_ms) && \
+        NANO_LOG(nanolog::LogLevel::WARN)
+
+#define LOG_INFO_THROTTLE(interval_ms)                                                                  \
+    static nanolog::ThrottleState _nano_throttle_##__LINE__;                                            \
+    nanolog::is_logged(nanolog::LogLevel::INFO) && _nano_throttle_##__LINE__.should_log(interval_ms) && \
+        NANO_LOG(nanolog::LogLevel::INFO)
+
+// 显式状态节流宏：由调用方管理 ThrottleState 对象（可用于成员变量）
+#define LOG_CRIT_THROTTLE_STATE(state, interval_ms) \
+    nanolog::is_logged(nanolog::LogLevel::CRIT) && state.should_log(interval_ms) && NANO_LOG(nanolog::LogLevel::CRIT)
+
+#define LOG_WARN_THROTTLE_STATE(state, interval_ms) \
+    nanolog::is_logged(nanolog::LogLevel::WARN) && state.should_log(interval_ms) && NANO_LOG(nanolog::LogLevel::WARN)
+
+#define LOG_INFO_THROTTLE_STATE(state, interval_ms) \
+    nanolog::is_logged(nanolog::LogLevel::INFO) && state.should_log(interval_ms) && NANO_LOG(nanolog::LogLevel::INFO)
 
 #endif /* NANO_LOG_HEADER_GUARD */

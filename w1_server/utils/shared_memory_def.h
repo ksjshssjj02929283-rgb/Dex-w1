@@ -309,7 +309,7 @@ bool SharedMemory<T, BufferCapacity, SHM_KEY>::PeekLatest(T* element_output) {
         int64_t timeout = timeout_ms_.load(std::memory_order_relaxed);
         if (timeout != -1) {
             struct timespec now;
-            clock_gettime(CLOCK_REALTIME, &now);
+            clock_gettime(CLOCK_MONOTONIC, &now);
             int64_t diff = (now.tv_sec - elem.ts.tv_sec) * 1000LL + (now.tv_nsec - elem.ts.tv_nsec) / 1000000LL;
             if (diff > timeout) {
                 read_ok = false;

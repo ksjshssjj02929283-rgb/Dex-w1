@@ -18,12 +18,14 @@ ComputeCommandStatus MoveTrajPlanner::ComputeCommand(const JointMeasurement& mea
     // 推进时间
     runtime_.timepoint += controller_dt_;
     ComputeCommandStatus ret = GetInterpolatedPosition(output_joint_cmd, runtime_.timepoint);
-    if (wait_trajectory_upon_finish_) {
-        bool robot_stopped = true;
-        for (auto i = 0; i < ndof_robot; i++) {
-            robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;
-        }
-        if (ret == ComputeCommandStatus::TaskFinished) {
+
+    for (int i = 0; i < ndof_robot; ++i) {
+        output_joint_cmd.torque_feedforward[i] = 0;
+    }
+
+    if (ret == ComputeCommandStatus::TaskFinished) {
+        if (wait_trajectory_upon_finish_) {
+            bool robot_stopped = (measurement.velocity.array().abs() < IdleVelocityThreshold).all();
             if (robot_stopped) {
                 LOG_INFO << "MoveTrajPlanner: Reached the end of trajectory at time " << runtime_.total_duration
                          << "s, point index " << (runtime_.traj_npoints - 1)
@@ -150,6 +152,10 @@ bool MoveTrajPlanner::ResetForNewTrajectory(const PlannerRequest& request,
 
     if (move_request.interval.has_value()) {
         runtime_.interval = move_request.interval.value();
+        if (runtime_.interval <= 0.0) {
+            LOG_CRIT << "MoveTrajPlanner: interval must be positive, got " << runtime_.interval;
+            return false;
+        }
     } else {
         LOG_CRIT << "MoveTrajPlanner: missing trajectory interval";
         return false;

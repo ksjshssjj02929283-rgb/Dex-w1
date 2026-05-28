@@ -36,7 +36,7 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDo
                                     const VectorDof& ddq, const Vector3d& gravity_acc_armbase, MotionGroup motion_group)
 {
     Eigen::VectorXd dyn_base_params(71), q_offset(7), q_arm(7), dq_arm(7), ddq_arm(7);
-    bool is_anth = robot_model.params_ptr->robot_name == "W1Anthropomorphic" ? true : false;
+    bool is_anth = robot_model.params_ptr->robot_type == "W1Anthropomorphic" ? true : false;
     utils::GetJointFromWholeBody(robot_model, q, q_arm, motion_group);
     utils::GetJointFromWholeBody(robot_model, dq, dq_arm, motion_group);
     utils::GetJointFromWholeBody(robot_model, ddq, ddq_arm, motion_group);
@@ -104,7 +104,7 @@ Eigen::MatrixXd GetMassMatrixBySymbol(const RobotModel& robot_model, const Eigen
     Eigen::VectorXd dyn_base_params = Eigen::VectorXd::Zero(71);
     Eigen::VectorXd q_offset = Eigen::VectorXd::Zero(7);
 
-    bool is_anth = robot_model.params_ptr->robot_name == "W1Anthropomorphic" ? true : false;
+    bool is_anth = robot_model.params_ptr->robot_type == "W1Anthropomorphic" ? true : false;
     if (motion_group == MotionGroup::Primary)
     {
         // 计算arm base坐标系下的重力方向和获取动力学最小参数集

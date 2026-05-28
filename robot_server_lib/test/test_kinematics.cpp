@@ -33,7 +33,7 @@ TEST(SRSKinematicsTest, Kinematics) {
 }
 
 TEST(SRSKinematicsTest, GetAllJointLimitsFromURDF) {
-    const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
+    const auto package_share_path = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 
@@ -57,7 +57,7 @@ TEST(SRSKinematicsTest, GetAllJointLimitsFromURDF) {
 }
 
 TEST(SRSKinematicsTest, CheckSafety) {
-    const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
+    const auto package_share_path = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
     const auto robot_cfg_path = std::filesystem::path(package_share_path) / "robot_config.yaml";
     RobotModel robot_model = utils::GetRobotModelFromConfig(robot_cfg_path);
 

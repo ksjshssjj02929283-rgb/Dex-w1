@@ -9,7 +9,7 @@ PKG_ARCH="arm64"
 PKG_DIR="deb_build"
 GIT_HASH=$(git rev-parse --short HEAD)
 GIT_DATE=$(git log -1 --format=%cd --date=format:'%Y%m%d')
-LIB_INSTALL_PREFIX="/opt/w1_server"
+LIB_INSTALL_PREFIX="/home/dexforce/w1/install"
 SCRIPTS_INSTALL_PREFIX="/home/dexforce/w1/dexe_robot_server"
 
 echo "Step 1: Building project (Version: $PKG_VERSION)..."

@@ -104,12 +104,18 @@ def set_zero_offset(zero_offsets_deg: list, joint_ids: list, expected_motor_coun
 
 def load_zero_offsets(is_left: bool) -> tuple[list, bool]:
     json_path = f'{DEXE_RP_DATA_PATH}/W1_V02_L.json' if is_left else f'{DEXE_RP_DATA_PATH}/W1_V02_R.json'
+    if not os.path.exists(json_path):
+        print(f"File not found: {json_path}")
+        return None, False
     with open(json_path, 'r') as f:
         data = json.load(f)
     return data['zero_offset'], data.get('is_calibrated', False)
 
 def load_torso_offsets() -> tuple[list, bool]:
     json_path = f'{DEXE_RP_DATA_PATH}/W1_V02.json'
+    if not os.path.exists(json_path):
+        print(f"File not found: {json_path}")
+        return None, False
     with open(json_path, 'r') as f:
         data = json.load(f)
     return data['zero_offset'], data.get('is_calibrated', False)
@@ -119,6 +125,9 @@ def _update_calibration_status(is_left: bool = None, is_torso: bool = False):
         json_path = f'{DEXE_RP_DATA_PATH}/W1_V02.json'
     else:
         json_path = f'{DEXE_RP_DATA_PATH}/W1_V02_L.json' if is_left else f'{DEXE_RP_DATA_PATH}/W1_V02_R.json'
+    
+    if not os.path.exists(json_path):
+        return
     
     with open(json_path, 'r') as f:
         data = json.load(f)
@@ -154,16 +163,20 @@ def main():
             right_ids = list(range(7, 14))
 
         left_zero_offsets, left_calibrated = load_zero_offsets(is_left=True)
-        if not left_calibrated:
+        if left_zero_offsets is not None and not left_calibrated:
             set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=left_ids, expected_motor_count=motor_count)
             _update_calibration_status(is_left=True)
+        elif left_zero_offsets is None:
+            print("Left arm offset file missing, skipping.")
         else:
             print("Left arm already calibrated, skipping.")
 
         right_zero_offsets, right_calibrated = load_zero_offsets(is_left=False)
-        if not right_calibrated:
+        if right_zero_offsets is not None and not right_calibrated:
             set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=right_ids, expected_motor_count=motor_count)
             _update_calibration_status(is_left=False)
+        elif right_zero_offsets is None:
+            print("Right arm offset file missing, skipping.")
         else:
             print("Right arm already calibrated, skipping.")
     else:
@@ -172,27 +185,33 @@ def main():
         # 躯干校准 (Joint IDs: 0, 1, 2, 3, 4, 5)
         joint_ids = list(range(6))
         torso_zero_offsets, torso_calibrated = load_torso_offsets()
-        if not torso_calibrated:
+        if torso_zero_offsets is not None and not torso_calibrated:
             set_zero_offset(zero_offsets_deg=torso_zero_offsets, joint_ids=joint_ids)
             _update_calibration_status(is_torso=True)
+        elif torso_zero_offsets is None:
+            print("Torso offset file missing, skipping.")
         else:
             print("Torso already calibrated, skipping.")
 
         # 左臂校准 (Joint IDs: 6, 7, 8, 9, 10, 11, 12)
         joint_ids = list(range(6, 13))
         left_zero_offsets, left_calibrated = load_zero_offsets(is_left=True)
-        if not left_calibrated:
+        if left_zero_offsets is not None and not left_calibrated:
             set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=joint_ids)
             _update_calibration_status(is_left=True)
+        elif left_zero_offsets is None:
+            print("Left arm offset file missing, skipping.")
         else:
             print("Left arm already calibrated, skipping.")
 
         # 右臂校准 (Joint IDs: 13, 14, 15, 16, 17, 18, 19)
         joint_ids = list(range(13, 20))
         right_zero_offsets, right_calibrated = load_zero_offsets(is_left=False)
-        if not right_calibrated:
+        if right_zero_offsets is not None and not right_calibrated:
             set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=joint_ids)
             _update_calibration_status(is_left=False)
+        elif right_zero_offsets is None:
+            print("Right arm offset file missing, skipping.")
         else:
             print("Right arm already calibrated, skipping.")
 

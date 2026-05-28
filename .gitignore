@@ -1,6 +1,7 @@
 .vscode/
 *.deb
 build/
+debian/
 deb_build/
 install/
 log/

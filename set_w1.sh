@@ -1,5 +1,6 @@
 #!/bin/bash
-source /opt/w1_server/setup.bash
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "${SCRIPT_DIR}/../install/setup.bash"
 # 打印使用说明
 print_usage() {
     echo "Usage: ./set_property.sh <property_type> [value]"
@@ -7,8 +8,8 @@ print_usage() {
     echo "Available property types:"
     echo "  echo            - Echo robot server state topic once"
     echo "  echo_sim        - Echo robot server state sim topic once"
-    echo "  clone ethercat  - Clone dexe_ethercat repository to ~/w1"
-    echo "  clone interface - Clone dexe_interfaces repository to ~/w1"
+    echo "  clone ethercat  - Clone dexe_ethercat (dev) repository to ~/w1"
+    echo "  clone interface - Clone dexe_interfaces (dev) repository to ~/w1"
     echo "  home            - Move robot to home joint position"
     echo "  standby         - Move robot to standby joint position"
     echo "  left            - Move left arm (7 joints, value: '[j1,j2,...]' or home/standby)"
@@ -25,6 +26,7 @@ print_usage() {
     echo "  shm             - Monitor shared memory (python3 script/monitor_shm.py)"
     echo "  control         - Joint control GUI (python3 script/qt_joint_control.py)"
     echo "  dyn             - Dynamic parameter identification GUI (python3 script/qt_dyn_params_ident.py)"
+    echo "  visual          - Visualization ROS2 node (python3 script/visual_ros2_node.py)"
     echo "  config          - Edit robot_config.yaml (gedit/vim ~/dexe_robot_server_data/robot_config.yaml)"
     echo "  pos_limit       - Enable/Disable position limit check (value: 0 or 1)"
     echo "  mode            - Switch run mode (value: mode number, e.g., 3)"
@@ -75,17 +77,17 @@ case $PROPERTY_KEY in
         ;;
     ruckig)
         echo "Running set_ruckig.sh ${@:2}..."
-        ./script/set_ruckig.sh "${@:2}"
+        "${SCRIPT_DIR}/script/set_ruckig.sh" "${@:2}"
         exit 0
         ;;
     filter)
         echo "Running set_butterworth_filter.sh ${@:2}..."
-        ./script/set_butterworth_filter.sh "${@:2}"
+        "${SCRIPT_DIR}/script/set_butterworth_filter.sh" "${@:2}"
         exit 0
         ;;
     zvd)
         echo "Running set_input_shaper.sh ${@:2}..."
-        ./script/set_input_shaper.sh "${@:2}"
+        "${SCRIPT_DIR}/script/set_input_shaper.sh" "${@:2}"
         exit 0
         ;;
     clear)
@@ -104,13 +106,15 @@ case $PROPERTY_KEY in
         ;;
     clone)
         if [ "$VALUE" == "ethercat" ]; then
-            echo "Cloning dexe_ethercat to ~/w1..."
+            echo "Cloning dexe_ethercat (dev) to ~/w1..."
+            rm -rf ~/w1/dexe_ethercat
             mkdir -p ~/w1
-            git clone http://192.168.3.16/dexembodied/dexe_ethercat.git ~/w1/dexe_ethercat
+            git clone -b dev http://192.168.3.16/dexembodied/dexe_ethercat.git ~/w1/dexe_ethercat
         elif [ "$VALUE" == "interface" ]; then
-            echo "Cloning dexe_interfaces to ~/w1..."
+            echo "Cloning dexe_interfaces (dev) to ~/w1..."
+            rm -rf ~/w1/dexe_interfaces
             mkdir -p ~/w1
-            git clone http://192.168.3.16/dexembodied/dexe_interfaces.git ~/w1/dexe_interfaces
+            git clone -b dev http://192.168.3.16/dexembodied/dexe_interfaces.git ~/w1/dexe_interfaces
         else
             echo "Usage: ./set_w1.sh clone [ethercat|interface]"
         fi
@@ -221,6 +225,11 @@ case $PROPERTY_KEY in
     dyn)
         echo "Starting Dynamic Parameter Identification GUI..."
         python3 script/qt_dyn_params_ident.py
+        exit 0
+        ;;
+    visual)
+        echo "Starting Visualization ROS2 node..."
+        python3 script/visual_ros2_node.py
         exit 0
         ;;
     hardware)
