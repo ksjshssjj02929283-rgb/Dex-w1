@@ -46,12 +46,6 @@ DEFAULT_EXCITATION_FREQUENCIES = "0.30,0.40,0.65,0.90"
 DEFAULT_EXCITATION_PHASES = "0.0,1.57079632679,1.0471975512,0.52359877559"
 DEFAULT_EXCITATION_RAMP = 2.0
 
-# Izz 标定 (纯 J7 激励) 默认参数
-CALIBRATE_IZZ_AMPLITUDE = "0.20"
-CALIBRATE_IZZ_FREQUENCY = "0.50"
-CALIBRATE_IZZ_PHASE = "0.0"
-CALIBRATE_IZZ_DURATION = 60.0
-
 
 @dataclass
 class DynamicSample:
@@ -432,8 +426,8 @@ def capture_online(args: argparse.Namespace) -> List[DynamicSample]:
         amplitudes = parse_float_list(args.excitation_amplitudes, -1, "--excitation-amplitudes")
         frequencies = parse_float_list(args.excitation_frequencies, -1, "--excitation-frequencies")
         phases = parse_float_list(args.excitation_phases, -1, "--excitation-phases")
-        if not (len(amplitudes) == len(frequencies) == len(phases) and len(amplitudes) in (1, 3, 4)):
-            raise RuntimeError("excitation 数组长度必须相等且为 1/3/4。")
+        if not (len(amplitudes) == len(frequencies) == len(phases) and len(amplitudes) in (3, 4)):
+            raise RuntimeError("excitation 数组长度必须相等且为 3 或 4。")
         count = len(amplitudes)
         wrist = wrist_indices_for_position(base_position, args.arm, count)
         if not wrist or max(wrist) >= base_position.size:
@@ -481,7 +475,6 @@ def capture_online(args: argparse.Namespace) -> List[DynamicSample]:
 
 def result_to_json(
     result: Dict[str, object], args: argparse.Namespace, sample_count: int,
-    mode: str = "",
 ) -> Dict[str, object]:
     inertia = np.asarray(result["inertia_com"], dtype=float)
     theta = np.asarray(result["theta"], dtype=float)
@@ -491,7 +484,6 @@ def result_to_json(
         "sample_count": int(sample_count),
         "arm": args.arm,
         "dt": args.dt,
-        "mode": mode,
         "wrench_source": "force_sensor_gravity (零偏+重力补偿后, F 系)",
         "kinematics_source": "ee_omega/alpha_ee_frame (server 1 kHz Butterworth, F 系)",
         "mass_kg": args.mass,
@@ -510,9 +502,6 @@ def print_result(payload: Dict[str, object]) -> None:
     print("\n========== 工具质心转动惯量辨识结果 ==========")
     print(f"有效样本数:        {payload['sample_count']}")
     print(f"辨识机械臂:        {payload['arm']}")
-    mode = payload.get("mode", "")
-    if mode:
-        print(f"模式:              {mode}")
     print(f"六维力来源:        {payload['wrench_source']}")
     print(f"运动学来源:        {payload['kinematics_source']}")
     print(f"工具质量 kg:       {payload['mass_kg']}")
@@ -526,10 +515,6 @@ def print_result(payload: Dict[str, object]) -> None:
     p = payload["physical"]
     print(f"正定检查:          {p['positive_definite']}")
     print(f"三角不等式检查:    {p['triangle_inequality']}")
-    if mode == "izz_calibration":
-        izz = float(np.array(payload["inertia_com_kg_m2"])[2, 2])
-        print(f"\n*** Izz 标定结果: {izz:.6g} kg·m^2 ***")
-        print(f"    理论值 (mR²/2): 0.00065 kg·m^2")
     print("\n===== robot_config.yaml 建议字段 =====")
     I = np.array(payload["inertia_com_kg_m2"])
     print(f"  inertia_com_kg_m2: [[{I[0,0]:.8g}, {I[0,1]:.8g}, {I[0,2]:.8g}],")
@@ -605,8 +590,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trim-end", type=float, default=1.0)
     parser.add_argument("--filter-fc", type=float, default=0.0,
                         help="可选: 仅对 wrench 再做零相位 Butterworth (Hz)。默认 0。")
-    parser.add_argument("--calibrate-izz", action="store_true",
-                        help="纯 J7 正弦激励单独标定 Izz (1 关节, ~1 param)。")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
@@ -623,9 +606,8 @@ def parse_args() -> argparse.Namespace:
     amps = parse_float_list(args.excitation_amplitudes, -1, "--excitation-amplitudes")
     freqs = parse_float_list(args.excitation_frequencies, -1, "--excitation-frequencies")
     phs = parse_float_list(args.excitation_phases, -1, "--excitation-phases")
-    allowed = (1, 3, 4) if args.calibrate_izz else (3, 4)
-    if not (len(amps) == len(freqs) == len(phs) and len(amps) in allowed):
-        parser.error(f"excitation 数组长度必须相等且为 {'/'.join(str(a) for a in sorted(allowed))}。")
+    if not (len(amps) == len(freqs) == len(phs) and len(amps) in (3, 4)):
+        parser.error("excitation 数组长度必须相等且为 3 或 4。")
     if np.any(amps < 0.0):
         parser.error("--excitation-amplitudes 不能包含负数。")
     if np.any(freqs <= 0.0):
@@ -639,18 +621,8 @@ def main() -> None:
         run_self_test()
         return
 
-    if args.calibrate_izz:
-        # 纯 J7 激励: 仅 1 关节, 覆盖用户未显式指定的 excitation 参数
-        if args.excitation_amplitudes == DEFAULT_EXCITATION_AMPLITUDES:
-            args.excitation_amplitudes = CALIBRATE_IZZ_AMPLITUDE
-            args.excitation_frequencies = CALIBRATE_IZZ_FREQUENCY
-            args.excitation_phases = CALIBRATE_IZZ_PHASE
-        if args.duration == DEFAULT_EXCITATION_DURATION:
-            args.duration = CALIBRATE_IZZ_DURATION
-
     print("\n========== 工具惯量辨识 ==========")
-    mode = "Izz 标定 (纯 J7)" if args.calibrate_izz else "完整辨识 (J4-J7)"
-    print(f"模式: {mode}  机械臂: {args.arm}  dt: {args.dt}s  mass: {args.mass}kg  com: {args.com_mm}mm")
+    print(f"机械臂: {args.arm}  dt: {args.dt}s  mass: {args.mass}kg  com: {args.com_mm}mm")
     if args.input:
         print("数据: 离线文件")
     elif args.no_excitation:
@@ -677,9 +649,8 @@ def main() -> None:
         extra_filter_fc_hz=extra_fc,
     )
     print(f"拟合中, 有效样本: {len(arrays['omega'])}")
-    mode_str = "izz_calibration" if args.calibrate_izz else ""
     result = fit_inertia(arrays["omega"], arrays["alpha"], arrays["torque_rot"])
-    payload = result_to_json(result, args, len(arrays["omega"]), mode=mode_str)
+    payload = result_to_json(result, args, len(arrays["omega"]))
     payload["capture_path"] = str(capture_path)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
