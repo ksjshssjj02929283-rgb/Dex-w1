@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Record, plot, and analyse robot force-sensor state fields.
+"""Record, plot, action-replay-record, and analyse robot force-sensor state fields.
 
 Records are written to script/force_sensor/force_analyse_data/<timestamp>.json
 by default. Use --record to capture data from /feedback/robot_server_state,
---plot to visualize an existing record, and --analyse to compute RMS from the
-latest recording. Plotting without a path uses the latest record in the default
-output directory.
+--plot to visualize an existing record, --replay to play an action JSON while
+recording force data, and --analyse to compute RMS from the latest recording.
+Plotting without a path uses the latest record in the default output directory.
 """
 
 from __future__ import annotations
@@ -20,6 +20,9 @@ from typing import Dict, List, Mapping, Sequence
 
 DEFAULT_STATE_TOPIC = "/feedback/robot_server_state"
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "force_analyse_data"
+JOINT_POSITION_TOPIC = "/control/joint_position"
+LEFT_HAND_TOPIC = "/set_brainco_left_hand_qpos"
+RIGHT_HAND_TOPIC = "/set_brainco_right_hand_qpos"
 FORCE_FIELDS = [
     "force_sensor",
     "force_sensor_gravity",
@@ -48,6 +51,18 @@ FIELD_LABELS = {
     "ee_omega_ee_frame": "ee_omega_ee_frame",
     "ee_alpha_ee_frame": "ee_alpha_ee_frame",
 }
+
+JOINT_KEYS = [
+    "ANKLE", "KNEE", "BUTTOCK", "WAIST", "NECK1", "NECK2",
+    "LEFT_J1", "LEFT_J2", "LEFT_J3", "LEFT_J4", "LEFT_J5", "LEFT_J6", "LEFT_J7",
+    "RIGHT_J1", "RIGHT_J2", "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7",
+]
+FINGER_KEYS = [
+    "LEFT_HAND_THUMB1", "LEFT_HAND_THUMB2", "LEFT_HAND_INDEX",
+    "LEFT_HAND_MIDDLE", "LEFT_HAND_RING", "LEFT_HAND_PINKY",
+    "RIGHT_HAND_THUMB1", "RIGHT_HAND_THUMB2", "RIGHT_HAND_INDEX",
+    "RIGHT_HAND_MIDDLE", "RIGHT_HAND_RING", "RIGHT_HAND_PINKY",
+]
 
 
 def timestamp_filename(now: datetime | None = None) -> str:
@@ -195,6 +210,58 @@ def make_recorder_node_class(node_base, string_msg):
     return ForceAnalyseRecorder
 
 
+def robot_status_callback(node):
+    def _callback(msg) -> None:
+        try:
+            data = json.loads(msg.data)
+            node.server_status = data.get("status")
+        except Exception as exc:
+            node.get_logger().error(f"Failed to parse robot_server_state: {exc}")
+
+    return _callback
+
+
+def read_action_file(path: Path) -> Mapping[str, object]:
+    with path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    frames = data.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise ValueError(f"{path} has no frames")
+    return data
+
+
+def frame_timestamp(frame: Mapping[str, object]) -> float:
+    return float(frame.get("timestamp", 0.0))
+
+
+def action_joint_names_and_positions(joint_data: Mapping[str, object]) -> tuple[List[str], List[float]]:
+    names: List[str] = []
+    positions: List[float] = []
+    for key in JOINT_KEYS:
+        if key in joint_data:
+            names.append(key)
+            positions.append(float(joint_data[key]))
+    return names, positions
+
+
+def hand_qpos(joint_data: Mapping[str, object], side: str) -> List[float]:
+    if side == "left":
+        keys = FINGER_KEYS[:6]
+    elif side == "right":
+        keys = FINGER_KEYS[6:]
+    else:
+        raise ValueError(f"unsupported hand side: {side}")
+    return [float(joint_data.get(key, 0.0)) for key in keys]
+
+
+def save_samples(samples: Sequence[Mapping[str, object]], output_path: Path, state_topic: str) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = make_payload(samples, state_topic=state_topic)
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
 def record(args: argparse.Namespace) -> None:
     output_path = args.output or (args.output_dir / timestamp_filename())
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -227,10 +294,7 @@ def record(args: argparse.Namespace) -> None:
         pass
     finally:
         samples = node.snapshot()
-        payload = make_payload(samples, state_topic=args.state_topic)
-        with output_path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2, ensure_ascii=False)
-            f.write("\n")
+        save_samples(samples, output_path, args.state_topic)
         print()
         print(f"Saved {len(samples)} samples to {output_path}")
         if len(samples) == 0 and node.last_error:
@@ -382,11 +446,87 @@ def analyse(args: argparse.Namespace) -> None:
         print()
 
 
+def replay_action_and_record(args: argparse.Namespace) -> None:
+    import rclpy
+    from rclpy.node import Node
+    from rclpy.executors import MultiThreadedExecutor
+    from joint_interfaces.msg import JointPositionControl
+    from std_msgs.msg import Float64MultiArray, String
+
+    action_data = read_action_file(args.replay)
+    frames = action_data["frames"]
+    output_path = args.output or (args.output_dir / timestamp_filename())
+
+    rclpy.init()
+    recorder_node_class = make_recorder_node_class(Node, String)
+    node = recorder_node_class(args.state_topic)
+    node.joint_publisher = node.create_publisher(JointPositionControl, JOINT_POSITION_TOPIC, 10)
+    node.left_hand_publisher = node.create_publisher(Float64MultiArray, LEFT_HAND_TOPIC, 10)
+    node.right_hand_publisher = node.create_publisher(Float64MultiArray, RIGHT_HAND_TOPIC, 10)
+    node.server_status = None
+    node.create_subscription(String, args.state_topic, robot_status_callback(node), 10)
+
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+    ros_thread = threading.Thread(target=executor.spin, daemon=True)
+    ros_thread.start()
+
+    print(f"Replaying action from {args.replay}")
+    print(f"Recording force data from {args.state_topic}")
+    print(f"Output: {output_path}")
+    print("Press Ctrl-C to stop.")
+
+    try:
+        replay_start = time.time()
+        record_start_time = None
+        for frame in frames:
+            if getattr(node, "server_status", None) == "Init":
+                node.get_logger().warn("Robot status is Init; stop replay.")
+                break
+
+            timestamp = frame_timestamp(frame)
+            if record_start_time is None:
+                record_start_time = timestamp
+            sleep_time = (timestamp - record_start_time) - (time.time() - replay_start)
+            if sleep_time > 0.0:
+                time.sleep(sleep_time)
+
+            joint_data = frame.get("data", {})
+            if not isinstance(joint_data, Mapping):
+                continue
+
+            joint_msg = JointPositionControl()
+            joint_msg.header.stamp = node.get_clock().now().to_msg()
+            joint_msg.name, joint_msg.position = action_joint_names_and_positions(joint_data)
+            node.joint_publisher.publish(joint_msg)
+
+            left_hand_msg = Float64MultiArray()
+            left_hand_msg.data = hand_qpos(joint_data, "left")
+            node.left_hand_publisher.publish(left_hand_msg)
+
+            right_hand_msg = Float64MultiArray()
+            right_hand_msg.data = hand_qpos(joint_data, "right")
+            node.right_hand_publisher.publish(right_hand_msg)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        samples = node.snapshot()
+        save_samples(samples, output_path, args.state_topic)
+        print()
+        print(f"Saved {len(samples)} samples to {output_path}")
+        if len(samples) == 0 and node.last_error:
+            print(f"Last parse error: {node.last_error}")
+        executor.shutdown()
+        node.destroy_node()
+        rclpy.shutdown()
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Record or plot robot force sensor fields.")
+    parser = argparse.ArgumentParser(description="Record, plot, replay action with force recording, or analyse robot force sensor fields.")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--record", action="store_true", help="record force fields to an offline JSON file")
     mode.add_argument("--plot", action="store_true", help="plot an offline JSON record")
+    mode.add_argument("--replay", type=Path, metavar="PATH", help="play an action JSON and record force data during the action")
     mode.add_argument("--analyse", action="store_true", help="compute RMS vs zero for the latest recording")
     parser.add_argument("path", nargs="?", type=Path, help="recording JSON for --plot or --analyse; default is latest recording")
     parser.add_argument("--state-topic", default=DEFAULT_STATE_TOPIC, help=f"default: {DEFAULT_STATE_TOPIC}")
@@ -397,7 +537,7 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_OUTPUT_DIR,
         help="directory for records; default is script/force_sensor/force_analyse_data",
     )
-    parser.add_argument("--output", type=Path, default=None, help="explicit output JSON path for --record")
+    parser.add_argument("--output", type=Path, default=None, help="explicit output JSON path for --record or --replay")
     parser.add_argument("--arm", choices=["primary", "secondary"], default="primary", help="arm slice to plot")
     parser.add_argument(
         "--show",
@@ -409,8 +549,10 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.duration < 0.0:
         parser.error("--duration cannot be negative")
-    if args.output is not None and args.plot:
-        parser.error("--output is only valid with --record")
+    if args.output is not None and not (args.record or args.replay is not None):
+        parser.error("--output is only valid with --record or --replay")
+    if args.path is not None and args.replay is not None:
+        parser.error("use --replay PATH without positional path")
     return args
 
 
@@ -420,6 +562,8 @@ def main() -> None:
         record(args)
     elif args.analyse:
         analyse(args)
+    elif args.replay is not None:
+        replay_action_and_record(args)
     else:
         plot(args)
 
