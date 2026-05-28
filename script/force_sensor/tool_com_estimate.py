@@ -21,7 +21,7 @@ from std_msgs.msg import String
 
 DEFAULT_STATE_TOPIC = "/feedback/robot_server_state"
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "tool_gravity_compensation_data"
-DEFAULT_ROBOT_CONFIG = Path(__file__).resolve().parent.parent / "w1_server" / "robot_config.yaml"
+DEFAULT_ROBOT_CONFIG = Path(__file__).resolve().parents[2] / "w1_server" / "robot_config.yaml"
 DEFAULT_GRAVITY = 9.79  # m/s^2
 DEFAULT_KNOWN_MASS = 1.061  # kg
 
