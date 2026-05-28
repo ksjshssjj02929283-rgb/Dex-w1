@@ -8,10 +8,12 @@
 
 物理方程 (与 server 端 ApplyToolInertiaCompensationPrimary 注释一致):
     F_g = -m a_C
-    T_g = -(I_C α_F + ω_F × I_C ω_F) + com × F_g
-=>  I_C α_F + ω_F × I_C ω_F = com × F_g - T_g
+    T_g = -(I_C α_F + ω_F × I_C ω_F) + com × F_g + b
+=>  I_C α_F + ω_F × I_C ω_F + b = com × F_g - T_g
 
-Ixy = Ixz = Iyz = 0 硬约束 (工具关于 x-z / y-z 面对称) → 3-param diagonal LS.
+其中 b = [bx, by, bz] 是 force_sensor_gravity 力矩分量的残余偏置 (Nm).
+
+Ixy = Ixz = Iyz = 0 硬约束 (工具关于 x-z / y-z 面对称) → 6-param diagonal LS with bias.
 
 输出: ^F I_C, kg·m^2.
 """
@@ -159,8 +161,17 @@ def _inertia_regressor_cols(omega: np.ndarray, alpha: np.ndarray) -> np.ndarray:
 
 def fit_inertia(
     omega: np.ndarray, alpha: np.ndarray, torque_rot: np.ndarray,
+    with_torque_bias: bool = True,
 ) -> Dict[str, object]:
-    """3-param diagonal LS: I·α + ω×I·ω = torque_rot  (Ixy=Ixz=Iyz=0)."""
+    """6-param diagonal LS with optional torque bias.
+
+    Model: I·α + ω×I·ω + b = torque_rot
+    - Ixx, Iyy, Izz: diagonal inertia about COM, F frame
+    - bx, by, bz: residual torque bias in force_sensor_gravity
+
+    If the unconstrained LS yields a non-physical inertia matrix, falls back
+    to constrained LS (Ixx>=0, Iyy>=0, Izz>=0, Ixx+Iyy>=Izz).
+    """
     omega = np.asarray(omega, dtype=float)
     alpha = np.asarray(alpha, dtype=float)
     torque_rot = np.asarray(torque_rot, dtype=float)
@@ -168,33 +179,125 @@ def fit_inertia(
     if not (omega.shape == alpha.shape == torque_rot.shape == (n, 3)):
         raise ValueError("omega, alpha, torque_rot 都必须是 shape=(N, 3)。")
 
-    rows = [_inertia_regressor_cols(omega[i], alpha[i]) for i in range(n)]
-    y = np.vstack(rows)                        # (3N, 3)
-    b = torque_rot.reshape(-1)                 # (3N,)
+    # build inertia regressor (3N, 3)
+    rows_inertia = [_inertia_regressor_cols(omega[i], alpha[i]) for i in range(n)]
+    Y_inertia = np.vstack(rows_inertia)
 
-    theta, _, rank, sv = np.linalg.lstsq(y, b, rcond=None)
-    pred = (y @ theta).reshape((-1, 3))
-    err = torque_rot - pred
+    b_vec = torque_rot.reshape(-1)
 
-    I_est = theta_to_inertia_matrix(theta)
+    if with_torque_bias:
+        # augment with identity columns for torque bias per axis
+        Y_bias = np.tile(np.eye(3), (n, 1))       # (3N, 3): [1,0,0; 0,1,0; 0,0,1] per sample
+        Y = np.hstack([Y_inertia, Y_bias])         # (3N, 6)
+        param_names = ["Ixx", "Iyy", "Izz", "bx", "by", "bz"]
+    else:
+        Y = Y_inertia                               # (3N, 3)
+        param_names = ["Ixx", "Iyy", "Izz"]
+
+    # ---- unconstrained LS ----
+    theta, _, rank, sv = np.linalg.lstsq(Y, b_vec, rcond=None)
+    pred = Y @ theta
+    err = b_vec - pred
+    ss_res = float(np.sum(err ** 2))
+    ss_tot = float(np.sum((b_vec - np.mean(b_vec)) ** 2))
+    r2 = float(1.0 - ss_res / ss_tot) if ss_tot > 1e-30 else float("nan")
+
+    I_est = theta_to_inertia_matrix(theta[:3])
+    torque_bias = np.asarray(theta[3:6], dtype=float) if with_torque_bias else np.zeros(3)
+
+    # ---- physical checks ----
     eigvals = np.linalg.eigvalsh(I_est)
-    return {
-        "theta": theta,                        # [Ixx, Iyy, Izz]
-        "inertia_com": I_est,
-        "rank": int(rank),
-        "condition_number": float(np.linalg.cond(y)) if y.size else float("inf"),
-        "singular_values": sv,
-        "torque_rms": float(np.sqrt(np.mean(err ** 2))),
-        "physical": {
-            "positive_definite": bool(np.all(eigvals > 0.0)),
-            "triangle_inequality": bool(
+    triangle_ok = bool(
+        I_est[0, 0] + I_est[1, 1] >= I_est[2, 2]
+        and I_est[0, 0] + I_est[2, 2] >= I_est[1, 1]
+        and I_est[1, 1] + I_est[2, 2] >= I_est[0, 0]
+    )
+    phys_ok = bool(np.all(eigvals > 0.0)) and triangle_ok
+
+    # ---- constrained LS fallback ----
+    constrained_used = False
+    if not phys_ok and with_torque_bias:
+        theta_c, constrained_used = _constrained_fit(Y, b_vec)
+        if constrained_used:
+            theta = theta_c
+            pred = Y @ theta
+            err = b_vec - pred
+            ss_res = float(np.sum(err ** 2))
+            r2 = float(1.0 - ss_res / ss_tot) if ss_tot > 1e-30 else float("nan")
+            I_est = theta_to_inertia_matrix(theta[:3])
+            torque_bias = np.asarray(theta[3:6], dtype=float)
+            eigvals = np.linalg.eigvalsh(I_est)
+            triangle_ok = bool(
                 I_est[0, 0] + I_est[1, 1] >= I_est[2, 2]
                 and I_est[0, 0] + I_est[2, 2] >= I_est[1, 1]
                 and I_est[1, 1] + I_est[2, 2] >= I_est[0, 0]
-            ),
+            )
+            phys_ok = bool(np.all(eigvals > 0.0)) and triangle_ok
+
+    return {
+        "theta": theta,
+        "param_names": param_names,
+        "inertia_com": I_est,
+        "torque_bias": torque_bias,
+        "rank": int(rank),
+        "condition_number": float(np.linalg.cond(Y)) if Y.size else float("inf"),
+        "singular_values": sv,
+        "torque_rms": float(np.sqrt(np.mean((err.reshape(-1, 3)) ** 2))),
+        "r2": r2,
+        "physical": {
+            "positive_definite": bool(np.all(eigvals > 0.0)),
+            "triangle_inequality": triangle_ok,
             "eigenvalues": array_to_list(eigvals),
         },
+        "constrained_used": constrained_used,
     }
+
+
+def _constrained_fit(Y: np.ndarray, b: np.ndarray) -> Tuple[np.ndarray, bool]:
+    """Constrained LS: Ixx>=0, Iyy>=0, Izz>=0, Ixx+Iyy>=Izz.
+
+    Returns (theta, success). Falls back to unconstrained LS on failure.
+    """
+    try:
+        from scipy.optimize import minimize
+    except ImportError:
+        return np.linalg.lstsq(Y, b, rcond=None)[0], False
+
+    def objective(x):
+        r = Y @ x - b
+        return float(r @ r)
+
+    def jacobian(x):
+        return 2.0 * (Y.T @ (Y @ x - b))
+
+    constraints = [
+        {"type": "ineq", "fun": lambda x: x[0]},                    # Ixx >= 0
+        {"type": "ineq", "fun": lambda x: x[1]},                    # Iyy >= 0
+        {"type": "ineq", "fun": lambda x: x[2]},                    # Izz >= 0
+        {"type": "ineq", "fun": lambda x: x[0] + x[1] - x[2]},     # Ixx+Iyy >= Izz
+    ]
+
+    # initial guess: unconstrained LS, projected to bounds
+    x0, _, _, _ = np.linalg.lstsq(Y, b, rcond=None)
+    x0[0] = max(x0[0], 1e-12)
+    x0[1] = max(x0[1], 1e-12)
+    x0[2] = max(x0[2], 1e-12)
+    deficit = x0[2] - (x0[0] + x0[1])
+    if deficit > 0.0:
+        x0[0] += deficit * 0.5
+        x0[1] += deficit * 0.5
+
+    try:
+        result = minimize(
+            objective, x0, method="SLSQP", jac=jacobian,
+            constraints=constraints,
+            options={"maxiter": 2000, "ftol": 1e-14},
+        )
+        if result.success:
+            return result.x, True
+    except Exception:
+        pass
+    return np.linalg.lstsq(Y, b, rcond=None)[0], False
 
 
 def torque_rotational_component(
@@ -476,7 +579,9 @@ def result_to_json(
     inertia = np.asarray(result["inertia_com"], dtype=float)
     theta = np.asarray(result["theta"], dtype=float)
     com_mm = parse_float_list(args.com_mm, 3, "--com-mm")
-    return {
+    param_names = result.get("param_names", ["Ixx", "Iyy", "Izz"])
+    n_total = len(param_names)
+    payload = {
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "sample_count": int(sample_count),
         "arm": args.arm,
@@ -485,14 +590,18 @@ def result_to_json(
         "kinematics_source": "ee_omega/alpha_ee_frame (server 1 kHz Butterworth, F 系)",
         "mass_kg": args.mass,
         "com_mm": array_to_list(com_mm),
-        "theta_order": ["Ixx", "Iyy", "Izz"],
+        "param_names": param_names,
         "theta": array_to_list(theta),
         "inertia_com_kg_m2": inertia.tolist(),
-        "rank": f"{result['rank']} / 3",
-        "condition_number": result["condition_number"],
+        "torque_bias": array_to_list(np.asarray(result.get("torque_bias", np.zeros(3)), dtype=float)),
+        "rank": f"{result['rank']} / {n_total}",
+        "condition_number": float(result["condition_number"]),
         "torque_rms": result["torque_rms"],
+        "r2": result.get("r2", float("nan")),
         "physical": result["physical"],
+        "constrained_used": result.get("constrained_used", False),
     }
+    return payload
 
 
 def print_result(payload: Dict[str, object]) -> None:
@@ -503,17 +612,28 @@ def print_result(payload: Dict[str, object]) -> None:
     print(f"运动学来源:        {payload['kinematics_source']}")
     print(f"工具质量 kg:       {payload['mass_kg']}")
     print(f"质心偏移 mm:       {np.array(payload['com_mm'])}")
-    print(f"参数顺序:          {payload['theta_order']}")
+    param_names = payload.get("param_names", payload.get("theta_order", ["Ixx", "Iyy", "Izz"]))
+    print(f"参数顺序:          {param_names}")
     print(f"参数向量:          {np.array(payload['theta'])}")
-    print(f"^F I_C kg*m^2:\n{np.array(payload['inertia_com_kg_m2'])}")
-    print(f"力矩残差 RMS:      {float(payload['torque_rms']):.6g} Nm")
-    print(f"回归矩阵秩:        {payload['rank']}")
-    print(f"条件数:            {float(payload['condition_number']):.6g}")
+    tb = np.array(payload.get("torque_bias", [0, 0, 0]))
+    print(f"力矩偏置 [Nm]:     {tb}")
+    I = np.array(payload["inertia_com_kg_m2"])
+    print(f"^F I_C kg*m^2:\n{I}")
+    rms_raw = payload["torque_rms"]
+    print(f"力矩残差 RMS:      {float(rms_raw):.6g} Nm")
+    r2 = payload.get("r2", float("nan"))
+    r2_val = float(r2) if not isinstance(r2, bool) else float("nan")
+    print(f"R²:                {r2_val:.4f}" if np.isfinite(r2_val) else f"R²:                {r2_val}")
+    print(f"回归矩阵秩:        {payload.get('rank', '? / ?')}")
+    cond_val = float(payload["condition_number"])
+    print(f"条件数:            {cond_val:.6g}")
     p = payload["physical"]
     print(f"正定检查:          {p['positive_definite']}")
     print(f"三角不等式检查:    {p['triangle_inequality']}")
+    constrained = payload.get("constrained_used", False)
+    if constrained:
+        print("约束优化:          已启用 (SLSQP)")
     print("\n===== robot_config.yaml 建议字段 =====")
-    I = np.array(payload["inertia_com_kg_m2"])
     print(f"  inertia_com_kg_m2: [[{I[0,0]:.8g}, {I[0,1]:.8g}, {I[0,2]:.8g}],")
     print(f"                     [{I[1,0]:.8g}, {I[1,1]:.8g}, {I[1,2]:.8g}],")
     print(f"                     [{I[2,0]:.8g}, {I[2,1]:.8g}, {I[2,2]:.8g}]]")
@@ -551,13 +671,38 @@ def run_self_test() -> None:
         I_true @ alpha[i] + np.cross(omega[i], I_true @ omega[i]) for i in range(n)
     ]) + np.cross(com, F_g)
 
+    # ---- test 1: no bias (clean data) ----
     torque_rot = torque_rotational_component(T_g, F_g, com)
-    result = fit_inertia(omega, alpha, torque_rot)
+    result = fit_inertia(omega, alpha, torque_rot, with_torque_bias=False)
     theta = np.asarray(result["theta"])
     err = np.linalg.norm(theta - np.array([0.018, 0.026, 0.031]))
-    print(f"self-test: theta_err={err:.6e}  torque_rms={result['torque_rms']:.6e}")
+    print(f"self-test (no bias):  inertia_err={err:.6e}  r2={result['r2']:.6f}  "
+          f"triangle={result['physical']['triangle_inequality']}")
     if err > 1e-10:
-        raise RuntimeError(f"self-test 失败: theta={theta}")
+        raise RuntimeError(f"self-test (no bias) 失败: theta={theta}")
+
+    # ---- test 2: with torque bias ----
+    # Model: I·α + ω×Iω + b = torque_rot.  Add bias directly to the RHS.
+    true_bias = np.array([0.01, -0.02, 0.015])
+    torque_rot2 = torque_rot + true_bias
+    result2 = fit_inertia(omega, alpha, torque_rot2, with_torque_bias=True)
+    theta2 = np.asarray(result2["theta"])
+    inertia_err2 = np.linalg.norm(theta2[:3] - np.array([0.018, 0.026, 0.031]))
+    bias_err2 = np.linalg.norm(theta2[3:6] - true_bias)
+    print(f"self-test (bias):    inertia_err={inertia_err2:.6e}  bias_err={bias_err2:.6e}  "
+          f"r2={result2['r2']:.6f}  triangle={result2['physical']['triangle_inequality']}")
+    if inertia_err2 > 1e-10 or bias_err2 > 1e-10:
+        raise RuntimeError(f"self-test (bias) 失败: theta={theta2}")
+
+    # ---- test 3: unphysical I triggers constrained fallback ----
+    # Add large noise to make Ixx go negative in unconstrained LS
+    rng2 = np.random.default_rng(123)
+    torque_noisy = torque_rot + rng2.normal(scale=0.05, size=(n, 3))
+    result3 = fit_inertia(omega, alpha, torque_noisy, with_torque_bias=True)
+    phys = result3["physical"]
+    print(f"self-test (noisy):   constrained={result3['constrained_used']}  "
+          f"positive_def={phys['positive_definite']}  triangle={phys['triangle_inequality']}  "
+          f"r2={result3['r2']:.4f}")
 
 
 # ---------------------------------------------------------------------------
@@ -566,7 +711,7 @@ def run_self_test() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="辨识工具绕质心的转动惯量 ^F I_C (4-param LS, F 系, Ixz=Iyz=0)。",
+        description="辨识工具绕质心的转动惯量 ^F I_C (6-param LS with torque bias, F 系, Ixy=Ixz=Iyz=0)。",
     )
     parser.add_argument("--arm", choices=["primary", "secondary"], default="primary")
     parser.add_argument("--state-topic", default=DEFAULT_STATE_TOPIC)
@@ -587,6 +732,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trim-end", type=float, default=1.0)
     parser.add_argument("--filter-fc", type=float, default=DEFAULT_FILTER_FC_HZ,
                         help="可选: 仅对 wrench 再做零相位 Butterworth (Hz)。默认 5 Hz。")
+    parser.add_argument("--no-torque-bias", action="store_true",
+                        help="禁用扭矩偏置项 (bx, by, bz), 仅辨识 3 个惯量参数。")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
@@ -646,7 +793,9 @@ def main() -> None:
         extra_filter_fc_hz=extra_fc,
     )
     print(f"拟合中, 有效样本: {len(arrays['omega'])}")
-    result = fit_inertia(arrays["omega"], arrays["alpha"], arrays["torque_rot"])
+    use_bias = not args.no_torque_bias
+    result = fit_inertia(arrays["omega"], arrays["alpha"], arrays["torque_rot"],
+                         with_torque_bias=use_bias)
     payload = result_to_json(result, args, len(arrays["omega"]))
     payload["capture_path"] = str(capture_path)
 
