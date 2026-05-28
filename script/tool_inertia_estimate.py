@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""通过末端动态激励辨识工具绕质心的转动惯量。
+"""通过末端动态激励联合辨识工具绕质心的转动惯量与质心偏移。
 
 数据来源全部来自 /feedback/robot_server_state, F = ee_link 系:
   - force_sensor_gravity[0:6] : 已扣零偏 + 已扣工具静态重力的六维力 (primary)
@@ -9,12 +9,11 @@
 物理方程 (与 server 端 ApplyToolInertiaCompensationPrimary 注释一致):
     F_g = -m a_C
     T_g = -(I_C α_F + ω_F × I_C ω_F) + com × F_g
-=>  I_C α_F + ω_F × I_C ω_F = com × F_g - T_g
+=>  I_C α_F + ω_F × I_C ω_F  +  skew(F_g) · com  =  -T_g
 
-输出: ^F I_C, kg·m^2.
+Ixz = Iyz = 0 硬约束 → 联合估计 4 个惯量参数 + 3 个 COM 参数 = 7 params.
 
-不再依赖 raw_force_sensor / force_sensor_bias / ee_pose_world / 手写 DH /
-joint_position+joint_velocity. 这些字段如果出现在状态里也会被忽略.
+输出: ^F I_C (kg·m^2) 与 com (mm, F 系).
 """
 
 import argparse
@@ -42,31 +41,32 @@ DEFAULT_DT = 0.01
 DEFAULT_TOOL_MASS_KG = 1.061
 DEFAULT_TOOL_COM_MM = "-0.15804154,0.70721872,50.33428542"
 DEFAULT_EXCITATION_DURATION = 120.0
-# 激励关节数: 取 4 时同时激励 J4/J5/J6/J7 (绕 EE x/y/z 更均衡, 改善 Ixx 可观性).
-# 幅值从 J4 往 J7 递减, 避免末端摆动幅度过大.
-EXCITATION_JOINT_COUNT = 4
 DEFAULT_EXCITATION_AMPLITUDES = "0.15,0.30,0.20,0.15"
 DEFAULT_EXCITATION_FREQUENCIES = "0.30,0.40,0.65,0.90"
 DEFAULT_EXCITATION_PHASES = "0.0,1.57079632679,1.0471975512,0.52359877559"
 DEFAULT_EXCITATION_RAMP = 2.0
+
+_PARAM_NAMES = ["Ixx", "Iyy", "Izz", "Ixy", "cx", "cy", "cz"]
+_COM_WARN_DIFF_MM = 3.0  # 拟合 COM 与输入 COM 偏差超过此值告警
 
 
 @dataclass
 class DynamicSample:
     arrival_time: float
     timestamp: float
-    wrench_gravity_F: np.ndarray  # 6 维, F 系, 已扣零偏与重力
-    omega_F: np.ndarray  # 3 维, F 系
-    alpha_F: np.ndarray  # 3 维, F 系
-    # 仅诊断/兼容采集文件; 不进入回归.
-    q_raw: Optional[np.ndarray] = None
-    dq_raw: Optional[np.ndarray] = None
+    wrench_gravity_F: np.ndarray  # 6 维, F 系
+    omega_F: np.ndarray           # 3 维, F 系
+    alpha_F: np.ndarray           # 3 维, F 系
 
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
 
 def parse_float_list(text: str, expected: int, name: str) -> np.ndarray:
     values = [float(item.strip()) for item in text.replace(";", ",").split(",") if item.strip()]
     if expected > 0 and len(values) != expected:
-        raise ValueError(f"{name} 需要 {expected} 个逗号分隔的数值，实际得到 {len(values)} 个。")
+        raise ValueError(f"{name} 需要 {expected} 个逗号分隔的数值, 实际得到 {len(values)} 个。")
     if expected < 0 and not values:
         raise ValueError(f"{name} 不能为空。")
     return np.asarray(values, dtype=float)
@@ -91,11 +91,6 @@ def smooth_excitation_envelope(t: float, duration: float, ramp_sec: float) -> fl
 
 
 def arm_wrist_indices(arm: str, count: int = 3) -> List[int]:
-    """全身关节数组中所选手臂倒数 count 个腕部关节索引。
-
-    count=3 → J5/J6/J7
-    count=4 → J4/J5/J6/J7
-    """
     j7 = 12 if arm == "primary" else 19
     return list(range(j7 - count + 1, j7 + 1))
 
@@ -132,142 +127,105 @@ def butter_filtfilt_2d(signal: np.ndarray, fc_hz: float, dt: float, order: int =
     return out
 
 
+# ---------------------------------------------------------------------------
+# regression
+# ---------------------------------------------------------------------------
+
 def theta_to_inertia_matrix(theta: np.ndarray) -> np.ndarray:
-    theta = np.asarray(theta, dtype=float).reshape(6)
+    """theta[:6] → 3×3 symmetric inertia matrix. theta may have >6 elements (com appended)."""
+    t = np.asarray(theta, dtype=float).ravel()
     return np.array(
-        [[theta[0], theta[3], theta[4]],
-         [theta[3], theta[1], theta[5]],
-         [theta[4], theta[5], theta[2]]],
+        [[t[0], t[3], 0.0],
+         [t[3], t[1], 0.0],
+         [0.0, 0.0, t[2]]],
         dtype=float,
     )
 
 
-def inertia_regressor_row(omega: np.ndarray, alpha: np.ndarray,
-                         param_mask: Optional[np.ndarray] = None) -> np.ndarray:
-    """tau_rot = I α + ω × (I ω) = Y_I(ω,α) · θ.
-
-    θ default: [Ixx, Iyy, Izz, Ixy, Ixz, Iyz] (6 params).
-    param_mask: bool array of length 6, True = include column.
-    """
+def _inertia_regressor_cols(omega: np.ndarray, alpha: np.ndarray) -> np.ndarray:
+    """4 cols: Ixx, Iyy, Izz, Ixy (Ixz=Iyz=0 hard-constrained)."""
     cols = []
-    for k, basis_theta in enumerate(np.eye(6)):
-        if param_mask is not None and not param_mask[k]:
-            continue
-        basis_i = theta_to_inertia_matrix(basis_theta)
-        cols.append(basis_i @ alpha + np.cross(omega, basis_i @ omega))
+    for k in [0, 1, 2, 3]:
+        basis = np.zeros((3, 3))
+        if k == 0:
+            basis[0, 0] = 1.0
+        elif k == 1:
+            basis[1, 1] = 1.0
+        elif k == 2:
+            basis[2, 2] = 1.0
+        else:
+            basis[0, 1] = basis[1, 0] = 1.0
+        cols.append(basis @ alpha + np.cross(omega, basis @ omega))
     return np.column_stack(cols)
 
 
-# 完整 6-param 顺序
-_PARAM_NAMES = ["Ixx", "Iyy", "Izz", "Ixy", "Ixz", "Iyz"]
-# 约束 Ixz=Iyz=0 → 仅拟合 Ixx, Iyy, Izz, Ixy
-_PARAM_MASK_XZ_YZ_ZERO = np.array([True, True, True, True, False, False], dtype=bool)
-_TRIANGLE_IZZ_LE_IXX_IYY = np.array([1.0, 1.0, -1.0, 0.0], dtype=float)
-_TRIANGLE_CHECK_TOL = 1e-10
+def _com_regressor_cols(F_g: np.ndarray) -> np.ndarray:
+    """3 cols for com: skew(F_g) = [[0,-Fz,Fy],[Fz,0,-Fx],[-Fy,Fx,0]]."""
+    F = np.asarray(F_g, dtype=float).ravel()
+    return np.array([
+        [0.0, -F[2], F[1]],
+        [F[2], 0.0, -F[0]],
+        [-F[1], F[0], 0.0],
+    ], dtype=float)
 
 
-def solve_lstsq_with_lower_halfspace(
-    y: np.ndarray,
-    b: np.ndarray,
-    lower_bound_normal: np.ndarray,
-    tol: float = 1e-12,
-) -> Tuple[np.ndarray, bool, int, np.ndarray]:
-    """Solve min ||Yθ-b|| with one constraint: normal·θ >= 0.
-
-    The unconstrained LS solution is used unless it violates the halfspace. When
-    it violates, solve the active equality normal·θ = 0 via a small KKT system.
-    """
-    theta, _, rank, singular_values = np.linalg.lstsq(y, b, rcond=None)
-    normal = np.asarray(lower_bound_normal, dtype=float).reshape(-1)
-    if normal.size != theta.size:
-        raise ValueError("lower_bound_normal size must match the fitted parameter count.")
-    if float(normal @ theta) >= -tol:
-        return theta, False, int(rank), singular_values
-
-    h = y.T @ y
-    rhs = y.T @ b
-    kkt = np.block([
-        [h, normal[:, None]],
-        [normal[None, :], np.zeros((1, 1))],
-    ])
-    kkt_rhs = np.concatenate([rhs, np.zeros(1)])
-    active_solution, _, _, _ = np.linalg.lstsq(kkt, kkt_rhs, rcond=None)
-    return active_solution[:-1], True, int(rank), singular_values
-
-
-def inertia_triangle_inequality_ok(inertia: np.ndarray, tol: float = _TRIANGLE_CHECK_TOL) -> bool:
-    ixx, iyy, izz = float(inertia[0, 0]), float(inertia[1, 1]), float(inertia[2, 2])
-    return bool(
-        ixx + iyy + tol >= izz
-        and ixx + izz + tol >= iyy
-        and iyy + izz + tol >= ixx
-    )
-
-
-def fit_inertia_from_rotational_terms(
-    omega: np.ndarray, alpha: np.ndarray, torque_residual: np.ndarray,
-    constrain_xz_yz_zero: bool = False,
+def fit_inertia_and_com(
+    omega: np.ndarray,
+    alpha: np.ndarray,
+    F_g: np.ndarray,
+    T_g: np.ndarray,
 ) -> Dict[str, object]:
+    """Joint LS: I·α + ω×I·ω + skew(F_g)·com = -T_g  (7 params)."""
     omega = np.asarray(omega, dtype=float)
     alpha = np.asarray(alpha, dtype=float)
-    torque_residual = np.asarray(torque_residual, dtype=float)
-    if omega.shape != alpha.shape or omega.shape != torque_residual.shape or omega.shape[1] != 3:
-        raise ValueError("omega、alpha、torque_residual 都必须是 shape=(N, 3)。")
-    param_mask = _PARAM_MASK_XZ_YZ_ZERO if constrain_xz_yz_zero else None
-    blocks = [inertia_regressor_row(omega[i], alpha[i], param_mask) for i in range(omega.shape[0])]
-    y = np.vstack(blocks)
-    b = torque_residual.reshape(-1)
-    triangle_constraint_active = False
-    if constrain_xz_yz_zero:
-        theta_partial, triangle_constraint_active, rank, singular_values = (
-            solve_lstsq_with_lower_halfspace(y, b, _TRIANGLE_IZZ_LE_IXX_IYY)
-        )
-    else:
-        theta_partial, _, rank, singular_values = np.linalg.lstsq(y, b, rcond=None)
-    pred = (y @ theta_partial).reshape((-1, 3))
-    err = torque_residual - pred
-    # 还原 6 维 theta (约束模式下缺失的列用 0 补齐)
-    if constrain_xz_yz_zero:
-        theta_full = np.zeros(6)
-        theta_full[param_mask] = theta_partial
-    else:
-        theta_full = theta_partial
-    inertia = theta_to_inertia_matrix(theta_full)
-    eigvals = np.linalg.eigvalsh(inertia)
-    physical = {
-        "symmetric": bool(np.allclose(inertia, inertia.T)),
-        "positive_definite": bool(np.all(eigvals > 0.0)),
-        "triangle_inequality": inertia_triangle_inequality_ok(inertia),
-        "eigenvalues": array_to_list(eigvals),
-    }
-    n_cols = int(param_mask.sum()) if param_mask is not None else 6
+    F_g = np.asarray(F_g, dtype=float)
+    T_g = np.asarray(T_g, dtype=float)
+    n = omega.shape[0]
+    if not (omega.shape == alpha.shape == F_g.shape == T_g.shape == (n, 3)):
+        raise ValueError("omega, alpha, F_g, T_g 都必须是 shape=(N, 3)。")
+
+    rows = []
+    for i in range(n):
+        y_i = _inertia_regressor_cols(omega[i], alpha[i])
+        y_com = _com_regressor_cols(F_g[i])
+        rows.append(np.hstack([y_i, y_com]))
+    y = np.vstack(rows)                       # (3N, 7)
+    b = -T_g.reshape(-1)                      # (3N,)
+
+    theta, _, rank, sv = np.linalg.lstsq(y, b, rcond=None)
+    pred = (y @ theta).reshape((-1, 3))
+    err = (-T_g) - pred
+
+    I_est = theta_to_inertia_matrix(theta)
+    com_est = theta[4:7].copy()
+    eigvals = np.linalg.eigvalsh(I_est)
     return {
-        "theta": theta_full,
-        "inertia_com": inertia,
-        "constrained": constrain_xz_yz_zero,
-        "triangle_constraint_active": triangle_constraint_active,
+        "theta": theta,                       # 7-vector
+        "inertia_com": I_est,
+        "com_fitted_m": com_est,
         "rank": int(rank),
         "condition_number": float(np.linalg.cond(y)) if y.size else float("inf"),
-        "singular_values": singular_values,
+        "singular_values": sv,
         "torque_rms": float(np.sqrt(np.mean(err ** 2))),
-        "physical": physical,
+        "physical": {
+            "symmetric": True,
+            "positive_definite": bool(np.all(eigvals > 0.0)),
+            "triangle_inequality": bool(
+                I_est[0, 0] + I_est[1, 1] >= I_est[2, 2]
+                and I_est[0, 0] + I_est[2, 2] >= I_est[1, 1]
+                and I_est[1, 1] + I_est[2, 2] >= I_est[0, 0]
+            ),
+            "eigenvalues": array_to_list(eigvals),
+        },
     }
 
 
-def torque_rotational_component(
-    torque_g: np.ndarray, force_g: np.ndarray, com_m: np.ndarray,
-) -> np.ndarray:
-    """从 force_sensor_gravity 中分离出旋转动力学项.
-
-    F_g = -m a_C,  T_g = -(I α + ω × I ω) + com × F_g
-    => I α + ω × I ω = com × F_g - T_g
-    """
-    com_m = np.asarray(com_m, dtype=float).reshape(3)
-    return np.cross(com_m, force_g) - torque_g
-
+# ---------------------------------------------------------------------------
+# data pipeline
+# ---------------------------------------------------------------------------
 
 def prepare_fit_arrays(
-    samples: List[DynamicSample], com_m: np.ndarray,
+    samples: List[DynamicSample],
     trim_start_sec: float, trim_end_sec: float, dt: float,
     extra_filter_fc_hz: Optional[float] = None,
 ) -> Dict[str, np.ndarray]:
@@ -277,54 +235,33 @@ def prepare_fit_arrays(
     omega = np.vstack([s.omega_F for s in samples])
     alpha = np.vstack([s.alpha_F for s in samples])
 
-    # ω/α 来自 server pinocchio FK → URDF ee_link 系.
-    # force_sensor_gravity 与 com 来自 MapSriRawToEE → SRI-EE 系.
-    # 两者差一个 R_z(180°) (传感器相对于法兰绕 z 旋转 180° 安装):
-    #   v_SRI = R_z(180°) · v_URDF = [-v_x, -v_y, v_z]
-    # 把 ω/α 旋到 SRI-EE 系, 与 wrench/com 统一坐标系.
-    omega[:, 0] *= -1.0
-    omega[:, 1] *= -1.0
-    alpha[:, 0] *= -1.0
-    alpha[:, 1] *= -1.0
-
     if not np.all(np.isfinite(omega)) or not np.all(np.isfinite(alpha)):
         n_bad = int(np.sum(~np.isfinite(omega).all(axis=1) | ~np.isfinite(alpha).all(axis=1)))
         raise ValueError(
             f"omega/alpha 中存在 {n_bad} 帧 NaN, 通常是 server 端运动学预处理判定无效 "
-            "(manager 不在 Idle/Running, 或反馈失效, 或首拍). 请确认 server 处于 Idle/Running, "
-            "并丢弃首拍/无效帧后再采集。"
+            "(manager 不在 Idle/Running, 或反馈失效, 或首拍). 请确认 server 处于 Idle/Running。"
         )
 
     if extra_filter_fc_hz is not None and extra_filter_fc_hz > 0:
-        # server 已 1 kHz Butterworth, 这里仅在用户显式要求时再过一次. 仅滤 wrench, 不滤 ω/α
-        # (避免与 server 滤波链相位错配).
         wrench_g = np.hstack([
             butter_filtfilt_2d(wrench_g[:, :3], extra_filter_fc_hz, dt),
             butter_filtfilt_2d(wrench_g[:, 3:6], extra_filter_fc_hz, dt),
         ])
-
-    F_g = wrench_g[:, :3]
-    T_g = wrench_g[:, 3:6]
-    torque_rot = torque_rotational_component(T_g, F_g, com_m)
 
     si = max(0, int(round(trim_start_sec / dt)))
     ei = len(samples) - max(0, int(round(trim_end_sec / dt)))
     if ei <= si + 10:
         raise ValueError("首尾裁剪后剩余样本太少, 请缩短 --trim-start/--trim-end 或增加采集时长。")
     return {
-        "wrench_gravity_F": wrench_g[si:ei],
         "omega": omega[si:ei],
         "alpha": alpha[si:ei],
-        "torque_rot": torque_rot[si:ei],
+        "F_g": wrench_g[si:ei, :3],
+        "T_g": wrench_g[si:ei, 3:6],
     }
 
 
-def _slice_arm_6(arr: np.ndarray, arm: str) -> np.ndarray:
-    """从 12 维 (primary[0:6] + secondary[6:12]) 或 6 维 (primary[0:3] + secondary[3:6]) 切出.
-
-    本文件中 force_sensor_gravity 是 12 维 wrench, ω/α 是 6 维 (primary 各 3, secondary 各 3 留 NaN).
-    根据数组长度判断每段宽度.
-    """
+def _slice_arm(arr: np.ndarray, arm: str) -> np.ndarray:
+    """12 维 (per=6) 或 6 维 (per=3): primary=左半, secondary=右半."""
     arr = np.asarray(arr, dtype=float)
     if arr.size in (6, 12):
         per = arr.size // 2
@@ -333,68 +270,30 @@ def _slice_arm_6(arr: np.ndarray, arm: str) -> np.ndarray:
 
 
 def sample_from_state_dict(data: Dict[str, object], arm: str) -> DynamicSample:
-    """从 robot_server_state JSON 字段中解析 F 系 wrench/ω/α.
-
-    必须字段: force_sensor_gravity, ee_omega_ee_frame, ee_alpha_ee_frame.
-    可选字段 (仅诊断): joint_position, joint_velocity (按 arm 切单臂 7 维).
-    """
     timestamp_raw = float(data.get("timestamp", 0.0))
     timestamp = timestamp_raw * 1e-9 if timestamp_raw > 1e12 else timestamp_raw
 
-    if "force_sensor_gravity" not in data:
-        raise ValueError("force_sensor_gravity 字段缺失, 请升级 server 到包含该字段的版本。")
-    if "ee_omega_ee_frame" not in data or "ee_alpha_ee_frame" not in data:
-        raise ValueError(
-            "ee_omega_ee_frame / ee_alpha_ee_frame 字段缺失, 请升级 server 到发布 F 系运动学的版本。"
-        )
-
-    wrench_g = _slice_arm_6(data["force_sensor_gravity"], arm)
-    if wrench_g.size != 6:
-        raise ValueError(f"force_sensor_gravity 切片得到 {wrench_g.size} 维, 期望 6 维。")
-    omega_F = _slice_arm_6(data["ee_omega_ee_frame"], arm)
-    alpha_F = _slice_arm_6(data["ee_alpha_ee_frame"], arm)
-    if omega_F.size != 3 or alpha_F.size != 3:
-        raise ValueError(
-            f"ee_omega/alpha 切片得到 {omega_F.size}/{alpha_F.size} 维, 期望 3 维 "
-            "(ω/α 应为 6 维, primary[0:3] + secondary[3:6])。"
-        )
-
-    q_raw: Optional[np.ndarray] = None
-    dq_raw: Optional[np.ndarray] = None
-    q_all = data.get("joint_position")
-    dq_all = data.get("joint_velocity")
-    if q_all is not None and dq_all is not None:
-        q_arr = np.asarray(q_all, dtype=float)
-        dq_arr = np.asarray(dq_all, dtype=float)
-        if q_arr.size == 7:
-            q_raw, dq_raw = q_arr.copy(), dq_arr.copy()
-        elif q_arr.size >= 13:
-            if arm == "primary":
-                q_raw = q_arr[6:13].copy()
-                dq_raw = dq_arr[6:13].copy()
-            elif q_arr.size >= 20:
-                q_raw = q_arr[13:20].copy()
-                dq_raw = dq_arr[13:20].copy()
-
-    return DynamicSample(time.monotonic(), timestamp, wrench_g, omega_F, alpha_F, q_raw, dq_raw)
+    for field in ("force_sensor_gravity", "ee_omega_ee_frame", "ee_alpha_ee_frame"):
+        if field not in data:
+            raise ValueError(f"{field} 字段缺失, 请升级 server。")
+    wrench_g = _slice_arm(data["force_sensor_gravity"], arm)
+    omega_F = _slice_arm(data["ee_omega_ee_frame"], arm)
+    alpha_F = _slice_arm(data["ee_alpha_ee_frame"], arm)
+    if wrench_g.size != 6 or omega_F.size != 3 or alpha_F.size != 3:
+        raise ValueError(f"wrench/ω/α 切片维度异常: {wrench_g.size}/{omega_F.size}/{alpha_F.size}")
+    return DynamicSample(time.monotonic(), timestamp, wrench_g, omega_F, alpha_F)
 
 
 def sample_to_json(sample: DynamicSample) -> Dict[str, object]:
-    out: Dict[str, object] = {
+    return {
         "timestamp": sample.timestamp,
         "wrench_gravity_F": array_to_list(sample.wrench_gravity_F),
         "omega_F": array_to_list(sample.omega_F),
         "alpha_F": array_to_list(sample.alpha_F),
     }
-    if sample.q_raw is not None:
-        out["q_raw"] = array_to_list(sample.q_raw)
-    if sample.dq_raw is not None:
-        out["dq_raw"] = array_to_list(sample.dq_raw)
-    return out
 
 
 def samples_from_jsonl(path: Path) -> List[DynamicSample]:
-    """读取已采集的 jsonl 离线复跑. 仅识别新格式 (含 wrench_gravity_F/omega_F/alpha_F)."""
     samples: List[DynamicSample] = []
     with path.open("r", encoding="utf-8") as f:
         for line in f:
@@ -403,17 +302,13 @@ def samples_from_jsonl(path: Path) -> List[DynamicSample]:
             data = json.loads(line)
             for key in ("wrench_gravity_F", "omega_F", "alpha_F"):
                 if key not in data:
-                    raise ValueError(
-                        f"jsonl 缺少字段 {key}: 该文件可能由旧版本脚本生成, 请用新版重新采集。"
-                    )
+                    raise ValueError(f"jsonl 缺少字段 {key}: 请用新版重新采集。")
             samples.append(DynamicSample(
                 arrival_time=time.monotonic(),
                 timestamp=float(data.get("timestamp", 0.0)),
                 wrench_gravity_F=np.asarray(data["wrench_gravity_F"], dtype=float),
                 omega_F=np.asarray(data["omega_F"], dtype=float),
                 alpha_F=np.asarray(data["alpha_F"], dtype=float),
-                q_raw=np.asarray(data["q_raw"], dtype=float) if "q_raw" in data else None,
-                dq_raw=np.asarray(data["dq_raw"], dtype=float) if "dq_raw" in data else None,
             ))
     return samples
 
@@ -425,16 +320,17 @@ def write_jsonl(path: Path, samples: Iterable[DynamicSample]) -> None:
             f.write(json.dumps(sample_to_json(sample), ensure_ascii=False) + "\n")
 
 
+# ---------------------------------------------------------------------------
+# online capture node
+# ---------------------------------------------------------------------------
+
 class ToolInertiaNode:
-    """在线采集节点: 订阅 robot_server_state, 可发布关节位置激励。"""
 
     def __init__(self, state_topic: str, arm: str):
         import rclpy
         from joint_interfaces.msg import JointPositionControl
         from rclpy.node import Node
         from std_msgs.msg import Header, String
-
-        self.arm = arm
 
         class _Node(Node):
             def __init__(self, outer):
@@ -485,7 +381,7 @@ class ToolInertiaNode:
 
     def snapshot_since(self, start_time: float) -> List[DynamicSample]:
         with self.lock:
-            return [sample for sample in self.samples if sample.arrival_time >= start_time]
+            return [s for s in self.samples if s.arrival_time >= start_time]
 
     def get_joint_position(self) -> Optional[np.ndarray]:
         with self.lock:
@@ -533,32 +429,30 @@ def capture_online(args: argparse.Namespace) -> List[DynamicSample]:
 
         base_position = wrapper.get_joint_position()
         if base_position is None:
-            raise RuntimeError("没有获取到当前关节位置, 无法启动自动激励。")
+            raise RuntimeError("没有获取到当前关节位置。")
         if not wrapper.get_joint_name():
-            raise RuntimeError("没有获取到 joint_name, 无法发布 JointPositionControl 自动激励。")
+            raise RuntimeError("没有获取到 joint_name。")
 
         amplitudes = parse_float_list(args.excitation_amplitudes, -1, "--excitation-amplitudes")
         frequencies = parse_float_list(args.excitation_frequencies, -1, "--excitation-frequencies")
         phases = parse_float_list(args.excitation_phases, -1, "--excitation-phases")
         if not (len(amplitudes) == len(frequencies) == len(phases) and len(amplitudes) in (3, 4)):
-            raise RuntimeError(
-                "excitation 幅值/频率/相位数组长度必须相等且为 3 (J5/J6/J7) 或 4 (J4/J5/J6/J7)。")
+            raise RuntimeError("excitation 数组长度必须相等且为 3 或 4。")
         excitation_count = len(amplitudes)
         wrist_indices = wrist_indices_for_position(base_position, args.arm, excitation_count)
         if not wrist_indices or max(wrist_indices) >= base_position.size:
             raise RuntimeError(f"关节数组长度 {base_position.size} 不支持 {excitation_count} 关节激励。")
 
-        print("数据已连接, 将启动推荐腕部激励。")
-        print(f"中心姿态取当前反馈位置; 激励关节索引: {wrist_indices}")
+        print(f"数据已连接; 激励关节索引: {wrist_indices}")
         print(f"幅值 rad: {amplitudes}")
         print(f"频率 Hz:  {frequencies}")
         print(f"相位 rad: {phases}")
-        print(f"时长:     {args.duration:.2f}s, 首尾平滑时间: {args.excitation_ramp:.2f}s")
-        input("确认周围安全、无碰撞风险后按 Enter 开始自动激励和采集 > ")
+        print(f"时长:     {args.duration:.2f}s, 平滑: {args.excitation_ramp:.2f}s")
+        input("确认周围安全后按 Enter 开始 > ")
 
         start = time.monotonic()
         next_t = time.monotonic()
-        print("自动激励中, 请保持人员和物体远离机械臂工作空间。")
+        print("自动激励中...")
         while True:
             t = time.monotonic() - start
             if t > args.duration:
@@ -571,7 +465,7 @@ def capture_online(args: argparse.Namespace) -> List[DynamicSample]:
             next_t += args.dt
             time.sleep(max(0.0, next_t - time.monotonic()))
 
-        print("激励结束, 发送中心姿态保持 1 秒。")
+        print("激励结束, 保持中心姿态 1 秒。")
         hold_end = time.monotonic() + 1.0
         while time.monotonic() < hold_end:
             wrapper.publish_joint_position(base_position)
@@ -588,28 +482,32 @@ def capture_online(args: argparse.Namespace) -> List[DynamicSample]:
             rclpy.shutdown()
 
 
+# ---------------------------------------------------------------------------
+# output
+# ---------------------------------------------------------------------------
+
 def result_to_json(
     result: Dict[str, object], args: argparse.Namespace, sample_count: int,
 ) -> Dict[str, object]:
     inertia = np.asarray(result["inertia_com"], dtype=float)
     theta = np.asarray(result["theta"], dtype=float)
-    n_params = 4 if result.get("constrained") else 6
+    com_in = parse_float_list(args.com_mm, 3, "--com-mm") / 1000.0
+    com_fit = np.asarray(result["com_fitted_m"], dtype=float)
     return {
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "sample_count": int(sample_count),
         "arm": args.arm,
         "dt": args.dt,
-        "constrained": bool(result.get("constrained", False)),
-        "triangle_constraint_active": bool(result.get("triangle_constraint_active", False)),
-        "wrench_source": "force_sensor_gravity (server 端已扣零偏 + 已扣工具静态重力, F 系)",
-        "kinematics_source": "ee_omega_ee_frame / ee_alpha_ee_frame (server 端 1 kHz Butterworth 滤波后, F 系)",
+        "wrench_source": "force_sensor_gravity (零偏+重力补偿后, F 系)",
+        "kinematics_source": "ee_omega/alpha_ee_frame (server 1 kHz Butterworth, F 系)",
         "mass_kg": args.mass,
-        "com_m": array_to_list(parse_float_list(args.com_mm, 3, "--com-mm") / 1000.0),
-        "com_mm": array_to_list(parse_float_list(args.com_mm, 3, "--com-mm")),
+        "com_input_mm": array_to_list(com_in * 1000.0),
+        "com_fitted_mm": array_to_list(com_fit * 1000.0),
+        "com_diff_mm": float(np.linalg.norm(com_fit - com_in) * 1000.0),
         "theta_order": _PARAM_NAMES,
         "theta": array_to_list(theta),
         "inertia_com_kg_m2": inertia.tolist(),
-        "rank": f"{result['rank']} / {n_params}",
+        "rank": f"{result['rank']} / 7",
         "condition_number": result["condition_number"],
         "singular_values": array_to_list(np.asarray(result["singular_values"], dtype=float)),
         "torque_rms": result["torque_rms"],
@@ -618,103 +516,97 @@ def result_to_json(
 
 
 def print_result(payload: Dict[str, object]) -> None:
-    print("\n========== 工具质心转动惯量辨识结果 ==========")
+    print("\n========== 工具质心转动惯量联合辨识结果 ==========")
     print(f"有效样本数:        {payload['sample_count']}")
     print(f"辨识机械臂:        {payload['arm']}")
-    print(f"六维力来源:        {payload['wrench_source']}")
-    print(f"运动学来源:        {payload['kinematics_source']}")
     print(f"工具质量 kg:       {payload['mass_kg']}")
-    print(f"质心偏移 mm:       {np.array(payload['com_mm'])}")
+    print(f"输入 COM mm:       {np.array(payload['com_input_mm'])}")
+    print(f"拟合 COM mm:       {np.array(payload['com_fitted_mm'])}")
+    diff = float(payload["com_diff_mm"])
+    print(f"COM 偏差 mm:       {diff:.4f}" + (" *** 偏差较大, 请检查 ***" if diff > _COM_WARN_DIFF_MM else ""))
     print(f"参数顺序:          {payload['theta_order']}")
     print(f"参数向量:          {np.array(payload['theta'])}")
     print(f"^F I_C kg*m^2:\n{np.array(payload['inertia_com_kg_m2'])}")
     print(f"力矩残差 RMS:      {float(payload['torque_rms']):.6g} Nm")
-    if payload.get("constrained"):
-        constraint_text = "Ixz=Iyz=0, Izz<=Ixx+Iyy (4 params)"
-        if payload.get("triangle_constraint_active"):
-            constraint_text += " [triangle active]"
-    else:
-        constraint_text = "无约束 (6 params)"
-    print(f"约束模式:          {constraint_text}")
     print(f"回归矩阵秩:        {payload['rank']}")
     print(f"条件数:            {float(payload['condition_number']):.6g}")
     physical = payload["physical"]
     print(f"正定检查:          {physical['positive_definite']}")
     print(f"三角不等式检查:    {physical['triangle_inequality']}")
     if float(payload["condition_number"]) > 1e4:
-        print("警告: 条件数较大, 建议增加绕多个方向的旋转激励。")
+        print("警告: 条件数较大, 建议增加激励方向多样性。")
     print("\n===== robot_config.yaml 建议字段 =====")
     inertia = np.array(payload["inertia_com_kg_m2"])
+    com_fitted = np.array(payload["com_fitted_mm"])
     print("tool_inertia:")
     print(f"  inertia_com_kg_m2: [[{inertia[0,0]:.8g}, {inertia[0,1]:.8g}, {inertia[0,2]:.8g}],")
     print(f"                     [{inertia[1,0]:.8g}, {inertia[1,1]:.8g}, {inertia[1,2]:.8g}],")
     print(f"                     [{inertia[2,0]:.8g}, {inertia[2,1]:.8g}, {inertia[2,2]:.8g}]]")
+    print("tool_gravity_compensation:")
+    print(f"  com_mm: [{com_fitted[0]:.5f}, {com_fitted[1]:.5f}, {com_fitted[2]:.5f}]")
     print("============================================\n")
 
 
+# ---------------------------------------------------------------------------
+# self-test
+# ---------------------------------------------------------------------------
+
 def run_self_test() -> None:
-    """合成 ω_F / α_F / F_g / T_g, 验证 LS 链路自洽."""
     rng = np.random.default_rng(42)
-    theta_true = np.array([0.018, 0.026, 0.031, 0.002, -0.003, 0.004])
-    I_true = theta_to_inertia_matrix(theta_true)
-    com = np.array([0.001, -0.002, 0.05])
+    I_true = np.array([[0.018, 0.002, 0.0],
+                       [0.002, 0.026, 0.0],
+                       [0.0,   0.0,   0.031]], dtype=float)
+    com_true = np.array([0.001, -0.002, 0.05])
     mass = 1.0
 
     n, dt = 4000, 0.005
     t = np.arange(n) * dt
-    omega_F = np.column_stack([
+    omega = np.column_stack([
         0.30 * np.sin(2.0 * np.pi * 0.40 * t + 0.0),
         0.25 * np.sin(2.0 * np.pi * 0.65 * t + 1.0),
         0.20 * np.sin(2.0 * np.pi * 0.90 * t + 2.0),
     ])
-    # α 用解析导数 (避免数值差分误差进入 self-test)
-    alpha_F = np.column_stack([
+    alpha = np.column_stack([
         0.30 * (2.0 * np.pi * 0.40) * np.cos(2.0 * np.pi * 0.40 * t + 0.0),
         0.25 * (2.0 * np.pi * 0.65) * np.cos(2.0 * np.pi * 0.65 * t + 1.0),
         0.20 * (2.0 * np.pi * 0.90) * np.cos(2.0 * np.pi * 0.90 * t + 2.0),
     ])
 
-    a_C_F = rng.normal(scale=0.5, size=(n, 3))
-    F_g = -mass * a_C_F
+    a_C = rng.normal(scale=0.5, size=(n, 3))
+    F_g = -mass * a_C
     T_g = -np.array([
-        I_true @ alpha_F[i] + np.cross(omega_F[i], I_true @ omega_F[i]) for i in range(n)
-    ]) + np.cross(com, F_g)
+        I_true @ alpha[i] + np.cross(omega[i], I_true @ omega[i]) for i in range(n)
+    ]) + np.cross(com_true, F_g)
 
-    samples = [
-        DynamicSample(0.0, 0.0,
-                      wrench_gravity_F=np.concatenate([F_g[i], T_g[i]]),
-                      omega_F=omega_F[i], alpha_F=alpha_F[i])
-        for i in range(n)
-    ]
-    arrays = prepare_fit_arrays(samples, com_m=com,
-                                trim_start_sec=0.5, trim_end_sec=0.5, dt=dt)
-    result = fit_inertia_from_rotational_terms(
-        arrays["omega"], arrays["alpha"], arrays["torque_rot"],
-        constrain_xz_yz_zero=False,  # self-test 使用全 6-param 验证
-    )
-    err = np.linalg.norm(np.asarray(result["theta"]) - theta_true)
-    print(f"self-test: theta_err={err:.6e}, torque_rms={result['torque_rms']:.6e}")
-    if err > 1e-10:
-        raise RuntimeError(f"self-test 失败: theta={result['theta']}")
+    result = fit_inertia_and_com(omega, alpha, F_g, T_g)
+    theta = np.asarray(result["theta"])
+    I_err = np.linalg.norm(theta[:4] - np.array([0.018, 0.026, 0.031, 0.002]))
+    com_err = np.linalg.norm(result["com_fitted_m"] - com_true)
+    print(f"self-test: I_err={I_err:.6e}  com_err={com_err:.6e}  torque_rms={result['torque_rms']:.6e}")
+    if I_err > 1e-10 or com_err > 1e-10:
+        raise RuntimeError(f"self-test 失败: theta={theta}")
 
+
+# ---------------------------------------------------------------------------
+# CLI & main
+# ---------------------------------------------------------------------------
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="通过 force_sensor_gravity + ee_omega/alpha_ee_frame 辨识工具绕质心的转动惯量 ^F I_C。",
+        description="联合辨识工具绕质心的转动惯量 ^F I_C 与 COM 偏移 (7-param LS, F 系)。",
     )
-    parser.add_argument("--arm", choices=["primary", "secondary"], default="primary",
-                        help="选择左臂 primary 或右臂 secondary (secondary 当前未支持, ω/α 为 NaN)。")
+    parser.add_argument("--arm", choices=["primary", "secondary"], default="primary")
     parser.add_argument("--state-topic", default=DEFAULT_STATE_TOPIC)
     parser.add_argument("--input", type=Path, help="已有 jsonl 文件; 不填则在线采集。")
     parser.add_argument("--duration", type=float, default=DEFAULT_EXCITATION_DURATION)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--dt", type=float, default=DEFAULT_DT)
     parser.add_argument("--mass", type=float, default=DEFAULT_TOOL_MASS_KG,
-                        help="工具质量 kg, 仅用于结果元数据 (不参与回归)。")
+                        help="工具质量 kg (仅用于结果元数据)。")
     parser.add_argument("--com-mm", default=DEFAULT_TOOL_COM_MM,
-                        help="质心相对 EE 原点偏移, 单位 mm, 格式 x,y,z (F 系)。")
+                        help="COM 初始值 mm (x,y,z, F 系)。联合估计将输出拟合值与之对比。")
     parser.add_argument("--no-excitation", action="store_true",
-                        help="不自动下发激励, 只采集; 需人工执行运动。")
+                        help="不自动下发激励, 只采集。")
     parser.add_argument("--excitation-amplitudes", default=DEFAULT_EXCITATION_AMPLITUDES)
     parser.add_argument("--excitation-frequencies", default=DEFAULT_EXCITATION_FREQUENCIES)
     parser.add_argument("--excitation-phases", default=DEFAULT_EXCITATION_PHASES)
@@ -722,14 +614,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trim-start", type=float, default=1.0)
     parser.add_argument("--trim-end", type=float, default=1.0)
     parser.add_argument("--filter-fc", type=float, default=0.0,
-                        help=("可选: 仅对 wrench 再做一次零相位 Butterworth (Hz)。"
-                              "默认 0 = 不再滤; server 已 1 kHz Butterworth, "
-                              "再滤会引入相位偏移, 谨慎使用。"))
-    parser.add_argument(
-        "--no-constrain-xz-yz", dest="constrain_xz_yz_zero",
-        action="store_false", default=True,
-        help="关闭 Ixz = Iyz = 0 物理约束 (恢复 6-param LS)。",
-    )
+                        help="可选: 仅对 wrench 再做零相位 Butterworth (Hz)。默认 0 = 不滤。")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
@@ -739,7 +624,7 @@ def parse_args() -> argparse.Namespace:
     if args.mass <= 0.0:
         parser.error("--mass 必须为正数。")
     if args.duration <= 0.0 and not args.no_excitation:
-        parser.error("自动激励模式下 --duration 必须为正数; 如需手动停止, 使用 --no-excitation。")
+        parser.error("自动激励模式下 --duration 必须为正数。")
     if args.excitation_ramp < 0.0:
         parser.error("--excitation-ramp 不能为负数。")
     parse_float_list(args.com_mm, 3, "--com-mm")
@@ -747,8 +632,7 @@ def parse_args() -> argparse.Namespace:
     frequencies = parse_float_list(args.excitation_frequencies, -1, "--excitation-frequencies")
     phases = parse_float_list(args.excitation_phases, -1, "--excitation-phases")
     if not (len(amplitudes) == len(frequencies) == len(phases) and len(amplitudes) in (3, 4)):
-        parser.error(
-            "excitation 幅值/频率/相位数组长度必须相等且为 3 (J5/J6/J7) 或 4 (J4/J5/J6/J7)。")
+        parser.error("excitation 数组长度必须相等且为 3 或 4。")
     if np.any(amplitudes < 0.0):
         parser.error("--excitation-amplitudes 不能包含负数。")
     if np.any(frequencies <= 0.0):
@@ -762,52 +646,43 @@ def main() -> None:
         run_self_test()
         return
 
-    print("\n========== 工具惯量辨识脚本 ==========")
+    print("\n========== 工具惯量 + COM 联合辨识 ==========")
     print(f"机械臂:            {args.arm}")
-    print(f"采样周期 dt:       {args.dt:.6f} s")
-    print(f"工具质量:          {args.mass:.6f} kg")
-    print(f"质心偏移 com_mm:   {args.com_mm}")
-    print("六维力来源:        force_sensor_gravity (零偏 + 重力补偿后, F 系)")
-    print("运动学来源:        ee_omega/alpha_ee_frame (server 1 kHz Butterworth 后, F 系)")
+    print(f"dt:                {args.dt:.6f} s")
+    print(f"质量:              {args.mass:.6f} kg")
+    print(f"输入 COM mm:       {args.com_mm}")
     if args.filter_fc and args.filter_fc > 0:
-        print(f"额外滤波 (仅 wrench): {args.filter_fc:.2f} Hz")
+        print(f"额外滤波 (wrench): {args.filter_fc:.2f} Hz")
     if args.input:
-        print("运动模式:          离线拟合, 不下发运动")
+        print("模式:              离线拟合")
     elif args.no_excitation:
-        print("运动模式:          只采集, 不自动下发激励")
+        print("模式:              手动采集")
     else:
-        print("运动模式:          自动下发推荐 J5/J6/J7 多频正弦激励")
-        print(f"激励幅值 rad:      {args.excitation_amplitudes}")
-        print(f"激励频率 Hz:       {args.excitation_frequencies}")
-        print(f"激励相位 rad:      {args.excitation_phases}")
-        print(f"激励时长:          {args.duration:.2f} s")
-    print("======================================\n")
+        print("模式:              自动激励 (J4-J7)")
+        print(f"  幅值: {args.excitation_amplitudes}")
+        print(f"  频率: {args.excitation_frequencies}")
+        print(f"  相位: {args.excitation_phases}")
+        print(f"  时长: {args.duration:.2f}s")
+    print("============================================\n")
 
     if args.input:
-        print(f"读取离线采集文件: {args.input.expanduser()}")
+        print(f"读取: {args.input.expanduser()}")
         samples = samples_from_jsonl(args.input.expanduser())
         capture_path = args.input.expanduser()
     else:
         samples = capture_online(args)
         capture_path = args.output_dir / f"tool_inertia_capture_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
         write_jsonl(capture_path, samples)
-        print(f"采集数据已保存: {capture_path}")
+        print(f"已保存: {capture_path}")
 
-    com_m = parse_float_list(args.com_mm, 3, "--com-mm") / 1000.0
     extra_fc = args.filter_fc if args.filter_fc and args.filter_fc > 0 else None
-
-    print("开始处理 wrench_gravity_F / ω_F / α_F 并构建回归方程...")
     arrays = prepare_fit_arrays(
-        samples, com_m=com_m,
+        samples,
         trim_start_sec=args.trim_start, trim_end_sec=args.trim_end, dt=args.dt,
         extra_filter_fc_hz=extra_fc,
     )
-    print(f"开始拟合 ^F I_C, 有效样本数: {len(arrays['omega'])}")
-    constrain = getattr(args, "constrain_xz_yz_zero", False)
-    result = fit_inertia_from_rotational_terms(
-        arrays["omega"], arrays["alpha"], arrays["torque_rot"],
-        constrain_xz_yz_zero=constrain,
-    )
+    print(f"拟合中, 有效样本: {len(arrays['omega'])}")
+    result = fit_inertia_and_com(arrays["omega"], arrays["alpha"], arrays["F_g"], arrays["T_g"])
     payload = result_to_json(result, args, len(arrays["omega"]))
     payload["capture_path"] = str(capture_path)
 
