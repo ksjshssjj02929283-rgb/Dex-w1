@@ -26,18 +26,27 @@ FORCE_FIELDS = [
     "raw_force_sensor",
     "force_sensor_bias",
 ]
+EE_FIELDS = [
+    "ee_omega_ee_frame",
+    "ee_alpha_ee_frame",
+]
 AXIS_LABELS = ["Fx [N]", "Fy [N]", "Fz [N]", "Tx [Nm]", "Ty [Nm]", "Tz [Nm]"]
+EE_AXIS_LABELS = ["ωx [rad/s]", "ωy [rad/s]", "ωz [rad/s]"]
 FIELD_COLORS = {
     "force_sensor": "tab:blue",
     "force_sensor_gravity": "tab:green",
     "raw_force_sensor": "tab:gray",
     "force_sensor_bias": "tab:red",
+    "ee_omega_ee_frame": "tab:orange",
+    "ee_alpha_ee_frame": "tab:purple",
 }
 FIELD_LABELS = {
     "force_sensor": "force_sensor",
     "force_sensor_gravity": "force_sensor_gravity",
     "raw_force_sensor": "raw_force_sensor",
     "force_sensor_bias": "force_sensor_bias",
+    "ee_omega_ee_frame": "ee_omega_ee_frame",
+    "ee_alpha_ee_frame": "ee_alpha_ee_frame",
 }
 
 
@@ -72,6 +81,8 @@ def extract_force_sample(data: Mapping[str, object], t: float = 0.0) -> Dict[str
     }
     for field in FORCE_FIELDS:
         sample[field] = float_list(data.get(field), field, 6)
+    for field in EE_FIELDS:
+        sample[field] = float_list(data.get(field), field, 3)
     return sample
 
 
@@ -87,7 +98,7 @@ def make_payload(
             "created_at": created.isoformat(timespec="seconds"),
             "state_topic": state_topic,
             "sample_count": len(samples),
-            "fields": FORCE_FIELDS,
+            "fields": FORCE_FIELDS + EE_FIELDS,
             "axis_labels": AXIS_LABELS,
             "notes": "Each field is stored exactly as published by robot_server_state.",
         },
@@ -101,6 +112,26 @@ def arm_slice(arm: str) -> slice:
     if arm == "secondary":
         return slice(6, 12)
     raise ValueError(f"unsupported arm: {arm}")
+
+
+def ee_arm_slice(arm: str) -> slice:
+    if arm == "primary":
+        return slice(0, 3)
+    if arm == "secondary":
+        return slice(3, 6)
+    raise ValueError(f"unsupported arm: {arm}")
+
+
+def ee_field_matrix(samples: Sequence[Mapping[str, object]], field: str, arm: str) -> List[List[float]]:
+    idx = ee_arm_slice(arm)
+    matrix: List[List[float]] = []
+    for sample in samples:
+        values = float_list(sample.get(field), field, 3)
+        selected = values[idx]
+        if len(selected) < 3:
+            raise ValueError(f"{field} for {arm} arm needs 3 values, got {len(selected)}")
+        matrix.append(selected[:3])
+    return matrix
 
 
 def field_matrix(samples: Sequence[Mapping[str, object]], field: str, arm: str) -> List[List[float]]:
@@ -280,8 +311,39 @@ def plot(args: argparse.Namespace) -> None:
         fig.canvas.draw_idle()
 
     check.on_clicked(on_check)
-    fig.suptitle(f"{path.name} ({args.arm})")
+    fig.suptitle(f"{path.name} — force ({args.arm})")
     fig.tight_layout(rect=[0.0, 0.08, 1.0, 0.95])
+
+    # EE fields figure (3 axes × 2 fields)
+    ee_matrices = {
+        field: ee_field_matrix(samples, field, args.arm)
+        for field in EE_FIELDS
+    }
+    fig_ee, axes_ee_grid = plt.subplots(1, 3, figsize=(14, 4), sharex=True)
+    axes_ee = list(axes_ee_grid.flatten())
+    lines_by_ee_axis: List[List[plt.Line2D]] = [[] for _ in range(3)]
+
+    for axis_idx, ax in enumerate(axes_ee):
+        for field in EE_FIELDS:
+            y = [row[axis_idx] for row in ee_matrices[field]]
+            (line,) = ax.plot(
+                t,
+                y,
+                label=FIELD_LABELS[field],
+                color=FIELD_COLORS[field],
+                linewidth=1.2,
+                alpha=0.85,
+            )
+            lines_by_ee_axis[axis_idx].append(line)
+        ax.set_title(EE_AXIS_LABELS[axis_idx])
+        ax.set_xlabel("time [s]")
+        ax.grid(True, alpha=0.3)
+        ax.axhline(0.0, color="gray", linewidth=0.6, alpha=0.5)
+        ax.legend(loc="upper left", fontsize=8)
+        update_ylim(ax, lines_by_ee_axis[axis_idx])
+
+    fig_ee.suptitle(f"{path.name} — EE kinematics ({args.arm})")
+    fig_ee.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
     plt.show()
 
 
@@ -329,7 +391,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--show",
         nargs="+",
-        choices=FORCE_FIELDS,
+        choices=FORCE_FIELDS + EE_FIELDS,
         default=FORCE_FIELDS,
         help="fields visible initially in --plot; checkboxes can toggle them after the window opens",
     )
