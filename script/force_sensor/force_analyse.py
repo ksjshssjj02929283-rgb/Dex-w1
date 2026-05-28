@@ -304,7 +304,8 @@ def analyse(args: argparse.Namespace) -> None:
         for axis_idx, label in enumerate(AXIS_LABELS):
             values = [row[axis_idx] for row in matrix]
             rms = (sum(v * v for v in values) / len(values)) ** 0.5
-            print(f"  {label:8s}  {rms:.6f}")
+            peak = max(abs(v) for v in values)
+            print(f"  {label:8s}  RMS={rms:.6f}  |peak|={peak:.6f}")
         print()
 
 
