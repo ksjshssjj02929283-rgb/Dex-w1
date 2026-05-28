@@ -33,7 +33,11 @@ EE_FIELDS = [
     "ee_omega_ee_frame",
     "ee_alpha_ee_frame",
 ]
+INERTIA_FIELDS = [
+    "force_sensor_inertia",
+]
 JOINT_STATE_FIELDS = [
+    "joint_position",
     "joint_velocity",
 ]
 AXIS_LABELS = ["Fx [N]", "Fy [N]", "Fz [N]", "Tx [Nm]", "Ty [Nm]", "Tz [Nm]"]
@@ -104,6 +108,11 @@ def extract_force_sample(data: Mapping[str, object], t: float = 0.0) -> Dict[str
             sample[field] = float_list(data.get(field), field, 3)
         except (ValueError, TypeError):
             pass
+    for field in INERTIA_FIELDS:
+        try:
+            sample[field] = float_list(data.get(field), field, 6)
+        except (ValueError, TypeError):
+            pass
     for field in JOINT_STATE_FIELDS:
         try:
             sample[field] = float_list(data.get(field), field, 1)
@@ -124,7 +133,7 @@ def make_payload(
             "created_at": created.isoformat(timespec="seconds"),
             "state_topic": state_topic,
             "sample_count": len(samples),
-            "fields": FORCE_FIELDS + EE_FIELDS + JOINT_STATE_FIELDS,
+            "fields": FORCE_FIELDS + INERTIA_FIELDS + EE_FIELDS + JOINT_STATE_FIELDS,
             "axis_labels": AXIS_LABELS,
             "notes": "Each field is stored exactly as published by robot_server_state.",
         },
