@@ -33,6 +33,9 @@ EE_FIELDS = [
     "ee_omega_ee_frame",
     "ee_alpha_ee_frame",
 ]
+JOINT_STATE_FIELDS = [
+    "joint_velocity",
+]
 AXIS_LABELS = ["Fx [N]", "Fy [N]", "Fz [N]", "Tx [Nm]", "Ty [Nm]", "Tz [Nm]"]
 EE_AXIS_LABELS = ["ωx [rad/s]", "ωy [rad/s]", "ωz [rad/s]"]
 FIELD_COLORS = {
@@ -101,6 +104,11 @@ def extract_force_sample(data: Mapping[str, object], t: float = 0.0) -> Dict[str
             sample[field] = float_list(data.get(field), field, 3)
         except (ValueError, TypeError):
             pass
+    for field in JOINT_STATE_FIELDS:
+        try:
+            sample[field] = float_list(data.get(field), field, 1)
+        except (ValueError, TypeError):
+            pass
     return sample
 
 
@@ -116,7 +124,7 @@ def make_payload(
             "created_at": created.isoformat(timespec="seconds"),
             "state_topic": state_topic,
             "sample_count": len(samples),
-            "fields": FORCE_FIELDS + EE_FIELDS,
+            "fields": FORCE_FIELDS + EE_FIELDS + JOINT_STATE_FIELDS,
             "axis_labels": AXIS_LABELS,
             "notes": "Each field is stored exactly as published by robot_server_state.",
         },
@@ -517,8 +525,10 @@ def replay_action_and_record(args: argparse.Namespace) -> None:
         if len(samples) == 0 and node.last_error:
             print(f"Last parse error: {node.last_error}")
         executor.shutdown()
+        ros_thread.join(timeout=1.0)
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 def parse_args() -> argparse.Namespace:
