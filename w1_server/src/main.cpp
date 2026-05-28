@@ -19,18 +19,20 @@ static YAML::Node MergeYamlNode(const YAML::Node& user_node,
                                 const YAML::Node& default_node,
                                 const std::string& path,
                                 bool& modified) {
-    YAML::Node result = user_node;
-    if (!default_node.IsMap()) return result;
+    YAML::Node result = user_node;             // 复制用户节点作为基础
+    if (!default_node.IsMap()) return result;  // 只有字典(Map)类型才需要向下遍历合并
 
     for (const auto& default_field : default_node) {
         std::string field_key = default_field.first.as<std::string>();
         std::string full_path = path.empty() ? field_key : path + "." + field_key;
 
         if (!result[field_key]) {
+            // 用户配置中不存在该字段，将默认配置中的整个节点补充进去
             result[field_key] = default_field.second;
             modified = true;
             std::cout << "[WARN] Added missing field: " << full_path << std::endl;
         } else if (default_field.second.IsMap()) {
+            // 字段存在且为字典类型，递归合并其内部的子字段
             result[field_key] = MergeYamlNode(result[field_key], default_field.second, full_path, modified);
         }
     }
@@ -39,6 +41,7 @@ static YAML::Node MergeYamlNode(const YAML::Node& user_node,
 
 static void CheckConfig(const std::filesystem::path& default_cfg_path, const std::filesystem::path& user_cfg_path) {
     if (!std::filesystem::exists(user_cfg_path)) {
+        // 用户配置文件不存在，执行完全拷贝
         if (!std::filesystem::copy_file(default_cfg_path, user_cfg_path,
                                         std::filesystem::copy_options::overwrite_existing)) {
             std::cerr << "[ERROR] Failed to copy default config file: " << user_cfg_path << std::endl;
@@ -46,18 +49,40 @@ static void CheckConfig(const std::filesystem::path& default_cfg_path, const std
         }
         std::cout << "[INFO] Created default config file: " << user_cfg_path << std::endl;
     } else {
+        // 加载默认配置和用户修改过的配置进行对比合并
         YAML::Node default_config = YAML::LoadFile(default_cfg_path.string());
         YAML::Node user_config = YAML::LoadFile(user_cfg_path.string());
+
+        // 检查配置版本，如果默认配置版本领先，则直接覆盖历史用户配置
+        std::string default_version =
+            default_config["config_version"] ? default_config["config_version"].as<std::string>() : "";
+        std::string user_version = user_config["config_version"] ? user_config["config_version"].as<std::string>() : "";
+
+        // 字符串比较版本号，假设版本格式为 "vXX"，直接比较字符串即可判断版本先后, 如果用户版本不存在则视为过旧需要覆盖
+        if (default_version > user_version) {
+            std::cout << "[INFO] Default config version (" << default_version << ") is newer than user config version ("
+                      << (user_version.empty() ? "none" : user_version) << "). Overwriting user config." << std::endl;
+            if (!std::filesystem::copy_file(default_cfg_path, user_cfg_path,
+                                            std::filesystem::copy_options::overwrite_existing)) {
+                std::cerr << "[ERROR] Failed to overwrite config file: " << user_cfg_path << std::endl;
+                std::exit(1);
+            }
+            // 覆盖后重新加载最新的配置内容，以便于继续执行后续正常的一致性动作
+            user_config = YAML::LoadFile(user_cfg_path.string());
+        }
+
         bool modified = false;
 
         for (const auto& default_node : default_config) {
             std::string key = default_node.first.as<std::string>();
 
             if (!user_config[key]) {
+                // 顶层字段缺失，补充整个节点
                 user_config[key] = default_node.second;
                 modified = true;
                 std::cout << "[WARN] Added missing field: " << key << std::endl;
             } else if (default_node.second.IsMap()) {
+                // 顶层字典类型字段存在，但内部二级字段可能缺失，遍历子字典处理
                 for (const auto& sub_node : default_node.second) {
                     std::string sub_key = sub_node.first.as<std::string>();
                     if (!user_config[key][sub_key]) {
@@ -67,12 +92,15 @@ static void CheckConfig(const std::filesystem::path& default_cfg_path, const std
                     }
                 }
             } else if (default_node.second.IsSequence() && key == "joints") {
+                // 特殊处理 joints 参数，joints 是一个数组，每个元素包含各个关节的具体配置
                 for (size_t i = 0; i < default_node.second.size(); ++i) {
                     if (i >= user_config[key].size()) {
+                        // 如果用户配置的关节数少于默认配置的关节数，将新增的关节补充到末尾
                         user_config[key].push_back(default_node.second[i]);
                         modified = true;
                         std::cout << "[WARN] Added missing joint at index: " << i << std::endl;
                     } else {
+                        // 关节参数虽然存在但也可能缺失某些下级属性，调用合并函数进行属性补齐
                         user_config[key][i] = MergeYamlNode(user_config[key][i], default_node.second[i],
                                                             "joints[" + std::to_string(i) + "]", modified);
                     }
@@ -81,6 +109,7 @@ static void CheckConfig(const std::filesystem::path& default_cfg_path, const std
         }
 
         if (modified) {
+            // 如果上述检查补齐了任何字段，将完整的用户配置覆盖写回原文件
             std::ofstream fout(user_cfg_path.string());
             fout << user_config;
             fout.close();

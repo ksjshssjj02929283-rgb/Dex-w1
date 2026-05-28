@@ -1,4 +1,5 @@
 # === 机器人基本配置 ===
+config_version: v01
 robot_type: w1
 version: v023
 left_hand_type: null
@@ -80,7 +81,7 @@ w1_v02:
   dyn_base_params_secondary: [0.18873769057742232, -0.0025820381104406987, 0.004378978277861697, 1.6438705978909056, 1.948775886748304, 0.0093574128424116, 0.11912790005054033, -0.043838289773375, 0.017970078945287474, 0.43745590934010775, 0.010027443426653182, 1.000670664956609e-06, 0.9733090559946299, 2.2490412945750746, 1.696542007296397, -0.13172091592781487, 0.019450925368660884, -0.008302059558895198, -0.01427268202620757, 0.008442207280929927, 0.004712507204238611, 0.004184118669518891, 0.044545012583856396, 0.1804370297520957, 1.4992717506463313, 1.5617333964069606, 0.009774189466812825, 0.0994831105688775, 0.0183062468816218, -0.0004310802171560632, 0.11095044379245333, -0.005433231098405991, 1.0008633838669455e-06, 0.512963907965668, 0.14646552435966714, 1.7801235056949098, 1.5397482417583306, -0.01742944109443152, 0.007612311375998499, 0.0030603661124915748, -0.0016713610306619033, 0.004398664717294961, -0.0010114725801189995, 0.009650075994982259, 0.012958308227523106, 0.03955979597970911, 0.28157524097626374, 0.30941653137887026, -0.03665292885787952, 0.014011546656212367, -0.0004663505877673091, -7.789149457913537e-05, 0.015613498795111452, -0.00022175052143568713, 0.007543606017444413, 0.004303398624063157, 1.068628430504393e-06, 0.47729863055447963, 0.3420221621184282, -0.006899741466882652, -0.013312760452596696, 0.0035465745883317057, 0.0010505744457743194, -0.005115181317576547, 0.009650560735415032, -0.0323257712972759, 0.005021222606855203, 0.02881957622003572, 0.531737651294806, 0.36609418185851594, 0.015414852329452144]
 
   joints:
-    - name: "ANKLE"
+    - name: ANKLE
       index: 0
       velocity_limit: 3.1416
       torque_limit: 87.0
@@ -96,7 +97,7 @@ w1_v02:
         damping: 20.0
         integral_ratio: 0.05
 
-    - name: "KNEE"
+    - name: KNEE
       index: 1
       velocity_limit: 3.1416
       torque_limit: 87.0
@@ -112,7 +113,7 @@ w1_v02:
         damping: 20.0
         integral_ratio: 0.05
 
-    - name: "BUTTOCK"
+    - name: BUTTOCK
       index: 2
       velocity_limit: 3.1416
       torque_limit: 87.0
@@ -128,7 +129,7 @@ w1_v02:
         damping: 20.0
         integral_ratio: 0.05
 
-    - name: "WAIST"
+    - name: WAIST
       index: 3
       velocity_limit: 3.1416
       torque_limit: 87.0
@@ -144,7 +145,7 @@ w1_v02:
         damping: 20.0
         integral_ratio: 0.05
 
-    - name: "NECK1"
+    - name: NECK1
       index: 4
       velocity_limit: 3.1416
       torque_limit: 10.0
@@ -156,7 +157,7 @@ w1_v02:
         enabled: true
         frequency: 12
 
-    - name: "NECK2"
+    - name: NECK2
       index: 5
       velocity_limit: 3.1416
       torque_limit: 10.0
@@ -172,7 +173,7 @@ w1_v02:
         damping: 20.0
         integral_ratio: 0.05
 
-    - name: "LEFT_J1"
+    - name: LEFT_J1
       index: 6
       velocity_limit: 3.1416
       torque_limit: 31.0
@@ -188,7 +189,7 @@ w1_v02:
         damping: 70.0
         integral_ratio: 0.02
 
-    - name: "LEFT_J2"
+    - name: LEFT_J2
       index: 7
       velocity_limit: 3.1416
       torque_limit: 31.0
@@ -204,7 +205,7 @@ w1_v02:
         damping: 62.0
         integral_ratio: 0.03
 
-    - name: "LEFT_J3"
+    - name: LEFT_J3
       index: 8
       velocity_limit: 3.1416
       torque_limit: 31.0
@@ -220,7 +221,7 @@ w1_v02:
         damping: 35.0
         integral_ratio: 0.03
 
-    - name: "LEFT_J4"
+    - name: LEFT_J4
       index: 9
       velocity_limit: 3.1416
       torque_limit: 31.0
@@ -236,7 +237,7 @@ w1_v02:
         damping: 33.0
         integral_ratio: 0.03
 
-    - name: "LEFT_J5"
+    - name: LEFT_J5
       index: 10
       velocity_limit: 3.1416
       torque_limit: 10.0
@@ -252,7 +253,7 @@ w1_v02:
         damping: 2.0
         integral_ratio: 0.05
 
-    - name: "LEFT_J6"
+    - name: LEFT_J6
       index: 11
       velocity_limit: 3.1416
       torque_limit: 10.0
@@ -268,7 +269,7 @@ w1_v02:
         damping: 2.0
         integral_ratio: 0.05
 
-    - name: "LEFT_J7"
+    - name: LEFT_J7
       index: 12
       velocity_limit: 3.1416
       torque_limit: 10.0
@@ -284,7 +285,7 @@ w1_v02:
         damping: 1.5
         integral_ratio: 0.05
 
-    - name: "RIGHT_J1"
+    - name: RIGHT_J1
       index: 13
       velocity_limit: 3.1416
       torque_limit: 31.0
@@ -300,7 +301,7 @@ w1_v02:
         damping: 70.0
         integral_ratio: 0.02
 
-    - name: "RIGHT_J2"
+    - name: RIGHT_J2
       index: 14
       velocity_limit: 3.1416
       torque_limit: 31.0
@@ -316,7 +317,7 @@ w1_v02:
         damping: 62.0
         integral_ratio: 0.03
 
-    - name: "RIGHT_J3"
+    - name: RIGHT_J3
       index: 15
       velocity_limit: 3.1416
       torque_limit: 31.0
@@ -332,7 +333,7 @@ w1_v02:
         damping: 35.0
         integral_ratio: 0.03
 
-    - name: "RIGHT_J4"
+    - name: RIGHT_J4
       index: 16
       velocity_limit: 3.1416
       torque_limit: 31.0
@@ -348,7 +349,7 @@ w1_v02:
         damping: 33.0
         integral_ratio: 0.03
 
-    - name: "RIGHT_J5"
+    - name: RIGHT_J5
       index: 17
       velocity_limit: 3.1416
       torque_limit: 10.0
@@ -364,7 +365,7 @@ w1_v02:
         damping: 2.0
         integral_ratio: 0.05
 
-    - name: "RIGHT_J6"
+    - name: RIGHT_J6
       index: 18
       velocity_limit: 3.1416
       torque_limit: 10.0
@@ -380,7 +381,7 @@ w1_v02:
         damping: 2.0
         integral_ratio: 0.05
 
-    - name: "RIGHT_J7"
+    - name: RIGHT_J7
       index: 19
       velocity_limit: 3.1416
       torque_limit: 10.0
@@ -420,317 +421,298 @@ w1_v03:
   dyn_base_params_secondary: [0.18873769057742232, -0.0025820381104406987, 0.004378978277861697, 1.6438705978909056, 1.948775886748304, 0.0093574128424116, 0.11912790005054033, -0.043838289773375, 0.017970078945287474, 0.43745590934010775, 0.010027443426653182, 1.000670664956609e-06, 0.9733090559946299, 2.2490412945750746, 1.696542007296397, -0.13172091592781487, 0.019450925368660884, -0.008302059558895198, -0.01427268202620757, 0.008442207280929927, 0.004712507204238611, 0.004184118669518891, 0.044545012583856396, 0.1804370297520957, 1.4992717506463313, 1.5617333964069606, 0.009774189466812825, 0.0994831105688775, 0.0183062468816218, -0.0004310802171560632, 0.11095044379245333, -0.005433231098405991, 1.0008633838669455e-06, 0.512963907965668, 0.14646552435966714, 1.7801235056949098, 1.5397482417583306, -0.01742944109443152, 0.007612311375998499, 0.0030603661124915748, -0.0016713610306619033, 0.004398664717294961, -0.0010114725801189995, 0.009650075994982259, 0.012958308227523106, 0.03955979597970911, 0.28157524097626374, 0.30941653137887026, -0.03665292885787952, 0.014011546656212367, -0.0004663505877673091, -7.789149457913537e-05, 0.015613498795111452, -0.00022175052143568713, 0.007543606017444413, 0.004303398624063157, 1.068628430504393e-06, 0.47729863055447963, 0.3420221621184282, -0.006899741466882652, -0.013312760452596696, 0.0035465745883317057, 0.0010505744457743194, -0.005115181317576547, 0.009650560735415032, -0.0323257712972759, 0.005021222606855203, 0.02881957622003572, 0.531737651294806, 0.36609418185851594, 0.015414852329452144]
 
   joints:
-    - name: "ANKLE"
+    - name: ANKLE
       index: 0
       velocity_limit: 3.1416
-      torque_limit: 87.0
+      torque_limit: 160.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 2.9
+        frequency: 5.0
       joint_impedance_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
-
-    - name: "KNEE"
+    - name: KNEE
       index: 1
       velocity_limit: 3.1416
-      torque_limit: 87.0
+      torque_limit: 160.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 2.9
+        frequency: 5.0
       joint_impedance_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
-
-    - name: "BUTTOCK"
+    - name: BUTTOCK
       index: 2
       velocity_limit: 3.1416
-      torque_limit: 87.0
+      torque_limit: 160.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 2.9
+        frequency: 5.0
       joint_impedance_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
-
-    - name: "WAIST"
+    - name: WAIST
       index: 3
       velocity_limit: 3.1416
-      torque_limit: 87.0
+      torque_limit: 160.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 3.5
+        frequency: 9.0
       joint_impedance_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
-
-    - name: "NECK1"
+    - name: NECK1
       index: 4
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 30.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 12
-
-    - name: "NECK2"
+        frequency: 22
+    - name: NECK2
       index: 5
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 30.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 12
+        frequency: 22
       joint_impedance_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
-
-    - name: "LEFT_J1"
+    - name: LEFT_J1
       index: 6
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 90.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 6.7
+        frequency: 13.5
       joint_impedance_control:
         stiffness: 900.0
         damping: 70.0
         integral_ratio: 0.02
-
-    - name: "LEFT_J2"
+    - name: LEFT_J2
       index: 7
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 90.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 9.5
+        frequency: 20.0
       joint_impedance_control:
         stiffness: 750.0
         damping: 62.0
         integral_ratio: 0.03
-
-    - name: "LEFT_J3"
+    - name: LEFT_J3
       index: 8
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 60.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 9.5
+        frequency: 20.0
       joint_impedance_control:
         stiffness: 650.0
         damping: 35.0
         integral_ratio: 0.03
-
-    - name: "LEFT_J4"
+    - name: LEFT_J4
       index: 9
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 60.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 12
+        frequency: 22
       joint_impedance_control:
         stiffness: 600.0
         damping: 33.0
         integral_ratio: 0.03
-
-    - name: "LEFT_J5"
+    - name: LEFT_J5
       index: 10
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 30.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 12
+        frequency: 22
       joint_impedance_control:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
-
-    - name: "LEFT_J6"
+    - name: LEFT_J6
       index: 11
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 30.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 12
+        frequency: 22
       joint_impedance_control:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
-
-    - name: "LEFT_J7"
+    - name: LEFT_J7
       index: 12
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 30.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 12
+        frequency: 22
       joint_impedance_control:
         stiffness: 20.0
         damping: 1.5
         integral_ratio: 0.05
-
-    - name: "RIGHT_J1"
+    - name: RIGHT_J1
       index: 13
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 90.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 6.7
+        frequency: 13.5
       joint_impedance_control:
         stiffness: 900.0
         damping: 70.0
         integral_ratio: 0.02
-
-    - name: "RIGHT_J2"
+    - name: RIGHT_J2
       index: 14
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 90.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 9.5
+        frequency: 20
       joint_impedance_control:
         stiffness: 750.0
         damping: 62.0
         integral_ratio: 0.03
-
-    - name: "RIGHT_J3"
+    - name: RIGHT_J3
       index: 15
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 60.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 9.5
+        frequency: 20
       joint_impedance_control:
         stiffness: 650.0
         damping: 35.0
         integral_ratio: 0.03
-
-    - name: "RIGHT_J4"
+    - name: RIGHT_J4
       index: 16
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 60.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 12
+        frequency: 22
       joint_impedance_control:
         stiffness: 600.0
         damping: 33.0
         integral_ratio: 0.03
-
-    - name: "RIGHT_J5"
+    - name: RIGHT_J5
       index: 17
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 30.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 12
+        frequency: 22
       joint_impedance_control:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
-
-    - name: "RIGHT_J6"
+    - name: RIGHT_J6
       index: 18
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 30.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 12
+        frequency: 22
       joint_impedance_control:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
-
-    - name: "RIGHT_J7"
+    - name: RIGHT_J7
       index: 19
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 30.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
-        frequency: 3
+        frequency: 5.0
       input_shaper:
         enabled: true
-        frequency: 12
+        frequency: 22
       joint_impedance_control:
         stiffness: 20.0
         damping: 1.5
