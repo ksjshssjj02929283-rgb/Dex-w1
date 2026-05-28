@@ -2,16 +2,18 @@
 """通过末端动态激励联合辨识工具绕质心的转动惯量与质心偏移。
 
 数据来源全部来自 /feedback/robot_server_state, F = ee_link 系:
-  - force_sensor_gravity[0:6] : 已扣零偏 + 已扣工具静态重力的六维力 (primary)
-  - ee_omega_ee_frame[0:3]    : 末端角速度 (server 1 kHz Butterworth 滤波后)
-  - ee_alpha_ee_frame[0:3]    : 末端角加速度 (同上)
+  - force_sensor[0:6]      : 零偏后、重力补偿前的六维力 (primary)
+  - ee_omega_ee_frame[0:3] : 末端角速度 (server 1 kHz Butterworth 滤波后)
+  - ee_alpha_ee_frame[0:3] : 末端角加速度 (同上)
 
-物理方程 (与 server 端 ApplyToolInertiaCompensationPrimary 注释一致):
-    F_g = -m a_C
-    T_g = -(I_C α_F + ω_F × I_C ω_F) + com × F_g
-=>  I_C α_F + ω_F × I_C ω_F  +  skew(F_g) · com  =  -T_g
+物理方程 (使用未扣重力的 unbiased wrench):
+    F_unb = m·R^T·g_W  −  m·a_C           (含重力 + 动态力)
+    T_unb = com × F_unb  −  (I·α + ω×I·ω)
+=>  I·α + ω×I·ω  +  skew(F_unb)·com  =  −T_unb
 
 Ixz = Iyz = 0 硬约束 → 联合估计 4 个惯量参数 + 3 个 COM 参数 = 7 params.
+
+com 的可观测性来自 F_unb 中的静态重力分量 (随姿态变化), 与 tool_com_estimate.py 物理意义一致.
 
 输出: ^F I_C (kg·m^2) 与 com (mm, F 系).
 """
@@ -54,9 +56,9 @@ _COM_WARN_DIFF_MM = 3.0  # 拟合 COM 与输入 COM 偏差超过此值告警
 class DynamicSample:
     arrival_time: float
     timestamp: float
-    wrench_gravity_F: np.ndarray  # 6 维, F 系
-    omega_F: np.ndarray           # 3 维, F 系
-    alpha_F: np.ndarray           # 3 维, F 系
+    wrench_unbiased_F: np.ndarray  # 6 维, F 系, 零偏后重力补偿前
+    omega_F: np.ndarray            # 3 维, F 系
+    alpha_F: np.ndarray            # 3 维, F 系
 
 
 # ---------------------------------------------------------------------------
@@ -172,35 +174,35 @@ def _com_regressor_cols(F_g: np.ndarray) -> np.ndarray:
 def fit_inertia_and_com(
     omega: np.ndarray,
     alpha: np.ndarray,
-    F_g: np.ndarray,
-    T_g: np.ndarray,
+    F_unb: np.ndarray,
+    T_unb: np.ndarray,
 ) -> Dict[str, object]:
-    """Joint LS: I·α + ω×I·ω + skew(F_g)·com = -T_g  (7 params)."""
+    """Joint LS: I·α + ω×I·ω + skew(F_unb)·com = -T_unb  (7 params)."""
     omega = np.asarray(omega, dtype=float)
     alpha = np.asarray(alpha, dtype=float)
-    F_g = np.asarray(F_g, dtype=float)
-    T_g = np.asarray(T_g, dtype=float)
+    F_unb = np.asarray(F_unb, dtype=float)
+    T_unb = np.asarray(T_unb, dtype=float)
     n = omega.shape[0]
-    if not (omega.shape == alpha.shape == F_g.shape == T_g.shape == (n, 3)):
-        raise ValueError("omega, alpha, F_g, T_g 都必须是 shape=(N, 3)。")
+    if not (omega.shape == alpha.shape == F_unb.shape == T_unb.shape == (n, 3)):
+        raise ValueError("omega, alpha, F_unb, T_unb 都必须是 shape=(N, 3)。")
 
     rows = []
     for i in range(n):
         y_i = _inertia_regressor_cols(omega[i], alpha[i])
-        y_com = _com_regressor_cols(F_g[i])
+        y_com = _com_regressor_cols(F_unb[i])
         rows.append(np.hstack([y_i, y_com]))
     y = np.vstack(rows)                       # (3N, 7)
-    b = -T_g.reshape(-1)                      # (3N,)
+    b = -T_unb.reshape(-1)                    # (3N,)
 
     theta, _, rank, sv = np.linalg.lstsq(y, b, rcond=None)
     pred = (y @ theta).reshape((-1, 3))
-    err = (-T_g) - pred
+    err = (-T_unb) - pred
 
     I_est = theta_to_inertia_matrix(theta)
     com_est = theta[4:7].copy()
     eigvals = np.linalg.eigvalsh(I_est)
     return {
-        "theta": theta,                       # 7-vector
+        "theta": theta,
         "inertia_com": I_est,
         "com_fitted_m": com_est,
         "rank": int(rank),
@@ -231,7 +233,7 @@ def prepare_fit_arrays(
 ) -> Dict[str, np.ndarray]:
     if len(samples) < 20:
         raise ValueError("动态采样点至少需要 20 个。")
-    wrench_g = np.vstack([s.wrench_gravity_F for s in samples])
+    wrench_g = np.vstack([s.wrench_unbiased_F for s in samples])
     omega = np.vstack([s.omega_F for s in samples])
     alpha = np.vstack([s.alpha_F for s in samples])
 
@@ -255,8 +257,8 @@ def prepare_fit_arrays(
     return {
         "omega": omega[si:ei],
         "alpha": alpha[si:ei],
-        "F_g": wrench_g[si:ei, :3],
-        "T_g": wrench_g[si:ei, 3:6],
+        "F_unb": wrench_g[si:ei, :3],
+        "T_unb": wrench_g[si:ei, 3:6],
     }
 
 
@@ -273,21 +275,21 @@ def sample_from_state_dict(data: Dict[str, object], arm: str) -> DynamicSample:
     timestamp_raw = float(data.get("timestamp", 0.0))
     timestamp = timestamp_raw * 1e-9 if timestamp_raw > 1e12 else timestamp_raw
 
-    for field in ("force_sensor_gravity", "ee_omega_ee_frame", "ee_alpha_ee_frame"):
+    for field in ("force_sensor", "ee_omega_ee_frame", "ee_alpha_ee_frame"):
         if field not in data:
             raise ValueError(f"{field} 字段缺失, 请升级 server。")
-    wrench_g = _slice_arm(data["force_sensor_gravity"], arm)
+    wrench_unb = _slice_arm(data["force_sensor"], arm)
     omega_F = _slice_arm(data["ee_omega_ee_frame"], arm)
     alpha_F = _slice_arm(data["ee_alpha_ee_frame"], arm)
-    if wrench_g.size != 6 or omega_F.size != 3 or alpha_F.size != 3:
-        raise ValueError(f"wrench/ω/α 切片维度异常: {wrench_g.size}/{omega_F.size}/{alpha_F.size}")
-    return DynamicSample(time.monotonic(), timestamp, wrench_g, omega_F, alpha_F)
+    if wrench_unb.size != 6 or omega_F.size != 3 or alpha_F.size != 3:
+        raise ValueError(f"wrench/ω/α 切片维度异常: {wrench_unb.size}/{omega_F.size}/{alpha_F.size}")
+    return DynamicSample(time.monotonic(), timestamp, wrench_unb, omega_F, alpha_F)
 
 
 def sample_to_json(sample: DynamicSample) -> Dict[str, object]:
     return {
         "timestamp": sample.timestamp,
-        "wrench_gravity_F": array_to_list(sample.wrench_gravity_F),
+        "wrench_unbiased_F": array_to_list(sample.wrench_unbiased_F),
         "omega_F": array_to_list(sample.omega_F),
         "alpha_F": array_to_list(sample.alpha_F),
     }
@@ -300,13 +302,13 @@ def samples_from_jsonl(path: Path) -> List[DynamicSample]:
             if not line.strip():
                 continue
             data = json.loads(line)
-            for key in ("wrench_gravity_F", "omega_F", "alpha_F"):
+            for key in ("wrench_unbiased_F", "omega_F", "alpha_F"):
                 if key not in data:
                     raise ValueError(f"jsonl 缺少字段 {key}: 请用新版重新采集。")
             samples.append(DynamicSample(
                 arrival_time=time.monotonic(),
                 timestamp=float(data.get("timestamp", 0.0)),
-                wrench_gravity_F=np.asarray(data["wrench_gravity_F"], dtype=float),
+                wrench_unbiased_F=np.asarray(data["wrench_unbiased_F"], dtype=float),
                 omega_F=np.asarray(data["omega_F"], dtype=float),
                 alpha_F=np.asarray(data["alpha_F"], dtype=float),
             ))
@@ -498,7 +500,7 @@ def result_to_json(
         "sample_count": int(sample_count),
         "arm": args.arm,
         "dt": args.dt,
-        "wrench_source": "force_sensor_gravity (零偏+重力补偿后, F 系)",
+        "wrench_source": "force_sensor (零偏后重力补偿前, F 系)",
         "kinematics_source": "ee_omega/alpha_ee_frame (server 1 kHz Butterworth, F 系)",
         "mass_kg": args.mass,
         "com_input_mm": array_to_list(com_in * 1000.0),
@@ -557,7 +559,7 @@ def run_self_test() -> None:
                        [0.002, 0.026, 0.0],
                        [0.0,   0.0,   0.031]], dtype=float)
     com_true = np.array([0.001, -0.002, 0.05])
-    mass = 1.0
+    g_world = np.array([0.0, 0.0, -9.81])
 
     n, dt = 4000, 0.005
     t = np.arange(n) * dt
@@ -572,19 +574,28 @@ def run_self_test() -> None:
         0.20 * (2.0 * np.pi * 0.90) * np.cos(2.0 * np.pi * 0.90 * t + 2.0),
     ])
 
-    a_C = rng.normal(scale=0.5, size=(n, 3))
-    F_g = -mass * a_C
-    T_g = -np.array([
-        I_true @ alpha[i] + np.cross(omega[i], I_true @ omega[i]) for i in range(n)
-    ]) + np.cross(com_true, F_g)
+    # 模拟末端姿态变化 (低频摆动, 让 gravity 投影在 EE 系下有一定变化)
+    R_ee = np.array([rot_y(0.15 * math.sin(2.0 * math.pi * 0.1 * ti)) for ti in t])
+    F_grav_ee = np.array([r.T @ g_world for r in R_ee])  # m=1 → 数值上等于加速度
 
-    result = fit_inertia_and_com(omega, alpha, F_g, T_g)
+    a_C = rng.normal(scale=0.5, size=(n, 3))
+    F_unb = F_grav_ee - a_C   # 重力 + 动态力 (mass=1)
+    T_unb = np.cross(com_true, F_unb) - np.array([
+        I_true @ alpha[i] + np.cross(omega[i], I_true @ omega[i]) for i in range(n)
+    ])
+
+    result = fit_inertia_and_com(omega, alpha, F_unb, T_unb)
     theta = np.asarray(result["theta"])
     I_err = np.linalg.norm(theta[:4] - np.array([0.018, 0.026, 0.031, 0.002]))
     com_err = np.linalg.norm(result["com_fitted_m"] - com_true)
     print(f"self-test: I_err={I_err:.6e}  com_err={com_err:.6e}  torque_rms={result['torque_rms']:.6e}")
     if I_err > 1e-10 or com_err > 1e-10:
         raise RuntimeError(f"self-test 失败: theta={theta}")
+
+
+def rot_y(theta: float) -> np.ndarray:
+    c, s = math.cos(theta), math.sin(theta)
+    return np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]], dtype=float)
 
 
 # ---------------------------------------------------------------------------
@@ -682,7 +693,7 @@ def main() -> None:
         extra_filter_fc_hz=extra_fc,
     )
     print(f"拟合中, 有效样本: {len(arrays['omega'])}")
-    result = fit_inertia_and_com(arrays["omega"], arrays["alpha"], arrays["F_g"], arrays["T_g"])
+    result = fit_inertia_and_com(arrays["omega"], arrays["alpha"], arrays["F_unb"], arrays["T_unb"])
     payload = result_to_json(result, args, len(arrays["omega"]))
     payload["capture_path"] = str(capture_path)
 
