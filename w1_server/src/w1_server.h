@@ -178,6 +178,14 @@ private:
     // 反馈失效或首拍跳过时写 NaN, 让下游消费者 (e.g. tool_inertia_estimate.py) 一眼丢弃.
     std::array<std::atomic<double>, 3> ee_omega_F_primary_{};
     std::array<std::atomic<double>, 3> ee_alpha_F_primary_{};
+    std::array<std::atomic<double>, 3> ee_linear_velocity_F_primary_{};
+    std::array<std::atomic<double>, 3> ee_linear_accel_raw_F_primary_{};
+    std::array<std::atomic<double>, 3> ee_linear_accel_filtered_F_primary_{};
+    // 工具惯性力分量诊断 (F = ee_link 系, 3 维: Fx Fy Fz), 仅 primary.
+    // 三项之和应等于 force_sensor_inertia[0:3] (补偿实际运行的周期).
+    std::array<std::atomic<double>, 3> inertia_force_from_ee_linear_acc_F_primary_{};
+    std::array<std::atomic<double>, 3> inertia_force_from_alpha_cross_com_F_primary_{};
+    std::array<std::atomic<double>, 3> inertia_force_from_omega_cross_omega_cross_com_F_primary_{};
     std::shared_ptr<SriForceSensor> primary_sensor_;
     std::shared_ptr<SriForceSensor> secondary_sensor_;  // 暂未使用
     bool primary_sensor_ready_ = false;

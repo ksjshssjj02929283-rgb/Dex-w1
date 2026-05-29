@@ -20,10 +20,9 @@ constexpr double kDefaultInertiaCompCutoffHz = 5.0;
 constexpr double kMinInertiaCompCutoffHz = 0.5;
 constexpr double kMaxInertiaCompCutoffHz = 100.0;  // 1 kHz 采样的 10%
 
-// 把 primary 的 3 维 atomic ω/α 快照成 6 维 (primary[0:3] + secondary[3:6]) 给 publish 用.
+// 把 primary 的 3 维 atomic 诊断量快照成 6 维 (primary[0:3] + secondary[3:6]) 给 publish 用.
 // secondary 段当前永远是 NaN, VectorToJsonArrayString 会把 NaN 输出为 JSON null.
-inline std::array<double, 6> SnapshotEEKinematicsArray6(
-    const std::array<std::atomic<double>, 3>& primary) {
+inline std::array<double, 6> SnapshotPrimaryVectorArray6(const std::array<std::atomic<double>, 3>& primary) {
     std::array<double, 6> out{};
     for (int i = 0; i < 3; ++i) out[i] = primary[i].load(std::memory_order_relaxed);
     const double nan_v = std::numeric_limits<double>::quiet_NaN();
@@ -335,6 +334,12 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
         for (int i = 0; i < 3; ++i) {
             ee_omega_F_primary_[i].store(nan_v, std::memory_order_relaxed);
             ee_alpha_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            ee_linear_velocity_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            ee_linear_accel_raw_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            ee_linear_accel_filtered_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            inertia_force_from_ee_linear_acc_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            inertia_force_from_alpha_cross_com_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            inertia_force_from_omega_cross_omega_cross_com_F_primary_[i].store(nan_v, std::memory_order_relaxed);
         }
     };
     if (!tool_inertia_compensation_enabled_ || !tool_gravity_compensation_enabled_) {
@@ -383,16 +388,23 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
         for (int i = 0; i < 3; ++i) {
             ee_omega_F_primary_[i].store(nan_v, std::memory_order_relaxed);
             ee_alpha_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            ee_linear_velocity_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            ee_linear_accel_raw_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            ee_linear_accel_filtered_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            inertia_force_from_ee_linear_acc_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            inertia_force_from_alpha_cross_com_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+            inertia_force_from_omega_cross_omega_cross_com_F_primary_[i].store(nan_v, std::memory_order_relaxed);
         }
         return wrench_ee;
     }
 
     // 末端线加速度: 对 v_ee 做后向差分, 再 Butterworth 低通滤波
+    Vector3d a_raw_armbase;
     Vector3d a_ee_armbase;
     {
-        const Vector3d a_raw = (v_ee_armbase - prev_ee_linvel_armbase_) / kDt;
+        a_raw_armbase = (v_ee_armbase - prev_ee_linvel_armbase_) / kDt;
         for (int i = 0; i < 3; ++i) {
-            a_ee_armbase[i] = ee_accel_filter_[i]->Apply(a_raw[i]);
+            a_ee_armbase[i] = ee_accel_filter_[i]->Apply(a_raw_armbase[i]);
         }
     }
     // EE 角加速度: 直接对 ω = J_ω · dq 做后向差分再 Butterworth 低通滤波.
@@ -418,8 +430,11 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
     const Vector3d r_C_armbase = R_a_e * tool_com_m_;
 
     // COM 加速度 (arm-base): a_C = a_ee + α × r_C + ω × (ω × r_C)
+    const Vector3d a_alpha_cross_com_armbase = alpha_ee_armbase.cross(r_C_armbase);
+    const Vector3d a_omega_cross_omega_cross_com_armbase =
+        w_ee_armbase.cross(w_ee_armbase.cross(r_C_armbase));
     const Vector3d a_C_armbase =
-        a_ee_armbase + alpha_ee_armbase.cross(r_C_armbase) + w_ee_armbase.cross(w_ee_armbase.cross(r_C_armbase));
+        a_ee_armbase + a_alpha_cross_com_armbase + a_omega_cross_omega_cross_com_armbase;
 
     // COM 处的惯量矩阵在 arm-base: I_C_a = R * I_C * R^T
     const Eigen::Matrix3d I_C_armbase = R_a_e * tool_inertia_com_ * R_a_e.transpose();
@@ -443,6 +458,14 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
     expected_inertia_wrench_ee.tail<3>() =
         -static_cast<double>(tool_model_sign_) * (R_a_e.transpose() * tau_about_ee_armbase);
 
+    const double model_sign = static_cast<double>(tool_model_sign_);
+    const Vector3d inertia_force_from_ee_linear_acc_ee =
+        -model_sign * (R_a_e.transpose() * (tool_mass_kg_ * a_ee_armbase));
+    const Vector3d inertia_force_from_alpha_cross_com_ee =
+        -model_sign * (R_a_e.transpose() * (tool_mass_kg_ * a_alpha_cross_com_armbase));
+    const Vector3d inertia_force_from_omega_cross_omega_cross_com_ee =
+        -model_sign * (R_a_e.transpose() * (tool_mass_kg_ * a_omega_cross_omega_cross_com_armbase));
+
     // 诊断: 暴露本周期实际扣除的惯量 wrench (EE 系, 6 维) 给 publish 线程.
     for (int i = 0; i < 6; ++i) {
         tool_inertia_wrench_ee_[i].store(expected_inertia_wrench_ee[i], std::memory_order_relaxed);
@@ -452,9 +475,21 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
     // (α_F = R^T α_ab 与 d/dt(ω_F) 在连续时间下严格相等, 差项 -ω_F × ω_F = 0).
     const Vector3d w_ee_F = R_a_e.transpose() * w_ee_armbase;
     const Vector3d alpha_ee_F = R_a_e.transpose() * alpha_ee_armbase;
+    const Vector3d v_ee_F = R_a_e.transpose() * v_ee_armbase;
+    const Vector3d a_raw_ee_F = R_a_e.transpose() * a_raw_armbase;
+    const Vector3d a_filtered_ee_F = R_a_e.transpose() * a_ee_armbase;
     for (int i = 0; i < 3; ++i) {
         ee_omega_F_primary_[i].store(w_ee_F[i], std::memory_order_relaxed);
         ee_alpha_F_primary_[i].store(alpha_ee_F[i], std::memory_order_relaxed);
+        ee_linear_velocity_F_primary_[i].store(v_ee_F[i], std::memory_order_relaxed);
+        ee_linear_accel_raw_F_primary_[i].store(a_raw_ee_F[i], std::memory_order_relaxed);
+        ee_linear_accel_filtered_F_primary_[i].store(a_filtered_ee_F[i], std::memory_order_relaxed);
+        inertia_force_from_ee_linear_acc_F_primary_[i].store(inertia_force_from_ee_linear_acc_ee[i],
+                                                             std::memory_order_relaxed);
+        inertia_force_from_alpha_cross_com_F_primary_[i].store(inertia_force_from_alpha_cross_com_ee[i],
+                                                               std::memory_order_relaxed);
+        inertia_force_from_omega_cross_omega_cross_com_F_primary_[i].store(
+            inertia_force_from_omega_cross_omega_cross_com_ee[i], std::memory_order_relaxed);
     }
 
     if (applied) *applied = true;
@@ -480,6 +515,12 @@ void RobotServer::ResetToolInertiaCompensationState() {
     for (int i = 0; i < 3; ++i) {
         ee_omega_F_primary_[i].store(nan_v, std::memory_order_relaxed);
         ee_alpha_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+        ee_linear_velocity_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+        ee_linear_accel_raw_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+        ee_linear_accel_filtered_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+        inertia_force_from_ee_linear_acc_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+        inertia_force_from_alpha_cross_com_F_primary_[i].store(nan_v, std::memory_order_relaxed);
+        inertia_force_from_omega_cross_omega_cross_com_F_primary_[i].store(nan_v, std::memory_order_relaxed);
     }
 }
 
@@ -1198,8 +1239,14 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         std::to_string(this->tool_inertia_wrench_ee_[5].load(std::memory_order_relaxed)) + "]" +
         // ω/α 在 F = ee_link 系, 6 维布局: primary[0:3] + secondary[3:6]; secondary 暂未支持, 写 NaN
         // (经 VectorToJsonArrayString 输出为 JSON null, 让下游 (script) 能区分"未支持"与"恰好为零").
-        ",\n  \"ee_omega_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotEEKinematicsArray6(this->ee_omega_F_primary_)).str() +
-        ",\n  \"ee_alpha_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotEEKinematicsArray6(this->ee_alpha_F_primary_)).str() +
+        ",\n  \"ee_omega_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->ee_omega_F_primary_)).str() +
+        ",\n  \"ee_alpha_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->ee_alpha_F_primary_)).str() +
+        ",\n  \"ee_linear_velocity_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->ee_linear_velocity_F_primary_)).str() +
+        ",\n  \"ee_linear_accel_raw_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->ee_linear_accel_raw_F_primary_)).str() +
+        ",\n  \"ee_linear_accel_filtered_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->ee_linear_accel_filtered_F_primary_)).str() +
+        ",\n  \"inertia_force_from_ee_linear_acc\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->inertia_force_from_ee_linear_acc_F_primary_)).str() +
+        ",\n  \"inertia_force_from_alpha_cross_com\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->inertia_force_from_alpha_cross_com_F_primary_)).str() +
+        ",\n  \"inertia_force_from_omega_cross_omega_cross_com\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->inertia_force_from_omega_cross_omega_cross_com_F_primary_)).str() +
         ", \"tool_inertia_filter_cutoff_hz\":" + std::to_string(this->tool_inertia_filter_cutoff_hz_) +
         "}";
     return robot_server_state_msg;
