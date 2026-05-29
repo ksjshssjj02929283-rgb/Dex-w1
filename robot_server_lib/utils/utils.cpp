@@ -214,9 +214,28 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         robot_property.enable_chassis_shaper = config["chassis_config"]["enable_chassis_shaper"].as<bool>();
     }
 
-    if (version_cfg["joints"] && version_cfg["joints"].IsSequence()) {
-        int joint_idx = 0;
-        for (const auto& joint_config : version_cfg["joints"]) {
+    if (config["force_sensor_external_wrench"] && config["force_sensor_external_wrench"].IsMap()) {
+        const auto external_wrench = config["force_sensor_external_wrench"];
+        auto parse_non_negative = [&](const char* key, double& target) {
+            if (!external_wrench[key]) {
+                return;
+            }
+            const double value = external_wrench[key].as<double>();
+            if (!std::isfinite(value) || value < 0.0) {
+                LOG_WARN << "Invalid force_sensor_external_wrench." << key << ": " << value
+                         << ", keep default " << target;
+                return;
+            }
+            target = value;
+        };
+        parse_non_negative("force_deadband_n", params.external_wrench_force_deadband_n);
+        parse_non_negative("force_saturation_n", params.external_wrench_force_saturation_n);
+        parse_non_negative("torque_deadband_nm", params.external_wrench_torque_deadband_nm);
+        parse_non_negative("torque_saturation_nm", params.external_wrench_torque_saturation_nm);
+    }
+
+    if (config["joints"] && config["joints"].IsSequence()) {
+        for (const auto& joint_config : config["joints"]) {
             std::string joint_name;
             if (joint_config["name"]) {
                 joint_name = joint_config["name"].as<std::string>();
@@ -696,32 +715,7 @@ StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interf
 }
 
 Vector12d GetSensorWrench(const Vector6d& wrench_primary, const Vector6d& wrench_secondary) {
-    //     // 最小力/力矩阈值(去除摩擦力), 和最大力/力矩值
-    //     constexpr double force_threshold = 1.0;
-    //     constexpr double torque_threshold = 0.1;
-    //     constexpr double force_max = 100.0;
-    //     constexpr double torque_max = 10.0;
-    //
-    //     auto deadzone_saturate = [](double x, double th, double mx) noexcept -> double {
-    //         double y = std::max(0.0, std::abs(x) - th);
-    //         if (y > mx) y = mx;
-    //         return std::copysign(y, x);
-    //     };
-    //
-    //     auto process6 = [&](const Vector6d &w) noexcept -> Vector6d {
-    //         Vector6d out;
-    //         for (int i = 0; i < 6; ++i) {
-    //             const bool is_force = i < 3;
-    //             const double th = is_force ? force_threshold : torque_threshold;
-    //             const double mx = is_force ? force_max : torque_max;
-    //             out[i] = deadzone_saturate(w[i], th, mx);
-    //         }
-    //         return out;
-    //     };
-    //
     Vector12d sensor_wrench;
-    //     sensor_wrench.head<6>() = process6(wrench_primary);
-    //     sensor_wrench.tail<6>() = process6(wrench_secondary);
     sensor_wrench.head<6>() = wrench_primary;
     sensor_wrench.tail<6>() = wrench_secondary;
     return sensor_wrench;

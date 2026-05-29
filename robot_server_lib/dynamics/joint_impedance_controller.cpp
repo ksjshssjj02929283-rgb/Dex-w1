@@ -1,5 +1,6 @@
 #include "joint_impedance_controller.h"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -43,7 +44,8 @@ VectorDof JointImpedanceController::ComputeExternalTorque(const VectorDof& feedb
                                                           const Vector12d& sensor_wrench) const {
     VectorDof torque_ext = VectorDof::Zero();
 
-    auto add_arm_external_torque = [&](MotionGroup motion_group, const Vector6d& wrench) {
+    auto add_arm_external_torque = [&](MotionGroup motion_group, const Vector6d& raw_wrench) {
+        const Vector6d wrench = ProcessExternalWrench(raw_wrench);
         if (wrench.isZero(FloatZeroTol)) {
             return;
         }
@@ -54,7 +56,7 @@ VectorDof JointImpedanceController::ComputeExternalTorque(const VectorDof& feedb
         const auto& arm_model =
             (motion_group == MotionGroup::Primary) ? *robot_model_.primary_arm_model_ptr
                                                    : *robot_model_.secondary_arm_model_ptr;
-        const Eigen::MatrixXd jacobian = pinocchio::GetJacobiMatrix(arm_model, q_arm);
+        const Eigen::MatrixXd jacobian = pinocchio::GetJacobiMatrix(arm_model, q_arm, pinocchio::LOCAL);
         const Eigen::VectorXd tau_arm = jacobian.transpose() * wrench;
         utils::MapJointToWholeBody(robot_model_, tau_arm, torque_ext, motion_group);
     };
@@ -63,6 +65,26 @@ VectorDof JointImpedanceController::ComputeExternalTorque(const VectorDof& feedb
     add_arm_external_torque(MotionGroup::Secondary, sensor_wrench.tail<6>());
 
     return torque_ext;
+}
+
+Vector6d JointImpedanceController::ProcessExternalWrench(const Vector6d& wrench) const {
+    const auto& params = *robot_model_.params_ptr;
+    Vector6d processed = Vector6d::Zero();
+
+    auto deadband_saturate = [](double value, double deadband, double saturation) {
+        const double magnitude = std::max(0.0, std::abs(value) - deadband);
+        return std::copysign(std::min(magnitude, saturation), value);
+    };
+
+    for (int i = 0; i < 6; ++i) {
+        const bool is_force = i < 3;
+        const double deadband =
+            is_force ? params.external_wrench_force_deadband_n : params.external_wrench_torque_deadband_nm;
+        const double saturation =
+            is_force ? params.external_wrench_force_saturation_n : params.external_wrench_torque_saturation_nm;
+        processed[i] = deadband_saturate(wrench[i], deadband, saturation);
+    }
+    return processed;
 }
 
 void JointImpedanceController::AccumulateIntegralError(const VectorDof& q_error) {

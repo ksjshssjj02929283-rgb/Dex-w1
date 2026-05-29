@@ -20,16 +20,6 @@ constexpr double kDefaultInertiaCompCutoffHz = 5.0;
 constexpr double kMinInertiaCompCutoffHz = 0.5;
 constexpr double kMaxInertiaCompCutoffHz = 100.0;  // 1 kHz 采样的 10%
 
-// 把 primary 的 3 维 atomic 诊断量快照成 6 维 (primary[0:3] + secondary[3:6]) 给 publish 用.
-// secondary 段当前永远是 NaN, VectorToJsonArrayString 会把 NaN 输出为 JSON null.
-inline std::array<double, 6> SnapshotPrimaryVectorArray6(const std::array<std::atomic<double>, 3>& primary) {
-    std::array<double, 6> out{};
-    for (int i = 0; i < 3; ++i) out[i] = primary[i].load(std::memory_order_relaxed);
-    const double nan_v = std::numeric_limits<double>::quiet_NaN();
-    for (int i = 3; i < 6; ++i) out[i] = nan_v;
-    return out;
-}
-
 bool ReadYamlVector(const YAML::Node& node, int expected_size, Eigen::VectorXd& out) {
     if (!node || !node.IsSequence() || static_cast<int>(node.size()) != expected_size) {
         return false;
@@ -714,7 +704,6 @@ void RobotServer::TorqueControlThreadFunc() {
             sensor_data_primary.head<3>() += sensor_force_;
         }
 
-        // 诊断字段: 保留"零偏后 + 重力补偿后, 惯量补偿前"的六维力。
         // 当惯量补偿运行时, primary 部分已通过同 cutoff 的滤波器做相位匹配。
         sensor_wrench_gravity_ = utils::GetSensorWrench(sensor_data_primary_before_inertia, sensor_data_secondary);
         sensor_wrench_gravity_raw_ = utils::GetSensorWrench(sensor_data_primary_gravity_raw, sensor_data_secondary);
@@ -722,9 +711,6 @@ void RobotServer::TorqueControlThreadFunc() {
         // 力控安全策略: 已启用但本周期未成功扣减的补偿视为"失效", 把对应臂的 sensor_data 清零,
         // 让下游 JointImpedanceController::ComputeExternalTorque 的 isZero 短路使 torque_ext=0,
         // 避免把"工具自重 / 惯性反作用"误当外力反馈进控制律.
-        // 注 1: "未启用" (用户没配 inertia_com_kg_m2 / 没装 secondary 传感器等) 不视为失效.
-        // 注 2: 清零会同时清掉 force_array 话题手动注入的 sensor_force_, 这是有意的——
-        //       补偿失效时 sensor_data_primary 已被工具自重污染, 在它上面叠加注入力没有意义.
         const bool primary_compensation_failed =
             primary_wrench_valid &&
             ((tool_gravity_compensation_enabled_ && !gravity_applied_primary) ||
@@ -1268,17 +1254,6 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         std::to_string(this->tool_inertia_wrench_ee_[3].load(std::memory_order_relaxed)) + "," +
         std::to_string(this->tool_inertia_wrench_ee_[4].load(std::memory_order_relaxed)) + "," +
         std::to_string(this->tool_inertia_wrench_ee_[5].load(std::memory_order_relaxed)) + "]" +
-        // ω/α 在 F = ee_link 系, 6 维布局: primary[0:3] + secondary[3:6]; secondary 暂未支持, 写 NaN
-        // (经 VectorToJsonArrayString 输出为 JSON null, 让下游 (script) 能区分"未支持"与"恰好为零").
-        ",\n  \"ee_omega_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->ee_omega_F_primary_)).str() +
-        ",\n  \"ee_alpha_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->ee_alpha_F_primary_)).str() +
-        ",\n  \"ee_linear_velocity_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->ee_linear_velocity_F_primary_)).str() +
-        ",\n  \"ee_linear_accel_raw_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->ee_linear_accel_raw_F_primary_)).str() +
-        ",\n  \"ee_linear_accel_filtered_ee_frame\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->ee_linear_accel_filtered_F_primary_)).str() +
-        ",\n  \"inertia_force_from_ee_linear_acc\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->inertia_force_from_ee_linear_acc_F_primary_)).str() +
-        ",\n  \"inertia_force_from_alpha_cross_com\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->inertia_force_from_alpha_cross_com_F_primary_)).str() +
-        ",\n  \"inertia_force_from_omega_cross_omega_cross_com\":" + utils::VectorToJsonArrayString(SnapshotPrimaryVectorArray6(this->inertia_force_from_omega_cross_omega_cross_com_F_primary_)).str() +
-        ", \"tool_inertia_filter_cutoff_hz\":" + std::to_string(this->tool_inertia_filter_cutoff_hz_) +
         "}";
     return robot_server_state_msg;
 }
