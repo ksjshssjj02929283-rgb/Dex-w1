@@ -263,6 +263,9 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
     for (auto& f : omega_diff_filter_) {
         f = std::make_shared<ButterworthFilter>(cutoff_hz);
     }
+    for (auto& f : force_sensor_gravity_filter_primary_) {
+        f = std::make_shared<ButterworthFilter>(cutoff_hz);
+    }
     ResetToolInertiaCompensationState();
 }
 
@@ -310,6 +313,16 @@ Vector6d RobotServer::ApplyToolGravityCompensation(const Vector6d& wrench_ee, in
 
     if (applied) *applied = true;
     return wrench_ee - expected_wrench_ee;
+}
+
+Vector6d RobotServer::ApplyToolGravityMatchedFilterPrimary(const Vector6d& wrench_ee) {
+    Vector6d filtered = wrench_ee;
+    for (int i = 0; i < 6; ++i) {
+        if (force_sensor_gravity_filter_primary_[i]) {
+            filtered[i] = force_sensor_gravity_filter_primary_[i]->Apply(wrench_ee[i]);
+        }
+    }
+    return filtered;
 }
 
 Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench_ee,
@@ -500,6 +513,9 @@ void RobotServer::ResetToolInertiaCompensationState() {
     for (auto& f : omega_diff_filter_) {
         if (f) f->Reset();
     }
+    for (auto& f : force_sensor_gravity_filter_primary_) {
+        if (f) f->Reset();
+    }
     // 失效路径下把诊断 wrench 置零, 避免 publish 线程读到过期数据. ω/α 写 NaN
     // (与"惯量补偿未运行"语义一致, 让 script 一眼丢弃, 不与"静止" (=0) 混淆).
     for (int i = 0; i < 6; ++i) {
@@ -602,14 +618,7 @@ void RobotServer::TorqueControlThreadFunc() {
             sensor_data_secondary =
                 ApplyToolGravityCompensation(zeroed_sensor_data_secondary, 1, &gravity_applied_secondary);
         }
-
-        // 诊断字段: 保留"零偏后 + 重力补偿后, 惯量补偿前"的六维力.
-        sensor_wrench_gravity_ = utils::GetSensorWrench(sensor_data_primary, sensor_data_secondary);
-
-        // 叠加手动输入的力数据；没有六维力传感器时保持控制律输入 wrench 为零。
-        if (primary_wrench_valid) {
-            sensor_data_primary.head<3>() += sensor_force_;
-        }
+        Vector6d sensor_data_primary_before_inertia = sensor_data_primary;
 
         // 使用临时变量接收共享内存数据
         RobotFeedback feedback_temp{};
@@ -630,6 +639,7 @@ void RobotServer::TorqueControlThreadFunc() {
 
         // 工具惯量补偿 (仅 primary): 在重力补偿之后, 在 sensor_data_primary 写入测量之前.
         // 用单一布尔门控所有前置条件, 防止后续修改任一条件时漏掉 Reset 路径.
+        bool should_run_inertia = false;
         if (tool_inertia_compensation_enabled_) {
             // 首次解析 primary 7 个关节在 whole-body 模型下的 joint id, 之后从缓存读.
             // 失败则永久关闭惯量补偿 (URDF/yaml 不匹配是配置错, 不是运行时偶发).
@@ -653,11 +663,19 @@ void RobotServer::TorqueControlThreadFunc() {
                 }
             }
 
-            const bool should_run_inertia =
+            should_run_inertia =
                 ret && primary_wrench_valid && tool_inertia_compensation_enabled_ &&
                 inertia_primary_joint_id_resolved_;
 
             if (should_run_inertia) {
+                // 与惯量补偿的 a/alpha 滤波使用同一 cutoff, 让被扣减的测量 wrench 与
+                // force_sensor_inertia 在相位上匹配. sensor_force_ 是手动注入量, 不参与滤波。
+                sensor_data_primary = ApplyToolGravityMatchedFilterPrimary(sensor_data_primary);
+                sensor_data_primary_before_inertia = sensor_data_primary;
+
+                // 叠加手动输入的力数据；没有六维力传感器时保持控制律输入 wrench 为零。
+                sensor_data_primary.head<3>() += sensor_force_;
+
                 for (int i = 0; i < 7; ++i) {
                     const int jid = inertia_primary_joint_id_[i];
                     inertia_q_primary_buf_[i] = robot_feedback_.joint_feedback[jid].joint_position;
@@ -671,6 +689,15 @@ void RobotServer::TorqueControlThreadFunc() {
                 ResetToolInertiaCompensationState();
             }
         }
+        if (!should_run_inertia && primary_wrench_valid) {
+            // 未运行惯量补偿时保持原语义: 重力补偿后的 wrench 不额外滤波。
+            // 若补偿失效, 下方安全策略会继续把 sensor_data_primary 清零。
+            sensor_data_primary.head<3>() += sensor_force_;
+        }
+
+        // 诊断字段: 保留"零偏后 + 重力补偿后, 惯量补偿前"的六维力。
+        // 当惯量补偿运行时, primary 部分已通过同 cutoff 的滤波器做相位匹配。
+        sensor_wrench_gravity_ = utils::GetSensorWrench(sensor_data_primary_before_inertia, sensor_data_secondary);
 
         // 力控安全策略: 已启用但本周期未成功扣减的补偿视为"失效", 把对应臂的 sensor_data 清零,
         // 让下游 JointImpedanceController::ComputeExternalTorque 的 isZero 短路使 torque_ext=0,

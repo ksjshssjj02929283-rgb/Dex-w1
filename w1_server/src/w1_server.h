@@ -56,6 +56,9 @@ private:
     // applied=false 的情况包括: 补偿未启用 (用户主动选择), 或 manager_state ∈ {Init, Error}
     // 导致 EE 旋转不可用. 调用方据此决定是否要清零下游 wrench.
     Vector6d ApplyToolGravityCompensation(const Vector6d& wrench_ee, int arm_index, bool* applied = nullptr) const;
+    // 与惯量补偿使用相同 cutoff 的 6 维 wrench 滤波, 用于让 force_sensor_gravity
+    // 与 force_sensor_inertia 在相位上匹配. 仅 primary 臂使用.
+    Vector6d ApplyToolGravityMatchedFilterPrimary(const Vector6d& wrench_ee);
     // 工具动力学(惯性)补偿: 仅对 primary 臂生效, 在重力补偿之后调用.
     // wrench_ee 已经是 EE 坐标系下的 6 维力旋量 (经过零偏与重力补偿).
     // 注意: q/dq 必须是 size==7 的预分配 VectorXd, 用 dynamic VectorXd 是为了
@@ -159,6 +162,7 @@ private:
     Vector3d prev_omega_armbase_ = Vector3d::Zero();
     std::array<std::shared_ptr<ButterworthFilter>, 3> ee_accel_filter_;   // EE 线加速度滤波
     std::array<std::shared_ptr<ButterworthFilter>, 3> omega_diff_filter_; // EE 角速度差分(=α)滤波
+    std::array<std::shared_ptr<ButterworthFilter>, 6> force_sensor_gravity_filter_primary_;
     // 预分配缓冲: 1 kHz 线程内绑定到 pinocchio_api 的 const VectorXd& 形参, 避免重复 new
     Eigen::VectorXd inertia_q_primary_buf_ = Eigen::VectorXd::Zero(7);
     Eigen::VectorXd inertia_dq_primary_buf_ = Eigen::VectorXd::Zero(7);

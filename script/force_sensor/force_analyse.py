@@ -50,6 +50,9 @@ JOINT_STATE_FIELDS = [
     "joint_position",
     "joint_velocity",
 ]
+SCALAR_FIELDS = [
+    "tool_inertia_filter_cutoff_hz",
+]
 AXIS_LABELS = ["Fx [N]", "Fy [N]", "Fz [N]", "Tx [Nm]", "Ty [Nm]", "Tz [Nm]"]
 EE_AXIS_LABELS = ["ωx [rad/s]", "ωy [rad/s]", "ωz [rad/s]"]
 FIELD_COLORS = {
@@ -133,6 +136,11 @@ def extract_force_sample(data: Mapping[str, object], t: float = 0.0) -> Dict[str
             sample[field] = float_list(data.get(field), field, 1)
         except (ValueError, TypeError):
             pass
+    for field in SCALAR_FIELDS:
+        try:
+            sample[field] = float(data[field])
+        except (KeyError, TypeError, ValueError):
+            pass
     return sample
 
 
@@ -150,7 +158,7 @@ def make_payload(
             "sample_count": len(samples),
             "fields": (
                 FORCE_FIELDS + INERTIA_FIELDS + INERTIA_COMPONENT_FIELDS + EE_FIELDS +
-                KINEMATIC_DIAGNOSTIC_FIELDS + JOINT_STATE_FIELDS
+                KINEMATIC_DIAGNOSTIC_FIELDS + JOINT_STATE_FIELDS + SCALAR_FIELDS
             ),
             "axis_labels": AXIS_LABELS,
             "notes": "Each field is stored exactly as published by robot_server_state.",
