@@ -70,6 +70,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     sensor_force_.setZero();
     sensor_wrench_.setZero();
     sensor_wrench_gravity_.setZero();
+    sensor_wrench_gravity_raw_.setZero();
     raw_sensor_wrench_.setZero();
     sensor_zero_offset_.setZero();
     LoadToolGravityCompensationConfig(robot_cfg_path);
@@ -619,6 +620,7 @@ void RobotServer::TorqueControlThreadFunc() {
                 ApplyToolGravityCompensation(zeroed_sensor_data_secondary, 1, &gravity_applied_secondary);
         }
         Vector6d sensor_data_primary_before_inertia = sensor_data_primary;
+        const Vector6d sensor_data_primary_gravity_raw = sensor_data_primary;
 
         // 使用临时变量接收共享内存数据
         RobotFeedback feedback_temp{};
@@ -698,6 +700,7 @@ void RobotServer::TorqueControlThreadFunc() {
         // 诊断字段: 保留"零偏后 + 重力补偿后, 惯量补偿前"的六维力。
         // 当惯量补偿运行时, primary 部分已通过同 cutoff 的滤波器做相位匹配。
         sensor_wrench_gravity_ = utils::GetSensorWrench(sensor_data_primary_before_inertia, sensor_data_secondary);
+        sensor_wrench_gravity_raw_ = utils::GetSensorWrench(sensor_data_primary_gravity_raw, sensor_data_secondary);
 
         // 力控安全策略: 已启用但本周期未成功扣减的补偿视为"失效", 把对应臂的 sensor_data 清零,
         // 让下游 JointImpedanceController::ComputeExternalTorque 的 isZero 短路使 torque_ext=0,
@@ -1161,6 +1164,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(torque_ff_arr_, index_offset, ndof_config_).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
         ",\n  \"force_sensor_gravity\":" + utils::VectorToJsonArrayString(sensor_wrench_gravity_).str() +
+        ",\n  \"force_sensor_gravity_raw\":" + utils::VectorToJsonArrayString(sensor_wrench_gravity_raw_).str() +
         ",\n  \"raw_force_sensor\":" + utils::VectorToJsonArrayString(raw_sensor_wrench_).str() +
         ",\n  \"force_sensor_bias\":" + utils::VectorToJsonArrayString(sensor_zero_offset_).str() +
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(negative_torque_limit_arr_, index_offset, ndof_config_).str() +
