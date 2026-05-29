@@ -285,6 +285,10 @@ struct RobotParams {
     std::vector<std::string> joints_dual_arm;                  // 双臂模式关节名称
     std::optional<Eigen::VectorXd> dyn_base_params_primary;    // 动力学基参数矩阵(非方阵)
     std::optional<Eigen::VectorXd> dyn_base_params_secondary;  // 动力学基参数矩阵(非方阵)
+    double external_wrench_force_deadband_n{3.0};
+    double external_wrench_force_saturation_n{100.0};
+    double external_wrench_torque_deadband_nm{0.1};
+    double external_wrench_torque_saturation_nm{10.0};
 };
 
 struct RobotModel {
