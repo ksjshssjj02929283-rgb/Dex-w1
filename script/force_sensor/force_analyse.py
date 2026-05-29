@@ -36,6 +36,16 @@ EE_FIELDS = [
 INERTIA_FIELDS = [
     "force_sensor_inertia",
 ]
+INERTIA_COMPONENT_FIELDS = [
+    "inertia_force_from_ee_linear_acc",
+    "inertia_force_from_alpha_cross_com",
+    "inertia_force_from_omega_cross_omega_cross_com",
+]
+KINEMATIC_DIAGNOSTIC_FIELDS = [
+    "ee_linear_velocity_ee_frame",
+    "ee_linear_accel_raw_ee_frame",
+    "ee_linear_accel_filtered_ee_frame",
+]
 JOINT_STATE_FIELDS = [
     "joint_position",
     "joint_velocity",
@@ -113,6 +123,11 @@ def extract_force_sample(data: Mapping[str, object], t: float = 0.0) -> Dict[str
             sample[field] = float_list(data.get(field), field, 6)
         except (ValueError, TypeError):
             pass
+    for field in INERTIA_COMPONENT_FIELDS + KINEMATIC_DIAGNOSTIC_FIELDS:
+        try:
+            sample[field] = float_list(data.get(field), field, 3)
+        except (ValueError, TypeError):
+            pass
     for field in JOINT_STATE_FIELDS:
         try:
             sample[field] = float_list(data.get(field), field, 1)
@@ -133,7 +148,10 @@ def make_payload(
             "created_at": created.isoformat(timespec="seconds"),
             "state_topic": state_topic,
             "sample_count": len(samples),
-            "fields": FORCE_FIELDS + INERTIA_FIELDS + EE_FIELDS + JOINT_STATE_FIELDS,
+            "fields": (
+                FORCE_FIELDS + INERTIA_FIELDS + INERTIA_COMPONENT_FIELDS + EE_FIELDS +
+                KINEMATIC_DIAGNOSTIC_FIELDS + JOINT_STATE_FIELDS
+            ),
             "axis_labels": AXIS_LABELS,
             "notes": "Each field is stored exactly as published by robot_server_state.",
         },
