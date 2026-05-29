@@ -29,6 +29,9 @@ FORCE_FIELDS = [
     "raw_force_sensor",
     "force_sensor_bias",
 ]
+FORCE_DIAGNOSTIC_FIELDS = [
+    "force_sensor_gravity_raw",
+]
 EE_FIELDS = [
     "ee_omega_ee_frame",
     "ee_alpha_ee_frame",
@@ -58,6 +61,7 @@ EE_AXIS_LABELS = ["ωx [rad/s]", "ωy [rad/s]", "ωz [rad/s]"]
 FIELD_COLORS = {
     "force_sensor": "tab:blue",
     "force_sensor_gravity": "tab:green",
+    "force_sensor_gravity_raw": "tab:olive",
     "raw_force_sensor": "tab:gray",
     "force_sensor_bias": "tab:red",
     "ee_omega_ee_frame": "tab:orange",
@@ -66,6 +70,7 @@ FIELD_COLORS = {
 FIELD_LABELS = {
     "force_sensor": "force_sensor",
     "force_sensor_gravity": "force_sensor_gravity",
+    "force_sensor_gravity_raw": "force_sensor_gravity_raw",
     "raw_force_sensor": "raw_force_sensor",
     "force_sensor_bias": "force_sensor_bias",
     "ee_omega_ee_frame": "ee_omega_ee_frame",
@@ -116,6 +121,11 @@ def extract_force_sample(data: Mapping[str, object], t: float = 0.0) -> Dict[str
     }
     for field in FORCE_FIELDS:
         sample[field] = float_list(data.get(field), field, 6)
+    for field in FORCE_DIAGNOSTIC_FIELDS:
+        try:
+            sample[field] = float_list(data.get(field), field, 6)
+        except (ValueError, TypeError):
+            pass
     for field in EE_FIELDS:
         try:
             sample[field] = float_list(data.get(field), field, 3)
@@ -157,7 +167,7 @@ def make_payload(
             "state_topic": state_topic,
             "sample_count": len(samples),
             "fields": (
-                FORCE_FIELDS + INERTIA_FIELDS + INERTIA_COMPONENT_FIELDS + EE_FIELDS +
+                FORCE_FIELDS + FORCE_DIAGNOSTIC_FIELDS + INERTIA_FIELDS + INERTIA_COMPONENT_FIELDS + EE_FIELDS +
                 KINEMATIC_DIAGNOSTIC_FIELDS + JOINT_STATE_FIELDS + SCALAR_FIELDS
             ),
             "axis_labels": AXIS_LABELS,
@@ -373,21 +383,25 @@ def plot(args: argparse.Namespace) -> None:
     path = args.path or latest_recording(args.output_dir)
     payload = load_payload(path)
     samples = payload["samples"]
+    force_plot_fields = [
+        field for field in FORCE_FIELDS + FORCE_DIAGNOSTIC_FIELDS
+        if any(field in sample for sample in samples)
+    ]
 
     t = [float(sample.get("t", idx)) for idx, sample in enumerate(samples)]
     matrices = {
         field: field_matrix(samples, field, args.arm)
-        for field in FORCE_FIELDS
+        for field in force_plot_fields
     }
 
     fig, axes_grid = plt.subplots(2, 3, figsize=(14, 7), sharex=True)
     axes = list(axes_grid.flatten())
-    lines_by_field: Dict[str, List[plt.Line2D]] = {field: [] for field in FORCE_FIELDS}
+    lines_by_field: Dict[str, List[plt.Line2D]] = {field: [] for field in force_plot_fields}
     lines_by_axis: List[List[plt.Line2D]] = [[] for _ in range(6)]
     initially_visible = set(args.show)
 
     for axis_idx, ax in enumerate(axes):
-        for field in FORCE_FIELDS:
+        for field in force_plot_fields:
             y = [row[axis_idx] for row in matrices[field]]
             (line,) = ax.plot(
                 t,
@@ -411,12 +425,12 @@ def plot(args: argparse.Namespace) -> None:
     check_ax = fig.add_axes([0.78, 0.02, 0.20, 0.14])
     check = CheckButtons(
         check_ax,
-        [FIELD_LABELS[field] for field in FORCE_FIELDS],
-        [field in initially_visible for field in FORCE_FIELDS],
+        [FIELD_LABELS[field] for field in force_plot_fields],
+        [field in initially_visible for field in force_plot_fields],
     )
 
     def on_check(label: str) -> None:
-        field = next(key for key in FORCE_FIELDS if FIELD_LABELS[key] == label)
+        field = next(key for key in force_plot_fields if FIELD_LABELS[key] == label)
         for line in lines_by_field[field]:
             line.set_visible(not line.get_visible())
         for axis_idx, ax in enumerate(axes):
@@ -469,6 +483,7 @@ ANALYSE_FIELDS = [
     "raw_force_sensor",
     "force_sensor",
     "force_sensor_gravity",
+    "force_sensor_gravity_raw",
 ]
 
 
@@ -479,6 +494,8 @@ def analyse(args: argparse.Namespace) -> None:
     print(f"RMS vs zero — {path.name}  ({len(samples)} samples, {args.arm} arm)\n")
 
     for field in ANALYSE_FIELDS:
+        if not any(field in sample for sample in samples):
+            continue
         matrix = field_matrix(samples, field, args.arm)
         print(f"{field}:")
         for axis_idx, label in enumerate(AXIS_LABELS):
@@ -587,7 +604,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--show",
         nargs="+",
-        choices=FORCE_FIELDS + EE_FIELDS,
+        choices=FORCE_FIELDS + FORCE_DIAGNOSTIC_FIELDS + EE_FIELDS,
         default=FORCE_FIELDS,
         help="fields visible initially in --plot; checkboxes can toggle them after the window opens",
     )
