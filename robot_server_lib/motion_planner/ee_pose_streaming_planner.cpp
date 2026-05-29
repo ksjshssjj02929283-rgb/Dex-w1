@@ -20,6 +20,11 @@ EEPoseStreamingPlanner::~EEPoseStreamingPlanner() = default;
 ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasurement& measurement,
                                                             const TimeMetaInfo& time_meta,
                                                             JointCommand& output_joint_cmd) {
+    const double alpha = 0.1;  // Low-pass filter coefficient for velocity
+    for (int i = 0; i < ndof_robot; ++i) {
+        filtered_velocity_[i] = alpha * measurement.velocity[i] + (1.0 - alpha) * filtered_velocity_[i];
+    }
+
     if (!runtime_.streaming_finished) {
         StreamingCommand cmd_buffer;
         bool received = streaming_buffer_->PeekLatest(&cmd_buffer);
@@ -91,7 +96,7 @@ ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasureme
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
-            robot_stopped = robot_stopped && std::abs(measurement.velocity[i]) < IdleVelocityThreshold;
+            robot_stopped = robot_stopped && std::abs(filtered_velocity_[i]) < IdleVelocityThreshold;
         }
         // 需同时满足机器人静止和streaming_finished为true，才能结束本次streaming
         if (runtime_.streaming_finished && robot_stopped) {
@@ -109,6 +114,7 @@ ComputeCommandStatus EEPoseStreamingPlanner::ComputeCommand(const JointMeasureme
 bool EEPoseStreamingPlanner::ResetForNewTrajectory(const PlannerRequest& request,
                                                    const JointMeasurement& measurement,
                                                    const TimeMetaInfo& time_meta) {
+    filtered_velocity_ = measurement.velocity;
     assert(request.data.has_value());
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
     auto move_request = std::get<MoveRequest>(request.data.value());

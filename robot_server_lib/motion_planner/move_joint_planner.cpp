@@ -19,6 +19,11 @@ MoveJointPlanner::~MoveJointPlanner() = default;
 ComputeCommandStatus MoveJointPlanner::ComputeCommand(const JointMeasurement& measurement,
                                                       const TimeMetaInfo& time_meta,
                                                       JointCommand& joint_cmd) {
+    const double alpha = 0.1;  // Low-pass filter coefficient for velocity
+    for (int i = 0; i < ndof_robot; ++i) {
+        filtered_velocity_[i] = alpha * measurement.velocity[i] + (1.0 - alpha) * filtered_velocity_[i];
+    }
+
     auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
     switch (status) {
         case ruckig::Working: {
@@ -38,7 +43,7 @@ ComputeCommandStatus MoveJointPlanner::ComputeCommand(const JointMeasurement& me
                 joint_cmd.velocity[i] = 0;
                 joint_cmd.acceleration[i] = 0;
                 joint_cmd.torque_feedforward[i] = 0;
-                robot_stopped = robot_stopped && std::abs(measurement.velocity[i]) < IdleVelocityThreshold;
+                robot_stopped = robot_stopped && std::abs(filtered_velocity_[i]) < IdleVelocityThreshold;
             }
             if (wait_trajectory_upon_finish_) {
                 if (robot_stopped) {
@@ -94,6 +99,7 @@ bool MoveJointPlanner::ResetForNewTrajectory(const PlannerRequest& request,
     for (auto i = 0; i < ndof_robot; i++) {
         runtime_.input.current_position[i] = measurement.q_desired_pre[i];
         runtime_.input.current_velocity[i] = measurement.velocity[i];
+        filtered_velocity_[i] = measurement.velocity[i];
         runtime_.input.current_acceleration[i] = 0.0;
         runtime_.input.target_position[i] = target_ndof[i];
         runtime_.input.target_velocity[i] = 0.0;

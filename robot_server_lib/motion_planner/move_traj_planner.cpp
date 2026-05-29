@@ -15,6 +15,11 @@ MoveTrajPlanner::~MoveTrajPlanner() = default;
 ComputeCommandStatus MoveTrajPlanner::ComputeCommand(const JointMeasurement& measurement,
                                                      const TimeMetaInfo& time_meta,
                                                      JointCommand& output_joint_cmd) {
+    const double alpha = 0.1;  // Low-pass filter coefficient for velocity
+    for (int i = 0; i < ndof_robot; ++i) {
+        filtered_velocity_[i] = alpha * measurement.velocity[i] + (1.0 - alpha) * filtered_velocity_[i];
+    }
+
     // 推进时间
     runtime_.timepoint += controller_dt_;
     ComputeCommandStatus ret = GetInterpolatedPosition(output_joint_cmd, runtime_.timepoint);
@@ -25,7 +30,7 @@ ComputeCommandStatus MoveTrajPlanner::ComputeCommand(const JointMeasurement& mea
 
     if (ret == ComputeCommandStatus::TaskFinished) {
         if (wait_trajectory_upon_finish_) {
-            bool robot_stopped = (measurement.velocity.array().abs() < IdleVelocityThreshold).all();
+            bool robot_stopped = (filtered_velocity_.array().abs() < IdleVelocityThreshold).all();
             if (robot_stopped) {
                 LOG_INFO << "MoveTrajPlanner: Reached the end of trajectory at time " << runtime_.total_duration
                          << "s, point index " << (runtime_.traj_npoints - 1)
@@ -106,6 +111,7 @@ ComputeCommandStatus MoveTrajPlanner::GetInterpolatedPosition(JointCommand& join
 bool MoveTrajPlanner::ResetForNewTrajectory(const PlannerRequest& request,
                                             const JointMeasurement& measurement,
                                             const TimeMetaInfo& time_meta) {
+    filtered_velocity_ = measurement.velocity;
     assert(request.data.has_value());
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
 

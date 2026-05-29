@@ -68,7 +68,6 @@ set -e
 BINS=(
     "${LIB_INSTALL_PREFIX}/w1_server/lib/w1_server/w1_server"
     "${LIB_INSTALL_PREFIX}/w1_server/lib/w1_server/feedback"
-    "${LIB_INSTALL_PREFIX}/w1_server/lib/w1_server/joint_control"
 )
 for BIN in "\${BINS[@]}"; do
     if [ -f "\$BIN" ]; then

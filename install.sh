@@ -59,7 +59,11 @@ BINS=(
 )
 for BIN in "\${BINS[@]}"; do
     if [ -f "\$BIN" ]; then
-        setcap 'cap_sys_nice,cap_ipc_lock=+ep' "\$BIN" || true
+        if setcap 'cap_sys_nice,cap_ipc_lock=+ep' "\$BIN"; then
+            echo "Successfully set capabilities for \$BIN"
+        else
+            echo "Failed to set capabilities for \$BIN"
+        fi
     fi
 done
 
@@ -67,13 +71,13 @@ cat > /tmp/w1_server.conf << LDCONF
 /opt/ros/humble/lib
 /opt/ros/humble/lib/aarch64-linux-gnu
 /opt/ros/humble/lib/x86_64-linux-gnu
-$INSTALL_DIR/chassis_interfaces/lib
-$INSTALL_DIR/joint_interfaces/lib
-$INSTALL_DIR/robot_server_interfaces/lib
-$INSTALL_DIR/robot_server_lib/lib
+$INSTALL_PATH/chassis_interfaces/lib
+$INSTALL_PATH/joint_interfaces/lib
+$INSTALL_PATH/robot_server_interfaces/lib
+$INSTALL_PATH/robot_server_lib/lib
 LDCONF
-sudo cp /tmp/w1_server.conf /etc/ld.so.conf.d/w1_server.conf
-sudo ldconfig
+cp /tmp/w1_server.conf /etc/ld.so.conf.d/w1_server.conf
+ldconfig
 
 exit 0
 EOF

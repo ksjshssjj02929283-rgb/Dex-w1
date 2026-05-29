@@ -252,7 +252,7 @@ bool SharedMemory<T, BufferCapacity, SHM_KEY>::AppendNewElement(const T& element
     queue_element.data = element;
     queue_element.valid = true;
     queue_element.cnt = ++cnt_;
-    clock_gettime(CLOCK_REALTIME, &queue_element.ts);
+    clock_gettime(CLOCK_MONOTONIC, &queue_element.ts);
 
     shm_ptr_->ring_buffer[expected_place] = std::move(queue_element);
 

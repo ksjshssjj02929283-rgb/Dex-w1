@@ -21,6 +21,11 @@ JointStreamingPlanner::~JointStreamingPlanner() = default;
 ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasurement& measurement,
                                                            const TimeMetaInfo& time_meta,
                                                            JointCommand& output_joint_cmd) {
+    const double alpha = 0.1;  // Low-pass filter coefficient for velocity
+    for (int i = 0; i < ndof_robot; ++i) {
+        filtered_velocity_[i] = alpha * measurement.velocity[i] + (1.0 - alpha) * filtered_velocity_[i];
+    }
+
     if (!runtime_.streaming_finished) {
         StreamingCommand cmd_buffer;
         bool received = streaming_buffer_->PeekLatest(&cmd_buffer);
@@ -117,7 +122,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
-            robot_stopped = robot_stopped && std::abs(measurement.velocity[i]) < IdleVelocityThreshold;
+            robot_stopped = robot_stopped && std::abs(filtered_velocity_[i]) < IdleVelocityThreshold;
         }
         if (!command_finished_time_.is_valid()) {
             command_finished_time_ = TimePointSystem::Now();
@@ -204,7 +209,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
             output_joint_cmd.velocity[i] = 0.0;
             output_joint_cmd.acceleration[i] = 0.0;
             output_joint_cmd.torque_feedforward[i] = 0.0;
-            robot_stopped = robot_stopped && std::abs(measurement.velocity[i]) < IdleVelocityThreshold;
+            robot_stopped = robot_stopped && std::abs(filtered_velocity_[i]) < IdleVelocityThreshold;
         }
         if (!command_finished_time_.is_valid()) {
             command_finished_time_ = TimePointSystem::Now();
@@ -231,6 +236,7 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
 bool JointStreamingPlanner::ResetForNewTrajectory(const PlannerRequest& request,
                                                   const JointMeasurement& measurement,
                                                   const TimeMetaInfo& time_meta) {
+    filtered_velocity_ = measurement.velocity;
     assert(request.data.has_value());
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
 

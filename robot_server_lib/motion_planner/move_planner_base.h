@@ -83,6 +83,8 @@ protected:
     int ndof_secondary_{7};
     int ndof_torso_{3};
     double controller_dt_{0.004};  // 控制周期，单位s
+
+    VectorDof filtered_velocity_ = VectorDof::Zero();
 };
 
 }  // namespace robot_server_lib

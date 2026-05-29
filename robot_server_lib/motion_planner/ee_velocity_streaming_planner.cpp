@@ -15,6 +15,11 @@ EEVelocityStreamingPlanner::~EEVelocityStreamingPlanner() = default;
 ComputeCommandStatus EEVelocityStreamingPlanner::ComputeCommand(const JointMeasurement& measurement,
                                                                 const TimeMetaInfo& time_meta,
                                                                 JointCommand& output_joint_cmd) {
+    const double alpha = 0.1;  // Low-pass filter coefficient for velocity
+    for (int i = 0; i < ndof_robot; ++i) {
+        filtered_velocity_[i] = alpha * measurement.velocity[i] + (1.0 - alpha) * filtered_velocity_[i];
+    }
+
     if (!runtime_.streaming_finished) {
         StreamingCommand cmd_buffer;
         bool received = streaming_buffer_->PeekLatest(&cmd_buffer);
@@ -183,7 +188,7 @@ ComputeCommandStatus EEVelocityStreamingPlanner::ComputeCommand(const JointMeasu
     output_joint_cmd.torque_feedforward.setZero();
 
     // Check robot stopped status - include both arm velocities in dual-arm mode
-    bool robot_stopped = (measurement.velocity.array() < IdleVelocityThreshold).all();
+    bool robot_stopped = (filtered_velocity_.array().abs() < IdleVelocityThreshold).all();
     if (motion_group_ == MotionGroup::BothArms) {
         robot_stopped = robot_stopped && (runtime_.qdot_solved_primary.array().abs() < IdleVelocityThreshold).all() &&
                         (runtime_.qdot_solved_secondary.array().abs() < IdleVelocityThreshold).all();
@@ -204,6 +209,7 @@ ComputeCommandStatus EEVelocityStreamingPlanner::ComputeCommand(const JointMeasu
 bool EEVelocityStreamingPlanner::ResetForNewTrajectory(const PlannerRequest& request,
                                                        const JointMeasurement& measurement,
                                                        const TimeMetaInfo& time_meta) {
+    filtered_velocity_ = measurement.velocity;
     assert(request.data.has_value());
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
     auto move_request = std::get<MoveRequest>(request.data.value());

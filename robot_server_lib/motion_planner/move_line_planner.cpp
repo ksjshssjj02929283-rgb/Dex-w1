@@ -24,6 +24,11 @@ MoveLinePlanner::~MoveLinePlanner() = default;
 ComputeCommandStatus MoveLinePlanner::ComputeCommand(const JointMeasurement& measurement,
                                                      const TimeMetaInfo& time_meta,
                                                      JointCommand& joint_cmd) {
+    const double alpha = 0.1;  // Low-pass filter coefficient for velocity
+    for (int i = 0; i < ndof_robot; ++i) {
+        filtered_velocity_[i] = alpha * measurement.velocity[i] + (1.0 - alpha) * filtered_velocity_[i];
+    }
+
     auto status = ruckig_otg_.update(runtime_.input, runtime_.output);
     JointPositionDof q_ndof = measurement.q_desired_pre;
     if (!ComputeOutputJoint(q_ndof)) {
@@ -48,7 +53,7 @@ ComputeCommandStatus MoveLinePlanner::ComputeCommand(const JointMeasurement& mea
                 joint_cmd.velocity[i] = 0.0;
                 joint_cmd.acceleration[i] = 0.0;
                 joint_cmd.torque_feedforward[i] = 0.0;
-                robot_stopped = robot_stopped && std::abs(measurement.velocity[i]) < IdleVelocityThreshold;
+                robot_stopped = robot_stopped && std::abs(filtered_velocity_[i]) < IdleVelocityThreshold;
             }
             if (wait_trajectory_upon_finish_) {
                 if (robot_stopped) {
@@ -71,6 +76,7 @@ ComputeCommandStatus MoveLinePlanner::ComputeCommand(const JointMeasurement& mea
 bool MoveLinePlanner::ResetForNewTrajectory(const PlannerRequest& request,
                                             const JointMeasurement& measurement,
                                             const TimeMetaInfo& time_meta) {
+    filtered_velocity_ = measurement.velocity;
     assert(request.data.has_value());
     assert(std::holds_alternative<MoveRequest>(request.data.value()));
     const auto& move_request = std::get<MoveRequest>(request.data.value());
