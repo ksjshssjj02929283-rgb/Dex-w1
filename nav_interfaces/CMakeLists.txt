@@ -75,6 +75,7 @@ set(SRV_FILES
   "srv/GetMapList.srv"
   "srv/LoadMap.srv"
   "srv/DeleteMap.srv"
+  "srv/RenameMap.srv"
   "srv/GetMapInfo.srv"
   "srv/GetString.srv"
   "srv/AddAreaInfo.srv"
