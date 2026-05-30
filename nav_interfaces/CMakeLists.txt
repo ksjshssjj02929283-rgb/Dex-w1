@@ -54,6 +54,8 @@ set(MSG_FILES
   "msg/RoomBehavior.msg"
   "msg/RoomInfo.msg"
   "msg/RoomInfoArray.msg"
+  "msg/TrajectoryPoint.msg"
+  "msg/RobotTrajectory.msg"
   "msg/TaskProgress.msg"
 )
 
