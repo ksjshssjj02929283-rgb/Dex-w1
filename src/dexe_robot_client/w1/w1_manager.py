@@ -1151,7 +1151,8 @@ class W1Manager:
                      qpos: np.ndarray,
                      armlee_qpos: np.ndarray = None,
                      armree_qpos: np.ndarray = None,
-                     robot_name: str = "whole_body") -> StatusCode:
+                     robot_name: str = "whole_body",
+                     save_scene: bool = True) -> StatusCode:
         """检查qpos状态是否碰撞"""
         if not self._check_qpos_dimension("full_body", qpos):
             return StatusCode.DIM_MISMATCH
@@ -1180,8 +1181,10 @@ class W1Manager:
                                               armree_tf)
         res = self.fcl_checker.naive_check_collision(robot_name=robot_name)
         if res:
-            self.fcl_checker.update_vis_transform(
-                torso_tf + head_tf + arml_tf + armr_tf, armlee_tf, armree_tf)
+            if save_scene:
+                self.fcl_checker.update_vis_transform(
+                    torso_tf + head_tf + arml_tf + armr_tf, armlee_tf,
+                    armree_tf)
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def _is_traj_collision(self,
@@ -1192,7 +1195,8 @@ class W1Manager:
                                                                 list]] = None,
                            right_arm_ee_trigger_list: list[tuple[int,
                                                                  list]] = None,
-                           step: int = 5) -> StatusCode:
+                           step: int = 5,
+                           save_scene: bool = True) -> StatusCode:
         """检查轨迹是否碰撞
         Args:
             qpos_array (np.ndarray): 10ms间隔的轨迹
@@ -1249,10 +1253,10 @@ class W1Manager:
             right_arm_ee_qpos_array_check = np.vstack(
                 (right_arm_ee_qpos_array[::step], right_arm_ee_qpos_array[-1]))
             for idx in range(qpos_array_check.shape[0]):
-                if self.is_collision(
-                        qpos_array_check[idx],
-                        left_arm_ee_qpos_array_check[idx],
-                        right_arm_ee_qpos_array_check[idx]) != StatusCode.FAIL:
+                if self.is_collision(qpos_array_check[idx],
+                                     left_arm_ee_qpos_array_check[idx],
+                                     right_arm_ee_qpos_array_check[idx],
+                                     save_scene=save_scene) != StatusCode.FAIL:
                     self.logger.error(
                         f"Traj is collision at idx {idx}, qpos {qpos_array_check[idx]}, do not executed!"
                     )
@@ -1261,7 +1265,8 @@ class W1Manager:
         else:
             qpos_array_check = np.vstack((qpos_array[::step], qpos_array[-1]))
             for qpos in qpos_array_check:
-                if self.is_collision(qpos) != StatusCode.FAIL:
+                if self.is_collision(qpos,
+                                     save_scene=save_scene) != StatusCode.FAIL:
                     self.logger.error(
                         f"Traj is collision at {qpos}, do not executed!")
                     return StatusCode.SUCCESS
