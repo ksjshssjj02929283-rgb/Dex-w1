@@ -107,6 +107,8 @@ void RobotServer::TorqueControlThreadFunc() {
         loop_counter++;
         next_cycle_time_point += std::chrono::microseconds(torque_ctrl_dt_micro);
 
+        auto t_start = std::chrono::steady_clock::now();
+
         // 读取力传感器数据
         Vector6d sensor_data_primary = Vector6d::Zero();
         Vector6d sensor_data_secondary = Vector6d::Zero();
@@ -150,6 +152,9 @@ void RobotServer::TorqueControlThreadFunc() {
         if (ret) {
             this->SwitchControlWord();
         }
+
+        auto t_feedback = std::chrono::steady_clock::now();
+
         // 如果开启了记录, 则在独立的记录日志中记录数据
         if (this->manager_info_.robot_property.enable_record && manager_state_ == Status::Running &&
             loop_counter % 1 == 0) {
@@ -190,6 +195,9 @@ void RobotServer::TorqueControlThreadFunc() {
                     << utils::VectorToJsonArrayString(torque_ff_log_arr_, index_offset, ndof_config_).str() << "}";
             nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
         }
+
+        auto t_log = std::chrono::steady_clock::now();
+
         // 如果机器人就绪，则写入测量数据
         if (this->is_robot_ready_) {
             // 关节反馈数据写入测量数据
@@ -224,6 +232,8 @@ void RobotServer::TorqueControlThreadFunc() {
 
         // 力控计算处理
         torque_controller_manager.LoopOnce();
+
+        auto t_torque = std::chrono::steady_clock::now();
 
         // 获取并写入控制数据: 关节位置, 速度, 关节力矩限制, 外部力矩
         TorqueCtrlCommand torque_cmd{};
@@ -425,7 +435,24 @@ void RobotServer::TorqueControlThreadFunc() {
         }
         RobotControl robot_control_temp = robot_control_;
         SortControlByJointName(robot_control_temp);
+        robot_control_temp.timestamp = this->now().nanoseconds();
         control_shm_instance.AppendNewElement(robot_control_temp);
+
+        auto now_time = std::chrono::steady_clock::now();
+        if (now_time > next_cycle_time_point) {
+            auto expected_start = next_cycle_time_point - std::chrono::microseconds(torque_ctrl_dt_micro);
+            auto elapsed_micro =
+                std::chrono::duration_cast<std::chrono::microseconds>(now_time - expected_start).count();
+            double usage = static_cast<double>(elapsed_micro) / torque_ctrl_dt_micro * 100.0;
+            auto dt_feedback = std::chrono::duration_cast<std::chrono::microseconds>(t_feedback - t_start).count();
+            auto dt_log = std::chrono::duration_cast<std::chrono::microseconds>(t_log - t_feedback).count();
+            auto dt_torque = std::chrono::duration_cast<std::chrono::microseconds>(t_torque - t_log).count();
+            auto dt_cmd = std::chrono::duration_cast<std::chrono::microseconds>(now_time - t_torque).count();
+            LOG_WARN_THROTTLE(1000) << "Torque control thread cycle time exceeded 100%! Usage: " << usage
+                                    << "%. Breakdown(us): Feedback=" << dt_feedback << ", Log=" << dt_log
+                                    << ", Torque=" << dt_torque << ", CmdAndWrite=" << dt_cmd;
+        }
+
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }
@@ -566,7 +593,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"motor_temperature\":" + utils::VectorToJsonArrayString(temperature_arr_, index_offset, ndof_config_).str() +
         ",\n  \"run_mode\":\"" + ToString(this->manager_info_.robot_property.run_mode) + "\"" +
         ", \"allow_force_control\":\"" + std::to_string(this->manager_info_.robot_property.allow_force_control) + "\"" +
-        ", \"server_error_code\":\"" + ToString(this->manager_info_.robot_property.error_code) + "\"" +
+        ", \"server_error_code\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.error_codes).str() +
         ", \"safe_level\":\"" + std::to_string(this->manager_info_.robot_property.safe_level) + "\"" +
         ", \"global_speed_ratio\":\"" + std::to_string(this->manager_info_.robot_property.global_speed_ratio) + "\"" +
         ",\n  \"joint_name\":" + utils::VectorToJsonArrayString(this->robot_model_.params_ptr->joint_names, index_offset, ndof_config_).str() +

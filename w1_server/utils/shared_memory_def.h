@@ -8,8 +8,8 @@
 #include <cstring>
 #include <iostream>
 
-#define FEEDBACK_SHM_KEY 0x1002
-#define CONTROL_SHM_KEY 0x2002
+#define FEEDBACK_SHM_KEY 0x1003
+#define CONTROL_SHM_KEY 0x2003
 #define MAX_JOINT_NUM 32
 #define OMNI_MOTOR_NUM 4
 
@@ -69,6 +69,7 @@ struct JointControl {
 
 struct RobotFeedback {
     uint64_t cnt = 0;
+    uint64_t timestamp = 0;
     uint16_t robot_status_word = 0x0000;
     uint8_t al_status[MAX_JOINT_NUM] = {0};
     // 关节反馈
@@ -79,6 +80,7 @@ struct RobotFeedback {
 
 struct RobotControl {
     uint64_t cnt = 0;
+    uint64_t timestamp = 0;
     uint16_t robot_control_word = 0x0000;
     // 关节控制
     JointControl joint_control[MAX_JOINT_NUM];

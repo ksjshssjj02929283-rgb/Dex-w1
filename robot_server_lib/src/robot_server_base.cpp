@@ -194,7 +194,7 @@ std::string RobotServerBase::GetRobotServerStateJson(uint64_t timestamp_ns,
 
         json +=
             "\n ,\"run_mode\":\"" + std::string(ToString(planner_info->robot_property.run_mode)) + "\"" +
-            ", \"server_error_code\":\"" + ToString(manager_info.robot_property.error_code) + "\"" +
+            ", \"server_error_code\":" + utils::VectorToJsonArrayString(manager_info.robot_property.error_codes).str() +
             ", \"safe_level\":\"" + std::to_string(manager_info.robot_property.safe_level) + "\"" +
             ", \"global_speed_ratio\":\"" + std::to_string(manager_info.robot_property.global_speed_ratio) + "\"" +
             "\n ,\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +

@@ -66,14 +66,16 @@ TEST(SRSKinematicsTest, CheckSafety) {
     measurement.velocity = Eigen::VectorXd::Zero(ndof_robot);
     measurement.effort = Eigen::VectorXd::Zero(ndof_robot);
 
-    ErrorCode error_code = ErrorCode::NoError;
+    std::array<ErrorCode, ndof_robot> error_codes{};
 
     SafetyCheckConfig safety_config;
     safety_config.check_position_limit = true;
     safety_config.check_velocity_limit = true;
     safety_config.check_torque_limit = true;
-    bool result = CheckSafety(measurement, robot_model, error_code, safety_config);
+    bool result = CheckSafety(measurement, robot_model, error_codes, safety_config);
     EXPECT_TRUE(result);
-    EXPECT_EQ(error_code, ErrorCode::NoError);
+    for (auto code : error_codes) {
+        EXPECT_EQ(code, ErrorCode::None);
+    }
     std::cout << "CheckSafety with zero measurement: passed" << std::endl;
 }

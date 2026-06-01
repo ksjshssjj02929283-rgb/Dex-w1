@@ -13,6 +13,7 @@
 #include <geometry_msgs/msg/wrench_stamped.hpp>
 #include <iomanip>
 #include <limits>
+#include <magic_enum.hpp>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -61,7 +62,10 @@ std::ostringstream VectorToJsonArrayString(const VectorType& vec, int start_inde
     for (int i = 0; i < count; ++i) {
         int idx = start_index + i;
         using ElemT = std::decay_t<decltype(vec[idx])>;
-        if constexpr (std::is_integral_v<ElemT>) {
+        if constexpr (std::is_enum_v<ElemT>) {
+            auto sv = magic_enum::enum_name(vec[idx]);
+            ss << "\"" << (sv.empty() ? "Unknown" : sv.data()) << "\"";
+        } else if constexpr (std::is_integral_v<ElemT>) {
             ss << static_cast<long long>(vec[idx]);
         } else if constexpr (std::is_convertible_v<ElemT, double>) {
             double v = static_cast<double>(vec[idx]);
@@ -85,7 +89,10 @@ std::ostringstream VectorToJsonArrayString(const VectorType& vec) {
     ss << "[";
     for (size_t i = 0; i < vec.size(); ++i) {
         using ElemT = std::decay_t<decltype(vec[i])>;
-        if constexpr (std::is_integral_v<ElemT>) {
+        if constexpr (std::is_enum_v<ElemT>) {
+            auto sv = magic_enum::enum_name(vec[i]);
+            ss << "\"" << (sv.empty() ? "Unknown" : sv.data()) << "\"";
+        } else if constexpr (std::is_integral_v<ElemT>) {
             ss << static_cast<long long>(vec[i]);
         } else if constexpr (std::is_convertible_v<ElemT, double>) {
             double v = static_cast<double>(vec[i]);

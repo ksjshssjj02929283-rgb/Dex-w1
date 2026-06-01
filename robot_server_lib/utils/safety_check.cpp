@@ -5,39 +5,40 @@
 namespace robot_server_lib {
 bool CheckSafety(const JointMeasurement& joint_measurement,
                  const RobotModel& robot_model,
-                 ErrorCode& error_code,
+                 std::array<ErrorCode, ndof_robot>& error_codes,
                  SafetyCheckConfig config) {
     const auto& params = *robot_model.params_ptr;
     const auto& model = *robot_model.model_ptr;
+    bool is_safe = true;
 
     for (int i = 0; i < ndof_robot; i++) {
         if (config.check_velocity_limit &&
             (joint_measurement.velocity[i] > params.joint_velocity_limit[i] * velocity_error_threshold ||
              joint_measurement.velocity[i] < -params.joint_velocity_limit[i] * velocity_error_threshold)) {
-            if (error_code != ErrorCode::VelocityOverLimit) {
+            if (error_codes[i] != ErrorCode::VelocityOverLimit) {
                 std::stringstream ss;
                 ss << "Joint " << i << " velocity over limit, current velocity: " << joint_measurement.velocity[i]
                    << ", limits: [" << -params.joint_velocity_limit[i] * velocity_error_threshold << ", "
                    << params.joint_velocity_limit[i] * velocity_error_threshold << "]";
                 std::cout << ss.str() << "\n";
                 LOG_CRIT << ss.str();
-                error_code = ErrorCode::VelocityOverLimit;
+                error_codes[i] = ErrorCode::VelocityOverLimit;
             }
-            return false;
+            is_safe = false;
         }
         if (config.check_torque_limit &&
             (joint_measurement.effort[i] > params.joint_torque_limit[i] * torque_error_threshold ||
              joint_measurement.effort[i] < -params.joint_torque_limit[i] * torque_error_threshold)) {
-            if (error_code != ErrorCode::TorqueOverLimit) {
+            if (error_codes[i] != ErrorCode::TorqueOverLimit) {
                 std::stringstream ss;
                 ss << "Joint " << i << " torque over limit, current torque: " << joint_measurement.effort[i]
                    << ", limits: [" << -params.joint_torque_limit[i] * torque_error_threshold << ", "
                    << params.joint_torque_limit[i] * torque_error_threshold << "]";
                 std::cout << ss.str() << "\n";
                 LOG_CRIT << ss.str();
-                error_code = ErrorCode::TorqueOverLimit;
+                error_codes[i] = ErrorCode::TorqueOverLimit;
             }
-            return false;
+            is_safe = false;
         }
     }
 
@@ -54,7 +55,7 @@ bool CheckSafety(const JointMeasurement& joint_measurement,
         for (int i = 0; i < ndof_robot; i++) {
             if (joint_measurement.q_desired_pre[i] > ub[i] &&
                 joint_measurement.velocity[i] > position_limit_vel_threshold) {
-                if (error_code != ErrorCode::PositionOverLimit) {
+                if (error_codes[i] != ErrorCode::PositionOverLimit) {
                     std::stringstream ss;
                     ss << "Joint " << model.names[i + 1]
                        << " exceeds upper limit, q_desired_pre: " << joint_measurement.q_desired_pre[i]
@@ -63,13 +64,13 @@ bool CheckSafety(const JointMeasurement& joint_measurement,
                        << ", velocity threshold: " << position_limit_vel_threshold;
                     std::cout << ss.str() << "\n";
                     LOG_CRIT << ss.str();
-                    error_code = ErrorCode::PositionOverLimit;
+                    error_codes[i] = ErrorCode::PositionOverLimit;
                 }
-                return false;
+                is_safe = false;
             }
             if (joint_measurement.q_desired_pre[i] < lb[i] &&
                 joint_measurement.velocity[i] < -position_limit_vel_threshold) {
-                if (error_code != ErrorCode::PositionOverLimit) {
+                if (error_codes[i] != ErrorCode::PositionOverLimit) {
                     std::stringstream ss;
                     ss << "Joint " << model.names[i + 1]
                        << " exceeds lower limit, q_desired_pre: " << joint_measurement.q_desired_pre[i]
@@ -78,13 +79,13 @@ bool CheckSafety(const JointMeasurement& joint_measurement,
                        << ", velocity threshold: " << -position_limit_vel_threshold;
                     std::cout << ss.str() << "\n";
                     LOG_CRIT << ss.str();
-                    error_code = ErrorCode::PositionOverLimit;
+                    error_codes[i] = ErrorCode::PositionOverLimit;
                 }
-                return false;
+                is_safe = false;
             }
         }
     }
 
-    return true;
+    return is_safe;
 }
 }  // namespace robot_server_lib

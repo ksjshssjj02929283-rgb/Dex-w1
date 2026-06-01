@@ -9,6 +9,6 @@ constexpr double position_limit_vel_threshold = 4 * IdleVelocityThreshold;
 
 bool CheckSafety(const JointMeasurement& joint_measurement,
                  const RobotModel& robot_model,
-                 ErrorCode& error_code,
+                 std::array<ErrorCode, ndof_robot>& error_codes,
                  SafetyCheckConfig config = SafetyCheckConfig());
 }  // namespace robot_server_lib

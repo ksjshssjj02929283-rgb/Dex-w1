@@ -67,7 +67,7 @@ void PlannerManager::LoopOnce() {
         safety_config.check_position_limit =
             robot_property_.safety_check_config.check_position_limit &&
             !(robot_property_.run_mode == RunMode::Drag || robot_property_.run_mode == RunMode::DragImpedance);
-        if (!CheckSafety(measurement, robot_model_, robot_property_.error_code, safety_config) &&
+        if (!CheckSafety(measurement, robot_model_, robot_property_.error_codes, safety_config) &&
             manager_state_ != Status::Error) {
             runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
             ReportRequestStatus(runtime_data_.latest_processing_request_id,
@@ -229,7 +229,7 @@ RequestResponse PlannerManager::OnRequestStateInit() {
                 response.re_run = true;
                 response.request_consumed = true;
                 robot_property_.clear_error_flag = true;
-                robot_property_.error_code = ErrorCode::NoError;  // 尝试清除错误码 Clear error code
+                robot_property_.error_codes.fill(ErrorCode::None);  // 尝试清除错误码 Clear error code
                 runtime_data_.latest_processing_request_id =
                     request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
                 runtime_data_.latest_processing_request_type = request.type;
@@ -434,7 +434,7 @@ RequestResponse PlannerManager::OnRequestStateError() {
         response.re_run = true;
         response.request_consumed = true;
         robot_property_.clear_error_flag = true;
-        robot_property_.error_code = ErrorCode::NoError;  // 尝试清除错误码 Clear error code
+        robot_property_.error_codes.fill(ErrorCode::None);  // 尝试清除错误码 Clear error code
         runtime_data_.latest_processing_request_id =
             request.request_id;  // 更新最新处理的命令ID Update the latest processing request ID
         runtime_data_.latest_processing_request_type = request.type;
@@ -938,8 +938,9 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
         case RequestType::ClearError: {
             assert(!request.data.has_value());
             robot_property_.clear_error_flag = true;
-            robot_property_.error_code = ErrorCode::NoError;  // 尝试清除错误码 Clear error code
-            LOG_INFO << "Set clear error flag to true, error code reset to: " << ToString(robot_property_.error_code);
+            robot_property_.error_codes.fill(ErrorCode::None);  // 尝试清除错误码 Clear error code
+            LOG_INFO << "Set clear error flag to true, error code reset to: "
+                     << "All Clear";
             return;
         }
         default:

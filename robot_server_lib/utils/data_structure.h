@@ -115,7 +115,7 @@ struct RobotProperty {
     VectorDof joint_integral_ratio = VectorDof::Constant(0.01);
     Vector12d cart_stiffness = Vector12d::Constant(200.0);
     Vector12d cart_damping_ratio = Vector12d::Constant(1.0);  // 阻尼比 范围0.5 ~ 1.5
-    ErrorCode error_code{ErrorCode::NoError};
+    std::array<ErrorCode, ndof_robot> error_codes{};
     TrajectoryBounds joint_streaming_bounds;     // joint streaming轨迹限制
     bool enable_streaming_ruckig{true};          // /control/joint接口是否使用Ruckig轨迹规划
     bool enable_chassis_shaper{false};           // 是否启用底盘速度输入整形器
