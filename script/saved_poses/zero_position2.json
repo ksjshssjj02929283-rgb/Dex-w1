@@ -1,0 +1,152 @@
+{
+  "HEAD_YAW_J1": {
+    "position": -0.00017976337358034856,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "HEAD_PITCH_J2": {
+    "position": 0.00030764607387841376,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "WAIST_YAW": {
+    "position": -0.0003715109720660537,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "WAIST_ROLL": {
+    "position": 0.0005273058958356891,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "SHOULDER_PITCH_L_J1": {
+    "position": 0.00034711553881836693,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "SHOULDER_ROLL_L_J2": {
+    "position": 0.00048055476149332695,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "ELBOW_PITCH_L_J3": {
+    "position": -3.92954087962763e-05,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "ELBOW_YAW_L_J4": {
+    "position": -1.807439125234983e-05,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "WRIST_PITCH_L_J5": {
+    "position": -0.00017976337358034856,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "WRIST_YAW_L_J6": {
+    "position": 0.0002208724772290371,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "WRIST_ROLL_L_J7": {
+    "position": -0.0002604525416499614,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "SHOULDER_PITCH_R_J1": {
+    "position": 5.8315012864199045e-06,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "SHOULDER_ROLL_R_J2": {
+    "position": 0.00036350798693241676,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "ELBOW_PITCH_R_J3": {
+    "position": 0.0001815770684327686,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "ELBOW_YAW_R_J4": {
+    "position": -3.530359290981194e-05,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "WRIST_PITCH_R_J5": {
+    "position": 3.5810346903746015e-05,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "WRIST_YAW_R_J6": {
+    "position": -0.00012848373987871253,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "WRIST_ROLL_R_J7": {
+    "position": 0.00011984224905356572,
+    "kp": 8000.0,
+    "kd": 800.0
+  },
+  "HIP_PITCH_L_J1": {
+    "position": -0.0,
+    "kp": 1000.0,
+    "kd": 20.0
+  },
+  "HIP_ROLL_L_J2": {
+    "position": 0.0,
+    "kp": 1000.0,
+    "kd": 20.0
+  },
+  "HIP_YAW_L_J3": {
+    "position": -0.0,
+    "kp": 1000.0,
+    "kd": 20.0
+  },
+  "KNEE_PITCH_L_J4": {
+    "position": 0.0,
+    "kp": 1000.0,
+    "kd": 20.0
+  },
+  "ANKLE_PITCH_L_J5": {
+    "position": 0.0,
+    "kp": 1000.0,
+    "kd": 20.0
+  },
+  "ANKLE_ROLL_L_J6": {
+    "position": 0.0,
+    "kp": 1000.0,
+    "kd": 20.0
+  },
+  "HIP_PITCH_R_J1": {
+    "position": -7.95134901999256e-06,
+    "kp": 1000.0,
+    "kd": 20.0
+  },
+  "HIP_ROLL_R_J2": {
+    "position": -0.0,
+    "kp": 1000.0,
+    "kd": 20.0
+  },
+  "HIP_YAW_R_J3": {
+    "position": -0.0,
+    "kp": 1000.0,
+    "kd": 20.0
+  },
+  "KNEE_PITCH_R_J4": {
+    "position": 0.0,
+    "kp": 1000.0,
+    "kd": 20.0
+  },
+  "ANKLE_PITCH_R_J5": {
+    "position": 0.0,
+    "kp": 1000.0,
+    "kd": 20.0
+  },
+  "ANKLE_ROLL_R_J6": {
+    "position": 0.0,
+    "kp": 1000.0,
+    "kd": 20.0
+  }
+}

@@ -26,8 +26,10 @@ class JointCommandPublisher(Node):
         
         # 转换为浮点数列表
         self.pos = [0.0] * 12
-        self.kp = [452.5, 114.3, 114.3, 452.5, 0.0, 52.0, 452.5, 114.3, 114.3, 452.5, 0.0, 52.0]
-        self.kd = [28.8, 7.3, 7.3, 28.8, 3.3, 3.3, 28.8, 7.3, 7.3, 28.8, 3.3, 3.3]
+        # self.kp = [452.5, 114.3, 114.3, 452.5, 52.0, 52.0, 452.5, 114.3, 114.3, 452.5, 52.0, 52.0]
+        self.kp = [1200.0] * 12
+        # self.kd = [28.8, 7.3, 7.3, 28.8, 3.3, 3.3, 28.8, 7.3, 7.3, 28.8, 3.3, 3.3]
+        self.kd = [20.0] * 12
         self.zeros = [0.0] * 12
 
         self.get_logger().info(f'已启动 100Hz 发布器: {self.topic_name}')
@@ -38,7 +40,7 @@ class JointCommandPublisher(Node):
         # --- 填充 Header ---
         msg.header = Header()
         msg.header.stamp = self.get_clock().now().to_msg() # 自动获取当前 ROS 时间
-        msg.header.frame_id = 'joint_command'
+        #msg.header.frame_id = 'joint_command'
         
         # --- 填充数据 ---
         msg.name = self.joint_names
