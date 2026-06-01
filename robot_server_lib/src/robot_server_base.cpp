@@ -345,7 +345,9 @@ void RobotServerBase::SetPropertyCallback(const std::shared_ptr<SetProperty::Req
         return;
     }
     planner_request.request_id = MakeNewRequestID(planner_request);
-    this->manager_buffers_.request_queue->EnQueue(planner_request);
+    planner_request.type >= RequestType::StopMove
+        ? this->manager_buffers_.emergency_request_queue->EnQueue(planner_request)
+        : this->manager_buffers_.request_queue->EnQueue(planner_request);
     response->request_id = planner_request.request_id;
 
     RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, value: %s", planner_request.request_id,

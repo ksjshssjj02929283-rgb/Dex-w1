@@ -573,6 +573,7 @@ PlannerRequest ParseSetPropertyRequest(
             break;
         case RequestType::EnableDrag:
         case RequestType::EnableSleep:
+        case RequestType::QuickStop:
         case RequestType::EnablePosLimitCheck:
         case RequestType::EnableStreamingRuckig:
         case RequestType::EnableRecord:

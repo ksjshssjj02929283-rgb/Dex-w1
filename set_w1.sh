@@ -185,19 +185,19 @@ case $PROPERTY_KEY in
         ;;
     start)
         echo "Starting dexe-system.service..."
-        sudo systemctl start dexe-system.service
+        echo 123456 | sudo -S systemctl start dexe-system.service
         echo "Watching EtherCAT status..."
         watch -n 0.1 ethercat sl
         exit 0
         ;;
     stop)
         echo "Stopping dexe-system.service..."
-        sudo systemctl stop dexe-system.service
+        echo 123456 | sudo -S systemctl stop dexe-system.service
         exit 0
         ;;
     restart)
         echo "Restarting dexe-system.service..."
-        sudo systemctl restart dexe-system.service
+        echo 123456 | sudo -S systemctl restart dexe-system.service
         echo "Watching EtherCAT status..."
         watch -n 0.1 ethercat sl
         exit 0

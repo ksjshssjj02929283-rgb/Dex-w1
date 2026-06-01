@@ -47,6 +47,7 @@ enum class RunMode {
     CartesianImpedance,  // impedance control
     DragImpedance,       // mixed drag and impedance control
     Sleep,               // sleep mode, motors disabled
+    QuickStop,           // quickstop mode
     Unknown
 };
 
@@ -87,6 +88,7 @@ enum class RequestType {
     StartEEVelocityStreaming,
     // Emergency Request
     StopMove,
+    QuickStop,
 
     Unknown
 };

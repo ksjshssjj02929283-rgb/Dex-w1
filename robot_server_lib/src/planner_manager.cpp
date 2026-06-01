@@ -215,8 +215,8 @@ RequestResponse PlannerManager::OnRequestStateInit() {
 
     // 切换 current_planner_ switch to nullptr
     current_planner_ = nullptr;
-    if (robot_property_.run_mode != RunMode::Sleep) {
-        robot_property_.run_mode = RunMode::Position;  // init状态除了Sleep模式默认切换位置模式
+    if (robot_property_.run_mode != RunMode::Sleep && robot_property_.run_mode != RunMode::QuickStop) {
+        robot_property_.run_mode = RunMode::Position;  // init状态除了Sleep/QuickStop模式默认切换位置模式
     }
 
     // 如果measurement_time无效则说明还未初始化完成, 还不能切换Idle
@@ -985,6 +985,43 @@ void PlannerManager::OnEmergencyRequest() {
                 ConsumeRequest(&request);  // 清除当前缓存请求 Clear cached request
             }
             break;
+
+        case RequestType::QuickStop: {
+            bool enable_quick_stop = std::get<bool>(emergency_request.data.value());
+            LOG_INFO << "New emergency request received with request ID: " << emergency_request.request_id
+                     << " Type: " << ToString(emergency_request.type) << " enable: " << enable_quick_stop;
+            runtime_data_.terminated_request_id = emergency_request.request_id;
+            if (enable_quick_stop) {
+                robot_property_.run_mode = RunMode::QuickStop;
+                LOG_INFO << "Enable QuickStop mode";
+
+                if (Status::Running == manager_state_) {
+                    ReportRequestStatus(runtime_data_.latest_processing_request_id,
+                                        runtime_data_.latest_processing_request_type, RequestStatus::Stopped,
+                                        manager_state_);
+                    current_planner_ = nullptr;
+                    ChangeState(Status::Idle);
+                }
+                // 清除当前缓存请求 Clear cached request
+                if (request.type != RequestType::Empty) {
+                    ReportRequestStatus(request.request_id, request.type, RequestStatus::Stopped, manager_state_);
+                    ConsumeRequest(&request);
+                }
+            } else {
+                robot_property_.run_mode = RunMode::Position;
+                LOG_INFO << "Disable QuickStop (switched to Position mode)";
+            }
+
+            // 完成并消费当前的 QuickStop 紧急请求
+            runtime_data_.latest_processing_request_id = emergency_request.request_id;
+            runtime_data_.latest_processing_request_type = emergency_request.type;
+            runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
+            ReportRequestStatus(emergency_request.request_id, emergency_request.type, RequestStatus::Executed,
+                                manager_state_);
+            ConsumeRequest(&emergency_request);
+            break;
+        }
+
         default:
             LOG_WARN << "Unknown emergency request type received: " << ToString(emergency_request.type);
             ConsumeRequest(&emergency_request);

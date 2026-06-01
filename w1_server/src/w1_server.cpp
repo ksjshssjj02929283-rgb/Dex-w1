@@ -352,6 +352,10 @@ void RobotServer::TorqueControlThreadFunc() {
                             manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
                         }
                         break;
+                    case RunMode::Sleep:
+                    case RunMode::QuickStop:
+                        previous_mode_ = this->manager_info_.robot_property.run_mode;
+                        break;
                     default:
                         assert(false && "Unknown RunMode");
                         break;
@@ -459,8 +463,9 @@ void RobotServer::TorqueControlThreadFunc() {
 
 void RobotServer::SwitchControlWord() {
     static bool inited = false;
-    // 0. Sleep 模式下进入QUICK_STOP，阻止写入measurement
-    if (this->manager_info_.robot_property.run_mode == RunMode::Sleep) {
+    // 0. Sleep/QuickStop 模式下进入QUICK_STOP，阻止写入measurement
+    if (this->manager_info_.robot_property.run_mode == RunMode::Sleep ||
+        this->manager_info_.robot_property.run_mode == RunMode::QuickStop) {
         this->is_robot_ready_ = false;
         line_interpolator_.Reset();
         robot_control_.robot_control_word = CTRLWORD_MOTOR_QUICK_STOP;
