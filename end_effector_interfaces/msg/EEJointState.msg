@@ -1,13 +1,22 @@
-# 关节状态枚举类型
+# 单关节状态
 
-# 位置到位停止
-uint8 IDLE = 0
+# 关节名称
+string name
 
-# 正在展开/抓取
-uint8 RUNNING = 1
+# 关节位置 [0,100]
+float32 position
 
-# 电流保护停止、力控到位停止、电机堵转停止
-uint8 STALL = 2
+# 关节速度 [0,100]
+float32 velocity
 
-# 没连上modbus串口
-uint8 UNKNOWN = 3
+# 关节电流 [0,100]
+float32 current
+
+# 关节温度 deg
+float32 temperature
+
+# 关节状态 
+uint8 status
+
+# 关节状态码
+uint8 error_code
