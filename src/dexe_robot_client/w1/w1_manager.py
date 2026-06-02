@@ -5260,10 +5260,10 @@ class W1Manager:
             f"plan_linear_whole_body_ik() input speed_ratio: {speed_ratio}")
 
         if movement_mode not in [
-                "eager", "sync_endpoint", "sync_point_by_point"
+                "eager", "sync_endpoint"
         ]:
             self.logger.error(
-                f"Unsupported movement mode: {movement_mode}, please choose from ['eager', 'sync_endpoint', 'sync_point_by_point']"
+                f"Unsupported movement mode: {movement_mode}, please choose from ['eager', 'sync_endpoint']"
             )
             return StatusCode.INPUT_INVALID, None, None, None
 
@@ -5476,6 +5476,16 @@ class W1Manager:
             if left_arm_static_flag or right_arm_static_flag:
                 self.logger.error(
                     "In sync_endpoint mode, both arms should not be static.")
+                return StatusCode.INPUT_INVALID, None, None, None
+            if not check_SE3_sparse_waypoints(left_pos_raw_list, blend_tolerance) or not check_SE3_sparse_waypoints(right_pos_raw_list, blend_tolerance):
+                self.logger.error(
+                    "In sync_endpoint mode, the waypoints should be sparse for both arms."
+                )
+                return StatusCode.INPUT_INVALID, None, None, None
+            if not self._check_sample_step(left_pos_raw_list, cartesian_step) or not self._check_sample_step(right_pos_raw_list, cartesian_step):
+                self.logger.error(
+                    "In sync_endpoint mode, the cartesian sample step should be smaller than arm movement distance."
+                )
                 return StatusCode.INPUT_INVALID, None, None, None
             left_interpolate_num_list = self._cal_path_seg_interpolate_num(
                 left_pos_raw_list, cartesian_step)
