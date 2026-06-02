@@ -153,6 +153,9 @@ class PinIKWholeBody:
         self.reference_cq = casadi.SX.sym("ref_q", self.robot_.model.nq, 1)
         cpin.framesForwardKinematics(self.cmodel, self.cdata, self.cq)
 
+        self.cfocus_point = casadi.SX.sym("focus_point", 3, 1)
+        self.cfocus_weight = casadi.SX.sym("focus_weight", 1, 1)
+
     def _create_trans_rot_error(self):
         calc_head_xz_trans_err = [
             self.cdata.oMf[self.left_id].translation - self.cleft_tf[:3, 3],
@@ -274,6 +277,8 @@ class PinIKWholeBody:
         self.param_left_tf = self.opti.parameter(4, 4)
         self.param_right_tf = self.opti.parameter(4, 4)
         self.param_head_tf = self.opti.parameter(4, 4)
+        self.param_focus_point = self.opti.parameter(3, 1)
+        self.param_focus_weight = self.opti.parameter()
 
         opts = {
             'ipopt': {
@@ -471,19 +476,29 @@ class PinIKWholeBody:
                  (self.param_left_tf[0, 3] + self.param_right_tf[0, 3]) / 2)))
 
             # focus point cost
-            if self.focus_point is None:
-                self.focus_point_cost_func = casadi.Function(
-                    "focus_point_cost", [self.cq], [0])
-            else:
-                focus_direction = self.focus_point - self.cdata.oMf[
-                    self.head_id].translation
-                focus_direction = focus_direction / (
-                    casadi.norm_2(focus_direction) + 1e-6)
-                head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
-                focus_point_cost = 10 * (
-                    1 - casadi.dot(focus_direction, head_forward))
-                self.focus_point_cost_func = casadi.Function(
-                    "focus_point_cost", [self.cq], [focus_point_cost])
+            # if self.focus_point is None:
+            #     self.focus_point_cost_func = casadi.Function(
+            #         "focus_point_cost", [self.cq], [0])
+            # else:
+            #     focus_direction = self.focus_point - self.cdata.oMf[
+            #         self.head_id].translation
+            #     focus_direction = focus_direction / (
+            #         casadi.norm_2(focus_direction) + 1e-6)
+            #     head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
+            #     focus_point_cost = 10 * (
+            #         1 - casadi.dot(focus_direction, head_forward))
+            #     self.focus_point_cost_func = casadi.Function(
+            #         "focus_point_cost", [self.cq], [focus_point_cost])
+
+            focus_direction = self.cfocus_point - self.cdata.oMf[self.head_id].translation
+            focus_direction = focus_direction / (casadi.norm_2(focus_direction) + 1e-6)
+            head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
+            focus_point_cost = self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
+            self.focus_point_cost_func = casadi.Function(
+                "focus_point_cost",
+                [self.cq, self.cfocus_point, self.cfocus_weight],
+                [focus_point_cost]
+            )
 
             # yapf: disable
             self.opti.minimize(
@@ -496,7 +511,8 @@ class PinIKWholeBody:
                                    self.var_q_last[0:3])  # move arms first cost
                 + 10 * (self.arm6_cost + self.arm7_cost + self.arm4_cost)
                 + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
-                + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q))
+                # + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q))
+                + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q, self.param_focus_point, self.param_focus_weight))
             )
             # yapf: enable
 
@@ -602,19 +618,28 @@ class PinIKWholeBody:
                  (self.param_left_tf[0, 3] + self.param_right_tf[0, 3]) / 2)))
 
             # focus point cost
-            if self.focus_point is None:
-                self.focus_point_cost_func = casadi.Function(
-                    "focus_point_cost", [self.cq], [0])
-            else:
-                focus_direction = self.focus_point - self.cdata.oMf[
-                    self.head_id].translation
-                focus_direction = focus_direction / (
-                    casadi.norm_2(focus_direction) + 1e-6)
-                head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
-                focus_point_cost = 10 * (
-                    1 - casadi.dot(focus_direction, head_forward))
-                self.focus_point_cost_func = casadi.Function(
-                    "focus_point_cost", [self.cq], [focus_point_cost])
+            # if self.focus_point is None:
+            #     self.focus_point_cost_func = casadi.Function(
+            #         "focus_point_cost", [self.cq], [0])
+            # else:
+            #     focus_direction = self.focus_point - self.cdata.oMf[
+            #         self.head_id].translation
+            #     focus_direction = focus_direction / (
+            #         casadi.norm_2(focus_direction) + 1e-6)
+            #     head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
+            #     focus_point_cost = 10 * (
+            #         1 - casadi.dot(focus_direction, head_forward))
+            #     self.focus_point_cost_func = casadi.Function(
+            #         "focus_point_cost", [self.cq], [focus_point_cost])
+            focus_direction = self.cfocus_point - self.cdata.oMf[self.head_id].translation
+            focus_direction = focus_direction / (casadi.norm_2(focus_direction) + 1e-6)
+            head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
+            focus_point_cost = self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
+            self.focus_point_cost_func = casadi.Function(
+                "focus_point_cost",
+                [self.cq, self.cfocus_point, self.cfocus_weight],
+                [focus_point_cost]
+            )
 
             # yapf: disable
             self.opti.minimize(
@@ -627,7 +652,8 @@ class PinIKWholeBody:
                                    self.var_q_last[0:3])  # move arms first cost
                 + 10 * (self.arm6_cost + self.arm7_cost + self.arm4_cost)
                 + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
-                + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q))
+                # + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q))
+                + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q, self.param_focus_point, self.param_focus_weight))
             )
             # yapf: enable
 
@@ -737,19 +763,28 @@ class PinIKWholeBody:
                  (self.param_left_tf[0, 3] + self.param_right_tf[0, 3]) / 2)))
 
             # focus point cost
-            if self.focus_point is None:
-                self.focus_point_cost_func = casadi.Function(
-                    "focus_point_cost", [self.cq], [0])
-            else:
-                focus_direction = self.focus_point - self.cdata.oMf[
-                    self.head_id].translation
-                focus_direction = focus_direction / (
-                    casadi.norm_2(focus_direction) + 1e-6)
-                head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
-                focus_point_cost = 10 * (
-                    1 - casadi.dot(focus_direction, head_forward))
-                self.focus_point_cost_func = casadi.Function(
-                    "focus_point_cost", [self.cq], [focus_point_cost])
+            # if self.focus_point is None:
+            #     self.focus_point_cost_func = casadi.Function(
+            #         "focus_point_cost", [self.cq], [0])
+            # else:
+            #     focus_direction = self.focus_point - self.cdata.oMf[
+            #         self.head_id].translation
+            #     focus_direction = focus_direction / (
+            #         casadi.norm_2(focus_direction) + 1e-6)
+            #     head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
+            #     focus_point_cost = 10 * (
+            #         1 - casadi.dot(focus_direction, head_forward))
+            #     self.focus_point_cost_func = casadi.Function(
+            #         "focus_point_cost", [self.cq], [focus_point_cost])
+            focus_direction = self.cfocus_point - self.cdata.oMf[self.head_id].translation
+            focus_direction = focus_direction / (casadi.norm_2(focus_direction) + 1e-6)
+            head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
+            focus_point_cost = self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
+            self.focus_point_cost_func = casadi.Function(
+                "focus_point_cost",
+                [self.cq, self.cfocus_point, self.cfocus_weight],
+                [focus_point_cost]
+            )
 
             # yapf: disable
             self.opti.minimize(
@@ -762,7 +797,8 @@ class PinIKWholeBody:
                                    self.var_q_last[0:3])  # move arms first cost
                 + 10 * (self.arm6_cost + self.arm7_cost + self.arm4_cost)
                 + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
-                + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q))
+                # + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q))
+                + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q, self.param_focus_point, self.param_focus_weight))
             )
 
         if cost_type == "standard_lean_backward":
@@ -871,19 +907,28 @@ class PinIKWholeBody:
                  (self.param_left_tf[0, 3] + self.param_right_tf[0, 3]) / 2)))
 
             # focus point cost
-            if self.focus_point is None:
-                self.focus_point_cost_func = casadi.Function(
-                    "focus_point_cost", [self.cq], [0])
-            else:
-                focus_direction = self.focus_point - self.cdata.oMf[
-                    self.head_id].translation
-                focus_direction = focus_direction / (
-                    casadi.norm_2(focus_direction) + 1e-6)
-                head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
-                focus_point_cost = 10 * (
-                    1 - casadi.dot(focus_direction, head_forward))
-                self.focus_point_cost_func = casadi.Function(
-                    "focus_point_cost", [self.cq], [focus_point_cost])
+            # if self.focus_point is None:
+            #     self.focus_point_cost_func = casadi.Function(
+            #         "focus_point_cost", [self.cq], [0])
+            # else:
+            #     focus_direction = self.focus_point - self.cdata.oMf[
+            #         self.head_id].translation
+            #     focus_direction = focus_direction / (
+            #         casadi.norm_2(focus_direction) + 1e-6)
+            #     head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
+            #     focus_point_cost = 10 * (
+            #         1 - casadi.dot(focus_direction, head_forward))
+            #     self.focus_point_cost_func = casadi.Function(
+            #         "focus_point_cost", [self.cq], [focus_point_cost])
+            focus_direction = self.cfocus_point - self.cdata.oMf[self.head_id].translation
+            focus_direction = focus_direction / (casadi.norm_2(focus_direction) + 1e-6)
+            head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
+            focus_point_cost = self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
+            self.focus_point_cost_func = casadi.Function(
+                "focus_point_cost",
+                [self.cq, self.cfocus_point, self.cfocus_weight],
+                [focus_point_cost]
+            )
 
             # yapf: disable
             self.opti.minimize(
@@ -896,7 +941,8 @@ class PinIKWholeBody:
                                    self.var_q_last[0:3])  # move arms first cost
                 + 10 * (self.arm6_cost + self.arm7_cost + self.arm4_cost)
                 + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
-                + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q))
+                # + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q))
+                + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q, self.param_focus_point, self.param_focus_weight))
             )
 
         if cost_type == "standard_lean_backward_strict":
@@ -1005,19 +1051,28 @@ class PinIKWholeBody:
                  (self.param_left_tf[0, 3] + self.param_right_tf[0, 3]) / 2)))
 
             # focus point cost
-            if self.focus_point is None:
-                self.focus_point_cost_func = casadi.Function(
-                    "focus_point_cost", [self.cq], [0])
-            else:
-                focus_direction = self.focus_point - self.cdata.oMf[
-                    self.head_id].translation
-                focus_direction = focus_direction / (
-                    casadi.norm_2(focus_direction) + 1e-6)
-                head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
-                focus_point_cost = 10 * (
-                    1 - casadi.dot(focus_direction, head_forward))
-                self.focus_point_cost_func = casadi.Function(
-                    "focus_point_cost", [self.cq], [focus_point_cost])
+            # if self.focus_point is None:
+            #     self.focus_point_cost_func = casadi.Function(
+            #         "focus_point_cost", [self.cq], [0])
+            # else:
+            #     focus_direction = self.focus_point - self.cdata.oMf[
+            #         self.head_id].translation
+            #     focus_direction = focus_direction / (
+            #         casadi.norm_2(focus_direction) + 1e-6)
+            #     head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
+            #     focus_point_cost = 10 * (
+            #         1 - casadi.dot(focus_direction, head_forward))
+            #     self.focus_point_cost_func = casadi.Function(
+            #         "focus_point_cost", [self.cq], [focus_point_cost])
+            focus_direction = self.cfocus_point - self.cdata.oMf[self.head_id].translation
+            focus_direction = focus_direction / (casadi.norm_2(focus_direction) + 1e-6)
+            head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
+            focus_point_cost = self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
+            self.focus_point_cost_func = casadi.Function(
+                "focus_point_cost",
+                [self.cq, self.cfocus_point, self.cfocus_weight],
+                [focus_point_cost]
+            )
 
             # yapf: disable
             self.opti.minimize(
@@ -1030,14 +1085,16 @@ class PinIKWholeBody:
                                    self.var_q_last[0:3])  # move arms first cost
                 + 10 * (self.arm6_cost + self.arm7_cost + self.arm4_cost)
                 + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
-                + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q))
+                # + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q))
+                + 10 * casadi.sumsqr(self.focus_point_cost_func(self.var_q, self.param_focus_point, self.param_focus_weight))
             )
 
     def solve_ik(self,
                  left_ee_target: np.ndarray,
                  right_ee_target: np.ndarray,
                  head_ee_target: np.ndarray = None,
-                 cur_qpos: np.ndarray = None):
+                 cur_qpos: np.ndarray = None,
+                 focus_point: np.ndarray = None):
 
         if cur_qpos is None:
             self.init_data = np.zeros(self.robot_.model.nq)
@@ -1058,6 +1115,14 @@ class PinIKWholeBody:
                 return False, None
             self.opti.set_value(self.param_head_tf, head_ee_target)
         self.opti.set_value(self.var_q_last, self.init_data)
+
+        if focus_point is None:
+            self.opti.set_value(self.param_focus_point, np.array([0.0, 0.0, 0.0]))
+            self.opti.set_value(self.param_focus_weight, 0.0)
+        else:
+            focus_point = np.asarray(focus_point).reshape(3, 1)
+            self.opti.set_value(self.param_focus_point, focus_point)
+            self.opti.set_value(self.param_focus_weight, 1.0)
 
         try:
             solution = self.opti.solve()
