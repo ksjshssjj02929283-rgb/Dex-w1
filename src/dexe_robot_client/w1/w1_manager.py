@@ -18,6 +18,7 @@ from queue import Queue, Empty
 from copy import deepcopy
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
+from scipy.spatial.transform import Rotation, Slerp
 
 from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, download_w1_urdf, StatusCode
 from ..common.mapping_index import *
@@ -26,7 +27,7 @@ from ..navigation_client import ChassisClient
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
-from .path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm, check_SE3_dense_waypoints
+from .path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm, check_SE3_sparse_waypoints
 from .path_planner.cartesian_planner import CartesianPlanner
 from .path_planner.cartesian_to_joint_planner import CartesianToJointPlanner
 from .path_planner.fcl_checker import FCLChecker
@@ -5153,6 +5154,77 @@ class W1Manager:
 
             return StatusCode.SUCCESS, interpolate_path
 
+    def _check_sample_step(self, path: list[np.ndarray], cartesian_step: float):
+        if len(path) < 2:
+            self.logger.error(
+                f"The number of sample points in path should be at least 2, but got {path.shape[0]}"
+            )
+            return False
+        if cartesian_step <= 0:
+            self.logger.error(f"Invalid cartesian_step: {cartesian_step}, should be positive.")
+            return False
+        
+        total_dist = 0.0
+        for i in range(len(path) - 1):
+            dist = np.linalg.norm(path[i + 1][:3, 3] - path[i][:3, 3])
+            total_dist += dist
+        if total_dist <= cartesian_step:
+            return False
+        return True
+    
+    def interpolate_se3_path_by_cartesian_step(self, path: list[np.ndarray],
+                                           cartesian_step: float) -> list[np.ndarray]:
+        if cartesian_step <= 0.:
+            self.logger.error(f"Invalid cartesian_step: {cartesian_step}, should be positive.")
+            return False, None
+        if len(path) <= 1:
+            self.logger.error(f"The number of points in path should be at least 2, but got {len(path)}")
+            return False, [poses[0].copy()] if len(path) == 1 else None
+
+        poses = [np.asarray(p, dtype=float) for p in path]
+        for idx, pose in enumerate(poses):
+            if pose.shape != (4, 4):
+                self.logger.error(
+                    f"Invalid pose shape: {pose.shape} at index {idx}, each pose should be a 4x4 homogeneous transformation matrix."
+                )
+                return False, None
+
+        interpolated_path = [poses[0].copy()]
+
+        for idx in range(len(poses) - 1):
+            pose0 = poses[idx]
+            pose1 = poses[idx + 1]
+
+            p0 = pose0[:3, 3]
+            p1 = pose1[:3, 3]
+
+            R0 = pose0[:3, :3]
+            R1 = pose1[:3, :3]
+
+            dist = np.linalg.norm(p1 - p0)
+
+            if dist <= cartesian_step:
+                interpolated_path.append(pose1.copy())
+                continue
+
+            key_rots = Rotation.from_matrix([R0, R1])
+            slerp = Slerp([0.0, 1.0], key_rots)
+
+            sample_distances = np.arange(cartesian_step, dist, cartesian_step)
+
+            for s in sample_distances:
+                ratio = s / dist
+
+                pose = np.eye(4)
+                pose[:3, 3] = p0 + ratio * (p1 - p0)
+                pose[:3, :3] = slerp([ratio]).as_matrix()[0]
+
+                interpolated_path.append(pose)
+
+            interpolated_path.append(pose1.copy())
+
+        return interpolated_path
+
     @time_consuming
     def plan_linear_whole_body_ik(self,
                                   start_qpos: np.ndarray,
@@ -5165,7 +5237,8 @@ class W1Manager:
                                   movement_mode: str = "eager",
                                   eye_focus_point: np.ndarray = None,
                                   is_torso_lean_backward: bool = False,
-                                  torso_lean_backward_threshold: float = None):
+                                  torso_lean_backward_threshold: float = None,
+                                  blend_tolerance: float = 0.005):
         """
         This function is used to plan linear trajectory of end effector in Cartesian space,
             and use whole body ik to solve the corresponding joint trajectory. 
@@ -5333,7 +5406,7 @@ class W1Manager:
 
         if movement_mode == "eager":
             if not left_arm_static_flag:
-                if not check_SE3_dense_waypoints(left_pos_raw_list):
+                if check_SE3_sparse_waypoints(left_pos_raw_list, blend_tolerance) and self._check_sample_step(left_pos_raw_list, cartesian_step):
                     left_bezier_planner = PathR3xSO3Bezier(left_pos_raw_list)
                     if not left_bezier_planner.calc_path(
                             PathType.Bezier5thCartesian, 0.01):
@@ -5345,13 +5418,18 @@ class W1Manager:
                         self.logger.error(
                             "Left arm bezier path interpolation failed.")
                         return StatusCode.PLAN_PATH_FAIL, None, None, None
+                elif check_SE3_sparse_waypoints(left_pos_raw_list, blend_tolerance) and not self._check_sample_step(left_pos_raw_list, cartesian_step):
+                    left_xpos_sample_array = np.array(left_pos_raw_list)
+                elif not check_SE3_sparse_waypoints(left_pos_raw_list, blend_tolerance) and self._check_sample_step(left_pos_raw_list, cartesian_step):
+                    left_xpos_sample_array = self.interpolate_se3_path_by_cartesian_step(left_pos_raw_list, cartesian_step)
+                    left_xpos_sample_array = np.array(left_xpos_sample_array)
                 else:
                     left_xpos_sample_array = np.array(left_pos_raw_list)
             else:
                 left_xpos_sample_array = np.array(left_pos_raw_list)
 
             if not right_arm_static_flag:
-                if not check_SE3_dense_waypoints(right_pos_raw_list):
+                if check_SE3_sparse_waypoints(right_pos_raw_list, blend_tolerance) and self._check_sample_step(right_pos_raw_list, cartesian_step):
                     right_bezier_planner = PathR3xSO3Bezier(right_pos_raw_list)
                     if not right_bezier_planner.calc_path(
                             PathType.Bezier5thCartesian, 0.01):
@@ -5364,6 +5442,11 @@ class W1Manager:
                         self.logger.error(
                             "Right arm bezier path interpolation failed.")
                         return StatusCode.PLAN_PATH_FAIL, None, None, None
+                elif check_SE3_sparse_waypoints(right_pos_raw_list, blend_tolerance) and not self._check_sample_step(right_pos_raw_list, cartesian_step):
+                    right_xpos_sample_array = np.array(right_pos_raw_list)
+                elif not check_SE3_sparse_waypoints(right_pos_raw_list, blend_tolerance) and self._check_sample_step(right_pos_raw_list, cartesian_step):
+                    right_xpos_sample_array = self.interpolate_se3_path_by_cartesian_step(right_pos_raw_list, cartesian_step)
+                    right_xpos_sample_array = np.array(right_xpos_sample_array)
                 else:
                     right_xpos_sample_array = np.array(right_pos_raw_list)
             else:
