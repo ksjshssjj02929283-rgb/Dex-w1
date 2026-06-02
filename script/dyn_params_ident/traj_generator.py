@@ -237,8 +237,6 @@ if __name__ == "__main__":
 
     # Setup Paths
     config_path = os.path.join(os.path.expanduser("~"), "dexe_robot_server_data/robot_config.yaml")
-    urdf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             "../../install/robot_server_lib/share/robot_server_lib/robot_models/w1/robot.urdf")
     srdf_path = None
     robot_version_key = None
     
@@ -260,9 +258,8 @@ if __name__ == "__main__":
 
     # Fallback for urdf_path if not found
     if not os.path.exists(urdf_path):
-        local_urdf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../robot_server_lib/robot_models/w1/robot.urdf")
-        if os.path.exists(local_urdf):
-            urdf_path = local_urdf
+        print(f"Warning: URDF not found at {urdf_path}, using default path.")
+        raise RuntimeError(f"URDF not found at {urdf_path}")
 
     print(f"Loaded URDF path: {urdf_path}")
     
@@ -300,7 +297,7 @@ if __name__ == "__main__":
 
     # Output directory
     script_dir = Path(__file__).parent
-    base_traj_dir = script_dir / 'dyn_params_ident_data' / 'trajectories'
+    base_traj_dir = script_dir / 'trajectories'
     if robot_version_key:
         base_traj_dir = base_traj_dir / robot_version_key
 
@@ -314,7 +311,7 @@ if __name__ == "__main__":
         
         arm_traj_dir = base_traj_dir / arm_side
         for seg_idx in [1, 2]:
-            traj_name = f"traj_{seg_idx}"
+            traj_name = f"traj{seg_idx}"
             traj_path = arm_traj_dir / f"{traj_name}.dat"
             
             print(f"Generating {traj_name} ({duration}s)...")

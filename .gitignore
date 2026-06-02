@@ -8,7 +8,7 @@ log/
 __pycache__/
 *.pyc
 nano_logs/
-script/dyn_params_ident_data/recdata/
+script/dyn_params_ident/recdata/
 CLAUDE.md
 AGENT.md
 dexe_robot_client/

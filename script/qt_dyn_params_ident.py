@@ -92,8 +92,8 @@ class DynParamIdentifier(Node):
         version_prefix = self.version[:3]
         robot_version_key = f"{self.robot_name}_{version_prefix}"
         project_root = Path(__file__).resolve().parent
-        self.traj_dir = project_root / "dyn_params_ident_data" / "trajectories" / robot_version_key
-        self.rec_dir = project_root / "dyn_params_ident_data" / "recdata"
+        self.traj_dir = project_root / "dyn_params_ident" / "trajectories" / robot_version_key
+        self.rec_dir = project_root / "dyn_params_ident" / "recdata"
         self.traj_path = os.path.join(self.traj_dir, "left", f"{self.traj}.dat")
         # 创建定时器检查连接状态
         self._last_msg_time = None
@@ -176,7 +176,7 @@ class DynParamIdentifier(Node):
         local_dt = getattr(self, "_sim_dt_override", self.dt)
         if self.is_left:
             # 运动到第一个点
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
             if not self.move_joint(is_sim=True, target_position=target_position):
                 return False
             self.log_msg(
@@ -187,7 +187,7 @@ class DynParamIdentifier(Node):
                 if self._stop_flag.is_set():
                     self.log_msg("仿真停止指令收到，提前结束。")
                     return False
-                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[i, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[i, :], 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
                 if not self._joint_publisher(
                     is_sim=True, target_position=target_position
                 ):
@@ -196,7 +196,7 @@ class DynParamIdentifier(Node):
                 self._sleep_until(next_t)
         else:
             # 运动到第一个点
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]] # fmt: skip
+            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]] # fmt: skip
             if not self.move_joint(is_sim=True, target_position=target_position):
                 return False
             self.log_msg(
@@ -207,7 +207,7 @@ class DynParamIdentifier(Node):
                 if self._stop_flag.is_set():
                     self.log_msg("仿真停止指令收到，提前结束。")
                     return False
-                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[i, :]] # fmt: skip
+                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[i, :]] # fmt: skip
                 if not self._joint_publisher(
                     is_sim=True, target_position=target_position
                 ):
@@ -218,7 +218,7 @@ class DynParamIdentifier(Node):
             time.sleep(1)  # 发送结束后等待1s
             self.log_msg("仿真轨迹执行完成, 返回初始姿态。")
             # 返回初始姿态
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
             self.move_joint(is_sim=True, target_position=target_position)
         return True
 
@@ -269,7 +269,7 @@ class DynParamIdentifier(Node):
         if not self._stop_flag.is_set():
             time.sleep(1)  # 发送结束后等待1s
             self.log_msg("所有轨迹采集完成, 返回初始姿态。")
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
             ret = self.move_joint(is_sim=False, target_position=target_position)
             if not ret:
                 return False
@@ -283,7 +283,7 @@ class DynParamIdentifier(Node):
         if self.is_left:
             # 运动到第一个点
             self.log_msg("正在运动到左臂轨迹起始点...")
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
             ret = self.move_joint(is_sim=False, target_position=target_position)
             if not ret:
                 return False
@@ -294,7 +294,7 @@ class DynParamIdentifier(Node):
                 if self._stop_flag.is_set():
                     self.log_msg("收到停止指令，终止当前段采集。")
                     return False
-                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[i, :], -0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[i, :], 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
                 if not self._joint_publisher(
                     is_sim=False, target_position=target_position
                 ):
@@ -311,7 +311,7 @@ class DynParamIdentifier(Node):
         else:
             # 运动到第一个点
             self.log_msg("正在运动到右臂轨迹起始点...")
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]] # fmt: skip
+            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]] # fmt: skip
             ret = self.move_joint(is_sim=False, target_position=target_position)
             if not ret:
                 return False
@@ -322,7 +322,7 @@ class DynParamIdentifier(Node):
                 if self._stop_flag.is_set():
                     self.log_msg("收到停止指令，终止当前段采集。")
                     return False
-                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[i, :]] # fmt: skip
+                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[i, :]] # fmt: skip
                 if not self._joint_publisher(
                     is_sim=False, target_position=target_position
                 ):
@@ -556,7 +556,7 @@ import sympy, sympybotics, scipy.signal, lmi_sdp, subprocess
 from sympy import BlockMatrix, Matrix, eye, Identity
 from lmi_sdp import LMI
 from sympybotics.dynident.regression import mrepl
-
+from dyn_params_ident.urdf2dh import get_dh_params_for_arm
 
 class DynParamCalculator:
     """
@@ -566,8 +566,8 @@ class DynParamCalculator:
     def __init__(self, robot_type, is_left, logger):
         self.log_msg = logger
         project_root = Path(__file__).resolve().parent
-        self.traj_dir = project_root / "dyn_params_ident_data" / "trajectories" / robot_type
-        self.rec_dir = project_root / "dyn_params_ident_data" / "recdata"
+        self.traj_dir = project_root / "dyn_params_ident" / "trajectories" / robot_type
+        self.rec_dir = project_root / "dyn_params_ident" / "recdata"
         self.is_v02 = robot_type == "w1_v02"
         self.is_left = is_left
         self.robot_type = robot_type
@@ -582,17 +582,12 @@ class DynParamCalculator:
     # todo: 补充v03模型
     def create_robot_model(self, robot_type):
         # 构建机器人模型, 并计算基础参数集
+        arm_side = "left" if self.is_left else "right"
+        dh_params = get_dh_params_for_arm(arm_side)
+        self.log_msg(f"DH parameters for {robot_type} {arm_side} arm:\n{dh_params}")
         self.rbtdef_num = sympybotics.RobotDef(
-            f"{robot_type}",
-            [
-                ("-pi/2", 0, 0.1025, "q"),
-                ("pi/2", 0, 0.0, "q"),
-                ("-pi/2", 0, 0.26, "q"),
-                ("pi/2", 0, 0.0, "q"),
-                ("-pi/2", 0, 0.264, "q"),
-                ("pi/2", 0, 0.0, "q"),
-                (0, 0, 0.0, "q"),
-            ],
+            f"{robot_type}_{arm_side}",
+            dh_params,
             dh_convention="standard",
         )
         self.rbtdef_num.frictionmodel = {"Coulomb", "viscous", "offset"}
@@ -605,117 +600,6 @@ class DynParamCalculator:
         rbt = sympybotics.RobotDynCode(self.rbtdef_num, verbose=True)
         rbt.calc_base_parms()
         return rbt
-
-    def generate_inv_dyn_code(self):
-        import re
-        from sympybotics.symcode import code_to_func
-        g0, g1, g2 = sympy.symbols('g0 g1 g2')
-        self.rbtdef_sym = self.rbtdef_num
-        self.rbtdef_sym.gravityacc = sympy.Matrix([g0, g1, g2])
-        rbt_sym = sympybotics.RobotDynCode(self.rbtdef_sym, verbose=True)
-
-        # 构造 tau = H(g) * Pb * dyn_base_parameters（7x1）
-        pb_syms = sympy.symbols(f'pb0:{len(self.rbt.dyn.baseparms)}')  # 仅用于构造表达式
-        pb = sympy.Matrix(pb_syms)
-        tau_expr = rbt_sym.dyn.H * self.rbt.dyn.Pb * pb  # 7x1
-
-        # 复用 H 的子表达式，生成 code 结构
-        T_se = sympybotics.symcode.Subexprs()
-        T_se._subexp_iv = rbt_sym._H_se
-        tau_code = T_se.get(tau_expr)
-
-        # 构造替换映射与函数签名（包含 dyn_base_params 与 gravity_acc）
-        q_subs = {q: f'q[{i}]' for i, q in enumerate(self.rbtdef_sym.q)}
-        dq_subs = {dq: f'dq[{i}]' for i, dq in enumerate(self.rbtdef_sym.dq)}
-        ddq_subs = {ddq: f'ddq[{i}]' for i, ddq in enumerate(self.rbtdef_sym.ddq)}
-        pb_subs = {sym: f'dyn_base_params[{i}]' for i, sym in enumerate(pb_syms)}
-        g_subs = {g0: 'gravity_acc[0]', g1: 'gravity_acc[1]', g2: 'gravity_acc[2]'}
-        subs = {**q_subs, **dq_subs, **ddq_subs, **pb_subs, **g_subs}
-
-        # 6) 生成 C++ 版本（用 C 代码风格，.cpp 可直接编译）
-        func_src_c = code_to_func(
-            'C', tau_code, 'tau_out', 'invdyn_tau',
-            ['q', 'dq', 'ddq', 'dyn_base_params', 'gravity_acc'], subs
-        )
-        header_cpp = (
-            '#include <math.h>\n'
-            '#include <stddef.h>\n'
-            'static inline double sign(double x){ return (x>0) - (x<0); }\n\n'
-        )
-
-        # 替换 ((x) > 0) - ((x) < 0) 为 sign(x)
-        pattern = re.compile(r'\(\(([^()]+?)\) > 0\) - \(\(\1\) < 0\)')
-        while True:
-            new_func_src_c = pattern.sub(r'sign(\1)', func_src_c)
-            if new_func_src_c == func_src_c:
-                break
-            func_src_c = new_func_src_c
-
-        out_path = os.path.join(os.path.dirname(__file__), 'invdyn_tau.cpp')
-        with open(out_path, 'w') as f:
-            f.write(header_cpp + func_src_c)
-
-    # todo: 补充v03模型
-    def generate_mass_matrix_code(self):
-        import re
-        from sympybotics.symcode import code_to_func
-        rbt_no_gravity = sympybotics.RobotDef(
-            f"{self.robot_type}",
-            [
-                ("-pi/2", 0, 0.1025, "q"),
-                ("pi/2", 0, 0.0, "q"),
-                ("-pi/2", 0, 0.26, "q"),
-                ("pi/2", 0, 0.0, "q"),
-                ("-pi/2", 0, 0.264, "q"),
-                ("pi/2", 0, 0.0, "q"),
-                (0, 0, 0.0, "q"),
-            ],
-            dh_convention="standard",
-        )
-        rbt_no_gravity.frictionmodel = {"Coulomb", "viscous", "offset"}
-        rbt_no_gravity.driveinertiamodel = "simplified"
-        rbt_no_gravity.gravityacc = (sympy.Matrix([0.0, 0.0, 0.0]))
-        rbt_sym = sympybotics.RobotDynCode(rbt_no_gravity, verbose=True)
-
-        # 构造 tau = H(g) * Pb * dyn_base_parameters（7x1）
-        pb_syms = sympy.symbols(f'pb0:{len(self.rbt.dyn.baseparms)}')  # 仅用于构造表达式
-        pb = sympy.Matrix(pb_syms)
-        tau_expr = rbt_sym.dyn.H * self.rbt.dyn.Pb * pb  # 7x1
-
-        # 复用 H 的子表达式，生成 code 结构
-        T_se = sympybotics.symcode.Subexprs()
-        T_se._subexp_iv = rbt_sym._H_se
-        tau_code = T_se.get(tau_expr)
-
-        # 构造替换映射与函数签名（包含 dyn_base_params 与 gravity_acc）
-        q_subs = {q: f'q[{i}]' for i, q in enumerate(rbt_no_gravity.q)}
-        dq_subs = {dq: f'0.0' for i, dq in enumerate(rbt_no_gravity.dq)}
-        ddq_subs = {ddq: f'ddq[{i}]' for i, ddq in enumerate(rbt_no_gravity.ddq)}
-        pb_subs = {sym: f'dyn_base_params[{i}]' for i, sym in enumerate(pb_syms)}
-        subs = {**q_subs, **dq_subs, **ddq_subs, **pb_subs}
-
-        # 6) 生成 C++ 版本（用 C 代码风格，.cpp 可直接编译）
-        func_src_c = code_to_func(
-            'C', tau_code, 'M_term_out', 'mass_term',
-            ['q', 'ddq', 'dyn_base_params'], subs
-        )
-        header_cpp = (
-            '#include <math.h>\n'
-            '#include <stddef.h>\n'
-            'static inline double sign(double x){ return (x>0) - (x<0); }\n\n'
-        )
-
-        # 替换 ((x) > 0) - ((x) < 0) 为 sign(x)
-        pattern = re.compile(r'\(\(([^()]+?)\) > 0\) - \(\(\1\) < 0\)')
-        while True:
-            new_func_src_c = pattern.sub(r'sign(\1)', func_src_c)
-            if new_func_src_c == func_src_c:
-                break
-            func_src_c = new_func_src_c
-
-        out_path = os.path.join(os.path.dirname(__file__), 'mass_matrix.cpp')
-        with open(out_path, 'w') as f:
-            f.write(header_cpp + func_src_c)
 
     def calc_dyn_params(self):
         # 创建机器人模型并计算基础参数集
@@ -850,19 +734,6 @@ class DynParamCalculator:
             }
         self.log_msg("所有轨迹数据处理完成并保存。")
 
-    def get_actual_q(self, q_raw):
-        if self.is_left:
-            if self.is_v02:
-                joint_offset = np.array(
-                    [0.0, 0.0, -np.pi / 2.0, 0.0, 0.0, -np.pi / 2.0, 0.0]
-                )
-        else:
-            if self.is_v02:
-                joint_offset = np.array(
-                    [0.0, 0.0, np.pi / 2.0, 0.0, 0.0, np.pi / 2.0, 0.0]
-                )
-        return q_raw + joint_offset
-
     def process_regression_data(self, traj):
         # 数据滤波, 差分和回归数据生成
         fc_mult = 10
@@ -878,7 +749,6 @@ class DynParamCalculator:
             self.ndof, self.dt, rec_path, traj_path
         )
 
-        q_raw = self.get_actual_q(q_raw)  # 从实际的 q 得到原始的 q (对应DH参数)
         q, dq, ddq, tau = self.diff_and_filt_data(
             dof=self.ndof,
             h=self.dt,
@@ -1172,7 +1042,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
         self.btn_show_plot = QtWidgets.QPushButton("图示已采集轨迹")
         self.btn_show_regression = QtWidgets.QPushButton("图示参数验证结果")
-        self.btn_gen_inertia_code = QtWidgets.QPushButton("生成惯量矩阵代码")
         btn_h = max(
             self.btn_run_sim.sizeHint().height(), self.btn_show_plot.sizeHint().height()
         )
@@ -1213,8 +1082,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_run_real = QtWidgets.QPushButton("真机采集轨迹")
         self.btn_calc_params = QtWidgets.QPushButton("计算动力学参数")
         self.btn_write_params = QtWidgets.QPushButton("写入辨识参数")
-        self.btn_gen_regression_code = QtWidgets.QPushButton("生成回归矩阵代码")
-        self.btn_gen_inertia_code = QtWidgets.QPushButton("生成惯量矩阵代码")
         bottom_vbox.addWidget(self.btn_run_real)
         # 图示已采集轨迹放在真机采集所有轨迹下方
         bottom_vbox.addWidget(self.btn_show_plot)
@@ -1228,8 +1095,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
         result_vbox.addWidget(self.btn_calc_params)
         result_vbox.addWidget(self.btn_show_regression)
         result_vbox.addWidget(self.btn_write_params)
-        result_vbox.addWidget(self.btn_gen_regression_code)
-        result_vbox.addWidget(self.btn_gen_inertia_code)
         ctrl_layout.addWidget(result_group)
         ctrl_layout.addStretch(1)
         # 第四部分：停止按钮
@@ -1310,9 +1175,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_stop.clicked.connect(self.on_stop_clicked)
         # 新增：图示辨识结果按钮
         self.btn_show_regression.clicked.connect(self.on_show_regression)
-        self.btn_gen_regression_code.clicked.connect(self.on_generate_regression_code)
-        # 新增：惯量矩阵按钮
-        self.btn_gen_inertia_code.clicked.connect(self.on_generate_inertia_code)
         # 可视化子进程句柄
         self._visual_proc = None
         # 外部浏览器打开防抖标志（避免多次打开同一地址）
@@ -1342,15 +1204,10 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_show_plot.setDisabled(True)
         self.btn_show_regression.setDisabled(True)
         self.btn_write_params.setDisabled(True)
-        self.btn_gen_regression_code.setDisabled(True)
-        self.btn_gen_inertia_code.setDisabled(True)
         # 控制可见性：仅当脚本以 --dev 参数运行时才显示该按钮
         self._show_dex_features = "--dev" in sys.argv
         if not getattr(self, "_show_dex_features", False):
             self.btn_calc_params.setDisabled(True)
-            self.btn_gen_regression_code.setVisible(False)
-            # 新增：非 dev 隐藏惯量矩阵按钮
-            self.btn_gen_inertia_code.setVisible(False)
 
         self._did_initial_ref_plot = False
 
@@ -1396,12 +1253,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 True if disabled else (not self._params_calculated)
             )
             self.btn_write_params.setDisabled(
-                True if disabled else (not self._params_calculated)
-            )
-            self.btn_gen_regression_code.setDisabled(
-                True if disabled else (not self._params_calculated)
-            )
-            self.btn_gen_inertia_code.setDisabled(
                 True if disabled else (not self._params_calculated)
             )
             self.traj_combo.setDisabled(disabled)
@@ -1653,8 +1504,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
             try:
                 self.btn_write_params.setDisabled(False)
                 self.btn_show_regression.setDisabled(False)
-                self.btn_gen_regression_code.setDisabled(False)
-                self.btn_gen_inertia_code.setDisabled(False)
             except Exception:
                 pass
             self._plot_regression_on_canvas()
@@ -1752,68 +1601,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
             )
         except Exception as e:
             self.log_msg("写入辨识参数出错: " + str(e))
-
-    def on_generate_regression_code(self):
-        try:
-            if not getattr(self, "_params_calculated", False):
-                self.log_msg("请先完成动力学参数计算后再生成回归矩阵代码。")
-                return
-            self.update_params_from_ui()
-            self.disable_buttons(True)
-            t = threading.Thread(target=self._thread_generate_regression_code, daemon=True)
-            t.start()
-        except Exception as e:
-            self.log_msg("生成回归矩阵代码启动失败: " + str(e))
-
-    # 新增：生成惯量矩阵代码
-    def on_generate_inertia_code(self):
-        try:
-            if not getattr(self, "_params_calculated", False):
-                self.log_msg("请先完成动力学参数计算后再生成惯量矩阵代码。")
-                return
-            self.update_params_from_ui()
-            self.disable_buttons(True)
-            t = threading.Thread(
-                target=self._thread_generate_inertia_code, daemon=True
-            )
-            t.start()
-        except Exception as e:
-            self.log_msg("生成惯量矩阵代码启动失败: " + str(e))
-
-    def _thread_generate_regression_code(self):
-        try:
-            # 根据当前界面选择的臂侧生成对应的代码
-            calc = self.dyn.calculator_left
-            self.log_msg(f"正在生成回归/逆动力学代码...")
-            calc.generate_inv_dyn_code()
-            out_path = os.path.join(os.path.dirname(__file__), 'invdyn_tau.cpp')
-            self.log_msg(f"回归矩阵/逆动力学代码已生成: {out_path}")
-        except Exception as e:
-            self.log_msg("生成回归矩阵代码出错: " + str(e))
-        finally:
-            try:
-                QtCore.QMetaObject.invokeMethod(
-                    self, "enable_buttons", QtCore.Qt.QueuedConnection
-                )
-            except Exception:
-                pass
-
-    def _thread_generate_inertia_code(self):
-        try:
-            calc = self.dyn.calculator_left
-            self.log_msg("正在生成惯量矩阵代码...")
-            calc.generate_mass_matrix_code()
-            out_path = os.path.join(os.path.dirname(__file__), "mass_matrix.cpp")
-            self.log_msg(f"惯量矩阵代码已生成: {out_path}")
-        except Exception as e:
-            self.log_msg("生成惯量矩阵代码出错: " + str(e))
-        finally:
-            try:
-                QtCore.QMetaObject.invokeMethod(
-                    self, "enable_buttons", QtCore.Qt.QueuedConnection
-                )
-            except Exception:
-                pass
 
     @QtCore.pyqtSlot()
     def _plot_records_on_canvas(self):

@@ -156,6 +156,106 @@ def dh_transform_matrix(a, alpha, d, theta):
         [0,   0,        0,       1]
     ])
 
+def to_angle_str(val: float) -> str:
+    # 限制在 [-pi, pi]
+    val = (val + np.pi) % (2 * np.pi) - np.pi
+    if abs(val) < 1e-4:
+        return "0"
+    elif abs(val - np.pi/2) < 1e-4:
+        return "pi/2"
+    elif abs(val + np.pi/2) < 1e-4:
+        return "-pi/2"
+    elif abs(val - np.pi) < 1e-4 or abs(val + np.pi) < 1e-4:
+        return "pi"
+    else:
+        # 如果不是特殊角度，输出带4位小数的字符串
+        return f"{val:.4f}"
+
+def to_theta_str(theta_offset: float) -> str:
+    theta_offset = (theta_offset + np.pi) % (2 * np.pi) - np.pi
+    if abs(theta_offset) < 1e-4:
+        return "q"
+    elif abs(theta_offset - np.pi/2) < 1e-4:
+        return "pi/2 + q"
+    elif abs(theta_offset + np.pi/2) < 1e-4:
+        return "-pi/2 + q"
+    elif abs(theta_offset - np.pi) < 1e-4 or abs(theta_offset + np.pi) < 1e-4:
+        return "pi + q"
+    else:
+        sgn = "+" if theta_offset > 0 else "-"
+        return f"q {sgn} {abs(theta_offset):.4f}"
+
+def to_dist_val(val: float) -> float:
+    if abs(val) < 1e-5:
+        return 0.0
+    val_rounded = round(float(val), 4)
+    if abs(val_rounded) < 1e-5:
+        return 0.0
+    return val_rounded
+
+def get_dh_params_for_arm(arm: str) -> List[Tuple[str, float, float, str]]:
+    """
+    获取指定手臂的 DH 参数列表，格式为 (alpha, a, d, theta)
+    用于 SymPyBotics
+    """
+    base_urdf_path, _, _ = get_robot_info()
+    if not base_urdf_path or not os.path.exists(base_urdf_path):
+        raise FileNotFoundError(f"URDF file not found: {base_urdf_path}")
+
+    urdf_path = base_urdf_path
+    start_link = "base_link"
+    end_link = f"{arm}_ee"
+
+    arm_filename = f"{arm}_arm.urdf"
+    arm_urdf_path = os.path.join(os.path.dirname(base_urdf_path), arm_filename)
+    
+    if os.path.exists(arm_urdf_path):
+        urdf_path = arm_urdf_path
+        robot = yourdfpy.URDF.load(urdf_path)
+        start_link = robot.base_link
+    else:
+        robot = yourdfpy.URDF.load(urdf_path)
+
+    joint_path = find_chain(robot, start_link, end_link)
+    if not joint_path:
+        raise ValueError(f"Could not find chain from {start_link} to {end_link}")
+    
+    active_joints = [jn for jn in joint_path if robot.joint_map[jn].type != 'fixed']
+    target_end_link = f"{arm}_ee"
+    robot.update_cfg({j: 0.0 for j in active_joints})
+    
+    axes = [] 
+    for jn in active_joints:
+        joint = robot.joint_map[jn]
+        T_base_child = robot.get_transform(joint.child)
+        z_base = normalize(T_base_child[:3, :3] @ np.array(joint.axis))
+        p_base = T_base_child[:3, 3]
+        axes.append((z_base, p_base))
+    
+    T_base_ee = robot.get_transform(target_end_link)
+    p_ee_base = T_base_ee[:3, 3]
+    axes.append((axes[-1][0], p_ee_base))
+
+    x_prev = None
+    p_intersect_prev = axes[0][1]
+    dh_params = []
+    for i in range(len(active_joints)):
+        z_i_minus_1, _ = axes[i]
+        z_i, p_i_origin = axes[i+1]
+        a, alpha, d, theta, x_curr, p_intersect_curr = compute_dh_params(z_i_minus_1, p_intersect_prev, z_i, p_i_origin, x_prev)
+        
+        alpha_str = to_angle_str(alpha)
+        theta_str = to_theta_str(theta)
+        a_val = to_dist_val(a)
+        d_val = to_dist_val(d)
+        
+        dh_params.append((alpha_str, a_val, d_val, theta_str))
+        
+        x_prev = x_curr
+        p_intersect_prev = p_intersect_curr
+        
+    return dh_params
+
 def main():
     # 仅支持选择手臂：left, right 或省略（两者）
     target_arm = None
@@ -167,19 +267,15 @@ def main():
 
     base_urdf_path, robot_type, version = get_robot_info()
     
-    print("\n" + "*"*50)
     print(f"机器人构型: {robot_type if robot_type else '未知'}")
     print(f"机器人版本: {version if version else '未知'}")
-    print("*"*50)
 
     if not base_urdf_path or not os.path.exists(base_urdf_path):
         print(f"错误: 未找到 URDF 文件。尝试路径为: {base_urdf_path}")
         return
 
     for arm in arms_to_process:
-        print(f"\n" + "="*50)
         print(f"正在处理 {arm.upper()} 手臂")
-        print("="*50)
         
         urdf_path = base_urdf_path
         start_link = "base_link" # 全机器人的默认起点
@@ -189,7 +285,7 @@ def main():
         arm_urdf_path = os.path.join(os.path.dirname(base_urdf_path), arm_filename)
         
         if os.path.exists(arm_urdf_path):
-            print(f"使用手臂专用 URDF: {arm_urdf_path}")
+            print(f"使用手臂 URDF: {arm_urdf_path}")
             urdf_path = arm_urdf_path
             robot = yourdfpy.URDF.load(urdf_path)
             start_link = robot.base_link
@@ -204,31 +300,25 @@ def main():
         
         active_joints = [jn for jn in joint_path if robot.joint_map[jn].type != 'fixed']
         
-        # ========== 取消末端 eelink，只计算到最后一个旋转关节 ==========
-        end_link = robot.joint_map[active_joints[-1]].child
-        idx = joint_path.index(active_joints[-1])
-        joint_path = joint_path[:idx+1]
-        
-        print(f"链路: {start_link} -> {' -> '.join(joint_path)} -> {end_link} (已忽略固定末端)")
-        # ==========================================================
+        target_end_link = f"{arm}_ee"
+            
+        print(f"链路: {start_link} -> {' -> '.join(joint_path)} -> {target_end_link}")
 
         robot.update_cfg({j: 0.0 for j in active_joints})
         
         axes = [] 
         for jn in active_joints:
             joint = robot.joint_map[jn]
-            T_base_parent = robot.get_transform(joint.parent)
-            z_base = normalize(T_base_parent[:3, :3] @ np.array(joint.axis))
-            p_base = (T_base_parent @ np.append(np.array(joint.origin[:3, 3]), 1.0))[:3]
+            T_base_child = robot.get_transform(joint.child)
+            z_base = normalize(T_base_child[:3, :3] @ np.array(joint.axis))
+            p_base = T_base_child[:3, 3]
             axes.append((z_base, p_base))
         
-        # 复制最后一个旋转关节的轴和位置作为虚拟解析终点
-        # 这确保最后一组参数只有在存在沿轴向平移时产生 d 偏置，且 a=0, alpha=0
-        axes.append((axes[-1][0], axes[-1][1]))
-
-        print(f"\nDH 参数 (Standard 标准约定):")
-        print(f"{'Joint':<25} | {'a':>8} | {'alpha':>8} | {'d':>8} | {'theta':>8}")
-        print("-" * 75)
+        # 获取末端 target_end_link 的绝对原点位置作为最后一个轴的原点位置
+        # 其 Z 轴方向继承前一个轴的方向
+        T_base_ee = robot.get_transform(target_end_link)
+        p_ee_base = T_base_ee[:3, 3]
+        axes.append((axes[-1][0], p_ee_base))
 
         x_prev = None
         p_intersect_prev = axes[0][1] # 一开始位于 J1 原点
@@ -237,38 +327,32 @@ def main():
             z_i_minus_1, _ = axes[i]
             z_i, p_i_origin = axes[i+1]
             a, alpha, d, theta, x_curr, p_intersect_curr = compute_dh_params(z_i_minus_1, p_intersect_prev, z_i, p_i_origin, x_prev)
-            print(f"{active_joints[i]:<25} | {a:8.4f} | {alpha:8.4f} | {d:8.4f} | {theta:8.4f}")
-            # DEBUG
-            # if active_joints[i] == "WRIST_ROLL_L_J7":
-            #    print(f"DEBUG J7: p_intersect_prev={p_intersect_prev}, p_i_origin={p_i_origin}, z_prev={z_i_minus_1}, z_curr={z_i}")
             dh_params_list.append((a, alpha, d, theta))
             x_prev = x_curr
             p_intersect_prev = p_intersect_curr
 
         print(f"\nPython 列表格式 (用于 SymPyBotics):")
         print("[")
+        # 首先生成所有的行格式文本以便对齐注释
+        lines = []
         for i, (a, alpha, d, theta) in enumerate(dh_params_list):
-            print(f"    ({alpha:8.4f}, {a:8.4f}, {d:8.4f}, {theta:8.4f}),  # {active_joints[i]}")
+            alpha_str = to_angle_str(alpha)
+            theta_str = to_theta_str(theta)
+            a_val = to_dist_val(a)
+            d_val = to_dist_val(d)
+            a_formatted = int(a_val) if float(a_val).is_integer() else a_val
+            d_formatted = int(d_val) if float(d_val).is_integer() else d_val
+            param_part = f"    (\"{alpha_str}\", {a_formatted}, {d_formatted}, \"{theta_str}\"),"
+            lines.append((param_part, active_joints[i]))
+        
+        # 寻找参数部分的最大长度，以便对齐
+        max_len = max(len(p) for p, _ in lines) if lines else 0
+        for param_part, joint_name in lines:
+            spacing = " " * (max_len - len(param_part) + 2)
+            print(f"{param_part}{spacing}# {joint_name}")
         print("]")
 
         # 验证环节
-        print(f"\n正在验证 {arm.upper()} 手臂 (全 0 关节构型):")
-        q_test = np.zeros(len(active_joints))
-        
-        # 1. URDF 正向运动学
-        robot.update_cfg({active_joints[i]: q_test[i] for i in range(len(active_joints))})
-        
-        # URDF 在世界坐标系中的变换
-        T_world_to_end_urdf = robot.get_transform(end_link)
-        pos_urdf_world = T_world_to_end_urdf[:3, 3]
-
-        # 2. DH 正向运动学
-        T_dh_chain = np.eye(4)
-        for i in range(len(active_joints)):
-            a, alpha, d, theta = dh_params_list[i]
-            T_i = dh_transform_matrix(a, alpha, d, theta + q_test[i])
-            T_dh_chain = T_dh_chain @ T_i
-            
         # 3. 构造 DH Frame 0 到 URDF 世界坐标系的转换矩阵 R_0
         # DH Frame 0: 原点 p_0, Z轴 = z_0, X轴 = x_1 (因为起始 theta 偏差假设为0)
         z_0 = axes[0][0]
@@ -286,23 +370,47 @@ def main():
         T_world_0[:3, 1] = Y_0
         T_world_0[:3, 2] = Z_0
         T_world_0[:3, 3] = p_0
-        
-        # 将 DH 结果转换到 URDF 统一坐标系下
-        T_world_end_dh = T_world_0 @ T_dh_chain
-        pos_dh_world = T_world_end_dh[:3, 3]
-        
-        dist_error = np.linalg.norm(pos_urdf_world - pos_dh_world)
-        
-        print(f"测试关节角 (rad): {[f'{v:.3f}' for v in q_test]}")
-        print(f"URDF 世界坐标位置: {pos_urdf_world}")
-        print(f"DH转换 世界坐标位置: {pos_dh_world}")
-        print(f"全局空间坐标对齐误差: {dist_error:.6f} m")
-        
-        if dist_error < 1e-3:
-            print("✅ 连杆几何验证通过：坐标完全对齐，DH 模型在物理空间中与 URDF 完全等价。")
-        else:
-            print("❌ 连杆几何验证失败：虽然长度可能一致，但在三维空间中的指向存在偏差。")
-            print("  可能原因：起始 Frame 0 与 URDF 的起始姿态未正确对齐。")
+
+        def run_verification(q_test, config_name):
+            print(f"\n正在验证 {arm.upper()} 手臂 ({config_name}):")
+            # 1. URDF 正向运动学
+            robot.update_cfg({active_joints[i]: q_test[i] for i in range(len(active_joints))})
+            
+            # URDF 在世界坐标系中的变换
+            T_world_to_end_urdf = robot.get_transform(target_end_link)
+            pos_urdf_world = T_world_to_end_urdf[:3, 3]
+
+            # 2. DH 正向运动学
+            T_dh_chain = np.eye(4)
+            for i in range(len(active_joints)):
+                a, alpha, d, theta = dh_params_list[i]
+                T_i = dh_transform_matrix(a, alpha, d, theta + q_test[i])
+                T_dh_chain = T_dh_chain @ T_i
+                
+            # 将 DH 结果转换到 URDF 统一坐标系下
+            T_world_end_dh = T_world_0 @ T_dh_chain
+            pos_dh_world = T_world_end_dh[:3, 3]
+            dist_error = np.linalg.norm(pos_urdf_world - pos_dh_world)
+            
+            print(f"测试关节角 (rad): {[f'{v:.3f}' for v in q_test]}")
+            print(f"URDF 世界坐标位置: {pos_urdf_world}")
+            print(f"DH转换 世界坐标位置: {pos_dh_world}")
+            print(f"全局空间坐标对齐误差: {dist_error:.6f} m")
+            
+            if dist_error < 1e-3:
+                print("✅ 连杆几何验证通过：坐标完全对齐，DH 模型在物理空间中与 URDF 完全等价。")
+            else:
+                print("❌ 连杆几何验证失败：虽然长度可能一致，但在三维空间中的指向存在偏差。")
+                print("  可能原因：起始 Frame 0 与 URDF 的起始姿态未正确对齐。")
+
+        # 1. 全 0 关节角度测试
+        q_zero = np.zeros(len(active_joints))
+        run_verification(q_zero, "全 0 关节构型")
+
+        # 2. 随机关节角度测试
+        # 每个关节取 [-1.0, 1.0] 弧度范围内的随机值
+        q_rand = np.random.uniform(-1.0, 1.0, len(active_joints))
+        run_verification(q_rand, "随机关节构型")
 
 if __name__ == "__main__":
     main()
