@@ -55,6 +55,17 @@ else
     SUDO_PREFIX="sudo"
 fi
 
+# === 2. 检查 Sudo 权限 ===
+# 尝试使用默认密码验证，如果失败则提示用户手动输入
+if echo "123456" | sudo -S -v >/dev/null 2>&1; then
+    SUDO_PREFIX="echo 123456 | sudo -S"
+    echo "✅ 使用默认密码获取 sudo 权限"
+else
+    echo "⚠️  默认密码错误，请手动输入 sudo 密码："
+    sudo -v
+    SUDO_PREFIX="sudo"
+fi
+
 # 在 install 目录中对二进制提权
 sudo_setcap() {
   eval "$SUDO_PREFIX setcap \"$1\" \"$2\" 2>/dev/null"
