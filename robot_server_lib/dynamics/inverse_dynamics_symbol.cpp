@@ -8,6 +8,14 @@
 #include "inverse_dynamics_symbol_generated/w1_v02/generated_include.h"
 #include "inverse_dynamics_symbol_generated/w1_v03/generated_include.h"
 
+// 引入所有生成的版本化函数前向声明
+namespace robot_server_lib::dynamics::w1_v03 {
+    void left_invdyn_tau(double* tau_out, const double* q, const double* dq, const double* ddq, const double* dyn_base_params, const double* gravity_acc);
+    void right_invdyn_tau(double* tau_out, const double* q, const double* dq, const double* ddq, const double* dyn_base_params, const double* gravity_acc);
+    void left_mass_term(double* M_term_out, const double* q, const double* ddq, const double* dyn_base_params);
+    void right_mass_term(double* M_term_out, const double* q, const double* ddq, const double* dyn_base_params);
+}
+
 namespace robot_server_lib
 {
 namespace dynamics
