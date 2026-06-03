@@ -382,8 +382,7 @@ class NavigationClient(ABC, Node):
             ]
             goal.behavior_tree = behavior_tree
         except (TypeError, ValueError) as e:
-            self.get_logger().error(
-                f"Invalid road navigation waypoints: {e}")
+            self.get_logger().error(f"Invalid road navigation waypoints: {e}")
             self._road_nav_status = "FAILED_TO_SEND"
             self._road_nav_done = True
             self._road_nav_success = False
@@ -453,8 +452,7 @@ class NavigationClient(ABC, Node):
                 self._road_nav_goal_handle.cancel_goal_async())
             self._road_nav_cancel_future.add_done_callback(
                 self._road_nav_cancel_done_callback)
-            self.get_logger().info(
-                "NavigateThroughPoses cancel request sent.")
+            self.get_logger().info("NavigateThroughPoses cancel request sent.")
             return True
         except Exception as e:
             self.get_logger().error(
@@ -479,8 +477,8 @@ class NavigationClient(ABC, Node):
                 "Auto charging action client not initialized.")
             return False
 
-        action_name = getattr(self._auto_charging_action_client,
-                              "_action_name", "/auto_charging")
+        action_name = getattr(self._auto_charging_action_client, "_action_name",
+                              "/auto_charging")
         self.get_logger().info(
             f"Waiting for AutoCharging action server: {action_name}")
         self._auto_charging_status = "WAITING_SERVER"
@@ -544,8 +542,7 @@ class NavigationClient(ABC, Node):
             self.get_logger().info("AutoCharging cancel request sent.")
             return True
         except Exception as e:
-            self.get_logger().error(
-                f"Failed to cancel AutoCharging goal: {e}")
+            self.get_logger().error(f"Failed to cancel AutoCharging goal: {e}")
             return False
 
     def _auto_charging_goal_done_callback(self, future):
@@ -587,9 +584,9 @@ class NavigationClient(ABC, Node):
             result = response.result
             self._auto_charging_status = self.AUTO_CHARGING_STATUS_NAMES.get(
                 response.status, "UNKNOWN")
-            self._auto_charging_success = (
-                self._auto_charging_status == "SUCCEEDED"
-                and bool(result.success))
+            self._auto_charging_success = (self._auto_charging_status
+                                           == "SUCCEEDED" and
+                                           bool(result.success))
             self._last_auto_charging_result_message = result.message
             self._auto_charging_done = True
 
@@ -648,8 +645,7 @@ class NavigationClient(ABC, Node):
                 f"NavigateThroughPoses cancel response: goals_canceling={len(response.goals_canceling)}"
             )
         except Exception as e:
-            self.get_logger().error(
-                f"NavigateThroughPoses cancel failed: {e}")
+            self.get_logger().error(f"NavigateThroughPoses cancel failed: {e}")
 
     def _road_nav_result_done_callback(self, future):
         try:
