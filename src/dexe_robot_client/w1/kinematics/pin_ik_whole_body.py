@@ -95,7 +95,7 @@ class PinIKWholeBody:
                               custom_right_ee_tf=custom_right_ee_tf,
                               custom_head_ee_tf=custom_head_ee_tf)
 
-        self.focus_point = None
+        # self.focus_point = None
         self.lean_backward_threshold = -0.1744  # rad
 
         self._create_pin_casadi()
@@ -244,19 +244,19 @@ class PinIKWholeBody:
                     [casadi.vertcat(*calc_head_rot_err)])
         }
 
-    def set_focus_point(self, position: np.ndarray):
-        if position is None:
-            self.focus_point = None
-            self.set_cost_function(cost_type=self.cost_type)
-            return True
+    # def set_focus_point(self, position: np.ndarray):
+    #     if position is None:
+    #         self.focus_point = None
+    #         self.set_cost_function(cost_type=self.cost_type)
+    #         return True
 
-        if np.atleast_2d(position).shape != (1, 3):
-            self.logger.error("Focus point must be a 3D position vector.")
-            self.focus_point = None
-            return False
-        self.focus_point = position
-        self.set_cost_function(cost_type=self.cost_type)
-        return True
+    #     if np.atleast_2d(position).shape != (1, 3):
+    #         self.logger.error("Focus point must be a 3D position vector.")
+    #         self.focus_point = None
+    #         return False
+    #     self.focus_point = position
+    #     self.set_cost_function(cost_type=self.cost_type)
+    #     return True
 
     def set_lean_backward_threshold(self, threshold: float):
         self.lean_backward_threshold = threshold
@@ -493,7 +493,7 @@ class PinIKWholeBody:
             focus_direction = self.cfocus_point - self.cdata.oMf[self.head_id].translation
             focus_direction = focus_direction / (casadi.norm_2(focus_direction) + 1e-6)
             head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
-            focus_point_cost = self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
+            focus_point_cost = 10 * self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
             self.focus_point_cost_func = casadi.Function(
                 "focus_point_cost",
                 [self.cq, self.cfocus_point, self.cfocus_weight],
@@ -634,7 +634,7 @@ class PinIKWholeBody:
             focus_direction = self.cfocus_point - self.cdata.oMf[self.head_id].translation
             focus_direction = focus_direction / (casadi.norm_2(focus_direction) + 1e-6)
             head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
-            focus_point_cost = self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
+            focus_point_cost = 10 * self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
             self.focus_point_cost_func = casadi.Function(
                 "focus_point_cost",
                 [self.cq, self.cfocus_point, self.cfocus_weight],
@@ -779,7 +779,7 @@ class PinIKWholeBody:
             focus_direction = self.cfocus_point - self.cdata.oMf[self.head_id].translation
             focus_direction = focus_direction / (casadi.norm_2(focus_direction) + 1e-6)
             head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
-            focus_point_cost = self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
+            focus_point_cost = 10 * self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
             self.focus_point_cost_func = casadi.Function(
                 "focus_point_cost",
                 [self.cq, self.cfocus_point, self.cfocus_weight],
@@ -923,7 +923,7 @@ class PinIKWholeBody:
             focus_direction = self.cfocus_point - self.cdata.oMf[self.head_id].translation
             focus_direction = focus_direction / (casadi.norm_2(focus_direction) + 1e-6)
             head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
-            focus_point_cost = self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
+            focus_point_cost = 10 * self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
             self.focus_point_cost_func = casadi.Function(
                 "focus_point_cost",
                 [self.cq, self.cfocus_point, self.cfocus_weight],
@@ -1067,7 +1067,7 @@ class PinIKWholeBody:
             focus_direction = self.cfocus_point - self.cdata.oMf[self.head_id].translation
             focus_direction = focus_direction / (casadi.norm_2(focus_direction) + 1e-6)
             head_forward = self.cdata.oMf[self.head_id].rotation[:, 0]
-            focus_point_cost = self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
+            focus_point_cost = 10 * self.cfocus_weight * (1 - casadi.dot(focus_direction, head_forward))
             self.focus_point_cost_func = casadi.Function(
                 "focus_point_cost",
                 [self.cq, self.cfocus_point, self.cfocus_weight],
