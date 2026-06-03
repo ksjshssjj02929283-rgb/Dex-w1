@@ -14,16 +14,29 @@ from urdf2dh import get_dh_params_for_arm, get_robot_info
 # ============================================================================
 
 class RobotUnifiedDynamicsGenerator:
-    def __init__(self, arm_name: str, dh_params: List[Tuple]):
+    def __init__(self, arm_name: str, dh_params: List[Tuple], robot_type: str, version: str):
         self.arm_name = arm_name
         self.dh_params = dh_params
+        self.robot_type = robot_type
+        self.version = version
+        
+        # 建立输出目录结构: generated/{robot_type}_{version_prefix}/
+        version_prefix = self.version[:3]
+        self.full_version_key = f"{self.robot_type}_{version_prefix}"
+        self.output_dir = os.path.join(
+            os.path.dirname(__file__), 
+            "generated", 
+            self.full_version_key
+        )
+        os.makedirs(self.output_dir, exist_ok=True)
+        
         self.rbt, self.rbtdef = self.create_robot_model()
         self.generate_all()
 
     # -------------------------------------------------
     def create_robot_model(self):
         rbtdef = sympybotics.RobotDef(
-            f"w1_{self.arm_name}",
+            f"{self.robot_type}_{self.version}_{self.arm_name}",
             self.dh_params,
             dh_convention="standard",
         )
@@ -38,6 +51,7 @@ class RobotUnifiedDynamicsGenerator:
 
     # -------------------------------------------------
     def generate_all(self):
+        # 预先清理或准备合并后的文件内容（如果需要的话，或者直接由 generate 方法追加）
         self.generate_M_term_code()
         self.generate_inv_dyn_code()
 
@@ -47,7 +61,7 @@ class RobotUnifiedDynamicsGenerator:
         import re
         from sympybotics.symcode import code_to_func
         rbt_no_gravity = sympybotics.RobotDef(
-            f"w1_{self.arm_name}",
+            f"{self.robot_type}_{self.version}_{self.arm_name}",
             self.dh_params,
             dh_convention="standard",
         )
@@ -97,14 +111,23 @@ class RobotUnifiedDynamicsGenerator:
         subs = {**q_subs, **ddq_subs, **pb_subs}
 
         # 6) 生成 C++ 版本（用 C 代码风格，.cpp 可直接编译）
+        func_name = f"{self.arm_name}_mass_term"
         func_src_c = code_to_func(
-            'C', tau_code, 'M_term_out', 'mass_term',
+            'C', tau_code, 'M_term_out', func_name,
             ['q', 'ddq', 'dyn_base_params'], subs
         )
+        
+        # 增加命名空间
+        ns = f"robot_server_lib::dynamics::{self.full_version_key}"
+        func_src_c = f"namespace {ns} {{\n{func_src_c}\n}}"
+
         header_cpp = (
             '#include <math.h>\n'
             '#include <stddef.h>\n'
-            'static inline double sign(double x){ return (x>0) - (x<0); }\n\n'
+            '#ifndef DYN_SIGN_FUNC\n'
+            '#define DYN_SIGN_FUNC\n'
+            'static inline double sign(double x){ return (x>0) - (x<0); }\n'
+            '#endif\n\n'
         )
 
         # 替换 ((x) > 0) - ((x) < 0) 为 sign(x)
@@ -115,9 +138,12 @@ class RobotUnifiedDynamicsGenerator:
                 break
             func_src_c = new_func_src_c
 
-        out_path = os.path.join(os.path.dirname(__file__), f'{self.arm_name}_mass_matrix.cpp')
-        with open(out_path, 'w') as f:
-            f.write(header_cpp + func_src_c)
+        out_path = os.path.join(self.output_dir, 'mass_matrix.cpp')
+        mode = 'a' if os.path.exists(out_path) else 'w'
+        with open(out_path, mode) as f:
+            if mode == 'w':
+                f.write(header_cpp)
+            f.write(func_src_c + "\n")
 
     def generate_inv_dyn_code(self):
         import re
@@ -125,7 +151,7 @@ class RobotUnifiedDynamicsGenerator:
         g0, g1, g2 = sympy.symbols('g0 g1 g2')
         # 创建一个带有符号重力加速度的模型
         rbtdef_sym = sympybotics.RobotDef(
-            f"w1_{self.arm_name}",
+            f"{self.robot_type}_{self.version}_{self.arm_name}",
             self.dh_params,
             dh_convention="standard",
         )
@@ -153,14 +179,23 @@ class RobotUnifiedDynamicsGenerator:
         subs = {**q_subs, **dq_subs, **ddq_subs, **pb_subs, **g_subs}
 
         # 6) 生成 C++ 版本（用 C 代码风格，.cpp 可直接编译）
+        func_name = f"{self.arm_name}_invdyn_tau"
         func_src_c = code_to_func(
-            'C', tau_code, 'tau_out', 'invdyn_tau',
+            'C', tau_code, 'tau_out', func_name,
             ['q', 'dq', 'ddq', 'dyn_base_params', 'gravity_acc'], subs
         )
+        
+        # 增加命名空间
+        ns = f"robot_server_lib::dynamics::{self.full_version_key}"
+        func_src_c = f"namespace {ns} {{\n{func_src_c}\n}}"
+
         header_cpp = (
             '#include <math.h>\n'
             '#include <stddef.h>\n'
-            'static inline double sign(double x){ return (x>0) - (x<0); }\n\n'
+            '#ifndef DYN_SIGN_FUNC\n'
+            '#define DYN_SIGN_FUNC\n'
+            'static inline double sign(double x){ return (x>0) - (x<0); }\n'
+            '#endif\n\n'
         )
 
         # 替换 ((x) > 0) - ((x) < 0) 为 sign(x)
@@ -171,14 +206,20 @@ class RobotUnifiedDynamicsGenerator:
                 break
             func_src_c = new_func_src_c
 
-        out_path = os.path.join(os.path.dirname(__file__), f'{self.arm_name}_invdyn_tau.cpp')
-        with open(out_path, 'w') as f:
-            f.write(header_cpp + func_src_c)
+        out_path = os.path.join(self.output_dir, 'invdyn_tau.cpp')
+        mode = 'a' if os.path.exists(out_path) else 'w'
+        with open(out_path, mode) as f:
+            if mode == 'w':
+                f.write(header_cpp)
+            f.write(func_src_c + "\n")
 
 if __name__ == "__main__":
     base_urdf_path, robot_type, version = get_robot_info()
-    print(f"机器人构型: {robot_type if robot_type else '未知'}")
-    print(f"机器人版本: {version if version else '未知'}")
+    robot_type = robot_type if robot_type else "unknown"
+    version = version if version else "v01"
+    
+    print(f"机器人构型: {robot_type}")
+    print(f"机器人版本: {version}")
 
     for arm in ["left", "right"]:
         # 确定该手臂对应的 URDF 路径
@@ -191,7 +232,7 @@ if __name__ == "__main__":
             print(f"DH parameters for {arm}:")
             for p in dh_params:
                 print(f"  {p}")
-            RobotUnifiedDynamicsGenerator(arm, dh_params)
+            RobotUnifiedDynamicsGenerator(arm, dh_params, robot_type, version)
             print(f"<<< Finished {arm.upper()} arm.")
         except Exception as e:
             print(f"!!! Error generating {arm} arm: {e}")

@@ -102,6 +102,9 @@ void RobotServer::TorqueControlThreadFunc() {
     Int64 loop_counter = 0;
     this->is_robot_ready_ = false;
     auto next_cycle_time_point = std::chrono::steady_clock::now();
+    double usage_sum = 0.0;
+    double peak_usage = 0.0;
+    int usage_count = 0;
 
     while (rclcpp::ok()) {
         loop_counter++;
@@ -443,6 +446,26 @@ void RobotServer::TorqueControlThreadFunc() {
         control_shm_instance.AppendNewElement(robot_control_temp);
 
         auto now_time = std::chrono::steady_clock::now();
+        double current_usage =
+            static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(now_time - t_start).count()) /
+            torque_ctrl_dt_micro * 100.0;
+        usage_sum += current_usage;
+        usage_count++;
+        if (current_usage > peak_usage) {
+            peak_usage = current_usage;
+        }
+
+        static nanolog::ThrottleState stats_throttle;
+        if (stats_throttle.should_log(5000)) {
+            RCLCPP_INFO(this->get_logger(), "Avg Usage(last 5s): %.2f%%, Peak Usage: %.2f%%",
+                        (usage_sum / std::max(1, usage_count)), peak_usage);
+            LOG_INFO << "Avg Usage(last 5s): " << (usage_sum / std::max(1, usage_count)) << "%, Peak: " << peak_usage
+                     << "%";
+            usage_sum = 0.0;
+            usage_count = 0;
+            peak_usage = 0.0;
+        }
+
         if (now_time > next_cycle_time_point) {
             auto expected_start = next_cycle_time_point - std::chrono::microseconds(torque_ctrl_dt_micro);
             auto elapsed_micro =

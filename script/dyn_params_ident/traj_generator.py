@@ -103,9 +103,6 @@ def nonrepeating_covering_traj(joint_limits, wf, L, duration, dt, margin_ratio=0
         norm = q_raw[:, k] / max_abs
         q[:, k] = target_low + (norm + 1.0) * 0.5 * (target_high - target_low)
 
-    q0 = np.zeros(ndof)
-    q[0, :] = q0
-
     return t, q
 
 def generate_q_with_limits(joint_limits, wf, L, duration, dt, collision_checker=None, arm_indices=None, q_fixed=None, max_attempts=500):
@@ -116,7 +113,7 @@ def generate_q_with_limits(joint_limits, wf, L, duration, dt, collision_checker=
         t, q = nonrepeating_covering_traj(
             joint_limits=joint_limits, wf=wf, L=L,
             duration=duration, dt=dt,
-            margin_ratio=0.08 # 尽量覆盖限位范围，碰撞检查确保安全
+            margin_ratio=0.02 # 缩小边距比例，使轨迹覆盖 96% 的关节范围
         )
 
         ok = True
@@ -173,17 +170,17 @@ def save_q(q, out_dir):
 # -------------------------------
 # 2) Plotting Logic
 # -------------------------------
-def arms_trajectory_plot(arm_side, base_dir, ndof, joint_limits, dt=0.01):
+def arms_trajectory_plot(arm_side, data_dir, save_dir, ndof, joint_limits, dt=0.01):
     """
     Plot two trajectory segments for one arm side in a large figure.
     Layout: Rows = Segments, Columns = Joints
     """
-    traj_paths = [os.path.join(base_dir, f"traj_{i}.dat") for i in [1, 2]]
+    traj_paths = [os.path.join(data_dir, f"traj{i}.dat") for i in [1, 2]]
     
     # Check if files exist
     valid_paths = [p for p in traj_paths if os.path.exists(p)]
     if not valid_paths:
-        print(f"No trajectory files found for {arm_side} at {base_dir}")
+        print(f"No trajectory files found for {arm_side} at {data_dir}")
         return
 
     # Rows are segments, Columns are joints
@@ -218,7 +215,7 @@ def arms_trajectory_plot(arm_side, base_dir, ndof, joint_limits, dt=0.01):
     fig.suptitle(f"{arm_side.upper()} ARM Trajectories Comparison", fontsize='large')
     fig.tight_layout(rect=[0, 0.03, 1, 0.95])
     
-    save_path = os.path.join(base_dir, f"{arm_side}_traj.png")
+    save_path = os.path.join(save_dir, f"{arm_side}_traj.png")
     plt.savefig(save_path)
     print(f"Saved plot to: {save_path}")
     plt.show()
@@ -231,8 +228,8 @@ if __name__ == "__main__":
     duration = 60.0
     dt = 0.01
     plot = False
-    wf = 0.3 * np.pi
-    L = 5
+    wf = 0.15 * np.pi # 降低基频权重（原为 0.3 * np.pi），减缓轨迹波动频率
+    L = 3             # 减少叠加的正弦波项数（原为 5），使轨迹更平滑
     ndof = 7
 
     # Setup Paths
@@ -278,10 +275,10 @@ if __name__ == "__main__":
 
     model = collision_checker.model
     
-    # Resting positions (Safe positions to avoid collisions)
+    # Resting positions (用于碰撞检测)
     q_torso_rest = np.array([0.5, -1.0, 0.5, 0.0, 0.0, 0.0])
-    q_left_rest  = np.array([-0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5])
-    q_right_rest = np.array([-0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5])
+    q_left_rest  = np.array([0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5])
+    q_right_rest = np.array([0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5])
 
     # Define arms
     arms = {
@@ -335,6 +332,6 @@ if __name__ == "__main__":
 
         # After generating both segments, plot them together
         try:
-            arms_trajectory_plot(arm_side, str(arm_traj_dir), ndof, joint_limits, dt=dt)
+            arms_trajectory_plot(arm_side, str(arm_traj_dir), str(arm_traj_dir), ndof, joint_limits, dt=dt)
         except Exception as e:
             print(f"Error plotting for {arm_side}: {e}")

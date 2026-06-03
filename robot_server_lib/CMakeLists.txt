@@ -66,6 +66,8 @@ endif()
 aux_source_directory(src LIB_SRCS)
 aux_source_directory(kinematics LIB_SRCS)
 aux_source_directory(dynamics LIB_SRCS)
+file(GLOB_RECURSE GENERATED_DYN_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/dynamics/generated/*.cpp")
+list(APPEND LIB_SRCS ${GENERATED_DYN_SRCS})
 aux_source_directory(motion_planner LIB_SRCS)
 aux_source_directory(torque_controller LIB_SRCS)
 

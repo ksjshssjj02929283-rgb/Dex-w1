@@ -45,6 +45,20 @@ def skew(v):
 
 
 class DynParamIdentifier(Node):
+    # Default rest positions
+    q_torso_rest = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0]
+    q_left_rest = [0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5]
+    q_right_rest = [0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
+
+    def get_full_target_position(self, arm_q, is_left=True):
+        if is_left:
+            return [*self.q_torso_rest, *arm_q, *self.q_right_rest]
+        else:
+            return [*self.q_torso_rest, *self.q_left_rest, *arm_q]
+
+    def get_rest_position(self):
+        return [*self.q_torso_rest, *self.q_left_rest, *self.q_right_rest]
+
     def __init__(self, traj="traj1", logger_callable=None):
         super().__init__("qt_dyn_params_ident")
         self.log_msg = logger_callable
@@ -176,7 +190,7 @@ class DynParamIdentifier(Node):
         local_dt = getattr(self, "_sim_dt_override", self.dt)
         if self.is_left:
             # 运动到第一个点
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+            target_position = self.get_full_target_position(q_ref[0, :], is_left=True)
             if not self.move_joint(is_sim=True, target_position=target_position):
                 return False
             self.log_msg(
@@ -187,7 +201,7 @@ class DynParamIdentifier(Node):
                 if self._stop_flag.is_set():
                     self.log_msg("仿真停止指令收到，提前结束。")
                     return False
-                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[i, :], 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+                target_position = self.get_full_target_position(q_ref[i, :], is_left=True)
                 if not self._joint_publisher(
                     is_sim=True, target_position=target_position
                 ):
@@ -196,7 +210,7 @@ class DynParamIdentifier(Node):
                 self._sleep_until(next_t)
         else:
             # 运动到第一个点
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]] # fmt: skip
+            target_position = self.get_full_target_position(q_ref[0, :], is_left=False)
             if not self.move_joint(is_sim=True, target_position=target_position):
                 return False
             self.log_msg(
@@ -207,7 +221,7 @@ class DynParamIdentifier(Node):
                 if self._stop_flag.is_set():
                     self.log_msg("仿真停止指令收到，提前结束。")
                     return False
-                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[i, :]] # fmt: skip
+                target_position = self.get_full_target_position(q_ref[i, :], is_left=False)
                 if not self._joint_publisher(
                     is_sim=True, target_position=target_position
                 ):
@@ -218,7 +232,7 @@ class DynParamIdentifier(Node):
             time.sleep(1)  # 发送结束后等待1s
             self.log_msg("仿真轨迹执行完成, 返回初始姿态。")
             # 返回初始姿态
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+            target_position = self.get_rest_position()
             self.move_joint(is_sim=True, target_position=target_position)
         return True
 
@@ -269,7 +283,7 @@ class DynParamIdentifier(Node):
         if not self._stop_flag.is_set():
             time.sleep(1)  # 发送结束后等待1s
             self.log_msg("所有轨迹采集完成, 返回初始姿态。")
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+            target_position = self.get_rest_position()
             ret = self.move_joint(is_sim=False, target_position=target_position)
             if not ret:
                 return False
@@ -283,7 +297,7 @@ class DynParamIdentifier(Node):
         if self.is_left:
             # 运动到第一个点
             self.log_msg("正在运动到左臂轨迹起始点...")
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+            target_position = self.get_full_target_position(q_ref[0, :], is_left=True)
             ret = self.move_joint(is_sim=False, target_position=target_position)
             if not ret:
                 return False
@@ -294,7 +308,7 @@ class DynParamIdentifier(Node):
                 if self._stop_flag.is_set():
                     self.log_msg("收到停止指令，终止当前段采集。")
                     return False
-                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[i, :], 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+                target_position = self.get_full_target_position(q_ref[i, :], is_left=True)
                 if not self._joint_publisher(
                     is_sim=False, target_position=target_position
                 ):
@@ -311,7 +325,7 @@ class DynParamIdentifier(Node):
         else:
             # 运动到第一个点
             self.log_msg("正在运动到右臂轨迹起始点...")
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]] # fmt: skip
+            target_position = self.get_full_target_position(q_ref[0, :], is_left=False)
             ret = self.move_joint(is_sim=False, target_position=target_position)
             if not ret:
                 return False
@@ -322,7 +336,7 @@ class DynParamIdentifier(Node):
                 if self._stop_flag.is_set():
                     self.log_msg("收到停止指令，终止当前段采集。")
                     return False
-                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[i, :]] # fmt: skip
+                target_position = self.get_full_target_position(q_ref[i, :], is_left=False)
                 if not self._joint_publisher(
                     is_sim=False, target_position=target_position
                 ):

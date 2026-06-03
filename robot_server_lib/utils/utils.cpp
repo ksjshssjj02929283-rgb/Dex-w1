@@ -39,6 +39,7 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     if (params.robot_version.size() >= 3) {
         std::string version_prefix = params.robot_version.substr(0, 3);
         std::string full_version_key = params.robot_type + "_" + version_prefix;
+        params.robot_key = full_version_key;
         if (config[full_version_key]) {
             version_cfg = config[full_version_key];
             std::cout << "[INFO] Robot type: " << params.robot_type << ", Robot version: " << params.robot_version
