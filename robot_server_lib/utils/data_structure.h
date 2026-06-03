@@ -264,6 +264,7 @@ struct TorqueControlBuffer {
 struct RobotParams {
     std::string robot_type;
     std::string robot_version;
+    std::string robot_key;
     std::string left_hand_type;
     std::string right_hand_type;
     Eigen::VectorXd joint_velocity_limit;  // 关节最大速度限制（正负对称）
