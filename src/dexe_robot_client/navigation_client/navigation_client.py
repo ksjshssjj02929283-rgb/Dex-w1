@@ -8,9 +8,9 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
 from action_msgs.msg import GoalStatus
 from scipy.spatial.transform import Rotation as R
-from nav2_msgs.action import NavigateToPose
+from nav2_msgs.action import NavigateThroughPoses, NavigateToPose
 from nav_interfaces.action import PreciseControl
-from std_srvs.srv import Trigger
+from chassis_interfaces.action import AutoCharging
 from rcl_interfaces.srv import SetParameters, GetParameters
 from rcl_interfaces.msg import ParameterType
 from rclpy.parameter import Parameter
@@ -25,6 +25,16 @@ from ..common import get_logger
 
 
 class NavigationClient(ABC, Node):
+    AUTO_CHARGING_STATUS_NAMES = {
+        GoalStatus.STATUS_UNKNOWN: "UNKNOWN",
+        GoalStatus.STATUS_ACCEPTED: "ACCEPTED",
+        GoalStatus.STATUS_EXECUTING: "EXECUTING",
+        GoalStatus.STATUS_CANCELING: "CANCELING",
+        GoalStatus.STATUS_SUCCEEDED: "SUCCEEDED",
+        GoalStatus.STATUS_CANCELED: "CANCELED",
+        GoalStatus.STATUS_ABORTED: "ABORTED",
+    }
+    ROAD_NAV_STATUS_NAMES = AUTO_CHARGING_STATUS_NAMES
 
     def __init__(self,
                  name: str,
@@ -44,7 +54,16 @@ class NavigationClient(ABC, Node):
         self._set_nav_client = None
         self._set_ctrl_client = None
         self._get_pos_subscriber = None
-        self._set_chassis_charging_client = None
+        self._auto_charging_action_client = None
+        self._auto_charging_goal_handle = None
+        self._auto_charging_send_goal_future = None
+        self._auto_charging_result_future = None
+        self._auto_charging_cancel_future = None
+        self._auto_charging_status = "IDLE"
+        self._auto_charging_done = False
+        self._auto_charging_success = False
+        self._last_auto_charging_feedback = None
+        self._last_auto_charging_result_message = ""
         self._controller_set_param_client = None
         self._local_costmap_set_param_client = None
         self._global_costmap_set_param_client = None
@@ -62,6 +81,16 @@ class NavigationClient(ABC, Node):
         self._nav_status = "IDLE"  # 或 NAVIGATING / SUCCEEDED / FAILED / CANCELLED
         self._nav_result = None  # 存储最后的导航结果
         self._nav_task_id = 0  # 导航任务ID，用于区分不同的导航任务
+        self._road_nav_action_client = None
+        self._road_nav_goal_handle = None
+        self._road_nav_send_goal_future = None
+        self._road_nav_result_future = None
+        self._road_nav_cancel_future = None
+        self._road_nav_status = "IDLE"
+        self._road_nav_done = False
+        self._road_nav_success = False
+        self._last_road_nav_feedback = None
+        self._last_road_nav_result_message = ""
         self._control_lock = threading.Lock()
         self._control_goal_handle = None
         self._control_result_future = None
@@ -298,28 +327,349 @@ class NavigationClient(ABC, Node):
                 f"Error cancelling navigation goal: {str(e)}")
             return False
 
-    def set_chassis_auto_charging(self) -> bool:
-        """调用回充服务"""
-        if not self._set_chassis_charging_client.wait_for_service(
-                timeout_sec=1.0):
+    def _create_road_nav_pose(self, x: float, y: float, yaw_rad: float,
+                              frame_id: str) -> PoseStamped:
+        """创建 NavigateThroughPoses 路点，yaw 使用弧度。"""
+        pose = PoseStamped()
+        pose.header.frame_id = frame_id
+        pose.header.stamp = self.get_clock().now().to_msg()
+        pose.pose.position.x = float(x)
+        pose.pose.position.y = float(y)
+        pose.pose.position.z = 0.0
+
+        half_yaw = float(yaw_rad) * 0.5
+        pose.pose.orientation.z = math.sin(half_yaw)
+        pose.pose.orientation.w = math.cos(half_yaw)
+        return pose
+
+    def set_chassis_road_navigation(self,
+                                    waypoints: list,
+                                    frame_id: str = "map",
+                                    timeout_sec: float = 10.0,
+                                    behavior_tree: str = "") -> bool:
+        """发送路网/多路点导航任务，非阻塞返回是否成功发出。
+
+        waypoints 中每个路点为 [x, y, yaw_rad] 或 (x, y, yaw_rad)。
+        yaw_rad 使用弧度，和 Nav2 NavigateThroughPoses 原生接口一致。
+        """
+        if self._road_nav_action_client is None:
+            self.get_logger().error(
+                "NavigateThroughPoses action client not initialized.")
+            return False
+        if not waypoints:
+            self.get_logger().error("Road navigation waypoints is empty.")
             return False
 
-        request = Trigger.Request()
-        future = self._set_chassis_charging_client.call_async(request)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+        action_name = getattr(self._road_nav_action_client, "_action_name",
+                              "/navigate_through_poses")
+        self.get_logger().info(
+            f"Waiting for NavigateThroughPoses action server: {action_name}")
+        self._road_nav_status = "WAITING_SERVER"
+        if not self._road_nav_action_client.wait_for_server(
+                timeout_sec=timeout_sec):
+            self.get_logger().error(
+                "NavigateThroughPoses action server is not available.")
+            self._road_nav_status = "FAILED_TO_SEND"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return False
 
-        if future.done():
-            try:
-                response = future.result()
+        try:
+            goal = NavigateThroughPoses.Goal()
+            goal.poses = [
+                self._create_road_nav_pose(x, y, yaw, frame_id)
+                for x, y, yaw in waypoints
+            ]
+            goal.behavior_tree = behavior_tree
+        except (TypeError, ValueError) as e:
+            self.get_logger().error(
+                f"Invalid road navigation waypoints: {e}")
+            self._road_nav_status = "FAILED_TO_SEND"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return False
+
+        self.get_logger().info(f"Sending {len(goal.poses)} road nav poses.")
+        for index, (x, y, yaw) in enumerate(waypoints, start=1):
+            self.get_logger().info(
+                f"  {index}: x={float(x):.3f}, y={float(y):.3f}, "
+                f"yaw={float(yaw):.3f} rad")
+
+        self._road_nav_done = False
+        self._road_nav_success = False
+        self._road_nav_status = "SENDING"
+        self._road_nav_goal_handle = None
+        self._road_nav_result_future = None
+        self._road_nav_cancel_future = None
+        self._last_road_nav_feedback = None
+        self._last_road_nav_result_message = ""
+
+        try:
+            self._road_nav_send_goal_future = (
+                self._road_nav_action_client.send_goal_async(
+                    goal, feedback_callback=self._road_nav_feedback_callback))
+            self._road_nav_send_goal_future.add_done_callback(
+                self._road_nav_goal_done_callback)
+            return True
+        except Exception as e:
+            self.get_logger().error(
+                f"Failed to send NavigateThroughPoses goal: {e}")
+            self._road_nav_status = "FAILED_TO_SEND"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return False
+
+    def get_road_navigation_status(self) -> str:
+        """获取当前路网/多路点导航状态。"""
+        return self._road_nav_status
+
+    def get_road_navigation_result(self) -> tuple[bool, str]:
+        """获取最近一次路网/多路点导航结果。"""
+        return self._road_nav_success, self._last_road_nav_result_message
+
+    def cancel_road_navigation(self) -> bool:
+        """取消当前路网/多路点导航任务。"""
+        if self._road_nav_goal_handle is None and self._road_nav_status in {
+                "SENDING", "ACCEPTED", "WAITING_SERVER"
+        }:
+            self.get_logger().info(
+                "Waiting for road navigation goal to be accepted before cancelling..."
+            )
+            start_time = time.time()
+            while time.time() - start_time < 1.0:
+                self.spin_once(timeout_sec=0.05)
+                if self._road_nav_goal_handle is not None:
+                    break
+                time.sleep(0.05)
+
+        if self._road_nav_goal_handle is None:
+            self.get_logger().warning(
+                "No accepted NavigateThroughPoses goal to cancel.")
+            return False
+
+        try:
+            self._road_nav_status = "CANCELING"
+            self._road_nav_cancel_future = (
+                self._road_nav_goal_handle.cancel_goal_async())
+            self._road_nav_cancel_future.add_done_callback(
+                self._road_nav_cancel_done_callback)
+            self.get_logger().info(
+                "NavigateThroughPoses cancel request sent.")
+            return True
+        except Exception as e:
+            self.get_logger().error(
+                f"Failed to cancel NavigateThroughPoses goal: {e}")
+            return False
+
+    def _auto_charging_feedback_callback(self, feedback_msg):
+        feedback = feedback_msg.feedback
+        self._last_auto_charging_feedback = feedback
+        if self._auto_charging_status != "CANCELING":
+            self._auto_charging_status = "EXECUTING"
+        self.get_logger().info("Auto charging feedback: "
+                               f"state={feedback.current_state}, "
+                               f"retry={feedback.retry_count}")
+
+    def set_chassis_auto_charging(self,
+                                  force: bool = True,
+                                  timeout_sec: float = 10.0) -> bool:
+        """发送回充 action，非阻塞返回是否成功发出。"""
+        if self._auto_charging_action_client is None:
+            self.get_logger().error(
+                "Auto charging action client not initialized.")
+            return False
+
+        action_name = getattr(self._auto_charging_action_client,
+                              "_action_name", "/auto_charging")
+        self.get_logger().info(
+            f"Waiting for AutoCharging action server: {action_name}")
+        self._auto_charging_status = "WAITING_SERVER"
+        if not self._auto_charging_action_client.wait_for_server(
+                timeout_sec=timeout_sec):
+            self.get_logger().error("Auto charging action server not available")
+            self._auto_charging_status = "FAILED_TO_SEND"
+            self._auto_charging_done = True
+            self._auto_charging_success = False
+            return False
+
+        goal_msg = AutoCharging.Goal()
+        goal_msg.force = force
+
+        self.get_logger().info(f"Sending AutoCharging goal: force={force}")
+        self._auto_charging_done = False
+        self._auto_charging_success = False
+        self._auto_charging_status = "SENDING"
+        self._auto_charging_goal_handle = None
+        self._auto_charging_result_future = None
+        self._auto_charging_cancel_future = None
+        self._last_auto_charging_feedback = None
+        self._last_auto_charging_result_message = ""
+
+        try:
+            self._auto_charging_send_goal_future = (
+                self._auto_charging_action_client.send_goal_async(
+                    goal_msg,
+                    feedback_callback=self._auto_charging_feedback_callback))
+            self._auto_charging_send_goal_future.add_done_callback(
+                self._auto_charging_goal_done_callback)
+            return True
+        except Exception as e:
+            self.get_logger().error(f"Failed to send AutoCharging goal: {e}")
+            self._auto_charging_status = "FAILED_TO_SEND"
+            self._auto_charging_done = True
+            self._auto_charging_success = False
+            return False
+
+    def get_auto_charging_status(self) -> str:
+        """获取当前回充 action 状态。"""
+        return self._auto_charging_status
+
+    def get_auto_charging_result(self) -> tuple[bool, str]:
+        """获取最近一次回充 action 结果。"""
+        return self._auto_charging_success, self._last_auto_charging_result_message
+
+    def cancel_auto_charging(self) -> bool:
+        """取消当前回充 action。"""
+        if self._auto_charging_goal_handle is None:
+            self.get_logger().warning(
+                "No accepted AutoCharging goal to cancel.")
+            return False
+
+        try:
+            self._auto_charging_status = "CANCELING"
+            self._auto_charging_cancel_future = (
+                self._auto_charging_goal_handle.cancel_goal_async())
+            self._auto_charging_cancel_future.add_done_callback(
+                self._auto_charging_cancel_done_callback)
+            self.get_logger().info("AutoCharging cancel request sent.")
+            return True
+        except Exception as e:
+            self.get_logger().error(
+                f"Failed to cancel AutoCharging goal: {e}")
+            return False
+
+    def _auto_charging_goal_done_callback(self, future):
+        try:
+            goal_handle = future.result()
+        except Exception as e:
+            self.get_logger().error(f"AutoCharging goal send failed: {e}")
+            self._auto_charging_status = "FAILED_TO_SEND"
+            self._auto_charging_done = True
+            self._auto_charging_success = False
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().error("AutoCharging goal was rejected.")
+            self._auto_charging_status = "REJECTED"
+            self._auto_charging_done = True
+            self._auto_charging_success = False
+            return
+
+        self._auto_charging_goal_handle = goal_handle
+        self._auto_charging_status = "ACCEPTED"
+        self.get_logger().info("AutoCharging goal accepted.")
+        self._auto_charging_result_future = goal_handle.get_result_async()
+        self._auto_charging_result_future.add_done_callback(
+            self._auto_charging_result_done_callback)
+
+    def _auto_charging_cancel_done_callback(self, future):
+        try:
+            response = future.result()
+            self.get_logger().info(
+                f"AutoCharging cancel response: goals_canceling={len(response.goals_canceling)}"
+            )
+        except Exception as e:
+            self.get_logger().error(f"AutoCharging cancel failed: {e}")
+
+    def _auto_charging_result_done_callback(self, future):
+        try:
+            response = future.result()
+            result = response.result
+            self._auto_charging_status = self.AUTO_CHARGING_STATUS_NAMES.get(
+                response.status, "UNKNOWN")
+            self._auto_charging_success = (
+                self._auto_charging_status == "SUCCEEDED"
+                and bool(result.success))
+            self._last_auto_charging_result_message = result.message
+            self._auto_charging_done = True
+
+            if self._auto_charging_success:
                 self.get_logger().info(
-                    f"Cancel control response: {response.message}")
-                return response.success
-            except Exception as e:
-                self.get_logger().error(f"Service call failed: {e}")
-                return False
-        else:
-            self.get_logger().error("Service call timed out.")
-            return False
+                    f"AutoCharging succeeded: {result.message}")
+            else:
+                self.get_logger().error(
+                    f"AutoCharging finished with status={self._auto_charging_status}: "
+                    f"{result.message}")
+        except Exception as e:
+            self.get_logger().error(f"Auto charging result error: {e}")
+            self._auto_charging_status = "UNKNOWN"
+            self._auto_charging_success = False
+            self._auto_charging_done = True
+
+    def _road_nav_feedback_callback(self, feedback_msg):
+        feedback = feedback_msg.feedback
+        self._last_road_nav_feedback = feedback
+        if self._road_nav_status != "CANCELING":
+            self._road_nav_status = "EXECUTING"
+        self.get_logger().info(
+            "NavigateThroughPoses feedback: "
+            f"poses_remaining={feedback.number_of_poses_remaining}, "
+            f"distance_remaining={feedback.distance_remaining:.3f} m")
+
+    def _road_nav_goal_done_callback(self, future):
+        try:
+            goal_handle = future.result()
+        except Exception as e:
+            self.get_logger().error(
+                f"NavigateThroughPoses goal send failed: {e}")
+            self._road_nav_status = "FAILED_TO_SEND"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().error("NavigateThroughPoses goal was rejected.")
+            self._road_nav_status = "REJECTED"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return
+
+        self._road_nav_goal_handle = goal_handle
+        self._road_nav_status = "ACCEPTED"
+        self.get_logger().info("NavigateThroughPoses goal accepted.")
+        self._road_nav_result_future = goal_handle.get_result_async()
+        self._road_nav_result_future.add_done_callback(
+            self._road_nav_result_done_callback)
+
+    def _road_nav_cancel_done_callback(self, future):
+        try:
+            response = future.result()
+            self.get_logger().info(
+                f"NavigateThroughPoses cancel response: goals_canceling={len(response.goals_canceling)}"
+            )
+        except Exception as e:
+            self.get_logger().error(
+                f"NavigateThroughPoses cancel failed: {e}")
+
+    def _road_nav_result_done_callback(self, future):
+        try:
+            response = future.result()
+            self._road_nav_status = self.ROAD_NAV_STATUS_NAMES.get(
+                response.status, "UNKNOWN")
+            self._road_nav_success = self._road_nav_status == "SUCCEEDED"
+            self._last_road_nav_result_message = self._road_nav_status
+            self._road_nav_done = True
+            if self._road_nav_success:
+                self.get_logger().info("NavigateThroughPoses succeeded.")
+            else:
+                self.get_logger().error(
+                    f"NavigateThroughPoses finished with status={self._road_nav_status}({response.status})"
+                )
+        except Exception as e:
+            self.get_logger().error(f"NavigateThroughPoses result error: {e}")
+            self._road_nav_status = "UNKNOWN"
+            self._road_nav_success = False
+            self._road_nav_done = True
 
     def get_control_status(self, consume: bool = True) -> str:
         """
