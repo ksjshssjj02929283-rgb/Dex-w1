@@ -204,7 +204,7 @@ def get_dh_params_for_arm(arm: str) -> List[Tuple[str, float, float, str]]:
 
     urdf_path = base_urdf_path
     start_link = "base_link"
-    end_link = f"{arm}_ee"
+    end_link = "ee_link" if "arm.urdf" in os.path.basename(base_urdf_path) or os.path.exists(os.path.join(os.path.dirname(base_urdf_path), f"{arm}_arm.urdf")) else f"{arm}_ee"
 
     arm_filename = f"{arm}_arm.urdf"
     arm_urdf_path = os.path.join(os.path.dirname(base_urdf_path), arm_filename)
@@ -216,12 +216,25 @@ def get_dh_params_for_arm(arm: str) -> List[Tuple[str, float, float, str]]:
     else:
         robot = yourdfpy.URDF.load(urdf_path)
 
+    # 自动识别 end_link
+    if end_link not in robot.link_map:
+        if f"{arm}_ee" in robot.link_map:
+            end_link = f"{arm}_ee"
+        elif "ee_link" in robot.link_map:
+            end_link = "ee_link"
+        else:
+            # 查找包含 ee 的 link
+            for ln in robot.link_map.keys():
+                if "ee" in ln.lower():
+                    end_link = ln
+                    break
+
     joint_path = find_chain(robot, start_link, end_link)
     if not joint_path:
         raise ValueError(f"Could not find chain from {start_link} to {end_link}")
     
     active_joints = [jn for jn in joint_path if robot.joint_map[jn].type != 'fixed']
-    target_end_link = f"{arm}_ee"
+    target_end_link = end_link
     robot.update_cfg({j: 0.0 for j in active_joints})
     
     axes = [] 

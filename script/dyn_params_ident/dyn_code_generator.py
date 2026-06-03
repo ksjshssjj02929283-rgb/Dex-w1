@@ -20,18 +20,43 @@ class RobotUnifiedDynamicsGenerator:
         self.robot_type = robot_type
         self.version = version
         
-        # 建立输出目录结构: generated/{robot_type}_{version_prefix}/
+        # 建立输出目录结构: robot_server_lib/dynamics/inverse_dynamics_symbol_generated/{robot_type}_{version_prefix}/
         version_prefix = self.version[:3]
         self.full_version_key = f"{self.robot_type}_{version_prefix}"
+        
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
         self.output_dir = os.path.join(
-            os.path.dirname(__file__), 
-            "generated", 
+            project_root, 
+            "robot_server_lib/dynamics/inverse_dynamics_symbol_generated", 
             self.full_version_key
         )
         os.makedirs(self.output_dir, exist_ok=True)
-        
+        self.header_path = os.path.join(self.output_dir, f"generated_include.h")
         self.rbt, self.rbtdef = self.create_robot_model()
         self.generate_all()
+
+    # -------------------------------------------------
+    def update_header(self, declaration: str):
+        ns = f"robot_server_lib::dynamics::{self.full_version_key}"
+        
+        if not os.path.exists(self.header_path):
+            with open(self.header_path, 'w') as f:
+                f.write("#pragma once\n\n")
+                f.write(f"namespace {ns} {{\n")
+                f.write(f"    {declaration};\n")
+                f.write("}\n")
+        else:
+            with open(self.header_path, 'r') as f:
+                lines = f.readlines()
+            
+            # 找到最后一个 } 并在其上方插入
+            for i in range(len(lines) - 1, -1, -1):
+                if "}" in lines[i]:
+                    lines.insert(i, f"    {declaration};\n")
+                    break
+            
+            with open(self.header_path, 'w') as f:
+                f.writelines(lines)
 
     # -------------------------------------------------
     def create_robot_model(self):
@@ -111,7 +136,7 @@ class RobotUnifiedDynamicsGenerator:
         subs = {**q_subs, **ddq_subs, **pb_subs}
 
         # 6) 生成 C++ 版本（用 C 代码风格，.cpp 可直接编译）
-        func_name = f"{self.arm_name}_mass_term"
+        func_name = f"{self.arm_name}_mass_term_func"
         func_src_c = code_to_func(
             'C', tau_code, 'M_term_out', func_name,
             ['q', 'ddq', 'dyn_base_params'], subs
@@ -119,11 +144,13 @@ class RobotUnifiedDynamicsGenerator:
         
         # 增加命名空间
         ns = f"robot_server_lib::dynamics::{self.full_version_key}"
-        func_src_c = f"namespace {ns} {{\n{func_src_c}\n}}"
-
+        func_src_c = f"namespace {ns} {{\n{func_src_c}\n}}"        
+        # 更新头文件
+        self.update_header(f"void {func_name}(double* M_term_out, const double* q, const double* ddq, const double* dyn_base_params)")
         header_cpp = (
             '#include <math.h>\n'
             '#include <stddef.h>\n'
+            f'#include "generated_include.h"\n'
             '#ifndef DYN_SIGN_FUNC\n'
             '#define DYN_SIGN_FUNC\n'
             'static inline double sign(double x){ return (x>0) - (x<0); }\n'
@@ -138,7 +165,8 @@ class RobotUnifiedDynamicsGenerator:
                 break
             func_src_c = new_func_src_c
 
-        out_path = os.path.join(self.output_dir, 'mass_matrix.cpp')
+        # 全部手臂共用同一个实现文件，采用追加模式
+        out_path = os.path.join(self.output_dir, 'mass_term_func.cpp')
         mode = 'a' if os.path.exists(out_path) else 'w'
         with open(out_path, mode) as f:
             if mode == 'w':
@@ -179,7 +207,7 @@ class RobotUnifiedDynamicsGenerator:
         subs = {**q_subs, **dq_subs, **ddq_subs, **pb_subs, **g_subs}
 
         # 6) 生成 C++ 版本（用 C 代码风格，.cpp 可直接编译）
-        func_name = f"{self.arm_name}_invdyn_tau"
+        func_name = f"{self.arm_name}_regression_func"
         func_src_c = code_to_func(
             'C', tau_code, 'tau_out', func_name,
             ['q', 'dq', 'ddq', 'dyn_base_params', 'gravity_acc'], subs
@@ -188,10 +216,12 @@ class RobotUnifiedDynamicsGenerator:
         # 增加命名空间
         ns = f"robot_server_lib::dynamics::{self.full_version_key}"
         func_src_c = f"namespace {ns} {{\n{func_src_c}\n}}"
-
+        # 更新头文件
+        self.update_header(f"void {func_name}(double* tau_out, const double* q, const double* dq, const double* ddq, const double* dyn_base_params, const double* gravity_acc)")
         header_cpp = (
             '#include <math.h>\n'
             '#include <stddef.h>\n'
+            f'#include "generated_include.h"\n'
             '#ifndef DYN_SIGN_FUNC\n'
             '#define DYN_SIGN_FUNC\n'
             'static inline double sign(double x){ return (x>0) - (x<0); }\n'
@@ -206,7 +236,8 @@ class RobotUnifiedDynamicsGenerator:
                 break
             func_src_c = new_func_src_c
 
-        out_path = os.path.join(self.output_dir, 'invdyn_tau.cpp')
+        # 全部手臂共用同一个实现文件，采用追加模式
+        out_path = os.path.join(self.output_dir, 'regression_func.cpp')
         mode = 'a' if os.path.exists(out_path) else 'w'
         with open(out_path, mode) as f:
             if mode == 'w':
@@ -216,10 +247,25 @@ class RobotUnifiedDynamicsGenerator:
 if __name__ == "__main__":
     base_urdf_path, robot_type, version = get_robot_info()
     robot_type = robot_type if robot_type else "unknown"
-    version = version if version else "v01"
+    version = version if version else "v02"
     
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
     print(f"机器人构型: {robot_type}")
     print(f"机器人版本: {version}")
+
+    # 清理旧的、非手臂特定的文件名，防止构建冲突（因为现在改为按手臂生成独立文件）
+    version_prefix = version[:3]
+    full_version_key = f"{robot_type}_{version_prefix}"
+    output_dir = os.path.join(project_root, 'robot_server_lib/dynamics/inverse_dynamics_symbol_generated', full_version_key)
+    
+    # 在开始生成前，彻底清理旧文件以确保“直接覆盖”的效果
+    if os.path.exists(output_dir):
+        print(f"Cleaning output directory: {output_dir}")
+        for f in os.listdir(output_dir):
+            os.remove(os.path.join(output_dir, f))
+    else:
+        os.makedirs(output_dir, exist_ok=True)
 
     for arm in ["left", "right"]:
         # 确定该手臂对应的 URDF 路径
@@ -238,3 +284,5 @@ if __name__ == "__main__":
             print(f"!!! Error generating {arm} arm: {e}")
             import traceback
             traceback.print_exc()
+
+    print("\n[SUCCESS] Dynamics generation completed.")

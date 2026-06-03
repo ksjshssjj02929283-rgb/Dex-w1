@@ -27,10 +27,21 @@ fi
 cd "${WORKSPACE_DIR}/.."
 colcon build --parallel-workers "${COLCON_PARALLEL_WORKERS}" --cmake-args -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DENABLE_TORQUE_CONTROL_SIMULATION=OFF -DCMAKE_CXX_COMPILER_LAUNCHER= -DCMAKE_C_COMPILER_LAUNCHER= --base-paths dexe_robot_server --packages-up-to robot_server_lib w1_server sim_server
 
+# === 2. 检查 Sudo 权限 ===
+# 尝试使用默认密码验证，如果失败则提示用户手动输入
+if echo "123456" | sudo -S -v >/dev/null 2>&1; then
+    SUDO_PREFIX="echo 123456 | sudo -S"
+    echo "✅ 使用默认密码获取 sudo 权限"
+else
+    echo "⚠️  默认密码错误，请手动输入 sudo 密码："
+    sudo -v
+    SUDO_PREFIX="sudo"
+fi
+
 # 在 install 目录中对二进制提权
 sudo_setcap() {
-  echo "123456" | sudo -S setcap "$1" "$2" 2>/dev/null
-  echo "123456" | sudo -S getcap -v "$2" 2>/dev/null
+  eval "$SUDO_PREFIX setcap \"$1\" \"$2\" 2>/dev/null"
+  eval "$SUDO_PREFIX getcap -v \"$2\" 2>/dev/null"
 }
 if [ -f "$INSTALL_DIR/w1_server/lib/w1_server/w1_server" ]; then
   sudo_setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$INSTALL_DIR/w1_server/lib/w1_server/w1_server" || true
@@ -51,5 +62,5 @@ $INSTALL_DIR/joint_interfaces/lib
 $INSTALL_DIR/robot_server_interfaces/lib
 $INSTALL_DIR/robot_server_lib/lib
 LDCONF
-echo "123456" | sudo -S cp /tmp/w1_server.conf /etc/ld.so.conf.d/w1_server.conf
-sudo ldconfig
+eval "$SUDO_PREFIX cp /tmp/w1_server.conf /etc/ld.so.conf.d/w1_server.conf"
+$SUDO_PREFIX ldconfig
