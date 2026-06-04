@@ -18,8 +18,8 @@ print_usage() {
     echo "Available property types:"
     echo "  echo            - Echo robot server state topic once"
     echo "  echo_sim        - Echo robot server state sim topic once"
-    echo "  clone ethercat  - Clone dexe_ethercat (dev) repository to ~/w1"
-    echo "  clone interface - Clone dexe_interfaces (dev) repository to ~/w1"
+    echo "  clone ethercat  - Clone dexe_ethercat (dev) repository to parent directory"
+    echo "  clone interface - Clone dexe_interfaces (dev) repository to parent directory"
     echo "  home            - Move robot to home joint position"
     echo "  standby         - Move robot to standby joint position"
     echo "  left            - Move left arm (7 joints, value: '[j1,j2,...]' or home/standby)"
@@ -115,16 +115,15 @@ case $PROPERTY_KEY in
         exit 0
         ;;
     clone)
+        PARENT_DIR="$(realpath "${SCRIPT_DIR}/..")"
         if [ "$VALUE" == "ethercat" ]; then
-            echo "Cloning dexe_ethercat (dev) to ~/w1..."
-            rm -rf ~/w1/dexe_ethercat
-            mkdir -p ~/w1
-            git clone -b dev http://192.168.3.16/dexembodied/dexe_ethercat.git ~/w1/dexe_ethercat
+            echo "Cloning dexe_ethercat (dev) to ${PARENT_DIR}..."
+            rm -rf "${PARENT_DIR}/dexe_ethercat"
+            git clone -b dev http://192.168.3.16/dexembodied/dexe_ethercat.git "${PARENT_DIR}/dexe_ethercat"
         elif [ "$VALUE" == "interface" ]; then
-            echo "Cloning dexe_interfaces (dev) to ~/w1..."
-            rm -rf ~/w1/dexe_interfaces
-            mkdir -p ~/w1
-            git clone -b dev http://192.168.3.16/dexembodied/dexe_interfaces.git ~/w1/dexe_interfaces
+            echo "Cloning dexe_interfaces (dev) to ${PARENT_DIR}..."
+            rm -rf "${PARENT_DIR}/dexe_interfaces"
+            git clone -b dev http://192.168.3.16/dexembodied/dexe_interfaces.git "${PARENT_DIR}/dexe_interfaces"
         else
             echo "Usage: ./set_w1.sh clone [ethercat|interface]"
         fi
