@@ -60,7 +60,6 @@ fi
 if echo "123456" | sudo -S -v >/dev/null 2>&1; then
     SUDO_PREFIX="echo 123456 | sudo -S"
 else
-    echo "请输入 sudo 密码："
     sudo -v
     SUDO_PREFIX="sudo"
 fi
