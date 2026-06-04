@@ -647,8 +647,8 @@ void RobotServer::TorqueControlThreadFunc() {
         auto t_feedback = std::chrono::steady_clock::now();
 
         // 如果开启了记录, 则在独立的记录日志中记录数据
-        if (this->manager_info_.robot_property.enable_record && manager_state_ == Status::Running &&
-            loop_counter % 1 == 0) {
+        if (this->manager_info_.robot_property.enable_record &&
+            (manager_state_ == Status::Idle || manager_state_ == Status::Running) && loop_counter % 1 == 0) {
             int index_offset = GetFirstJointIndex();
             double timestamp_s = this->now().nanoseconds() / 1e9;
 
