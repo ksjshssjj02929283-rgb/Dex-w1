@@ -5,10 +5,10 @@ source "${SCRIPT_DIR}/../install/setup.bash"
 # === 检查 Sudo 权限 ===
 # 尝试使用默认密码验证，如果失败则提示用户手动输入
 if echo "123456" | sudo -S -v >/dev/null 2>&1; then
-    SUDO_PREFIX="echo 123456 | sudo -S"
+    SUDO_RUN() { echo "123456" | sudo -S "$@"; }
 else
-    # 仅在需要 sudo 时提示，这里先定义变量，实际用到 sudo 的 case 再触发 sudo -v 或保持提示
-    SUDO_PREFIX="sudo"
+    # 仅在需要 sudo 时提示
+    SUDO_RUN() { sudo "$@"; }
 fi
 
 # 打印使用说明
@@ -194,22 +194,19 @@ case $PROPERTY_KEY in
         ;;
     start)
         echo "Starting dexe-system.service..."
-        if [ "$SUDO_PREFIX" = "sudo" ]; then sudo -v; fi
-        $SUDO_PREFIX systemctl start dexe-system.service
+        SUDO_RUN systemctl start dexe-system.service
         echo "Watching EtherCAT status..."
         watch -n 0.1 ethercat sl
         exit 0
         ;;
     stop)
         echo "Stopping dexe-system.service..."
-        if [ "$SUDO_PREFIX" = "sudo" ]; then sudo -v; fi
-        $SUDO_PREFIX systemctl stop dexe-system.service
+        SUDO_RUN systemctl stop dexe-system.service
         exit 0
         ;;
     restart)
         echo "Restarting dexe-system.service..."
-        if [ "$SUDO_PREFIX" = "sudo" ]; then sudo -v; fi
-        $SUDO_PREFIX systemctl restart dexe-system.service
+        SUDO_RUN systemctl restart dexe-system.service
         echo "Watching EtherCAT status..."
         watch -n 0.1 ethercat sl
         exit 0
