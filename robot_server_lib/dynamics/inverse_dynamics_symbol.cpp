@@ -32,13 +32,6 @@ struct RobotDynamics {
     MassTermFunc right_mass_term_func;
 };
 
-struct RobotDynamics {
-    RegressionFunc left_regression_func;
-    RegressionFunc right_regression_func;
-    MassTermFunc left_mass_term_func;
-    MassTermFunc right_mass_term_func;
-};
-
 struct DynDispatcher {
     static const std::unordered_map<std::string, RobotDynamics>& GetRegistry() {
         static const std::unordered_map<std::string, RobotDynamics> registry = {
