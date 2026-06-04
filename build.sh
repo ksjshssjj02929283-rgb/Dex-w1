@@ -31,9 +31,8 @@ colcon build --parallel-workers "${COLCON_PARALLEL_WORKERS}" --cmake-args -DCMAK
 # 尝试使用默认密码验证，如果失败则提示用户手动输入
 if echo "123456" | sudo -S -v >/dev/null 2>&1; then
     SUDO_PREFIX="echo 123456 | sudo -S"
-    echo "✅ 使用默认密码获取 sudo 权限"
 else
-    echo "⚠️  默认密码错误，请手动输入 sudo 密码："
+    echo "请输入 sudo 密码："
     sudo -v
     SUDO_PREFIX="sudo"
 fi
