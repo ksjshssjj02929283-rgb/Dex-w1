@@ -159,15 +159,18 @@ Eigen::MatrixXd GetMassMatrixBySymbol(const RobotModel& robot_model, const Eigen
     Eigen::MatrixXd asym = M_matrix - M_matrix.transpose();
     if (asym.norm() > FloatZeroTol) {
         LOG_CRIT << "Mass matrix is not symmetric! norm: " << asym.norm();
+        std::exit(EXIT_FAILURE);
     }
 
     Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(M_matrix);
     if (es.info() != Eigen::Success) {
         LOG_CRIT << "Mass matrix eigenvalue decomposition failed!";
+        std::exit(EXIT_FAILURE);
     } else {
         double min_eig = es.eigenvalues().minCoeff();
         if (min_eig <= FloatZeroTol) {
             LOG_CRIT << "Mass matrix is not positive definite! min eigenvalue: " << min_eig;
+            std::exit(EXIT_FAILURE);
         }
     }
 
