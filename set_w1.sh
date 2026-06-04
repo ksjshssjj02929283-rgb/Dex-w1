@@ -136,7 +136,7 @@ case $PROPERTY_KEY in
         ;;
     standby)
         echo "Moving robot to standby position..."
-        ros2 action send_goal /control/move_robot robot_server_interfaces/action/MoveRobot "{motion_group: WholeBody, type: MoveJoint, target: [0.6, -1.2, 0.6, 0.0, 0.0, 0.0, 0.25, -1.4, 0.0, -0.6, 0.0, 0.0, 0.0, -0.25, 1.4, 0.0, 0.6, 0.0, 0.0, 0.0], config: '{\"speed\":0.1,\"acceleration\":0.1}'}"
+        ros2 action send_goal /control/move_robot robot_server_interfaces/action/MoveRobot "{motion_group: WholeBody, type: MoveJoint, target: [0.6, -1.2, 0.6, 0.0, 0.0, 0.0, 0.0, -1.4, 0.0, -0.6, 0.0, -0.5, -0.5, 0.0, 1.4, 0.0, 0.6, 0.0, 0.5, 0.5], config: '{\"speed\":0.1,\"acceleration\":0.1}'}"
         exit 0
         ;;    
     left)
@@ -148,7 +148,7 @@ case $PROPERTY_KEY in
         if [ "$TARGET_VALUE" == "home" ]; then
             TARGET_VALUE="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]"
         elif [ "$TARGET_VALUE" == "standby" ]; then
-            TARGET_VALUE="[0.25, -1.4, 0.0, -0.6, 0.0, 0.0, 0.0]"
+            TARGET_VALUE="[0.0, -1.4, 0.0, -0.6, 0.0, -0.5, -0.5]"
         fi
 
         # Ensure it starts and ends with [ ]
@@ -168,7 +168,7 @@ case $PROPERTY_KEY in
         if [ "$TARGET_VALUE" == "home" ]; then
             TARGET_VALUE="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]"
         elif [ "$TARGET_VALUE" == "standby" ]; then
-            TARGET_VALUE="[-0.25, 1.4, 0.0, 0.6, 0.0, 0.0, 0.0]"
+            TARGET_VALUE="[0.0, 1.4, 0.0, 0.6, 0.0, 0.5, 0.5]"
         fi
         
         # Ensure it starts and ends with [ ]

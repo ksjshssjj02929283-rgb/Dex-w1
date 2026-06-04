@@ -49,8 +49,8 @@ void RobotServer::RobotThreadFunc() {
 
     TorqueCtrlCommand torque_cmd{};
     JointRawMeasurement raw_measurement{};
-    raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, 1.0, 1.2, 0.0,
-        1.0, 0.0, 0.5, 0.5;
+    raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, 0.0, 1.2, 0.0, 1.0,
+        0.0, 0.5, 0.5;
     raw_measurement.velocity.setZero();
     raw_measurement.effort.setZero();
     raw_measurement.sensor_wrench = Eigen::VectorXd::Zero(12);
@@ -86,7 +86,7 @@ void RobotServer::RobotThreadFunc() {
 
     PlannerManagerCommand q_cmd{};
     JointMeasurement joint_measurement{};
-    joint_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, -0.5, 1.2, 0.0,
+    joint_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, 0.0, 1.2, 0.0,
         1.0, 0.0, 0.5, 0.5;
     joint_measurement.q_desired_pre = joint_measurement.position;
     joint_measurement.velocity.setZero();
