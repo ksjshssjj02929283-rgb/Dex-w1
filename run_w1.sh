@@ -31,11 +31,9 @@ sudo_setcap() {
 }
 if [ -f "$INSTALL_DIR/w1_server/lib/w1_server/w1_server" ]; then
   sudo_setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$INSTALL_DIR/w1_server/lib/w1_server/w1_server" || true
-  echo "setcap applied to $INSTALL_DIR/w1_server/lib/w1_server/w1_server:"; getcap -v "$INSTALL_DIR/w1_server/lib/w1_server/w1_server" || true
 fi
 if [ -f "$INSTALL_DIR/w1_server/lib/w1_server/feedback" ]; then
   sudo_setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$INSTALL_DIR/w1_server/lib/w1_server/feedback" || true
-  echo "setcap applied to $INSTALL_DIR/w1_server/lib/w1_server/feedback:"; getcap -v "$INSTALL_DIR/w1_server/lib/w1_server/feedback" || true
 fi
 
 # 如果已经运行了则kill掉
