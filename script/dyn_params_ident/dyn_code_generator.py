@@ -153,7 +153,13 @@ class RobotUnifiedDynamicsGenerator:
             f'#include "generated_include.h"\n'
             '#ifndef DYN_SIGN_FUNC\n'
             '#define DYN_SIGN_FUNC\n'
-            'static inline double sign(double x){ return (x>0) - (x<0); }\n'
+            'static inline double sign(double x) {\n'
+            '    double f_c_scale = 0.2;\n'
+            '    double vel_threshold = 0.000872664626;  // 0.05/180*PI, idle velocity threshold\n'
+            '    if (x > vel_threshold) return f_c_scale;\n'
+            '    else if (x < -vel_threshold) return -f_c_scale;\n'
+            '    else return 0.0;\n'
+            '}\n'
             '#endif\n\n'
         )
 
@@ -224,7 +230,13 @@ class RobotUnifiedDynamicsGenerator:
             f'#include "generated_include.h"\n'
             '#ifndef DYN_SIGN_FUNC\n'
             '#define DYN_SIGN_FUNC\n'
-            'static inline double sign(double x){ return (x>0) - (x<0); }\n'
+            'static inline double sign(double x) {\n'
+            '    double f_c_scale = 0.2;\n'
+            '    double vel_threshold = 0.000872664626;  // 0.05/180*PI, idle velocity threshold\n'
+            '    if (x > vel_threshold) return f_c_scale;\n'
+            '    else if (x < -vel_threshold) return -f_c_scale;\n'
+            '    else return 0.0;\n'
+            '}\n'
             '#endif\n\n'
         )
 
