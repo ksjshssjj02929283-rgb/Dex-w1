@@ -25,7 +25,7 @@ print_usage() {
     echo "  left            - Move left arm (7 joints, value: '[j1,j2,...]' or home/standby)"
     echo "  right           - Move right arm (7 joints, value: '[j1,j2,...]' or home/standby)"
     echo "  stop_move       - Stop current movement"
-    echo "  force           - Monitor force_sensor, force_sensor_gravity, raw_force_sensor, and force_sensor_bias at 10Hz"
+    echo "  force           - Monitor force_sensor, force_sensor_gravity, raw_force_sensor, force_sensor_bias, and force_sensor_inertia at 10Hz"
     echo "  log             - Print robot server log"
     echo "  clear           - Clear errors (no value needed)"
     echo "  drag            - Enable/Disable drag mode (value: 0 or 1)"
@@ -182,7 +182,6 @@ class ForceMonitor(Node):
                 data.get("raw_force_sensor", []),
                 data.get("force_sensor_bias", []),
                 data.get("force_sensor_inertia", []),
-                data.get("tool_inertia_filter_cutoff_hz", None),
             )
         except Exception:
             return
@@ -195,17 +194,13 @@ class ForceMonitor(Node):
         if latest is None:
             return
         (force_sensor, force_sensor_gravity, raw_force_sensor, force_sensor_bias,
-         force_sensor_inertia, tool_inertia_filter_cutoff_hz) = latest
+         force_sensor_inertia) = latest
         print("------------------------------------------------", flush=True)
         print(f"force_sensor: {json.dumps(force_sensor, separators=(',', ':'))},", flush=True)
         print(f"force_sensor_gravity: {json.dumps(force_sensor_gravity, separators=(',', ':'))},", flush=True)
         print(f"raw_force_sensor: {json.dumps(raw_force_sensor, separators=(',', ':'))},", flush=True)
         print(f"force_sensor_bias: {json.dumps(force_sensor_bias, separators=(',', ':'))}", flush=True)
-        # 工具惯量补偿: 6 维 (Fx Fy Fz τx τy τz, EE 系) — 失效或首拍时全 0 (与"静止≈0"在数值上一致,
-        # 真正的"未运行"通过 force_sensor 全 0 的安全策略间接体现)
-        c_str = f"{tool_inertia_filter_cutoff_hz:.2f}Hz" if tool_inertia_filter_cutoff_hz is not None else "n/a"
-        print(f"force_sensor_inertia: {json.dumps(force_sensor_inertia, separators=(',', ':'))}, "
-              f"tool_inertia_filter_cutoff_hz: {c_str}", flush=True)
+        print(f"force_sensor_inertia: {json.dumps(force_sensor_inertia, separators=(',', ':'))}", flush=True)
 
 
 rclpy.init()

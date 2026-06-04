@@ -54,25 +54,16 @@ private:
     void PublishImu();
     std_msgs::msg::String GetRobotServerStateMsg();
     void LoadToolGravityCompensationConfig(const std::filesystem::path& robot_cfg_path);
-    // 返回扣减后的 wrench. 如果重力补偿已启用且本周期成功扣到, *applied 置 true; 否则 false.
-    // applied=false 的情况包括: 补偿未启用 (用户主动选择), 或 manager_state ∈ {Init, Error}
-    // 导致 EE 旋转不可用. 调用方据此决定是否要清零下游 wrench.
+    // 扣除工具重力; 成功扣减时 *applied=true.
     Vector6d ApplyToolGravityCompensation(const Vector6d& wrench_ee, int arm_index, bool* applied = nullptr) const;
-    // 与惯量补偿使用相同 cutoff 的 6 维 wrench 滤波, 用于让 force_sensor_gravity
-    // 与 force_sensor_inertia 在相位上匹配. 仅 primary 臂使用.
+    // 让重力补偿结果与惯量补偿使用相同滤波相位. 仅 primary 臂使用.
     Vector6d ApplyToolGravityMatchedFilterPrimary(const Vector6d& wrench_ee);
-    // 工具动力学(惯性)补偿: 仅对 primary 臂生效, 在重力补偿之后调用.
-    // wrench_ee 已经是 EE 坐标系下的 6 维力旋量 (经过零偏与重力补偿).
-    // 注意: q/dq 必须是 size==7 的预分配 VectorXd, 用 dynamic VectorXd 是为了
-    // 直接绑定到 pinocchio_api 的 const VectorXd& 形参, 避免每周期临时构造分配.
-    // 返回扣减后的 wrench. 如果惯量补偿已启用且本周期成功扣到, *applied 置 true; 否则 false
-    // (首拍跳过, 防御性早退, 或函数本身被 wiring 的 should_run_inertia 拦截前).
+    // 仅对 primary 臂做工具惯量补偿; 成功扣减时 *applied=true.
     Vector6d ApplyToolInertiaCompensationPrimary(const Vector6d& wrench_ee,
                                                  const Eigen::VectorXd& feedback_q_primary,
                                                  const Eigen::VectorXd& feedback_dq_primary,
                                                  bool* applied = nullptr);
-    // 重置惯量补偿的所有运行时状态 (滤波器 + 历史 + 首拍标志).
-    // 在反馈失效或首次启用时调用, 确保下次有效样本不会带入旧滤波状态.
+    // 重置惯量补偿的滤波器、历史和首拍标志.
     void ResetToolInertiaCompensationState();
     std::optional<Eigen::Matrix3d> GetEERotationWorldFromEE(int arm_index) const;
 
@@ -145,7 +136,6 @@ private:
     Vector3d sensor_force_;
     Vector12d sensor_wrench_;
     Vector12d sensor_wrench_gravity_;
-    Vector12d sensor_wrench_gravity_raw_;
     Vector12d raw_sensor_wrench_;
     Vector12d sensor_zero_offset_;
     bool sensor_zero_offset_valid_[2] = {false, false};
@@ -158,10 +148,6 @@ private:
     // 工具惯量补偿状态 (primary only)
     bool tool_inertia_compensation_enabled_ = false;
     Eigen::Matrix3d tool_inertia_com_ = Eigen::Matrix3d::Zero();
-    // 当前实际生效的滤波器截止频率 (Hz). 由 yaml 的 inertia_compensation_filter_hz 加载.
-    // 注: 真正决定滤波行为的是 ee_accel_filter_/omega_diff_filter_ 内部的 IIR 系数,
-    // 此成员只用于日志与发布 JSON 显示, 运行时改它不会改滤波器, 必须重建对象.
-    double tool_inertia_filter_cutoff_hz_ = 5.0;
     bool tool_inertia_first_sample_ = true;
     Vector3d prev_ee_linvel_armbase_ = Vector3d::Zero();
     Vector3d prev_omega_armbase_ = Vector3d::Zero();
@@ -173,24 +159,11 @@ private:
     Eigen::VectorXd inertia_dq_primary_buf_ = Eigen::VectorXd::Zero(7);
     int inertia_primary_joint_id_[7] = {-1, -1, -1, -1, -1, -1, -1};  // wb-model joint id, -1=未解析
     bool inertia_primary_joint_id_resolved_ = false;
-    // 运行时诊断: 最近一次实际扣除的惯量补偿 wrench (EE 系, 6 维: Fx Fy Fz τx τy τz).
-    // 由 1 kHz 控制线程写入, 由 100 Hz publish 线程读取.
-    // 本周期未运行时 (前置条件不满足或首拍跳过) 显式写零, 与"静止时扣减≈0"在数值上
-    // 不可区分; "未运行"的语义靠下游 sensor_data 也被清零的安全策略间接体现.
+    // 最近一次实际扣除的惯量补偿 wrench, 供状态发布读取.
     std::array<std::atomic<double>, 6> tool_inertia_wrench_ee_{};
-    // 运行时诊断: 末端角速度/角加速度 (F = ee_link 系, 3 维: x y z), 仅 primary.
-    // 由 ComputeAndPublishEEKinematicsPrimary 在 1 kHz 写入, publish 线程读取.
-    // 反馈失效或首拍跳过时写 NaN, 让下游消费者 (e.g. tool_inertia_estimate.py) 一眼丢弃.
+    // 离线惯量辨识仍依赖这两组主观测量.
     std::array<std::atomic<double>, 3> ee_omega_F_primary_{};
     std::array<std::atomic<double>, 3> ee_alpha_F_primary_{};
-    std::array<std::atomic<double>, 3> ee_linear_velocity_F_primary_{};
-    std::array<std::atomic<double>, 3> ee_linear_accel_raw_F_primary_{};
-    std::array<std::atomic<double>, 3> ee_linear_accel_filtered_F_primary_{};
-    // 工具惯性力分量诊断 (F = ee_link 系, 3 维: Fx Fy Fz), 仅 primary.
-    // 三项之和应等于 force_sensor_inertia[0:3] (补偿实际运行的周期).
-    std::array<std::atomic<double>, 3> inertia_force_from_ee_linear_acc_F_primary_{};
-    std::array<std::atomic<double>, 3> inertia_force_from_alpha_cross_com_F_primary_{};
-    std::array<std::atomic<double>, 3> inertia_force_from_omega_cross_omega_cross_com_F_primary_{};
     std::shared_ptr<SriForceSensor> primary_sensor_;
     std::shared_ptr<SriForceSensor> secondary_sensor_;  // 暂未使用
     bool primary_sensor_ready_ = false;
