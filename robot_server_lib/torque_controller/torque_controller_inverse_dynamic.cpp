@@ -9,6 +9,7 @@ TorqueControllerInvDynamic::TorqueControllerInvDynamic(RobotModel robot_model) :
 bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_measurement,
                                                 const PlannerManagerCommand& input_cmd,
                                                 TorqueCtrlCommand& output_cmd) {
+    output_cmd.torque_ext.setZero();
     VectorDof feedback_q = raw_measurement.position;
     VectorDof feedback_dq = raw_measurement.velocity;
     VectorDof cmd_q = input_cmd.cmd.position;
@@ -38,7 +39,7 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
         case TorqueControllerState::Operating: {
             joint_impedance_controller_->UpdateTorqueCommand(feedback_q, feedback_dq, cmd_q, cmd_dq, K_p, K_v,
                                                              K_i_ratio, raw_measurement.sensor_wrench,
-                                                             torque_joint_impedance);
+                                                             torque_joint_impedance, &output_cmd.torque_ext);
             output_cmd.torque_feedforward =
                 dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero(),
                                           false);  // 补偿重力, 科氏力, 摩擦力

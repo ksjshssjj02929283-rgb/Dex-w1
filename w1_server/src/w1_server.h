@@ -133,6 +133,7 @@ private:
     Vector12d sensor_wrench_;
     Vector12d sensor_wrench_gravity_;
     Vector12d raw_sensor_wrench_;
+    VectorDof latest_torque_ext_ = VectorDof::Zero();
     Vector12d sensor_zero_offset_;
     bool sensor_zero_offset_valid_[2] = {false, false};
     int sensor_zero_offset_samples_[2] = {0, 0};
