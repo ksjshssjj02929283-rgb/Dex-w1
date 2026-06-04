@@ -7,7 +7,7 @@ import os
 from typing import List, Tuple
 from sympybotics.symcode import code_to_func, Subexprs
 import re
-from urdf2dh import get_dh_params_for_arm, get_robot_info
+from urdf2dh import get_dh_params_for_arm, get_robot_info, get_gravity_in_arm_base
 
 # ============================================================================
 # Robot Dynamics Generator Class
@@ -68,7 +68,9 @@ class RobotUnifiedDynamicsGenerator:
 
         rbtdef.frictionmodel = {"Coulomb", "viscous", "offset"}
         rbtdef.driveinertiamodel = "simplified"
-        rbtdef.gravityacc = sympy.Matrix([-9.81, 0.0, 0.0])
+        # 从 URDF 计算手臂基座坐标系下的重力方向
+        gravity = get_gravity_in_arm_base(self.arm_name)
+        rbtdef.gravityacc = sympy.Matrix(gravity)
 
         rbt = sympybotics.RobotDynCode(rbtdef, verbose=True)
         rbt.calc_base_parms()
@@ -290,6 +292,8 @@ if __name__ == "__main__":
             print(f"DH parameters for {arm}:")
             for p in dh_params:
                 print(f"  {p}")
+            gravity = get_gravity_in_arm_base(arm)
+            print(f"Gravity direction in {arm} arm base: ({gravity[0]:.4f}, {gravity[1]:.4f}, {gravity[2]:.4f})")
             RobotUnifiedDynamicsGenerator(arm, dh_params, robot_type, version)
             print(f"<<< Finished {arm.upper()} arm.")
         except Exception as e:

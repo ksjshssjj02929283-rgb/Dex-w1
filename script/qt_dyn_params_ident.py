@@ -570,7 +570,7 @@ import sympy, sympybotics, scipy.signal, lmi_sdp, subprocess
 from sympy import BlockMatrix, Matrix, eye, Identity
 from lmi_sdp import LMI
 from sympybotics.dynident.regression import mrepl
-from dyn_params_ident.urdf2dh import get_dh_params_for_arm
+from dyn_params_ident.urdf2dh import get_dh_params_for_arm, get_gravity_in_arm_base
 
 class DynParamCalculator:
     """
@@ -599,6 +599,8 @@ class DynParamCalculator:
         arm_side = "left" if self.is_left else "right"
         dh_params = get_dh_params_for_arm(arm_side)
         self.log_msg(f"DH parameters for {robot_type} {arm_side} arm:\n{dh_params}")
+        gravity = get_gravity_in_arm_base(arm_side)
+        self.log_msg(f"Gravity direction in {arm_side} arm base: ({gravity[0]:.4f}, {gravity[1]:.4f}, {gravity[2]:.4f})")
         self.rbtdef_num = sympybotics.RobotDef(
             f"{robot_type}_{arm_side}",
             dh_params,
@@ -606,11 +608,7 @@ class DynParamCalculator:
         )
         self.rbtdef_num.frictionmodel = {"Coulomb", "viscous", "offset"}
         self.rbtdef_num.driveinertiamodel = "simplified"
-        self.rbtdef_num.gravityacc = (
-            sympy.Matrix([-9.81, 0.0, 0.0])
-            if self.is_left
-            else sympy.Matrix([9.81, 0.0, 0.0])
-        )
+        self.rbtdef_num.gravityacc = sympy.Matrix(gravity)
         rbt = sympybotics.RobotDynCode(self.rbtdef_num, verbose=True)
         rbt.calc_base_parms()
         return rbt
