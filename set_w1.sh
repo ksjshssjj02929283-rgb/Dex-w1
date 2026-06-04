@@ -26,17 +26,20 @@ print_usage() {
     echo "  right           - Move right arm (7 joints, value: '[j1,j2,...]' or home/standby)"
     echo "  stop_move       - Stop current movement"
     echo "  log             - Print robot server log"
-    echo "  clear          - Clear errors (no value needed)"
+    echo "  clear           - Clear errors (no value needed)"
     echo "  drag            - Enable/Disable drag mode (value: 0 or 1)"
     echo "  start           - Start dexe-system.service"
     echo "  stop            - Stop dexe-system.service"
     echo "  restart         - Restart dexe-system.service"
+    echo "  sleep           - Sleep mode"
+    echo "  quickstop       - QuickStop mode"
     echo "  watch           - Watch EtherCAT status (watch -n 0.1 ethercat sl)"
     echo "  state           - Monitor feedback state (python3 script/monitor_feedback.py)"
     echo "  shm             - Monitor shared memory (python3 script/monitor_shm.py)"
     echo "  control         - Joint control GUI (python3 script/qt_joint_control.py)"
     echo "  dyn             - Dynamic parameter identification GUI (python3 script/qt_dyn_params_ident.py)"
-    echo "  visual          - Visualization ROS2 node (python3 script/visual_ros2_node.py)"
+    echo "  trajgen         - Trajectory generator (python3 script/traj_generator.py)"
+    echo "  vis             - Visualization ROS2 node (python3 script/visual_ros2_node.py)"
     echo "  config          - Edit robot_config.yaml (gedit/vim ~/dexe_robot_server_data/robot_config.yaml)"
     echo "  pos_limit       - Enable/Disable position limit check (value: 0 or 1)"
     echo "  mode            - Switch run mode (value: mode number, e.g., 3)"
@@ -211,6 +214,12 @@ case $PROPERTY_KEY in
         watch -n 0.1 ethercat sl
         exit 0
         ;;
+    sleep)
+        PROPERTY_TYPE="EnableSleep"
+        ;;
+    quickstop)
+        PROPERTY_TYPE="QuickStop"
+        ;;
     watch)
         echo "Watching EtherCAT status..."
         watch -n 0.1 ethercat sl
@@ -236,7 +245,12 @@ case $PROPERTY_KEY in
         python3 script/qt_dyn_params_ident.py
         exit 0
         ;;
-    visual)
+    trajgen)
+        echo "Starting Trajectory Generator..."
+        python3 script/dyn_params_ident/traj_generator.py
+        exit 0
+        ;;
+    vis)
         echo "Starting Visualization ROS2 node..."
         python3 script/visual_ros2_node.py
         exit 0
