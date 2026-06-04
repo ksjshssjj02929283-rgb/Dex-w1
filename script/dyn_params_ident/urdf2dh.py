@@ -346,6 +346,43 @@ def get_dh_params_for_arm(arm: str) -> List[Tuple[str, float, float, str]]:
         result.append((format_angle(alpha), format_dist(a), format_dist(d), format_theta_offset(theta)))
     return result
 
+def get_gravity_in_arm_base(arm: str) -> Tuple[float, float, float]:
+    """
+    计算在手臂基座（arm_base）坐标系下表示的重力加速度向量 (gx, gy, gz)。
+    流程：
+      1. 加载全身 URDF (base_urdf_path)
+      2. 找到手臂基座 link（SHOULDER_PITCH_{L/R}_J1 的父 link）
+      3. gravity_armbase = R_base_to_armbase^T * g_world
+         其中 g_world = (0, 0, -9.81)，R_base_to_armbase 为全身 base_link 到手臂基座的旋转
+    """
+    base_urdf_path, _, _ = get_robot_info()
+    if not base_urdf_path or not os.path.exists(base_urdf_path):
+        raise FileNotFoundError(f"URDF file not found: {base_urdf_path}")
+
+    full_robot = yourdfpy.URDF.load(base_urdf_path)
+    side = arm[0].upper()  # 'L' or 'R'
+    arm_base_link = None
+    for jn, j in full_robot.joint_map.items():
+        if 'J1' in jn.upper() and side in jn.upper():
+            arm_base_link = j.parent
+            break
+    if arm_base_link is None:
+        # fallback: just match J1 without side
+        for jn, j in full_robot.joint_map.items():
+            if 'J1' in jn.upper():
+                arm_base_link = j.parent
+                break
+    if arm_base_link is None:
+        raise ValueError(f"Could not find first arm joint (containing 'J1') for {arm} arm in full robot URDF")
+
+    T_base_to_armbase = full_robot.get_transform(arm_base_link)
+    R_base_to_armbase = T_base_to_armbase[:3, :3]
+
+    g_world = np.array([0.0, 0.0, -9.81])
+    g_armbase = R_base_to_armbase.T @ g_world
+    return (float(g_armbase[0]), float(g_armbase[1]), float(g_armbase[2]))
+
+
 def main():
     target_arm = None
     if len(sys.argv) > 1 and sys.argv[1].lower() in ("left", "right"):
