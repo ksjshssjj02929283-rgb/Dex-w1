@@ -49,7 +49,15 @@ class VisualRos2Node(Node):
         with open(self.robot_cfg_path, 'r') as f:
             cfg = yaml.safe_load(f)
         self.robot_name = cfg.get("robot_name")
-        self.urdf_path = cfg.get("file_path", {}).get("robot_urdf")
+        
+        extracted_urdf = cfg.get("file_path", {}).get("robot_urdf")
+        if extracted_urdf:
+            ee_urdf_path = Path(extracted_urdf).parent / "robot_with_ee.urdf"
+            if ee_urdf_path.exists():
+                self.urdf_path = str(ee_urdf_path)
+            else:
+                self.urdf_path = extracted_urdf
+
         # 读取 ros2 到 urdf 的名字映射
         self.ros2_to_urdf_map = cfg.get("ros2_to_urdf_map", {})
         # 同时建立反向映射，方便查找

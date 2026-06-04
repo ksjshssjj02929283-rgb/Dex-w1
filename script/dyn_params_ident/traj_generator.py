@@ -244,7 +244,11 @@ if __name__ == "__main__":
                 config = yaml.safe_load(f)
                 extracted_urdf = config.get('file_path', {}).get('robot_urdf')
                 if extracted_urdf:
-                    urdf_path = extracted_urdf
+                    ee_urdf_path = os.path.join(os.path.dirname(extracted_urdf), "robot_with_ee.urdf")
+                    if os.path.exists(ee_urdf_path):
+                        urdf_path = ee_urdf_path
+                    else:
+                        urdf_path = extracted_urdf
                     srdf_path = urdf_path.replace('.urdf', '.srdf')
                 robot_type = config.get("robot_type", "")
                 version = config.get("version", "")

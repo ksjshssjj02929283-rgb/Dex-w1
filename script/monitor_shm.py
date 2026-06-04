@@ -5,8 +5,8 @@ import os
 import curses
 
 # Constants
-FEEDBACK_SHM_KEY = 0x1002
-CONTROL_SHM_KEY = 0x2002
+FEEDBACK_SHM_KEY = 0x1003
+CONTROL_SHM_KEY = 0x2003
 MAX_JOINT_NUM = 32
 OMNI_MOTOR_NUM = 4
 BUFFER_CAPACITY = 8
@@ -61,6 +61,7 @@ class JointFeedback(ctypes.Structure):
 class RobotFeedback(ctypes.Structure):
     _fields_ = [
         ("cnt", ctypes.c_uint64),
+        ("timestamp", ctypes.c_uint64),
         ("robot_status_word", ctypes.c_uint16),
         ("al_status", ctypes.c_uint8 * MAX_JOINT_NUM),
         ("joint_feedback", JointFeedback * MAX_JOINT_NUM),
@@ -99,6 +100,7 @@ class ChassisControl(ctypes.Structure):
 class RobotControl(ctypes.Structure):
     _fields_ = [
         ("cnt", ctypes.c_uint64),
+        ("timestamp", ctypes.c_uint64),
         ("robot_control_word", ctypes.c_uint16),
         ("joint_control", JointControl * MAX_JOINT_NUM),
         ("chassis_control", ChassisControl),
@@ -202,7 +204,7 @@ def monitor(stdscr):
                 stdscr,
                 row,
                 0,
-                f"Cnt: {data.cnt}  StatusWord: 0x{data.robot_status_word:04X}",
+                f"Cnt: {data.cnt}  Timestamp: {data.timestamp}  StatusWord: 0x{data.robot_status_word:04X}",
             )
             row += 1
             addstr_safe(
@@ -292,7 +294,7 @@ def monitor(stdscr):
                 stdscr,
                 row,
                 0,
-                f"Cnt: {data.cnt}  CtrlWord: 0x{data.robot_control_word:04X}  ChassisMode: {data.chassis_control.chassis_mode}",
+                f"Cnt: {data.cnt}  Timestamp: {data.timestamp}  CtrlWord: 0x{data.robot_control_word:04X}  ChassisMode: {data.chassis_control.chassis_mode}",
             )
             row += 1
             addstr_safe(
