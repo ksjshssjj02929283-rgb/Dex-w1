@@ -32,7 +32,6 @@ colcon build --parallel-workers "${COLCON_PARALLEL_WORKERS}" --cmake-args -DCMAK
 if echo "123456" | sudo -S -v >/dev/null 2>&1; then
     SUDO_PREFIX="echo 123456 | sudo -S"
 else
-    echo "请输入 sudo 密码："
     sudo -v
     SUDO_PREFIX="sudo"
 fi
@@ -62,4 +61,4 @@ $INSTALL_DIR/robot_server_interfaces/lib
 $INSTALL_DIR/robot_server_lib/lib
 LDCONF
 eval "$SUDO_PREFIX cp /tmp/w1_server.conf /etc/ld.so.conf.d/w1_server.conf"
-$SUDO_PREFIX ldconfig
+eval "$SUDO_PREFIX ldconfig"
