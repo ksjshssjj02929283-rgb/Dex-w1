@@ -290,6 +290,7 @@ struct RobotParams {
     double external_wrench_force_saturation_n{100.0};
     double external_wrench_torque_deadband_nm{0.1};
     double external_wrench_torque_saturation_nm{10.0};
+    int external_wrench_model_sign{1};
 };
 
 struct RobotModel {

@@ -88,6 +88,7 @@ Vector6d JointImpedanceController::ProcessExternalWrench(const Vector6d& wrench)
             is_force ? params.external_wrench_force_saturation_n : params.external_wrench_torque_saturation_nm;
         processed[i] = deadband_saturate(wrench[i], deadband, saturation);
     }
+    processed *= static_cast<double>(params.external_wrench_model_sign);
     return processed;
 }
 
