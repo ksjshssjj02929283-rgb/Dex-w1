@@ -199,8 +199,6 @@ void RobotServer::TorqueControlThreadFunc() {
             nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
         }
 
-        auto t_log = std::chrono::steady_clock::now();
-
         // 如果机器人就绪，则写入测量数据
         if (this->is_robot_ready_) {
             // 关节反馈数据写入测量数据
@@ -232,6 +230,7 @@ void RobotServer::TorqueControlThreadFunc() {
             LOG_CRIT_THROTTLE(5000) << "Robot is not ready, shm status: " << ret
                                     << ", statusword: " << robot_feedback_.robot_status_word;
         }
+        auto t_log = std::chrono::steady_clock::now();
 
         // 力控计算处理
         torque_controller_manager.LoopOnce();
