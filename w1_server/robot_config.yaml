@@ -57,6 +57,7 @@ global_speed_ratio: 1.0
 
 # === 外力传感器进入关节阻抗控制前的死区与饱和 ===
 force_sensor_external_wrench:
+  model_sign: -1
   force_deadband_n: 3.0
   force_saturation_n: 100.0
   torque_deadband_nm: 0.1

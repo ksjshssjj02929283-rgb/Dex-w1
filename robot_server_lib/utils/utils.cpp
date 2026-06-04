@@ -228,10 +228,23 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
             }
             target = value;
         };
+        auto parse_model_sign = [&](const char* key, int& target) {
+            if (!external_wrench[key]) {
+                return;
+            }
+            const int value = external_wrench[key].as<int>();
+            if (value != -1 && value != 1) {
+                LOG_WARN << "Invalid force_sensor_external_wrench." << key << ": " << value
+                         << ", keep default " << target;
+                return;
+            }
+            target = value;
+        };
         parse_non_negative("force_deadband_n", params.external_wrench_force_deadband_n);
         parse_non_negative("force_saturation_n", params.external_wrench_force_saturation_n);
         parse_non_negative("torque_deadband_nm", params.external_wrench_torque_deadband_nm);
         parse_non_negative("torque_saturation_nm", params.external_wrench_torque_saturation_nm);
+        parse_model_sign("model_sign", params.external_wrench_model_sign);
     }
 
     if (config["joints"] && config["joints"].IsSequence()) {
