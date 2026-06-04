@@ -29,9 +29,6 @@ FORCE_FIELDS = [
     "raw_force_sensor",
     "force_sensor_bias",
 ]
-FORCE_DIAGNOSTIC_FIELDS = [
-    "force_sensor_gravity_raw",
-]
 EE_FIELDS = [
     "ee_omega_ee_frame",
     "ee_alpha_ee_frame",
@@ -39,29 +36,15 @@ EE_FIELDS = [
 INERTIA_FIELDS = [
     "force_sensor_inertia",
 ]
-INERTIA_COMPONENT_FIELDS = [
-    "inertia_force_from_ee_linear_acc",
-    "inertia_force_from_alpha_cross_com",
-    "inertia_force_from_omega_cross_omega_cross_com",
-]
-KINEMATIC_DIAGNOSTIC_FIELDS = [
-    "ee_linear_velocity_ee_frame",
-    "ee_linear_accel_raw_ee_frame",
-    "ee_linear_accel_filtered_ee_frame",
-]
 JOINT_STATE_FIELDS = [
     "joint_position",
     "joint_velocity",
-]
-SCALAR_FIELDS = [
-    "tool_inertia_filter_cutoff_hz",
 ]
 AXIS_LABELS = ["Fx [N]", "Fy [N]", "Fz [N]", "Tx [Nm]", "Ty [Nm]", "Tz [Nm]"]
 EE_AXIS_LABELS = ["ωx [rad/s]", "ωy [rad/s]", "ωz [rad/s]"]
 FIELD_COLORS = {
     "force_sensor": "tab:blue",
     "force_sensor_gravity": "tab:green",
-    "force_sensor_gravity_raw": "tab:olive",
     "raw_force_sensor": "tab:gray",
     "force_sensor_bias": "tab:red",
     "ee_omega_ee_frame": "tab:orange",
@@ -70,7 +53,6 @@ FIELD_COLORS = {
 FIELD_LABELS = {
     "force_sensor": "force_sensor",
     "force_sensor_gravity": "force_sensor_gravity",
-    "force_sensor_gravity_raw": "force_sensor_gravity_raw",
     "raw_force_sensor": "raw_force_sensor",
     "force_sensor_bias": "force_sensor_bias",
     "ee_omega_ee_frame": "ee_omega_ee_frame",
@@ -121,11 +103,6 @@ def extract_force_sample(data: Mapping[str, object], t: float = 0.0) -> Dict[str
     }
     for field in FORCE_FIELDS:
         sample[field] = float_list(data.get(field), field, 6)
-    for field in FORCE_DIAGNOSTIC_FIELDS:
-        try:
-            sample[field] = float_list(data.get(field), field, 6)
-        except (ValueError, TypeError):
-            pass
     for field in EE_FIELDS:
         try:
             sample[field] = float_list(data.get(field), field, 3)
@@ -136,20 +113,10 @@ def extract_force_sample(data: Mapping[str, object], t: float = 0.0) -> Dict[str
             sample[field] = float_list(data.get(field), field, 6)
         except (ValueError, TypeError):
             pass
-    for field in INERTIA_COMPONENT_FIELDS + KINEMATIC_DIAGNOSTIC_FIELDS:
-        try:
-            sample[field] = float_list(data.get(field), field, 3)
-        except (ValueError, TypeError):
-            pass
     for field in JOINT_STATE_FIELDS:
         try:
             sample[field] = float_list(data.get(field), field, 1)
         except (ValueError, TypeError):
-            pass
-    for field in SCALAR_FIELDS:
-        try:
-            sample[field] = float(data[field])
-        except (KeyError, TypeError, ValueError):
             pass
     return sample
 
@@ -167,8 +134,7 @@ def make_payload(
             "state_topic": state_topic,
             "sample_count": len(samples),
             "fields": (
-                FORCE_FIELDS + FORCE_DIAGNOSTIC_FIELDS + INERTIA_FIELDS + INERTIA_COMPONENT_FIELDS + EE_FIELDS +
-                KINEMATIC_DIAGNOSTIC_FIELDS + JOINT_STATE_FIELDS + SCALAR_FIELDS
+                FORCE_FIELDS + INERTIA_FIELDS + EE_FIELDS + JOINT_STATE_FIELDS
             ),
             "axis_labels": AXIS_LABELS,
             "notes": "Each field is stored exactly as published by robot_server_state.",
@@ -384,7 +350,7 @@ def plot(args: argparse.Namespace) -> None:
     payload = load_payload(path)
     samples = payload["samples"]
     force_plot_fields = [
-        field for field in FORCE_FIELDS + FORCE_DIAGNOSTIC_FIELDS
+        field for field in FORCE_FIELDS
         if any(field in sample for sample in samples)
     ]
 
@@ -483,7 +449,6 @@ ANALYSE_FIELDS = [
     "raw_force_sensor",
     "force_sensor",
     "force_sensor_gravity",
-    "force_sensor_gravity_raw",
 ]
 
 
@@ -604,7 +569,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--show",
         nargs="+",
-        choices=FORCE_FIELDS + FORCE_DIAGNOSTIC_FIELDS + EE_FIELDS,
+        choices=FORCE_FIELDS + EE_FIELDS,
         default=FORCE_FIELDS,
         help="fields visible initially in --plot; checkboxes can toggle them after the window opens",
     )

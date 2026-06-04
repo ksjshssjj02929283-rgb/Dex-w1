@@ -250,28 +250,7 @@ $$
 | `raw_force_sensor` (12 维) | N / N·m | 完全原始, 连零偏都没扣 |
 | `force_sensor_bias` (12 维) | N / N·m | 零偏标定值 (EE 系) |
 | `force_sensor_inertia` (6 维) | N / N·m | primary 惯量补偿这一周期实际从 wrench 中扣减的量 (= `expected_inertia_wrench_ee`). 静止 ≈ 0; 失效 / 首拍显式置零. 与 `force_sensor` 同视角同符号. |
-| `tool_inertia_filter_cutoff_hz` | Hz | 当前生效的 LPF 截止, 由 yaml 加载 |
 
 监控工具:
 - `./set_w1.sh force` 每 100 ms 打印上述字段
 - `script/plot_force_sensor.py --force_sensor --force_sensor_inertia` 实时 6 分量曲线对比
-
-## 6 历史: 2026-05-26 符号 bug 复盘
-
-**现象**: 实机定量分析显示重力补偿后 RMS 0.8652, 惯量补偿后 RMS 1.0889 (反而升高), 对模型 `after = before − k·inertia` 拟合得 `k ≈ -1.48`. 符号方向反了.
-
-**根因**: 写代码时把"加速工具需要的合力 $m\boldsymbol{a}_C$"当成了"传感器读数中应该看到的工具惯性分量". 这两者在牛顿第三定律下等大反向. 重力补偿那一支因为公式简单 (直接 $+m\boldsymbol{g}$), 直觉对了; 惯量补偿涉及"运动方程 → 反作用 → 传感器" 的二次符号转换, 我跳过了显式推导.
-
-**为什么没在审查 / 测试阶段发现**:
-- 离线辨识脚本里 `F_meas = +mg − m·a_C` 的符号约定是现成的, 但我对齐"参考点 + 坐标基"的语义时没把整个公式抄来核对符号
-- reviewer prompt 只让检查"代码 vs 设计是否一致", 没要求"用第一性原理 / 已知物理公式代回去验证"
-- 静止 / 慢动测试中 $|\boldsymbol{F}_{\text{inertia}}| \sim 1\,\mathrm{N}$ 叠在 0.5 N 噪声上, 视觉无法区分"叠加" vs "抵消"
-- 没做带运动的合成单元测试 (例如纯线加速度沿 +z, 手算 expected 应为 $-m a_z\hat{z}$)
-
-**修复**: `expected_inertia_wrench_ee` 的两个分量赋值取负号; 同时把 α 估计从 $J_\omega \ddot{q}$ 改成 $\dot{\boldsymbol{\omega}}$ 直接微分 (顺手补 $\dot{J}\dot{q}$ 项).
-
-**护栏建议** (尚未实施):
-1. 把惯量公式抽成纯函数, 用合成 case 写 GoogleTest (固定姿态 + 已知 a_C → 断言符号)
-2. C++ 文件头引用 `tool_inertia_estimate.py:379` 的 F_meas/M_meas 公式作为 ground truth, 注释里强制显式写"传感器视角符号"
-3. 任何新补偿模块 (柯氏力 / 空气阻力 / 弹簧元件) 必须先写"传感器读数模型"再写代码
-

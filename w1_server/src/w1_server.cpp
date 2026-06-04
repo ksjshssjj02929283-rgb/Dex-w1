@@ -12,10 +12,7 @@
 
 namespace {
 constexpr double kDefaultGravity = 9.79;
-// 末端加速度/关节加速度低通截止默认值. 与 script/tool_inertia_estimate.py 的 DEFAULT_FILTER_FC_HZ
-// 一致 (5 Hz) — 脚本作者已在该工具/传感器组合下离线验证过该频率能跑出物理合法的惯量解.
-// 注意: 脚本是双向 filtfilt (零相位 6 阶), 这里是单向二阶临界阻尼 IIR, 衰减更弱、有相位延迟.
-// 可以通过 yaml 的 inertia_compensation_filter_hz 覆盖.
+// 与离线惯量辨识脚本默认值对齐, 可由 yaml 覆盖.
 constexpr double kDefaultInertiaCompCutoffHz = 5.0;
 constexpr double kMinInertiaCompCutoffHz = 0.5;
 constexpr double kMaxInertiaCompCutoffHz = 100.0;  // 1 kHz 采样的 10%
@@ -31,7 +28,6 @@ bool ReadYamlVector(const YAML::Node& node, int expected_size, Eigen::VectorXd& 
     return true;
 }
 
-// 解析 3x3 惯量矩阵: 期望 YAML 中是 3 行, 每行 3 个 double
 bool ReadYamlMatrix3(const YAML::Node& node, Eigen::Matrix3d& out) {
     if (!node || !node.IsSequence() || node.size() != 3) {
         return false;
@@ -60,7 +56,6 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     sensor_force_.setZero();
     sensor_wrench_.setZero();
     sensor_wrench_gravity_.setZero();
-    sensor_wrench_gravity_raw_.setZero();
     raw_sensor_wrench_.setZero();
     sensor_zero_offset_.setZero();
     LoadToolGravityCompensationConfig(robot_cfg_path);
@@ -168,10 +163,8 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
     tool_com_m_.setZero();
     tool_inertia_compensation_enabled_ = false;
     tool_inertia_com_.setZero();
-    tool_inertia_filter_cutoff_hz_ = kDefaultInertiaCompCutoffHz;
     inertia_primary_joint_id_resolved_ = false;
     for (int i = 0; i < 7; ++i) inertia_primary_joint_id_[i] = -1;
-    // 滤波器在解析完截止频率后再构造, 见下方.
 
     double cutoff_hz = kDefaultInertiaCompCutoffHz;
 
@@ -198,12 +191,7 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
                             "Tool gravity compensation enabled, mass_kg=%.4f, gravity=%.4f, model_sign=%d",
                             tool_mass_kg_, tool_gravity_magnitude_, tool_model_sign_);
 
-                // 工具惯量补偿: 必须配置 3x3 inertia_com_kg_m2 才启用; 仅 primary 臂使用.
-                // 坐标系语义 (与 script/tool_inertia_estimate.py 输出一致):
-                //   - I_C^EE: 关于工具 COM, 在 EE 系基下表达 (kg·m^2)
-                //   - com_m_  : 从 EE 原点指向 COM, 在 EE 系下表达 (m)
-                // mass≈0 时惯量补偿在物理上无意义 (F=m·a 与 r_C×F 都退化), 同时避免配置错位
-                // (mass 错配为 0 但 inertia 非零) 时仍产生 ω×(I·ω) 导致非物理力矩.
+                // 仅在质量和 COM 惯量都有效时启用惯量补偿.
                 Eigen::Matrix3d inertia_com;
                 if (ReadYamlMatrix3(node["inertia_com_kg_m2"], inertia_com)) {
                     if (tool_mass_kg_ < FloatZeroTol) {
@@ -224,8 +212,6 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
                                 "Invalid inertia_com_kg_m2 (expect 3x3 list), tool inertia compensation disabled");
                 }
 
-                // 滤波器截止频率: 与脚本默认 5 Hz 对齐, 用户可在 yaml 中覆盖.
-                // 仅在惯量补偿启用时应用; 校验区间防止误配.
                 if (node["inertia_compensation_filter_hz"]) {
                     const double v = node["inertia_compensation_filter_hz"].as<double>();
                     if (!std::isfinite(v) || v < kMinInertiaCompCutoffHz || v > kMaxInertiaCompCutoffHz) {
@@ -242,7 +228,6 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
         RCLCPP_WARN(this->get_logger(), "Failed to load tool gravity compensation config: %s", e.what());
     }
 
-    tool_inertia_filter_cutoff_hz_ = cutoff_hz;
     if (tool_inertia_compensation_enabled_) {
         RCLCPP_INFO(this->get_logger(),
                     "Tool inertia compensation filter cutoff: %.2f Hz (1 kHz sampling, 2nd-order critically damped)",
@@ -321,23 +306,14 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
                                                           const Eigen::VectorXd& feedback_dq_primary,
                                                           bool* applied) {
     if (applied) *applied = false;
-    // 防御性早退 (wiring 已做过滤, 这里冗余以便函数本身可独立调用).
-    // 早退时把 wrench 数组置零, 避免 publish 线程读到上一次的有效值.
     auto early_return = [&]() {
         for (int i = 0; i < 6; ++i) {
             tool_inertia_wrench_ee_[i].store(0.0, std::memory_order_relaxed);
         }
-        // ω/α 同步标记无效: 与"惯量补偿未跑"语义同生同灭, 让 script 看到 NaN 直接 drop.
         const double nan_v = std::numeric_limits<double>::quiet_NaN();
         for (int i = 0; i < 3; ++i) {
             ee_omega_F_primary_[i].store(nan_v, std::memory_order_relaxed);
             ee_alpha_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-            ee_linear_velocity_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-            ee_linear_accel_raw_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-            ee_linear_accel_filtered_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-            inertia_force_from_ee_linear_acc_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-            inertia_force_from_alpha_cross_com_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-            inertia_force_from_omega_cross_omega_cross_com_F_primary_[i].store(nan_v, std::memory_order_relaxed);
         }
     };
     if (!tool_inertia_compensation_enabled_ || !tool_gravity_compensation_enabled_) {
@@ -356,10 +332,6 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
 
     constexpr double kDt = torque_ctrl_dt;  // 1 ms
 
-    // 注意: pinocchio::GetJacobiMatrix / GetFK 内部仍会构造 Data 与动态矩阵.
-    // 这是 robot_server_lib 当前 API 的限制 (cartesian_impedance_controller 等
-    // 1 kHz 控制器也是这样调用), 留作 lib 层后续优化项. 这里至少避免在表达式
-    // 路径上再次产生动态中间结果.
     const Eigen::MatrixXd J_armbase_dyn =
         pinocchio::GetJacobiMatrix(arm_model, feedback_q_primary);
     if (J_armbase_dyn.rows() != 6 || J_armbase_dyn.cols() != 7) {
@@ -372,7 +344,7 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
     const Vector3d v_ee_armbase = twist_armbase.head<3>();
     const Vector3d w_ee_armbase = twist_armbase.tail<3>();
 
-    // 首拍: 仅记录历史并暖滤波器 (Apply(0) 让滤波器以 0 作为初值开始), 直接跳过本周期补偿.
+    // 首拍只暖滤波器并记录历史.
     if (tool_inertia_first_sample_) {
         for (int i = 0; i < 3; ++i) ee_accel_filter_[i]->Apply(0.0);
         for (int i = 0; i < 3; ++i) omega_diff_filter_[i]->Apply(0.0);
@@ -386,17 +358,10 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
         for (int i = 0; i < 3; ++i) {
             ee_omega_F_primary_[i].store(nan_v, std::memory_order_relaxed);
             ee_alpha_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-            ee_linear_velocity_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-            ee_linear_accel_raw_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-            ee_linear_accel_filtered_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-            inertia_force_from_ee_linear_acc_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-            inertia_force_from_alpha_cross_com_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-            inertia_force_from_omega_cross_omega_cross_com_F_primary_[i].store(nan_v, std::memory_order_relaxed);
         }
         return wrench_ee;
     }
 
-    // 末端线加速度: 对 v_ee 做后向差分, 再 Butterworth 低通滤波
     Vector3d a_raw_armbase;
     Vector3d a_ee_armbase;
     {
@@ -405,9 +370,6 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
             a_ee_armbase[i] = ee_accel_filter_[i]->Apply(a_raw_armbase[i]);
         }
     }
-    // EE 角加速度: 直接对 ω = J_ω · dq 做后向差分再 Butterworth 低通滤波.
-    // 这条等价于 α = J_ω·ddq + J̇_ω·dq, 隐含包含 J̇·dq 修正项 (用 ddq · J_ω 缺这一项),
-    // 与 v_ee 那条链路对称, 滤波延迟一致.
     Vector3d alpha_ee_armbase;
     {
         const Vector3d alpha_raw = (w_ee_armbase - prev_omega_armbase_) / kDt;
@@ -418,76 +380,38 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
     prev_ee_linvel_armbase_ = v_ee_armbase;
     prev_omega_armbase_ = w_ee_armbase;
 
-    // EE 旋转 (从 EE 到 arm-base): 直接由 arm-only 模型的 FK 取得.
-    // 注意 GetEERotationWorldFromEE 返回的是 global<-ee, 对于 W1 这与 armbase<-ee 一般不同
-    // (左右臂 base 相对于躯干有固定旋转), 因此不能复用.
     const Eigen::Matrix4d T_armbase_ee = pinocchio::GetFK(arm_model, feedback_q_primary);
     const Eigen::Matrix3d R_a_e = T_armbase_ee.topLeftCorner<3, 3>();
 
-    // 工具 COM 在 arm-base 坐标的偏移 (从 EE 原点到 COM)
     const Vector3d r_C_armbase = R_a_e * tool_com_m_;
 
-    // COM 加速度 (arm-base): a_C = a_ee + α × r_C + ω × (ω × r_C)
     const Vector3d a_alpha_cross_com_armbase = alpha_ee_armbase.cross(r_C_armbase);
     const Vector3d a_omega_cross_omega_cross_com_armbase =
         w_ee_armbase.cross(w_ee_armbase.cross(r_C_armbase));
     const Vector3d a_C_armbase =
         a_ee_armbase + a_alpha_cross_com_armbase + a_omega_cross_omega_cross_com_armbase;
 
-    // COM 处的惯量矩阵在 arm-base: I_C_a = R * I_C * R^T
     const Eigen::Matrix3d I_C_armbase = R_a_e * tool_inertia_com_ * R_a_e.transpose();
 
-    // 工具产生的反作用力旋量 (arm-base 坐标, 等效在 EE 原点处):
-    //   F_a = m * a_C
-    //   τ_a (about EE origin) = I_C_a * α + ω × (I_C_a * ω) + r_C × (m * a_C)
-    // 这两个是"驱动工具运动需要的力/力矩"(物体的运动方程左边).
     const Vector3d F_armbase = tool_mass_kg_ * a_C_armbase;
     const Vector3d tau_about_ee_armbase =
         I_C_armbase * alpha_ee_armbase + w_ee_armbase.cross(I_C_armbase * w_ee_armbase) + r_C_armbase.cross(F_armbase);
 
-    // expected_inertia_wrench_ee = "传感器中应出现的工具惯性分量" (与 ApplyToolGravityCompensation
-    // 的 expected_wrench_ee 同一视角): 由牛顿第三定律, 这等于 -[F; τ] (即工具反作用回到传感器的方向),
-    // 旋到 EE 系并应用 model_sign. 与离线辨识脚本 tool_inertia_estimate.py 的约定:
-    //     F_meas ≈ m R^T g - m a_C            (重力补偿后残差 ≈ -m a_C)
-    //     M_meas ≈ -(I α + ω × I ω) + com × F_unbiased
-    // 完全一致 — 重力补偿后的 wrench - expected_inertia ≈ 0.
+    // 传感器视角下应扣除的惯量分量.
     Vector6d expected_inertia_wrench_ee;
     expected_inertia_wrench_ee.head<3>() = -static_cast<double>(tool_model_sign_) * (R_a_e.transpose() * F_armbase);
     expected_inertia_wrench_ee.tail<3>() =
         -static_cast<double>(tool_model_sign_) * (R_a_e.transpose() * tau_about_ee_armbase);
 
-    const double model_sign = static_cast<double>(tool_model_sign_);
-    const Vector3d inertia_force_from_ee_linear_acc_ee =
-        -model_sign * (R_a_e.transpose() * (tool_mass_kg_ * a_ee_armbase));
-    const Vector3d inertia_force_from_alpha_cross_com_ee =
-        -model_sign * (R_a_e.transpose() * (tool_mass_kg_ * a_alpha_cross_com_armbase));
-    const Vector3d inertia_force_from_omega_cross_omega_cross_com_ee =
-        -model_sign * (R_a_e.transpose() * (tool_mass_kg_ * a_omega_cross_omega_cross_com_armbase));
-
-    // 诊断: 暴露本周期实际扣除的惯量 wrench (EE 系, 6 维) 给 publish 线程.
     for (int i = 0; i < 6; ++i) {
         tool_inertia_wrench_ee_[i].store(expected_inertia_wrench_ee[i], std::memory_order_relaxed);
     }
 
-    // 发布 ω/α (F = ee_link 系) 给离线辨识脚本. ω/α 是自由向量, 直接 R^T 乘即可
-    // (α_F = R^T α_ab 与 d/dt(ω_F) 在连续时间下严格相等, 差项 -ω_F × ω_F = 0).
     const Vector3d w_ee_F = R_a_e.transpose() * w_ee_armbase;
     const Vector3d alpha_ee_F = R_a_e.transpose() * alpha_ee_armbase;
-    const Vector3d v_ee_F = R_a_e.transpose() * v_ee_armbase;
-    const Vector3d a_raw_ee_F = R_a_e.transpose() * a_raw_armbase;
-    const Vector3d a_filtered_ee_F = R_a_e.transpose() * a_ee_armbase;
     for (int i = 0; i < 3; ++i) {
         ee_omega_F_primary_[i].store(w_ee_F[i], std::memory_order_relaxed);
         ee_alpha_F_primary_[i].store(alpha_ee_F[i], std::memory_order_relaxed);
-        ee_linear_velocity_F_primary_[i].store(v_ee_F[i], std::memory_order_relaxed);
-        ee_linear_accel_raw_F_primary_[i].store(a_raw_ee_F[i], std::memory_order_relaxed);
-        ee_linear_accel_filtered_F_primary_[i].store(a_filtered_ee_F[i], std::memory_order_relaxed);
-        inertia_force_from_ee_linear_acc_F_primary_[i].store(inertia_force_from_ee_linear_acc_ee[i],
-                                                             std::memory_order_relaxed);
-        inertia_force_from_alpha_cross_com_F_primary_[i].store(inertia_force_from_alpha_cross_com_ee[i],
-                                                               std::memory_order_relaxed);
-        inertia_force_from_omega_cross_omega_cross_com_F_primary_[i].store(
-            inertia_force_from_omega_cross_omega_cross_com_ee[i], std::memory_order_relaxed);
     }
 
     if (applied) *applied = true;
@@ -507,8 +431,6 @@ void RobotServer::ResetToolInertiaCompensationState() {
     for (auto& f : force_sensor_gravity_filter_primary_) {
         if (f) f->Reset();
     }
-    // 失效路径下把诊断 wrench 置零, 避免 publish 线程读到过期数据. ω/α 写 NaN
-    // (与"惯量补偿未运行"语义一致, 让 script 一眼丢弃, 不与"静止" (=0) 混淆).
     for (int i = 0; i < 6; ++i) {
         tool_inertia_wrench_ee_[i].store(0.0, std::memory_order_relaxed);
     }
@@ -516,12 +438,6 @@ void RobotServer::ResetToolInertiaCompensationState() {
     for (int i = 0; i < 3; ++i) {
         ee_omega_F_primary_[i].store(nan_v, std::memory_order_relaxed);
         ee_alpha_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-        ee_linear_velocity_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-        ee_linear_accel_raw_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-        ee_linear_accel_filtered_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-        inertia_force_from_ee_linear_acc_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-        inertia_force_from_alpha_cross_com_F_primary_[i].store(nan_v, std::memory_order_relaxed);
-        inertia_force_from_omega_cross_omega_cross_com_F_primary_[i].store(nan_v, std::memory_order_relaxed);
     }
 }
 
@@ -610,7 +526,6 @@ void RobotServer::TorqueControlThreadFunc() {
                 ApplyToolGravityCompensation(zeroed_sensor_data_secondary, 1, &gravity_applied_secondary);
         }
         Vector6d sensor_data_primary_before_inertia = sensor_data_primary;
-        const Vector6d sensor_data_primary_gravity_raw = sensor_data_primary;
 
         // 使用临时变量接收共享内存数据
         RobotFeedback feedback_temp{};
@@ -660,8 +575,6 @@ void RobotServer::TorqueControlThreadFunc() {
                 inertia_primary_joint_id_resolved_;
 
             if (should_run_inertia) {
-                // 与惯量补偿的 a/alpha 滤波使用同一 cutoff, 让被扣减的测量 wrench 与
-                // force_sensor_inertia 在相位上匹配. sensor_force_ 是手动注入量, 不参与滤波。
                 sensor_data_primary = ApplyToolGravityMatchedFilterPrimary(sensor_data_primary);
                 sensor_data_primary_before_inertia = sensor_data_primary;
 
@@ -677,23 +590,16 @@ void RobotServer::TorqueControlThreadFunc() {
                     sensor_data_primary, inertia_q_primary_buf_, inertia_dq_primary_buf_,
                     &inertia_applied_primary);
             } else {
-                // 任一前置条件不满足都重置滤波器与历史, 避免下次有效样本带入旧状态
                 ResetToolInertiaCompensationState();
             }
         }
         if (!should_run_inertia && primary_wrench_valid) {
-            // 未运行惯量补偿时保持原语义: 重力补偿后的 wrench 不额外滤波。
-            // 若补偿失效, 下方安全策略会继续把 sensor_data_primary 清零。
             sensor_data_primary.head<3>() += sensor_force_;
         }
 
-        // 当惯量补偿运行时, primary 部分已通过同 cutoff 的滤波器做相位匹配。
         sensor_wrench_gravity_ = utils::GetSensorWrench(sensor_data_primary_before_inertia, sensor_data_secondary);
-        sensor_wrench_gravity_raw_ = utils::GetSensorWrench(sensor_data_primary_gravity_raw, sensor_data_secondary);
 
-        // 力控安全策略: 已启用但本周期未成功扣减的补偿视为"失效", 把对应臂的 sensor_data 清零,
-        // 让下游 JointImpedanceController::ComputeExternalTorque 的 isZero 短路使 torque_ext=0,
-        // 避免把"工具自重 / 惯性反作用"误当外力反馈进控制律.
+        // 补偿失效时直接清零对应外力输入, 避免把工具自重或惯性当成外力.
         const bool primary_compensation_failed =
             primary_wrench_valid &&
             ((tool_gravity_compensation_enabled_ && !gravity_applied_primary) ||
@@ -1150,7 +1056,6 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(torque_ff_arr_, index_offset, ndof_config_).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
         ",\n  \"force_sensor_gravity\":" + utils::VectorToJsonArrayString(sensor_wrench_gravity_).str() +
-        ",\n  \"force_sensor_gravity_raw\":" + utils::VectorToJsonArrayString(sensor_wrench_gravity_raw_).str() +
         ",\n  \"raw_force_sensor\":" + utils::VectorToJsonArrayString(raw_sensor_wrench_).str() +
         ",\n  \"force_sensor_bias\":" + utils::VectorToJsonArrayString(sensor_zero_offset_).str() +
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(negative_torque_limit_arr_, index_offset, ndof_config_).str() +
