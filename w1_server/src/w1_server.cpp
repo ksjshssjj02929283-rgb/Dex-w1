@@ -57,6 +57,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     sensor_wrench_.setZero();
     sensor_wrench_gravity_.setZero();
     raw_sensor_wrench_.setZero();
+    latest_torque_ext_.setZero();
     sensor_zero_offset_.setZero();
     LoadToolGravityCompensationConfig(robot_cfg_path);
 
@@ -657,12 +658,14 @@ void RobotServer::TorqueControlThreadFunc() {
             std::array<double, MAX_JOINT_NUM> torque_log_arr_{};
             std::array<double, MAX_JOINT_NUM> position_cmd_log_arr_{};
             std::array<double, MAX_JOINT_NUM> torque_ff_log_arr_{};
+            std::array<double, MAX_JOINT_NUM> torque_ext_log_arr_{};
             for (int i = 0; i < ndof_robot; ++i) {
                 position_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_position;
                 velocity_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_velocity;
                 torque_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_torque;
                 position_cmd_log_arr_[i] = robot_control_.joint_control[i].joint_position;
                 torque_ff_log_arr_[i] = robot_control_.joint_control[i].joint_torque_feedforward;
+                torque_ext_log_arr_[i] = latest_torque_ext_[i];
             }
 
             nanolog::NanoLogLine logline(nanolog::LogLevel::CRIT, __FILE__, __func__, __LINE__, false);
@@ -682,7 +685,9 @@ void RobotServer::TorqueControlThreadFunc() {
                     << ", \"joint_position_cmd\": "
                     << utils::VectorToJsonArrayString(position_cmd_log_arr_, index_offset, ndof_config_).str()
                     << ", \"joint_torque_feedforward\": "
-                    << utils::VectorToJsonArrayString(torque_ff_log_arr_, index_offset, ndof_config_).str() << "}";
+                    << utils::VectorToJsonArrayString(torque_ff_log_arr_, index_offset, ndof_config_).str()
+                    << ", \"torque_ext\": "
+                    << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str() << "}";
             nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
         }
 
@@ -733,6 +738,7 @@ void RobotServer::TorqueControlThreadFunc() {
         if (this->manager_buffers_.planner_manager_command->PeekLatest(&this->planner_cmd_) &&
             this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd)) {
             this->is_cmd_valid_ = true;
+            latest_torque_ext_ = torque_cmd.torque_ext;
             // 位置指令线性插值
             VectorDof interpolated_position = line_interpolator_.Interpolate(this->planner_cmd_.cmd.position);
             JointMeasurement manager_measurement{};
@@ -870,6 +876,7 @@ void RobotServer::TorqueControlThreadFunc() {
                 }
             }
         } else {
+            latest_torque_ext_.setZero();
             line_interpolator_.Reset();
             for (int i = 0; i < ndof_robot; ++i) {
                 butterworth_filter_[i]->Reset();  // 重置滤波器状态
@@ -1117,6 +1124,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(torque_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(torque_ff_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_torque_sensor\":" + utils::VectorToJsonArrayString(torque_sensor_arr_, index_offset, ndof_config_).str() +
+        ",\n  \"torque_ext\":" + utils::VectorToJsonArrayString(latest_torque_ext_, index_offset, ndof_config_).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
         ",\n  \"force_sensor_gravity\":" + utils::VectorToJsonArrayString(sensor_wrench_gravity_).str() +
         ",\n  \"raw_force_sensor\":" + utils::VectorToJsonArrayString(raw_sensor_wrench_).str() +

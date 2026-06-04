@@ -71,6 +71,7 @@ def parse_line(line, debug=False):
         "joint_torque",
         "joint_position_cmd",
         "joint_torque_feedforward",
+        "torque_ext",
     ]
     for k in array_keys:
         if k in data:
@@ -263,6 +264,7 @@ def main():
     pos_after_filter = build_array("joint_position_after_filter")
     tor = build_array("joint_torque")
     tor_ff = build_array("joint_torque_feedforward")
+    tor_ext = build_array("torque_ext")
     vel = build_array("joint_velocity")
 
     # 底盘数据解析（单个值，不是数组）
@@ -522,6 +524,10 @@ def main():
             # 4) torque
             ax = axes[3]
             ax.plot(times, tor[:, joint_idx], label="torque", color="tab:red", linewidth=1.2)
+            if np.isfinite(tor_ff[:, joint_idx]).any():
+                ax.plot(times, tor_ff[:, joint_idx], label="torque_ff", color="tab:green", linewidth=1.0, linestyle="--")
+            if np.isfinite(tor_ext[:, joint_idx]).any():
+                ax.plot(times, tor_ext[:, joint_idx], label="torque_ext", color="tab:purple", linewidth=1.0, linestyle=":")
             ax.grid(True, alpha=0.3, linestyle=':')
             ax.tick_params(labelsize=8)
             ax.set_ylabel("Torque [Nm]", fontsize=9)

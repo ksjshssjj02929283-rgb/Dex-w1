@@ -18,7 +18,8 @@ public:
                              const VectorDof& damping,
                              double integral_ratio,
                              const Vector12d& sensor_wrench,
-                             VectorDof& tau_command);
+                             VectorDof& tau_command,
+                             VectorDof* torque_ext_out = nullptr);
 
     void Reset();
 

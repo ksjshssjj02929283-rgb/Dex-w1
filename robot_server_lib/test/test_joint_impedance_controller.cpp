@@ -16,7 +16,9 @@ RobotModel LoadRobotModel() {
     return utils::GetRobotModelFromConfig(robot_cfg_path);
 }
 
-VectorDof ComputeJointImpedanceTorque(const RobotModel& robot_model, const Vector12d& sensor_wrench) {
+VectorDof ComputeJointImpedanceTorque(const RobotModel& robot_model,
+                                      const Vector12d& sensor_wrench,
+                                      VectorDof* torque_ext_out = nullptr) {
     dynamics::JointImpedanceController controller(robot_model);
     VectorDof feedback_q = VectorDof::Zero();
     VectorDof feedback_dq = VectorDof::Zero();
@@ -26,7 +28,7 @@ VectorDof ComputeJointImpedanceTorque(const RobotModel& robot_model, const Vecto
     VectorDof damping = VectorDof::Zero();
     VectorDof tau = VectorDof::Zero();
     controller.UpdateTorqueCommand(feedback_q, feedback_dq, cmd_q, cmd_dq, stiffness, damping, 0.0, sensor_wrench,
-                                   tau);
+                                   tau, torque_ext_out);
     return tau;
 }
 
@@ -49,7 +51,8 @@ TEST(JointImpedanceControllerTest, ExternalWrenchUsesLocalJacobianAndSaturates) 
     Vector12d sensor_wrench = Vector12d::Zero();
     sensor_wrench.head<6>() << 150.0, -120.0, 4.0, 15.0, -20.0, 0.2;
 
-    const VectorDof tau = ComputeJointImpedanceTorque(robot_model, sensor_wrench);
+    VectorDof torque_ext = VectorDof::Zero();
+    const VectorDof tau = ComputeJointImpedanceTorque(robot_model, sensor_wrench, &torque_ext);
 
     Eigen::VectorXd q_arm = Eigen::VectorXd::Zero(robot_model.primary_arm_model_ptr->nv);
     const Eigen::MatrixXd jacobian_local =
@@ -62,4 +65,6 @@ TEST(JointImpedanceControllerTest, ExternalWrenchUsesLocalJacobianAndSaturates) 
 
     EXPECT_TRUE(tau.isApprox(expected_tau, 1e-9)) << "tau: " << tau.transpose()
                                                  << "\nexpected: " << expected_tau.transpose();
+    EXPECT_TRUE(torque_ext.isApprox(expected_tau, 1e-9)) << "torque_ext: " << torque_ext.transpose()
+                                                        << "\nexpected: " << expected_tau.transpose();
 }
