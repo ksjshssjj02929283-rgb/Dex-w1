@@ -14,8 +14,8 @@ namespace dynamics
 {
 
 // 调度器：根据构型和版本返回对应的逆动力学函数指针
-typedef void (*RegressionFunc)(double*, const double*, const double*, const double*, const double*, const double*);
-typedef void (*MassTermFunc)(double*, const double*, const double*, const double*);
+using RegressionFunc = void (*)(double*, const double*, const double*, const double*, const double*, const double*);
+using MassTermFunc = void (*)(double*, const double*, const double*, const double*);
 
 struct RobotDynamics {
     RegressionFunc left_regression_func;
@@ -42,7 +42,15 @@ struct DynDispatcher {
     static RegressionFunc GetRegressionFunc(const std::string& robot_key, bool is_left) {
         auto it = GetRegistry().find(robot_key);
         if (it != GetRegistry().end()) {
-            return is_left ? it->second.left_regression_func : it->second.right_regression_func;
+            auto func = is_left ? it->second.left_regression_func : it->second.right_regression_func;
+            if (!func) {
+                std::cerr << "[ERROR] Null regression func pointer for robot_key: " << robot_key
+                          << ", is_left: " << is_left << std::endl;
+                LOG_CRIT << "Null regression func pointer for robot_key: " << robot_key
+                         << ", is_left: " << is_left;
+                std::exit(EXIT_FAILURE);
+            }
+            return func;
         }
         std::cerr << "[ERROR] No symbolic inverse dynamics for robot_key: " << robot_key << std::endl;
         std::exit(EXIT_FAILURE);
@@ -51,7 +59,15 @@ struct DynDispatcher {
     static MassTermFunc GetMassTermFunc(const std::string& robot_key, bool is_left) {
         auto it = GetRegistry().find(robot_key);
         if (it != GetRegistry().end()) {
-            return is_left ? it->second.left_mass_term_func : it->second.right_mass_term_func;
+            auto func = is_left ? it->second.left_mass_term_func : it->second.right_mass_term_func;
+            if (!func) {
+                std::cerr << "[ERROR] Null mass term func pointer for robot_key: " << robot_key
+                          << ", is_left: " << is_left << std::endl;
+                LOG_CRIT << "Null mass term func pointer for robot_key: " << robot_key
+                         << ", is_left: " << is_left;
+                std::exit(EXIT_FAILURE);
+            }
+            return func;
         }
         std::cerr << "[ERROR] No symbolic mass term func for robot_key: " << robot_key << std::endl;
         LOG_CRIT << "No symbolic mass term func for robot_key: " << robot_key;
@@ -138,6 +154,21 @@ Eigen::MatrixXd GetMassMatrixBySymbol(const RobotModel& robot_model, const Eigen
         Eigen::VectorXd col_out = Eigen::VectorXd::Zero(7);
         func(col_out.data(), q_arm.data(), ddq_arm.data(), dyn_base_params.data());
         M_matrix.col(col) = col_out;
+    }
+
+    Eigen::MatrixXd asym = M_matrix - M_matrix.transpose();
+    if (asym.norm() > FloatZeroTol) {
+        LOG_CRIT << "Mass matrix is not symmetric! norm: " << asym.norm();
+    }
+
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(M_matrix);
+    if (es.info() != Eigen::Success) {
+        LOG_CRIT << "Mass matrix eigenvalue decomposition failed!";
+    } else {
+        double min_eig = es.eigenvalues().minCoeff();
+        if (min_eig <= FloatZeroTol) {
+            LOG_CRIT << "Mass matrix is not positive definite! min eigenvalue: " << min_eig;
+        }
     }
 
     return M_matrix;
