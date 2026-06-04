@@ -659,6 +659,7 @@ void RobotServer::TorqueControlThreadFunc() {
             std::array<double, MAX_JOINT_NUM> position_cmd_log_arr_{};
             std::array<double, MAX_JOINT_NUM> torque_ff_log_arr_{};
             std::array<double, MAX_JOINT_NUM> torque_ext_log_arr_{};
+            Vector12d force_sensor_log = sensor_wrench_;
             for (int i = 0; i < ndof_robot; ++i) {
                 position_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_position;
                 velocity_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_velocity;
@@ -687,7 +688,9 @@ void RobotServer::TorqueControlThreadFunc() {
                     << ", \"joint_torque_feedforward\": "
                     << utils::VectorToJsonArrayString(torque_ff_log_arr_, index_offset, ndof_config_).str()
                     << ", \"torque_ext\": "
-                    << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str() << "}";
+                    << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
+                    << ", \"force_sensor\": "
+                    << utils::VectorToJsonArrayString(force_sensor_log).str() << "}";
             nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
         }
 
