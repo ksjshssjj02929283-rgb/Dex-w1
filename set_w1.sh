@@ -227,32 +227,32 @@ case $PROPERTY_KEY in
         ;;
     state)
         echo "Monitoring feedback state..."
-        python3 script/monitor_feedback.py
+        python3 "${SCRIPT_DIR}/script/monitor_feedback.py"
         exit 0
         ;;
     shm)
         echo "Monitoring shared memory..."
-        python3 script/monitor_shm.py
+        python3 "${SCRIPT_DIR}/script/monitor_shm.py"
         exit 0
         ;;
     control)
         echo "Starting Joint Control GUI..."
-        python3 script/qt_joint_control.py
+        python3 "${SCRIPT_DIR}/script/qt_joint_control.py"
         exit 0
         ;;
     dyn)
         echo "Starting Dynamic Parameter Identification GUI..."
-        python3 script/qt_dyn_params_ident.py
+        python3 "${SCRIPT_DIR}/script/qt_dyn_params_ident.py"
         exit 0
         ;;
     trajgen)
         echo "Starting Trajectory Generator..."
-        python3 script/dyn_params_ident/traj_generator.py
+        python3 "${SCRIPT_DIR}/script/dyn_params_ident/traj_generator.py"
         exit 0
         ;;
     vis)
         echo "Starting Visualization ROS2 node..."
-        python3 script/visual_ros2_node.py
+        python3 "${SCRIPT_DIR}/script/visual_ros2_node.py"
         exit 0
         ;;
     hardware)

@@ -21,8 +21,8 @@ if [ -z "$ROS_DISTRO" ]; then
 fi
 
 if [ -f "${WORKSPACE_DIR}/.gitmodules" ]; then
-    git submodule sync --recursive
-    git submodule update --init --recursive
+    git -C "${WORKSPACE_DIR}" submodule sync --recursive
+    git -C "${WORKSPACE_DIR}" submodule update --init --recursive
 fi
 cd "${WORKSPACE_DIR}/.."
 colcon build --parallel-workers "${COLCON_PARALLEL_WORKERS}" --cmake-args -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DENABLE_TORQUE_CONTROL_SIMULATION=OFF -DCMAKE_CXX_COMPILER_LAUNCHER= -DCMAKE_C_COMPILER_LAUNCHER= --base-paths dexe_robot_server --packages-up-to robot_server_lib w1_server sim_server
