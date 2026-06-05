@@ -228,8 +228,8 @@ if __name__ == "__main__":
     duration = 60.0
     dt = 0.01
     plot = False
-    wf = 0.15 * np.pi # 降低基频权重（原为 0.3 * np.pi），减缓轨迹波动频率
-    L = 3             # 减少叠加的正弦波项数（原为 5），使轨迹更平滑
+    wf = 0.12 * np.pi # 轨迹基频
+    L = 3             # 轨迹谐波数
     ndof = 7
 
     # Setup Paths
