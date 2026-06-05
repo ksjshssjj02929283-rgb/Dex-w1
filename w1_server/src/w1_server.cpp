@@ -626,53 +626,6 @@ void RobotServer::TorqueControlThreadFunc() {
         if (ret) {
             this->SwitchControlWord();
         }
-        // 如果开启了记录, 则在独立的记录日志中记录数据
-        if (this->manager_info_.robot_property.enable_record &&
-            (manager_state_ == Status::Idle || manager_state_ == Status::Running) && loop_counter % 1 == 0) {
-            int index_offset = GetFirstJointIndex();
-            double timestamp_s = this->now().nanoseconds() / 1e9;
-
-            // 从 JointFeedback 中提取字段用于日志记录
-            std::array<double, MAX_JOINT_NUM> position_log_arr_{};
-            std::array<double, MAX_JOINT_NUM> velocity_log_arr_{};
-            std::array<double, MAX_JOINT_NUM> torque_log_arr_{};
-            std::array<double, MAX_JOINT_NUM> position_cmd_log_arr_{};
-            std::array<double, MAX_JOINT_NUM> torque_ff_log_arr_{};
-            std::array<double, MAX_JOINT_NUM> torque_ext_log_arr_{};
-            Vector12d force_sensor_log = sensor_wrench_;
-            for (int i = 0; i < ndof_robot; ++i) {
-                position_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_position;
-                velocity_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_velocity;
-                torque_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_torque;
-                position_cmd_log_arr_[i] = robot_control_.joint_control[i].joint_position;
-                torque_ff_log_arr_[i] = robot_control_.joint_control[i].joint_torque_feedforward;
-                torque_ext_log_arr_[i] = latest_torque_ext_[i];
-            }
-
-            nanolog::NanoLogLine logline(nanolog::LogLevel::CRIT, __FILE__, __func__, __LINE__, false);
-            logline << "{\"timestamp\": \"" << std::to_string(timestamp_s) << "\", "
-                    << "\"joint_position\": "
-                    << utils::VectorToJsonArrayString(position_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"joint_velocity\": "
-                    << utils::VectorToJsonArrayString(velocity_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"joint_torque\":"
-                    << utils::VectorToJsonArrayString(torque_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"joint_position_input\": "
-                    << utils::VectorToJsonArrayString(joint_position_input_, index_offset, ndof_config_).str()
-                    << ", \"joint_position_after_ruckig\": "
-                    << utils::VectorToJsonArrayString(joint_position_before_filter_, index_offset, ndof_config_).str()
-                    << ", \"joint_position_after_filter\": "
-                    << utils::VectorToJsonArrayString(joint_position_after_filter_, index_offset, ndof_config_).str()
-                    << ", \"joint_position_cmd\": "
-                    << utils::VectorToJsonArrayString(position_cmd_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"joint_torque_feedforward\": "
-                    << utils::VectorToJsonArrayString(torque_ff_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"torque_ext\": "
-                    << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"force_sensor\": "
-                    << utils::VectorToJsonArrayString(force_sensor_log).str() << "}";
-            nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
-        }
         // 如果机器人就绪，则写入测量数据
         if (this->is_robot_ready_) {
             // 关节反馈数据写入测量数据
@@ -858,6 +811,53 @@ void RobotServer::TorqueControlThreadFunc() {
                 butterworth_filter_[i]->Reset();  // 重置滤波器状态
                 input_shapers_[i]->Reset();       // 重置输入整形器状态
             }
+        }
+        // 如果开启了记录, 则在独立的记录日志中记录数据
+        // 此处位于 sensor_wrench_ 更新和 LoopOnce() 之后, 使 force_sensor 与 torque_ext 来自同一 tick 的计算
+        if (this->manager_info_.robot_property.enable_record &&
+            (manager_state_ == Status::Idle || manager_state_ == Status::Running) && loop_counter % 1 == 0) {
+            int index_offset = GetFirstJointIndex();
+            double timestamp_s = this->now().nanoseconds() / 1e9;
+
+            std::array<double, MAX_JOINT_NUM> position_log_arr_{};
+            std::array<double, MAX_JOINT_NUM> velocity_log_arr_{};
+            std::array<double, MAX_JOINT_NUM> torque_log_arr_{};
+            std::array<double, MAX_JOINT_NUM> position_cmd_log_arr_{};
+            std::array<double, MAX_JOINT_NUM> torque_ff_log_arr_{};
+            std::array<double, MAX_JOINT_NUM> torque_ext_log_arr_{};
+            Vector12d force_sensor_log = sensor_wrench_;
+            for (int i = 0; i < ndof_robot; ++i) {
+                position_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_position;
+                velocity_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_velocity;
+                torque_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_torque;
+                position_cmd_log_arr_[i] = robot_control_.joint_control[i].joint_position;
+                torque_ff_log_arr_[i] = robot_control_.joint_control[i].joint_torque_feedforward;
+                torque_ext_log_arr_[i] = latest_torque_ext_[i];
+            }
+
+            nanolog::NanoLogLine logline(nanolog::LogLevel::CRIT, __FILE__, __func__, __LINE__, false);
+            logline << "{\"timestamp\": \"" << std::to_string(timestamp_s) << "\", "
+                    << "\"joint_position\": "
+                    << utils::VectorToJsonArrayString(position_log_arr_, index_offset, ndof_config_).str()
+                    << ", \"joint_velocity\": "
+                    << utils::VectorToJsonArrayString(velocity_log_arr_, index_offset, ndof_config_).str()
+                    << ", \"joint_torque\":"
+                    << utils::VectorToJsonArrayString(torque_log_arr_, index_offset, ndof_config_).str()
+                    << ", \"joint_position_input\": "
+                    << utils::VectorToJsonArrayString(joint_position_input_, index_offset, ndof_config_).str()
+                    << ", \"joint_position_after_ruckig\": "
+                    << utils::VectorToJsonArrayString(joint_position_before_filter_, index_offset, ndof_config_).str()
+                    << ", \"joint_position_after_filter\": "
+                    << utils::VectorToJsonArrayString(joint_position_after_filter_, index_offset, ndof_config_).str()
+                    << ", \"joint_position_cmd\": "
+                    << utils::VectorToJsonArrayString(position_cmd_log_arr_, index_offset, ndof_config_).str()
+                    << ", \"joint_torque_feedforward\": "
+                    << utils::VectorToJsonArrayString(torque_ff_log_arr_, index_offset, ndof_config_).str()
+                    << ", \"torque_ext\": "
+                    << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
+                    << ", \"force_sensor\": "
+                    << utils::VectorToJsonArrayString(force_sensor_log).str() << "}";
+            nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
         }
         // 如果状态字发生变化了则打印
         static int16_t last_status_word_ = -1;
