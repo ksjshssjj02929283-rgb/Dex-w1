@@ -6,7 +6,7 @@ print_usage() {
     echo ""
     echo "Available property types:"
     echo "  echo            - Echo robot server state topic once"
-    echo "  force           - Monitor force_sensor, force_sensor_gravity, raw_force_sensor, force_sensor_bias, and force_sensor_inertia at 10Hz"
+    echo "  force           - Monitor torque_ext, force_sensor, force_sensor_gravity, raw_force_sensor, force_sensor_bias, and force_sensor_inertia at 10Hz"
     echo "  log             - Print robot server log"
     echo "  clear_error     - Clear errors (no value needed)"
     echo "  drag            - Enable/Disable drag mode (value: 0 or 1)"
@@ -92,6 +92,7 @@ class ForceMonitor(Node):
         try:
             data = json.loads(msg.data)
             latest = (
+                data.get("torque_ext", []),
                 data.get("force_sensor", []),
                 data.get("force_sensor_gravity", []),
                 data.get("raw_force_sensor", []),
@@ -108,9 +109,10 @@ class ForceMonitor(Node):
             latest = self.latest
         if latest is None:
             return
-        (force_sensor, force_sensor_gravity, raw_force_sensor, force_sensor_bias,
+        (torque_ext, force_sensor, force_sensor_gravity, raw_force_sensor, force_sensor_bias,
          force_sensor_inertia) = latest
         print("------------------------------------------------", flush=True)
+        print(f"torque_ext: {json.dumps(torque_ext, separators=(',', ':'))},", flush=True)
         print(f"force_sensor: {json.dumps(force_sensor, separators=(',', ':'))},", flush=True)
         print(f"force_sensor_gravity: {json.dumps(force_sensor_gravity, separators=(',', ':'))},", flush=True)
         print(f"raw_force_sensor: {json.dumps(raw_force_sensor, separators=(',', ':'))},", flush=True)
