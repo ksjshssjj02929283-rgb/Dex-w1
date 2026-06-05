@@ -10,6 +10,8 @@ from action_msgs.msg import GoalStatus
 from scipy.spatial.transform import Rotation as R
 from nav2_msgs.action import NavigateThroughPoses, NavigateToPose
 from nav_interfaces.action import PreciseControl
+from nav_interfaces.msg import NavPoint
+from nav_interfaces.srv import GetAllNavPoints
 from chassis_interfaces.action import AutoCharging
 from rcl_interfaces.srv import SetParameters, GetParameters
 from rcl_interfaces.msg import ParameterType
@@ -91,6 +93,8 @@ class NavigationClient(ABC, Node):
         self._road_nav_success = False
         self._last_road_nav_feedback = None
         self._last_road_nav_result_message = ""
+        self._nav_points_client = None
+        self._nav_points_timeout_sec = 10.0
         self._control_lock = threading.Lock()
         self._control_goal_handle = None
         self._control_result_future = None
@@ -458,6 +462,71 @@ class NavigationClient(ABC, Node):
             self.get_logger().error(
                 f"Failed to cancel NavigateThroughPoses goal: {e}")
             return False
+
+    def _parse_nav_point(
+            self,
+            point: NavPoint) -> tuple[str, tuple[float, float, float]] | None:
+        """从 NavPoint 消息解析点位名称和 x/y/theta_rad。"""
+        if not isinstance(point, NavPoint):
+            self.get_logger().warning(
+                f"Skip unexpected nav point type: {type(point).__name__}")
+            return None
+
+        if not point.name:
+            self.get_logger().warning("Skip nav point with empty name.")
+            return None
+
+        return (
+            str(point.name),
+            (
+                float(point.x),
+                float(point.y),
+                float(point.theta),
+            ),
+        )
+
+    def get_all_nav_points(self) -> dict[str, tuple[float, float, float]]:
+        """获取所有路网导航点，返回点位名称到 x/y/theta_rad 的映射。"""
+        if self._nav_points_client is None:
+            self.get_logger().error(
+                "GetAllNavPoints service client not initialized.")
+            return {}
+
+        service_name = self._nav_points_client.srv_name
+        self.get_logger().info(
+            f"Waiting for GetAllNavPoints service: {service_name}")
+        if not self._nav_points_client.wait_for_service(
+                timeout_sec=self._nav_points_timeout_sec):
+            self.get_logger().error("GetAllNavPoints service is not available.")
+            return {}
+
+        future = self._nav_points_client.call_async(GetAllNavPoints.Request())
+        rclpy.spin_until_future_complete(
+            self, future, timeout_sec=self._nav_points_timeout_sec)
+        if not future.done():
+            self.get_logger().error("GetAllNavPoints service call timed out.")
+            return {}
+
+        response = future.result()
+        if response is None:
+            exception_msg = (str(future.exception())
+                             if future.exception() else "unknown error")
+            self.get_logger().error(
+                f"GetAllNavPoints service call failed: {exception_msg}")
+            return {}
+        if not response.success:
+            self.get_logger().error(
+                "GetAllNavPoints service returned success=False.")
+            return {}
+
+        points_by_name: dict[str, tuple[float, float, float]] = {}
+        for point in response.points:
+            parsed_point = self._parse_nav_point(point)
+            if parsed_point is None:
+                continue
+            name, pose = parsed_point
+            points_by_name[name] = pose
+        return points_by_name
 
     def _auto_charging_feedback_callback(self, feedback_msg):
         feedback = feedback_msg.feedback

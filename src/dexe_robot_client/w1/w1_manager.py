@@ -833,6 +833,19 @@ class W1Manager:
         ).get_road_navigation_result()
         return StatusCode.SUCCESS, success, message
 
+    def get_all_nav_points(
+            self) -> tuple[StatusCode, dict[str, tuple[float, float, float]]]:
+        """获取所有路网导航点，返回点位名称到 x/y/theta_rad 的映射。"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL, {}
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL, {}
+        nav_points = self._get_chassis_client().get_all_nav_points()
+        return (StatusCode.SUCCESS if nav_points else StatusCode.FAIL,
+                nav_points)
+
     def get_control_status(self) -> str:
         """获取底盘控制状态"""
         if not self._use_nav:
@@ -853,6 +866,17 @@ class W1Manager:
             self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL
         res = self._get_chassis_client().set_chassis_auto_charging()
+        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
+
+    def cancel_auto_charging(self) -> StatusCode:
+        """取消当前回充 action"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        res = self._get_chassis_client().cancel_auto_charging()
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def cancel_chassis_motion(self) -> StatusCode:

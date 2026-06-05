@@ -24,6 +24,7 @@
 | 底盘位姿反馈 | `/feedback/chassis_pose` | `/feedback_sim/chassis_pose` | `PoseStamped` |
 | Nav2 导航 | `navigate_to_pose` action | 未初始化 action client | 仿真模式调用 `set_chassis_nav2_position()` 当前会有空指针风险 |
 | 路网/多路点导航 | `/navigate_through_poses` action | 未初始化 action client | `NavigateThroughPoses`，waypoints yaw 使用弧度 |
+| 路网导航点映射 | `/map_asset_manager/get_all_nav_points` service | `/map_asset_manager/get_all_nav_points` service | 返回点位名称到 `(x, y, theta_rad)` 的映射 |
 | Nav2 pose publisher | `/control/nav2_pose` | `/control_sim/nav2_pose` | 已创建，但当前导航发送逻辑不使用 publisher |
 | 底盘精控 | `control/precise_control` action | `control/precise_control` action | 目标 frame 为 `base_link` |
 | 自动回充 | `/auto_charging` action | 未初始化 | `chassis_interfaces/action/AutoCharging` |
@@ -86,6 +87,14 @@ Nav2 发送流程：
 6. 异步 `send_goal_async()` 并注册 feedback/result callback。
 7. feedback 更新为 `EXECUTING`，result 根据 action status 映射为 `SUCCEEDED`、`CANCELED`、`ABORTED` 等状态。
 
+路网导航点查询流程：
+
+1. `ChassisClient` 默认创建 `/map_asset_manager/get_all_nav_points` service client。
+2. `get_all_nav_points()` 等待 `nav_interfaces/srv/GetAllNavPoints` 服务，默认最多 10 秒。
+3. 服务返回 `success=False`、调用超时或异常时返回空字典。
+4. 对 `response.points` 中的 `nav_interfaces/msg/NavPoint` 逐个解析，跳过空名称或非预期类型。
+5. 返回 `dict[str, tuple[float, float, float]]`，键为点位名称，值为 `(x, y, theta_rad)`。
+
 回充发送流程：
 
 1. 等待 `/auto_charging` action server，默认最多 10 秒。
@@ -98,6 +107,7 @@ Nav2 发送流程：
 
 | 服务 | 类型 | 用途 |
 | --- | --- | --- |
+| `/map_asset_manager/get_all_nav_points` | `nav_interfaces/srv/GetAllNavPoints` | 获取路网导航点名称到 `(x, y, theta_rad)` 的映射 |
 | `/controller_server/set_parameters` | `rcl_interfaces/srv/SetParameters` | 写 controller 参数 |
 | `/controller_server/get_parameters` | `rcl_interfaces/srv/GetParameters` | 读取校验 controller 参数 |
 | `/local_costmap/local_costmap/set_parameters` | `SetParameters` | 写 local costmap 参数 |
@@ -131,6 +141,7 @@ Nav2 发送流程：
 | `get_road_navigation_status()` | 无 | `str` | 返回本地路网导航状态缓存 |
 | `get_road_navigation_result()` | 无 | `(bool, str)` | 返回最近一次路网导航结果成功标志和消息 |
 | `cancel_road_navigation()` | 无 | `bool` | 通过当前路网导航 goal handle 发送取消请求 |
+| `get_all_nav_points()` | 无 | `dict[str, tuple[float, float, float]]` | 获取所有路网导航点，返回点位名称到 `(x, y, theta_rad)` 的映射 |
 | `set_chassis_control_position(position)` | `[x, 0, yaw_deg]` | `bool` | 发送底盘精控 action，非阻塞 |
 | `get_control_status(consume=True)` | 兼容参数 | `str` | 返回本地精控状态缓存，当前不消费终态 |
 | `refresh_control_status()` | 无 | `bool` | 兼容旧接口，当前只判断状态不是 `UNKNOWN` |
@@ -157,8 +168,10 @@ Nav2 发送流程：
 | `get_nav_status()` | `get_nav_state()` | `(StatusCode, str)` | 获取导航状态 |
 | `get_road_navigation_status()` | `get_road_navigation_status()` | `(StatusCode, str)` | 获取路网/多路点导航状态 |
 | `get_road_navigation_result()` | `get_road_navigation_result()` | `(StatusCode, bool, str)` | 获取最近一次路网/多路点导航结果 |
+| `get_all_nav_points()` | `get_all_nav_points()` | `(StatusCode, dict[str, tuple[float, float, float]])` | 获取所有路网导航点名称到 `(x, y, theta_rad)` 的映射 |
 | `get_control_status()` | `get_control_status()` | `(StatusCode, str)` | 当前函数标注为 `str`，实际返回元组 |
 | `set_auto_charging()` | `set_chassis_auto_charging()` | `StatusCode` | 请求自动回充 |
+| `cancel_auto_charging()` | `cancel_auto_charging()` | `StatusCode` | 取消当前回充 action |
 | `cancel_chassis_motion()` | `cancel_chassis_nav2()` + `cancel_road_navigation()` + `cancel_chassis_control()` | `StatusCode` | 任一取消请求发出成功即返回成功 |
 | `set_chassis_footprint(vertices)` | `set_footprint()` | `StatusCode` | 设置 costmap footprint |
 | `set_chassis_nav_tolerance(xy_tol, yaw_tol)` | `set_goal_tolerance()` | `StatusCode` | 设置导航容差 |
@@ -226,6 +239,26 @@ Nav2 发送流程：
 
 注意：`get_nav_state()` 和 `get_control_status()` 只是读取本地缓存，不主动 `spin_once()`。在 `W1Manager` 正常路径中，节点已经加入 `MultiThreadedExecutor` 后台 spin；如果直接单独使用 `ChassisClient`，调用方需要自己 spin，或调用会触发 spin 的接口。
 
+## 安装与测试
+
+在 `dexe_robot_client` 仓库根目录下可以通过 Python build 生成安装包：
+
+```bash
+python3 -m build
+```
+
+构建完成后，`dexe_robot_client/dist/` 下会生成 `dexe_robot_client_*.whl` 文件。进入该目录或直接指定 wheel 路径后，可以用 `pip install` 安装进行测试：
+
+```bash
+pip install *.whl
+```
+
+如果在仓库根目录直接安装，也可以使用：
+
+```bash
+pip install dist/*.whl
+```
+
 ## 典型调用方式
 
 ```python
@@ -244,6 +277,15 @@ w1 = W1Manager(
 if w1.connect() == StatusCode.SUCCESS:
     w1.move_chassis_nav2([1.0, 0.5, 90.0])
     status_code, nav_status = w1.get_nav_status()
+
+    status_code, nav_points = w1.get_all_nav_points()
+    if status_code == StatusCode.SUCCESS:
+        waypoints = [
+            nav_points["point_a"],
+            nav_points["point_b"],
+        ]
+        w1.move_chassis_road_navigation(waypoints)
+
     w1.move_chassis_road_navigation([
         [1.0, 0.5, 0.0],
         [1.5, 0.5, 1.57],

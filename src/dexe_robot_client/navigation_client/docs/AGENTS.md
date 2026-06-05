@@ -16,6 +16,7 @@
 - 新增或移除 ROS 依赖时，应同步维护 ROS 接口表，必要时同步仓库根目录 `docs/README.md`。
 - 自动回充当前使用 `/auto_charging` (`chassis_interfaces/action/AutoCharging`) action，不应再按 `std_srvs/srv/Trigger` service 描述或实现。
 - 路网/多路点导航当前使用 `/navigate_through_poses` (`nav2_msgs/action/NavigateThroughPoses`) action；`waypoints` 的 yaw 按弧度记录，不要与 `move_chassis_nav2()` 的角度单位混淆。
+- 路网导航点映射当前使用 `/map_asset_manager/get_all_nav_points` (`nav_interfaces/srv/GetAllNavPoints`) service；返回值按 `dict[str, tuple[float, float, float]]` 记录，tuple 含义为 `(x, y, theta_rad)`。
 - 记录问题时应区分“已确认代码现状”和“推断风险”，避免把待验证假设写成结论。
 
 ## 构建与验证

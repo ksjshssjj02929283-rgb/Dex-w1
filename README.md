@@ -96,6 +96,8 @@ More examlpes see `dexe_robot_client/examples`.
 
 目标仍基于 `base_link`：`position` 为 `[x, 0, yaw]`，`yaw` 单位为度，`x` 和 `yaw` 不能同时非零。控制发送行为与导航一致，不因本地旧 goal handle 或旧状态拦截新目标；`get_control_status()` 像 `get_nav_state()` 一样返回 action feedback/result 维护的本地状态，不消费终态；`cancel_chassis_control()` 通过当前 action goal handle 发送取消请求。
 
+路网导航通过 `/navigate_through_poses` (`nav2_msgs/action/NavigateThroughPoses`) 发送多路点任务，`waypoints` 使用 `[x, y, yaw_rad]`；`get_all_nav_points()` 通过 `/map_asset_manager/get_all_nav_points` (`nav_interfaces/srv/GetAllNavPoints`) 获取点位名称到 `(x, y, theta_rad)` 的映射。
+
 
 ## 🏷️ Others
 #### Branches
