@@ -1,33 +1,33 @@
 # === 机器人基本配置 ===
 config_version: v01
 robot_type: w1
-version: v023
+version: v024
 left_hand_type: null
 right_hand_type: null
 
 file_path:
   robot_urdf: ../install/robot_server_lib/share/robot_server_lib/robot_models/w1/robot.urdf
 ros2_to_urdf_map:
-  ANKLE: ANKLE_PITCH
-  KNEE: KNEE_PITCH
-  BUTTOCK: BUTTOCK_PITCH
-  WAIST: WAIST_YAW
-  NECK1: HEAD_YAW_J1
-  NECK2: HEAD_PITCH_J2
-  LEFT_J1: SHOULDER_PITCH_L_J1
-  LEFT_J2: SHOULDER_ROLL_L_J2
-  LEFT_J3: ELBOW_PITCH_L_J3
-  LEFT_J4: ELBOW_YAW_L_J4
-  LEFT_J5: WRIST_PITCH_L_J5
-  LEFT_J6: WRIST_YAW_L_J6
-  LEFT_J7: WRIST_ROLL_L_J7
-  RIGHT_J1: SHOULDER_PITCH_R_J1
-  RIGHT_J2: SHOULDER_ROLL_R_J2
-  RIGHT_J3: ELBOW_PITCH_R_J3
-  RIGHT_J4: ELBOW_YAW_R_J4
-  RIGHT_J5: WRIST_PITCH_R_J5
-  RIGHT_J6: WRIST_YAW_R_J6
-  RIGHT_J7: WRIST_ROLL_R_J7
+  ANKLE: ANKLE
+  KNEE: KNEE
+  BUTTOCK: BUTTOCK
+  WAIST: WAIST
+  NECK1: NECK1
+  NECK2: NECK2
+  LEFT_J1: LEFT_J1
+  LEFT_J2: LEFT_J2
+  LEFT_J3: LEFT_J3
+  LEFT_J4: LEFT_J4
+  LEFT_J5: LEFT_J5
+  LEFT_J6: LEFT_J6
+  LEFT_J7: LEFT_J7
+  RIGHT_J1: RIGHT_J1
+  RIGHT_J2: RIGHT_J2
+  RIGHT_J3: RIGHT_J3
+  RIGHT_J4: RIGHT_J4
+  RIGHT_J5: RIGHT_J5
+  RIGHT_J6: RIGHT_J6
+  RIGHT_J7: RIGHT_J7
 
 # === 关节分组配置 ===
 # 主臂关节名称（左臂，7自由度）
