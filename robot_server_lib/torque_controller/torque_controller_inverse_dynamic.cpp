@@ -27,6 +27,7 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                 dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
             output_cmd.q_desired = idle_q_;
+            output_cmd.torque_ext = joint_impedance_controller_->ComputeExternalTorque(feedback_q, raw_measurement.sensor_wrench);
             break;
         case TorqueControllerState::Decelerating:
             torque_joint_impedance = K_v.asDiagonal() * (-feedback_dq);
@@ -34,6 +35,7 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                 dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
             output_cmd.q_desired = feedback_q;
+            output_cmd.torque_ext = joint_impedance_controller_->ComputeExternalTorque(feedback_q, raw_measurement.sensor_wrench);
             break;
         case TorqueControllerState::Operating: {
             joint_impedance_controller_->UpdateTorqueCommand(feedback_q, feedback_dq, cmd_q, cmd_dq, K_p, K_v,

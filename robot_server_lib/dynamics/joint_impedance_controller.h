@@ -22,9 +22,9 @@ public:
                              VectorDof* torque_ext_out = nullptr);
 
     void Reset();
+    VectorDof ComputeExternalTorque(const VectorDof& feedback_q, const Vector12d& sensor_wrench) const;
 
 private:
-    VectorDof ComputeExternalTorque(const VectorDof& feedback_q, const Vector12d& sensor_wrench) const;
     Vector6d ProcessExternalWrench(const Vector6d& wrench) const;
     void AccumulateIntegralError(const VectorDof& q_error);
 
