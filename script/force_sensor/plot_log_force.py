@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Plot arm-only position error, torque, and torque_ext.
+"""Plot arm-only position error, torque, torque_ext, and force_sensor.
 
 Data sources:
   - Default: read recent samples from ~/log/robot_record.jsonl.
@@ -32,6 +32,8 @@ import numpy as np
 LOG_PATH = Path("~/log/robot_record.jsonl").expanduser()
 DEFAULT_STATE_TOPIC = "/feedback/robot_server_state"
 ARRAY_KEYS = ["joint_position", "joint_position_cmd", "joint_torque", "torque_ext"]
+FORCE_SENSOR_KEY = "force_sensor"
+FORCE_SENSOR_LABELS = ["Fx [N]", "Fy [N]", "Fz [N]", "Tx [Nm]", "Ty [Nm]", "Tz [Nm]"]
 
 
 def parse_timestamp(value):
@@ -183,6 +185,19 @@ def build_array(samples: Sequence[Tuple[datetime, dict]], key: str, joint_count:
     return arr
 
 
+def build_force_sensor_array(samples: Sequence[Tuple[datetime, dict]]) -> np.ndarray:
+    arr = np.full((len(samples), 12), np.nan, dtype=float)
+    for i, (_, data) in enumerate(samples):
+        value = data.get(FORCE_SENSOR_KEY)
+        if isinstance(value, list) and len(value) >= 12:
+            arr[i, :] = np.asarray(value[:12], dtype=float)
+    return arr
+
+
+def has_force_sensor_data(force_sensor: np.ndarray) -> bool:
+    return bool(force_sensor.size) and not np.isnan(force_sensor).all()
+
+
 def compute_position_error_deg(joint_position: np.ndarray, joint_position_cmd: np.ndarray) -> np.ndarray:
     return np.degrees(joint_position_cmd - joint_position)
 
@@ -278,6 +293,31 @@ def plot_single_joint(
     return fig
 
 
+def plot_force_sensor_figure(
+    arm_name: str,
+    sensor_indices: Sequence[int],
+    times: np.ndarray,
+    force_sensor: np.ndarray,
+    start_timestamp: datetime,
+):
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(2, 3, figsize=(14.0, 7.0), dpi=100, sharex=True)
+    configure_axes_grid(axes)
+    fig.suptitle(f"{arm_name} Force Sensor (Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})",
+                 fontsize=11)
+
+    for axis_idx, ax in enumerate(axes.flatten()):
+        sensor_idx = sensor_indices[axis_idx]
+        ax.plot(times, force_sensor[:, sensor_idx], color="tab:green", linewidth=1.2)
+        ax.axhline(0.0, color="gray", linewidth=0.6, alpha=0.5)
+        ax.set_title(FORCE_SENSOR_LABELS[axis_idx], fontsize=10)
+        ax.set_xlabel("Time [s]", fontsize=9)
+
+    fig.tight_layout(rect=[0.02, 0.02, 1.0, 0.95], h_pad=1.5, w_pad=1.2)
+    return fig
+
+
 def parse_args() -> argparse.Namespace:
     if len(sys.argv) >= 2:
         match = re.fullmatch(r"-?\d+(\.\d+)?", sys.argv[1])
@@ -286,7 +326,7 @@ def parse_args() -> argparse.Namespace:
             sys.argv[1] = f"--seconds={seconds}"
 
     parser = argparse.ArgumentParser(
-        description="Plot arm position error, torque, and torque_ext from robot_record or robot_server_state topics."
+        description="Plot arm position error, torque, torque_ext, and force_sensor from robot_record or robot_server_state topics."
     )
     parser.add_argument("--seconds", type=float, default=5.0, help="Time window in seconds to plot from the end.")
     parser.add_argument("--n", type=int, default=5000, help="Maximum valid samples kept while reading.")
@@ -326,6 +366,7 @@ def main() -> None:
     joint_position_cmd = build_array(samples, "joint_position_cmd", joint_count)
     joint_torque = build_array(samples, "joint_torque", joint_count)
     torque_ext = build_array(samples, "torque_ext", joint_count)
+    force_sensor = build_force_sensor_array(samples)
     pos_error_deg = compute_position_error_deg(joint_position, joint_position_cmd)
     start_timestamp = samples[0][0]
 
@@ -349,6 +390,16 @@ def main() -> None:
         if args.arm in ("both", "right"):
             figures.append(plot_arm_figure("Right Arm", right_arm, times, pos_error_deg, joint_torque, torque_ext,
                                            start_timestamp))
+
+    if has_force_sensor_data(force_sensor):
+        if args.arm in ("both", "left"):
+            figures.append(plot_force_sensor_figure("Left Arm", list(range(0, 6)), times, force_sensor,
+                                                    start_timestamp))
+        if args.arm in ("both", "right"):
+            figures.append(plot_force_sensor_figure("Right Arm", list(range(6, 12)), times, force_sensor,
+                                                    start_timestamp))
+    elif args.debug:
+        print("[DEBUG] No valid force_sensor samples found; skipping force_sensor figure.")
 
     if args.save:
         output_dir = Path(__file__).resolve().parent
