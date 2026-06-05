@@ -34,10 +34,10 @@ print_usage() {
     echo "  sleep           - Sleep mode"
     echo "  quickstop       - QuickStop mode"
     echo "  watch           - Watch EtherCAT status (watch -n 0.1 ethercat sl)"
-    echo "  state           - Monitor feedback state (python3 script/monitor_feedback.py)"
+    echo "  state           - Monitor feedback state (python3 script/monitor_state.py)"
     echo "  shm             - Monitor shared memory (python3 script/monitor_shm.py)"
     echo "  control         - Joint control GUI (python3 script/qt_joint_control.py)"
-    echo "  dyn             - Dynamic parameter identification GUI (python3 script/qt_dyn_params_ident.py)"
+    echo "  dyn [args]      - Dynamic parameter identification GUI (python3 script/qt_dyn_params_ident.py)"
     echo "  trajgen         - Trajectory generator (python3 script/traj_generator.py)"
     echo "  vis             - Visualization ROS2 node (python3 script/visual_ros2_node.py)"
     echo "  config          - Edit robot_config.yaml (gedit/vim ~/dexe_robot_server_data/robot_config.yaml)"
@@ -227,7 +227,7 @@ case $PROPERTY_KEY in
         ;;
     state)
         echo "Monitoring feedback state..."
-        python3 "${SCRIPT_DIR}/script/monitor_feedback.py"
+        python3 "${SCRIPT_DIR}/script/monitor_state.py"
         exit 0
         ;;
     shm)
@@ -242,7 +242,7 @@ case $PROPERTY_KEY in
         ;;
     dyn)
         echo "Starting Dynamic Parameter Identification GUI..."
-        python3 "${SCRIPT_DIR}/script/qt_dyn_params_ident.py"
+        python3 "${SCRIPT_DIR}/script/qt_dyn_params_ident.py" "${@:2}"
         exit 0
         ;;
     trajgen)

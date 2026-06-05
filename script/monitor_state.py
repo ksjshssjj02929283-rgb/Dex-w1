@@ -48,7 +48,7 @@ def monitor(stdscr, node):
     IN_TABLE = {
         "joint_name", "joint_position", "joint_position_cmd", "joint_velocity", "joint_velocity_cmd", 
         "joint_torque", "joint_torque_cmd", "torque_limit_negative", "torque_limit_positive", 
-        "motor_status", "motor_temperature", "motor_error_code", "joint_stiffness", "joint_damping", 
+        "motor_status", "motor_temperature", "motor_error_code", "joint_stiffness", "joint_damping", "joint_integral_ratio",
         "enable_butterworth_filter", "butterworth_filter_frequency", "enable_input_shaper", "input_shaper_frequency",
         "cart_stiffness", "cart_damping_ratio", "force_sensor",
         "chassis_status_word", "chassis_error_code_left", "chassis_error_code_right",
@@ -102,15 +102,15 @@ def monitor(stdscr, node):
                         v1 = [str(i), JOINT_NAMES[i] if i<len(JOINT_NAMES) else f"J{i}", f"{pos[i]:.3f}", f"{cp[i] if i<len(cp) else 0:.3f}", f"{fv[i] if i<len(fv) else 0:.3f}", f"{cv[i] if i<len(cv) else 0:.3f}", f"{ft[i] if i<len(ft) else 0:.1f}", f"{ct[i] if i<len(ct) else 0:.1f}"]
                         addstr_safe(stdscr, row, 0, "".join(center_text(v, w) for v, w in zip(v1, [c[1] for c in cols1]))); row += 1
                     row += 1
-                    cols2 = [("ID", 3), ("Name", 10), ("Eth", 6), ("Err", 4), ("Temp", 6), ("TLim-", 6), ("TLim+", 6), ("JtKp", 7), ("JtKd", 7), ("Filter", 9), ("ZVD", 9)]
+                    cols2 = [("ID", 3), ("Name", 10), ("Eth", 6), ("Err", 4), ("Temp", 6), ("TLim-", 6), ("TLim+", 6), ("JtKp", 7), ("JtIntg", 7), ("JtKd", 7), ("Filter", 9), ("ZVD", 9)]
                     addstr_safe(stdscr, row, 0, "".join(n.center(w) for n, w in cols2), curses.A_UNDERLINE); row += 1
-                    ms=data.get("motor_status",[]); me=data.get("motor_error_code",[]); mt=data.get("motor_temperature",[]); ln=data.get("torque_limit_negative",[]); lp=data.get("torque_limit_positive",[]); st=data.get("joint_stiffness",[]); da=data.get("joint_damping",[]); be=data.get("enable_butterworth_filter",[]); bh=data.get("butterworth_filter_frequency",[]); se=data.get("enable_input_shaper",[]); sh=data.get("input_shaper_frequency",[])
+                    ms=data.get("motor_status",[]); me=data.get("motor_error_code",[]); mt=data.get("motor_temperature",[]); ln=data.get("torque_limit_negative",[]); lp=data.get("torque_limit_positive",[]); st=data.get("joint_stiffness",[]); ji=data.get("joint_integral_ratio",[]); da=data.get("joint_damping",[]); be=data.get("enable_butterworth_filter",[]); bh=data.get("butterworth_filter_frequency",[]); se=data.get("enable_input_shaper",[]); sh=data.get("input_shaper_frequency",[])
                     for i in range(len(pos)):
                         f_s = "Y" if (i<len(be) and be[i]) else "N"
                         z_s = "Y" if (i<len(se) and se[i]) else "N"
                         f_t = f"{f_s}|{bh[i] if i<len(bh) else 0:3.0f}"
                         z_d = f"{z_s}|{sh[i] if i<len(sh) else 0:3.0f}"
-                        v2 = [str(i), JOINT_NAMES[i] if i<len(JOINT_NAMES) else f"J{i}", str(ms[i] if i<len(ms) else "N"), str(me[i] if i<len(me) else 0), f"{mt[i] if i<len(mt) else 0:.0f}", f"{ln[i] if i<len(ln) else 0:.1f}", f"{lp[i] if i<len(lp) else 0:.1f}", f"{st[i] if i<len(st) else 0:.1f}", f"{da[i] if i<len(da) else 0:.1f}", f_t, z_d]
+                        v2 = [str(i), JOINT_NAMES[i] if i<len(JOINT_NAMES) else f"J{i}", str(ms[i] if i<len(ms) else "N"), str(me[i] if i<len(me) else 0), f"{mt[i] if i<len(mt) else 0:.0f}", f"-{ln[i] if i<len(ln) else 0:.1f}", f"{lp[i] if i<len(lp) else 0:.1f}", f"{st[i] if i<len(st) else 0:.1f}", f"{ji[i] if i<len(ji) else 0:.1f}", f"{da[i] if i<len(da) else 0:.1f}", f_t, z_d]
                         addstr_safe(stdscr, row, 0, "".join(center_text(v, w) for v, w in zip(v2, [c[1] for c in cols2]))); row += 1
                     row += 1
                     ck=data.get("cart_stiffness",[]); cd=data.get("cart_damping_ratio",[]); fs=data.get("force_sensor",[])
