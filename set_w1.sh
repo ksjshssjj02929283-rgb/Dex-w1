@@ -6,7 +6,7 @@ print_usage() {
     echo ""
     echo "Available property types:"
     echo "  echo            - Echo robot server state topic once"
-    echo "  force           - Monitor torque_ext, force_sensor, force_sensor_gravity, raw_force_sensor, force_sensor_bias, and force_sensor_inertia at 10Hz"
+    echo "  force           - Monitor dual-arm torque_ext(14D), force_sensor, force_sensor_gravity, raw_force_sensor, force_sensor_bias, and force_sensor_inertia at 10Hz"
     echo "  log             - Print robot server log"
     echo "  clear_error     - Clear errors (no value needed)"
     echo "  drag            - Enable/Disable drag mode (value: 0 or 1)"
@@ -79,6 +79,28 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
+ARM_JOINT_NAMES = (
+    "LEFT_J1", "LEFT_J2", "LEFT_J3", "LEFT_J4", "LEFT_J5", "LEFT_J6", "LEFT_J7",
+    "RIGHT_J1", "RIGHT_J2", "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7",
+)
+
+
+def select_dual_arm_torque_ext(data):
+    torque_ext = data.get("torque_ext", [])
+    if not isinstance(torque_ext, list):
+        return []
+
+    joint_names = data.get("joint_name", [])
+    if isinstance(joint_names, list) and len(joint_names) == len(torque_ext):
+        torque_by_name = dict(zip(joint_names, torque_ext))
+        selected = [torque_by_name[name] for name in ARM_JOINT_NAMES if name in torque_by_name]
+        if selected:
+            return selected
+
+    if len(torque_ext) == len(ARM_JOINT_NAMES):
+        return torque_ext
+    return torque_ext[:len(ARM_JOINT_NAMES)]
+
 
 class ForceMonitor(Node):
     def __init__(self):
@@ -92,7 +114,7 @@ class ForceMonitor(Node):
         try:
             data = json.loads(msg.data)
             latest = (
-                data.get("torque_ext", []),
+                select_dual_arm_torque_ext(data),
                 data.get("force_sensor", []),
                 data.get("force_sensor_gravity", []),
                 data.get("raw_force_sensor", []),

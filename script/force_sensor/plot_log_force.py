@@ -17,7 +17,15 @@ import numpy as np
 
 
 LOG_PATH = Path("~/log/robot_record.jsonl").expanduser()
+DEFAULT_STATE_TOPIC = "/feedback/robot_server_state"
 ARRAY_KEYS = ["joint_position", "joint_position_cmd", "joint_torque", "torque_ext"]
+
+
+def parse_timestamp(value):
+    ts_value = float(value)
+    if ts_value > 1e12:
+        ts_value /= 1e9
+    return datetime.fromtimestamp(ts_value)
 
 
 def parse_line(line: str, debug: bool = False):
@@ -36,7 +44,7 @@ def parse_line(line: str, debug: bool = False):
         return None
 
     try:
-        ts = datetime.fromtimestamp(float(data["timestamp"]))
+        ts = parse_timestamp(data["timestamp"])
     except Exception as exc:
         if debug:
             print(f"[DEBUG] Failed to parse timestamp '{data['timestamp']}': {exc}")
@@ -73,6 +81,57 @@ def load_recent_samples(log_path: Path, max_samples: int, seconds: float, debug:
     filtered = deque((ts, data) for ts, data in samples if ts >= cutoff)
     if not filtered:
         raise ValueError(f"No samples found within the last {seconds} seconds.")
+    return filtered
+
+
+def load_topic_samples(topics: Sequence[str], max_samples: int, seconds: float, debug: bool = False):
+    try:
+        import rclpy
+        from std_msgs.msg import String
+    except Exception as exc:
+        raise RuntimeError("ROS topic mode requires rclpy and std_msgs in the current environment.") from exc
+
+    if not topics:
+        topics = [DEFAULT_STATE_TOPIC]
+
+    samples: Deque[Tuple[datetime, dict]] = deque(maxlen=max_samples)
+    rclpy.init(args=None)
+    node = rclpy.create_node("plot_log_force_topic_capture")
+
+    def make_callback(topic: str):
+        def callback(msg: String):
+            parsed = parse_line(msg.data, debug=debug)
+            if parsed is None:
+                return
+            ts, data = parsed
+            data["_topic"] = topic
+            samples.append((ts, data))
+
+        return callback
+
+    subscriptions = [node.create_subscription(String, topic, make_callback(topic), 10) for topic in topics]
+
+    if debug:
+        print(f"[DEBUG] Subscribing topics: {', '.join(topics)}")
+        print(f"[DEBUG] Capturing for {seconds:g}s, max samples={max_samples}")
+
+    deadline = datetime.now() + timedelta(seconds=abs(seconds))
+    try:
+        while rclpy.ok() and datetime.now() < deadline and len(samples) < max_samples:
+            rclpy.spin_once(node, timeout_sec=0.1)
+    finally:
+        subscriptions.clear()
+        node.destroy_node()
+        rclpy.shutdown()
+
+    if not samples:
+        raise ValueError(f"No valid samples captured from topics: {', '.join(topics)}")
+
+    ordered = sorted(samples, key=lambda item: item[0])
+    cutoff = ordered[-1][0] - timedelta(seconds=abs(seconds))
+    filtered = [(ts, data) for ts, data in ordered if ts >= cutoff]
+    if not filtered:
+        raise ValueError(f"No samples captured within the last {seconds} seconds.")
     return filtered
 
 
@@ -211,12 +270,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--joint", type=int, default=None, help="Plot one arm joint by raw joint index.")
     parser.add_argument("--arm", choices=["both", "left", "right"], default="both", help="Select which arm to plot.")
     parser.add_argument("--log", type=Path, default=LOG_PATH, help=f"Path to robot_record.jsonl (default: {LOG_PATH})")
+    parser.add_argument(
+        "--topics",
+        nargs="*",
+        default=None,
+        help=f"Capture std_msgs/String robot_server_state JSON from ROS topics (default: {DEFAULT_STATE_TOPIC}).",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    samples = list(load_recent_samples(args.log.expanduser(), args.n, args.seconds, debug=args.debug))
+    if args.topics is None:
+        samples = list(load_recent_samples(args.log.expanduser(), args.n, args.seconds, debug=args.debug))
+        source_label = str(args.log.expanduser())
+    else:
+        topics = args.topics if args.topics else [DEFAULT_STATE_TOPIC]
+        samples = list(load_topic_samples(topics, args.n, args.seconds, debug=args.debug))
+        source_label = ", ".join(topics)
+
     joint_count = detect_joint_count(samples)
     left_arm, right_arm = arm_joint_groups(joint_count)
 
@@ -229,7 +301,7 @@ def main() -> None:
     start_timestamp = samples[0][0]
 
     if args.debug:
-        print(f"[DEBUG] Loaded {len(samples)} samples from {args.log.expanduser()}")
+        print(f"[DEBUG] Loaded {len(samples)} samples from {source_label}")
         print(f"[DEBUG] Joint count: {joint_count}")
         print(f"[DEBUG] Arm selection: {args.arm}")
 
