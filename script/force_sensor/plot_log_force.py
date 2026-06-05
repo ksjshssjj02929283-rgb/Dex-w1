@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Plot arm-only position error, torque, and torque_ext from robot_record.jsonl."""
+"""Plot arm-only position error, torque, and torque_ext.
+
+Data sources:
+  - Default: read recent samples from ~/log/robot_record.jsonl.
+  - Topic mode: capture std_msgs/String JSON from /feedback/robot_server_state.
+    Captured topic samples are saved as force_log_YYYYmmdd_HHMMSS.jsonl
+    in this script directory.
+
+Examples:
+  python3 plot_log_force.py 5
+  python3 plot_log_force.py --log ~/log/robot_record.jsonl --seconds 5 --arm left
+  python3 plot_log_force.py --topic --seconds 5
+  python3 plot_log_force.py --topic /feedback/robot_server_state --joint 6
+"""
 
 from __future__ import annotations
 
@@ -84,6 +97,11 @@ def load_recent_samples(log_path: Path, max_samples: int, seconds: float, debug:
     return filtered
 
 
+def make_topic_log_path() -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return Path(__file__).resolve().parent / f"force_log_{timestamp}.jsonl"
+
+
 def load_topic_samples(topics: Sequence[str], max_samples: int, seconds: float, debug: bool = False):
     try:
         import rclpy
@@ -97,6 +115,8 @@ def load_topic_samples(topics: Sequence[str], max_samples: int, seconds: float, 
     samples: Deque[Tuple[datetime, dict]] = deque(maxlen=max_samples)
     rclpy.init(args=None)
     node = rclpy.create_node("plot_log_force_topic_capture")
+    topic_log_path = make_topic_log_path()
+    topic_log_handle = topic_log_path.open("w", encoding="utf-8")
 
     def make_callback(topic: str):
         def callback(msg: String):
@@ -104,7 +124,8 @@ def load_topic_samples(topics: Sequence[str], max_samples: int, seconds: float, 
             if parsed is None:
                 return
             ts, data = parsed
-            data["_topic"] = topic
+            topic_log_handle.write(json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "\n")
+            topic_log_handle.flush()
             samples.append((ts, data))
 
         return callback
@@ -114,12 +135,14 @@ def load_topic_samples(topics: Sequence[str], max_samples: int, seconds: float, 
     if debug:
         print(f"[DEBUG] Subscribing topics: {', '.join(topics)}")
         print(f"[DEBUG] Capturing for {seconds:g}s, max samples={max_samples}")
+        print(f"[DEBUG] Saving captured topic log to: {topic_log_path}")
 
     deadline = datetime.now() + timedelta(seconds=abs(seconds))
     try:
         while rclpy.ok() and datetime.now() < deadline and len(samples) < max_samples:
             rclpy.spin_once(node, timeout_sec=0.1)
     finally:
+        topic_log_handle.close()
         subscriptions.clear()
         node.destroy_node()
         rclpy.shutdown()
@@ -132,7 +155,7 @@ def load_topic_samples(topics: Sequence[str], max_samples: int, seconds: float, 
     filtered = [(ts, data) for ts, data in ordered if ts >= cutoff]
     if not filtered:
         raise ValueError(f"No samples captured within the last {seconds} seconds.")
-    return filtered
+    return filtered, topic_log_path
 
 
 def detect_joint_count(samples: Iterable[Tuple[datetime, dict]]) -> int:
@@ -262,7 +285,9 @@ def parse_args() -> argparse.Namespace:
             seconds = abs(float(sys.argv[1]))
             sys.argv[1] = f"--seconds={seconds}"
 
-    parser = argparse.ArgumentParser(description="Plot arm position error, torque, and torque_ext from robot_record.")
+    parser = argparse.ArgumentParser(
+        description="Plot arm position error, torque, and torque_ext from robot_record or robot_server_state topics."
+    )
     parser.add_argument("--seconds", type=float, default=5.0, help="Time window in seconds to plot from the end.")
     parser.add_argument("--n", type=int, default=5000, help="Maximum valid samples kept while reading.")
     parser.add_argument("--save", action="store_true", help="Save figures to this script directory instead of showing.")
@@ -271,8 +296,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--arm", choices=["both", "left", "right"], default="both", help="Select which arm to plot.")
     parser.add_argument("--log", type=Path, default=LOG_PATH, help=f"Path to robot_record.jsonl (default: {LOG_PATH})")
     parser.add_argument(
+        "--topic",
         "--topics",
         nargs="*",
+        dest="topics",
         default=None,
         help=f"Capture std_msgs/String robot_server_state JSON from ROS topics (default: {DEFAULT_STATE_TOPIC}).",
     )
@@ -286,8 +313,10 @@ def main() -> None:
         source_label = str(args.log.expanduser())
     else:
         topics = args.topics if args.topics else [DEFAULT_STATE_TOPIC]
-        samples = list(load_topic_samples(topics, args.n, args.seconds, debug=args.debug))
+        samples, topic_log_path = load_topic_samples(topics, args.n, args.seconds, debug=args.debug)
+        samples = list(samples)
         source_label = ", ".join(topics)
+        print(f"Saved topic log: {topic_log_path}")
 
     joint_count = detect_joint_count(samples)
     left_arm, right_arm = arm_joint_groups(joint_count)
