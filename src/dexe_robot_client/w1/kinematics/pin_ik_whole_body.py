@@ -97,6 +97,8 @@ class PinIKWholeBody:
 
         # self.focus_point = None
         self.lean_backward_threshold = -0.1744  # rad
+        self.cache_left_target = None
+        self.cache_right_target = None
 
         self._create_pin_casadi()
         self._create_trans_rot_error()
@@ -137,6 +139,8 @@ class PinIKWholeBody:
                 'tracking_head_ee', self.robot_.model.getJointId("NECK2"),
                 pinocchio.SE3(target_head_ee[:3, :3], target_head_ee[:3, 3]),
                 pinocchio.FrameType.OP_FRAME))
+
+        self.robot_.data = self.robot_.model.createData()
 
         self.left_id = self.robot_.model.getFrameId("tracking_left_ee")
         self.right_id = self.robot_.model.getFrameId("tracking_right_ee")
@@ -1101,6 +1105,18 @@ class PinIKWholeBody:
         else:
             self.init_data = cur_qpos
 
+        if self.cost_type != "standard_strict" and self.cost_type != "standard_lean_backward_strict":
+            if self.cache_left_target is not None and self.cache_right_target is not None:
+                left_T_err = np.linalg.inv(left_ee_target) @ self.cache_left_target
+                right_T_err = np.linalg.inv(right_ee_target) @ self.cache_right_target
+                left_rot_err = np.linalg.norm(pinocchio.log3(left_T_err[:3, :3]))
+                right_rot_err = np.linalg.norm(pinocchio.log3(right_T_err[:3, :3]))
+                left_trans_err = np.linalg.norm(left_ee_target[:3, 3] - self.cache_left_target[:3, 3])
+                right_trans_err = np.linalg.norm(right_ee_target[:3, 3] - self.cache_right_target[:3, 3])
+                if left_rot_err < np.deg2rad(1) and right_rot_err < np.deg2rad(1) and left_trans_err < 0.0005 and right_trans_err < 0.0005:
+                    self.logger.info("Target change is small, using previous solution as result.")
+                    return True, cur_qpos
+
         self.opti.set_initial(self.var_q, self.init_data)
 
         self.opti.set_value(self.param_left_tf, left_ee_target)
@@ -1127,6 +1143,10 @@ class PinIKWholeBody:
         try:
             solution = self.opti.solve()
             solution_q = solution.value(self.var_q)
+
+            self.cache_left_target = left_ee_target
+            self.cache_right_target = right_ee_target
+
             return True, solution_q
         except Exception as e:
             self.logger.error(f"IK solver failed: {e}")

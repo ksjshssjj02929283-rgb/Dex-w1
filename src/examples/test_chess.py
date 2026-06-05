@@ -172,6 +172,8 @@ if __name__ == "__main__":
     armree_T_armrtcp = np.identity(4)
     armree_T_armrtcp[:3, :3] = R.from_rotvec([0.0, 0.0, 180.],
                                              degrees=True).as_matrix()
+    
+    focus_center = np.array([0.6, 0.0, 0.8])
 
     rate = RateLimiter(frequency=100, warn=True)
     while True:
@@ -186,7 +188,8 @@ if __name__ == "__main__":
 
         res, result_qpos = ik_solver.solve_ik(left_ee_target=T_world_larm,
                                               right_ee_target=T_world_rarm,
-                                              cur_qpos=cur_qpos)
+                                              cur_qpos=cur_qpos,
+                                              focus_point=focus_center)
 
         world_T_armltcp = T_world_larm @ armlee_T_armltcp
         world_T_armrtcp = T_world_rarm @ armree_T_armrtcp
