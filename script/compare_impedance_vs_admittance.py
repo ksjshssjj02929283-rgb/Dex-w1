@@ -1,0 +1,449 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+实时录制 + 自动对比: 左臂(传感器+导纳) vs 右臂(纯阻抗)
+
+原理:
+  - 左臂 joints 6-12:  有力传感器 → tau_ext 非零 → 导纳环工作 → 阻抗+导纳
+  - 右臂 joints 13-19: 无传感器 → tau_ext = 0 → 纯阻抗
+  - 同一时刻、同一外力、一次录制
+
+使用方法:
+    source /opt/ros/humble/setup.bash
+    python3 compare_impedance_vs_admittance.py
+
+运行后:
+    1. 脚本开始录制 /feedback/robot_server_state
+    2. 手动推左右臂，保持几秒，松手，等待 3-5 秒
+    3. 输入 s 并回车 → 停止录制
+    4. 自动输出统计结果 + 保存可视化图片
+
+可选参数:
+    --left  J1,J2...   左臂关节索引 (默认 6-12)
+    --right J1,J2...   右臂关节索引 (默认 13-19)
+    --settle SEC       稳态评估等待秒数 (默认 2.0s)
+    --threshold RAD    恢复阈值 rad (默认 0.003 ≈ 0.17°)
+    --topic TOPIC      ROS topic (默认 /feedback/robot_server_state)
+    --save-dir DIR     图片保存目录 (默认脚本所在目录)
+"""
+
+import argparse
+import json
+import sys
+import threading
+import time
+from pathlib import Path
+
+import numpy as np
+import matplotlib
+
+matplotlib.use("Agg")  # 不弹窗，直接保存
+import matplotlib.pyplot as plt
+
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+
+
+# ──────────────────────── 录制节点 ────────────────────────
+
+RECORD_KEYS = [
+    "joint_position",
+    "joint_position_cmd",
+    "torque_ext",
+    "joint_admittance_q_offset",
+    "joint_position_ref_admittance",
+    "joint_impedance_error_after_admittance",
+    "force_sensor",
+]
+
+
+class Recorder(Node):
+    def __init__(self, topic: str):
+        super().__init__("impedance_vs_admittance_recorder")
+        self._lock = threading.Lock()
+        self._t0 = time.monotonic()
+        self.timestamps = []
+        self.data = {k: [] for k in RECORD_KEYS}
+        self.count = 0
+
+        self.create_subscription(String, topic, self._callback, 50)
+        self.get_logger().info(f"Subscribed to {topic}")
+
+    def _callback(self, msg: String):
+        try:
+            d = json.loads(msg.data)
+        except (json.JSONDecodeError, TypeError):
+            return
+
+        # 检查必需字段
+        if not all(k in d for k in RECORD_KEYS):
+            return
+
+        t = time.monotonic() - self._t0
+
+        with self._lock:
+            self.timestamps.append(t)
+            for k in RECORD_KEYS:
+                self.data[k].append(d[k])
+            self.count += 1
+
+    def snapshot(self):
+        """返回 (timestamps_ndarray, data_dict_of_ndarrays)"""
+        with self._lock:
+            ts = np.array(self.timestamps)
+            out = {}
+            for k in RECORD_KEYS:
+                out[k] = np.array(self.data[k])
+            return ts, out
+
+
+# ──────────────────────── 分析逻辑 ────────────────────────
+
+def detect_force_events(torque_ext, joint_indices, threshold_ratio=0.12):
+    """用指定关节 |tau_ext| 之和检测外力事件"""
+    mag = np.sum(np.abs(torque_ext[:, joint_indices]), axis=1)
+    threshold = np.max(mag) * threshold_ratio
+    if threshold < 0.3:
+        threshold = 0.3
+
+    in_force = mag > threshold
+    events = []
+    started, start = False, 0
+    for i in range(len(in_force)):
+        if in_force[i] and not started:
+            started, start = True, i
+        elif not in_force[i] and started:
+            events.append((start, i))
+            started = False
+    if started:
+        events.append((start, len(in_force) - 1))
+
+    return events, mag, threshold
+
+
+def compute_metrics_per_joint(timestamps, joint_position, force_event,
+                              settle_sec=2.0, threshold=0.003):
+    """
+    joint_position: 单个关节的原始位置数组 (rad)
+    稳态误差 = |mean(初始0.5s位置) - mean(录制结束前0.5s位置)|
+    """
+    dt = np.median(np.diff(timestamps)) if len(timestamps) > 1 else 0.001
+    fs, fe = force_event
+    n = len(joint_position)
+
+    # 峰值偏差: 施力阶段相对初始位置的偏移
+    half_sec = max(1, int(0.5 / dt))
+    initial_pos = np.mean(joint_position[:half_sec])
+    peak_error = np.max(np.abs(joint_position[fs:fe + 1] - initial_pos))
+
+    # 稳态误差: 初始0.5s均值 vs 结束前0.5s均值
+    final_pos = np.mean(joint_position[-half_sec:])
+    ss_error = abs(initial_pos - final_pos)
+
+    # 恢复时间: 从外力消失到位置回到初始值附近
+    post = np.abs(joint_position[fe + 1:] - initial_pos)
+    recovered = np.where(post < threshold)[0]
+    recovery_time = recovered[0] * dt if len(recovered) > 0 else float("inf")
+
+    return {"peak_error": peak_error, "steady_state_error": ss_error, "recovery_time": recovery_time}
+
+
+# ──────────────────────── 绘图 ────────────────────────
+
+def save_plots(timestamps, data, left_joints, right_joints,
+               force_events, force_mag, threshold, args, save_path):
+    t_rel = timestamps
+    n_pairs = min(len(left_joints), len(right_joints))
+
+    fig, axes = plt.subplots(n_pairs + 1, 3, figsize=(18, 3.5 * (n_pairs + 1)))
+
+    for row in range(n_pairs):
+        jl, jr = left_joints[row], right_joints[row]
+
+        # Col 0: 位置误差
+        ax = axes[row, 0]
+        err_l = np.degrees(data["joint_position"][:, jl] - data["joint_position_cmd"][:, jl])
+        err_r = np.degrees(data["joint_position"][:, jr] - data["joint_position_cmd"][:, jr])
+        ax.plot(t_rel, err_l, color="#2ecc71", linewidth=0.8, label=f"Left J{jl} (adm)")
+        ax.plot(t_rel, err_r, color="#e74c3c", linewidth=0.8, label=f"Right J{jr} (imp)")
+        for fs, fe in force_events:
+            ax.axvspan(t_rel[fs], t_rel[min(fe, len(t_rel) - 1)], alpha=0.1, color="orange")
+        ax.set_ylabel("Error (deg)", fontsize=9)
+        ax.legend(fontsize=7, loc="upper right")
+        ax.grid(True, alpha=0.3)
+        ax.set_title(f"J{jl} vs J{jr} — Position Error", fontsize=10)
+
+        # Col 1: tau_ext
+        ax = axes[row, 1]
+        ax.plot(t_rel, data["torque_ext"][:, jl], color="#2ecc71", linewidth=0.8, label=f"Left J{jl}")
+        ax.plot(t_rel, data["torque_ext"][:, jr], color="#e74c3c", linewidth=0.8, label=f"Right J{jr}")
+        for fs, fe in force_events:
+            ax.axvspan(t_rel[fs], t_rel[min(fe, len(t_rel) - 1)], alpha=0.1, color="orange")
+        ax.set_ylabel("tau_ext (Nm)", fontsize=9)
+        ax.legend(fontsize=7, loc="upper right")
+        ax.grid(True, alpha=0.3)
+        ax.set_title(f"J{jl} vs J{jr} — External Torque", fontsize=10)
+
+        # Col 2: 导纳偏移
+        ax = axes[row, 2]
+        off_l = np.degrees(data["joint_admittance_q_offset"][:, jl])
+        off_r = np.degrees(data["joint_admittance_q_offset"][:, jr])
+        ax.plot(t_rel, off_l, color="#2ecc71", linewidth=0.8, label=f"Left J{jl}")
+        ax.plot(t_rel, off_r, color="#e74c3c", linewidth=0.8, label=f"Right J{jr}")
+        for fs, fe in force_events:
+            ax.axvspan(t_rel[fs], t_rel[min(fe, len(t_rel) - 1)], alpha=0.1, color="orange")
+        ax.set_ylabel("Offset (deg)", fontsize=9)
+        ax.legend(fontsize=7, loc="upper right")
+        ax.grid(True, alpha=0.3)
+        ax.set_title(f"J{jl} vs J{jr} — Admittance q_offset", fontsize=10)
+
+    # 底部: 力强度 + 汇总
+    ax_force = axes[n_pairs, 0]
+    mag_l = np.sum(np.abs(data["torque_ext"][:, left_joints]), axis=1)
+    mag_r = np.sum(np.abs(data["torque_ext"][:, right_joints]), axis=1)
+    ax_force.plot(t_rel, mag_l, color="#2ecc71", linewidth=0.8, label="Left arm |tau_ext|")
+    ax_force.plot(t_rel, mag_r, color="#e74c3c", linewidth=0.8, label="Right arm |tau_ext|")
+    ax_force.axhline(threshold, color="orange", linestyle="--", linewidth=0.8, alpha=0.6)
+    for fs, fe in force_events:
+        ax_force.axvspan(t_rel[fs], t_rel[min(fe, len(t_rel) - 1)], alpha=0.15, color="orange")
+    ax_force.set_xlabel("Time (s)")
+    ax_force.set_ylabel("|tau_ext| sum (Nm)")
+    ax_force.set_title("Force Magnitude", fontsize=10)
+    ax_force.legend(fontsize=7)
+    ax_force.grid(True, alpha=0.3)
+
+    # 汇总表
+    ax_table = axes[n_pairs, 1]
+    ax_table.axis("off")
+    ax_table.set_title("Peak Error (deg)", fontsize=10)
+
+    header = f"{'Pair':<12}{'Left(adm)':<14}{'Right(imp)':<14}{'Improve':<10}\n" + "─" * 50 + "\n"
+    rows_text = header
+    for row in range(n_pairs):
+        jl, jr = left_joints[row], right_joints[row]
+        peak_l = np.degrees(np.max(np.abs(data["joint_position"][:, jl] - data["joint_position_cmd"][:, jl])))
+        peak_r = np.degrees(np.max(np.abs(data["joint_position"][:, jr] - data["joint_position_cmd"][:, jr])))
+        imp = f"{(1 - peak_l / peak_r) * 100:+.1f}%" if peak_r > 1e-6 else "N/A"
+        rows_text += f"J{jl}vsJ{jr:<6}{peak_l:>8.4f}°    {peak_r:>8.4f}°    {imp}\n"
+
+    ax_table.text(0.05, 0.95, rows_text, transform=ax_table.transAxes,
+                  fontsize=9, va="top", fontfamily="monospace",
+                  bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.8))
+
+    # 恢复指标表
+    ax_det = axes[n_pairs, 2]
+    ax_det.axis("off")
+    ax_det.set_title("Recovery Metrics", fontsize=10)
+
+    det = f"{'Joint':<8}{'Steady(deg)':<14}{'Recovery(s)':<14}{'Mode':<8}\n" + "─" * 44 + "\n"
+    if force_events:
+        fe = force_events[0]
+        for row in range(n_pairs):
+            for side, joints, label in [("L", left_joints, "adm"), ("R", right_joints, "imp")]:
+                j = joints[row]
+                pos = data["joint_position"][:, j]
+                m = compute_metrics_per_joint(timestamps, pos, fe, args.settle, args.threshold)
+                ss_str = f"{np.degrees(m['steady_state_error']):.4f}" if not np.isnan(m["steady_state_error"]) else "N/A"
+                rt_str = f"{m['recovery_time']:.3f}" if m["recovery_time"] < 100 else ">100"
+                det += f"J{j:<6}{ss_str:>10}°      {rt_str:>8}s    {label}\n"
+            det += "─" * 44 + "\n"
+
+    ax_det.text(0.05, 0.95, det, transform=ax_det.transAxes,
+                fontsize=8, va="top", fontfamily="monospace",
+                bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.8))
+
+    fig.suptitle(
+        "Left Arm (Impedance+Admittance) vs Right Arm (Impedance Only)\n"
+        "Orange = detected external force",
+        fontsize=12, fontweight="bold",
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ──────────────────────── 终端输出 ────────────────────────
+
+def print_statistics(timestamps, data, left_joints, right_joints,
+                     force_events, threshold, args):
+    n_pairs = min(len(left_joints), len(right_joints))
+    duration = timestamps[-1] - timestamps[0]
+    dt_ms = (timestamps[-1] - timestamps[0]) / len(timestamps) * 1000
+
+    print(f"\n{'═' * 72}")
+    print(f"  录制: {len(timestamps)} samples, {duration:.2f}s, dt≈{dt_ms:.1f}ms ({1000/dt_ms:.0f} Hz)")
+    print(f"  外力阈值: {threshold:.2f} Nm (left arm |tau_ext| sum)")
+    print(f"  检测到 {len(force_events)} 次外力事件")
+    for i, (fs, fe) in enumerate(force_events):
+        print(f"    Event {i+1}: {timestamps[fs]:.2f}s ~ {timestamps[fe]:.2f}s "
+              f"(持续 {timestamps[fe]-timestamps[fs]:.2f}s)")
+    print(f"{'═' * 72}")
+
+    if not force_events:
+        print("[WARN] 未检测到外力事件，以下指标可能无意义")
+
+    fe = force_events[0] if force_events else (0, len(timestamps) - 1)
+
+    print(f"\n{'Joint':<8}{'Side':<6}{'Peak(deg)':<13}{'Steady(deg)':<15}{'Recovery(s)':<15}{'tau_ext(Nm)':<12}")
+    print("─" * 72)
+
+    improvements = {"peak": [], "ss": [], "rt": []}
+
+    for row in range(n_pairs):
+        jl, jr = left_joints[row], right_joints[row]
+
+        for j, label in [(jl, "adm"), (jr, "imp")]:
+            pos = data["joint_position"][:, j]
+            m = compute_metrics_per_joint(timestamps, pos, fe, args.settle, args.threshold)
+            peak_deg = np.degrees(m["peak_error"])
+            ss_deg = np.degrees(m["steady_state_error"]) if not np.isnan(m["steady_state_error"]) else float("nan")
+            rt = m["recovery_time"]
+            tau = np.mean(np.abs(data["torque_ext"][fe[0]:fe[1]+1, j]))
+
+            rt_str = f"{rt:.3f}" if rt < 100 else ">100"
+            ss_str = f"{ss_deg:.4f}" if not np.isnan(ss_deg) else "N/A"
+            print(f"J{j:<6}{label:<6}{peak_deg:>7.4f}°    {ss_str:>10}°      {rt_str:>8}s      {tau:>7.2f}")
+
+        # 改善百分比
+        pos_l = data["joint_position"][:, jl]
+        pos_r = data["joint_position"][:, jr]
+        ml = compute_metrics_per_joint(timestamps, pos_l, fe, args.settle, args.threshold)
+        mr = compute_metrics_per_joint(timestamps, pos_r, fe, args.settle, args.threshold)
+
+        # Peak improvement
+        if mr["peak_error"] > 1e-6:
+            imp = (1 - ml["peak_error"] / mr["peak_error"]) * 100
+            improvements["peak"].append(imp)
+        # Steady-state improvement
+        if (not np.isnan(ml["steady_state_error"]) and not np.isnan(mr["steady_state_error"])
+                and mr["steady_state_error"] > 1e-6):
+            imp = (1 - ml["steady_state_error"] / mr["steady_state_error"]) * 100
+            improvements["ss"].append(imp)
+        # Recovery time improvement
+        if mr["recovery_time"] > 1e-6 and ml["recovery_time"] < 100 and mr["recovery_time"] < 100:
+            imp = (1 - ml["recovery_time"] / mr["recovery_time"]) * 100
+            improvements["rt"].append(imp)
+
+        print("─" * 72)
+
+    # 总体汇总
+    print(f"\n{'═' * 72}")
+    print("  总体改善 (左臂 admittance 相对右臂 impedance-only)")
+    print(f"{'═' * 72}")
+    if improvements["peak"]:
+        avg = np.mean(improvements["peak"])
+        print(f"  峰值偏差改善:   {avg:+.1f}%  (正=左臂更优, 负=右臂更优)")
+    if improvements["ss"]:
+        avg = np.mean(improvements["ss"])
+        print(f"  稳态偏差改善:   {avg:+.1f}%")
+    if improvements["rt"]:
+        avg = np.mean(improvements["rt"])
+        print(f"  恢复时间改善:   {avg:+.1f}%")
+    print(f"{'═' * 72}")
+
+
+# ──────────────────────── 主函数 ────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="实时录制 + 自动对比: 左臂(导纳) vs 右臂(纯阻抗)"
+    )
+    parser.add_argument("--left", type=str, default="6,7,8,9,10,11,12",
+                        help="左臂关节索引 (默认 6-12)")
+    parser.add_argument("--right", type=str, default="13,14,15,16,17,18,19",
+                        help="右臂关节索引 (默认 13-19)")
+    parser.add_argument("--settle", type=float, default=2.0,
+                        help="稳态评估等待秒数 (默认 2.0)")
+    parser.add_argument("--threshold", type=float, default=0.003,
+                        help="恢复阈值 rad (默认 0.003)")
+    parser.add_argument("--topic", type=str, default="/feedback/robot_server_state",
+                        help="ROS topic")
+    parser.add_argument("--save-dir", type=str, default=None,
+                        help="图片保存目录 (默认脚本所在目录)")
+    args = parser.parse_args()
+
+    left_joints = [int(j) for j in args.left.split(",")]
+    right_joints = [int(j) for j in args.right.split(",")]
+
+    save_dir = Path(args.save_dir) if args.save_dir else Path(__file__).parent
+    save_dir.mkdir(parents=True, exist_ok=True)
+    save_path = save_dir / "comparison_impedance_vs_admittance.png"
+
+    # ── 启动 ROS ──
+    rclpy.init()
+    recorder = Recorder(args.topic)
+    spin_thread = threading.Thread(target=rclpy.spin, args=(recorder,), daemon=True)
+    spin_thread.start()
+
+    # ── 等待数据到达 ──
+    print("\n╔══════════════════════════════════════════════════════════╗")
+    print("║  Impedance vs Admittance 实时对比工具                    ║")
+    print("║                                                          ║")
+    print("║  左臂 J6-12  = 阻抗+导纳 (有传感器)                     ║")
+    print("║  右臂 J13-19 = 纯阻抗   (无传感器)                      ║")
+    print("║                                                          ║")
+    print("║  现在开始录制，请施加外力...                             ║")
+    print("║  输入 s 并回车 → 停止录制并输出结果                     ║")
+    print("╚══════════════════════════════════════════════════════════╝")
+    print()
+
+    # 后台打印录制状态
+    last_count = [0]
+    stop_monitor = threading.Event()
+
+    def monitor():
+        while not stop_monitor.is_set():
+            time.sleep(1.0)
+            n = recorder.count
+            rate = n - last_count[0]
+            last_count[0] = n
+            if rate > 0:
+                print(f"  [录制中] {n} samples, ~{rate} Hz")
+
+    monitor_thread = threading.Thread(target=monitor, daemon=True)
+    monitor_thread.start()
+
+    # ── 等待用户输入 s ──
+    try:
+        while True:
+            cmd = input().strip().lower()
+            if cmd == "s":
+                break
+    except (KeyboardInterrupt, EOFError):
+        pass
+
+    stop_monitor.set()
+
+    # ── 停止录制 ──
+    recorder.destroy_node()
+    rclpy.shutdown()
+    spin_thread.join(timeout=2.0)
+
+    timestamps, data = recorder.snapshot()
+
+    if len(timestamps) < 20:
+        print("\n[ERROR] 数据量太少 (<20 samples)，无法分析")
+        sys.exit(1)
+
+    # 相对时间 (从 0 开始)
+    timestamps = timestamps - timestamps[0]
+
+    # ── 分析 ──
+    force_events, force_mag, threshold = detect_force_events(
+        data["torque_ext"], left_joints
+    )
+
+    # ── 输出统计 ──
+    print_statistics(timestamps, data, left_joints, right_joints,
+                     force_events, threshold, args)
+
+    # ── 保存图片 ──
+    save_plots(timestamps, data, left_joints, right_joints,
+               force_events, force_mag, threshold, args, save_path)
+    print(f"\n[SAVED] {save_path}")
+    print("[DONE]")
+
+
+if __name__ == "__main__":
+    main()

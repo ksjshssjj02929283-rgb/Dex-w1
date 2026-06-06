@@ -10,6 +10,7 @@ __pycache__/
 *.pyc
 nano_logs/
 script/dyn_params_ident/recdata/
+script/force_sensor/force_data/
 CLAUDE.md
 AGENTS.md
 .claude/
@@ -18,3 +19,5 @@ dexe_robot_client/
 findings.md
 progress.md
 task_plan.md
+# Manager agent memory
+.manager-agent/

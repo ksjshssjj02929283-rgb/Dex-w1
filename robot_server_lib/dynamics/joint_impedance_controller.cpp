@@ -30,13 +30,37 @@ bool JointImpedanceController::UpdateTorqueCommand(const VectorDof& feedback_q,
     }
 
     AccumulateIntegralError(q_error);
-    const VectorDof torque_integral = (stiffness * integral_ratio).asDiagonal() * integral_error_;
+    // const VectorDof torque_integral = (stiffness * integral_ratio).asDiagonal() * integral_error_;
     const VectorDof torque_ext = ComputeExternalTorque(feedback_q, sensor_wrench);
     if (torque_ext_out) {
         *torque_ext_out = torque_ext;
     }
 
-    tau_command = stiffness.asDiagonal() * q_error + damping.asDiagonal() * dq_error + torque_integral + torque_ext;
+    tau_command = stiffness.asDiagonal() * q_error + damping.asDiagonal() * dq_error  + torque_ext; // + torque_integral
+    return true;
+}
+
+bool JointImpedanceController::UpdateTorqueCommandWithoutExternalTorque(const VectorDof& feedback_q,
+                                                                        const VectorDof& feedback_dq,
+                                                                        const VectorDof& cmd_q,
+                                                                        const VectorDof& cmd_dq,
+                                                                        const VectorDof& stiffness,
+                                                                        const VectorDof& damping,
+                                                                        double integral_ratio,
+                                                                        VectorDof& tau_command) {
+    VectorDof q_error = cmd_q - feedback_q;
+    const VectorDof dq_error = cmd_dq - feedback_dq;
+
+    constexpr double kSmallPositionError = 0.005 / 180.0 * 3.14159265358979323846;
+    for (int i = 0; i < ndof_robot; i++) {
+        if (std::abs(q_error[i]) < kSmallPositionError) {
+            q_error[i] = 0.0;
+        }
+    }
+
+    AccumulateIntegralError(q_error);
+    // const VectorDof torque_integral = (stiffness * integral_ratio).asDiagonal() * integral_error_;
+    tau_command = stiffness.asDiagonal() * q_error + damping.asDiagonal() * dq_error; // + torque_integral
     return true;
 }
 

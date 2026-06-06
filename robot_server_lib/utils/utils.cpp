@@ -247,6 +247,86 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         parse_model_sign("model_sign", params.external_wrench_model_sign);
     }
 
+    auto read_joint_admittance_finite = [](const YAML::Node& node, const char* key, double& target) {
+        if (!node || !node[key]) {
+            return;
+        }
+        const double value = node[key].as<double>();
+        if (!std::isfinite(value)) {
+            LOG_WARN << "Invalid joint_admittance." << key << ": " << value << ", keep default " << target;
+            return;
+        }
+        target = value;
+    };
+    auto read_joint_admittance_bounded = [](const YAML::Node& node,
+                                            const char* key,
+                                            double& target,
+                                            double min_value,
+                                            bool strict_min) {
+        if (!node || !node[key]) {
+            return;
+        }
+        const double value = node[key].as<double>();
+        const bool valid_min = strict_min ? value > min_value : value >= min_value;
+        if (!std::isfinite(value) || !valid_min) {
+            LOG_WARN << "Invalid joint_admittance." << key << ": " << value << ", keep default " << target;
+            return;
+        }
+        target = value;
+    };
+    auto read_joint_admittance_bool = [](const YAML::Node& node, const char* key, bool& target) {
+        if (node && node[key]) {
+            target = node[key].as<bool>();
+        }
+    };
+    auto apply_joint_admittance_node = [&](const YAML::Node& node, JointAdmittanceJointConfig& target) {
+        if (!node || !node.IsMap()) {
+            return;
+        }
+        read_joint_admittance_bool(node, "enabled", target.enabled);
+        read_joint_admittance_finite(node, "torque_gain", target.torque_gain);
+        read_joint_admittance_bounded(node, "virtual_inertia", target.virtual_inertia, 0.0, true);
+        read_joint_admittance_bounded(node, "natural_frequency_hz", target.natural_frequency_hz, 0.0, true);
+        read_joint_admittance_bounded(node, "damping_ratio", target.damping_ratio, 0.0, true);
+        read_joint_admittance_bounded(node, "offset_limit", target.offset_limit, 0.0, false);
+        read_joint_admittance_bounded(node, "velocity_limit", target.velocity_limit, 0.0, false);
+        read_joint_admittance_bounded(node, "acceleration_limit", target.acceleration_limit, 0.0, false);
+    };
+
+    if (config["joint_admittance"] && config["joint_admittance"].IsMap()) {
+        const auto admittance = config["joint_admittance"];
+        read_joint_admittance_bool(admittance, "enabled", robot_property.joint_admittance.enabled);
+        read_joint_admittance_finite(admittance, "torque_ext_direct_gain",
+                                     robot_property.joint_admittance.torque_ext_direct_gain);
+
+        if (admittance["default"]) {
+            for (auto& joint_cfg : robot_property.joint_admittance.joints) {
+                apply_joint_admittance_node(admittance["default"], joint_cfg);
+            }
+        }
+
+        if (admittance["groups"] && admittance["groups"].IsMap()) {
+            for (const auto& group : admittance["groups"]) {
+                const auto group_node = group.second;
+                if (!group_node["joints"] || !group_node["joints"].IsSequence()) {
+                    LOG_WARN << "joint_admittance group missing joints list, skipping";
+                    continue;
+                }
+                for (const auto& joint_name_node : group_node["joints"]) {
+                    const std::string joint_name = joint_name_node.as<std::string>();
+                    const auto it = joint_name_to_index.find(joint_name);
+                    if (it == joint_name_to_index.end()) {
+                        LOG_WARN << "joint_admittance unknown joint: " << joint_name;
+                        continue;
+                    }
+                    auto& joint_cfg = robot_property.joint_admittance.joints[it->second];
+                    joint_cfg.enabled = true;
+                    apply_joint_admittance_node(group_node, joint_cfg);
+                }
+            }
+        }
+    }
+
     if (config["joints"] && config["joints"].IsSequence()) {
         for (const auto& joint_config : config["joints"]) {
             std::string joint_name;
@@ -304,6 +384,11 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                     robot_property.joint_integral_ratio[joint_idx] =
                         joint_config["joint_impedance_control"]["integral_ratio"].as<double>();
                 }
+            }
+
+            if (joint_config["joint_admittance"] && joint_config["joint_admittance"].IsMap()) {
+                apply_joint_admittance_node(joint_config["joint_admittance"],
+                                            robot_property.joint_admittance.joints[joint_idx]);
             }
 
             if (joint_config["butterworth_filter"]) {

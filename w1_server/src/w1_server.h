@@ -138,6 +138,10 @@ private:
     Vector12d sensor_wrench_gravity_;
     Vector12d raw_sensor_wrench_;
     VectorDof latest_torque_ext_ = VectorDof::Zero();
+    VectorDof latest_joint_admittance_q_offset_ = VectorDof::Zero();
+    VectorDof latest_joint_admittance_dq_offset_ = VectorDof::Zero();
+    VectorDof latest_joint_position_ref_admittance_ = VectorDof::Zero();
+    VectorDof latest_joint_impedance_error_after_admittance_ = VectorDof::Zero();
     Vector12d sensor_zero_offset_;
     bool sensor_zero_offset_valid_[2] = {false, false};
     int sensor_zero_offset_samples_[2] = {0, 0};
