@@ -1,5 +1,6 @@
 #pragma once
 #include "inverse_dynamics.h"
+#include "joint_admittance_controller.h"
 #include "joint_impedance_controller.h"
 #include "torque_controller_base.h"
 
@@ -16,6 +17,7 @@ public:
 protected:
     VectorDof idle_q_;
     std::shared_ptr<dynamics::JointImpedanceController> joint_impedance_controller_{nullptr};
+    std::shared_ptr<dynamics::JointAdmittanceController> joint_admittance_controller_{nullptr};
 };
 
 }  // namespace robot_server_lib

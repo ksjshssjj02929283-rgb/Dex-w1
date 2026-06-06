@@ -100,6 +100,23 @@ struct TrajectoryBounds {
     }
 };
 
+struct JointAdmittanceJointConfig {
+    bool enabled{false};
+    double torque_gain{1.0};
+    double virtual_inertia{1.0};
+    double natural_frequency_hz{1.5};
+    double damping_ratio{1.2};
+    double offset_limit{0.05};
+    double velocity_limit{0.4};
+    double acceleration_limit{5.0};
+};
+
+struct JointAdmittanceConfig {
+    bool enabled{false};
+    double torque_ext_direct_gain{0.0};
+    std::array<JointAdmittanceJointConfig, ndof_robot> joints{};
+};
+
 struct RobotProperty {
     pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
@@ -112,6 +129,7 @@ struct RobotProperty {
     VectorDof joint_stiffness = VectorDof::Constant(200.0);
     VectorDof joint_damping = VectorDof::Constant(20.0);
     double joint_integral_ratio = 0.01;
+    JointAdmittanceConfig joint_admittance;
     Vector12d cart_stiffness = Vector12d::Constant(200.0);
     Vector12d cart_damping_ratio = Vector12d::Constant(1.0);  // 阻尼比 范围0.5 ~ 1.5
     ErrorCode error_code{ErrorCode::NoError};
@@ -187,6 +205,10 @@ struct TorqueCtrlCommand {
     VectorDof torque_impedance;    // 笛卡尔阻抗控制模式下的力矩
     VectorDof torque_ext;          // 由外部wrench映射得到的关节空间力矩
     VectorDof q_desired;
+    VectorDof joint_admittance_q_offset{VectorDof::Zero()};
+    VectorDof joint_admittance_dq_offset{VectorDof::Zero()};
+    VectorDof joint_position_ref_admittance{VectorDof::Zero()};
+    VectorDof joint_impedance_error_after_admittance{VectorDof::Zero()};
 };
 
 // 移动指令

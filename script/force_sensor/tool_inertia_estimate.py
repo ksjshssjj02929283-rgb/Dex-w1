@@ -38,7 +38,7 @@ except Exception:  # pragma: no cover
 
 
 DEFAULT_STATE_TOPIC = "/feedback/robot_server_state"
-DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "tool_inertia_data"
+DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "force_data"
 DEFAULT_DT = 0.01
 DEFAULT_FILTER_FC_HZ = 5.0
 DEFAULT_TOOL_MASS_KG = 1.061
@@ -781,7 +781,7 @@ def main() -> None:
         capture_path = args.input.expanduser()
     else:
         samples = capture_online(args)
-        capture_path = args.output_dir / f"tool_inertia_capture_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+        capture_path = args.output_dir / f"tool_inertia_estimate_{datetime.now().strftime('%m%d%H%M')}.jsonl"
         write_jsonl(capture_path, samples)
         print(f"已保存: {capture_path}")
 
@@ -800,7 +800,7 @@ def main() -> None:
     payload["capture_path"] = str(capture_path)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    result_path = args.output_dir / f"tool_inertia_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    result_path = args.output_dir / f"tool_inertia_estimate_{datetime.now().strftime('%m%d%H%M')}.json"
     with result_path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
     print_result(payload)

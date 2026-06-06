@@ -21,6 +21,15 @@ public:
                              VectorDof& tau_command,
                              VectorDof* torque_ext_out = nullptr);
 
+    bool UpdateTorqueCommandWithoutExternalTorque(const VectorDof& feedback_q,
+                                                  const VectorDof& feedback_dq,
+                                                  const VectorDof& cmd_q,
+                                                  const VectorDof& cmd_dq,
+                                                  const VectorDof& stiffness,
+                                                  const VectorDof& damping,
+                                                  double integral_ratio,
+                                                  VectorDof& tau_command);
+
     void Reset();
     VectorDof ComputeExternalTorque(const VectorDof& feedback_q, const Vector12d& sensor_wrench) const;
 

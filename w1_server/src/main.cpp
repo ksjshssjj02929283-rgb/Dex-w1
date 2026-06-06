@@ -58,14 +58,7 @@ static void CheckConfig(const std::filesystem::path& default_cfg_path, const std
                 modified = true;
                 std::cout << "[WARN] Added missing field: " << key << std::endl;
             } else if (default_node.second.IsMap()) {
-                for (const auto& sub_node : default_node.second) {
-                    std::string sub_key = sub_node.first.as<std::string>();
-                    if (!user_config[key][sub_key]) {
-                        user_config[key][sub_key] = sub_node.second;
-                        modified = true;
-                        std::cout << "[WARN] Added missing field: " << key << "." << sub_key << std::endl;
-                    }
-                }
+                user_config[key] = MergeYamlNode(user_config[key], default_node.second, key, modified);
             } else if (default_node.second.IsSequence() && key == "joints") {
                 for (size_t i = 0; i < default_node.second.size(); ++i) {
                     if (i >= user_config[key].size()) {

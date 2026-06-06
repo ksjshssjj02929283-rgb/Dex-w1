@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record, plot, action-replay-record, and analyse robot force-sensor state fields.
 
-Records are written to script/force_sensor/force_analyse_data/<timestamp>.json
+Records are written to script/force_sensor/force_data/force_analyse_<timestamp>.json
 by default. Use --record to capture data from /feedback/robot_server_state,
 --plot to visualize an existing record, --replay to play an action JSON while
 recording force data, and --analyse to compute RMS from the latest recording.
@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Sequence
 
 DEFAULT_STATE_TOPIC = "/feedback/robot_server_state"
-DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "force_analyse_data"
+DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "force_data"
 JOINT_POSITION_TOPIC = "/control/joint_position"
 LEFT_HAND_TOPIC = "/set_brainco_left_hand_qpos"
 RIGHT_HAND_TOPIC = "/set_brainco_right_hand_qpos"
@@ -73,8 +73,8 @@ FINGER_KEYS = [
 
 
 def timestamp_filename(now: datetime | None = None) -> str:
-    stamp = (now or datetime.now()).strftime("%Y%m%d_%H%M%S")
-    return f"{stamp}.json"
+    stamp = (now or datetime.now()).strftime("%m%d%H%M")
+    return f"force_analyse_{stamp}.json"
 
 
 def latest_recording(output_dir: Path) -> Path:

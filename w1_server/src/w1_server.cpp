@@ -58,6 +58,10 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     sensor_wrench_gravity_.setZero();
     raw_sensor_wrench_.setZero();
     latest_torque_ext_.setZero();
+    latest_joint_admittance_q_offset_.setZero();
+    latest_joint_admittance_dq_offset_.setZero();
+    latest_joint_position_ref_admittance_.setZero();
+    latest_joint_impedance_error_after_admittance_.setZero();
     sensor_zero_offset_.setZero();
     LoadToolGravityCompensationConfig(robot_cfg_path);
 
@@ -672,6 +676,10 @@ void RobotServer::TorqueControlThreadFunc() {
             this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd)) {
             this->is_cmd_valid_ = true;
             latest_torque_ext_ = torque_cmd.torque_ext;
+            latest_joint_admittance_q_offset_ = torque_cmd.joint_admittance_q_offset;
+            latest_joint_admittance_dq_offset_ = torque_cmd.joint_admittance_dq_offset;
+            latest_joint_position_ref_admittance_ = torque_cmd.joint_position_ref_admittance;
+            latest_joint_impedance_error_after_admittance_ = torque_cmd.joint_impedance_error_after_admittance;
             // 位置指令线性插值
             VectorDof interpolated_position = line_interpolator_.Interpolate(this->planner_cmd_.cmd.position);
             JointMeasurement manager_measurement{};
@@ -806,6 +814,10 @@ void RobotServer::TorqueControlThreadFunc() {
             }
         } else {
             latest_torque_ext_.setZero();
+            latest_joint_admittance_q_offset_.setZero();
+            latest_joint_admittance_dq_offset_.setZero();
+            latest_joint_position_ref_admittance_.setZero();
+            latest_joint_impedance_error_after_admittance_.setZero();
             line_interpolator_.Reset();
             for (int i = 0; i < ndof_robot; ++i) {
                 butterworth_filter_[i]->Reset();  // 重置滤波器状态
@@ -855,6 +867,21 @@ void RobotServer::TorqueControlThreadFunc() {
                     << utils::VectorToJsonArrayString(torque_ff_log_arr_, index_offset, ndof_config_).str()
                     << ", \"torque_ext\": "
                     << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
+                    << ", \"torque_ext_raw\": "
+                    << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
+                    << ", \"joint_admittance_q_offset\": "
+                    << utils::VectorToJsonArrayString(latest_joint_admittance_q_offset_, index_offset, ndof_config_)
+                           .str()
+                    << ", \"joint_admittance_dq_offset\": "
+                    << utils::VectorToJsonArrayString(latest_joint_admittance_dq_offset_, index_offset, ndof_config_)
+                           .str()
+                    << ", \"joint_position_ref_admittance\": "
+                    << utils::VectorToJsonArrayString(latest_joint_position_ref_admittance_, index_offset, ndof_config_)
+                           .str()
+                    << ", \"joint_impedance_error_after_admittance\": "
+                    << utils::VectorToJsonArrayString(latest_joint_impedance_error_after_admittance_, index_offset,
+                                                      ndof_config_)
+                           .str()
                     << ", \"force_sensor\": "
                     << utils::VectorToJsonArrayString(force_sensor_log).str() << "}";
             nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
@@ -1065,6 +1092,11 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(torque_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(torque_ff_arr_, index_offset, ndof_config_).str() +
         ",\n  \"torque_ext\":" + utils::VectorToJsonArrayString(latest_torque_ext_, index_offset, ndof_config_).str() +
+        ",\n  \"torque_ext_raw\":" + utils::VectorToJsonArrayString(latest_torque_ext_, index_offset, ndof_config_).str() +
+        ",\n  \"joint_admittance_q_offset\":" + utils::VectorToJsonArrayString(latest_joint_admittance_q_offset_, index_offset, ndof_config_).str() +
+        ",\n  \"joint_admittance_dq_offset\":" + utils::VectorToJsonArrayString(latest_joint_admittance_dq_offset_, index_offset, ndof_config_).str() +
+        ",\n  \"joint_position_ref_admittance\":" + utils::VectorToJsonArrayString(latest_joint_position_ref_admittance_, index_offset, ndof_config_).str() +
+        ",\n  \"joint_impedance_error_after_admittance\":" + utils::VectorToJsonArrayString(latest_joint_impedance_error_after_admittance_, index_offset, ndof_config_).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
         ",\n  \"force_sensor_gravity\":" + utils::VectorToJsonArrayString(sensor_wrench_gravity_).str() +
         ",\n  \"raw_force_sensor\":" + utils::VectorToJsonArrayString(raw_sensor_wrench_).str() +

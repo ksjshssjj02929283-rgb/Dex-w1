@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Plot arm-only position error, torque, torque_ext, and force_sensor.
+"""Plot arm-only position error, torque, torque_ext, admittance/impedance fields, and force_sensor.
 
 Data sources:
   - Default: read recent samples from ~/log/robot_record.jsonl.
   - Topic mode: capture std_msgs/String JSON from /feedback/robot_server_state.
-    Captured topic samples are saved as force_log_YYYYmmdd_HHMMSS.jsonl
-    in this script directory.
+    Captured topic samples are saved as plot_log_force_MMDDHHMM.jsonl
+    in script/force_sensor/force_data/.
 
 Examples:
   python3 plot_log_force.py 5
@@ -31,7 +31,11 @@ import numpy as np
 
 LOG_PATH = Path("~/log/robot_record.jsonl").expanduser()
 DEFAULT_STATE_TOPIC = "/feedback/robot_server_state"
-ARRAY_KEYS = ["joint_position", "joint_position_cmd", "joint_torque", "torque_ext"]
+ARRAY_KEYS = [
+    "joint_position", "joint_position_cmd", "joint_torque", "torque_ext",
+    "joint_admittance_q_offset", "joint_admittance_dq_offset",
+    "joint_position_ref_admittance",
+]
 FORCE_SENSOR_KEY = "force_sensor"
 FORCE_SENSOR_LABELS = ["Fx [N]", "Fy [N]", "Fz [N]", "Tx [Nm]", "Ty [Nm]", "Tz [Nm]"]
 
@@ -100,8 +104,10 @@ def load_recent_samples(log_path: Path, max_samples: int, seconds: float, debug:
 
 
 def make_topic_log_path() -> Path:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return Path(__file__).resolve().parent / f"force_log_{timestamp}.jsonl"
+    timestamp = datetime.now().strftime("%m%d%H%M")
+    output_dir = Path(__file__).resolve().parent / "force_data"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir / f"plot_log_force_{timestamp}.jsonl"
 
 
 def load_topic_samples(topics: Sequence[str], max_samples: int, seconds: float, debug: bool = False):
@@ -221,37 +227,111 @@ def plot_arm_figure(
     arm_name: str,
     joint_indices: Sequence[int],
     times: np.ndarray,
+    show_admittance: bool,
     pos_error_deg: np.ndarray,
     torque: np.ndarray,
     torque_ext: np.ndarray,
+    admittance_q_offset: np.ndarray,
+    admittance_dq_offset: np.ndarray,
+    position_ref_admittance: np.ndarray,
+    impedance_error_after_admittance: np.ndarray,
+    force_sensor: np.ndarray,
+    sensor_indices: Sequence[int],
     start_timestamp: datetime,
 ):
     import matplotlib.pyplot as plt
 
     cols = len(joint_indices)
-    fig, axes = plt.subplots(3, cols, figsize=(19.2, 8.8), dpi=100, sharex=True)
-    fig.suptitle(f"{arm_name} (Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})", fontsize=11)
-    configure_axes_grid(axes)
 
-    for col, joint_idx in enumerate(joint_indices):
-        joint_label = f"{arm_name.split()[0]} J{col + 1}"
+    if show_admittance:
+        plot_rows = 5
+        rows = plot_rows
+        figsize = (19.2, rows * 1.8)
+        fig = plt.figure(figsize=figsize, dpi=100)
+        grid = fig.add_gridspec(rows, cols)
+        axes = np.empty((plot_rows, cols), dtype=object)
+        for row in range(plot_rows):
+            for col in range(cols):
+                axes[row, col] = fig.add_subplot(grid[row, col])
+        fig.suptitle(
+            f"{arm_name} — Admittance/Impedance "
+            f"(Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})",
+            fontsize=11,
+        )
+        configure_axes_grid(axes)
 
-        ax = axes[0, col]
-        ax.plot(times, pos_error_deg[:, joint_idx], color="tab:blue", linewidth=1.2)
-        ax.set_title(joint_label, fontsize=10)
-        if col == 0:
-            ax.set_ylabel("Pos Error [deg]", fontsize=9)
+        for col, joint_idx in enumerate(joint_indices):
+            joint_label = f"{arm_name.split()[0]} J{col + 1}"
 
-        ax = axes[1, col]
-        ax.plot(times, torque[:, joint_idx], color="tab:red", linewidth=1.2)
-        if col == 0:
-            ax.set_ylabel("Torque [Nm]", fontsize=9)
+            ax = axes[0, col]
+            ax.plot(times, torque_ext[:, joint_idx], color="tab:purple", linewidth=1.2)
+            ax.set_title(joint_label, fontsize=10)
+            if col == 0:
+                ax.set_ylabel("Torque Ext [Nm]", fontsize=9)
 
-        ax = axes[2, col]
-        ax.plot(times, torque_ext[:, joint_idx], color="tab:purple", linewidth=1.2)
-        if col == 0:
-            ax.set_ylabel("Torque Ext [Nm]", fontsize=9)
-        ax.set_xlabel("Time [s]", fontsize=9)
+            ax = axes[1, col]
+            ax.plot(times, admittance_q_offset[:, joint_idx], color="tab:orange", linewidth=1.2)
+            if col == 0:
+                ax.set_ylabel("Admittance Q Offset [rad]", fontsize=9)
+
+            ax = axes[2, col]
+            ax.plot(times, admittance_dq_offset[:, joint_idx], color="tab:cyan", linewidth=1.2)
+            if col == 0:
+                ax.set_ylabel("Admittance DQ Offset [rad/s]", fontsize=9)
+
+            ax = axes[3, col]
+            ax.plot(times, position_ref_admittance[:, joint_idx], color="tab:green", linewidth=1.2)
+            if col == 0:
+                ax.set_ylabel("Pos Ref Admittance [rad]", fontsize=9)
+
+            ax = axes[4, col]
+            ax.plot(times, impedance_error_after_admittance[:, joint_idx], color="tab:brown", linewidth=1.2)
+            if col == 0:
+                ax.set_ylabel("Impedance Error [rad]", fontsize=9)
+            ax.set_xlabel("Time [s]", fontsize=9)
+    else:
+        has_force = has_force_sensor_data(force_sensor)
+        plot_rows = 3
+        rows = plot_rows + (6 if has_force else 0)
+        figsize = (19.2, rows * 1.8)
+        fig = plt.figure(figsize=figsize, dpi=100)
+        grid = fig.add_gridspec(rows, cols)
+        axes = np.empty((plot_rows, cols), dtype=object)
+        for row in range(plot_rows):
+            for col in range(cols):
+                axes[row, col] = fig.add_subplot(grid[row, col])
+        fig.suptitle(f"{arm_name} (Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})", fontsize=11)
+        configure_axes_grid(axes)
+
+        for col, joint_idx in enumerate(joint_indices):
+            joint_label = f"{arm_name.split()[0]} J{col + 1}"
+
+            ax = axes[0, col]
+            ax.plot(times, pos_error_deg[:, joint_idx], color="tab:blue", linewidth=1.2)
+            ax.set_title(joint_label, fontsize=10)
+            if col == 0:
+                ax.set_ylabel("Pos Error [deg]", fontsize=9)
+
+            ax = axes[1, col]
+            ax.plot(times, torque[:, joint_idx], color="tab:red", linewidth=1.2)
+            if col == 0:
+                ax.set_ylabel("Torque [Nm]", fontsize=9)
+
+            ax = axes[2, col]
+            ax.plot(times, torque_ext[:, joint_idx], color="tab:purple", linewidth=1.2)
+            if col == 0:
+                ax.set_ylabel("Torque Ext [Nm]", fontsize=9)
+            ax.set_xlabel("Time [s]", fontsize=9)
+
+        if has_force:
+            for row_offset, sensor_idx in enumerate(sensor_indices):
+                ax = fig.add_subplot(grid[plot_rows + row_offset, :])
+                configure_axes_grid(np.asarray([[ax]], dtype=object))
+                ax.plot(times, force_sensor[:, sensor_idx], color="tab:green", linewidth=1.2)
+                ax.axhline(0.0, color="gray", linewidth=0.6, alpha=0.5)
+                ax.set_title(FORCE_SENSOR_LABELS[row_offset], fontsize=10)
+                ax.set_ylabel(FORCE_SENSOR_LABELS[row_offset], fontsize=9)
+                ax.set_xlabel("Time [s]", fontsize=9)
 
     fig.tight_layout(rect=[0.02, 0.02, 1.0, 0.97], h_pad=1.5, w_pad=1.2)
     return fig
@@ -261,9 +341,14 @@ def plot_single_joint(
     joint_idx: int,
     joint_count: int,
     times: np.ndarray,
+    show_admittance: bool,
     pos_error_deg: np.ndarray,
     torque: np.ndarray,
     torque_ext: np.ndarray,
+    admittance_q_offset: np.ndarray,
+    admittance_dq_offset: np.ndarray,
+    position_ref_admittance: np.ndarray,
+    impedance_error_after_admittance: np.ndarray,
     start_timestamp: datetime,
 ):
     import matplotlib.pyplot as plt
@@ -275,46 +360,47 @@ def plot_single_joint(
             raise ValueError("Requested joint is not an arm joint.")
         title = f"{'Left' if joint_idx < 13 else 'Right'} J{(joint_idx - 6) % 7 + 1}"
 
-    fig, axes = plt.subplots(3, 1, figsize=(12.8, 8.0), dpi=100, sharex=True)
-    configure_axes_grid(np.asarray(axes))
-    fig.suptitle(f"{title} (Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})", fontsize=11)
+    if show_admittance:
+        n_plots = 5
+        fig, axes = plt.subplots(n_plots, 1, figsize=(12.8, n_plots * 2.0), dpi=100, sharex=True)
+        configure_axes_grid(np.asarray(axes))
+        fig.suptitle(
+            f"{title} — Admittance/Impedance "
+            f"(Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})",
+            fontsize=11,
+        )
 
-    axes[0].plot(times, pos_error_deg[:, joint_idx], color="tab:blue", linewidth=1.2)
-    axes[0].set_ylabel("Pos Error [deg]", fontsize=9)
+        axes[0].plot(times, torque_ext[:, joint_idx], color="tab:purple", linewidth=1.2)
+        axes[0].set_ylabel("Torque Ext [Nm]", fontsize=9)
 
-    axes[1].plot(times, torque[:, joint_idx], color="tab:red", linewidth=1.2)
-    axes[1].set_ylabel("Torque [Nm]", fontsize=9)
+        axes[1].plot(times, admittance_q_offset[:, joint_idx], color="tab:orange", linewidth=1.2)
+        axes[1].set_ylabel("Admittance Q Offset [rad]", fontsize=9)
 
-    axes[2].plot(times, torque_ext[:, joint_idx], color="tab:purple", linewidth=1.2)
-    axes[2].set_ylabel("Torque Ext [Nm]", fontsize=9)
-    axes[2].set_xlabel("Time [s]", fontsize=9)
+        axes[2].plot(times, admittance_dq_offset[:, joint_idx], color="tab:cyan", linewidth=1.2)
+        axes[2].set_ylabel("Admittance DQ Offset [rad/s]", fontsize=9)
+
+        axes[3].plot(times, position_ref_admittance[:, joint_idx], color="tab:green", linewidth=1.2)
+        axes[3].set_ylabel("Pos Ref Admittance [rad]", fontsize=9)
+
+        axes[4].plot(times, impedance_error_after_admittance[:, joint_idx], color="tab:brown", linewidth=1.2)
+        axes[4].set_ylabel("Impedance Error [rad]", fontsize=9)
+        axes[4].set_xlabel("Time [s]", fontsize=9)
+    else:
+        fig, axes = plt.subplots(3, 1, figsize=(12.8, 8.0), dpi=100, sharex=True)
+        configure_axes_grid(np.asarray(axes))
+        fig.suptitle(f"{title} (Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})", fontsize=11)
+
+        axes[0].plot(times, pos_error_deg[:, joint_idx], color="tab:blue", linewidth=1.2)
+        axes[0].set_ylabel("Pos Error [deg]", fontsize=9)
+
+        axes[1].plot(times, torque[:, joint_idx], color="tab:red", linewidth=1.2)
+        axes[1].set_ylabel("Torque [Nm]", fontsize=9)
+
+        axes[2].plot(times, torque_ext[:, joint_idx], color="tab:purple", linewidth=1.2)
+        axes[2].set_ylabel("Torque Ext [Nm]", fontsize=9)
+        axes[2].set_xlabel("Time [s]", fontsize=9)
 
     fig.tight_layout(rect=[0.02, 0.02, 1.0, 0.95], h_pad=1.5)
-    return fig
-
-
-def plot_force_sensor_figure(
-    arm_name: str,
-    sensor_indices: Sequence[int],
-    times: np.ndarray,
-    force_sensor: np.ndarray,
-    start_timestamp: datetime,
-):
-    import matplotlib.pyplot as plt
-
-    fig, axes = plt.subplots(2, 3, figsize=(14.0, 7.0), dpi=100, sharex=True)
-    configure_axes_grid(axes)
-    fig.suptitle(f"{arm_name} Force Sensor (Log Start: {start_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})",
-                 fontsize=11)
-
-    for axis_idx, ax in enumerate(axes.flatten()):
-        sensor_idx = sensor_indices[axis_idx]
-        ax.plot(times, force_sensor[:, sensor_idx], color="tab:green", linewidth=1.2)
-        ax.axhline(0.0, color="gray", linewidth=0.6, alpha=0.5)
-        ax.set_title(FORCE_SENSOR_LABELS[axis_idx], fontsize=10)
-        ax.set_xlabel("Time [s]", fontsize=9)
-
-    fig.tight_layout(rect=[0.02, 0.02, 1.0, 0.95], h_pad=1.5, w_pad=1.2)
     return fig
 
 
@@ -326,12 +412,13 @@ def parse_args() -> argparse.Namespace:
             sys.argv[1] = f"--seconds={seconds}"
 
     parser = argparse.ArgumentParser(
-        description="Plot arm position error, torque, torque_ext, and force_sensor from robot_record or robot_server_state topics."
+        description="Plot arm position error, torque, torque_ext, admittance/impedance fields, and force_sensor from robot_record or robot_server_state topics."
     )
     parser.add_argument("--seconds", type=float, default=5.0, help="Time window in seconds to plot from the end.")
     parser.add_argument("--n", type=int, default=5000, help="Maximum valid samples kept while reading.")
     parser.add_argument("--save", action="store_true", help="Save figures to this script directory instead of showing.")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging.")
+    parser.add_argument("--admittance", action="store_true", help="Plot admittance/impedance fields only.")
     parser.add_argument("--joint", type=int, default=None, help="Plot one arm joint by raw joint index.")
     parser.add_argument("--arm", choices=["both", "left", "right"], default="both", help="Select which arm to plot.")
     parser.add_argument("--log", type=Path, default=LOG_PATH, help=f"Path to robot_record.jsonl (default: {LOG_PATH})")
@@ -370,10 +457,17 @@ def main() -> None:
     pos_error_deg = compute_position_error_deg(joint_position, joint_position_cmd)
     start_timestamp = samples[0][0]
 
+    show_admittance = args.admittance
+    admittance_q_offset = build_array(samples, "joint_admittance_q_offset", joint_count) if show_admittance else None
+    admittance_dq_offset = build_array(samples, "joint_admittance_dq_offset", joint_count) if show_admittance else None
+    position_ref_admittance = build_array(samples, "joint_position_ref_admittance", joint_count) if show_admittance else None
+    impedance_error_after_admittance = (position_ref_admittance - joint_position) if show_admittance else None
+
     if args.debug:
         print(f"[DEBUG] Loaded {len(samples)} samples from {source_label}")
         print(f"[DEBUG] Joint count: {joint_count}")
         print(f"[DEBUG] Arm selection: {args.arm}")
+        print(f"[DEBUG] Admittance mode: {show_admittance}")
 
     import matplotlib.pyplot as plt
 
@@ -381,28 +475,31 @@ def main() -> None:
     if args.joint is not None:
         if args.joint not in left_arm and args.joint not in right_arm:
             raise ValueError(f"Joint {args.joint} is not an arm joint for joint_count={joint_count}.")
-        figures.append(plot_single_joint(args.joint, joint_count, times, pos_error_deg, joint_torque, torque_ext,
+        figures.append(plot_single_joint(args.joint, joint_count, times, show_admittance,
+                                         pos_error_deg, joint_torque, torque_ext,
+                                         admittance_q_offset, admittance_dq_offset,
+                                         position_ref_admittance, impedance_error_after_admittance,
                                          start_timestamp))
     else:
         if args.arm in ("both", "left"):
-            figures.append(plot_arm_figure("Left Arm", left_arm, times, pos_error_deg, joint_torque, torque_ext,
-                                           start_timestamp))
+            figures.append(plot_arm_figure("Left Arm", left_arm, times, show_admittance,
+                                           pos_error_deg, joint_torque, torque_ext,
+                                           admittance_q_offset, admittance_dq_offset,
+                                           position_ref_admittance, impedance_error_after_admittance,
+                                           force_sensor, list(range(0, 6)), start_timestamp))
         if args.arm in ("both", "right"):
-            figures.append(plot_arm_figure("Right Arm", right_arm, times, pos_error_deg, joint_torque, torque_ext,
-                                           start_timestamp))
+            figures.append(plot_arm_figure("Right Arm", right_arm, times, show_admittance,
+                                           pos_error_deg, joint_torque, torque_ext,
+                                           admittance_q_offset, admittance_dq_offset,
+                                           position_ref_admittance, impedance_error_after_admittance,
+                                           force_sensor, list(range(6, 12)), start_timestamp))
 
-    if has_force_sensor_data(force_sensor):
-        if args.arm in ("both", "left"):
-            figures.append(plot_force_sensor_figure("Left Arm", list(range(0, 6)), times, force_sensor,
-                                                    start_timestamp))
-        if args.arm in ("both", "right"):
-            figures.append(plot_force_sensor_figure("Right Arm", list(range(6, 12)), times, force_sensor,
-                                                    start_timestamp))
-    elif args.debug:
+    if not has_force_sensor_data(force_sensor) and args.debug:
         print("[DEBUG] No valid force_sensor samples found; skipping force_sensor figure.")
 
     if args.save:
-        output_dir = Path(__file__).resolve().parent
+        output_dir = Path(__file__).resolve().parent / "force_data"
+        output_dir.mkdir(parents=True, exist_ok=True)
         for idx, fig in enumerate(figures, start=1):
             suffix = f"joint_{args.joint}" if args.joint is not None else args.arm
             out_path = output_dir / f"plot_log_force_{suffix}_{idx}.png"
