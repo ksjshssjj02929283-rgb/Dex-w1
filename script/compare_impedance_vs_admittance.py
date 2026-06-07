@@ -47,11 +47,32 @@ from std_msgs.msg import String
 
 # ──────────────────────── 录制节点 ────────────────────────
 
-RECORD_KEYS = [
+# 分析所需的字段
+ANALYSIS_KEYS = [
     "joint_position",
     "joint_position_cmd",
     "torque_ext",
     "joint_admittance_q_offset",
+    "joint_position_ref_admittance",
+    "joint_impedance_error_after_admittance",
+    "force_sensor",
+]
+
+# JSONL 要保存的字段 (与 robot_record.jsonl 一致)
+LOG_KEYS = [
+    "timestamp",
+    "joint_position",
+    "joint_velocity",
+    "joint_torque",
+    "joint_position_input",
+    "joint_position_after_ruckig",
+    "joint_position_after_filter",
+    "joint_position_cmd",
+    "joint_torque_feedforward",
+    "torque_ext",
+    "torque_ext_raw",
+    "joint_admittance_q_offset",
+    "joint_admittance_dq_offset",
     "joint_position_ref_admittance",
     "joint_impedance_error_after_admittance",
     "force_sensor",
@@ -63,8 +84,7 @@ class Recorder(Node):
         super().__init__("impedance_vs_admittance_recorder")
         self._lock = threading.Lock()
         self._t0 = time.monotonic()
-        self.timestamps = []
-        self.data = {k: [] for k in RECORD_KEYS}
+        self._raw_samples = []  # 完整 JSON dict 列表
         self.count = 0
 
         self.create_subscription(String, topic, self._callback, 50)
@@ -76,26 +96,40 @@ class Recorder(Node):
         except (json.JSONDecodeError, TypeError):
             return
 
-        # 检查必需字段
-        if not all(k in d for k in RECORD_KEYS):
+        # 至少要有分析所需字段
+        if not all(k in d for k in ANALYSIS_KEYS):
             return
 
-        t = time.monotonic() - self._t0
-
         with self._lock:
-            self.timestamps.append(t)
-            for k in RECORD_KEYS:
-                self.data[k].append(d[k])
+            self._raw_samples.append(d)
             self.count += 1
 
-    def snapshot(self):
-        """返回 (timestamps_ndarray, data_dict_of_ndarrays)"""
+    def snapshot_raw(self):
+        """返回完整 JSON dict 列表 (用于保存 JSONL)"""
         with self._lock:
-            ts = np.array(self.timestamps)
-            out = {}
-            for k in RECORD_KEYS:
-                out[k] = np.array(self.data[k])
-            return ts, out
+            return list(self._raw_samples)
+
+    def snapshot_analysis(self):
+        """返回 (timestamps_ndarray, data_dict_of_ndarrays) 用于分析"""
+        with self._lock:
+            samples = self._raw_samples
+        timestamps = np.array([time.monotonic() - self._t0 for _ in samples])
+        data = {}
+        for k in ANALYSIS_KEYS:
+            data[k] = np.array([s[k] for s in samples])
+        return timestamps, data
+
+    def save_jsonl(self, filepath):
+        """保存为与 robot_record.jsonl 同格式的文件"""
+        with self._lock:
+            samples = self._raw_samples
+        with open(filepath, "w") as f:
+            for s in samples:
+                row = {}
+                for k in LOG_KEYS:
+                    if k in s:
+                        row[k] = s[k]
+                f.write(json.dumps(row) + "\n")
 
 
 # ──────────────────────── 分析逻辑 ────────────────────────
@@ -370,6 +404,9 @@ def main():
     save_dir.mkdir(parents=True, exist_ok=True)
     save_path = save_dir / "comparison_impedance_vs_admittance.png"
 
+    # JSONL 文件名带时间戳
+    jsonl_path = save_dir / f"record_{time.strftime('%Y%m%d_%H%M%S')}.jsonl"
+
     # ── 启动 ROS ──
     rclpy.init()
     recorder = Recorder(args.topic)
@@ -386,6 +423,7 @@ def main():
     print("║  现在开始录制，请施加外力...                             ║")
     print("║  输入 s 并回车 → 停止录制并输出结果                     ║")
     print("╚══════════════════════════════════════════════════════════╝")
+    print(f"  JSONL: {jsonl_path}")
     print()
 
     # 后台打印录制状态
@@ -420,7 +458,12 @@ def main():
     rclpy.shutdown()
     spin_thread.join(timeout=2.0)
 
-    timestamps, data = recorder.snapshot()
+    # ── 保存 JSONL ──
+    recorder.save_jsonl(str(jsonl_path))
+    print(f"[SAVED] {jsonl_path}")
+
+    # ── 提取分析数据 ──
+    timestamps, data = recorder.snapshot_analysis()
 
     if len(timestamps) < 20:
         print("\n[ERROR] 数据量太少 (<20 samples)，无法分析")
@@ -441,7 +484,7 @@ def main():
     # ── 保存图片 ──
     save_plots(timestamps, data, left_joints, right_joints,
                force_events, force_mag, threshold, args, save_path)
-    print(f"\n[SAVED] {save_path}")
+    print(f"[SAVED] {save_path}")
     print("[DONE]")
 
 
