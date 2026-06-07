@@ -84,6 +84,7 @@ class Recorder(Node):
         super().__init__("impedance_vs_admittance_recorder")
         self._lock = threading.Lock()
         self._t0 = time.monotonic()
+        self._timestamps = []  # 每个采样到达时的相对时间
         self._raw_samples = []  # 完整 JSON dict 列表
         self.count = 0
 
@@ -96,11 +97,12 @@ class Recorder(Node):
         except (json.JSONDecodeError, TypeError):
             return
 
-        # 至少要有分析所需字段
         if not all(k in d for k in ANALYSIS_KEYS):
             return
 
+        t = time.monotonic() - self._t0
         with self._lock:
+            self._timestamps.append(t)
             self._raw_samples.append(d)
             self.count += 1
 
@@ -112,12 +114,12 @@ class Recorder(Node):
     def snapshot_analysis(self):
         """返回 (timestamps_ndarray, data_dict_of_ndarrays) 用于分析"""
         with self._lock:
+            ts = np.array(self._timestamps)
             samples = self._raw_samples
-        timestamps = np.array([time.monotonic() - self._t0 for _ in samples])
         data = {}
         for k in ANALYSIS_KEYS:
             data[k] = np.array([s[k] for s in samples])
-        return timestamps, data
+        return ts, data
 
     def save_jsonl(self, filepath):
         """保存为与 robot_record.jsonl 同格式的文件"""
