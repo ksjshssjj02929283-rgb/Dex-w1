@@ -30,13 +30,13 @@ bool JointImpedanceController::UpdateTorqueCommand(const VectorDof& feedback_q,
     }
 
     AccumulateIntegralError(q_error);
-    // const VectorDof torque_integral = (stiffness * integral_ratio).asDiagonal() * integral_error_;
+    const VectorDof torque_integral = (stiffness * integral_ratio).asDiagonal() * integral_error_;
     const VectorDof torque_ext = ComputeExternalTorque(feedback_q, sensor_wrench);
     if (torque_ext_out) {
         *torque_ext_out = torque_ext;
-    }
+    }JointAdmittanceController
 
-    tau_command = stiffness.asDiagonal() * q_error + damping.asDiagonal() * dq_error  + torque_ext; // + torque_integral
+    tau_command = stiffness.asDiagonal() * q_error + damping.asDiagonal() * dq_error + torque_ext + torque_integral;
     return true;
 }
 
@@ -59,8 +59,8 @@ bool JointImpedanceController::UpdateTorqueCommandWithoutExternalTorque(const Ve
     }
 
     AccumulateIntegralError(q_error);
-    // const VectorDof torque_integral = (stiffness * integral_ratio).asDiagonal() * integral_error_;
-    tau_command = stiffness.asDiagonal() * q_error + damping.asDiagonal() * dq_error; // + torque_integral
+    const VectorDof torque_integral = (stiffness * integral_ratio).asDiagonal() * integral_error_;
+    tau_command = stiffness.asDiagonal() * q_error + damping.asDiagonal() * dq_error + torque_integral;
     return true;
 }
 

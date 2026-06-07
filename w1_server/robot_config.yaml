@@ -261,7 +261,7 @@ joints:
       frequency: 12
     joint_impedance_control:
       stiffness: 30.0
-      damping: 30.0
+      damping: 2.0
       integral_ratio: 0.05
 
   - name: "LEFT_J5"
