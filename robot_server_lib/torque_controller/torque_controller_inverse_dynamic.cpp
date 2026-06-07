@@ -1,6 +1,16 @@
 #include "torque_controller_inverse_dynamic.h"
 
+#include <cmath>
+
 namespace robot_server_lib {
+
+namespace {
+constexpr double kIntegralTorqueExtThresholdNm = 0.2;
+constexpr double kIntegralQOffsetThresholdRad = 0.003;
+constexpr double kIntegralDqOffsetThresholdRadPerSec = 0.03;
+constexpr double kIntegralCommandVelocityThresholdRadPerSec = 0.03;
+constexpr double kIntegralFeedbackVelocityThresholdRadPerSec = 0.05;
+}  // namespace
 
 TorqueControllerInvDynamic::TorqueControllerInvDynamic(RobotModel robot_model) : TorqueControllerBase(robot_model) {
     joint_impedance_controller_ = std::make_shared<dynamics::JointImpedanceController>(robot_model_);
@@ -74,10 +84,24 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
 
             const VectorDof cmd_q_admittance = cmd_q + q_offset;
             const VectorDof cmd_dq_admittance = cmd_dq + dq_offset;
+            VectorDof integral_enable = VectorDof::Zero();
+            for (int i = 0; i < ndof_robot; ++i) {
+                const bool external_force_settled = std::abs(torque_ext_raw[i]) < kIntegralTorqueExtThresholdNm;
+                const bool admittance_offset_settled =
+                    std::abs(q_offset[i]) < kIntegralQOffsetThresholdRad &&
+                    std::abs(dq_offset[i]) < kIntegralDqOffsetThresholdRadPerSec;
+                const bool command_settled =
+                    std::abs(cmd_dq_admittance[i]) < kIntegralCommandVelocityThresholdRadPerSec;
+                const bool feedback_settled =
+                    std::abs(feedback_dq[i]) < kIntegralFeedbackVelocityThresholdRadPerSec;
+                integral_enable[i] =
+                    external_force_settled && admittance_offset_settled && command_settled && feedback_settled ? 1.0
+                                                                                                                : 0.0;
+            }
 
             joint_impedance_controller_->UpdateTorqueCommandWithoutExternalTorque(
                 feedback_q, feedback_dq, cmd_q_admittance, cmd_dq_admittance, K_p, K_v, K_i_ratio,
-                torque_joint_impedance);
+                torque_joint_impedance, torque_ctrl_dt, &integral_enable);
 
             if (robot_model_.robot_property_default.joint_admittance.enabled) {
                 torque_joint_impedance +=

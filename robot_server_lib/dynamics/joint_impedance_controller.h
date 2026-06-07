@@ -19,7 +19,9 @@ public:
                              double integral_ratio,
                              const Vector12d& sensor_wrench,
                              VectorDof& tau_command,
-                             VectorDof* torque_ext_out = nullptr);
+                             VectorDof* torque_ext_out = nullptr,
+                             double dt = 0.0,
+                             const VectorDof* integral_enable = nullptr);
 
     bool UpdateTorqueCommandWithoutExternalTorque(const VectorDof& feedback_q,
                                                   const VectorDof& feedback_dq,
@@ -28,14 +30,16 @@ public:
                                                   const VectorDof& stiffness,
                                                   const VectorDof& damping,
                                                   double integral_ratio,
-                                                  VectorDof& tau_command);
+                                                  VectorDof& tau_command,
+                                                  double dt = 0.0,
+                                                  const VectorDof* integral_enable = nullptr);
 
     void Reset();
     VectorDof ComputeExternalTorque(const VectorDof& feedback_q, const Vector12d& sensor_wrench) const;
 
 private:
     Vector6d ProcessExternalWrench(const Vector6d& wrench) const;
-    void AccumulateIntegralError(const VectorDof& q_error);
+    void AccumulateIntegralError(const VectorDof& q_error, double dt, const VectorDof* integral_enable);
 
     RobotModel robot_model_;
     VectorDof integral_error_ = VectorDof::Zero();
