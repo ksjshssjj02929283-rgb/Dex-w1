@@ -58,13 +58,23 @@ class CollisionChecker:
         if pairs_to_remove_indices:
             print(f"Removed {len(pairs_to_remove_indices)} naturally colliding pairs (SRDF/Adjacent).")
 
-    def check_collision(self, q):
+    def check_collision(self, q, margin=0.0):
         """
-        Check if the configuration q (NQ=20) has self-collisions.
+        Check if the configuration q (NQ=20) has self-collisions or is within safety margin.
         """
         # q must be (20,) array
         pin.updateGeometryPlacements(self.model, self.data, self.collision_model, self.collision_data, q)
-        return pin.computeCollisions(self.collision_model, self.collision_data, False)
+        
+        if margin > 1e-6:
+            # Check proximity using computeDistances
+            pin.computeDistances(self.collision_model, self.collision_data)
+            for dist_res in self.collision_data.distanceResults:
+                if dist_res.min_distance < margin:
+                    return True
+            return False
+        else:
+            # Classic boolean collision check
+            return pin.computeCollisions(self.collision_model, self.collision_data, False)
 
 def nonrepeating_covering_traj(joint_limits, wf, L, duration, dt, margin_ratio=0.03, filt_cutoff=None):
     """
@@ -142,7 +152,8 @@ def generate_q_with_limits(joint_limits, wf, L, duration, dt, collision_checker=
                 q_full = q_full_base.copy()
                 q_full[arm_indices] = q[idx, :]
                 
-                if collision_checker.check_collision(q_full):
+                # Check collision with safety margin
+                if collision_checker.check_collision(q_full, margin=0.01):
                     ok = False
                     break
             
@@ -150,12 +161,12 @@ def generate_q_with_limits(joint_limits, wf, L, duration, dt, collision_checker=
             if ok and (q.shape[0]-1) % stride != 0:
                 q_full = q_full_base.copy()
                 q_full[arm_indices] = q[-1, :]
-                if collision_checker.check_collision(q_full):
+                if collision_checker.check_collision(q_full, margin=0.01):
                     ok = False
 
         if ok:
             if collision_checker:
-                print(f"✅ Trajectory within limits and collision-free on attempt {attempt}")
+                print(f"✅ Trajectory within limits and collision-free (with margin) on attempt {attempt}")
             else:
                 print(f"✅ Trajectory within limits on attempt {attempt}")
             return t, q

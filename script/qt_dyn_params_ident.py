@@ -293,6 +293,8 @@ class DynParamIdentifier(Node):
     def _run_real_capture_once(self, traj_path, rec_path):
         with open(traj_path, "r") as file:
             q_ref = np.loadtxt(file)
+        # 使用GUI设置的真机步长覆盖
+        local_dt = getattr(self, "_real_dt_override", self.dt)
         rec = np.zeros((q_ref.shape[0], 1 + 7 + 7))
         if self.is_left:
             # 运动到第一个点
@@ -320,7 +322,7 @@ class DynParamIdentifier(Node):
                         np.array(self.joint_torque[6:13]),
                     ]
                 )
-                next_t = self._fixed_rate_next(next_t, self.dt)
+                next_t = self._fixed_rate_next(next_t, local_dt)
                 self._sleep_until(next_t)
         else:
             # 运动到第一个点
@@ -348,7 +350,7 @@ class DynParamIdentifier(Node):
                         np.array(self.joint_torque[13:20]),
                     ]
                 )
-                next_t = self._fixed_rate_next(next_t, self.dt)
+                next_t = self._fixed_rate_next(next_t, local_dt)
                 self._sleep_until(next_t)
         # 仅在未停止时保存
         if not self._stop_flag.is_set():
@@ -1092,9 +1094,31 @@ class DynParamGUI(QtWidgets.QMainWindow):
         bottom_vbox.setContentsMargins(8, 8, 8, 8)
         bottom_vbox.setSpacing(8)
         self.btn_run_real = QtWidgets.QPushButton("真机采集轨迹")
+        
+        # 真机采集倍速选择
+        self.real_speed_combo = QtWidgets.QComboBox()
+        self.real_speed_combo.addItems(["x1倍速", "x0.5倍速"])
+        self.real_speed_combo.setCurrentText("x1倍速")
+        self.real_speed_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        fm_real = self.real_speed_combo.fontMetrics()
+        max_text_real = max(["x1倍速", "x0.5倍速"], key=lambda s: fm_real.width(s))
+        width_real = fm_real.width(max_text_real) + 36
+        self.real_speed_combo.setFixedWidth(width_real)
+        self.real_speed_combo.setFixedHeight(btn_h)
+        self.real_speed_combo.setStyleSheet(
+            f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}"
+        )
+
+        real_row = QtWidgets.QWidget()
+        real_row_layout = QtWidgets.QHBoxLayout(real_row)
+        real_row_layout.setContentsMargins(0, 0, 0, 0)
+        real_row_layout.setSpacing(8)
+        real_row_layout.addWidget(self.btn_run_real)
+        real_row_layout.addWidget(self.real_speed_combo)
+        bottom_vbox.addWidget(real_row)
+
         self.btn_calc_params = QtWidgets.QPushButton("计算动力学参数")
         self.btn_write_params = QtWidgets.QPushButton("写入辨识参数")
-        bottom_vbox.addWidget(self.btn_run_real)
         # 图示已采集轨迹放在真机采集所有轨迹下方
         bottom_vbox.addWidget(self.btn_show_plot)
         ctrl_layout.addWidget(bottom_group)
@@ -1183,6 +1207,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_write_params.clicked.connect(self.on_write_params)
         # 倍速选择变化
         self.sim_speed_combo.currentTextChanged.connect(self._on_sim_speed_changed)
+        self.real_speed_combo.currentTextChanged.connect(self._on_real_speed_changed)
         # 新增：停止按钮连接
         self.btn_stop.clicked.connect(self.on_stop_clicked)
         # 新增：图示辨识结果按钮
@@ -1253,6 +1278,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.btn_show_reference.setDisabled(disabled)
             # 仿真倍速选择在运行/计算时也禁用
             self.sim_speed_combo.setDisabled(disabled)
+            # 真机倍速选择在运行/计算时也禁用
+            self.real_speed_combo.setDisabled(disabled)
             # 根据采集完成状态决定是否可用
             self.btn_show_plot.setDisabled(
                 True if disabled else (not self._captured_finished)
@@ -1314,6 +1341,14 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.log_msg(f"仿真速度系数设置为 {self._sim_speed_mult}x")
         except Exception:
             self._sim_speed_mult = 1.0
+
+    def _on_real_speed_changed(self, text: str):
+        try:
+            mapping = {"x1倍速": 1.0, "x0.5倍速": 0.5}
+            self._real_speed_mult = mapping.get(text, 1.0)
+            self.log_msg(f"真机采集速度系数设置为 {self._real_speed_mult}x")
+        except Exception:
+            self._real_speed_mult = 1.0
 
     def _open_meshcat_url(self):
         try:
@@ -1400,6 +1435,13 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def on_run_real(self):
         self.update_params_from_ui()
+        # 根据倍速系数调整真机采集步长
+        try:
+            self.dyn._real_dt_override = float(self.dyn.dt) / max(
+                0.1, float(getattr(self, "_real_speed_mult", 1.0))
+            )
+        except Exception:
+            self.dyn._real_dt_override = self.dyn.dt
         # 弹窗确认
         msg = (
             "将执行真机采集：\n\n"
