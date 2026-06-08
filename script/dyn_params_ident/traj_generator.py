@@ -11,6 +11,9 @@ import math
 import numpy as np
 import yaml
 import pinocchio as pin
+import time
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from scipy.signal import butter, filtfilt
 from matplotlib import pyplot as plt
@@ -115,20 +118,103 @@ def nonrepeating_covering_traj(joint_limits, wf, L, duration, dt, margin_ratio=0
 
     return t, q
 
-def generate_q_with_limits(joint_limits, wf, L, duration, dt, collision_checker=None, arm_indices=None, q_fixed=None, max_attempts=500):
-    ndof = len(joint_limits)
-    for attempt in range(1, max_attempts + 1):
-        if attempt % 50 == 0:
-            print(f"... Generation at attempt {attempt} ...")
+def _parallel_worker(worker_id, joint_limits, wf, L, duration, dt, urdf_path, srdf_path, arm_indices, q_fixed, attempts_per_worker):
+    import numpy as np
+    import os
+    import time
+    # Seeding properly to keep different processes from generating duplicate signal
+    np.random.seed((os.getpid() * worker_id + int(time.time() * 1000)) % 123456789)
+    
+    local_checker = None
+    if urdf_path and os.path.exists(urdf_path):
+        try:
+            local_checker = CollisionChecker(urdf_path, srdf_path)
+        except Exception:
+            pass
+
+    for attempt in range(1, attempts_per_worker + 1):
         t, q = nonrepeating_covering_traj(
             joint_limits=joint_limits, wf=wf, L=L,
             duration=duration, dt=dt,
-            margin_ratio=0.02 # 缩小边距比例，使轨迹覆盖 96% 的关节范围
+            margin_ratio=0.02 
         )
 
         ok = True
         # 1) Joint limit check
-        for i in range(ndof):
+        for i in range(len(joint_limits)):
+            low, high = joint_limits[i]
+            if not np.all((q[:, i] >= low) & (q[:, i] <= high)):
+                ok = False
+                break
+        
+        # 2) Self-collision check
+        if ok and local_checker is not None:
+            stride = max(1, int(round(0.05 / dt)))
+            if q_fixed is None:
+                q_full_base = np.zeros(local_checker.model.nq)
+            else:
+                q_full_base = q_fixed.copy()
+            
+            for idx in range(0, q.shape[0], stride):
+                q_full = q_full_base.copy()
+                q_full[arm_indices] = q[idx, :]
+                if local_checker.check_collision(q_full, margin=0.0):
+                    ok = False
+                    break
+            
+            if ok and (q.shape[0]-1) % stride != 0:
+                q_full = q_full_base.copy()
+                q_full[arm_indices] = q[-1, :]
+                if local_checker.check_collision(q_full, margin=0.0):
+                    ok = False
+
+        if ok:
+            return t, q, attempt
+            
+    return None
+
+def generate_q_with_limits(joint_limits, wf, L, duration, dt, collision_checker=None, arm_indices=None, q_fixed=None, max_attempts=1000, multi_arm=False, urdf_path=None, srdf_path=None):
+    ndof_total = len(joint_limits)
+    
+    if urdf_path and os.path.exists(urdf_path):
+        num_workers = multiprocessing.cpu_count()
+        print(f"🚀 Spawning {num_workers} processes for parallel trajectory generation...")
+        
+        attempts_per_worker = max(100, max_attempts // num_workers)
+        
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            futures = {
+                executor.submit(
+                    _parallel_worker,
+                    i, joint_limits, wf, L, duration, dt,
+                    urdf_path, srdf_path, arm_indices, q_fixed,
+                    attempts_per_worker
+                ): i for i in range(num_workers)
+            }
+            
+            for future in as_completed(futures):
+                result = future.result()
+                if result is not None:
+                    t, q, attempt = result
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    print(f"✅ Trajectory found by parallel Worker {futures[future]} on attempt {attempt}")
+                    return t, q
+                    
+        print("❌ All parallel processes failed. Falling back to sequential...")
+
+    for attempt in range(1, max_attempts + 1):
+        if attempt % 50 == 0:
+            print(f"... Generation at attempt {attempt} ...")
+        
+        t, q = nonrepeating_covering_traj(
+            joint_limits=joint_limits, wf=wf, L=L,
+            duration=duration, dt=dt,
+            margin_ratio=0.02 
+        )
+
+        ok = True
+        # 1) Joint limit check
+        for i in range(ndof_total):
             low, high = joint_limits[i]
             if not np.all((q[:, i] >= low) & (q[:, i] <= high)):
                 ok = False
@@ -139,21 +225,21 @@ def generate_q_with_limits(joint_limits, wf, L, duration, dt, collision_checker=
             # Check collisions roughly every 50ms to save time
             stride = max(1, int(round(0.05 / dt)))
             
-            # Use provided q_fixed as base for full body configuration
             if q_fixed is None:
                 q_full_base = np.zeros(collision_checker.model.nq)
             else:
                 q_full_base = q_fixed.copy()
             
             if arm_indices is None:
+                # Default to something sensible if not provided, but usually it is provided
                 arm_indices = range(6, 13)
 
             for idx in range(0, q.shape[0], stride):
                 q_full = q_full_base.copy()
                 q_full[arm_indices] = q[idx, :]
                 
-                # Check collision with safety margin
-                if collision_checker.check_collision(q_full, margin=0.01):
+                # Check collision with safety margin (0 cm)
+                if collision_checker.check_collision(q_full, margin=0.0):
                     ok = False
                     break
             
@@ -161,7 +247,7 @@ def generate_q_with_limits(joint_limits, wf, L, duration, dt, collision_checker=
             if ok and (q.shape[0]-1) % stride != 0:
                 q_full = q_full_base.copy()
                 q_full[arm_indices] = q[-1, :]
-                if collision_checker.check_collision(q_full, margin=0.01):
+                if collision_checker.check_collision(q_full, margin=0.0):
                     ok = False
 
         if ok:
@@ -291,21 +377,17 @@ if __name__ == "__main__":
     model = collision_checker.model
     
     # Resting positions (用于碰撞检测)
-    q_torso_rest = np.array([0.5, -1.0, 0.5, 0.0, 0.0, 0.0])
+    q_torso_rest = np.zeros(6)
     q_left_rest  = np.array([0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5])
     q_right_rest = np.array([0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5])
 
-    # Define arms
-    arms = {
-        'left': {
-            'indices': range(6, 13),
-            'q_fixed': np.concatenate([q_torso_rest, np.zeros(7), q_right_rest])
-        },
-        'right': {
-            'indices': range(13, 20),
-            'q_fixed': np.concatenate([q_torso_rest, q_left_rest, np.zeros(7)])
-        }
-    }
+    # Left and Right Arm indices
+    left_indices = list(range(6, 13))
+    right_indices = list(range(13, 20))
+    combined_indices = left_indices + right_indices
+
+    # Define arms for saving/plotting (loop metadata)
+    arm_names = ['left', 'right']
 
     # Output directory
     script_dir = Path(__file__).parent
@@ -313,39 +395,50 @@ if __name__ == "__main__":
     if robot_version_key:
         base_traj_dir = base_traj_dir / robot_version_key
 
-    for arm_side, arm_config in arms.items():
-        print(f"\n--- Generating for {arm_side.upper()} ARM ---")
-        indices = arm_config['indices']
-        q_fixed = arm_config['q_fixed']
-        
-        # Get joint limits for this arm
-        joint_limits = [(model.lowerPositionLimit[i], model.upperPositionLimit[i]) for i in indices]
-        
-        arm_traj_dir = base_traj_dir / arm_side
-        for seg_idx in [1, 2]:
-            traj_name = f"traj{seg_idx}"
-            traj_path = arm_traj_dir / f"{traj_name}.dat"
-            
-            print(f"Generating {traj_name} ({duration}s)...")
-            try:
-                t, q = generate_q_with_limits(
-                    joint_limits=joint_limits, 
-                    wf=wf, L=L, 
-                    duration=duration, 
-                    dt=dt, 
-                    collision_checker=collision_checker,
-                    arm_indices=indices,
-                    q_fixed=q_fixed
-                )
-                
-                save_q(q, str(traj_path))
-                
-            except Exception as e:
-                print(f"Error generating for {arm_side} {traj_name}: {e}")
-                import traceback
-                traceback.print_exc()
+    # Get joint limits for both arms
+    combined_limits = [(model.lowerPositionLimit[i], model.upperPositionLimit[i]) for i in combined_indices]
+    
+    # Base configuration for full-body collision check
+    q_fixed_base = np.concatenate([q_torso_rest, np.zeros(14)])
 
-        # After generating both segments, plot them together
+    for seg_idx in [1, 2]:
+        traj_name = f"traj{seg_idx}"
+        print(f"\n--- Generating Combined {traj_name.upper()} (Both Arms) ---")
+        
+        try:
+            # Generate combined trajectory for both arms (14 DOF) with collision detection
+            t, q_combined = generate_q_with_limits(
+                joint_limits=combined_limits, 
+                wf=wf, L=L, 
+                duration=duration, 
+                dt=dt, 
+                collision_checker=collision_checker,
+                arm_indices=combined_indices,
+                q_fixed=q_fixed_base,
+                max_attempts=10000, # Increased attempts for combined check
+                urdf_path=urdf_path,
+                srdf_path=srdf_path
+            )
+            
+            # Split and save for each arm
+            q_left = q_combined[:, :7]
+            q_right = q_combined[:, 7:]
+            
+            for arm_side, q_arm in zip(['left', 'right'], [q_left, q_right]):
+                arm_traj_dir = base_traj_dir / arm_side
+                traj_path = arm_traj_dir / f"{traj_name}.dat"
+                save_q(q_arm, str(traj_path))
+                
+        except Exception as e:
+            print(f"Error generating combined {traj_name}: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # After generating all segments, plot for each arm
+    for arm_side in ['left', 'right']:
+        arm_traj_dir = base_traj_dir / arm_side
+        indices = left_indices if arm_side == 'left' else right_indices
+        joint_limits = [(model.lowerPositionLimit[i], model.upperPositionLimit[i]) for i in indices]
         try:
             arms_trajectory_plot(arm_side, str(arm_traj_dir), str(arm_traj_dir), ndof, joint_limits, dt=dt)
         except Exception as e:
