@@ -982,7 +982,7 @@ class W1Manager:
             return StatusCode.FAIL
         if not self._check_qpos_dimension(name, qpos_):
             return StatusCode.DIM_MISMATCH
-        res = self._get_arm_ee_client(name).set_pos(qpos_)
+        res = self._get_arm_ee_client(name).set_pos(qpos_.tolist())
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def set_home_qpos(self,
@@ -1057,8 +1057,9 @@ class W1Manager:
         if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name, False):
                 return StatusCode.FAIL, None
-            res, value = self._get_arm_ee_client(name).get_pos()
-            return (StatusCode.SUCCESS if res else StatusCode.FAIL), value
+            res, info = self._get_arm_ee_client(name).get_info()
+            return (StatusCode.SUCCESS if res else StatusCode.FAIL), np.array(
+                info.joint_position)
 
         robot_info = self.robot_client.get_info()
         if robot_info.joint_position_cmd is None and robot_info.joint_position is None:
@@ -1653,7 +1654,7 @@ class W1Manager:
                 if local_count < target_count:
                     continue
                 elif local_count == target_count:
-                    ee_client.set_pos(np.array(target_ee_qpos))
+                    ee_client.set_pos(target_ee_qpos)
                     ee_trigger_list_[idx][2] = True
                     self.logger.debug(
                         f"{ee_name} has triggered: {target_count} {target_ee_qpos}."
