@@ -43,7 +43,7 @@ private:
 
     RobotModel robot_model_;
     VectorDof integral_error_ = VectorDof::Zero();
-    double error_integral_max_ = 0.1;
+    double error_integral_max_ = 0.5;
 };
 
 }  // namespace dynamics
