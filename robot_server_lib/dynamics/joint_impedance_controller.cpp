@@ -132,14 +132,12 @@ void JointImpedanceController::AccumulateIntegralError(const VectorDof& q_error,
                                                        double dt,
                                                        const VectorDof* integral_enable) {
     if (dt <= 0.0 || !std::isfinite(dt)) {
-        integral_error_.setZero();
         return;
     }
 
     for (int i = 0; i < ndof_robot; ++i) {
         const bool enabled = (integral_enable == nullptr) || ((*integral_enable)[i] > 0.5);
         if (!enabled) {
-            integral_error_[i] = 0.0;
             continue;
         }
         integral_error_[i] = std::clamp(integral_error_[i] + q_error[i] * dt,

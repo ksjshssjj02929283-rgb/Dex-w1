@@ -35,7 +35,7 @@ joint_admittance:
     primary_shoulder:
       joints: [LEFT_J1, LEFT_J2, LEFT_J3]
       virtual_inertia: 1.2
-      natural_frequency_hz: 1.0
+      natural_frequency_hz: 1.5
       damping_ratio: 1.5
       offset_limit: 0.1
     primary_elbow_wrist:

@@ -158,31 +158,43 @@ def detect_force_events(torque_ext, joint_indices, threshold_ratio=0.12):
     return events, mag, threshold
 
 
-def compute_metrics_per_joint(timestamps, joint_position, force_event,
-                              settle_sec=2.0, threshold=0.003):
+def compute_metrics_per_joint(timestamps, joint_position, joint_position_cmd,
+                              force_event, settle_sec=2.0, threshold=0.003):
     """
-    joint_position: 单个关节的原始位置数组 (rad)
-    稳态误差 = |mean(初始0.5s位置) - mean(录制结束前0.5s位置)|
+    joint_position:     单个关节的原始位置数组 (rad)
+    joint_position_cmd: 单个关节的指令位置数组 (rad)
+    所有误差均对 cmd 计算, 不用实测初值作参考.
     """
     dt = np.median(np.diff(timestamps)) if len(timestamps) > 1 else 0.001
     fs, fe = force_event
     n = len(joint_position)
 
-    # 峰值偏差: 施力阶段相对初始位置的偏移
+    error = joint_position - joint_position_cmd
+
     half_sec = max(1, int(0.5 / dt))
-    initial_pos = np.mean(joint_position[:half_sec])
-    peak_error = np.max(np.abs(joint_position[fs:fe + 1] - initial_pos))
 
-    # 稳态误差: 初始0.5s均值 vs 结束前0.5s均值
-    final_pos = np.mean(joint_position[-half_sec:])
-    ss_error = abs(initial_pos - final_pos)
+    baseline_error = np.mean(error[:half_sec])
+    peak_error = np.max(np.abs(error[fs:fe + 1]))
 
-    # 恢复时间: 从外力消失到位置回到初始值附近
-    post = np.abs(joint_position[fe + 1:] - initial_pos)
-    recovered = np.where(post < threshold)[0]
+    final_error = np.mean(error[-half_sec:])
+    final_error_abs = np.mean(np.abs(error[-half_sec:]))
+    baseline_error_abs = np.mean(np.abs(error[:half_sec:]))
+
+    net_recovery_error = abs(final_error - baseline_error)
+
+    post_error = error[fe + 1:]
+    recovered = np.where(np.abs(post_error - baseline_error) < threshold)[0]
     recovery_time = recovered[0] * dt if len(recovered) > 0 else float("inf")
 
-    return {"peak_error": peak_error, "steady_state_error": ss_error, "recovery_time": recovery_time}
+    return {
+        "peak_error": peak_error,
+        "baseline_error": baseline_error,
+        "baseline_error_abs": baseline_error_abs,
+        "final_error": final_error,
+        "final_error_abs": final_error_abs,
+        "net_recovery_error": net_recovery_error,
+        "recovery_time": recovery_time,
+    }
 
 
 # ──────────────────────── 绘图 ────────────────────────
@@ -272,18 +284,21 @@ def save_plots(timestamps, data, left_joints, right_joints,
     ax_det.axis("off")
     ax_det.set_title("Recovery Metrics", fontsize=10)
 
-    det = f"{'Joint':<8}{'Steady(deg)':<14}{'Recovery(s)':<14}{'Mode':<8}\n" + "─" * 44 + "\n"
+    det = f"{'Joint':<8}{'Base(°)':<10}{'Final(°)':<10}{'NetRec(°)':<10}{'RecT(s)':<10}{'Mode':<6}\n" + "─" * 54 + "\n"
     if force_events:
         fe = force_events[0]
         for row in range(n_pairs):
             for side, joints, label in [("L", left_joints, "adm"), ("R", right_joints, "imp")]:
                 j = joints[row]
                 pos = data["joint_position"][:, j]
-                m = compute_metrics_per_joint(timestamps, pos, fe, args.settle, args.threshold)
-                ss_str = f"{np.degrees(m['steady_state_error']):.4f}" if not np.isnan(m["steady_state_error"]) else "N/A"
+                cmd = data["joint_position_cmd"][:, j]
+                m = compute_metrics_per_joint(timestamps, pos, cmd, fe, args.settle, args.threshold)
+                bl_str = f"{np.degrees(m['baseline_error']):+.3f}"
+                fi_str = f"{np.degrees(m['final_error']):+.3f}"
+                nr_str = f"{np.degrees(m['net_recovery_error']):.4f}"
                 rt_str = f"{m['recovery_time']:.3f}" if m["recovery_time"] < 100 else ">100"
-                det += f"J{j:<6}{ss_str:>10}°      {rt_str:>8}s    {label}\n"
-            det += "─" * 44 + "\n"
+                det += f"J{j:<6}{bl_str:>9} {fi_str:>9} {nr_str:>9} {rt_str:>8}s  {label}\n"
+            det += "─" * 54 + "\n"
 
     ax_det.text(0.05, 0.95, det, transform=ax_det.transAxes,
                 fontsize=8, va="top", fontfamily="monospace",
@@ -321,62 +336,55 @@ def print_statistics(timestamps, data, left_joints, right_joints,
 
     fe = force_events[0] if force_events else (0, len(timestamps) - 1)
 
-    print(f"\n{'Joint':<8}{'Side':<6}{'Peak(deg)':<13}{'Steady(deg)':<15}{'Recovery(s)':<15}{'tau_ext(Nm)':<12}")
-    print("─" * 72)
+    print(f"\n{'Joint':<7}{'Side':<5}{'Baseline':>10}{'Final':>10}{'NetRecov':>10}{'Peak':>10}{'RecovT':>10}{'tau_ext':>9}")
+    print(f"{'':12}{'(deg)':>10}{'(deg)':>10}{'(deg)':>10}{'(deg)':>10}{'(s)':>10}{'(Nm)':>9}")
+    print("─" * 78)
 
-    improvements = {"peak": [], "ss": [], "rt": []}
+    improvements = {"peak": [], "final": [], "net_recovery": [], "rt": []}
 
     for row in range(n_pairs):
         jl, jr = left_joints[row], right_joints[row]
 
         for j, label in [(jl, "adm"), (jr, "imp")]:
             pos = data["joint_position"][:, j]
-            m = compute_metrics_per_joint(timestamps, pos, fe, args.settle, args.threshold)
-            peak_deg = np.degrees(m["peak_error"])
-            ss_deg = np.degrees(m["steady_state_error"]) if not np.isnan(m["steady_state_error"]) else float("nan")
+            cmd = data["joint_position_cmd"][:, j]
+            m = compute_metrics_per_joint(timestamps, pos, cmd, fe, args.settle, args.threshold)
+            bl_deg = np.degrees(m["baseline_error"])
+            fi_deg = np.degrees(m["final_error"])
+            nr_deg = np.degrees(m["net_recovery_error"])
+            pk_deg = np.degrees(m["peak_error"])
             rt = m["recovery_time"]
             tau = np.mean(np.abs(data["torque_ext"][fe[0]:fe[1]+1, j]))
 
             rt_str = f"{rt:.3f}" if rt < 100 else ">100"
-            ss_str = f"{ss_deg:.4f}" if not np.isnan(ss_deg) else "N/A"
-            print(f"J{j:<6}{label:<6}{peak_deg:>7.4f}°    {ss_str:>10}°      {rt_str:>8}s      {tau:>7.2f}")
+            print(f"J{j:<5}{label:<5}{bl_deg:>+10.4f}{fi_deg:>+10.4f}{nr_deg:>10.4f}{pk_deg:>10.4f}{rt_str:>10s}{tau:>9.2f}")
 
-        # 改善百分比
         pos_l = data["joint_position"][:, jl]
         pos_r = data["joint_position"][:, jr]
-        ml = compute_metrics_per_joint(timestamps, pos_l, fe, args.settle, args.threshold)
-        mr = compute_metrics_per_joint(timestamps, pos_r, fe, args.settle, args.threshold)
+        cmd_l = data["joint_position_cmd"][:, jl]
+        cmd_r = data["joint_position_cmd"][:, jr]
+        ml = compute_metrics_per_joint(timestamps, pos_l, cmd_l, fe, args.settle, args.threshold)
+        mr = compute_metrics_per_joint(timestamps, pos_r, cmd_r, fe, args.settle, args.threshold)
 
-        # Peak improvement
         if mr["peak_error"] > 1e-6:
-            imp = (1 - ml["peak_error"] / mr["peak_error"]) * 100
-            improvements["peak"].append(imp)
-        # Steady-state improvement
-        if (not np.isnan(ml["steady_state_error"]) and not np.isnan(mr["steady_state_error"])
-                and mr["steady_state_error"] > 1e-6):
-            imp = (1 - ml["steady_state_error"] / mr["steady_state_error"]) * 100
-            improvements["ss"].append(imp)
-        # Recovery time improvement
+            improvements["peak"].append((1 - ml["peak_error"] / mr["peak_error"]) * 100)
+        if mr["final_error_abs"] > 1e-6:
+            improvements["final"].append((1 - ml["final_error_abs"] / mr["final_error_abs"]) * 100)
+        if mr["net_recovery_error"] > 1e-6:
+            improvements["net_recovery"].append((1 - ml["net_recovery_error"] / mr["net_recovery_error"]) * 100)
         if mr["recovery_time"] > 1e-6 and ml["recovery_time"] < 100 and mr["recovery_time"] < 100:
-            imp = (1 - ml["recovery_time"] / mr["recovery_time"]) * 100
-            improvements["rt"].append(imp)
+            improvements["rt"].append((1 - ml["recovery_time"] / mr["recovery_time"]) * 100)
 
-        print("─" * 72)
+        print("─" * 78)
 
-    # 总体汇总
-    print(f"\n{'═' * 72}")
-    print("  总体改善 (左臂 admittance 相对右臂 impedance-only)")
-    print(f"{'═' * 72}")
-    if improvements["peak"]:
-        avg = np.mean(improvements["peak"])
-        print(f"  峰值偏差改善:   {avg:+.1f}%  (正=左臂更优, 负=右臂更优)")
-    if improvements["ss"]:
-        avg = np.mean(improvements["ss"])
-        print(f"  稳态偏差改善:   {avg:+.1f}%")
-    if improvements["rt"]:
-        avg = np.mean(improvements["rt"])
-        print(f"  恢复时间改善:   {avg:+.1f}%")
-    print(f"{'═' * 72}")
+    print(f"\n{'═' * 78}")
+    print("  总体改善 (左臂 admittance 相对右臂 impedance-only, 正=左臂更优)")
+    print(f"{'═' * 78}")
+    for key, label in [("peak", "峰值偏差"), ("final", "末段|actual-cmd|"), ("net_recovery", "净恢复误差"), ("rt", "恢复时间")]:
+        if improvements[key]:
+            avg = np.mean(improvements[key])
+            print(f"  {label+'改善:':<20}{avg:+.1f}%")
+    print(f"{'═' * 78}")
 
 
 # ──────────────────────── 主函数 ────────────────────────
