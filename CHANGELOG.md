@@ -1,6 +1,8 @@
 # CHANGELOG
 
 ## [Unrelease]
+### Feat
+- 适配ee_devices 0.4.3 (dexe_interfaces >= dev-b7a8dbf56ec23b6e6ff5b8b0a6f9383653bb05ed)
 
 ## [V0.5.0]
 ### Feat

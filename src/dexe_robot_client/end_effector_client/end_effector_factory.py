@@ -6,19 +6,26 @@ All rights reserved.
 ----------------------------------------------------------------------------
 '''
 
+from dexe_rp.utils.type import EndEffectorType as DexeRP_EEType
+
 from .end_effector_type import EndEffectorType
-from .brainco_hand_client import BrainCoHandClient
-from .linker_hand_client import LinkerHandClient
-from .pgc_gripper_client import PGCGripperClient
+from .end_effector_client import EndEffectorClient
 
 
-def create_end_effector_client(is_left: bool, is_sim: bool,
-                               end_effector_type: EndEffectorType):
+# TODO: Should be deprecated util use EndEffectorType defined in dexe_rp
+def create_end_effector_client(end_effector_type: EndEffectorType,
+                               is_left: bool, is_sim: bool):
     if end_effector_type == EndEffectorType.BRAINCO_HAND:
-        return BrainCoHandClient(is_left=is_left, is_sim=is_sim)
+        return EndEffectorClient(ee_type=DexeRP_EEType.BrainCo_Revo1_R,
+                                 is_left=is_left,
+                                 is_sim=is_sim)
     elif end_effector_type == EndEffectorType.LINKER_HAND:
-        return LinkerHandClient(is_left=is_left, is_sim=is_sim)
+        return EndEffectorClient(ee_type=DexeRP_EEType.Linker_L6,
+                                 is_left=is_left,
+                                 is_sim=is_sim)
     elif end_effector_type == EndEffectorType.PGC_GRIPPER:
-        return PGCGripperClient(is_left=is_left, is_sim=is_sim)
+        return EndEffectorClient(ee_type=DexeRP_EEType.DH_PGC_140_50,
+                                 is_left=is_left,
+                                 is_sim=is_sim)
     else:
         raise ValueError(f"{end_effector_type.name} are not support.")
