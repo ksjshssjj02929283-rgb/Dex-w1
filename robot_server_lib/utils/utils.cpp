@@ -337,7 +337,7 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                         joint_config["joint_impedance_control"]["damping"].as<double>();
                 }
                 if (joint_config["joint_impedance_control"]["integral_ratio"]) {
-                    robot_property.joint_integral_ratio =
+                    robot_property.joint_integral_ratio[joint_idx] =
                         joint_config["joint_impedance_control"]["integral_ratio"].as<double>();
                 }
             }

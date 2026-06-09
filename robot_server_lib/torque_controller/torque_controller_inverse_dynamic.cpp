@@ -35,7 +35,7 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
     VectorDof torque_joint_impedance = VectorDof::Zero();
     VectorDof K_p = input_cmd.cmd.joint_stiffness;
     VectorDof K_v = input_cmd.cmd.joint_damping;
-    double K_i_ratio = input_cmd.cmd.joint_integral_ratio;
+    VectorDof K_i_ratio = input_cmd.cmd.joint_integral_ratio;
     bool use_simple_dynamics = input_cmd.use_simple_dynamics;
     switch (state_) {
         case TorqueControllerState::Idle:

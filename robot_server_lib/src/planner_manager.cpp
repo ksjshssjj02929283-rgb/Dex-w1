@@ -702,9 +702,9 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
                 LOG_WARN << ss.str();
                 return;
             }
-            robot_property_.joint_integral_ratio = k_i_ratio;
-            std::cout << "[INFO] Set k_i_ratio to " << robot_property_.joint_integral_ratio << "\n";
-            LOG_INFO << "Set k_i_ratio to " << robot_property_.joint_integral_ratio;
+            robot_property_.joint_integral_ratio.setConstant(k_i_ratio);
+            std::cout << "[INFO] Set k_i_ratio to " << k_i_ratio << "\n";
+            LOG_INFO << "Set k_i_ratio to " << k_i_ratio;
             return;
         }
         case RequestType::CartStiffness: {

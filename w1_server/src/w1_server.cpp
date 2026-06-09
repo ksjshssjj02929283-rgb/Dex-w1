@@ -1119,7 +1119,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ", \"enable_chassis_shaper\":" + std::to_string(this->manager_info_.robot_property.enable_chassis_shaper) +
         ",\n  \"joint_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_stiffness, index_offset, ndof_config_).str() +
         ",\n  \"joint_damping\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_damping, index_offset, ndof_config_).str() +
-        ",\n  \"joint_integral_ratio\":" + std::to_string(this->manager_info_.robot_property.joint_integral_ratio) +
+        ",\n  \"joint_integral_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_integral_ratio, index_offset, ndof_config_).str() +
         ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness, 0, this->robot_mode_ == RobotMode::SingleArm? 6 : 12).str() +
         ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio, 0, this->robot_mode_ == RobotMode::SingleArm? 6 : 12).str() +
         ",\n  \"chassis_status_word\":" + std::to_string(this->robot_feedback_.chassis_feedback.status_word) +
