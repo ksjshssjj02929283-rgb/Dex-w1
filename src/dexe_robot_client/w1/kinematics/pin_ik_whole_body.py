@@ -262,9 +262,12 @@ class PinIKWholeBody:
     #     self.set_cost_function(cost_type=self.cost_type)
     #     return True
 
-    def set_lean_backward_threshold(self, threshold: float):
+    def set_lean_backward_threshold(self, threshold: float, is_strict: bool = False):
         self.lean_backward_threshold = threshold
-        self.set_cost_function(cost_type="standard_lean_backward")
+        if is_strict:
+            self.set_cost_function(cost_type="standard_lean_backward_strict")
+        else:
+            self.set_cost_function(cost_type="standard_lean_backward")
         return True
 
     def set_cost_function(self, cost_type: str):
