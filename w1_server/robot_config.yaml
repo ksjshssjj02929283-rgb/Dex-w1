@@ -11,6 +11,9 @@ right_arm_name: "W1RightArmAnthropomorphic"
 # === 是否允许开启力控 ===
 allow_force_control: true
 
+# === 是否启用力传感器（false 时走无外力/无导纳的纯关节阻抗模式）===
+allow_force_sensor: true
+
 # === 外力传感器进入关节阻抗控制前的死区与饱和 ===
 force_sensor_external_wrench:
   model_sign: -1
