@@ -129,6 +129,23 @@ def compute_dh_from_axes(axes, x_init=None) -> List[Tuple[float, float, float, f
         x_prev, p_prev = x_curr, p_new
     return params
 
+def correct_dh_orientation(robot, active_joints, target_end_link, arm_base_link,
+                           dh_params) -> List[Tuple[float, float, float, float]]:
+    robot.update_cfg({j: 0.0 for j in active_joints})
+    T_urdf = robot.get_transform(target_end_link, arm_base_link)
+    T_dh = dh_fk(dh_params, np.zeros(len(active_joints)))
+
+    pos_err = np.linalg.norm(T_urdf[:3, 3] - T_dh[:3, 3])
+    R_err = T_urdf[:3, :3].T @ T_dh[:3, :3]
+    ang_err = np.degrees(np.arccos(np.clip((np.trace(R_err) - 1) / 2, -1, 1)))
+
+    if pos_err < 1e-3 and abs(ang_err - 180) < 1.0:
+        params = list(dh_params)
+        a, alpha, d, theta = params[-1]
+        params[-1] = (a, alpha, d, theta + np.pi)
+        return params
+    return dh_params
+
 def get_arm_base_x_axis(robot, arm_base_link: str) -> np.ndarray:
     return normalize(robot.get_transform(arm_base_link)[:3, 0])
 
@@ -259,6 +276,8 @@ def get_dh_params_for_arm(arm: str) -> List[Tuple[str, float, float, str]]:
     arm_base_link = find_arm_base_link(robot, arm)
     x_init = get_arm_base_x_axis(robot, arm_base_link)
     dh_params = compute_dh_from_axes(axes, x_init)
+    dh_params = correct_dh_orientation(robot, active_joints, target_end_link,
+                                       arm_base_link, dh_params)
 
     result = []
     for a, alpha, d, theta in dh_params:
@@ -288,6 +307,8 @@ def main():
         print(f"手臂基座 link: {arm_base_link}")
         x_init = get_arm_base_x_axis(robot, arm_base_link)
         dh_params = compute_dh_from_axes(axes, x_init)
+        dh_params = correct_dh_orientation(robot, active_joints, target_end_link,
+                                           arm_base_link, dh_params)
 
         print("\nDH 参数:")
         print_dh_list(dh_params, active_joints)
