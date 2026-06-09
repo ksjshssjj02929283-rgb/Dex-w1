@@ -55,6 +55,10 @@ enable_record: false
 safe_level: 0.5
 global_speed_ratio: 1.0
 
+# === 力传感器开关 ===
+# false: 跳过传感器初始化，关节阻抗退化为无 tau_ext 的纯阻抗模式
+force_sensor_enabled: true
+
 # === 外力传感器进入关节阻抗控制前的死区与饱和 ===
 force_sensor_external_wrench:
   model_sign: -1

@@ -64,6 +64,16 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     latest_joint_impedance_error_after_admittance_.setZero();
     sensor_zero_offset_.setZero();
     LoadToolGravityCompensationConfig(robot_cfg_path);
+    try {
+        const auto cfg = YAML::LoadFile(robot_cfg_path.string());
+        if (cfg["force_sensor_enabled"]) {
+            force_sensor_enabled_ = cfg["force_sensor_enabled"].as<bool>();
+        }
+    } catch (const std::exception& e) {
+        LOG_WARN << "Failed to read force_sensor_enabled from config, defaulting to true: " << e.what();
+    }
+    RCLCPP_INFO(this->get_logger(), "force_sensor_enabled: %s", force_sensor_enabled_ ? "true" : "false");
+    LOG_INFO << "force_sensor_enabled: " << (force_sensor_enabled_ ? "true" : "false");
 
     // 创建 /feedback/joint 发布器
     feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint", 10);
@@ -121,31 +131,36 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     }
 
     // 初始化力传感器
-    primary_sensor_ = std::make_shared<SriForceSensor>();
-    primary_sensor_->SetToolGravityCompensationForZeroCalibration(
-        tool_gravity_compensation_enabled_, tool_mass_kg_, tool_com_m_, tool_gravity_magnitude_, tool_model_sign_,
-        [this]() -> std::optional<Eigen::Matrix3d> {
-            return GetEERotationWorldFromEE(0);
-        });
-    if (!primary_sensor_->Init(460800)) {
-        RCLCPP_WARN(this->get_logger(), "Failed to initialize primary force sensor");
-        LOG_WARN << "Failed to initialize primary force sensor";
-        primary_sensor_ = nullptr;
+    if (force_sensor_enabled_) {
+        primary_sensor_ = std::make_shared<SriForceSensor>();
+        primary_sensor_->SetToolGravityCompensationForZeroCalibration(
+            tool_gravity_compensation_enabled_, tool_mass_kg_, tool_com_m_, tool_gravity_magnitude_, tool_model_sign_,
+            [this]() -> std::optional<Eigen::Matrix3d> {
+                return GetEERotationWorldFromEE(0);
+            });
+        if (!primary_sensor_->Init(460800)) {
+            RCLCPP_WARN(this->get_logger(), "Failed to initialize primary force sensor");
+            LOG_WARN << "Failed to initialize primary force sensor";
+            primary_sensor_ = nullptr;
+        } else {
+            Vector6d primary_zero_offset = Vector6d::Zero();
+            primary_sensor_->GetZeroOffset(&primary_zero_offset);
+            sensor_zero_offset_.head<6>() = primary_zero_offset;
+            sensor_zero_offset_valid_[0] = primary_sensor_->HasValidZeroOffset();
+            sensor_zero_offset_samples_[0] = primary_sensor_->GetZeroOffsetSampleCount();
+            RCLCPP_INFO(this->get_logger(), "Primary force sensor initialized successfully");
+            RCLCPP_INFO(this->get_logger(),
+                        "Primary force sensor zero offset: valid=%d, samples=%d, [%.4f, %.4f, %.4f, %.4f, %.4f, %.4f]",
+                        sensor_zero_offset_valid_[0], sensor_zero_offset_samples_[0],
+                        primary_zero_offset[0], primary_zero_offset[1], primary_zero_offset[2], primary_zero_offset[3],
+                        primary_zero_offset[4], primary_zero_offset[5]);
+            LOG_INFO << "Primary force sensor initialized successfully";
+            LOG_INFO << "Primary force sensor zero offset: valid=" << sensor_zero_offset_valid_[0]
+                     << ", samples=" << sensor_zero_offset_samples_[0] << ", offset=" << primary_zero_offset.transpose();
+        }
     } else {
-        Vector6d primary_zero_offset = Vector6d::Zero();
-        primary_sensor_->GetZeroOffset(&primary_zero_offset);
-        sensor_zero_offset_.head<6>() = primary_zero_offset;
-        sensor_zero_offset_valid_[0] = primary_sensor_->HasValidZeroOffset();
-        sensor_zero_offset_samples_[0] = primary_sensor_->GetZeroOffsetSampleCount();
-        RCLCPP_INFO(this->get_logger(), "Primary force sensor initialized successfully");
-        RCLCPP_INFO(this->get_logger(),
-                    "Primary force sensor zero offset: valid=%d, samples=%d, [%.4f, %.4f, %.4f, %.4f, %.4f, %.4f]",
-                    sensor_zero_offset_valid_[0], sensor_zero_offset_samples_[0],
-                    primary_zero_offset[0], primary_zero_offset[1], primary_zero_offset[2], primary_zero_offset[3],
-                    primary_zero_offset[4], primary_zero_offset[5]);
-        LOG_INFO << "Primary force sensor initialized successfully";
-        LOG_INFO << "Primary force sensor zero offset: valid=" << sensor_zero_offset_valid_[0]
-                 << ", samples=" << sensor_zero_offset_samples_[0] << ", offset=" << primary_zero_offset.transpose();
+        RCLCPP_INFO(this->get_logger(), "Force sensor disabled by config, skipping initialization");
+        LOG_INFO << "Force sensor disabled by config, skipping initialization";
     }
     // secondary_sensor_ = std::make_shared<ForceSensorReader>("/dev/ttyUSB1");  // 暂未使用
     if (!primary_sensor_ && !secondary_sensor_) {
