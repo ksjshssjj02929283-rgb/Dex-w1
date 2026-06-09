@@ -17,8 +17,9 @@ bool CheckSafety(const JointMeasurement& joint_measurement,
              joint_measurement.velocity[i] < -params.joint_velocity_limit[i] * velocity_error_threshold)) {
             if (error_codes[i] != ErrorCode::VelocityOverLimit) {
                 std::stringstream ss;
-                ss << "Joint " << i << " velocity over limit, current velocity: " << joint_measurement.velocity[i]
-                   << ", limits: [" << -params.joint_velocity_limit[i] * velocity_error_threshold << ", "
+                ss << "Joint " << model.names[i + 1]
+                   << " velocity over limit, current velocity: " << joint_measurement.velocity[i] << ", limits: ["
+                   << -params.joint_velocity_limit[i] * velocity_error_threshold << ", "
                    << params.joint_velocity_limit[i] * velocity_error_threshold << "]";
                 std::cout << ss.str() << "\n";
                 LOG_CRIT << ss.str();
@@ -31,8 +32,9 @@ bool CheckSafety(const JointMeasurement& joint_measurement,
              joint_measurement.effort[i] < -params.joint_torque_limit[i] * torque_error_threshold)) {
             if (error_codes[i] != ErrorCode::TorqueOverLimit) {
                 std::stringstream ss;
-                ss << "Joint " << i << " torque over limit, current torque: " << joint_measurement.effort[i]
-                   << ", limits: [" << -params.joint_torque_limit[i] * torque_error_threshold << ", "
+                ss << "Joint " << model.names[i + 1]
+                   << " torque over limit, current torque: " << joint_measurement.effort[i] << ", limits: ["
+                   << -params.joint_torque_limit[i] * torque_error_threshold << ", "
                    << params.joint_torque_limit[i] * torque_error_threshold << "]";
                 std::cout << ss.str() << "\n";
                 LOG_CRIT << ss.str();

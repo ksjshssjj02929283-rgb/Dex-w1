@@ -333,6 +333,7 @@ if __name__ == "__main__":
     config_path = os.path.join(os.path.expanduser("~"), "dexe_robot_server_data/robot_config.yaml")
     srdf_path = None
     robot_version_key = None
+    config = {}
     
     if os.path.exists(config_path):
         import yaml
@@ -375,31 +376,45 @@ if __name__ == "__main__":
         exit(1)
 
     model = collision_checker.model
-    
-    # Resting positions (用于碰撞检测)
-    q_torso_rest = np.zeros(6)
+
+    ros2_to_urdf_map = config.get('ros2_to_urdf_map', None)
+
+    if ros2_to_urdf_map:
+        map_keys = list(ros2_to_urdf_map.keys())
+
+        def get_urdf_qidx(urdf_joint_name):
+            joint_id = model.getJointId(urdf_joint_name)
+            if joint_id >= model.njoints:
+                raise RuntimeError(f"Joint '{urdf_joint_name}' not found in URDF model")
+            return model.joints[joint_id].idx_v
+
+        urdf_q_indices = {k: get_urdf_qidx(v) for k, v in ros2_to_urdf_map.items()}
+
+        torso_indices = [urdf_q_indices[k] for k in map_keys[:6]]
+        left_indices = [urdf_q_indices[k] for k in map_keys[6:13]]
+        right_indices = [urdf_q_indices[k] for k in map_keys[13:20]]
+    else:
+        torso_indices = list(range(6))
+        left_indices = list(range(6, 13))
+        right_indices = list(range(13, 20))
+
+    combined_indices = left_indices + right_indices
+
+    q_torso_rest = np.zeros(len(torso_indices))
     q_left_rest  = np.array([0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5])
     q_right_rest = np.array([0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5])
 
-    # Left and Right Arm indices
-    left_indices = list(range(6, 13))
-    right_indices = list(range(13, 20))
-    combined_indices = left_indices + right_indices
-
-    # Define arms for saving/plotting (loop metadata)
     arm_names = ['left', 'right']
 
-    # Output directory
     script_dir = Path(__file__).parent
     base_traj_dir = script_dir / 'trajectories'
     if robot_version_key:
         base_traj_dir = base_traj_dir / robot_version_key
 
-    # Get joint limits for both arms
     combined_limits = [(model.lowerPositionLimit[i], model.upperPositionLimit[i]) for i in combined_indices]
-    
-    # Base configuration for full-body collision check
-    q_fixed_base = np.concatenate([q_torso_rest, np.zeros(14)])
+
+    q_fixed_base = np.zeros(model.nq)
+    q_fixed_base[torso_indices] = q_torso_rest
 
     for seg_idx in [1, 2]:
         traj_name = f"traj{seg_idx}"

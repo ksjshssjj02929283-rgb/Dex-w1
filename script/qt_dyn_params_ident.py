@@ -46,7 +46,7 @@ def skew(v):
 
 class DynParamIdentifier(Node):
     # Default rest positions
-    q_torso_rest = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0]
+    q_torso_rest = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     q_left_rest = [0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5]
     q_right_rest = [0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
 
