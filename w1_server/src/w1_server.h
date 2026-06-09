@@ -169,6 +169,7 @@ private:
     std::shared_ptr<SriForceSensor> secondary_sensor_;  // 暂未使用
     bool primary_sensor_ready_ = false;
     bool secondary_sensor_ready_ = false;
+    bool force_sensor_enabled_{true};
 
     // 位置指令线性插值器 (1kHz)
     utils::LinearInterpolator line_interpolator_;
