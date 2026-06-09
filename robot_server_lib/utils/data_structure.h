@@ -127,6 +127,7 @@ struct RobotProperty {
     bool clear_error_flag{false};
     bool allow_force_control{false};
     bool enable_cartesian_impedance{false};
+    bool allow_force_sensor{true};
     SafetyCheckConfig safety_check_config;  // 安全检查配置
     VectorDof joint_stiffness = VectorDof::Constant(200.0);
     VectorDof joint_damping = VectorDof::Constant(20.0);

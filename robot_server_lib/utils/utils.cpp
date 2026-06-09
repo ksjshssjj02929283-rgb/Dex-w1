@@ -187,8 +187,12 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         robot_property.enable_cartesian_impedance = version_cfg["enable_cartesian_impedance"].as<bool>();
     }
 
-    if (version_cfg["joint_streaming_bounds"] && version_cfg["joint_streaming_bounds"].IsMap()) {
-        if (version_cfg["joint_streaming_bounds"]["max_velocity"]) {
+    if (config["allow_force_sensor"]) {
+        robot_property.allow_force_sensor = config["allow_force_sensor"].as<bool>();
+    }
+
+    if (config["joint_streaming_bounds"] && config["joint_streaming_bounds"].IsMap()) {
+        if (config["joint_streaming_bounds"]["max_velocity"]) {
             robot_property.joint_streaming_bounds.max_velocity =
                 version_cfg["joint_streaming_bounds"]["max_velocity"].as<double>();
         }

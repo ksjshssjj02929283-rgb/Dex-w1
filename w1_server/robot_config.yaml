@@ -55,6 +55,9 @@ enable_record: false
 safe_level: 0.5
 global_speed_ratio: 1.0
 
+# === 是否启用力传感器（false 时走无外力/无导纳的纯关节阻抗模式）===
+allow_force_sensor: true
+
 # === 外力传感器进入关节阻抗控制前的死区与饱和 ===
 force_sensor_external_wrench:
   model_sign: -1

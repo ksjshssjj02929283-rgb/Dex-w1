@@ -43,7 +43,10 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                 dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
             output_cmd.q_desired = idle_q_;
-            output_cmd.torque_ext = joint_impedance_controller_->ComputeExternalTorque(feedback_q, raw_measurement.sensor_wrench);
+            if (robot_model_.robot_property_default.allow_force_sensor) {
+                output_cmd.torque_ext =
+                    joint_impedance_controller_->ComputeExternalTorque(feedback_q, raw_measurement.sensor_wrench);
+            }
             if (joint_admittance_controller_) {
                 joint_admittance_controller_->DecayToZero(torque_ctrl_dt);
                 output_cmd.joint_admittance_q_offset = joint_admittance_controller_->q_offset();
@@ -60,7 +63,10 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                 dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
             output_cmd.q_desired = feedback_q;
-            output_cmd.torque_ext = joint_impedance_controller_->ComputeExternalTorque(feedback_q, raw_measurement.sensor_wrench);
+            if (robot_model_.robot_property_default.allow_force_sensor) {
+                output_cmd.torque_ext =
+                    joint_impedance_controller_->ComputeExternalTorque(feedback_q, raw_measurement.sensor_wrench);
+            }
             if (joint_admittance_controller_) {
                 joint_admittance_controller_->DecayToZero(torque_ctrl_dt);
                 output_cmd.joint_admittance_q_offset = joint_admittance_controller_->q_offset();
@@ -72,14 +78,21 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                 output_cmd.joint_position_ref_admittance - feedback_q;
             break;
         case TorqueControllerState::Operating: {
+            const bool use_force_sensor = robot_model_.robot_property_default.allow_force_sensor;
             const VectorDof torque_ext_raw =
-                joint_impedance_controller_->ComputeExternalTorque(feedback_q, raw_measurement.sensor_wrench);
+                use_force_sensor
+                    ? joint_impedance_controller_->ComputeExternalTorque(feedback_q, raw_measurement.sensor_wrench)
+                    : VectorDof::Zero();
             output_cmd.torque_ext = torque_ext_raw;
 
             VectorDof q_offset = VectorDof::Zero();
             VectorDof dq_offset = VectorDof::Zero();
             if (joint_admittance_controller_) {
-                joint_admittance_controller_->Update(torque_ext_raw, torque_ctrl_dt, q_offset, dq_offset);
+                if (use_force_sensor) {
+                    joint_admittance_controller_->Update(torque_ext_raw, torque_ctrl_dt, q_offset, dq_offset);
+                } else {
+                    joint_admittance_controller_->DecayToZero(torque_ctrl_dt);
+                }
             }
 
             const VectorDof cmd_q_admittance = cmd_q + q_offset;
@@ -103,11 +116,13 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                 feedback_q, feedback_dq, cmd_q_admittance, cmd_dq_admittance, K_p, K_v, K_i_ratio,
                 torque_joint_impedance, torque_ctrl_dt, &integral_enable);
 
-            if (robot_model_.robot_property_default.joint_admittance.enabled) {
-                torque_joint_impedance +=
-                    robot_model_.robot_property_default.joint_admittance.torque_ext_direct_gain * torque_ext_raw;
-            } else {
-                torque_joint_impedance += torque_ext_raw;
+            if (use_force_sensor) {
+                if (robot_model_.robot_property_default.joint_admittance.enabled) {
+                    torque_joint_impedance +=
+                        robot_model_.robot_property_default.joint_admittance.torque_ext_direct_gain * torque_ext_raw;
+                } else {
+                    torque_joint_impedance += torque_ext_raw;
+                }
             }
 
             output_cmd.torque_feedforward =
