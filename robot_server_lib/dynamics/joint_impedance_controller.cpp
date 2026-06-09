@@ -15,7 +15,7 @@ bool JointImpedanceController::UpdateTorqueCommand(const VectorDof& feedback_q,
                                                    const VectorDof& cmd_dq,
                                                    const VectorDof& stiffness,
                                                    const VectorDof& damping,
-                                                   double integral_ratio,
+                                                   const VectorDof& integral_ratio,
                                                    const Vector12d& sensor_wrench,
                                                    VectorDof& tau_command,
                                                    VectorDof* torque_ext_out,
@@ -31,12 +31,12 @@ bool JointImpedanceController::UpdateTorqueCommand(const VectorDof& feedback_q,
         }
     }
 
-    if (integral_ratio > 0.0) {
+    if ((integral_ratio.array() > 0.0).any()) {
         AccumulateIntegralError(q_error, dt, integral_enable);
     } else {
         integral_error_.setZero();
     }
-    const VectorDof torque_integral = (stiffness * integral_ratio).asDiagonal() * integral_error_;
+    const VectorDof torque_integral = (stiffness.cwiseProduct(integral_ratio)).asDiagonal() * integral_error_;
     const VectorDof torque_ext = ComputeExternalTorque(feedback_q, sensor_wrench);
     if (torque_ext_out) {
         *torque_ext_out = torque_ext;
@@ -52,7 +52,7 @@ bool JointImpedanceController::UpdateTorqueCommandWithoutExternalTorque(const Ve
                                                                         const VectorDof& cmd_dq,
                                                                         const VectorDof& stiffness,
                                                                         const VectorDof& damping,
-                                                                        double integral_ratio,
+                                                                        const VectorDof& integral_ratio,
                                                                         VectorDof& tau_command,
                                                                         double dt,
                                                                         const VectorDof* integral_enable) {
@@ -66,12 +66,12 @@ bool JointImpedanceController::UpdateTorqueCommandWithoutExternalTorque(const Ve
         }
     }
 
-    if (integral_ratio > 0.0) {
+    if ((integral_ratio.array() > 0.0).any()) {
         AccumulateIntegralError(q_error, dt, integral_enable);
     } else {
         integral_error_.setZero();
     }
-    const VectorDof torque_integral = (stiffness * integral_ratio).asDiagonal() * integral_error_;
+    const VectorDof torque_integral = (stiffness.cwiseProduct(integral_ratio)).asDiagonal() * integral_error_;
     tau_command = stiffness.asDiagonal() * q_error + damping.asDiagonal() * dq_error + torque_integral;
     return true;
 }
