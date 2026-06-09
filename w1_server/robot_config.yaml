@@ -186,6 +186,10 @@ joints:
     input_shaper:
       enabled: true
       frequency: 12
+    joint_impedance_control:
+      stiffness: 200.0
+      damping: 20.0
+      integral_ratio: 0.05
 
   - name: "NECK2"
     index: 5
@@ -215,9 +219,9 @@ joints:
       enabled: true
       frequency: 6.7
     joint_impedance_control:
-      stiffness: 1000.0
+      stiffness: 900.0
       damping: 110.0
-      integral_ratio: 0.025
+      integral_ratio: 0.02
 
   - name: "LEFT_J2"
     index: 7
@@ -327,9 +331,9 @@ joints:
       enabled: true
       frequency: 6.7
     joint_impedance_control:
-      stiffness: 1000.0
+      stiffness: 900.0
       damping: 110.0
-      integral_ratio: 0.025
+      integral_ratio: 0.02
 
   - name: "RIGHT_J2"
     index: 14
