@@ -290,6 +290,43 @@ class DynParamIdentifier(Node):
             self.log_msg("已返回初始姿态")
         return True
 
+    def run_real_capture_arm(self, is_left):
+        self.set_safe_level(1.0)
+        self._stop_flag.clear()
+        orig_is_left = self.is_left
+        orig_traj = self.traj
+
+        traj_list = ["traj1", "traj2"]
+        side = "left" if is_left else "right"
+        side_dir = os.path.join(self.rec_dir, side)
+        os.makedirs(side_dir, exist_ok=True)
+
+        self.is_left = is_left
+        for traj_name in traj_list:
+            if self._stop_flag.is_set():
+                self.log_msg("收到停止指令，终止剩余真机采集。")
+                return False
+            self.traj = traj_name
+            self.traj_path = os.path.join(self.traj_dir, side, f"{self.traj}.dat")
+            rec_path = os.path.join(side_dir, f"rbtlog_{self.traj}.dat")
+            if not self._run_real_capture_once(self.traj_path, rec_path):
+                return False
+
+        self.is_left = orig_is_left
+        self.traj = orig_traj
+        side_dir_orig = "left" if self.is_left else "right"
+        self.traj_path = os.path.join(self.traj_dir, side_dir_orig, f"{self.traj}.dat")
+        if not self._stop_flag.is_set():
+            time.sleep(1)
+            arm_label = "左" if is_left else "右"
+            self.log_msg(f"{arm_label}臂轨迹采集完成, 返回初始姿态。")
+            target_position = self.get_rest_position()
+            ret = self.move_joint(is_sim=False, target_position=target_position)
+            if not ret:
+                return False
+            self.log_msg("已返回初始姿态")
+        return True
+
     def _run_real_capture_once(self, traj_path, rec_path):
         with open(traj_path, "r") as file:
             q_ref = np.loadtxt(file)
@@ -1093,7 +1130,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         bottom_vbox = QtWidgets.QVBoxLayout(bottom_group)
         bottom_vbox.setContentsMargins(8, 8, 8, 8)
         bottom_vbox.setSpacing(8)
-        self.btn_run_real = QtWidgets.QPushButton("真机采集轨迹")
+        self.btn_run_real = QtWidgets.QPushButton("真机采集所有轨迹")
         
         # 真机采集倍速选择
         self.real_speed_combo = QtWidgets.QComboBox()
@@ -1116,6 +1153,42 @@ class DynParamGUI(QtWidgets.QMainWindow):
         real_row_layout.addWidget(self.btn_run_real)
         real_row_layout.addWidget(self.real_speed_combo)
         bottom_vbox.addWidget(real_row)
+
+        self.btn_run_real_left = QtWidgets.QPushButton("真机采集左臂轨迹")
+        self.real_left_speed_combo = QtWidgets.QComboBox()
+        self.real_left_speed_combo.addItems(["x1倍速", "x0.5倍速"])
+        self.real_left_speed_combo.setCurrentText("x1倍速")
+        self.real_left_speed_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        self.real_left_speed_combo.setFixedWidth(width_real)
+        self.real_left_speed_combo.setFixedHeight(btn_h)
+        self.real_left_speed_combo.setStyleSheet(
+            f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}"
+        )
+        real_left_row = QtWidgets.QWidget()
+        real_left_row_layout = QtWidgets.QHBoxLayout(real_left_row)
+        real_left_row_layout.setContentsMargins(0, 0, 0, 0)
+        real_left_row_layout.setSpacing(8)
+        real_left_row_layout.addWidget(self.btn_run_real_left)
+        real_left_row_layout.addWidget(self.real_left_speed_combo)
+        bottom_vbox.addWidget(real_left_row)
+
+        self.btn_run_real_right = QtWidgets.QPushButton("真机采集右臂轨迹")
+        self.real_right_speed_combo = QtWidgets.QComboBox()
+        self.real_right_speed_combo.addItems(["x1倍速", "x0.5倍速"])
+        self.real_right_speed_combo.setCurrentText("x1倍速")
+        self.real_right_speed_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        self.real_right_speed_combo.setFixedWidth(width_real)
+        self.real_right_speed_combo.setFixedHeight(btn_h)
+        self.real_right_speed_combo.setStyleSheet(
+            f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}"
+        )
+        real_right_row = QtWidgets.QWidget()
+        real_right_row_layout = QtWidgets.QHBoxLayout(real_right_row)
+        real_right_row_layout.setContentsMargins(0, 0, 0, 0)
+        real_right_row_layout.setSpacing(8)
+        real_right_row_layout.addWidget(self.btn_run_real_right)
+        real_right_row_layout.addWidget(self.real_right_speed_combo)
+        bottom_vbox.addWidget(real_right_row)
 
         self.btn_calc_params = QtWidgets.QPushButton("计算动力学参数")
         self.btn_write_params = QtWidgets.QPushButton("写入辨识参数")
@@ -1201,6 +1274,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_open_meshcat.clicked.connect(self._start_visual_node)
         self.btn_run_sim.clicked.connect(self.on_run_sim)
         self.btn_run_real.clicked.connect(self.on_run_real)
+        self.btn_run_real_left.clicked.connect(self.on_run_real_left)
+        self.btn_run_real_right.clicked.connect(self.on_run_real_right)
         self.btn_show_reference.clicked.connect(self.on_show_reference)
         self.btn_show_plot.clicked.connect(self.on_show_plot)
         self.btn_calc_params.clicked.connect(self.on_calc_params)
@@ -1208,6 +1283,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         # 倍速选择变化
         self.sim_speed_combo.currentTextChanged.connect(self._on_sim_speed_changed)
         self.real_speed_combo.currentTextChanged.connect(self._on_real_speed_changed)
+        self.real_left_speed_combo.currentTextChanged.connect(self._on_real_left_speed_changed)
+        self.real_right_speed_combo.currentTextChanged.connect(self._on_real_right_speed_changed)
         # 新增：停止按钮连接
         self.btn_stop.clicked.connect(self.on_stop_clicked)
         # 新增：图示辨识结果按钮
@@ -1272,14 +1349,17 @@ class DynParamGUI(QtWidgets.QMainWindow):
         try:
             self.btn_run_sim.setDisabled(disabled)
             self.btn_run_real.setDisabled(disabled)
+            self.btn_run_real_left.setDisabled(disabled)
+            self.btn_run_real_right.setDisabled(disabled)
             # 可视化始终可用
             self.btn_open_meshcat.setDisabled(False)
             # 待采集参考轨迹：仅随操作禁用，不受采集/计算状态限制
             self.btn_show_reference.setDisabled(disabled)
             # 仿真倍速选择在运行/计算时也禁用
             self.sim_speed_combo.setDisabled(disabled)
-            # 真机倍速选择在运行/计算时也禁用
             self.real_speed_combo.setDisabled(disabled)
+            self.real_left_speed_combo.setDisabled(disabled)
+            self.real_right_speed_combo.setDisabled(disabled)
             # 根据采集完成状态决定是否可用
             self.btn_show_plot.setDisabled(
                 True if disabled else (not self._captured_finished)
@@ -1349,6 +1429,22 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.log_msg(f"真机采集速度系数设置为 {self._real_speed_mult}x")
         except Exception:
             self._real_speed_mult = 1.0
+
+    def _on_real_left_speed_changed(self, text: str):
+        try:
+            mapping = {"x1倍速": 1.0, "x0.5倍速": 0.5}
+            self._real_left_speed_mult = mapping.get(text, 1.0)
+            self.log_msg(f"左臂真机采集速度系数设置为 {self._real_left_speed_mult}x")
+        except Exception:
+            self._real_left_speed_mult = 1.0
+
+    def _on_real_right_speed_changed(self, text: str):
+        try:
+            mapping = {"x1倍速": 1.0, "x0.5倍速": 0.5}
+            self._real_right_speed_mult = mapping.get(text, 1.0)
+            self.log_msg(f"右臂真机采集速度系数设置为 {self._real_right_speed_mult}x")
+        except Exception:
+            self._real_right_speed_mult = 1.0
 
     def _open_meshcat_url(self):
         try:
@@ -1479,6 +1575,102 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 self._plot_records_on_canvas()
         except Exception as e:
             self.log_msg("真机采集出错: " + str(e))
+        finally:
+            try:
+                QtCore.QMetaObject.invokeMethod(
+                    self, "enable_buttons", QtCore.Qt.QueuedConnection
+                )
+            except Exception:
+                pass
+
+    def on_run_real_left(self):
+        self.update_params_from_ui()
+        try:
+            self.dyn._real_dt_override = float(self.dyn.dt) / max(
+                0.1, float(getattr(self, "_real_left_speed_mult", 1.0))
+            )
+        except Exception:
+            self.dyn._real_dt_override = self.dyn.dt
+        msg = (
+            "将执行左臂真机采集：\n\n"
+            "- 左臂采集2段轨迹（辨识+验证）\n"
+            "- 轨迹范围较大，请注意安全并离开机器人手臂运动范围!\n\n"
+            "是否确认开始？"
+        )
+        mbox = QtWidgets.QMessageBox(self)
+        mbox.setIcon(QtWidgets.QMessageBox.NoIcon)
+        mbox.setWindowTitle("确认开始左臂真机采集")
+        mbox.setText(msg)
+        mbox.setWindowModality(QtCore.Qt.ApplicationModal)
+        mbox.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+        btn_confirm = mbox.addButton("确认", QtWidgets.QMessageBox.YesRole)
+        btn_cancel = mbox.addButton("取消", QtWidgets.QMessageBox.NoRole)
+        mbox.setDefaultButton(btn_cancel)
+        mbox.exec_()
+        if mbox.clickedButton() is not btn_confirm:
+            self.log_msg("已取消左臂真机采集。")
+            return
+        self.log_msg("开始进行左臂真机采集, 请注意安全!")
+        self.disable_buttons(True)
+        t = threading.Thread(target=self._thread_run_real_left, daemon=True)
+        t.start()
+
+    def _thread_run_real_left(self):
+        try:
+            if self.dyn.run_real_capture_arm(is_left=True):
+                self.log_msg("左臂真机采集结束")
+                self._captured_finished = True
+                self._plot_records_on_canvas()
+        except Exception as e:
+            self.log_msg("左臂真机采集出错: " + str(e))
+        finally:
+            try:
+                QtCore.QMetaObject.invokeMethod(
+                    self, "enable_buttons", QtCore.Qt.QueuedConnection
+                )
+            except Exception:
+                pass
+
+    def on_run_real_right(self):
+        self.update_params_from_ui()
+        try:
+            self.dyn._real_dt_override = float(self.dyn.dt) / max(
+                0.1, float(getattr(self, "_real_right_speed_mult", 1.0))
+            )
+        except Exception:
+            self.dyn._real_dt_override = self.dyn.dt
+        msg = (
+            "将执行右臂真机采集：\n\n"
+            "- 右臂采集2段轨迹（辨识+验证）\n"
+            "- 轨迹范围较大，请注意安全并离开机器人手臂运动范围!\n\n"
+            "是否确认开始？"
+        )
+        mbox = QtWidgets.QMessageBox(self)
+        mbox.setIcon(QtWidgets.QMessageBox.NoIcon)
+        mbox.setWindowTitle("确认开始右臂真机采集")
+        mbox.setText(msg)
+        mbox.setWindowModality(QtCore.Qt.ApplicationModal)
+        mbox.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+        btn_confirm = mbox.addButton("确认", QtWidgets.QMessageBox.YesRole)
+        btn_cancel = mbox.addButton("取消", QtWidgets.QMessageBox.NoRole)
+        mbox.setDefaultButton(btn_cancel)
+        mbox.exec_()
+        if mbox.clickedButton() is not btn_confirm:
+            self.log_msg("已取消右臂真机采集。")
+            return
+        self.log_msg("开始进行右臂真机采集, 请注意安全!")
+        self.disable_buttons(True)
+        t = threading.Thread(target=self._thread_run_real_right, daemon=True)
+        t.start()
+
+    def _thread_run_real_right(self):
+        try:
+            if self.dyn.run_real_capture_arm(is_left=False):
+                self.log_msg("右臂真机采集结束")
+                self._captured_finished = True
+                self._plot_records_on_canvas()
+        except Exception as e:
+            self.log_msg("右臂真机采集出错: " + str(e))
         finally:
             try:
                 QtCore.QMetaObject.invokeMethod(

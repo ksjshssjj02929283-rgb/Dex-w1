@@ -36,7 +36,7 @@ print_usage() {
     echo "  watch           - Watch EtherCAT status (watch -n 0.1 ethercat sl)"
     echo "  state           - Monitor feedback state (python3 script/monitor_state.py)"
     echo "  shm             - Monitor shared memory (python3 script/monitor_shm.py)"
-    echo "  control         - Joint control GUI (python3 script/qt_joint_control.py)"
+    echo "  ctrl            - Joint control GUI (python3 script/qt_joint_control.py)"
     echo "  dyn [args]      - Dynamic parameter identification GUI (python3 script/qt_dyn_params_ident.py)"
     echo "  trajgen         - Trajectory generator (python3 script/traj_generator.py)"
     echo "  vis             - Visualization ROS2 node (python3 script/visual_ros2_node.py)"
@@ -235,7 +235,7 @@ case $PROPERTY_KEY in
         python3 "${SCRIPT_DIR}/script/monitor_shm.py"
         exit 0
         ;;
-    control)
+    ctrl)
         echo "Starting Joint Control GUI..."
         python3 "${SCRIPT_DIR}/script/qt_joint_control.py"
         exit 0
