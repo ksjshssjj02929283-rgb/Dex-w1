@@ -95,9 +95,10 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                     joint_admittance_controller_->DecayToZero(torque_ctrl_dt);
                 }
             }
-
+            // admittance后的参考位置和速度
             const VectorDof cmd_q_admittance = cmd_q + q_offset;
             const VectorDof cmd_dq_admittance = cmd_dq + dq_offset;
+
             VectorDof integral_enable = VectorDof::Zero();
             for (int i = 0; i < ndof_robot; ++i) {
                 const bool external_force_settled = std::abs(torque_ext_raw[i]) < kIntegralTorqueExtThresholdNm;
@@ -113,10 +114,12 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                                                                                                                 : 0.0;
             }
 
+            // 更新阻抗控制力矩命令
             joint_impedance_controller_->UpdateTorqueCommandWithoutExternalTorque(
                 feedback_q, feedback_dq, cmd_q_admittance, cmd_dq_admittance, K_p, K_v, K_i_ratio,
                 torque_joint_impedance, torque_ctrl_dt, &integral_enable);
 
+            // use_force_sensor=true时，
             if (use_force_sensor) {
                 if (robot_model_.robot_property_default.joint_admittance.enabled) {
                     torque_joint_impedance +=
@@ -126,6 +129,7 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                 }
             }
 
+            // 
             output_cmd.torque_feedforward =
                 dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero(),
                                           false);  // 补偿重力, 科氏力, 摩擦力
