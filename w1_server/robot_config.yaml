@@ -66,12 +66,12 @@ force_sensor_external_wrench:
   torque_deadband_nm: 0.1
   torque_saturation_nm: 10.0
 
-# === 关节 admittance 整形 ===
+# === 关节导纳 admittance ===
 joint_admittance:
   enabled: true
   torque_ext_direct_gain: 0.0
   default:
-    torque_gain: -0.7         # 负号是顺应外力的移动，绝对值的大小代表利用的外力矩的多少
+    torque_gain: -0.9         # 负号是顺应外力的移动，绝对值的大小代表利用的外力矩的多少
     virtual_inertia: 1.0
     natural_frequency_hz: 1.5
     damping_ratio: 1.2
@@ -82,14 +82,14 @@ joint_admittance:
     primary_shoulder:
       joints: [LEFT_J1, LEFT_J2, LEFT_J3, LEFT_J4]
       virtual_inertia: 0.6
-      natural_frequency_hz: 0.6
-      damping_ratio: 1.6
+      natural_frequency_hz: 0.8
+      damping_ratio: 1.2
       offset_limit: 0.2
     primary_elbow_wrist:
       joints: [LEFT_J5, LEFT_J6, LEFT_J7]
       virtual_inertia: 0.4
-      natural_frequency_hz: 0.5
-      damping_ratio: 1.5
+      natural_frequency_hz: 0.6
+      damping_ratio: 1.1
       offset_limit: 0.15
 
 # === 工具补偿参数 ===
