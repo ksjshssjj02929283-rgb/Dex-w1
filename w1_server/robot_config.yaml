@@ -36,17 +36,17 @@ joint_admittance:
     acceleration_limit: 5.0
   groups:
     primary_shoulder:
-      joints: [LEFT_J1, LEFT_J2, LEFT_J3]
-      virtual_inertia: 1.5
-      natural_frequency_hz: 1.2
-      damping_ratio: 1.4
-      offset_limit: 0.1
+      joints: [LEFT_J1, LEFT_J2, LEFT_J3, LEFT_J4]
+      virtual_inertia: 0.6
+      natural_frequency_hz: 0.6
+      damping_ratio: 1.2
+      offset_limit: 0.12
     primary_elbow_wrist:
-      joints: [LEFT_J4, LEFT_J5, LEFT_J6, LEFT_J7]
-      virtual_inertia: 0.8
-      natural_frequency_hz: 1.0
-      damping_ratio: 1.5
-      offset_limit: 0.06
+      joints: [LEFT_J5, LEFT_J6, LEFT_J7]
+      virtual_inertia: 0.4
+      natural_frequency_hz: 0.5
+      damping_ratio: 1.3
+      offset_limit: 0.1
 
 # === 工具补偿参数 ===
 # 坐标系约定: com_mm 与 inertia_com_kg_m2 都在 EE/法兰系下表达
@@ -429,7 +429,7 @@ joints:
     joint_impedance_control:
       stiffness: 160.0
       damping: 12.0
-      integral_ratio: 0.01
+      integral_ratio: 0.0
 
 # === 动力学参数 ===
 dyn_base_params_primary: [
