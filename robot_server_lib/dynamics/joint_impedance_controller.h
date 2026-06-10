@@ -16,7 +16,7 @@ public:
                              const VectorDof& cmd_dq,
                              const VectorDof& stiffness,
                              const VectorDof& damping,
-                             const VectorDof& integral_ratio,
+                             double integral_ratio,
                              const Vector12d& sensor_wrench,
                              VectorDof& tau_command,
                              VectorDof* torque_ext_out = nullptr,
@@ -29,7 +29,7 @@ public:
                                                   const VectorDof& cmd_dq,
                                                   const VectorDof& stiffness,
                                                   const VectorDof& damping,
-                                                  const VectorDof& integral_ratio,
+                                                  double integral_ratio,
                                                   VectorDof& tau_command,
                                                   double dt = 0.0,
                                                   const VectorDof* integral_enable = nullptr);
