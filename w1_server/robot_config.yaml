@@ -94,14 +94,13 @@ joint_admittance:
 
 # === 工具补偿参数 ===
 # 坐标系约定: com_mm 与 inertia_com_kg_m2 都在 EE/法兰系下表达
-# 惯量张量 (单位 kg·m^2), 不是关于 EE 原点的. 改坐标系/参考点后必须重新生成.
-tool_gravity_compensation:
+tool_gravity_compensation:    # 大寰二指夹 
   com_mm: [-0.15804154,0.70721872,50.33428542]   # COM 相对 EE 原点的偏移, 单位 mm, 在 EE 系下
   mass_kg: 1.061
   gravity_magnitude: 9.79
   inertia_com_kg_m2: [[0.00111446, 0.0001123, 0],
                        [0.0001123, 0.00123732, 0],
-                       [0, 0, 0.00065]]  # I_C^EE, 关于 COM, EE 系基
+                       [0, 0, 0.00065]]  # 惯量张量 (单位 kg·m^2) I_C^EE, 关于 COM, EE 系基
   model_sign: 1
   # 末端加速度 / 关节加速度的低通截止 (Hz), 用于在线惯量补偿. 默认 5.0 与脚本一致.
   # 静止时 G1 诊断字段 (tool_inertia_force_norm/torque_norm) 显示噪声偏大 -> 调低 (3 ~ 4)
