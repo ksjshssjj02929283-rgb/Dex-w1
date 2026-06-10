@@ -60,7 +60,7 @@ allow_force_sensor: true
 
 # === 外力传感器进入关节阻抗控制前的死区与饱和 ===
 force_sensor_external_wrench:
-  model_sign: -1
+  model_sign: -1               # 正号是放大外力，负号是抵消外力
   force_deadband_n: 3.0
   force_saturation_n: 100.0
   torque_deadband_nm: 0.1
@@ -71,7 +71,7 @@ joint_admittance:
   enabled: true
   torque_ext_direct_gain: 0.0
   default:
-    torque_gain: 1.0
+    torque_gain: -0.7         # 负号是顺应外力的移动，绝对值的大小代表利用的外力矩的多少
     virtual_inertia: 1.0
     natural_frequency_hz: 1.5
     damping_ratio: 1.2
