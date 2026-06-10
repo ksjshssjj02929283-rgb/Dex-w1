@@ -7,8 +7,11 @@ All rights reserved.
 '''
 
 from enum import Enum, auto
-from typing import List
+from typing import List, Tuple
+
 import pinocchio
+
+from .logger import get_logger
 from ..end_effector_client import EndEffectorType
 
 
