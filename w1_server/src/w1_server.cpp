@@ -17,6 +17,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     // 创建 /feedback/joint 发布器
     feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint", 10);
 
+    // 创建 /imu/chassis 发布器 (替代原有 imu node)
+    imu_publisher_ = this->create_publisher<sensor_msgs::msg::Imu>("/imu/chassis", 20);
+
     // 创建 /feedback/joint_velocity_torque_limit 发布器
     velocity_torque_limit_feedback_publisher_ =
         this->create_publisher<JointVelocityTorqueLimitFeedbackMsg>("/feedback/joint_velocity_torque_limit", 10);
@@ -53,6 +56,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
 
     // 创建定时器，定时发布feedback 定时器回调函数
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
+
+    // 创建定时器，定时发布 IMU 数据 (2ms = 500Hz，与原 imu node 一致)
+    imu_timer_ = this->create_wall_timer(std::chrono::milliseconds(2), [this]() { PublishImu(); });
 
     // 初始化巴特沃斯滤波器和滤波开关
     for (int i = 0; i < ndof_robot; ++i) {
@@ -477,6 +483,7 @@ void RobotServer::TorqueControlThreadFunc() {
             LOG_WARN_THROTTLE(1000) << "Torque control thread cycle time exceeded 100%! Usage: " << usage
                                     << "%. Breakdown(us): Feedback=" << dt_feedback << ", Log=" << dt_log
                                     << ", Torque=" << dt_torque << ", CmdAndWrite=" << dt_cmd;
+            next_cycle_time_point = now_time;
         }
 
         std::this_thread::sleep_until(next_cycle_time_point);
@@ -565,8 +572,11 @@ void RobotServer::PublishThreadFunc() {
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok()) {
         next_cycle_time_point += std::chrono::microseconds(publish_dt_micro);
-        // Publish /feedback/robot_server_state
         this->robot_server_state_publisher_->publish(GetRobotServerStateMsg());
+        auto now_time = std::chrono::steady_clock::now();
+        if (now_time > next_cycle_time_point) {
+            next_cycle_time_point = now_time;
+        }
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }
@@ -660,6 +670,28 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
     return robot_server_state_msg;
 }
 // clang-format on
+
+void RobotServer::PublishImu() {
+    const auto& imu = robot_feedback_.imu_data;
+    sensor_msgs::msg::Imu imu_msg;
+    imu_msg.header.stamp = this->get_clock()->now();
+    imu_msg.header.frame_id = "imu_chassis_link";
+
+    imu_msg.orientation.w = imu.orientation.w;
+    imu_msg.orientation.x = imu.orientation.x;
+    imu_msg.orientation.y = imu.orientation.y;
+    imu_msg.orientation.z = imu.orientation.z;
+
+    imu_msg.angular_velocity.x = imu.angular_velocity.x;
+    imu_msg.angular_velocity.y = imu.angular_velocity.y;
+    imu_msg.angular_velocity.z = imu.angular_velocity.z;
+
+    imu_msg.linear_acceleration.x = imu.linear_acceleration.x;
+    imu_msg.linear_acceleration.y = imu.linear_acceleration.y;
+    imu_msg.linear_acceleration.z = imu.linear_acceleration.z;
+
+    imu_publisher_->publish(imu_msg);
+}
 
 void RobotServer::PublishFeedback() {
     // 发布关节状态反馈，A1模式只发布14个关节，W1模式发布20个关节
