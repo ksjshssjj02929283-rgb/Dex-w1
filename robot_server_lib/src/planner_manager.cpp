@@ -128,7 +128,7 @@ void PlannerManager::LoopOnce() {
         // for both arms
         const auto& dyn_base_params_primary = this->robot_model_.params_ptr->dyn_base_params_primary;
         const auto& dyn_base_params_secondary = this->robot_model_.params_ptr->dyn_base_params_secondary;
-        if (!is_sim_ && dyn_base_params_primary.has_value()) {
+        if (!is_sim_ && robot_property_.enable_cartesian_impedance && dyn_base_params_primary.has_value()) {
             Eigen::VectorXd tau_ff_pri, q_cmd_primary, q_feedback_primary, dq_feedback_primary, dq_cmd_primary;
             utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_primary,
                                          MotionGroup::Primary);
@@ -144,7 +144,7 @@ void PlannerManager::LoopOnce() {
             utils::MapJointToWholeBody(this->robot_model_, tau_ff_pri, this->runtime_data_.joint_cmd.torque_feedforward,
                                        MotionGroup::Primary);
         }
-        if (!is_sim_ && dyn_base_params_secondary.has_value()) {
+        if (!is_sim_ && robot_property_.enable_cartesian_impedance && dyn_base_params_secondary.has_value()) {
             Eigen::VectorXd tau_ff_sec, q_cmd_secondary, q_feedback_secondary, dq_feedback_secondary, dq_cmd_secondary;
             utils::GetJointFromWholeBody(this->robot_model_, measurement.position, q_feedback_secondary,
                                          MotionGroup::Secondary);
@@ -557,6 +557,9 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
                     if (!robot_property_.allow_force_control) {
                         std::cout << "[WARN] Force control is not allowed by configuration.\n";
                         LOG_WARN << "Force control is not allowed by configuration.";
+                    } else if (!robot_property_.enable_cartesian_impedance) {
+                        std::cout << "[WARN] Cartesian impedance is not enabled by configuration.\n";
+                        LOG_WARN << "Cartesian impedance is not enabled by configuration.";
                     } else if (this->robot_model_.IsDynamicParamsAvailable()) {
                         robot_property_.run_mode = RunMode::CartesianImpedance;
                     } else {
@@ -568,6 +571,9 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
                     if (!robot_property_.allow_force_control) {
                         std::cout << "[WARN] Force control is not allowed by configuration.\n";
                         LOG_WARN << "Force control is not allowed by configuration.";
+                    } else if (!robot_property_.enable_cartesian_impedance) {
+                        std::cout << "[WARN] Cartesian impedance is not enabled by configuration.\n";
+                        LOG_WARN << "Cartesian impedance is not enabled by configuration.";
                     } else if (this->robot_model_.IsDynamicParamsAvailable()) {
                         robot_property_.run_mode = RunMode::DragImpedance;
                     } else {

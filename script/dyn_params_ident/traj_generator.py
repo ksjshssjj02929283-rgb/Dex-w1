@@ -315,7 +315,7 @@ def arms_trajectory_plot(arm_side, data_dir, save_dir, ndof, joint_limits, dt=0.
     save_path = os.path.join(save_dir, f"{arm_side}_traj.png")
     plt.savefig(save_path)
     print(f"Saved plot to: {save_path}")
-    plt.show()
+    plt.close(fig)
 
 # -------------------------------
 # Main Execution

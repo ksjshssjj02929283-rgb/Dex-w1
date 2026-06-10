@@ -352,11 +352,18 @@ class DynParamIdentifier(Node):
                     is_sim=False, target_position=target_position
                 ):
                     return False
+                _eps = 1e-9
+                _sensor_slice = self.joint_torque_sensor[6:13] if self.joint_torque_sensor else []
+                tau_data = (
+                    _sensor_slice
+                    if _sensor_slice and any(abs(v) > _eps for v in _sensor_slice)
+                    else self.joint_torque[6:13]
+                )
                 rec[i, :] = np.concatenate(
                     [
                         np.array([float(self.timestamp - time0) * 1e-9]),
                         np.array(self.joint_position[6:13]),
-                        np.array(self.joint_torque[6:13]),
+                        np.array(tau_data),
                     ]
                 )
                 next_t = self._fixed_rate_next(next_t, local_dt)
@@ -380,11 +387,18 @@ class DynParamIdentifier(Node):
                     is_sim=False, target_position=target_position
                 ):
                     return False
+                _eps = 1e-9
+                _sensor_slice = self.joint_torque_sensor[13:20] if self.joint_torque_sensor else []
+                tau_data = (
+                    _sensor_slice
+                    if _sensor_slice and any(abs(v) > _eps for v in _sensor_slice)
+                    else self.joint_torque[13:20]
+                )
                 rec[i, :] = np.concatenate(
                     [
                         np.array([float(self.timestamp - time0) * 1e-9]),
                         np.array(self.joint_position[13:20]),
-                        np.array(self.joint_torque[13:20]),
+                        np.array(tau_data),
                     ]
                 )
                 next_t = self._fixed_rate_next(next_t, local_dt)
@@ -557,9 +571,11 @@ class DynParamIdentifier(Node):
             msg_joint_names = state["joint_name"]
             msg_joint_positions = [float(x) for x in state["joint_position"]]
             msg_joint_torques = [float(x) for x in state.get("joint_torque", [])]
+            msg_joint_torques_sensor = [float(x) for x in state.get("joint_torque_sensor", [])]
             
             full_pos = []
             full_tau = []
+            full_tau_sensor = []
             for name in self.joint_full_names:
                 if name in msg_joint_names:
                     idx = msg_joint_names.index(name)
@@ -568,13 +584,18 @@ class DynParamIdentifier(Node):
                         full_tau.append(msg_joint_torques[idx])
                     else:
                         full_tau.append(0.0)
+                    if idx < len(msg_joint_torques_sensor):
+                        full_tau_sensor.append(msg_joint_torques_sensor[idx])
+                    else:
+                        full_tau_sensor.append(0.0)
                 else:
                     full_pos.append(0.0)
                     full_tau.append(0.0)
-            
+                    full_tau_sensor.append(0.0)
             self.joint_name = self.joint_full_names
             self.joint_position = full_pos
             self.joint_torque = full_tau
+            self.joint_torque_sensor = full_tau_sensor
 
     def _robot_state_callback_sim(self, msg):
         self._last_msg_time_sim = self.get_clock().now().nanoseconds / 1e9
@@ -586,9 +607,10 @@ class DynParamIdentifier(Node):
             msg_joint_names = state["joint_name"]
             msg_joint_positions = [float(x) for x in state["joint_position"]]
             msg_joint_torques = [float(x) for x in state.get("joint_torque", [])]
-            
+            msg_joint_torques_sensor = [float(x) for x in state.get("joint_torque_sensor", [])]
             full_pos = []
             full_tau = []
+            full_tau_sensor = []
             for name in self.joint_full_names:
                 if name in msg_joint_names:
                     idx = msg_joint_names.index(name)
@@ -597,12 +619,17 @@ class DynParamIdentifier(Node):
                         full_tau.append(msg_joint_torques[idx])
                     else:
                         full_tau.append(0.0)
+                    if idx < len(msg_joint_torques_sensor):
+                        full_tau_sensor.append(msg_joint_torques_sensor[idx])
+                    else:
+                        full_tau_sensor.append(0.0)
                 else:
                     full_pos.append(0.0)
                     full_tau.append(0.0)
             
             self.joint_position_sim = full_pos
             self.joint_torque_sim = full_tau
+            self.joint_torque_sensor_sim = full_tau_sensor
 
 
 import sympy, sympybotics, scipy.signal, lmi_sdp, subprocess
@@ -2198,6 +2225,8 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     win = DynParamGUI()
     win.show()
+    win.activateWindow()
+    win.raise_()
     sys.exit(app.exec_())
 
 

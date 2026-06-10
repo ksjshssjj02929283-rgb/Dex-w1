@@ -38,6 +38,9 @@ print_usage() {
     echo "  shm             - Monitor shared memory (python3 script/monitor_shm.py)"
     echo "  ctrl            - Joint control GUI (python3 script/qt_joint_control.py)"
     echo "  dyn [args]      - Dynamic parameter identification GUI (python3 script/qt_dyn_params_ident.py)"
+    echo "  codegen         - Generate dynamics code (python3 script/dyn_params_ident/dyn_code_generator.py)"
+    echo "  dh [left|right] - Compute DH parameters from URDF (python3 script/dyn_params_ident/urdf2dh.py)"
+    echo "  gui             - Robot Launcher GUI (python3 script/gui.py)"
     echo "  trajgen         - Trajectory generator (python3 script/traj_generator.py)"
     echo "  vis             - Visualization ROS2 node (python3 script/visual_ros2_node.py)"
     echo "  config          - Edit robot_config.yaml (gedit/vim ~/dexe_robot_server_data/robot_config.yaml)"
@@ -51,18 +54,44 @@ print_usage() {
 
     echo ""
     echo "Examples:"
-    echo "  ./set_property.sh echo"
-    echo "  ./set_property.sh config"
-    echo "  ./set_property.sh log"
-    echo "  ./set_property.sh watch"
-    echo "  ./set_property.sh state"
-    echo "  ./set_property.sh shm"
-    echo "  ./set_property.sh clear"
-    echo "  ./set_property.sh drag 1"
-    echo "  ./set_property.sh pos_limit 0"
-    echo "  ./set_property.sh mode 1"
-    echo "  ./set_property.sh safe_level 0.3"
-    echo "  ./set_property.sh restart"
+    echo "  ./set_w1.sh echo"
+    echo "  ./set_w1.sh echo_sim"
+    echo "  ./set_w1.sh clone ethercat"
+    echo "  ./set_w1.sh clone interface"
+    echo "  ./set_w1.sh home"
+    echo "  ./set_w1.sh standby"
+    echo "  ./set_w1.sh left home"
+    echo "  ./set_w1.sh left '[0.0, -1.4, 0.0, -0.6, 0.0, -0.5, -0.5]'"
+    echo "  ./set_w1.sh right standby"
+    echo "  ./set_w1.sh right '[0.0, 1.4, 0.0, 0.6, 0.0, 0.5, 0.5]'"
+    echo "  ./set_w1.sh stop_move"
+    echo "  ./set_w1.sh log"
+    echo "  ./set_w1.sh clear"
+    echo "  ./set_w1.sh drag 1"
+    echo "  ./set_w1.sh start"
+    echo "  ./set_w1.sh stop"
+    echo "  ./set_w1.sh restart"
+    echo "  ./set_w1.sh sleep"
+    echo "  ./set_w1.sh quickstop"
+    echo "  ./set_w1.sh watch"
+    echo "  ./set_w1.sh state"
+    echo "  ./set_w1.sh shm"
+    echo "  ./set_w1.sh ctrl"
+    echo "  ./set_w1.sh dyn"
+    echo "  ./set_w1.sh codegen"
+    echo "  ./set_w1.sh dh left"
+    echo "  ./set_w1.sh dh"
+    echo "  ./set_w1.sh gui"
+    echo "  ./set_w1.sh trajgen"
+    echo "  ./set_w1.sh vis"
+    echo "  ./set_w1.sh config"
+    echo "  ./set_w1.sh pos_limit 0"
+    echo "  ./set_w1.sh mode 1"
+    echo "  ./set_w1.sh safe_level 0.3"
+    echo "  ./set_w1.sh ruckig true"
+    echo "  ./set_w1.sh filter true"
+    echo "  ./set_w1.sh zvd true"
+    echo "  ./set_w1.sh hardware"
 }
 
 # 检查输入参数
@@ -243,6 +272,21 @@ case $PROPERTY_KEY in
     dyn)
         echo "Starting Dynamic Parameter Identification GUI..."
         python3 "${SCRIPT_DIR}/script/qt_dyn_params_ident.py" "${@:2}"
+        exit 0
+        ;;
+    codegen)
+        echo "Starting Dynamics Code Generator..."
+        python3 "${SCRIPT_DIR}/script/dyn_params_ident/dyn_code_generator.py"
+        exit 0
+        ;;
+    dh)
+        echo "Computing DH parameters from URDF..."
+        python3 "${SCRIPT_DIR}/script/dyn_params_ident/urdf2dh.py" "${@:2}"
+        exit 0
+        ;;
+    gui)
+        echo "Starting Robot Launcher GUI..."
+        python3 "${SCRIPT_DIR}/script/gui.py"
         exit 0
         ;;
     trajgen)
