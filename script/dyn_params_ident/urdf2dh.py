@@ -66,7 +66,6 @@ def load_robot(arm: str):
 
     active_joints = [jn for jn in joint_path if robot.joint_map[jn].type != 'fixed']
 
-    # end_link 改为最后一个活动关节的子 link，忽略后续固定的工具变换
     end_link = robot.joint_map[active_joints[-1]].child
 
     print(f"{'使用手臂 URDF' if urdf_path != base_urdf_path else '使用完整机器人 URDF'}: {urdf_path}")
@@ -107,60 +106,59 @@ def normalize(v: np.ndarray) -> np.ndarray:
 
 def compute_axes(robot, active_joints: List[str], target_end_link: str):
     axes = []
+    link_frames = []
     for jn in active_joints:
         joint = robot.joint_map[jn]
         T = robot.get_transform(joint.child)
         z = normalize(T[:3, :3] @ np.array(joint.axis))
         axes.append((z, T[:3, 3]))
+        link_frames.append(T[:3, :3].copy())
 
     T_ee = robot.get_transform(target_end_link)
     axes.append((axes[-1][0], T_ee[:3, 3]))
-    return axes
+    link_frames.append(T_ee[:3, :3].copy())
+    return axes, link_frames
 
-def compute_dh_from_axes(axes, x_init=None) -> List[Tuple[float, float, float, float]]:
-    x_prev = x_init
-    p_prev = axes[0][1]
-    params = []
-    for i in range(len(axes) - 1):
-        z_prev, _ = axes[i]
-        z_curr, p_curr = axes[i + 1]
-        a, alpha, d, theta, x_curr, p_new = _dh_pair(z_prev, p_prev, z_curr, p_curr, x_prev)
-        params.append((a, alpha, d, theta))
-        x_prev, p_prev = x_curr, p_new
-    return params
+def _build_dh_base_transform(z0, x_init):
+    y_dh = normalize(np.cross(z0, x_init))
+    R_dh = np.column_stack([x_init, y_dh, z0])
+    return R_dh
 
-def correct_dh_orientation(robot, active_joints, target_end_link, arm_base_link,
-                           dh_params) -> List[Tuple[float, float, float, float]]:
-    robot.update_cfg({j: 0.0 for j in active_joints})
-    T_urdf = robot.get_transform(target_end_link, arm_base_link)
-    T_dh = dh_fk(dh_params, np.zeros(len(active_joints)))
-
-    pos_err = np.linalg.norm(T_urdf[:3, 3] - T_dh[:3, 3])
-    R_err = T_urdf[:3, :3].T @ T_dh[:3, :3]
-    ang_err = np.degrees(np.arccos(np.clip((np.trace(R_err) - 1) / 2, -1, 1)))
-
-    if pos_err < 1e-3 and abs(ang_err - 180) < 1.0:
-        params = list(dh_params)
-        a, alpha, d, theta = params[-1]
-        params[-1] = (a, alpha, d, theta + np.pi)
-        return params
-    return dh_params
+def _transform_axes_to_dh_base(axes, link_frames, R_dh, p_origin):
+    local_axes = []
+    local_frames = []
+    for (z, p), R in zip(axes, link_frames):
+        z_local = R_dh.T @ z
+        p_local = R_dh.T @ (p - p_origin)
+        R_local = R_dh.T @ R
+        local_axes.append((z_local, p_local))
+        local_frames.append(R_local)
+    return local_axes, local_frames
 
 def get_arm_base_x_axis(robot, arm_base_link: str) -> np.ndarray:
     return normalize(robot.get_transform(arm_base_link)[:3, 0])
 
-def _dh_pair(z_prev, p_prev, z_curr, p_curr, x_prev=None):
+def _dh_pair(z_prev, p_prev, z_curr, p_curr, x_prev=None, x_ref=None):
     x_i = np.cross(z_prev, z_curr)
     if np.linalg.norm(x_i) < 1e-5:
         v = p_curr - p_prev
         x_i = v - np.dot(v, z_prev) * z_prev
         if np.linalg.norm(x_i) < 1e-5:
-            if x_prev is not None:
+            if x_ref is not None:
+                x_i = x_ref - np.dot(x_ref, z_prev) * z_prev
+                if np.linalg.norm(x_i) < 1e-5:
+                    x_i = x_ref if x_prev is None else x_prev
+            elif x_prev is not None:
                 x_i = x_prev
             else:
                 ref = np.array([1, 0, 0]) if abs(z_prev[0]) < 0.9 else np.array([0, 1, 0])
                 x_i = np.cross(z_prev, ref)
     x_i = normalize(x_i)
+
+    if x_ref is not None and np.linalg.norm(np.cross(z_prev, z_curr)) > 1e-5:
+        proj = x_ref - np.dot(x_ref, z_curr) * z_curr
+        if np.linalg.norm(proj) > 1e-5 and np.dot(x_i, proj) < 0:
+            x_i = -x_i
 
     a = -np.dot(p_prev - p_curr, x_i)
     rhs = p_curr - p_prev + a * x_i
@@ -186,6 +184,45 @@ def _dh_pair(z_prev, p_prev, z_curr, p_curr, x_prev=None):
         theta = 0.0
 
     return a, alpha, d, theta, x_i, p_curr + s * z_curr
+
+def compute_dh_from_axes(axes, x_init=None, link_frames=None) -> List[Tuple[float, float, float, float]]:
+    x_prev = x_init
+    p_prev = axes[0][1]
+    params = []
+    for i in range(len(axes) - 1):
+        z_prev, _ = axes[i]
+        z_curr, p_curr = axes[i + 1]
+        x_ref = None
+        if link_frames is not None and i + 1 < len(link_frames):
+            x_ref = link_frames[i + 1][:, 0]
+        a, alpha, d, theta, x_curr, p_new = _dh_pair(z_prev, p_prev, z_curr, p_curr, x_prev, x_ref)
+        params.append((a, alpha, d, theta))
+        x_prev, p_prev = x_curr, p_new
+    return params
+
+def compute_dh_params(axes, link_frames, x_init):
+    z0 = axes[0][0]
+    p_origin = axes[0][1]
+    R_dh = _build_dh_base_transform(z0, x_init)
+    local_axes, local_frames = _transform_axes_to_dh_base(axes, link_frames, R_dh, p_origin)
+    x_init_local = np.array([1.0, 0.0, 0.0])
+    dh_params = compute_dh_from_axes(local_axes, x_init_local, local_frames)
+    return dh_params, R_dh, p_origin
+
+def compute_tool_frame(robot, active_joints, target_end_link, dh_params, R_dh, p_origin):
+    robot.update_cfg({j: 0.0 for j in active_joints})
+    T_urdf = urdf_end_in_dh_base(robot, target_end_link, R_dh, p_origin)
+    T_dh = dh_fk(dh_params, np.zeros(len(active_joints)))
+    T_tool = np.linalg.inv(T_dh) @ T_urdf
+    return T_tool
+
+def urdf_end_in_dh_base(robot, target_end_link, R_dh, p_origin):
+    T_root_to_end = robot.get_transform(target_end_link)
+    T_dh_base = np.eye(4)
+    T_dh_base[:3, :3] = R_dh
+    T_dh_base[:3, 3] = p_origin
+    T_end_in_dh_base = np.linalg.inv(T_dh_base) @ T_root_to_end
+    return T_end_in_dh_base
 
 def dh_transform(a, alpha, d, theta):
     ct, st = np.cos(theta), np.sin(theta)
@@ -242,21 +279,27 @@ def print_dh_list(dh_params, joint_names):
         print(f"{line}{' ' * (max_len - len(line) + 2)}# {jn}")
     print("]")
 
-def run_verification(robot, arm, active_joints, target_end_link, arm_base_link, dh_params, q, label):
+def run_verification(robot, arm, active_joints, target_end_link, dh_params, q, label, R_dh, p_origin, T_tool):
     print(f"\n正在验证 {arm.upper()} 手臂 ({label}):")
     robot.update_cfg({jn: q[i] for i, jn in enumerate(active_joints)})
 
-    T_urdf = robot.get_transform(target_end_link, arm_base_link)
+    T_urdf_in_dh_base = urdf_end_in_dh_base(robot, target_end_link, R_dh, p_origin)
     T_dh = dh_fk(dh_params, q)
+    T_dh_corrected = T_dh @ T_tool
 
     print(f"测试关节角 (rad): {np.round(q, 4).tolist()}")
-    print(f"URDF 末端位姿:\n{np.round(T_urdf, 6)}")
-    print(f"DH  末端位姿:\n{np.round(T_dh, 6)}")
-    pos_err = np.linalg.norm(T_urdf[:3, 3] - T_dh[:3, 3])
-    R_err = T_urdf[:3, :3].T @ T_dh[:3, :3]
+    print(f"URDF 末端位姿 (DH基座坐标系):\n{np.round(T_urdf_in_dh_base, 6)}")
+    print(f"DH  末端位姿 (含T_tool):\n{np.round(T_dh_corrected, 6)}")
+    pos_err = np.linalg.norm(T_urdf_in_dh_base[:3, 3] - T_dh_corrected[:3, 3])
+    R_err = T_urdf_in_dh_base[:3, :3].T @ T_dh_corrected[:3, :3]
     ang_err = np.degrees(np.arccos(np.clip((np.trace(R_err) - 1) / 2, -1, 1)))
     print(f"位置误差: {pos_err:.6f} m,  姿态误差: {ang_err:.4f} deg")
     print("✅ DH 模型与 URDF 完全等价。" if (pos_err < 1e-3 and ang_err < 1) else "❌ 存在偏差。")
+
+def get_gravity_in_dh_base(arm: str, R_dh: np.ndarray) -> Tuple[float, float, float]:
+    g_world = np.array([0.0, 0.0, -9.81])
+    g_dh = R_dh.T @ g_world
+    return (float(g_dh[0]), float(g_dh[1]), float(g_dh[2]))
 
 def get_gravity_in_arm_base(arm: str) -> Tuple[float, float, float]:
     base_urdf_path, _, _ = get_robot_info()
@@ -272,12 +315,10 @@ def get_gravity_in_arm_base(arm: str) -> Tuple[float, float, float]:
 def get_dh_params_for_arm(arm: str) -> List[Tuple[str, float, float, str]]:
     robot, start_link, active_joints, target_end_link = load_robot(arm)
     robot.update_cfg({j: 0.0 for j in active_joints})
-    axes = compute_axes(robot, active_joints, target_end_link)
+    axes, link_frames = compute_axes(robot, active_joints, target_end_link)
     arm_base_link = find_arm_base_link(robot, arm)
     x_init = get_arm_base_x_axis(robot, arm_base_link)
-    dh_params = compute_dh_from_axes(axes, x_init)
-    dh_params = correct_dh_orientation(robot, active_joints, target_end_link,
-                                       arm_base_link, dh_params)
+    dh_params, R_dh, p_origin = compute_dh_params(axes, link_frames, x_init)
 
     result = []
     for a, alpha, d, theta in dh_params:
@@ -302,25 +343,32 @@ def main():
         robot, start_link, active_joints, target_end_link = load_robot(arm)
 
         robot.update_cfg({j: 0.0 for j in active_joints})
-        axes = compute_axes(robot, active_joints, target_end_link)
+        axes, link_frames = compute_axes(robot, active_joints, target_end_link)
         arm_base_link = find_arm_base_link(robot, arm)
         print(f"手臂基座 link: {arm_base_link}")
         x_init = get_arm_base_x_axis(robot, arm_base_link)
-        dh_params = compute_dh_from_axes(axes, x_init)
-        dh_params = correct_dh_orientation(robot, active_joints, target_end_link,
-                                           arm_base_link, dh_params)
+        dh_params, R_dh, p_origin = compute_dh_params(axes, link_frames, x_init)
 
         print("\nDH 参数:")
         print_dh_list(dh_params, active_joints)
+
+        T_tool = compute_tool_frame(robot, active_joints, target_end_link, dh_params, R_dh, p_origin)
+        is_identity = np.max(np.abs(T_tool - np.eye(4))) < 1e-6
+        if is_identity:
+            print("工具坐标系 T_tool: 单位矩阵 (DH 帧与 URDF 帧一致)")
+        else:
+            print(f"工具坐标系 T_tool (DH FK 末端 → URDF 末端):\n{np.round(T_tool, 6)}")
+            ang_tool = np.degrees(np.arccos(np.clip((np.trace(T_tool[:3,:3]) - 1) / 2, -1, 1)))
+            print(f"  旋转角度: {ang_tool:.1f}°,  平移: {np.linalg.norm(T_tool[:3,3]):.6f} m")
 
         gravity = get_gravity_in_arm_base(arm)
         print(f"手臂基座重力方向 (gx, gy, gz): ({gravity[0]:.4f}, {gravity[1]:.4f}, {gravity[2]:.4f})")
 
         q_zero = np.array([0.0, 0.1, 0.0, 0.1, 0.0, 0.0, 0.0])
-        run_verification(robot, arm, active_joints, target_end_link, arm_base_link, dh_params, q_zero, "关节构型: [0.0, 0.1, 0.0, 0.1, 0.0, 0.0, 0.0]")
+        run_verification(robot, arm, active_joints, target_end_link, dh_params, q_zero, "关节构型: [0.0, 0.1, 0.0, 0.1, 0.0, 0.0, 0.0]", R_dh, p_origin, T_tool)
 
         q_rand = np.random.uniform(-1.0, 1.0, len(active_joints))
-        run_verification(robot, arm, active_joints, target_end_link, arm_base_link, dh_params, q_rand, "随机关节构型")
+        run_verification(robot, arm, active_joints, target_end_link, dh_params, q_rand, "随机关节构型", R_dh, p_origin, T_tool)
 
 if __name__ == "__main__":
     main()

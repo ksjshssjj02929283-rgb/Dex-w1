@@ -579,26 +579,19 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
     // A1/Arm模式下数据在虚拟20关节表示中的6-19位置，需要提取
     int index_offset = GetFirstJointIndex();
     // 从 JointFeedback 数组中提取字段
-    std::array<double, MAX_JOINT_NUM> position_arr_{};
-    std::array<double, MAX_JOINT_NUM> velocity_arr_{};
-    std::array<double, MAX_JOINT_NUM> torque_arr_{};
-    std::array<double, MAX_JOINT_NUM> temperature_arr_{};
-    std::array<uint16_t, MAX_JOINT_NUM> motor_status_arr_{};
-    std::array<uint16_t, MAX_JOINT_NUM> error_code_arr_{};
+    std::array<double, MAX_JOINT_NUM> position_arr_{}, velocity_arr_{}, torque_arr_{}, torque_sensor_arr_{}, temperature_arr_{};
+    std::array<uint16_t, MAX_JOINT_NUM> motor_status_arr_{}, error_code_arr_{};
     for (int i = 0; i < ndof_robot; ++i) {
         position_arr_[i] = this->robot_feedback_.joint_feedback[i].joint_position;
         velocity_arr_[i] = this->robot_feedback_.joint_feedback[i].joint_velocity;
         torque_arr_[i] = this->robot_feedback_.joint_feedback[i].joint_torque;
+        torque_sensor_arr_[i] = this->robot_feedback_.joint_feedback[i].joint_sensor_torque;
         motor_status_arr_[i] = this->robot_feedback_.al_status[i];
         temperature_arr_[i] = this->robot_feedback_.joint_feedback[i].joint_temperature;
         error_code_arr_[i] = this->robot_feedback_.joint_feedback[i].joint_error_code;
     }
     // 从 JointControl 数组中提取字段
-    std::array<double, MAX_JOINT_NUM> position_cmd_arr_{};
-    std::array<double, MAX_JOINT_NUM> velocity_cmd_arr_{};
-    std::array<double, MAX_JOINT_NUM> torque_ff_arr_{};
-    std::array<double, MAX_JOINT_NUM> positive_torque_limit_arr_{};
-    std::array<double, MAX_JOINT_NUM> negative_torque_limit_arr_{};
+    std::array<double, MAX_JOINT_NUM> position_cmd_arr_{}, velocity_cmd_arr_{}, torque_ff_arr_{}, positive_torque_limit_arr_{}, negative_torque_limit_arr_{};
     for (int i = 0; i < ndof_robot; ++i) {
         position_cmd_arr_[i] = this->robot_control_.joint_control[i].joint_position;
         velocity_cmd_arr_[i] = this->robot_control_.joint_control[i].joint_velocity;
@@ -620,6 +613,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"motor_temperature\":" + utils::VectorToJsonArrayString(temperature_arr_, index_offset, ndof_config_).str() +
         ",\n  \"run_mode\":\"" + ToString(this->manager_info_.robot_property.run_mode) + "\"" +
         ", \"allow_force_control\":\"" + std::to_string(this->manager_info_.robot_property.allow_force_control) + "\"" +
+        ", \"enable_cartesian_impedance\":\"" + std::to_string(this->manager_info_.robot_property.enable_cartesian_impedance) + "\"" +
         ", \"server_error_code\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.error_codes).str() +
         ", \"safe_level\":\"" + std::to_string(this->manager_info_.robot_property.safe_level) + "\"" +
         ", \"global_speed_ratio\":\"" + std::to_string(this->manager_info_.robot_property.global_speed_ratio) + "\"" +
@@ -630,6 +624,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_velocity_cmd\":" + utils::VectorToJsonArrayString(velocity_cmd_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(torque_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(torque_ff_arr_, index_offset, ndof_config_).str() +
+        ",\n  \"joint_torque_sensor\":" + utils::VectorToJsonArrayString(torque_sensor_arr_, index_offset, ndof_config_).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(negative_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(positive_torque_limit_arr_, index_offset, ndof_config_).str() +

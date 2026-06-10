@@ -73,6 +73,7 @@ w1_v02:
 
   # === 是否允许开启力控 ===
   allow_force_control: true
+  enable_cartesian_impedance: false
 
   cart_stiffness: [200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0]
   cart_damping_ratio: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
@@ -413,6 +414,7 @@ w1_v03:
 
   # === 是否允许开启力控 ===
   allow_force_control: false
+  enable_cartesian_impedance: false
 
   cart_stiffness: [200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0]
   cart_damping_ratio: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
