@@ -70,7 +70,7 @@ struct JointCommand {
     VectorDof torque_feedforward;
     VectorDof joint_stiffness;
     VectorDof joint_damping;
-    VectorDof joint_integral_ratio;
+    double joint_integral_ratio;
 
     std::string ToString() const {
         std::stringstream ss;
@@ -129,7 +129,7 @@ struct RobotProperty {
     SafetyCheckConfig safety_check_config;  // 安全检查配置
     VectorDof joint_stiffness = VectorDof::Constant(200.0);
     VectorDof joint_damping = VectorDof::Constant(20.0);
-    VectorDof joint_integral_ratio = VectorDof::Constant(0.01);
+    double joint_integral_ratio = 0.01;
     JointAdmittanceConfig joint_admittance;
     Vector12d cart_stiffness = Vector12d::Constant(200.0);
     Vector12d cart_damping_ratio = Vector12d::Constant(1.0);  // 阻尼比 范围0.5 ~ 1.5
