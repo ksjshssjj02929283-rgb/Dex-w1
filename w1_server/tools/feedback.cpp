@@ -108,6 +108,12 @@ int main(int argc, char* argv[]) {
                           << std::endl;
             }
         }
+        fb.imu_data.orientation.w = 1.0f;
+        fb.imu_data.angular_velocity = {0.0f, 0.0f, 0.0f};
+        fb.imu_data.linear_acceleration = {0.0f, 0.0f, 9.7887f};
+        fb.imu_data.mag = {0.0f, 0.0f, 0.0f};
+        fb.imu_data.eul = {0.0f, 0.0f, 0.0f};
+
         fb_shm.AppendNewElement(fb);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
