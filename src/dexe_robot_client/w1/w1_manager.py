@@ -888,13 +888,18 @@ class W1Manager:
             self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL
 
-        self.logger.info("Sending request to cancel navigation and control...")
+        self.logger.info(
+            "Sending request to cancel navigation, control and auto charging..."
+        )
         nav_cancel_ok = self._get_chassis_client().cancel_chassis_nav2()
         road_nav_cancel_ok = self._get_chassis_client().cancel_road_navigation()
         control_cancel_ok = self._get_chassis_client().cancel_chassis_control()
+        auto_charging_cancel_ok = (
+            self._get_chassis_client().cancel_auto_charging())
 
         # 只要有一个成功，就认为取消指令已尽力发送
-        if nav_cancel_ok or road_nav_cancel_ok or control_cancel_ok:
+        if (nav_cancel_ok or road_nav_cancel_ok or control_cancel_ok or
+                auto_charging_cancel_ok):
             return StatusCode.SUCCESS
         return StatusCode.FAIL
 

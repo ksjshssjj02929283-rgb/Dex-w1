@@ -4,7 +4,7 @@
 
 本文用于交接 `src/dexe_robot_client/navigation_client/` 的当前实现、ROS 接口协议、上层调用方式、已知问题和后续维护重点。内容基于当前代码确认，不代表下游导航服务端的完整设计说明。
 
-当前对外实际入口是 `ChassisClient`。`ChassisClient` 继承 `NavigationClient`，负责按 `is_sim` 初始化底盘位姿订阅、Nav2 action、底盘精控 action、回充 action、电量诊断、障碍物 topic 和 Nav2 参数服务。上层 `W1Manager` 在 `use_nav=True` 时持有真实模式 `ChassisClient(is_sim=False)`，并把底盘能力包装成 `StatusCode` 风格接口。
+当前对外实际入口是 `ChassisClient`。`ChassisClient` 继承 `NavigationClient`，负责按 `is_sim` 初始化底盘位姿订阅、Nav2 action、底盘精控 action、回充 action、电量诊断、障碍物 topic 和 Nav2 参数服务。上层 `W1Manager` 在 `use_nav=True` 时持有真实模式 `ChassisClient(is_sim=False)`，并把底盘能力包装成 `StatusCode` 风格接口；统一停止底盘运动时会同时尝试取消导航、路网导航、精控和回充 action。
 
 ## 代码边界
 
@@ -99,9 +99,16 @@ Nav2 发送流程：
 
 1. 等待 `/auto_charging` action server，默认最多 10 秒。
 2. 构造 `AutoCharging.Goal()`，写入 `force` 字段，默认 `True`。
-3. 异步 `send_goal_async()` 并注册 feedback callback。
-4. goal accepted 后注册 result callback。
-5. result callback 根据 action result status 和 `result.success` 更新 `_auto_charging_status`、`_auto_charging_success` 和 `_last_auto_charging_result_message`。
+3. 每次发送前自增 `_auto_charging_task_id`，后续 feedback、goal response、cancel response 和 result callback 只处理当前 task，忽略旧回调。
+4. 异步 `send_goal_async()` 并注册带 task id 的 feedback callback。
+5. goal accepted 后缓存当前 goal handle，并注册带 task id 的 result callback。
+6. result callback 根据 action result status 和 `result.success` 更新 `_auto_charging_status`、`_auto_charging_success` 和 `_last_auto_charging_result_message`，并清空当前 goal handle。
+
+回充取消流程：
+
+1. 如果当前 goal handle 尚未生成，但回充状态仍处于 `WAITING_SERVER`、`SENDING`、`ACCEPTED` 或 `EXECUTING`，`cancel_auto_charging()` 会等待最多 1 秒，让当前 goal accepted callback 有机会写入 goal handle。
+2. goal handle 可用后调用 `cancel_goal_async()`，并注册带 task id 的 cancel response callback。
+3. cancel response 仅代表 action cancel 请求响应；最终是否取消成功仍以后续 result callback 的 `CANCELED` 状态为准。
 
 ### Parameter 服务
 
@@ -149,7 +156,7 @@ Nav2 发送流程：
 | `set_chassis_auto_charging(force=True, timeout_sec=10.0)` | force、等待 action server 超时 | `bool` | 发送 `/auto_charging` action，非阻塞返回是否成功发出 |
 | `get_auto_charging_status()` | 无 | `str` | 返回本地回充 action 状态缓存 |
 | `get_auto_charging_result()` | 无 | `(bool, str)` | 返回最近一次回充结果成功标志和消息 |
-| `cancel_auto_charging()` | 无 | `bool` | 通过当前回充 goal handle 发送取消请求 |
+| `cancel_auto_charging()` | 无 | `bool` | 通过当前回充 goal handle 发送取消请求；goal handle 尚未生成时最多等待 1 秒 |
 | `set_goal_tolerance(xy_tolerance, yaw_tolerance)` | float, float | `bool` | 设置并校验 Nav2 到达容差 |
 | `set_footprint(vertices)` | 4 点列表 | `bool` | 设置并校验 local/global footprint |
 | `set_inflation_radius(radius)` | float | `bool` | 设置并校验 local/global inflation radius |
@@ -172,7 +179,7 @@ Nav2 发送流程：
 | `get_control_status()` | `get_control_status()` | `(StatusCode, str)` | 当前函数标注为 `str`，实际返回元组 |
 | `set_auto_charging()` | `set_chassis_auto_charging()` | `StatusCode` | 请求自动回充 |
 | `cancel_auto_charging()` | `cancel_auto_charging()` | `StatusCode` | 取消当前回充 action |
-| `cancel_chassis_motion()` | `cancel_chassis_nav2()` + `cancel_road_navigation()` + `cancel_chassis_control()` | `StatusCode` | 任一取消请求发出成功即返回成功 |
+| `cancel_chassis_motion()` | `cancel_chassis_nav2()` + `cancel_road_navigation()` + `cancel_chassis_control()` + `cancel_auto_charging()` | `StatusCode` | 任一取消请求发出成功即返回成功 |
 | `set_chassis_footprint(vertices)` | `set_footprint()` | `StatusCode` | 设置 costmap footprint |
 | `set_chassis_nav_tolerance(xy_tol, yaw_tol)` | `set_goal_tolerance()` | `StatusCode` | 设置导航容差 |
 | `set_chassis_inflation_radius(radius)` | `set_inflation_radius()` | `StatusCode` | 设置膨胀半径 |
@@ -309,8 +316,9 @@ if w1.connect() == StatusCode.SUCCESS:
 3. `timeout_sec` 构造参数只影响初始化后第一次 `spin_once()`，连接超时阈值固定为 `_connection_timeout = 1.0`。
 4. `cancel_chassis_nav2()` 在 goal handle 尚未生成时会内部循环 spin 最多 1 秒，与“非阻塞”描述不完全一致。
 5. `cancel_chassis_control()` 不等待 goal response；刚发送精控目标后立即取消时，如果 goal handle 未缓存，会返回 `False`。
-6. 参数读写内部调用 `rclpy.spin_until_future_complete()`；如果节点已在外部 executor 中运行，存在嵌套 spin 或阻塞业务线程风险。
-7. `set_chassis_nav2_position()`、`set_chassis_control_position()` 没有输入长度、数值类型、`NaN/Inf` 校验。
+6. `cancel_auto_charging()` 在 goal handle 尚未生成时会内部等待最多 1 秒，与“非阻塞”描述不完全一致。
+7. 参数读写内部调用 `rclpy.spin_until_future_complete()`；如果节点已在外部 executor 中运行，存在嵌套 spin 或阻塞业务线程风险。
+8. `set_chassis_nav2_position()`、`set_chassis_control_position()` 没有输入长度、数值类型、`NaN/Inf` 校验。
 
 ### P2
 

@@ -61,6 +61,7 @@ class NavigationClient(ABC, Node):
         self._auto_charging_send_goal_future = None
         self._auto_charging_result_future = None
         self._auto_charging_cancel_future = None
+        self._auto_charging_task_id = 0
         self._auto_charging_status = "IDLE"
         self._auto_charging_done = False
         self._auto_charging_success = False
@@ -528,7 +529,13 @@ class NavigationClient(ABC, Node):
             points_by_name[name] = pose
         return points_by_name
 
-    def _auto_charging_feedback_callback(self, feedback_msg):
+    def _auto_charging_feedback_callback(self, feedback_msg, task_id):
+        if task_id != self._auto_charging_task_id:
+            self.get_logger().debug(
+                f"Ignoring feedback for old AutoCharging task {task_id} "
+                f"(current: {self._auto_charging_task_id})")
+            return
+
         feedback = feedback_msg.feedback
         self._last_auto_charging_feedback = feedback
         if self._auto_charging_status != "CANCELING":
@@ -563,6 +570,8 @@ class NavigationClient(ABC, Node):
         goal_msg.force = force
 
         self.get_logger().info(f"Sending AutoCharging goal: force={force}")
+        self._auto_charging_task_id += 1
+        current_task_id = self._auto_charging_task_id
         self._auto_charging_done = False
         self._auto_charging_success = False
         self._auto_charging_status = "SENDING"
@@ -572,13 +581,17 @@ class NavigationClient(ABC, Node):
         self._last_auto_charging_feedback = None
         self._last_auto_charging_result_message = ""
 
+        def auto_charging_feedback_callback(feedback_msg):
+            self._auto_charging_feedback_callback(feedback_msg, current_task_id)
+
         try:
             self._auto_charging_send_goal_future = (
                 self._auto_charging_action_client.send_goal_async(
                     goal_msg,
-                    feedback_callback=self._auto_charging_feedback_callback))
+                    feedback_callback=auto_charging_feedback_callback))
             self._auto_charging_send_goal_future.add_done_callback(
-                self._auto_charging_goal_done_callback)
+                lambda future: self._auto_charging_goal_done_callback(
+                    future, current_task_id))
             return True
         except Exception as e:
             self.get_logger().error(f"Failed to send AutoCharging goal: {e}")
@@ -597,24 +610,48 @@ class NavigationClient(ABC, Node):
 
     def cancel_auto_charging(self) -> bool:
         """取消当前回充 action。"""
+        if self._auto_charging_goal_handle is None and self._auto_charging_status in {
+                "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING"
+        }:
+            self.get_logger().info(
+                "Waiting for AutoCharging goal to be accepted before cancelling..."
+            )
+            current_task_id = self._auto_charging_task_id
+            start_time = time.time()
+            while time.time() - start_time < 1.0:
+                if current_task_id != self._auto_charging_task_id:
+                    break
+                self._spin_once_if_not_executed(timeout_sec=0.05)
+                if self._auto_charging_goal_handle is not None:
+                    break
+                time.sleep(0.05)
+
         if self._auto_charging_goal_handle is None:
             self.get_logger().warning(
                 "No accepted AutoCharging goal to cancel.")
             return False
 
         try:
+            current_task_id = self._auto_charging_task_id
             self._auto_charging_status = "CANCELING"
             self._auto_charging_cancel_future = (
                 self._auto_charging_goal_handle.cancel_goal_async())
             self._auto_charging_cancel_future.add_done_callback(
-                self._auto_charging_cancel_done_callback)
+                lambda future: self._auto_charging_cancel_done_callback(
+                    future, current_task_id))
             self.get_logger().info("AutoCharging cancel request sent.")
             return True
         except Exception as e:
             self.get_logger().error(f"Failed to cancel AutoCharging goal: {e}")
             return False
 
-    def _auto_charging_goal_done_callback(self, future):
+    def _auto_charging_goal_done_callback(self, future, task_id):
+        if task_id != self._auto_charging_task_id:
+            self.get_logger().debug(
+                f"Ignoring goal response for old AutoCharging task {task_id} "
+                f"(current: {self._auto_charging_task_id})")
+            return
+
         try:
             goal_handle = future.result()
         except Exception as e:
@@ -636,9 +673,16 @@ class NavigationClient(ABC, Node):
         self.get_logger().info("AutoCharging goal accepted.")
         self._auto_charging_result_future = goal_handle.get_result_async()
         self._auto_charging_result_future.add_done_callback(
-            self._auto_charging_result_done_callback)
+            lambda future: self._auto_charging_result_done_callback(
+                future, task_id))
 
-    def _auto_charging_cancel_done_callback(self, future):
+    def _auto_charging_cancel_done_callback(self, future, task_id):
+        if task_id != self._auto_charging_task_id:
+            self.get_logger().debug(
+                f"Ignoring cancel response for old AutoCharging task {task_id} "
+                f"(current: {self._auto_charging_task_id})")
+            return
+
         try:
             response = future.result()
             self.get_logger().info(
@@ -647,7 +691,13 @@ class NavigationClient(ABC, Node):
         except Exception as e:
             self.get_logger().error(f"AutoCharging cancel failed: {e}")
 
-    def _auto_charging_result_done_callback(self, future):
+    def _auto_charging_result_done_callback(self, future, task_id):
+        if task_id != self._auto_charging_task_id:
+            self.get_logger().debug(
+                f"Ignoring result for old AutoCharging task {task_id} "
+                f"(current: {self._auto_charging_task_id})")
+            return
+
         try:
             response = future.result()
             result = response.result
@@ -658,6 +708,7 @@ class NavigationClient(ABC, Node):
                                            bool(result.success))
             self._last_auto_charging_result_message = result.message
             self._auto_charging_done = True
+            self._auto_charging_goal_handle = None
 
             if self._auto_charging_success:
                 self.get_logger().info(
@@ -671,6 +722,7 @@ class NavigationClient(ABC, Node):
             self._auto_charging_status = "UNKNOWN"
             self._auto_charging_success = False
             self._auto_charging_done = True
+            self._auto_charging_goal_handle = None
 
     def _road_nav_feedback_callback(self, feedback_msg):
         feedback = feedback_msg.feedback
