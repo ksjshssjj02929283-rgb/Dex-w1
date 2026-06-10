@@ -135,22 +135,16 @@ def _transform_axes_to_dh_base(axes, link_frames, R_dh, p_origin):
         local_frames.append(R_local)
     return local_axes, local_frames
 
-def correct_dh_orientation(robot, active_joints, target_end_link, arm_base_link,
-                           dh_params) -> List[Tuple[float, float, float, float]]:
-    robot.update_cfg({j: 0.0 for j in active_joints})
-    T_urdf = robot.get_transform(target_end_link, arm_base_link)
-    T_dh = dh_fk(dh_params, np.zeros(len(active_joints)))
-
-    pos_err = np.linalg.norm(T_urdf[:3, 3] - T_dh[:3, 3])
-    R_err = T_urdf[:3, :3].T @ T_dh[:3, :3]
-    ang_err = np.degrees(np.arccos(np.clip((np.trace(R_err) - 1) / 2, -1, 1)))
-
-    if pos_err < 1e-3 and abs(ang_err - 180) < 1.0:
-        params = list(dh_params)
-        a, alpha, d, theta = params[-1]
-        params[-1] = (a, alpha, d, theta + np.pi)
-        return params
-    return dh_params
+def _transform_axes_to_dh_base(axes, link_frames, R_dh, p_origin):
+    local_axes = []
+    local_frames = []
+    for (z, p), R in zip(axes, link_frames):
+        z_local = R_dh.T @ z
+        p_local = R_dh.T @ (p - p_origin)
+        R_local = R_dh.T @ R
+        local_axes.append((z_local, p_local))
+        local_frames.append(R_local)
+    return local_axes, local_frames
 
 def get_arm_base_x_axis(robot, arm_base_link: str) -> np.ndarray:
     return normalize(robot.get_transform(arm_base_link)[:3, 0])
@@ -313,6 +307,11 @@ def run_verification(robot, arm, active_joints, target_end_link, dh_params, q, l
     print(f"位置误差: {pos_err:.6f} m,  姿态误差: {ang_err:.4f} deg")
     print("✅ DH 模型与 URDF 完全等价。" if (pos_err < 1e-3 and ang_err < 1) else "❌ 存在偏差。")
 
+def get_gravity_in_dh_base(arm: str, R_dh: np.ndarray) -> Tuple[float, float, float]:
+    g_world = np.array([0.0, 0.0, -9.81])
+    g_dh = R_dh.T @ g_world
+    return (float(g_dh[0]), float(g_dh[1]), float(g_dh[2]))
+
 def get_gravity_in_arm_base(arm: str) -> Tuple[float, float, float]:
     base_urdf_path, _, _ = get_robot_info()
     if not base_urdf_path or not os.path.exists(base_urdf_path):
@@ -377,12 +376,10 @@ def get_gravity_in_arm_base(arm: str) -> Tuple[float, float, float]:
 def get_dh_params_for_arm(arm: str) -> List[Tuple[str, float, float, str]]:
     robot, start_link, active_joints, target_end_link = load_robot(arm)
     robot.update_cfg({j: 0.0 for j in active_joints})
-    axes = compute_axes(robot, active_joints, target_end_link)
+    axes, link_frames = compute_axes(robot, active_joints, target_end_link)
     arm_base_link = find_arm_base_link(robot, arm)
     x_init = get_arm_base_x_axis(robot, arm_base_link)
-    dh_params = compute_dh_from_axes(axes, x_init)
-    dh_params = correct_dh_orientation(robot, active_joints, target_end_link,
-                                       arm_base_link, dh_params)
+    dh_params, R_dh, p_origin = compute_dh_params(axes, link_frames, x_init)
 
     result = []
     for a, alpha, d, theta in dh_params:
