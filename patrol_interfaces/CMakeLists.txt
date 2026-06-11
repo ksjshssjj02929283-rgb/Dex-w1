@@ -12,6 +12,7 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PatrolPoint.msg"
   "srv/PatrolUpload.srv"
+  "srv/PatrolRobotStatus.srv"
   "action/PatrolRecord.action"
   DEPENDENCIES std_msgs
 )

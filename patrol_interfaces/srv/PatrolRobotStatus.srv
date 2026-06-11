@@ -1,0 +1,16 @@
+# Patrol robot abnormal status reporting service.
+
+string task_id      # 用于标识这一轮巡检任务，示例：20260514_103000_patrol01
+string task_name    # 任务名称，如：商场日常巡检
+string robot_code   # 机器人唯一标识
+string address      # 机器人巡检地址，如：东莞某某商场
+string floor        # 机器人巡检楼层，如：3F
+PatrolPoint[] current_point  # 机器人当前位置（定位给出的）
+string error_msg    # 异常描述
+int32 error_code    # 异常错误码
+
+---
+
+bool success        # 是否成功同步该异常
+string ack_msg      # 异常原因
+int32 ack_code      # 异常错误码
