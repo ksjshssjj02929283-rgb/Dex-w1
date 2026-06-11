@@ -139,6 +139,7 @@ private:
     std::shared_ptr<EIInputShaper> input_shapers_[ndof_robot];
     EIInputShaper::Type input_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
     const double input_shaper_max_ramp_rad_per_sec = 10 * M_PI;
+    uint32_t imu_timestamp_ = 0;
 };
 
 }  // namespace robot_server_lib

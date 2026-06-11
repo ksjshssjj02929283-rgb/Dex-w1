@@ -673,24 +673,27 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
 
 void RobotServer::PublishImu() {
     const auto& imu = robot_feedback_.imu_data;
-    sensor_msgs::msg::Imu imu_msg;
-    imu_msg.header.stamp = this->get_clock()->now();
-    imu_msg.header.frame_id = "imu_chassis_link";
+    if (imu_timestamp_ != imu.timestamp) {
+        imu_timestamp_ = imu.timestamp;
+        sensor_msgs::msg::Imu imu_msg;
+        imu_msg.header.stamp = this->get_clock()->now();
+        imu_msg.header.frame_id = "imu_chassis_link";
 
-    imu_msg.orientation.w = imu.orientation.w;
-    imu_msg.orientation.x = imu.orientation.x;
-    imu_msg.orientation.y = imu.orientation.y;
-    imu_msg.orientation.z = imu.orientation.z;
+        imu_msg.orientation.w = imu.orientation.w;
+        imu_msg.orientation.x = imu.orientation.x;
+        imu_msg.orientation.y = imu.orientation.y;
+        imu_msg.orientation.z = imu.orientation.z;
 
-    imu_msg.angular_velocity.x = imu.angular_velocity.x;
-    imu_msg.angular_velocity.y = imu.angular_velocity.y;
-    imu_msg.angular_velocity.z = imu.angular_velocity.z;
+        imu_msg.angular_velocity.x = imu.angular_velocity.x;
+        imu_msg.angular_velocity.y = imu.angular_velocity.y;
+        imu_msg.angular_velocity.z = imu.angular_velocity.z;
 
-    imu_msg.linear_acceleration.x = imu.linear_acceleration.x;
-    imu_msg.linear_acceleration.y = imu.linear_acceleration.y;
-    imu_msg.linear_acceleration.z = imu.linear_acceleration.z;
+        imu_msg.linear_acceleration.x = imu.linear_acceleration.x;
+        imu_msg.linear_acceleration.y = imu.linear_acceleration.y;
+        imu_msg.linear_acceleration.z = imu.linear_acceleration.z;
 
-    imu_publisher_->publish(imu_msg);
+        imu_publisher_->publish(imu_msg);
+    }
 }
 
 void RobotServer::PublishFeedback() {
