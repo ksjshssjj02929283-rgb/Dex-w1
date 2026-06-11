@@ -316,6 +316,7 @@ class CartesianToJointPlanner:
             right_qpos_array = pos_array[:, dofs:]
             return True, left_qpos_array, right_qpos_array
 
+    @time_consuming
     def generate_dense_whole_body_joint_traj(
             self,
             whole_body_joint_traj: np.ndarray = None,

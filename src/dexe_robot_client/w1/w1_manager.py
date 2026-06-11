@@ -5238,7 +5238,8 @@ class W1Manager:
                                   eye_focus_point: np.ndarray = None,
                                   is_torso_lean_backward: bool = False,
                                   torso_lean_backward_threshold: float = None,
-                                  blend_tolerance: float = 0.005):
+                                  blend_tolerance: float = 0.005,
+                                  solve_accurate_target: bool = True):
         """
         This function is used to plan linear trajectory of end effector in Cartesian space,
             and use whole body ik to solve the corresponding joint trajectory. 
@@ -5587,36 +5588,38 @@ class W1Manager:
             )
             return StatusCode.PLAN_TRAJ_FAIL, None, None, None
 
-        # resolve for the last target
-        left_last_target_xpos = left_xpos_sample_array[-1]
-        right_last_target_xpos = right_xpos_sample_array[-1] @ np.linalg.inv(
-            self.cartesian_joint_planner.right_tcp)
-        if not is_torso_lean_backward:
-            self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
-                "standard_strict")
-        else:
-            self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
-                "standard_lean_backward_strict")
-        res, full_body_last_qpos = self.cartesian_joint_planner.whole_body_ik_solver.solve_ik(
-            left_ee_target=left_last_target_xpos,
-            right_ee_target=right_last_target_xpos,
-            cur_qpos=full_body_joint_traj[-1])
-        if not res:
-            self.logger.error(
-                "Whole body joint traj planning failed in plan_linear_whole_body_ik when solve for strict pose error."
-            )
-            return StatusCode.PLAN_TRAJ_FAIL, None, None, None
-        full_body_joint_traj = np.vstack(
-            [full_body_joint_traj, full_body_last_qpos])
-        qvel_limits_array_ = np.vstack(
-            [qvel_limits_array_, qvel_limits_array_[-1]])
-        if not is_torso_lean_backward:
-            self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
-                "standard")
-        else:
-            self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
-                "standard_lean_backward")
-
+        if solve_accurate_target:
+            # start_time = time.time()
+            # resolve for the last target
+            left_last_target_xpos = left_xpos_sample_array[-1]
+            right_last_target_xpos = right_xpos_sample_array[-1] @ np.linalg.inv(
+                self.cartesian_joint_planner.right_tcp)
+            if not is_torso_lean_backward:
+                self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
+                    "standard_strict")
+            else:
+                self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
+                    "standard_lean_backward_strict")
+            res, full_body_last_qpos = self.cartesian_joint_planner.whole_body_ik_solver.solve_ik(
+                left_ee_target=left_last_target_xpos,
+                right_ee_target=right_last_target_xpos,
+                cur_qpos=full_body_joint_traj[-1])
+            if not res:
+                self.logger.error(
+                    "Whole body joint traj planning failed in plan_linear_whole_body_ik when solve for strict pose error."
+                )
+                return StatusCode.PLAN_TRAJ_FAIL, None, None, None
+            full_body_joint_traj = np.vstack(
+                [full_body_joint_traj, full_body_last_qpos])
+            qvel_limits_array_ = np.vstack(
+                [qvel_limits_array_, qvel_limits_array_[-1]])
+            if not is_torso_lean_backward:
+                self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
+                    "standard")
+            else:
+                self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
+                    "standard_lean_backward")
+            # print(f"solve for last ik time: {time.time() - start_time}")
         
 
         # combine the start qpos
@@ -5672,5 +5675,17 @@ class W1Manager:
                 self.logger.error(
                     "Collision detected in plan_linear_whole_body_ik.")
                 return StatusCode.COLLISION_FAIL, None, None, None
+
+        # if left_pos_raw_array is not None:
+        #     self.logger.info(f"left_target_pose: {left_pos_raw_array[-1]}")
+        # left_final_xpos = self.get_xpos("left_arm", full_body_joint_traj_[-1], is_local=False)[1]
+        # left_final_user_pose = xpos_to_user_pose(left_final_xpos)
+        # self.logger.info(f"left_final_pose: {left_final_user_pose}")
+
+        # if right_pos_raw_array is not None:
+        #     self.logger.info(f"right_target_pose: {right_pos_raw_array[-1]}")
+        # right_final_xpos = self.get_xpos("right_arm", full_body_joint_traj_[-1], is_local=False)[1]
+        # right_final_user_pose = xpos_to_user_pose(right_final_xpos)
+        # self.logger.info(f"right_final_pose: {right_final_user_pose}")
 
         return StatusCode.SUCCESS, full_body_joint_traj_, left_arm_ee_trigger_list, right_arm_ee_trigger_list
