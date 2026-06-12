@@ -13,6 +13,7 @@ import yaml
 import pinocchio as pin
 import time
 import multiprocessing
+import threading
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from scipy.signal import butter, filtfilt
@@ -57,9 +58,6 @@ class CollisionChecker:
         
         # Re-create collision data after removing pairs
         self.collision_data = pin.GeometryData(self.collision_model)
-        
-        if pairs_to_remove_indices:
-            print(f"Removed {len(pairs_to_remove_indices)} naturally colliding pairs (SRDF/Adjacent).")
 
     def check_collision(self, q, margin=0.0):
         """
@@ -122,7 +120,7 @@ def _parallel_worker(worker_id, joint_limits, wf, L, duration, dt, urdf_path, sr
     import numpy as np
     import os
     import time
-    # Seeding properly to keep different processes from generating duplicate signal
+    import tempfile
     np.random.seed((os.getpid() * worker_id + int(time.time() * 1000)) % 123456789)
     
     local_checker = None
@@ -132,7 +130,16 @@ def _parallel_worker(worker_id, joint_limits, wf, L, duration, dt, urdf_path, sr
         except Exception:
             pass
 
+    counter_file = os.path.join(tempfile.gettempdir(), f"trajgen_counter_{os.getppid()}")
+    
     for attempt in range(1, attempts_per_worker + 1):
+        try:
+            with open(counter_file, 'r') as f:
+                val = int(f.read().strip())
+            with open(counter_file, 'w') as f:
+                f.write(str(val + 1))
+        except Exception:
+            pass
         t, q = nonrepeating_covering_traj(
             joint_limits=joint_limits, wf=wf, L=L,
             duration=duration, dt=dt,
@@ -181,83 +188,72 @@ def generate_q_with_limits(joint_limits, wf, L, duration, dt, collision_checker=
         print(f"🚀 Spawning {num_workers} processes for parallel trajectory generation...")
         
         attempts_per_worker = max(100, max_attempts // num_workers)
-        
-        with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            futures = {
-                executor.submit(
-                    _parallel_worker,
-                    i, joint_limits, wf, L, duration, dt,
-                    urdf_path, srdf_path, arm_indices, q_fixed,
-                    attempts_per_worker
-                ): i for i in range(num_workers)
-            }
-            
-            for future in as_completed(futures):
-                result = future.result()
-                if result is not None:
-                    t, q, attempt = result
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    print(f"✅ Trajectory found by parallel Worker {futures[future]} on attempt {attempt}")
-                    return t, q
-                    
-        print("❌ All parallel processes failed. Falling back to sequential...")
 
-    for attempt in range(1, max_attempts + 1):
-        if attempt % 50 == 0:
-            print(f"... Generation at attempt {attempt} ...")
-        
-        t, q = nonrepeating_covering_traj(
-            joint_limits=joint_limits, wf=wf, L=L,
-            duration=duration, dt=dt,
-            margin_ratio=0.02 
-        )
+        import tempfile
+        counter_file = os.path.join(tempfile.gettempdir(), f"trajgen_counter_{os.getpid()}")
+        with open(counter_file, 'w') as f:
+            f.write('0')
 
-        ok = True
-        # 1) Joint limit check
-        for i in range(ndof_total):
-            low, high = joint_limits[i]
-            if not np.all((q[:, i] >= low) & (q[:, i] <= high)):
-                ok = False
-                break
-        
-        # 2) Self-collision check (if checker provided)
-        if ok and collision_checker is not None:
-            # Check collisions roughly every 50ms to save time
-            stride = max(1, int(round(0.05 / dt)))
-            
-            if q_fixed is None:
-                q_full_base = np.zeros(collision_checker.model.nq)
-            else:
-                q_full_base = q_fixed.copy()
-            
-            if arm_indices is None:
-                # Default to something sensible if not provided, but usually it is provided
-                arm_indices = range(6, 13)
+        stop_monitor = threading.Event()
 
-            for idx in range(0, q.shape[0], stride):
-                q_full = q_full_base.copy()
-                q_full[arm_indices] = q[idx, :]
-                
-                # Check collision with safety margin (0 cm)
-                if collision_checker.check_collision(q_full, margin=0.0):
-                    ok = False
-                    break
-            
-            # Check last point if not included
-            if ok and (q.shape[0]-1) % stride != 0:
-                q_full = q_full_base.copy()
-                q_full[arm_indices] = q[-1, :]
-                if collision_checker.check_collision(q_full, margin=0.0):
-                    ok = False
+        def _monitor_counter():
+            while not stop_monitor.is_set():
+                stop_monitor.wait(1.0)
+                if not stop_monitor.is_set():
+                    try:
+                        with open(counter_file, 'r') as f:
+                            val = int(f.read().strip())
+                        print(f"  ... total attempts: {val} ...")
+                    except Exception:
+                        pass
 
-        if ok:
-            if collision_checker:
-                print(f"✅ Trajectory within limits and collision-free (with margin) on attempt {attempt}")
-            else:
-                print(f"✅ Trajectory within limits on attempt {attempt}")
-            return t, q
-    
-    raise RuntimeError("Failed to generate a valid trajectory within joint limits.")
+        monitor_thread = threading.Thread(target=_monitor_counter, daemon=True)
+        monitor_thread.start()
+
+        executor = ProcessPoolExecutor(max_workers=num_workers)
+        futures = {
+            executor.submit(
+                _parallel_worker,
+                i, joint_limits, wf, L, duration, dt,
+                urdf_path, srdf_path, arm_indices, q_fixed,
+                attempts_per_worker
+            ): i for i in range(num_workers)
+        }
+
+        def _kill_workers(exc):
+            stop_monitor.set()
+            procs = list(exc._processes.values()) if exc._processes else []
+            exc.shutdown(wait=False, cancel_futures=True)
+            for p in procs:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+
+        for future in as_completed(futures):
+            result = future.result()
+            if result is not None:
+                t, q, attempt = result
+                try:
+                    with open(counter_file, 'r') as f:
+                        total = int(f.read().strip())
+                except Exception:
+                    total = attempt
+                print(f"✅ Trajectory found by parallel Worker {futures[future]} on attempt {attempt}, total attempts: {total}")
+                _kill_workers(executor)
+                try:
+                    os.remove(counter_file)
+                except Exception:
+                    pass
+                return t, q
+
+        _kill_workers(executor)
+        try:
+            os.remove(counter_file)
+        except Exception:
+            pass
+        print("❌ All parallel processes failed after exhausting all attempts. Please try again.")
+        sys.exit(1)
 
 def save_q(q, out_dir):
     os.makedirs(os.path.dirname(out_dir), exist_ok=True)
@@ -315,7 +311,6 @@ def arms_trajectory_plot(arm_side, data_dir, save_dir, ndof, joint_limits, dt=0.
     save_path = os.path.join(save_dir, f"{arm_side}_traj.png")
     plt.savefig(save_path)
     print(f"Saved plot to: {save_path}")
-    plt.close(fig)
 
 # -------------------------------
 # Main Execution

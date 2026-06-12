@@ -14,7 +14,6 @@ from rclpy.executors import MultiThreadedExecutor
 from joint_interfaces.msg import JointPositionControl
 from robot_server_interfaces.srv import SetProperty
 from std_msgs.msg import Header, String
-from sensor_msgs.msg import JointState
 import numpy as np
 import matplotlib
 
@@ -550,14 +549,16 @@ class DynParamIdentifier(Node):
             ax2.plot(
                 t_raw_cut,
                 tau_cut[:, j],
-                label="Measured τ (Nm)",
+                label="Measured τ",
                 color="tab:red",
                 linewidth=1,
             )
             ax2.set_ylabel("Torque (Nm)", color="tab:red")
             ax1.tick_params(axis="y", labelcolor="tab:blue")
             ax2.tick_params(axis="y", labelcolor="tab:red")
-            ax1.legend(loc="upper right", fontsize="small")
+            h1, l1 = ax1.get_legend_handles_labels()
+            h2, l2 = ax2.get_legend_handles_labels()
+            ax1.legend(h1 + h2, l1 + l2, loc="upper right", fontsize="small")
 
     def _robot_state_callback(self, msg):
         self._last_msg_time = self.get_clock().now().nanoseconds / 1e9
@@ -1349,6 +1350,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self._show_dex_features = "--dev" in sys.argv
         if not getattr(self, "_show_dex_features", False):
             self.btn_calc_params.setDisabled(True)
+        else:
+            self.btn_show_plot.setDisabled(False)
 
         self._did_initial_ref_plot = False
 
@@ -1391,9 +1394,12 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.btn_show_plot.setDisabled(
                 True if disabled else (not self._captured_finished)
             )
-            self.btn_calc_params.setDisabled(
-                True if disabled else (not self._captured_finished)
-            )
+            if getattr(self, "_show_dex_features", False):
+                self.btn_calc_params.setDisabled(disabled)
+            else:
+                self.btn_calc_params.setDisabled(
+                    True if disabled else (not self._captured_finished)
+                )
             # 根据计算完成状态决定是否可用
             self.btn_show_regression.setDisabled(
                 True if disabled else (not self._params_calculated)
@@ -1715,18 +1721,11 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def _thread_show_plot(self):
         try:
-            # 绘图时在主线程以安全方式更新 FigureCanvas
             QtCore.QMetaObject.invokeMethod(
-                self, "_plot_on_canvas", QtCore.Qt.QueuedConnection
+                self, "_plot_records_on_canvas", QtCore.Qt.QueuedConnection
             )
         except Exception as e:
             self.log_msg("绘图出错: " + str(e))
-            try:
-                QtCore.QMetaObject.invokeMethod(
-                    self, "enable_buttons", QtCore.Qt.QueuedConnection
-                )
-            except Exception:
-                pass
 
     def on_show_regression(self):
         self.update_params_from_ui()

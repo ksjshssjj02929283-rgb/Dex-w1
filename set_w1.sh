@@ -50,6 +50,9 @@ print_usage() {
     echo "  ruckig          - Enable/Disable ruckig (value: true or false)"
     echo "  filter          - Enable/Disable butterworth filter (value: true or false)"
     echo "  zvd             - Enable/Disable input shaper (value: true or false)"
+    echo "  ethercat run   - Run dexe_ethercat (./../dexe_ethercat/run.sh)"
+    echo "  ethercat build - Build dexe_ethercat (./../dexe_ethercat/build.sh)"
+    echo "  ethercat git   - Show dexe_ethercat git log"
     echo "  hardware        - Cat /etc/dexe_robot/hardware.yaml"
 
     echo ""
@@ -91,6 +94,9 @@ print_usage() {
     echo "  ./set_w1.sh ruckig true"
     echo "  ./set_w1.sh filter true"
     echo "  ./set_w1.sh zvd true"
+    echo "  ./set_w1.sh ethercat run"
+    echo "  ./set_w1.sh ethercat build"
+    echo "  ./set_w1.sh ethercat git"
     echo "  ./set_w1.sh hardware"
 }
 
@@ -311,6 +317,32 @@ case $PROPERTY_KEY in
         else
             vim ~/dexe_robot_server_data/robot_config.yaml
         fi
+        exit 0
+        ;;
+    ethercat)
+        ETHERCAT_DIR="${SCRIPT_DIR}/../dexe_ethercat"
+        if [ ! -d "$ETHERCAT_DIR" ]; then
+            echo "Error: dexe_ethercat directory not found at $ETHERCAT_DIR"
+            exit 1
+        fi
+        case "$VALUE" in
+            run)
+                echo "Running dexe_ethercat..."
+                "$ETHERCAT_DIR/run.sh"
+                ;;
+            build)
+                echo "Building dexe_ethercat..."
+                "$ETHERCAT_DIR/build.sh"
+                ;;
+            git)
+                echo "dexe_ethercat git log:"
+                git -C "$ETHERCAT_DIR" log
+                ;;
+            *)
+                echo "Usage: ./set_w1.sh ethercat [run|build|git]"
+                exit 1
+                ;;
+        esac
         exit 0
         ;;
     *)
