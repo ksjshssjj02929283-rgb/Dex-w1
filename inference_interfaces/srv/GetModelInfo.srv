@@ -1,0 +1,11 @@
+# Get Model Info Service
+
+# model id located in XWiz inference model path 
+# ~/.dexforce/XWiz/model_deployments/models
+uint8 model
+
+---
+# the information selected by model
+string[] selected_cameras
+# the total joint groups
+JointGroup[] joint_groups

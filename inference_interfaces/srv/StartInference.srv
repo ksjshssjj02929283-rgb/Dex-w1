@@ -1,0 +1,19 @@
+# Start Inference Service
+
+# Inference Mode
+uint8 SIMULATION = 1
+uint8 REAL = 2
+
+uint8 mode  # Inference Mode
+
+# model id located in XWiz inference model path 
+# ~/.dexforce/XWiz/model_deployments/models
+uint8 model
+
+# task id located in Xwiz inference task path
+# ~/.dexforce/XWiz/model_deployments/tasks
+uint8 task
+
+---
+bool success   # indicate successful run of service
+string message # informational, e.g. for error messages
