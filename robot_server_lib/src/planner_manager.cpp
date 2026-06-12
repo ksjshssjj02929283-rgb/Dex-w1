@@ -989,16 +989,12 @@ void PlannerManager::PublishPlannerInfo() {
         const auto& whole_model = *robot_model_.model_ptr;
         // armlee/armree 在 URDF 中既是固定关节名也是 child link 名, pinocchio 会注册多个同名 frame,
         // 必须显式指定 FrameType 否则 getFrameId 抛 invalid_argument. 这里取 link 对应的 BODY.
-        const int armlee_frame_id =
-            static_cast<int>(whole_model.getFrameId("armlee", pinocchio::BODY));
-        const int armree_frame_id =
-            static_cast<int>(whole_model.getFrameId("armree", pinocchio::BODY));
+        const int armlee_frame_id = static_cast<int>(whole_model.getFrameId("armlee", pinocchio::BODY));
+        const int armree_frame_id = static_cast<int>(whole_model.getFrameId("armree", pinocchio::BODY));
         if (armlee_frame_id < static_cast<int>(whole_model.frames.size()) &&
             armree_frame_id < static_cast<int>(whole_model.frames.size())) {
-            pinocchio::SE3 oM_armlee =
-                pinocchio::GetFkByFrameId(whole_model, measurement.position, armlee_frame_id);
-            pinocchio::SE3 oM_armree =
-                pinocchio::GetFkByFrameId(whole_model, measurement.position, armree_frame_id);
+            pinocchio::SE3 oM_armlee = pinocchio::GetFkByFrameId(whole_model, measurement.position, armlee_frame_id);
+            pinocchio::SE3 oM_armree = pinocchio::GetFkByFrameId(whole_model, measurement.position, armree_frame_id);
             // TCP 偏移与 ee_pose_measurement 保持一致语义: T_world_tcp = T_world_ee * T_ee_tcp
             pinocchio::SE3 oM_tcp_primary = oM_armlee * robot_property_.tcp_frame;
             pinocchio::SE3 oM_tcp_secondary = oM_armree * robot_property_.tcp_frame_secondary;

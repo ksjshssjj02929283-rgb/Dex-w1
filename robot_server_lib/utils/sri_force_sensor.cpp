@@ -197,8 +197,7 @@ bool SriForceSensor::TryFinalizeBias() {
     }
 
     for (int i = 0; i < 6; ++i) {
-        const float mean = mCalibrationSum[i] /
-                           static_cast<float>(mCalibrationSampleCount);
+        const float mean = mCalibrationSum[i] / static_cast<float>(mCalibrationSampleCount);
         mZeroOffset[i] = mean - static_cast<float>(tool_gravity_ee[i]);
     }
     mZeroOffsetSampleCount = mCalibrationSampleCount;
@@ -211,10 +210,9 @@ bool SriForceSensor::TryFinalizeBias() {
         "gravity_subtracted=%d, R_finalize_rpy_xyz=%.4f, %.4f, %.4f\n",
         mZeroOffsetSampleCount, mZeroOffset[0], mZeroOffset[1], mZeroOffset[2], mZeroOffset[3], mZeroOffset[4],
         mZeroOffset[5], gravity_subtracted ? 1 : 0, rpy_log[0], rpy_log[1], rpy_log[2]);
-    LOG_INFO << "Zero calibration completed: samples=" << mZeroOffsetSampleCount
-             << ", bias_ee=" << mZeroOffset[0] << ", " << mZeroOffset[1] << ", " << mZeroOffset[2] << ", "
-             << mZeroOffset[3] << ", " << mZeroOffset[4] << ", " << mZeroOffset[5]
-             << ", gravity_subtracted=" << (gravity_subtracted ? 1 : 0)
+    LOG_INFO << "Zero calibration completed: samples=" << mZeroOffsetSampleCount << ", bias_ee=" << mZeroOffset[0]
+             << ", " << mZeroOffset[1] << ", " << mZeroOffset[2] << ", " << mZeroOffset[3] << ", " << mZeroOffset[4]
+             << ", " << mZeroOffset[5] << ", gravity_subtracted=" << (gravity_subtracted ? 1 : 0)
              << ", R_finalize_rpy_xyz=" << rpy_log[0] << ", " << rpy_log[1] << ", " << rpy_log[2];
 
     return true;
@@ -364,7 +362,8 @@ void SriForceSensor::ReadLoop() {
                 }
 
                 float tfx, tfy, tfz, tmx, tmy, tmz;
-                int newOffset = ParseFrame(rx_buffer.data(), static_cast<int>(rx_buffer.size()), 0, tfx, tfy, tfz, tmx, tmy, tmz);
+                int newOffset =
+                    ParseFrame(rx_buffer.data(), static_cast<int>(rx_buffer.size()), 0, tfx, tfy, tfz, tmx, tmy, tmz);
                 if (newOffset == 14) {
                     fx = tfx;
                     fy = tfy;

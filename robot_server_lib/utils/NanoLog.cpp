@@ -296,10 +296,7 @@ struct BufferBase {
 };
 
 struct SpinLock {
-    SpinLock(std::atomic_flag& flag) : m_flag(flag) {
-        while (m_flag.test_and_set(std::memory_order_acquire))
-            ;
-    }
+    SpinLock(std::atomic_flag& flag) : m_flag(flag) { while (m_flag.test_and_set(std::memory_order_acquire)); }
 
     ~SpinLock() { m_flag.clear(std::memory_order_release); }
 
@@ -433,8 +430,7 @@ public:
                 setup_next_write_buffer();
             }
         } else {
-            while (m_write_index.load(std::memory_order_acquire) >= Buffer::size)
-                ;
+            while (m_write_index.load(std::memory_order_acquire) >= Buffer::size);
             push(std::move(logline));
         }
     }

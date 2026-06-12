@@ -28,7 +28,7 @@ public:
 protected:
     virtual void ManagerThreadFunc();
     virtual void TorqueControlThreadFunc();
-    virtual void RobotThreadFunc(){};
+    virtual void RobotThreadFunc() {};
     virtual void PublishThreadFunc();
     virtual void SetPropertyCallback(const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request>,
                                      std::shared_ptr<robot_server_interfaces::srv::SetProperty::Response>);

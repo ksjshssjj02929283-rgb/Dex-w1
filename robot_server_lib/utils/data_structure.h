@@ -134,12 +134,12 @@ struct RobotProperty {
     Vector12d cart_stiffness = Vector12d::Constant(200.0);
     Vector12d cart_damping_ratio = Vector12d::Constant(1.0);  // 阻尼比 范围0.5 ~ 1.5
     ErrorCode error_code{ErrorCode::NoError};
-    TrajectoryBounds joint_streaming_bounds;     // joint streaming轨迹限制
-    bool enable_streaming_ruckig{true};          // /control/joint接口是否使用Ruckig轨迹规划
-    bool enable_chassis_shaper{false};           // 是否启用底盘速度输入整形器
-    bool enable_record{false};                   // 是否启用调试日志
-    bool enable_butterworth_filter[ndof_robot];  // 是否使用Butterworth滤波器
-    bool enable_input_shaper[ndof_robot];        // 是否使用输入整形器
+    TrajectoryBounds joint_streaming_bounds;                            // joint streaming轨迹限制
+    bool enable_streaming_ruckig{true};                                 // /control/joint接口是否使用Ruckig轨迹规划
+    bool enable_chassis_shaper{false};                                  // 是否启用底盘速度输入整形器
+    bool enable_record{false};                                          // 是否启用调试日志
+    bool enable_butterworth_filter[ndof_robot];                         // 是否使用Butterworth滤波器
+    bool enable_input_shaper[ndof_robot];                               // 是否使用输入整形器
     VectorDof butterworth_filter_frequency = VectorDof::Constant(3.0);  // 输入滤波器频率
     VectorDof input_shaper_frequency = VectorDof::Constant(6.0);        // 输入整形器频率
 };
@@ -297,8 +297,8 @@ struct RobotParams {
     std::string robot_version;
     std::string left_arm_name;
     std::string right_arm_name;
-    Eigen::VectorXd joint_velocity_limit;  // 关节最大速度限制（正负对称）
-    Eigen::VectorXd joint_torque_limit;    // 关节最大力矩限制（正负对称）
+    Eigen::VectorXd joint_velocity_limit;    // 关节最大速度限制（正负对称）
+    Eigen::VectorXd joint_torque_limit;      // 关节最大力矩限制（正负对称）
     Eigen::VectorXd joint_limit_margin_deg;  // 关节位置限位安全阈值（度），用于在硬限位基础上缩小范围
     std::vector<std::string> joints_primary_names;
     std::vector<std::string> joints_secondary_names;

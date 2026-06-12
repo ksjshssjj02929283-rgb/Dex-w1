@@ -56,14 +56,12 @@ TEST(SRISerialTest, OpenPortAndReadData) {
     EXPECT_GE(count, 5000) << "Too few reads received in 5 seconds";
 }
 
-#include <optional>
 #include <Eigen/Geometry>
+#include <optional>
 
 namespace {
 // Feed n calibration frames with the given raw float channels.
-void FeedCalibrationFrames(SriForceSensor& s, int n,
-                           float fx, float fy, float fz,
-                           float mx, float my, float mz) {
+void FeedCalibrationFrames(SriForceSensor& s, int n, float fx, float fy, float fz, float mx, float my, float mz) {
     for (int i = 0; i < n; ++i) {
         s.ProcessCalibrationDataForTest(fx, fy, fz, mx, my, mz);
     }
@@ -74,8 +72,7 @@ TEST(SriForceSensorBias, FinalizeRequiresEnoughSamples) {
     SriForceSensor s;
     s.BeginCalibrationForTest();
     s.SetToolGravityCompensationForZeroCalibration(
-        false /*enabled=false → no gravity needed*/, 0.0,
-        robot_server_lib::Vector3d::Zero(), 9.79, 1,
+        false /*enabled=false → no gravity needed*/, 0.0, robot_server_lib::Vector3d::Zero(), 9.79, 1,
         []() -> std::optional<robot_server_lib::Matrix3d> { return std::nullopt; });
 
     EXPECT_FALSE(s.TryFinalizeBias());  // zero samples
@@ -94,12 +91,11 @@ TEST(SriForceSensorBias, WaitsForValidRotation) {
     SriForceSensor s;
     s.BeginCalibrationForTest();
     bool r_valid = false;
-    s.SetToolGravityCompensationForZeroCalibration(
-        true, 1.0, robot_server_lib::Vector3d::Zero(), 9.79, 1,
-        [&]() -> std::optional<robot_server_lib::Matrix3d> {
-            if (!r_valid) return std::nullopt;
-            return robot_server_lib::Matrix3d::Identity();
-        });
+    s.SetToolGravityCompensationForZeroCalibration(true, 1.0, robot_server_lib::Vector3d::Zero(), 9.79, 1,
+                                                   [&]() -> std::optional<robot_server_lib::Matrix3d> {
+                                                       if (!r_valid) return std::nullopt;
+                                                       return robot_server_lib::Matrix3d::Identity();
+                                                   });
 
     FeedCalibrationFrames(s, 1000, 0.0f, 0.0f, -9.79f, 0.0f, 0.0f, 0.0f);
     EXPECT_FALSE(s.TryFinalizeBias());  // R still nullopt
