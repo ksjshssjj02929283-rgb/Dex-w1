@@ -102,11 +102,12 @@ tool_gravity_compensation:    # 大寰二指夹
                        [0.0001123, 0.00123732, 0],
                        [0, 0, 0.00065]]  # 惯量张量 (单位 kg·m^2) I_C^EE, 关于 COM, EE 系基
   model_sign: 1
-  # 末端加速度 / 关节加速度的低通截止 (Hz), 用于在线惯量补偿. 默认 5.0 与脚本一致.
-  # 静止时 G1 诊断字段 (tool_inertia_force_norm/torque_norm) 显示噪声偏大 -> 调低 (3 ~ 4)
-  # 快速运动跟踪不上 -> 调高 (8 ~ 10). 合法区间 [0.5, 100].
-  inertia_compensation_filter_hz: 5.0
-  
+  # 末端加速度 / 关节加速度的低通截止 (Hz), 用于在线惯量补偿.
+  inertia_compensation_filter_hz: 10.0
+
+# === 记录配置 ===
+enable_record: true
+
 # === 底盘配置 ===
 # 底盘类型: omni (全向轮) / diff_drive (差速驱动)
 chassis_config:

@@ -1,12 +1,13 @@
 #include "w1_server.h"
 
+#include <yaml-cpp/yaml.h>
+
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <set>
-#include <yaml-cpp/yaml.h>
 
 #include "robot_server_lib/pinocchio_api.h"
 
@@ -124,9 +125,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     primary_sensor_ = std::make_shared<SriForceSensor>();
     primary_sensor_->SetToolGravityCompensationForZeroCalibration(
         tool_gravity_compensation_enabled_, tool_mass_kg_, tool_com_m_, tool_gravity_magnitude_, tool_model_sign_,
-        [this]() -> std::optional<Eigen::Matrix3d> {
-            return GetEERotationWorldFromEE(0);
-        });
+        [this]() -> std::optional<Eigen::Matrix3d> { return GetEERotationWorldFromEE(0); });
     if (!primary_sensor_->Init(460800)) {
         RCLCPP_WARN(this->get_logger(), "Failed to initialize primary force sensor");
         LOG_WARN << "Failed to initialize primary force sensor";
@@ -140,9 +139,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
         RCLCPP_INFO(this->get_logger(), "Primary force sensor initialized successfully");
         RCLCPP_INFO(this->get_logger(),
                     "Primary force sensor zero offset: valid=%d, samples=%d, [%.4f, %.4f, %.4f, %.4f, %.4f, %.4f]",
-                    sensor_zero_offset_valid_[0], sensor_zero_offset_samples_[0],
-                    primary_zero_offset[0], primary_zero_offset[1], primary_zero_offset[2], primary_zero_offset[3],
-                    primary_zero_offset[4], primary_zero_offset[5]);
+                    sensor_zero_offset_valid_[0], sensor_zero_offset_samples_[0], primary_zero_offset[0],
+                    primary_zero_offset[1], primary_zero_offset[2], primary_zero_offset[3], primary_zero_offset[4],
+                    primary_zero_offset[5]);
         LOG_INFO << "Primary force sensor initialized successfully";
         LOG_INFO << "Primary force sensor zero offset: valid=" << sensor_zero_offset_valid_[0]
                  << ", samples=" << sensor_zero_offset_samples_[0] << ", offset=" << primary_zero_offset.transpose();
@@ -226,9 +225,10 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
                 if (node["inertia_compensation_filter_hz"]) {
                     const double v = node["inertia_compensation_filter_hz"].as<double>();
                     if (!std::isfinite(v) || v < kMinInertiaCompCutoffHz || v > kMaxInertiaCompCutoffHz) {
-                        RCLCPP_WARN(this->get_logger(),
-                                    "inertia_compensation_filter_hz=%.4f out of range [%.2f, %.2f], using default %.2f Hz",
-                                    v, kMinInertiaCompCutoffHz, kMaxInertiaCompCutoffHz, kDefaultInertiaCompCutoffHz);
+                        RCLCPP_WARN(
+                            this->get_logger(),
+                            "inertia_compensation_filter_hz=%.4f out of range [%.2f, %.2f], using default %.2f Hz", v,
+                            kMinInertiaCompCutoffHz, kMaxInertiaCompCutoffHz, kDefaultInertiaCompCutoffHz);
                     } else {
                         cutoff_hz = v;
                     }
@@ -255,7 +255,6 @@ void RobotServer::LoadToolGravityCompensationConfig(const std::filesystem::path&
     }
     ResetToolInertiaCompensationState();
 }
-
 
 std::optional<Eigen::Matrix3d> RobotServer::GetEERotationWorldFromEE(int arm_index) const {
     // PlannerManager 在 manager_state_ ∈ {Init, Error} 时仍然把 14 维 ee_pose_world_measurement
@@ -343,8 +342,7 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
 
     constexpr double kDt = torque_ctrl_dt;  // 1 ms
 
-    const Eigen::MatrixXd J_armbase_dyn =
-        pinocchio::GetJacobiMatrix(arm_model, feedback_q_primary);
+    const Eigen::MatrixXd J_armbase_dyn = pinocchio::GetJacobiMatrix(arm_model, feedback_q_primary);
     if (J_armbase_dyn.rows() != 6 || J_armbase_dyn.cols() != 7) {
         early_return();
         return wrench_ee;
@@ -397,10 +395,8 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
     const Vector3d r_C_armbase = R_a_e * tool_com_m_;
 
     const Vector3d a_alpha_cross_com_armbase = alpha_ee_armbase.cross(r_C_armbase);
-    const Vector3d a_omega_cross_omega_cross_com_armbase =
-        w_ee_armbase.cross(w_ee_armbase.cross(r_C_armbase));
-    const Vector3d a_C_armbase =
-        a_ee_armbase + a_alpha_cross_com_armbase + a_omega_cross_omega_cross_com_armbase;
+    const Vector3d a_omega_cross_omega_cross_com_armbase = w_ee_armbase.cross(w_ee_armbase.cross(r_C_armbase));
+    const Vector3d a_C_armbase = a_ee_armbase + a_alpha_cross_com_armbase + a_omega_cross_omega_cross_com_armbase;
 
     const Eigen::Matrix3d I_C_armbase = R_a_e * tool_inertia_com_ * R_a_e.transpose();
 
@@ -477,8 +473,7 @@ void RobotServer::TorqueControlThreadFunc() {
         // 力传感器零偏延迟结算: 等到 EE 位姿可用后才完成校准并去除工具重力, 然后镜像 ready 标志.
         if (primary_sensor_) {
             if (primary_sensor_->TryFinalizeBias()) {
-                RCLCPP_INFO(this->get_logger(),
-                            "Primary force sensor zero offset finalized; samples=%d",
+                RCLCPP_INFO(this->get_logger(), "Primary force sensor zero offset finalized; samples=%d",
                             primary_sensor_->GetZeroOffsetSampleCount());
                 LOG_INFO << "Primary force sensor zero offset finalized; samples="
                          << primary_sensor_->GetZeroOffsetSampleCount();
@@ -489,8 +484,7 @@ void RobotServer::TorqueControlThreadFunc() {
         }
         if (secondary_sensor_) {
             if (secondary_sensor_->TryFinalizeBias()) {
-                RCLCPP_INFO(this->get_logger(),
-                            "Secondary force sensor zero offset finalized; samples=%d",
+                RCLCPP_INFO(this->get_logger(), "Secondary force sensor zero offset finalized; samples=%d",
                             secondary_sensor_->GetZeroOffsetSampleCount());
                 LOG_INFO << "Secondary force sensor zero offset finalized; samples="
                          << secondary_sensor_->GetZeroOffsetSampleCount();
@@ -509,8 +503,8 @@ void RobotServer::TorqueControlThreadFunc() {
         Vector6d raw_sensor_data_secondary = Vector6d::Zero();
         const bool primary_wrench_valid =
             primary_sensor_ && primary_sensor_ready_ && primary_sensor_->PeekLatest(&zeroed_sensor_data_primary);
-        const bool secondary_wrench_valid =
-            secondary_sensor_ && secondary_sensor_ready_ && secondary_sensor_->PeekLatest(&zeroed_sensor_data_secondary);
+        const bool secondary_wrench_valid = secondary_sensor_ && secondary_sensor_ready_ &&
+                                            secondary_sensor_->PeekLatest(&zeroed_sensor_data_secondary);
         if (primary_sensor_ && primary_sensor_ready_) {
             primary_sensor_->PeekLatestRaw(&raw_sensor_data_primary);
             Vector6d primary_zero_offset = Vector6d::Zero();
@@ -533,8 +527,7 @@ void RobotServer::TorqueControlThreadFunc() {
         bool inertia_applied_primary = false;
 
         if (primary_wrench_valid) {
-            sensor_data_primary =
-                ApplyToolGravityCompensation(zeroed_sensor_data_primary, 0, &gravity_applied_primary);
+            sensor_data_primary = ApplyToolGravityCompensation(zeroed_sensor_data_primary, 0, &gravity_applied_primary);
         }
         if (secondary_wrench_valid) {
             sensor_data_secondary =
@@ -593,8 +586,7 @@ void RobotServer::TorqueControlThreadFunc() {
             }
 
             should_run_inertia =
-                ret && primary_wrench_valid && tool_inertia_compensation_enabled_ &&
-                inertia_primary_joint_id_resolved_;
+                ret && primary_wrench_valid && tool_inertia_compensation_enabled_ && inertia_primary_joint_id_resolved_;
 
             if (should_run_inertia) {
                 sensor_data_primary = ApplyToolGravityMatchedFilterPrimary(sensor_data_primary);
@@ -609,8 +601,7 @@ void RobotServer::TorqueControlThreadFunc() {
                     inertia_dq_primary_buf_[i] = robot_feedback_.joint_feedback[jid].joint_velocity;
                 }
                 sensor_data_primary = ApplyToolInertiaCompensationPrimary(
-                    sensor_data_primary, inertia_q_primary_buf_, inertia_dq_primary_buf_,
-                    &inertia_applied_primary);
+                    sensor_data_primary, inertia_q_primary_buf_, inertia_dq_primary_buf_, &inertia_applied_primary);
             } else {
                 ResetToolInertiaCompensationState();
             }
@@ -623,9 +614,8 @@ void RobotServer::TorqueControlThreadFunc() {
 
         // 补偿失效时直接清零对应外力输入, 避免把工具自重或惯性当成外力.
         const bool primary_compensation_failed =
-            primary_wrench_valid &&
-            ((tool_gravity_compensation_enabled_ && !gravity_applied_primary) ||
-             (tool_inertia_compensation_enabled_ && !inertia_applied_primary));
+            primary_wrench_valid && ((tool_gravity_compensation_enabled_ && !gravity_applied_primary) ||
+                                     (tool_inertia_compensation_enabled_ && !inertia_applied_primary));
         const bool secondary_compensation_failed =
             secondary_wrench_valid && tool_gravity_compensation_enabled_ && !gravity_applied_secondary;
         if (primary_compensation_failed) {
@@ -922,42 +912,40 @@ void RobotServer::TorqueControlThreadFunc() {
             }
 
             nanolog::NanoLogLine logline(nanolog::LogLevel::CRIT, __FILE__, __func__, __LINE__, false);
-            logline << "{\"timestamp\": \"" << std::to_string(timestamp_s) << "\", "
-                    << "\"joint_position\": "
-                    << utils::VectorToJsonArrayString(position_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"joint_velocity\": "
-                    << utils::VectorToJsonArrayString(velocity_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"joint_torque\":"
-                    << utils::VectorToJsonArrayString(torque_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"joint_position_input\": "
-                    << utils::VectorToJsonArrayString(joint_position_input_, index_offset, ndof_config_).str()
-                    << ", \"joint_position_after_ruckig\": "
-                    << utils::VectorToJsonArrayString(joint_position_before_filter_, index_offset, ndof_config_).str()
-                    << ", \"joint_position_after_filter\": "
-                    << utils::VectorToJsonArrayString(joint_position_after_filter_, index_offset, ndof_config_).str()
-                    << ", \"joint_position_cmd\": "
-                    << utils::VectorToJsonArrayString(position_cmd_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"joint_torque_feedforward\": "
-                    << utils::VectorToJsonArrayString(torque_ff_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"torque_ext\": "
-                    << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"torque_ext_raw\": "
-                    << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"joint_admittance_q_offset\": "
-                    << utils::VectorToJsonArrayString(latest_joint_admittance_q_offset_, index_offset, ndof_config_)
-                           .str()
-                    << ", \"joint_admittance_dq_offset\": "
-                    << utils::VectorToJsonArrayString(latest_joint_admittance_dq_offset_, index_offset, ndof_config_)
-                           .str()
-                    << ", \"joint_position_ref_admittance\": "
-                    << utils::VectorToJsonArrayString(latest_joint_position_ref_admittance_, index_offset, ndof_config_)
-                           .str()
-                    << ", \"joint_impedance_error_after_admittance\": "
-                    << utils::VectorToJsonArrayString(latest_joint_impedance_error_after_admittance_, index_offset,
-                                                      ndof_config_)
-                           .str()
-                    << ", \"force_sensor\": "
-                    << utils::VectorToJsonArrayString(force_sensor_log).str() << "}";
+            logline
+                << "{\"timestamp\": \"" << std::to_string(timestamp_s) << "\", "
+                << "\"joint_position\": "
+                << utils::VectorToJsonArrayString(position_log_arr_, index_offset, ndof_config_).str()
+                << ", \"joint_velocity\": "
+                << utils::VectorToJsonArrayString(velocity_log_arr_, index_offset, ndof_config_).str()
+                << ", \"joint_torque\":"
+                << utils::VectorToJsonArrayString(torque_log_arr_, index_offset, ndof_config_).str()
+                << ", \"joint_position_input\": "
+                << utils::VectorToJsonArrayString(joint_position_input_, index_offset, ndof_config_).str()
+                << ", \"joint_position_after_ruckig\": "
+                << utils::VectorToJsonArrayString(joint_position_before_filter_, index_offset, ndof_config_).str()
+                << ", \"joint_position_after_filter\": "
+                << utils::VectorToJsonArrayString(joint_position_after_filter_, index_offset, ndof_config_).str()
+                << ", \"joint_position_cmd\": "
+                << utils::VectorToJsonArrayString(position_cmd_log_arr_, index_offset, ndof_config_).str()
+                << ", \"joint_torque_feedforward\": "
+                << utils::VectorToJsonArrayString(torque_ff_log_arr_, index_offset, ndof_config_).str()
+                << ", \"torque_ext\": "
+                << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
+                << ", \"torque_ext_raw\": "
+                << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
+                << ", \"joint_admittance_q_offset\": "
+                << utils::VectorToJsonArrayString(latest_joint_admittance_q_offset_, index_offset, ndof_config_).str()
+                << ", \"joint_admittance_dq_offset\": "
+                << utils::VectorToJsonArrayString(latest_joint_admittance_dq_offset_, index_offset, ndof_config_).str()
+                << ", \"joint_position_ref_admittance\": "
+                << utils::VectorToJsonArrayString(latest_joint_position_ref_admittance_, index_offset, ndof_config_)
+                       .str()
+                << ", \"joint_impedance_error_after_admittance\": "
+                << utils::VectorToJsonArrayString(latest_joint_impedance_error_after_admittance_, index_offset,
+                                                  ndof_config_)
+                       .str()
+                << ", \"force_sensor\": " << utils::VectorToJsonArrayString(force_sensor_log).str() << "}";
             nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
         }
         // 如果状态字发生变化了则打印

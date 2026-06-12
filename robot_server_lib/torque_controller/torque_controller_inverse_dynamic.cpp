@@ -52,10 +52,8 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                 output_cmd.joint_admittance_q_offset = joint_admittance_controller_->q_offset();
                 output_cmd.joint_admittance_dq_offset = joint_admittance_controller_->dq_offset();
             }
-            output_cmd.joint_position_ref_admittance =
-                output_cmd.q_desired + output_cmd.joint_admittance_q_offset;
-            output_cmd.joint_impedance_error_after_admittance =
-                output_cmd.joint_position_ref_admittance - feedback_q;
+            output_cmd.joint_position_ref_admittance = output_cmd.q_desired + output_cmd.joint_admittance_q_offset;
+            output_cmd.joint_impedance_error_after_admittance = output_cmd.joint_position_ref_admittance - feedback_q;
             break;
         case TorqueControllerState::Decelerating:
             torque_joint_impedance = K_v.asDiagonal() * (-feedback_dq);
@@ -72,17 +70,14 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                 output_cmd.joint_admittance_q_offset = joint_admittance_controller_->q_offset();
                 output_cmd.joint_admittance_dq_offset = joint_admittance_controller_->dq_offset();
             }
-            output_cmd.joint_position_ref_admittance =
-                output_cmd.q_desired + output_cmd.joint_admittance_q_offset;
-            output_cmd.joint_impedance_error_after_admittance =
-                output_cmd.joint_position_ref_admittance - feedback_q;
+            output_cmd.joint_position_ref_admittance = output_cmd.q_desired + output_cmd.joint_admittance_q_offset;
+            output_cmd.joint_impedance_error_after_admittance = output_cmd.joint_position_ref_admittance - feedback_q;
             break;
         case TorqueControllerState::Operating: {
             const bool use_force_sensor = robot_model_.robot_property_default.allow_force_sensor;
-            const VectorDof torque_ext_raw =
-                use_force_sensor
-                    ? joint_impedance_controller_->ComputeExternalTorque(feedback_q, raw_measurement.sensor_wrench)
-                    : VectorDof::Zero();
+            const VectorDof torque_ext_raw = use_force_sensor ? joint_impedance_controller_->ComputeExternalTorque(
+                                                                    feedback_q, raw_measurement.sensor_wrench)
+                                                              : VectorDof::Zero();
             output_cmd.torque_ext = torque_ext_raw;
 
             VectorDof q_offset = VectorDof::Zero();
@@ -101,16 +96,14 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
             VectorDof integral_enable = VectorDof::Zero();
             for (int i = 0; i < ndof_robot; ++i) {
                 const bool external_force_settled = std::abs(torque_ext_raw[i]) < kIntegralTorqueExtThresholdNm;
-                const bool admittance_offset_settled =
-                    std::abs(q_offset[i]) < kIntegralQOffsetThresholdRad &&
-                    std::abs(dq_offset[i]) < kIntegralDqOffsetThresholdRadPerSec;
+                const bool admittance_offset_settled = std::abs(q_offset[i]) < kIntegralQOffsetThresholdRad &&
+                                                       std::abs(dq_offset[i]) < kIntegralDqOffsetThresholdRadPerSec;
                 const bool command_settled =
                     std::abs(cmd_dq_admittance[i]) < kIntegralCommandVelocityThresholdRadPerSec;
-                const bool feedback_settled =
-                    std::abs(feedback_dq[i]) < kIntegralFeedbackVelocityThresholdRadPerSec;
+                const bool feedback_settled = std::abs(feedback_dq[i]) < kIntegralFeedbackVelocityThresholdRadPerSec;
                 integral_enable[i] =
                     external_force_settled && admittance_offset_settled && command_settled && feedback_settled ? 1.0
-                                                                                                                : 0.0;
+                                                                                                               : 0.0;
             }
 
             // 更新阻抗控制力矩命令
@@ -128,7 +121,7 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                 }
             }
 
-            // 
+            //
             output_cmd.torque_feedforward =
                 dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero(),
                                           false);  // 补偿重力, 科氏力, 摩擦力

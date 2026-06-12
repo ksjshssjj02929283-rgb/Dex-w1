@@ -1,7 +1,8 @@
 #pragma once
 
-#include <atomic>
 #include <array>
+#include <atomic>
+#include <geometry_msgs/msg/twist.hpp>
 #include <memory>
 #include <optional>
 #include <geometry_msgs/msg/twist.hpp>
@@ -156,8 +157,8 @@ private:
     bool tool_inertia_first_sample_ = true;
     Vector3d prev_ee_linvel_armbase_ = Vector3d::Zero();
     Vector3d prev_omega_armbase_ = Vector3d::Zero();
-    std::array<std::shared_ptr<ButterworthFilter>, 3> ee_accel_filter_;   // EE 线加速度滤波
-    std::array<std::shared_ptr<ButterworthFilter>, 3> omega_diff_filter_; // EE 角速度差分(=α)滤波
+    std::array<std::shared_ptr<ButterworthFilter>, 3> ee_accel_filter_;    // EE 线加速度滤波
+    std::array<std::shared_ptr<ButterworthFilter>, 3> omega_diff_filter_;  // EE 角速度差分(=α)滤波
     std::array<std::shared_ptr<ButterworthFilter>, 6> force_sensor_gravity_filter_primary_;
     // 预分配缓冲: 1 kHz 线程内绑定到 pinocchio_api 的 const VectorXd& 形参, 避免重复 new
     Eigen::VectorXd inertia_q_primary_buf_ = Eigen::VectorXd::Zero(7);

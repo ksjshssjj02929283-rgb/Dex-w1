@@ -226,8 +226,8 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
             }
             const double value = external_wrench[key].as<double>();
             if (!std::isfinite(value) || value < 0.0) {
-                LOG_WARN << "Invalid force_sensor_external_wrench." << key << ": " << value
-                         << ", keep default " << target;
+                LOG_WARN << "Invalid force_sensor_external_wrench." << key << ": " << value << ", keep default "
+                         << target;
                 return;
             }
             target = value;
@@ -238,8 +238,8 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
             }
             const int value = external_wrench[key].as<int>();
             if (value != -1 && value != 1) {
-                LOG_WARN << "Invalid force_sensor_external_wrench." << key << ": " << value
-                         << ", keep default " << target;
+                LOG_WARN << "Invalid force_sensor_external_wrench." << key << ": " << value << ", keep default "
+                         << target;
                 return;
             }
             target = value;
@@ -262,10 +262,7 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         }
         target = value;
     };
-    auto read_joint_admittance_bounded = [](const YAML::Node& node,
-                                            const char* key,
-                                            double& target,
-                                            double min_value,
+    auto read_joint_admittance_bounded = [](const YAML::Node& node, const char* key, double& target, double min_value,
                                             bool strict_min) {
         if (!node || !node[key]) {
             return;
