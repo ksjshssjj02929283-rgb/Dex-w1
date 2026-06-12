@@ -22,6 +22,7 @@
 #include <robot_server_interfaces/srv/set_property.hpp>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 #include "NanoLog.hpp"

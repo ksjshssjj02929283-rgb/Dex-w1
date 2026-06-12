@@ -5,7 +5,6 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <memory>
 #include <optional>
-#include <geometry_msgs/msg/twist.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 

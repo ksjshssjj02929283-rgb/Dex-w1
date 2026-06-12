@@ -186,13 +186,12 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     if (version_cfg["enable_cartesian_impedance"]) {
         robot_property.enable_cartesian_impedance = version_cfg["enable_cartesian_impedance"].as<bool>();
     }
-
     if (config["allow_force_sensor"]) {
         robot_property.allow_force_sensor = config["allow_force_sensor"].as<bool>();
     }
 
-    if (config["joint_streaming_bounds"] && config["joint_streaming_bounds"].IsMap()) {
-        if (config["joint_streaming_bounds"]["max_velocity"]) {
+    if (version_cfg["joint_streaming_bounds"] && version_cfg["joint_streaming_bounds"].IsMap()) {
+        if (version_cfg["joint_streaming_bounds"]["max_velocity"]) {
             robot_property.joint_streaming_bounds.max_velocity =
                 version_cfg["joint_streaming_bounds"]["max_velocity"].as<double>();
         }
@@ -216,39 +215,6 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
 
     if (config["chassis_config"] && config["chassis_config"]["enable_chassis_shaper"]) {
         robot_property.enable_chassis_shaper = config["chassis_config"]["enable_chassis_shaper"].as<bool>();
-    }
-
-    if (config["force_sensor_external_wrench"] && config["force_sensor_external_wrench"].IsMap()) {
-        const auto external_wrench = config["force_sensor_external_wrench"];
-        auto parse_non_negative = [&](const char* key, double& target) {
-            if (!external_wrench[key]) {
-                return;
-            }
-            const double value = external_wrench[key].as<double>();
-            if (!std::isfinite(value) || value < 0.0) {
-                LOG_WARN << "Invalid force_sensor_external_wrench." << key << ": " << value << ", keep default "
-                         << target;
-                return;
-            }
-            target = value;
-        };
-        auto parse_model_sign = [&](const char* key, int& target) {
-            if (!external_wrench[key]) {
-                return;
-            }
-            const int value = external_wrench[key].as<int>();
-            if (value != -1 && value != 1) {
-                LOG_WARN << "Invalid force_sensor_external_wrench." << key << ": " << value << ", keep default "
-                         << target;
-                return;
-            }
-            target = value;
-        };
-        parse_non_negative("force_deadband_n", params.external_wrench_force_deadband_n);
-        parse_non_negative("force_saturation_n", params.external_wrench_force_saturation_n);
-        parse_non_negative("torque_deadband_nm", params.external_wrench_torque_deadband_nm);
-        parse_non_negative("torque_saturation_nm", params.external_wrench_torque_saturation_nm);
-        parse_model_sign("model_sign", params.external_wrench_model_sign);
     }
 
     auto read_joint_admittance_finite = [](const YAML::Node& node, const char* key, double& target) {
@@ -294,42 +260,9 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         read_joint_admittance_bounded(node, "acceleration_limit", target.acceleration_limit, 0.0, false);
     };
 
-    if (config["joint_admittance"] && config["joint_admittance"].IsMap()) {
-        const auto admittance = config["joint_admittance"];
-        read_joint_admittance_bool(admittance, "enabled", robot_property.joint_admittance.enabled);
-        read_joint_admittance_finite(admittance, "torque_ext_direct_gain",
-                                     robot_property.joint_admittance.torque_ext_direct_gain);
-
-        if (admittance["default"]) {
-            for (auto& joint_cfg : robot_property.joint_admittance.joints) {
-                apply_joint_admittance_node(admittance["default"], joint_cfg);
-            }
-        }
-
-        if (admittance["groups"] && admittance["groups"].IsMap()) {
-            for (const auto& group : admittance["groups"]) {
-                const auto group_node = group.second;
-                if (!group_node["joints"] || !group_node["joints"].IsSequence()) {
-                    LOG_WARN << "joint_admittance group missing joints list, skipping";
-                    continue;
-                }
-                for (const auto& joint_name_node : group_node["joints"]) {
-                    const std::string joint_name = joint_name_node.as<std::string>();
-                    const auto it = joint_name_to_index.find(joint_name);
-                    if (it == joint_name_to_index.end()) {
-                        LOG_WARN << "joint_admittance unknown joint: " << joint_name;
-                        continue;
-                    }
-                    auto& joint_cfg = robot_property.joint_admittance.joints[it->second];
-                    joint_cfg.enabled = true;
-                    apply_joint_admittance_node(group_node, joint_cfg);
-                }
-            }
-        }
-    }
-
-    if (config["joints"] && config["joints"].IsSequence()) {
-        for (const auto& joint_config : config["joints"]) {
+    if (version_cfg["joints"] && version_cfg["joints"].IsSequence()) {
+        int joint_idx = 0;
+        for (const auto& joint_config : version_cfg["joints"]) {
             std::string joint_name;
             if (joint_config["name"]) {
                 joint_name = joint_config["name"].as<std::string>();
@@ -382,7 +315,7 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                         joint_config["joint_impedance_control"]["damping"].as<double>();
                 }
                 if (joint_config["joint_impedance_control"]["integral_ratio"]) {
-                    robot_property.joint_integral_ratio =
+                    robot_property.joint_integral_ratio[joint_idx] =
                         joint_config["joint_impedance_control"]["integral_ratio"].as<double>();
                 }
             }
@@ -421,6 +354,74 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
             std::cout << "[Error] Total joint count mismatch! Config count: " << joint_idx
                       << ", URDF count (Pinocchio): " << model.names.size() - 1 << "\n";
             exit(EXIT_FAILURE);
+        }
+    }
+
+    if (config["force_sensor_external_wrench"] && config["force_sensor_external_wrench"].IsMap()) {
+        const auto external_wrench = config["force_sensor_external_wrench"];
+        auto parse_non_negative = [&](const char* key, double& target) {
+            if (!external_wrench[key]) {
+                return;
+            }
+            const double value = external_wrench[key].as<double>();
+            if (!std::isfinite(value) || value < 0.0) {
+                LOG_WARN << "Invalid force_sensor_external_wrench." << key << ": " << value << ", keep default "
+                         << target;
+                return;
+            }
+            target = value;
+        };
+        auto parse_model_sign = [&](const char* key, int& target) {
+            if (!external_wrench[key]) {
+                return;
+            }
+            const int value = external_wrench[key].as<int>();
+            if (value != -1 && value != 1) {
+                LOG_WARN << "Invalid force_sensor_external_wrench." << key << ": " << value << ", keep default "
+                         << target;
+                return;
+            }
+            target = value;
+        };
+        parse_non_negative("force_deadband_n", params.external_wrench_force_deadband_n);
+        parse_non_negative("force_saturation_n", params.external_wrench_force_saturation_n);
+        parse_non_negative("torque_deadband_nm", params.external_wrench_torque_deadband_nm);
+        parse_non_negative("torque_saturation_nm", params.external_wrench_torque_saturation_nm);
+        parse_model_sign("model_sign", params.external_wrench_model_sign);
+    }
+
+    if (config["joint_admittance"] && config["joint_admittance"].IsMap()) {
+        const auto admittance = config["joint_admittance"];
+        read_joint_admittance_bool(admittance, "enabled", robot_property.joint_admittance.enabled);
+        read_joint_admittance_finite(admittance, "torque_ext_direct_gain",
+                                     robot_property.joint_admittance.torque_ext_direct_gain);
+
+        if (admittance["default"]) {
+            for (auto& joint_cfg : robot_property.joint_admittance.joints) {
+                apply_joint_admittance_node(admittance["default"], joint_cfg);
+            }
+        }
+
+        if (admittance["groups"] && admittance["groups"].IsMap()) {
+            for (const auto& group : admittance["groups"]) {
+                const auto group_node = group.second;
+                if (!group_node["joints"] || !group_node["joints"].IsSequence()) {
+                    LOG_WARN << "joint_admittance group missing joints list, skipping";
+                    continue;
+                }
+                for (const auto& joint_name_node : group_node["joints"]) {
+                    const std::string joint_name = joint_name_node.as<std::string>();
+                    const auto it = std::find(params.joint_names.begin(), params.joint_names.end(), joint_name);
+                    if (it == params.joint_names.end()) {
+                        LOG_WARN << "joint_admittance unknown joint: " << joint_name;
+                        continue;
+                    }
+                    const int joint_idx = std::distance(params.joint_names.begin(), it);
+                    auto& joint_cfg = robot_property.joint_admittance.joints[joint_idx];
+                    joint_cfg.enabled = true;
+                    apply_joint_admittance_node(group_node, joint_cfg);
+                }
+            }
         }
     }
 

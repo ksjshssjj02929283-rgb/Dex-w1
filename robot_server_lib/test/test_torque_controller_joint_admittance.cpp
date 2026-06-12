@@ -50,8 +50,7 @@ PlannerManagerCommand MakeOperatingCommand() {
     input.cmd.torque_feedforward.setZero();
     input.cmd.joint_stiffness = VectorDof::Constant(100.0);
     input.cmd.joint_damping = VectorDof::Constant(10.0);
-    input.cmd.joint_integral_ratio = 0.0;
-    input.use_simple_dynamics = false;
+    input.cmd.joint_integral_ratio = VectorDof::Constant(0.0);
     return input;
 }
 }  // namespace

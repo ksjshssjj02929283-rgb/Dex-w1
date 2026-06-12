@@ -132,7 +132,9 @@ public:
 
         for (int attempt = 0; attempt < attempts; ++attempt) {
             // 等待读事件，最久 2ms，避免 busy-loop
-            struct pollfd pfd{fd_, POLLIN, 0};
+            struct pollfd pfd {
+                fd_, POLLIN, 0
+            };
             int pr = poll(&pfd, 1, 2);
             if (pr <= 0) {
                 // 超时或被信号打断，下一次尝试
@@ -179,7 +181,9 @@ public:
                 int wait_ms = (int)std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
                 if (wait_ms > 2) wait_ms = 2;  // 小步等待
 
-                struct pollfd p2{fd_, POLLIN, 0};
+                struct pollfd p2 {
+                    fd_, POLLIN, 0
+                };
                 int pr2 = poll(&p2, 1, wait_ms);
                 if (pr2 <= 0) {
                     // 超时或被信号打断，继续循环检查整体超时

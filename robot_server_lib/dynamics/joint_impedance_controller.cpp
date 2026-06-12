@@ -47,15 +47,15 @@ bool JointImpedanceController::UpdateTorqueCommand(const VectorDof& feedback_q,
 }
 
 bool JointImpedanceController::UpdateTorqueCommandWithoutExternalTorque(const VectorDof& feedback_q,
-                                                                        const VectorDof& feedback_dq,
-                                                                        const VectorDof& cmd_q,
-                                                                        const VectorDof& cmd_dq,
-                                                                        const VectorDof& stiffness,
-                                                                        const VectorDof& damping,
-                                                                        double integral_ratio,
-                                                                        VectorDof& tau_command,
-                                                                        double dt,
-                                                                        const VectorDof* integral_enable) {
+                                                                         const VectorDof& feedback_dq,
+                                                                         const VectorDof& cmd_q,
+                                                                         const VectorDof& cmd_dq,
+                                                                         const VectorDof& stiffness,
+                                                                         const VectorDof& damping,
+                                                                         const VectorDof& integral_ratio,
+                                                                         VectorDof& tau_command,
+                                                                         double dt,
+                                                                         const VectorDof* integral_enable) {
     VectorDof q_error = cmd_q - feedback_q;
     const VectorDof dq_error = cmd_dq - feedback_dq;
 
@@ -66,12 +66,19 @@ bool JointImpedanceController::UpdateTorqueCommandWithoutExternalTorque(const Ve
         }
     }
 
-    if (integral_ratio > 0.0) {
+    bool has_integral = false;
+    for (int i = 0; i < ndof_robot; ++i) {
+        if (integral_ratio[i] > 0.0) {
+            has_integral = true;
+            break;
+        }
+    }
+    if (has_integral) {
         AccumulateIntegralError(q_error, dt, integral_enable);
     } else {
         integral_error_.setZero();
     }
-    const VectorDof torque_integral = (stiffness * integral_ratio).asDiagonal() * integral_error_;
+    const VectorDof torque_integral = (stiffness.cwiseProduct(integral_ratio)).asDiagonal() * integral_error_;
     tau_command = stiffness.asDiagonal() * q_error + damping.asDiagonal() * dq_error + torque_integral;
     return true;
 }

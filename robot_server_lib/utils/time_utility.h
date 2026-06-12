@@ -21,7 +21,7 @@ public:
     [[nodiscard]] bool is_invalid() const { return IsInvalid(*this); }
 
 protected:
-    explicit TimePointBase(std::int64_t time_in_ns) : time_in_ns_(time_in_ns) {};
+    explicit TimePointBase(std::int64_t time_in_ns) : time_in_ns_(time_in_ns){};
     std::int64_t time_in_ns_{-1};
 };
 
@@ -42,7 +42,7 @@ public:
     }
 
 private:
-    explicit TimePointSystem(std::int64_t time_in_ns) : TimePointBase(time_in_ns) {};
+    explicit TimePointSystem(std::int64_t time_in_ns) : TimePointBase(time_in_ns){};
 };
 
 class TimePointManual : public TimePointBase {
@@ -66,7 +66,7 @@ public:
 
 private:
     static std::atomic_int64_t shared_time_in_ns;
-    explicit TimePointManual(std::int64_t time_in_ns) : TimePointBase(time_in_ns) {};
+    explicit TimePointManual(std::int64_t time_in_ns) : TimePointBase(time_in_ns){};
 };
 
 inline std::atomic_int64_t TimePointManual::shared_time_in_ns{0};

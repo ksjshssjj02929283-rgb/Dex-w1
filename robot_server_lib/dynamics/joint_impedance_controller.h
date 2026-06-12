@@ -29,7 +29,7 @@ public:
                                                   const VectorDof& cmd_dq,
                                                   const VectorDof& stiffness,
                                                   const VectorDof& damping,
-                                                  double integral_ratio,
+                                                  const VectorDof& integral_ratio,
                                                   VectorDof& tau_command,
                                                   double dt = 0.0,
                                                   const VectorDof* integral_enable = nullptr);

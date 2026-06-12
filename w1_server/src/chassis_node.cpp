@@ -26,7 +26,7 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : rclcpp::Node("cha
     gyro_excite_threshold_ =
         this->declare_parameter<double>("gyro_excite_threshold", 0.004);  // 角速度标准差阈值 (rad/s ≈ 0.22°/s)
     imu_reinit_duration_ = this->declare_parameter<double>("imu_reinit_duration", 3600.0);  // 重新初始化间隔 (s)
-    gravity_magnitude_ = this->declare_parameter<double>("gravity_magnitude", 9.7887);      // 当地重力加速度 (m/s²)
+    gravity_magnitude_ = this->declare_parameter<double>("gravity_magnitude", 9.7887);  // 当地重力加速度 (m/s²)
 
     // 死区参数
     speed_deadzone_ = this->declare_parameter<double>("speed_deadzone", 1e-3);   // 线速度死区 (m/s)
