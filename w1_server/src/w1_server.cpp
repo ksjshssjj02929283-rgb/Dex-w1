@@ -1419,8 +1419,8 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
             }
         };
 
-        update_bool_param("enable_record", this->enable_record_);
-        update_atomic_bool_param("enable_chassis_shaper", this->enable_chassis_shaper_);
+        update_bool_param("enable_record", this->manager_info_.robot_property.enable_record);
+        update_bool_param("enable_chassis_shaper", this->manager_info_.robot_property.enable_chassis_shaper);
 
     } catch (const std::exception& e) {
         RCLCPP_WARN(this->get_logger(), "Failed to parse /control/debug JSON: %s", e.what());
