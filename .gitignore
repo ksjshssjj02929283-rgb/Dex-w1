@@ -20,4 +20,4 @@ findings.md
 progress.md
 task_plan.md
 # Manager agent memory
-.manager-agent/
+.manager-agent/*

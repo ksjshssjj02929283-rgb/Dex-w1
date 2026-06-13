@@ -640,53 +640,6 @@ void RobotServer::TorqueControlThreadFunc() {
 
         auto t_feedback = std::chrono::steady_clock::now();
 
-        // 如果开启了记录, 则在独立的记录日志中记录数据
-        if (this->manager_info_.robot_property.enable_record &&
-            (manager_state_ == Status::Idle || manager_state_ == Status::Running) && loop_counter % 1 == 0) {
-            int index_offset = GetFirstJointIndex();
-            double timestamp_s = this->now().nanoseconds() / 1e9;
-
-            // 从 JointFeedback 中提取字段用于日志记录
-            std::array<double, MAX_JOINT_NUM> position_log_arr_{};
-            std::array<double, MAX_JOINT_NUM> velocity_log_arr_{};
-            std::array<double, MAX_JOINT_NUM> torque_log_arr_{};
-            std::array<double, MAX_JOINT_NUM> position_cmd_log_arr_{};
-            std::array<double, MAX_JOINT_NUM> torque_ff_log_arr_{};
-            std::array<double, MAX_JOINT_NUM> torque_ext_log_arr_{};
-            Vector12d force_sensor_log = sensor_wrench_;
-            for (int i = 0; i < ndof_robot; ++i) {
-                position_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_position;
-                velocity_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_velocity;
-                torque_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_torque;
-                position_cmd_log_arr_[i] = robot_control_.joint_control[i].joint_position;
-                torque_ff_log_arr_[i] = robot_control_.joint_control[i].joint_torque_feedforward;
-                torque_ext_log_arr_[i] = latest_torque_ext_[i];
-            }
-
-            nanolog::NanoLogLine logline(nanolog::LogLevel::CRIT, __FILE__, __func__, __LINE__, false);
-            logline << "{\"timestamp\": \"" << std::to_string(timestamp_s) << "\", "
-                    << "\"joint_position\": "
-                    << utils::VectorToJsonArrayString(position_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"joint_velocity\": "
-                    << utils::VectorToJsonArrayString(velocity_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"joint_torque\":"
-                    << utils::VectorToJsonArrayString(torque_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"joint_position_input\": "
-                    << utils::VectorToJsonArrayString(joint_position_input_, index_offset, ndof_config_).str()
-                    << ", \"joint_position_after_ruckig\": "
-                    << utils::VectorToJsonArrayString(joint_position_before_filter_, index_offset, ndof_config_).str()
-                    << ", \"joint_position_after_filter\": "
-                    << utils::VectorToJsonArrayString(joint_position_after_filter_, index_offset, ndof_config_).str()
-                    << ", \"joint_position_cmd\": "
-                    << utils::VectorToJsonArrayString(position_cmd_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"joint_torque_feedforward\": "
-                    << utils::VectorToJsonArrayString(torque_ff_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"torque_ext\": "
-                    << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
-                    << ", \"force_sensor\": " << utils::VectorToJsonArrayString(force_sensor_log).str() << "}";
-            nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
-        }
-
         // 如果机器人就绪，则写入测量数据
         if (this->is_robot_ready_) {
             // 关节反馈数据写入测量数据
@@ -930,8 +883,6 @@ void RobotServer::TorqueControlThreadFunc() {
                 << ", \"joint_torque_feedforward\": "
                 << utils::VectorToJsonArrayString(torque_ff_log_arr_, index_offset, ndof_config_).str()
                 << ", \"torque_ext\": "
-                << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
-                << ", \"torque_ext_raw\": "
                 << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
                 << ", \"joint_admittance_q_offset\": "
                 << utils::VectorToJsonArrayString(latest_joint_admittance_q_offset_, index_offset, ndof_config_).str()
@@ -1189,7 +1140,6 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(torque_ff_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_torque_sensor\":" + utils::VectorToJsonArrayString(torque_sensor_arr_, index_offset, ndof_config_).str() +
         ",\n  \"torque_ext\":" + utils::VectorToJsonArrayString(latest_torque_ext_, index_offset, ndof_config_).str() +
-        ",\n  \"torque_ext_raw\":" + utils::VectorToJsonArrayString(latest_torque_ext_, index_offset, ndof_config_).str() +
         ",\n  \"joint_admittance_q_offset\":" + utils::VectorToJsonArrayString(latest_joint_admittance_q_offset_, index_offset, ndof_config_).str() +
         ",\n  \"joint_admittance_dq_offset\":" + utils::VectorToJsonArrayString(latest_joint_admittance_dq_offset_, index_offset, ndof_config_).str() +
         ",\n  \"joint_position_ref_admittance\":" + utils::VectorToJsonArrayString(latest_joint_position_ref_admittance_, index_offset, ndof_config_).str() +
@@ -1468,6 +1418,9 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
                 LOG_INFO << key << " set to " << (bool_value ? "true" : "false");
             }
         };
+
+        update_bool_param("enable_record", this->enable_record_);
+        update_atomic_bool_param("enable_chassis_shaper", this->enable_chassis_shaper_);
 
     } catch (const std::exception& e) {
         RCLCPP_WARN(this->get_logger(), "Failed to parse /control/debug JSON: %s", e.what());

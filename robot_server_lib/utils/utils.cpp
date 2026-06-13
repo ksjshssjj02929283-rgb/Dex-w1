@@ -701,6 +701,7 @@ PlannerRequest ParseSetPropertyRequest(
         case RequestType::EnablePosLimitCheck:
         case RequestType::EnableStreamingRuckig:
         case RequestType::EnableRecord:
+        case RequestType::EnableChassisShaper:
             planner_request.data = parse_bool(request->value);
             break;
         case RequestType::JointStiffness:
@@ -713,7 +714,7 @@ PlannerRequest ParseSetPropertyRequest(
             planner_request.data = utils::StringToVectorXd(request->value);
             break;
         case RequestType::JointIntegralRatio:
-            planner_request.data = std::clamp(std::stod(request->value), 0.00, 1.0);
+            planner_request.data = utils::StringToVectorXd(request->value);
             break;
         default:
             planner_request.type = RequestType::Empty;
