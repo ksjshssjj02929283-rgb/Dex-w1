@@ -96,6 +96,7 @@ LOG_KEYS = [
     "force_sensor_inertia",
     "ee_omega_ee_frame",
     "ee_alpha_ee_frame",
+    "ee_pose_world",
 ]
 
 
