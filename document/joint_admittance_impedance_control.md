@@ -2,348 +2,224 @@
 
 ## 1 概述
 
-本项目在力矩控制层实现了一种**关节空间导纳-阻抗串联控制**（Admittance-in-Impedance Control）架构，用于在力控模式下实现柔顺交互。整个系统由三个核心组件串联而成：
+本控制器用于力控模式下的关节空间柔顺控制。整体思路是：
 
-1. **外力估计**（`JointImpedanceController::ComputeExternalTorque`）——通过力矩传感器读数与雅可比转置映射，将末端六维力/力矩转换为关节空间外力矩 $\boldsymbol{\tau}_{\text{ext}}$。
-2. **导纳环**（`JointAdmittanceController`）——以 $\boldsymbol{\tau}_{\text{ext}}$ 为输入，模拟一个虚拟质量-弹簧-阻尼系统，输出关节位置修正量 $\boldsymbol{q}_{\text{offset}}$ 及其导数 $\dot{\boldsymbol{q}}_{\text{offset}}$。
-3. **阻抗环**（`JointImpedanceController::UpdateTorqueCommandWithoutExternalTorque`）——以修正后的参考位置（$\boldsymbol{q}_{\text{cmd}} + \boldsymbol{q}_{\text{offset}}$）与实际反馈计算跟踪误差，输出刚度-阻尼-积分力矩。
-4. **逆动力学前馈**（`dynamics::InverseDynamics`）——补偿重力、科氏力与摩擦力，构成最终的力矩输出。
+1. 六维力传感器 wrench 经过死区、饱和和符号处理后，通过雅可比转置映射为关节外力矩 `torque_ext`。
+2. 导纳环把 `torque_ext` 转换成关节参考位置偏移 `q_offset` 和速度偏移 `dq_offset`。
+3. 阻抗环跟踪修正后的参考位置 `q_cmd + q_offset`。
+4. 逆动力学前馈补偿重力、科氏力和摩擦力。
 
-上述组件在 `TorqueControllerInvDynamic::ComputeCommand` 中被编排为一个完整的控制周期。
+控制周期在 `TorqueControllerInvDynamic::ComputeCommand` 中完成，主要代码位于：
 
-### 1.1 为什么使用导纳-阻抗串联而非纯阻抗控制
+- `robot_server_lib/dynamics/joint_admittance_controller.cpp`
+- `robot_server_lib/dynamics/joint_impedance_controller.cpp`
+- `robot_server_lib/torque_controller/torque_controller_inverse_dynamic.cpp`
 
-纯阻抗控制直接将外力矩前馈叠加到力矩输出上（$\boldsymbol{\tau} = K_p \boldsymbol{e} + K_v \dot{\boldsymbol{e}} + \boldsymbol{\tau}_{\text{ext}}$），存在以下局限：
+简化流程如下：
 
-- **刚度与柔顺性耦合**：高刚度保证跟踪精度，但外力直接叠加到力矩上会产生过大的反向力，难以兼顾精度与安全。
-- **缺乏动态滤波**：传感器噪声和高频外力直接注入力矩环路。
-
-导纳环在外力与阻抗控制器之间引入一个虚拟动力学系统，对外力进行**低通滤波并转换成位置偏移**，使机器人在受到外力时表现为"虚拟地变软"——参考位置主动退让，而非在力矩层硬扛。这实现了刚度与柔顺性的解耦：阻抗环保持高刚度跟踪精度，导纳环独立调节交互柔顺性。
-
-### 1.2 控制框图
-
-```
-                 ┌─────────────────┐
- 力矩传感器 ───→ │  外力矩估计      │ ─τ_ext───────────────────────┐
-                 │  J^T · wrench    │                               │
-                 └─────────────────┘                               ▼
-                                                          ┌──────────────────┐
-                                                          │   导纳环          │
-                                                          │  M·ddq+B·dq+K·q  │
-                                                          │   = torque_gain   │
-                                                          │     · τ_ext       │
-                                                          └──────┬───────────┘
-                                                                 │ q_offset, dq_offset
-                                                                 ▼
- 规划指令 ──→ q_cmd ──(+)──→ q_cmd_admittance ──→ ┌──────────────────────────┐
-                                                 │     阻抗环                 │
-                                                 │  τ = K_p·(q_cmd_adm - q)  │
-                                                 │    + K_v·(dq_cmd_adm - dq)│
-                                                 │    + K_i·K_p·∫e dt        │
-                                                 └──────────┬─────────────────┘
-                                                            │ τ_impedance
-                                                            ▼
-                                              ┌──────────────────────────┐
-                                              │  逆动力学前馈             │
-                                              │  τ_ff = RNEA(q,dq,0)     │
-                                              └──────────┬─────────────────┘
-                                                         │
-                                                         ▼
-                                          τ_total = τ_impedance + τ_ff
+```text
+sensor_wrench
+   ↓ deadband / saturation / sign
+torque_ext = J^T * wrench
+   ↓
+JointAdmittanceController
+   ↓ q_offset, dq_offset
+q_ref_adm = q_cmd + q_offset
+dq_ref_adm = dq_cmd + dq_offset
+   ↓
+JointImpedanceController
+   ↓
+tau_total = tau_impedance + InverseDynamics(q, dq, 0)
 ```
 
-## 2 导纳环
+导纳环的作用是让外力先变成位置退让量，而不是直接全部叠加到力矩输出上。这样阻抗环仍可以保持较高跟踪刚度，柔顺性主要由导纳参数决定。
 
-**源文件**：`robot_server_lib/dynamics/joint_admittance_controller.{h,cpp}`
+## 2 外力矩估计
 
-### 2.1 动力学方程
-
-导纳环为每个关节模拟一个独立的二阶虚拟系统。对于关节 $i$，其动力学方程为：
+外力矩由 `JointImpedanceController::ComputeExternalTorque` 计算：
 
 $$
-M_i \ddot{q}_{\text{offset},i} + B_i \dot{q}_{\text{offset},i} + K_i q_{\text{offset},i} = g_i \cdot \tau_{\text{ext},i}
+\tau_{\mathrm{ext}} = J^T(q) \cdot w
+$$
+
+其中 `w` 是力传感器的六维 wrench。进入雅可比映射前会先做处理：
+
+$$
+w_{\mathrm{proc}} = \mathrm{sign} \cdot \mathrm{saturate}(\mathrm{deadband}(w_{\mathrm{raw}}))
+$$
+
+相关配置在 `w1_server/robot_config.yaml` 的 `force_sensor_external_wrench`：
+
+| 字段 | 含义 |
+|---|---|
+| `model_sign` | 传感器符号约定，当前配置为 `-1` |
+| `force_deadband_n` | 力死区，单位 N |
+| `force_saturation_n` | 力饱和，单位 N |
+| `torque_deadband_nm` | 力矩死区，单位 N·m |
+| `torque_saturation_nm` | 力矩饱和，单位 N·m |
+
+左右臂分别使用各自的 arm-only Pinocchio 模型计算雅可比，再映射回全身关节向量。
+
+## 3 导纳环
+
+导纳环为每个关节模拟一个二阶虚拟系统：
+
+$$
+M_i \ddot{q}_{\mathrm{offset},i}
++ B_i \dot{q}_{\mathrm{offset},i}
++ K_i q_{\mathrm{offset},i}
+= g_i \tau_{\mathrm{ext},i}
 $$
 
 其中：
 
-| 符号 | 含义 | 配置字段 |
-|------|------|----------|
-| $M_i$ | 虚拟惯量 | `virtual_inertia`（默认 1.0） |
-| $g_i$ | 力矩增益 | `torque_gain`（默认 1.0） |
-| $\tau_{\text{ext},i}$ | 关节外力矩（由雅可比转置计算） | 运行时输入 |
-| $q_{\text{offset},i}$ | 位置修正量（输出） | `q_offset_` |
-| $K_i$ | 虚拟刚度 | 由固有频率导出 |
-| $B_i$ | 虚拟阻尼 | 由阻尼比导出 |
+| 符号 | 配置字段 | 含义 |
+|---|---|---|
+| $g_i$ | `torque_gain` | 外力矩输入增益 |
+| $M_i$ | `virtual_inertia` | 虚拟惯量 |
+| $K_i$ | 由 `natural_frequency_hz` 推导 | 虚拟刚度 |
+| $B_i$ | 由 `damping_ratio` 推导 | 虚拟阻尼 |
 
-### 2.2 刚度与阻尼的参数化
-
-本实现不直接配置 $K$ 和 $B$，而是通过**固有频率** $\omega_n$ 和**阻尼比** $\zeta$ 间接推导，物理意义更直观：
+刚度和阻尼不直接配置，而是由固有频率和阻尼比计算：
 
 $$
-\omega_{n,i} = 2\pi f_{n,i}, \quad f_{n,i} = \text{natural\_frequency\_hz} \ (\text{默认}\ 1.5\text{Hz})
+\omega_n = 2 \pi f_n
 $$
 
 $$
-K_i = M_i \omega_{n,i}^2
+K = M \omega_n^2,\quad B = 2 \zeta M \omega_n
+$$
+
+默认阻尼比为 `1.2`，属于过阻尼设置，优先避免外力突变后的振荡。
+
+导纳状态使用显式欧拉积分：
+
+$$
+\ddot{q}_{\mathrm{offset}} =
+\frac{g\tau_{\mathrm{ext}} - B\dot{q}_{\mathrm{offset}} - Kq_{\mathrm{offset}}}{M}
 $$
 
 $$
-B_i = 2\zeta_i M_i \omega_{n,i}, \quad \zeta_i = \text{damping\_ratio} \ (\text{默认}\ 1.2)
-$$
-
-对应代码（`joint_admittance_controller.cpp:99-105`）：
-
-```cpp
-const double omega_n = 2.0 * M_PI * natural_frequency_hz_[i];
-stiffness_[i] = virtual_inertia_[i] * omega_n * omega_n;
-damping_[i] = 2.0 * damping_ratio_[i] * virtual_inertia_[i] * omega_n;
-```
-
-默认 $\zeta = 1.2 > 1$，使导纳系统为**过阻尼**，避免外力突变时产生位置偏移振荡。
-
-### 2.3 数值积分
-
-采用显式欧拉法进行数值积分（`joint_admittance_controller.cpp:84-91`）：
-
-$$
-\ddot{q}_{\text{offset},i}^{[k]} = \frac{g_i \cdot \tau_{\text{ext},i} - B_i \dot{q}_{\text{offset},i}^{[k]} - K_i q_{\text{offset},i}^{[k]}}{M_i}
+\dot{q}_{\mathrm{offset}} \leftarrow \dot{q}_{\mathrm{offset}} + \ddot{q}_{\mathrm{offset}} dt
 $$
 
 $$
-\dot{q}_{\text{offset},i}^{[k+1]} = \dot{q}_{\text{offset},i}^{[k]} + \ddot{q}_{\text{offset},i}^{[k]} \cdot dt
+q_{\mathrm{offset}} \leftarrow q_{\mathrm{offset}} + \dot{q}_{\mathrm{offset}} dt
+$$
+
+每次积分后都会对位置、速度、加速度限幅：
+
+| 状态 | 配置字段 | 默认值 |
+|---|---|---|
+| `q_offset` | `offset_limit` | 0.05 rad |
+| `dq_offset` | `velocity_limit` | 0.4 rad/s |
+| `ddq_offset` | `acceleration_limit` | 5.0 rad/s² |
+
+当位置偏移到达限幅边界时，继续向外积分的速度和加速度会被清零，避免偏移长期顶在限幅上。
+
+## 4 阻抗环和力矩输出
+
+导纳使能后，阻抗环使用修正后的参考量：
+
+$$
+q_{\mathrm{ref}} = q_{\mathrm{cmd}} + q_{\mathrm{offset}}
 $$
 
 $$
-q_{\text{offset},i}^{[k+1]} = q_{\text{offset},i}^{[k]} + \dot{q}_{\text{offset},i}^{[k+1]} \cdot dt
+\dot{q}_{\mathrm{ref}} = \dot{q}_{\mathrm{cmd}} + \dot{q}_{\mathrm{offset}}
 $$
 
-在每次积分步之后进行限幅，防止发散。
-
-### 2.4 状态限幅与抗饱和
-
-导纳环对输出的三个状态量施加严格的限幅（`ClampState()`，`joint_admittance_controller.cpp:107-131`）：
-
-| 状态 | 限幅字段 | 默认值 |
-|------|----------|--------|
-| $q_{\text{offset}}$ | `offset_limit` | 0.05 rad（约 2.9°） |
-| $\dot{q}_{\text{offset}}$ | `velocity_limit` | 0.4 rad/s |
-| $\ddot{q}_{\text{offset}}$ | `acceleration_limit` | 5.0 rad/s² |
-
-当 $q_{\text{offset}}$ 到达限幅边界时，清除继续向外积分的速度和加速度（积分抗饱和），避免饱和后偏移量在边界处持续积累：
-
-```cpp
-if (q_offset_[i] >= offset_limit_[i]) {
-    if (dq_offset_[i] > 0.0) dq_offset_[i] = 0.0;       // 清除外向速度
-    if (dq_offset_[i] >= 0.0 && ddq_offset_[i] > 0.0)
-        ddq_offset_[i] = 0.0;                             // 清除外向加速度
-}
-```
-
-### 2.5 衰减模式（DecayToZero）
-
-当导纳环不需要激活（如 Idle、Decelerating 状态或无力矩传感器时），调用 `DecayToZero(dt)` 而非 `Update()`。该方法以零外力矩驱动虚拟系统，利用阻尼项使 $q_{\text{offset}}$ 自然衰减至零，而非立即置零，避免位置参考突变。
-
-### 2.6 配置鲁棒性
-
-所有配置参数经过 `PositiveOrDefault` / `NonNegativeOrDefault` 校验，对非有限值（NaN/Inf）和非正值回退到安全默认值，保证虚拟系统不会因配置错误而发散。
-
-### 2.7 逐关节使能
-
-`JointAdmittanceConfig.joints[i].enabled` 可逐关节开关导纳环。未使能的关节其偏移量被清零，不参与导纳计算。全局 `JointAdmittanceConfig.enabled` 控制整个导纳环的总开关。
-
-## 3 阻抗环
-
-**源文件**：`robot_server_lib/dynamics/joint_impedance_controller.{h,cpp}`
-
-### 3.1 阻抗控制律
-
-在含导纳环的配置中，使用 `UpdateTorqueCommandWithoutExternalTorque` 变体（外力矩已由导纳环处理，不在此重复叠加）：
+阻抗控制律为：
 
 $$
-\boldsymbol{\tau}_{\text{impedance}} = \text{diag}(\boldsymbol{K}_p) \cdot \boldsymbol{e}_q + \text{diag}(\boldsymbol{K}_v) \cdot \boldsymbol{e}_{\dot{q}} + \text{diag}(\boldsymbol{K}_p \cdot K_i) \cdot \int \boldsymbol{e}_q \, dt
+\tau_{\mathrm{imp}} =
+K_p(q_{\mathrm{ref}} - q)
++ K_v(\dot{q}_{\mathrm{ref}} - \dot{q})
++ K_p K_i \int(q_{\mathrm{ref}} - q)dt
 $$
 
-其中跟踪误差基于导纳修正后的参考位置：
+位置误差小于 `0.005 deg` 时会置零，用于减少小误差抖动。
+
+积分项只在系统基本静止、外力和导纳偏移都已收敛时启用。当前门限为：
+
+| 条件 | 阈值 |
+|---|---|
+| `abs(torque_ext)` | `< 0.2 N·m` |
+| `abs(q_offset)` | `< 0.003 rad` |
+| `abs(dq_offset)` | `< 0.03 rad/s` |
+| `abs(cmd_dq_admittance)` | `< 0.03 rad/s` |
+| `abs(feedback_dq)` | `< 0.05 rad/s` |
+
+最终力矩：
 
 $$
-\boldsymbol{e}_q = \boldsymbol{q}_{\text{cmd}} + \boldsymbol{q}_{\text{offset}} - \boldsymbol{q}_{\text{feedback}}
+\tau_{\mathrm{total}} =
+\tau_{\mathrm{imp}} + \tau_{\mathrm{ff}}
 $$
 
-$$
-\boldsymbol{e}_{\dot{q}} = \dot{\boldsymbol{q}}_{\text{cmd}} + \dot{\boldsymbol{q}}_{\text{offset}} - \dot{\boldsymbol{q}}_{\text{feedback}}
-$$
-
-对应代码（`joint_impedance_controller.cpp:59-75`）：
-
-```cpp
-VectorDof q_error = cmd_q - feedback_q;       // cmd_q 已含 q_offset
-const VectorDof dq_error = cmd_dq - feedback_dq;
-// ... 小误差死区处理 ...
-tau_command = stiffness.asDiagonal() * q_error
-            + damping.asDiagonal() * dq_error
-            + torque_integral;
-```
-
-### 3.2 死区
-
-当位置误差小于 $0.005°$（$0.005/180 \times \pi$ rad）时置零，消除传感器分辨率噪声引起的微小力矩抖动。
-
-### 3.3 积分项与条件激活
-
-积分项用于消除稳态误差，但不当激活会导致积分饱和、超调甚至不稳定。本实现引入了**多条件门控**机制（`torque_controller_inverse_dynamic.cpp:97-108`），仅当以下条件同时满足时才允许积分：
-
-| 条件 | 阈值 | 物理含义 |
-|------|------|----------|
-| 外力矩收敛 | $\|\tau_{\text{ext},i}\| < 0.2$ Nm | 外部干扰已消除 |
-| 导纳偏移收敛 | $\|q_{\text{offset},i}\| < 0.003$ rad | 导纳环已稳定 |
-| 导纳速度收敛 | $\|\dot{q}_{\text{offset},i}\| < 0.03$ rad/s | 导纳环无动态运动 |
-| 指令速度收敛 | $\|\dot{q}_{\text{cmd\_adm},i}\| < 0.03$ rad/s | 规划器已停稳 |
-| 反馈速度收敛 | $\|\dot{q}_{\text{fb},i}\| < 0.05$ rad/s | 机器人已停稳 |
-
-积分误差本身也受到限幅（$\pm 0.5$ rad·s），防止积分饱和。
-
-## 4 外力矩估计
-
-**源文件**：`joint_impedance_controller.cpp:83-129`
-
-### 4.1 雅可比转置法
-
-末端力矩传感器测得六维力旋 $\boldsymbol{w} \in \mathbb{R}^6$（力 + 力矩），通过雅可比转置映射到关节空间：
+其中：
 
 $$
-\boldsymbol{\tau}_{\text{ext}} = \boldsymbol{J}^T(\boldsymbol{q}) \cdot \boldsymbol{w}
+\tau_{\mathrm{ff}} = \mathrm{InverseDynamics}(q,\dot{q},0)
 $$
 
-对于双臂机器人，左右臂分别独立计算，再映射回全身关节向量。
-
-### 4.2 力旋处理
-
-原始传感器读数经过以下处理后才进行雅可比映射（`ProcessExternalWrench`，`joint_impedance_controller.cpp:110-129`）：
-
-1. **死区**：力/力矩分量分别配置死区（`external_wrench_force_deadband_n`、`external_wrench_torque_deadband_nm`），消除传感器零漂。
-2. **饱和**：限幅到最大值（`external_wrench_force_saturation_n`、`external_wrench_torque_saturation_nm`），防止异常大力导致关节力矩溢出。
-3. **符号**：乘以 `external_wrench_model_sign`（$\pm 1$），适配传感器安装方向。
-
-公式为：
+当 `joint_admittance.enabled = true` 时，外力矩默认只进入导纳环。若需要保留一部分外力直通，可以设置：
 
 $$
-w_{\text{proc}} = \text{sign} \cdot \text{sat}(\text{deadband}(w_{\text{raw}}))
+\tau_{\mathrm{imp}} \leftarrow \tau_{\mathrm{imp}} + \mathrm{torque\_ext\_direct\_gain}\cdot\tau_{\mathrm{ext}}
 $$
 
-## 5 集成：TorqueControllerInvDynamic
+当前默认 `torque_ext_direct_gain = 0.0`。如果关闭导纳环，控制器会退回到原来的阻抗控制方式，直接叠加 `torque_ext`。
 
-**源文件**：`robot_server_lib/torque_controller/torque_controller_inverse_dynamic.{h,cpp}`
+## 5 状态机行为
 
-`TorqueControllerInvDynamic` 是力矩控制线程的核心，持有阻抗控制器和导纳控制器的共享指针，在 `ComputeCommand` 中按状态机分派。
+### 5.1 Operating
 
-### 5.1 Operating 状态（正常运行）完整流程
+正常运行时执行完整链路：
 
-```
-                    力矩传感器 wrench
-                         │
-                         ▼
-              ┌──────────────────────┐
-              │ ComputeExternalTorque │  ← J^T · ProcessedWrench
-              └─────────┬────────────┘
-                        │ τ_ext_raw
-           ┌────────────┼────────────────────┐
-           │            │                    │
-           ▼            ▼                    ▼
-     τ_ext 输出   导纳环 Update        τ_ext_direct_gain
-     (状态反馈)   → q_offset, dq_offset   直通增益叠加
-                        │
-                        ▼
-              q_cmd_admittance = q_cmd + q_offset
-              dq_cmd_admittance = dq_cmd + dq_offset
-                        │
-                        ▼
-              ┌────────────────────────┐
-              │ UpdateTorqueCommand     │  ← K_p·e + K_v·ė + K_i·∫e
-              │ WithoutExternalTorque  │
-              └─────────┬──────────────┘
-                        │ τ_joint_impedance
-                        ▼
-              τ_impedance += torque_ext_direct_gain · τ_ext   (可选)
-                        │
-                        ▼
-              τ_ff = InverseDynamics(q_fb, dq_fb, 0)          ← 重力+科氏+摩擦补偿
-                        │
-                        ▼
-              τ_total = τ_joint_impedance + τ_ff
-```
+1. 计算 `torque_ext`。
+2. 导纳环更新 `q_offset` 和 `dq_offset`。
+3. 阻抗环跟踪 `q_cmd + q_offset`。
+4. 叠加逆动力学前馈输出最终关节力矩。
 
-### 5.2 外力矩直通增益
+### 5.2 Idle / Decelerating
 
-当导纳环使能时，外力矩不直接叠加到阻抗力矩上，而是仅通过导纳环间接影响参考位置。但配置中提供了 `torque_ext_direct_gain` 参数，允许外力矩以可调增益部分直通到力矩输出（`torque_controller_inverse_dynamic.cpp:116-123`）：
+非运行状态下不继续用外力驱动导纳环，而是调用 `DecayToZero(dt)`，让导纳偏移通过虚拟阻尼平滑回零。这样可以避免状态切换时参考位置突然跳变。
 
-- **`joint_admittance.enabled = true`**：$\boldsymbol{\tau} \mathrel{+}= \text{torque\_ext\_direct\_gain} \cdot \boldsymbol{\tau}_{\text{ext}}$（默认增益为 0，纯导纳模式）
-- **`joint_admittance.enabled = false`**：$\boldsymbol{\tau} \mathrel{+}= \boldsymbol{\tau}_{\text{ext}}$（增益为 1，退化为纯阻抗+前馈外力模式）
-
-### 5.3 Idle / Decelerating 状态
-
-在这两种非运行状态下：
-
-- 阻抗环以当前位置（Idle）或零速度目标（Decelerating）产生保持力矩。
-- 导纳环调用 `DecayToZero`，使偏移量平滑衰减至零。
-- 外力矩仍被计算并输出到状态反馈（`output_cmd.torque_ext`），供上层监控。
-
-### 5.4 最终力矩输出
-
-$$
-\boldsymbol{\tau}_{\text{total}} = \underbrace{\boldsymbol{\tau}_{\text{impedance}}}_{\text{刚度+阻尼+积分+直通}} + \underbrace{\text{RNEA}(\boldsymbol{q}, \dot{\boldsymbol{q}}, \boldsymbol{0})}_{\text{重力+科氏+摩擦前馈}}
-$$
-
-逆动力学前馈使用递归牛顿-欧拉算法（RNEA），在当前关节状态下计算使机器人保持静止所需的力矩，补偿重力、科氏离心力及摩擦力。阻抗力矩只需要补偿偏差部分，大幅降低了阻抗增益的需求。
+`torque_ext` 仍会计算并写入反馈，方便上层监控外力。
 
 ## 6 配置参数
 
-### 6.1 导纳环配置（`JointAdmittanceConfig`）
+导纳配置位于 `w1_server/robot_config.yaml` 的 `joint_admittance`：
 
-定义在 `robot_server_lib/utils/data_structure.h:103-118`，在 `RobotProperty.joint_admittance` 中配置。
+```yaml
+joint_admittance:
+  enabled: true
+  torque_ext_direct_gain: 0.0
+  default:
+    torque_gain: -0.9
+    virtual_inertia: 1.0
+    natural_frequency_hz: 1.5
+    damping_ratio: 1.2
+    offset_limit: 0.05
+    velocity_limit: 0.2
+    acceleration_limit: 1.3
+```
 
-**全局参数**：
+`default` 会先应用到所有关节，`groups` 可以覆盖某些关节组。组配置中列出的关节会自动使能导纳。
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `enabled` | bool | false | 导纳环总开关 |
-| `torque_ext_direct_gain` | double | 0.0 | 外力矩直通增益（导纳使能时） |
+主要调参方向：
 
-**逐关节参数**（`JointAdmittanceJointConfig`）：
+- `torque_gain`：决定外力矩转换为位置偏移的方向和强度。当前配置用负号表示顺应外力方向移动。
+- `natural_frequency_hz`：越大响应越快，但过大时更容易激发结构振动。
+- `damping_ratio`：越大越平稳，响应也越慢；建议先使用 `1.0 ~ 1.5`。
+- `virtual_inertia`：越大越不容易被外力推动。
+- `offset_limit`：限制最大退让角度，防止外力异常时偏移过大。
+- `torque_ext_direct_gain`：一般保持 `0.0`；只有需要更直接的力矩响应时再小幅增加。
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `enabled` | bool | false | 该关节导纳环开关 |
-| `torque_gain` | double | 1.0 | 外力矩输入增益 |
-| `virtual_inertia` | double | 1.0 | 虚拟惯量 $M$ |
-| `natural_frequency_hz` | double | 1.5 | 固有频率 $f_n$（Hz） |
-| `damping_ratio` | double | 1.2 | 阻尼比 $\zeta$ |
-| `offset_limit` | double | 0.05 | 位置偏移限幅（rad） |
-| `velocity_limit` | double | 0.4 | 速度限幅（rad/s） |
-| `acceleration_limit` | double | 5.0 | 加速度限幅（rad/s²） |
+## 7 验证建议
 
-### 6.2 阻抗环配置（`RobotProperty`）
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `joint_stiffness` | 200.0 | 关节刚度 $K_p$（N·m/rad） |
-| `joint_damping` | 20.0 | 关节阻尼 $K_v$（N·m·s/rad） |
-| `joint_integral_ratio` | 0.01 | 积分增益比例 $K_i$ |
-
-### 6.3 调参指南
-
-- **增大 `natural_frequency_hz`**：导纳环响应更快，但接近机器人结构频率时可能引起共振。
-- **增大 `damping_ratio`**：更平稳无超调，但响应变慢。$\zeta > 1$ 为过阻尼（推荐），$\zeta = 1$ 为临界阻尼，$\zeta < 1$ 为欠阻尼（有振荡）。
-- **增大 `offset_limit`**：允许更大的柔顺退让空间，但会降低在极端外力下的位置保持能力。
-- **`torque_gain`**：调节外力矩对导纳环的激励强度。大于 1 提高对弱力的灵敏度，小于 1 降低灵敏度。
-- **`torque_ext_direct_gain`**：在纯导纳模式（0.0）和纯阻抗模式（1.0）之间连续调节。中间值可兼顾导纳的平滑性与阻抗的快速响应。
-
-## 7 文件索引
-
-| 文件 | 职责 |
-|------|------|
-| `robot_server_lib/dynamics/joint_admittance_controller.{h,cpp}` | 导纳环：虚拟质量-弹簧-阻尼系统 |
-| `robot_server_lib/dynamics/joint_impedance_controller.{h,cpp}` | 阻抗环：刚度-阻尼-积分控制 + 外力矩估计 |
-| `robot_server_lib/torque_controller/torque_controller_inverse_dynamic.{h,cpp}` | 集成层：状态机分派，编排导纳+阻抗+逆动力学 |
-| `robot_server_lib/dynamics/inverse_dynamics.{h,cpp}` | 逆动力学前馈（RNEA） |
-| `robot_server_lib/utils/data_structure.h` | 配置结构体定义（`JointAdmittanceConfig` 等） |
-| `robot_server_lib/test/test_joint_admittance_controller.cpp` | 导纳环单元测试 |
+1. 静止无接触时，`torque_ext` 应接近零；如果长期偏大，优先检查力传感器零偏、工具补偿和 `model_sign`。
+2. 人手轻推关节或末端时，`joint_admittance_q_offset` 应随外力方向变化，松手后逐渐回零。
+3. `q_cmd + q_offset` 不应出现跳变；如果有跳变，检查状态切换和 `DecayToZero` 行为。
+4. 调参时先固定阻抗参数，只调整导纳参数；确认柔顺性合适后再微调阻抗刚度和阻尼。

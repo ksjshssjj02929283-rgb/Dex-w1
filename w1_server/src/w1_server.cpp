@@ -18,6 +18,10 @@ constexpr double kDefaultInertiaCompCutoffHz = 5.0;
 constexpr double kMinInertiaCompCutoffHz = 0.5;
 constexpr double kMaxInertiaCompCutoffHz = 100.0;  // 1 kHz 采样的 10%
 
+double JsonFiniteOrZero(double value) {
+    return std::isfinite(value) ? value : 0.0;
+}
+
 bool ReadYamlVector(const YAML::Node& node, int expected_size, Eigen::VectorXd& out) {
     if (!node || !node.IsSequence() || static_cast<int>(node.size()) != expected_size) {
         return false;
@@ -871,7 +875,25 @@ void RobotServer::TorqueControlThreadFunc() {
                 << utils::VectorToJsonArrayString(latest_joint_impedance_error_after_admittance_, index_offset,
                                                   ndof_config_)
                        .str()
-                << ", \"force_sensor\": " << utils::VectorToJsonArrayString(force_sensor_log).str() << "}";
+                << ", \"force_sensor\": " << utils::VectorToJsonArrayString(force_sensor_log).str()
+                << ", \"force_sensor_gravity\": " << utils::VectorToJsonArrayString(sensor_wrench_gravity_).str()
+                << ", \"raw_force_sensor\": " << utils::VectorToJsonArrayString(raw_sensor_wrench_).str()
+                << ", \"force_sensor_bias\": " << utils::VectorToJsonArrayString(sensor_zero_offset_).str()
+                << ", \"force_sensor_inertia\": ["
+                << this->tool_inertia_wrench_ee_[0].load(std::memory_order_relaxed) << ","
+                << this->tool_inertia_wrench_ee_[1].load(std::memory_order_relaxed) << ","
+                << this->tool_inertia_wrench_ee_[2].load(std::memory_order_relaxed) << ","
+                << this->tool_inertia_wrench_ee_[3].load(std::memory_order_relaxed) << ","
+                << this->tool_inertia_wrench_ee_[4].load(std::memory_order_relaxed) << ","
+                << this->tool_inertia_wrench_ee_[5].load(std::memory_order_relaxed) << "]"
+                << ", \"ee_omega_ee_frame\": ["
+                << JsonFiniteOrZero(this->ee_omega_F_primary_[0].load(std::memory_order_relaxed)) << ","
+                << JsonFiniteOrZero(this->ee_omega_F_primary_[1].load(std::memory_order_relaxed)) << ","
+                << JsonFiniteOrZero(this->ee_omega_F_primary_[2].load(std::memory_order_relaxed)) << ",0,0,0]"
+                << ", \"ee_alpha_ee_frame\": ["
+                << JsonFiniteOrZero(this->ee_alpha_F_primary_[0].load(std::memory_order_relaxed)) << ","
+                << JsonFiniteOrZero(this->ee_alpha_F_primary_[1].load(std::memory_order_relaxed)) << ","
+                << JsonFiniteOrZero(this->ee_alpha_F_primary_[2].load(std::memory_order_relaxed)) << ",0,0,0]}";
             nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
         }
         // 如果状态字发生变化了则打印
@@ -1089,6 +1111,14 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"force_sensor_gravity\":" + utils::VectorToJsonArrayString(sensor_wrench_gravity_).str() +
         ",\n  \"raw_force_sensor\":" + utils::VectorToJsonArrayString(raw_sensor_wrench_).str() +
         ",\n  \"force_sensor_bias\":" + utils::VectorToJsonArrayString(sensor_zero_offset_).str() +
+        ",\n  \"ee_omega_ee_frame\":[" +
+        std::to_string(JsonFiniteOrZero(this->ee_omega_F_primary_[0].load(std::memory_order_relaxed))) + "," +
+        std::to_string(JsonFiniteOrZero(this->ee_omega_F_primary_[1].load(std::memory_order_relaxed))) + "," +
+        std::to_string(JsonFiniteOrZero(this->ee_omega_F_primary_[2].load(std::memory_order_relaxed))) + ",0,0,0]" +
+        ",\n  \"ee_alpha_ee_frame\":[" +
+        std::to_string(JsonFiniteOrZero(this->ee_alpha_F_primary_[0].load(std::memory_order_relaxed))) + "," +
+        std::to_string(JsonFiniteOrZero(this->ee_alpha_F_primary_[1].load(std::memory_order_relaxed))) + "," +
+        std::to_string(JsonFiniteOrZero(this->ee_alpha_F_primary_[2].load(std::memory_order_relaxed))) + ",0,0,0]" +
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(negative_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(positive_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_measurement, 0, this->robot_mode_ == RobotMode::SingleArm? 7 : 14).str() +

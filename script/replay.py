@@ -90,6 +90,12 @@ LOG_KEYS = [
     "joint_position_ref_admittance",
     "joint_impedance_error_after_admittance",
     "force_sensor",
+    "force_sensor_gravity",
+    "raw_force_sensor",
+    "force_sensor_bias",
+    "force_sensor_inertia",
+    "ee_omega_ee_frame",
+    "ee_alpha_ee_frame",
 ]
 
 
