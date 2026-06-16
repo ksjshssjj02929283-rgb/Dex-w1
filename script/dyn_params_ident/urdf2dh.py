@@ -307,11 +307,6 @@ def run_verification(robot, arm, active_joints, target_end_link, dh_params, q, l
     print(f"位置误差: {pos_err:.6f} m,  姿态误差: {ang_err:.4f} deg")
     print("✅ DH 模型与 URDF 完全等价。" if (pos_err < 1e-3 and ang_err < 1) else "❌ 存在偏差。")
 
-def get_gravity_in_dh_base(arm: str, R_dh: np.ndarray) -> Tuple[float, float, float]:
-    g_world = np.array([0.0, 0.0, -9.81])
-    g_dh = R_dh.T @ g_world
-    return (float(g_dh[0]), float(g_dh[1]), float(g_dh[2]))
-
 def get_gravity_in_arm_base(arm: str) -> Tuple[float, float, float]:
     base_urdf_path, _, _ = get_robot_info()
     if not base_urdf_path or not os.path.exists(base_urdf_path):
