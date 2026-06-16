@@ -637,7 +637,7 @@ import sympy, sympybotics, scipy.signal, lmi_sdp, subprocess
 from sympy import BlockMatrix, Matrix, eye, Identity
 from lmi_sdp import LMI
 from sympybotics.dynident.regression import mrepl
-from dyn_params_ident.urdf2dh import get_dh_params_for_arm, get_gravity_in_arm_base
+from dyn_params_ident.urdf2dh import get_dh_params_for_arm, get_gravity_in_dh_base
 
 class DynParamCalculator:
     """
@@ -666,7 +666,7 @@ class DynParamCalculator:
         arm_side = "left" if self.is_left else "right"
         dh_params = get_dh_params_for_arm(arm_side)
         self.log_msg(f"DH parameters for {robot_type} {arm_side} arm:\n{dh_params}")
-        gravity = get_gravity_in_arm_base(arm_side)
+        gravity = get_gravity_in_dh_base(arm_side)
         self.log_msg(f"Gravity direction in {arm_side} arm base: ({gravity[0]:.4f}, {gravity[1]:.4f}, {gravity[2]:.4f})")
         self.rbtdef_num = sympybotics.RobotDef(
             f"{robot_type}_{arm_side}",
@@ -2058,24 +2058,31 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 calc_left = self.dyn.calculator_left
                 tL, tau_raw_L, tau_pred_L = calc_left.get_regr_validatation()
                 totalL = tau_raw_L.shape[0]
+                r2_list_L = []
                 for i in range(min(ndof, tau_raw_L.shape[1])):
                     ax = axes_left[i]
                     ax.clear()
+                    measured_i = np.asarray(tau_raw_L[:, i]).flatten()[:totalL]
+                    estimated_i = np.asarray(tau_pred_L[:, i]).flatten()[:totalL]
                     ax.plot(
                         tL[:totalL],
-                        np.asarray(tau_raw_L[:, i]).flatten()[:totalL],
+                        measured_i,
                         label="Measured torque",
                         color="tab:red",
                         linewidth=1,
                     )
                     ax.plot(
                         tL[:totalL],
-                        np.asarray(tau_pred_L[:, i]).flatten()[:totalL],
+                        estimated_i,
                         label="Estimated torque",
                         color="tab:blue",
                         linewidth=1,
                     )
-                    ax.set_title(f"Joint {i+1}")
+                    ss_res = np.sum((measured_i - estimated_i) ** 2)
+                    ss_tot = np.sum((measured_i - np.mean(measured_i)) ** 2)
+                    r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+                    r2_list_L.append(r2)
+                    ax.set_title(f"Joint {i+1}  R²={r2*100:.1f}%")
                     ax.set_xlabel("Time (s)")
                     ax.set_ylabel("Torque (Nm)")
                     ax.grid(True, linestyle="--", alpha=0.4)
@@ -2088,6 +2095,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 except Exception:
                     pass
                 self.left_canvas.draw()
+                r2_str_L = ", ".join([f"J{i+1}: {v*100:.1f}%" for i, v in enumerate(r2_list_L)])
+                self.log_msg(f"左臂力矩吻合度 R²: {r2_str_L}, 平均: {np.mean(r2_list_L)*100:.1f}%")
             except Exception as e:
                 self.log_msg(
                     "左臂辨识绘图错误: "
@@ -2105,24 +2114,31 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 calc_right = self.dyn.calculator_right
                 tR, tau_raw_R, tau_pred_R = calc_right.get_regr_validatation()
                 totalR = tau_raw_R.shape[0]
+                r2_list_R = []
                 for i in range(min(ndof, tau_raw_R.shape[1])):
                     ax = axes_right[i]
                     ax.clear()
+                    measured_i = np.asarray(tau_raw_R[:, i]).flatten()[:totalR]
+                    estimated_i = np.asarray(tau_pred_R[:, i]).flatten()[:totalR]
                     ax.plot(
                         tR[:totalR],
-                        np.asarray(tau_raw_R[:, i]).flatten()[:totalR],
+                        measured_i,
                         label="Measured torque",
                         color="tab:red",
                         linewidth=1,
                     )
                     ax.plot(
                         tR[:totalR],
-                        np.asarray(tau_pred_R[:, i]).flatten()[:totalR],
+                        estimated_i,
                         label="Estimated torque",
                         color="tab:blue",
                         linewidth=1,
                     )
-                    ax.set_title(f"Joint {i+1}")
+                    ss_res = np.sum((measured_i - estimated_i) ** 2)
+                    ss_tot = np.sum((measured_i - np.mean(measured_i)) ** 2)
+                    r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+                    r2_list_R.append(r2)
+                    ax.set_title(f"Joint {i+1}  R²={r2*100:.1f}%")
                     ax.set_xlabel("Time (s)")
                     ax.set_ylabel("Torque (Nm)")
                     ax.grid(True, linestyle="--", alpha=0.4)
@@ -2135,12 +2151,27 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 except Exception:
                     pass
                 self.right_canvas.draw()
+                r2_str_R = ", ".join([f"J{i+1}: {v*100:.1f}%" for i, v in enumerate(r2_list_R)])
+                self.log_msg(f"右臂力矩吻合度 R²: {r2_str_R}, 平均: {np.mean(r2_list_R)*100:.1f}%")
             except Exception as e:
                 self.log_msg(
                     "右臂辨识绘图错误: "
                     + str(e)
                     + "。请先计算动力学参数并确保数据存在。"
                 )
+
+            r2_threshold = 0.9
+            weights = np.array([2, 2, 2, 2, 1, 1, 1])
+            mean_r2_L = np.average(r2_list_L, weights=weights) if r2_list_L else 0.0
+            mean_r2_R = np.average(r2_list_R, weights=weights) if r2_list_R else 0.0
+            if mean_r2_L < r2_threshold or mean_r2_R < r2_threshold:
+                self.log_msg(
+                    f"辨识验证失败！加权平均吻合度未达90%: 左臂 {mean_r2_L*100:.1f}%, 右臂 {mean_r2_R*100:.1f}%"
+                )
+                self._params_calculated = False
+                self.btn_write_params.setDisabled(True)
+            else:
+                self.log_msg(f"辨识验证通过，加权平均吻合度: 左臂 {mean_r2_L*100:.1f}%, 右臂 {mean_r2_R*100:.1f}%")
 
             self.log_msg("辨识结果图绘制完成。")
         finally:

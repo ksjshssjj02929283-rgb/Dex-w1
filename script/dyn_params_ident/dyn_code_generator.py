@@ -7,7 +7,7 @@ import os
 from typing import List, Tuple
 from sympybotics.symcode import code_to_func, Subexprs
 import re
-from urdf2dh import get_dh_params_for_arm, get_robot_info, get_gravity_in_arm_base
+from urdf2dh import get_dh_params_for_arm, get_robot_info
 
 # ============================================================================
 # Robot Dynamics Generator Class
@@ -68,8 +68,10 @@ class RobotUnifiedDynamicsGenerator:
 
         rbtdef.frictionmodel = {"Coulomb", "viscous", "offset"}
         rbtdef.driveinertiamodel = "simplified"
-        # 从 URDF 计算手臂基座坐标系下的重力方向
-        gravity = get_gravity_in_arm_base(self.arm_name)
+        # calc_base_parms() 是数值方法，重力方向影响 Pb 的结果
+        # 必须使用 DH base 坐标系下的重力，与 sympybotics DH 模型一致
+        from urdf2dh import get_gravity_in_dh_base
+        gravity = get_gravity_in_dh_base(self.arm_name)
         rbtdef.gravityacc = sympy.Matrix(gravity)
 
         rbt = sympybotics.RobotDynCode(rbtdef, verbose=True)
@@ -183,9 +185,25 @@ class RobotUnifiedDynamicsGenerator:
 
     def generate_inv_dyn_code(self):
         import re
+        import numpy as np
         from sympybotics.symcode import code_to_func
-        g0, g1, g2 = sympy.symbols('g0 g1 g2')
-        # 创建一个带有符号重力加速度的模型
+        from urdf2dh import get_dh_base_rotation
+
+        # 运行时输入的是 arm base 坐标系重力，DH 模型需要 DH base 坐标系重力
+        # get_dh_base_rotation 返回 arm base → DH base 旋转矩阵，bake into 符号模型
+        # 当 DH base == arm base 时旋转为单位阵，不影响计算结果
+        R_T = get_dh_base_rotation(self.arm_name)
+        def _clean_val(v):
+            if abs(v) < 1e-9:
+                return 0
+            if abs(v - round(v)) < 1e-9:
+                return int(round(v))
+            return v
+        R_T_clean = [[_clean_val(R_T[i, j]) for j in range(3)] for i in range(3)]
+        print(f"R_T_clean for {self.arm_name} arm:\n{R_T_clean}")
+        ga0, ga1, ga2 = sympy.symbols('ga0 ga1 ga2')
+        gravity_dh = sympy.Matrix(R_T_clean) * sympy.Matrix([ga0, ga1, ga2])
+
         rbtdef_sym = sympybotics.RobotDef(
             f"{self.robot_type}_{self.version}_{self.arm_name}",
             self.dh_params,
@@ -193,7 +211,7 @@ class RobotUnifiedDynamicsGenerator:
         )
         rbtdef_sym.frictionmodel = {"Coulomb", "viscous", "offset"}
         rbtdef_sym.driveinertiamodel = "simplified"
-        rbtdef_sym.gravityacc = sympy.Matrix([g0, g1, g2])
+        rbtdef_sym.gravityacc = gravity_dh
         rbt_sym = sympybotics.RobotDynCode(rbtdef_sym, verbose=True)
 
         # 构造 tau = H(g) * Pb * dyn_base_parameters（7x1）
@@ -211,7 +229,7 @@ class RobotUnifiedDynamicsGenerator:
         dq_subs = {dq: f'dq[{i}]' for i, dq in enumerate(rbtdef_sym.dq)}
         ddq_subs = {ddq: f'ddq[{i}]' for i, ddq in enumerate(rbtdef_sym.ddq)}
         pb_subs = {sym: f'dyn_base_params[{i}]' for i, sym in enumerate(pb_syms)}
-        g_subs = {g0: 'gravity_acc[0]', g1: 'gravity_acc[1]', g2: 'gravity_acc[2]'}
+        g_subs = {ga0: 'gravity_acc[0]', ga1: 'gravity_acc[1]', ga2: 'gravity_acc[2]'}
         subs = {**q_subs, **dq_subs, **ddq_subs, **pb_subs, **g_subs}
 
         # 6) 生成 C++ 版本（用 C 代码风格，.cpp 可直接编译）
@@ -292,8 +310,6 @@ if __name__ == "__main__":
             print(f"DH parameters for {arm}:")
             for p in dh_params:
                 print(f"  {p}")
-            gravity = get_gravity_in_arm_base(arm)
-            print(f"Gravity direction in {arm} arm base: ({gravity[0]:.4f}, {gravity[1]:.4f}, {gravity[2]:.4f})")
             RobotUnifiedDynamicsGenerator(arm, dh_params, robot_type, version)
             print(f"<<< Finished {arm.upper()} arm.")
         except Exception as e:

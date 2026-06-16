@@ -296,11 +296,6 @@ def run_verification(robot, arm, active_joints, target_end_link, dh_params, q, l
     print(f"位置误差: {pos_err:.6f} m,  姿态误差: {ang_err:.4f} deg")
     print("✅ DH 模型与 URDF 完全等价。" if (pos_err < 1e-3 and ang_err < 1) else "❌ 存在偏差。")
 
-def get_gravity_in_dh_base(arm: str, R_dh: np.ndarray) -> Tuple[float, float, float]:
-    g_world = np.array([0.0, 0.0, -9.81])
-    g_dh = R_dh.T @ g_world
-    return (float(g_dh[0]), float(g_dh[1]), float(g_dh[2]))
-
 def get_gravity_in_arm_base(arm: str) -> Tuple[float, float, float]:
     base_urdf_path, _, _ = get_robot_info()
     if not base_urdf_path or not os.path.exists(base_urdf_path):
@@ -311,6 +306,32 @@ def get_gravity_in_arm_base(arm: str) -> Tuple[float, float, float]:
     R = full_robot.get_transform(arm_base_link)[:3, :3]
     g = R.T @ np.array([0.0, 0.0, -9.81])
     return (float(g[0]), float(g[1]), float(g[2]))
+
+def get_gravity_in_dh_base(arm: str) -> Tuple[float, float, float]:
+    robot, start_link, active_joints, target_end_link = load_robot(arm)
+    robot.update_cfg({j: 0.0 for j in active_joints})
+    axes, link_frames = compute_axes(robot, active_joints, target_end_link)
+    arm_base_link = find_arm_base_link(robot, arm)
+    x_init = get_arm_base_x_axis(robot, arm_base_link)
+    _, R_dh, _ = compute_dh_params(axes, link_frames, x_init)
+    g_world = np.array([0.0, 0.0, -9.81])
+    g_dh = R_dh.T @ g_world
+    return (float(g_dh[0]), float(g_dh[1]), float(g_dh[2]))
+
+def get_dh_base_rotation(arm: str) -> np.ndarray:
+    """返回 arm base → DH base 的旋转矩阵 (3x3)。
+    gravity_dh = R @ gravity_arm_base。
+    find_arm_base_link 返回的 arm base 不一定是 URDF root，
+    需用 R_arm_base 消除 arm base 相对 root 的固定变换。
+    """
+    robot, start_link, active_joints, target_end_link = load_robot(arm)
+    robot.update_cfg({j: 0.0 for j in active_joints})
+    axes, link_frames = compute_axes(robot, active_joints, target_end_link)
+    arm_base_link = find_arm_base_link(robot, arm)
+    R_arm_base = robot.get_transform(arm_base_link)[:3, :3]
+    x_init = get_arm_base_x_axis(robot, arm_base_link)
+    _, R_dh, _ = compute_dh_params(axes, link_frames, x_init)
+    return R_dh.T @ R_arm_base
 
 def get_dh_params_for_arm(arm: str) -> List[Tuple[str, float, float, str]]:
     robot, start_link, active_joints, target_end_link = load_robot(arm)
