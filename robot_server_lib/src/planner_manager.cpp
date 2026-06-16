@@ -1004,6 +1004,20 @@ void PlannerManager::PublishPlannerInfo() {
         ee_pose_world << ee_pose_world_primary.ToVectorXd(), ee_pose_world_secondary.ToVectorXd();
         ee_pose_world = (ee_pose_world.array() * 1e5).round() / 1e5;
         info.ee_pose_world_measurement = ee_pose_world;
+
+        // [DIAGNOSE] torque_ext 无外力异常: 打印 armlee/armree frame 是否被解析 + 实际写入的 ee_pose_world.
+        // found=false 说明 URDF 改名后查不到 frame, ee_pose_world 会是默认 identity -> 重力补偿 R 错误.
+        {
+            static int diagnose_cnt = 0;
+            if (++diagnose_cnt % 200 == 0) {
+                const bool found = (armlee_frame_id < static_cast<int>(whole_model.frames.size()) &&
+                                    armree_frame_id < static_cast<int>(whole_model.frames.size()));
+                LOG_INFO << "[DIAGNOSE ee_pose_world] nframes=" << whole_model.frames.size()
+                         << " armlee_id=" << armlee_frame_id << " armree_id=" << armree_frame_id
+                         << " found=" << (found ? 1 : 0)
+                         << " ee_world_primary[x,y,z,w,qx,qy,qz]=" << ee_pose_world.head<7>().transpose();
+            }
+        }
     } else {
         // Init/Error 状态下不写 ee_pose_world_measurement, info.ee_pose_world_measurement 保持默认 size=0.
         // (publish_ee_pose_world 是预分配的 14 维变量, 不动它的容量, 只是不拷贝到 info.)
