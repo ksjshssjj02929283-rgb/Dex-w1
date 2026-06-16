@@ -1230,21 +1230,9 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_position_ref_admittance\":" + utils::VectorToJsonArrayString(latest_joint_position_ref_admittance_, index_offset, ndof_config_).str() +
         ",\n  \"joint_impedance_error_after_admittance\":" + utils::VectorToJsonArrayString(latest_joint_impedance_error_after_admittance_, index_offset, ndof_config_).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
-        ",\n  \"force_sensor_gravity\":" + utils::VectorToJsonArrayString(sensor_wrench_gravity_).str() +
-        ",\n  \"raw_force_sensor\":" + utils::VectorToJsonArrayString(raw_sensor_wrench_).str() +
-        ",\n  \"force_sensor_bias\":" + utils::VectorToJsonArrayString(sensor_zero_offset_).str() +
-        ",\n  \"ee_omega_ee_frame\":[" +
-        std::to_string(JsonFiniteOrZero(this->ee_omega_F_primary_[0].load(std::memory_order_relaxed))) + "," +
-        std::to_string(JsonFiniteOrZero(this->ee_omega_F_primary_[1].load(std::memory_order_relaxed))) + "," +
-        std::to_string(JsonFiniteOrZero(this->ee_omega_F_primary_[2].load(std::memory_order_relaxed))) + ",0,0,0]" +
-        ",\n  \"ee_alpha_ee_frame\":[" +
-        std::to_string(JsonFiniteOrZero(this->ee_alpha_F_primary_[0].load(std::memory_order_relaxed))) + "," +
-        std::to_string(JsonFiniteOrZero(this->ee_alpha_F_primary_[1].load(std::memory_order_relaxed))) + "," +
-        std::to_string(JsonFiniteOrZero(this->ee_alpha_F_primary_[2].load(std::memory_order_relaxed))) + ",0,0,0]" +
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(negative_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(positive_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_measurement, 0, this->robot_mode_ == RobotMode::SingleArm? 7 : 14).str() +
-        ",\n  \"ee_pose_world\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_world_measurement, 0, this->robot_mode_ == RobotMode::SingleArm? 7 : 14).str() +
         ",\n  \"torso_pose_X_Z_RY\":" + utils::VectorToJsonArrayString(this->manager_info_.torso_pose_measurement).str() +
         ",\n  \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
         ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
@@ -1272,13 +1260,6 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n \"chassis_driver_temperature\":" + std::to_string(this->robot_feedback_.chassis_feedback.driver_temperature) +
         ", \"chassis_left_temperature\":" + std::to_string(this->robot_feedback_.chassis_feedback.left_temperature) +
         ", \"chassis_right_temperature\":" + std::to_string(this->robot_feedback_.chassis_feedback.right_temperature) +
-        ",\n  \"force_sensor_inertia\":[" +
-        std::to_string(this->tool_inertia_wrench_ee_[0].load(std::memory_order_relaxed)) + "," +
-        std::to_string(this->tool_inertia_wrench_ee_[1].load(std::memory_order_relaxed)) + "," +
-        std::to_string(this->tool_inertia_wrench_ee_[2].load(std::memory_order_relaxed)) + "," +
-        std::to_string(this->tool_inertia_wrench_ee_[3].load(std::memory_order_relaxed)) + "," +
-        std::to_string(this->tool_inertia_wrench_ee_[4].load(std::memory_order_relaxed)) + "," +
-        std::to_string(this->tool_inertia_wrench_ee_[5].load(std::memory_order_relaxed)) + "]" +
         "}";
     return robot_server_state_msg;
 }
