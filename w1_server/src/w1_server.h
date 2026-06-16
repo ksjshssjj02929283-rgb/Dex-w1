@@ -2,7 +2,8 @@
 
 #include <atomic>
 #include <geometry_msgs/msg/twist.hpp>
-#include <std_msgs/msg/float64_multi_array.hpp>  // 新增
+#include <sensor_msgs/msg/imu.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 
 #include "chassis_interfaces/msg/chassis_motor_control.hpp"
 #include "chassis_interfaces/msg/chassis_whole_control.hpp"
@@ -47,11 +48,14 @@ private:
     void ForceArrayCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg);
     void DebugCallback(const std_msgs::msg::String::SharedPtr msg);
     void PublishFeedback();
+    void PublishImu();
     std_msgs::msg::String GetRobotServerStateMsg();
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;
+    rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
     rclcpp::Publisher<JointVelocityTorqueLimitFeedbackMsg>::SharedPtr velocity_torque_limit_feedback_publisher_;
     rclcpp::TimerBase::SharedPtr control_timer_;
+    rclcpp::TimerBase::SharedPtr imu_timer_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr force_subscriber_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr debug_subscriber_;
     rclcpp::Subscription<JointControlMsg>::SharedPtr control_subscriber_;
@@ -135,6 +139,7 @@ private:
     std::shared_ptr<EIInputShaper> input_shapers_[ndof_robot];
     EIInputShaper::Type input_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
     const double input_shaper_max_ramp_rad_per_sec = 10 * M_PI;
+    uint32_t imu_timestamp_ = 0;
 };
 
 }  // namespace robot_server_lib

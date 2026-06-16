@@ -5,29 +5,65 @@
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <cstddef>
 #include <cstring>
 #include <iostream>
 
-#define FEEDBACK_SHM_KEY 0x1003
-#define CONTROL_SHM_KEY 0x2003
+#define FEEDBACK_SHM_KEY 0x1004
+#define CONTROL_SHM_KEY 0x2004
 #define MAX_JOINT_NUM 32
 #define OMNI_MOTOR_NUM 4
 
 struct ChassisFeedback {
-    int64_t timestamp;
-    double left_velocity;
-    double right_velocity;
+    int64_t timestamp = 0;
+    double left_velocity = 0;
+    double right_velocity = 0;
     double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};   // 底盘电机控制速度
     double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};  // 底盘电机控制方向
-    uint16_t status_word;
-    uint16_t error_code_left;
-    uint16_t error_code_right;
+    uint16_t status_word = 0;
+    uint16_t error_code_left = 0;
+    uint16_t error_code_right = 0;
     double left_current = 0;
     double right_current = 0;
     double driver_temperature = 0;
     double left_temperature = 0;
     double right_temperature = 0;
 };
+
+struct Vector3f {
+    float x = 0;
+    float y = 0;
+    float z = 0;
+};
+
+struct Quaternionf {
+    float x = 0;
+    float y = 0;
+    float z = 0;
+    float w = 0;
+};
+
+struct ImuData {
+    uint32_t id = 0;
+    Quaternionf orientation = {};
+    Vector3f angular_velocity = {};     // rad/s
+    Vector3f linear_acceleration = {};  // m/s^2
+    Vector3f mag = {};                  // uT
+    Vector3f eul = {};                  // x: 横滚角 Roll, y: 俯仰角 Pitch, z: 航向角 Yaw, unit: deg
+    float pressure = 0;                 // Pa
+    uint32_t timestamp = 0;             // HI91 protocol timestamp
+};
+
+static_assert(sizeof(Vector3f) == 12, "Vector3f shared-memory layout changed");
+static_assert(sizeof(Quaternionf) == 16, "Quaternionf shared-memory layout changed");
+static_assert(sizeof(ImuData) == 76, "ImuData shared-memory layout changed");
+static_assert(offsetof(ImuData, orientation) == 4, "ImuData orientation offset changed");
+static_assert(offsetof(ImuData, angular_velocity) == 20, "ImuData angular_velocity offset changed");
+static_assert(offsetof(ImuData, linear_acceleration) == 32, "ImuData linear_acceleration offset changed");
+static_assert(offsetof(ImuData, mag) == 44, "ImuData mag offset changed");
+static_assert(offsetof(ImuData, eul) == 56, "ImuData eul offset changed");
+static_assert(offsetof(ImuData, pressure) == 68, "ImuData pressure offset changed");
+static_assert(offsetof(ImuData, timestamp) == 72, "ImuData timestamp offset changed");
 
 struct ChassisControl {
     uint64_t cnt = 0;
@@ -44,27 +80,27 @@ struct ChassisControl {
 };
 
 struct JointFeedback {
-    char joint_name[10] = {};    // 关节名 / ID
-    uint16_t joint_status_word;  // 状态字
-    uint16_t joint_error_code;   // 错误码
-    double joint_position;       // 位置
-    double joint_velocity;       // 速度
-    double joint_torque;         // 力矩
-    double joint_sensor_torque;  // 力矩传感器
-    double joint_temperature;    // 温度
+    char joint_name[10] = {};        // 关节名 / ID
+    uint16_t joint_status_word = 0;  // 状态字
+    uint16_t joint_error_code = 0;   // 错误码
+    double joint_position = 0;       // 位置
+    double joint_velocity = 0;       // 速度
+    double joint_torque = 0;         // 力矩
+    double joint_sensor_torque = 0;  // 力矩传感器
+    double joint_temperature = 0;    // 温度
 };
 
 struct JointControl {
-    char joint_name[10] = {};            // 关节名 / ID
-    uint16_t joint_mode;                 // 控制模式（默认 0）
-    double joint_position;               // 给定位置 (rad)
-    double joint_velocity;               // 给定速度 (rad/s)
-    double joint_torque;                 // 给定力矩 (Nm)
-    double joint_torque_feedforward;     // 力矩前馈 (Nm)
-    double joint_Kp;                     // 刚度
-    double joint_Kd;                     // 阻尼
-    double joint_positive_torque_limit;  // 正向力矩限制
-    double joint_negative_torque_limit;  // 负向力矩限制
+    char joint_name[10] = {};                // 关节名 / ID
+    uint16_t joint_mode = 0;                 // 控制模式（默认 0）
+    double joint_position = 0;               // 给定位置 (rad)
+    double joint_velocity = 0;               // 给定速度 (rad/s)
+    double joint_torque = 0;                 // 给定力矩 (Nm)
+    double joint_torque_feedforward = 0;     // 力矩前馈 (Nm)
+    double joint_Kp = 0;                     // 刚度
+    double joint_Kd = 0;                     // 阻尼
+    double joint_positive_torque_limit = 0;  // 正向力矩限制
+    double joint_negative_torque_limit = 0;  // 负向力矩限制
 };
 
 struct RobotFeedback {
@@ -76,6 +112,7 @@ struct RobotFeedback {
     JointFeedback joint_feedback[MAX_JOINT_NUM];
     // 底盘反馈
     ChassisFeedback chassis_feedback;
+    ImuData imu_data;
 };
 
 struct RobotControl {
@@ -115,7 +152,7 @@ protected:
     struct QueueElement {
         T data;
         uint64_t cnt = 0;
-        struct timespec ts;
+        struct timespec ts = {0, 0};
         bool valid{false};  // Handle the case if no element has arrived yet
     };
 

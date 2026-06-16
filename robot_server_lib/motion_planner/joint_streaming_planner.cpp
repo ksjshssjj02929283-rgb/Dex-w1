@@ -170,9 +170,10 @@ ComputeCommandStatus JointStreamingPlanner::ComputeCommand(const JointMeasuremen
                 (use_acceleration_ && !is_velocity_timeout) ? latest_cmd.target_acceleration[i] : 0.0;
         }
         // 每秒打印一次日志，内容包括接收到的命令帧数、位置、速度、加速度等信息
+        double time_period = 10.0;  // 日志打印周期，单位秒
         if (!last_log_time_.is_valid() ||
-            (time_meta.current_time.time_in_ns() - last_log_time_.time_in_ns()) * 1e-9 >= 10.0) {
-            LOG_INFO << "Streaming received " << frame_count_ << " frames in last period, "
+            (time_meta.current_time.time_in_ns() - last_log_time_.time_in_ns()) * 1e-9 >= time_period) {
+            LOG_INFO << "Streaming received " << frame_count_ << " frames in last " << time_period << " seconds, "
                      << "position = " << latest_cmd.command.transpose();
             frame_count_ = 0;
             last_log_time_ = time_meta.current_time;

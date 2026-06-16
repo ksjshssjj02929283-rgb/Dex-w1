@@ -1,6 +1,16 @@
 #!/bin/bash
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "${SCRIPT_DIR}/../install/setup.bash"
+
+# === 检查 Sudo 权限 ===
+# 尝试使用默认密码验证，如果失败则提示用户手动输入
+if echo "123456" | sudo -S -v >/dev/null 2>&1; then
+    SUDO_RUN() { echo "123456" | sudo -S "$@"; }
+else
+    # 仅在需要 sudo 时提示
+    SUDO_RUN() { sudo "$@"; }
+fi
+
 # 打印使用说明
 print_usage() {
     echo "Usage: ./set_property.sh <property_type> [value]"
@@ -8,25 +18,31 @@ print_usage() {
     echo "Available property types:"
     echo "  echo            - Echo robot server state topic once"
     echo "  echo_sim        - Echo robot server state sim topic once"
-    echo "  clone ethercat  - Clone dexe_ethercat (dev) repository to ~/w1"
-    echo "  clone interface - Clone dexe_interfaces (dev) repository to ~/w1"
+    echo "  clone ethercat  - Clone dexe_ethercat (dev) repository to parent directory"
+    echo "  clone interface - Clone dexe_interfaces (dev) repository to parent directory"
     echo "  home            - Move robot to home joint position"
     echo "  standby         - Move robot to standby joint position"
     echo "  left            - Move left arm (7 joints, value: '[j1,j2,...]' or home/standby)"
     echo "  right           - Move right arm (7 joints, value: '[j1,j2,...]' or home/standby)"
     echo "  stop_move       - Stop current movement"
     echo "  log             - Print robot server log"
-    echo "  clear          - Clear errors (no value needed)"
+    echo "  clear           - Clear errors (no value needed)"
     echo "  drag            - Enable/Disable drag mode (value: 0 or 1)"
     echo "  start           - Start dexe-system.service"
     echo "  stop            - Stop dexe-system.service"
     echo "  restart         - Restart dexe-system.service"
+    echo "  sleep           - Sleep mode"
+    echo "  quickstop       - QuickStop mode"
     echo "  watch           - Watch EtherCAT status (watch -n 0.1 ethercat sl)"
-    echo "  state           - Monitor feedback state (python3 script/monitor_feedback.py)"
+    echo "  state           - Monitor feedback state (python3 script/monitor_state.py)"
     echo "  shm             - Monitor shared memory (python3 script/monitor_shm.py)"
-    echo "  control         - Joint control GUI (python3 script/qt_joint_control.py)"
-    echo "  dyn             - Dynamic parameter identification GUI (python3 script/qt_dyn_params_ident.py)"
-    echo "  visual          - Visualization ROS2 node (python3 script/visual_ros2_node.py)"
+    echo "  ctrl            - Joint control GUI (python3 script/qt_joint_control.py)"
+    echo "  dyn [args]      - Dynamic parameter identification GUI (python3 script/qt_dyn_params_ident.py)"
+    echo "  codegen         - Generate dynamics code (python3 script/dyn_params_ident/dyn_code_generator.py)"
+    echo "  dh [left|right] - Compute DH parameters from URDF (python3 script/dyn_params_ident/urdf2dh.py)"
+    echo "  gui             - Robot Launcher GUI (python3 script/gui.py)"
+    echo "  trajgen         - Trajectory generator (python3 script/traj_generator.py)"
+    echo "  vis             - Visualization ROS2 node (python3 script/visual_ros2_node.py)"
     echo "  config          - Edit robot_config.yaml (gedit/vim ~/dexe_robot_server_data/robot_config.yaml)"
     echo "  pos_limit       - Enable/Disable position limit check (value: 0 or 1)"
     echo "  mode            - Switch run mode (value: mode number, e.g., 3)"
@@ -34,22 +50,54 @@ print_usage() {
     echo "  ruckig          - Enable/Disable ruckig (value: true or false)"
     echo "  filter          - Enable/Disable butterworth filter (value: true or false)"
     echo "  zvd             - Enable/Disable input shaper (value: true or false)"
+    echo "  ethercat run   - Run dexe_ethercat (./../dexe_ethercat/run.sh)"
+    echo "  ethercat build - Build dexe_ethercat (./../dexe_ethercat/build.sh)"
+    echo "  ethercat git   - Show dexe_ethercat git log"
     echo "  hardware        - Cat /etc/dexe_robot/hardware.yaml"
 
     echo ""
     echo "Examples:"
-    echo "  ./set_property.sh echo"
-    echo "  ./set_property.sh config"
-    echo "  ./set_property.sh log"
-    echo "  ./set_property.sh watch"
-    echo "  ./set_property.sh state"
-    echo "  ./set_property.sh shm"
-    echo "  ./set_property.sh clear"
-    echo "  ./set_property.sh drag 1"
-    echo "  ./set_property.sh pos_limit 0"
-    echo "  ./set_property.sh mode 1"
-    echo "  ./set_property.sh safe_level 0.3"
-    echo "  ./set_property.sh restart"
+    echo "  ./set_w1.sh echo"
+    echo "  ./set_w1.sh echo_sim"
+    echo "  ./set_w1.sh clone ethercat"
+    echo "  ./set_w1.sh clone interface"
+    echo "  ./set_w1.sh home"
+    echo "  ./set_w1.sh standby"
+    echo "  ./set_w1.sh left home"
+    echo "  ./set_w1.sh left '[0.0, -1.4, 0.0, -0.6, 0.0, -0.5, -0.5]'"
+    echo "  ./set_w1.sh right standby"
+    echo "  ./set_w1.sh right '[0.0, 1.4, 0.0, 0.6, 0.0, 0.5, 0.5]'"
+    echo "  ./set_w1.sh stop_move"
+    echo "  ./set_w1.sh log"
+    echo "  ./set_w1.sh clear"
+    echo "  ./set_w1.sh drag 1"
+    echo "  ./set_w1.sh start"
+    echo "  ./set_w1.sh stop"
+    echo "  ./set_w1.sh restart"
+    echo "  ./set_w1.sh sleep"
+    echo "  ./set_w1.sh quickstop"
+    echo "  ./set_w1.sh watch"
+    echo "  ./set_w1.sh state"
+    echo "  ./set_w1.sh shm"
+    echo "  ./set_w1.sh ctrl"
+    echo "  ./set_w1.sh dyn"
+    echo "  ./set_w1.sh codegen"
+    echo "  ./set_w1.sh dh left"
+    echo "  ./set_w1.sh dh"
+    echo "  ./set_w1.sh gui"
+    echo "  ./set_w1.sh trajgen"
+    echo "  ./set_w1.sh vis"
+    echo "  ./set_w1.sh config"
+    echo "  ./set_w1.sh pos_limit 0"
+    echo "  ./set_w1.sh mode 1"
+    echo "  ./set_w1.sh safe_level 0.3"
+    echo "  ./set_w1.sh ruckig true"
+    echo "  ./set_w1.sh filter true"
+    echo "  ./set_w1.sh zvd true"
+    echo "  ./set_w1.sh ethercat run"
+    echo "  ./set_w1.sh ethercat build"
+    echo "  ./set_w1.sh ethercat git"
+    echo "  ./set_w1.sh hardware"
 }
 
 # 检查输入参数
@@ -105,16 +153,15 @@ case $PROPERTY_KEY in
         exit 0
         ;;
     clone)
+        PARENT_DIR="$(realpath "${SCRIPT_DIR}/..")"
         if [ "$VALUE" == "ethercat" ]; then
-            echo "Cloning dexe_ethercat (dev) to ~/w1..."
-            rm -rf ~/w1/dexe_ethercat
-            mkdir -p ~/w1
-            git clone -b dev http://192.168.3.16/dexembodied/dexe_ethercat.git ~/w1/dexe_ethercat
+            echo "Cloning dexe_ethercat (dev) to ${PARENT_DIR}..."
+            rm -rf "${PARENT_DIR}/dexe_ethercat"
+            git clone -b dev http://192.168.3.16/dexembodied/dexe_ethercat.git "${PARENT_DIR}/dexe_ethercat"
         elif [ "$VALUE" == "interface" ]; then
-            echo "Cloning dexe_interfaces (dev) to ~/w1..."
-            rm -rf ~/w1/dexe_interfaces
-            mkdir -p ~/w1
-            git clone -b dev http://192.168.3.16/dexembodied/dexe_interfaces.git ~/w1/dexe_interfaces
+            echo "Cloning dexe_interfaces (dev) to ${PARENT_DIR}..."
+            rm -rf "${PARENT_DIR}/dexe_interfaces"
+            git clone -b dev http://192.168.3.16/dexembodied/dexe_interfaces.git "${PARENT_DIR}/dexe_interfaces"
         else
             echo "Usage: ./set_w1.sh clone [ethercat|interface]"
         fi
@@ -127,7 +174,7 @@ case $PROPERTY_KEY in
         ;;
     standby)
         echo "Moving robot to standby position..."
-        ros2 action send_goal /control/move_robot robot_server_interfaces/action/MoveRobot "{motion_group: WholeBody, type: MoveJoint, target: [0.6, -1.2, 0.6, 0.0, 0.0, 0.0, 0.25, -1.4, 0.0, -0.6, 0.0, 0.0, 0.0, -0.25, 1.4, 0.0, 0.6, 0.0, 0.0, 0.0], config: '{\"speed\":0.1,\"acceleration\":0.1}'}"
+        ros2 action send_goal /control/move_robot robot_server_interfaces/action/MoveRobot "{motion_group: WholeBody, type: MoveJoint, target: [0.6, -1.2, 0.6, 0.0, 0.0, 0.0, 0.0, -1.4, 0.0, -0.6, 0.0, -0.5, -0.5, 0.0, 1.4, 0.0, 0.6, 0.0, 0.5, 0.5], config: '{\"speed\":0.1,\"acceleration\":0.1}'}"
         exit 0
         ;;    
     left)
@@ -139,7 +186,7 @@ case $PROPERTY_KEY in
         if [ "$TARGET_VALUE" == "home" ]; then
             TARGET_VALUE="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]"
         elif [ "$TARGET_VALUE" == "standby" ]; then
-            TARGET_VALUE="[0.25, -1.4, 0.0, -0.6, 0.0, 0.0, 0.0]"
+            TARGET_VALUE="[0.0, -1.4, 0.0, -0.6, 0.0, -0.5, -0.5]"
         fi
 
         # Ensure it starts and ends with [ ]
@@ -159,7 +206,7 @@ case $PROPERTY_KEY in
         if [ "$TARGET_VALUE" == "home" ]; then
             TARGET_VALUE="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]"
         elif [ "$TARGET_VALUE" == "standby" ]; then
-            TARGET_VALUE="[-0.25, 1.4, 0.0, 0.6, 0.0, 0.0, 0.0]"
+            TARGET_VALUE="[0.0, 1.4, 0.0, 0.6, 0.0, 0.5, 0.5]"
         fi
         
         # Ensure it starts and ends with [ ]
@@ -185,22 +232,28 @@ case $PROPERTY_KEY in
         ;;
     start)
         echo "Starting dexe-system.service..."
-        echo 123456 | sudo -S systemctl start dexe-system.service
+        SUDO_RUN systemctl start dexe-system.service
         echo "Watching EtherCAT status..."
         watch -n 0.1 ethercat sl
         exit 0
         ;;
     stop)
         echo "Stopping dexe-system.service..."
-        echo 123456 | sudo -S systemctl stop dexe-system.service
+        SUDO_RUN systemctl stop dexe-system.service
         exit 0
         ;;
     restart)
         echo "Restarting dexe-system.service..."
-        echo 123456 | sudo -S systemctl restart dexe-system.service
+        SUDO_RUN systemctl restart dexe-system.service
         echo "Watching EtherCAT status..."
         watch -n 0.1 ethercat sl
         exit 0
+        ;;
+    sleep)
+        PROPERTY_TYPE="EnableSleep"
+        ;;
+    quickstop)
+        PROPERTY_TYPE="QuickStop"
         ;;
     watch)
         echo "Watching EtherCAT status..."
@@ -209,27 +262,47 @@ case $PROPERTY_KEY in
         ;;
     state)
         echo "Monitoring feedback state..."
-        python3 script/monitor_feedback.py
+        python3 "${SCRIPT_DIR}/script/monitor_state.py"
         exit 0
         ;;
     shm)
         echo "Monitoring shared memory..."
-        python3 script/monitor_shm.py
+        python3 "${SCRIPT_DIR}/script/monitor_shm.py"
         exit 0
         ;;
-    control)
+    ctrl)
         echo "Starting Joint Control GUI..."
-        python3 script/qt_joint_control.py
+        python3 "${SCRIPT_DIR}/script/qt_joint_control.py"
         exit 0
         ;;
     dyn)
         echo "Starting Dynamic Parameter Identification GUI..."
-        python3 script/qt_dyn_params_ident.py
+        python3 "${SCRIPT_DIR}/script/qt_dyn_params_ident.py" "${@:2}"
         exit 0
         ;;
-    visual)
+    codegen)
+        echo "Starting Dynamics Code Generator..."
+        python3 "${SCRIPT_DIR}/script/dyn_params_ident/dyn_code_generator.py"
+        exit 0
+        ;;
+    dh)
+        echo "Computing DH parameters from URDF..."
+        python3 "${SCRIPT_DIR}/script/dyn_params_ident/urdf2dh.py" "${@:2}"
+        exit 0
+        ;;
+    gui)
+        echo "Starting Robot Launcher GUI..."
+        python3 "${SCRIPT_DIR}/script/gui.py"
+        exit 0
+        ;;
+    trajgen)
+        echo "Starting Trajectory Generator..."
+        python3 "${SCRIPT_DIR}/script/dyn_params_ident/traj_generator.py"
+        exit 0
+        ;;
+    vis)
         echo "Starting Visualization ROS2 node..."
-        python3 script/visual_ros2_node.py
+        python3 "${SCRIPT_DIR}/script/visual_ros2_node.py"
         exit 0
         ;;
     hardware)
@@ -244,6 +317,32 @@ case $PROPERTY_KEY in
         else
             vim ~/dexe_robot_server_data/robot_config.yaml
         fi
+        exit 0
+        ;;
+    ethercat)
+        ETHERCAT_DIR="${SCRIPT_DIR}/../dexe_ethercat"
+        if [ ! -d "$ETHERCAT_DIR" ]; then
+            echo "Error: dexe_ethercat directory not found at $ETHERCAT_DIR"
+            exit 1
+        fi
+        case "$VALUE" in
+            run)
+                echo "Running dexe_ethercat..."
+                "$ETHERCAT_DIR/run.sh"
+                ;;
+            build)
+                echo "Building dexe_ethercat..."
+                "$ETHERCAT_DIR/build.sh"
+                ;;
+            git)
+                echo "dexe_ethercat git log:"
+                git -C "$ETHERCAT_DIR" log
+                ;;
+            *)
+                echo "Usage: ./set_w1.sh ethercat [run|build|git]"
+                exit 1
+                ;;
+        esac
         exit 0
         ;;
     *)

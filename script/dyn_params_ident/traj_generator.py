@@ -11,6 +11,10 @@ import math
 import numpy as np
 import yaml
 import pinocchio as pin
+import time
+import multiprocessing
+import threading
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from scipy.signal import butter, filtfilt
 from matplotlib import pyplot as plt
@@ -54,17 +58,24 @@ class CollisionChecker:
         
         # Re-create collision data after removing pairs
         self.collision_data = pin.GeometryData(self.collision_model)
-        
-        if pairs_to_remove_indices:
-            print(f"Removed {len(pairs_to_remove_indices)} naturally colliding pairs (SRDF/Adjacent).")
 
-    def check_collision(self, q):
+    def check_collision(self, q, margin=0.0):
         """
-        Check if the configuration q (NQ=20) has self-collisions.
+        Check if the configuration q (NQ=20) has self-collisions or is within safety margin.
         """
         # q must be (20,) array
         pin.updateGeometryPlacements(self.model, self.data, self.collision_model, self.collision_data, q)
-        return pin.computeCollisions(self.collision_model, self.collision_data, False)
+        
+        if margin > 1e-6:
+            # Check proximity using computeDistances
+            pin.computeDistances(self.collision_model, self.collision_data)
+            for dist_res in self.collision_data.distanceResults:
+                if dist_res.min_distance < margin:
+                    return True
+            return False
+        else:
+            # Classic boolean collision check
+            return pin.computeCollisions(self.collision_model, self.collision_data, False)
 
 def nonrepeating_covering_traj(joint_limits, wf, L, duration, dt, margin_ratio=0.03, filt_cutoff=None):
     """
@@ -103,67 +114,146 @@ def nonrepeating_covering_traj(joint_limits, wf, L, duration, dt, margin_ratio=0
         norm = q_raw[:, k] / max_abs
         q[:, k] = target_low + (norm + 1.0) * 0.5 * (target_high - target_low)
 
-    q0 = np.zeros(ndof)
-    q[0, :] = q0
-
     return t, q
 
-def generate_q_with_limits(joint_limits, wf, L, duration, dt, collision_checker=None, arm_indices=None, q_fixed=None, max_attempts=500):
-    ndof = len(joint_limits)
-    for attempt in range(1, max_attempts + 1):
-        if attempt % 50 == 0:
-            print(f"... Generation at attempt {attempt} ...")
+def _parallel_worker(worker_id, joint_limits, wf, L, duration, dt, urdf_path, srdf_path, arm_indices, q_fixed, attempts_per_worker):
+    import numpy as np
+    import os
+    import time
+    import tempfile
+    np.random.seed((os.getpid() * worker_id + int(time.time() * 1000)) % 123456789)
+    
+    local_checker = None
+    if urdf_path and os.path.exists(urdf_path):
+        try:
+            local_checker = CollisionChecker(urdf_path, srdf_path)
+        except Exception:
+            pass
+
+    counter_file = os.path.join(tempfile.gettempdir(), f"trajgen_counter_{os.getppid()}")
+    
+    for attempt in range(1, attempts_per_worker + 1):
+        try:
+            with open(counter_file, 'r') as f:
+                val = int(f.read().strip())
+            with open(counter_file, 'w') as f:
+                f.write(str(val + 1))
+        except Exception:
+            pass
         t, q = nonrepeating_covering_traj(
             joint_limits=joint_limits, wf=wf, L=L,
             duration=duration, dt=dt,
-            margin_ratio=0.08 # 尽量覆盖限位范围，碰撞检查确保安全
+            margin_ratio=0.02 
         )
 
         ok = True
         # 1) Joint limit check
-        for i in range(ndof):
+        for i in range(len(joint_limits)):
             low, high = joint_limits[i]
             if not np.all((q[:, i] >= low) & (q[:, i] <= high)):
                 ok = False
                 break
         
-        # 2) Self-collision check (if checker provided)
-        if ok and collision_checker is not None:
-            # Check collisions roughly every 50ms to save time
+        # 2) Self-collision check
+        if ok and local_checker is not None:
             stride = max(1, int(round(0.05 / dt)))
-            
-            # Use provided q_fixed as base for full body configuration
             if q_fixed is None:
-                q_full_base = np.zeros(collision_checker.model.nq)
+                q_full_base = np.zeros(local_checker.model.nq)
             else:
                 q_full_base = q_fixed.copy()
             
-            if arm_indices is None:
-                arm_indices = range(6, 13)
-
             for idx in range(0, q.shape[0], stride):
                 q_full = q_full_base.copy()
                 q_full[arm_indices] = q[idx, :]
-                
-                if collision_checker.check_collision(q_full):
+                if local_checker.check_collision(q_full, margin=0.0):
                     ok = False
                     break
             
-            # Check last point if not included
             if ok and (q.shape[0]-1) % stride != 0:
                 q_full = q_full_base.copy()
                 q_full[arm_indices] = q[-1, :]
-                if collision_checker.check_collision(q_full):
+                if local_checker.check_collision(q_full, margin=0.0):
                     ok = False
 
         if ok:
-            if collision_checker:
-                print(f"✅ Trajectory within limits and collision-free on attempt {attempt}")
-            else:
-                print(f"✅ Trajectory within limits on attempt {attempt}")
-            return t, q
+            return t, q, attempt
+            
+    return None
+
+def generate_q_with_limits(joint_limits, wf, L, duration, dt, collision_checker=None, arm_indices=None, q_fixed=None, max_attempts=1000, multi_arm=False, urdf_path=None, srdf_path=None):
+    ndof_total = len(joint_limits)
     
-    raise RuntimeError("Failed to generate a valid trajectory within joint limits.")
+    if urdf_path and os.path.exists(urdf_path):
+        num_workers = multiprocessing.cpu_count()
+        print(f"🚀 Spawning {num_workers} processes for parallel trajectory generation...")
+        
+        attempts_per_worker = max(100, max_attempts // num_workers)
+
+        import tempfile
+        counter_file = os.path.join(tempfile.gettempdir(), f"trajgen_counter_{os.getpid()}")
+        with open(counter_file, 'w') as f:
+            f.write('0')
+
+        stop_monitor = threading.Event()
+
+        def _monitor_counter():
+            while not stop_monitor.is_set():
+                stop_monitor.wait(1.0)
+                if not stop_monitor.is_set():
+                    try:
+                        with open(counter_file, 'r') as f:
+                            val = int(f.read().strip())
+                        print(f"  ... total attempts: {val} ...")
+                    except Exception:
+                        pass
+
+        monitor_thread = threading.Thread(target=_monitor_counter, daemon=True)
+        monitor_thread.start()
+
+        executor = ProcessPoolExecutor(max_workers=num_workers)
+        futures = {
+            executor.submit(
+                _parallel_worker,
+                i, joint_limits, wf, L, duration, dt,
+                urdf_path, srdf_path, arm_indices, q_fixed,
+                attempts_per_worker
+            ): i for i in range(num_workers)
+        }
+
+        def _kill_workers(exc):
+            stop_monitor.set()
+            procs = list(exc._processes.values()) if exc._processes else []
+            exc.shutdown(wait=False, cancel_futures=True)
+            for p in procs:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+
+        for future in as_completed(futures):
+            result = future.result()
+            if result is not None:
+                t, q, attempt = result
+                try:
+                    with open(counter_file, 'r') as f:
+                        total = int(f.read().strip())
+                except Exception:
+                    total = attempt
+                print(f"✅ Trajectory found by parallel Worker {futures[future]} on attempt {attempt}, total attempts: {total}")
+                _kill_workers(executor)
+                try:
+                    os.remove(counter_file)
+                except Exception:
+                    pass
+                return t, q
+
+        _kill_workers(executor)
+        try:
+            os.remove(counter_file)
+        except Exception:
+            pass
+        print("❌ All parallel processes failed after exhausting all attempts. Please try again.")
+        sys.exit(1)
 
 def save_q(q, out_dir):
     os.makedirs(os.path.dirname(out_dir), exist_ok=True)
@@ -173,17 +263,17 @@ def save_q(q, out_dir):
 # -------------------------------
 # 2) Plotting Logic
 # -------------------------------
-def arms_trajectory_plot(arm_side, base_dir, ndof, joint_limits, dt=0.01):
+def arms_trajectory_plot(arm_side, data_dir, save_dir, ndof, joint_limits, dt=0.01):
     """
     Plot two trajectory segments for one arm side in a large figure.
     Layout: Rows = Segments, Columns = Joints
     """
-    traj_paths = [os.path.join(base_dir, f"traj_{i}.dat") for i in [1, 2]]
+    traj_paths = [os.path.join(data_dir, f"traj{i}.dat") for i in [1, 2]]
     
     # Check if files exist
     valid_paths = [p for p in traj_paths if os.path.exists(p)]
     if not valid_paths:
-        print(f"No trajectory files found for {arm_side} at {base_dir}")
+        print(f"No trajectory files found for {arm_side} at {data_dir}")
         return
 
     # Rows are segments, Columns are joints
@@ -218,10 +308,9 @@ def arms_trajectory_plot(arm_side, base_dir, ndof, joint_limits, dt=0.01):
     fig.suptitle(f"{arm_side.upper()} ARM Trajectories Comparison", fontsize='large')
     fig.tight_layout(rect=[0, 0.03, 1, 0.95])
     
-    save_path = os.path.join(base_dir, f"{arm_side}_traj.png")
+    save_path = os.path.join(save_dir, f"{arm_side}_traj.png")
     plt.savefig(save_path)
     print(f"Saved plot to: {save_path}")
-    plt.show()
 
 # -------------------------------
 # Main Execution
@@ -231,14 +320,15 @@ if __name__ == "__main__":
     duration = 60.0
     dt = 0.01
     plot = False
-    wf = 0.3 * np.pi
-    L = 5
+    wf = 0.12 * np.pi # 轨迹基频
+    L = 3             # 轨迹谐波数
     ndof = 7
 
     # Setup Paths
     config_path = os.path.join(os.path.expanduser("~"), "dexe_robot_server_data/robot_config.yaml")
     srdf_path = None
     robot_version_key = None
+    config = {}
     
     if os.path.exists(config_path):
         import yaml
@@ -247,7 +337,11 @@ if __name__ == "__main__":
                 config = yaml.safe_load(f)
                 extracted_urdf = config.get('file_path', {}).get('robot_urdf')
                 if extracted_urdf:
-                    urdf_path = extracted_urdf
+                    ee_urdf_path = os.path.join(os.path.dirname(extracted_urdf), "robot_with_ee.urdf")
+                    if os.path.exists(ee_urdf_path):
+                        urdf_path = ee_urdf_path
+                    else:
+                        urdf_path = extracted_urdf
                     srdf_path = urdf_path.replace('.urdf', '.srdf')
                 robot_type = config.get("robot_type", "")
                 version = config.get("version", "")
@@ -277,64 +371,85 @@ if __name__ == "__main__":
         exit(1)
 
     model = collision_checker.model
-    
-    # Resting positions (Safe positions to avoid collisions)
-    q_torso_rest = np.array([0.5, -1.0, 0.5, 0.0, 0.0, 0.0])
-    q_left_rest  = np.array([-0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5])
-    q_right_rest = np.array([-0.5, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5])
 
-    # Define arms
-    arms = {
-        'left': {
-            'indices': range(6, 13),
-            'q_fixed': np.concatenate([q_torso_rest, np.zeros(7), q_right_rest])
-        },
-        'right': {
-            'indices': range(13, 20),
-            'q_fixed': np.concatenate([q_torso_rest, q_left_rest, np.zeros(7)])
-        }
-    }
+    ros2_to_urdf_map = config.get('ros2_to_urdf_map', None)
 
-    # Output directory
+    if ros2_to_urdf_map:
+        map_keys = list(ros2_to_urdf_map.keys())
+
+        def get_urdf_qidx(urdf_joint_name):
+            joint_id = model.getJointId(urdf_joint_name)
+            if joint_id >= model.njoints:
+                raise RuntimeError(f"Joint '{urdf_joint_name}' not found in URDF model")
+            return model.joints[joint_id].idx_v
+
+        urdf_q_indices = {k: get_urdf_qidx(v) for k, v in ros2_to_urdf_map.items()}
+
+        torso_indices = [urdf_q_indices[k] for k in map_keys[:6]]
+        left_indices = [urdf_q_indices[k] for k in map_keys[6:13]]
+        right_indices = [urdf_q_indices[k] for k in map_keys[13:20]]
+    else:
+        torso_indices = list(range(6))
+        left_indices = list(range(6, 13))
+        right_indices = list(range(13, 20))
+
+    combined_indices = left_indices + right_indices
+
+    q_torso_rest = np.zeros(len(torso_indices))
+    q_left_rest  = np.array([0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5])
+    q_right_rest = np.array([0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5])
+
+    arm_names = ['left', 'right']
+
     script_dir = Path(__file__).parent
     base_traj_dir = script_dir / 'trajectories'
     if robot_version_key:
         base_traj_dir = base_traj_dir / robot_version_key
 
-    for arm_side, arm_config in arms.items():
-        print(f"\n--- Generating for {arm_side.upper()} ARM ---")
-        indices = arm_config['indices']
-        q_fixed = arm_config['q_fixed']
-        
-        # Get joint limits for this arm
-        joint_limits = [(model.lowerPositionLimit[i], model.upperPositionLimit[i]) for i in indices]
-        
-        arm_traj_dir = base_traj_dir / arm_side
-        for seg_idx in [1, 2]:
-            traj_name = f"traj{seg_idx}"
-            traj_path = arm_traj_dir / f"{traj_name}.dat"
-            
-            print(f"Generating {traj_name} ({duration}s)...")
-            try:
-                t, q = generate_q_with_limits(
-                    joint_limits=joint_limits, 
-                    wf=wf, L=L, 
-                    duration=duration, 
-                    dt=dt, 
-                    collision_checker=collision_checker,
-                    arm_indices=indices,
-                    q_fixed=q_fixed
-                )
-                
-                save_q(q, str(traj_path))
-                
-            except Exception as e:
-                print(f"Error generating for {arm_side} {traj_name}: {e}")
-                import traceback
-                traceback.print_exc()
+    combined_limits = [(model.lowerPositionLimit[i], model.upperPositionLimit[i]) for i in combined_indices]
 
-        # After generating both segments, plot them together
+    q_fixed_base = np.zeros(model.nq)
+    q_fixed_base[torso_indices] = q_torso_rest
+
+    for seg_idx in [1, 2]:
+        traj_name = f"traj{seg_idx}"
+        print(f"\n--- Generating Combined {traj_name.upper()} (Both Arms) ---")
+        
         try:
-            arms_trajectory_plot(arm_side, str(arm_traj_dir), ndof, joint_limits, dt=dt)
+            # Generate combined trajectory for both arms (14 DOF) with collision detection
+            t, q_combined = generate_q_with_limits(
+                joint_limits=combined_limits, 
+                wf=wf, L=L, 
+                duration=duration, 
+                dt=dt, 
+                collision_checker=collision_checker,
+                arm_indices=combined_indices,
+                q_fixed=q_fixed_base,
+                max_attempts=10000, # Increased attempts for combined check
+                urdf_path=urdf_path,
+                srdf_path=srdf_path
+            )
+            
+            # Split and save for each arm
+            q_left = q_combined[:, :7]
+            q_right = q_combined[:, 7:]
+            
+            for arm_side, q_arm in zip(['left', 'right'], [q_left, q_right]):
+                arm_traj_dir = base_traj_dir / arm_side
+                traj_path = arm_traj_dir / f"{traj_name}.dat"
+                save_q(q_arm, str(traj_path))
+                
+        except Exception as e:
+            print(f"Error generating combined {traj_name}: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # After generating all segments, plot for each arm
+    for arm_side in ['left', 'right']:
+        arm_traj_dir = base_traj_dir / arm_side
+        indices = left_indices if arm_side == 'left' else right_indices
+        joint_limits = [(model.lowerPositionLimit[i], model.upperPositionLimit[i]) for i in indices]
+        try:
+            arms_trajectory_plot(arm_side, str(arm_traj_dir), str(arm_traj_dir), ndof, joint_limits, dt=dt)
         except Exception as e:
             print(f"Error plotting for {arm_side}: {e}")

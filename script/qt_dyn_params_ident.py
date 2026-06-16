@@ -14,7 +14,6 @@ from rclpy.executors import MultiThreadedExecutor
 from joint_interfaces.msg import JointPositionControl
 from robot_server_interfaces.srv import SetProperty
 from std_msgs.msg import Header, String
-from sensor_msgs.msg import JointState
 import numpy as np
 import matplotlib
 
@@ -45,6 +44,20 @@ def skew(v):
 
 
 class DynParamIdentifier(Node):
+    # Default rest positions
+    q_torso_rest = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    q_left_rest = [0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5]
+    q_right_rest = [0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5]
+
+    def get_full_target_position(self, arm_q, is_left=True):
+        if is_left:
+            return [*self.q_torso_rest, *arm_q, *self.q_right_rest]
+        else:
+            return [*self.q_torso_rest, *self.q_left_rest, *arm_q]
+
+    def get_rest_position(self):
+        return [*self.q_torso_rest, *self.q_left_rest, *self.q_right_rest]
+
     def __init__(self, traj="traj1", logger_callable=None):
         super().__init__("qt_dyn_params_ident")
         self.log_msg = logger_callable
@@ -176,7 +189,7 @@ class DynParamIdentifier(Node):
         local_dt = getattr(self, "_sim_dt_override", self.dt)
         if self.is_left:
             # 运动到第一个点
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+            target_position = self.get_full_target_position(q_ref[0, :], is_left=True)
             if not self.move_joint(is_sim=True, target_position=target_position):
                 return False
             self.log_msg(
@@ -187,7 +200,7 @@ class DynParamIdentifier(Node):
                 if self._stop_flag.is_set():
                     self.log_msg("仿真停止指令收到，提前结束。")
                     return False
-                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[i, :], 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+                target_position = self.get_full_target_position(q_ref[i, :], is_left=True)
                 if not self._joint_publisher(
                     is_sim=True, target_position=target_position
                 ):
@@ -196,7 +209,7 @@ class DynParamIdentifier(Node):
                 self._sleep_until(next_t)
         else:
             # 运动到第一个点
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]] # fmt: skip
+            target_position = self.get_full_target_position(q_ref[0, :], is_left=False)
             if not self.move_joint(is_sim=True, target_position=target_position):
                 return False
             self.log_msg(
@@ -207,7 +220,7 @@ class DynParamIdentifier(Node):
                 if self._stop_flag.is_set():
                     self.log_msg("仿真停止指令收到，提前结束。")
                     return False
-                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[i, :]] # fmt: skip
+                target_position = self.get_full_target_position(q_ref[i, :], is_left=False)
                 if not self._joint_publisher(
                     is_sim=True, target_position=target_position
                 ):
@@ -218,7 +231,7 @@ class DynParamIdentifier(Node):
             time.sleep(1)  # 发送结束后等待1s
             self.log_msg("仿真轨迹执行完成, 返回初始姿态。")
             # 返回初始姿态
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+            target_position = self.get_rest_position()
             self.move_joint(is_sim=True, target_position=target_position)
         return True
 
@@ -269,7 +282,44 @@ class DynParamIdentifier(Node):
         if not self._stop_flag.is_set():
             time.sleep(1)  # 发送结束后等待1s
             self.log_msg("所有轨迹采集完成, 返回初始姿态。")
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+            target_position = self.get_rest_position()
+            ret = self.move_joint(is_sim=False, target_position=target_position)
+            if not ret:
+                return False
+            self.log_msg("已返回初始姿态")
+        return True
+
+    def run_real_capture_arm(self, is_left):
+        self.set_safe_level(1.0)
+        self._stop_flag.clear()
+        orig_is_left = self.is_left
+        orig_traj = self.traj
+
+        traj_list = ["traj1", "traj2"]
+        side = "left" if is_left else "right"
+        side_dir = os.path.join(self.rec_dir, side)
+        os.makedirs(side_dir, exist_ok=True)
+
+        self.is_left = is_left
+        for traj_name in traj_list:
+            if self._stop_flag.is_set():
+                self.log_msg("收到停止指令，终止剩余真机采集。")
+                return False
+            self.traj = traj_name
+            self.traj_path = os.path.join(self.traj_dir, side, f"{self.traj}.dat")
+            rec_path = os.path.join(side_dir, f"rbtlog_{self.traj}.dat")
+            if not self._run_real_capture_once(self.traj_path, rec_path):
+                return False
+
+        self.is_left = orig_is_left
+        self.traj = orig_traj
+        side_dir_orig = "left" if self.is_left else "right"
+        self.traj_path = os.path.join(self.traj_dir, side_dir_orig, f"{self.traj}.dat")
+        if not self._stop_flag.is_set():
+            time.sleep(1)
+            arm_label = "左" if is_left else "右"
+            self.log_msg(f"{arm_label}臂轨迹采集完成, 返回初始姿态。")
+            target_position = self.get_rest_position()
             ret = self.move_joint(is_sim=False, target_position=target_position)
             if not ret:
                 return False
@@ -279,11 +329,13 @@ class DynParamIdentifier(Node):
     def _run_real_capture_once(self, traj_path, rec_path):
         with open(traj_path, "r") as file:
             q_ref = np.loadtxt(file)
+        # 使用GUI设置的真机步长覆盖
+        local_dt = getattr(self, "_real_dt_override", self.dt)
         rec = np.zeros((q_ref.shape[0], 1 + 7 + 7))
         if self.is_left:
             # 运动到第一个点
             self.log_msg("正在运动到左臂轨迹起始点...")
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[0, :], 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+            target_position = self.get_full_target_position(q_ref[0, :], is_left=True)
             ret = self.move_joint(is_sim=False, target_position=target_position)
             if not ret:
                 return False
@@ -294,24 +346,31 @@ class DynParamIdentifier(Node):
                 if self._stop_flag.is_set():
                     self.log_msg("收到停止指令，终止当前段采集。")
                     return False
-                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, *q_ref[i, :], 0.0, 1.2, 0.0, 1.0, 0.0, 0.5, 0.5] # fmt: skip
+                target_position = self.get_full_target_position(q_ref[i, :], is_left=True)
                 if not self._joint_publisher(
                     is_sim=False, target_position=target_position
                 ):
                     return False
+                _eps = 1e-9
+                _sensor_slice = self.joint_torque_sensor[6:13] if self.joint_torque_sensor else []
+                tau_data = (
+                    _sensor_slice
+                    if _sensor_slice and any(abs(v) > _eps for v in _sensor_slice)
+                    else self.joint_torque[6:13]
+                )
                 rec[i, :] = np.concatenate(
                     [
                         np.array([float(self.timestamp - time0) * 1e-9]),
                         np.array(self.joint_position[6:13]),
-                        np.array(self.joint_torque[6:13]),
+                        np.array(tau_data),
                     ]
                 )
-                next_t = self._fixed_rate_next(next_t, self.dt)
+                next_t = self._fixed_rate_next(next_t, local_dt)
                 self._sleep_until(next_t)
         else:
             # 运动到第一个点
             self.log_msg("正在运动到右臂轨迹起始点...")
-            target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[0, :]] # fmt: skip
+            target_position = self.get_full_target_position(q_ref[0, :], is_left=False)
             ret = self.move_joint(is_sim=False, target_position=target_position)
             if not ret:
                 return False
@@ -322,19 +381,26 @@ class DynParamIdentifier(Node):
                 if self._stop_flag.is_set():
                     self.log_msg("收到停止指令，终止当前段采集。")
                     return False
-                target_position = [0.5, -1.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, *q_ref[i, :]] # fmt: skip
+                target_position = self.get_full_target_position(q_ref[i, :], is_left=False)
                 if not self._joint_publisher(
                     is_sim=False, target_position=target_position
                 ):
                     return False
+                _eps = 1e-9
+                _sensor_slice = self.joint_torque_sensor[13:20] if self.joint_torque_sensor else []
+                tau_data = (
+                    _sensor_slice
+                    if _sensor_slice and any(abs(v) > _eps for v in _sensor_slice)
+                    else self.joint_torque[13:20]
+                )
                 rec[i, :] = np.concatenate(
                     [
                         np.array([float(self.timestamp - time0) * 1e-9]),
                         np.array(self.joint_position[13:20]),
-                        np.array(self.joint_torque[13:20]),
+                        np.array(tau_data),
                     ]
                 )
-                next_t = self._fixed_rate_next(next_t, self.dt)
+                next_t = self._fixed_rate_next(next_t, local_dt)
                 self._sleep_until(next_t)
         # 仅在未停止时保存
         if not self._stop_flag.is_set():
@@ -483,14 +549,16 @@ class DynParamIdentifier(Node):
             ax2.plot(
                 t_raw_cut,
                 tau_cut[:, j],
-                label="Measured τ (Nm)",
+                label="Measured τ",
                 color="tab:red",
                 linewidth=1,
             )
             ax2.set_ylabel("Torque (Nm)", color="tab:red")
             ax1.tick_params(axis="y", labelcolor="tab:blue")
             ax2.tick_params(axis="y", labelcolor="tab:red")
-            ax1.legend(loc="upper right", fontsize="small")
+            h1, l1 = ax1.get_legend_handles_labels()
+            h2, l2 = ax2.get_legend_handles_labels()
+            ax1.legend(h1 + h2, l1 + l2, loc="upper right", fontsize="small")
 
     def _robot_state_callback(self, msg):
         self._last_msg_time = self.get_clock().now().nanoseconds / 1e9
@@ -504,9 +572,11 @@ class DynParamIdentifier(Node):
             msg_joint_names = state["joint_name"]
             msg_joint_positions = [float(x) for x in state["joint_position"]]
             msg_joint_torques = [float(x) for x in state.get("joint_torque", [])]
+            msg_joint_torques_sensor = [float(x) for x in state.get("joint_torque_sensor", [])]
             
             full_pos = []
             full_tau = []
+            full_tau_sensor = []
             for name in self.joint_full_names:
                 if name in msg_joint_names:
                     idx = msg_joint_names.index(name)
@@ -515,13 +585,18 @@ class DynParamIdentifier(Node):
                         full_tau.append(msg_joint_torques[idx])
                     else:
                         full_tau.append(0.0)
+                    if idx < len(msg_joint_torques_sensor):
+                        full_tau_sensor.append(msg_joint_torques_sensor[idx])
+                    else:
+                        full_tau_sensor.append(0.0)
                 else:
                     full_pos.append(0.0)
                     full_tau.append(0.0)
-            
+                    full_tau_sensor.append(0.0)
             self.joint_name = self.joint_full_names
             self.joint_position = full_pos
             self.joint_torque = full_tau
+            self.joint_torque_sensor = full_tau_sensor
 
     def _robot_state_callback_sim(self, msg):
         self._last_msg_time_sim = self.get_clock().now().nanoseconds / 1e9
@@ -533,9 +608,10 @@ class DynParamIdentifier(Node):
             msg_joint_names = state["joint_name"]
             msg_joint_positions = [float(x) for x in state["joint_position"]]
             msg_joint_torques = [float(x) for x in state.get("joint_torque", [])]
-            
+            msg_joint_torques_sensor = [float(x) for x in state.get("joint_torque_sensor", [])]
             full_pos = []
             full_tau = []
+            full_tau_sensor = []
             for name in self.joint_full_names:
                 if name in msg_joint_names:
                     idx = msg_joint_names.index(name)
@@ -544,19 +620,24 @@ class DynParamIdentifier(Node):
                         full_tau.append(msg_joint_torques[idx])
                     else:
                         full_tau.append(0.0)
+                    if idx < len(msg_joint_torques_sensor):
+                        full_tau_sensor.append(msg_joint_torques_sensor[idx])
+                    else:
+                        full_tau_sensor.append(0.0)
                 else:
                     full_pos.append(0.0)
                     full_tau.append(0.0)
             
             self.joint_position_sim = full_pos
             self.joint_torque_sim = full_tau
+            self.joint_torque_sensor_sim = full_tau_sensor
 
 
 import sympy, sympybotics, scipy.signal, lmi_sdp, subprocess
 from sympy import BlockMatrix, Matrix, eye, Identity
 from lmi_sdp import LMI
 from sympybotics.dynident.regression import mrepl
-from dyn_params_ident.urdf2dh import get_dh_params_for_arm
+from dyn_params_ident.urdf2dh import get_dh_params_for_arm, get_gravity_in_dh_base
 
 class DynParamCalculator:
     """
@@ -585,6 +666,8 @@ class DynParamCalculator:
         arm_side = "left" if self.is_left else "right"
         dh_params = get_dh_params_for_arm(arm_side)
         self.log_msg(f"DH parameters for {robot_type} {arm_side} arm:\n{dh_params}")
+        gravity = get_gravity_in_dh_base(arm_side)
+        self.log_msg(f"Gravity direction in {arm_side} arm base: ({gravity[0]:.4f}, {gravity[1]:.4f}, {gravity[2]:.4f})")
         self.rbtdef_num = sympybotics.RobotDef(
             f"{robot_type}_{arm_side}",
             dh_params,
@@ -592,11 +675,7 @@ class DynParamCalculator:
         )
         self.rbtdef_num.frictionmodel = {"Coulomb", "viscous", "offset"}
         self.rbtdef_num.driveinertiamodel = "simplified"
-        self.rbtdef_num.gravityacc = (
-            sympy.Matrix([-9.81, 0.0, 0.0])
-            if self.is_left
-            else sympy.Matrix([9.81, 0.0, 0.0])
-        )
+        self.rbtdef_num.gravityacc = sympy.Matrix(gravity)
         rbt = sympybotics.RobotDynCode(self.rbtdef_num, verbose=True)
         rbt.calc_base_parms()
         return rbt
@@ -1079,10 +1158,68 @@ class DynParamGUI(QtWidgets.QMainWindow):
         bottom_vbox = QtWidgets.QVBoxLayout(bottom_group)
         bottom_vbox.setContentsMargins(8, 8, 8, 8)
         bottom_vbox.setSpacing(8)
-        self.btn_run_real = QtWidgets.QPushButton("真机采集轨迹")
+        self.btn_run_real = QtWidgets.QPushButton("真机采集所有轨迹")
+        
+        # 真机采集倍速选择
+        self.real_speed_combo = QtWidgets.QComboBox()
+        self.real_speed_combo.addItems(["x1倍速", "x0.5倍速"])
+        self.real_speed_combo.setCurrentText("x1倍速")
+        self.real_speed_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        fm_real = self.real_speed_combo.fontMetrics()
+        max_text_real = max(["x1倍速", "x0.5倍速"], key=lambda s: fm_real.width(s))
+        width_real = fm_real.width(max_text_real) + 36
+        self.real_speed_combo.setFixedWidth(width_real)
+        self.real_speed_combo.setFixedHeight(btn_h)
+        self.real_speed_combo.setStyleSheet(
+            f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}"
+        )
+
+        real_row = QtWidgets.QWidget()
+        real_row_layout = QtWidgets.QHBoxLayout(real_row)
+        real_row_layout.setContentsMargins(0, 0, 0, 0)
+        real_row_layout.setSpacing(8)
+        real_row_layout.addWidget(self.btn_run_real)
+        real_row_layout.addWidget(self.real_speed_combo)
+        bottom_vbox.addWidget(real_row)
+
+        self.btn_run_real_left = QtWidgets.QPushButton("真机采集左臂轨迹")
+        self.real_left_speed_combo = QtWidgets.QComboBox()
+        self.real_left_speed_combo.addItems(["x1倍速", "x0.5倍速"])
+        self.real_left_speed_combo.setCurrentText("x1倍速")
+        self.real_left_speed_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        self.real_left_speed_combo.setFixedWidth(width_real)
+        self.real_left_speed_combo.setFixedHeight(btn_h)
+        self.real_left_speed_combo.setStyleSheet(
+            f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}"
+        )
+        real_left_row = QtWidgets.QWidget()
+        real_left_row_layout = QtWidgets.QHBoxLayout(real_left_row)
+        real_left_row_layout.setContentsMargins(0, 0, 0, 0)
+        real_left_row_layout.setSpacing(8)
+        real_left_row_layout.addWidget(self.btn_run_real_left)
+        real_left_row_layout.addWidget(self.real_left_speed_combo)
+        bottom_vbox.addWidget(real_left_row)
+
+        self.btn_run_real_right = QtWidgets.QPushButton("真机采集右臂轨迹")
+        self.real_right_speed_combo = QtWidgets.QComboBox()
+        self.real_right_speed_combo.addItems(["x1倍速", "x0.5倍速"])
+        self.real_right_speed_combo.setCurrentText("x1倍速")
+        self.real_right_speed_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        self.real_right_speed_combo.setFixedWidth(width_real)
+        self.real_right_speed_combo.setFixedHeight(btn_h)
+        self.real_right_speed_combo.setStyleSheet(
+            f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}"
+        )
+        real_right_row = QtWidgets.QWidget()
+        real_right_row_layout = QtWidgets.QHBoxLayout(real_right_row)
+        real_right_row_layout.setContentsMargins(0, 0, 0, 0)
+        real_right_row_layout.setSpacing(8)
+        real_right_row_layout.addWidget(self.btn_run_real_right)
+        real_right_row_layout.addWidget(self.real_right_speed_combo)
+        bottom_vbox.addWidget(real_right_row)
+
         self.btn_calc_params = QtWidgets.QPushButton("计算动力学参数")
         self.btn_write_params = QtWidgets.QPushButton("写入辨识参数")
-        bottom_vbox.addWidget(self.btn_run_real)
         # 图示已采集轨迹放在真机采集所有轨迹下方
         bottom_vbox.addWidget(self.btn_show_plot)
         ctrl_layout.addWidget(bottom_group)
@@ -1165,12 +1302,17 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_open_meshcat.clicked.connect(self._start_visual_node)
         self.btn_run_sim.clicked.connect(self.on_run_sim)
         self.btn_run_real.clicked.connect(self.on_run_real)
+        self.btn_run_real_left.clicked.connect(self.on_run_real_left)
+        self.btn_run_real_right.clicked.connect(self.on_run_real_right)
         self.btn_show_reference.clicked.connect(self.on_show_reference)
         self.btn_show_plot.clicked.connect(self.on_show_plot)
         self.btn_calc_params.clicked.connect(self.on_calc_params)
         self.btn_write_params.clicked.connect(self.on_write_params)
         # 倍速选择变化
         self.sim_speed_combo.currentTextChanged.connect(self._on_sim_speed_changed)
+        self.real_speed_combo.currentTextChanged.connect(self._on_real_speed_changed)
+        self.real_left_speed_combo.currentTextChanged.connect(self._on_real_left_speed_changed)
+        self.real_right_speed_combo.currentTextChanged.connect(self._on_real_right_speed_changed)
         # 新增：停止按钮连接
         self.btn_stop.clicked.connect(self.on_stop_clicked)
         # 新增：图示辨识结果按钮
@@ -1208,6 +1350,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self._show_dex_features = "--dev" in sys.argv
         if not getattr(self, "_show_dex_features", False):
             self.btn_calc_params.setDisabled(True)
+        else:
+            self.btn_show_plot.setDisabled(False)
 
         self._did_initial_ref_plot = False
 
@@ -1235,19 +1379,27 @@ class DynParamGUI(QtWidgets.QMainWindow):
         try:
             self.btn_run_sim.setDisabled(disabled)
             self.btn_run_real.setDisabled(disabled)
+            self.btn_run_real_left.setDisabled(disabled)
+            self.btn_run_real_right.setDisabled(disabled)
             # 可视化始终可用
             self.btn_open_meshcat.setDisabled(False)
             # 待采集参考轨迹：仅随操作禁用，不受采集/计算状态限制
             self.btn_show_reference.setDisabled(disabled)
             # 仿真倍速选择在运行/计算时也禁用
             self.sim_speed_combo.setDisabled(disabled)
+            self.real_speed_combo.setDisabled(disabled)
+            self.real_left_speed_combo.setDisabled(disabled)
+            self.real_right_speed_combo.setDisabled(disabled)
             # 根据采集完成状态决定是否可用
             self.btn_show_plot.setDisabled(
                 True if disabled else (not self._captured_finished)
             )
-            self.btn_calc_params.setDisabled(
-                True if disabled else (not self._captured_finished)
-            )
+            if getattr(self, "_show_dex_features", False):
+                self.btn_calc_params.setDisabled(disabled)
+            else:
+                self.btn_calc_params.setDisabled(
+                    True if disabled else (not self._captured_finished)
+                )
             # 根据计算完成状态决定是否可用
             self.btn_show_regression.setDisabled(
                 True if disabled else (not self._params_calculated)
@@ -1302,6 +1454,30 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.log_msg(f"仿真速度系数设置为 {self._sim_speed_mult}x")
         except Exception:
             self._sim_speed_mult = 1.0
+
+    def _on_real_speed_changed(self, text: str):
+        try:
+            mapping = {"x1倍速": 1.0, "x0.5倍速": 0.5}
+            self._real_speed_mult = mapping.get(text, 1.0)
+            self.log_msg(f"真机采集速度系数设置为 {self._real_speed_mult}x")
+        except Exception:
+            self._real_speed_mult = 1.0
+
+    def _on_real_left_speed_changed(self, text: str):
+        try:
+            mapping = {"x1倍速": 1.0, "x0.5倍速": 0.5}
+            self._real_left_speed_mult = mapping.get(text, 1.0)
+            self.log_msg(f"左臂真机采集速度系数设置为 {self._real_left_speed_mult}x")
+        except Exception:
+            self._real_left_speed_mult = 1.0
+
+    def _on_real_right_speed_changed(self, text: str):
+        try:
+            mapping = {"x1倍速": 1.0, "x0.5倍速": 0.5}
+            self._real_right_speed_mult = mapping.get(text, 1.0)
+            self.log_msg(f"右臂真机采集速度系数设置为 {self._real_right_speed_mult}x")
+        except Exception:
+            self._real_right_speed_mult = 1.0
 
     def _open_meshcat_url(self):
         try:
@@ -1388,6 +1564,13 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def on_run_real(self):
         self.update_params_from_ui()
+        # 根据倍速系数调整真机采集步长
+        try:
+            self.dyn._real_dt_override = float(self.dyn.dt) / max(
+                0.1, float(getattr(self, "_real_speed_mult", 1.0))
+            )
+        except Exception:
+            self.dyn._real_dt_override = self.dyn.dt
         # 弹窗确认
         msg = (
             "将执行真机采集：\n\n"
@@ -1433,6 +1616,102 @@ class DynParamGUI(QtWidgets.QMainWindow):
             except Exception:
                 pass
 
+    def on_run_real_left(self):
+        self.update_params_from_ui()
+        try:
+            self.dyn._real_dt_override = float(self.dyn.dt) / max(
+                0.1, float(getattr(self, "_real_left_speed_mult", 1.0))
+            )
+        except Exception:
+            self.dyn._real_dt_override = self.dyn.dt
+        msg = (
+            "将执行左臂真机采集：\n\n"
+            "- 左臂采集2段轨迹（辨识+验证）\n"
+            "- 轨迹范围较大，请注意安全并离开机器人手臂运动范围!\n\n"
+            "是否确认开始？"
+        )
+        mbox = QtWidgets.QMessageBox(self)
+        mbox.setIcon(QtWidgets.QMessageBox.NoIcon)
+        mbox.setWindowTitle("确认开始左臂真机采集")
+        mbox.setText(msg)
+        mbox.setWindowModality(QtCore.Qt.ApplicationModal)
+        mbox.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+        btn_confirm = mbox.addButton("确认", QtWidgets.QMessageBox.YesRole)
+        btn_cancel = mbox.addButton("取消", QtWidgets.QMessageBox.NoRole)
+        mbox.setDefaultButton(btn_cancel)
+        mbox.exec_()
+        if mbox.clickedButton() is not btn_confirm:
+            self.log_msg("已取消左臂真机采集。")
+            return
+        self.log_msg("开始进行左臂真机采集, 请注意安全!")
+        self.disable_buttons(True)
+        t = threading.Thread(target=self._thread_run_real_left, daemon=True)
+        t.start()
+
+    def _thread_run_real_left(self):
+        try:
+            if self.dyn.run_real_capture_arm(is_left=True):
+                self.log_msg("左臂真机采集结束")
+                self._captured_finished = True
+                self._plot_records_on_canvas()
+        except Exception as e:
+            self.log_msg("左臂真机采集出错: " + str(e))
+        finally:
+            try:
+                QtCore.QMetaObject.invokeMethod(
+                    self, "enable_buttons", QtCore.Qt.QueuedConnection
+                )
+            except Exception:
+                pass
+
+    def on_run_real_right(self):
+        self.update_params_from_ui()
+        try:
+            self.dyn._real_dt_override = float(self.dyn.dt) / max(
+                0.1, float(getattr(self, "_real_right_speed_mult", 1.0))
+            )
+        except Exception:
+            self.dyn._real_dt_override = self.dyn.dt
+        msg = (
+            "将执行右臂真机采集：\n\n"
+            "- 右臂采集2段轨迹（辨识+验证）\n"
+            "- 轨迹范围较大，请注意安全并离开机器人手臂运动范围!\n\n"
+            "是否确认开始？"
+        )
+        mbox = QtWidgets.QMessageBox(self)
+        mbox.setIcon(QtWidgets.QMessageBox.NoIcon)
+        mbox.setWindowTitle("确认开始右臂真机采集")
+        mbox.setText(msg)
+        mbox.setWindowModality(QtCore.Qt.ApplicationModal)
+        mbox.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+        btn_confirm = mbox.addButton("确认", QtWidgets.QMessageBox.YesRole)
+        btn_cancel = mbox.addButton("取消", QtWidgets.QMessageBox.NoRole)
+        mbox.setDefaultButton(btn_cancel)
+        mbox.exec_()
+        if mbox.clickedButton() is not btn_confirm:
+            self.log_msg("已取消右臂真机采集。")
+            return
+        self.log_msg("开始进行右臂真机采集, 请注意安全!")
+        self.disable_buttons(True)
+        t = threading.Thread(target=self._thread_run_real_right, daemon=True)
+        t.start()
+
+    def _thread_run_real_right(self):
+        try:
+            if self.dyn.run_real_capture_arm(is_left=False):
+                self.log_msg("右臂真机采集结束")
+                self._captured_finished = True
+                self._plot_records_on_canvas()
+        except Exception as e:
+            self.log_msg("右臂真机采集出错: " + str(e))
+        finally:
+            try:
+                QtCore.QMetaObject.invokeMethod(
+                    self, "enable_buttons", QtCore.Qt.QueuedConnection
+                )
+            except Exception:
+                pass
+
     def on_show_plot(self):
         self.update_params_from_ui()
         self.log_msg("准备图示已采集轨迹...")
@@ -1442,18 +1721,11 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def _thread_show_plot(self):
         try:
-            # 绘图时在主线程以安全方式更新 FigureCanvas
             QtCore.QMetaObject.invokeMethod(
-                self, "_plot_on_canvas", QtCore.Qt.QueuedConnection
+                self, "_plot_records_on_canvas", QtCore.Qt.QueuedConnection
             )
         except Exception as e:
             self.log_msg("绘图出错: " + str(e))
-            try:
-                QtCore.QMetaObject.invokeMethod(
-                    self, "enable_buttons", QtCore.Qt.QueuedConnection
-                )
-            except Exception:
-                pass
 
     def on_show_regression(self):
         self.update_params_from_ui()
@@ -1786,24 +2058,31 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 calc_left = self.dyn.calculator_left
                 tL, tau_raw_L, tau_pred_L = calc_left.get_regr_validatation()
                 totalL = tau_raw_L.shape[0]
+                r2_list_L = []
                 for i in range(min(ndof, tau_raw_L.shape[1])):
                     ax = axes_left[i]
                     ax.clear()
+                    measured_i = np.asarray(tau_raw_L[:, i]).flatten()[:totalL]
+                    estimated_i = np.asarray(tau_pred_L[:, i]).flatten()[:totalL]
                     ax.plot(
                         tL[:totalL],
-                        np.asarray(tau_raw_L[:, i]).flatten()[:totalL],
+                        measured_i,
                         label="Measured torque",
                         color="tab:red",
                         linewidth=1,
                     )
                     ax.plot(
                         tL[:totalL],
-                        np.asarray(tau_pred_L[:, i]).flatten()[:totalL],
+                        estimated_i,
                         label="Estimated torque",
                         color="tab:blue",
                         linewidth=1,
                     )
-                    ax.set_title(f"Joint {i+1}")
+                    ss_res = np.sum((measured_i - estimated_i) ** 2)
+                    ss_tot = np.sum((measured_i - np.mean(measured_i)) ** 2)
+                    r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+                    r2_list_L.append(r2)
+                    ax.set_title(f"Joint {i+1}  R²={r2*100:.1f}%")
                     ax.set_xlabel("Time (s)")
                     ax.set_ylabel("Torque (Nm)")
                     ax.grid(True, linestyle="--", alpha=0.4)
@@ -1816,6 +2095,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 except Exception:
                     pass
                 self.left_canvas.draw()
+                r2_str_L = ", ".join([f"J{i+1}: {v*100:.1f}%" for i, v in enumerate(r2_list_L)])
+                self.log_msg(f"左臂力矩吻合度 R²: {r2_str_L}, 平均: {np.mean(r2_list_L)*100:.1f}%")
             except Exception as e:
                 self.log_msg(
                     "左臂辨识绘图错误: "
@@ -1833,24 +2114,31 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 calc_right = self.dyn.calculator_right
                 tR, tau_raw_R, tau_pred_R = calc_right.get_regr_validatation()
                 totalR = tau_raw_R.shape[0]
+                r2_list_R = []
                 for i in range(min(ndof, tau_raw_R.shape[1])):
                     ax = axes_right[i]
                     ax.clear()
+                    measured_i = np.asarray(tau_raw_R[:, i]).flatten()[:totalR]
+                    estimated_i = np.asarray(tau_pred_R[:, i]).flatten()[:totalR]
                     ax.plot(
                         tR[:totalR],
-                        np.asarray(tau_raw_R[:, i]).flatten()[:totalR],
+                        measured_i,
                         label="Measured torque",
                         color="tab:red",
                         linewidth=1,
                     )
                     ax.plot(
                         tR[:totalR],
-                        np.asarray(tau_pred_R[:, i]).flatten()[:totalR],
+                        estimated_i,
                         label="Estimated torque",
                         color="tab:blue",
                         linewidth=1,
                     )
-                    ax.set_title(f"Joint {i+1}")
+                    ss_res = np.sum((measured_i - estimated_i) ** 2)
+                    ss_tot = np.sum((measured_i - np.mean(measured_i)) ** 2)
+                    r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+                    r2_list_R.append(r2)
+                    ax.set_title(f"Joint {i+1}  R²={r2*100:.1f}%")
                     ax.set_xlabel("Time (s)")
                     ax.set_ylabel("Torque (Nm)")
                     ax.grid(True, linestyle="--", alpha=0.4)
@@ -1863,12 +2151,27 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 except Exception:
                     pass
                 self.right_canvas.draw()
+                r2_str_R = ", ".join([f"J{i+1}: {v*100:.1f}%" for i, v in enumerate(r2_list_R)])
+                self.log_msg(f"右臂力矩吻合度 R²: {r2_str_R}, 平均: {np.mean(r2_list_R)*100:.1f}%")
             except Exception as e:
                 self.log_msg(
                     "右臂辨识绘图错误: "
                     + str(e)
                     + "。请先计算动力学参数并确保数据存在。"
                 )
+
+            r2_threshold = 0.9
+            weights = np.array([2, 2, 2, 2, 1, 1, 1])
+            mean_r2_L = np.average(r2_list_L, weights=weights) if r2_list_L else 0.0
+            mean_r2_R = np.average(r2_list_R, weights=weights) if r2_list_R else 0.0
+            if mean_r2_L < r2_threshold or mean_r2_R < r2_threshold:
+                self.log_msg(
+                    f"辨识验证失败！加权平均吻合度未达90%: 左臂 {mean_r2_L*100:.1f}%, 右臂 {mean_r2_R*100:.1f}%"
+                )
+                self._params_calculated = False
+                self.btn_write_params.setDisabled(True)
+            else:
+                self.log_msg(f"辨识验证通过，加权平均吻合度: 左臂 {mean_r2_L*100:.1f}%, 右臂 {mean_r2_R*100:.1f}%")
 
             self.log_msg("辨识结果图绘制完成。")
         finally:
@@ -1952,6 +2255,8 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     win = DynParamGUI()
     win.show()
+    win.activateWindow()
+    win.raise_()
     sys.exit(app.exec_())
 
 

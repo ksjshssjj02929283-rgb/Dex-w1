@@ -17,6 +17,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     // 创建 /feedback/joint 发布器
     feedback_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/feedback/joint", 10);
 
+    // 创建 /imu/chassis 发布器 (替代原有 imu node)
+    imu_publisher_ = this->create_publisher<sensor_msgs::msg::Imu>("/imu/chassis", 20);
+
     // 创建 /feedback/joint_velocity_torque_limit 发布器
     velocity_torque_limit_feedback_publisher_ =
         this->create_publisher<JointVelocityTorqueLimitFeedbackMsg>("/feedback/joint_velocity_torque_limit", 10);
@@ -53,6 +56,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
 
     // 创建定时器，定时发布feedback 定时器回调函数
     control_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), [this]() { PublishFeedback(); });
+
+    // 创建定时器，定时发布 IMU 数据 (2ms = 500Hz，与原 imu node 一致)
+    imu_timer_ = this->create_wall_timer(std::chrono::milliseconds(2), [this]() { PublishImu(); });
 
     // 初始化巴特沃斯滤波器和滤波开关
     for (int i = 0; i < ndof_robot; ++i) {
@@ -102,6 +108,9 @@ void RobotServer::TorqueControlThreadFunc() {
     Int64 loop_counter = 0;
     this->is_robot_ready_ = false;
     auto next_cycle_time_point = std::chrono::steady_clock::now();
+    double usage_sum = 0.0;
+    double peak_usage = 0.0;
+    int usage_count = 0;
 
     while (rclcpp::ok()) {
         loop_counter++;
@@ -196,8 +205,6 @@ void RobotServer::TorqueControlThreadFunc() {
             nanolog::LogManager::instance().write_to_logger("record", std::move(logline));
         }
 
-        auto t_log = std::chrono::steady_clock::now();
-
         // 如果机器人就绪，则写入测量数据
         if (this->is_robot_ready_) {
             // 关节反馈数据写入测量数据
@@ -229,6 +236,7 @@ void RobotServer::TorqueControlThreadFunc() {
             LOG_CRIT_THROTTLE(5000) << "Robot is not ready, shm status: " << ret
                                     << ", statusword: " << robot_feedback_.robot_status_word;
         }
+        auto t_log = std::chrono::steady_clock::now();
 
         // 力控计算处理
         torque_controller_manager.LoopOnce();
@@ -443,6 +451,26 @@ void RobotServer::TorqueControlThreadFunc() {
         control_shm_instance.AppendNewElement(robot_control_temp);
 
         auto now_time = std::chrono::steady_clock::now();
+        double current_usage =
+            static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(now_time - t_start).count()) /
+            torque_ctrl_dt_micro * 100.0;
+        usage_sum += current_usage;
+        usage_count++;
+        if (current_usage > peak_usage) {
+            peak_usage = current_usage;
+        }
+
+        static nanolog::ThrottleState stats_throttle;
+        if (stats_throttle.should_log(5000)) {
+            RCLCPP_INFO(this->get_logger(), "Avg Usage(last 5s): %.2f%%, Peak Usage: %.2f%%",
+                        (usage_sum / std::max(1, usage_count)), peak_usage);
+            LOG_INFO << "Avg Usage(last 5s): " << (usage_sum / std::max(1, usage_count)) << "%, Peak: " << peak_usage
+                     << "%";
+            usage_sum = 0.0;
+            usage_count = 0;
+            peak_usage = 0.0;
+        }
+
         if (now_time > next_cycle_time_point) {
             auto expected_start = next_cycle_time_point - std::chrono::microseconds(torque_ctrl_dt_micro);
             auto elapsed_micro =
@@ -455,6 +483,7 @@ void RobotServer::TorqueControlThreadFunc() {
             LOG_WARN_THROTTLE(1000) << "Torque control thread cycle time exceeded 100%! Usage: " << usage
                                     << "%. Breakdown(us): Feedback=" << dt_feedback << ", Log=" << dt_log
                                     << ", Torque=" << dt_torque << ", CmdAndWrite=" << dt_cmd;
+            next_cycle_time_point = now_time;
         }
 
         std::this_thread::sleep_until(next_cycle_time_point);
@@ -543,8 +572,11 @@ void RobotServer::PublishThreadFunc() {
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok()) {
         next_cycle_time_point += std::chrono::microseconds(publish_dt_micro);
-        // Publish /feedback/robot_server_state
         this->robot_server_state_publisher_->publish(GetRobotServerStateMsg());
+        auto now_time = std::chrono::steady_clock::now();
+        if (now_time > next_cycle_time_point) {
+            next_cycle_time_point = now_time;
+        }
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }
@@ -557,26 +589,19 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
     // A1/Arm模式下数据在虚拟20关节表示中的6-19位置，需要提取
     int index_offset = GetFirstJointIndex();
     // 从 JointFeedback 数组中提取字段
-    std::array<double, MAX_JOINT_NUM> position_arr_{};
-    std::array<double, MAX_JOINT_NUM> velocity_arr_{};
-    std::array<double, MAX_JOINT_NUM> torque_arr_{};
-    std::array<double, MAX_JOINT_NUM> temperature_arr_{};
-    std::array<uint16_t, MAX_JOINT_NUM> motor_status_arr_{};
-    std::array<uint16_t, MAX_JOINT_NUM> error_code_arr_{};
+    std::array<double, MAX_JOINT_NUM> position_arr_{}, velocity_arr_{}, torque_arr_{}, torque_sensor_arr_{}, temperature_arr_{};
+    std::array<uint16_t, MAX_JOINT_NUM> motor_status_arr_{}, error_code_arr_{};
     for (int i = 0; i < ndof_robot; ++i) {
         position_arr_[i] = this->robot_feedback_.joint_feedback[i].joint_position;
         velocity_arr_[i] = this->robot_feedback_.joint_feedback[i].joint_velocity;
         torque_arr_[i] = this->robot_feedback_.joint_feedback[i].joint_torque;
+        torque_sensor_arr_[i] = this->robot_feedback_.joint_feedback[i].joint_sensor_torque;
         motor_status_arr_[i] = this->robot_feedback_.al_status[i];
         temperature_arr_[i] = this->robot_feedback_.joint_feedback[i].joint_temperature;
         error_code_arr_[i] = this->robot_feedback_.joint_feedback[i].joint_error_code;
     }
     // 从 JointControl 数组中提取字段
-    std::array<double, MAX_JOINT_NUM> position_cmd_arr_{};
-    std::array<double, MAX_JOINT_NUM> velocity_cmd_arr_{};
-    std::array<double, MAX_JOINT_NUM> torque_ff_arr_{};
-    std::array<double, MAX_JOINT_NUM> positive_torque_limit_arr_{};
-    std::array<double, MAX_JOINT_NUM> negative_torque_limit_arr_{};
+    std::array<double, MAX_JOINT_NUM> position_cmd_arr_{}, velocity_cmd_arr_{}, torque_ff_arr_{}, positive_torque_limit_arr_{}, negative_torque_limit_arr_{};
     for (int i = 0; i < ndof_robot; ++i) {
         position_cmd_arr_[i] = this->robot_control_.joint_control[i].joint_position;
         velocity_cmd_arr_[i] = this->robot_control_.joint_control[i].joint_velocity;
@@ -598,6 +623,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"motor_temperature\":" + utils::VectorToJsonArrayString(temperature_arr_, index_offset, ndof_config_).str() +
         ",\n  \"run_mode\":\"" + ToString(this->manager_info_.robot_property.run_mode) + "\"" +
         ", \"allow_force_control\":\"" + std::to_string(this->manager_info_.robot_property.allow_force_control) + "\"" +
+        ", \"enable_cartesian_impedance\":\"" + std::to_string(this->manager_info_.robot_property.enable_cartesian_impedance) + "\"" +
         ", \"server_error_code\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.error_codes).str() +
         ", \"safe_level\":\"" + std::to_string(this->manager_info_.robot_property.safe_level) + "\"" +
         ", \"global_speed_ratio\":\"" + std::to_string(this->manager_info_.robot_property.global_speed_ratio) + "\"" +
@@ -608,6 +634,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_velocity_cmd\":" + utils::VectorToJsonArrayString(velocity_cmd_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_torque\":" + utils::VectorToJsonArrayString(torque_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(torque_ff_arr_, index_offset, ndof_config_).str() +
+        ",\n  \"joint_torque_sensor\":" + utils::VectorToJsonArrayString(torque_sensor_arr_, index_offset, ndof_config_).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(negative_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(positive_torque_limit_arr_, index_offset, ndof_config_).str() +
@@ -643,6 +670,31 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
     return robot_server_state_msg;
 }
 // clang-format on
+
+void RobotServer::PublishImu() {
+    const auto& imu = robot_feedback_.imu_data;
+    if (imu_timestamp_ != imu.timestamp) {
+        imu_timestamp_ = imu.timestamp;
+        sensor_msgs::msg::Imu imu_msg;
+        imu_msg.header.stamp = this->get_clock()->now();
+        imu_msg.header.frame_id = "imu_chassis_link";
+
+        imu_msg.orientation.w = imu.orientation.w;
+        imu_msg.orientation.x = imu.orientation.x;
+        imu_msg.orientation.y = imu.orientation.y;
+        imu_msg.orientation.z = imu.orientation.z;
+
+        imu_msg.angular_velocity.x = imu.angular_velocity.x;
+        imu_msg.angular_velocity.y = imu.angular_velocity.y;
+        imu_msg.angular_velocity.z = imu.angular_velocity.z;
+
+        imu_msg.linear_acceleration.x = imu.linear_acceleration.x;
+        imu_msg.linear_acceleration.y = imu.linear_acceleration.y;
+        imu_msg.linear_acceleration.z = imu.linear_acceleration.z;
+
+        imu_publisher_->publish(imu_msg);
+    }
+}
 
 void RobotServer::PublishFeedback() {
     // 发布关节状态反馈，A1模式只发布14个关节，W1模式发布20个关节

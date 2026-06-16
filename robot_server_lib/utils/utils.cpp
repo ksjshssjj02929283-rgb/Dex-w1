@@ -39,6 +39,7 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     if (params.robot_version.size() >= 3) {
         std::string version_prefix = params.robot_version.substr(0, 3);
         std::string full_version_key = params.robot_type + "_" + version_prefix;
+        params.robot_key = full_version_key;
         if (config[full_version_key]) {
             version_cfg = config[full_version_key];
             std::cout << "[INFO] Robot type: " << params.robot_type << ", Robot version: " << params.robot_version
@@ -180,6 +181,10 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
 
     if (version_cfg["allow_force_control"]) {
         robot_property.allow_force_control = version_cfg["allow_force_control"].as<bool>();
+    }
+
+    if (version_cfg["enable_cartesian_impedance"]) {
+        robot_property.enable_cartesian_impedance = version_cfg["enable_cartesian_impedance"].as<bool>();
     }
 
     if (version_cfg["joint_streaming_bounds"] && version_cfg["joint_streaming_bounds"].IsMap()) {
