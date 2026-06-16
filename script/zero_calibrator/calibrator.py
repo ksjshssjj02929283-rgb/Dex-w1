@@ -12,18 +12,25 @@ from scipy.spatial.transform import Rotation as R
 from IPython import embed
 
 def _pulse_to_degree(pulse):
-    # 电机脉冲转角度
     degree = ((pulse - 262144) / 262144) * 360.0
     return degree
 
 def _to_complement_hex(value, bits=32):
-    # 若是负数，获取补码表示
     if value < 0:
-        # 计算补码： 2^bits + value
         value = (1 << bits) + value
-    # 将整数转换为16进制字符串
     hex_value = hex(value)
     return hex_value
+
+def _parse_ethercat_value(result, label):
+    if result.returncode != 0:
+        raise RuntimeError(f'{label} 失败 (returncode={result.returncode}): {result.stderr.strip()}')
+    parts = result.stdout.split()
+    if len(parts) < 2:
+        raise RuntimeError(f'{label} 输出无法解析: {result.stdout!r}')
+    try:
+        return int(parts[1])
+    except ValueError:
+        raise RuntimeError(f'{label} 输出无法解析为整数: {result.stdout!r}')
 
 def _get_motor_index_and_check_status() -> list:
     import re
@@ -33,7 +40,7 @@ def _get_motor_index_and_check_status() -> list:
         raise RuntimeError(f'执行 "ethercat sl" 失败: {e}')
 
     driver_positions = []
-    non_preop = []  # (index, state)
+    non_preop = []
 
     for line in result.stdout.splitlines():
         if 'ZeroErr Driver' in line:
@@ -59,21 +66,17 @@ def _get_motor_index_and_check_status() -> list:
         raise RuntimeError(f'以下 ZeroErr Driver 非 PREOP 状态: {details}')
 
     print(f"Motor index: [{', '.join(map(str, driver_positions))}], total {len(driver_positions)} motors, all in PREOP state.")
-    # 返回 ZeroErr Driver 在 ethercat 从站表中的索引列表（按出现顺序）
     return driver_positions
 
 def _get_motor_position_deg_by_index(motor_index_list: list) -> list:
-    # 通过 motor_index 获取电机的当前角度（单位：度）
     qpos_list = []
     for motor_index in motor_index_list:
-        result = subprocess.run(['ethercat', 'upload', '-p', str(motor_index), '0x6064', '0'], capture_output=True, text=True)
-        stdout = result.stdout
-        pulse = int(stdout.split(' ')[1])
+        result = subprocess.run(['ethercat', 'upload', '-p', str(motor_index), '0x6064', '0', '-t', 'uint32'], capture_output=True, text=True)
+        pulse = _parse_ethercat_value(result, f'读取电机 {motor_index} 位置')
         qpos_list.append(_pulse_to_degree(pulse))
     return qpos_list
 
 def _write_zero_offset_error(is_left: bool, index_list: list, offset_error_list: list):
-    # 仅处理对应手臂的关节索引：左臂 6..12，右臂 13..19
     target_joint_ids = list(range(6, 13)) if is_left else list(range(13, 20))
     if len(offset_error_list) != len(target_joint_ids):
         raise ValueError(f"offset_error_list 长度应为 {len(target_joint_ids)}，当前为 {len(offset_error_list)}")
@@ -81,24 +84,23 @@ def _write_zero_offset_error(is_left: bool, index_list: list, offset_error_list:
     new_offset_list = []
 
     for i_local, joint_id in enumerate(target_joint_ids):
-        # joint_id 是 0..19 的关节序号，index_list[joint_id] 为对应 EtherCAT 从站索引（-p 参数）
         index = index_list[joint_id]
         offset_error = offset_error_list[i_local]
 
-        # 读取原本的零位偏差值
-        result = subprocess.run(['ethercat', 'upload', '-p', str(index), '0x3b75', '0'], capture_output=True, text=True)
-        pre_offset = int(result.stdout.split(' ')[1])
+        result = subprocess.run(['ethercat', 'upload', '-p', str(index), '0x3b75', '0', '-t', 'uint32'], capture_output=True, text=True)
+        pre_offset = _parse_ethercat_value(result, f'读取电机 {index} 零位偏移')
         pre_offset_list.append(pre_offset)
 
-        # 计算新的零位偏差值
-        new_offset = int(pre_offset + offset_error / 360.0 * 262144)
+        new_offset = (pre_offset + round(offset_error / 360.0 * 262144)) & 0xFFFFFFFF
         new_offset_list.append(new_offset)
 
-        # 写入新的零位偏差值
         result = subprocess.run(['ethercat', 'download', '-p', str(index), '0x3b75', '0', _to_complement_hex(new_offset)], capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f'写入电机 {index} 零位偏移失败 (returncode={result.returncode}): {result.stderr.strip()}')
 
-        # 保存写入值（已解锁保存区）
         result = subprocess.run(['ethercat', 'download', '-p', str(index), '0x1010', '1', '0x65766173'], capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f'保存电机 {index} 零位偏移失败 (returncode={result.returncode}): {result.stderr.strip()}')
 
     print(f"pre_offset:", pre_offset_list)
     print(f"new_offset:", new_offset_list)
