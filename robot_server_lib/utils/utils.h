@@ -51,6 +51,11 @@ inline std::size_t GetContainerSize(const T (&)[N]) {
     return N;
 }
 
+template <typename Derived>
+inline bool IsFiniteVector(const Eigen::MatrixBase<Derived>& value) {
+    return value.allFinite();
+}
+
 template <typename VectorType>
 std::ostringstream VectorToJsonArrayString(const VectorType& vec, int start_index, int count) {
     int total_size = static_cast<int>(GetContainerSize(vec));
@@ -129,6 +134,9 @@ bool GetJointFromWholeBody(const RobotModel& robot_model,
 
 // 根据 motion_group 获取对应的关节数量
 int GetJointCount(const RobotModel& robot_model, const MotionGroup& motion_group);
+
+// 从一组已配置的手臂关节推断该链末端 BODY frame，用于兼容不同 URDF 的末端 link 命名。
+int GetTerminalBodyFrameId(const pinocchio::Model& model, const std::vector<std::string>& joint_names);
 
 Vector12d GetSensorWrench(const Vector6d& wrench_primary, const Vector6d& wrench_secondary);
 

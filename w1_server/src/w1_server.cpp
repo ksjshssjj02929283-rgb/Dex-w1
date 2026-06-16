@@ -18,9 +18,7 @@ constexpr double kDefaultInertiaCompCutoffHz = 5.0;
 constexpr double kMinInertiaCompCutoffHz = 0.5;
 constexpr double kMaxInertiaCompCutoffHz = 100.0;  // 1 kHz 采样的 10%
 
-double JsonFiniteOrZero(double value) {
-    return std::isfinite(value) ? value : 0.0;
-}
+double JsonFiniteOrZero(double value) { return std::isfinite(value) ? value : 0.0; }
 
 bool ReadYamlVector(const YAML::Node& node, int expected_size, Eigen::VectorXd& out) {
     if (!node || !node.IsSequence() || static_cast<int>(node.size()) != expected_size) {
@@ -265,17 +263,32 @@ std::optional<Eigen::Matrix3d> RobotServer::GetEERotationWorldFromEE(int arm_ind
     // 写入 buffer, 但里面是默认构造的 (0,0,0, 1,0,0,0) —— 看起来 valid 实际是占位 identity.
     // 不加这条门, 力传感器零偏会在 R=I 假设下结算, 残留 ~m·g 的工具重力分量.
     if (this->manager_state_ != Status::Idle && this->manager_state_ != Status::Running) {
+        LOG_WARN_THROTTLE(5000) << "tool compensation waiting for ee_pose_world: manager_state="
+                                << static_cast<int>(this->manager_state_);
+        return std::nullopt;
+    }
+    if (arm_index < 0) {
+        LOG_WARN_THROTTLE(5000) << "tool compensation failed: invalid arm_index=" << arm_index;
         return std::nullopt;
     }
     const auto& ee_pose_world = this->manager_info_.ee_pose_world_measurement;
     const int offset = arm_index * 7;
     if (ee_pose_world.size() < offset + 7) {
+        LOG_WARN_THROTTLE(5000) << "tool compensation failed: ee_pose_world_measurement size=" << ee_pose_world.size()
+                                << ", required=" << offset + 7 << ", arm_index=" << arm_index;
         return std::nullopt;
     }
 
     Eigen::Quaterniond q(ee_pose_world[offset + 3], ee_pose_world[offset + 4], ee_pose_world[offset + 5],
                          ee_pose_world[offset + 6]);
-    if (!q.coeffs().allFinite() || q.norm() <= FloatZeroTol) {
+    if (!q.coeffs().allFinite()) {
+        LOG_WARN_THROTTLE(5000) << "tool compensation failed: ee_pose_world quaternion is non-finite, arm_index="
+                                << arm_index;
+        return std::nullopt;
+    }
+    if (q.norm() <= FloatZeroTol) {
+        LOG_WARN_THROTTLE(5000) << "tool compensation failed: ee_pose_world quaternion norm is near zero, arm_index="
+                                << arm_index << ", norm=" << q.norm();
         return std::nullopt;
     }
     q.normalize();
@@ -290,6 +303,8 @@ Vector6d RobotServer::ApplyToolGravityCompensation(const Vector6d& wrench_ee, in
 
     const auto rotation_world_from_ee_opt = GetEERotationWorldFromEE(arm_index);
     if (!rotation_world_from_ee_opt) {
+        LOG_WARN_THROTTLE(1000) << "tool gravity compensation lapsed: missing valid ee_pose_world rotation, arm_index="
+                                << arm_index;
         return wrench_ee;
     }
     const Eigen::Matrix3d& rotation_world_from_ee = *rotation_world_from_ee_opt;
@@ -300,6 +315,12 @@ Vector6d RobotServer::ApplyToolGravityCompensation(const Vector6d& wrench_ee, in
     Vector6d expected_wrench_ee;
     expected_wrench_ee.head<3>() = expected_force_ee;
     expected_wrench_ee.tail<3>() = tool_com_m_.cross(expected_force_ee);
+
+    if (!utils::IsFiniteVector(expected_wrench_ee)) {
+        LOG_WARN_THROTTLE(1000) << "tool gravity compensation lapsed: expected wrench is non-finite, arm_index="
+                                << arm_index << ", wrench=" << expected_wrench_ee.transpose();
+        return wrench_ee;
+    }
 
     if (applied) *applied = true;
     return wrench_ee - expected_wrench_ee;
@@ -320,7 +341,7 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
                                                           const Eigen::VectorXd& feedback_dq_primary,
                                                           bool* applied) {
     if (applied) *applied = false;
-    auto early_return = [&]() {
+    auto reset_inertia_state = [&]() {
         for (int i = 0; i < 6; ++i) {
             tool_inertia_wrench_ee_[i].store(0.0, std::memory_order_relaxed);
         }
@@ -330,35 +351,55 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
             ee_alpha_F_primary_[i].store(nan_v, std::memory_order_relaxed);
         }
     };
-    if (!tool_inertia_compensation_enabled_ || !tool_gravity_compensation_enabled_) {
-        early_return();
+    auto fail_inertia_compensation = [&](const char* reason) {
+        reset_inertia_state();
+        LOG_WARN_THROTTLE(1000) << "tool inertia compensation lapsed: " << reason;
+        return wrench_ee;
+    };
+    if (!tool_inertia_compensation_enabled_) {
+        reset_inertia_state();
         return wrench_ee;
     }
+    if (!tool_gravity_compensation_enabled_) {
+        return fail_inertia_compensation("gravity compensation is disabled");
+    }
     if (!robot_model_.primary_arm_model_ptr) {
-        early_return();
-        return wrench_ee;
+        return fail_inertia_compensation("primary arm model is null");
     }
     const auto& arm_model = *robot_model_.primary_arm_model_ptr;
     if (arm_model.nv != 7 || feedback_q_primary.size() != 7 || feedback_dq_primary.size() != 7) {
-        early_return();
-        return wrench_ee;
+        return fail_inertia_compensation("primary arm model or feedback vector size is invalid");
+    }
+    if (!utils::IsFiniteVector(wrench_ee) || !utils::IsFiniteVector(feedback_q_primary) ||
+        !utils::IsFiniteVector(feedback_dq_primary)) {
+        return fail_inertia_compensation("input wrench/q/dq contains non-finite values");
     }
 
     constexpr double kDt = torque_ctrl_dt;  // 1 ms
 
     const Eigen::MatrixXd J_armbase_dyn = pinocchio::GetJacobiMatrix(arm_model, feedback_q_primary);
     if (J_armbase_dyn.rows() != 6 || J_armbase_dyn.cols() != 7) {
-        early_return();
-        return wrench_ee;
+        return fail_inertia_compensation("Jacobian shape is invalid");
+    }
+    if (!utils::IsFiniteVector(J_armbase_dyn)) {
+        return fail_inertia_compensation("Jacobian contains non-finite values");
     }
     const Eigen::Matrix<double, 6, 7> J_armbase = J_armbase_dyn;
     const Eigen::Matrix<double, 7, 1> dq7 = feedback_dq_primary.head<7>();
     const Eigen::Matrix<double, 6, 1> twist_armbase = J_armbase * dq7;
+    if (!utils::IsFiniteVector(twist_armbase)) {
+        return fail_inertia_compensation("end-effector twist contains non-finite values");
+    }
     const Vector3d v_ee_armbase = twist_armbase.head<3>();
     const Vector3d w_ee_armbase = twist_armbase.tail<3>();
 
     // 首拍只暖滤波器并记录历史.
     if (tool_inertia_first_sample_) {
+        for (int i = 0; i < 3; ++i) {
+            if (!ee_accel_filter_[i] || !omega_diff_filter_[i]) {
+                return fail_inertia_compensation("inertia compensation filters are not initialized");
+            }
+        }
         for (int i = 0; i < 3; ++i) ee_accel_filter_[i]->Apply(0.0);
         for (int i = 0; i < 3; ++i) omega_diff_filter_[i]->Apply(0.0);
         prev_ee_linvel_armbase_ = v_ee_armbase;
@@ -380,6 +421,9 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
     {
         a_raw_armbase = (v_ee_armbase - prev_ee_linvel_armbase_) / kDt;
         for (int i = 0; i < 3; ++i) {
+            if (!ee_accel_filter_[i]) {
+                return fail_inertia_compensation("linear acceleration filter is not initialized");
+            }
             a_ee_armbase[i] = ee_accel_filter_[i]->Apply(a_raw_armbase[i]);
         }
     }
@@ -387,14 +431,23 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
     {
         const Vector3d alpha_raw = (w_ee_armbase - prev_omega_armbase_) / kDt;
         for (int i = 0; i < 3; ++i) {
+            if (!omega_diff_filter_[i]) {
+                return fail_inertia_compensation("angular acceleration filter is not initialized");
+            }
             alpha_ee_armbase[i] = omega_diff_filter_[i]->Apply(alpha_raw[i]);
         }
+    }
+    if (!utils::IsFiniteVector(a_ee_armbase) || !utils::IsFiniteVector(alpha_ee_armbase)) {
+        return fail_inertia_compensation("filtered acceleration contains non-finite values");
     }
     prev_ee_linvel_armbase_ = v_ee_armbase;
     prev_omega_armbase_ = w_ee_armbase;
 
     const Eigen::Matrix4d T_armbase_ee = pinocchio::GetFK(arm_model, feedback_q_primary);
     const Eigen::Matrix3d R_a_e = T_armbase_ee.topLeftCorner<3, 3>();
+    if (!utils::IsFiniteVector(T_armbase_ee) || !utils::IsFiniteVector(R_a_e)) {
+        return fail_inertia_compensation("end-effector FK contains non-finite values");
+    }
 
     const Vector3d r_C_armbase = R_a_e * tool_com_m_;
 
@@ -413,6 +466,9 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
     expected_inertia_wrench_ee.head<3>() = -static_cast<double>(tool_model_sign_) * (R_a_e.transpose() * F_armbase);
     expected_inertia_wrench_ee.tail<3>() =
         -static_cast<double>(tool_model_sign_) * (R_a_e.transpose() * tau_about_ee_armbase);
+    if (!utils::IsFiniteVector(expected_inertia_wrench_ee)) {
+        return fail_inertia_compensation("expected inertia wrench contains non-finite values");
+    }
 
     for (int i = 0; i < 6; ++i) {
         tool_inertia_wrench_ee_[i].store(expected_inertia_wrench_ee[i], std::memory_order_relaxed);
@@ -420,6 +476,9 @@ Vector6d RobotServer::ApplyToolInertiaCompensationPrimary(const Vector6d& wrench
 
     const Vector3d w_ee_F = R_a_e.transpose() * w_ee_armbase;
     const Vector3d alpha_ee_F = R_a_e.transpose() * alpha_ee_armbase;
+    if (!utils::IsFiniteVector(w_ee_F) || !utils::IsFiniteVector(alpha_ee_F)) {
+        return fail_inertia_compensation("ee omega/alpha in EE frame contains non-finite values");
+    }
     for (int i = 0; i < 3; ++i) {
         ee_omega_F_primary_[i].store(w_ee_F[i], std::memory_order_relaxed);
         ee_alpha_F_primary_[i].store(alpha_ee_F[i], std::memory_order_relaxed);
@@ -585,6 +644,7 @@ void RobotServer::TorqueControlThreadFunc() {
                 if (!ok) {
                     RCLCPP_WARN(this->get_logger(),
                                 "tool inertia compensation: failed to resolve primary joint ids, disabling");
+                    LOG_WARN << "tool inertia compensation: failed to resolve primary joint ids, disabling";
                     tool_inertia_compensation_enabled_ = false;
                 }
             }
@@ -628,11 +688,15 @@ void RobotServer::TorqueControlThreadFunc() {
                                  "primary tool compensation lapsed (gravity_applied=%d, inertia_applied=%d); "
                                  "zeroing sensor_data_primary so torque_ext=0 in joint impedance",
                                  gravity_applied_primary, inertia_applied_primary);
+            LOG_WARN_THROTTLE(1000) << "primary tool compensation lapsed (gravity_applied=" << gravity_applied_primary
+                                    << ", inertia_applied=" << inertia_applied_primary
+                                    << "); zeroing sensor_data_primary so torque_ext=0 in joint impedance";
         }
         if (secondary_compensation_failed) {
             sensor_data_secondary.setZero();
             RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
                                  "secondary tool gravity compensation lapsed; zeroing sensor_data_secondary");
+            LOG_WARN_THROTTLE(1000) << "secondary tool gravity compensation lapsed; zeroing sensor_data_secondary";
         }
 
         // 根据状态写入机器人控制字
@@ -903,9 +967,8 @@ void RobotServer::TorqueControlThreadFunc() {
                 << ", \"force_sensor_gravity\": " << utils::VectorToJsonArrayString(sensor_wrench_gravity_).str()
                 << ", \"raw_force_sensor\": " << utils::VectorToJsonArrayString(raw_sensor_wrench_).str()
                 << ", \"force_sensor_bias\": " << utils::VectorToJsonArrayString(sensor_zero_offset_).str()
-                << ", \"force_sensor_inertia\": ["
-                << this->tool_inertia_wrench_ee_[0].load(std::memory_order_relaxed) << ","
-                << this->tool_inertia_wrench_ee_[1].load(std::memory_order_relaxed) << ","
+                << ", \"force_sensor_inertia\": [" << this->tool_inertia_wrench_ee_[0].load(std::memory_order_relaxed)
+                << "," << this->tool_inertia_wrench_ee_[1].load(std::memory_order_relaxed) << ","
                 << this->tool_inertia_wrench_ee_[2].load(std::memory_order_relaxed) << ","
                 << this->tool_inertia_wrench_ee_[3].load(std::memory_order_relaxed) << ","
                 << this->tool_inertia_wrench_ee_[4].load(std::memory_order_relaxed) << ","

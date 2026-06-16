@@ -661,6 +661,26 @@ int GetJointCount(const RobotModel& robot_model, const MotionGroup& motion_group
     }
 }
 
+int GetTerminalBodyFrameId(const pinocchio::Model& model, const std::vector<std::string>& joint_names) {
+    if (joint_names.empty()) {
+        return -1;
+    }
+
+    const auto joint_id = model.getJointId(joint_names.back());
+    if (joint_id == 0 || joint_id >= static_cast<pinocchio::JointIndex>(model.njoints)) {
+        return -1;
+    }
+
+    int terminal_frame_id = -1;
+    for (std::size_t frame_id = 0; frame_id < model.frames.size(); ++frame_id) {
+        const auto& frame = model.frames[frame_id];
+        if (frame.parentJoint == joint_id && frame.type == pinocchio::BODY) {
+            terminal_frame_id = static_cast<int>(frame_id);
+        }
+    }
+    return terminal_frame_id;
+}
+
 PlannerRequest ParseSetPropertyRequest(
     const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request) {
     PlannerRequest planner_request;

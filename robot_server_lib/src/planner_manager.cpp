@@ -1069,23 +1069,26 @@ void PlannerManager::PublishPlannerInfo() {
     if (this->manager_state_ == Status::Idle || this->manager_state_ == Status::Running) {
         PoseQuaternion ee_pose_world_primary, ee_pose_world_secondary;
         const auto& whole_model = *robot_model_.model_ptr;
-        // armlee/armree 在 URDF 中既是固定关节名也是 child link 名, pinocchio 会注册多个同名 frame,
-        // 必须显式指定 FrameType 否则 getFrameId 抛 invalid_argument. 这里取 link 对应的 BODY.
-        const int armlee_frame_id = static_cast<int>(whole_model.getFrameId("armlee", pinocchio::BODY));
-        const int armree_frame_id = static_cast<int>(whole_model.getFrameId("armree", pinocchio::BODY));
-        if (armlee_frame_id < static_cast<int>(whole_model.frames.size()) &&
-            armree_frame_id < static_cast<int>(whole_model.frames.size())) {
-            pinocchio::SE3 oM_armlee = pinocchio::GetFkByFrameId(whole_model, measurement.position, armlee_frame_id);
-            pinocchio::SE3 oM_armree = pinocchio::GetFkByFrameId(whole_model, measurement.position, armree_frame_id);
+        const int primary_ee_frame_id =
+            utils::GetTerminalBodyFrameId(whole_model, robot_model_.params_ptr->joints_primary_names);
+        const int secondary_ee_frame_id =
+            utils::GetTerminalBodyFrameId(whole_model, robot_model_.params_ptr->joints_secondary_names);
+        if (primary_ee_frame_id >= 0 && secondary_ee_frame_id >= 0) {
+            pinocchio::SE3 oM_primary_ee =
+                pinocchio::GetFkByFrameId(whole_model, measurement.position, primary_ee_frame_id);
+            pinocchio::SE3 oM_secondary_ee =
+                pinocchio::GetFkByFrameId(whole_model, measurement.position, secondary_ee_frame_id);
             // TCP 偏移与 ee_pose_measurement 保持一致语义: T_world_tcp = T_world_ee * T_ee_tcp
-            pinocchio::SE3 oM_tcp_primary = oM_armlee * robot_property_.tcp_frame;
-            pinocchio::SE3 oM_tcp_secondary = oM_armree * robot_property_.tcp_frame_secondary;
+            pinocchio::SE3 oM_tcp_primary = oM_primary_ee * robot_property_.tcp_frame;
+            pinocchio::SE3 oM_tcp_secondary = oM_secondary_ee * robot_property_.tcp_frame_secondary;
             ee_pose_world_primary = PoseQuaternion(oM_tcp_primary.toHomogeneousMatrix());
             ee_pose_world_secondary = PoseQuaternion(oM_tcp_secondary.toHomogeneousMatrix());
+            ee_pose_world << ee_pose_world_primary.ToVectorXd(), ee_pose_world_secondary.ToVectorXd();
+            ee_pose_world = (ee_pose_world.array() * 1e5).round() / 1e5;
+            info.ee_pose_world_measurement = ee_pose_world;
+        } else {
+            LOG_WARN_THROTTLE(5000) << "Failed to resolve terminal BODY frames for ee_pose_world_measurement.";
         }
-        ee_pose_world << ee_pose_world_primary.ToVectorXd(), ee_pose_world_secondary.ToVectorXd();
-        ee_pose_world = (ee_pose_world.array() * 1e5).round() / 1e5;
-        info.ee_pose_world_measurement = ee_pose_world;
     } else {
         // Init/Error 状态下不写 ee_pose_world_measurement, info.ee_pose_world_measurement 保持默认 size=0.
         // (publish_ee_pose_world 是预分配的 14 维变量, 不动它的容量, 只是不拷贝到 info.)
