@@ -18,7 +18,7 @@
 #include "robot_server_lib/sri_force_sensor.h"
 #include "robot_server_lib/utils.h"
 #include "shared_memory_def.h"
-#include "tool_compenstaion.h"
+#include "robot_server_lib/tool_compenstaion.h"
 #include "w1_utils.h"
 
 namespace robot_server_lib {
