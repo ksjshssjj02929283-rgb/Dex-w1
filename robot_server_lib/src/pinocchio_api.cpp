@@ -13,8 +13,6 @@ void PrintModelInfo(const Model& model) {
 Eigen::Matrix4d GetFK(const Model& model, const Eigen::VectorXd& q) {
     SE3 pose;
     Data data(model);
-    // 这里约定调用方传入的是“末端 frame 位于最后”的模型，例如单臂 URDF。
-    // 不要把这个规则直接用于 whole-body 模型；全身 URDF 的最后一帧可能是 head/chassis/connector。
     int frame_id = model.nframes - 1;
     forwardKinematics(model, data, q);
     updateFramePlacements(model, data);
