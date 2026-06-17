@@ -380,6 +380,46 @@ void RobotServer::TorqueControlThreadFunc() {
 
         sensor_wrench_gravity_ = utils::GetSensorWrench(sensor_data_primary_before_inertia, sensor_data_secondary);
 
+        VectorDof tool_torque_feedforward = VectorDof::Zero();
+        if (ret && robot_model_.primary_arm_model_ptr) {
+            Vector6d tool_wrench_primary = Vector6d::Zero();
+            bool tool_gravity_wrench_applied = false;
+            std::string tool_gravity_wrench_failure_reason;
+            tool_wrench_primary += dynamics::tool_compensation::ComputeToolGravityWrenchEE(
+                tool_compensation_config_, GetEERotationWorldFromEE(0), &tool_gravity_wrench_applied,
+                &tool_gravity_wrench_failure_reason);
+            if (!tool_gravity_wrench_applied && !tool_gravity_wrench_failure_reason.empty()) {
+                LOG_WARN_THROTTLE(1000) << "tool feedforward gravity wrench lapsed: "
+                                        << tool_gravity_wrench_failure_reason;
+            }
+            if (inertia_applied_primary) {
+                for (int i = 0; i < 6; ++i) {
+                    tool_wrench_primary[i] +=
+                        tool_compensation_state_.tool_inertia_wrench_ee[i].load(std::memory_order_relaxed);
+                }
+            }
+            if (!tool_wrench_primary.isZero(FloatZeroTol)) {
+                VectorDof feedback_q_whole = VectorDof::Zero();
+                for (int i = 0; i < ndof_robot; ++i) {
+                    feedback_q_whole[i] = robot_feedback_.joint_feedback[i].joint_position;
+                }
+                Eigen::VectorXd feedback_q_primary;
+                utils::GetJointFromWholeBody(robot_model_, feedback_q_whole, feedback_q_primary, MotionGroup::Primary);
+                bool tool_torque_applied = false;
+                std::string tool_torque_failure_reason;
+                const Eigen::VectorXd tool_torque_primary =
+                    dynamics::tool_compensation::ComputeToolJointTorqueFromWrench(
+                        *robot_model_.primary_arm_model_ptr, feedback_q_primary, tool_wrench_primary,
+                        &tool_torque_applied, &tool_torque_failure_reason);
+                if (tool_torque_applied) {
+                    utils::MapJointToWholeBody(robot_model_, tool_torque_primary, tool_torque_feedforward,
+                                               MotionGroup::Primary);
+                } else if (!tool_torque_failure_reason.empty()) {
+                    LOG_WARN_THROTTLE(1000) << "tool feedforward torque lapsed: " << tool_torque_failure_reason;
+                }
+            }
+        }
+
         // 补偿失效时直接清零对应外力输入, 避免把工具自重或惯性当成外力.
         const bool primary_compensation_failed =
             primary_wrench_valid && ((tool_compensation_config_.gravity_enabled && !gravity_applied_primary) ||
@@ -418,6 +458,7 @@ void RobotServer::TorqueControlThreadFunc() {
             JointRawMeasurement raw_measurement{};
             raw_measurement.sensor_wrench = sensor_wrench_ =
                 utils::GetSensorWrench(sensor_data_primary, sensor_data_secondary);
+            raw_measurement.tool_torque_feedforward = tool_torque_feedforward;
             raw_sensor_wrench_ = utils::GetSensorWrench(raw_sensor_data_primary, raw_sensor_data_secondary);
 
             for (int i = 0; i < ndof_robot; ++i) {
