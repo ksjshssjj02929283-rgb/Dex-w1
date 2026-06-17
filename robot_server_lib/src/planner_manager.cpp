@@ -25,6 +25,7 @@ void PlannerManager::Initialize() {
     runtime_data_.publish_measurement_secondary.resize(robot_model_.params_ptr->joints_secondary_names.size());
     runtime_data_.publish_measurement_torso.resize(robot_model_.params_ptr->joints_torso_names.size());
     runtime_data_.publish_ee_pose.resize(14);
+    runtime_data_.publish_ee_pose_world.resize(14);
     runtime_data_.publish_torso_X_Z_RY.resize(3);
 
     auto& time_meta = runtime_data_.time_meta;
@@ -1058,6 +1059,41 @@ void PlannerManager::PublishPlannerInfo() {
     ee_pose = (ee_pose.array() * 1e5).round() / 1e5;  // 精确到小数点后五位
 
     info.ee_pose_measurement = ee_pose;
+
+    // 计算末端在 world (URDF 根 base_link, z 朝上) 下的位姿，
+    // 用于工具重力补偿等需要真实 world 重力方向的场景。
+    // 注: ee_pose_measurement 是 armlbase->TCP，受 torso 关节姿态影响，不能直接当作 world->ee 使用。
+    // 注意: 仅在 Idle/Running 状态下写入真实 FK; 其它状态保持 size=0, 让下游 (例如力传感器零偏结算)
+    // 能可靠区分 "未就绪" 和 "已就绪", 而不是看到默认构造的 (0,0,0, 1,0,0,0) 占位身份四元数.
+    auto& ee_pose_world = runtime_data_.publish_ee_pose_world;
+    if (this->manager_state_ == Status::Idle || this->manager_state_ == Status::Running) {
+        PoseQuaternion ee_pose_world_primary, ee_pose_world_secondary;
+        const auto& whole_model = *robot_model_.model_ptr;
+        const int primary_ee_frame_id =
+            utils::GetTerminalBodyFrameId(whole_model, robot_model_.params_ptr->joints_primary_names);
+        const int secondary_ee_frame_id =
+            utils::GetTerminalBodyFrameId(whole_model, robot_model_.params_ptr->joints_secondary_names);
+        if (primary_ee_frame_id >= 0 && secondary_ee_frame_id >= 0) {
+            pinocchio::SE3 oM_primary_ee =
+                pinocchio::GetFkByFrameId(whole_model, measurement.position, primary_ee_frame_id);
+            pinocchio::SE3 oM_secondary_ee =
+                pinocchio::GetFkByFrameId(whole_model, measurement.position, secondary_ee_frame_id);
+            // TCP 偏移与 ee_pose_measurement 保持一致语义: T_world_tcp = T_world_ee * T_ee_tcp
+            pinocchio::SE3 oM_tcp_primary = oM_primary_ee * robot_property_.tcp_frame;
+            pinocchio::SE3 oM_tcp_secondary = oM_secondary_ee * robot_property_.tcp_frame_secondary;
+            ee_pose_world_primary = PoseQuaternion(oM_tcp_primary.toHomogeneousMatrix());
+            ee_pose_world_secondary = PoseQuaternion(oM_tcp_secondary.toHomogeneousMatrix());
+            ee_pose_world << ee_pose_world_primary.ToVectorXd(), ee_pose_world_secondary.ToVectorXd();
+            ee_pose_world = (ee_pose_world.array() * 1e5).round() / 1e5;
+            info.ee_pose_world_measurement = ee_pose_world;
+        } else {
+            LOG_WARN_THROTTLE(5000) << "Failed to resolve terminal BODY frames for ee_pose_world_measurement.";
+        }
+    } else {
+        // Init/Error 状态下不写 ee_pose_world_measurement, info.ee_pose_world_measurement 保持默认 size=0.
+        // (publish_ee_pose_world 是预分配的 14 维变量, 不动它的容量, 只是不拷贝到 info.)
+    }
+
     auto& torso_X_Z_RY = runtime_data_.publish_torso_X_Z_RY;
     torso_X_Z_RY << torso_pose.position[0], torso_pose.position[2],
         measurement_torso[0] + measurement_torso[1] + measurement_torso[2];

@@ -324,6 +324,9 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     if (version_cfg["enable_cartesian_impedance"]) {
         robot_property.enable_cartesian_impedance = version_cfg["enable_cartesian_impedance"].as<bool>();
     }
+    if (config["allow_force_sensor"]) {
+        robot_property.allow_force_sensor = config["allow_force_sensor"].as<bool>();
+    }
 
     if (version_cfg["joint_streaming_bounds"] && version_cfg["joint_streaming_bounds"].IsMap()) {
         if (version_cfg["joint_streaming_bounds"]["max_velocity"]) {
@@ -351,6 +354,49 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     if (config["chassis_config"] && config["chassis_config"]["enable_chassis_shaper"]) {
         robot_property.enable_chassis_shaper = config["chassis_config"]["enable_chassis_shaper"].as<bool>();
     }
+
+    auto read_joint_admittance_finite = [](const YAML::Node& node, const char* key, double& target) {
+        if (!node || !node[key]) {
+            return;
+        }
+        const double value = node[key].as<double>();
+        if (!std::isfinite(value)) {
+            LOG_WARN << "Invalid joint_admittance." << key << ": " << value << ", keep default " << target;
+            return;
+        }
+        target = value;
+    };
+    auto read_joint_admittance_bounded = [](const YAML::Node& node, const char* key, double& target, double min_value,
+                                            bool strict_min) {
+        if (!node || !node[key]) {
+            return;
+        }
+        const double value = node[key].as<double>();
+        const bool valid_min = strict_min ? value > min_value : value >= min_value;
+        if (!std::isfinite(value) || !valid_min) {
+            LOG_WARN << "Invalid joint_admittance." << key << ": " << value << ", keep default " << target;
+            return;
+        }
+        target = value;
+    };
+    auto read_joint_admittance_bool = [](const YAML::Node& node, const char* key, bool& target) {
+        if (node && node[key]) {
+            target = node[key].as<bool>();
+        }
+    };
+    auto apply_joint_admittance_node = [&](const YAML::Node& node, JointAdmittanceJointConfig& target) {
+        if (!node || !node.IsMap()) {
+            return;
+        }
+        read_joint_admittance_bool(node, "enabled", target.enabled);
+        read_joint_admittance_finite(node, "torque_gain", target.torque_gain);
+        read_joint_admittance_bounded(node, "virtual_inertia", target.virtual_inertia, 0.0, true);
+        read_joint_admittance_bounded(node, "natural_frequency_hz", target.natural_frequency_hz, 0.0, true);
+        read_joint_admittance_bounded(node, "damping_ratio", target.damping_ratio, 0.0, true);
+        read_joint_admittance_bounded(node, "offset_limit", target.offset_limit, 0.0, false);
+        read_joint_admittance_bounded(node, "velocity_limit", target.velocity_limit, 0.0, false);
+        read_joint_admittance_bounded(node, "acceleration_limit", target.acceleration_limit, 0.0, false);
+    };
 
     if (version_cfg["joints"] && version_cfg["joints"].IsSequence()) {
         int joint_idx = 0;
@@ -412,6 +458,11 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                 }
             }
 
+            if (joint_config["joint_admittance"] && joint_config["joint_admittance"].IsMap()) {
+                apply_joint_admittance_node(joint_config["joint_admittance"],
+                                            robot_property.joint_admittance.joints[joint_idx]);
+            }
+
             if (joint_config["butterworth_filter"]) {
                 if (joint_config["butterworth_filter"]["enabled"]) {
                     robot_property.enable_butterworth_filter[joint_idx] =
@@ -441,6 +492,74 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
             std::cout << "[Error] Total joint count mismatch! Config count: " << joint_idx
                       << ", URDF count (Pinocchio): " << model.names.size() - 1 << "\n";
             exit(EXIT_FAILURE);
+        }
+    }
+
+    if (config["force_sensor_external_wrench"] && config["force_sensor_external_wrench"].IsMap()) {
+        const auto external_wrench = config["force_sensor_external_wrench"];
+        auto parse_non_negative = [&](const char* key, double& target) {
+            if (!external_wrench[key]) {
+                return;
+            }
+            const double value = external_wrench[key].as<double>();
+            if (!std::isfinite(value) || value < 0.0) {
+                LOG_WARN << "Invalid force_sensor_external_wrench." << key << ": " << value << ", keep default "
+                         << target;
+                return;
+            }
+            target = value;
+        };
+        auto parse_model_sign = [&](const char* key, int& target) {
+            if (!external_wrench[key]) {
+                return;
+            }
+            const int value = external_wrench[key].as<int>();
+            if (value != -1 && value != 1) {
+                LOG_WARN << "Invalid force_sensor_external_wrench." << key << ": " << value << ", keep default "
+                         << target;
+                return;
+            }
+            target = value;
+        };
+        parse_non_negative("force_deadband_n", params.external_wrench_force_deadband_n);
+        parse_non_negative("force_saturation_n", params.external_wrench_force_saturation_n);
+        parse_non_negative("torque_deadband_nm", params.external_wrench_torque_deadband_nm);
+        parse_non_negative("torque_saturation_nm", params.external_wrench_torque_saturation_nm);
+        parse_model_sign("model_sign", params.external_wrench_model_sign);
+    }
+
+    if (config["joint_admittance"] && config["joint_admittance"].IsMap()) {
+        const auto admittance = config["joint_admittance"];
+        read_joint_admittance_bool(admittance, "enabled", robot_property.joint_admittance.enabled);
+        read_joint_admittance_finite(admittance, "torque_ext_direct_gain",
+                                     robot_property.joint_admittance.torque_ext_direct_gain);
+
+        if (admittance["default"]) {
+            for (auto& joint_cfg : robot_property.joint_admittance.joints) {
+                apply_joint_admittance_node(admittance["default"], joint_cfg);
+            }
+        }
+
+        if (admittance["groups"] && admittance["groups"].IsMap()) {
+            for (const auto& group : admittance["groups"]) {
+                const auto group_node = group.second;
+                if (!group_node["joints"] || !group_node["joints"].IsSequence()) {
+                    LOG_WARN << "joint_admittance group missing joints list, skipping";
+                    continue;
+                }
+                for (const auto& joint_name_node : group_node["joints"]) {
+                    const std::string joint_name = joint_name_node.as<std::string>();
+                    const auto it = std::find(params.joint_names.begin(), params.joint_names.end(), joint_name);
+                    if (it == params.joint_names.end()) {
+                        LOG_WARN << "joint_admittance unknown joint: " << joint_name;
+                        continue;
+                    }
+                    const int joint_idx = std::distance(params.joint_names.begin(), it);
+                    auto& joint_cfg = robot_property.joint_admittance.joints[joint_idx];
+                    joint_cfg.enabled = true;
+                    apply_joint_admittance_node(group_node, joint_cfg);
+                }
+            }
         }
     }
 
@@ -680,6 +799,26 @@ int GetJointCount(const RobotModel& robot_model, const MotionGroup& motion_group
     }
 }
 
+int GetTerminalBodyFrameId(const pinocchio::Model& model, const std::vector<std::string>& joint_names) {
+    if (joint_names.empty()) {
+        return -1;
+    }
+
+    const auto joint_id = model.getJointId(joint_names.back());
+    if (joint_id == 0 || joint_id >= static_cast<pinocchio::JointIndex>(model.njoints)) {
+        return -1;
+    }
+
+    int terminal_frame_id = -1;
+    for (std::size_t frame_id = 0; frame_id < model.frames.size(); ++frame_id) {
+        const auto& frame = model.frames[frame_id];
+        if (frame.parentJoint == joint_id && frame.type == pinocchio::BODY) {
+            terminal_frame_id = static_cast<int>(frame_id);
+        }
+    }
+    return terminal_frame_id;
+}
+
 PlannerRequest ParseSetPropertyRequest(
     const std::shared_ptr<robot_server_interfaces::srv::SetProperty::Request> request) {
     PlannerRequest planner_request;
@@ -720,6 +859,7 @@ PlannerRequest ParseSetPropertyRequest(
         case RequestType::EnablePosLimitCheck:
         case RequestType::EnableStreamingRuckig:
         case RequestType::EnableRecord:
+        case RequestType::EnableChassisShaper:
             planner_request.data = parse_bool(request->value);
             break;
         case RequestType::JointStiffness:
@@ -732,7 +872,7 @@ PlannerRequest ParseSetPropertyRequest(
             planner_request.data = utils::StringToVectorXd(request->value);
             break;
         case RequestType::JointIntegralRatio:
-            planner_request.data = std::clamp(std::stod(request->value), 0.00, 1.0);
+            planner_request.data = utils::StringToVectorXd(request->value);
             break;
         default:
             planner_request.type = RequestType::Empty;
@@ -834,32 +974,9 @@ StreamingCommand ParseStreamingCommand(const std::shared_ptr<robot_server_interf
 }
 
 Vector12d GetSensorWrench(const Vector6d& wrench_primary, const Vector6d& wrench_secondary) {
-    // 最小力/力矩阈值(去除摩擦力), 和最大力/力矩值
-    constexpr double force_threshold = 1.0;
-    constexpr double torque_threshold = 0.1;
-    constexpr double force_max = 100.0;
-    constexpr double torque_max = 10.0;
-
-    auto deadzone_saturate = [](double x, double th, double mx) noexcept -> double {
-        double y = std::max(0.0, std::abs(x) - th);
-        if (y > mx) y = mx;
-        return std::copysign(y, x);
-    };
-
-    auto process6 = [&](const Vector6d& w) noexcept -> Vector6d {
-        Vector6d out;
-        for (int i = 0; i < 6; ++i) {
-            const bool is_force = i < 3;
-            const double th = is_force ? force_threshold : torque_threshold;
-            const double mx = is_force ? force_max : torque_max;
-            out[i] = deadzone_saturate(w[i], th, mx);
-        }
-        return out;
-    };
-
     Vector12d sensor_wrench;
-    sensor_wrench.head<6>() = process6(wrench_primary);
-    sensor_wrench.tail<6>() = process6(wrench_secondary);
+    sensor_wrench.head<6>() = wrench_primary;
+    sensor_wrench.tail<6>() = wrench_secondary;
     return sensor_wrench;
 }
 

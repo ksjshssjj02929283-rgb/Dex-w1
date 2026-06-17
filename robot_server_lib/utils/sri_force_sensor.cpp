@@ -2,6 +2,8 @@
 
 #include <pthread.h>
 
+#include <utility>
+
 void Setup_Realtime(int priority) {
     // 锁内存，避免分页抖动
     if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
@@ -32,7 +34,7 @@ SriForceSensor::~SriForceSensor() {
 
 // 串口方法
 const char* SriForceSensor::FindSerialPort() {
-    const char* candidates[] = {"/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyUSB2"};
+    const char* candidates[] = {"/dev/ttyUSB2"};
     for (const auto& device : candidates) {
         if (access(device, F_OK) == 0) {
             printf("Found SRI force sensor at: %s\n", device);
@@ -67,7 +69,7 @@ int SriForceSensor::SetPara(int serialfd, int speed) {
     tty.c_cflag |= CS8;
     tty.c_cflag |= PARENB;
     tty.c_cflag &= ~PARODD;
-    tty.c_cflag |= CSTOPB;
+    tty.c_cflag &= ~CSTOPB;
     tcflush(serialfd, TCIFLUSH);
     tty.c_cc[VTIME] = 1;
     tty.c_cc[VMIN] = 1;
@@ -96,7 +98,7 @@ int SriForceSensor::ReadData(int fd, unsigned char* data, int datalength) {
     FD_ZERO(&readset);
     FD_SET(fd, &readset);
 
-    struct timeval tv = {0, 10};
+    struct timeval tv = {0, 20000};
     if (select(fd + 1, &readset, nullptr, nullptr, &tv) <= 0) {
         return 0;
     }
@@ -109,49 +111,117 @@ void SriForceSensor::ClosePort(int fd) {
     }
 }
 
+robot_server_lib::Vector6d SriForceSensor::MapSriRawToEE(float fx, float fy, float fz, float mx, float my, float mz) {
+    robot_server_lib::Vector6d wrench_ee;
+    wrench_ee << -fx, -fy, fz, -mx, -my, mz;
+    return wrench_ee;
+}
+
+void SriForceSensor::SetToolGravityCompensationForZeroCalibration(
+    bool enabled,
+    double tool_mass_kg,
+    const robot_server_lib::Vector3d& tool_com_m,
+    double gravity_magnitude,
+    int model_sign,
+    std::function<std::optional<robot_server_lib::Matrix3d>()> rotation_world_from_ee_provider) {
+    mToolGravityCompensationForZeroEnabled = enabled && tool_mass_kg > 0.0 && gravity_magnitude > 0.0;
+    mToolMassKg = tool_mass_kg;
+    mToolGravityMagnitude = gravity_magnitude;
+    mToolModelSign = model_sign;
+    mToolComM = tool_com_m;
+    mRotationWorldFromEEProvider = std::move(rotation_world_from_ee_provider);
+}
+
+robot_server_lib::Vector6d SriForceSensor::ComputeToolGravityWrenchEE() const {
+    if (!mToolGravityCompensationForZeroEnabled) {
+        return robot_server_lib::Vector6d::Zero();
+    }
+    if (!mRotationWorldFromEEProvider) {
+        return robot_server_lib::Vector6d::Zero();
+    }
+    const auto R_opt = mRotationWorldFromEEProvider();
+    if (!R_opt) {
+        return robot_server_lib::Vector6d::Zero();
+    }
+    const robot_server_lib::Matrix3d& R = *R_opt;
+    const robot_server_lib::Vector3d gravity_world(0.0, 0.0, -mToolGravityMagnitude);
+    const robot_server_lib::Vector3d force_ee =
+        static_cast<double>(mToolModelSign) * R.transpose() * (mToolMassKg * gravity_world);
+    robot_server_lib::Vector6d wrench_ee;
+    wrench_ee.head<3>() = force_ee;
+    wrench_ee.tail<3>() = mToolComM.cross(force_ee);
+    return wrench_ee;
+}
+
 // 零位校准方法
 void SriForceSensor::ProcessCalibrationData(float fx, float fy, float fz, float mx, float my, float mz) {
+    std::lock_guard<std::mutex> lock(mCalibrationMutex);
     if (!mIsCalibrating) {
         return;
     }
-
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - mCalibrationStartTime).count();
-
-    if (elapsed >= 500) {
-        if (mCalibrationSampleCount > 0) {
-            for (int i = 0; i < 6; i++) {
-                mZeroOffset[i] = mCalibrationSum[i] / mCalibrationSampleCount;
-            }
-            printf(
-                "[Info] SRI force sensor: Zero calibration completed: samples=%d, offset=%.4f, %.4f, %.4f, %.4f, %.4f, "
-                "%.4f\n",
-                mCalibrationSampleCount, mZeroOffset[0], mZeroOffset[1], mZeroOffset[2], mZeroOffset[3], mZeroOffset[4],
-                mZeroOffset[5]);
-            LOG_INFO << "Zero calibration completed: samples=" << mCalibrationSampleCount
-                     << ", offset=" << mZeroOffset[0] << ", " << mZeroOffset[1] << ", " << mZeroOffset[2] << ", "
-                     << mZeroOffset[3] << ", " << mZeroOffset[4] << ", " << mZeroOffset[5];
-        }
-        mIsCalibrating = false;
-        return;
+    const robot_server_lib::Vector6d wrench_ee = MapSriRawToEE(fx, fy, fz, mx, my, mz);
+    for (int i = 0; i < 6; ++i) {
+        mCalibrationSum[i] += static_cast<float>(wrench_ee[i]);
     }
-
-    mCalibrationSum[0] += fx;
-    mCalibrationSum[1] += fy;
-    mCalibrationSum[2] += fz;
-    mCalibrationSum[3] += mx;
-    mCalibrationSum[4] += my;
-    mCalibrationSum[5] += mz;
     mCalibrationSampleCount++;
 }
 
-void SriForceSensor::ApplyZeroOffset(float& fx, float& fy, float& fz, float& mx, float& my, float& mz) {
-    fx -= mZeroOffset[0];
-    fy -= mZeroOffset[1];
-    fz -= mZeroOffset[2];
-    mx -= mZeroOffset[3];
-    my -= mZeroOffset[4];
-    mz -= mZeroOffset[5];
+bool SriForceSensor::TryFinalizeBias() {
+    std::lock_guard<std::mutex> lock(mCalibrationMutex);
+    if (!mIsCalibrating) {
+        return false;
+    }
+    if (mCalibrationSampleCount < kMinCalibrationSamples) {
+        return false;
+    }
+
+    robot_server_lib::Vector6d tool_gravity_ee = robot_server_lib::Vector6d::Zero();
+    Eigen::Vector3d rpy_log = Eigen::Vector3d::Zero();
+    bool gravity_subtracted = false;
+    if (mToolGravityCompensationForZeroEnabled) {
+        if (!mRotationWorldFromEEProvider) {
+            return false;
+        }
+        const auto R_opt = mRotationWorldFromEEProvider();
+        if (!R_opt) {
+            return false;
+        }
+        const robot_server_lib::Matrix3d& R = *R_opt;
+        const robot_server_lib::Vector3d gravity_world(0.0, 0.0, -mToolGravityMagnitude);
+        const robot_server_lib::Vector3d force_ee =
+            static_cast<double>(mToolModelSign) * R.transpose() * (mToolMassKg * gravity_world);
+        tool_gravity_ee.head<3>() = force_ee;
+        tool_gravity_ee.tail<3>() = mToolComM.cross(force_ee);
+        rpy_log = R.eulerAngles(0, 1, 2);  // intrinsic XYZ, only for log
+        gravity_subtracted = true;
+    }
+
+    for (int i = 0; i < 6; ++i) {
+        const float mean = mCalibrationSum[i] / static_cast<float>(mCalibrationSampleCount);
+        mZeroOffset[i] = mean - static_cast<float>(tool_gravity_ee[i]);
+    }
+    mZeroOffsetSampleCount = mCalibrationSampleCount;
+    mZeroOffsetValid = true;
+    mIsCalibrating = false;
+
+    // Restore observability log line that ProcessCalibrationData used to emit.
+    printf(
+        "[Info] SRI force sensor: Zero calibration completed: samples=%d, bias_ee=%.4f, %.4f, %.4f, %.4f, %.4f, %.4f, "
+        "gravity_subtracted=%d, R_finalize_rpy_xyz=%.4f, %.4f, %.4f\n",
+        mZeroOffsetSampleCount, mZeroOffset[0], mZeroOffset[1], mZeroOffset[2], mZeroOffset[3], mZeroOffset[4],
+        mZeroOffset[5], gravity_subtracted ? 1 : 0, rpy_log[0], rpy_log[1], rpy_log[2]);
+    LOG_INFO << "Zero calibration completed: samples=" << mZeroOffsetSampleCount << ", bias_ee=" << mZeroOffset[0]
+             << ", " << mZeroOffset[1] << ", " << mZeroOffset[2] << ", " << mZeroOffset[3] << ", " << mZeroOffset[4]
+             << ", " << mZeroOffset[5] << ", gravity_subtracted=" << (gravity_subtracted ? 1 : 0)
+             << ", R_finalize_rpy_xyz=" << rpy_log[0] << ", " << rpy_log[1] << ", " << rpy_log[2];
+
+    return true;
+}
+
+void SriForceSensor::ApplyZeroOffset(robot_server_lib::Vector6d& wrench_ee) {
+    for (int i = 0; i < 6; i++) {
+        wrench_ee[i] -= mZeroOffset[i];
+    }
 }
 
 // 解析方法
@@ -218,12 +288,12 @@ int SriForceSensor::ParseFrame(const unsigned char* data,
 
     float f[6];
     for (int i = 0; i < 3; i++) {
-        f[i] = (forceInt32[i] & 0x10000) ? -(float)((forceInt32[i] & 0xffff) / 10.0)
-                                         : (float)((forceInt32[i] & 0xffff) / 10.0);
+        f[i] = (forceInt32[i] & 0x10000) ? -(float)((forceInt32[i] & 0xffff) / 100.0)
+                                         : (float)((forceInt32[i] & 0xffff) / 100.0);
     }
     for (int i = 3; i < 6; i++) {
-        f[i] = (forceInt32[i] & 0x0800) ? -(float)((forceInt32[i] & 0x07ff) / 10.0)
-                                        : (float)((forceInt32[i] & 0x07ff) / 10.0);
+        f[i] = (forceInt32[i] & 0x0800) ? -(float)((forceInt32[i] & 0x07ff) / 100.0)
+                                        : (float)((forceInt32[i] & 0x07ff) / 100.0);
     }
 
     fx = f[0];
@@ -248,53 +318,91 @@ void* SriForceSensor::ReadThread(void* param) {
 void SriForceSensor::ReadLoop() {
     printf("[Info] SRI force sensor: Read thread started\n");
     LOG_INFO << "SRI force sensor: Read thread started";
+    auto last_abnormal_log_time = std::chrono::steady_clock::now() - std::chrono::seconds(5);
+    auto log_read_abnormal = [&last_abnormal_log_time]() {
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_abnormal_log_time >= std::chrono::seconds(1)) {
+            printf("[Warn] Force sensor data read abnormal\n");
+            LOG_WARN << "Force sensor data read abnormal";
+            last_abnormal_log_time = now;
+        }
+    };
+    std::vector<unsigned char> rx_buffer;
+    rx_buffer.reserve(REC_DATA_LEN);
+    const unsigned char frame_header[] = {0xAA, 0x55};
     while (true) {
         if (m_serial_fd < 0) break;
 
         int recvDataLen = ReadData(m_serial_fd, mReadBuffer, REC_DATA_LEN);
         if (recvDataLen > 0) {
-            // 只解析最后一个有效帧
-            float fx = 0, fy = 0, fz = 0, mx = 0, my = 0, mz = 0;
-            int found = 0;
+            rx_buffer.insert(rx_buffer.end(), mReadBuffer, mReadBuffer + recvDataLen);
 
-            int offset = 0;
-            while (offset + 14 <= recvDataLen) {
-                float tfx, tfy, tfz, tmx, tmy, tmz;
-                int newOffset = ParseFrame(mReadBuffer, recvDataLen, offset, tfx, tfy, tfz, tmx, tmy, tmz);
-                if (newOffset < 0) {
+            if (rx_buffer.size() > REC_DATA_LEN) {
+                rx_buffer.erase(rx_buffer.begin(), rx_buffer.end() - 1024);
+            }
+
+            float fx = 0, fy = 0, fz = 0, mx = 0, my = 0, mz = 0;
+            bool found = false;
+
+            while (true) {
+                auto header = std::search(rx_buffer.begin(), rx_buffer.end(), frame_header, frame_header + 2);
+                if (header == rx_buffer.end()) {
+                    if (rx_buffer.size() > 1) {
+                        rx_buffer.erase(rx_buffer.begin(), rx_buffer.end() - 1);
+                    }
                     break;
                 }
-                if (newOffset == offset) {
-                    offset++;
-                    continue;
+
+                if (header != rx_buffer.begin()) {
+                    rx_buffer.erase(rx_buffer.begin(), header);
                 }
 
-                // 更新最新值
-                fx = tfx;
-                fy = tfy;
-                fz = tfz;
-                mx = tmx;
-                my = tmy;
-                mz = tmz;
-                found = 1;
-                offset = newOffset;
+                if (rx_buffer.size() < 14) {
+                    break;
+                }
+
+                float tfx, tfy, tfz, tmx, tmy, tmz;
+                int newOffset =
+                    ParseFrame(rx_buffer.data(), static_cast<int>(rx_buffer.size()), 0, tfx, tfy, tfz, tmx, tmy, tmz);
+                if (newOffset == 14) {
+                    fx = tfx;
+                    fy = tfy;
+                    fz = tfz;
+                    mx = tmx;
+                    my = tmy;
+                    mz = tmz;
+                    found = true;
+                    rx_buffer.erase(rx_buffer.begin(), rx_buffer.begin() + 14);
+                } else if (newOffset > 0) {
+                    rx_buffer.erase(rx_buffer.begin(), rx_buffer.begin() + 1);
+                } else {
+                    break;
+                }
             }
 
             if (found) {
-                // 校准
                 if (mIsCalibrating) {
                     ProcessCalibrationData(fx, fy, fz, mx, my, mz);
                 } else {
-                    // 应用零位偏移并写入 buffer
-                    ApplyZeroOffset(fx, fy, fz, mx, my, mz);
-                    if (buffer_) {
-                        robot_server_lib::Vector6d vec;
-                        vec << fx, fy, fz, mx, my, mz;
-                        buffer_->AppendNewElement(vec);
+                    robot_server_lib::Vector6d raw_vec;
+                    raw_vec << fx, fy, fz, mx, my, mz;
+                    if (raw_buffer_) {
+                        raw_buffer_->AppendNewElement(raw_vec);
+                    }
+
+                    if (mZeroOffsetValid) {
+                        robot_server_lib::Vector6d wrench_ee = MapSriRawToEE(fx, fy, fz, mx, my, mz);
+                        ApplyZeroOffset(wrench_ee);
+                        if (buffer_) {
+                            buffer_->AppendNewElement(wrench_ee);
+                        }
                     }
                 }
+            } else if (rx_buffer.size() >= 14) {
+                log_read_abnormal();
             }
         } else {
+            log_read_abnormal();
             usleep(50);
         }
     }
@@ -313,6 +421,7 @@ bool SriForceSensor::Init(int baudrate) {
 
     // 创建 buffer
     buffer_ = std::make_shared<robot_server_lib::SingleWriterLatestBuffer<robot_server_lib::Vector6d>>();
+    raw_buffer_ = std::make_shared<robot_server_lib::SingleWriterLatestBuffer<robot_server_lib::Vector6d>>();
 
     // 打开串口
     m_serial_fd = OpenPort(port);
@@ -338,16 +447,20 @@ bool SriForceSensor::Init(int baudrate) {
     // 等待数据开始流动
     usleep(100000);
 
-    // 启动零位校准
-    mIsCalibrating = true;
-    mCalibrationSampleCount = 0;
-    memset(mCalibrationSum, 0, sizeof(mCalibrationSum));
-    mCalibrationStartTime = std::chrono::steady_clock::now();
-
-    // 等待校准完成
-    while (mIsCalibrating) {
-        usleep(10000);
+    // 启动零位校准 (在锁内初始化以避免与读取线程的竞争)
+    {
+        std::lock_guard<std::mutex> lock(mCalibrationMutex);
+        memset(mCalibrationSum, 0, sizeof(mCalibrationSum));
+        memset(mZeroOffset, 0, sizeof(mZeroOffset));
+        mCalibrationSampleCount = 0;
+        mZeroOffsetSampleCount = 0;
+        mZeroOffsetValid = false;
+        mIsCalibrating = true;
+        mCalibrationStartTime = std::chrono::steady_clock::now();
     }
+
+    // 校准结束由控制循环中的 TryFinalizeBias() 异步完成 (它可以使用真实的 R 来减去重力)，
+    // 因此 Init() 不再阻塞等待校准完成。
 
     printf("[Info] SRI force sensor: Initialized successfully\n");
     LOG_INFO << "SRI force sensor initialized successfully";
@@ -366,10 +479,46 @@ void SriForceSensor::Close() {
 }
 
 bool SriForceSensor::PeekLatest(robot_server_lib::Vector6d* output) {
+    if (!HasValidZeroOffset()) {
+        return false;
+    }
     if (buffer_ && output) {
         return buffer_->PeekLatest(output);
     }
     return false;
 }
 
+bool SriForceSensor::PeekLatestRaw(robot_server_lib::Vector6d* output) {
+    if (raw_buffer_ && output) {
+        return raw_buffer_->PeekLatest(output);
+    }
+    return false;
+}
+
+bool SriForceSensor::GetZeroOffset(robot_server_lib::Vector6d* output) const {
+    if (!output) {
+        return false;
+    }
+
+    *output << mZeroOffset[0], mZeroOffset[1], mZeroOffset[2], mZeroOffset[3], mZeroOffset[4], mZeroOffset[5];
+    return true;
+}
+
+bool SriForceSensor::HasValidZeroOffset() const { return mZeroOffsetValid; }
+
+int SriForceSensor::GetZeroOffsetSampleCount() const { return mZeroOffsetSampleCount; }
+
 bool SriForceSensor::IsCalibrating() const { return mIsCalibrating; }
+
+void SriForceSensor::BeginCalibrationForTest() {
+    std::lock_guard<std::mutex> lock(mCalibrationMutex);
+    for (int i = 0; i < 6; ++i) {
+        mCalibrationSum[i] = 0.0f;
+        mZeroOffset[i] = 0.0f;
+    }
+    mCalibrationSampleCount = 0;
+    mZeroOffsetSampleCount = 0;
+    mZeroOffsetValid = false;
+    mIsCalibrating = true;
+    mCalibrationStartTime = std::chrono::steady_clock::now();
+}

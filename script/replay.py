@@ -1,3 +1,4 @@
+import argparse
 import sys
 import rclpy
 from rclpy.node import Node
@@ -7,6 +8,7 @@ import json
 import time
 import threading
 from rclpy.executors import MultiThreadedExecutor
+from pathlib import Path
 
 # record_file示例
 # {
@@ -71,12 +73,68 @@ joint_keys = [
 finger_keys = ["LEFT_HAND_THUMB1", "LEFT_HAND_THUMB2", "LEFT_HAND_INDEX", "LEFT_HAND_MIDDLE", "LEFT_HAND_RING", "LEFT_HAND_PINKY",
                     "RIGHT_HAND_THUMB1", "RIGHT_HAND_THUMB2", "RIGHT_HAND_INDEX", "RIGHT_HAND_MIDDLE", "RIGHT_HAND_RING", "RIGHT_HAND_PINKY"]
 
-# 读取运行参数
-def read_args():
-    if len(sys.argv) < 2:
-        print("Usage: python replay.py <recorded_file_path>")
-        sys.exit(1)
-    return sys.argv[1]
+LOG_KEYS = [
+    "timestamp",
+    "joint_position",
+    "joint_velocity",
+    "joint_torque",
+    "joint_position_input",
+    "joint_position_after_ruckig",
+    "joint_position_after_filter",
+    "joint_position_cmd",
+    "joint_torque_feedforward",
+    "torque_ext",
+    "torque_ext_raw",
+    "joint_admittance_q_offset",
+    "joint_admittance_dq_offset",
+    "joint_position_ref_admittance",
+    "joint_impedance_error_after_admittance",
+    "force_sensor",
+    "force_sensor_gravity",
+    "raw_force_sensor",
+    "force_sensor_bias",
+    "force_sensor_inertia",
+    "ee_omega_ee_frame",
+    "ee_alpha_ee_frame",
+    "ee_pose_world",
+]
+
+
+class Recorder:
+    def __init__(self, node: Node, topic: str, log_path: str):
+        self._lock = threading.Lock()
+        self._log_path = log_path
+        self._samples = []
+        self.count = 0
+        node.create_subscription(String, topic, self._callback, 50)
+
+    def _callback(self, msg: String):
+        try:
+            d = json.loads(msg.data)
+        except (json.JSONDecodeError, TypeError):
+            return
+        with self._lock:
+            self._samples.append(d)
+            self.count += 1
+
+    def save(self):
+        with self._lock:
+            samples = self._samples
+        with open(self._log_path, "w") as f:
+            for s in samples:
+                row = {}
+                for k in LOG_KEYS:
+                    if k in s:
+                        row[k] = s[k]
+                f.write(json.dumps(row) + "\n")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Replay recorded robot data")
+    parser.add_argument("recorded_file", help="Path to the recorded JSON file")
+    parser.add_argument("--log", type=str, default=None,
+                        help="录制 /feedback/robot_server_state 数据到 JSONL 文件")
+    return parser.parse_args()
 
 # 读取记录文件
 def read_recorded_file(file_path):
@@ -162,12 +220,17 @@ def robot_state_callback(node):
 # 主函数
 def main(args=None):
     rclpy.init(args=args)
+    cli_args = parse_args()
 
-    # 创建节点
     node = Node("replay_node")
     node.publisher = node.create_publisher(JointPositionControl, "/control/joint_position", 10)
     node.server_status = None
     node.create_subscription(String, "/feedback/robot_server_state", robot_state_callback(node), 10)
+
+    recorder = None
+    if cli_args.log:
+        recorder = Recorder(node, "/feedback/robot_server_state", cli_args.log)
+
     executor = MultiThreadedExecutor()
     executor.add_node(node)
     ros_thread = threading.Thread(target=executor.spin, daemon=True)
@@ -178,16 +241,14 @@ def main(args=None):
     left_hand_node.publisher = left_hand_node.create_publisher(Float64MultiArray, "/set_brainco_left_hand_qpos", 10)
     right_hand_node.publisher = right_hand_node.create_publisher(Float64MultiArray, "/set_brainco_right_hand_qpos", 10)
 
-    # 读取记录文件路径
-    recorded_file_path = read_args()
+    recorded_data = read_recorded_file(cli_args.recorded_file)
 
-    # 读取记录数据
-    recorded_data = read_recorded_file(recorded_file_path)
-
-    # 发送记录的数据
     send_recorded_data(node, left_hand_node, right_hand_node, recorded_data)
 
-    # 销毁节点
+    if recorder:
+        recorder.save()
+        print(f"[SAVED] {cli_args.log} ({recorder.count} samples)")
+
     node.destroy_node()
     rclpy.shutdown()
 
