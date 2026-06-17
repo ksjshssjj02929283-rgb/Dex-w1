@@ -16,7 +16,6 @@
 #include <magic_enum.hpp>
 #include <memory>
 #include <nlohmann/json.hpp>
-#include <optional>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <robot_server_interfaces/action/move_robot.hpp>
 #include <robot_server_interfaces/msg/streaming_command.hpp>
@@ -41,22 +40,6 @@ PoseQuaternion VectorXdToPoseQuaternion(const Eigen::VectorXd& vec);
 PoseQuaternion StringToPoseQuaternion(const std::string& str);
 
 Vector3d StringToVector3d(const std::string& str);
-
-enum class EERotationParseError {
-    None,
-    InvalidArmIndex,
-    InsufficientSize,
-    NonFiniteQuaternion,
-    NearZeroQuaternion,
-};
-
-struct EERotationParseResult {
-    std::optional<Eigen::Matrix3d> rotation;
-    EERotationParseError reason{EERotationParseError::None};
-    int required_size{0};
-};
-
-EERotationParseResult GetEERotationWorldFromPoseVector(const Eigen::VectorXd& ee_pose_world, int arm_index);
 
 template <typename T>
 inline std::size_t GetContainerSize(const T& c) {
