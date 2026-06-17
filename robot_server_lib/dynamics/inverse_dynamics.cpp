@@ -24,8 +24,8 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
         {
             auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, q, robot_model.model_ptr->getFrameId(first_joint_urdf_name) - 1);
             Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
-            Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Primary);
-            utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Primary);
+            Eigen::VectorXd tau_arm = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Primary);
+            utils::MapJointToWholeBody(robot_model, tau_arm, tau, MotionGroup::Primary);
         }
         else
         {

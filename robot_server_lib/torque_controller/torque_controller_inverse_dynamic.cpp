@@ -36,11 +36,14 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
     VectorDof K_p = input_cmd.cmd.joint_stiffness;
     VectorDof K_v = input_cmd.cmd.joint_damping;
     VectorDof K_i_ratio = input_cmd.cmd.joint_integral_ratio;
+    auto compute_feedforward = [&]() {
+        return dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero()) +
+               raw_measurement.tool_torque_feedforward;
+    };
     switch (state_) {
         case TorqueControllerState::Idle:
             torque_joint_impedance = K_p.asDiagonal() * (idle_q_ - feedback_q) + K_v.asDiagonal() * (-feedback_dq);
-            output_cmd.torque_feedforward =
-                dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
+            output_cmd.torque_feedforward = compute_feedforward();
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
             output_cmd.q_desired = idle_q_;
             if (robot_model_.robot_property_default.allow_force_sensor) {
@@ -57,8 +60,7 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
             break;
         case TorqueControllerState::Decelerating:
             torque_joint_impedance = K_v.asDiagonal() * (-feedback_dq);
-            output_cmd.torque_feedforward =
-                dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
+            output_cmd.torque_feedforward = compute_feedforward();
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
             output_cmd.q_desired = feedback_q;
             if (robot_model_.robot_property_default.allow_force_sensor) {
@@ -122,8 +124,7 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
             }
 
             //
-            output_cmd.torque_feedforward =
-                dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
+            output_cmd.torque_feedforward = compute_feedforward();
             output_cmd.torque_impedance = torque_cart_impedance + output_cmd.torque_feedforward;
             output_cmd.torque = torque_joint_impedance + output_cmd.torque_feedforward;
             output_cmd.q_desired = cmd_q;

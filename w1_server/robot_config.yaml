@@ -61,9 +61,9 @@ allow_force_sensor: true
 # === 外力传感器进入关节阻抗控制前的死区与饱和 ===
 force_sensor_external_wrench:
   model_sign: -1               # 正号是放大外力，负号是抵消外力
-  force_deadband_n: 3.2
+  force_deadband_n: 3.3
   force_saturation_n: 100.0
-  torque_deadband_nm: 0.13
+  torque_deadband_nm: 0.15
   torque_saturation_nm: 10.0
 
 # === 关节导纳 admittance ===
@@ -103,7 +103,7 @@ tool_gravity_compensation:    # 大寰二指夹
                        [0, 0, 0.00065]]  # 惯量张量 (单位 kg·m^2) I_C^EE, 关于 COM, EE 系基
   model_sign: 1
   # 末端加速度 / 关节加速度的低通截止 (Hz), 用于在线惯量补偿.
-  inertia_compensation_filter_hz: 5.0
+  inertia_compensation_filter_hz: 20.0
 
 # === 记录配置 ===
 enable_record: true

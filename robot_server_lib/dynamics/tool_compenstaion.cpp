@@ -1,5 +1,6 @@
 #include "tool_compenstaion.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -112,19 +113,18 @@ void InitializeToolCompensationFilters(ToolCompensationState& state, double cuto
     }
 }
 
-Vector6d ApplyToolGravityCompensation(const Vector6d& wrench_ee,
-                                      const ToolCompensationConfig& config,
-                                      const std::optional<Eigen::Matrix3d>& rotation_world_from_ee,
-                                      bool* applied,
-                                      std::string* failure_reason) {
+Vector6d ComputeToolGravityWrenchEE(const ToolCompensationConfig& config,
+                                    const std::optional<Eigen::Matrix3d>& rotation_world_from_ee,
+                                    bool* applied,
+                                    std::string* failure_reason) {
     if (applied) *applied = false;
     if (failure_reason) failure_reason->clear();
     if (!config.gravity_enabled) {
-        return wrench_ee;
+        return Vector6d::Zero();
     }
     if (!rotation_world_from_ee) {
         if (failure_reason) *failure_reason = "missing valid ee_pose_world rotation";
-        return wrench_ee;
+        return Vector6d::Zero();
     }
 
     const Vector3d gravity_world(0.0, 0.0, -config.gravity_magnitude);
@@ -137,10 +137,23 @@ Vector6d ApplyToolGravityCompensation(const Vector6d& wrench_ee,
 
     if (!utils::IsFiniteVector(expected_wrench_ee)) {
         if (failure_reason) *failure_reason = "expected wrench is non-finite";
-        return wrench_ee;
+        return Vector6d::Zero();
     }
 
     if (applied) *applied = true;
+    return expected_wrench_ee;
+}
+
+Vector6d ApplyToolGravityCompensation(const Vector6d& wrench_ee,
+                                      const ToolCompensationConfig& config,
+                                      const std::optional<Eigen::Matrix3d>& rotation_world_from_ee,
+                                      bool* applied,
+                                      std::string* failure_reason) {
+    const Vector6d expected_wrench_ee =
+        ComputeToolGravityWrenchEE(config, rotation_world_from_ee, applied, failure_reason);
+    if (applied && !*applied) {
+        return wrench_ee;
+    }
     return wrench_ee - expected_wrench_ee;
 }
 
@@ -288,6 +301,37 @@ Vector6d ApplyToolInertiaCompensationPrimary(const Vector6d& wrench_ee,
 
     if (applied) *applied = true;
     return wrench_ee - expected_inertia_wrench_ee;
+}
+
+Eigen::VectorXd ComputeToolJointTorqueFromWrench(const pinocchio::Model& arm_model,
+                                                 const Eigen::VectorXd& feedback_q_arm,
+                                                 const Vector6d& tool_wrench_ee,
+                                                 bool* applied,
+                                                 std::string* failure_reason) {
+    if (applied) *applied = false;
+    if (failure_reason) failure_reason->clear();
+
+    if (arm_model.nv <= 0 || feedback_q_arm.size() != arm_model.nq) {
+        if (failure_reason) *failure_reason = "arm model or feedback q size is invalid";
+        return Eigen::VectorXd::Zero(std::max<int>(arm_model.nv, 0));
+    }
+    if (!utils::IsFiniteVector(feedback_q_arm) || !utils::IsFiniteVector(tool_wrench_ee)) {
+        if (failure_reason) *failure_reason = "tool torque input contains non-finite values";
+        return Eigen::VectorXd::Zero(arm_model.nv);
+    }
+
+    const Eigen::MatrixXd jacobian = pinocchio::GetJacobiMatrix(arm_model, feedback_q_arm, pinocchio::LOCAL);
+    if (jacobian.rows() != 6 || jacobian.cols() != arm_model.nv) {
+        if (failure_reason) *failure_reason = "Jacobian shape is invalid";
+        return Eigen::VectorXd::Zero(arm_model.nv);
+    }
+    if (!utils::IsFiniteVector(jacobian)) {
+        if (failure_reason) *failure_reason = "Jacobian contains non-finite values";
+        return Eigen::VectorXd::Zero(arm_model.nv);
+    }
+
+    if (applied) *applied = true;
+    return jacobian.transpose() * tool_wrench_ee;
 }
 
 void ResetToolInertiaCompensationState(ToolCompensationState& state) {

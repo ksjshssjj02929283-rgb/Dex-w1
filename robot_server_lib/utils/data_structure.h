@@ -53,12 +53,14 @@ struct JointRawMeasurement {
     VectorDof velocity;                          // 关节速度
     VectorDof effort;                            // 关节力矩
     Vector12d sensor_wrench{Vector12d::Zero()};  // 六维力传感器数据
+    VectorDof tool_torque_feedforward{VectorDof::Zero()};  // 工具负载补偿前馈力矩
     TimePointSystem time_point;
 
     std::string ToString() const {
         std::stringstream ss;
         ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose()
-           << ", Effort: " << effort.transpose() << ", Sensor Wrench: " << sensor_wrench.transpose();
+           << ", Effort: " << effort.transpose() << ", Sensor Wrench: " << sensor_wrench.transpose()
+           << ", Tool Torque Feedforward: " << tool_torque_feedforward.transpose();
         return ss.str();
     }
 };

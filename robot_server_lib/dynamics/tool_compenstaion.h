@@ -64,6 +64,11 @@ ToolCompensationLoadResult LoadToolGravityCompensationConfig(const std::filesyst
 
 void InitializeToolCompensationFilters(ToolCompensationState& state, double cutoff_hz);
 
+Vector6d ComputeToolGravityWrenchEE(const ToolCompensationConfig& config,
+                                    const std::optional<Eigen::Matrix3d>& rotation_world_from_ee,
+                                    bool* applied = nullptr,
+                                    std::string* failure_reason = nullptr);
+
 Vector6d ApplyToolGravityCompensation(const Vector6d& wrench_ee,
                                       const ToolCompensationConfig& config,
                                       const std::optional<Eigen::Matrix3d>& rotation_world_from_ee,
@@ -80,6 +85,12 @@ Vector6d ApplyToolInertiaCompensationPrimary(const Vector6d& wrench_ee,
                                              ToolCompensationState& state,
                                              bool* applied = nullptr,
                                              std::string* failure_reason = nullptr);
+
+Eigen::VectorXd ComputeToolJointTorqueFromWrench(const pinocchio::Model& arm_model,
+                                                 const Eigen::VectorXd& feedback_q_arm,
+                                                 const Vector6d& tool_wrench_ee,
+                                                 bool* applied = nullptr,
+                                                 std::string* failure_reason = nullptr);
 
 void ResetToolInertiaCompensationState(ToolCompensationState& state);
 
