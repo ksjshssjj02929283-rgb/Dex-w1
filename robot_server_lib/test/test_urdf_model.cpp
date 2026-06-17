@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <filesystem>
 #include <iostream>
+#include <pinocchio/parsers/urdf.hpp>
 
 #include "NanoLog.hpp"
 #include "data_structure.h"
@@ -116,6 +118,26 @@ TEST(ModelAnalysisTest, PrimaryArmModelTest) {
 
     std::cout << "\n========================================\n" << std::endl;
     EXPECT_NE(robot_model.primary_arm_model_ptr, nullptr);
+}
+
+TEST(ModelAnalysisTest, ResolvesTerminalEeBodyFramesFromConfiguredArmJoints) {
+    const auto robot_urdf_path =
+        std::filesystem::path(__FILE__).parent_path().parent_path() / "robot_models" / "w1" / "robot.urdf";
+    pinocchio::Model model;
+    pinocchio::urdf::buildModel(robot_urdf_path, model);
+
+    const std::vector<std::string> primary_joints = {"LEFT_J1", "LEFT_J2", "LEFT_J3", "LEFT_J4",
+                                                     "LEFT_J5", "LEFT_J6", "LEFT_J7"};
+    const std::vector<std::string> secondary_joints = {"RIGHT_J1", "RIGHT_J2", "RIGHT_J3", "RIGHT_J4",
+                                                       "RIGHT_J5", "RIGHT_J6", "RIGHT_J7"};
+
+    const int primary_frame_id = utils::GetTerminalBodyFrameId(model, primary_joints);
+    const int secondary_frame_id = utils::GetTerminalBodyFrameId(model, secondary_joints);
+
+    ASSERT_GE(primary_frame_id, 0);
+    ASSERT_GE(secondary_frame_id, 0);
+    EXPECT_EQ(model.frames[primary_frame_id].name, "left_ee");
+    EXPECT_EQ(model.frames[secondary_frame_id].name, "right_ee");
 }
 
 int main(int argc, char** argv) {

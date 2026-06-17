@@ -101,6 +101,23 @@ struct TrajectoryBounds {
     }
 };
 
+struct JointAdmittanceJointConfig {
+    bool enabled{false};
+    double torque_gain{1.0};
+    double virtual_inertia{1.0};
+    double natural_frequency_hz{1.5};
+    double damping_ratio{1.2};
+    double offset_limit{0.05};
+    double velocity_limit{0.4};
+    double acceleration_limit{5.0};
+};
+
+struct JointAdmittanceConfig {
+    bool enabled{false};
+    double torque_ext_direct_gain{0.0};
+    std::array<JointAdmittanceJointConfig, ndof_robot> joints{};
+};
+
 struct RobotProperty {
     pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
@@ -110,10 +127,12 @@ struct RobotProperty {
     bool clear_error_flag{false};
     bool allow_force_control{false};
     bool enable_cartesian_impedance{false};
+    bool allow_force_sensor{true};
     SafetyCheckConfig safety_check_config;  // 安全检查配置
     VectorDof joint_stiffness = VectorDof::Constant(200.0);
     VectorDof joint_damping = VectorDof::Constant(20.0);
     VectorDof joint_integral_ratio = VectorDof::Constant(0.01);
+    JointAdmittanceConfig joint_admittance;
     Vector12d cart_stiffness = Vector12d::Constant(200.0);
     Vector12d cart_damping_ratio = Vector12d::Constant(1.0);  // 阻尼比 范围0.5 ~ 1.5
     std::array<ErrorCode, ndof_robot> error_codes{};
@@ -129,6 +148,10 @@ struct RobotProperty {
 
 struct PlannerManagerInfo {
     Eigen::VectorXd ee_pose_measurement;
+    // 末端在 URDF 根 (base_link, 与世界系等价: z 朝上) 下的位姿，
+    // 布局与 ee_pose_measurement 相同: [x,y,z,qw,qx,qy,qz] x2 (primary, secondary)。
+    // 用于工具重力补偿等需要 world 重力方向的场景。
+    Eigen::VectorXd ee_pose_world_measurement;
     Eigen::VectorXd torso_pose_measurement;
     RobotProperty robot_property;
 };
@@ -182,7 +205,12 @@ struct TorqueCtrlCommand {
     VectorDof torque;              // 关节tracking力控模式下的力矩指令
     VectorDof torque_feedforward;  // 力矩前馈(抵消重力, 科氏力, 摩擦力)
     VectorDof torque_impedance;    // 笛卡尔阻抗控制模式下的力矩
+    VectorDof torque_ext;          // 由外部wrench映射得到的关节空间力矩
     VectorDof q_desired;
+    VectorDof joint_admittance_q_offset{VectorDof::Zero()};
+    VectorDof joint_admittance_dq_offset{VectorDof::Zero()};
+    VectorDof joint_position_ref_admittance{VectorDof::Zero()};
+    VectorDof joint_impedance_error_after_admittance{VectorDof::Zero()};
 };
 
 // 移动指令
@@ -283,6 +311,11 @@ struct RobotParams {
     std::vector<std::string> joints_dual_arm;                       // 双臂模式关节名称
     std::optional<Eigen::VectorXd> dyn_base_params_primary;         // 动力学基参数矩阵(非方阵)
     std::optional<Eigen::VectorXd> dyn_base_params_secondary;       // 动力学基参数矩阵(非方阵)
+    double external_wrench_force_deadband_n{3.0};
+    double external_wrench_force_saturation_n{100.0};
+    double external_wrench_torque_deadband_nm{0.1};
+    double external_wrench_torque_saturation_nm{10.0};
+    int external_wrench_model_sign{1};
 };
 
 struct RobotModel {

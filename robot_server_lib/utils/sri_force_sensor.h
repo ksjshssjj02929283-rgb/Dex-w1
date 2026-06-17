@@ -24,6 +24,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -64,6 +65,37 @@ public:
 
     // 读取最新力传感器数据 (fx, fy, fz, mx, my, mz)
     bool PeekLatest(robot_server_lib::Vector6d* output);
+    bool PeekLatestRaw(robot_server_lib::Vector6d* output);
+    bool GetZeroOffset(robot_server_lib::Vector6d* output) const;
+    bool HasValidZeroOffset() const;
+    int GetZeroOffsetSampleCount() const;
+
+    // Try to finalize the zero offset using accumulated samples and the
+    // current rotation provider. Returns true on the tick that finalization
+    // succeeds; false if already finalized or conditions are not yet met.
+    // Safe to call from the control loop every tick.
+    bool TryFinalizeBias();
+
+    // Test-only helper: reset calibration accumulators and start a new
+    // calibration without going through Init() / opening any serial port.
+    // Production code should use Init() instead.
+    void BeginCalibrationForTest();
+
+    // Test-only helper: feed one calibration frame from outside the read
+    // thread. Forwards to the private ProcessCalibrationData.
+    void ProcessCalibrationDataForTest(float fx, float fy, float fz, float mx, float my, float mz) {
+        ProcessCalibrationData(fx, fy, fz, mx, my, mz);
+    }
+
+    // 设置零位校准时的工具自重补偿参数
+    // rotation_world_from_ee_provider: 返回 R_world_from_EE 的旋转矩阵
+    void SetToolGravityCompensationForZeroCalibration(
+        bool enabled,
+        double tool_mass_kg,
+        const robot_server_lib::Vector3d& tool_com_m,
+        double gravity_magnitude = 9.79,
+        int model_sign = 1,
+        std::function<std::optional<robot_server_lib::Matrix3d>()> rotation_world_from_ee_provider = nullptr);
 
     // 是否正在校准
     bool IsCalibrating() const;
@@ -76,13 +108,26 @@ private:
 
     // 数据输出 buffer
     std::shared_ptr<robot_server_lib::SingleWriterLatestBuffer<robot_server_lib::Vector6d>> buffer_;
+    std::shared_ptr<robot_server_lib::SingleWriterLatestBuffer<robot_server_lib::Vector6d>> raw_buffer_;
 
-    // 零位校准相关
+    // 零位校准相关（mZeroOffset 和 mCalibrationSum 均在 EE 坐标系下）
     bool mIsCalibrating = false;
     int mCalibrationSampleCount = 0;
+    int mZeroOffsetSampleCount = 0;
+    bool mZeroOffsetValid = false;
     float mZeroOffset[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     float mCalibrationSum[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     std::chrono::steady_clock::time_point mCalibrationStartTime;
+
+    bool mToolGravityCompensationForZeroEnabled = false;
+    double mToolMassKg = 0.0;
+    double mToolGravityMagnitude = 9.79;
+    int mToolModelSign = 1;
+    robot_server_lib::Vector3d mToolComM = robot_server_lib::Vector3d::Zero();
+    std::function<std::optional<robot_server_lib::Matrix3d>()> mRotationWorldFromEEProvider;
+
+    mutable std::mutex mCalibrationMutex;
+    static constexpr int kMinCalibrationSamples = 500;  // ~500ms @ 1kHz
 
     // 串口方法
     int OpenPort(const char* device);
@@ -112,7 +157,9 @@ private:
 
     // 零位校准方法
     void ProcessCalibrationData(float fx, float fy, float fz, float mx, float my, float mz);
-    void ApplyZeroOffset(float& fx, float& fy, float& fz, float& mx, float& my, float& mz);
+    void ApplyZeroOffset(robot_server_lib::Vector6d& wrench_ee);
+    static robot_server_lib::Vector6d MapSriRawToEE(float fx, float fy, float fz, float mx, float my, float mz);
+    robot_server_lib::Vector6d ComputeToolGravityWrenchEE() const;
 
     // 辅助方法
     const char* FindSerialPort();

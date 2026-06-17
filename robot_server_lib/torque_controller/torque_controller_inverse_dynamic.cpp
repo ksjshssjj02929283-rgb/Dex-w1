@@ -1,12 +1,31 @@
 #include "torque_controller_inverse_dynamic.h"
 
+#include <cmath>
+
 namespace robot_server_lib {
 
-TorqueControllerInvDynamic::TorqueControllerInvDynamic(RobotModel robot_model) : TorqueControllerBase(robot_model) {}
+namespace {
+constexpr double kIntegralTorqueExtThresholdNm = 0.2;
+constexpr double kIntegralQOffsetThresholdRad = 0.003;
+constexpr double kIntegralDqOffsetThresholdRadPerSec = 0.03;
+constexpr double kIntegralCommandVelocityThresholdRadPerSec = 0.03;
+constexpr double kIntegralFeedbackVelocityThresholdRadPerSec = 0.05;
+}  // namespace
+
+TorqueControllerInvDynamic::TorqueControllerInvDynamic(RobotModel robot_model) : TorqueControllerBase(robot_model) {
+    joint_impedance_controller_ = std::make_shared<dynamics::JointImpedanceController>(robot_model_);
+    joint_admittance_controller_ =
+        std::make_shared<dynamics::JointAdmittanceController>(robot_model_.robot_property_default.joint_admittance);
+}
 
 bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_measurement,
                                                 const PlannerManagerCommand& input_cmd,
                                                 TorqueCtrlCommand& output_cmd) {
+    output_cmd.torque_ext.setZero();
+    output_cmd.joint_admittance_q_offset.setZero();
+    output_cmd.joint_admittance_dq_offset.setZero();
+    output_cmd.joint_position_ref_admittance.setZero();
+    output_cmd.joint_impedance_error_after_admittance.setZero();
     VectorDof feedback_q = raw_measurement.position;
     VectorDof feedback_dq = raw_measurement.velocity;
     VectorDof cmd_q = input_cmd.cmd.position;
@@ -14,8 +33,6 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
     VectorDof cmd_ddq = input_cmd.cmd.acceleration;
     VectorDof torque_cart_impedance = input_cmd.cmd.torque_feedforward;
     VectorDof torque_joint_impedance = VectorDof::Zero();
-    VectorDof q_error = VectorDof::Zero();
-    VectorDof dq_error = VectorDof::Zero();
     VectorDof K_p = input_cmd.cmd.joint_stiffness;
     VectorDof K_v = input_cmd.cmd.joint_damping;
     VectorDof K_i_ratio = input_cmd.cmd.joint_integral_ratio;
@@ -26,6 +43,17 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                 dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
             output_cmd.q_desired = idle_q_;
+            if (robot_model_.robot_property_default.allow_force_sensor) {
+                output_cmd.torque_ext =
+                    joint_impedance_controller_->ComputeExternalTorque(feedback_q, raw_measurement.sensor_wrench);
+            }
+            if (joint_admittance_controller_) {
+                joint_admittance_controller_->DecayToZero(torque_ctrl_dt);
+                output_cmd.joint_admittance_q_offset = joint_admittance_controller_->q_offset();
+                output_cmd.joint_admittance_dq_offset = joint_admittance_controller_->dq_offset();
+            }
+            output_cmd.joint_position_ref_admittance = output_cmd.q_desired + output_cmd.joint_admittance_q_offset;
+            output_cmd.joint_impedance_error_after_admittance = output_cmd.joint_position_ref_admittance - feedback_q;
             break;
         case TorqueControllerState::Decelerating:
             torque_joint_impedance = K_v.asDiagonal() * (-feedback_dq);
@@ -33,26 +61,77 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                 dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
             output_cmd.q_desired = feedback_q;
+            if (robot_model_.robot_property_default.allow_force_sensor) {
+                output_cmd.torque_ext =
+                    joint_impedance_controller_->ComputeExternalTorque(feedback_q, raw_measurement.sensor_wrench);
+            }
+            if (joint_admittance_controller_) {
+                joint_admittance_controller_->DecayToZero(torque_ctrl_dt);
+                output_cmd.joint_admittance_q_offset = joint_admittance_controller_->q_offset();
+                output_cmd.joint_admittance_dq_offset = joint_admittance_controller_->dq_offset();
+            }
+            output_cmd.joint_position_ref_admittance = output_cmd.q_desired + output_cmd.joint_admittance_q_offset;
+            output_cmd.joint_impedance_error_after_admittance = output_cmd.joint_position_ref_admittance - feedback_q;
             break;
         case TorqueControllerState::Operating: {
-            q_error = cmd_q - feedback_q;
-            dq_error = cmd_dq - feedback_dq;
-            // 积分误差累计并限幅
-            for (int i = 0; i < ndof_robot; i++) {
-                if (std::abs(q_error[i]) < 0.005 / 180 * M_PI) {
-                    q_error[i] = 0.0;
+            const bool use_force_sensor = robot_model_.robot_property_default.allow_force_sensor;
+            const VectorDof torque_ext_raw = use_force_sensor ? joint_impedance_controller_->ComputeExternalTorque(
+                                                                    feedback_q, raw_measurement.sensor_wrench)
+                                                              : VectorDof::Zero();
+            output_cmd.torque_ext = torque_ext_raw;
+
+            VectorDof q_offset = VectorDof::Zero();
+            VectorDof dq_offset = VectorDof::Zero();
+            if (joint_admittance_controller_) {
+                if (use_force_sensor) {
+                    joint_admittance_controller_->Update(torque_ext_raw, torque_ctrl_dt, q_offset, dq_offset);
+                } else {
+                    joint_admittance_controller_->DecayToZero(torque_ctrl_dt);
                 }
             }
-            integral_error_ = (integral_error_ + q_error).cwiseMin(error_integral_max_).cwiseMax(-error_integral_max_);
-            // 根据 K_p 百分比计算实际 K_i
-            VectorDof torque_integral = (K_p.cwiseProduct(K_i_ratio)).asDiagonal() * integral_error_;
+            // admittance后的参考位置和速度
+            const VectorDof cmd_q_admittance = cmd_q + q_offset;
+            const VectorDof cmd_dq_admittance = cmd_dq + dq_offset;
 
-            torque_joint_impedance = K_p.asDiagonal() * q_error + K_v.asDiagonal() * dq_error + torque_integral;
-            output_cmd.torque_feedforward = dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq,
-                                                                      VectorDof::Zero());  // 补偿重力, 科氏力, 摩擦力
+            VectorDof integral_enable = VectorDof::Zero();
+            for (int i = 0; i < ndof_robot; ++i) {
+                const bool external_force_settled = std::abs(torque_ext_raw[i]) < kIntegralTorqueExtThresholdNm;
+                const bool admittance_offset_settled = std::abs(q_offset[i]) < kIntegralQOffsetThresholdRad &&
+                                                       std::abs(dq_offset[i]) < kIntegralDqOffsetThresholdRadPerSec;
+                const bool command_settled =
+                    std::abs(cmd_dq_admittance[i]) < kIntegralCommandVelocityThresholdRadPerSec;
+                const bool feedback_settled = std::abs(feedback_dq[i]) < kIntegralFeedbackVelocityThresholdRadPerSec;
+                integral_enable[i] =
+                    external_force_settled && admittance_offset_settled && command_settled && feedback_settled ? 1.0
+                                                                                                               : 0.0;
+            }
+
+            // 更新阻抗控制力矩命令
+            joint_impedance_controller_->UpdateTorqueCommandWithoutExternalTorque(
+                feedback_q, feedback_dq, cmd_q_admittance, cmd_dq_admittance, K_p, K_v, K_i_ratio,
+                torque_joint_impedance, torque_ctrl_dt, &integral_enable);
+
+            // use_force_sensor=true时，
+            if (use_force_sensor) {
+                if (robot_model_.robot_property_default.joint_admittance.enabled) {
+                    torque_joint_impedance +=
+                        robot_model_.robot_property_default.joint_admittance.torque_ext_direct_gain * torque_ext_raw;
+                } else {
+                    torque_joint_impedance += torque_ext_raw;
+                }
+            }
+
+            //
+            output_cmd.torque_feedforward =
+                dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
             output_cmd.torque_impedance = torque_cart_impedance + output_cmd.torque_feedforward;
             output_cmd.torque = torque_joint_impedance + output_cmd.torque_feedforward;
             output_cmd.q_desired = cmd_q;
+            output_cmd.joint_admittance_q_offset = q_offset;
+            output_cmd.joint_admittance_dq_offset = dq_offset;
+            output_cmd.joint_position_ref_admittance = cmd_q_admittance;
+            output_cmd.joint_impedance_error_after_admittance = cmd_q_admittance - feedback_q;
+            break;
         }
         default:
             break;
@@ -63,7 +142,11 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
 bool TorqueControllerInvDynamic::ResetForNewEpisode(const JointRawMeasurement& raw_measurement,
                                                     const TorqueControllerState& state) {
     state_ = state;
-    integral_error_.setZero();  // 重置积分误差
+    joint_impedance_controller_->Reset();
+    if (joint_admittance_controller_ &&
+        (state == TorqueControllerState::Init || state == TorqueControllerState::Operating)) {
+        joint_admittance_controller_->Reset();
+    }
     if (state_ == TorqueControllerState::Idle) {
         idle_q_ = raw_measurement.position;
         LOG_INFO << "TorqueControllerInvDynamic set idle_q_: " << idle_q_.transpose();

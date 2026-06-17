@@ -1,3 +1,7 @@
+# 注意: 真机实际加载的是 ~/dexe_robot_server_data/robot_config.yaml.
+# 启动时 main.cpp:CheckConfig 会把"用户 yaml 缺的字段"从这里 merge 过去 (补缺不覆盖).
+# 修改本文件中的值后, 想让真机生效要么删用户 yaml 触发重建, 要么手动编辑用户 yaml 同步.
+
 # === 机器人基本配置 ===
 config_version: v01
 robot_type: w1
@@ -51,6 +55,59 @@ enable_record: false
 safe_level: 0.5
 global_speed_ratio: 1.0
 
+# === 是否启用力传感器（false 时走无外力/无导纳的纯关节阻抗模式）===
+allow_force_sensor: true
+
+# === 外力传感器进入关节阻抗控制前的死区与饱和 ===
+force_sensor_external_wrench:
+  model_sign: -1               # 正号是放大外力，负号是抵消外力
+  force_deadband_n: 3.2
+  force_saturation_n: 100.0
+  torque_deadband_nm: 0.13
+  torque_saturation_nm: 10.0
+
+# === 关节导纳 admittance ===
+joint_admittance:
+  enabled: true
+  torque_ext_direct_gain: 0.0
+  default:
+    torque_gain: -0.9         # 负号是顺应外力的移动，绝对值的大小代表利用的外力矩的多少
+    virtual_inertia: 1.0
+    natural_frequency_hz: 1.5
+    damping_ratio: 1.2
+    offset_limit: 0.05
+    velocity_limit: 0.2
+    acceleration_limit: 1.3
+  groups:
+    primary_shoulder:
+      joints: [LEFT_J1, LEFT_J2, LEFT_J3, LEFT_J4]
+      virtual_inertia: 0.6
+      natural_frequency_hz: 0.8
+      damping_ratio: 1.2
+      offset_limit: 0.2
+    primary_elbow_wrist:
+      joints: [LEFT_J5, LEFT_J6, LEFT_J7]
+      virtual_inertia: 0.4
+      natural_frequency_hz: 0.6
+      damping_ratio: 1.1
+      offset_limit: 0.15
+
+# === 工具补偿参数 ===
+# 坐标系约定: com_mm 与 inertia_com_kg_m2 都在 EE/法兰系下表达
+tool_gravity_compensation:    # 大寰二指夹 
+  com_mm: [-0.15804154,0.70721872,50.33428542]   # COM 相对 EE 原点的偏移, 单位 mm, 在 EE 系下
+  mass_kg: 1.061
+  gravity_magnitude: 9.79
+  inertia_com_kg_m2: [[0.00111446, 0.0001123, 0],
+                       [0.0001123, 0.00123732, 0],
+                       [0, 0, 0.00065]]  # 惯量张量 (单位 kg·m^2) I_C^EE, 关于 COM, EE 系基
+  model_sign: 1
+  # 末端加速度 / 关节加速度的低通截止 (Hz), 用于在线惯量补偿.
+  inertia_compensation_filter_hz: 5.0
+
+# === 记录配置 ===
+enable_record: true
+
 # === 底盘配置 ===
 # 底盘类型: omni (全向轮) / diff_drive (差速驱动)
 chassis_config:
@@ -94,9 +151,9 @@ w1_v02:
         enabled: true
         frequency: 2.9
       joint_impedance_control:
-        stiffness: 200.0
-        damping: 20.0
-        integral_ratio: 0.05
+        stiffness: 600.0
+        damping: 60.0
+        integral_ratio: 0.03
 
     - name: KNEE
       index: 1
@@ -110,9 +167,9 @@ w1_v02:
         enabled: true
         frequency: 2.9
       joint_impedance_control:
-        stiffness: 200.0
-        damping: 20.0
-        integral_ratio: 0.05
+        stiffness: 600.0
+        damping: 60.0
+        integral_ratio: 0.03
 
     - name: BUTTOCK
       index: 2
@@ -126,9 +183,9 @@ w1_v02:
         enabled: true
         frequency: 2.9
       joint_impedance_control:
-        stiffness: 200.0
-        damping: 20.0
-        integral_ratio: 0.05
+        stiffness: 600.0
+        damping: 60.0
+        integral_ratio: 0.03
 
     - name: WAIST
       index: 3
@@ -142,9 +199,9 @@ w1_v02:
         enabled: true
         frequency: 3.5
       joint_impedance_control:
-        stiffness: 200.0
-        damping: 20.0
-        integral_ratio: 0.05
+        stiffness: 600.0
+        damping: 60.0
+        integral_ratio: 0.03
 
     - name: NECK1
       index: 4
@@ -157,6 +214,10 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
+      joint_impedance_control:
+        stiffness: 200.0
+        damping: 20.0
+        integral_ratio: 0.05
 
     - name: NECK2
       index: 5
@@ -186,9 +247,9 @@ w1_v02:
         enabled: true
         frequency: 6.7
       joint_impedance_control:
-        stiffness: 900.0
+        stiffness: 800.0
         damping: 70.0
-        integral_ratio: 0.02
+        integral_ratio: 0
 
     - name: LEFT_J2
       index: 7
@@ -204,7 +265,7 @@ w1_v02:
       joint_impedance_control:
         stiffness: 750.0
         damping: 62.0
-        integral_ratio: 0.03
+        integral_ratio: 0
 
     - name: LEFT_J3
       index: 8
@@ -220,7 +281,7 @@ w1_v02:
       joint_impedance_control:
         stiffness: 650.0
         damping: 35.0
-        integral_ratio: 0.03
+        integral_ratio: 0.
 
     - name: LEFT_J4
       index: 9
@@ -236,7 +297,7 @@ w1_v02:
       joint_impedance_control:
         stiffness: 600.0
         damping: 33.0
-        integral_ratio: 0.03
+        integral_ratio: 0
 
     - name: LEFT_J5
       index: 10
@@ -252,7 +313,7 @@ w1_v02:
       joint_impedance_control:
         stiffness: 30.0
         damping: 2.0
-        integral_ratio: 0.05
+        integral_ratio: 0
 
     - name: LEFT_J6
       index: 11
@@ -268,7 +329,7 @@ w1_v02:
       joint_impedance_control:
         stiffness: 30.0
         damping: 2.0
-        integral_ratio: 0.05
+        integral_ratio: 0
 
     - name: LEFT_J7
       index: 12
@@ -284,7 +345,7 @@ w1_v02:
       joint_impedance_control:
         stiffness: 20.0
         damping: 1.5
-        integral_ratio: 0.05
+        integral_ratio: 0
 
     - name: RIGHT_J1
       index: 13
@@ -298,9 +359,9 @@ w1_v02:
         enabled: true
         frequency: 6.7
       joint_impedance_control:
-        stiffness: 900.0
+        stiffness: 800.0
         damping: 70.0
-        integral_ratio: 0.02
+        integral_ratio: 0.
 
     - name: RIGHT_J2
       index: 14
@@ -316,7 +377,7 @@ w1_v02:
       joint_impedance_control:
         stiffness: 750.0
         damping: 62.0
-        integral_ratio: 0.03
+        integral_ratio: 0
 
     - name: RIGHT_J3
       index: 15
@@ -332,7 +393,7 @@ w1_v02:
       joint_impedance_control:
         stiffness: 650.0
         damping: 35.0
-        integral_ratio: 0.03
+        integral_ratio: 0
 
     - name: RIGHT_J4
       index: 16
@@ -348,7 +409,7 @@ w1_v02:
       joint_impedance_control:
         stiffness: 600.0
         damping: 33.0
-        integral_ratio: 0.03
+        integral_ratio: 0
 
     - name: RIGHT_J5
       index: 17
@@ -364,7 +425,7 @@ w1_v02:
       joint_impedance_control:
         stiffness: 30.0
         damping: 2.0
-        integral_ratio: 0.05
+        integral_ratio: 0
 
     - name: RIGHT_J6
       index: 18
@@ -380,7 +441,7 @@ w1_v02:
       joint_impedance_control:
         stiffness: 30.0
         damping: 2.0
-        integral_ratio: 0.05
+        integral_ratio: 0
 
     - name: RIGHT_J7
       index: 19
@@ -396,7 +457,7 @@ w1_v02:
       joint_impedance_control:
         stiffness: 20.0
         damping: 1.5
-        integral_ratio: 0.05
+        integral_ratio: 0
 
 w1_v03:
   # === streaming运动参数 ===

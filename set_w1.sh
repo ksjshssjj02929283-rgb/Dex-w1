@@ -25,6 +25,7 @@ print_usage() {
     echo "  left            - Move left arm (7 joints, value: '[j1,j2,...]' or home/standby)"
     echo "  right           - Move right arm (7 joints, value: '[j1,j2,...]' or home/standby)"
     echo "  stop_move       - Stop current movement"
+    echo "  force           - Monitor dual-arm torque_ext(14D), force_sensor, force_sensor_gravity, raw_force_sensor, force_sensor_bias, and force_sensor_inertia at 10Hz"
     echo "  log             - Print robot server log"
     echo "  clear           - Clear errors (no value needed)"
     echo "  drag            - Enable/Disable drag mode (value: 0 or 1)"
@@ -59,6 +60,7 @@ print_usage() {
     echo "Examples:"
     echo "  ./set_w1.sh echo"
     echo "  ./set_w1.sh echo_sim"
+    echo "  ./set_property.sh force"
     echo "  ./set_w1.sh clone ethercat"
     echo "  ./set_w1.sh clone interface"
     echo "  ./set_w1.sh home"
@@ -150,6 +152,91 @@ case $PROPERTY_KEY in
     echo_sim)
         echo "Echoing robot server state sim..."
         ros2 topic echo /feedback/robot_server_state_sim --field data --once
+        exit 0
+        ;;
+    force)
+        echo "Monitoring force sensor data at 10Hz..."
+        python3 - <<'PY'
+import json
+import threading
+
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+
+ARM_JOINT_NAMES = (
+    "LEFT_J1", "LEFT_J2", "LEFT_J3", "LEFT_J4", "LEFT_J5", "LEFT_J6", "LEFT_J7",
+    "RIGHT_J1", "RIGHT_J2", "RIGHT_J3", "RIGHT_J4", "RIGHT_J5", "RIGHT_J6", "RIGHT_J7",
+)
+
+
+def select_dual_arm_torque_ext(data):
+    torque_ext = data.get("torque_ext", [])
+    if not isinstance(torque_ext, list):
+        return []
+
+    joint_names = data.get("joint_name", [])
+    if isinstance(joint_names, list) and len(joint_names) == len(torque_ext):
+        torque_by_name = dict(zip(joint_names, torque_ext))
+        selected = [torque_by_name[name] for name in ARM_JOINT_NAMES if name in torque_by_name]
+        if selected:
+            return selected
+
+    if len(torque_ext) == len(ARM_JOINT_NAMES):
+        return torque_ext
+    return torque_ext[:len(ARM_JOINT_NAMES)]
+
+
+class ForceMonitor(Node):
+    def __init__(self):
+        super().__init__("force_monitor")
+        self.latest = None
+        self.lock = threading.Lock()
+        self.create_subscription(String, "/feedback/robot_server_state", self.callback, 10)
+        self.create_timer(0.1, self.print_latest)
+
+    def callback(self, msg):
+        try:
+            data = json.loads(msg.data)
+            latest = (
+                select_dual_arm_torque_ext(data),
+                data.get("force_sensor", []),
+                data.get("force_sensor_gravity", []),
+                data.get("raw_force_sensor", []),
+                data.get("force_sensor_bias", []),
+                data.get("force_sensor_inertia", []),
+            )
+        except Exception:
+            return
+        with self.lock:
+            self.latest = latest
+
+    def print_latest(self):
+        with self.lock:
+            latest = self.latest
+        if latest is None:
+            return
+        (torque_ext, force_sensor, force_sensor_gravity, raw_force_sensor, force_sensor_bias,
+         force_sensor_inertia) = latest
+        print("------------------------------------------------", flush=True)
+        print(f"torque_ext: {json.dumps(torque_ext, separators=(',', ':'))},", flush=True)
+        print(f"force_sensor: {json.dumps(force_sensor, separators=(',', ':'))},", flush=True)
+        print(f"force_sensor_gravity: {json.dumps(force_sensor_gravity, separators=(',', ':'))},", flush=True)
+        print(f"raw_force_sensor: {json.dumps(raw_force_sensor, separators=(',', ':'))},", flush=True)
+        print(f"force_sensor_bias: {json.dumps(force_sensor_bias, separators=(',', ':'))}", flush=True)
+        print(f"force_sensor_inertia: {json.dumps(force_sensor_inertia, separators=(',', ':'))}", flush=True)
+
+
+rclpy.init()
+node = ForceMonitor()
+try:
+    rclpy.spin(node)
+except KeyboardInterrupt:
+    pass
+finally:
+    node.destroy_node()
+    rclpy.shutdown()
+PY
         exit 0
         ;;
     clone)

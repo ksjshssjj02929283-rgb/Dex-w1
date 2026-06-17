@@ -1,3 +1,4 @@
+.DS_Store
 .vscode/
 *.deb
 build/
@@ -9,6 +10,14 @@ __pycache__/
 *.pyc
 nano_logs/
 script/dyn_params_ident/recdata/
+script/force_sensor/force_data/
 CLAUDE.md
-AGENT.md
+AGENTS.md
+.claude/
+.codex/
 dexe_robot_client/
+findings.md
+progress.md
+task_plan.md
+# Manager agent memory
+.manager-agent/*
