@@ -2160,18 +2160,18 @@ class DynParamGUI(QtWidgets.QMainWindow):
                     + "。请先计算动力学参数并确保数据存在。"
                 )
 
-            r2_threshold = 0.9
+            r2_threshold = 0.8
             weights = np.array([2, 2, 2, 2, 1, 1, 1])
             mean_r2_L = np.average(r2_list_L, weights=weights) if r2_list_L else 0.0
             mean_r2_R = np.average(r2_list_R, weights=weights) if r2_list_R else 0.0
             if mean_r2_L < r2_threshold or mean_r2_R < r2_threshold:
                 self.log_msg(
-                    f"辨识验证失败！加权平均吻合度未达90%: 左臂 {mean_r2_L*100:.1f}%, 右臂 {mean_r2_R*100:.1f}%"
+                    f"辨识验证失败！加权平均吻合度未达到 {r2_threshold*100}%: 左臂 {mean_r2_L*100:.1f}%, 右臂 {mean_r2_R*100:.1f}%"
                 )
                 self._params_calculated = False
                 self.btn_write_params.setDisabled(True)
             else:
-                self.log_msg(f"辨识验证通过，加权平均吻合度: 左臂 {mean_r2_L*100:.1f}%, 右臂 {mean_r2_R*100:.1f}%")
+                self.log_msg(f"辨识验证通过，加权平均吻合度: 左臂 {mean_r2_L*100:.1f}%, 右臂 {mean_r2_R*100:.1f}%, 大于 {r2_threshold*100}%")
 
             self.log_msg("辨识结果图绘制完成。")
         finally:

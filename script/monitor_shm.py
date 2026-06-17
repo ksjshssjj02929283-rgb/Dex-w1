@@ -5,8 +5,8 @@ import os
 import curses
 
 # Constants
-FEEDBACK_SHM_KEY = 0x1003
-CONTROL_SHM_KEY = 0x2003
+FEEDBACK_SHM_KEY = 0x1004
+CONTROL_SHM_KEY = 0x2004
 MAX_JOINT_NUM = 32
 OMNI_MOTOR_NUM = 4
 BUFFER_CAPACITY = 8
@@ -45,6 +45,36 @@ class ChassisFeedback(ctypes.Structure):
     ]
 
 
+class Vector3f(ctypes.Structure):
+    _fields_ = [
+        ("x", ctypes.c_float),
+        ("y", ctypes.c_float),
+        ("z", ctypes.c_float),
+    ]
+
+
+class Quaternionf(ctypes.Structure):
+    _fields_ = [
+        ("x", ctypes.c_float),
+        ("y", ctypes.c_float),
+        ("z", ctypes.c_float),
+        ("w", ctypes.c_float),
+    ]
+
+
+class ImuData(ctypes.Structure):
+    _fields_ = [
+        ("id", ctypes.c_uint32),
+        ("orientation", Quaternionf),
+        ("angular_velocity", Vector3f),
+        ("linear_acceleration", Vector3f),
+        ("mag", Vector3f),
+        ("eul", Vector3f),
+        ("pressure", ctypes.c_float),
+        ("timestamp", ctypes.c_uint32),
+    ]
+
+
 class JointFeedback(ctypes.Structure):
     _fields_ = [
         ("joint_name", ctypes.c_char * 10),
@@ -55,17 +85,6 @@ class JointFeedback(ctypes.Structure):
         ("joint_torque", ctypes.c_double),
         ("joint_sensor_torque", ctypes.c_double),
         ("joint_temperature", ctypes.c_double),
-    ]
-
-
-class RobotFeedback(ctypes.Structure):
-    _fields_ = [
-        ("cnt", ctypes.c_uint64),
-        ("timestamp", ctypes.c_uint64),
-        ("robot_status_word", ctypes.c_uint16),
-        ("al_status", ctypes.c_uint8 * MAX_JOINT_NUM),
-        ("joint_feedback", JointFeedback * MAX_JOINT_NUM),
-        ("chassis_feedback", ChassisFeedback),
     ]
 
 
@@ -94,6 +113,18 @@ class ChassisControl(ctypes.Structure):
         ("chassis_motor_direction", ctypes.c_double * OMNI_MOTOR_NUM),
         ("chassis_estop", ctypes.c_int),
         ("chassis_neutral", ctypes.c_int),
+    ]
+
+
+class RobotFeedback(ctypes.Structure):
+    _fields_ = [
+        ("cnt", ctypes.c_uint64),
+        ("timestamp", ctypes.c_uint64),
+        ("robot_status_word", ctypes.c_uint16),
+        ("al_status", ctypes.c_uint8 * MAX_JOINT_NUM),
+        ("joint_feedback", JointFeedback * MAX_JOINT_NUM),
+        ("chassis_feedback", ChassisFeedback),
+        ("imu_data", ImuData),
     ]
 
 
@@ -166,6 +197,11 @@ def fmt_array(arr, length, fmt="{:.2f}"):
     return "[" + ", ".join(fmt.format(arr[i]) for i in range(length)) + "]"
 
 
+def cstr_to_py(c_arr):
+    raw = bytes(c_arr)
+    return raw.split(b"\x00", 1)[0].decode("utf-8", errors="ignore")
+
+
 def monitor(stdscr):
     curses.curs_set(0)
     stdscr.nodelay(True)
@@ -175,7 +211,14 @@ def monitor(stdscr):
     ctrl_ptr = get_shm_ptr(CONTROL_SHM_KEY, ControlShmStruct)
 
     if not fbk_ptr and not ctrl_ptr:
-        addstr_safe(stdscr, 0, 0, "Could not attach to any shared memory.")
+        addstr_safe(
+            stdscr,
+            0,
+            0,
+            ("Could not attach to shared memory "
+             f"(feedback=0x{FEEDBACK_SHM_KEY:X}, "
+             f"control=0x{CONTROL_SHM_KEY:X})."),
+        )
         stdscr.refresh()
         time.sleep(2)
         return
@@ -252,20 +295,60 @@ def monitor(stdscr):
                  f"T_R={data.chassis_feedback.right_temperature}"),
             )
             row += 1
-
-            addstr_safe(stdscr, row, 0,
-                        "Joint  Name     Pos      Vel      Torque   SenTorque  Temp   Status  Err")
+            addstr_safe(
+                stdscr,
+                row,
+                0,
+                ("IMU: "
+                 f"id=0x{data.imu_data.id:02X} "
+                 f"linear_acceleration="
+                 f"[{data.imu_data.linear_acceleration.x:.2f}, "
+                 f"{data.imu_data.linear_acceleration.y:.2f}, "
+                 f"{data.imu_data.linear_acceleration.z:.2f}] "
+                 f"angular_velocity="
+                 f"[{data.imu_data.angular_velocity.x:.2f}, "
+                 f"{data.imu_data.angular_velocity.y:.2f}, "
+                 f"{data.imu_data.angular_velocity.z:.2f}]"),
+            )
             row += 1
-            for i in range(MAX_JOINT_NUM):
-                jf = data.joint_feedback[i]
-                name = jf.joint_name.decode('utf-8', errors='ignore').strip('\x00')
-                if not name:
-                    continue
+            addstr_safe(
+                stdscr,
+                row,
+                0,
+                ("IMU: "
+                 f"mag=[{data.imu_data.mag.x:.2f}, "
+                 f"{data.imu_data.mag.y:.2f}, "
+                 f"{data.imu_data.mag.z:.2f}] "
+                 f"eul(RPY)=[{data.imu_data.eul.x:.2f}, "
+                 f"{data.imu_data.eul.y:.2f}, "
+                 f"{data.imu_data.eul.z:.2f}] "
+                 f"pressure={data.imu_data.pressure:.2f} "
+                 f"ts={data.imu_data.timestamp}"),
+            )
+            row += 1
+            addstr_safe(
+                stdscr,
+                row,
+                0,
+                ("IMU orientation(xyzw): "
+                 f"[{data.imu_data.orientation.x:.4f}, "
+                 f"{data.imu_data.orientation.y:.4f}, "
+                 f"{data.imu_data.orientation.z:.4f}, "
+                 f"{data.imu_data.orientation.w:.4f}]"),
+            )
+            row += 1
+
+            addstr_safe(
+                stdscr, row, 0,
+                "Joint  Name       Pos      Vel      Torque   AL  Err   Temp")
+            row += 1
+            for i in range(min(MAX_JOINT_NUM, 20)):
+                joint_name = cstr_to_py(data.joint_feedback[i].joint_name)
                 addstr_safe(
                     stdscr,
                     row,
                     0,
-                    f"{i:2d}     {name:<8s} {jf.joint_position:6.3f}   {jf.joint_velocity:6.3f}   {jf.joint_torque:6.3f}   {jf.joint_sensor_torque:6.3f}   {jf.joint_temperature:5.1f}   0x{jf.joint_status_word:04X}  0x{jf.joint_error_code:04X}",
+                    f"{i:2d}     {joint_name:10.10s} {data.joint_feedback[i].joint_position:6.3f}   {data.joint_feedback[i].joint_velocity:6.3f}   {data.joint_feedback[i].joint_torque:6.3f}   {data.al_status[i]:2d}  {data.joint_feedback[i].joint_error_code:04X}  {data.joint_feedback[i].joint_temperature:6.1f}",
                 )
                 row += 1
         else:
@@ -310,7 +393,8 @@ def monitor(stdscr):
                 row,
                 0,
                 "Chassis motors vel: " +
-                fmt_array(data.chassis_control.chassis_motor_velocity, OMNI_MOTOR_NUM),
+                fmt_array(data.chassis_control.chassis_motor_velocity,
+                          OMNI_MOTOR_NUM),
             )
             row += 1
             addstr_safe(
@@ -318,7 +402,8 @@ def monitor(stdscr):
                 row,
                 0,
                 "Chassis motors dir: " +
-                fmt_array(data.chassis_control.chassis_motor_direction, OMNI_MOTOR_NUM),
+                fmt_array(data.chassis_control.chassis_motor_direction,
+                          OMNI_MOTOR_NUM),
             )
             row += 1
             addstr_safe(
@@ -329,18 +414,16 @@ def monitor(stdscr):
             )
             row += 1
 
-            addstr_safe(stdscr, row, 0, "Joint  Name     Mode  Pos      Vel      Torque   TorqueFF  Kp       Kd       Torque+    Torque-")
+            addstr_safe(stdscr, row, 0,
+                        "Joint  Name       Pos      Vel      TorqueFF")
             row += 1
-            for i in range(MAX_JOINT_NUM):
-                jc = data.joint_control[i]
-                name = jc.joint_name.decode('utf-8', errors='ignore').strip('\x00')
-                if not name:
-                    continue
+            for i in range(min(MAX_JOINT_NUM, 20)):
+                joint_name = cstr_to_py(data.joint_control[i].joint_name)
                 addstr_safe(
                     stdscr,
                     row,
                     0,
-                    f"{i:2d}     {name:<8s} {jc.joint_mode:<5d} {jc.joint_position:6.3f}   {jc.joint_velocity:6.3f}   {jc.joint_torque:6.3f}   {jc.joint_torque_feedforward:6.3f}   {jc.joint_Kp:5.2f}   {jc.joint_Kd:5.2f}   {jc.joint_positive_torque_limit:8.3f}   {jc.joint_negative_torque_limit:8.3f}",
+                    f"{i:2d}     {joint_name:10.10s} {data.joint_control[i].joint_position:6.3f}   {data.joint_control[i].joint_velocity:6.3f}   {data.joint_control[i].joint_torque_feedforward:6.3f}",
                 )
                 row += 1
         else:

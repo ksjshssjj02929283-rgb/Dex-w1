@@ -25,7 +25,26 @@ if [ -f "${WORKSPACE_DIR}/.gitmodules" ]; then
     git -C "${WORKSPACE_DIR}" submodule update --init --recursive
 fi
 cd "${WORKSPACE_DIR}/.."
-colcon build --parallel-workers "${COLCON_PARALLEL_WORKERS}" --cmake-args -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DENABLE_TORQUE_CONTROL_SIMULATION=OFF -DCMAKE_CXX_COMPILER_LAUNCHER= -DCMAKE_C_COMPILER_LAUNCHER= --base-paths dexe_robot_server --packages-up-to robot_server_lib w1_server sim_server
+
+# 已在 install/ 就跳过——复用独立 ~/zyn/dexe_interfaces 的产物,避免与 build/ 缓存里
+# 记录的源码路径冲突;未装则正常编 submodule 版本(此时无旧缓存,不会冲突)。
+SKIP_INTERFACES=""
+for d in "$WORKSPACE_DIR/dexe_interfaces"/*/; do
+  [ -d "$d" ] || continue
+  pkg=$(basename "$d")
+  if [ -d "install/$pkg" ]; then
+    SKIP_INTERFACES="$SKIP_INTERFACES $pkg"
+    echo "    - 跳过 $pkg (已在 install/ 中存在)"
+  else
+    echo "    - 编译 $pkg (install/ 中不存在,从 submodule 编译)"
+  fi
+done
+SKIP_ARGS=""
+if [ -n "$SKIP_INTERFACES" ]; then
+  SKIP_ARGS="--packages-skip ${SKIP_INTERFACES# }"
+fi
+
+colcon build --parallel-workers "${COLCON_PARALLEL_WORKERS}" --cmake-args -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DENABLE_TORQUE_CONTROL_SIMULATION=OFF -DCMAKE_CXX_COMPILER_LAUNCHER= -DCMAKE_C_COMPILER_LAUNCHER= --base-paths dexe_robot_server --packages-up-to robot_server_lib w1_server sim_server $SKIP_ARGS
 
 # === 2. 检查 Sudo 权限 ===
 # 尝试使用默认密码验证，如果失败则提示用户手动输入
