@@ -166,22 +166,26 @@ std::optional<Eigen::Matrix3d> RobotServer::GetEERotationWorldFromEE(int arm_ind
     const auto rotation_result = utils::GetEERotationWorldFromPoseVector(ee_pose_world, arm_index);
     if (!rotation_result.rotation) {
         switch (rotation_result.reason) {
-            case utils::EERotationParseError::InvalidArmIndex:
+            case utils::EERotationParseError::InvalidArmIndex: {
                 LOG_WARN_THROTTLE(5000) << "tool compensation failed: invalid arm_index=" << arm_index;
                 break;
-            case utils::EERotationParseError::InsufficientSize:
+            }
+            case utils::EERotationParseError::InsufficientSize: {
                 LOG_WARN_THROTTLE(5000) << "tool compensation failed: ee_pose_world_measurement size="
                                         << ee_pose_world.size() << ", required=" << rotation_result.required_size
                                         << ", arm_index=" << arm_index;
                 break;
-            case utils::EERotationParseError::NonFiniteQuaternion:
+            }
+            case utils::EERotationParseError::NonFiniteQuaternion: {
                 LOG_WARN_THROTTLE(5000)
                     << "tool compensation failed: ee_pose_world quaternion is non-finite, arm_index=" << arm_index;
                 break;
-            case utils::EERotationParseError::NearZeroQuaternion:
+            }
+            case utils::EERotationParseError::NearZeroQuaternion: {
                 LOG_WARN_THROTTLE(5000)
                     << "tool compensation failed: ee_pose_world quaternion norm is near zero, arm_index=" << arm_index;
                 break;
+            }
             case utils::EERotationParseError::None:
                 break;
         }
