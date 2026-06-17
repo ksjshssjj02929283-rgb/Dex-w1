@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <set>
+#include <sstream>
 
 namespace robot_server_lib {
 
@@ -914,6 +915,16 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         positive_torque_limit_arr_[i] = this->robot_control_.joint_control[i].joint_positive_torque_limit;
         negative_torque_limit_arr_[i] = this->robot_control_.joint_control[i].joint_negative_torque_limit;
     }
+    std::ostringstream force_sensor_inertia_ss;
+    force_sensor_inertia_ss << "[";
+    for (int i = 0; i < 6; ++i) {
+        if (i > 0) {
+            force_sensor_inertia_ss << ",";
+        }
+        force_sensor_inertia_ss << dynamics::tool_compensation::JsonFiniteOrZero(
+            this->tool_compensation_state_.tool_inertia_wrench_ee[i].load(std::memory_order_relaxed));
+    }
+    force_sensor_inertia_ss << "]";
 
     robot_server_state_msg.data =
         std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
@@ -946,6 +957,10 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_position_ref_admittance\":" + utils::VectorToJsonArrayString(latest_joint_position_ref_admittance_, index_offset, ndof_config_).str() +
         ",\n  \"joint_impedance_error_after_admittance\":" + utils::VectorToJsonArrayString(latest_joint_impedance_error_after_admittance_, index_offset, ndof_config_).str() +
         ",\n  \"force_sensor\":" + utils::VectorToJsonArrayString(sensor_wrench_).str() +
+        ",\n  \"force_sensor_gravity\":" + utils::VectorToJsonArrayString(sensor_wrench_gravity_).str() +
+        ",\n  \"raw_force_sensor\":" + utils::VectorToJsonArrayString(raw_sensor_wrench_).str() +
+        ",\n  \"force_sensor_bias\":" + utils::VectorToJsonArrayString(sensor_zero_offset_).str() +
+        ",\n  \"force_sensor_inertia\":" + force_sensor_inertia_ss.str() +
         ",\n  \"torque_limit_negative\":" + utils::VectorToJsonArrayString(negative_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"torque_limit_positive\":" + utils::VectorToJsonArrayString(positive_torque_limit_arr_, index_offset, ndof_config_).str() +
         ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_measurement, 0, this->robot_mode_ == RobotMode::SingleArm? 7 : 14).str() +
