@@ -13,6 +13,7 @@ find_package(rosidl_default_generators REQUIRED)
 set(MSG_FILES
   "msg/InferenceStatus.msg"
   "msg/JointGroup.msg"
+  "msg/ShadowSegment.msg"
 )
 
 # Srv files
@@ -20,6 +21,7 @@ set(SRV_FILES
   "srv/Deploy.srv"
   "srv/StartInference.srv"
   "srv/GetModelInfo.srv"
+  "srv/ExportShadowSegments.srv"
 )
 
 

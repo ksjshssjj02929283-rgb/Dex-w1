@@ -1,0 +1,15 @@
+# Export Shadow Data Segments Service
+
+# Source shadow data session directory (absolute path)
+string source_path
+
+# Output export directory (absolute path)
+string export_path
+
+# Segment definitions
+inference_interfaces/ShadowSegment[] segments
+
+---
+bool   success
+string message        # error description on failure; empty on success
+string output_path    # final zip path written on success
