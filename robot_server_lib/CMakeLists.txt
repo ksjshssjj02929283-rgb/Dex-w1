@@ -78,6 +78,7 @@ add_library(${PROJECT_NAME} ${LIB_SRCS})
 target_include_directories(${PROJECT_NAME} PUBLIC
   ${EIGEN3_INCLUDE_DIR}
   $<INSTALL_INTERFACE:include>
+  $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/utils>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/kinematics>
@@ -153,7 +154,7 @@ install(
 # 添加头文件导出
 ament_export_targets(export_robot_server_lib HAS_LIBRARY_TARGET)
 ament_export_libraries(robot_server_lib robot_server_utils)
-ament_export_include_directories(include)
+ament_export_include_directories(include include/${PROJECT_NAME})
 
 option(BUILD_TESTING "Build tests" ON)
 
@@ -169,4 +170,3 @@ if(BUILD_TESTING)
 endif()
 
 ament_package()
-
