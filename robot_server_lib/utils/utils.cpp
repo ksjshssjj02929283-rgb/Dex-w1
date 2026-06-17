@@ -648,6 +648,37 @@ Vector3d StringToVector3d(const std::string& str) {
     return values;
 }
 
+EERotationParseResult GetEERotationWorldFromPoseVector(const Eigen::VectorXd& ee_pose_world, int arm_index) {
+    EERotationParseResult result;
+    if (arm_index < 0) {
+        result.reason = EERotationParseError::InvalidArmIndex;
+        return result;
+    }
+
+    const int offset = arm_index * 7;
+    result.required_size = offset + 7;
+    if (ee_pose_world.size() < result.required_size) {
+        result.reason = EERotationParseError::InsufficientSize;
+        return result;
+    }
+
+    Eigen::Quaterniond q(ee_pose_world[offset + 3], ee_pose_world[offset + 4], ee_pose_world[offset + 5],
+                         ee_pose_world[offset + 6]);
+    if (!q.coeffs().allFinite()) {
+        result.reason = EERotationParseError::NonFiniteQuaternion;
+        return result;
+    }
+    if (q.norm() <= FloatZeroTol) {
+        result.reason = EERotationParseError::NearZeroQuaternion;
+        return result;
+    }
+
+    q.normalize();
+    result.rotation = q.toRotationMatrix();
+    result.reason = EERotationParseError::None;
+    return result;
+}
+
 Vector6d StringToVector6d(const std::string& str) {
     std::stringstream ss(str);
     std::string item;

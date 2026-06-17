@@ -1,7 +1,5 @@
 #pragma once
 
-#include <array>
-#include <atomic>
 #include <geometry_msgs/msg/twist.hpp>
 #include <memory>
 #include <optional>
@@ -20,6 +18,7 @@
 #include "robot_server_lib/sri_force_sensor.h"
 #include "robot_server_lib/utils.h"
 #include "shared_memory_def.h"
+#include "tool_compenstaion.h"
 #include "w1_utils.h"
 
 namespace robot_server_lib {
@@ -53,18 +52,6 @@ private:
     void PublishFeedback();
     void PublishImu();
     std_msgs::msg::String GetRobotServerStateMsg();
-    void LoadToolGravityCompensationConfig(const std::filesystem::path& robot_cfg_path);
-    // 扣除工具重力; 成功扣减时 *applied=true.
-    Vector6d ApplyToolGravityCompensation(const Vector6d& wrench_ee, int arm_index, bool* applied = nullptr) const;
-    // 让重力补偿结果与惯量补偿使用相同滤波相位. 仅 primary 臂使用.
-    Vector6d ApplyToolGravityMatchedFilterPrimary(const Vector6d& wrench_ee);
-    // 仅对 primary 臂做工具惯量补偿; 成功扣减时 *applied=true.
-    Vector6d ApplyToolInertiaCompensationPrimary(const Vector6d& wrench_ee,
-                                                 const Eigen::VectorXd& feedback_q_primary,
-                                                 const Eigen::VectorXd& feedback_dq_primary,
-                                                 bool* applied = nullptr);
-    // 重置惯量补偿的滤波器、历史和首拍标志.
-    void ResetToolInertiaCompensationState();
     std::optional<Eigen::Matrix3d> GetEERotationWorldFromEE(int arm_index) const;
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;
@@ -145,30 +132,13 @@ private:
     Vector12d sensor_zero_offset_;
     bool sensor_zero_offset_valid_[2] = {false, false};
     int sensor_zero_offset_samples_[2] = {0, 0};
-    bool tool_gravity_compensation_enabled_ = false;
-    double tool_mass_kg_ = 0.0;
-    double tool_gravity_magnitude_ = 9.79;
-    int tool_model_sign_ = 1;
-    Vector3d tool_com_m_ = Vector3d::Zero();
-    // 工具惯量补偿状态 (primary only)
-    bool tool_inertia_compensation_enabled_ = false;
-    Eigen::Matrix3d tool_inertia_com_ = Eigen::Matrix3d::Zero();
-    bool tool_inertia_first_sample_ = true;
-    Vector3d prev_ee_linvel_armbase_ = Vector3d::Zero();
-    Vector3d prev_omega_armbase_ = Vector3d::Zero();
-    std::array<std::shared_ptr<ButterworthFilter>, 3> ee_accel_filter_;    // EE 线加速度滤波
-    std::array<std::shared_ptr<ButterworthFilter>, 3> omega_diff_filter_;  // EE 角速度差分(=α)滤波
-    std::array<std::shared_ptr<ButterworthFilter>, 6> force_sensor_gravity_filter_primary_;
+    dynamics::tool_compensation::ToolCompensationConfig tool_compensation_config_;
+    dynamics::tool_compensation::ToolCompensationState tool_compensation_state_;
     // 预分配缓冲: 1 kHz 线程内绑定到 pinocchio_api 的 const VectorXd& 形参, 避免重复 new
     Eigen::VectorXd inertia_q_primary_buf_ = Eigen::VectorXd::Zero(7);
     Eigen::VectorXd inertia_dq_primary_buf_ = Eigen::VectorXd::Zero(7);
     int inertia_primary_joint_id_[7] = {-1, -1, -1, -1, -1, -1, -1};  // wb-model joint id, -1=未解析
     bool inertia_primary_joint_id_resolved_ = false;
-    // 最近一次实际扣除的惯量补偿 wrench, 供状态发布读取.
-    std::array<std::atomic<double>, 6> tool_inertia_wrench_ee_{};
-    // 离线惯量辨识仍依赖这两组主观测量.
-    std::array<std::atomic<double>, 3> ee_omega_F_primary_{};
-    std::array<std::atomic<double>, 3> ee_alpha_F_primary_{};
     std::shared_ptr<SriForceSensor> primary_sensor_;
     std::shared_ptr<SriForceSensor> secondary_sensor_;  // 暂未使用
     bool primary_sensor_ready_ = false;
