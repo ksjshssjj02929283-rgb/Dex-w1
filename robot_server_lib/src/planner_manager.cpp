@@ -1060,9 +1060,7 @@ void PlannerManager::PublishPlannerInfo() {
 
     info.ee_pose_measurement = ee_pose;
 
-    // 计算末端在 world (URDF 根 base_link, z 朝上) 下的位姿，
-    // 用于工具重力补偿等需要真实 world 重力方向的场景。
-    // 注: ee_pose_measurement 是 armlbase->TCP，受 torso 关节姿态影响，不能直接当作 world->ee 使用。
+    // 计算末端在 world (base_link) 下的位姿，用于工具重力补偿重力
     // 注意: 仅在 Idle/Running 状态下写入真实 FK; 其它状态保持 size=0, 让下游 (例如力传感器零偏结算)区分 "未就绪" 和 "已就绪", 而不是看到默认构造的 (0,0,0, 1,0,0,0)
     auto& ee_pose_world = runtime_data_.publish_ee_pose_world;
     if (this->manager_state_ == Status::Idle || this->manager_state_ == Status::Running) {
