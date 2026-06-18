@@ -44,10 +44,10 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
             dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
         static int print_count = 0;
         if (++print_count % 1000 == 0) {
-            // 打印调试信息
-            printf("arm_forward_torque: %s, tool_torque_feedforward: %s\n",     
-                output_cmd.arm_forward_torque.transpose().format(Eigen::IOFormat(3, 0, ", ", "\n", "[", "]")).c_str(),
-                raw_measurement.tool_torque_feedforward.transpose().format(Eigen::IOFormat(3, 0, ", ", "\n", "[", "]")).c_str());
+            const Eigen::IOFormat log_format(3, 0, ", ", "\n", "[", "]");
+            LOG_INFO << "arm_forward_torque: " << output_cmd.arm_forward_torque.transpose().format(log_format)
+                     << ", tool_torque_feedforward: "
+                     << raw_measurement.tool_torque_feedforward.transpose().format(log_format);
         }
         return output_cmd.arm_forward_torque - raw_measurement.tool_torque_feedforward;  // 注意补偿用的符号
 
