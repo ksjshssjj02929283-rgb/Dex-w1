@@ -84,6 +84,7 @@ LOG_KEYS = [
     "joint_position_cmd",
     "joint_torque_feedforward",
     "torque_ext",
+    "tool_compensation_torque",
     "torque_ext_raw",
     "joint_admittance_q_offset",
     "joint_admittance_dq_offset",

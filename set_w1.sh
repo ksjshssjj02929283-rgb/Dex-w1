@@ -172,21 +172,21 @@ ARM_JOINT_NAMES = (
 )
 
 
-def select_dual_arm_torque_ext(data):
-    torque_ext = data.get("torque_ext", [])
-    if not isinstance(torque_ext, list):
+def select_dual_arm_vector(data, key):
+    values = data.get(key, [])
+    if not isinstance(values, list):
         return []
 
     joint_names = data.get("joint_name", [])
-    if isinstance(joint_names, list) and len(joint_names) == len(torque_ext):
-        torque_by_name = dict(zip(joint_names, torque_ext))
-        selected = [torque_by_name[name] for name in ARM_JOINT_NAMES if name in torque_by_name]
+    if isinstance(joint_names, list) and len(joint_names) == len(values):
+        values_by_name = dict(zip(joint_names, values))
+        selected = [values_by_name[name] for name in ARM_JOINT_NAMES if name in values_by_name]
         if selected:
             return selected
 
-    if len(torque_ext) == len(ARM_JOINT_NAMES):
-        return torque_ext
-    return torque_ext[:len(ARM_JOINT_NAMES)]
+    if len(values) == len(ARM_JOINT_NAMES):
+        return values
+    return values[:len(ARM_JOINT_NAMES)]
 
 
 class ForceMonitor(Node):
@@ -201,7 +201,8 @@ class ForceMonitor(Node):
         try:
             data = json.loads(msg.data)
             latest = (
-                select_dual_arm_torque_ext(data),
+                select_dual_arm_vector(data, "torque_ext"),
+                select_dual_arm_vector(data, "tool_compensation_torque"),
                 data.get("force_sensor", []),
                 data.get("force_sensor_gravity", []),
                 data.get("raw_force_sensor", []),
@@ -218,10 +219,11 @@ class ForceMonitor(Node):
             latest = self.latest
         if latest is None:
             return
-        (torque_ext, force_sensor, force_sensor_gravity, raw_force_sensor, force_sensor_bias,
+        (torque_ext, tool_compensation_torque, force_sensor, force_sensor_gravity, raw_force_sensor, force_sensor_bias,
          force_sensor_inertia) = latest
         print("------------------------------------------------", flush=True)
         print(f"torque_ext: {json.dumps(torque_ext, separators=(',', ':'))},", flush=True)
+        print(f"tool_compensation_torque: {json.dumps(tool_compensation_torque, separators=(',', ':'))},", flush=True)
         print(f"force_sensor: {json.dumps(force_sensor, separators=(',', ':'))},", flush=True)
         print(f"force_sensor_gravity: {json.dumps(force_sensor_gravity, separators=(',', ':'))},", flush=True)
         print(f"raw_force_sensor: {json.dumps(raw_force_sensor, separators=(',', ':'))},", flush=True)
