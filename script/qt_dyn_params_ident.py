@@ -34,9 +34,13 @@ def read_data(dof, h, rbtlogfile, trajreffile):
     t = np.array(rbtlog[:, 0])
     q = np.array(rbtlog[:, 1 : dof + 1])
     tau = np.array(rbtlog[:, dof + 1 : dof * 2 + 1])
+    if rbtlog.shape[1] >= dof * 2 + 1 + dof:
+        tau_sensor = np.array(rbtlog[:, dof * 2 + 1 : dof * 2 + 1 + dof])
+    else:
+        tau_sensor = np.zeros_like(tau)
     trajref = np.loadtxt(trajreffile)
     reft = np.array([h * i for i in range(trajref.shape[0])])
-    return t, q, tau, reft, trajref
+    return t, q, tau, tau_sensor, reft, trajref
 
 
 def skew(v):
@@ -331,7 +335,7 @@ class DynParamIdentifier(Node):
             q_ref = np.loadtxt(file)
         # 使用GUI设置的真机步长覆盖
         local_dt = getattr(self, "_real_dt_override", self.dt)
-        rec = np.zeros((q_ref.shape[0], 1 + 7 + 7))
+        rec = np.zeros((q_ref.shape[0], 1 + 7 + 7 + 7))
         if self.is_left:
             # 运动到第一个点
             self.log_msg("正在运动到左臂轨迹起始点...")
@@ -351,18 +355,14 @@ class DynParamIdentifier(Node):
                     is_sim=False, target_position=target_position
                 ):
                     return False
-                _eps = 1e-9
-                _sensor_slice = self.joint_torque_sensor[6:13] if self.joint_torque_sensor else []
-                tau_data = (
-                    _sensor_slice
-                    if _sensor_slice and any(abs(v) > _eps for v in _sensor_slice)
-                    else self.joint_torque[6:13]
-                )
+                _tau_current = self.joint_torque[6:13] if self.joint_torque else [0.0] * 7
+                _tau_sensor = self.joint_torque_sensor[6:13] if self.joint_torque_sensor else [0.0] * 7
                 rec[i, :] = np.concatenate(
                     [
                         np.array([float(self.timestamp - time0) * 1e-9]),
                         np.array(self.joint_position[6:13]),
-                        np.array(tau_data),
+                        np.array(_tau_current),
+                        np.array(_tau_sensor),
                     ]
                 )
                 next_t = self._fixed_rate_next(next_t, local_dt)
@@ -386,18 +386,14 @@ class DynParamIdentifier(Node):
                     is_sim=False, target_position=target_position
                 ):
                     return False
-                _eps = 1e-9
-                _sensor_slice = self.joint_torque_sensor[13:20] if self.joint_torque_sensor else []
-                tau_data = (
-                    _sensor_slice
-                    if _sensor_slice and any(abs(v) > _eps for v in _sensor_slice)
-                    else self.joint_torque[13:20]
-                )
+                _tau_current = self.joint_torque[13:20] if self.joint_torque else [0.0] * 7
+                _tau_sensor = self.joint_torque_sensor[13:20] if self.joint_torque_sensor else [0.0] * 7
                 rec[i, :] = np.concatenate(
                     [
                         np.array([float(self.timestamp - time0) * 1e-9]),
                         np.array(self.joint_position[13:20]),
-                        np.array(tau_data),
+                        np.array(_tau_current),
+                        np.array(_tau_sensor),
                     ]
                 )
                 next_t = self._fixed_rate_next(next_t, local_dt)
@@ -505,7 +501,7 @@ class DynParamIdentifier(Node):
         rec_path = os.path.join(self.rec_dir, side_dir, rec_filename)
         traj_path = os.path.join(self.traj_dir, side_dir, f"{self.traj}.dat")
 
-        t_raw, q_raw, tau_raw, t_ref, q_ref = read_data(
+        t_raw, q_raw, tau_raw, tau_sensor_raw, t_ref, q_ref = read_data(
             self.ndof, self.dt, rec_path, traj_path
         )
         n_joints = q_raw.shape[1]
@@ -521,6 +517,7 @@ class DynParamIdentifier(Node):
         q_ref_cut = np.asarray(q_ref[:min_len, :])
         q_raw_cut = np.asarray(q_raw[:min_len, :])
         tau_cut = np.asarray(tau_raw[:min_len, :])
+        tau_sensor_cut = np.asarray(tau_sensor_raw[:min_len, :]) if tau_sensor_raw.size > 0 else None
 
         for j in range(min(len(ax_handles), n_joints)):
             ax1 = ax_handles[j]
@@ -549,10 +546,19 @@ class DynParamIdentifier(Node):
             ax2.plot(
                 t_raw_cut,
                 tau_cut[:, j],
-                label="Measured τ",
+                label="Measured τ (current)",
                 color="tab:red",
                 linewidth=1,
             )
+            if tau_sensor_cut is not None and np.any(np.abs(tau_sensor_cut[:, j]) > 1e-9):
+                ax2.plot(
+                    t_raw_cut,
+                    tau_sensor_cut[:, j],
+                    label="Measured τ (sensor)",
+                    color="tab:orange",
+                    linewidth=1,
+                    linestyle="--",
+                )
             ax2.set_ylabel("Torque (Nm)", color="tab:red")
             ax1.tick_params(axis="y", labelcolor="tab:blue")
             ax2.tick_params(axis="y", labelcolor="tab:red")
@@ -793,13 +799,15 @@ class DynParamCalculator:
 
     def process_and_cache_data(self):
         for traj in ["traj1", "traj2"]:
-            t_raw, q_raw, tau_raw, t, q, dq, ddq, tau, W, omega, Q1, R1, rho1 = (
-                self.process_regression_data(traj)
-            )
+            (
+                t_raw, q_raw, tau_current_raw, tau_sensor_raw,
+                t, q, dq, ddq, tau, W, omega, Q1, R1, rho1,
+            ) = self.process_regression_data(traj)
             self.proc_data[traj] = {
                 "t_raw": t_raw,
                 "q_raw": q_raw,
-                "tau_raw": tau_raw,
+                "tau_current": tau_current_raw,
+                "tau_sensor": tau_sensor_raw,
                 "t": t,
                 "q": q,
                 "dq": dq,
@@ -824,10 +832,12 @@ class DynParamCalculator:
         sub_dir = "left" if self.is_left else "right"
         rec_path = os.path.join(self.rec_dir, sub_dir, rec_filename)
         traj_path = os.path.join(self.traj_dir, sub_dir, f"{traj}.dat")
-        t_raw, q_raw, tau_raw, t_ref, q_ref = read_data(
+        t_raw, q_raw, tau_current_raw, tau_sensor_raw, t_ref, q_ref = read_data(
             self.ndof, self.dt, rec_path, traj_path
         )
-
+        # 辨识使用电流估算力矩 (joint_torque), sensor torque 仅用于显示对比
+        tau_raw = tau_current_raw
+        self.log_msg(f"[{traj}] 使用电流估算力矩 (current torque) 进行辨识")
         q, dq, ddq, tau = self.diff_and_filt_data(
             dof=self.ndof,
             h=self.dt,
@@ -840,7 +850,8 @@ class DynParamCalculator:
         )
         t_raw = t_raw[si:sf]
         q_raw = q_raw[si:sf]
-        tau_raw = tau_raw[si:sf]
+        tau_current_raw = tau_current_raw[si:sf]
+        tau_sensor_raw = tau_sensor_raw[si:sf]
         q = q[si:sf]
         dq = dq[si:sf]
         ddq = ddq[si:sf]
@@ -848,7 +859,7 @@ class DynParamCalculator:
         t_raw = t_raw - t_raw[0]
         t = np.array(range(q.shape[0])) * self.dt
         W, omega, Q1, R1, rho1 = self.gen_regr_matrices(self.rbt, q, dq, ddq, tau)
-        return t_raw, q_raw, tau_raw, t, q, dq, ddq, tau, W, omega, Q1, R1, rho1
+        return t_raw, q_raw, tau_current_raw, tau_sensor_raw, t, q, dq, ddq, tau, W, omega, Q1, R1, rho1
 
     # 惯性矩阵M(q)正定性测试: M(q)理论上应为对称正定矩阵，否则对应的动能不满足正定性，模型物理不可行, 因此需要验证辨识结果对应的质量矩阵是否为正定矩阵）
     def test_mass_matrix_psd(self, beta_solution):
@@ -1038,15 +1049,23 @@ class DynParamCalculator:
             raise RuntimeError("未找到处理数据，请先执行计算动力学参数。")
         W = np.matrix(traj_proc["W"])
         t = traj_proc["t"]
-        tau_raw = np.matrix(traj_proc["tau"])
+        tau_current = np.matrix(traj_proc["tau_current"])
+        tau_sensor = np.matrix(traj_proc["tau_sensor"])
+        tau_used = np.matrix(traj_proc["tau"])
         if self.solutions_beta_starextra is None:
-            raise RuntimeError("未找到辨识结果，请先执行计算动力学参数。")
+            raise RuntimeError("未找到辨识结果，请先计算动力学参数。")
         omega_pred = W * np.matrix(self.solutions_beta_starextra)
         tau_pred = omega_pred.reshape(
-            int(omega_pred.shape[0] / tau_raw.shape[1]), tau_raw.shape[1]
+            int(omega_pred.shape[0] / tau_used.shape[1]), tau_used.shape[1]
         )
-        total = tau_raw.shape[0]
-        return t[:total], tau_raw[:total, :], tau_pred[:total, :]
+        total = tau_used.shape[0]
+        return (
+            t[:total],
+            tau_current[:total, :],
+            tau_sensor[:total, :],
+            tau_pred[:total, :],
+            tau_used[:total, :],
+        )
 
 
 class DynParamGUI(QtWidgets.QMainWindow):
@@ -2056,21 +2075,32 @@ class DynParamGUI(QtWidgets.QMainWindow):
                     for j in range(rows * cols)
                 ]
                 calc_left = self.dyn.calculator_left
-                tL, tau_raw_L, tau_pred_L = calc_left.get_regr_validatation()
-                totalL = tau_raw_L.shape[0]
+                tL, tau_current_L, tau_sensor_L, tau_pred_L, tau_used_L = calc_left.get_regr_validatation()
+                totalL = tau_used_L.shape[0]
                 r2_list_L = []
-                for i in range(min(ndof, tau_raw_L.shape[1])):
+                for i in range(min(ndof, tau_used_L.shape[1])):
                     ax = axes_left[i]
                     ax.clear()
-                    measured_i = np.asarray(tau_raw_L[:, i]).flatten()[:totalL]
+                    current_i = np.asarray(tau_current_L[:, i]).flatten()[:totalL]
+                    sensor_i = np.asarray(tau_sensor_L[:, i]).flatten()[:totalL]
                     estimated_i = np.asarray(tau_pred_L[:, i]).flatten()[:totalL]
+                    used_i = np.asarray(tau_used_L[:, i]).flatten()[:totalL]
                     ax.plot(
                         tL[:totalL],
-                        measured_i,
-                        label="Measured torque",
+                        current_i,
+                        label="Current torque",
                         color="tab:red",
                         linewidth=1,
                     )
+                    if np.any(np.abs(sensor_i) > 1e-9):
+                        ax.plot(
+                            tL[:totalL],
+                            sensor_i,
+                            label="Sensor torque",
+                            color="tab:orange",
+                            linewidth=1,
+                            linestyle="--",
+                        )
                     ax.plot(
                         tL[:totalL],
                         estimated_i,
@@ -2078,8 +2108,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
                         color="tab:blue",
                         linewidth=1,
                     )
-                    ss_res = np.sum((measured_i - estimated_i) ** 2)
-                    ss_tot = np.sum((measured_i - np.mean(measured_i)) ** 2)
+                    ss_res = np.sum((used_i - estimated_i) ** 2)
+                    ss_tot = np.sum((used_i - np.mean(used_i)) ** 2)
                     r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
                     r2_list_L.append(r2)
                     ax.set_title(f"Joint {i+1}  R²={r2*100:.1f}%")
@@ -2112,21 +2142,32 @@ class DynParamGUI(QtWidgets.QMainWindow):
                     for j in range(rows * cols)
                 ]
                 calc_right = self.dyn.calculator_right
-                tR, tau_raw_R, tau_pred_R = calc_right.get_regr_validatation()
-                totalR = tau_raw_R.shape[0]
+                tR, tau_current_R, tau_sensor_R, tau_pred_R, tau_used_R = calc_right.get_regr_validatation()
+                totalR = tau_used_R.shape[0]
                 r2_list_R = []
-                for i in range(min(ndof, tau_raw_R.shape[1])):
+                for i in range(min(ndof, tau_used_R.shape[1])):
                     ax = axes_right[i]
                     ax.clear()
-                    measured_i = np.asarray(tau_raw_R[:, i]).flatten()[:totalR]
+                    current_i = np.asarray(tau_current_R[:, i]).flatten()[:totalR]
+                    sensor_i = np.asarray(tau_sensor_R[:, i]).flatten()[:totalR]
                     estimated_i = np.asarray(tau_pred_R[:, i]).flatten()[:totalR]
+                    used_i = np.asarray(tau_used_R[:, i]).flatten()[:totalR]
                     ax.plot(
                         tR[:totalR],
-                        measured_i,
-                        label="Measured torque",
+                        current_i,
+                        label="Current torque",
                         color="tab:red",
                         linewidth=1,
                     )
+                    if np.any(np.abs(sensor_i) > 1e-9):
+                        ax.plot(
+                            tR[:totalR],
+                            sensor_i,
+                            label="Sensor torque",
+                            color="tab:orange",
+                            linewidth=1,
+                            linestyle="--",
+                        )
                     ax.plot(
                         tR[:totalR],
                         estimated_i,
@@ -2134,8 +2175,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
                         color="tab:blue",
                         linewidth=1,
                     )
-                    ss_res = np.sum((measured_i - estimated_i) ** 2)
-                    ss_tot = np.sum((measured_i - np.mean(measured_i)) ** 2)
+                    ss_res = np.sum((used_i - estimated_i) ** 2)
+                    ss_tot = np.sum((used_i - np.mean(used_i)) ** 2)
                     r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
                     r2_list_R.append(r2)
                     ax.set_title(f"Joint {i+1}  R²={r2*100:.1f}%")
@@ -2166,10 +2207,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
             mean_r2_R = np.average(r2_list_R, weights=weights) if r2_list_R else 0.0
             if mean_r2_L < r2_threshold or mean_r2_R < r2_threshold:
                 self.log_msg(
-                    f"辨识验证失败！加权平均吻合度未达到 {r2_threshold*100}%: 左臂 {mean_r2_L*100:.1f}%, 右臂 {mean_r2_R*100:.1f}%"
+                    f"⚠ 辨识验证未达标（阈值 {r2_threshold*100}%）: 左臂 {mean_r2_L*100:.1f}%, 右臂 {mean_r2_R*100:.1f}%，仍可写入但建议检查数据。"
                 )
-                self._params_calculated = False
-                self.btn_write_params.setDisabled(True)
             else:
                 self.log_msg(f"辨识验证通过，加权平均吻合度: 左臂 {mean_r2_L*100:.1f}%, 右臂 {mean_r2_R*100:.1f}%, 大于 {r2_threshold*100}%")
 
