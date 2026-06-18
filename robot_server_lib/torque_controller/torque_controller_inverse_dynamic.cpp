@@ -37,8 +37,8 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
     VectorDof K_v = input_cmd.cmd.joint_damping;
     VectorDof K_i_ratio = input_cmd.cmd.joint_integral_ratio;
     auto compute_feedforward = [&]() {
-        return dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero()) +
-               raw_measurement.tool_torque_feedforward;
+        return dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero()) -
+               raw_measurement.tool_torque_feedforward; // 计算力矩补偿（含基于最小参数集的机械臂的逆动力学前馈和来自工具的力矩补偿）
     };
     switch (state_) {
         case TorqueControllerState::Idle:
