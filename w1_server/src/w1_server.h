@@ -125,6 +125,7 @@ private:
     Vector12d sensor_wrench_gravity_;
     Vector12d raw_sensor_wrench_;
     VectorDof latest_torque_ext_ = VectorDof::Zero();
+    VectorDof latest_arm_forward_torque_ = VectorDof::Zero();
     VectorDof latest_tool_compensation_torque_ = VectorDof::Zero();
     VectorDof latest_joint_admittance_q_offset_ = VectorDof::Zero();
     VectorDof latest_joint_admittance_dq_offset_ = VectorDof::Zero();

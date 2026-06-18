@@ -202,6 +202,7 @@ class ForceMonitor(Node):
             data = json.loads(msg.data)
             latest = (
                 select_dual_arm_vector(data, "torque_ext"),
+                select_dual_arm_vector(data, "arm_forward_torque"),
                 select_dual_arm_vector(data, "tool_compensation_torque"),
                 data.get("force_sensor", []),
                 data.get("force_sensor_gravity", []),
@@ -219,10 +220,11 @@ class ForceMonitor(Node):
             latest = self.latest
         if latest is None:
             return
-        (torque_ext, tool_compensation_torque, force_sensor, force_sensor_gravity, raw_force_sensor, force_sensor_bias,
-         force_sensor_inertia) = latest
+        (torque_ext, arm_forward_torque, tool_compensation_torque, force_sensor, force_sensor_gravity,
+         raw_force_sensor, force_sensor_bias, force_sensor_inertia) = latest
         print("------------------------------------------------", flush=True)
         print(f"torque_ext: {json.dumps(torque_ext, separators=(',', ':'))},", flush=True)
+        print(f"arm_forward_torque: {json.dumps(arm_forward_torque, separators=(',', ':'))},", flush=True)
         print(f"tool_compensation_torque: {json.dumps(tool_compensation_torque, separators=(',', ':'))},", flush=True)
         print(f"force_sensor: {json.dumps(force_sensor, separators=(',', ':'))},", flush=True)
         print(f"force_sensor_gravity: {json.dumps(force_sensor_gravity, separators=(',', ':'))},", flush=True)

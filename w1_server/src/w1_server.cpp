@@ -20,6 +20,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     sensor_wrench_gravity_.setZero();
     raw_sensor_wrench_.setZero();
     latest_torque_ext_.setZero();
+    latest_arm_forward_torque_.setZero();
     latest_tool_compensation_torque_.setZero();
     latest_joint_admittance_q_offset_.setZero();
     latest_joint_admittance_dq_offset_.setZero();
@@ -511,6 +512,7 @@ void RobotServer::TorqueControlThreadFunc() {
             this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd)) {
             this->is_cmd_valid_ = true;
             latest_torque_ext_ = torque_cmd.torque_ext;
+            latest_arm_forward_torque_ = torque_cmd.arm_forward_torque;
             latest_joint_admittance_q_offset_ = torque_cmd.joint_admittance_q_offset;
             latest_joint_admittance_dq_offset_ = torque_cmd.joint_admittance_dq_offset;
             latest_joint_position_ref_admittance_ = torque_cmd.joint_position_ref_admittance;
@@ -653,6 +655,7 @@ void RobotServer::TorqueControlThreadFunc() {
             }
         } else {
             latest_torque_ext_.setZero();
+            latest_arm_forward_torque_.setZero();
             latest_tool_compensation_torque_.setZero();
             latest_joint_admittance_q_offset_.setZero();
             latest_joint_admittance_dq_offset_.setZero();
@@ -708,6 +711,8 @@ void RobotServer::TorqueControlThreadFunc() {
                 << utils::VectorToJsonArrayString(torque_ff_log_arr_, index_offset, ndof_config_).str()
                 << ", \"torque_ext\": "
                 << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
+                << ", \"arm_forward_torque\": "
+                << utils::VectorToJsonArrayString(latest_arm_forward_torque_, index_offset, ndof_config_).str()
                 << ", \"tool_compensation_torque\": "
                 << utils::VectorToJsonArrayString(latest_tool_compensation_torque_, index_offset, ndof_config_).str()
                 << ", \"joint_admittance_q_offset\": "
@@ -1007,6 +1012,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(torque_ff_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_torque_sensor\":" + utils::VectorToJsonArrayString(torque_sensor_arr_, index_offset, ndof_config_).str() +
         ",\n  \"torque_ext\":" + utils::VectorToJsonArrayString(latest_torque_ext_, index_offset, ndof_config_).str() +
+        ",\n  \"arm_forward_torque\":" + utils::VectorToJsonArrayString(latest_arm_forward_torque_, index_offset, ndof_config_).str() +
         ",\n  \"tool_compensation_torque\":" + utils::VectorToJsonArrayString(latest_tool_compensation_torque_, index_offset, ndof_config_).str() +
         ",\n  \"joint_admittance_q_offset\":" + utils::VectorToJsonArrayString(latest_joint_admittance_q_offset_, index_offset, ndof_config_).str() +
         ",\n  \"joint_admittance_dq_offset\":" + utils::VectorToJsonArrayString(latest_joint_admittance_dq_offset_, index_offset, ndof_config_).str() +
