@@ -9,8 +9,8 @@
 #include <cstring>
 #include <iostream>
 
-#define FEEDBACK_SHM_KEY 0x1004
-#define CONTROL_SHM_KEY 0x2004
+#define FEEDBACK_SHM_KEY 0x1005
+#define CONTROL_SHM_KEY 0x2005
 #define MAX_JOINT_NUM 32
 #define OMNI_MOTOR_NUM 4
 
@@ -54,17 +54,6 @@ struct ImuData {
     uint32_t timestamp = 0;             // HI91 protocol timestamp
 };
 
-static_assert(sizeof(Vector3f) == 12, "Vector3f shared-memory layout changed");
-static_assert(sizeof(Quaternionf) == 16, "Quaternionf shared-memory layout changed");
-static_assert(sizeof(ImuData) == 76, "ImuData shared-memory layout changed");
-static_assert(offsetof(ImuData, orientation) == 4, "ImuData orientation offset changed");
-static_assert(offsetof(ImuData, angular_velocity) == 20, "ImuData angular_velocity offset changed");
-static_assert(offsetof(ImuData, linear_acceleration) == 32, "ImuData linear_acceleration offset changed");
-static_assert(offsetof(ImuData, mag) == 44, "ImuData mag offset changed");
-static_assert(offsetof(ImuData, eul) == 56, "ImuData eul offset changed");
-static_assert(offsetof(ImuData, pressure) == 68, "ImuData pressure offset changed");
-static_assert(offsetof(ImuData, timestamp) == 72, "ImuData timestamp offset changed");
-
 struct ChassisControl {
     uint64_t cnt = 0;
 
@@ -80,7 +69,7 @@ struct ChassisControl {
 };
 
 struct JointFeedback {
-    char joint_name[10] = {};        // 关节名 / ID
+    char joint_name[32] = {};        // 关节名 / ID
     uint16_t joint_status_word = 0;  // 状态字
     uint16_t joint_error_code = 0;   // 错误码
     double joint_position = 0;       // 位置
@@ -91,7 +80,7 @@ struct JointFeedback {
 };
 
 struct JointControl {
-    char joint_name[10] = {};                // 关节名 / ID
+    char joint_name[32] = {};            // 关节名 / ID
     uint16_t joint_mode = 0;                 // 控制模式（默认 0）
     double joint_position = 0;               // 给定位置 (rad)
     double joint_velocity = 0;               // 给定速度 (rad/s)

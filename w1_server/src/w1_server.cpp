@@ -612,6 +612,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
 
     robot_server_state_msg.data =
         std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) +
+        ", \"server_version\":\"" W1_SERVER_VERSION "\"" +
         ", \"robot_type\":\"" + this->robot_model_.params_ptr->robot_type + "\"" +
         ", \"robot_version\":\"" + this->robot_model_.params_ptr->robot_version + "\"" +
         ", \"robot_mode\":\"" + ToString(this->robot_mode_) + "\"" +
