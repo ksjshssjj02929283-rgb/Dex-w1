@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <sstream>
 
 #include "utils.h"
 
@@ -330,8 +331,24 @@ Eigen::VectorXd ComputeToolJointTorqueFromWrench(const pinocchio::Model& arm_mod
         return Eigen::VectorXd::Zero(arm_model.nv);
     }
 
+    const Eigen::VectorXd tau_force = jacobian.topRows<3>().transpose() * tool_wrench_ee.head<3>();
+    const Eigen::VectorXd tau_moment = jacobian.bottomRows<3>().transpose() * tool_wrench_ee.tail<3>();
+    const Eigen::VectorXd tau_tool = tau_force + tau_moment;
+
+    static int print_count = 0;
+    if (++print_count % 1000 == 0) {
+        const Eigen::IOFormat log_format(5, 0, ", ", "\n", "[", "]");
+        std::ostringstream ss;
+        ss << "tool joint torque debug: wrench_ee=" << tool_wrench_ee.transpose().format(log_format)
+           << ", q_arm=" << feedback_q_arm.transpose().format(log_format)
+           << ", tau_force=" << tau_force.transpose().format(log_format)
+           << ", tau_moment=" << tau_moment.transpose().format(log_format)
+           << ", tau_tool=" << tau_tool.transpose().format(log_format);
+        LOG_INFO << ss.str();
+    }
+
     if (applied) *applied = true;
-    return jacobian.transpose() * tool_wrench_ee;
+    return tau_tool;
 }
 
 void ResetToolInertiaCompensationState(ToolCompensationState& state) {
