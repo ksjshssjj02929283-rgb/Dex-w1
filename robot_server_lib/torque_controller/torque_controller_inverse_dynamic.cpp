@@ -1,6 +1,7 @@
 #include "torque_controller_inverse_dynamic.h"
 
 #include <cmath>
+#include <sstream>
 
 namespace robot_server_lib {
 
@@ -45,9 +46,11 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
         static int print_count = 0;
         if (++print_count % 1000 == 0) {
             const Eigen::IOFormat log_format(3, 0, ", ", "\n", "[", "]");
-            LOG_INFO << "arm_forward_torque: " << output_cmd.arm_forward_torque.transpose().format(log_format)
-                     << ", tool_torque_feedforward: "
-                     << raw_measurement.tool_torque_feedforward.transpose().format(log_format);
+            std::ostringstream ss;
+            ss << "arm_forward_torque: " << output_cmd.arm_forward_torque.transpose().format(log_format)
+               << ", tool_torque_feedforward: "
+               << raw_measurement.tool_torque_feedforward.transpose().format(log_format);
+            LOG_INFO << ss.str();
         }
         return output_cmd.arm_forward_torque - raw_measurement.tool_torque_feedforward;  // 注意补偿用的符号
 
