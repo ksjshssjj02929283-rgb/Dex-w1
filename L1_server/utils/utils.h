@@ -1,8 +1,13 @@
 #pragma once
 
 #include <bitset>
+#include <cmath>
+#include <cstdint>
+#include <iomanip>
 #include <nlohmann/json.hpp>
 #include <sstream>
+#include <string>
+#include <type_traits>
 #include <vector>
 
 using json = nlohmann::json;
@@ -20,7 +25,26 @@ using json = nlohmann::json;
 #define STATUSWORD_MOTOR_QUICK_STOP (1U << 3)
 
 namespace robot_server_lib {
+
+// 基础类型别名
+using Int64 = std::int64_t;
+
+// 控制周期常量
+constexpr int torque_ctrl_dt_micro = 1000;    // 1kHz
+constexpr int publish_dt_micro = 10000;       // 100Hz
+
 namespace utils {
+
+// 获取容器大小（支持 STL 容器和原生数组）
+template <typename T>
+inline std::size_t GetContainerSize(const T &c) {
+    return static_cast<std::size_t>(c.size());
+}
+
+template <typename T, std::size_t N>
+inline std::size_t GetContainerSize(const T (&)[N]) {
+    return N;
+}
 
 template <typename VectorType>
 std::ostringstream MotorStatusToJsonArrayString(const VectorType &vec, int start_index, int end_index) {
@@ -130,6 +154,34 @@ std::ostringstream MotorErrorcodeToJsonArrayString(const VectorType &vec, int st
             }
         } else {
             ss << "invalid data";
+        }
+        if (i < end_index - 1) ss << ",";
+    }
+    ss << "]";
+    return ss;
+}
+
+// 将数值数组序列化为 JSON 数组字符串（带起止索引）
+template <typename VectorType>
+std::ostringstream VectorToJsonArrayString(const VectorType &vec, int start_index, int end_index) {
+    int total_size = static_cast<int>(GetContainerSize(vec));
+    if (start_index < 0) start_index = 0;
+    if (end_index < 0 || end_index > total_size) end_index = total_size;
+    if (start_index > end_index) start_index = end_index;
+
+    std::ostringstream ss;
+    ss << "[";
+    for (int i = start_index; i < end_index; ++i) {
+        using ElemT = std::decay_t<decltype(vec[i])>;
+        if constexpr (std::is_integral_v<ElemT>) {
+            ss << static_cast<long long>(vec[i]);
+        } else {
+            double v = static_cast<double>(vec[i]);
+            if (std::isfinite(v)) {
+                ss << std::fixed << std::setprecision(4) << v;
+            } else {
+                ss << "null";
+            }
         }
         if (i < end_index - 1) ss << ",";
     }

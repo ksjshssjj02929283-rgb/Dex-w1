@@ -1,16 +1,26 @@
 #include "L1_server.h"
 
+#include <cerrno>
+#include <cstring>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <sched.h>
+#include <sys/mman.h>
 #include <system_error>
+#include <unistd.h>
 
 #include "parallel_ankle_calc.h"
 
 namespace robot_server_lib {
 
-RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : RobotServerBase(robot_cfg_path, is_sim) {
+RobotServer::RobotServer(std::filesystem::path robot_cfg_path) : Node("robot_server") {
+    // 初始化日志系统
+    InitLogger();
+    LOG_INFO << "";
+    LOG_INFO << "---------------------------------------L1 Robot Server Initializing---------------------------------------";
+
     // 尝试从 ~/dexe_robot_server_data/l1_config.json 加载配置
     std::filesystem::path config_dir = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
     std::filesystem::path config_path = config_dir / "l1_config.json";
@@ -184,7 +194,7 @@ void RobotServer::JointCommandCallback(const JointCommandMsg::SharedPtr msg) {
 
 // 处理反馈数据和发送控制命令的实时线程函数
 void RobotServer::JointControlThreadFunc() {
-    Setup_Realtime();
+    SetupRealtime();
     // 初始化共享内存
     auto& feedback_shm_instance = FeedbackSharedMemory::GetInstance();
     auto& control_shm_instance = ControlSharedMemory::GetInstance();
@@ -618,6 +628,31 @@ std::string RobotServer::GetRobotStatusString() {
         ",\n  \"leg_ankle_motor_position_fb\":" + utils::VectorToJsonArrayString(leg_ankle_motor_position_fb, 0, 4).str() + 
         ",\n  \"leg_ankle_motor_position_cmd\":" + utils::VectorToJsonArrayString(leg_ankle_motor_position_cmd, 0, 4).str() + "\n}";
     return InvertJointSignFromJsonString(status_string);
+}
+
+void RobotServer::SetupRealtime() {
+    // 锁内存，避免分页抖动
+    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
+        std::cerr << "mlockall failed: " << std::strerror(errno) << std::endl;
+    }
+    // 设置SCHED_FIFO实时调度
+    sched_param sp{};
+    sp.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0) {
+        std::cerr << "sched_setscheduler failed: " << std::strerror(errno) << std::endl;
+        LOG_CRIT << "sched_setscheduler failed, please run setcap!";
+        assert(false && "sched_setscheduler failed, please run setcap!");
+    }
+}
+
+void RobotServer::InitLogger() {
+    // 固定路径为 ~/log
+    std::filesystem::path home = std::filesystem::path(std::getenv("HOME"));
+    std::filesystem::create_directories(home / "log");
+    nanolog::initialize(nanolog::GuaranteedLogger(), (home / "log/").string(), "robot_server", 10, 10);
+    nanolog::set_log_level(nanolog::LogLevel::INFO);
+    RCLCPP_INFO(this->get_logger(), "Logs directory: %s",
+                ((home / "log").string() + "/robot_server.txt").c_str());
 }
 
 }  // namespace robot_server_lib

@@ -3,23 +3,25 @@
 #include <builtin_interfaces/msg/time.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <numeric>
-#include <std_msgs/msg/float64_multi_array.hpp>  // 新增
+#include <sensor_msgs/msg/joint_state.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
+#include <std_msgs/msg/string.hpp>
 
 #include "joint_interfaces/msg/joint_command.hpp"
 #include "joint_interfaces/msg/joint_position_control.hpp"
+#include "NanoLog.hpp"
 #include "parallel_ankle_calc.h"
-#include "robot_server_lib/robot_server_base.h"
+#include "rclcpp/rclcpp.hpp"
 #include "shared_memory_def.h"
 #include "utils.h"
 
 namespace robot_server_lib {
 
 using JointCommandMsg = joint_interfaces::msg::JointCommand;
-using SetProperty = robot_server_interfaces::srv::SetProperty;
 
-class RobotServer : public RobotServerBase {
+class RobotServer : public rclcpp::Node {
 public:
-    RobotServer(std::filesystem::path robot_cfg_path, bool is_sim);
+    RobotServer(std::filesystem::path robot_cfg_path);
 
 private:
     void JointControlThreadFunc();
@@ -44,6 +46,10 @@ private:
     void DebugCallback(const std_msgs::msg::String::SharedPtr msg);
     std::string InvertJointSignFromJsonString(std::string status_string);
     std::string GetRobotStatusString();
+    // 锁内存并设置 SCHED_FIFO 实时调度
+    void SetupRealtime();
+    // 初始化 nanolog 日志系统
+    void InitLogger();
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_status_publisher_;
@@ -86,7 +92,9 @@ private:
     double legs_damping_[12]{0.0};
 
     bool clear_error_flag_{false};
+    bool is_robot_ready_{false};
 
+    std::thread torque_control_thread_;           // 关节控制线程
     std::thread joint_state_publisher_thread_;  // 100Hz关节状态发布线程
 
     utils::PMAnkle pm_ankle_left_{true};

@@ -1,7 +1,9 @@
 #include <cerrno>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 
+#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "L1_server.h"
 
 int main(int argc, char* argv[]) {
@@ -12,7 +14,7 @@ int main(int argc, char* argv[]) {
 
     // 启动节点
     rclcpp::executors::MultiThreadedExecutor executor;
-    auto node_server = std::make_shared<robot_server_lib::RobotServer>(robot_cfg_path, false);
+    auto node_server = std::make_shared<robot_server_lib::RobotServer>(robot_cfg_path);
     executor.add_node(node_server);
     executor.spin();
     rclcpp::shutdown();
