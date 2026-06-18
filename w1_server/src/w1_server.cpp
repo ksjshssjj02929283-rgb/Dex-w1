@@ -20,6 +20,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     sensor_wrench_gravity_.setZero();
     raw_sensor_wrench_.setZero();
     latest_torque_ext_.setZero();
+    latest_tool_compensation_torque_.setZero();
     latest_joint_admittance_q_offset_.setZero();
     latest_joint_admittance_dq_offset_.setZero();
     latest_joint_position_ref_admittance_.setZero();
@@ -426,6 +427,9 @@ void RobotServer::TorqueControlThreadFunc() {
             }
         }
 
+        // 将计算的工具补偿力矩写入共享内存, 供外部使用
+        latest_tool_compensation_torque_ = tool_torque_feedforward;
+
         // 补偿失效时直接清零对应外力输入, 避免把工具自重或惯性当成外力.
         const bool primary_compensation_failed =
             primary_wrench_valid && ((tool_compensation_config_.gravity_enabled && !gravity_applied_primary) ||
@@ -649,6 +653,7 @@ void RobotServer::TorqueControlThreadFunc() {
             }
         } else {
             latest_torque_ext_.setZero();
+            latest_tool_compensation_torque_.setZero();
             latest_joint_admittance_q_offset_.setZero();
             latest_joint_admittance_dq_offset_.setZero();
             latest_joint_position_ref_admittance_.setZero();
@@ -703,6 +708,8 @@ void RobotServer::TorqueControlThreadFunc() {
                 << utils::VectorToJsonArrayString(torque_ff_log_arr_, index_offset, ndof_config_).str()
                 << ", \"torque_ext\": "
                 << utils::VectorToJsonArrayString(torque_ext_log_arr_, index_offset, ndof_config_).str()
+                << ", \"tool_compensation_torque\": "
+                << utils::VectorToJsonArrayString(latest_tool_compensation_torque_, index_offset, ndof_config_).str()
                 << ", \"joint_admittance_q_offset\": "
                 << utils::VectorToJsonArrayString(latest_joint_admittance_q_offset_, index_offset, ndof_config_).str()
                 << ", \"joint_admittance_dq_offset\": "
@@ -999,6 +1006,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_torque_cmd\":" + utils::VectorToJsonArrayString(torque_ff_arr_, index_offset, ndof_config_).str() +
         ",\n  \"joint_torque_sensor\":" + utils::VectorToJsonArrayString(torque_sensor_arr_, index_offset, ndof_config_).str() +
         ",\n  \"torque_ext\":" + utils::VectorToJsonArrayString(latest_torque_ext_, index_offset, ndof_config_).str() +
+        ",\n  \"tool_compensation_torque\":" + utils::VectorToJsonArrayString(latest_tool_compensation_torque_, index_offset, ndof_config_).str() +
         ",\n  \"joint_admittance_q_offset\":" + utils::VectorToJsonArrayString(latest_joint_admittance_q_offset_, index_offset, ndof_config_).str() +
         ",\n  \"joint_admittance_dq_offset\":" + utils::VectorToJsonArrayString(latest_joint_admittance_dq_offset_, index_offset, ndof_config_).str() +
         ",\n  \"joint_position_ref_admittance\":" + utils::VectorToJsonArrayString(latest_joint_position_ref_admittance_, index_offset, ndof_config_).str() +
