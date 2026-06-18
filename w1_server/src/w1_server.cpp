@@ -385,6 +385,10 @@ void RobotServer::TorqueControlThreadFunc() {
             Vector6d tool_wrench_primary = Vector6d::Zero();
             bool tool_gravity_wrench_applied = false;
             std::string tool_gravity_wrench_failure_reason;
+
+            // 计算工具重力和惯量补偿的关节前馈补偿力矩
+
+            // 工具重力补偿 wrench
             tool_wrench_primary += dynamics::tool_compensation::ComputeToolGravityWrenchEE(
                 tool_compensation_config_, GetEERotationWorldFromEE(0), &tool_gravity_wrench_applied,
                 &tool_gravity_wrench_failure_reason);
@@ -392,12 +396,14 @@ void RobotServer::TorqueControlThreadFunc() {
                 LOG_WARN_THROTTLE(1000) << "tool feedforward gravity wrench lapsed: "
                                         << tool_gravity_wrench_failure_reason;
             }
-            if (inertia_applied_primary) {
-                for (int i = 0; i < 6; ++i) {
-                    tool_wrench_primary[i] +=
-                        tool_compensation_state_.tool_inertia_wrench_ee[i].load(std::memory_order_relaxed);
-                }
-            }
+            // 工具惯量补偿 wrench
+            // if (inertia_applied_primary) {
+            //     for (int i = 0; i < 6; ++i) {
+            //         tool_wrench_primary[i] +=
+            //             tool_compensation_state_.tool_inertia_wrench_ee[i].load(std::memory_order_relaxed);
+            //     }
+            // }
+            // 将计算的 wrench 转为关节空间的前馈补偿力矩
             if (!tool_wrench_primary.isZero(FloatZeroTol)) {
                 VectorDof feedback_q_whole = VectorDof::Zero();
                 for (int i = 0; i < ndof_robot; ++i) {
