@@ -178,7 +178,7 @@ void RobotServer::JointCommandCallback(const JointCommandMsg::SharedPtr msg) {
             }
         }
     }
-    last_command_timestamp_ = msg->header.stamp;
+    last_command_timestamp_ = this->get_clock()->now();
     robot_control_ = robot_control_temp;
 }
 
