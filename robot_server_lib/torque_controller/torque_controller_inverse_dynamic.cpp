@@ -52,7 +52,7 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
                << raw_measurement.tool_torque_feedforward.transpose().format(log_format);
             LOG_INFO << ss.str();
         }
-        return output_cmd.arm_forward_torque - raw_measurement.tool_torque_feedforward;  // 注意补偿用的符号
+        return output_cmd.arm_forward_torque;  // - raw_measurement.tool_torque_feedforward;  // 注意补偿用的符号
 
     };
     switch (state_) {
