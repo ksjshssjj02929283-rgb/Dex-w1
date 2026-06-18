@@ -37,10 +37,20 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
     VectorDof K_p = input_cmd.cmd.joint_stiffness;
     VectorDof K_v = input_cmd.cmd.joint_damping;
     VectorDof K_i_ratio = input_cmd.cmd.joint_integral_ratio;
+
+    // 计算前馈力矩
     auto compute_feedforward = [&]() {
         output_cmd.arm_forward_torque =
             dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
-        return output_cmd.arm_forward_torque - raw_measurement.tool_torque_feedforward;
+        static int print_count = 0;
+        if (++print_count % 1000 == 0) {
+            // 打印调试信息
+            printf("arm_forward_torque: %s, tool_torque_feedforward: %s\n",     
+                output_cmd.arm_forward_torque.transpose().format(Eigen::IOFormat(3, 0, ", ", "\n", "[", "]")).c_str(),
+                raw_measurement.tool_torque_feedforward.transpose().format(Eigen::IOFormat(3, 0, ", ", "\n", "[", "]")).c_str());
+        }
+        return output_cmd.arm_forward_torque - raw_measurement.tool_torque_feedforward;  // 注意补偿用的符号
+
     };
     switch (state_) {
         case TorqueControllerState::Idle:
