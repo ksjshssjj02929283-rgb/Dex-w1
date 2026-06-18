@@ -343,7 +343,8 @@ Eigen::VectorXd ComputeToolJointTorqueFromWrench(const pinocchio::Model& arm_mod
            << ", q_arm=" << feedback_q_arm.transpose().format(log_format)
            << ", tau_force=" << tau_force.transpose().format(log_format)
            << ", tau_moment=" << tau_moment.transpose().format(log_format)
-           << ", tau_tool=" << tau_tool.transpose().format(log_format);
+           << ", tau_tool=" << tau_tool.transpose().format(log_format)
+           << ", jacobian_T=" << jacobian.transpose().format(log_format);
         LOG_INFO << ss.str();
     }
 
