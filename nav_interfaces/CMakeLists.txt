@@ -41,6 +41,7 @@ set(MSG_FILES
   "msg/TargetInfo.msg"
   "msg/TargetMapInfo.msg"
   "msg/LocalizationState.msg"
+  "msg/MappingState.msg"
   "msg/RobotStatus.msg"
   "msg/NavigationStatus.msg"
   "msg/ChangeTopology.msg"
@@ -87,6 +88,7 @@ set(SRV_FILES
   "srv/RenameMap.srv"
   "srv/GetMapInfo.srv"
   "srv/GetString.srv"
+  "srv/SaveMap.srv"
   "srv/AddAreaInfo.srv"
   "srv/GetAreaInfoList.srv"
   "srv/GetAllAreas.srv"
@@ -108,6 +110,8 @@ set(SRV_FILES
   "srv/GetAllRooms.srv"
   "srv/GetRoomByName.srv"
   "srv/GetRoomAtPose.srv"
+  "srv/SaveAssets.srv"
+  "srv/RollbackMap.srv"
 )
 
 # 5) 声明要生成的动作
