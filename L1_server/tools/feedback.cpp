@@ -69,7 +69,7 @@ int main(int argc, char* argv[]) {
                 std::ostringstream ss;
                 ss << "ctrl position: ";
                 for (int i = 0; i < ndof_robot; i++) {
-                    ss << ctrl.position[i];
+                    ss << ctrl.joint_control[i].joint_position;
                     if (i < ndof_robot - 1) ss << ", ";
                 }
                 LOG_INFO << ss.str();
@@ -79,16 +79,17 @@ int main(int argc, char* argv[]) {
         fb.robot_status_word = 2;
 
         for (int i = 0; i < ndof_body; i++) {
-            fb.position[i] = ctrl.position[i];
-            fb.velocity[i] = ctrl.velocity[i];
-            fb.torque[i] = ctrl.torque_feedforward[i];
+            fb.joint_feedback[i].joint_position = ctrl.joint_control[i].joint_position;
+            fb.joint_feedback[i].joint_velocity = ctrl.joint_control[i].joint_velocity;
+            fb.joint_feedback[i].joint_torque = ctrl.joint_control[i].joint_torque_feedforward;
         }
 
         for (int i = 0; i < ndof_legs; i++) {
-            fb.leg_feedback_[i].joint_position = ctrl.leg_control[i].joint_position;
-            fb.leg_feedback_[i].joint_velocity = ctrl.leg_control[i].joint_velocity;
-            fb.leg_feedback_[i].joint_torque = ctrl.leg_control[i].joint_torque;
-            fb.leg_feedback_[i].joint_status_word = 2;
+            int idx = i + ndof_body;
+            fb.joint_feedback[idx].joint_position = ctrl.joint_control[idx].joint_position;
+            fb.joint_feedback[idx].joint_velocity = ctrl.joint_control[idx].joint_velocity;
+            fb.joint_feedback[idx].joint_torque = ctrl.joint_control[idx].joint_torque;
+            fb.joint_feedback[idx].joint_status_word = 2;
         }
         fb_shm.AppendNewElement(fb);
 

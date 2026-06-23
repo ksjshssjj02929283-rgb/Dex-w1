@@ -21,12 +21,32 @@ if [ -z "$ROS_DISTRO" ]; then
     exit 1
 fi
 
-# === 2. 初始化 submodule（dexe_interfaces 含 JointCommand.msg 等接口定义）===
+# === 2. 初始化 submodule（dexe_interfaces 使用 zyn/l1 分支，含 JointCommand.msg 等 L1 接口定义）===
 if [ -f "${WORKSPACE_DIR}/.gitmodules" ]; then
     git -C "${WORKSPACE_DIR}" submodule sync --recursive
     git -C "${WORKSPACE_DIR}" submodule update --init --recursive
+    # 切换 dexe_interfaces 到 zyn/l1 分支（L1 双足人形接口）
+    git -C "${WORKSPACE_DIR}/dexe_interfaces" fetch origin
+    git -C "${WORKSPACE_DIR}/dexe_interfaces" checkout origin/zyn/l1
 fi
 cd "${WORKSPACE_DIR}/.."
+
+# === 2.5 检测 submodule 是否变更，若变更则清除旧接口产物（避免 install/ 中残留旧分支编译结果）===
+SUBMODULE_HASH=$(git -C "${WORKSPACE_DIR}/dexe_interfaces" rev-parse HEAD 2>/dev/null || echo "")
+HASH_FILE="${WORKSPACE_DIR}/.dexe_interfaces_hash"
+if [ -n "$SUBMODULE_HASH" ]; then
+    if [ -f "$HASH_FILE" ] && [ "$(cat "$HASH_FILE")" = "$SUBMODULE_HASH" ]; then
+        echo "    - dexe_interfaces 未变化 ($SUBMODULE_HASH)，复用 install/ 中的接口包"
+    else
+        echo "    - dexe_interfaces 已更新 ($SUBMODULE_HASH)，清除旧接口产物以强制重编译"
+        for d in "$WORKSPACE_DIR/dexe_interfaces"/*/; do
+            [ -d "$d" ] || continue
+            pkg=$(basename "$d")
+            rm -rf "install/$pkg" "build/$pkg"
+        done
+        echo "$SUBMODULE_HASH" > "$HASH_FILE"
+    fi
+fi
 
 # === 3. 复用已安装的 interfaces 包，避免与 build/ 缓存里的源码路径冲突 ===
 # 已在 install/ 就跳过——复用独立 ~/zyn/dexe_interfaces 的产物；未装则正常编 submodule 版本

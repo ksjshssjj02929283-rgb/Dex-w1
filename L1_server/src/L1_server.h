@@ -8,7 +8,6 @@
 #include <std_msgs/msg/string.hpp>
 
 #include "joint_interfaces/msg/joint_command.hpp"
-#include "joint_interfaces/msg/joint_position_control.hpp"
 #include "NanoLog.hpp"
 #include "parallel_ankle_calc.h"
 #include "rclcpp/rclcpp.hpp"
@@ -21,7 +20,7 @@ using JointCommandMsg = joint_interfaces::msg::JointCommand;
 
 class RobotServer : public rclcpp::Node {
 public:
-    RobotServer(std::filesystem::path robot_cfg_path);
+    RobotServer();
 
 private:
     void JointControlThreadFunc();
@@ -38,7 +37,6 @@ private:
     }
 
     void JointCommandCallback(const joint_interfaces::msg::JointCommand::SharedPtr msg);
-    void JointPositionControlCallback(const joint_interfaces::msg::JointPositionControl::SharedPtr msg);
     void JointStatePublisher();
     void WriteFeedbackToControl();
     RobotFeedback ConvertAnkleMotorsToPitchRoll(const RobotFeedback& robot_feedback);
@@ -55,7 +53,6 @@ private:
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_status_publisher_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr debug_subscriber_;
     rclcpp::Subscription<joint_interfaces::msg::JointCommand>::SharedPtr joint_command_subscriber_;
-    rclcpp::Subscription<joint_interfaces::msg::JointPositionControl>::SharedPtr joint_position_control_subscriber_;
 
     RobotControl robot_control_;
     RobotFeedback robot_feedback_;
@@ -88,9 +85,6 @@ private:
                                    31.0, 31.0, 31.0, 31.0, 10.0, 10.0, 10.0, 
                                    87.0, 87.0};
                                    
-    double legs_stiffness_[12]{0.0};
-    double legs_damping_[12]{0.0};
-
     bool clear_error_flag_{false};
     bool is_robot_ready_{false};
 

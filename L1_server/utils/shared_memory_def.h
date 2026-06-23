@@ -5,87 +5,113 @@
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <cstddef>
 #include <cstring>
 #include <iostream>
-#include <sstream>
 
-#define FEEDBACK_SHM_KEY 0x1000
-#define CONTROL_SHM_KEY 0x2000
+#define FEEDBACK_SHM_KEY 0x1005
+#define CONTROL_SHM_KEY 0x2005
 #define MAX_JOINT_NUM 32
 #define OMNI_MOTOR_NUM 4
 
 struct ChassisFeedback {
-    int64_t timestamp;
-    double left_velocity;
-    double right_velocity;
+    int64_t timestamp = 0;
+    double left_velocity = 0;
+    double right_velocity = 0;
+    double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};   // 底盘电机控制速度
+    double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};  // 底盘电机控制方向
+    uint16_t status_word = 0;
+    uint16_t error_code_left = 0;
+    uint16_t error_code_right = 0;
+    double left_current = 0;
+    double right_current = 0;
+    double driver_temperature = 0;
+    double left_temperature = 0;
+    double right_temperature = 0;
 };
-struct LegMotorFeedback {
-    int joint_alias = 0;             // ID
+
+struct Vector3f {
+    float x = 0;
+    float y = 0;
+    float z = 0;
+};
+
+struct Quaternionf {
+    float x = 0;
+    float y = 0;
+    float z = 0;
+    float w = 0;
+};
+
+struct ImuData {
+    uint32_t id = 0;
+    Quaternionf orientation = {};
+    Vector3f angular_velocity = {};     // rad/s
+    Vector3f linear_acceleration = {};  // m/s^2
+    Vector3f mag = {};                  // uT
+    Vector3f eul = {};                  // x: 横滚角 Roll, y: 俯仰角 Pitch, z: 航向角 Yaw, unit: deg
+    float pressure = 0;                 // Pa
+    uint32_t timestamp = 0;             // HI91 protocol timestamp
+};
+
+struct ChassisControl {
+    uint64_t cnt = 0;
+
+    int chassis_mode = 0;  // 底盘控制模式. 1：差速，2：全向电机控制
+    // 差速底盘控制
+    double chassis_left_velocity = 0.0;
+    double chassis_right_velocity = 0.0;
+    // 用于全向底盘电机控制的全局变量,左前、右前、左后、右后
+    double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};   // 底盘电机控制速度
+    double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};  // 底盘电机控制方向
+    int chassis_estop = 0;
+    int chassis_neutral = 0;
+};
+
+struct JointFeedback {
+    char joint_name[32] = {};        // 关节名 / ID
     uint16_t joint_status_word = 0;  // 状态字
     uint16_t joint_error_code = 0;   // 错误码
     double joint_position = 0;       // 位置
     double joint_velocity = 0;       // 速度
     double joint_torque = 0;         // 力矩
+    double joint_sensor_torque = 0;  // 力矩传感器
+    double joint_temperature = 0;    // 温度
 };
 
-struct LegMotorControl {
-    int joint_alias = 0;                  // 关节名 / ID
-    uint16_t joint_mode = 0;              // 控制模式（默认 0）
-    double joint_position = 0;            // 给定位置 (rad)
-    double joint_velocity = 0;            // 给定速度 (rad/s)
-    double joint_torque = 0;              // 给定力矩 (Nm)
-    double joint_torque_feedforward = 0;  // 力矩前馈 (Nm)
-    double joint_Kp = 0;                  // 刚度
-    double joint_Kd = 0;                  // 阻尼
+struct JointControl {
+    char joint_name[32] = {};            // 关节名 / ID
+    uint16_t joint_mode = 0;                 // 控制模式（默认 0）
+    double joint_position = 0;               // 给定位置 (rad)
+    double joint_velocity = 0;               // 给定速度 (rad/s)
+    double joint_torque = 0;                 // 给定力矩 (Nm)
+    double joint_torque_feedforward = 0;     // 力矩前馈 (Nm)
+    double joint_Kp = 0;                     // 刚度
+    double joint_Kd = 0;                     // 阻尼
+    double joint_positive_torque_limit = 0;  // 正向力矩限制
+    double joint_negative_torque_limit = 0;  // 负向力矩限制
 };
 
 struct RobotFeedback {
     uint64_t cnt = 0;
+    uint64_t timestamp = 0;
     uint16_t robot_status_word = 0x0000;
     uint8_t al_status[MAX_JOINT_NUM] = {0};
-    uint16_t motor_error_code[MAX_JOINT_NUM] = {0};
-    uint8_t motor_temperature[MAX_JOINT_NUM] = {0};
-    uint16_t robot_error_code = 0x0000;
     // 关节反馈
-    double position[MAX_JOINT_NUM] = {0};
-    double velocity[MAX_JOINT_NUM] = {0};
-    double torque[MAX_JOINT_NUM] = {0};
+    JointFeedback joint_feedback[MAX_JOINT_NUM];
     // 底盘反馈
     ChassisFeedback chassis_feedback;
-    // L1
-    LegMotorFeedback leg_feedback_[12];
+    ImuData imu_data;
 };
 
 struct RobotControl {
     uint64_t cnt = 0;
+    uint64_t timestamp = 0;
     uint16_t robot_control_word = 0x0000;
     // 关节控制
-    double position[MAX_JOINT_NUM] = {0};
-    double velocity[MAX_JOINT_NUM] = {0};
-    double acceleration[MAX_JOINT_NUM] = {0};
-    double torque_feedforward[MAX_JOINT_NUM] = {0};
-    double torque_external[MAX_JOINT_NUM] = {0};
-    double positive_velocity_limit[MAX_JOINT_NUM] = {0};
-    double negative_velocity_limit[MAX_JOINT_NUM] = {0};
-    double positive_torque_limit[MAX_JOINT_NUM] = {0};
-    double negative_torque_limit[MAX_JOINT_NUM] = {0};
-    int chassis_mode = 0;  //底盘控制模式. 0：全向整车控制，1：差速，2：全向电机控制
-    // 全向整车控制
-    int chassis_whole_mode = 0;
-    double chassis_velocity = 0.0;
-    double chassis_direction = 0.0;
-    // 差速底盘控制
-    double chassis_left_velocity = 0.0;
-    double chassis_right_velocity = 0.0;
-    // 用于全向底盘电机控制的全局变量,左前、右前、左后、右后
-    double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};   //底盘电机控制速度
-    double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};  //底盘电机控制方向
-    int chassis_estop = 0;
-    int chassis_neutral = 0;
-    uint64_t chassis_cnt = 0;
-
-    // L1
-    LegMotorControl leg_control[12];
+    JointControl joint_control[MAX_JOINT_NUM];
+    // 底盘控制
+    ChassisControl chassis_control;
 };
 
 inline void decodeTwoUint32FromUint64(std::uint64_t v, std::uint32_t& latest, std::uint32_t& reader) {
@@ -115,7 +141,7 @@ protected:
     struct QueueElement {
         T data;
         uint64_t cnt = 0;
-        struct timespec ts;
+        struct timespec ts = {0, 0};
         bool valid{false};  // Handle the case if no element has arrived yet
     };
 
@@ -254,7 +280,7 @@ bool SharedMemory<T, BufferCapacity, SHM_KEY>::AppendNewElement(const T& element
     queue_element.data = element;
     queue_element.valid = true;
     queue_element.cnt = ++cnt_;
-    clock_gettime(CLOCK_REALTIME, &queue_element.ts);
+    clock_gettime(CLOCK_MONOTONIC, &queue_element.ts);
 
     shm_ptr_->ring_buffer[expected_place] = std::move(queue_element);
 
@@ -311,7 +337,7 @@ bool SharedMemory<T, BufferCapacity, SHM_KEY>::PeekLatest(T* element_output) {
         int64_t timeout = timeout_ms_.load(std::memory_order_relaxed);
         if (timeout != -1) {
             struct timespec now;
-            clock_gettime(CLOCK_REALTIME, &now);
+            clock_gettime(CLOCK_MONOTONIC, &now);
             int64_t diff = (now.tv_sec - elem.ts.tv_sec) * 1000LL + (now.tv_nsec - elem.ts.tv_nsec) / 1000000LL;
             if (diff > timeout) {
                 read_ok = false;

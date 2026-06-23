@@ -42,7 +42,6 @@ find_package(Eigen3 REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
 
 # ROS 2 dependencies
-find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -75,7 +74,6 @@ ament_target_dependencies(${PROJECT_NAME}
   std_msgs
   geometry_msgs
   sensor_msgs
-  ament_index_cpp
   Eigen3
   eigen3_cmake_module
   joint_interfaces
@@ -90,25 +88,6 @@ install(
   TARGETS ${PROJECT_NAME}
   DESTINATION lib/${PROJECT_NAME}
 )
-
-# robot.cfg：如果目标已存在则跳过安装
-set(ROBOT_CFG_INSTALL_PATH
-    "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/robot.cfg"
-)
-
-if(EXISTS "${ROBOT_CFG_INSTALL_PATH}")
-  message(STATUS
-    "[${PROJECT_NAME}] robot.cfg already exists at install destination, skipping install."
-  )
-else()
-  message(STATUS
-    "[${PROJECT_NAME}] robot.cfg not found at install destination, will be installed."
-  )
-  install(
-    FILES robot.cfg
-    DESTINATION share/${PROJECT_NAME}
-  )
-endif()
 
 # feedback 可执行文件
 add_executable(feedback tools/feedback.cpp utils/NanoLog.cpp)

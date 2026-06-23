@@ -15,110 +15,11 @@
 
 namespace robot_server_lib {
 
-RobotServer::RobotServer(std::filesystem::path robot_cfg_path) : Node("robot_server") {
+RobotServer::RobotServer() : Node("robot_server") {
     // 初始化日志系统
     InitLogger();
     LOG_INFO << "";
     LOG_INFO << "---------------------------------------L1 Robot Server Initializing---------------------------------------";
-
-    // 尝试从 ~/dexe_robot_server_data/l1_config.json 加载配置
-    std::filesystem::path config_dir = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
-    std::filesystem::path config_path = config_dir / "l1_config.json";
-
-    if (std::filesystem::exists(config_path)) {
-        try {
-            std::ifstream config_file(config_path);
-            nlohmann::json config = nlohmann::json::parse(config_file);
-            config_file.close();
-
-            // 读取 legs_stiffness
-            if (config.contains("legs_stiffness") && config["legs_stiffness"].is_array()) {
-                auto& arr = config["legs_stiffness"];
-                int count = std::min(12, (int)arr.size());
-                for (int i = 0; i < count; i++) {
-                    legs_stiffness_[i] = arr[i].get<double>();
-                }
-                RCLCPP_INFO(this->get_logger(), "Loaded legs_stiffness from config file: %s",
-                            config_path.string().c_str());
-            } else {
-                // 字段不存在，使用默认值并保存
-                nlohmann::json arr_stiffness = nlohmann::json::array();
-                for (int i = 0; i < 12; i++) arr_stiffness.push_back(legs_stiffness_[i]);
-                config["legs_stiffness"] = arr_stiffness;
-                std::ofstream out_file(config_path);
-                out_file << config.dump(4);
-                out_file.close();
-                RCLCPP_INFO(this->get_logger(), "legs_stiffness not found in config, saved default values");
-            }
-
-            // 读取 legs_damping
-            if (config.contains("legs_damping") && config["legs_damping"].is_array()) {
-                auto& arr = config["legs_damping"];
-                int count = std::min(12, (int)arr.size());
-                for (int i = 0; i < count; i++) {
-                    legs_damping_[i] = arr[i].get<double>();
-                }
-                RCLCPP_INFO(this->get_logger(), "Loaded legs_damping from config file: %s",
-                            config_path.string().c_str());
-            } else {
-                // 字段不存在，使用默认值并保存
-                nlohmann::json arr_damping = nlohmann::json::array();
-                for (int i = 0; i < 12; i++) arr_damping.push_back(legs_damping_[i]);
-                config["legs_damping"] = arr_damping;
-                std::ofstream out_file(config_path);
-                out_file << config.dump(4);
-                out_file.close();
-                RCLCPP_INFO(this->get_logger(), "legs_damping not found in config, saved default values");
-            }
-        } catch (const std::exception& e) {
-            RCLCPP_WARN(this->get_logger(), "Failed to load l1_config.json: %s, using default values", e.what());
-            // 配置文件为空或解析失败，创建默认配置文件
-            std::filesystem::create_directories(config_dir);
-            nlohmann::json config;
-
-            nlohmann::json arr_stiffness = nlohmann::json::array();
-            for (int i = 0; i < 12; i++) arr_stiffness.push_back(legs_stiffness_[i]);
-            config["legs_stiffness"] = arr_stiffness;
-
-            nlohmann::json arr_damping = nlohmann::json::array();
-            for (int i = 0; i < 12; i++) arr_damping.push_back(legs_damping_[i]);
-            config["legs_damping"] = arr_damping;
-
-            std::ofstream out_file(config_path);
-            out_file << config.dump(4);
-            out_file.close();
-            RCLCPP_INFO(this->get_logger(), "Created default config file at: %s", config_path.string().c_str());
-        }
-    } else {
-        // 配置文件不存在，创建默认配置文件
-        std::filesystem::create_directories(config_dir);
-        nlohmann::json config;
-
-        nlohmann::json arr_stiffness = nlohmann::json::array();
-        for (int i = 0; i < 12; i++) arr_stiffness.push_back(legs_stiffness_[i]);
-        config["legs_stiffness"] = arr_stiffness;
-
-        nlohmann::json arr_damping = nlohmann::json::array();
-        for (int i = 0; i < 12; i++) arr_damping.push_back(legs_damping_[i]);
-        config["legs_damping"] = arr_damping;
-
-        std::ofstream out_file(config_path);
-        out_file << config.dump(4);
-        out_file.close();
-
-        RCLCPP_INFO(this->get_logger(), "Config file not found, created default config at %s",
-                    config_path.string().c_str());
-    }
-
-    // 打印当前的刚度和阻尼值
-    std::string stiffness_str = "legs_stiffness: ";
-    std::string damping_str = "legs_damping: ";
-    for (int i = 0; i < 12; i++) {
-        stiffness_str += std::to_string(legs_stiffness_[i]) + " ";
-        damping_str += std::to_string(legs_damping_[i]) + " ";
-    }
-    RCLCPP_INFO(this->get_logger(), "%s", stiffness_str.c_str());
-    RCLCPP_INFO(this->get_logger(), "%s", damping_str.c_str());
 
     // 创建 /hardware/joint_state 发布器
     joint_state_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/hardware/joint_state", 10);
@@ -126,13 +27,9 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path) : Node("robot_ser
     // 创建 /feedback/robot_server_state 发布器
     robot_status_publisher_ = this->create_publisher<std_msgs::msg::String>("/feedback/robot_server_state", 10);
 
-    // 创建 /hardware/joint_command 订阅器 输入为28自由度, 16上半身+12腿部
+    // 创建 /hardware/joint_command 订阅器
     joint_command_subscriber_ = this->create_subscription<JointCommandMsg>(
         "/hardware/joint_command", 10, std::bind(&RobotServer::JointCommandCallback, this, std::placeholders::_1));
-
-    joint_position_control_subscriber_ = this->create_subscription<joint_interfaces::msg::JointPositionControl>(
-        "/hardware/joint_position_control", 10,
-        std::bind(&RobotServer::JointPositionControlCallback, this, std::placeholders::_1));
 
     // 创建 /control/debug 订阅器
     debug_subscriber_ = this->create_subscription<std_msgs::msg::String>(
@@ -145,23 +42,6 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path) : Node("robot_ser
     joint_state_publisher_thread_ = std::thread(&RobotServer::JointStatePublisherThreadFunc, this);
 }
 
-void RobotServer::JointPositionControlCallback(const joint_interfaces::msg::JointPositionControl::SharedPtr msg) {
-    auto robot_control_temp = robot_control_;
-    for (size_t i = 0; i < msg->name.size(); ++i) {
-        for (int j = 0; j < ndof_body_ + ndof_legs_; ++j) {
-            if (joint_name_[j] == msg->name[i]) {
-                if (j < ndof_body_) {
-                    robot_control_temp.position[j] = msg->position[i];
-                } else {
-                    int leg_index = j - ndof_body_;
-                    robot_control_temp.leg_control[leg_index].joint_position = msg->position[i];
-                }
-            }
-        }
-    }
-    robot_control_ = robot_control_temp;
-}
-
 void RobotServer::JointCommandCallback(const JointCommandMsg::SharedPtr msg) {
     auto robot_control_temp = robot_control_;
     for (size_t i = 0; i < msg->name.size(); ++i) {
@@ -171,19 +51,13 @@ void RobotServer::JointCommandCallback(const JointCommandMsg::SharedPtr msg) {
                 if (IsJointInMinusList(joint_name_[j])) {
                     sign = -1;
                 }
-                if (j < ndof_body_) {
-                    robot_control_temp.position[j] = sign * msg->position[i];
-                    robot_control_temp.velocity[j] = sign * msg->velocity[i];
-                    robot_control_temp.torque_feedforward[j] = sign * msg->torque_feedforward[i];
-                } else {
-                    int leg_index = j - ndof_body_;
-                    robot_control_temp.leg_control[leg_index].joint_position = sign * msg->position[i];
-                    robot_control_temp.leg_control[leg_index].joint_velocity = sign * msg->velocity[i];
-                    robot_control_temp.leg_control[leg_index].joint_torque = sign * msg->torque[i];
-                    robot_control_temp.leg_control[leg_index].joint_torque_feedforward =
-                        sign * msg->torque_feedforward[i];
-                    robot_control_temp.leg_control[leg_index].joint_Kp = msg->stiffness[i];
-                    robot_control_temp.leg_control[leg_index].joint_Kd = msg->damping[i];
+                robot_control_temp.joint_control[j].joint_position = sign * msg->position[i];
+                robot_control_temp.joint_control[j].joint_velocity = sign * msg->velocity[i];
+                robot_control_temp.joint_control[j].joint_torque_feedforward = sign * msg->torque_feedforward[i];
+                if (j >= ndof_body_) {
+                    robot_control_temp.joint_control[j].joint_torque = sign * msg->torque[i];
+                    robot_control_temp.joint_control[j].joint_Kp = msg->stiffness[i];
+                    robot_control_temp.joint_control[j].joint_Kd = msg->damping[i];
                 }
             }
         }
@@ -255,25 +129,27 @@ void RobotServer::JointControlThreadFunc() {
                 LOG_CRIT << "Robot is not ready, shm status: " << ret
                          << ", statusword: " << robot_feedback_.robot_status_word;
             }
-            for (int i = 0; i < 12; i++) {
-                robot_control_.leg_control[i].joint_position = robot_feedback_.leg_feedback_[i].joint_position;
-                robot_control_.leg_control[i].joint_velocity = 0.0;
-                robot_control_.leg_control[i].joint_torque = 0.0;
-                robot_control_.leg_control[i].joint_torque_feedforward = 0.0;
-                robot_control_.leg_control[i].joint_Kp = 0.0;
-                robot_control_.leg_control[i].joint_Kd = 0.0;
+            for (int i = 0; i < ndof_legs_; i++) {
+                int idx = i + ndof_body_;
+                robot_control_.joint_control[idx].joint_position = robot_feedback_.joint_feedback[idx].joint_position;
+                robot_control_.joint_control[idx].joint_velocity = 0.0;
+                robot_control_.joint_control[idx].joint_torque = 0.0;
+                robot_control_.joint_control[idx].joint_torque_feedforward = 0.0;
+                robot_control_.joint_control[idx].joint_Kp = 0.0;
+                robot_control_.joint_control[idx].joint_Kd = 0.0;
             }
         }
         // 如果指令超时则腿部指令置零
         if (last_command_timestamp_.sec == 0 && last_command_timestamp_.nanosec == 0 ||
             diff.nanoseconds() > static_cast<int64_t>(command_timeout_ms_) * 1000000LL) {
-            for (int i = 0; i < 12; i++) {
-                robot_control_.leg_control[i].joint_position = robot_feedback_.leg_feedback_[i].joint_position;
-                robot_control_.leg_control[i].joint_velocity = 0.0;
-                robot_control_.leg_control[i].joint_torque = 0.0;
-                robot_control_.leg_control[i].joint_torque_feedforward = 0.0;
-                robot_control_.leg_control[i].joint_Kp = 0.0;
-                robot_control_.leg_control[i].joint_Kd = 0.0;
+            for (int i = 0; i < ndof_legs_; i++) {
+                int idx = i + ndof_body_;
+                robot_control_.joint_control[idx].joint_position = robot_feedback_.joint_feedback[idx].joint_position;
+                robot_control_.joint_control[idx].joint_velocity = 0.0;
+                robot_control_.joint_control[idx].joint_torque = 0.0;
+                robot_control_.joint_control[idx].joint_torque_feedforward = 0.0;
+                robot_control_.joint_control[idx].joint_Kp = 0.0;
+                robot_control_.joint_control[idx].joint_Kd = 0.0;
             }
         }
         // 如果状态字发生变化了则打印
@@ -300,176 +176,25 @@ void RobotServer::JointControlThreadFunc() {
     }
 }
 
-RobotFeedback RobotServer::ConvertAnkleMotorsToPitchRoll(const RobotFeedback& robot_feedback) {
-    RobotFeedback result = robot_feedback;
-
-    ankle_motor_torque_[0] = robot_feedback.leg_feedback_[4].joint_torque;
-    ankle_motor_torque_[1] = robot_feedback.leg_feedback_[5].joint_torque;
-    ankle_motor_torque_[2] = robot_feedback.leg_feedback_[10].joint_torque;
-    ankle_motor_torque_[3] = robot_feedback.leg_feedback_[11].joint_torque;
-
-    ankle_motor_position_fb_[0] = robot_feedback.leg_feedback_[4].joint_position;
-    ankle_motor_position_fb_[1] = robot_feedback.leg_feedback_[5].joint_position;
-    ankle_motor_position_fb_[2] = robot_feedback.leg_feedback_[10].joint_position;
-    ankle_motor_position_fb_[3] = robot_feedback.leg_feedback_[11].joint_position;
-    
-    const double ankle_motor1_left = robot_feedback.leg_feedback_[4].joint_position;
-    const double ankle_motor2_left = robot_feedback.leg_feedback_[5].joint_position;
-    const double ankle_vel_motor1_left = robot_feedback.leg_feedback_[4].joint_velocity;
-    const double ankle_vel_motor2_left = robot_feedback.leg_feedback_[5].joint_velocity;
-    const double ankle_tau_motor1_left = robot_feedback.leg_feedback_[4].joint_torque;
-    const double ankle_tau_motor2_left = robot_feedback.leg_feedback_[5].joint_torque;
-
-    const double ankle_motor1_right = robot_feedback.leg_feedback_[10].joint_position;
-    const double ankle_motor2_right = robot_feedback.leg_feedback_[11].joint_position;
-    const double ankle_vel_motor1_right = robot_feedback.leg_feedback_[10].joint_velocity;
-    const double ankle_vel_motor2_right = robot_feedback.leg_feedback_[11].joint_velocity;
-    const double ankle_tau_motor1_right = robot_feedback.leg_feedback_[10].joint_torque;
-    const double ankle_tau_motor2_right = robot_feedback.leg_feedback_[11].joint_torque;
-
-    Eigen::Vector2d ankle_pose_left = pm_ankle_left_.GetAnklePoseFromMotorAngles(ankle_motor1_left, ankle_motor2_left);
-    double ankle_pitch_left = ankle_pose_left(0);
-    double ankle_roll_left = ankle_pose_left(1);
-
-    Eigen::Vector2d ankle_pose_right =
-        pm_ankle_right_.GetAnklePoseFromMotorAngles(ankle_motor1_right, ankle_motor2_right);
-    double ankle_pitch_right = ankle_pose_right(0);
-    double ankle_roll_right = ankle_pose_right(1);
-
-    result.leg_feedback_[4].joint_position = ankle_pitch_left;
-    result.leg_feedback_[5].joint_position = ankle_roll_left;
-    result.leg_feedback_[10].joint_position = ankle_pitch_right;
-    result.leg_feedback_[11].joint_position = ankle_roll_right;
-
-    Eigen::Vector2d ankle_vel_left = pm_ankle_left_.GetTaskVelocitiesFromMotorVelocities(
-        ankle_pitch_left, ankle_roll_left, ankle_vel_motor1_left, ankle_vel_motor2_left);
-    Eigen::Vector2d ankle_vel_right = pm_ankle_right_.GetTaskVelocitiesFromMotorVelocities(
-        ankle_pitch_right, ankle_roll_right, ankle_vel_motor1_right, ankle_vel_motor2_right);
-
-    result.leg_feedback_[4].joint_velocity = ankle_vel_left(0);
-    result.leg_feedback_[5].joint_velocity = ankle_vel_left(1);
-    result.leg_feedback_[10].joint_velocity = ankle_vel_right(0);
-    result.leg_feedback_[11].joint_velocity = ankle_vel_right(1);
-
-    Eigen::Vector2d ankle_tau_left = pm_ankle_left_.GetTaskTorquesFromMotorTorques(
-        ankle_pitch_left, ankle_roll_left, ankle_tau_motor1_left, ankle_tau_motor2_left);
-    Eigen::Vector2d ankle_tau_right = pm_ankle_right_.GetTaskTorquesFromMotorTorques(
-        ankle_pitch_right, ankle_roll_right, ankle_tau_motor1_right, ankle_tau_motor2_right);
-
-    result.leg_feedback_[4].joint_torque = ankle_tau_left(0);
-    result.leg_feedback_[5].joint_torque = ankle_tau_left(1);
-    result.leg_feedback_[10].joint_torque = ankle_tau_right(0);
-    result.leg_feedback_[11].joint_torque = ankle_tau_right(1);
-
-    return result;
-}
-
-RobotControl RobotServer::ConvertPitchRollToAnkleMotors(const RobotControl& robot_control) {
-    RobotControl result = robot_control;
-
-    ankle_motor_position_cmd_[0] = robot_control.leg_control[4].joint_position;
-    ankle_motor_position_cmd_[1] = robot_control.leg_control[5].joint_position;
-    ankle_motor_position_cmd_[2] = robot_control.leg_control[10].joint_position;
-    ankle_motor_position_cmd_[3] = robot_control.leg_control[11].joint_position;
-    
-    const double ankle_pitch_left = std::clamp(robot_control.leg_control[4].joint_position, -1.0472, 0.61087);
-    const double ankle_roll_left = std::clamp(robot_control.leg_control[5].joint_position, -0.2618, 0.2618);
-    const double ankle_tau_pitch_left = robot_control.leg_control[4].joint_torque;
-    const double ankle_tau_roll_left = robot_control.leg_control[5].joint_torque;
-    const double ankle_ff_pitch_left = robot_control.leg_control[4].joint_torque_feedforward;
-    const double ankle_ff_roll_left = robot_control.leg_control[5].joint_torque_feedforward;
-    const double ankle_k_pitch_left = robot_control.leg_control[4].joint_Kp;
-    const double ankle_k_roll_left = robot_control.leg_control[5].joint_Kp;
-    const double ankle_d_pitch_left = robot_control.leg_control[4].joint_Kd;
-    const double ankle_d_roll_left = robot_control.leg_control[5].joint_Kd;
-
-    const double ankle_pitch_right = std::clamp(robot_control.leg_control[10].joint_position, -1.0472, 0.61087);
-    const double ankle_roll_right = std::clamp(robot_control.leg_control[11].joint_position, -0.2618, 0.2618);
-    const double ankle_tau_pitch_right = robot_control.leg_control[10].joint_torque;
-    const double ankle_tau_roll_right = robot_control.leg_control[11].joint_torque;
-    const double ankle_ff_pitch_right = robot_control.leg_control[10].joint_torque_feedforward;
-    const double ankle_ff_roll_right = robot_control.leg_control[11].joint_torque_feedforward;
-    const double ankle_k_pitch_right = robot_control.leg_control[10].joint_Kp;
-    const double ankle_k_roll_right = robot_control.leg_control[11].joint_Kp;
-    const double ankle_d_pitch_right = robot_control.leg_control[10].joint_Kd;
-    const double ankle_d_roll_right = robot_control.leg_control[11].joint_Kd;
-
-    utils::AnkleIKSolution motor_angles_left = pm_ankle_left_.GetAnkleMotorAngles(ankle_pitch_left, ankle_roll_left);
-    utils::AnkleIKSolution motor_angles_right =
-        pm_ankle_right_.GetAnkleMotorAngles(ankle_pitch_right, ankle_roll_right);
-
-    result.leg_control[4].joint_position = motor_angles_left.theta_1_rad;
-    result.leg_control[5].joint_position = motor_angles_left.theta_2_rad;
-    result.leg_control[10].joint_position = motor_angles_right.theta_1_rad;
-    result.leg_control[11].joint_position = motor_angles_right.theta_2_rad;
-
-    Eigen::Matrix2d ankle_k_left = pm_ankle_left_.GetMotorStiffnessMatrixFromTaskStiffness(
-        ankle_pitch_left, ankle_roll_left, ankle_k_pitch_left, ankle_k_roll_left);
-    Eigen::Matrix2d ankle_k_right = pm_ankle_right_.GetMotorStiffnessMatrixFromTaskStiffness(
-        ankle_pitch_right, ankle_roll_right, ankle_k_pitch_right, ankle_k_roll_right);
-
-    result.leg_control[4].joint_Kp = ankle_k_left(0, 0);
-    result.leg_control[5].joint_Kp = ankle_k_left(1, 1);
-    result.leg_control[10].joint_Kp = ankle_k_right(0, 0);
-    result.leg_control[11].joint_Kp = ankle_k_right(1, 1);
-
-    Eigen::Matrix2d ankle_d_left = pm_ankle_left_.GetMotorDampingMatrixFromTaskDamping(ankle_pitch_left, ankle_roll_left,
-                                                                                 ankle_d_pitch_left, ankle_d_roll_left);
-    Eigen::Matrix2d ankle_d_right = pm_ankle_right_.GetMotorDampingMatrixFromTaskDamping(
-        ankle_pitch_right, ankle_roll_right, ankle_d_pitch_right, ankle_d_roll_right);
-
-    result.leg_control[4].joint_Kd = ankle_d_left(0, 0);
-    result.leg_control[5].joint_Kd = ankle_d_left(1, 1);
-    result.leg_control[10].joint_Kd = ankle_d_right(0, 0);
-    result.leg_control[11].joint_Kd = ankle_d_right(1, 1);
-
-    Eigen::Vector2d ankle_tau_left = pm_ankle_left_.GetMotorTorquesFromTaskTorques(
-        ankle_pitch_left, ankle_roll_left, ankle_tau_pitch_left, ankle_tau_roll_left);
-    Eigen::Vector2d ankle_tau_right = pm_ankle_right_.GetMotorTorquesFromTaskTorques(
-        ankle_pitch_right, ankle_roll_right, ankle_tau_pitch_right, ankle_tau_roll_right);
-
-    result.leg_control[4].joint_torque = ankle_tau_left(0);
-    result.leg_control[5].joint_torque = ankle_tau_left(1);
-    result.leg_control[10].joint_torque = ankle_tau_right(0);
-    result.leg_control[11].joint_torque = ankle_tau_right(1);
-
-    Eigen::Vector2d ankle_ff_left = pm_ankle_left_.GetMotorTorquesFromTaskTorques(
-        ankle_pitch_left, ankle_roll_left, ankle_ff_pitch_left, ankle_ff_roll_left);
-    Eigen::Vector2d ankle_ff_right = pm_ankle_right_.GetMotorTorquesFromTaskTorques(
-        ankle_pitch_right, ankle_roll_right, ankle_ff_pitch_right, ankle_ff_roll_right);
-
-    // 计算电机角度误差（使用原始的电机角度反馈值）
-    const double motor1_left_error = motor_angles_left.theta_1_rad - ankle_motor_position_fb_[0];
-    const double motor2_left_error = motor_angles_left.theta_2_rad - ankle_motor_position_fb_[1];
-    const double motor1_right_error = motor_angles_right.theta_1_rad - ankle_motor_position_fb_[2];
-    const double motor2_right_error = motor_angles_right.theta_2_rad - ankle_motor_position_fb_[3];
-
-    // 将交叉耦合项加到前馈力矩中
-    result.leg_control[4].joint_torque_feedforward = ankle_ff_left(0) + ankle_k_left(0, 1) * motor2_left_error;
-    result.leg_control[5].joint_torque_feedforward = ankle_ff_left(1) + ankle_k_left(1, 0) * motor1_left_error;
-    result.leg_control[10].joint_torque_feedforward = ankle_ff_right(0) + ankle_k_right(0, 1) * motor2_right_error;
-    result.leg_control[11].joint_torque_feedforward = ankle_ff_right(1) + ankle_k_right(1, 0) * motor1_right_error;
-
-    return result;
-}
-
 void RobotServer::WriteFeedbackToControl() {
     for (int i = 0; i < this->ndof_body_; ++i) {
-        robot_control_.position[i] = robot_feedback_.position[i];
-        robot_control_.velocity[i] = 0.0;
-        robot_control_.torque_feedforward[i] = 0.0;
-        robot_control_.positive_torque_limit[i] = this->torque_limit_Nm_[i];
-        robot_control_.negative_torque_limit[i] = -this->torque_limit_Nm_[i];
+        robot_control_.joint_control[i].joint_position = robot_feedback_.joint_feedback[i].joint_position;
+        robot_control_.joint_control[i].joint_velocity = 0.0;
+        robot_control_.joint_control[i].joint_torque_feedforward = 0.0;
+        robot_control_.joint_control[i].joint_positive_torque_limit = this->torque_limit_Nm_[i];
+        robot_control_.joint_control[i].joint_negative_torque_limit = -this->torque_limit_Nm_[i];
     }
     for (int i = 0; i < this->ndof_legs_; ++i) {
-        robot_control_.leg_control[i].joint_alias = robot_feedback_.leg_feedback_[i].joint_alias;  // 关节ID初始化
-        robot_control_.leg_control[i].joint_mode = 0;                                              // 默认控制模式
-        robot_control_.leg_control[i].joint_position = robot_feedback_.leg_feedback_[i].joint_position;
-        robot_control_.leg_control[i].joint_velocity = 0.0;
-        robot_control_.leg_control[i].joint_torque = 0.0;
-        robot_control_.leg_control[i].joint_torque_feedforward = 0.0;
-        robot_control_.leg_control[i].joint_Kp = 0.0;  // 腿部刚度初始值
-        robot_control_.leg_control[i].joint_Kd = 0.0;    // 腿部阻尼初始值
+        int idx = i + this->ndof_body_;
+        std::strncpy(robot_control_.joint_control[idx].joint_name, robot_feedback_.joint_feedback[idx].joint_name,
+                     sizeof(robot_control_.joint_control[idx].joint_name) - 1);
+        robot_control_.joint_control[idx].joint_mode = 0;
+        robot_control_.joint_control[idx].joint_position = robot_feedback_.joint_feedback[idx].joint_position;
+        robot_control_.joint_control[idx].joint_velocity = 0.0;
+        robot_control_.joint_control[idx].joint_torque = 0.0;
+        robot_control_.joint_control[idx].joint_torque_feedforward = 0.0;
+        robot_control_.joint_control[idx].joint_Kp = 0.0;
+        robot_control_.joint_control[idx].joint_Kd = 0.0;
     }
 }
 
@@ -484,16 +209,17 @@ void RobotServer::JointStatePublisher() {
     for (int i = 0; i < this->ndof_body_; ++i) {
         joint_state_msg.name[i] = this->joint_name_[i];
         IsJointInMinusList(joint_state_msg.name[i]) ? sign = -1 : sign = 1;
-        joint_state_msg.position[i] = sign * robot_feedback_.position[i];
-        joint_state_msg.velocity[i] = sign * robot_feedback_.velocity[i];
-        joint_state_msg.effort[i] = sign * robot_feedback_.torque[i];
+        joint_state_msg.position[i] = sign * robot_feedback_.joint_feedback[i].joint_position;
+        joint_state_msg.velocity[i] = sign * robot_feedback_.joint_feedback[i].joint_velocity;
+        joint_state_msg.effort[i] = sign * robot_feedback_.joint_feedback[i].joint_torque;
     }
     for (int i = 0; i < this->ndof_legs_; ++i) {
-        joint_state_msg.name[i + this->ndof_body_] = this->joint_name_[i + this->ndof_body_];
-        IsJointInMinusList(joint_name_[i + this->ndof_body_]) ? sign = -1 : sign = 1;
-        joint_state_msg.position[i + this->ndof_body_] = sign * robot_feedback_.leg_feedback_[i].joint_position;
-        joint_state_msg.velocity[i + this->ndof_body_] = sign * robot_feedback_.leg_feedback_[i].joint_velocity;
-        joint_state_msg.effort[i + this->ndof_body_] = sign * robot_feedback_.leg_feedback_[i].joint_torque;
+        int idx = i + this->ndof_body_;
+        joint_state_msg.name[idx] = this->joint_name_[idx];
+        IsJointInMinusList(joint_name_[idx]) ? sign = -1 : sign = 1;
+        joint_state_msg.position[idx] = sign * robot_feedback_.joint_feedback[idx].joint_position;
+        joint_state_msg.velocity[idx] = sign * robot_feedback_.joint_feedback[idx].joint_velocity;
+        joint_state_msg.effort[idx] = sign * robot_feedback_.joint_feedback[idx].joint_torque;
     }
     this->joint_state_publisher_->publish(joint_state_msg);
 
@@ -511,6 +237,70 @@ void RobotServer::JointStatePublisherThreadFunc() {
         this->JointStatePublisher();
         std::this_thread::sleep_until(next_cycle_time_point);
     }
+}
+
+std::string RobotServer::GetRobotStatusString() {
+    uint64_t timestamp_ns = this->now().nanoseconds();
+    const int ndof_total = ndof_body_ + ndof_legs_;
+
+    // 从统一 joint_feedback / joint_control 数组中提取所有关节字段
+    std::vector<double> joint_position(ndof_total), joint_velocity(ndof_total), joint_torque(ndof_total);
+    std::vector<double> joint_position_cmd(ndof_total), joint_stiffness(ndof_total), joint_damping(ndof_total);
+    std::vector<uint16_t> motor_error_code(ndof_total);
+    for (int i = 0; i < ndof_total; ++i) {
+        joint_position[i] = robot_feedback_.joint_feedback[i].joint_position;
+        joint_velocity[i] = robot_feedback_.joint_feedback[i].joint_velocity;
+        joint_torque[i] = robot_feedback_.joint_feedback[i].joint_torque;
+        joint_position_cmd[i] = robot_control_.joint_control[i].joint_position;
+        joint_stiffness[i] = robot_control_.joint_control[i].joint_Kp;
+        joint_damping[i] = robot_control_.joint_control[i].joint_Kd;
+        motor_error_code[i] = robot_feedback_.joint_feedback[i].joint_error_code;
+    }
+
+    // 构建脚踝电机原始数据
+    std::vector<double> ankle_motor_torque = {
+        ankle_motor_torque_[0], ankle_motor_torque_[1],
+        ankle_motor_torque_[2], ankle_motor_torque_[3]
+    };
+    std::vector<double> ankle_motor_position_fb = {
+        ankle_motor_position_fb_[0], ankle_motor_position_fb_[1],
+        ankle_motor_position_fb_[2], ankle_motor_position_fb_[3]
+    };
+    std::vector<double> ankle_motor_position_cmd = {
+        ankle_motor_position_cmd_[0], ankle_motor_position_cmd_[1],
+        ankle_motor_position_cmd_[2], ankle_motor_position_cmd_[3]
+    };
+    // 构建关节名称 JSON 数组
+    std::string joint_names_str = "[";
+    for (int i = 0; i < ndof_total; ++i) {
+        if (i > 0) joint_names_str += ",";
+        joint_names_str += "\"" + joint_name_[i] + "\"";
+    }
+    joint_names_str += "]";
+    auto status_string =
+        std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) + ",\n  \"joint_names\":" + joint_names_str +
+        ",\n  \"robot_statusword\":" +
+        utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() + ", \"robot_controlword\":" +
+        utils::RobotControlwordToJsonString(this->robot_control_.robot_control_word).str() + ",\n  \"motor_status\":" +
+        utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, 0, ndof_total).str() +
+        ",\n  \"motor_error_code\":" +
+        utils::MotorErrorcodeToJsonArrayString(motor_error_code, 0, ndof_total).str() +
+        ",\n  \"joint_position_cmd\":" +
+        utils::VectorToJsonArrayString(joint_position_cmd, 0, ndof_total).str() +
+        ",\n  \"joint_position\":" +
+        utils::VectorToJsonArrayString(joint_position, 0, ndof_total).str() +
+        ",\n  \"joint_velocity\":" +
+        utils::VectorToJsonArrayString(joint_velocity, 0, ndof_total).str() +
+        ",\n  \"joint_torque\":" +
+        utils::VectorToJsonArrayString(joint_torque, 0, ndof_total).str() +
+        ",\n  \"joint_stiffness\":" +
+        utils::VectorToJsonArrayString(joint_stiffness, 0, ndof_total).str() +
+        ",\n  \"joint_damping\":" +
+        utils::VectorToJsonArrayString(joint_damping, 0, ndof_total).str() +
+        ",\n  \"leg_ankle_motor_torque\":" + utils::VectorToJsonArrayString(ankle_motor_torque, 0, 4).str() +
+        ",\n  \"leg_ankle_motor_position_fb\":" + utils::VectorToJsonArrayString(ankle_motor_position_fb, 0, 4).str() +
+        ",\n  \"leg_ankle_motor_position_cmd\":" + utils::VectorToJsonArrayString(ankle_motor_position_cmd, 0, 4).str() + "\n}";
+    return InvertJointSignFromJsonString(status_string);
 }
 
 void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
@@ -540,94 +330,17 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
 }
 
 std::string RobotServer::InvertJointSignFromJsonString(std::string status_string) {
-    //将string变为json
     auto json_obj = nlohmann::json::parse(status_string);
-    //获取joint_names
     auto joint_names = json_obj["joint_names"];
-    //遍历joint name
     for (size_t i = 0; i < joint_names.size(); ++i) {
         std::string joint_name = joint_names[i].get<std::string>();
         if (IsJointInMinusList(joint_name)) {
-            //判断是上半身还是下半身
-            if (i < ndof_body_) {
-                json_obj["body_joint_position"][i] = -json_obj["body_joint_position"][i].get<double>();
-                json_obj["body_joint_velocity"][i] = -json_obj["body_joint_velocity"][i].get<double>();
-                json_obj["body_joint_torque"][i] = -json_obj["body_joint_torque"][i].get<double>();
-            } else {
-                json_obj["leg_joint_position"][i - ndof_body_] =
-                    -json_obj["leg_joint_position"][i - ndof_body_].get<double>();
-
-                json_obj["leg_joint_velocity"][i - ndof_body_] =
-                    -json_obj["leg_joint_velocity"][i - ndof_body_].get<double>();
-                json_obj["leg_joint_torque"][i - ndof_body_] =
-                    -json_obj["leg_joint_torque"][i - ndof_body_].get<double>();
-            }
+            json_obj["joint_position"][i] = -json_obj["joint_position"][i].get<double>();
+            json_obj["joint_velocity"][i] = -json_obj["joint_velocity"][i].get<double>();
+            json_obj["joint_torque"][i] = -json_obj["joint_torque"][i].get<double>();
         }
     }
-    //转换回string
     return json_obj.dump();
-}
-
-std::string RobotServer::GetRobotStatusString() {
-    uint64_t timestamp_ns = this->now().nanoseconds();
-    // 构建腿部位置数组
-    std::vector<double> leg_position(ndof_legs_), leg_velocity(ndof_legs_), leg_torque(ndof_legs_),
-        leg_stiffness(ndof_legs_), leg_damping(ndof_legs_);
-    for (int i = 0; i < ndof_legs_; ++i) {
-        leg_position[i] = robot_feedback_.leg_feedback_[i].joint_position;
-        leg_velocity[i] = robot_feedback_.leg_feedback_[i].joint_velocity;
-        leg_torque[i] = robot_feedback_.leg_feedback_[i].joint_torque;
-        leg_stiffness[i] = robot_control_.leg_control[i].joint_Kp;
-        leg_damping[i] = robot_control_.leg_control[i].joint_Kd;
-    }
-    // 构建脚踝电机原始力矩数组
-    std::vector<double> leg_ankle_motor_torque = {
-        ankle_motor_torque_[0], ankle_motor_torque_[1],
-        ankle_motor_torque_[2], ankle_motor_torque_[3]
-    };
-    std::vector<double> leg_ankle_motor_position_fb = {
-        ankle_motor_position_fb_[0], ankle_motor_position_fb_[1],
-        ankle_motor_position_fb_[2], ankle_motor_position_fb_[3]
-    };
-    std::vector<double> leg_ankle_motor_position_cmd = {
-        ankle_motor_position_cmd_[0], ankle_motor_position_cmd_[1],
-        ankle_motor_position_cmd_[2], ankle_motor_position_cmd_[3]
-    };
-    // 构建关节名称 JSON 数组
-    std::string joint_names_str = "[";
-    for (int i = 0; i < ndof_body_ + ndof_legs_; ++i) {
-        if (i > 0) joint_names_str += ",";
-        joint_names_str += "\"" + joint_name_[i] + "\"";
-    }
-    joint_names_str += "]";
-    auto status_string =
-        std::string("{\n  \"timestamp\":") + std::to_string(timestamp_ns) + ",\n  \"joint_names\":" + joint_names_str +
-        ",\n  \"robot_statusword\":" +
-        utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() + ", \"robot_controlword\":" +
-        utils::RobotControlwordToJsonString(this->robot_control_.robot_control_word).str() + ",\n  \"motor_status\":" +
-        utils::MotorStatusToJsonArrayString(this->robot_feedback_.al_status, 0, ndof_body_ + ndof_legs_).str() +
-        ",\n  \"motor_error_code\":" +
-        utils::MotorErrorcodeToJsonArrayString(this->robot_feedback_.motor_error_code, 0, ndof_body_ + ndof_legs_)
-            .str() +
-        ",\n  \"body_joint_position_cmd\":" +
-        utils::VectorToJsonArrayString(this->robot_control_.position, 0, ndof_body_).str() +
-        ",\n  \"body_joint_position\":" +
-        utils::VectorToJsonArrayString(this->robot_feedback_.position, 0, ndof_body_).str() +
-        ",\n  \"body_joint_velocity\":" +
-        utils::VectorToJsonArrayString(this->robot_feedback_.velocity, 0, ndof_body_).str() +
-        ",\n  \"body_joint_torque\":" +
-        utils::VectorToJsonArrayString(this->robot_feedback_.torque, 0, ndof_body_).str() +
-        ",\n  \"leg_joint_position_cmd\":" +
-        utils::VectorToJsonArrayString(this->robot_control_.position, ndof_body_, ndof_body_ + ndof_legs_).str() +
-        ",\n  \"leg_joint_position\":" + utils::VectorToJsonArrayString(leg_position, 0, ndof_legs_).str() +
-        ",\n  \"leg_joint_velocity\":" + utils::VectorToJsonArrayString(leg_velocity, 0, ndof_legs_).str() +
-        ",\n  \"leg_joint_torque\":" + utils::VectorToJsonArrayString(leg_torque, 0, ndof_legs_).str() +
-        ",\n  \"leg_stiffness\":" + utils::VectorToJsonArrayString(leg_stiffness, 0, ndof_legs_).str() +
-        ",\n  \"leg_damping\":" + utils::VectorToJsonArrayString(leg_damping, 0, ndof_legs_).str() +
-        ",\n  \"leg_ankle_motor_torque\":" + utils::VectorToJsonArrayString(leg_ankle_motor_torque, 0, 4).str() + 
-        ",\n  \"leg_ankle_motor_position_fb\":" + utils::VectorToJsonArrayString(leg_ankle_motor_position_fb, 0, 4).str() + 
-        ",\n  \"leg_ankle_motor_position_cmd\":" + utils::VectorToJsonArrayString(leg_ankle_motor_position_cmd, 0, 4).str() + "\n}";
-    return InvertJointSignFromJsonString(status_string);
 }
 
 void RobotServer::SetupRealtime() {
@@ -653,6 +366,159 @@ void RobotServer::InitLogger() {
     nanolog::set_log_level(nanolog::LogLevel::INFO);
     RCLCPP_INFO(this->get_logger(), "Logs directory: %s",
                 ((home / "log").string() + "/robot_server.txt").c_str());
+}
+
+RobotFeedback RobotServer::ConvertAnkleMotorsToPitchRoll(const RobotFeedback& robot_feedback) {
+    RobotFeedback result = robot_feedback;
+
+    ankle_motor_torque_[0] = robot_feedback.joint_feedback[ndof_body_ + 4].joint_torque;
+    ankle_motor_torque_[1] = robot_feedback.joint_feedback[ndof_body_ + 5].joint_torque;
+    ankle_motor_torque_[2] = robot_feedback.joint_feedback[ndof_body_ + 10].joint_torque;
+    ankle_motor_torque_[3] = robot_feedback.joint_feedback[ndof_body_ + 11].joint_torque;
+
+    ankle_motor_position_fb_[0] = robot_feedback.joint_feedback[ndof_body_ + 4].joint_position;
+    ankle_motor_position_fb_[1] = robot_feedback.joint_feedback[ndof_body_ + 5].joint_position;
+    ankle_motor_position_fb_[2] = robot_feedback.joint_feedback[ndof_body_ + 10].joint_position;
+    ankle_motor_position_fb_[3] = robot_feedback.joint_feedback[ndof_body_ + 11].joint_position;
+    
+    const double ankle_motor1_left = robot_feedback.joint_feedback[ndof_body_ + 4].joint_position;
+    const double ankle_motor2_left = robot_feedback.joint_feedback[ndof_body_ + 5].joint_position;
+    const double ankle_vel_motor1_left = robot_feedback.joint_feedback[ndof_body_ + 4].joint_velocity;
+    const double ankle_vel_motor2_left = robot_feedback.joint_feedback[ndof_body_ + 5].joint_velocity;
+    const double ankle_tau_motor1_left = robot_feedback.joint_feedback[ndof_body_ + 4].joint_torque;
+    const double ankle_tau_motor2_left = robot_feedback.joint_feedback[ndof_body_ + 5].joint_torque;
+
+    const double ankle_motor1_right = robot_feedback.joint_feedback[ndof_body_ + 10].joint_position;
+    const double ankle_motor2_right = robot_feedback.joint_feedback[ndof_body_ + 11].joint_position;
+    const double ankle_vel_motor1_right = robot_feedback.joint_feedback[ndof_body_ + 10].joint_velocity;
+    const double ankle_vel_motor2_right = robot_feedback.joint_feedback[ndof_body_ + 11].joint_velocity;
+    const double ankle_tau_motor1_right = robot_feedback.joint_feedback[ndof_body_ + 10].joint_torque;
+    const double ankle_tau_motor2_right = robot_feedback.joint_feedback[ndof_body_ + 11].joint_torque;
+
+    Eigen::Vector2d ankle_pose_left = pm_ankle_left_.GetAnklePoseFromMotorAngles(ankle_motor1_left, ankle_motor2_left);
+    double ankle_pitch_left = ankle_pose_left(0);
+    double ankle_roll_left = ankle_pose_left(1);
+
+    Eigen::Vector2d ankle_pose_right =
+        pm_ankle_right_.GetAnklePoseFromMotorAngles(ankle_motor1_right, ankle_motor2_right);
+    double ankle_pitch_right = ankle_pose_right(0);
+    double ankle_roll_right = ankle_pose_right(1);
+
+    result.joint_feedback[ndof_body_ + 4].joint_position = ankle_pitch_left;
+    result.joint_feedback[ndof_body_ + 5].joint_position = ankle_roll_left;
+    result.joint_feedback[ndof_body_ + 10].joint_position = ankle_pitch_right;
+    result.joint_feedback[ndof_body_ + 11].joint_position = ankle_roll_right;
+
+    Eigen::Vector2d ankle_vel_left = pm_ankle_left_.GetTaskVelocitiesFromMotorVelocities(
+        ankle_pitch_left, ankle_roll_left, ankle_vel_motor1_left, ankle_vel_motor2_left);
+    Eigen::Vector2d ankle_vel_right = pm_ankle_right_.GetTaskVelocitiesFromMotorVelocities(
+        ankle_pitch_right, ankle_roll_right, ankle_vel_motor1_right, ankle_vel_motor2_right);
+
+    result.joint_feedback[ndof_body_ + 4].joint_velocity = ankle_vel_left(0);
+    result.joint_feedback[ndof_body_ + 5].joint_velocity = ankle_vel_left(1);
+    result.joint_feedback[ndof_body_ + 10].joint_velocity = ankle_vel_right(0);
+    result.joint_feedback[ndof_body_ + 11].joint_velocity = ankle_vel_right(1);
+
+    Eigen::Vector2d ankle_tau_left = pm_ankle_left_.GetTaskTorquesFromMotorTorques(
+        ankle_pitch_left, ankle_roll_left, ankle_tau_motor1_left, ankle_tau_motor2_left);
+    Eigen::Vector2d ankle_tau_right = pm_ankle_right_.GetTaskTorquesFromMotorTorques(
+        ankle_pitch_right, ankle_roll_right, ankle_tau_motor1_right, ankle_tau_motor2_right);
+
+    result.joint_feedback[ndof_body_ + 4].joint_torque = ankle_tau_left(0);
+    result.joint_feedback[ndof_body_ + 5].joint_torque = ankle_tau_left(1);
+    result.joint_feedback[ndof_body_ + 10].joint_torque = ankle_tau_right(0);
+    result.joint_feedback[ndof_body_ + 11].joint_torque = ankle_tau_right(1);
+
+    return result;
+}
+
+RobotControl RobotServer::ConvertPitchRollToAnkleMotors(const RobotControl& robot_control) {
+    RobotControl result = robot_control;
+
+    ankle_motor_position_cmd_[0] = robot_control.joint_control[ndof_body_ + 4].joint_position;
+    ankle_motor_position_cmd_[1] = robot_control.joint_control[ndof_body_ + 5].joint_position;
+    ankle_motor_position_cmd_[2] = robot_control.joint_control[ndof_body_ + 10].joint_position;
+    ankle_motor_position_cmd_[3] = robot_control.joint_control[ndof_body_ + 11].joint_position;
+    
+    const double ankle_pitch_left = std::clamp(robot_control.joint_control[ndof_body_ + 4].joint_position, -1.0472, 0.61087);
+    const double ankle_roll_left = std::clamp(robot_control.joint_control[ndof_body_ + 5].joint_position, -0.2618, 0.2618);
+    const double ankle_tau_pitch_left = robot_control.joint_control[ndof_body_ + 4].joint_torque;
+    const double ankle_tau_roll_left = robot_control.joint_control[ndof_body_ + 5].joint_torque;
+    const double ankle_ff_pitch_left = robot_control.joint_control[ndof_body_ + 4].joint_torque_feedforward;
+    const double ankle_ff_roll_left = robot_control.joint_control[ndof_body_ + 5].joint_torque_feedforward;
+    const double ankle_k_pitch_left = robot_control.joint_control[ndof_body_ + 4].joint_Kp;
+    const double ankle_k_roll_left = robot_control.joint_control[ndof_body_ + 5].joint_Kp;
+    const double ankle_d_pitch_left = robot_control.joint_control[ndof_body_ + 4].joint_Kd;
+    const double ankle_d_roll_left = robot_control.joint_control[ndof_body_ + 5].joint_Kd;
+
+    const double ankle_pitch_right = std::clamp(robot_control.joint_control[ndof_body_ + 10].joint_position, -1.0472, 0.61087);
+    const double ankle_roll_right = std::clamp(robot_control.joint_control[ndof_body_ + 11].joint_position, -0.2618, 0.2618);
+    const double ankle_tau_pitch_right = robot_control.joint_control[ndof_body_ + 10].joint_torque;
+    const double ankle_tau_roll_right = robot_control.joint_control[ndof_body_ + 11].joint_torque;
+    const double ankle_ff_pitch_right = robot_control.joint_control[ndof_body_ + 10].joint_torque_feedforward;
+    const double ankle_ff_roll_right = robot_control.joint_control[ndof_body_ + 11].joint_torque_feedforward;
+    const double ankle_k_pitch_right = robot_control.joint_control[ndof_body_ + 10].joint_Kp;
+    const double ankle_k_roll_right = robot_control.joint_control[ndof_body_ + 11].joint_Kp;
+    const double ankle_d_pitch_right = robot_control.joint_control[ndof_body_ + 10].joint_Kd;
+    const double ankle_d_roll_right = robot_control.joint_control[ndof_body_ + 11].joint_Kd;
+
+    utils::AnkleIKSolution motor_angles_left = pm_ankle_left_.GetAnkleMotorAngles(ankle_pitch_left, ankle_roll_left);
+    utils::AnkleIKSolution motor_angles_right =
+        pm_ankle_right_.GetAnkleMotorAngles(ankle_pitch_right, ankle_roll_right);
+
+    result.joint_control[ndof_body_ + 4].joint_position = motor_angles_left.theta_1_rad;
+    result.joint_control[ndof_body_ + 5].joint_position = motor_angles_left.theta_2_rad;
+    result.joint_control[ndof_body_ + 10].joint_position = motor_angles_right.theta_1_rad;
+    result.joint_control[ndof_body_ + 11].joint_position = motor_angles_right.theta_2_rad;
+
+    Eigen::Matrix2d ankle_k_left = pm_ankle_left_.GetMotorStiffnessMatrixFromTaskStiffness(
+        ankle_pitch_left, ankle_roll_left, ankle_k_pitch_left, ankle_k_roll_left);
+    Eigen::Matrix2d ankle_k_right = pm_ankle_right_.GetMotorStiffnessMatrixFromTaskStiffness(
+        ankle_pitch_right, ankle_roll_right, ankle_k_pitch_right, ankle_k_roll_right);
+
+    result.joint_control[ndof_body_ + 4].joint_Kp = ankle_k_left(0, 0);
+    result.joint_control[ndof_body_ + 5].joint_Kp = ankle_k_left(1, 1);
+    result.joint_control[ndof_body_ + 10].joint_Kp = ankle_k_right(0, 0);
+    result.joint_control[ndof_body_ + 11].joint_Kp = ankle_k_right(1, 1);
+
+    Eigen::Matrix2d ankle_d_left = pm_ankle_left_.GetMotorDampingMatrixFromTaskDamping(ankle_pitch_left, ankle_roll_left,
+                                                                                 ankle_d_pitch_left, ankle_d_roll_left);
+    Eigen::Matrix2d ankle_d_right = pm_ankle_right_.GetMotorDampingMatrixFromTaskDamping(
+        ankle_pitch_right, ankle_roll_right, ankle_d_pitch_right, ankle_d_roll_right);
+
+    result.joint_control[ndof_body_ + 4].joint_Kd = ankle_d_left(0, 0);
+    result.joint_control[ndof_body_ + 5].joint_Kd = ankle_d_left(1, 1);
+    result.joint_control[ndof_body_ + 10].joint_Kd = ankle_d_right(0, 0);
+    result.joint_control[ndof_body_ + 11].joint_Kd = ankle_d_right(1, 1);
+
+    Eigen::Vector2d ankle_tau_left = pm_ankle_left_.GetMotorTorquesFromTaskTorques(
+        ankle_pitch_left, ankle_roll_left, ankle_tau_pitch_left, ankle_tau_roll_left);
+    Eigen::Vector2d ankle_tau_right = pm_ankle_right_.GetMotorTorquesFromTaskTorques(
+        ankle_pitch_right, ankle_roll_right, ankle_tau_pitch_right, ankle_tau_roll_right);
+
+    result.joint_control[ndof_body_ + 4].joint_torque = ankle_tau_left(0);
+    result.joint_control[ndof_body_ + 5].joint_torque = ankle_tau_left(1);
+    result.joint_control[ndof_body_ + 10].joint_torque = ankle_tau_right(0);
+    result.joint_control[ndof_body_ + 11].joint_torque = ankle_tau_right(1);
+
+    Eigen::Vector2d ankle_ff_left = pm_ankle_left_.GetMotorTorquesFromTaskTorques(
+        ankle_pitch_left, ankle_roll_left, ankle_ff_pitch_left, ankle_ff_roll_left);
+    Eigen::Vector2d ankle_ff_right = pm_ankle_right_.GetMotorTorquesFromTaskTorques(
+        ankle_pitch_right, ankle_roll_right, ankle_ff_pitch_right, ankle_ff_roll_right);
+
+    // 计算电机角度误差（使用原始的电机角度反馈值）
+    const double motor1_left_error = motor_angles_left.theta_1_rad - ankle_motor_position_fb_[0];
+    const double motor2_left_error = motor_angles_left.theta_2_rad - ankle_motor_position_fb_[1];
+    const double motor1_right_error = motor_angles_right.theta_1_rad - ankle_motor_position_fb_[2];
+    const double motor2_right_error = motor_angles_right.theta_2_rad - ankle_motor_position_fb_[3];
+
+    // 将交叉耦合项加到前馈力矩中
+    result.joint_control[ndof_body_ + 4].joint_torque_feedforward = ankle_ff_left(0) + ankle_k_left(0, 1) * motor2_left_error;
+    result.joint_control[ndof_body_ + 5].joint_torque_feedforward = ankle_ff_left(1) + ankle_k_left(1, 0) * motor1_left_error;
+    result.joint_control[ndof_body_ + 10].joint_torque_feedforward = ankle_ff_right(0) + ankle_k_right(0, 1) * motor2_right_error;
+    result.joint_control[ndof_body_ + 11].joint_torque_feedforward = ankle_ff_right(1) + ankle_k_right(1, 0) * motor1_right_error;
+
+    return result;
 }
 
 }  // namespace robot_server_lib
