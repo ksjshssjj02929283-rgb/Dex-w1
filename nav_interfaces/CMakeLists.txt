@@ -44,6 +44,7 @@ set(MSG_FILES
   "msg/MappingState.msg"
   "msg/RobotStatus.msg"
   "msg/NavigationStatus.msg"
+  "msg/NavSystemStatus.msg"
   "msg/ChangeTopology.msg"
   "msg/TopologyLine.msg"
   "msg/Route.msg"
