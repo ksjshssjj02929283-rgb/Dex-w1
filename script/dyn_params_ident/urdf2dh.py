@@ -135,17 +135,6 @@ def _transform_axes_to_dh_base(axes, link_frames, R_dh, p_origin):
         local_frames.append(R_local)
     return local_axes, local_frames
 
-def _transform_axes_to_dh_base(axes, link_frames, R_dh, p_origin):
-    local_axes = []
-    local_frames = []
-    for (z, p), R in zip(axes, link_frames):
-        z_local = R_dh.T @ z
-        p_local = R_dh.T @ (p - p_origin)
-        R_local = R_dh.T @ R
-        local_axes.append((z_local, p_local))
-        local_frames.append(R_local)
-    return local_axes, local_frames
-
 def get_arm_base_x_axis(robot, arm_base_link: str) -> np.ndarray:
     return normalize(robot.get_transform(arm_base_link)[:3, 0])
 
@@ -343,30 +332,6 @@ def get_dh_base_rotation(arm: str) -> np.ndarray:
     x_init = get_arm_base_x_axis(robot, arm_base_link)
     _, R_dh, _ = compute_dh_params(axes, link_frames, x_init)
     return R_dh.T @ R_arm_base
-
-def get_dh_params_for_arm(arm: str) -> List[Tuple[str, float, float, str]]:
-    robot, start_link, active_joints, target_end_link = load_robot(arm)
-    robot.update_cfg({j: 0.0 for j in active_joints})
-    axes, link_frames = compute_axes(robot, active_joints, target_end_link)
-    arm_base_link = find_arm_base_link(robot, arm)
-    x_init = get_arm_base_x_axis(robot, arm_base_link)
-    dh_params, R_dh, p_origin = compute_dh_params(axes, link_frames, x_init)
-
-    result = []
-    for a, alpha, d, theta in dh_params:
-        result.append((format_angle(alpha), format_dist(a), format_dist(d), format_theta_offset(theta)))
-    return result
-
-def get_gravity_in_arm_base(arm: str) -> Tuple[float, float, float]:
-    base_urdf_path, _, _ = get_robot_info()
-    if not base_urdf_path or not os.path.exists(base_urdf_path):
-        raise FileNotFoundError(f"URDF file not found: {base_urdf_path}")
-
-    full_robot = yourdfpy.URDF.load(base_urdf_path)
-    arm_base_link = find_arm_base_link(full_robot, arm)
-    R = full_robot.get_transform(arm_base_link)[:3, :3]
-    g = R.T @ np.array([0.0, 0.0, -9.81])
-    return (float(g[0]), float(g[1]), float(g[2]))
 
 def get_dh_params_for_arm(arm: str) -> List[Tuple[str, float, float, str]]:
     robot, start_link, active_joints, target_end_link = load_robot(arm)
