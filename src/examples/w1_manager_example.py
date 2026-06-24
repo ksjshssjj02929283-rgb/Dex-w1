@@ -118,15 +118,15 @@ def move_full_body_example2(move_with_ee: bool,
 
     cur_l_pose = w1_manager.get_current_pose("left_arm")[1]
     l_pose1 = deepcopy(cur_l_pose)
-    l_pose1[0] += -100
+    l_pose1[1] += -100
     l_pose1[2] += -100
     l_pose2 = deepcopy(l_pose1)
-    l_pose2[2] += 100
+    l_pose2[1] += 100
     l_pose3 = deepcopy(l_pose2)
-    l_pose3[0] += 100
-    l_pose3[2] += -100
+    l_pose3[1] += -100
+    l_pose3[2] += 100
     l_pose4 = deepcopy(l_pose3)
-    l_pose4[2] += 100
+    l_pose4[1] += 100
     left_arm_waypoints = [l_pose1, l_pose2, l_pose3, l_pose4]
     if not is_local:
         T_chassis_armbase = w1_manager.get_current_xpos("left_arm_base",
@@ -143,15 +143,15 @@ def move_full_body_example2(move_with_ee: bool,
 
     cur_r_pose = w1_manager.get_current_pose("right_arm")[1]
     r_pose1 = deepcopy(cur_r_pose)
-    r_pose1[0] += 100
+    r_pose1[1] += 100
     r_pose1[2] += -100
     r_pose2 = deepcopy(r_pose1)
-    r_pose2[2] += 100
+    r_pose2[1] += -100
     r_pose3 = deepcopy(r_pose2)
-    r_pose3[0] += -100
-    r_pose3[2] += -100
+    r_pose3[1] += 100
+    r_pose3[2] += 100
     r_pose4 = deepcopy(r_pose3)
-    r_pose4[2] += 100
+    r_pose4[1] += -100
     right_arm_waypoints = [r_pose1, r_pose2, r_pose3, r_pose4]
     if not is_local:
         T_chassis_armbase = w1_manager.get_current_xpos("right_arm_base",
