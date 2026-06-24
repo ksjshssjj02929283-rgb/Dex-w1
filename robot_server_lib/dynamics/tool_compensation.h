@@ -18,7 +18,7 @@ namespace robot_server_lib {
 namespace dynamics {
 namespace tool_compensation {
 
-constexpr double kDefaultGravity = 9.79;
+constexpr double kDefaultGravity = 9.8;
 constexpr double kDefaultInertiaCompCutoffHz = 5.0;
 constexpr double kMinInertiaCompCutoffHz = 0.5;
 constexpr double kMaxInertiaCompCutoffHz = 100.0;

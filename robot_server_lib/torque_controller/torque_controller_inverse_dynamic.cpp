@@ -53,7 +53,6 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
             LOG_INFO << ss.str();
         }
         return output_cmd.arm_forward_torque;  // - raw_measurement.tool_torque_feedforward;  // 注意补偿用的符号
-
     };
     switch (state_) {
         case TorqueControllerState::Idle:

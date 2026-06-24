@@ -59,7 +59,7 @@ TEST(PinocchioModelTest, Pinocchio) {
     //     const auto &pose  = data.oMf[fid];  // world->frame pose
     //     std::cout << "Frame " << fid << " (" << frame.name << ") pose:\n" << pose << std::endl;
 
-    //     Eigen::Vector3d g_world(0.0, 0.0, -9.81);
+    //     Eigen::Vector3d g_world(0.0, 0.0, -9.8);
     //     Eigen::Vector3d g_local = pose.rotation().transpose() * g_world;
     //     std::cout << "Gravity in frame " << fid << " (" << frame.name << ") : "
     //               << g_local.transpose() << std::endl;

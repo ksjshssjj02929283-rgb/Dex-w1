@@ -304,7 +304,7 @@ def get_gravity_in_arm_base(arm: str) -> Tuple[float, float, float]:
     full_robot = yourdfpy.URDF.load(base_urdf_path)
     arm_base_link = find_arm_base_link(full_robot, arm)
     R = full_robot.get_transform(arm_base_link)[:3, :3]
-    g = R.T @ np.array([0.0, 0.0, -9.81])
+    g = R.T @ np.array([0.0, 0.0, -9.8])
     return (float(g[0]), float(g[1]), float(g[2]))
 
 def get_gravity_in_dh_base(arm: str) -> Tuple[float, float, float]:
@@ -314,7 +314,7 @@ def get_gravity_in_dh_base(arm: str) -> Tuple[float, float, float]:
     arm_base_link = find_arm_base_link(robot, arm)
     x_init = get_arm_base_x_axis(robot, arm_base_link)
     _, R_dh, _ = compute_dh_params(axes, link_frames, x_init)
-    g_world = np.array([0.0, 0.0, -9.81])
+    g_world = np.array([0.0, 0.0, -9.8])
     g_dh = R_dh.T @ g_world
     return (float(g_dh[0]), float(g_dh[1]), float(g_dh[2]))
 

@@ -271,6 +271,10 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     pinocchio::urdf::buildModel(primary_arm_urdf_path, left_arm_model);
     pinocchio::urdf::buildModel(secondary_arm_urdf_path, right_arm_model);
 
+    model.gravity.linear() = Eigen::Vector3d(0.0, 0.0, -9.8);
+    left_arm_model.gravity.linear() = Eigen::Vector3d(0.0, 0.0, -9.8);
+    right_arm_model.gravity.linear() = Eigen::Vector3d(0.0, 0.0, -9.8);
+
     if (version_cfg["dyn_base_params_primary"]) {
         auto parse_array = [&](const std::string& key, Eigen::VectorXd& dst) {
             if (version_cfg[key] && version_cfg[key].IsSequence()) {

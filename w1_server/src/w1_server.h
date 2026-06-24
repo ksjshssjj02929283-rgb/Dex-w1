@@ -16,9 +16,9 @@
 #include "robot_server_lib/ei_input_shaper.h"
 #include "robot_server_lib/robot_server_base.h"
 #include "robot_server_lib/sri_force_sensor.h"
+#include "robot_server_lib/tool_compensation.h"
 #include "robot_server_lib/utils.h"
 #include "shared_memory_def.h"
-#include "robot_server_lib/tool_compensation.h"
 #include "w1_utils.h"
 
 namespace robot_server_lib {

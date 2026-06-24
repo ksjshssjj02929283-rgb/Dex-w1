@@ -35,10 +35,10 @@ TEST(InvDynSymbolTest, InvDynSymbol) {
     auto t0 = std::chrono::high_resolution_clock::now();
 
     // 主臂
-    Vector3d gravity_acc_armbase_primary = Vector3d{-9.81, 0.0, 0.0};
+    Vector3d gravity_acc_armbase_primary = Vector3d{-9.8, 0.0, 0.0};
 
     // 副臂
-    Vector3d gravity_acc_armbase_secondary = Vector3d{9.81, 0.0, 0.0};
+    Vector3d gravity_acc_armbase_secondary = Vector3d{9.8, 0.0, 0.0};
 
     Eigen::VectorXd tau_primary = dynamics::InvDynamikBySymbol(robot_model, q, VectorDof::Zero(), VectorDof::Zero(),
                                                                gravity_acc_armbase_primary, MotionGroup::Primary);

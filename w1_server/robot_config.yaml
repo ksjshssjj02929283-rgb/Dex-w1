@@ -97,7 +97,7 @@ joint_admittance:
 tool_gravity_compensation:    # 大寰二指夹 
   com_mm: [-0.15804154,0.70721872,50.33428542]   # COM 相对 EE 原点的偏移, 单位 mm, 在 EE 系下
   mass_kg: 1.061
-  gravity_magnitude: 9.79
+  gravity_magnitude: 9.8
   inertia_com_kg_m2: [[0.00111446, 0.0001123, 0],
                        [0.0001123, 0.00123732, 0],
                        [0, 0, 0.00065]]  # 惯量张量 (单位 kg·m^2) I_C^EE, 关于 COM, EE 系基

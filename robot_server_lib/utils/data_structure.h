@@ -49,10 +49,10 @@ struct JointMeasurement {
 };
 
 struct JointRawMeasurement {
-    VectorDof position;                          // 关节位置
-    VectorDof velocity;                          // 关节速度
-    VectorDof effort;                            // 关节力矩
-    Vector12d sensor_wrench{Vector12d::Zero()};  // 六维力传感器数据
+    VectorDof position;                                    // 关节位置
+    VectorDof velocity;                                    // 关节速度
+    VectorDof effort;                                      // 关节力矩
+    Vector12d sensor_wrench{Vector12d::Zero()};            // 六维力传感器数据
     VectorDof tool_torque_feedforward{VectorDof::Zero()};  // 工具负载补偿前馈力矩
     TimePointSystem time_point;
 
@@ -204,11 +204,11 @@ struct PlannerManagerCommand {
 };
 
 struct TorqueCtrlCommand {
-    VectorDof torque;              // 关节tracking力控模式下的力矩指令
-    VectorDof torque_feedforward;  // 力矩前馈(抵消重力, 科氏力, 摩擦力)
+    VectorDof torque;                                 // 关节tracking力控模式下的力矩指令
+    VectorDof torque_feedforward;                     // 力矩前馈(抵消重力, 科氏力, 摩擦力)
     VectorDof arm_forward_torque{VectorDof::Zero()};  // 机械臂动力学前馈力矩
-    VectorDof torque_impedance;    // 笛卡尔阻抗控制模式下的力矩
-    VectorDof torque_ext;          // 由外部wrench映射得到的关节空间力矩
+    VectorDof torque_impedance;                       // 笛卡尔阻抗控制模式下的力矩
+    VectorDof torque_ext;                             // 由外部wrench映射得到的关节空间力矩
     VectorDof q_desired;
     VectorDof joint_admittance_q_offset{VectorDof::Zero()};
     VectorDof joint_admittance_dq_offset{VectorDof::Zero()};

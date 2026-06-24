@@ -79,7 +79,7 @@ std::optional<sensor_msgs::msg::Imu> ImuProcessor::GetRefinedImuData(const senso
     Eigen::Vector3d gyr_level_in_G = R_ItoG_ * gyr_corr;  // 世界系下的角速度
 
     // 4) 去重力，得到“线加速度”（世界系）
-    Eigen::Vector3d lin_acc_in_G = acc_level_in_G - gravity_vector_;  // gravity_vector_ e.g. [0,0,-9.81]
+    Eigen::Vector3d lin_acc_in_G = acc_level_in_G - gravity_vector_;
 
     // 5) 填回消息
     sensor_msgs::msg::Imu res_imu = imu_data;  // 复制原头等元数据

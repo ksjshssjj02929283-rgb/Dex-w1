@@ -93,7 +93,7 @@ public:
         bool enabled,
         double tool_mass_kg,
         const robot_server_lib::Vector3d& tool_com_m,
-        double gravity_magnitude = 9.79,
+        double gravity_magnitude = 9.8,
         int model_sign = 1,
         std::function<std::optional<robot_server_lib::Matrix3d>()> rotation_world_from_ee_provider = nullptr);
 
@@ -121,7 +121,7 @@ private:
 
     bool mToolGravityCompensationForZeroEnabled = false;
     double mToolMassKg = 0.0;
-    double mToolGravityMagnitude = 9.79;
+    double mToolGravityMagnitude = 9.8;
     int mToolModelSign = 1;
     robot_server_lib::Vector3d mToolComM = robot_server_lib::Vector3d::Zero();
     std::function<std::optional<robot_server_lib::Matrix3d>()> mRotationWorldFromEEProvider;

@@ -22,7 +22,7 @@ from std_msgs.msg import String
 DEFAULT_STATE_TOPIC = "/feedback/robot_server_state"
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "tool_gravity_compensation_data"
 DEFAULT_ROBOT_CONFIG = Path(__file__).resolve().parents[2] / "w1_server" / "robot_config.yaml"
-DEFAULT_GRAVITY = 9.79  # m/s^2
+DEFAULT_GRAVITY = 9.8  # m/s^2
 DEFAULT_KNOWN_MASS = 1.061  # kg
 
 
@@ -606,7 +606,7 @@ def update_robot_config(config_path: Path, result: Dict[str, object]) -> None:
 
 def run_self_test() -> None:
     rng = np.random.default_rng(7)
-    gravity = 9.79
+    gravity = 9.8
     model_sign = 1
     true_mass = 1.061
     true_com = np.array([0.03, -0.015, 0.08])

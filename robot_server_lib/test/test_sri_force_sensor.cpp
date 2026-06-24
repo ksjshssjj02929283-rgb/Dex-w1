@@ -72,7 +72,7 @@ TEST(SriForceSensorBias, FinalizeRequiresEnoughSamples) {
     SriForceSensor s;
     s.BeginCalibrationForTest();
     s.SetToolGravityCompensationForZeroCalibration(
-        false /*enabled=false → no gravity needed*/, 0.0, robot_server_lib::Vector3d::Zero(), 9.79, 1,
+        false /*enabled=false → no gravity needed*/, 0.0, robot_server_lib::Vector3d::Zero(), 9.8, 1,
         []() -> std::optional<robot_server_lib::Matrix3d> { return std::nullopt; });
 
     EXPECT_FALSE(s.TryFinalizeBias());  // zero samples
@@ -91,13 +91,13 @@ TEST(SriForceSensorBias, WaitsForValidRotation) {
     SriForceSensor s;
     s.BeginCalibrationForTest();
     bool r_valid = false;
-    s.SetToolGravityCompensationForZeroCalibration(true, 1.0, robot_server_lib::Vector3d::Zero(), 9.79, 1,
+    s.SetToolGravityCompensationForZeroCalibration(true, 1.0, robot_server_lib::Vector3d::Zero(), 9.8, 1,
                                                    [&]() -> std::optional<robot_server_lib::Matrix3d> {
                                                        if (!r_valid) return std::nullopt;
                                                        return robot_server_lib::Matrix3d::Identity();
                                                    });
 
-    FeedCalibrationFrames(s, 1000, 0.0f, 0.0f, -9.79f, 0.0f, 0.0f, 0.0f);
+    FeedCalibrationFrames(s, 1000, 0.0f, 0.0f, -9.8f, 0.0f, 0.0f, 0.0f);
     EXPECT_FALSE(s.TryFinalizeBias());  // R still nullopt
     EXPECT_FALSE(s.HasValidZeroOffset());
     EXPECT_TRUE(s.IsCalibrating());
@@ -111,7 +111,7 @@ TEST(SriForceSensorBias, GravityDisabledFinalizesOnSamplesAlone) {
     SriForceSensor s;
     s.BeginCalibrationForTest();
     s.SetToolGravityCompensationForZeroCalibration(
-        false, 0.0, robot_server_lib::Vector3d::Zero(), 9.79, 1,
+        false, 0.0, robot_server_lib::Vector3d::Zero(), 9.8, 1,
         []() -> std::optional<robot_server_lib::Matrix3d> { return std::nullopt; });
 
     FeedCalibrationFrames(s, 500, 1.0f, 2.0f, 3.0f, 0.1f, 0.2f, 0.3f);
@@ -130,7 +130,7 @@ TEST(SriForceSensorBias, TryFinalizeReturnsTrueOnceOnly) {
     SriForceSensor s;
     s.BeginCalibrationForTest();
     s.SetToolGravityCompensationForZeroCalibration(
-        false, 0.0, robot_server_lib::Vector3d::Zero(), 9.79, 1,
+        false, 0.0, robot_server_lib::Vector3d::Zero(), 9.8, 1,
         []() -> std::optional<robot_server_lib::Matrix3d> { return std::nullopt; });
 
     FeedCalibrationFrames(s, 500, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
