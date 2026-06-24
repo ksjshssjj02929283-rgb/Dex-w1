@@ -21,18 +21,12 @@ kill_process_exact() {
 # 如果已经运行了则 kill 掉
 kill_process_exact "feedback"
 
-# 选择可执行文件路径：优先 install（开发），回退 /opt（部署）
-BIN=""
-for candidate in "$INSTALL_DIR/L1_server/lib/L1_server/feedback" "/opt/L1_server/L1_server/lib/L1_server/feedback"; do
-    if [ -f "$candidate" ]; then
-        BIN="$candidate"
-        break
-    fi
-done
+# 选择可执行文件路径
+BIN="$INSTALL_DIR/l1_server/lib/l1_server/feedback"
 
-if [ -z "$BIN" ]; then
-    echo "❌ 找不到 feedback 可执行文件"
-    echo "   请先运行 ./build.sh，或检查 /opt/L1_server 是否已部署"
+if [ ! -f "$BIN" ]; then
+    echo "❌ 找不到 feedback 可执行文件: $BIN"
+    echo "   请先运行 ./build.sh"
     exit 1
 fi
 

@@ -163,12 +163,12 @@ TEST(PMAnkleTest, MotorStiffnessFromTaskStiffness) {
             std::cout << "Input: k_pitch=" << k_pitch << ", k_roll=" << k_roll << std::endl;
             std::cout << "Output matrix:\n" << k_motor << std::endl;
 
-            EXPECT_TRUE(std::isfinite(k_motor(0,0))) << "k_motor(0,0) is not finite, is_left=" << is_left;
-            EXPECT_TRUE(std::isfinite(k_motor(0,1))) << "k_motor(0,1) is not finite, is_left=" << is_left;
-            EXPECT_TRUE(std::isfinite(k_motor(1,0))) << "k_motor(1,0) is not finite, is_left=" << is_left;
-            EXPECT_TRUE(std::isfinite(k_motor(1,1))) << "k_motor(1,1) is not finite, is_left=" << is_left;
-            EXPECT_GT(k_motor(0,0), 0.0) << "k_motor(0,0) should be positive, is_left=" << is_left;
-            EXPECT_GT(k_motor(1,1), 0.0) << "k_motor(1,1) should be positive, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(k_motor(0, 0))) << "k_motor(0,0) is not finite, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(k_motor(0, 1))) << "k_motor(0,1) is not finite, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(k_motor(1, 0))) << "k_motor(1,0) is not finite, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(k_motor(1, 1))) << "k_motor(1,1) is not finite, is_left=" << is_left;
+            EXPECT_GT(k_motor(0, 0), 0.0) << "k_motor(0,0) should be positive, is_left=" << is_left;
+            EXPECT_GT(k_motor(1, 1), 0.0) << "k_motor(1,1) should be positive, is_left=" << is_left;
         }
     }
 }
@@ -187,20 +187,21 @@ TEST(PMAnkleTest, MotorDampingFromTaskDamping) {
             std::cout << "Input: d_pitch=" << d_pitch << ", d_roll=" << d_roll << std::endl;
             std::cout << "Output matrix:\n" << d_motor << std::endl;
 
-            EXPECT_TRUE(std::isfinite(d_motor(0,0))) << "d_motor(0,0) is not finite, is_left=" << is_left;
-            EXPECT_TRUE(std::isfinite(d_motor(0,1))) << "d_motor(0,1) is not finite, is_left=" << is_left;
-            EXPECT_TRUE(std::isfinite(d_motor(1,0))) << "d_motor(1,0) is not finite, is_left=" << is_left;
-            EXPECT_TRUE(std::isfinite(d_motor(1,1))) << "d_motor(1,1) is not finite, is_left=" << is_left;
-            EXPECT_GT(d_motor(0,0), 0.0) << "d_motor(0,0) should be positive, is_left=" << is_left;
-            EXPECT_GT(d_motor(1,1), 0.0) << "d_motor(1,1) should be positive, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(d_motor(0, 0))) << "d_motor(0,0) is not finite, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(d_motor(0, 1))) << "d_motor(0,1) is not finite, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(d_motor(1, 0))) << "d_motor(1,0) is not finite, is_left=" << is_left;
+            EXPECT_TRUE(std::isfinite(d_motor(1, 1))) << "d_motor(1,1) is not finite, is_left=" << is_left;
+            EXPECT_GT(d_motor(0, 0), 0.0) << "d_motor(0,0) should be positive, is_left=" << is_left;
+            EXPECT_GT(d_motor(1, 1), 0.0) << "d_motor(1,1) should be positive, is_left=" << is_left;
         }
     }
 }
 
-
 #include <gtest/gtest.h>
+
 #include <Eigen/Dense>
 #include <cmath>
+
 #include "parallel_ankle_calc.h"
 
 using namespace robot_server_lib::utils;
@@ -211,54 +212,49 @@ using namespace robot_server_lib::utils;
 TEST(PMAnkleTest, RightFootPositiveRollIKFK) {
     bool is_left = false;  // 右脚
     PMAnkle ankle(is_left);
-    
+
     // 期望的任务空间位姿
     double expected_pitch = 0.3102;
     double expected_roll = 0.0427;
-    
+
     // 已知的电机角度
     double theta_1_known = -0.2016;  // 电机1
     double theta_2_known = 0.2078;   // 电机2
-    
+
     std::cout << "\n========== Right Foot Positive Roll Test ==========" << std::endl;
-    std::cout << "Expected: pitch=" << expected_pitch << " rad (" << expected_pitch * 180.0 / M_PI 
+    std::cout << "Expected: pitch=" << expected_pitch << " rad (" << expected_pitch * 180.0 / M_PI
               << " deg), roll=" << expected_roll << " rad (" << expected_roll * 180.0 / M_PI << " deg)" << std::endl;
-    std::cout << "Given motor angles: theta1=" << theta_1_known << " rad, theta2=" << theta_2_known << " rad" << std::endl;
-    
+    std::cout << "Given motor angles: theta1=" << theta_1_known << " rad, theta2=" << theta_2_known << " rad"
+              << std::endl;
+
     // 测试1: 从电机角度正向运动学计算位姿
     auto fk_result = ankle.GetAnklePoseFromMotorAngles(theta_1_known, theta_2_known);
-    
-    std::cout << "FK result: pitch=" << fk_result(0) << " rad (" << fk_result(0) * 180.0 / M_PI 
+
+    std::cout << "FK result: pitch=" << fk_result(0) << " rad (" << fk_result(0) * 180.0 / M_PI
               << " deg), roll=" << fk_result(1) << " rad (" << fk_result(1) * 180.0 / M_PI << " deg)" << std::endl;
-    
-    EXPECT_NEAR(fk_result(0), expected_pitch, 1e-4) 
-        << "FK pitch mismatch for right foot positive roll";
-    EXPECT_NEAR(fk_result(1), expected_roll, 1e-4) 
-        << "FK roll mismatch for right foot positive roll";
-    
+
+    EXPECT_NEAR(fk_result(0), expected_pitch, 1e-4) << "FK pitch mismatch for right foot positive roll";
+    EXPECT_NEAR(fk_result(1), expected_roll, 1e-4) << "FK roll mismatch for right foot positive roll";
+
     // 测试2: 从期望位姿逆向运动学计算电机角度
     auto ik_solution = ankle.GetAnkleMotorAngles(expected_pitch, expected_roll);
-    
-    std::cout << "IK result: theta1=" << ik_solution.theta_1_rad << " rad, theta2=" << ik_solution.theta_2_rad << " rad" << std::endl;
+
+    std::cout << "IK result: theta1=" << ik_solution.theta_1_rad << " rad, theta2=" << ik_solution.theta_2_rad << " rad"
+              << std::endl;
     std::cout << "IK success: " << ik_solution.success_1 << ", " << ik_solution.success_2 << std::endl;
-    
+
     EXPECT_TRUE(ik_solution.success_1) << "IK solution 1 failed for right foot positive roll";
     EXPECT_TRUE(ik_solution.success_2) << "IK solution 2 failed for right foot positive roll";
-    
-    EXPECT_NEAR(ik_solution.theta_1_rad, theta_1_known, 1e-4) 
-        << "IK theta1 mismatch for right foot positive roll";
-    EXPECT_NEAR(ik_solution.theta_2_rad, theta_2_known, 1e-4) 
-        << "IK theta2 mismatch for right foot positive roll";
-    
+
+    EXPECT_NEAR(ik_solution.theta_1_rad, theta_1_known, 1e-4) << "IK theta1 mismatch for right foot positive roll";
+    EXPECT_NEAR(ik_solution.theta_2_rad, theta_2_known, 1e-4) << "IK theta2 mismatch for right foot positive roll";
+
     // 测试3: 验证 FK(IK(q)) = q
-    auto fk_from_ik = ankle.GetAnklePoseFromMotorAngles(
-        ik_solution.theta_1_rad, ik_solution.theta_2_rad);
-    
-    EXPECT_NEAR(fk_from_ik(0), expected_pitch, 1e-6) 
-        << "FK(IK(q)) consistency failed for pitch";
-    EXPECT_NEAR(fk_from_ik(1), expected_roll, 1e-6) 
-        << "FK(IK(q)) consistency failed for roll";
-    
+    auto fk_from_ik = ankle.GetAnklePoseFromMotorAngles(ik_solution.theta_1_rad, ik_solution.theta_2_rad);
+
+    EXPECT_NEAR(fk_from_ik(0), expected_pitch, 1e-6) << "FK(IK(q)) consistency failed for pitch";
+    EXPECT_NEAR(fk_from_ik(1), expected_roll, 1e-6) << "FK(IK(q)) consistency failed for roll";
+
     std::cout << "==================================================\n" << std::endl;
 }
 
@@ -268,54 +264,49 @@ TEST(PMAnkleTest, RightFootPositiveRollIKFK) {
 TEST(PMAnkleTest, RightFootNegativeRollIKFK) {
     bool is_left = false;  // 右脚
     PMAnkle ankle(is_left);
-    
+
     // 期望的任务空间位姿
     double expected_pitch = 0.3102;
     double expected_roll = -0.0427;
-    
+
     // 已知的电机角度
     double theta_1_known = 0.2016;   // 电机1
     double theta_2_known = -0.2078;  // 电机2
-    
+
     std::cout << "\n========== Right Foot Negative Roll Test ==========" << std::endl;
-    std::cout << "Expected: pitch=" << expected_pitch << " rad (" << expected_pitch * 180.0 / M_PI 
+    std::cout << "Expected: pitch=" << expected_pitch << " rad (" << expected_pitch * 180.0 / M_PI
               << " deg), roll=" << expected_roll << " rad (" << expected_roll * 180.0 / M_PI << " deg)" << std::endl;
-    std::cout << "Given motor angles: theta1=" << theta_1_known << " rad, theta2=" << theta_2_known << " rad" << std::endl;
-    
+    std::cout << "Given motor angles: theta1=" << theta_1_known << " rad, theta2=" << theta_2_known << " rad"
+              << std::endl;
+
     // 测试1: 从电机角度正向运动学计算位姿
     auto fk_result = ankle.GetAnklePoseFromMotorAngles(theta_1_known, theta_2_known);
-    
-    std::cout << "FK result: pitch=" << fk_result(0) << " rad (" << fk_result(0) * 180.0 / M_PI 
+
+    std::cout << "FK result: pitch=" << fk_result(0) << " rad (" << fk_result(0) * 180.0 / M_PI
               << " deg), roll=" << fk_result(1) << " rad (" << fk_result(1) * 180.0 / M_PI << " deg)" << std::endl;
-    
-    EXPECT_NEAR(fk_result(0), expected_pitch, 1e-4) 
-        << "FK pitch mismatch for right foot negative roll";
-    EXPECT_NEAR(fk_result(1), expected_roll, 1e-4) 
-        << "FK roll mismatch for right foot negative roll";
-    
+
+    EXPECT_NEAR(fk_result(0), expected_pitch, 1e-4) << "FK pitch mismatch for right foot negative roll";
+    EXPECT_NEAR(fk_result(1), expected_roll, 1e-4) << "FK roll mismatch for right foot negative roll";
+
     // 测试2: 从期望位姿逆向运动学计算电机角度
     auto ik_solution = ankle.GetAnkleMotorAngles(expected_pitch, expected_roll);
-    
-    std::cout << "IK result: theta1=" << ik_solution.theta_1_rad << " rad, theta2=" << ik_solution.theta_2_rad << " rad" << std::endl;
+
+    std::cout << "IK result: theta1=" << ik_solution.theta_1_rad << " rad, theta2=" << ik_solution.theta_2_rad << " rad"
+              << std::endl;
     std::cout << "IK success: " << ik_solution.success_1 << ", " << ik_solution.success_2 << std::endl;
-    
+
     EXPECT_TRUE(ik_solution.success_1) << "IK solution 1 failed for right foot negative roll";
     EXPECT_TRUE(ik_solution.success_2) << "IK solution 2 failed for right foot negative roll";
-    
-    EXPECT_NEAR(ik_solution.theta_1_rad, theta_1_known, 1e-4) 
-        << "IK theta1 mismatch for right foot negative roll";
-    EXPECT_NEAR(ik_solution.theta_2_rad, theta_2_known, 1e-4) 
-        << "IK theta2 mismatch for right foot negative roll";
-    
+
+    EXPECT_NEAR(ik_solution.theta_1_rad, theta_1_known, 1e-4) << "IK theta1 mismatch for right foot negative roll";
+    EXPECT_NEAR(ik_solution.theta_2_rad, theta_2_known, 1e-4) << "IK theta2 mismatch for right foot negative roll";
+
     // 测试3: 验证 FK(IK(q)) = q
-    auto fk_from_ik = ankle.GetAnklePoseFromMotorAngles(
-        ik_solution.theta_1_rad, ik_solution.theta_2_rad);
-    
-    EXPECT_NEAR(fk_from_ik(0), expected_pitch, 1e-6) 
-        << "FK(IK(q)) consistency failed for pitch";
-    EXPECT_NEAR(fk_from_ik(1), expected_roll, 1e-6) 
-        << "FK(IK(q)) consistency failed for roll";
-    
+    auto fk_from_ik = ankle.GetAnklePoseFromMotorAngles(ik_solution.theta_1_rad, ik_solution.theta_2_rad);
+
+    EXPECT_NEAR(fk_from_ik(0), expected_pitch, 1e-6) << "FK(IK(q)) consistency failed for pitch";
+    EXPECT_NEAR(fk_from_ik(1), expected_roll, 1e-6) << "FK(IK(q)) consistency failed for roll";
+
     std::cout << "==================================================\n" << std::endl;
 }
 
@@ -326,54 +317,49 @@ TEST(PMAnkleTest, RightFootNegativeRollIKFK) {
 TEST(PMAnkleTest, LeftFootPositiveRollIKFK) {
     bool is_left = true;  // 左脚
     PMAnkle ankle(is_left);
-    
+
     // 期望的任务空间位姿（左脚的正roll对应电机符号相反）
     double expected_pitch = 0.3102;
     double expected_roll = -0.0427;  // 左脚的正roll方向与右脚相反
-    
+
     // 已知的电机角度（根据对称性推导）
     double theta_1_known = 0.2016;   // 电机1
     double theta_2_known = -0.2078;  // 电机2
-    
+
     std::cout << "\n========== Left Foot Positive Roll Test ==========" << std::endl;
-    std::cout << "Expected: pitch=" << expected_pitch << " rad (" << expected_pitch * 180.0 / M_PI 
+    std::cout << "Expected: pitch=" << expected_pitch << " rad (" << expected_pitch * 180.0 / M_PI
               << " deg), roll=" << expected_roll << " rad (" << expected_roll * 180.0 / M_PI << " deg)" << std::endl;
-    std::cout << "Given motor angles: theta1=" << theta_1_known << " rad, theta2=" << theta_2_known << " rad" << std::endl;
-    
+    std::cout << "Given motor angles: theta1=" << theta_1_known << " rad, theta2=" << theta_2_known << " rad"
+              << std::endl;
+
     // 测试1: 从电机角度正向运动学计算位姿
     auto fk_result = ankle.GetAnklePoseFromMotorAngles(theta_1_known, theta_2_known);
-    
-    std::cout << "FK result: pitch=" << fk_result(0) << " rad (" << fk_result(0) * 180.0 / M_PI 
+
+    std::cout << "FK result: pitch=" << fk_result(0) << " rad (" << fk_result(0) * 180.0 / M_PI
               << " deg), roll=" << fk_result(1) << " rad (" << fk_result(1) * 180.0 / M_PI << " deg)" << std::endl;
-    
-    EXPECT_NEAR(fk_result(0), expected_pitch, 1e-4) 
-        << "FK pitch mismatch for left foot positive roll";
-    EXPECT_NEAR(fk_result(1), expected_roll, 1e-4) 
-        << "FK roll mismatch for left foot positive roll";
-    
+
+    EXPECT_NEAR(fk_result(0), expected_pitch, 1e-4) << "FK pitch mismatch for left foot positive roll";
+    EXPECT_NEAR(fk_result(1), expected_roll, 1e-4) << "FK roll mismatch for left foot positive roll";
+
     // 测试2: 从期望位姿逆向运动学计算电机角度
     auto ik_solution = ankle.GetAnkleMotorAngles(expected_pitch, expected_roll);
-    
-    std::cout << "IK result: theta1=" << ik_solution.theta_1_rad << " rad, theta2=" << ik_solution.theta_2_rad << " rad" << std::endl;
+
+    std::cout << "IK result: theta1=" << ik_solution.theta_1_rad << " rad, theta2=" << ik_solution.theta_2_rad << " rad"
+              << std::endl;
     std::cout << "IK success: " << ik_solution.success_1 << ", " << ik_solution.success_2 << std::endl;
-    
+
     EXPECT_TRUE(ik_solution.success_1) << "IK solution 1 failed for left foot positive roll";
     EXPECT_TRUE(ik_solution.success_2) << "IK solution 2 failed for left foot positive roll";
-    
-    EXPECT_NEAR(ik_solution.theta_1_rad, theta_1_known, 1e-4) 
-        << "IK theta1 mismatch for left foot positive roll";
-    EXPECT_NEAR(ik_solution.theta_2_rad, theta_2_known, 1e-4) 
-        << "IK theta2 mismatch for left foot positive roll";
-    
+
+    EXPECT_NEAR(ik_solution.theta_1_rad, theta_1_known, 1e-4) << "IK theta1 mismatch for left foot positive roll";
+    EXPECT_NEAR(ik_solution.theta_2_rad, theta_2_known, 1e-4) << "IK theta2 mismatch for left foot positive roll";
+
     // 测试3: 验证 FK(IK(q)) = q
-    auto fk_from_ik = ankle.GetAnklePoseFromMotorAngles(
-        ik_solution.theta_1_rad, ik_solution.theta_2_rad);
-    
-    EXPECT_NEAR(fk_from_ik(0), expected_pitch, 1e-6) 
-        << "FK(IK(q)) consistency failed for pitch";
-    EXPECT_NEAR(fk_from_ik(1), expected_roll, 1e-6) 
-        << "FK(IK(q)) consistency failed for roll";
-    
+    auto fk_from_ik = ankle.GetAnklePoseFromMotorAngles(ik_solution.theta_1_rad, ik_solution.theta_2_rad);
+
+    EXPECT_NEAR(fk_from_ik(0), expected_pitch, 1e-6) << "FK(IK(q)) consistency failed for pitch";
+    EXPECT_NEAR(fk_from_ik(1), expected_roll, 1e-6) << "FK(IK(q)) consistency failed for roll";
+
     std::cout << "================================================\n" << std::endl;
 }
 
@@ -383,53 +369,48 @@ TEST(PMAnkleTest, LeftFootPositiveRollIKFK) {
 TEST(PMAnkleTest, LeftFootNegativeRollIKFK) {
     bool is_left = true;  // 左脚
     PMAnkle ankle(is_left);
-    
+
     // 期望的任务空间位姿
     double expected_pitch = 0.3102;
     double expected_roll = 0.0427;  // 左脚的负roll对应正电机角度
-    
+
     // 已知的电机角度（根据对称性推导）
     double theta_1_known = -0.2016;  // 电机1
     double theta_2_known = 0.2078;   // 电机2
-    
+
     std::cout << "\n========== Left Foot Negative Roll Test ==========" << std::endl;
-    std::cout << "Expected: pitch=" << expected_pitch << " rad (" << expected_pitch * 180.0 / M_PI 
+    std::cout << "Expected: pitch=" << expected_pitch << " rad (" << expected_pitch * 180.0 / M_PI
               << " deg), roll=" << expected_roll << " rad (" << expected_roll * 180.0 / M_PI << " deg)" << std::endl;
-    std::cout << "Given motor angles: theta1=" << theta_1_known << " rad, theta2=" << theta_2_known << " rad" << std::endl;
-    
+    std::cout << "Given motor angles: theta1=" << theta_1_known << " rad, theta2=" << theta_2_known << " rad"
+              << std::endl;
+
     // 测试1: 从电机角度正向运动学计算位姿
     auto fk_result = ankle.GetAnklePoseFromMotorAngles(theta_1_known, theta_2_known);
-    
-    std::cout << "FK result: pitch=" << fk_result(0) << " rad (" << fk_result(0) * 180.0 / M_PI 
+
+    std::cout << "FK result: pitch=" << fk_result(0) << " rad (" << fk_result(0) * 180.0 / M_PI
               << " deg), roll=" << fk_result(1) << " rad (" << fk_result(1) * 180.0 / M_PI << " deg)" << std::endl;
-    
-    EXPECT_NEAR(fk_result(0), expected_pitch, 1e-4) 
-        << "FK pitch mismatch for left foot negative roll";
-    EXPECT_NEAR(fk_result(1), expected_roll, 1e-4) 
-        << "FK roll mismatch for left foot negative roll";
-    
+
+    EXPECT_NEAR(fk_result(0), expected_pitch, 1e-4) << "FK pitch mismatch for left foot negative roll";
+    EXPECT_NEAR(fk_result(1), expected_roll, 1e-4) << "FK roll mismatch for left foot negative roll";
+
     // 测试2: 从期望位姿逆向运动学计算电机角度
     auto ik_solution = ankle.GetAnkleMotorAngles(expected_pitch, expected_roll);
-    
-    std::cout << "IK result: theta1=" << ik_solution.theta_1_rad << " rad, theta2=" << ik_solution.theta_2_rad << " rad" << std::endl;
+
+    std::cout << "IK result: theta1=" << ik_solution.theta_1_rad << " rad, theta2=" << ik_solution.theta_2_rad << " rad"
+              << std::endl;
     std::cout << "IK success: " << ik_solution.success_1 << ", " << ik_solution.success_2 << std::endl;
-    
+
     EXPECT_TRUE(ik_solution.success_1) << "IK solution 1 failed for left foot negative roll";
     EXPECT_TRUE(ik_solution.success_2) << "IK solution 2 failed for left foot negative roll";
-    
-    EXPECT_NEAR(ik_solution.theta_1_rad, theta_1_known, 1e-4) 
-        << "IK theta1 mismatch for left foot negative roll";
-    EXPECT_NEAR(ik_solution.theta_2_rad, theta_2_known, 1e-4) 
-        << "IK theta2 mismatch for left foot negative roll";
-    
+
+    EXPECT_NEAR(ik_solution.theta_1_rad, theta_1_known, 1e-4) << "IK theta1 mismatch for left foot negative roll";
+    EXPECT_NEAR(ik_solution.theta_2_rad, theta_2_known, 1e-4) << "IK theta2 mismatch for left foot negative roll";
+
     // 测试3: 验证 FK(IK(q)) = q
-    auto fk_from_ik = ankle.GetAnklePoseFromMotorAngles(
-        ik_solution.theta_1_rad, ik_solution.theta_2_rad);
-    
-    EXPECT_NEAR(fk_from_ik(0), expected_pitch, 1e-6) 
-        << "FK(IK(q)) consistency failed for pitch";
-    EXPECT_NEAR(fk_from_ik(1), expected_roll, 1e-6) 
-        << "FK(IK(q)) consistency failed for roll";
-    
+    auto fk_from_ik = ankle.GetAnklePoseFromMotorAngles(ik_solution.theta_1_rad, ik_solution.theta_2_rad);
+
+    EXPECT_NEAR(fk_from_ik(0), expected_pitch, 1e-6) << "FK(IK(q)) consistency failed for pitch";
+    EXPECT_NEAR(fk_from_ik(1), expected_roll, 1e-6) << "FK(IK(q)) consistency failed for roll";
+
     std::cout << "===============================================\n" << std::endl;
 }

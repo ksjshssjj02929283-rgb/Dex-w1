@@ -29,18 +29,18 @@ sudo_setcap() {
   eval "$SUDO_PREFIX setcap \"$1\" \"$2\"" 2>/dev/null
   eval "$SUDO_PREFIX getcap -v \"$2\"" 2>/dev/null
 }
-if [ -f "$INSTALL_DIR/L1_server/lib/L1_server/L1_server" ]; then
-  sudo_setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$INSTALL_DIR/L1_server/lib/L1_server/L1_server" || true
+if [ -f "$INSTALL_DIR/l1_server/lib/l1_server/l1_server" ]; then
+  sudo_setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$INSTALL_DIR/l1_server/lib/l1_server/l1_server" || true
 fi
-if [ -f "$INSTALL_DIR/L1_server/lib/L1_server/feedback" ]; then
-  sudo_setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$INSTALL_DIR/L1_server/lib/L1_server/feedback" || true
+if [ -f "$INSTALL_DIR/l1_server/lib/l1_server/feedback" ]; then
+  sudo_setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$INSTALL_DIR/l1_server/lib/l1_server/feedback" || true
 fi
 
 # 如果已经运行了则 kill 掉
-kill_process "L1_server"
+kill_process "l1_server"
 
 # 配置 EtherCAT 伺服的位置跟随误差窗口
 taskset -c 6 script/set_max_position_following_error_window.sh > /dev/null 2>&1 &
 
-# 启动 L1_server
-taskset -c 6 ros2 run L1_server L1_server
+# 启动 l1_server
+taskset -c 6 ros2 run l1_server l1_server

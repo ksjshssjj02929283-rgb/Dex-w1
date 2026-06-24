@@ -41,7 +41,11 @@ PYTHON_EXCLUDE_DIRS = [
 ]
 
 CPP_EXCLUDE_DIRS = [
-    "build", "install", "log", ".git", "third_party",
+    "build",
+    "install",
+    "log",
+    ".git",
+    "third_party",
 ]
 
 

@@ -6,7 +6,7 @@ source "$SCRIPT_DIR/../install/setup.bash"
 #     "$f"
 #   fi
 # done
-for f in $SCRIPT_DIR/../build/L1_server/test_*; do
+for f in $SCRIPT_DIR/../build/l1_server/test_*; do
   echo $f
   if [[ -x "$f" ]]; then
     echo "Running $f"

@@ -69,9 +69,9 @@ public:
                                                    double tau_motor_2);
 
     Eigen::Vector2d GetMotorTorquesFromTaskTorques(double q_pitch_rad,
-                                                    double q_roll_rad,
-                                                    double tau_task_pitch,
-                                                    double tau_task_roll);
+                                                   double q_roll_rad,
+                                                   double tau_task_pitch,
+                                                   double tau_task_roll);
 
     Eigen::Vector2d GetTaskVelocitiesFromMotorVelocities(double q_pitch_rad,
                                                          double q_roll_rad,
@@ -79,14 +79,14 @@ public:
                                                          double vel_motor_2);
 
     Eigen::Matrix2d GetMotorStiffnessMatrixFromTaskStiffness(double q_pitch_rad,
-                                                       double q_roll_rad,
-                                                       double k_pitch,
-                                                       double k_roll);
+                                                             double q_roll_rad,
+                                                             double k_pitch,
+                                                             double k_roll);
 
     Eigen::Matrix2d GetMotorDampingMatrixFromTaskDamping(double q_pitch_rad,
-                                                   double q_roll_rad,
-                                                   double d_pitch,
-                                                   double d_roll);
+                                                         double q_roll_rad,
+                                                         double d_pitch,
+                                                         double d_roll);
 
     Eigen::Matrix2d ComputeJacobian(double q_pitch_rad, double q_roll_rad);
 

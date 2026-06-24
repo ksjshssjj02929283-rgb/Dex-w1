@@ -30,8 +30,8 @@ namespace robot_server_lib {
 using Int64 = std::int64_t;
 
 // 控制周期常量
-constexpr int torque_ctrl_dt_micro = 1000;    // 1kHz
-constexpr int publish_dt_micro = 10000;       // 100Hz
+constexpr int torque_ctrl_dt_micro = 1000;  // 1kHz
+constexpr int publish_dt_micro = 10000;     // 100Hz
 
 namespace utils {
 

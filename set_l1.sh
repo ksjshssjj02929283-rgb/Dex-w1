@@ -36,6 +36,7 @@ print_usage() {
     echo "  viewer          - ROS 可视化 GUI (script/qt_ros_viewer.py)"
     echo "  zero            - 发送零位指令 (script/send_zero_command.py)"
     echo "  clear           - 清除错误 (向 /control/debug 发送 {\"clear_error\":true})"
+    echo "  mode [0|1]      - 设置上肢控制模式 (0=位置模式, 1=力矩模式)"
     echo "  lock            - 锁定双臂 (script/arms_lock.sh)"
     echo "  unlock          - 解锁双臂 (script/arms_unlock.sh)"
     echo ""
@@ -63,6 +64,7 @@ print_usage() {
     echo "  ./set_l1.sh echo"
     echo "  ./set_l1.sh ctrl"
     echo "  ./set_l1.sh clear"
+    echo "  ./set_l1.sh mode 1"
     echo "  ./set_l1.sh zero"
     echo "  ./set_l1.sh watch"
     echo "  ./set_l1.sh ethercat run"
@@ -129,6 +131,14 @@ case $COMMAND in
     clear)
         echo "Clearing errors..."
         ros2 topic pub --once /control/debug std_msgs/msg/String "{data: '{\"clear_error\":true}'}"
+        ;;
+    mode)
+        if [ "$VALUE" != "0" ] && [ "$VALUE" != "1" ]; then
+            echo "Usage: ./set_l1.sh mode [0|1]  (0=位置模式, 1=力矩模式)"
+            exit 1
+        fi
+        echo "Setting run_mode to $VALUE..."
+        ros2 topic pub --once /control/debug std_msgs/msg/String "{data: '{\"run_mode\":$VALUE}'}"
         ;;
     lock)
         echo "Locking arms..."
@@ -214,7 +224,7 @@ case $COMMAND in
         echo "Editing l1_config.json..."
         CONFIG_FILE=~/dexe_robot_server_data/l1_config.json
         if [ ! -f "$CONFIG_FILE" ]; then
-            echo "提示: $CONFIG_FILE 不存在，首次启动 L1_server 时会自动创建默认配置"
+            echo "提示: $CONFIG_FILE 不存在，首次启动 l1_server 时会自动创建默认配置"
         fi
         if [ -n "$DISPLAY" ]; then
             gedit "$CONFIG_FILE"

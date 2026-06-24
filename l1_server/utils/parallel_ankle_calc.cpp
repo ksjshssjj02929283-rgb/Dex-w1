@@ -189,7 +189,7 @@ Eigen::Vector2d PMAnkle::GetTaskTorquesFromMotorTorques(double q_pitch_rad,
                                                         double tau_motor_2) {
     Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad);
     Eigen::Vector2d tau_motor(tau_motor_1, tau_motor_2);
-    
+
     return J.transpose() * tau_motor;
 }
 
@@ -213,27 +213,25 @@ Eigen::Vector2d PMAnkle::GetTaskVelocitiesFromMotorVelocities(double q_pitch_rad
 }
 
 Eigen::Matrix2d PMAnkle::GetMotorStiffnessMatrixFromTaskStiffness(double q_pitch_rad,
-                                                            double q_roll_rad,
-                                                            double k_pitch,
-                                                            double k_roll) {
+                                                                  double q_roll_rad,
+                                                                  double k_pitch,
+                                                                  double k_roll) {
     Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad);
     Eigen::Matrix2d J_inv = J.inverse();
     Eigen::Matrix2d K_task;
-    K_task << k_pitch, 0,
-              0, k_roll;
+    K_task << k_pitch, 0, 0, k_roll;
     Eigen::Matrix2d K_motor = J_inv.transpose() * K_task * J_inv;
     return K_motor;
 }
 
 Eigen::Matrix2d PMAnkle::GetMotorDampingMatrixFromTaskDamping(double q_pitch_rad,
-                                                        double q_roll_rad,
-                                                        double d_pitch,
-                                                        double d_roll) {
+                                                              double q_roll_rad,
+                                                              double d_pitch,
+                                                              double d_roll) {
     Eigen::Matrix2d J = ComputeAnkleJacobian(q_pitch_rad, q_roll_rad);
     Eigen::Matrix2d J_inv = J.inverse();
     Eigen::Matrix2d D_task;
-    D_task << d_pitch, 0,
-              0, d_roll;
+    D_task << d_pitch, 0, 0, d_roll;
     Eigen::Matrix2d D_motor = J_inv.transpose() * D_task * J_inv;
     return D_motor;
 }

@@ -21,13 +21,13 @@ if [ -z "$ROS_DISTRO" ]; then
     exit 1
 fi
 
-# === 2. 初始化 submodule（dexe_interfaces 使用 zyn/l1 分支，含 JointCommand.msg 等 L1 接口定义）===
+# === 2. 初始化 submodule（dexe_interfaces 使用 dev_l1 分支，含 JointCommand.msg 等 L1 接口定义）===
 if [ -f "${WORKSPACE_DIR}/.gitmodules" ]; then
     git -C "${WORKSPACE_DIR}" submodule sync --recursive
     git -C "${WORKSPACE_DIR}" submodule update --init --recursive
-    # 切换 dexe_interfaces 到 zyn/l1 分支（L1 双足人形接口）
+    # 切换 dexe_interfaces 到 dev_l1 分支（L1 双足人形接口）
     git -C "${WORKSPACE_DIR}/dexe_interfaces" fetch origin
-    git -C "${WORKSPACE_DIR}/dexe_interfaces" checkout origin/zyn/l1
+    git -C "${WORKSPACE_DIR}/dexe_interfaces" checkout origin/dev_l1
 fi
 cd "${WORKSPACE_DIR}/.."
 
@@ -66,11 +66,11 @@ if [ -n "$SKIP_INTERFACES" ]; then
   SKIP_ARGS="--packages-skip ${SKIP_INTERFACES# }"
 fi
 
-# === 4. 编译（--packages-up-to 自动按依赖顺序编译 L1_server 及其依赖）===
+# === 4. 编译（--packages-up-to 自动按依赖顺序编译 l1_server 及其依赖）===
 colcon build --parallel-workers "${COLCON_PARALLEL_WORKERS}" \
   --cmake-args -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
   --base-paths dexe_robot_server \
-  --packages-up-to L1_server \
+  --packages-up-to l1_server \
   $SKIP_ARGS
 
 # === 5. 检查 Sudo 权限 ===
@@ -88,14 +88,14 @@ sudo_setcap() {
   eval "$SUDO_PREFIX getcap -v \"$2\"" 2>/dev/null
 }
 
-BIN_SERVER="$INSTALL_DIR/L1_server/lib/L1_server/L1_server"
-BIN_FEEDBACK="$INSTALL_DIR/L1_server/lib/L1_server/feedback"
+BIN_SERVER="$INSTALL_DIR/l1_server/lib/l1_server/l1_server"
+BIN_FEEDBACK="$INSTALL_DIR/l1_server/lib/l1_server/feedback"
 
 if [ -f "$BIN_SERVER" ]; then
   sudo_setcap 'cap_sys_nice,cap_ipc_lock=+ep' "$BIN_SERVER" || true
   echo "setcap applied to $BIN_SERVER"
 else
-  echo "ERROR: $BIN_SERVER 不存在，检查构建是否成功以及目标名是否为 L1_server"
+  echo "ERROR: $BIN_SERVER 不存在，检查构建是否成功以及目标名是否为 l1_server"
 fi
 
 if [ -f "$BIN_FEEDBACK" ]; then
@@ -105,17 +105,14 @@ else
   echo "ERROR: $BIN_FEEDBACK 不存在，检查构建是否成功以及目标名是否为 feedback"
 fi
 
-# === 6. 复制到 /opt 并配置运行时库路径（setcap 后二进制会忽略 LD_LIBRARY_PATH）===
-eval "$SUDO_PREFIX rm -rf /opt/L1_server"
-eval "$SUDO_PREFIX cp -r install /opt/L1_server"
-
-cat > /tmp/L1_server.conf << LDCONF
+# === 6. 配置运行时库路径（setcap 后二进制会忽略 LD_LIBRARY_PATH）===
+cat > /tmp/l1_server.conf << LDCONF
 /opt/ros/humble/lib
 /opt/ros/humble/lib/aarch64-linux-gnu
 /opt/ros/humble/lib/x86_64-linux-gnu
-/opt/L1_server/chassis_interfaces/lib
-/opt/L1_server/joint_interfaces/lib
-/opt/L1_server/robot_server_interfaces/lib
+$INSTALL_DIR/chassis_interfaces/lib
+$INSTALL_DIR/joint_interfaces/lib
+$INSTALL_DIR/robot_server_interfaces/lib
 LDCONF
-eval "$SUDO_PREFIX cp /tmp/L1_server.conf /etc/ld.so.conf.d/L1_server.conf"
+eval "$SUDO_PREFIX cp /tmp/l1_server.conf /etc/ld.so.conf.d/l1_server.conf"
 eval "$SUDO_PREFIX ldconfig"
