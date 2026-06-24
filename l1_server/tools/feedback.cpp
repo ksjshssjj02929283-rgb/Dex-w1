@@ -20,6 +20,14 @@ const int ndof_body = 18;
 const int ndof_legs = 12;
 const int ndof_robot = ndof_body + ndof_legs;
 
+const char* joint_names[30] = {
+    "HEAD_YAW_J1",        "HEAD_PITCH_J2",    "SHOULDER_PITCH_L_J1", "SHOULDER_ROLL_L_J2", "ELBOW_PITCH_L_J3",
+    "ELBOW_YAW_L_J4",     "WRIST_PITCH_L_J5", "WRIST_YAW_L_J6",      "WRIST_ROLL_L_J7",    "SHOULDER_PITCH_R_J1",
+    "SHOULDER_ROLL_R_J2", "ELBOW_PITCH_R_J3", "ELBOW_YAW_R_J4",      "WRIST_PITCH_R_J5",   "WRIST_YAW_R_J6",
+    "WRIST_ROLL_R_J7",    "WAIST_YAW",        "WAIST_ROLL",          "HIP_PITCH_L_J1",     "HIP_ROLL_L_J2",
+    "HIP_YAW_L_J3",       "KNEE_PITCH_L_J4",  "ANKLE_PITCH_L_J5",    "ANKLE_ROLL_L_J6",    "HIP_PITCH_R_J1",
+    "HIP_ROLL_R_J2",      "HIP_YAW_R_J3",     "KNEE_PITCH_R_J4",     "ANKLE_PITCH_R_J5",   "ANKLE_ROLL_R_J6"};
+
 void signal_handler(int signal) {
     if (signal == SIGINT) {
         g_stop_flag = 1;
@@ -62,6 +70,11 @@ int main(int argc, char* argv[]) {
 
     RobotFeedback fb{};
     RobotControl ctrl{};
+
+    // 初始化关节名称和状态字（SortFeedbackByJointName 需要按名称匹配）
+    for (int i = 0; i < ndof_robot; i++) {
+        std::strncpy(fb.joint_feedback[i].joint_name, joint_names[i], sizeof(fb.joint_feedback[i].joint_name) - 1);
+    }
 
     while (!g_stop_flag) {
         if (ctrl_shm.PeekLatest(&ctrl)) {

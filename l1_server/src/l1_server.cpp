@@ -171,8 +171,7 @@ void RobotServer::JointControlThreadFunc() {
             LOG_INFO << "Status word changed to "
                      << utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str()
                      << ", control word changed to "
-                     << utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str()
-                     << " robot status: " << this->GetRobotStatusString();
+                     << utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str();
             RCLCPP_INFO(this->get_logger(), "Status word: %s, control word: %s",
                         utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str(),
                         utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str().c_str());
@@ -238,11 +237,8 @@ bool RobotServer::SortFeedbackByJointName(RobotFeedback& feedback) {
         }
     }
     if (matched_count != ndof_total) {
-        RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                              "SortFeedbackByJointName: matched count mismatch. Expected %d, matched %d", ndof_total,
-                              matched_count);
-        LOG_CRIT_THROTTLE(5000) << "SortFeedbackByJointName: matched count mismatch. Expected " << ndof_total
-                                << ", matched " << matched_count;
+        RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "SortFeedbackByJointName: matched %d/%d",
+                              matched_count, ndof_total);
         return false;
     }
 
@@ -341,7 +337,7 @@ std::string RobotServer::GetRobotStatusString() {
     std::string joint_names_str = "[";
     for (int i = 0; i < ndof_total; ++i) {
         if (i > 0) joint_names_str += ",";
-        joint_names_str += "\"" + joint_name_[i] + "\"";
+        joint_names_str += std::string("\"") + joint_name_[i] + "\"";
     }
     joint_names_str += "]";
     auto status_string =

@@ -29,7 +29,7 @@ private:
     // 获取关节符号：minus 关节返回 -1，其余返回 1
     int GetJointSign(int joint_index) const {
         for (const auto& name : joint_minus_) {
-            if (name == joint_name_[joint_index]) {
+            if (std::strcmp(name, joint_name_[joint_index]) == 0) {
                 return -1;
             }
         }
@@ -66,8 +66,7 @@ private:
     Int64 streaming_request_id_{-1};
     const int ndof_body_ = 18;  // 机器人上半身自由度
     const int ndof_legs_ = 12;  // 腿部自由度
-
-    std::string joint_name_[30] = {
+    const char* joint_name_[30] = {
         "HEAD_YAW_J1",        "HEAD_PITCH_J2",    "SHOULDER_PITCH_L_J1", "SHOULDER_ROLL_L_J2", "ELBOW_PITCH_L_J3",
         "ELBOW_YAW_L_J4",     "WRIST_PITCH_L_J5", "WRIST_YAW_L_J6",      "WRIST_ROLL_L_J7",    "SHOULDER_PITCH_R_J1",
         "SHOULDER_ROLL_R_J2", "ELBOW_PITCH_R_J3", "ELBOW_YAW_R_J4",      "WRIST_PITCH_R_J5",   "WRIST_YAW_R_J6",
@@ -75,7 +74,7 @@ private:
         "HIP_YAW_L_J3",       "KNEE_PITCH_L_J4",  "ANKLE_PITCH_L_J5",    "ANKLE_ROLL_L_J6",    "HIP_PITCH_R_J1",
         "HIP_ROLL_R_J2",      "HIP_YAW_R_J3",     "KNEE_PITCH_R_J4",     "ANKLE_PITCH_R_J5",   "ANKLE_ROLL_R_J6"};
 
-    std::string joint_minus_[30] = {"HEAD_PITCH_J2",   "SHOULDER_PITCH_R_J1", "ELBOW_PITCH_R_J3", "WRIST_PITCH_R_J5",
+    const char* joint_minus_[10] = {"HEAD_PITCH_J2",   "SHOULDER_PITCH_R_J1", "ELBOW_PITCH_R_J3", "WRIST_PITCH_R_J5",
                                     "WAIST_YAW",       "WAIST_ROLL",          "HIP_PITCH_L_J1",   "HIP_ROLL_L_J2",
                                     "KNEE_PITCH_L_J4", "HIP_ROLL_R_J2"};
 
