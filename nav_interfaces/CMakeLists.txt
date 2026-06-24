@@ -41,6 +41,7 @@ set(MSG_FILES
   "msg/TargetInfo.msg"
   "msg/TargetMapInfo.msg"
   "msg/LocalizationState.msg"
+  "msg/MapState.msg"
   "msg/MappingState.msg"
   "msg/RobotStatus.msg"
   "msg/NavigationStatus.msg"
