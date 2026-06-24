@@ -15,7 +15,6 @@ import pathlib
 import json
 import atexit
 from queue import Queue, Empty
-from copy import deepcopy
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
@@ -40,11 +39,10 @@ from dexe_rp import DexforceW1Kinematics, StatusType, SRSAKinematics, SRSIKinema
 from dexe_rp import (StatusType, TrajectoryConstraint,
                      create_double_s_traj_along_blend_path, create_blend_path,
                      BlendType, R2, R2Tangent, R4, R4Tangent, R7, R7Tangent,
-                     R20, R20Tangent, SE3, R3xSO3, R3xSO3Tangent, calc_next_iks,
-                     calc_nearest_iks)
+                     R20, R20Tangent, SE3, R3xSO3, R3xSO3Tangent, calc_nearest_iks)
 
-USE_TOPPRA = False
-calc_iks_func = calc_next_iks
+USE_TOPPRA = True
+calc_iks_func = calc_nearest_iks
 
 
 class W1Manager:
@@ -340,11 +338,10 @@ class W1Manager:
         self.logger.info(f"Ros2 node destroyed.")
 
     def _init_kine_solver(self):
-        ik_nearest_weight = np.array([2., 2., 2., 0., 1., 1., 1.])
-        self.kine = DexforceW1Kinematics(
-            self._arm_type == W1ArmType.ANTHROPOMORPHIC)
-        self.kine.left_arm_kine.set_ik_nearest_weight(ik_nearest_weight)
-        self.kine.right_arm_kine.set_ik_nearest_weight(ik_nearest_weight)
+        # ik_nearest_weight = np.array([2., 2., 2., 0., 1., 1., 1.])
+        self.kine = DexforceW1Kinematics(self._arm_type == W1ArmType.ANTHROPOMORPHIC)
+        # self.kine.left_arm_kine.set_ik_nearest_weight(ik_nearest_weight)
+        # self.kine.right_arm_kine.set_ik_nearest_weight(ik_nearest_weight)
         self.kine.set_user_qpos_limits(self.w1_params.qpos_lb,
                                        self.w1_params.qpos_ub)
 
@@ -1820,52 +1817,6 @@ class W1Manager:
             return res, None
         return res, xpos_to_user_pose(cur_xpos)
 
-    def transfer_grasp_pose(
-            self, name: str, pre_grasp_pose: list, pre_torso_qpos: np.ndarray,
-            target_torso_qpos: np.ndarray) -> tuple[StatusCode, list]:
-        """保持抓取点在全身坐标系的位置，获取torso运动后的相对于机械臂基座坐标系的抓取pose
-
-        Args:
-            name (str): left_arm / right_arm
-            pre_grasp_pose (list): 抓取前相对于机械臂基座的pose
-            pre_torso_qpos (np.ndarray): torso运动前的qpos
-            target_torso_qpos (np.ndarray): torso运动后的qpos
-
-        Returns:
-            tuple[StatusCode, list]
-        """
-        pre_torso_qpos = np.array(pre_torso_qpos)
-        target_torso_qpos = np.array(target_torso_qpos)
-
-        if not self._check_arm_name(name):
-            return StatusCode.NAME_MISMATCH, None
-        if not self._check_qpos_dimension("torso", pre_torso_qpos) or \
-            not self._check_qpos_dimension("torso", target_torso_qpos):
-            return StatusCode.DIM_MISMATCH, None
-
-        T_armbase_ee_pre = user_pose_to_xpos(pre_grasp_pose[:3],
-                                             pre_grasp_pose[3:])
-
-        qpos_pre = np.zeros(self.w1_params.full_body_dofs)
-        qpos_pre[:4] = pre_torso_qpos
-        res_fk, T_chassis_armbase_pre = self.kine.get_fk(
-            name + "_base", qpos_pre)
-        if not res_fk:
-            self.logger.error(f"{name} solve fk failed!")
-            return StatusCode.IK_FAIL, None
-
-        qpos_target = np.zeros(self.w1_params.full_body_dofs)
-        qpos_target[:4] = target_torso_qpos
-        res_fk, T_chasis_armbase_target = self.kine.get_fk(
-            name + "_base", qpos_target)
-        if not res_fk:
-            self.logger.error(f"{name} solve fk failed!")
-            return StatusCode.FK_FAIL, None
-
-        T_armbase_ee_target = np.linalg.inv(
-            T_chasis_armbase_target) @ T_chassis_armbase_pre @ T_armbase_ee_pre
-        return StatusCode.SUCCESS, xpos_to_user_pose(T_armbase_ee_target)
-
     def _parse_waypoints_from_dict(
         self,
         name: str,
@@ -3287,203 +3238,6 @@ class W1Manager:
         return self.execute_joint_traj(total_qpos_array,
                                        left_arm_ee_trigger_list,
                                        right_arm_ee_trigger_list)
-
-    def move_torso_linear(self,
-                          delta_x_mm: float,
-                          delta_z_mm: float,
-                          cartesian_step=0.002,
-                          speed_ratio: float = 1.) -> StatusCode:
-        """腿部从当前位置直线移动相对距离
-
-        Args:
-            delta_x_mm (float): x方向(前后)直线相对运动距离
-            delta_z_mm (float): z方向(上下)直线相对运动距离
-            cartesian_step (float, optional): 直线离散步长. Defaults to 0.002.
-            speed_ratio (float, optional): 运动速率. Defaults to 1..
-
-        Returns:
-            StatusCode: 
-        """
-        res, cur_qpos = self.get_current_qpos()
-        if res.value < 0:
-            return res
-        res_fk, cur_x, cur_z, cur_y_theta = self.kine.get_torso_fk(cur_qpos[:3])
-        if not res_fk:
-            return StatusCode.FK_FAIL
-        target_x = cur_x + (delta_x_mm / 1000.)
-        target_z = cur_z + (delta_z_mm / 1000.)
-        # TODO: check com in support polyhedron
-
-        # Create path
-        p_cur = np.array([cur_x, cur_z])
-        p_target = np.array([target_x, target_z])
-        dist = np.linalg.norm(p_target - p_cur)
-        n_steps = int(np.ceil(dist / cartesian_step))
-        s_list = np.linspace(0, 1, n_steps + 1)
-        p_list = [p_cur + (p_target - p_cur) * s for s in s_list]
-
-        # Solve ik
-        qpos_list = []
-        for p in p_list:
-            res_ik, qpos = self.kine.get_torso_ik(p[0], p[1], cur_y_theta,
-                                                  cur_qpos[1] < 0)
-            if not res_ik:
-                return StatusCode.IK_FAIL
-            qpos_list.append(np.r_[qpos, cur_qpos[3]])
-
-        speed_ratio_list = [speed_ratio] * len(qpos_list)
-        default_qvel = self.w1_params.default_qvel[
-            self.w1_params.index_infos["torso"]["index"]]
-        min_qvel = self.w1_params.min_qvel[self.w1_params.index_infos["torso"]
-                                           ["index"]]
-        max_qvel = self.w1_params.max_qvel[self.w1_params.index_infos["torso"]
-                                           ["index"]]
-        qvel_limits_array = np.clip(np.outer(speed_ratio_list, default_qvel),
-                                    min_qvel, max_qvel)
-
-        res_plan, torso_qpos_array = self.plan_joint_traj(
-            "torso", np.array(qpos_list), False, qvel_limits_array)
-        if res_plan.value < 0:
-            return res_plan, None
-
-        # align
-        res_align, total_qpos_array = self._qpos_align(
-            torso_qpos_array, cur_qpos[self.w1_params.head_index],
-            cur_qpos[self.w1_params.left_arm_index],
-            cur_qpos[self.w1_params.right_arm_index])
-        if not res_align:
-            return StatusCode.FAIL
-
-        return self.execute_joint_traj(total_qpos_array)
-
-    def move_arm_linear(self,
-                        name: str,
-                        delta_trans_mm: list,
-                        cartesian_step=0.005,
-                        speed_ratio: float = 1.,
-                        along_base_frame: bool = True) -> StatusCode:
-        """机械臂从当前位置直线移动相对距离
-
-        Args:
-            name (str): ["left_arm", "right_arm"]
-            delta_trans_mm (list): 直线相对运动距离
-            cartesian_step (float, optional): 直线离散步长. Defaults to 0.005.
-            speed_ratio (float, optional): 运动速率. Defaults to 1..
-            along_base_frame (bool, optional): 参考chassis_base坐标系/tcp坐标系. Defaults to True.
-
-        Returns:
-            StatusCode: 
-        """
-        if not self._check_arm_name(name):
-            return StatusCode.NAME_MISMATCH
-
-        res, T_armbase_ee = self.get_current_xpos(name)
-        if res.value < 0:
-            return res
-
-        delta_xpos = user_pose_to_xpos(delta_trans_mm, [0., 0., 0.])
-        if along_base_frame:
-            res, T_chassis_ee = self.get_current_xpos(name, False)
-            if res.value < 0:
-                return res
-            target_xpos = T_armbase_ee @ np.linalg.inv(T_chassis_ee) @ (
-                delta_xpos @ T_chassis_ee)
-        else:
-            target_xpos = T_armbase_ee @ delta_xpos
-
-        return self.move_linear_full_body(
-            waypoints_dict={f"{name}": [xpos_to_user_pose(target_xpos)]},
-            cartesian_step=cartesian_step,
-            speed_ratio=speed_ratio)
-
-    def rotate_arm_linear(self,
-                          name: str,
-                          delta_rot_deg: list,
-                          speed_ratio: float = 1.,
-                          along_base_frame: bool = True) -> StatusCode:
-        """机械臂从当前位置旋转相对角度
-
-        Args:
-            name (str): ["left_arm", "right_arm"]
-            delta_rot_deg (list): 旋转相对运动距离
-            speed_ratio (float, optional): 运动速率. Defaults to 1..
-            along_base_frame (bool, optional): 参考chassis_base坐标系/tcp坐标系. Defaults to True.
-
-        Returns:
-            StatusCode: 
-        """
-        if not self._check_arm_name(name):
-            return StatusCode.NAME_MISMATCH
-
-        res, T_armbase_ee = self.get_current_xpos(name)
-        if res.value < 0:
-            return res
-
-        delta_xpos = user_pose_to_xpos([0., 0., 0.], delta_rot_deg)
-        target_xpos = deepcopy(T_armbase_ee)
-
-        if along_base_frame:
-            res, T_chassis_ee = self.get_current_xpos(name, False)
-            if res.value < 0:
-                return res
-            target_xpos[:3,:3] = T_armbase_ee[:3,:3] @ T_chassis_ee[:3,:3].T \
-                  @ delta_xpos[:3,:3] @ T_chassis_ee[:3,:3]
-        else:
-            target_xpos[:3, :3] = T_armbase_ee[:3, :3] @ delta_xpos[:3, :3]
-
-        arm_kine = self._get_arm_kine(name)
-        if arm_kine is None:
-            return StatusCode.NAME_MISMATCH
-
-        path = PathR3xSO3Bezier(np.array([T_armbase_ee, target_xpos]))
-        if not path.calc_path():
-            return StatusCode.PLAN_PATH_FAIL
-        xpos_sample_array = path.get_sample_by_step(0.005)
-        if xpos_sample_array is None:
-            return StatusCode.PLAN_PATH_FAIL
-
-        # solve ik
-        qpos_list = []
-        res, cur_qpos = self.get_current_qpos()
-        if res.value < 0:
-            return res
-        cur_qseed = cur_qpos[self.w1_params.index_infos[name]["index"]]
-        res, qpos_list = calc_iks_func(arm_kine, cur_qseed, xpos_sample_array)
-        if res.type != StatusType.Success:
-            return StatusCode.IK_FAIL, None
-
-        speed_ratio_list = [speed_ratio] * len(qpos_list)
-        default_qvel = self.w1_params.default_qvel[
-            self.w1_params.index_infos[name]["index"]]
-        min_qvel = self.w1_params.min_qvel[self.w1_params.index_infos[name]
-                                           ["index"]]
-        max_qvel = self.w1_params.max_qvel[self.w1_params.index_infos[name]
-                                           ["index"]]
-        qvel_limits_array = np.clip(np.outer(speed_ratio_list, default_qvel),
-                                    min_qvel, max_qvel)
-
-        res_plan, arm_qpos_array = self.plan_joint_traj(name,
-                                                        np.array(qpos_list),
-                                                        False,
-                                                        qvel_limits_array)
-        if res_plan.value < 0:
-            return res_plan, None
-
-        # align
-        if name == "left_arm":
-            res_align, total_qpos_array = self._qpos_align(
-                cur_qpos[self.w1_params.torso_index],
-                cur_qpos[self.w1_params.head_index], arm_qpos_array,
-                cur_qpos[self.w1_params.right_arm_index])
-        else:
-            res_align, total_qpos_array = self._qpos_align(
-                cur_qpos[self.w1_params.torso_index],
-                cur_qpos[self.w1_params.head_index],
-                cur_qpos[self.w1_params.left_arm_index], arm_qpos_array)
-        if not res_align:
-            return StatusCode.FAIL
-
-        return self.execute_joint_traj(total_qpos_array)
 
     def attach_object(self,
                       obj_name: str,

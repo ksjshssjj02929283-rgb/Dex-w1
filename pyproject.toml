@@ -10,7 +10,7 @@ where = ["src"]
 
 [project]
 name = "dexe_robot_client"
-version = "0.6.0"
+version = "0.6.1"
 description = "DexEmbodied Robot Client"
 authors = [
     { name = "Dexforce", email = "dexforce@dexforce.com" }
@@ -24,7 +24,7 @@ dependencies = [
     "toppra==0.6.3",
     "trimesh>=4.2.4",
     "pathfinding",
-    "dexe_rp>=0.3.0"
+    "dexe_rp==0.3.4"
 ]
 
 [project.scripts]

@@ -38,11 +38,11 @@ class CartesianPlanner:
         self._init_arml_base_T_armr_base()
 
     def _init_kine_solver(self):
-        ik_nearst_weight = np.array([2., 2., 2., 0., 1., 1., 1.])
+        # ik_nearst_weight = np.array([2., 2., 2., 0., 1., 1., 1.])
         self.kine = DexforceW1Kinematics(
             self._arm_type == W1ArmType.ANTHROPOMORPHIC)
-        self.kine.left_arm_kine.set_ik_nearest_weight(ik_nearst_weight)
-        self.kine.right_arm_kine.set_ik_nearest_weight(ik_nearst_weight)
+        # self.kine.left_arm_kine.set_ik_nearest_weight(ik_nearst_weight)
+        # self.kine.right_arm_kine.set_ik_nearest_weight(ik_nearst_weight)
         self.kine.set_user_qpos_limits(self.w1_params.qpos_lb,
                                        self.w1_params.qpos_ub)
 
