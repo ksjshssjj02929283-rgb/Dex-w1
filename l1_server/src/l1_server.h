@@ -46,8 +46,6 @@ private:
     std::string GetRobotStatusString();
     // 锁内存并设置 SCHED_FIFO 实时调度
     void SetupRealtime();
-    // 初始化 nanolog 日志系统
-    void InitLogger();
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_status_publisher_;

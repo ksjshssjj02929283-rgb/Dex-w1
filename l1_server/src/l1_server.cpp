@@ -17,8 +17,6 @@
 namespace robot_server_lib {
 
 RobotServer::RobotServer() : Node("robot_server") {
-    // 初始化日志系统
-    InitLogger();
     LOG_INFO << "";
     LOG_INFO
         << "---------------------------------------L1 Robot Server Initializing---------------------------------------";
@@ -409,15 +407,6 @@ void RobotServer::SetupRealtime() {
         LOG_CRIT << "sched_setscheduler failed, please run setcap!";
         assert(false && "sched_setscheduler failed, please run setcap!");
     }
-}
-
-void RobotServer::InitLogger() {
-    // 固定路径为 ~/log
-    std::filesystem::path home = std::filesystem::path(std::getenv("HOME"));
-    std::filesystem::create_directories(home / "log");
-    nanolog::initialize(nanolog::GuaranteedLogger(), (home / "log/").string(), "robot_server", 10, 10);
-    nanolog::set_log_level(nanolog::LogLevel::INFO);
-    RCLCPP_INFO(this->get_logger(), "Logs directory: %s", ((home / "log").string() + "/robot_server.txt").c_str());
 }
 
 RobotFeedback RobotServer::ConvertAnkleMotorsToPitchRoll(const RobotFeedback& robot_feedback) {
