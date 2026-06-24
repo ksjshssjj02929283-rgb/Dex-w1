@@ -39,7 +39,8 @@ from dexe_rp import DexforceW1Kinematics, StatusType, SRSAKinematics, SRSIKinema
 from dexe_rp import (StatusType, TrajectoryConstraint,
                      create_double_s_traj_along_blend_path, create_blend_path,
                      BlendType, R2, R2Tangent, R4, R4Tangent, R7, R7Tangent,
-                     R20, R20Tangent, SE3, R3xSO3, R3xSO3Tangent, calc_nearest_iks)
+                     R20, R20Tangent, SE3, R3xSO3, R3xSO3Tangent,
+                     calc_nearest_iks)
 
 USE_TOPPRA = True
 calc_iks_func = calc_nearest_iks
@@ -339,7 +340,8 @@ class W1Manager:
 
     def _init_kine_solver(self):
         # ik_nearest_weight = np.array([2., 2., 2., 0., 1., 1., 1.])
-        self.kine = DexforceW1Kinematics(self._arm_type == W1ArmType.ANTHROPOMORPHIC)
+        self.kine = DexforceW1Kinematics(
+            self._arm_type == W1ArmType.ANTHROPOMORPHIC)
         # self.kine.left_arm_kine.set_ik_nearest_weight(ik_nearest_weight)
         # self.kine.right_arm_kine.set_ik_nearest_weight(ik_nearest_weight)
         self.kine.set_user_qpos_limits(self.w1_params.qpos_lb,
