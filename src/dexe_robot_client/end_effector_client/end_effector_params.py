@@ -80,7 +80,7 @@ def _():
 def _():
     return EndEffectorParams(
         dof=6,
-        joint_names=("T_CMC_YAW", "T_MCP", "IF_MCP_PITCH", "MF_MCP_PITCH",
+        joint_names=("T_MCP", "T_CMC_YAW", "IF_MCP_PITCH", "MF_MCP_PITCH",
                      "RF_MCP_PITCH", "LF_MCP_PITCH"),
         supported_modes=(
             EEJointControlMode.POSITION,
@@ -98,7 +98,7 @@ def _():
 def _():
     return EndEffectorParams(
         dof=6,
-        joint_names=("T_CMC_YAW", "T_MCP", "IF_MCP_PITCH", "MF_MCP_PITCH",
+        joint_names=("T_MCP", "T_CMC_YAW", "IF_MCP_PITCH", "MF_MCP_PITCH",
                      "RF_MCP_PITCH", "LF_MCP_PITCH"),
         supported_modes=(EEJointControlMode.POSITION,),
         position=Limit((0,) * 6, (100,) * 6),
@@ -130,11 +130,12 @@ def _():
 def _():
     return EndEffectorParams(
         dof=13,
-        joint_names=("T_CMC_ROLL", "T_CMC_YAW", "T_MCP", "T_IP", "IF_MCP_ROLL",
-                     "IF_MCP_PITCH", "IF_PIP", "MF_MCP_ROLL", "MF_MCP_PITCH",
-                     "MF_PIP", "RF_MCP_ROLL", "RF_MCP_PITCH", "RF_PIP"),
+        joint_names=("IF_MCP_ROLL","IF_MCP_PITCH", "IF_PIP", 
+                     "MF_MCP_ROLL", "MF_MCP_PITCH", "MF_PIP", 
+                     "RF_MCP_ROLL", "RF_MCP_PITCH", "RF_PIP", 
+                     "T_CMC_ROLL", "T_CMC_YAW", "T_MCP", "T_IP"),
         supported_modes=(EEJointControlMode.POSITION,),
-        position=Limit((0, 0, 0, 0, -100, 0, 0, -100, 0, 0, -100, 0, 0),
+        position=Limit((-100, 0, 0, -100, 0, 0, -100, 0, 0, 0, 0, 0, 0),
                        (100,) * 13),
         velocity=Limit((-100,) * 13, (100,) * 13),
         current=Limit((-100,) * 13, (100,) * 13),
