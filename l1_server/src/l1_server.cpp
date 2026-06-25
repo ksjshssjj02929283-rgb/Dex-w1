@@ -16,7 +16,12 @@
 
 namespace robot_server_lib {
 
-RobotServer::RobotServer() : Node("robot_server") {
+RobotServer::RobotServer(const std::string& config_path) : Node("robot_server") {
+    // 加载配置
+    auto config = LoadConfig(config_path);
+    run_mode_ = config.run_mode;
+    RCLCPP_INFO(this->get_logger(), "Config loaded from %s, run_mode=%d", config_path.c_str(), run_mode_);
+
     LOG_INFO << "";
     LOG_INFO
         << "---------------------------------------L1 Robot Server Initializing---------------------------------------";

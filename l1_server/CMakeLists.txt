@@ -42,11 +42,13 @@ find_package(Eigen3 REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
 
 # ROS 2 dependencies
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 # Other ROS 2 packages
 find_package(joint_interfaces REQUIRED)
@@ -74,6 +76,7 @@ ament_target_dependencies(${PROJECT_NAME}
   std_msgs
   geometry_msgs
   sensor_msgs
+  ament_index_cpp
   Eigen3
   eigen3_cmake_module
   joint_interfaces
@@ -82,12 +85,19 @@ ament_target_dependencies(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME}
   Eigen3::Eigen
+  yaml-cpp
 )
 
 install(
   TARGETS ${PROJECT_NAME}
   DESTINATION lib/${PROJECT_NAME}
 )
+
+# l1_config.yaml：如果目标已存在则跳过安装
+set(CONFIG_INSTALL_PATH "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/l1_config.yaml")
+if(NOT EXISTS "${CONFIG_INSTALL_PATH}")
+  install(FILES l1_config.yaml DESTINATION share/${PROJECT_NAME})
+endif()
 
 # feedback 可执行文件
 add_executable(feedback tools/feedback.cpp utils/NanoLog.cpp)

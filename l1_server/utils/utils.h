@@ -145,4 +145,13 @@ std::ostringstream VectorToJsonArrayString(const VectorType &vec, int start_inde
 }
 
 }  // namespace utils
+
+// L1 配置结构（从 l1_config.yaml 加载）
+struct L1Config {
+    int run_mode = 0;  // 上肢控制模式: 0=位置模式, 1=力矩模式(CST)
+};
+
+// 从 YAML 文件加载配置
+L1Config LoadConfig(const std::string& config_path);
+
 }  // namespace robot_server_lib

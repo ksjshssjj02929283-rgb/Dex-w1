@@ -20,7 +20,7 @@ using JointCommandMsg = joint_interfaces::msg::JointCommand;
 
 class RobotServer : public rclcpp::Node {
 public:
-    RobotServer();
+    RobotServer(const std::string& config_path);
     ~RobotServer() override;
 
 private:

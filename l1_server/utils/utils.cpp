@@ -1,5 +1,9 @@
 #include "utils.h"
 
+#include <iostream>
+
+#include <yaml-cpp/yaml.h>
+
 namespace robot_server_lib {
 namespace utils {
 
@@ -53,4 +57,18 @@ std::ostringstream RobotControlwordToJsonString(const int &control_word) {
 }
 
 }  // namespace utils
+
+L1Config LoadConfig(const std::string& config_path) {
+    L1Config config;
+    try {
+        YAML::Node node = YAML::LoadFile(config_path);
+        if (node["run_mode"]) {
+            config.run_mode = node["run_mode"].as<int>();
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to load config from " << config_path << ": " << e.what() << std::endl;
+    }
+    return config;
+}
+
 }  // namespace robot_server_lib

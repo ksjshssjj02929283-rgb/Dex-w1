@@ -26,6 +26,7 @@ print_usage() {
     echo "  echo            - 打印一次 robot server 状态 (/feedback/robot_server_state)"
     echo "  log             - 打印 robot server 日志 (~/log/robot_server.txt)"
     echo "  state           - 关节状态查看 GUI (script/joint_viewer.py)"
+    echo "  shm             - 监视共享内存数据 (script/monitor_shm.py)"
     echo "  watch           - 监视 EtherCAT 从站状态 (watch -n 0.1 ethercat sl)"
     echo "  bat             - 监视电池电量 (script/watch_bat_status.sh)"
     echo "  dc              - 读取 DC 寄存器 (script/read_DC_regs.sh)"
@@ -97,6 +98,10 @@ case $COMMAND in
     state)
         echo "Starting joint viewer..."
         python3 "${SCRIPT_DIR}/script/joint_viewer.py"
+        ;;
+    shm)
+        echo "Monitoring shared memory..."
+        python3 "${SCRIPT_DIR}/script/monitor_shm.py"
         ;;
     watch)
         echo "Watching EtherCAT status..."
@@ -221,10 +226,10 @@ case $COMMAND in
 
     # === 配置 ===
     config)
-        echo "Editing l1_config.json..."
-        CONFIG_FILE=~/dexe_robot_server_data/l1_config.json
+        echo "Editing l1_config.yaml..."
+        CONFIG_FILE=~/dexe_robot_server_data/l1_config.yaml
         if [ ! -f "$CONFIG_FILE" ]; then
-            echo "提示: $CONFIG_FILE 不存在，首次启动 l1_server 时会自动创建默认配置"
+            echo "提示: $CONFIG_FILE 不存在，首次启动 l1_server 时会自动从默认配置创建"
         fi
         if [ -n "$DISPLAY" ]; then
             gedit "$CONFIG_FILE"
