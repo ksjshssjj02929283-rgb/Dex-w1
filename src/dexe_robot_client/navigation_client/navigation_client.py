@@ -8,8 +8,11 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
 from action_msgs.msg import GoalStatus
 from scipy.spatial.transform import Rotation as R
-from nav2_msgs.action import NavigateToPose
-from std_srvs.srv import Trigger
+from nav2_msgs.action import NavigateThroughPoses, NavigateToPose
+from nav_interfaces.action import PreciseControl
+from nav_interfaces.msg import NavPoint
+from nav_interfaces.srv import GetAllNavPoints
+from chassis_interfaces.action import AutoCharging
 from rcl_interfaces.srv import SetParameters, GetParameters
 from rcl_interfaces.msg import ParameterType
 from rclpy.parameter import Parameter
@@ -24,6 +27,16 @@ from ..common import get_logger
 
 
 class NavigationClient(ABC, Node):
+    AUTO_CHARGING_STATUS_NAMES = {
+        GoalStatus.STATUS_UNKNOWN: "UNKNOWN",
+        GoalStatus.STATUS_ACCEPTED: "ACCEPTED",
+        GoalStatus.STATUS_EXECUTING: "EXECUTING",
+        GoalStatus.STATUS_CANCELING: "CANCELING",
+        GoalStatus.STATUS_SUCCEEDED: "SUCCEEDED",
+        GoalStatus.STATUS_CANCELED: "CANCELED",
+        GoalStatus.STATUS_ABORTED: "ABORTED",
+    }
+    ROAD_NAV_STATUS_NAMES = AUTO_CHARGING_STATUS_NAMES
 
     def __init__(self,
                  name: str,
@@ -41,10 +54,19 @@ class NavigationClient(ABC, Node):
         self._connection_timeout = 1.0
         self._set_nav_publisher = None
         self._set_nav_client = None
-        self._set_ctrl_publisher = None
+        self._set_ctrl_client = None
         self._get_pos_subscriber = None
-        self._set_chassis_charging_client = None
-        self._cancel_control_client = None
+        self._auto_charging_action_client = None
+        self._auto_charging_goal_handle = None
+        self._auto_charging_send_goal_future = None
+        self._auto_charging_result_future = None
+        self._auto_charging_cancel_future = None
+        self._auto_charging_task_id = 0
+        self._auto_charging_status = "IDLE"
+        self._auto_charging_done = False
+        self._auto_charging_success = False
+        self._last_auto_charging_feedback = None
+        self._last_auto_charging_result_message = ""
         self._controller_set_param_client = None
         self._local_costmap_set_param_client = None
         self._global_costmap_set_param_client = None
@@ -62,19 +84,35 @@ class NavigationClient(ABC, Node):
         self._nav_status = "IDLE"  # 或 NAVIGATING / SUCCEEDED / FAILED / CANCELLED
         self._nav_result = None  # 存储最后的导航结果
         self._nav_task_id = 0  # 导航任务ID，用于区分不同的导航任务
-        self._last_control_status = None
-        self._last_control_status_success = False
-        # control status 防抖 + 防陈旧
-        self._control_status_requesting = False
+        self._road_nav_action_client = None
+        self._road_nav_goal_handle = None
+        self._road_nav_send_goal_future = None
+        self._road_nav_result_future = None
+        self._road_nav_cancel_future = None
+        self._road_nav_status = "IDLE"
+        self._road_nav_done = False
+        self._road_nav_success = False
+        self._last_road_nav_feedback = None
+        self._last_road_nav_result_message = ""
+        self._nav_points_client = None
+        self._nav_points_timeout_sec = 10.0
+        self._control_lock = threading.Lock()
+        self._control_goal_handle = None
+        self._control_result_future = None
+        self._control_status = "IDLE"
+        self._control_result = None
+        self._control_task_id = 0
+        self._last_control_status = "IDLE"
+        self._last_control_status_success = True
         self._last_control_status_time = None
-        self._control_status_timeout = 1.0  # 秒，超过认为状态陈旧
+        self._last_logged_control_status = None
+        self._control_terminal_states = {"SUCCEEDED", "FAILED", "CANCELLED"}
 
         self._init_subscriber(is_sim)
         self._init_publisher(is_sim)
         self.spin_once(timeout_sec=timeout_sec)
 
         self.create_timer(0.1, self._check_connection_status)
-        self.create_timer(0.5, self.refresh_control_status)
 
     def _check_connection_status(self):
         """定时检查消息是否超时"""
@@ -169,7 +207,7 @@ class NavigationClient(ABC, Node):
         Returns:
             bool: 如果检测到障碍物则返回 True，否则返回 False。
         """
-        self.spin_once()
+        # self.spin_once()
         return self._has_obstacle
 
     def get_chassis_position(self) -> tuple[bool, np.ndarray]:
@@ -253,7 +291,7 @@ class NavigationClient(ABC, Node):
                 - "CANCELLED": 已取消
         """
         # 触发 ROS2 回调（非常重要）
-        self.spin_once()
+        # self.spin_once()
 
         return self._nav_status
 
@@ -294,92 +332,513 @@ class NavigationClient(ABC, Node):
                 f"Error cancelling navigation goal: {str(e)}")
             return False
 
-    def set_chassis_auto_charging(self) -> bool:
-        """调用回充服务"""
-        if not self._set_chassis_charging_client.wait_for_service(
-                timeout_sec=1.0):
-            return False
+    def _create_road_nav_pose(self, x: float, y: float, yaw_rad: float,
+                              frame_id: str) -> PoseStamped:
+        """创建 NavigateThroughPoses 路点，yaw 使用弧度。"""
+        pose = PoseStamped()
+        pose.header.frame_id = frame_id
+        pose.header.stamp = self.get_clock().now().to_msg()
+        pose.pose.position.x = float(x)
+        pose.pose.position.y = float(y)
+        pose.pose.position.z = 0.0
 
-        request = Trigger.Request()
-        future = self._set_chassis_charging_client.call_async(request)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+        half_yaw = float(yaw_rad) * 0.5
+        pose.pose.orientation.z = math.sin(half_yaw)
+        pose.pose.orientation.w = math.cos(half_yaw)
+        return pose
 
-        if future.done():
-            try:
-                response = future.result()
-                self.get_logger().info(
-                    f"Cancel control response: {response.message}")
-                return response.success
-            except Exception as e:
-                self.get_logger().error(f"Service call failed: {e}")
-                return False
-        else:
-            self.get_logger().error("Service call timed out.")
-            return False
+    def set_chassis_road_navigation(self,
+                                    waypoints: list,
+                                    frame_id: str = "map",
+                                    timeout_sec: float = 10.0,
+                                    behavior_tree: str = "") -> bool:
+        """发送路网/多路点导航任务，非阻塞返回是否成功发出。
 
-    def get_control_status(self) -> str:
+        waypoints 中每个路点为 [x, y, yaw_rad] 或 (x, y, yaw_rad)。
+        yaw_rad 使用弧度，和 Nav2 NavigateThroughPoses 原生接口一致。
         """
-        获取当前缓存的底层控制状态（不触发服务调用）
+        if self._road_nav_action_client is None:
+            self.get_logger().error(
+                "NavigateThroughPoses action client not initialized.")
+            return False
+        if not waypoints:
+            self.get_logger().error("Road navigation waypoints is empty.")
+            return False
+
+        action_name = getattr(self._road_nav_action_client, "_action_name",
+                              "/navigate_through_poses")
+        self.get_logger().info(
+            f"Waiting for NavigateThroughPoses action server: {action_name}")
+        self._road_nav_status = "WAITING_SERVER"
+        if not self._road_nav_action_client.wait_for_server(
+                timeout_sec=timeout_sec):
+            self.get_logger().error(
+                "NavigateThroughPoses action server is not available.")
+            self._road_nav_status = "FAILED_TO_SEND"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return False
+
+        try:
+            goal = NavigateThroughPoses.Goal()
+            goal.poses = [
+                self._create_road_nav_pose(x, y, yaw, frame_id)
+                for x, y, yaw in waypoints
+            ]
+            goal.behavior_tree = behavior_tree
+        except (TypeError, ValueError) as e:
+            self.get_logger().error(f"Invalid road navigation waypoints: {e}")
+            self._road_nav_status = "FAILED_TO_SEND"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return False
+
+        self.get_logger().info(f"Sending {len(goal.poses)} road nav poses.")
+        for index, (x, y, yaw) in enumerate(waypoints, start=1):
+            self.get_logger().info(
+                f"  {index}: x={float(x):.3f}, y={float(y):.3f}, "
+                f"yaw={float(yaw):.3f} rad")
+
+        self._road_nav_done = False
+        self._road_nav_success = False
+        self._road_nav_status = "SENDING"
+        self._road_nav_goal_handle = None
+        self._road_nav_result_future = None
+        self._road_nav_cancel_future = None
+        self._last_road_nav_feedback = None
+        self._last_road_nav_result_message = ""
+
+        try:
+            self._road_nav_send_goal_future = (
+                self._road_nav_action_client.send_goal_async(
+                    goal, feedback_callback=self._road_nav_feedback_callback))
+            self._road_nav_send_goal_future.add_done_callback(
+                self._road_nav_goal_done_callback)
+            return True
+        except Exception as e:
+            self.get_logger().error(
+                f"Failed to send NavigateThroughPoses goal: {e}")
+            self._road_nav_status = "FAILED_TO_SEND"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return False
+
+    def get_road_navigation_status(self) -> str:
+        """获取当前路网/多路点导航状态。"""
+        return self._road_nav_status
+
+    def get_road_navigation_result(self) -> tuple[bool, str]:
+        """获取最近一次路网/多路点导航结果。"""
+        return self._road_nav_success, self._last_road_nav_result_message
+
+    def cancel_road_navigation(self) -> bool:
+        """取消当前路网/多路点导航任务。"""
+        if self._road_nav_goal_handle is None and self._road_nav_status in {
+                "SENDING", "ACCEPTED", "WAITING_SERVER"
+        }:
+            self.get_logger().info(
+                "Waiting for road navigation goal to be accepted before cancelling..."
+            )
+            start_time = time.time()
+            while time.time() - start_time < 1.0:
+                self.spin_once(timeout_sec=0.05)
+                if self._road_nav_goal_handle is not None:
+                    break
+                time.sleep(0.05)
+
+        if self._road_nav_goal_handle is None:
+            self.get_logger().warning(
+                "No accepted NavigateThroughPoses goal to cancel.")
+            return False
+
+        try:
+            self._road_nav_status = "CANCELING"
+            self._road_nav_cancel_future = (
+                self._road_nav_goal_handle.cancel_goal_async())
+            self._road_nav_cancel_future.add_done_callback(
+                self._road_nav_cancel_done_callback)
+            self.get_logger().info("NavigateThroughPoses cancel request sent.")
+            return True
+        except Exception as e:
+            self.get_logger().error(
+                f"Failed to cancel NavigateThroughPoses goal: {e}")
+            return False
+
+    def _parse_nav_point(
+            self,
+            point: NavPoint) -> tuple[str, tuple[float, float, float]] | None:
+        """从 NavPoint 消息解析点位名称和 x/y/theta_rad。"""
+        if not isinstance(point, NavPoint):
+            self.get_logger().warning(
+                f"Skip unexpected nav point type: {type(point).__name__}")
+            return None
+
+        if not point.name:
+            self.get_logger().warning("Skip nav point with empty name.")
+            return None
+
+        return (
+            str(point.name),
+            (
+                float(point.x),
+                float(point.y),
+                float(point.theta),
+            ),
+        )
+
+    def get_all_nav_points(self) -> dict[str, tuple[float, float, float]]:
+        """获取所有路网导航点，返回点位名称到 x/y/theta_rad 的映射。"""
+        if self._nav_points_client is None:
+            self.get_logger().error(
+                "GetAllNavPoints service client not initialized.")
+            return {}
+
+        service_name = self._nav_points_client.srv_name
+        self.get_logger().info(
+            f"Waiting for GetAllNavPoints service: {service_name}")
+        if not self._nav_points_client.wait_for_service(
+                timeout_sec=self._nav_points_timeout_sec):
+            self.get_logger().error("GetAllNavPoints service is not available.")
+            return {}
+
+        future = self._nav_points_client.call_async(GetAllNavPoints.Request())
+        rclpy.spin_until_future_complete(
+            self, future, timeout_sec=self._nav_points_timeout_sec)
+        if not future.done():
+            self.get_logger().error("GetAllNavPoints service call timed out.")
+            return {}
+
+        response = future.result()
+        if response is None:
+            exception_msg = (str(future.exception())
+                             if future.exception() else "unknown error")
+            self.get_logger().error(
+                f"GetAllNavPoints service call failed: {exception_msg}")
+            return {}
+        if not response.success:
+            self.get_logger().error(
+                "GetAllNavPoints service returned success=False.")
+            return {}
+
+        points_by_name: dict[str, tuple[float, float, float]] = {}
+        for point in response.points:
+            parsed_point = self._parse_nav_point(point)
+            if parsed_point is None:
+                continue
+            name, pose = parsed_point
+            points_by_name[name] = pose
+        return points_by_name
+
+    def _auto_charging_feedback_callback(self, feedback_msg, task_id):
+        if task_id != self._auto_charging_task_id:
+            self.get_logger().debug(
+                f"Ignoring feedback for old AutoCharging task {task_id} "
+                f"(current: {self._auto_charging_task_id})")
+            return
+
+        feedback = feedback_msg.feedback
+        self._last_auto_charging_feedback = feedback
+        if self._auto_charging_status != "CANCELING":
+            self._auto_charging_status = "EXECUTING"
+        self.get_logger().info("Auto charging feedback: "
+                               f"state={feedback.current_state}, "
+                               f"retry={feedback.retry_count}")
+
+    def set_chassis_auto_charging(self,
+                                  force: bool = True,
+                                  timeout_sec: float = 10.0) -> bool:
+        """发送回充 action，非阻塞返回是否成功发出。"""
+        if self._auto_charging_action_client is None:
+            self.get_logger().error(
+                "Auto charging action client not initialized.")
+            return False
+
+        action_name = getattr(self._auto_charging_action_client, "_action_name",
+                              "/auto_charging")
+        self.get_logger().info(
+            f"Waiting for AutoCharging action server: {action_name}")
+        self._auto_charging_status = "WAITING_SERVER"
+        if not self._auto_charging_action_client.wait_for_server(
+                timeout_sec=timeout_sec):
+            self.get_logger().error("Auto charging action server not available")
+            self._auto_charging_status = "FAILED_TO_SEND"
+            self._auto_charging_done = True
+            self._auto_charging_success = False
+            return False
+
+        goal_msg = AutoCharging.Goal()
+        goal_msg.force = force
+
+        self.get_logger().info(f"Sending AutoCharging goal: force={force}")
+        self._auto_charging_task_id += 1
+        current_task_id = self._auto_charging_task_id
+        self._auto_charging_done = False
+        self._auto_charging_success = False
+        self._auto_charging_status = "SENDING"
+        self._auto_charging_goal_handle = None
+        self._auto_charging_result_future = None
+        self._auto_charging_cancel_future = None
+        self._last_auto_charging_feedback = None
+        self._last_auto_charging_result_message = ""
+
+        def auto_charging_feedback_callback(feedback_msg):
+            self._auto_charging_feedback_callback(feedback_msg, current_task_id)
+
+        try:
+            self._auto_charging_send_goal_future = (
+                self._auto_charging_action_client.send_goal_async(
+                    goal_msg,
+                    feedback_callback=auto_charging_feedback_callback))
+            self._auto_charging_send_goal_future.add_done_callback(
+                lambda future: self._auto_charging_goal_done_callback(
+                    future, current_task_id))
+            return True
+        except Exception as e:
+            self.get_logger().error(f"Failed to send AutoCharging goal: {e}")
+            self._auto_charging_status = "FAILED_TO_SEND"
+            self._auto_charging_done = True
+            self._auto_charging_success = False
+            return False
+
+    def get_auto_charging_status(self) -> str:
+        """获取当前回充 action 状态。"""
+        return self._auto_charging_status
+
+    def get_auto_charging_result(self) -> tuple[bool, str]:
+        """获取最近一次回充 action 结果。"""
+        return self._auto_charging_success, self._last_auto_charging_result_message
+
+    def cancel_auto_charging(self) -> bool:
+        """取消当前回充 action。"""
+        if self._auto_charging_goal_handle is None and self._auto_charging_status in {
+                "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING"
+        }:
+            self.get_logger().info(
+                "Waiting for AutoCharging goal to be accepted before cancelling..."
+            )
+            current_task_id = self._auto_charging_task_id
+            start_time = time.time()
+            while time.time() - start_time < 1.0:
+                if current_task_id != self._auto_charging_task_id:
+                    break
+                self._spin_once_if_not_executed(timeout_sec=0.05)
+                if self._auto_charging_goal_handle is not None:
+                    break
+                time.sleep(0.05)
+
+        if self._auto_charging_goal_handle is None:
+            self.get_logger().warning(
+                "No accepted AutoCharging goal to cancel.")
+            return False
+
+        try:
+            current_task_id = self._auto_charging_task_id
+            self._auto_charging_status = "CANCELING"
+            self._auto_charging_cancel_future = (
+                self._auto_charging_goal_handle.cancel_goal_async())
+            self._auto_charging_cancel_future.add_done_callback(
+                lambda future: self._auto_charging_cancel_done_callback(
+                    future, current_task_id))
+            self.get_logger().info("AutoCharging cancel request sent.")
+            return True
+        except Exception as e:
+            self.get_logger().error(f"Failed to cancel AutoCharging goal: {e}")
+            return False
+
+    def _auto_charging_goal_done_callback(self, future, task_id):
+        if task_id != self._auto_charging_task_id:
+            self.get_logger().debug(
+                f"Ignoring goal response for old AutoCharging task {task_id} "
+                f"(current: {self._auto_charging_task_id})")
+            return
+
+        try:
+            goal_handle = future.result()
+        except Exception as e:
+            self.get_logger().error(f"AutoCharging goal send failed: {e}")
+            self._auto_charging_status = "FAILED_TO_SEND"
+            self._auto_charging_done = True
+            self._auto_charging_success = False
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().error("AutoCharging goal was rejected.")
+            self._auto_charging_status = "REJECTED"
+            self._auto_charging_done = True
+            self._auto_charging_success = False
+            return
+
+        self._auto_charging_goal_handle = goal_handle
+        self._auto_charging_status = "ACCEPTED"
+        self.get_logger().info("AutoCharging goal accepted.")
+        self._auto_charging_result_future = goal_handle.get_result_async()
+        self._auto_charging_result_future.add_done_callback(
+            lambda future: self._auto_charging_result_done_callback(
+                future, task_id))
+
+    def _auto_charging_cancel_done_callback(self, future, task_id):
+        if task_id != self._auto_charging_task_id:
+            self.get_logger().debug(
+                f"Ignoring cancel response for old AutoCharging task {task_id} "
+                f"(current: {self._auto_charging_task_id})")
+            return
+
+        try:
+            response = future.result()
+            self.get_logger().info(
+                f"AutoCharging cancel response: goals_canceling={len(response.goals_canceling)}"
+            )
+        except Exception as e:
+            self.get_logger().error(f"AutoCharging cancel failed: {e}")
+
+    def _auto_charging_result_done_callback(self, future, task_id):
+        if task_id != self._auto_charging_task_id:
+            self.get_logger().debug(
+                f"Ignoring result for old AutoCharging task {task_id} "
+                f"(current: {self._auto_charging_task_id})")
+            return
+
+        try:
+            response = future.result()
+            result = response.result
+            self._auto_charging_status = self.AUTO_CHARGING_STATUS_NAMES.get(
+                response.status, "UNKNOWN")
+            self._auto_charging_success = (self._auto_charging_status
+                                           == "SUCCEEDED" and
+                                           bool(result.success))
+            self._last_auto_charging_result_message = result.message
+            self._auto_charging_done = True
+            self._auto_charging_goal_handle = None
+
+            if self._auto_charging_success:
+                self.get_logger().info(
+                    f"AutoCharging succeeded: {result.message}")
+            else:
+                self.get_logger().error(
+                    f"AutoCharging finished with status={self._auto_charging_status}: "
+                    f"{result.message}")
+        except Exception as e:
+            self.get_logger().error(f"Auto charging result error: {e}")
+            self._auto_charging_status = "UNKNOWN"
+            self._auto_charging_success = False
+            self._auto_charging_done = True
+            self._auto_charging_goal_handle = None
+
+    def _road_nav_feedback_callback(self, feedback_msg):
+        feedback = feedback_msg.feedback
+        self._last_road_nav_feedback = feedback
+        if self._road_nav_status != "CANCELING":
+            self._road_nav_status = "EXECUTING"
+        self.get_logger().info(
+            "NavigateThroughPoses feedback: "
+            f"poses_remaining={feedback.number_of_poses_remaining}, "
+            f"distance_remaining={feedback.distance_remaining:.3f} m")
+
+    def _road_nav_goal_done_callback(self, future):
+        try:
+            goal_handle = future.result()
+        except Exception as e:
+            self.get_logger().error(
+                f"NavigateThroughPoses goal send failed: {e}")
+            self._road_nav_status = "FAILED_TO_SEND"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().error("NavigateThroughPoses goal was rejected.")
+            self._road_nav_status = "REJECTED"
+            self._road_nav_done = True
+            self._road_nav_success = False
+            return
+
+        self._road_nav_goal_handle = goal_handle
+        self._road_nav_status = "ACCEPTED"
+        self.get_logger().info("NavigateThroughPoses goal accepted.")
+        self._road_nav_result_future = goal_handle.get_result_async()
+        self._road_nav_result_future.add_done_callback(
+            self._road_nav_result_done_callback)
+
+    def _road_nav_cancel_done_callback(self, future):
+        try:
+            response = future.result()
+            self.get_logger().info(
+                f"NavigateThroughPoses cancel response: goals_canceling={len(response.goals_canceling)}"
+            )
+        except Exception as e:
+            self.get_logger().error(f"NavigateThroughPoses cancel failed: {e}")
+
+    def _road_nav_result_done_callback(self, future):
+        try:
+            response = future.result()
+            self._road_nav_status = self.ROAD_NAV_STATUS_NAMES.get(
+                response.status, "UNKNOWN")
+            self._road_nav_success = self._road_nav_status == "SUCCEEDED"
+            self._last_road_nav_result_message = self._road_nav_status
+            self._road_nav_done = True
+            if self._road_nav_success:
+                self.get_logger().info("NavigateThroughPoses succeeded.")
+            else:
+                self.get_logger().error(
+                    f"NavigateThroughPoses finished with status={self._road_nav_status}({response.status})"
+                )
+        except Exception as e:
+            self.get_logger().error(f"NavigateThroughPoses result error: {e}")
+            self._road_nav_status = "UNKNOWN"
+            self._road_nav_success = False
+            self._road_nav_done = True
+
+    def get_control_status(self, consume: bool = True) -> str:
+        """
+        获取当前底盘控制 action 状态，语义与 get_nav_state() 保持一致。
+
+        Args:
+            consume (bool): 兼容旧接口参数，当前不消费终态。
 
         Returns:
             str:
                 - "IDLE"
                 - "CONTROL"
-                - "CANCEL CONTROL"
-                - "UNKNOWN"
+                - "SUCCEEDED"
+                - "FAILED"
+                - "CANCELLED"
+                - action feedback 中的 current_status
         """
-        self.spin_once()
+        with self._control_lock:
+            status = self._control_status
 
-        if self._last_control_status_success and self._last_control_status_time:
-            # 防止返回陈旧状态
-            if (time.time() - self._last_control_status_time
-               ) <= self._control_status_timeout:
-                return self._last_control_status
-
-        return "UNKNOWN"
+        self._log_control_status_once(status)
+        return status
 
     def refresh_control_status(self) -> bool:
         """
-        主动向底层控制节点请求一次状态（异步，带 in-flight 防抖）
+        兼容旧接口：返回是否存在有效本地状态。
+
         Returns:
-            bool: 请求是否成功发出
+            bool: 当前是否有可读状态。
         """
-        # 防止请求堆积
-        if self._control_status_requesting:
-            return False
-
-        if not hasattr(self, '_get_status_client') or \
-        not self._get_status_client.wait_for_service(timeout_sec=0.2):
-            return False
-
-        request = Trigger.Request()
-        try:
-            self._control_status_requesting = True
-            future = self._get_status_client.call_async(request)
-            future.add_done_callback(self._on_get_control_status_response)
-            return True
-        except Exception as e:
-            self._control_status_requesting = False
-            self.get_logger().error(f"Failed to refresh control status: {e}")
-            return False
+        with self._control_lock:
+            return self._control_status != "UNKNOWN"
 
     def cancel_chassis_control(self) -> bool:
-        """请求取消当前的控制任务。
+        """取消当前底盘控制 action（非阻塞）。
 
         返回:
-            bool: 如果服务调用成功则为 True。
+            bool: 如果取消请求成功发出则为 True。
         """
-        if not hasattr(
-                self, '_cancel_control_client'
-        ) or not self._cancel_control_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().error("Cancel control service not available.")
+        with self._control_lock:
+            goal_handle = self._control_goal_handle
+            current_task_id = self._control_task_id
+
+        if goal_handle is None:
+            self.get_logger().warning("No active control goal to cancel.")
             return False
 
-        # 非阻塞调用：发送请求后立即返回，结果由回调处理
-        request = Trigger.Request()
         try:
-            future = self._cancel_control_client.call_async(request)
-            future.add_done_callback(self._on_cancel_control_response)
+            cancel_future = goal_handle.cancel_goal_async()
+            cancel_future.add_done_callback(
+                lambda future: self._on_control_cancel_response(
+                    future, current_task_id))
             self.get_logger().info("Cancel control request sent.")
             return True
         except Exception as e:
@@ -397,25 +856,62 @@ class NavigationClient(ABC, Node):
         Returns:
             bool: 如果目标发送成功则为 True。
         """
-        chassis_position = PoseStamped()
-        chassis_position.header.frame_id = "base_link"
-        chassis_position.pose.position.x = position[0]
-        chassis_position.pose.position.y = 0.0
-        chassis_position.pose.position.z = 0.0
-
-        rotation = R.from_euler('xyz', [0, 0, position[2]], degrees=True)
-        quat_arry = rotation.as_quat()
-
-        chassis_position.pose.orientation.x = quat_arry[0]
-        chassis_position.pose.orientation.y = quat_arry[1]
-        chassis_position.pose.orientation.z = quat_arry[2]
-        chassis_position.pose.orientation.w = quat_arry[3]
         if position[0] != 0.0 and position[2] != 0:
             self.get_logger().info(
                 "illegal position, x and yaw should not be set together.")
             return False
 
-        self._set_ctrl_publisher.publish(chassis_position)
+        if self._set_ctrl_client is None:
+            self.get_logger().error(
+                "PreciseControl action client not initialized.")
+            return False
+
+        if not self._set_ctrl_client.wait_for_server(timeout_sec=1.0):
+            self.get_logger().error(
+                "PreciseControl action server not available.")
+            return False
+
+        control_goal = PreciseControl.Goal()
+        control_goal.target_pose = PoseStamped()
+        control_goal.target_pose.header.frame_id = "base_link"
+        control_goal.target_pose.pose.position.x = float(position[0])
+        control_goal.target_pose.pose.position.y = 0.0
+        control_goal.target_pose.pose.position.z = 0.0
+
+        rotation = R.from_euler('xyz', [0, 0, position[2]], degrees=True)
+        quat_arry = rotation.as_quat()
+
+        control_goal.target_pose.pose.orientation.x = quat_arry[0]
+        control_goal.target_pose.pose.orientation.y = quat_arry[1]
+        control_goal.target_pose.pose.orientation.z = quat_arry[2]
+        control_goal.target_pose.pose.orientation.w = quat_arry[3]
+
+        with self._control_lock:
+            self._control_task_id += 1
+            current_task_id = self._control_task_id
+            self._control_goal_handle = None
+            self._control_result = None
+            self._control_status = "CONTROL"
+            self._last_control_status = "CONTROL"
+            self._last_control_status_success = True
+            self._last_control_status_time = time.time()
+
+        try:
+            send_future = self._set_ctrl_client.send_goal_async(
+                control_goal,
+                feedback_callback=lambda feedback_msg: self.
+                _on_control_feedback(feedback_msg, current_task_id))
+            send_future.add_done_callback(
+                lambda future: self._on_control_goal_response(
+                    future, current_task_id))
+        except Exception as e:
+            self._set_control_status("FAILED", current_task_id)
+            self._clear_control_goal(current_task_id)
+            self.get_logger().error(f"Failed to send precise control goal: {e}")
+            return False
+        self.get_logger().info(
+            f"Precise control goal sent: x={position[0]}, yaw={position[2]}deg, frame=base_link"
+        )
         return True
 
     def set_goal_tolerance(self, xy_tolerance: float,
@@ -523,6 +1019,12 @@ class NavigationClient(ABC, Node):
         r"""Spin the node once with a timeout of 0.1 sec."""
         rclpy.spin_once(self, timeout_sec=timeout_sec)
 
+    def _spin_once_if_not_executed(self, timeout_sec: float = 0.01):
+        try:
+            self.spin_once(timeout_sec=timeout_sec)
+        except RuntimeError as e:
+            self.get_logger().debug(f"spin_once skipped: {e}")
+
     def spin(self):
         r"""Continuously spin the node while rclpy is running."""
         while rclpy.ok():
@@ -599,34 +1101,129 @@ class NavigationClient(ABC, Node):
         except Exception as e:
             self.get_logger().error(f"Error in cancel response: {str(e)}")
 
-    def _on_cancel_control_response(self, future):
-        """Callback for cancel control service response (non-blocking)."""
-        try:
-            response = future.result()
-            self.get_logger().info(
-                f"Cancel control response: {response.message}")
-        except Exception as e:
-            self.get_logger().error(f"Error in cancel control response: {e}")
-
-    def _on_get_control_status_response(self, future):
-        """Callback for get_control_status async response (non-blocking)."""
-        self._control_status_requesting = False
+    def _on_control_goal_response(self, future, task_id):
+        """Callback for precise control goal response."""
+        with self._control_lock:
+            if task_id != self._control_task_id:
+                return
 
         try:
-            response = future.result()
+            goal_handle = future.result()
+            if not goal_handle.accepted:
+                self._set_control_status("FAILED", task_id)
+                self._clear_control_goal(task_id)
+                self.get_logger().error("Precise control goal was rejected.")
+                return
 
-            # 记录时间戳
-            self._last_control_status_time = time.time()
+            with self._control_lock:
+                if task_id != self._control_task_id:
+                    return
+                self._control_goal_handle = goal_handle
 
-            # 直接缓存（假设底层返回的就是合法状态）
-            self._last_control_status = response.message
-            self._last_control_status_success = bool(response.success)
-
-            # self.get_logger().info(f"Control status updated: {response.message}")
+            self.get_logger().info("Precise control goal accepted.")
+            result_future = goal_handle.get_result_async()
+            with self._control_lock:
+                if task_id == self._control_task_id:
+                    self._control_result_future = result_future
+            result_future.add_done_callback(
+                lambda result_future: self._on_control_result(
+                    result_future, task_id))
         except Exception as e:
-            self._last_control_status_success = False
+            self._set_control_status("FAILED", task_id)
+            self._clear_control_goal(task_id)
             self.get_logger().error(
-                f"Error in get control status response: {e}")
+                f"Error in precise control goal response: {e}")
+
+    def _on_control_feedback(self, feedback_msg, task_id):
+        """Callback for precise control feedback."""
+        with self._control_lock:
+            if task_id != self._control_task_id:
+                return
+            status = feedback_msg.feedback.current_status
+
+        if status:
+            self._set_control_status(status, task_id)
+            if status in self._control_terminal_states:
+                self._clear_control_goal(task_id)
+
+    def _on_control_result(self, future, task_id):
+        """Callback for precise control result."""
+        with self._control_lock:
+            if task_id != self._control_task_id:
+                return
+
+        try:
+            result = future.result()
+            with self._control_lock:
+                if task_id != self._control_task_id:
+                    return
+                self._control_result = result
+
+            if result.status == GoalStatus.STATUS_CANCELED:
+                self._set_control_status("CANCELLED", task_id)
+                self._clear_control_goal(task_id)
+                self.get_logger().info("Precise control goal was cancelled.")
+            elif result.status == GoalStatus.STATUS_SUCCEEDED and result.result.success:
+                self._set_control_status("SUCCEEDED", task_id)
+                self._clear_control_goal(task_id)
+                self.get_logger().info(
+                    f"Precise control succeeded: {result.result.message}")
+            else:
+                self._set_control_status("FAILED", task_id)
+                self._clear_control_goal(task_id)
+                self.get_logger().error(
+                    f"Precise control failed with status {result.status}: "
+                    f"{result.result.message}")
+        except Exception as e:
+            self._set_control_status("FAILED", task_id)
+            self._clear_control_goal(task_id)
+            self.get_logger().error(
+                f"Error getting precise control result: {e}")
+
+    def _on_control_cancel_response(self, future, task_id):
+        """Callback for precise control cancel response."""
+        with self._control_lock:
+            if task_id != self._control_task_id:
+                return
+
+        try:
+            future.result()
+        except Exception as e:
+            self.get_logger().error(
+                f"Error in precise control cancel response: {e}")
+            return
+
+        self._set_control_status("CANCELLING", task_id)
+        self.get_logger().info("Precise control goal cancel request accepted.")
+
+    def _set_control_status(self, status: str, task_id: int = None):
+        with self._control_lock:
+            if task_id is not None and task_id != self._control_task_id:
+                return
+            self._control_status = status
+            self._last_control_status = status
+            self._last_control_status_success = status != "UNKNOWN"
+            self._last_control_status_time = time.time()
+            should_log = status != self._last_logged_control_status
+            if should_log:
+                self._last_logged_control_status = status
+
+        if should_log:
+            self.get_logger().info(f"Precise control status: {status}")
+
+    def _log_control_status_once(self, status: str):
+        with self._control_lock:
+            if status == self._last_logged_control_status:
+                return
+            self._last_logged_control_status = status
+        self.get_logger().info(f"Precise control status: {status}")
+
+    def _clear_control_goal(self, task_id: int = None):
+        with self._control_lock:
+            if task_id is not None and task_id != self._control_task_id:
+                return
+            self._control_goal_handle = None
+            self._control_result_future = None
 
     def _get_param(self, client, name: str):
         if not client.wait_for_service(timeout_sec=0.5):

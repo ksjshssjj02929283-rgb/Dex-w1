@@ -2,6 +2,10 @@
 
 ## [Unrelease]
 
+## [V0.6.0]
+### Feat
+- 适配ee_devices 0.4.3 (dexe_interfaces >= dev-e112b31c851b361d74156e2deee1e46ae5e8cac1)
+
 ## [V0.5.0]
 ### Feat
 - 支持dexe_rp提供的DoubleS轨迹规划算法和calc_next_iks算法

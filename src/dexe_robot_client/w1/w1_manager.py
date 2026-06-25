@@ -733,6 +733,22 @@ class W1Manager:
             base_position)
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
+    def move_chassis_road_navigation(self,
+                                     waypoints: list,
+                                     frame_id: str = "map",
+                                     timeout_sec: float = 10.0,
+                                     behavior_tree: str = "") -> StatusCode:
+        """路网/多路点导航，waypoints 为 [x, y, yaw_rad] 列表。"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        res = self._get_chassis_client().set_chassis_road_navigation(
+            waypoints, frame_id, timeout_sec, behavior_tree)
+        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
+
     def move_chassis_ctrl(self, base_position: np.ndarray) -> StatusCode:
         """移动底盘至目标位置，使用底盘控制接口"""
         if not self._use_nav:
@@ -795,6 +811,42 @@ class W1Manager:
             return StatusCode.FAIL, "NOT_INITIALIZED"
         return StatusCode.SUCCESS, self._get_chassis_client().get_nav_state()
 
+    def get_road_navigation_status(self) -> tuple[StatusCode, str]:
+        """获取当前路网/多路点导航状态。"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL, "DISABLED"
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL, "NOT_INITIALIZED"
+        return StatusCode.SUCCESS, self._get_chassis_client(
+        ).get_road_navigation_status()
+
+    def get_road_navigation_result(self) -> tuple[StatusCode, bool, str]:
+        """获取最近一次路网/多路点导航结果。"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL, False, "DISABLED"
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL, False, "NOT_INITIALIZED"
+        success, message = self._get_chassis_client(
+        ).get_road_navigation_result()
+        return StatusCode.SUCCESS, success, message
+
+    def get_all_nav_points(
+            self) -> tuple[StatusCode, dict[str, tuple[float, float, float]]]:
+        """获取所有路网导航点，返回点位名称到 x/y/theta_rad 的映射。"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL, {}
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL, {}
+        nav_points = self._get_chassis_client().get_all_nav_points()
+        return (StatusCode.SUCCESS if nav_points else StatusCode.FAIL,
+                nav_points)
+
     def get_control_status(self) -> str:
         """获取底盘控制状态"""
         if not self._use_nav:
@@ -807,7 +859,7 @@ class W1Manager:
         ).get_control_status()
 
     def set_auto_charging(self) -> StatusCode:
-        """调用回充服务"""
+        """发送回充 action"""
         if not self._use_nav:
             self.logger.error("Navigation function is disabled.")
             return StatusCode.FAIL
@@ -815,6 +867,17 @@ class W1Manager:
             self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL
         res = self._get_chassis_client().set_chassis_auto_charging()
+        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
+
+    def cancel_auto_charging(self) -> StatusCode:
+        """取消当前回充 action"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        res = self._get_chassis_client().cancel_auto_charging()
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def cancel_chassis_motion(self) -> StatusCode:
@@ -826,12 +889,18 @@ class W1Manager:
             self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL
 
-        self.logger.info("Sending request to cancel navigation and control...")
+        self.logger.info(
+            "Sending request to cancel navigation, control and auto charging..."
+        )
         nav_cancel_ok = self._get_chassis_client().cancel_chassis_nav2()
+        road_nav_cancel_ok = self._get_chassis_client().cancel_road_navigation()
         control_cancel_ok = self._get_chassis_client().cancel_chassis_control()
+        auto_charging_cancel_ok = (
+            self._get_chassis_client().cancel_auto_charging())
 
         # 只要有一个成功，就认为取消指令已尽力发送
-        if nav_cancel_ok or control_cancel_ok:
+        if (nav_cancel_ok or road_nav_cancel_ok or control_cancel_ok or
+                auto_charging_cancel_ok):
             return StatusCode.SUCCESS
         return StatusCode.FAIL
 
@@ -919,7 +988,7 @@ class W1Manager:
             return StatusCode.FAIL
         if not self._check_qpos_dimension(name, qpos_):
             return StatusCode.DIM_MISMATCH
-        res = self._get_arm_ee_client(name).set_pos(qpos_)
+        res = self._get_arm_ee_client(name).set_pos(qpos_.tolist())
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def set_home_qpos(self,
@@ -994,8 +1063,9 @@ class W1Manager:
         if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name, False):
                 return StatusCode.FAIL, None
-            res, value = self._get_arm_ee_client(name).get_pos()
-            return (StatusCode.SUCCESS if res else StatusCode.FAIL), value
+            res, info = self._get_arm_ee_client(name).get_info()
+            return (StatusCode.SUCCESS if res else StatusCode.FAIL), np.array(
+                info.joint_position)
 
         robot_info = self.robot_client.get_info()
         if robot_info.joint_position_cmd is None and robot_info.joint_position is None:
@@ -1152,7 +1222,8 @@ class W1Manager:
                      qpos: np.ndarray,
                      armlee_qpos: np.ndarray = None,
                      armree_qpos: np.ndarray = None,
-                     robot_name: str = "whole_body") -> StatusCode:
+                     robot_name: str = "whole_body",
+                     save_scene: bool = True) -> StatusCode:
         """检查qpos状态是否碰撞"""
         if not self._check_qpos_dimension("full_body", qpos):
             return StatusCode.DIM_MISMATCH
@@ -1181,8 +1252,10 @@ class W1Manager:
                                               armree_tf)
         res = self.fcl_checker.naive_check_collision(robot_name=robot_name)
         if res:
-            self.fcl_checker.update_vis_transform(
-                torso_tf + head_tf + arml_tf + armr_tf, armlee_tf, armree_tf)
+            if save_scene:
+                self.fcl_checker.update_vis_transform(
+                    torso_tf + head_tf + arml_tf + armr_tf, armlee_tf,
+                    armree_tf)
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def _is_traj_collision(self,
@@ -1193,7 +1266,8 @@ class W1Manager:
                                                                 list]] = None,
                            right_arm_ee_trigger_list: list[tuple[int,
                                                                  list]] = None,
-                           step: int = 5) -> StatusCode:
+                           step: int = 5,
+                           save_scene: bool = True) -> StatusCode:
         """检查轨迹是否碰撞
         Args:
             qpos_array (np.ndarray): 10ms间隔的轨迹
@@ -1250,10 +1324,10 @@ class W1Manager:
             right_arm_ee_qpos_array_check = np.vstack(
                 (right_arm_ee_qpos_array[::step], right_arm_ee_qpos_array[-1]))
             for idx in range(qpos_array_check.shape[0]):
-                if self.is_collision(
-                        qpos_array_check[idx],
-                        left_arm_ee_qpos_array_check[idx],
-                        right_arm_ee_qpos_array_check[idx]) != StatusCode.FAIL:
+                if self.is_collision(qpos_array_check[idx],
+                                     left_arm_ee_qpos_array_check[idx],
+                                     right_arm_ee_qpos_array_check[idx],
+                                     save_scene=save_scene) != StatusCode.FAIL:
                     self.logger.error(
                         f"Traj is collision at idx {idx}, qpos {qpos_array_check[idx]}, do not executed!"
                     )
@@ -1262,7 +1336,8 @@ class W1Manager:
         else:
             qpos_array_check = np.vstack((qpos_array[::step], qpos_array[-1]))
             for qpos in qpos_array_check:
-                if self.is_collision(qpos) != StatusCode.FAIL:
+                if self.is_collision(qpos,
+                                     save_scene=save_scene) != StatusCode.FAIL:
                     self.logger.error(
                         f"Traj is collision at {qpos}, do not executed!")
                     return StatusCode.SUCCESS
@@ -1585,7 +1660,7 @@ class W1Manager:
                 if local_count < target_count:
                     continue
                 elif local_count == target_count:
-                    ee_client.set_pos(np.array(target_ee_qpos))
+                    ee_client.set_pos(target_ee_qpos)
                     ee_trigger_list_[idx][2] = True
                     self.logger.debug(
                         f"{ee_name} has triggered: {target_count} {target_ee_qpos}."
