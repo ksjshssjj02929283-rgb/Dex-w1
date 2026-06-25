@@ -73,9 +73,7 @@ private:
         "HIP_YAW_L_J3",       "KNEE_PITCH_L_J4",  "ANKLE_PITCH_L_J5",    "ANKLE_ROLL_L_J6",    "HIP_PITCH_R_J1",
         "HIP_ROLL_R_J2",      "HIP_YAW_R_J3",     "KNEE_PITCH_R_J4",     "ANKLE_PITCH_R_J5",   "ANKLE_ROLL_R_J6"};
 
-    const char* joint_minus_[10] = {"HEAD_PITCH_J2",   "SHOULDER_PITCH_R_J1", "ELBOW_PITCH_R_J3", "WRIST_PITCH_R_J5",
-                                    "WAIST_YAW",       "WAIST_ROLL",          "HIP_PITCH_L_J1",   "HIP_ROLL_L_J2",
-                                    "KNEE_PITCH_L_J4", "HIP_ROLL_R_J2"};
+    const char* joint_minus_[4] = {"HIP_PITCH_L_J1",   "HIP_ROLL_L_J2", "KNEE_PITCH_L_J4", "HIP_ROLL_R_J2"};
 
     double torque_limit_Nm_[18] = {10.0, 10.0, 31.0, 31.0, 31.0, 31.0, 10.0, 10.0, 10.0,
                                    31.0, 31.0, 31.0, 31.0, 10.0, 10.0, 10.0, 87.0, 87.0};
