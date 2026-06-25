@@ -42,6 +42,11 @@ RobotServer::RobotServer() : Node("robot_server") {
     joint_state_publisher_thread_ = std::thread(&RobotServer::JointStatePublisherThreadFunc, this);
 }
 
+RobotServer::~RobotServer() {
+    if (torque_control_thread_.joinable()) torque_control_thread_.join();
+    if (joint_state_publisher_thread_.joinable()) joint_state_publisher_thread_.join();
+}
+
 void RobotServer::JointCommandCallback(const JointCommandMsg::SharedPtr msg) {
     auto robot_control_temp = robot_control_;
     for (size_t i = 0; i < msg->name.size(); ++i) {

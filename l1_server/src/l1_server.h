@@ -21,6 +21,7 @@ using JointCommandMsg = joint_interfaces::msg::JointCommand;
 class RobotServer : public rclcpp::Node {
 public:
     RobotServer();
+    ~RobotServer() override;
 
 private:
     void JointControlThreadFunc();

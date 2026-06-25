@@ -40,7 +40,7 @@ fi
 kill_process "l1_server"
 
 # 配置 EtherCAT 伺服的位置跟随误差窗口
-taskset -c 6 script/set_max_position_following_error_window.sh > /dev/null 2>&1 &
+# taskset -c 6 script/set_max_position_following_error_window.sh > /dev/null 2>&1 &
 
 # 启动 l1_server
-taskset -c 6 ros2 run l1_server l1_server
+taskset -c 6 ./../install/l1_server/lib/l1_server/l1_server 
