@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Eigen/Dense>
 #include <bitset>
 #include <cmath>
 #include <cstdint>
@@ -147,11 +148,34 @@ std::ostringstream VectorToJsonArrayString(const VectorType &vec, int start_inde
 }  // namespace utils
 
 // L1 配置结构（从 l1_config.yaml 加载）
+
+// 单侧（左/右）踝关节并联机构参数
+struct AnkleParams {
+    Eigen::Vector3d r_roll_center{0.0, 0.0, 0.0};   // roll 旋转中心（基坐标系）
+    Eigen::Vector3d r_pitch_center{0.0, 0.0, 0.0};  // pitch 旋转中心（基坐标系）
+
+    Eigen::Vector3d r_a1{0.0, 0.0, 0.0};  // 执行器1 A点坐标
+    Eigen::Vector3d r_c1{0.0, 0.0, 0.0};  // 执行器1 C点初始坐标
+    double l_bar1 = 0.0;                  // 执行器1 法兰杆长度
+    double l_rod1 = 0.0;                  // 执行器1 连杆长度
+    double alpha_1_rad = 0.0;             // 执行器1 零位偏移
+
+    Eigen::Vector3d r_a2{0.0, 0.0, 0.0};  // 执行器2 A点坐标
+    Eigen::Vector3d r_c2{0.0, 0.0, 0.0};  // 执行器2 C点初始坐标
+    double l_bar2 = 0.0;                  // 执行器2 法兰杆长度
+    double l_rod2 = 0.0;                  // 执行器2 连杆长度
+    double alpha_2_rad = 0.0;             // 执行器2 零位偏移
+};
+
 struct L1Config {
-    int run_mode = 0;  // 上肢控制模式: 0=位置模式, 1=力矩模式(CST)
+    int run_mode = 0;                // 上肢控制模式: 0=位置模式, 1=力矩模式(CST)
+    std::string robot_type;          // 机器人型号，如 "l1"
+    std::string version;             // 版本号，如 "v01"
+    AnkleParams left_ankle_params;   // 左侧并联踝关节几何参数
+    AnkleParams right_ankle_params;  // 右侧并联踝关节几何参数
 };
 
 // 从 YAML 文件加载配置
-L1Config LoadConfig(const std::string& config_path);
+L1Config LoadConfig(const std::string &config_path);
 
 }  // namespace robot_server_lib

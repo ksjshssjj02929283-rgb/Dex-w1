@@ -78,12 +78,6 @@ $$
 给定目标横滚角 $\phi$（Roll）和俯仰角 $\theta$（Pitch），基坐标系到末端坐标系的旋转矩阵为：
 
 $$
-\mathbf{X}_{rot} = \mathbf{R}_y(\theta) \cdot \mathbf{R}_x(\phi)
-$$
-
-其中：
-
-$$
 \mathbf{R}_x(\phi) = \begin{pmatrix}
 1 & 0 & 0 \\
 0 & \cos\phi & -\sin\phi \\
@@ -99,13 +93,46 @@ $$
 \end{pmatrix}
 $$
 
+### 3.1.1 旋转中心（物理机器人修正）
+
+实际机器人中，Roll 与 Pitch 的旋转中心**不重合**：Pitch 旋转中心比 Roll 旋转中心沿 $+Z$ 方向高出 10 mm。机构运动链为（基座 $\rightarrow$ 脚）：
+
+$$
+\text{基座} \rightarrow \text{Pitch（绕 } O_{pitch} \text{）} \rightarrow \text{Roll（绕 } O_{roll} \text{）} \rightarrow \text{脚}
+$$
+
+取基坐标系原点位于 Roll 旋转中心，则：
+
+$$
+O_{roll} = \begin{pmatrix} 0 \\ 0 \\ 0 \end{pmatrix}, \quad
+O_{pitch} = \begin{pmatrix} 0 \\ 0 \\ 10 \end{pmatrix} \text{ mm}
+$$
+
 ### 3.2 C点位置计算
 
-旋转后C点在基坐标系下的位置：
+考虑两级串联旋转中心后，脚（含 C 点）作为刚体在基坐标系下的变换为（先绕 $O_{roll}$ 做 Roll，再绕 $O_{pitch}$ 做 Pitch）：
 
 $$
-\vec{r}_{C_i} = \mathbf{X}_{rot} \cdot \vec{r}_{C_i}^{(0)}
+\vec{r}_{C_i} = \mathbf{R}_y(\theta)\,\mathbf{R}_x(\phi)\,\vec{r}_{C_i}^{(0)}
+\;+\; \mathbf{R}_y(\theta)\bigl(\mathbf{I} - \mathbf{R}_x(\phi)\bigr)\,O_{roll}
+\;+\; \bigl(\mathbf{I} - \mathbf{R}_y(\theta)\bigr)\,O_{pitch}
 $$
+
+代入 $O_{roll} = 0$：
+
+$$
+\vec{r}_{C_i} = \mathbf{R}_y(\theta)\,\mathbf{R}_x(\phi)\,\vec{r}_{C_i}^{(0)}
+\;+\; \bigl(\mathbf{I} - \mathbf{R}_y(\theta)\bigr)\,O_{pitch}
+$$
+
+其中第二项展开为：
+
+$$
+\bigl(\mathbf{I} - \mathbf{R}_y(\theta)\bigr)\begin{pmatrix}0\\0\\10\end{pmatrix}
+= \begin{pmatrix} -10\sin\theta \\ 0 \\ 10(1-\cos\theta) \end{pmatrix}
+$$
+
+可见该平移修正项**仅与 pitch 角 $\theta$ 有关**，与 roll 角 $\phi$ 无关。当 $O_{roll}=O_{pitch}=0$ 时，公式退化为原始单中心模型 $\vec{r}_{C_i} = \mathbf{R}_y(\theta)\mathbf{R}_x(\phi)\vec{r}_{C_i}^{(0)}$。
 
 ## 4 逆运动学求解
 

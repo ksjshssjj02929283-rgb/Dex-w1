@@ -3,6 +3,8 @@
 #include <cmath>
 #include <iostream>
 
+#include "utils.h"
+
 namespace robot_server_lib {
 namespace utils {
 
@@ -14,47 +16,29 @@ Eigen::Matrix3d Ry(double angle_rad) {
     return Eigen::AngleAxisd(angle_rad, Eigen::Vector3d::UnitY()).toRotationMatrix();
 }
 
-PMAnkle::PMAnkle(bool is_left_) : is_left_(is_left_) {
-    Eigen::Vector3d r_a_1_vec, r_c_1_vec, r_a_2_vec, r_c_2_vec;
-    double l_bar_1, l_rod_1, l_bar_2, l_rod_2, alpha_1_rad, alpha_2_rad;
+PMAnkle::PMAnkle(bool is_left, const AnkleParams& params) : is_left_(is_left) {
+    // 执行器1
+    params_1_ = AnkleActuatorParams(true, params.r_a1, params.r_c1, params.l_bar1, params.l_rod1, params.alpha_1_rad);
+    // 执行器2
+    params_2_ = AnkleActuatorParams(false, params.r_a2, params.r_c2, params.l_bar2, params.l_rod2, params.alpha_2_rad);
 
-    if (is_left_) {
-        r_a_1_vec = Eigen::Vector3d(-46, 0, 257.94);
-        r_c_1_vec = Eigen::Vector3d(-46, -59, 0.0);
-        l_bar_1 = 60;
-        l_rod_1 = 268.354;
-        alpha_1_rad = 0.1745;
-
-        r_a_2_vec = Eigen::Vector3d(-46, 0, 177.94);
-        r_c_2_vec = Eigen::Vector3d(-46, 59, 0.0);
-        l_bar_2 = 60;
-        l_rod_2 = 188.355;
-        alpha_2_rad = -0.1745;
-
-    } else {
-        r_a_1_vec = Eigen::Vector3d(-46, 0, 257.94);
-        r_c_1_vec = Eigen::Vector3d(-46, 59, 0.0);
-        l_bar_1 = 60;
-        l_rod_1 = 268.354;
-        alpha_1_rad = -0.1745;
-
-        r_a_2_vec = Eigen::Vector3d(-46, 0, 177.94);
-        r_c_2_vec = Eigen::Vector3d(-46, -59, 0.0);
-        l_bar_2 = 60;
-        l_rod_2 = 188.355;
-        alpha_2_rad = 0.1745;
-    }
-
-    params_1_ = AnkleActuatorParams(true, r_a_1_vec, r_c_1_vec, l_bar_1, l_rod_1, alpha_1_rad);
-    params_2_ = AnkleActuatorParams(false, r_a_2_vec, r_c_2_vec, l_bar_2, l_rod_2, alpha_2_rad);
+    // 旋转中心
+    roll_center_ = params.r_roll_center;
+    pitch_center_ = params.r_pitch_center;
 }
 
 std::pair<double, bool> PMAnkle::CalculateSingleThetaIInternal(double q_pitch_rad,
                                                                double q_roll_rad,
                                                                const AnkleActuatorParams& params) {
     const Eigen::Vector3d& r_ai = params.r_ai_0;
-    Eigen::Matrix3d x_rot = Ry(q_pitch_rad) * Rx(q_roll_rad);
-    Eigen::Vector3d r_ci = x_rot * params.r_ci_0_initial;
+    Eigen::Matrix3d R_pitch = Ry(q_pitch_rad);
+    Eigen::Matrix3d R_roll = Rx(q_roll_rad);
+    Eigen::Matrix3d I = Eigen::Matrix3d::Identity();
+    // 两级串联旋转（基座 -> pitch(绕 pitch_center_) -> roll(绕 roll_center_) -> 脚）：
+    //   r_ci = R_pitch*R_roll*p0 + R_pitch*(I-R_roll)*roll_center_ + (I-R_pitch)*pitch_center_
+    // 当 roll_center_ = pitch_center_ = 0 时退化为原始单中心模型。
+    Eigen::Vector3d r_ci = R_pitch * R_roll * params.r_ci_0_initial + R_pitch * (I - R_roll) * roll_center_ +
+                           (I - R_pitch) * pitch_center_;
     Eigen::Vector3d r_ci_minus_r_ai = r_ci - r_ai;
 
     double a_val = r_ci_minus_r_ai.y();

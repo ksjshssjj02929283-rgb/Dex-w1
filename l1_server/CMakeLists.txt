@@ -93,11 +93,9 @@ install(
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# l1_config.yaml：如果目标已存在则跳过安装
-set(CONFIG_INSTALL_PATH "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/l1_config.yaml")
-if(NOT EXISTS "${CONFIG_INSTALL_PATH}")
-  install(FILES l1_config.yaml DESTINATION share/${PROJECT_NAME})
-endif()
+# l1_config.yaml：始终安装为默认模板（跟踪源码）。用户自定义配置在 ~/dexe_robot_server_data，
+# 由 CheckConfig 合并保留，不会被覆盖。
+install(FILES l1_config.yaml DESTINATION share/${PROJECT_NAME})
 
 # feedback 可执行文件
 add_executable(feedback tools/feedback.cpp utils/NanoLog.cpp)

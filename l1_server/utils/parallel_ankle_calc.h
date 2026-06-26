@@ -4,6 +4,10 @@
 #include <stdexcept>
 
 namespace robot_server_lib {
+
+// 前向声明：踝关节几何参数结构（完整定义见 utils.h）
+struct AnkleParams;
+
 namespace utils {
 
 struct AnkleActuatorParams {
@@ -55,9 +59,16 @@ class PMAnkle {
 public:
     AnkleActuatorParams params_1_;
     AnkleActuatorParams params_2_;
-    bool is_left_;
+    bool is_left_ = false;
 
-    PMAnkle(bool is_left_);
+    // 旋转中心（基坐标系下）。实际机器人中 pitch 与 roll 的旋转中心不重合，
+    // pitch 旋转中心比 roll 旋转中心沿 +Z 方向高出 10mm。
+    Eigen::Vector3d roll_center_;
+    Eigen::Vector3d pitch_center_;
+
+    PMAnkle() = default;  // 默认构造，构造后需重新赋值才可用于计算
+    // 由外部传入的踝关节几何参数构造（参数来自 l1_config.yaml）
+    explicit PMAnkle(bool is_left, const AnkleParams& params);
 
     AnkleIKSolution GetAnkleMotorAngles(double q_pitch_rad, double q_roll_rad);
 

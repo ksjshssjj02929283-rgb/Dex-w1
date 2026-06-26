@@ -20,6 +20,9 @@ RobotServer::RobotServer(const std::string& config_path) : Node("robot_server") 
     // 加载配置
     auto config = LoadConfig(config_path);
     run_mode_ = config.run_mode;
+    // 用配置文件中的踝关节几何参数构造并联踝关节求解器
+    pm_ankle_left_ = utils::PMAnkle(true, config.left_ankle_params);
+    pm_ankle_right_ = utils::PMAnkle(false, config.right_ankle_params);
     RCLCPP_INFO(this->get_logger(), "Config loaded from %s, run_mode=%d", config_path.c_str(), run_mode_);
 
     LOG_INFO << "";

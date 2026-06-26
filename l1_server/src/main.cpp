@@ -1,17 +1,15 @@
-#include "l1_server.h"
-
 #include <yaml-cpp/yaml.h>
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
-
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 
+#include "l1_server.h"
+
 // 检查并合并配置文件：用户配置优先，缺少字段从默认配置补充
-static void CheckConfig(const std::filesystem::path& default_cfg_path,
-                        const std::filesystem::path& user_cfg_path) {
+static void CheckConfig(const std::filesystem::path& default_cfg_path, const std::filesystem::path& user_cfg_path) {
     // 确保用户配置目录存在
     if (!std::filesystem::exists(user_cfg_path.parent_path())) {
         std::filesystem::create_directories(user_cfg_path.parent_path());
@@ -19,8 +17,7 @@ static void CheckConfig(const std::filesystem::path& default_cfg_path,
 
     if (!std::filesystem::exists(user_cfg_path)) {
         // 用户配置不存在，直接拷贝默认配置
-        std::filesystem::copy_file(default_cfg_path, user_cfg_path,
-                                   std::filesystem::copy_options::overwrite_existing);
+        std::filesystem::copy_file(default_cfg_path, user_cfg_path, std::filesystem::copy_options::overwrite_existing);
         std::cout << "[INFO] Created default config: " << user_cfg_path << std::endl;
         return;
     }
