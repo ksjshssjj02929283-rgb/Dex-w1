@@ -18,6 +18,7 @@ from queue import Queue, Empty
 from copy import deepcopy
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
+from scipy.spatial.transform import Rotation, Slerp
 
 from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, download_w1_urdf, StatusCode
 from ..common.mapping_index import *
@@ -26,7 +27,7 @@ from ..navigation_client import ChassisClient
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
-from .path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm
+from .path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm, check_SE3_sparse_waypoints
 from .path_planner.cartesian_planner import CartesianPlanner
 from .path_planner.cartesian_to_joint_planner import CartesianToJointPlanner
 from .path_planner.fcl_checker import FCLChecker
@@ -4795,24 +4796,6 @@ class W1Manager:
             left_arm_ee_trigger_list=left_ee_trigger_list,
             right_arm_ee_trigger_list=right_ee_trigger_list)
 
-    def set_whole_body_ik_cost_type(self, cost_type: str):
-        """
-        Set the cost type for whole body ik solver. The cost type will affect the motion style of the planned trajectory.
-        
-        Args:
-            cost_type (str): the cost type for whole body ik solver, currently support "standard", "standard_bend_backward"
-        """
-
-        if cost_type not in self.cartesian_joint_planner.whole_body_ik_solver.supported_cost_types:
-            self.logger.error(
-                f"Unsupported cost type: {cost_type}, please choose \
-                    from {self.cartesian_joint_planner.whole_body_ik_solver.supported_cost_types}"
-            )
-            return StatusCode.INPUT_INVALID
-        self.cartesian_joint_planner.set_whole_body_ik_cost_type(
-            cost_type=cost_type)
-        return StatusCode.SUCCESS
-
     def plan_linear_dual_arm_sync(self,
                                   task_dict: dict,
                                   start_qpos: np.ndarray,
@@ -5228,6 +5211,84 @@ class W1Manager:
 
             return StatusCode.SUCCESS, interpolate_path
 
+    def _check_sample_step(self, path: list[np.ndarray], cartesian_step: float):
+        if len(path) < 2:
+            self.logger.error(
+                f"The number of sample points in path should be at least 2, but got {path.shape[0]}"
+            )
+            return False
+        if cartesian_step <= 0:
+            self.logger.error(
+                f"Invalid cartesian_step: {cartesian_step}, should be positive."
+            )
+            return False
+
+        total_dist = 0.0
+        for i in range(len(path) - 1):
+            dist = np.linalg.norm(path[i + 1][:3, 3] - path[i][:3, 3])
+            total_dist += dist
+        if total_dist <= cartesian_step:
+            return False
+        return True
+
+    def interpolate_se3_path_by_cartesian_step(
+            self, path: list[np.ndarray],
+            cartesian_step: float) -> list[np.ndarray]:
+        if cartesian_step <= 0.:
+            self.logger.error(
+                f"Invalid cartesian_step: {cartesian_step}, should be positive."
+            )
+            return False, None
+        if len(path) <= 1:
+            self.logger.error(
+                f"The number of points in path should be at least 2, but got {len(path)}"
+            )
+            return False, [poses[0].copy()] if len(path) == 1 else None
+
+        poses = [np.asarray(p, dtype=float) for p in path]
+        for idx, pose in enumerate(poses):
+            if pose.shape != (4, 4):
+                self.logger.error(
+                    f"Invalid pose shape: {pose.shape} at index {idx}, each pose should be a 4x4 homogeneous transformation matrix."
+                )
+                return False, None
+
+        interpolated_path = [poses[0].copy()]
+
+        for idx in range(len(poses) - 1):
+            pose0 = poses[idx]
+            pose1 = poses[idx + 1]
+
+            p0 = pose0[:3, 3]
+            p1 = pose1[:3, 3]
+
+            R0 = pose0[:3, :3]
+            R1 = pose1[:3, :3]
+
+            dist = np.linalg.norm(p1 - p0)
+
+            if dist <= cartesian_step:
+                interpolated_path.append(pose1.copy())
+                continue
+
+            key_rots = Rotation.from_matrix([R0, R1])
+            slerp = Slerp([0.0, 1.0], key_rots)
+
+            sample_distances = np.arange(cartesian_step, dist, cartesian_step)
+
+            for s in sample_distances:
+                ratio = s / dist
+
+                pose = np.eye(4)
+                pose[:3, 3] = p0 + ratio * (p1 - p0)
+                pose[:3, :3] = slerp([ratio]).as_matrix()[0]
+
+                interpolated_path.append(pose)
+
+            interpolated_path.append(pose1.copy())
+
+        return interpolated_path
+
     @time_consuming
     def plan_linear_whole_body_ik(self,
                                   start_qpos: np.ndarray,
@@ -5239,8 +5300,8 @@ class W1Manager:
                                   use_collision_validator: bool = True,
                                   movement_mode: str = "eager",
                                   eye_focus_point: np.ndarray = None,
-                                  is_torso_lean_backward: bool = False,
-                                  torso_lean_backward_threshold: float = None):
+                                  upper_body_leaning_threshold: float = None,
+                                  blend_tolerance: float = 0.005):
         """
         This function is used to plan linear trajectory of end effector in Cartesian space,
             and use whole body ik to solve the corresponding joint trajectory. 
@@ -5250,37 +5311,33 @@ class W1Manager:
             - If there is not end-effectors, start_left_arm_ee_qpos and start_right_arm_ee_qpos can be set to None
             - Arms' teaching point should be in chassis base-link frame
         """
-        if movement_mode not in [
-                "eager", "sync_endpoint", "sync_point_by_point"
-        ]:
+        self.logger.debug(
+            f"plan_linear_whole_body_ik() input cur_qpos: {start_qpos}")
+        self.logger.debug(
+            f"plan_linear_whole_body_ik() input cur_ee_qpos: {start_left_arm_ee_qpos}, {start_right_arm_ee_qpos}"
+        )
+        self.logger.debug("plan_linear_whole_body_ik() input waypoints_dict:")
+        self.logger.debug(waypoints_dict)
+        self.logger.debug(
+            f"plan_linear_whole_body_ik() input cartesian_step: {cartesian_step}"
+        )
+        self.logger.debug(
+            f"plan_linear_whole_body_ik() input use_collision_validator: {use_collision_validator}"
+        )
+        self.logger.debug(
+            f"plan_linear_whole_body_ik() input movement_mode: {movement_mode}")
+        self.logger.debug(
+            f"plan_linear_whole_body_ik() input eye_focus_point: {eye_focus_point}"
+        )
+        self.logger.debug(
+            f"plan_linear_whole_body_ik() input upper_body_leaning_threshold: {upper_body_leaning_threshold}"
+        )
+
+        if movement_mode not in ["eager", "sync_endpoint"]:
             self.logger.error(
-                f"Unsupported movement mode: {movement_mode}, please choose from ['eager', 'sync_endpoint', 'sync_point_by_point']"
+                f"Unsupported movement mode: {movement_mode}, please choose from ['eager', 'sync_endpoint']"
             )
             return StatusCode.INPUT_INVALID, None, None, None
-
-        if is_torso_lean_backward:
-            if torso_lean_backward_threshold is not None:
-                self.cartesian_joint_planner.set_whole_body_ik_lean_backward_threshold(
-                    torso_lean_backward_threshold)
-            else:
-                self.cartesian_joint_planner.set_whole_body_ik_cost_type(
-                    "standard_lean_backward")
-        else:
-            self.cartesian_joint_planner.set_whole_body_ik_cost_type("standard")
-
-        if eye_focus_point is not None:
-            if not isinstance(eye_focus_point, np.ndarray) or np.atleast_2d(
-                    eye_focus_point).shape != (1, 3):
-                self.logger.error(
-                    "eye_focus_point should be a numpy array with shape (3,) or (1, 3)."
-                )
-                return StatusCode.INPUT_INVALID, None, None, None
-            else:
-                eye_focus_point = eye_focus_point.reshape(3,)
-                self.cartesian_joint_planner.set_whole_body_ik_focus_point(
-                    eye_focus_point)
-        else:
-            self.cartesian_joint_planner.set_whole_body_ik_focus_point(None)
 
         left_parse_res, left_pos_raw_array, left_qvel_limits_array, _ = \
             self._parse_waypoints_from_dict("left_arm", waypoints_dict, speed_ratio, is_cartesian=True)
@@ -5397,33 +5454,71 @@ class W1Manager:
 
         if movement_mode == "eager":
             if not left_arm_static_flag:
-                left_bezier_planner = PathR3xSO3Bezier(left_pos_raw_list)
-                if not left_bezier_planner.calc_path(
-                        PathType.Bezier5thCartesian, 0.01):
-                    self.logger.error("Left arm bezier path planning failed.")
-                    return StatusCode.PLAN_PATH_FAIL, None, None, None
-                res, left_xpos_sample_array = self._interpolate_bezier_path(
-                    left_bezier_planner, cartesian_step)
-                if res != StatusCode.SUCCESS:
-                    self.logger.error(
-                        "Left arm bezier path interpolation failed.")
-                    return StatusCode.PLAN_PATH_FAIL, None, None, None
+                if check_SE3_sparse_waypoints(
+                        left_pos_raw_list,
+                        blend_tolerance) and self._check_sample_step(
+                            left_pos_raw_list, cartesian_step):
+                    left_bezier_planner = PathR3xSO3Bezier(left_pos_raw_list)
+                    if not left_bezier_planner.calc_path(
+                            PathType.Bezier5thCartesian, 0.01):
+                        self.logger.error(
+                            "Left arm bezier path planning failed.")
+                        return StatusCode.PLAN_PATH_FAIL, None, None, None
+                    res, left_xpos_sample_array = self._interpolate_bezier_path(
+                        left_bezier_planner, cartesian_step)
+                    if res != StatusCode.SUCCESS:
+                        self.logger.error(
+                            "Left arm bezier path interpolation failed.")
+                        return StatusCode.PLAN_PATH_FAIL, None, None, None
+                elif check_SE3_sparse_waypoints(
+                        left_pos_raw_list,
+                        blend_tolerance) and not self._check_sample_step(
+                            left_pos_raw_list, cartesian_step):
+                    left_xpos_sample_array = np.array(left_pos_raw_list)
+                elif not check_SE3_sparse_waypoints(
+                        left_pos_raw_list,
+                        blend_tolerance) and self._check_sample_step(
+                            left_pos_raw_list, cartesian_step):
+                    left_xpos_sample_array = self.interpolate_se3_path_by_cartesian_step(
+                        left_pos_raw_list, cartesian_step)
+                    left_xpos_sample_array = np.array(left_xpos_sample_array)
+                else:
+                    left_xpos_sample_array = np.array(left_pos_raw_list)
             else:
                 left_xpos_sample_array = np.array(left_pos_raw_list)
 
             if not right_arm_static_flag:
-                right_bezier_planner = PathR3xSO3Bezier(right_pos_raw_list)
-                if not right_bezier_planner.calc_path(
-                        PathType.Bezier5thCartesian, 0.01):
-                    self.logger.error("Right arm bezier path planning failed.")
-                    return StatusCode.PLAN_PATH_FAIL, None, None, None
+                if check_SE3_sparse_waypoints(
+                        right_pos_raw_list,
+                        blend_tolerance) and self._check_sample_step(
+                            right_pos_raw_list, cartesian_step):
+                    right_bezier_planner = PathR3xSO3Bezier(right_pos_raw_list)
+                    if not right_bezier_planner.calc_path(
+                            PathType.Bezier5thCartesian, 0.01):
+                        self.logger.error(
+                            "Right arm bezier path planning failed.")
+                        return StatusCode.PLAN_PATH_FAIL, None, None, None
 
-                res, right_xpos_sample_array = self._interpolate_bezier_path(
-                    right_bezier_planner, cartesian_step)
-                if res != StatusCode.SUCCESS:
-                    self.logger.error(
-                        "Right arm bezier path interpolation failed.")
-                    return StatusCode.PLAN_PATH_FAIL, None, None, None
+                    res, right_xpos_sample_array = self._interpolate_bezier_path(
+                        right_bezier_planner, cartesian_step)
+                    if res != StatusCode.SUCCESS:
+                        self.logger.error(
+                            "Right arm bezier path interpolation failed.")
+                        return StatusCode.PLAN_PATH_FAIL, None, None, None
+                elif check_SE3_sparse_waypoints(
+                        right_pos_raw_list,
+                        blend_tolerance) and not self._check_sample_step(
+                            right_pos_raw_list, cartesian_step):
+                    right_xpos_sample_array = np.array(right_pos_raw_list)
+                elif not check_SE3_sparse_waypoints(
+                        right_pos_raw_list,
+                        blend_tolerance) and self._check_sample_step(
+                            right_pos_raw_list, cartesian_step):
+                    right_xpos_sample_array = self.interpolate_se3_path_by_cartesian_step(
+                        right_pos_raw_list, cartesian_step)
+                    right_xpos_sample_array = np.array(right_xpos_sample_array)
+                else:
+                    right_xpos_sample_array = np.array(right_pos_raw_list)
             else:
                 right_xpos_sample_array = np.array(right_pos_raw_list)
 
@@ -5451,6 +5546,22 @@ class W1Manager:
             if left_arm_static_flag or right_arm_static_flag:
                 self.logger.error(
                     "In sync_endpoint mode, both arms should not be static.")
+                return StatusCode.INPUT_INVALID, None, None, None
+            if not check_SE3_sparse_waypoints(
+                    left_pos_raw_list,
+                    blend_tolerance) or not check_SE3_sparse_waypoints(
+                        right_pos_raw_list, blend_tolerance):
+                self.logger.error(
+                    "In sync_endpoint mode, the waypoints should be sparse for both arms."
+                )
+                return StatusCode.INPUT_INVALID, None, None, None
+            if not self._check_sample_step(
+                    left_pos_raw_list,
+                    cartesian_step) or not self._check_sample_step(
+                        right_pos_raw_list, cartesian_step):
+                self.logger.error(
+                    "In sync_endpoint mode, the cartesian sample step should be smaller than arm movement distance."
+                )
                 return StatusCode.INPUT_INVALID, None, None, None
             left_interpolate_num_list = self._cal_path_seg_interpolate_num(
                 left_pos_raw_list, cartesian_step)
@@ -5544,38 +5655,40 @@ class W1Manager:
         res, full_body_joint_traj = self.cartesian_joint_planner.plan_whole_body(
             start_qpos=start_qpos,
             left_end_effector_traj=np.asarray(left_xpos_sample_array),
-            right_end_effector_traj=np.asarray(right_xpos_sample_array))
-
-        # resolve for the last target
-        left_last_target_xpos = left_xpos_sample_array[-1]
-        right_last_target_xpos = right_xpos_sample_array[-1] @ np.linalg.inv(
-            self.cartesian_joint_planner.right_tcp)
-        if not is_torso_lean_backward:
-            self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
-                "standard_strict")
-        else:
-            self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
-                "standard_lean_backward_strict")
-        res, full_body_last_qpos = self.cartesian_joint_planner.whole_body_ik_solver.solve_ik(
-            left_ee_target=left_last_target_xpos,
-            right_ee_target=right_last_target_xpos,
-            cur_qpos=full_body_joint_traj[-1])
-        full_body_joint_traj = np.vstack(
-            [full_body_joint_traj, full_body_last_qpos])
-        qvel_limits_array_ = np.vstack(
-            [qvel_limits_array_, qvel_limits_array_[-1]])
-        if not is_torso_lean_backward:
-            self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
-                "standard")
-        else:
-            self.cartesian_joint_planner.whole_body_ik_solver.set_cost_function(
-                "standard_lean_backward")
+            right_end_effector_traj=np.asarray(right_xpos_sample_array),
+            upper_body_leaning_threshold=upper_body_leaning_threshold,
+            eye_focus_point=eye_focus_point,
+            is_strict_solution=False)
 
         if not res:
             self.logger.error(
                 "Whole body joint traj planning failed in plan_linear_whole_body_ik."
             )
             return StatusCode.PLAN_TRAJ_FAIL, None, None, None
+
+        # resolve for the last target
+        left_last_target_xpos = left_xpos_sample_array[-1]
+        right_last_target_xpos = right_xpos_sample_array[-1] @ np.linalg.inv(
+            self.cartesian_joint_planner.right_tcp)
+
+        res, full_body_last_qpos = self.cartesian_joint_planner.whole_body_ik_solver.solve_ik(
+            left_arm_target=left_last_target_xpos,
+            right_arm_target=right_last_target_xpos,
+            ref_qpos=full_body_joint_traj[-1],
+            upper_body_leaning_threshold=upper_body_leaning_threshold,
+            eye_focus_point=eye_focus_point,
+            is_strict_solution=True)
+
+        if not res:
+            self.logger.error(
+                "Last point strictly IK solving failed in plan_linear_whole_body_ik."
+            )
+            return StatusCode.PLAN_TRAJ_FAIL, None, None, None
+
+        full_body_joint_traj = np.vstack(
+            [full_body_joint_traj, full_body_last_qpos])
+        qvel_limits_array_ = np.vstack(
+            [qvel_limits_array_, qvel_limits_array_[-1]])
 
         # combine the start qpos
         full_body_joint_traj = np.vstack([start_qpos, full_body_joint_traj])

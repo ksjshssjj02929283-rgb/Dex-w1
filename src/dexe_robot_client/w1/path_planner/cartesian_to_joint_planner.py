@@ -8,12 +8,13 @@ All rights reserved.
 
 import numpy as np
 from copy import deepcopy
+import pathlib
 
-from ...common import get_logger, W1ArmType, W1Version
+from ...common import get_logger, time_consuming, W1ArmType, W1Version
 from ..utils.w1_params import W1Params
 from ...end_effector_client import EndEffectorType
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
-from ..kinematics.pin_ik_whole_body import PinIKWholeBody
+from ..kinematics.whole_body_ik import *
 from .utils.robot_type import *
 from dexe_rp import DexforceW1Kinematics, StatusType, calc_nearest_iks
 
@@ -58,21 +59,26 @@ class CartesianToJointPlanner:
             raise ValueError(f"Unsupported W1 version: {self._w1_version}")
         urdf_path = get_robot_urdf(robot_type=robot_type)
 
-        self.whole_body_ik_solver = PinIKWholeBody(urdf_path,
-                                                   track_type="standard",
-                                                   cost_type="standard")
+        if robot_type == RobotType.W1V02_1 or robot_type == RobotType.W1V02_2:
+            urdf_path = pathlib.Path.home(
+            ) / ".cache/dexe_data/assembled/w1/robot.urdf"
+            tracking_frame_config = TrackingFrameConfig.init_from_urdf(
+                robot="W1V02X", urdf_path=urdf_path)
+            joint_name_config = JointNameConfig.init_from_robot(robot="W1V02X")
+        else:
+            raise ValueError(f"Unsupported robot type: {robot_type}")
+
+        self.whole_body_ik_solver = WholeBodyIK(
+            urdf_path,
+            tracking_frame_config=tracking_frame_config,
+            joint_name_config=joint_name_config,
+            solver_options=IpoptOptions(),
+            weight_config=WeightConfig(),
+            posture_config=PostureConfig(),
+            freezed_joint_dict=None)
 
         self.logger.info(
             f"Initialize kinematic solver for Cartesian to Joint Planner")
-
-    def set_whole_body_ik_cost_type(self, cost_type: str):
-        self.whole_body_ik_solver.set_cost_function(cost_type=cost_type)
-
-    def set_whole_body_ik_focus_point(self, focus_point: np.ndarray):
-        self.whole_body_ik_solver.set_focus_point(focus_point)
-
-    def set_whole_body_ik_lean_backward_threshold(self, threshold: float):
-        self.whole_body_ik_solver.set_lean_backward_threshold(threshold)
 
     def set_arm_tcp(self, name: str, pose: np.ndarray):
         if name == "left_arm":
@@ -133,12 +139,14 @@ class CartesianToJointPlanner:
             return False, None
         return True, np.array(qpos_list)
 
-    from dexe_robot_client.common import time_consuming
-
     @time_consuming
-    def plan_whole_body(self, start_qpos: np.ndarray,
+    def plan_whole_body(self,
+                        start_qpos: np.ndarray,
                         left_end_effector_traj: np.ndarray,
-                        right_end_effector_traj: np.ndarray):
+                        right_end_effector_traj: np.ndarray,
+                        upper_body_leaning_threshold: float = None,
+                        eye_focus_point: np.ndarray = None,
+                        is_strict_solution: bool = False):
         """
         This function will solve whole body IK by tracking the dual arm end-effector poses
         Args:
@@ -166,9 +174,12 @@ class CartesianToJointPlanner:
         for left_pose, right_pose in zip(left_end_effector_traj,
                                          right_end_effector_traj):
             res_ik, result_qpos = self.whole_body_ik_solver.solve_ik(
-                left_ee_target=left_pose,
-                right_ee_target=right_pose,
-                cur_qpos=current_qpos)
+                left_arm_target=left_pose,
+                right_arm_target=right_pose,
+                ref_qpos=current_qpos,
+                upper_body_leaning_threshold=upper_body_leaning_threshold,
+                eye_focus_point=eye_focus_point,
+                is_strict_solution=is_strict_solution)
             if not res_ik:
                 self.logger.error(
                     f"Whole body Cartesian_to_joint_planner: solve ik failed, cur_qpos(deg): {np.rad2deg(current_qpos)}"
@@ -343,13 +354,3 @@ class CartesianToJointPlanner:
                 "whole body joint dense trajectory generation failed")
             return False, None
         return True, qpos_array
-
-    def check_joint_traj_collision(self):
-        pass
-
-    def check_end_effector_traj_collision(self):
-        # TODO: implement this in cartesian planner?
-        pass
-
-    def check_joint_traj_continuity(self):
-        pass
