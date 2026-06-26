@@ -16,7 +16,6 @@ from dexe_robot_client.common.mapping_index import *
 from scipy.spatial.transform import Rotation as R
 from IPython import embed
 from dexe_robot_client.common.config import DATA_DIR
-from dexe_robot_client.w1.kinematics.pin_ik_whole_body import PinIKWholeBody
 from dexe_robot_client.w1.utils.unit_conversion import *
 
 from dexe_rp import W1Vis, pos_wxyz_to_homogeneous, Box, Sphere, Mesh, Material, rotation_to_wxyz
@@ -520,9 +519,9 @@ def test_plan_linear_whole_body_ik(start_qpos, start_left_arm_ee_qpos,
                                              start_right_arm_ee_qpos,
                                              task_dict,
                                              use_collision_validator=False,
-                                             movement_mode="sync_point_by_point",
+                                             movement_mode="eager",
                                              eye_focus_point=np.array([0.6, 0.0, 0.8]),
-                                             is_torso_lean_backward=True)
+                                             )
     return res, trajectory, armlee_trigger, armree_trigger
 
 
