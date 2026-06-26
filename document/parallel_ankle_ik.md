@@ -9,7 +9,7 @@
 ### 2.1 执行器结构
 
 每个执行器由以下组件构成：
-
+原点O为脚踝Roll方向旋转中心
 | 组件 | 说明 |
 |------|------|
 | A点 | 电机输出端固定点（基坐标系下坐标已知） |
@@ -35,8 +35,8 @@ $$
 
 | 参数 | 值 |
 |------|-----|
-| A点坐标 | (-46, 0, 257.94) mm |
-| C点初始坐标 | (-46, -59, 0) mm |
+| A1点坐标 | (-46, 0, 257.94) mm |
+| C1点初始坐标 | (-46, -59, 0) mm |
 | 法兰杆长度 $l_{bar}$ | 60 mm |
 | 连杆长度 $l_{rod}$ | 268.354 mm |
 | 零位偏移 $\alpha_{offset}$ | 0.1745 rad (10°) |
@@ -45,8 +45,8 @@ $$
 
 | 参数 | 值 |
 |------|-----|
-| A点坐标 | (-46, 0, 177.94) mm |
-| C点初始坐标 | (-46, 59, 0) mm |
+| A2点坐标 | (-46, 0, 177.94) mm |
+| C2点初始坐标 | (-46, 59, 0) mm |
 | 法兰杆长度 $l_{bar}$ | 60 mm |
 | 连杆长度 $l_{rod}$ | 188.355 mm |
 | 零位偏移 $\alpha_{offset}$ | -0.1745 rad (-10°) |
@@ -55,8 +55,8 @@ $$
 
 | 参数 | 值 |
 |------|-----|
-| A点坐标 | (-46, 0, 257.94) mm |
-| C点初始坐标 | (-46, 59, 0) mm |
+| A1点坐标 | (-46, 0, 257.94) mm |
+| C1点初始坐标 | (-46, 59, 0) mm |
 | 法兰杆长度 $l_{bar}$ | 60 mm |
 | 连杆长度 $l_{rod}$ | 268.354 mm |
 | 零位偏移 $\alpha_{offset}$ | -0.1745 rad (-10°) |
@@ -65,8 +65,8 @@ $$
 
 | 参数 | 值 |
 |------|-----|
-| A点坐标 | (-46, 0, 177.94) mm |
-| C点初始坐标 | (-46, -59, 0) mm |
+| A2点坐标 | (-46, 0, 177.94) mm |
+| C2点初始坐标 | (-46, -59, 0) mm |
 | 法兰杆长度 $l_{bar}$ | 60 mm |
 | 连杆长度 $l_{rod}$ | 188.355 mm |
 | 零位偏移 $\alpha_{offset}$ | 0.1745 rad (10°) |
@@ -140,21 +140,27 @@ $$
 
 ### 4.3 角度求解
 
-最终电机角度为：
+中间几何角度（尚未加入零位偏移与方向修正）：
 
 $$
-\theta_i = \arcsin\left( \frac{b \cdot c + |a| \cdot \sqrt{a^2 + b^2 - c^2}}{a^2 + b^2} \right) + \alpha_{offset}
+\theta_i = \arcsin\left( \frac{b \cdot c + |a| \cdot \sqrt{a^2 + b^2 - c^2}}{a^2 + b^2} \right)
 $$
 
 ### 4.4 电机方向修正
 
-由于左右踝关节的实际电机转向可能与理论方向相反，需要对计算角度进行符号修正。当踝关节类型（左右）与执行器编号（是否为第一个）不匹配时取反：
+由于左右踝关节的实际电机转向可能与理论方向相反，需要对计算角度进行符号修正。当踝关节类型（左右）与执行器编号（是否为第一个）相同时取反（即 `is_left == is_first_actuator`，XNOR 关系）：
 
 $$
 \theta_i = \begin{cases}
--\theta_i + \alpha_{offset} & \text{if } is\_left \oplus is\_first\_actuator \\
-\theta_i + \alpha_{offset} & \text{otherwise}
+-\theta_i & \text{if } is\_left == is\_first\_actuator \\
+\theta_i & \text{otherwise}
 \end{cases}
+$$
+
+随后叠加零位偏移，得到最终电机角度：
+
+$$
+\theta_i \mathrel{+}= \alpha_{offset}
 $$
 
 ## 5 构型可行性条件
@@ -299,14 +305,13 @@ $$
 \mathbf{K}_{task} = \begin{pmatrix} k_{pitch} & 0 \\ 0 & k_{roll} \end{pmatrix}
 $$
 
-展开为标量形式：
+记 $\mathbf{M} = \mathbf{J}^{-1}$（即雅可比矩阵的逆，$\mathbf{M}_{ij}$ 为其元素），$\mathbf{K}_{motor}$ 一般为满阵：
 
 $$
-k_1 = k_{pitch} \cdot (J_{11}^{-1})^2 + k_{roll} \cdot (J_{12}^{-1})^2
-$$
-
-$$
-k_2 = k_{pitch} \cdot (J_{21}^{-1})^2 + k_{roll} \cdot (J_{22}^{-1})^2
+\mathbf{K}_{motor} = \begin{pmatrix}
+k_{pitch} M_{11}^2 + k_{roll} M_{21}^2 & k_{pitch} M_{11} M_{12} + k_{roll} M_{21} M_{22} \\
+k_{pitch} M_{11} M_{12} + k_{roll} M_{21} M_{22} & k_{pitch} M_{12}^2 + k_{roll} M_{22}^2
+\end{pmatrix}
 $$
 
 **物理意义**：电机刚度通常大于任务空间刚度，因为电机位于传动链的更前端。当机构处于某些特定构型时，一个方向的刚度可能会被"放大"到电机空间。
@@ -325,12 +330,11 @@ $$
 \mathbf{D}_{task} = \begin{pmatrix} d_{pitch} & 0 \\ 0 & d_{roll} \end{pmatrix}
 $$
 
-展开为标量形式：
+记 $\mathbf{M} = \mathbf{J}^{-1}$（雅可比矩阵的逆，$\mathbf{M}_{ij}$ 为其元素），$\mathbf{D}_{motor}$ 一般为满阵：
 
 $$
-d_1 = d_{pitch} \cdot (J_{11}^{-1})^2 + d_{roll} \cdot (J_{12}^{-1})^2
-$$
-
-$$
-d_2 = d_{pitch} \cdot (J_{21}^{-1})^2 + d_{roll} \cdot (J_{22}^{-1})^2
+\mathbf{D}_{motor} = \begin{pmatrix}
+d_{pitch} M_{11}^2 + d_{roll} M_{21}^2 & d_{pitch} M_{11} M_{12} + d_{roll} M_{21} M_{22} \\
+d_{pitch} M_{11} M_{12} + d_{roll} M_{21} M_{22} & d_{pitch} M_{12}^2 + d_{roll} M_{22}^2
+\end{pmatrix}
 $$
