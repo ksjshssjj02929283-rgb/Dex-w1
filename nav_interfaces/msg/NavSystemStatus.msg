@@ -16,9 +16,16 @@ bool bumper_rear_active      # 后防撞条触发
 # ── 定位状态（来自 /localization_node/state）──
 nav_interfaces/LocalizationState localization
 
+# ── 当前加载地图（来自 map_manager/map_name）──
+string current_map_name
+
+# ── 任务状态（来自 mission_manager/status）──
+string task_status
+
 # ── 位姿 + 速度（来自 /feedback/odom）──
 geometry_msgs/Pose  pose       # odom 系位姿
 geometry_msgs/Twist velocity   # 机体速度
 
-# ── 任务状态（后续来自 mission_manager/status）──
-string task_status
+# ── 急停丢位恢复状态（来自 SafetyReactor）──
+string recover_state    # NORMAL / SAFE_STOP / RELOCATING / GLOBAL_RELOC / ALARM
+string safety_alarm     # 告警信息（ALARM 时非空，否则空）
