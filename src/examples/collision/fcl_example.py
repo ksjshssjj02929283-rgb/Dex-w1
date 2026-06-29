@@ -6,7 +6,8 @@ All rights reserved.
 ----------------------------------------------------------------------------
 '''
 
-from dexe_robot_client.w1 import RobotType, Planner_Pin, FCLChecker
+from dexe_robot_client.common import RobotType
+from dexe_robot_client.w1 import Planner_Pin, FCLChecker
 from dexe_robot_client.end_effector_client import EndEffectorType
 import numpy as np
 import time

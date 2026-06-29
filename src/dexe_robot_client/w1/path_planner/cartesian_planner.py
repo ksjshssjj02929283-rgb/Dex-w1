@@ -8,7 +8,7 @@ All rights reserved.
 
 import numpy as np
 
-from ...common import get_logger, W1ArmType, W1Version
+from ...common import get_logger, W1ArmType, W1Version, RobotType
 from ..utils.w1_params import W1Params
 from ...end_effector_client import EndEffectorType
 from ..path_planner.blend_path import PathR3xSO3Bezier
@@ -30,19 +30,21 @@ class CartesianPlanner:
         self._w1_version = w1_version
         self._end_effector_type = end_effector_type
 
-        self.w1_params = W1Params(self._arm_type, self._w1_version,
-                                  self._end_effector_type)
+        if w1_version == W1Version.V2:
+            self.w1_params = W1Params(self._arm_type, self._w1_version,
+                                      self._end_effector_type)
+        elif w1_version == W1Version.V3:
+            # temporarily use the same params for V3
+            self.w1_params = W1Params(self._arm_type, W1Version.V2,
+                                      self._end_effector_type)
+
         self._init_kine_solver()
         self._init_pinocchio(self._arm_type, self._w1_version,
                              self._end_effector_type)
         self._init_arml_base_T_armr_base()
 
     def _init_kine_solver(self):
-        ik_nearst_weight = np.array([2., 2., 2., 0., 1., 1., 1.])
-        self.kine = DexforceW1Kinematics(
-            self._arm_type == W1ArmType.ANTHROPOMORPHIC)
-        self.kine.left_arm_kine.set_ik_nearest_weight(ik_nearst_weight)
-        self.kine.right_arm_kine.set_ik_nearest_weight(ik_nearst_weight)
+        self.kine = DexforceW1Kinematics()
         self.kine.set_user_qpos_limits(self.w1_params.qpos_lb,
                                        self.w1_params.qpos_ub)
 
@@ -75,7 +77,17 @@ class CartesianPlanner:
 
             self._pin_kine = Planner_Pin(robot_type=pin_robot_type,
                                          end_effector_type=pin_ee_type)
-
+        elif w1_version == W1Version.V3:
+            if end_effector_type is None or isinstance(end_effector_type,
+                                                       EndEffectorType):
+                pin_ee_type = end_effector_type
+            else:
+                raise ValueError(
+                    f"Not supported end_effector_type: {end_effector_type} for pinocchio model"
+                )
+                return
+            self._pin_kine = Planner_Pin(robot_type=RobotType.W1V03_1,
+                                         end_effector_type=pin_ee_type)
         else:
             raise ValueError(
                 f"Not supported w1 version: {w1_version} for pinocchio model")

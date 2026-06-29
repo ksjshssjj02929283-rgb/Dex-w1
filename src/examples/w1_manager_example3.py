@@ -10,15 +10,15 @@ import numpy as np
 from dexe_robot_client.common import W1Version, W1ArmType, get_logger
 from dexe_robot_client.end_effector_client import EndEffectorType
 from dexe_robot_client.w1 import W1Manager
-from dexe_rp import StatusType, SRSAKinematics, SRSIKinematics
+from dexe_rp import StatusType
 
 
 def arm_angle_motion():
     """利用SRSKinematics实现手臂冗余运动的示例"""
     w1_manager = W1Manager(is_sim=True,
                            arm_type=W1ArmType.ANTHROPOMORPHIC,
-                           w1_version=W1Version.V2,
-                           end_effector_type=EndEffectorType.BRAINCO_HAND)
+                           w1_version=W1Version.V3,
+                           end_effector_type=None)
     if not w1_manager.connect() and not w1_manager.is_enabled():
         return
     # yapf: disable
@@ -29,28 +29,27 @@ def arm_angle_motion():
     # yapf: enable
     w1_manager.go_home(1.)
 
-    SRSConfig = SRSAKinematics.Config if w1_manager._arm_type == W1ArmType.ANTHROPOMORPHIC else SRSIKinematics.Config
-
     # arm angle trajectory
     T = 10.
     t_list = np.arange(0, T + w1_manager.TIME_STEP,
                        w1_manager.TIME_STEP).round(2)
-    delta_psi_list = np.deg2rad(30) * np.sin(2 * np.pi / T * t_list)
+    delta_rp_list = np.deg2rad(30) * np.sin(2 * np.pi / T * t_list)
 
     # left arm
     cur_left_qpos = w1_manager.get_current_qpos("left_arm")[1]
-    left_ref_psi = w1_manager.kine.left_arm_kine.calc_arm_angle(
-        cur_left_qpos)[1]
-    cur_left_xpos = w1_manager.kine.left_arm_kine.get_fk(cur_left_qpos)[1]
+    left_ref_rp = w1_manager.kine.left_arm_kine.get_config(
+        cur_left_qpos).redundancy_parameter
+    cur_left_xpos = w1_manager.kine.left_arm_kine.get_fk(cur_left_qpos)
 
-    left_psi_list = left_ref_psi + delta_psi_list
+    left_rp_list = left_ref_rp + delta_rp_list
     left_qpos_seed = cur_left_qpos
     left_qpos_list = []
-    for psi in left_psi_list:
-        srs_cfg = SRSConfig(True, left_qpos_seed, psi)
+    for redundancy_parameter in left_rp_list:
+        cfg = w1_manager.kine.left_arm_kine.get_config(left_qpos_seed,
+                                                       redundancy_parameter)
         res_status, qpos = w1_manager.kine.left_arm_kine.get_ik(
-            cur_left_xpos, srs_cfg)
-        if res_status.type != StatusType.Success:
+            cur_left_xpos, cfg, left_qpos_seed)
+        if res_status != StatusType.Success:
             get_logger().error("ik failed")
             return
         if not np.allclose(qpos, left_qpos_seed, atol=np.deg2rad(90)):
@@ -61,18 +60,19 @@ def arm_angle_motion():
 
     # right arm
     cur_right_qpos = w1_manager.get_current_qpos("right_arm")[1]
-    right_ref_psi = w1_manager.kine.right_arm_kine.calc_arm_angle(
-        cur_right_qpos)[1]
-    cur_right_xpos = w1_manager.kine.right_arm_kine.get_fk(cur_right_qpos)[1]
+    right_ref_rp = w1_manager.kine.right_arm_kine.get_config(
+        cur_right_qpos).redundancy_parameter
+    cur_right_xpos = w1_manager.kine.right_arm_kine.get_fk(cur_right_qpos)
 
-    right_psi_list = right_ref_psi - delta_psi_list
+    right_rp_list = right_ref_rp - delta_rp_list
     right_qpos_seed = cur_right_qpos
     right_qpos_list = []
-    for psi in right_psi_list:
-        srs_cfg = SRSConfig(False, right_qpos_seed, psi)
+    for redundancy_parameter in right_rp_list:
+        cfg = w1_manager.kine.right_arm_kine.get_config(right_qpos_seed,
+                                                        redundancy_parameter)
         res_status, qpos = w1_manager.kine.right_arm_kine.get_ik(
-            cur_right_xpos, srs_cfg)
-        if res_status.type != StatusType.Success:
+            cur_right_xpos, cfg, right_qpos_seed)
+        if res_status != StatusType.Success:
             get_logger().error("ik failed")
             return
         if not np.allclose(qpos, right_qpos_seed, atol=np.deg2rad(90)):

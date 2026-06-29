@@ -7,7 +7,7 @@ All rights reserved.
 '''
 
 import pinocchio
-from ...common import get_pin2real_idx, get_real2pin_idx, get_pin_idx
+from ...common import get_pin2real_idx, get_real2pin_idx, get_pin_idx, RobotType
 from .utils.robot_type import *
 
 
@@ -16,28 +16,29 @@ class Planner_Pin:
     def __init__(self,
                  robot_type: RobotType = RobotType.W1V02_1,
                  end_effector_type: EndEffectorType = None):
+        self.robot_type = robot_type
         robot_urdf = get_robot_urdf(robot_type=robot_type,
                                     ee_type=end_effector_type)
         self.pin_model = pinocchio.buildModelFromUrdf(robot_urdf)
         self.pin_data = self.pin_model.createData()
 
-        self.pin2real_idx = get_pin2real_idx(robot_urdf)
-        self.real2pin_idx = get_real2pin_idx(robot_urdf)
+        self.pin2real_idx = get_pin2real_idx(robot_urdf, robot_type)
+        self.real2pin_idx = get_real2pin_idx(robot_urdf, robot_type)
 
         if end_effector_type is not None and isinstance(end_effector_type,
                                                         EndEffectorType):
             self.use_ee = True
             self.ee_type = end_effector_type
             self.pin_torso_idx, self.pin_head_idx, self.pin_arml_idx, self.pin_armr_idx, self.pin_armlee_idx, self.pin_armree_idx = get_pin_idx(
-                robot_urdf)
+                robot_urdf, robot_type)
         else:
             self.use_ee = False
             self.ee_type = None
             self.pin_torso_idx, self.pin_head_idx, self.pin_arml_idx, self.pin_armr_idx = get_pin_idx(
-                robot_urdf)
+                robot_urdf, robot_type)
 
         self.armlee_joint_name, self.armree_joint_name = get_ee_joint_names(
-            end_effector_type)
+            end_effector_type, robot_type)
 
     def get_Kinematics(self,
                        real_qpos: np.ndarray = None,
@@ -150,22 +151,46 @@ class Planner_Pin:
         Returns:
             The tuple of transformation matrices in order of [left arm base, right arm base]
         """
-        if self.use_ee:
-            if self.ee_type == EndEffectorType.BRAINCO_HAND:
-                real_qpos = np.concatenate((real_qpos, np.zeros(20)), axis=0)
-            elif self.ee_type == EndEffectorType.PGC_GRIPPER:
-                real_qpos = np.concatenate((real_qpos, np.zeros(4)), axis=0)
-            elif self.ee_type == EndEffectorType.LINKER_HAND:
-                real_qpos = np.concatenate((real_qpos, np.zeros(22)), axis=0)
+        if self.robot_type == RobotType.W1V02_1 or self.robot_type == RobotType.W1V02_2:
+            if self.use_ee:
+                if self.ee_type == EndEffectorType.BRAINCO_HAND:
+                    real_qpos = np.concatenate((real_qpos, np.zeros(20)),
+                                               axis=0)
+                elif self.ee_type == EndEffectorType.PGC_GRIPPER:
+                    real_qpos = np.concatenate((real_qpos, np.zeros(4)), axis=0)
+                elif self.ee_type == EndEffectorType.LINKER_HAND:
+                    real_qpos = np.concatenate((real_qpos, np.zeros(22)),
+                                               axis=0)
 
-        pin_qpos = real_qpos[self.real2pin_idx]
-        pinocchio.forwardKinematics(self.pin_model, self.pin_data, pin_qpos)
-        pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
-        arml_base_ID = self.pin_model.getFrameId("LEFT_ARM_BASE")
-        armr_base_ID = self.pin_model.getFrameId("RIGHT_ARM_BASE")
-        arml_base_tf = self.pin_data.oMf[arml_base_ID].homogeneous
-        armr_base_tf = self.pin_data.oMf[armr_base_ID].homogeneous
-        return arml_base_tf, armr_base_tf
+            pin_qpos = real_qpos[self.real2pin_idx]
+            pinocchio.forwardKinematics(self.pin_model, self.pin_data, pin_qpos)
+            pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
+            arml_base_ID = self.pin_model.getFrameId("LEFT_ARM_BASE")
+            armr_base_ID = self.pin_model.getFrameId("RIGHT_ARM_BASE")
+            arml_base_tf = self.pin_data.oMf[arml_base_ID].homogeneous
+            armr_base_tf = self.pin_data.oMf[armr_base_ID].homogeneous
+            return arml_base_tf, armr_base_tf
+        elif self.robot_type == RobotType.W1V03_1:
+            if self.use_ee:
+                if self.ee_type == EndEffectorType.BRAINCO_HAND:
+                    real_qpos = np.concatenate((real_qpos, np.zeros(20)),
+                                               axis=0)
+                elif self.ee_type == EndEffectorType.PGC_GRIPPER:
+                    real_qpos = np.concatenate((real_qpos, np.zeros(4)), axis=0)
+                elif self.ee_type == EndEffectorType.LINKER_HAND:
+                    real_qpos = np.concatenate((real_qpos, np.zeros(22)),
+                                               axis=0)
+
+            pin_qpos = real_qpos[self.real2pin_idx]
+            pinocchio.forwardKinematics(self.pin_model, self.pin_data, pin_qpos)
+            pinocchio.updateFramePlacements(self.pin_model, self.pin_data)
+            arml_base_ID = self.pin_model.getFrameId(
+                "TORSO_TO_LEFT_ARM_CONNECTOR")
+            armr_base_ID = self.pin_model.getFrameId(
+                "TORSO_TO_RIGHT_ARM_CONNECTOR")
+            arml_base_tf = self.pin_data.oMf[arml_base_ID].homogeneous
+            armr_base_tf = self.pin_data.oMf[armr_base_ID].homogeneous
+            return arml_base_tf, armr_base_tf
 
     def _pulse_to_radian(self, pulse: float, lower_limit: float,
                          upper_limit: float):

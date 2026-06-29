@@ -1,6 +1,12 @@
 # CHANGELOG
 
 ## [Unrelease]
+### Feat
+- 支持W1 V030硬件版本
+
+### Remove
+- 移除move_torso_linear()、move_arm_linear()、rotate_arm_linear()
+- 移除transfer_grasp_pose()
 
 ## [V0.6.0]
 ### Feat
