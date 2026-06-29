@@ -790,7 +790,7 @@ class W1Manager:
         ).get_control_status()
 
     def set_auto_charging(self) -> StatusCode:
-        """调用回充服务"""
+        """发送回充 action"""
         if not self._use_nav:
             self.logger.error("Navigation function is disabled.")
             return StatusCode.FAIL
@@ -800,8 +800,19 @@ class W1Manager:
         res = self._get_chassis_client().set_chassis_auto_charging()
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
+    def cancel_auto_charging(self) -> StatusCode:
+        """取消当前回充 action"""
+        if not self._use_nav:
+            self.logger.error("Navigation function is disabled.")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("Chassis client has not initialized")
+            return StatusCode.FAIL
+        res = self._get_chassis_client().cancel_auto_charging()
+        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
+
     def cancel_chassis_motion(self) -> StatusCode:
-        """统一取消底盘运动，同时调用取消导航和取消控制。"""
+        """统一取消底盘运动，同时取消导航、控制和回充。"""
         if not self._use_nav:
             self.logger.error("Navigation function is disabled.")
             return StatusCode.FAIL
@@ -809,12 +820,15 @@ class W1Manager:
             self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL
 
-        self.logger.info("Sending request to cancel navigation and control...")
+        self.logger.info(
+            "Sending request to cancel navigation, control and auto charging...")
         nav_cancel_ok = self._get_chassis_client().cancel_chassis_nav2()
         control_cancel_ok = self._get_chassis_client().cancel_chassis_control()
+        auto_charging_cancel_ok = (
+            self._get_chassis_client().cancel_auto_charging())
 
         # 只要有一个成功，就认为取消指令已尽力发送
-        if nav_cancel_ok or control_cancel_ok:
+        if nav_cancel_ok or control_cancel_ok or auto_charging_cancel_ok:
             return StatusCode.SUCCESS
         return StatusCode.FAIL
 

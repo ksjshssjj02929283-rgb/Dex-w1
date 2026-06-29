@@ -9,6 +9,7 @@ from geometry_msgs.msg import PoseStamped
 from action_msgs.msg import GoalStatus
 from scipy.spatial.transform import Rotation as R
 from nav2_msgs.action import NavigateToPose
+from chassis_interfaces.action import AutoCharging
 from std_srvs.srv import Trigger
 from rcl_interfaces.srv import SetParameters, GetParameters
 from rcl_interfaces.msg import ParameterType
@@ -24,6 +25,15 @@ from ..common import get_logger
 
 
 class NavigationClient(ABC, Node):
+    AUTO_CHARGING_STATUS_NAMES = {
+        GoalStatus.STATUS_UNKNOWN: "UNKNOWN",
+        GoalStatus.STATUS_ACCEPTED: "ACCEPTED",
+        GoalStatus.STATUS_EXECUTING: "EXECUTING",
+        GoalStatus.STATUS_CANCELING: "CANCELING",
+        GoalStatus.STATUS_SUCCEEDED: "SUCCEEDED",
+        GoalStatus.STATUS_CANCELED: "CANCELED",
+        GoalStatus.STATUS_ABORTED: "ABORTED",
+    }
 
     def __init__(self,
                  name: str,
@@ -43,7 +53,17 @@ class NavigationClient(ABC, Node):
         self._set_nav_client = None
         self._set_ctrl_publisher = None
         self._get_pos_subscriber = None
-        self._set_chassis_charging_client = None
+        self._auto_charging_action_client = None
+        self._auto_charging_goal_handle = None
+        self._auto_charging_send_goal_future = None
+        self._auto_charging_result_future = None
+        self._auto_charging_cancel_future = None
+        self._auto_charging_task_id = 0
+        self._auto_charging_status = "IDLE"
+        self._auto_charging_done = False
+        self._auto_charging_success = False
+        self._last_auto_charging_feedback = None
+        self._last_auto_charging_result_message = ""
         self._cancel_control_client = None
         self._controller_set_param_client = None
         self._local_costmap_set_param_client = None
@@ -294,28 +314,200 @@ class NavigationClient(ABC, Node):
                 f"Error cancelling navigation goal: {str(e)}")
             return False
 
-    def set_chassis_auto_charging(self) -> bool:
-        """调用回充服务"""
-        if not self._set_chassis_charging_client.wait_for_service(
-                timeout_sec=1.0):
+    def _auto_charging_feedback_callback(self, feedback_msg, task_id):
+        if task_id != self._auto_charging_task_id:
+            self.get_logger().debug(
+                f"Ignoring feedback for old AutoCharging task {task_id} "
+                f"(current: {self._auto_charging_task_id})")
+            return
+
+        feedback = feedback_msg.feedback
+        self._last_auto_charging_feedback = feedback
+        if self._auto_charging_status != "CANCELING":
+            self._auto_charging_status = "EXECUTING"
+        self.get_logger().info("Auto charging feedback: "
+                               f"state={feedback.current_state}, "
+                               f"retry={feedback.retry_count}")
+
+    def set_chassis_auto_charging(self,
+                                  force: bool = True,
+                                  timeout_sec: float = 10.0) -> bool:
+        """发送回充 action，非阻塞返回是否成功发出。"""
+        if self._auto_charging_action_client is None:
+            self.get_logger().error(
+                "Auto charging action client not initialized.")
             return False
 
-        request = Trigger.Request()
-        future = self._set_chassis_charging_client.call_async(request)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+        action_name = getattr(self._auto_charging_action_client, "_action_name",
+                              "/auto_charging")
+        self.get_logger().info(
+            f"Waiting for AutoCharging action server: {action_name}")
+        self._auto_charging_status = "WAITING_SERVER"
+        if not self._auto_charging_action_client.wait_for_server(
+                timeout_sec=timeout_sec):
+            self.get_logger().error("Auto charging action server not available")
+            self._auto_charging_status = "FAILED_TO_SEND"
+            self._auto_charging_done = True
+            self._auto_charging_success = False
+            return False
 
-        if future.done():
-            try:
-                response = future.result()
+        goal_msg = AutoCharging.Goal()
+        goal_msg.force = force
+
+        self.get_logger().info(f"Sending AutoCharging goal: force={force}")
+        self._auto_charging_task_id += 1
+        current_task_id = self._auto_charging_task_id
+        self._auto_charging_done = False
+        self._auto_charging_success = False
+        self._auto_charging_status = "SENDING"
+        self._auto_charging_goal_handle = None
+        self._auto_charging_result_future = None
+        self._auto_charging_cancel_future = None
+        self._last_auto_charging_feedback = None
+        self._last_auto_charging_result_message = ""
+
+        def auto_charging_feedback_callback(feedback_msg):
+            self._auto_charging_feedback_callback(feedback_msg, current_task_id)
+
+        try:
+            self._auto_charging_send_goal_future = (
+                self._auto_charging_action_client.send_goal_async(
+                    goal_msg,
+                    feedback_callback=auto_charging_feedback_callback))
+            self._auto_charging_send_goal_future.add_done_callback(
+                lambda future: self._auto_charging_goal_done_callback(
+                    future, current_task_id))
+            return True
+        except Exception as e:
+            self.get_logger().error(f"Failed to send AutoCharging goal: {e}")
+            self._auto_charging_status = "FAILED_TO_SEND"
+            self._auto_charging_done = True
+            self._auto_charging_success = False
+            return False
+
+    def get_auto_charging_status(self) -> str:
+        """获取当前回充 action 状态。"""
+        return self._auto_charging_status
+
+    def get_auto_charging_result(self) -> tuple[bool, str]:
+        """获取最近一次回充 action 结果。"""
+        return self._auto_charging_success, self._last_auto_charging_result_message
+
+    def cancel_auto_charging(self) -> bool:
+        """取消当前回充 action。"""
+        if self._auto_charging_goal_handle is None and self._auto_charging_status in {
+                "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING"
+        }:
+            self.get_logger().info(
+                "Waiting for AutoCharging goal to be accepted before cancelling..."
+            )
+            current_task_id = self._auto_charging_task_id
+            start_time = time.time()
+            while time.time() - start_time < 1.0:
+                if current_task_id != self._auto_charging_task_id:
+                    break
+                self._spin_once_if_not_executed(timeout_sec=0.05)
+                if self._auto_charging_goal_handle is not None:
+                    break
+                time.sleep(0.05)
+
+        if self._auto_charging_goal_handle is None:
+            self.get_logger().warning(
+                "No accepted AutoCharging goal to cancel.")
+            return False
+
+        try:
+            current_task_id = self._auto_charging_task_id
+            self._auto_charging_status = "CANCELING"
+            self._auto_charging_cancel_future = (
+                self._auto_charging_goal_handle.cancel_goal_async())
+            self._auto_charging_cancel_future.add_done_callback(
+                lambda future: self._auto_charging_cancel_done_callback(
+                    future, current_task_id))
+            self.get_logger().info("AutoCharging cancel request sent.")
+            return True
+        except Exception as e:
+            self.get_logger().error(f"Failed to cancel AutoCharging goal: {e}")
+            return False
+
+    def _auto_charging_goal_done_callback(self, future, task_id):
+        if task_id != self._auto_charging_task_id:
+            self.get_logger().debug(
+                f"Ignoring goal response for old AutoCharging task {task_id} "
+                f"(current: {self._auto_charging_task_id})")
+            return
+
+        try:
+            goal_handle = future.result()
+        except Exception as e:
+            self.get_logger().error(f"AutoCharging goal send failed: {e}")
+            self._auto_charging_status = "FAILED_TO_SEND"
+            self._auto_charging_done = True
+            self._auto_charging_success = False
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().error("AutoCharging goal was rejected.")
+            self._auto_charging_status = "REJECTED"
+            self._auto_charging_done = True
+            self._auto_charging_success = False
+            return
+
+        self._auto_charging_goal_handle = goal_handle
+        self._auto_charging_status = "ACCEPTED"
+        self.get_logger().info("AutoCharging goal accepted.")
+        self._auto_charging_result_future = goal_handle.get_result_async()
+        self._auto_charging_result_future.add_done_callback(
+            lambda future: self._auto_charging_result_done_callback(
+                future, task_id))
+
+    def _auto_charging_cancel_done_callback(self, future, task_id):
+        if task_id != self._auto_charging_task_id:
+            self.get_logger().debug(
+                f"Ignoring cancel response for old AutoCharging task {task_id} "
+                f"(current: {self._auto_charging_task_id})")
+            return
+
+        try:
+            response = future.result()
+            self.get_logger().info(
+                f"AutoCharging cancel response: goals_canceling={len(response.goals_canceling)}"
+            )
+        except Exception as e:
+            self.get_logger().error(f"AutoCharging cancel failed: {e}")
+
+    def _auto_charging_result_done_callback(self, future, task_id):
+        if task_id != self._auto_charging_task_id:
+            self.get_logger().debug(
+                f"Ignoring result for old AutoCharging task {task_id} "
+                f"(current: {self._auto_charging_task_id})")
+            return
+
+        try:
+            response = future.result()
+            result = response.result
+            self._auto_charging_status = self.AUTO_CHARGING_STATUS_NAMES.get(
+                response.status, "UNKNOWN")
+            self._auto_charging_success = (self._auto_charging_status
+                                           == "SUCCEEDED" and
+                                           bool(result.success))
+            self._last_auto_charging_result_message = result.message
+            self._auto_charging_done = True
+            self._auto_charging_goal_handle = None
+
+            if self._auto_charging_success:
                 self.get_logger().info(
-                    f"Cancel control response: {response.message}")
-                return response.success
-            except Exception as e:
-                self.get_logger().error(f"Service call failed: {e}")
-                return False
-        else:
-            self.get_logger().error("Service call timed out.")
-            return False
+                    f"AutoCharging succeeded: {result.message}")
+            else:
+                self.get_logger().error(
+                    f"AutoCharging finished with status={self._auto_charging_status}: "
+                    f"{result.message}")
+        except Exception as e:
+            self.get_logger().error(f"Auto charging result error: {e}")
+            self._auto_charging_status = "UNKNOWN"
+            self._auto_charging_success = False
+            self._auto_charging_done = True
+            self._auto_charging_goal_handle = None
 
     def get_control_status(self) -> str:
         """
@@ -522,6 +714,12 @@ class NavigationClient(ABC, Node):
     def spin_once(self, timeout_sec: float = 0.1):
         r"""Spin the node once with a timeout of 0.1 sec."""
         rclpy.spin_once(self, timeout_sec=timeout_sec)
+
+    def _spin_once_if_not_executed(self, timeout_sec: float = 0.01):
+        try:
+            self.spin_once(timeout_sec=timeout_sec)
+        except RuntimeError as e:
+            self.get_logger().debug(f"spin_once skipped: {e}")
 
     def spin(self):
         r"""Continuously spin the node while rclpy is running."""

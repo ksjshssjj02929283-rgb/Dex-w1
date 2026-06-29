@@ -4,6 +4,7 @@ from geometry_msgs.msg import PoseStamped
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
+from chassis_interfaces.action import AutoCharging
 from std_srvs.srv import Trigger
 from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.parameter import Parameter
@@ -50,8 +51,8 @@ class ChassisClient(NavigationClient):
                 Trigger, 'control/get_control_status')
             self._cancel_control_client = self.create_client(
                 Trigger, 'control/cancel_chassis_control')
-            self._set_chassis_charging_client = self.create_client(
-                Trigger, 'auto_charging')
+            self._auto_charging_action_client = ActionClient(
+                self, AutoCharging, '/auto_charging')
 
             self._controller_set_param_client = self.create_client(
                 SetParameters, '/controller_server/set_parameters')
