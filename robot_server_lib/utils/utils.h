@@ -32,6 +32,10 @@ namespace robot_server_lib {
 namespace utils {
 RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path);
 
+// 配置文件管理: 以默认配置为基准同步/补齐用户配置, 合并外部硬件配置
+void CheckConfig(const std::filesystem::path& default_cfg_path, const std::filesystem::path& user_cfg_path);
+void SyncHardwareConfig(const std::filesystem::path& robot_cfg_path);
+
 void SetMax(std::atomic_int64_t& maximum_value, std::int64_t value);
 
 PoseQuaternion VectorXdToPoseQuaternion(const Eigen::VectorXd& vec);

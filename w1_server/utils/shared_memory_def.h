@@ -80,7 +80,7 @@ struct JointFeedback {
 };
 
 struct JointControl {
-    char joint_name[32] = {};            // 关节名 / ID
+    char joint_name[32] = {};                // 关节名 / ID
     uint16_t joint_mode = 0;                 // 控制模式（默认 0）
     double joint_position = 0;               // 给定位置 (rad)
     double joint_velocity = 0;               // 给定速度 (rad/s)

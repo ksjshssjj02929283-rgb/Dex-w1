@@ -18,6 +18,7 @@ using json = nlohmann::json;
 #define STATUSWORD_MOTOR_ENABLED (1U << 1)
 #define STATUSWORD_MOTOR_FAULT (1U << 2)
 #define STATUSWORD_MOTOR_QUICK_STOP (1U << 3)
+#define STATUSWORD_SLAVE_SCANNING (1U << 4)
 
 namespace robot_server_lib {
 namespace utils {
@@ -79,6 +80,9 @@ inline std::ostringstream RobotStatuswordToJsonString(const int& status_word) {
             break;
         case 8:
             ss << "\"MOTOR_QUICK_STOP\"";
+            break;
+        case 16:
+            ss << "\"SLAVE_SCANNING\"";
             break;
         default:
             ss << status_word;

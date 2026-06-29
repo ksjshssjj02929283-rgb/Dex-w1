@@ -13,6 +13,7 @@
 #include <thread>
 
 #include "shared_memory_def.h"
+#include "w1_utils.h"
 
 volatile std::sig_atomic_t g_stop_flag = 0;
 static double prev_position[20] = {0};
@@ -46,6 +47,26 @@ static void setup_realtime() {
     if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0) {
         std::cerr << "sched_setscheduler failed: " << std::strerror(errno) << std::endl;
     }
+}
+
+// 模拟 EtherCAT slave 状态机: 根据 server 下发的控制字响应对应的状态字
+// 起始反馈 READY, 收到 ENABLE 后反馈 ENABLED, 其他控制字也做对应响应
+// 控制字↔状态字握手优先级(与 w1_server::SwitchControlWord 的状态机一致):
+//   SETZERO(bit6)    -> SLAVE_SCANNING(bit4)
+//   QUICK_STOP(bit2) -> QUICK_STOP(bit3)
+//   ENABLE(bit1)     -> ENABLED(bit1)
+//   SWITCH_ON/CLR(bit0/bit3) -> READY(bit0)
+static uint16_t ResolveStatusWord(uint16_t control_word) {
+    // 急停模式
+    if (control_word & CTRLWORD_MOTOR_QUICK_STOP) {
+        return STATUSWORD_MOTOR_QUICK_STOP;
+    }
+    // 已使能: ENABLE 控制字 -> ENABLED 状态字
+    if (control_word & CTRLWORD_MOTOR_ENABLE) {
+        return STATUSWORD_MOTOR_ENABLED;
+    }
+    // SWITCH_ON / CLEAR_FAULT / 默认起始态 -> READY
+    return STATUSWORD_MOTOR_READY;
 }
 
 int main(int argc, char* argv[]) {
@@ -88,7 +109,8 @@ int main(int argc, char* argv[]) {
         ctrl.joint_control[2].joint_position = 0.5;
         ctrl_shm.PeekLatest(&ctrl);
 
-        fb.robot_status_word = 2;
+        // 根据 server 下发的控制字响应对应的状态字(起始 READY)
+        fb.robot_status_word = ResolveStatusWord(ctrl.robot_control_word);
         for (int i = 0; i < ndof; i++) {
             int reverse_idx = ndof - 1 - i;
             std::strncpy(fb.joint_feedback[i].joint_name, joint_names[reverse_idx].c_str(),
