@@ -15,10 +15,10 @@ from copy import deepcopy
 from .fcl_checker import FCLChecker
 from .ompl_plan import OMPLPlanSingle, OMPLPlanCentralized, OMPLPlanDecoupled
 from .traj_coordination import Coordination
-from .utils.robot_type import RobotType, RobotURDF, RobotCollision, get_robot_urdf, get_robot_mesh_path
+from .utils.robot_type import RobotURDF, RobotCollision, get_robot_urdf, get_robot_mesh_path
 from .planner_pinocchio import Planner_Pin
 from ...end_effector_client import EndEffectorType
-from ...common import get_logger
+from ...common import get_logger, RobotType
 
 HEAD_DIM = 2
 TORSO_DIM = 4

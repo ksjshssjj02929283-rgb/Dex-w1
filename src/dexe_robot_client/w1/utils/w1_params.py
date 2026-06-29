@@ -25,7 +25,7 @@ class W1Params:
         self._arm_type = arm_type
 
         self._w1_version = w1_version
-        if self._w1_version != W1Version.V2:
+        if self._w1_version != W1Version.V2 and self._w1_version != W1Version.V3:
             raise ValueError(
                 f"W1Version {self._w1_version.name} are not support.")
 
@@ -43,13 +43,17 @@ class W1Params:
             raise ValueError(
                 f"Unsupport end effector type: {self._end_effector_type.name}.")
 
-        if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
-            robot_urdf = get_robot_urdf(RobotType.W1V02_1)
-        else:
-            robot_urdf = get_robot_urdf(RobotType.W1V02_2)
+        if self._w1_version == W1Version.V2:
+            if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
+                robot_version = RobotType.W1V02_1
+            else:
+                robot_version = RobotType.W1V02_2
+        elif self._w1_version == W1Version.V3:
+            robot_version = RobotType.W1V03_1
 
+        robot_urdf = get_robot_urdf(robot_version)
+        self._pin2real_idx = get_pin2real_idx(robot_urdf, robot_version)
         self._pin_model = pin.buildModelFromUrdf(robot_urdf)
-        self._pin2real_idx = get_pin2real_idx(robot_urdf)
 
         self.torso_dofs = 4
         self.head_dofs = 2

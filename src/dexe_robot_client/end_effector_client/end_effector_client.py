@@ -19,23 +19,11 @@ from end_effector_interfaces.msg import (EEJointControl, EEJointControlMode,
                                          EEJointStatus, EETactileState)
 from geometry_msgs.msg import Wrench
 
-from dexe_rp.utils.type import EndEffectorType as DexeRP_EEType
+from dexe_rp import EndEffectorType as DexeRP_EEType
+from dexe_rp import get_idx_mapping
 
 from ..common import get_logger
 from .end_effector_params import EndEffectorFactory, EndEffectorParams
-
-
-# Do NOT write in mapping_index.py to avoid circular import
-def get_idx_mapping(current_names: Tuple[str, ...],
-                    target_names: Tuple[str, ...]) -> Tuple[int, ...]:
-    cur_dict = {name: idx for idx, name in enumerate(current_names)}
-    cur_2_target_idx = []
-    for name in target_names:
-        if name not in cur_dict:
-            get_logger().warning(f"Name '{name}' not found in current_names")
-            continue
-        cur_2_target_idx.append(cur_dict[name])
-    return cur_2_target_idx
 
 
 @dataclass(frozen=True)

@@ -9,7 +9,7 @@ All rights reserved.
 import os
 import numpy as np
 from dexe_robot_client.end_effector_client import EndEffectorType
-from dexe_robot_client.common import W1Version, W1ArmType
+from dexe_robot_client.common import W1Version, W1ArmType, RobotType
 from dexe_robot_client.w1 import W1Manager
 from dexe_robot_client.w1.path_planner.utils.robot_type import *
 from dexe_robot_client.common.mapping_index import *

@@ -13,13 +13,14 @@ class W1ArmType(Enum):
     INDUSTRIAL = auto()
     ANTHROPOMORPHIC = auto()
 
-    # 构型_版本
-    INDUSTRIAL_V2 = auto()
-    INDUSTRIAL_V3 = auto()
-    ANTHROPOMORPHIC_V2 = auto()
-    ANTHROPOMORPHIC_V3 = auto()
-
 
 class W1Version(Enum):
     V1 = auto()
     V2 = auto()
+    V3 = auto()
+
+
+class RobotType(Enum):
+    W1V02_1 = auto()
+    W1V02_2 = auto()
+    W1V03_1 = auto()

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from ...end_effector_client import EndEffectorType
 from .utils.robot_type import *
-from ...common import get_logger
+from ...common import get_logger, RobotType
 
 
 class FCLChecker:

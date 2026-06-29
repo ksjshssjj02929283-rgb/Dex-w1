@@ -15,8 +15,9 @@ from ..utils.w1_params import W1Params
 from ...end_effector_client import EndEffectorType
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from ..kinematics.whole_body_ik import *
+from ..kinematics.pin_ik_030 import PinIKWholeBody030
 from .utils.robot_type import *
-from dexe_rp import DexforceW1Kinematics, StatusType, calc_nearest_iks
+from dexe_rp import DexforceW1Kinematics, StatusType, RobotVersion, ArmType
 
 
 class CartesianToJointPlanner:
@@ -32,19 +33,21 @@ class CartesianToJointPlanner:
         self._w1_version = w1_version
         self._end_effector_type = end_effector_type
 
-        self.w1_params = W1Params(self._arm_type, self._w1_version,
-                                  self._end_effector_type)
+        if w1_version == W1Version.V2:
+            self.w1_params = W1Params(self._arm_type, self._w1_version,
+                                      self._end_effector_type)
+        elif w1_version == W1Version.V3:
+            # temporarily use the same params for V3
+            self.w1_params = W1Params(self._arm_type, W1Version.V2,
+                                      self._end_effector_type)
+
         self._init_kine_solver()
 
         self.left_tcp = np.eye(4)
         self.right_tcp = np.eye(4)
 
     def _init_kine_solver(self):
-        ik_nearst_weight = np.array([2., 2., 2., 0., 1., 1., 1.])
-        self.kine = DexforceW1Kinematics(
-            self._arm_type == W1ArmType.ANTHROPOMORPHIC)
-        self.kine.left_arm_kine.set_ik_nearest_weight(ik_nearst_weight)
-        self.kine.right_arm_kine.set_ik_nearest_weight(ik_nearst_weight)
+        self.kine = DexforceW1Kinematics()
         self.kine.set_user_qpos_limits(self.w1_params.qpos_lb,
                                        self.w1_params.qpos_ub)
 
@@ -55,27 +58,36 @@ class CartesianToJointPlanner:
                 robot_type = RobotType.W1V02_2
             else:
                 raise ValueError(f"Unsupported arm type: {self._arm_type}")
-        else:
-            raise ValueError(f"Unsupported W1 version: {self._w1_version}")
-        urdf_path = get_robot_urdf(robot_type=robot_type)
 
-        if robot_type == RobotType.W1V02_1 or robot_type == RobotType.W1V02_2:
+            urdf_path = get_robot_urdf(robot_type=robot_type)
+
+            if robot_type == RobotType.W1V02_1 or robot_type == RobotType.W1V02_2:
+                urdf_path = pathlib.Path.home(
+                ) / ".cache/dexe_data/assembled/w1/robot.urdf"
+                tracking_frame_config = TrackingFrameConfig.init_from_urdf(
+                    robot="W1V02X", urdf_path=urdf_path)
+                joint_name_config = JointNameConfig.init_from_robot(
+                    robot="W1V02X")
+            else:
+                raise ValueError(f"Unsupported robot type: {robot_type}")
+
+            self.whole_body_ik_solver = WholeBodyIK(
+                urdf_path,
+                tracking_frame_config=tracking_frame_config,
+                joint_name_config=joint_name_config,
+                solver_options=IpoptOptions(),
+                weight_config=WeightConfig(),
+                posture_config=PostureConfig(),
+                freezed_joint_dict=None)
+
+        elif self._w1_version == W1Version.V3:
             urdf_path = pathlib.Path.home(
             ) / ".cache/dexe_data/assembled/w1/robot.urdf"
-            tracking_frame_config = TrackingFrameConfig.init_from_urdf(
-                robot="W1V02X", urdf_path=urdf_path)
-            joint_name_config = JointNameConfig.init_from_robot(robot="W1V02X")
+            self.whole_body_ik_solver = PinIKWholeBody030(urdf_path,
+                                                          track_type="standard",
+                                                          cost_type="standard")
         else:
-            raise ValueError(f"Unsupported robot type: {robot_type}")
-
-        self.whole_body_ik_solver = WholeBodyIK(
-            urdf_path,
-            tracking_frame_config=tracking_frame_config,
-            joint_name_config=joint_name_config,
-            solver_options=IpoptOptions(),
-            weight_config=WeightConfig(),
-            posture_config=PostureConfig(),
-            freezed_joint_dict=None)
+            raise ValueError(f"Unsupported W1 version: {self._w1_version}")
 
         self.logger.info(
             f"Initialize kinematic solver for Cartesian to Joint Planner")
@@ -116,25 +128,8 @@ class CartesianToJointPlanner:
         # cur_qseed = deepcopy(start_qpos)
         # joint_qpos_list = []
         arm_kine = self._get_arm_kine(name)
-        # for pose in end_effector_traj:
-        #     res_ik, cur_qpos = arm_kine.get_nearest_ik(xpos=pose,
-        #                                                qpos_seed=cur_qseed)
-        #     if not res_ik:
-        #         self.logger.error(
-        #             f"{name} Cartesian_to_joint_planner : solve ik failed, cur_qseed(deg): {np.rad2deg(cur_qseed)}."
-        #         )
-        #         return False, None
-        #     if not np.allclose(cur_qpos, cur_qseed, atol=np.deg2rad(90.0)):
-        #         self.logger.error(f"{name} Cartesian_to_joint_planner, solving ik failed since qpos traj is not continues\n" + \
-        #                           f"cur_qpos(deg): {np.rad2deg(cur_qpos)}\n" + \
-        #                           f"cur_qseed(deg): {np.rad2deg(cur_qseed)}.")
-        #         return False, None
-        #     joint_qpos_list.append(cur_qpos)
-        #     cur_qseed = cur_qpos
-        # joint_qpos_array = np.array(joint_qpos_list)
-        # return True, joint_qpos_array
-        res, qpos_list = calc_nearest_iks(arm_kine, start_qpos,
-                                          end_effector_traj)
+        res, qpos_list = arm_kine.calc_nearest_iks(start_qpos,
+                                                   end_effector_traj)
         if res.type != StatusType.Success:
             return False, None
         return True, np.array(qpos_list)
