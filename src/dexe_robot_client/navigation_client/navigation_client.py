@@ -272,7 +272,7 @@ class NavigationClient(ABC, Node):
                 - "FAILED": 失败
                 - "CANCELLED": 已取消
         """
-        # 触发 ROS2 回调（非常重要）
+        # 独立运行时主动处理一次回调；由 W1Manager Executor 管理时为空操作。
         self.spin_once()
 
         return self._nav_status
@@ -521,7 +521,8 @@ class NavigationClient(ABC, Node):
                 - "UNKNOWN"
         """
         self.spin_once()
-
+        # logger.error(f"#####_last_control_status:{self._last_control_status}")
+        self.get_logger().error(f"#####_last_control_status:{self._last_control_status}")
         if self._last_control_status_success and self._last_control_status_time:
             # 防止返回陈旧状态
             if (time.time() - self._last_control_status_time
@@ -712,8 +713,30 @@ class NavigationClient(ABC, Node):
             return False
 
     def spin_once(self, timeout_sec: float = 0.1):
-        r"""Spin the node once with a timeout of 0.1 sec."""
+        r"""仅在独立运行模式下处理一次回调，避免抢占外部 Executor 管理的节点。"""
+        if self._is_managed_by_executor():
+            return
         rclpy.spin_once(self, timeout_sec=timeout_sec)
+
+    def _is_managed_by_executor(self) -> bool:
+        """Return whether this node is currently owned by an executor."""
+        executor = self.executor
+        return executor is not None and self in executor.get_nodes()
+
+    def _wait_for_future(self, future, timeout_sec: float) -> bool:
+        """等待 Future 完成，避免为当前节点启动第二个 Executor。"""
+        if not self._is_managed_by_executor():
+            rclpy.spin_until_future_complete(
+                self, future, timeout_sec=timeout_sec)
+            return future.done()
+
+        deadline = time.monotonic() + timeout_sec
+        while not future.done():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                return False
+            time.sleep(min(0.01, remaining))
+        return True
 
     def _spin_once_if_not_executed(self, timeout_sec: float = 0.01):
         try:
@@ -723,8 +746,10 @@ class NavigationClient(ABC, Node):
 
     def spin(self):
         r"""Continuously spin the node while rclpy is running."""
+        if self._is_managed_by_executor():
+            return
         while rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.1)
+            self.spin_once(timeout_sec=0.1)
 
     def _on_nav_goal_response(self, future, task_id):
         """Callback for navigation goal response.
@@ -835,9 +860,7 @@ class NavigationClient(ABC, Node):
         req = GetParameters.Request()
         req.names = [name]
         future = client.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=1.0)
-
-        if not future.done():
+        if not self._wait_for_future(future, timeout_sec=1.0):
             self.get_logger().error(
                 f"Failed to get parameter '{name}': service call timed out.")
             return None
@@ -863,9 +886,7 @@ class NavigationClient(ABC, Node):
         req.parameters = [param.to_parameter_msg()]
 
         future = set_client.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=1.0)
-
-        if not future.done():
+        if not self._wait_for_future(future, timeout_sec=1.0):
             self.get_logger().error(f"Timeout setting parameter '{name}'")
             return False
 
