@@ -99,6 +99,8 @@ class PinIKWholeBody:
         self.lean_backward_threshold = -0.1744  # rad
         self.cache_left_target = None
         self.cache_right_target = None
+        self.cache_ref_q = None
+        self.cache_sol_q = None
 
         self._create_pin_casadi()
         self._create_trans_rot_error()
@@ -1109,16 +1111,17 @@ class PinIKWholeBody:
             self.init_data = cur_qpos
 
         if self.cost_type != "standard_strict" and self.cost_type != "standard_lean_backward_strict":
-            if self.cache_left_target is not None and self.cache_right_target is not None:
-                left_T_err = np.linalg.inv(left_ee_target) @ self.cache_left_target
-                right_T_err = np.linalg.inv(right_ee_target) @ self.cache_right_target
-                left_rot_err = np.linalg.norm(pinocchio.log3(left_T_err[:3, :3]))
-                right_rot_err = np.linalg.norm(pinocchio.log3(right_T_err[:3, :3]))
-                left_trans_err = np.linalg.norm(left_ee_target[:3, 3] - self.cache_left_target[:3, 3])
-                right_trans_err = np.linalg.norm(right_ee_target[:3, 3] - self.cache_right_target[:3, 3])
-                if left_rot_err < np.deg2rad(1) and right_rot_err < np.deg2rad(1) and left_trans_err < 0.0005 and right_trans_err < 0.0005:
-                    self.logger.info("Target change is small, using previous solution as result.")
-                    return True, cur_qpos
+            if self.cache_left_target is not None and self.cache_right_target is not None and self.cache_ref_q is not None and self.cache_sol_q is not None:
+                if np.isclose(self.init_data, self.cache_ref_q, atol = 0.0001):
+                    left_T_err = np.linalg.inv(left_ee_target) @ self.cache_left_target
+                    right_T_err = np.linalg.inv(right_ee_target) @ self.cache_right_target
+                    left_rot_err = np.linalg.norm(pinocchio.log3(left_T_err[:3, :3]))
+                    right_rot_err = np.linalg.norm(pinocchio.log3(right_T_err[:3, :3]))
+                    left_trans_err = np.linalg.norm(left_ee_target[:3, 3] - self.cache_left_target[:3, 3])
+                    right_trans_err = np.linalg.norm(right_ee_target[:3, 3] - self.cache_right_target[:3, 3])
+                    if left_rot_err < np.deg2rad(1) and right_rot_err < np.deg2rad(1) and left_trans_err < 0.0005 and right_trans_err < 0.0005:
+                        self.logger.info("Target change is small, using previous solution as result.")
+                        return True, self.cache_sol_q
 
         self.opti.set_initial(self.var_q, self.init_data)
 
@@ -1149,6 +1152,8 @@ class PinIKWholeBody:
 
             self.cache_left_target = left_ee_target
             self.cache_right_target = right_ee_target
+            self.cache_ref_q = deepcopy(self.init_data)
+            self.cache_sol_q = deepcopy(solution_q)
 
             return True, solution_q
         except Exception as e:
