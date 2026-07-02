@@ -5,8 +5,8 @@ import os
 import curses
 
 # Constants
-FEEDBACK_SHM_KEY = 0x1004
-CONTROL_SHM_KEY = 0x2004
+FEEDBACK_SHM_KEY = 0x1005
+CONTROL_SHM_KEY = 0x2005
 MAX_JOINT_NUM = 32
 OMNI_MOTOR_NUM = 4
 BUFFER_CAPACITY = 8
@@ -77,7 +77,7 @@ class ImuData(ctypes.Structure):
 
 class JointFeedback(ctypes.Structure):
     _fields_ = [
-        ("joint_name", ctypes.c_char * 10),
+        ("joint_name", ctypes.c_char * 32),
         ("joint_status_word", ctypes.c_uint16),
         ("joint_error_code", ctypes.c_uint16),
         ("joint_position", ctypes.c_double),
@@ -90,7 +90,7 @@ class JointFeedback(ctypes.Structure):
 
 class JointControl(ctypes.Structure):
     _fields_ = [
-        ("joint_name", ctypes.c_char * 10),
+        ("joint_name", ctypes.c_char * 32),
         ("joint_mode", ctypes.c_uint16),
         ("joint_position", ctypes.c_double),
         ("joint_velocity", ctypes.c_double),

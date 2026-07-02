@@ -61,7 +61,7 @@ class CustomTableWidget(QTableWidget):
                 if key in delta_map:
                     current_value += delta_map[key]
                     if col == 1:
-                        current_value = max(-3.14, min(3.14, current_value))
+                        current_value = max(-6.283, min(6.283, current_value))
                     if col == 2:
                         clamped = current_value
                         current_value = max(0.01, min(0.2, current_value))

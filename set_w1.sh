@@ -25,7 +25,7 @@ print_usage() {
     echo "  left            - Move left arm (7 joints, value: '[j1,j2,...]' or home/standby)"
     echo "  right           - Move right arm (7 joints, value: '[j1,j2,...]' or home/standby)"
     echo "  stop_move       - Stop current movement"
-    echo "  log             - Print robot server log"
+    echo "  log [lines]     - Follow robot server log (tail -n lines -f)"
     echo "  clear           - Clear errors (no value needed)"
     echo "  drag            - Enable/Disable drag mode (value: 0 or 1)"
     echo "  start           - Start dexe-system.service"
@@ -37,6 +37,7 @@ print_usage() {
     echo "  state           - Monitor feedback state (python3 script/monitor_state.py)"
     echo "  shm             - Monitor shared memory (python3 script/monitor_shm.py)"
     echo "  ctrl            - Joint control GUI (python3 script/qt_joint_control.py)"
+    echo "  analyzer        - Joint analyzer GUI (python3 script/joint_analyzer.py)"
     echo "  dyn [args]      - Dynamic parameter identification GUI (python3 script/qt_dyn_params_ident.py)"
     echo "  codegen         - Generate dynamics code (python3 script/dyn_params_ident/dyn_code_generator.py)"
     echo "  dh [left|right] - Compute DH parameters from URDF (python3 script/dyn_params_ident/urdf2dh.py)"
@@ -69,6 +70,7 @@ print_usage() {
     echo "  ./set_w1.sh right '[0.0, 1.4, 0.0, 0.6, 0.0, 0.5, 0.5]'"
     echo "  ./set_w1.sh stop_move"
     echo "  ./set_w1.sh log"
+    echo "  ./set_w1.sh log 100"
     echo "  ./set_w1.sh clear"
     echo "  ./set_w1.sh drag 1"
     echo "  ./set_w1.sh start"
@@ -224,7 +226,11 @@ case $PROPERTY_KEY in
         ;;
     log)
         if [ -f ~/log/robot_server.txt ]; then
-            cat ~/log/robot_server.txt
+            if [ -n "$VALUE" ]; then
+                tail -n "$VALUE" -f ~/log/robot_server.txt
+            else
+                tail -f ~/log/robot_server.txt
+            fi
         else
             echo "Error: Log file ~/log/robot_server.txt not found."
         fi
@@ -273,6 +279,11 @@ case $PROPERTY_KEY in
     ctrl)
         echo "Starting Joint Control GUI..."
         python3 "${SCRIPT_DIR}/script/qt_joint_control.py"
+        exit 0
+        ;;
+    analyzer)
+        echo "Starting Joint Analyzer GUI..."
+        python3 "${SCRIPT_DIR}/script/joint_analyzer.py"
         exit 0
         ;;
     dyn)
