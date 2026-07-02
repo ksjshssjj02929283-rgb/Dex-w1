@@ -6,17 +6,17 @@ All rights reserved.
 ----------------------------------------------------------------------------
 '''
 
-import os
 import numpy as np
-from dexe_robot_client.end_effector_client import EndEffectorType
-from dexe_robot_client.common import W1Version, W1ArmType
+from scipy.spatial.transform import Rotation as R
+from IPython import embed
+from loop_rate_limiters import RateLimiter
+
 from dexe_robot_client.w1 import W1Manager
 from dexe_robot_client.w1.path_planner.utils.robot_type import *
 from dexe_robot_client.common.mapping_index import *
-from scipy.spatial.transform import Rotation as R
-from IPython import embed
 from dexe_robot_client.common.config import DATA_DIR
-from loop_rate_limiters import RateLimiter
+
+from dexe_rp import EndEffectorType, RobotVersion
 from dexe_rp import W1Vis, pos_wxyz_to_homogeneous, Box, Material
 """
 This example task shows demo of dual arm(fix-connection) move line using SRS get nearest ik(just dual arm motion)
@@ -60,9 +60,8 @@ def test_move_linear_dual_arm_sync(task_dict):
 
 if __name__ == "__main__":
     w1_manager = W1Manager(is_sim=True,
-                           arm_type=W1ArmType.ANTHROPOMORPHIC,
-                           w1_version=W1Version.V2,
-                           end_effector_type=EndEffectorType.BRAINCO_HAND)
+                           robot_version=RobotVersion.W1V024,
+                           end_effector_type=EndEffectorType.BrainCo_Revo1_R)
     if not w1_manager.connect() and not w1_manager.is_enabled():
         raise RuntimeError("Failed to connect to W1 robot.")
 

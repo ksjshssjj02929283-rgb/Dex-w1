@@ -6,19 +6,18 @@ All rights reserved.
 ----------------------------------------------------------------------------
 '''
 
-import os
+import json
 import numpy as np
-from dexe_robot_client.end_effector_client import EndEffectorType
-from dexe_robot_client.common import W1Version, W1ArmType, RobotType
+from IPython import embed
+from scipy.spatial.transform import Rotation as R
+
 from dexe_robot_client.w1 import W1Manager
 from dexe_robot_client.w1.path_planner.utils.robot_type import *
 from dexe_robot_client.common.mapping_index import *
-from scipy.spatial.transform import Rotation as R
-from IPython import embed
 from dexe_robot_client.common.config import DATA_DIR
 
+from dexe_rp import EndEffectorType, RobotVersion
 from dexe_rp import W1Vis, pos_wxyz_to_homogeneous, Box, Sphere, Mesh, Material
-import json
 """
 This example shows basic useage of plan_dual_arm_multiple_task
 """
@@ -233,13 +232,9 @@ def viser_execute_traj(vis,
 
 
 if __name__ == "__main__":
-    robot_type = RobotType.W1V02_1
-    robot_ee_type = EndEffectorType.BRAINCO_HAND
-    # robot_ee_type = None
     w1_manager = W1Manager(is_sim=True,
-                           arm_type=W1ArmType.ANTHROPOMORPHIC,
-                           w1_version=W1Version.V2,
-                           end_effector_type=robot_ee_type)
+                           robot_version=RobotVersion.W1V024,
+                           end_effector_type=EndEffectorType.BrainCo_Revo1_R)
     if not w1_manager.connect() and not w1_manager.is_enabled():
         raise RuntimeError("Failed to connect to W1 robot.")
 

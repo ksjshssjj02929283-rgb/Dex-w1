@@ -10,36 +10,29 @@ import numpy as np
 from copy import deepcopy
 import pathlib
 
-from ...common import get_logger, time_consuming, W1ArmType, W1Version
+from ...common import get_logger, time_consuming
 from ..utils.w1_params import W1Params
-from ...end_effector_client import EndEffectorType
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from ..kinematics.whole_body_ik import *
 from ..kinematics.pin_ik_030 import PinIKWholeBody030
 from .utils.robot_type import *
-from dexe_rp import DexforceW1Kinematics, StatusType, RobotVersion, ArmType
+
+from dexe_rp import DexforceW1Kinematics, StatusType, RobotVersion, EndEffectorType
 
 
 class CartesianToJointPlanner:
 
     def __init__(
             self,
-            arm_type: W1ArmType = W1ArmType.ANTHROPOMORPHIC,
-            w1_version: W1Version = W1Version.V2,
-            end_effector_type: EndEffectorType = EndEffectorType.BRAINCO_HAND):
+            robot_version: RobotVersion,
+            end_effector_type: EndEffectorType = EndEffectorType.BrainCo_Revo1_R
+    ):
         self.logger = get_logger()
 
-        self._arm_type = arm_type
-        self._w1_version = w1_version
+        self._robot_version = robot_version
         self._end_effector_type = end_effector_type
 
-        if w1_version == W1Version.V2:
-            self.w1_params = W1Params(self._arm_type, self._w1_version,
-                                      self._end_effector_type)
-        elif w1_version == W1Version.V3:
-            # temporarily use the same params for V3
-            self.w1_params = W1Params(self._arm_type, W1Version.V2,
-                                      self._end_effector_type)
+        self.w1_params = W1Params(self._robot_version, self._end_effector_type)
 
         self._init_kine_solver()
 
@@ -51,14 +44,8 @@ class CartesianToJointPlanner:
         self.kine.set_user_qpos_limits(self.w1_params.qpos_lb,
                                        self.w1_params.qpos_ub)
 
-        if self._w1_version == W1Version.V2:
-            if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
-                robot_type = RobotType.W1V02_1
-            elif self._arm_type == W1ArmType.INDUSTRIAL:
-                robot_type = RobotType.W1V02_2
-            else:
-                raise ValueError(f"Unsupported arm type: {self._arm_type}")
-
+        robot_type = self.w1_params.robot_type
+        if self._robot_version.version_value.startswith("v02"):
             urdf_path = get_robot_urdf(robot_type=robot_type)
 
             if robot_type == RobotType.W1V02_1 or robot_type == RobotType.W1V02_2:
@@ -80,14 +67,14 @@ class CartesianToJointPlanner:
                 posture_config=PostureConfig(),
                 freezed_joint_dict=None)
 
-        elif self._w1_version == W1Version.V3:
+        elif self._robot_version.version_value.startswith("v03"):
             urdf_path = pathlib.Path.home(
             ) / ".cache/dexe_data/assembled/w1/robot.urdf"
             self.whole_body_ik_solver = PinIKWholeBody030(urdf_path,
                                                           track_type="standard",
                                                           cost_type="standard")
         else:
-            raise ValueError(f"Unsupported W1 version: {self._w1_version}")
+            raise ValueError(f"Unsupported W1 version: {self._robot_version}")
 
         self.logger.info(
             f"Initialize kinematic solver for Cartesian to Joint Planner")
@@ -130,7 +117,7 @@ class CartesianToJointPlanner:
         arm_kine = self._get_arm_kine(name)
         res, qpos_list = arm_kine.calc_nearest_iks(start_qpos,
                                                    end_effector_traj)
-        if res.type != StatusType.Success:
+        if res != StatusType.Success:
             return False, None
         return True, np.array(qpos_list)
 

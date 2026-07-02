@@ -6,22 +6,17 @@ All rights reserved.
 ----------------------------------------------------------------------------
 '''
 
-import os
 import numpy as np
-from dexe_robot_client.end_effector_client import EndEffectorType
-from dexe_robot_client.common import W1Version, W1ArmType
 from dexe_robot_client.w1 import W1Manager
 from dexe_robot_client.w1.path_planner.utils.robot_type import *
 from dexe_robot_client.common.mapping_index import *
 from scipy.spatial.transform import Rotation as R
 from IPython import embed
-from dexe_robot_client.common.config import DATA_DIR
 from dexe_robot_client.w1.utils.unit_conversion import *
 
+from dexe_rp import EndEffectorType, RobotVersion
 from dexe_rp import W1Vis, pos_wxyz_to_homogeneous, Box, Sphere, Mesh, Material, rotation_to_wxyz
-import json
 from loop_rate_limiters import RateLimiter
-import pinocchio as pin
 """
 This example is used to test move_line solving SRS IK susccess rate for chess task
 """
@@ -527,9 +522,8 @@ def test_plan_linear_whole_body_ik(start_qpos, start_left_arm_ee_qpos,
 
 if __name__ == "__main__":
     w1_manager = W1Manager(is_sim=True,
-                           arm_type=W1ArmType.ANTHROPOMORPHIC,
-                           w1_version=W1Version.V2,
-                           end_effector_type=EndEffectorType.BRAINCO_HAND)
+                           robot_version=RobotVersion.W1V024,
+                           end_effector_type=EndEffectorType.BrainCo_Revo1_R)
     if not w1_manager.connect() and not w1_manager.is_enabled():
         raise RuntimeError("Failed to connect to W1 robot.")
 

@@ -8,18 +8,19 @@ All rights reserved.
 
 from dexe_robot_client.common import RobotType
 from dexe_robot_client.w1 import Planner_Pin, FCLChecker
-from dexe_robot_client.end_effector_client import EndEffectorType
 import numpy as np
 import time
+
+from dexe_rp import EndEffectorType
 
 if __name__ == "__main__":
     # Pinocchio Instance
     planner_pin = Planner_Pin(robot_type=RobotType.W1V02_1,
-                              end_effector_type=EndEffectorType.BRAINCO_HAND)
+                              end_effector_type=EndEffectorType.BrainCo_Revo1_R)
 
     # FCL Instance
     fcl_checker = FCLChecker(robot_type=RobotType.W1V02_1,
-                             end_effector_type=EndEffectorType.BRAINCO_HAND)
+                             end_effector_type=EndEffectorType.BrainCo_Revo1_R)
     fcl_checker.enable_visualize()
 
     # fcl_checker.load_env_json(

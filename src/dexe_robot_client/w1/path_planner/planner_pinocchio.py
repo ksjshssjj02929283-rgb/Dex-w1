@@ -9,6 +9,7 @@ All rights reserved.
 import pinocchio
 from ...common import get_pin2real_idx, get_real2pin_idx, get_pin_idx, RobotType
 from .utils.robot_type import *
+from dexe_rp import EndEffectorType
 
 
 class Planner_Pin:
@@ -25,11 +26,13 @@ class Planner_Pin:
         self.pin2real_idx = get_pin2real_idx(robot_urdf, robot_type)
         self.real2pin_idx = get_real2pin_idx(robot_urdf, robot_type)
 
-        if end_effector_type is not None and isinstance(end_effector_type,
-                                                        EndEffectorType):
+        if end_effector_type is not None and isinstance(
+                end_effector_type, EndEffectorType
+        ) and end_effector_type != EndEffectorType.AGILEX_Pika and end_effector_type != EndEffectorType.AGILEX_PiPER_L100:
             self.use_ee = True
             self.ee_type = end_effector_type
-            self.pin_torso_idx, self.pin_head_idx, self.pin_arml_idx, self.pin_armr_idx, self.pin_armlee_idx, self.pin_armree_idx = get_pin_idx(
+            self.pin_torso_idx, self.pin_head_idx, self.pin_arml_idx, self.pin_armr_idx, \
+                self.pin_armlee_idx, self.pin_armree_idx = get_pin_idx(
                 robot_urdf, robot_type)
         else:
             self.use_ee = False
@@ -79,20 +82,20 @@ class Planner_Pin:
                 raise ValueError(
                     "left_ee_qpos and right_ee_qpos should be provided when use_ee is True"
                 )
-            if self.ee_type == EndEffectorType.BRAINCO_HAND:
+            if self.ee_type == EndEffectorType.BrainCo_Revo1_R:
                 if left_ee_qpos.shape != (6,) or right_ee_qpos.shape != (6,):
                     raise ValueError(
-                        "For BRAINCO_HAND, left_ee_qpos and right_ee_qpos should have shape of (6, )"
+                        "For BrainCo_Revo1_R, left_ee_qpos and right_ee_qpos should have shape of (6, )"
                     )
-            elif self.ee_type == EndEffectorType.PGC_GRIPPER:
+            elif self.ee_type == EndEffectorType.DH_PGC_140_50:
                 if left_ee_qpos.shape != (1,) or right_ee_qpos.shape != (1,):
                     raise ValueError(
-                        "For PGC_GRIPPER, left_ee_qpos and right_ee_qpos should have shape of (2, )"
+                        "For DH_PGC_140_50, left_ee_qpos and right_ee_qpos should have shape of (2, )"
                     )
-            elif self.ee_type == EndEffectorType.LINKER_HAND:
+            elif self.ee_type == EndEffectorType.Linker_L6:
                 if left_ee_qpos.shape != (6,) or right_ee_qpos.shape != (6,):
                     raise ValueError(
-                        "For LINKER_HAND, left_ee_qpos and right_ee_qpos should have shape of (6, )"
+                        "For Linker_L6, left_ee_qpos and right_ee_qpos should have shape of (6, )"
                     )
             else:
                 raise ValueError("Unsupported end effector type")
@@ -153,12 +156,12 @@ class Planner_Pin:
         """
         if self.robot_type == RobotType.W1V02_1 or self.robot_type == RobotType.W1V02_2:
             if self.use_ee:
-                if self.ee_type == EndEffectorType.BRAINCO_HAND:
+                if self.ee_type == EndEffectorType.BrainCo_Revo1_R:
                     real_qpos = np.concatenate((real_qpos, np.zeros(20)),
                                                axis=0)
-                elif self.ee_type == EndEffectorType.PGC_GRIPPER:
+                elif self.ee_type == EndEffectorType.DH_PGC_140_50:
                     real_qpos = np.concatenate((real_qpos, np.zeros(4)), axis=0)
-                elif self.ee_type == EndEffectorType.LINKER_HAND:
+                elif self.ee_type == EndEffectorType.Linker_L6:
                     real_qpos = np.concatenate((real_qpos, np.zeros(22)),
                                                axis=0)
 
@@ -172,12 +175,12 @@ class Planner_Pin:
             return arml_base_tf, armr_base_tf
         elif self.robot_type == RobotType.W1V03_1:
             if self.use_ee:
-                if self.ee_type == EndEffectorType.BRAINCO_HAND:
+                if self.ee_type == EndEffectorType.BrainCo_Revo1_R:
                     real_qpos = np.concatenate((real_qpos, np.zeros(20)),
                                                axis=0)
-                elif self.ee_type == EndEffectorType.PGC_GRIPPER:
+                elif self.ee_type == EndEffectorType.DH_PGC_140_50:
                     real_qpos = np.concatenate((real_qpos, np.zeros(4)), axis=0)
-                elif self.ee_type == EndEffectorType.LINKER_HAND:
+                elif self.ee_type == EndEffectorType.Linker_L6:
                     real_qpos = np.concatenate((real_qpos, np.zeros(22)),
                                                axis=0)
 
@@ -204,7 +207,7 @@ class Planner_Pin:
 
     def _compute_ee_qpos(self, left_ee_pulse: np.ndarray,
                          right_ee_pulse: np.ndarray):
-        if self.ee_type == EndEffectorType.BRAINCO_HAND:
+        if self.ee_type == EndEffectorType.BrainCo_Revo1_R:
             left_ee_qpos, right_ee_qpos = np.zeros(6), np.zeros(6)
 
             left_ee_qpos[0], left_ee_qpos[1] = self._pulse_to_radian(left_ee_pulse[0], BRAINCO_LEFT_LIMITS[0, 1], BRAINCO_LEFT_LIMITS[1, 1]), \
@@ -238,7 +241,7 @@ class Planner_Pin:
                                                      BRAINCO_RIGHT_LIMITS[1, 8])
 
             return left_ee_qpos, right_ee_qpos
-        elif self.ee_type == EndEffectorType.LINKER_HAND:
+        elif self.ee_type == EndEffectorType.Linker_L6:
             left_ee_qpos, right_ee_qpos = np.zeros(6), np.zeros(6)
             # pulse index order (thumb_mcp, thumb_cmc, index_mcp, middle_mcp, ring_mcp, little_mcp)
             left_ee_qpos[0], left_ee_qpos[1] = self._pulse_to_radian(left_ee_pulse[0], LINKER_LEFT_LIMITS[0,1], LINKER_LEFT_LIMITS[1,1]), \
@@ -272,7 +275,7 @@ class Planner_Pin:
                                                      LINKER_RIGHT_LIMITS[1, 9])
 
             return left_ee_qpos, right_ee_qpos
-        elif self.ee_type == EndEffectorType.PGC_GRIPPER:
+        elif self.ee_type == EndEffectorType.DH_PGC_140_50:
             left_ee_qpos, right_ee_qpos = np.zeros(1), np.zeros(1)
 
             left_ee_qpos[0] = self._pulse_to_position(left_ee_pulse[0],
@@ -295,7 +298,7 @@ class Planner_Pin:
 
     def get_complete_ee_qpos(self, armlee_qpos: np.ndarray,
                              armree_qpos: np.ndarray):
-        if self.ee_type == EndEffectorType.BRAINCO_HAND:
+        if self.ee_type == EndEffectorType.BrainCo_Revo1_R:
             arml_thumb_cmc, arml_thumb_mcp = armlee_qpos[1], armlee_qpos[0]
             # arml_thumb_cmc, arml_thumb_mcp = armlee_qpos[0], armlee_qpos[1]
             arml_index_mcp = armlee_qpos[2]
@@ -345,7 +348,7 @@ class Planner_Pin:
                 armr_little_mcp, armr_little_pip
             ])
             return complete_armlee_qpos, complete_armree_qpos
-        elif self.ee_type == EndEffectorType.LINKER_HAND:
+        elif self.ee_type == EndEffectorType.Linker_L6:
             arml_thumb_cmc, arml_thumb_mcp = armlee_qpos[1], armlee_qpos[0]
             # arml_thumb_cmc, arml_thumb_mcp = armlee_qpos[0], armlee_qpos[1]
             arml_thumb_pip = self._compute_ee_mimic_qpos(
@@ -401,7 +404,7 @@ class Planner_Pin:
                 armr_ring_pip, armr_little_mcp, armr_little_pip
             ])
             return complete_armlee_qpos, complete_armree_qpos
-        elif self.ee_type == EndEffectorType.PGC_GRIPPER:
+        elif self.ee_type == EndEffectorType.DH_PGC_140_50:
             arml_finger1 = armlee_qpos[0]
             arml_finger2 = self._compute_ee_mimic_qpos(arml_finger1, 1.0, 0.0,
                                                        PGC_LEFT_LIMITS[0, 1],

@@ -17,8 +17,9 @@ from .ompl_plan import OMPLPlanSingle, OMPLPlanCentralized, OMPLPlanDecoupled
 from .traj_coordination import Coordination
 from .utils.robot_type import RobotURDF, RobotCollision, get_robot_urdf, get_robot_mesh_path
 from .planner_pinocchio import Planner_Pin
-from ...end_effector_client import EndEffectorType
 from ...common import get_logger, RobotType
+
+from dexe_rp import EndEffectorType
 
 HEAD_DIM = 2
 TORSO_DIM = 4
@@ -79,14 +80,18 @@ class HybridPlanner:
 
         Args:
             robot_type (RobotType): The type of the robot (RobotType.W1V02_1 or RobotType.W1V02_2)
-            ee_type (EndEffectorType): The type of the end effector (EndEffectorType.PGC_GRIPPER or EndEffectorType.BRAINCO_HAND)
+            ee_type (EndEffectorType): The type of the end effector
 
         Notes:
             - If ee_type is None, it will not use the end effector
         """
         if ee_type is not None:
-            cls.ee_type = ee_type
-            cls.use_ee = True
+            if ee_type != EndEffectorType.AGILEX_Pika and ee_type != EndEffectorType.AGILEX_PiPER_L100:
+                cls.ee_type = ee_type
+                cls.use_ee = True
+            else:
+                cls.ee_type = None
+                cls.use_ee = False
         else:
             cls.ee_type = None
             cls.use_ee = False
@@ -201,15 +206,15 @@ class HybridPlanner:
     def set_end_effector_qpos(self, armlee_qpos: np.ndarray,
                               armree_qpos: np.ndarray):
         if self.use_ee:
-            if self.ee_type == EndEffectorType.BRAINCO_HAND:
+            if self.ee_type == EndEffectorType.BrainCo_Revo1_R:
                 if armlee_qpos.shape != (6,) or armree_qpos.shape != (6,):
                     raise ValueError(
-                        f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                        f"For BrainCo_Revo1_R, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
                     )
-            if self.ee_type == EndEffectorType.PGC_GRIPPER:
+            if self.ee_type == EndEffectorType.DH_PGC_140_50:
                 if armlee_qpos.shape != (2,) or armree_qpos.shape != (2,):
                     raise ValueError(
-                        f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                        f"For DH_PGC_140_50, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
                     )
             self.armlee_qpos = armlee_qpos
             self.armree_qpos = armree_qpos

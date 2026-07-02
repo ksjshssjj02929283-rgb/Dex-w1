@@ -13,12 +13,12 @@ from .fcl_checker import FCLChecker
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from .traj_coordination import Coordination
 from .planner_pinocchio import Planner_Pin
-from ...end_effector_client import EndEffectorType
 from ...common import get_logger
-import pinocchio
 import time
 import os
 import csv
+
+from dexe_rp import EndEffectorType
 
 CHECK_RES = 0.005
 SAMPLE_RANGE = 0.1
@@ -120,15 +120,15 @@ class OMPLPlanSingle:
     def set_end_effector_qpos(self, armlee_qpos: np.ndarray,
                               armree_qpos: np.ndarray):
         if self.use_ee:
-            if self.end_effector_type == EndEffectorType.BRAINCO_HAND:
+            if self.end_effector_type == EndEffectorType.BrainCo_Revo1_R:
                 if armlee_qpos.shape != (6,) or armree_qpos.shape != (6,):
                     raise ValueError(
-                        f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                        f"For BrainCo_Revo1_R, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
                     )
-            if self.end_effector_type == EndEffectorType.PGC_GRIPPER:
+            if self.end_effector_type == EndEffectorType.DH_PGC_140_50:
                 if armlee_qpos.shape != (2,) or armree_qpos.shape != (2,):
                     raise ValueError(
-                        f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                        f"For DH_PGC_140_50, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
                     )
             # self.armlee_qpos = armlee_qpos
             # self.armree_qpos = armree_qpos
@@ -616,15 +616,15 @@ class OMPLPlanCentralized:
     def set_end_effector_qpos(self, armlee_qpos: np.ndarray,
                               armree_qpos: np.ndarray):
         if self.use_ee:
-            if self.end_effector_type == EndEffectorType.BRAINCO_HAND:
+            if self.end_effector_type == EndEffectorType.BrainCo_Revo1_R:
                 if armlee_qpos.shape != (6,) or armree_qpos.shape != (6,):
                     raise ValueError(
-                        f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                        f"For BrainCo_Revo1_R, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
                     )
-            if self.end_effector_type == EndEffectorType.PGC_GRIPPER:
+            if self.end_effector_type == EndEffectorType.DH_PGC_140_50:
                 if armlee_qpos.shape != (2,) or armree_qpos.shape != (2,):
                     raise ValueError(
-                        f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                        f"For DH_PGC_140_50, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
                     )
             self.armlee_qpos = armlee_qpos
             self.armree_qpos = armree_qpos
@@ -918,15 +918,15 @@ class OMPLPlanDecoupled:
     def set_end_effector_qpos(self, armlee_qpos: np.ndarray,
                               armree_qpos: np.ndarray):
         if self.use_ee:
-            if self.end_effector_type == EndEffectorType.BRAINCO_HAND:
+            if self.end_effector_type == EndEffectorType.BrainCo_Revo1_R:
                 if armlee_qpos.shape != (6,) or armree_qpos.shape != (6,):
                     raise ValueError(
-                        f"For BRAINCO_HAND, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                        f"For BrainCo_Revo1_R, end_effector_qpos must be a 6-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
                     )
-            if self.end_effector_type == EndEffectorType.PGC_GRIPPER:
+            if self.end_effector_type == EndEffectorType.DH_PGC_140_50:
                 if armlee_qpos.shape != (2,) or armree_qpos.shape != (2,):
                     raise ValueError(
-                        f"For PGC_GRIPPER, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
+                        f"For DH_PGC_140_50, end_effector_qpos must be a 2-element array, got {armlee_qpos.shape} and {armree_qpos.shape}"
                     )
             self.armlee_qpos = armlee_qpos
             self.armree_qpos = armree_qpos

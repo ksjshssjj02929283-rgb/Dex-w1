@@ -3,10 +3,15 @@
 ## [Unrelease]
 ### Feat
 - 支持W1 V030硬件版本
+- 支持 W1Manager 类构造函数，自动从系统配置中读取类型
+
+### Refactor
+- W1Manager构造使用 dexe_rp 中的RobotVersion 和 EndEffectorType
 
 ### Remove
 - 移除move_torso_linear()、move_arm_linear()、rotate_arm_linear()
 - 移除transfer_grasp_pose()
+- 移除 W1ArmType、W1Version 和 EndEffectorType
 
 ## [V0.6.0]
 ### Feat
