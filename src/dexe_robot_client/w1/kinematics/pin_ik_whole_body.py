@@ -516,7 +516,7 @@ class PinIKWholeBody:
                 + 0.02 * regularization_cost
                 + 5 * self.smooth_cost
                 + self.waist_straight_weight * casadi.sumsqr(self.var_q[0] + self.var_q[1] + self.var_q[2])  # upper body straight cost
-                + 10 * casadi.sumsqr(self.var_q[0:3] -
+                + 100 * casadi.sumsqr(self.var_q[0:3] -
                                    self.var_q_last[0:3])  # move arms first cost
                 + 10 * (self.arm6_cost + self.arm7_cost + self.arm4_cost)
                 + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
@@ -657,7 +657,7 @@ class PinIKWholeBody:
                 + 0.02 * regularization_cost
                 + 5 * self.smooth_cost
                 + waist_straight_weight * casadi.sumsqr(self.var_q[0] + self.var_q[1] + self.var_q[2])  # upper body straight cost
-                + 10 * casadi.sumsqr(self.var_q[0:3] -
+                + 100 * casadi.sumsqr(self.var_q[0:3] -
                                    self.var_q_last[0:3])  # move arms first cost
                 + 10 * (self.arm6_cost + self.arm7_cost + self.arm4_cost)
                 + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
@@ -802,7 +802,7 @@ class PinIKWholeBody:
                 + 0.02 * regularization_cost
                 + 5 * self.smooth_cost
                 + self.waist_straight_weight * casadi.sumsqr(self.var_q[0] + self.var_q[1] + self.var_q[2])  # upper body straight cost
-                + 10 * casadi.sumsqr(self.var_q[0:3] -
+                + 100 * casadi.sumsqr(self.var_q[0:3] -
                                    self.var_q_last[0:3])  # move arms first cost
                 + 10 * (self.arm6_cost + self.arm7_cost + self.arm4_cost)
                 + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
@@ -946,7 +946,7 @@ class PinIKWholeBody:
                 + 0.02 * regularization_cost
                 + 5 * self.smooth_cost
                 + self.waist_straight_weight * casadi.sumsqr(self.var_q[0] + self.var_q[1] + self.var_q[2] - self.lean_backward_threshold)  # upper body straight cost
-                + 10 * casadi.sumsqr(self.var_q[0:3] -
+                + 100 * casadi.sumsqr(self.var_q[0:3] -
                                    self.var_q_last[0:3])  # move arms first cost
                 + 10 * (self.arm6_cost + self.arm7_cost + self.arm4_cost)
                 + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
@@ -1090,7 +1090,7 @@ class PinIKWholeBody:
                 + 0.02 * regularization_cost
                 + 5 * self.smooth_cost
                 + self.waist_straight_weight * casadi.sumsqr(self.var_q[0] + self.var_q[1] + self.var_q[2] - self.lean_backward_threshold)  # upper body straight cost
-                + 10 * casadi.sumsqr(self.var_q[0:3] -
+                + 100 * casadi.sumsqr(self.var_q[0:3] -
                                    self.var_q_last[0:3])  # move arms first cost
                 + 10 * (self.arm6_cost + self.arm7_cost + self.arm4_cost)
                 + 10 * casadi.sumsqr(self.angle_cost_func(self.var_q))
@@ -1112,7 +1112,7 @@ class PinIKWholeBody:
 
         if self.cost_type != "standard_strict" and self.cost_type != "standard_lean_backward_strict":
             if self.cache_left_target is not None and self.cache_right_target is not None and self.cache_ref_q is not None and self.cache_sol_q is not None:
-                if np.isclose(self.init_data, self.cache_ref_q, atol = 0.0001):
+                if np.allclose(self.init_data, self.cache_ref_q, atol = 0.005):
                     left_T_err = np.linalg.inv(left_ee_target) @ self.cache_left_target
                     right_T_err = np.linalg.inv(right_ee_target) @ self.cache_right_target
                     left_rot_err = np.linalg.norm(pinocchio.log3(left_T_err[:3, :3]))
