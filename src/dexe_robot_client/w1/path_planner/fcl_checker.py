@@ -18,9 +18,10 @@ from copy import deepcopy
 from ...common import LOG_DIR
 from dataclasses import dataclass
 
-from ...end_effector_client import EndEffectorType
 from .utils.robot_type import *
 from ...common import get_logger, RobotType
+
+from dexe_rp import EndEffectorType
 
 
 class FCLChecker:
@@ -33,7 +34,7 @@ class FCLChecker:
 
         Args:
             robot_type(RobotType): Type of the robot (e.g., W1V02_1, W1V02_2).
-            end_effector_type(EndEffectorType): Type of the end effector (e.g., PGC_GRIPPER, BRAINCO_HAND).
+            end_effector_type(EndEffectorType): Type of the end effector.
         """
         if robot_type is None or not isinstance(robot_type, RobotType):
             raise ValueError(
@@ -71,15 +72,16 @@ class FCLChecker:
         self.use_ee = False
         if end_effector_type is not None:
             if isinstance(end_effector_type, EndEffectorType):
-                self.armlee_full_path, self.armree_full_path = get_ee_full_path(
-                    robot_type, end_effector_type)
-                # self.arml_full_path.append(self.ee_full_path[0])
-                # self.armr_full_path.append(self.ee_full_path[1])
-                self.end_effector_type = end_effector_type
-                self.use_ee = True
+                if end_effector_type != EndEffectorType.AGILEX_Pika and end_effector_type != EndEffectorType.AGILEX_PiPER_L100:
+                    self.armlee_full_path, self.armree_full_path = get_ee_full_path(
+                        robot_type, end_effector_type)
+                    # self.arml_full_path.append(self.ee_full_path[0])
+                    # self.armr_full_path.append(self.ee_full_path[1])
+                    self.end_effector_type = end_effector_type
+                    self.use_ee = True
             else:
                 raise ValueError(
-                    f"Unsupported End Effector Type: {end_effector_type}. Please use PGC_GRIPPER or BRAINCO_HAND or LINKER_HAND."
+                    f"Unsupported End Effector Type: {end_effector_type}. Please use DH_PGC_140_50 or BrainCo_Revo1_R or Linker_L6."
                 )
 
         self.arml_attached = False

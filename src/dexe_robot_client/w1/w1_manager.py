@@ -19,12 +19,12 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from scipy.spatial.transform import Rotation, Slerp
 
-from ..common import time_consuming, get_logger, DATA_DIR, W1ArmType, W1Version, RobotType, download_w1_urdf, StatusCode
+from ..common import time_consuming, get_logger, DATA_DIR, RobotType, StatusCode
 from ..common.mapping_index import *
-from ..end_effector_client import EndEffectorType, create_end_effector_client
 from ..navigation_client import ChassisClient
 from ..robot_client import RobotClientRos2 as RobotClient
 from ..robot_client import MotionGroup, Status
+from ..end_effector_client import EndEffectorClient
 from .trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from .path_planner.blend_path import PathType, PathRnBezier, PathR3xSO3Bezier, weighted_norm, check_SE3_sparse_waypoints
 from .path_planner.cartesian_planner import CartesianPlanner
@@ -36,10 +36,12 @@ from .path_planner.hybrid_planner import HybridPlanner
 from .utils.w1_params import W1Params
 from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 
-from dexe_rp import (DexforceW1Kinematics, StatusType, R2, R2Tangent, R4,
-                     R4Tangent, R7, R7Tangent, R20, R20Tangent, SE3, R3xSO3,
-                     R3xSO3Tangent, TrajectoryConstraint, BlendType,
+from dexe_rp import StatusType, RobotVersion, EndEffectorType, read_config
+from dexe_rp import (R2, R2Tangent, R4, R4Tangent, R7, R7Tangent, R20,
+                     R20Tangent, SE3, R3xSO3, R3xSO3Tangent,
+                     TrajectoryConstraint, BlendType,
                      create_double_s_traj_along_blend_path, create_blend_path)
+from dexe_rp import DexforceW1Kinematics
 
 USE_TOPPRA = False
 
@@ -54,11 +56,22 @@ class W1Manager:
                 cls._instance = super().__new__(cls)
         return cls._instance
 
+    @classmethod
+    def create(cls, is_sim: bool, use_nav: bool = False):
+        """TODO: Add ChassisType rather than use_nav.
+
+                Support left and right different ee type."""
+        config = read_config()
+        robot_version = RobotVersion.from_robot_and_version_safe(
+            config["robot_type"], config["version"])
+        end_effector_type = EndEffectorType.from_string_safe(
+            config["left_hand_type"])
+        return cls(is_sim, robot_version, end_effector_type, use_nav)
+
     def __init__(self,
                  is_sim: bool,
-                 arm_type: W1ArmType,
-                 w1_version: W1Version = W1Version.V2,
-                 end_effector_type: EndEffectorType = None,
+                 robot_version: RobotVersion,
+                 end_effector_type: EndEffectorType,
                  use_nav: bool = False):
         self.logger = get_logger()
 
@@ -76,7 +89,6 @@ class W1Manager:
         self._right_ee_client_sim = None
         self._right_ee_client_real = None
 
-        self._use_nav = use_nav
         self.chassis_client = None
         self._chassis_client_sim = None
         self._chassis_client_real = None
@@ -87,21 +99,15 @@ class W1Manager:
         self._node_thread = None
 
         self._is_sim = None
-        self._arm_type = arm_type
-        self._w1_version = w1_version
+        self._robot_version = robot_version
         self._end_effector_type = end_effector_type
+        self._use_nav = use_nav
 
         self.logger.info(
-            f"Initialize W1 manager: \narm type: {arm_type}\nw1 version: {w1_version}\nend effector type: {end_effector_type}\nuse_nav: {use_nav}"
+            f"Initialize W1 manager: \nrobot version: {robot_version}\nend effector type: {end_effector_type}\nuse_nav: {use_nav}"
         )
 
-        if w1_version == W1Version.V2:
-            res, file_path = download_w1_urdf(arm_type, w1_version,
-                                              end_effector_type)
-            res, file_path = download_w1_urdf(arm_type, w1_version, None)
-
-        self.w1_params = W1Params(self._arm_type, self._w1_version,
-                                  self._end_effector_type)
+        self.w1_params = W1Params(self._robot_version, self._end_effector_type)
 
         # 在主线程中正常退出时自动调用
         atexit.register(self._destroy_clients)
@@ -118,31 +124,23 @@ class W1Manager:
             raise RuntimeError("Set real mode failed")
 
         # initialize fcl checker and pinocchio model and planner
-        self._init_fcl_checker(arm_type=arm_type,
-                               w1_version=w1_version,
-                               end_effector_type=end_effector_type)
+        robot_type = None
+        if self._robot_version.version_value.startswith("v02"):
+            if self._robot_version.version_value.endswith("i"):
+                robot_type = RobotType.W1V02_2
+            else:
+                robot_type = RobotType.W1V02_1
+        elif self._robot_version.version_value.startswith("v03"):
+            robot_type = RobotType.W1V03_1
 
-        self._init_pinocchio(arm_type=arm_type,
-                             w1_version=w1_version,
-                             end_effector_type=end_effector_type)
+        self.real_torso_idx, self.real_head_idx, \
+            self.real_arml_idx, self.real_armr_idx = get_real_idx(robot_type, None)
 
-        if w1_version == W1Version.V2:
-            self.real_torso_idx, self.real_head_idx, self.real_arml_idx, self.real_armr_idx = get_real_idx(
-            )
-        elif w1_version == W1Version.V3:
-            self.real_torso_idx, self.real_head_idx, self.real_arml_idx, self.real_armr_idx = get_real_idx(
-                RobotType.W1V03_1, None)
-        else:
-            raise ValueError(
-                f"Not supported w1 version: {w1_version} for real idx")
-
-        self._init_planner(arm_type=arm_type,
-                           w1_version=w1_version,
-                           end_effector_type=end_effector_type)
-
-        self._init_cartesian_planner(arm_type=arm_type,
-                                     w1_version=w1_version,
-                                     end_effector_type=end_effector_type)
+        self._init_fcl_checker(robot_type, self._end_effector_type)
+        self._init_pinocchio(robot_type, self._end_effector_type)
+        self._init_planner(robot_type, self._end_effector_type)
+        self._init_cartesian_planner(self._robot_version,
+                                     self._end_effector_type)
 
         self._stop_move_event = threading.Event()
         self._stop_move_event.clear()
@@ -150,99 +148,37 @@ class W1Manager:
         self.collision_cnt = 0
 
     def _init_fcl_checker(self,
-                          arm_type: W1ArmType,
-                          w1_version: W1Version = W1Version.V2,
+                          robot_type: RobotType,
                           end_effector_type: EndEffectorType = None):
-        if w1_version == W1Version.V2:
-            if arm_type == W1ArmType.ANTHROPOMORPHIC:
-                fcl_robot_type = RobotType.W1V02_1
-            elif arm_type == W1ArmType.INDUSTRIAL:
-                fcl_robot_type = RobotType.W1V02_2
-            else:
-                raise ValueError(
-                    f"Not supported arm type: {arm_type} for fcl checker")
-                return
-            self.fcl_checker = FCLChecker(fcl_robot_type, end_effector_type)
-            self.fcl_checker.enable_visualize()
-        elif w1_version == W1Version.V3:
-            fcl_robot_type = RobotType.W1V03_1
-            self.fcl_checker = FCLChecker(fcl_robot_type, end_effector_type)
-            self.fcl_checker.enable_visualize()
-        else:
-            raise ValueError(
-                f"Not supported w1 version: {w1_version} for fcl checker")
+        fcl_robot_type = robot_type
+        self.fcl_checker = FCLChecker(fcl_robot_type, end_effector_type)
+        self.fcl_checker.enable_visualize()
 
     def _init_pinocchio(self,
-                        arm_type: W1ArmType = W1ArmType.ANTHROPOMORPHIC,
-                        w1_version: W1Version = W1Version.V2,
+                        robot_type: RobotType,
                         end_effector_type: EndEffectorType = None):
         """
         Initialize the pinocchio model and data for the robot.
         """
-        if w1_version == W1Version.V2:
-            if arm_type == W1ArmType.ANTHROPOMORPHIC:
-                pin_robot_type = RobotType.W1V02_1
-            elif arm_type == W1ArmType.INDUSTRIAL:
-                pin_robot_type = RobotType.W1V02_2
-            else:
-                raise ValueError(
-                    f"Not supported arm type: {arm_type} for pinocchio model")
-                return
-            if end_effector_type is None or isinstance(end_effector_type,
-                                                       EndEffectorType):
-                pin_ee_type = end_effector_type
-            else:
-                raise ValueError(
-                    f"Not supported end_effector_type: {end_effector_type} for pinocchio model"
-                )
-                return
-
-            self._pin_kine = Planner_Pin(robot_type=pin_robot_type,
-                                         end_effector_type=pin_ee_type)
-        elif w1_version == W1Version.V3:
-            pin_robot_type = RobotType.W1V03_1
-            if end_effector_type is None or isinstance(end_effector_type,
-                                                       EndEffectorType):
-                pin_ee_type = end_effector_type
-            else:
-                raise ValueError(
-                    f"Not supported end_effector_type: {end_effector_type} for pinocchio model"
-                )
-                return
-
-            self._pin_kine = Planner_Pin(robot_type=pin_robot_type,
-                                         end_effector_type=pin_ee_type)
-        else:
-            raise ValueError(
-                f"Not supported w1 version: {w1_version} for pinocchio model")
+        pin_robot_type = robot_type
+        self._pin_kine = Planner_Pin(pin_robot_type, end_effector_type)
 
     def _init_planner(self,
-                      arm_type: W1ArmType,
-                      w1_version: W1Version.V2,
+                      robot_type: RobotType,
                       end_effector_type: EndEffectorType = None):
-        if w1_version == W1Version.V2:
-            if arm_type == W1ArmType.ANTHROPOMORPHIC:
-                planner_robot_type = RobotType.W1V02_1
-            elif arm_type == W1ArmType.INDUSTRIAL:
-                planner_robot_type = RobotType.W1V02_2
-            else:
-                raise ValueError(
-                    f"Not supported arm type: {arm_type} for planner")
-                return
-            HybridPlanner.set_arms_cfg(SINGLE_ARM_DIM, SINGLE_ARM_DIM,
-                                       LARM_BOUND, RARM_BOUND)
-            HybridPlanner.set_robot_cfg(robot_type=planner_robot_type,
-                                        ee_type=end_effector_type)
-            # HybridPlanner.set_env_json(get_env_json_path())
-            self.hybrid_planner = HybridPlanner()
+        planner_robot_type = robot_type
+        HybridPlanner.set_arms_cfg(SINGLE_ARM_DIM, SINGLE_ARM_DIM, LARM_BOUND,
+                                   RARM_BOUND)
+        HybridPlanner.set_robot_cfg(planner_robot_type, end_effector_type)
+        # HybridPlanner.set_env_json(get_env_json_path())
+        self.hybrid_planner = HybridPlanner()
 
     def _init_cartesian_planner(self,
-                                arm_type: W1ArmType,
-                                w1_version: W1Version,
+                                robot_version: RobotVersion,
                                 end_effector_type: EndEffectorType = None):
         self.cartesian_joint_planner = CartesianToJointPlanner(
-            arm_type, w1_version, end_effector_type)
-        self.cartesian_planner = CartesianPlanner(arm_type, w1_version,
+            robot_version, end_effector_type)
+        self.cartesian_planner = CartesianPlanner(robot_version,
                                                   end_effector_type)
 
     def _init_clients(self):
@@ -275,22 +211,16 @@ class W1Manager:
                         self._robot_client_sim, self._robot_client_real
                     ]
             else:
-                self._left_ee_client_sim = create_end_effector_client(
-                    is_left=True,
-                    is_sim=True,
-                    end_effector_type=self._end_effector_type)
-                self._right_ee_client_sim = create_end_effector_client(
+                self._left_ee_client_sim = EndEffectorClient(
+                    ee_type=self._end_effector_type, is_left=True, is_sim=True)
+                self._right_ee_client_sim = EndEffectorClient(
+                    ee_type=self._end_effector_type, is_left=False, is_sim=True)
+                self._left_ee_client_real = EndEffectorClient(
+                    ee_type=self._end_effector_type, is_left=True, is_sim=False)
+                self._right_ee_client_real = EndEffectorClient(
+                    ee_type=self._end_effector_type,
                     is_left=False,
-                    is_sim=True,
-                    end_effector_type=self._end_effector_type)
-                self._left_ee_client_real = create_end_effector_client(
-                    is_left=True,
-                    is_sim=False,
-                    end_effector_type=self._end_effector_type)
-                self._right_ee_client_real = create_end_effector_client(
-                    is_left=False,
-                    is_sim=False,
-                    end_effector_type=self._end_effector_type)
+                    is_sim=False)
                 self.left_ee_client = self._left_ee_client_sim
                 self.right_ee_client = self._right_ee_client_sim
 
@@ -1251,11 +1181,19 @@ class W1Manager:
         if self._has_arm_ee_client("left_arm_ee",
                                    False) and self._has_arm_ee_client(
                                        "right_arm_ee", False):
-            torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(
-                qpos,
-                left_ee_qpos=armlee_qpos,
-                right_ee_qpos=armree_qpos,
-                compute_ee=True)
+            if self._end_effector_type != EndEffectorType.AGILEX_Pika and self._end_effector_type != EndEffectorType.AGILEX_PiPER_L100:
+                torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(
+                    qpos,
+                    left_ee_qpos=armlee_qpos,
+                    right_ee_qpos=armree_qpos,
+                    compute_ee=True)
+            else:
+                torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(
+                    qpos,
+                    left_ee_qpos=None,
+                    right_ee_qpos=None,
+                    compute_ee=False)
+                armlee_tf, armree_tf = None, None
         else:
             torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(
                 qpos, left_ee_qpos=None, right_ee_qpos=None, compute_ee=False)

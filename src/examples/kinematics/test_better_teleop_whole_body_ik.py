@@ -6,8 +6,7 @@ All rights reserved.
 ----------------------------------------------------------------------------
 '''
 
-import os
-import time
+from pathlib import Path
 import numpy as np
 from IPython import embed
 
@@ -80,7 +79,7 @@ if __name__ == "__main__":
 
     vis, scene_handle_list, workobjects_handle_list = load_viser()
 
-    urdf_path = "/home/young/dexe_data_cache/v023/w1/robot.urdf"
+    urdf_path = Path.home() / ".cache/dexe_data/assembled/w1/robot.urdf"
     left_j7_T_tracking = np.array([[0, 0.707, 0.707, -0.15], [1, 0, 0, 0],
                                    [0, 0.707, -0.707, 0], [0, 0, 0, 1]])
     right_j7_T_tracking = np.array([[0, 0.707, 0.707, -0.15], [1, 0, 0, 0],

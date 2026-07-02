@@ -13,7 +13,8 @@ import pinocchio
 
 from .logger import get_logger
 from .robot_type import RobotType
-from ..end_effector_client import EndEffectorType
+
+from dexe_rp import EndEffectorType
 
 
 class RealRobotIdx(Enum):
@@ -429,7 +430,7 @@ def get_real2pin_idx(urdf_path,
         raise ValueError(f"Unsupported W1 version: {robot_version}")
 
 
-def get_real_idx(robot_version: RobotType = RobotType.W1V02_1,
+def get_real_idx(robot_type: RobotType = RobotType.W1V02_1,
                  end_effector_type: EndEffectorType = None):
     """
     This function returns the start and end indices for torso, head, left arm, and right arm in the real robot.
@@ -443,31 +444,31 @@ def get_real_idx(robot_version: RobotType = RobotType.W1V02_1,
     Notes:
         - This function requires the joints order in real robot can't have torso, head, arml, armr overlapped
     """
-    if robot_version == RobotType.W1V02_1 or robot_version == RobotType.W1V02_2:
+    if robot_type == RobotType.W1V02_1 or robot_type == RobotType.W1V02_2:
         if end_effector_type is None:
             real_robot_idx = RealRobotIdx
-        if end_effector_type == EndEffectorType.BRAINCO_HAND:
+        if end_effector_type == EndEffectorType.BrainCo_Revo1_R:
             real_robot_idx = RealRobotIdx_Brainco
-        if end_effector_type == EndEffectorType.PGC_GRIPPER:
+        if end_effector_type == EndEffectorType.DH_PGC_140_50:
             real_robot_idx = RealRobotIdx_PGC
-        if end_effector_type == EndEffectorType.LINKER_HAND:
+        if end_effector_type == EndEffectorType.Linker_L6:
             real_robot_idx = RealRobotIdx_Linker
-    elif robot_version == RobotType.W1V03_1:
+    elif robot_type == RobotType.W1V03_1:
         if end_effector_type is None:
             real_robot_idx = RealRobotIdx030
-        if end_effector_type == EndEffectorType.BRAINCO_HAND:
+        if end_effector_type == EndEffectorType.BrainCo_Revo1_R:
             real_robot_idx = RealRobotIdx030_Brainco
-        if end_effector_type == EndEffectorType.PGC_GRIPPER:
+        if end_effector_type == EndEffectorType.DH_PGC_140_50:
             real_robot_idx = RealRobotIdx030_PGC
-        if end_effector_type == EndEffectorType.LINKER_HAND:
+        if end_effector_type == EndEffectorType.Linker_L6:
             real_robot_idx = RealRobotIdx030_Linker
     else:
-        raise ValueError(f"Unsupported W1 version: {robot_version}")
+        raise ValueError(f"Unsupported W1 version: {robot_type}")
 
     real_names = [realjoint.name for realjoint in real_robot_idx]
     real_dict = {name: idx for idx, name in enumerate(real_names)}
 
-    if robot_version == RobotType.W1V02_1 or robot_version == RobotType.W1V02_2:
+    if robot_type == RobotType.W1V02_1 or robot_type == RobotType.W1V02_2:
         ankle_idx, knee_idx, buttock_idx, waist_idx = real_dict[
             "ANKLE"], real_dict["KNEE"], real_dict["BUTTOCK"], real_dict[
                 "WAIST"]
@@ -490,7 +491,7 @@ def get_real_idx(robot_version: RobotType = RobotType.W1V02_1,
         if end_effector_type is None:
             return torso_idx, head_idx, left_arm_idx, right_arm_idx
 
-        if end_effector_type == EndEffectorType.BRAINCO_HAND:
+        if end_effector_type == EndEffectorType.BrainCo_Revo1_R:
             left_thumb_prox_idx, left_thumb_dist_idx = real_dict[
                 "LEFT_THUMBCMC"], real_dict["LEFT_THUMBMCP"]
             left_index_prox_idx, left_index_dist_idx = real_dict[
@@ -530,7 +531,7 @@ def get_real_idx(robot_version: RobotType = RobotType.W1V02_1,
 
             return torso_idx, head_idx, left_arm_idx, right_arm_idx, left_hand_idx, right_hand_idx
 
-        if end_effector_type == EndEffectorType.PGC_GRIPPER:
+        if end_effector_type == EndEffectorType.DH_PGC_140_50:
             left_finger1_idx, left_finger2_idx = real_dict[
                 "LEFT_FINGER1"], real_dict["LEFT_FINGER2"]
             right_finger1_idx, right_finger2_idx = real_dict[
@@ -540,7 +541,7 @@ def get_real_idx(robot_version: RobotType = RobotType.W1V02_1,
 
             return torso_idx, head_idx, left_arm_idx, right_arm_idx, left_hand_idx, right_hand_idx
 
-        if end_effector_type == EndEffectorType.LINKER_HAND:
+        if end_effector_type == EndEffectorType.Linker_L6:
             left_thumb_prox_base_idx, left_thumb_prox_idx, left_thumb_dist_idx = \
                 real_dict["LEFT_THUMBCMC"], real_dict["LEFT_THUMBMCP"], real_dict["LEFT_THUMBPIP"]
             left_index_prox_idx, left_index_dist_idx = \
@@ -579,7 +580,7 @@ def get_real_idx(robot_version: RobotType = RobotType.W1V02_1,
             ]
 
             return torso_idx, head_idx, left_arm_idx, right_arm_idx, left_hand_idx, right_hand_idx
-    elif robot_version == RobotType.W1V03_1:
+    elif robot_type == RobotType.W1V03_1:
         ankle_idx, knee_idx, buttock_idx, waist_idx = real_dict[
             "ANKLE_PITCH"], real_dict["KNEE_PITCH"], real_dict[
                 "BUTTOCK_PITCH"], real_dict["WAIST_YAW"]
@@ -603,7 +604,7 @@ def get_real_idx(robot_version: RobotType = RobotType.W1V02_1,
         if end_effector_type is None:
             return torso_idx, head_idx, left_arm_idx, right_arm_idx
 
-        if end_effector_type == EndEffectorType.BRAINCO_HAND:
+        if end_effector_type == EndEffectorType.BrainCo_Revo1_R:
             left_thumb_prox_idx, left_thumb_dist_idx = real_dict[
                 "LEFT_T_CMC_YAW"], real_dict["LEFT_T_MCP"]
             left_index_prox_idx, left_index_dist_idx = real_dict[
@@ -643,7 +644,7 @@ def get_real_idx(robot_version: RobotType = RobotType.W1V02_1,
 
             return torso_idx, head_idx, left_arm_idx, right_arm_idx, left_hand_idx, right_hand_idx
 
-        if end_effector_type == EndEffectorType.PGC_GRIPPER:
+        if end_effector_type == EndEffectorType.DH_PGC_140_50:
             left_finger1_idx, left_finger2_idx = real_dict[
                 "LEFT_FINGER_1"], real_dict["LEFT_FINGER_2"]
             right_finger1_idx, right_finger2_idx = real_dict[
@@ -653,7 +654,7 @@ def get_real_idx(robot_version: RobotType = RobotType.W1V02_1,
 
             return torso_idx, head_idx, left_arm_idx, right_arm_idx, left_hand_idx, right_hand_idx
 
-        if end_effector_type == EndEffectorType.LINKER_HAND:
+        if end_effector_type == EndEffectorType.Linker_L6:
             left_thumb_prox_base_idx, left_thumb_prox_idx, left_thumb_dist_idx = \
                 real_dict["LEFT_T_CMC_YAW"], real_dict["LEFT_T_MCP"], real_dict["LEFT_T_IP"]
             left_index_prox_idx, left_index_dist_idx = \
@@ -968,10 +969,10 @@ def get_ee_sim2real_idx(articulation, is_left: bool,
     sim_dict = {name: idx for idx, name in enumerate(sim_actived_names)}
 
     idx_class_map = {
-        (EndEffectorType.BRAINCO_HAND, True): LeftBrainCoHandIdx,
-        (EndEffectorType.BRAINCO_HAND, False): RightBrainCoHandIdx,
-        (EndEffectorType.PGC_GRIPPER, True): LeftPGCGripperIdx,
-        (EndEffectorType.PGC_GRIPPER, False): RightPGCGripperIdx,
+        (EndEffectorType.BrainCo_Revo1_R, True): LeftBrainCoHandIdx,
+        (EndEffectorType.BrainCo_Revo1_R, False): RightBrainCoHandIdx,
+        (EndEffectorType.DH_PGC_140_50, True): LeftPGCGripperIdx,
+        (EndEffectorType.DH_PGC_140_50, False): RightPGCGripperIdx,
     }
 
     idx_class = None

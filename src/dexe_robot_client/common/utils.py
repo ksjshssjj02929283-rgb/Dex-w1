@@ -11,12 +11,12 @@ import pathlib
 import zipfile
 import requests
 import time
-import numpy as np
 from functools import wraps
 from .logger import get_logger
 from .config import DOWNLOAD_DIR, ASSETS_DIR, MODEL_DIR, ENVIRONMENT_DIR, URL_PREFIX
-from .robot_type import W1ArmType, W1Version
-from ..end_effector_client import EndEffectorType
+from .robot_type import RobotType
+
+from dexe_rp import EndEffectorType
 
 
 # 函数运行耗时装饰器
@@ -84,29 +84,28 @@ def download_and_unzip_file(url: str) -> bool:
 
 
 def download_w1_urdf(
-        arm_type: W1ArmType,
-        w1_version: W1Version = W1Version.V2,
+        robot_type: RobotType,
         end_effector_type: EndEffectorType = None) -> tuple[bool, str]:
     logger = get_logger()
 
     name = "W1"
 
-    if w1_version != W1Version.V2:
-        logger.error(f"{w1_version.name} are not support.")
+    if robot_type != RobotType.W1V02_1 or robot_type != RobotType.W1V02_2:
+        logger.error(f"{robot_type.name} are not support.")
         return False, None
 
     name += "_V2"
-    if arm_type == W1ArmType.ANTHROPOMORPHIC:
+    if robot_type == RobotType.W1V02_1:
         name += "_A"
-    elif arm_type == W1ArmType.INDUSTRIAL:
+    elif robot_type == RobotType.W1V02_2:
         name += "_I"
     else:
-        logger.error(f"{arm_type.name} are not support.")
+        logger.error(f"{robot_type.name} are not support.")
         return False, None
 
     if end_effector_type is None:
         pass
-    elif end_effector_type == EndEffectorType.BRAINCO_HAND:
+    elif end_effector_type == EndEffectorType.BrainCo_Revo1_R:
         name += "_BRAINCO"
         end_effector_folder_path = MODEL_DIR / "simplified_brainco"
         if not end_effector_folder_path.exists():
@@ -118,7 +117,7 @@ def download_w1_urdf(
                        zip_path=DOWNLOAD_DIR,
                        unzip_path=MODEL_DIR)
 
-    elif end_effector_type == EndEffectorType.PGC_GRIPPER:
+    elif end_effector_type == EndEffectorType.DH_PGC_140_50:
         name += "_PGC"
         end_effector_folder_path = MODEL_DIR / "simplified_pgc"
         if not end_effector_folder_path.exists():
@@ -129,7 +128,7 @@ def download_w1_urdf(
             unzip_file(filename=file_name,
                        zip_path=DOWNLOAD_DIR,
                        unzip_path=MODEL_DIR)
-    elif end_effector_type == EndEffectorType.LINKER_HAND:
+    elif end_effector_type == EndEffectorType.Linker_L6:
         name += "_LINKER"
         end_effector_folder_path = MODEL_DIR / "simplified_linker"
         if not end_effector_folder_path.exists():

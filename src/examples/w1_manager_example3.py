@@ -7,18 +7,14 @@ All rights reserved.
 '''
 
 import numpy as np
-from dexe_robot_client.common import W1Version, W1ArmType, get_logger
-from dexe_robot_client.end_effector_client import EndEffectorType
+from dexe_robot_client.common import get_logger
 from dexe_robot_client.w1 import W1Manager
 from dexe_rp import StatusType
 
 
 def arm_angle_motion():
     """利用SRSKinematics实现手臂冗余运动的示例"""
-    w1_manager = W1Manager(is_sim=True,
-                           arm_type=W1ArmType.ANTHROPOMORPHIC,
-                           w1_version=W1Version.V3,
-                           end_effector_type=None)
+    w1_manager = W1Manager.create(is_sim=True)
     if not w1_manager.connect() and not w1_manager.is_enabled():
         return
     # yapf: disable

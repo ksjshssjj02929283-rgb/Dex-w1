@@ -23,7 +23,7 @@ from dexe_rp import EndEffectorType as DexeRP_EEType
 from dexe_rp import get_idx_mapping
 
 from ..common import get_logger
-from .end_effector_params import EndEffectorFactory, EndEffectorParams
+from .end_effector_params import EndEffectorParamsRegistry, EndEffectorParams
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,8 @@ class EndEffectorClient(Node):
         self.is_left = is_left
         self.is_sim = is_sim
 
-        self.ee_params: EndEffectorParams = EndEffectorFactory.create(ee_type)
+        self.ee_params: EndEffectorParams = EndEffectorParamsRegistry.get(
+            ee_type)
 
         self._connection_timeout = 1.0
         self._read_lock = threading.Lock()

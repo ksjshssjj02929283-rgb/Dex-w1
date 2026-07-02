@@ -6,7 +6,7 @@ All rights reserved.
 ----------------------------------------------------------------------------
 '''
 
-import os
+from pathlib import Path
 import time
 import numpy as np
 from IPython import embed
@@ -78,7 +78,7 @@ if __name__ == "__main__":
 
     vis, scene_handle_list, workobjects_handle_list = load_viser()
 
-    urdf_path = "/home/young/dexe_data_cache/v023/w1/robot.urdf"
+    urdf_path = Path.home() / ".cache/dexe_data/assembled/w1/robot.urdf"
     tracking_frame_config = TrackingFrameConfig.init_from_urdf(
         robot="W1V02X", urdf_path=urdf_path)
     tracking_frame_config.left_ee_frame = None

@@ -8,39 +8,31 @@ All rights reserved.
 
 import numpy as np
 
-from ...common import get_logger, W1ArmType, W1Version, RobotType
+from ...common import get_logger, RobotType
 from ..utils.w1_params import W1Params
-from ...end_effector_client import EndEffectorType
 from ..path_planner.blend_path import PathR3xSO3Bezier
 from .utils.robot_type import *
 from .planner_pinocchio import Planner_Pin
-from dexe_rp import DexforceW1Kinematics
+
+from dexe_rp import DexforceW1Kinematics, RobotVersion, EndEffectorType
 
 
 class CartesianPlanner:
 
     def __init__(
             self,
-            arm_type: W1ArmType = W1ArmType.ANTHROPOMORPHIC,
-            w1_version: W1Version = W1Version.V2,
-            end_effector_type: EndEffectorType = EndEffectorType.BRAINCO_HAND):
+            robot_version: RobotVersion,
+            end_effector_type: EndEffectorType = EndEffectorType.BrainCo_Revo1_R
+    ):
         self.logger = get_logger()
 
-        self._arm_type = arm_type
-        self._w1_version = w1_version
+        self._robot_version = robot_version
         self._end_effector_type = end_effector_type
 
-        if w1_version == W1Version.V2:
-            self.w1_params = W1Params(self._arm_type, self._w1_version,
-                                      self._end_effector_type)
-        elif w1_version == W1Version.V3:
-            # temporarily use the same params for V3
-            self.w1_params = W1Params(self._arm_type, W1Version.V2,
-                                      self._end_effector_type)
+        self.w1_params = W1Params(self._robot_version, self._end_effector_type)
 
         self._init_kine_solver()
-        self._init_pinocchio(self._arm_type, self._w1_version,
-                             self._end_effector_type)
+        self._init_pinocchio(self._robot_version, self._end_effector_type)
         self._init_arml_base_T_armr_base()
 
     def _init_kine_solver(self):
@@ -51,46 +43,21 @@ class CartesianPlanner:
         self.logger.info(f"Initialize kinematic solver for Cartesian Planner")
 
     def _init_pinocchio(self,
-                        arm_type: W1ArmType = W1ArmType.ANTHROPOMORPHIC,
-                        w1_version: W1Version = W1Version.V2,
+                        robot_version: RobotVersion,
                         end_effector_type: EndEffectorType = None):
         """
         Initialize the pinocchio model and data for the robot.
         """
-        if w1_version == W1Version.V2:
-            if arm_type == W1ArmType.ANTHROPOMORPHIC:
-                pin_robot_type = RobotType.W1V02_1
-            elif arm_type == W1ArmType.INDUSTRIAL:
+        pin_robot_type = None
+        if robot_version.version_value.startswith("v02"):
+            if robot_version.version_value.endswith("i"):
                 pin_robot_type = RobotType.W1V02_2
             else:
-                raise ValueError(
-                    f"Not supported arm type: {arm_type} for pinocchio model")
-                return
-            if end_effector_type is None or isinstance(end_effector_type,
-                                                       EndEffectorType):
-                pin_ee_type = end_effector_type
-            else:
-                raise ValueError(
-                    f"Not supported end_effector_type: {end_effector_type} for pinocchio model"
-                )
-                return
+                pin_robot_type = RobotType.W1V02_1
+        elif robot_version.version_value.startswith("v03"):
+            pin_robot_type = RobotType.W1V03_1
 
-            self._pin_kine = Planner_Pin(robot_type=pin_robot_type,
-                                         end_effector_type=pin_ee_type)
-        elif w1_version == W1Version.V3:
-            if end_effector_type is None or isinstance(end_effector_type,
-                                                       EndEffectorType):
-                pin_ee_type = end_effector_type
-            else:
-                raise ValueError(
-                    f"Not supported end_effector_type: {end_effector_type} for pinocchio model"
-                )
-                return
-            self._pin_kine = Planner_Pin(robot_type=RobotType.W1V03_1,
-                                         end_effector_type=pin_ee_type)
-        else:
-            raise ValueError(
-                f"Not supported w1 version: {w1_version} for pinocchio model")
+        self._pin_kine = Planner_Pin(pin_robot_type, end_effector_type)
 
     def set_arm_tcp(self, name: str, pose: np.ndarray):
         return self.kine.set_tcp(name, pose)

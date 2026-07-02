@@ -7,20 +7,18 @@ All rights reserved.
 '''
 
 from dexe_robot_client.w1.path_planner.cartesian_planner import CartesianPlanner
-from dexe_robot_client.common import W1ArmType, W1Version
-from dexe_robot_client.end_effector_client import EndEffectorType
 from dexe_robot_client.w1.utils.unit_conversion import *
+
+from dexe_rp import EndEffectorType, RobotVersion
 
 from scipy.spatial.transform import Rotation as R
 import numpy as np
-import time
 
 
 def test_cartesian_planner():
     cartesian_planner = CartesianPlanner(
-        arm_type=W1ArmType.ANTHROPOMORPHIC,
-        w1_version=W1Version.V2,
-        end_effector_type=EndEffectorType.BRAINCO_HAND)
+        robot_version=RobotVersion.W1V024,
+        end_effector_type=EndEffectorType.BrainCo_Revo1_R)
 
     cartesian_planner.set_arm_tcp("left_arm", np.eye(4))
     right_tcp_pose = np.eye(4)
