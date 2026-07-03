@@ -17,12 +17,12 @@ from datetime import datetime
 
 # PyQt5 imports
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QTableWidget, QTableWidgetItem,
+    QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel, QLineEdit, QFileDialog,
-    QTabWidget, QHeaderView, QGroupBox, QFormLayout, QDoubleSpinBox, QSplitter, QComboBox,
+    QGroupBox, QDoubleSpinBox, QSplitter, QComboBox,
     QScrollArea, QProgressBar
 )
-from PyQt5.QtCore import QTimer, Qt, pyqtSignal, QObject
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal, QObject, QSize
 from PyQt5.QtGui import QColor, QFont
 
 # Matplotlib for PyQt5
@@ -540,11 +540,11 @@ class StepButton(QPushButton):
 
     def start_continuous(self):
         self.is_long_press = True
-        self.pulse_timer.start(20) # 50Hz
+        self.pulse_timer.start(10) # 100Hz
 
     def pulse_move(self):
         # Continuous move: Proportional to manual step but capped for safety
-        # Cap at 0.005 rad per pulse (at 50Hz, this is 0.25 rad/s)
+        # Cap at 0.005 rad per pulse (at 100Hz, this is 0.5 rad/s)
         step = self.parent_ctrl.step_spin.value()
         continuous_step = min(step, 0.005)
         self.parent_ctrl.increment_cmd(self.joint_name, continuous_step * self.direction)
@@ -563,7 +563,7 @@ class ControlWidget(QWidget):
         self.container.setStyleSheet("#jointContainer { background-color: white; }")
         self.joint_layout = QVBoxLayout(self.container)
         self.joint_layout.setAlignment(Qt.AlignTop)
-        self.joint_layout.setSpacing(2)
+        self.joint_layout.setSpacing(0)
         
         # Header Row
         header = QWidget()
@@ -584,14 +584,14 @@ class ControlWidget(QWidget):
         # Step Size Control - No extra spacing, tightly coupled to label
         self.step_spin = QDoubleSpinBox()
         self.step_spin.setRange(0.0001, 1.0)
+        self.step_spin.setDecimals(4)
         self.step_spin.setValue(0.001)
         self.step_spin.setSingleStep(0.001)
-        self.step_spin.setDecimals(4)
         self.step_spin.setFixedWidth(70)
         self.step_spin.setToolTip("Click step size (rad)")
         self.step_spin.valueChanged.connect(self._update_spin_step)
         # Initialize the singleStep based on the initial value (0.001)
-        self._update_spin_step(self.step_spin.value())
+        self._update_spin_step(0.001)
         h_layout.addWidget(self.step_spin)
         
         self.joint_layout.addWidget(header)
@@ -649,9 +649,9 @@ class ControlWidget(QWidget):
             if name not in self.joint_widgets:
                 # print(f"DEBUG: Adding widget for {name}")
                 row_widget = QWidget()
-                row_widget.setMinimumHeight(40)
+                row_widget.setMinimumHeight(35)
                 row_layout = QHBoxLayout(row_widget)
-                row_layout.setContentsMargins(5, 2, 5, 2)
+                row_layout.setContentsMargins(5, 1, 5, 1)
                 
                 name_label = QLabel(name)
                 name_label.setFixedWidth(120)
@@ -721,7 +721,17 @@ class RecordWidget(QWidget):
         path_layout.addWidget(QLabel("Record Path:"))
         
         path_row = QHBoxLayout()
-        self.path_edit = QLineEdit(os.path.join(os.getcwd(), f"log_{datetime.now().strftime('%H%M%S')}.csv"))
+        # Path: script/../log/ folder
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        log_dir = os.path.join(os.path.dirname(script_dir), "log")
+        if not os.path.exists(log_dir):
+            try:
+                os.makedirs(log_dir)
+            except:
+                log_dir = os.getcwd() # Fallback
+
+        default_name = f"record_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        self.path_edit = QLineEdit(os.path.join(log_dir, default_name))
         path_btn = QPushButton("...")
         path_btn.setFixedWidth(35)
         path_btn.clicked.connect(self.browse)
@@ -746,6 +756,8 @@ class RecordWidget(QWidget):
             "Position (rad)", "Position Error (rad)", "Velocity (rad/s)", "Torque (Nm)",
             "Target Position (rad)", "Target Velocity (rad/s)", "Target Torque (Nm)"
         ])
+        # Set "Position Error (rad)" as default
+        self.trig_data.setCurrentIndex(1)
         self.trig_data.setFixedWidth(150)
         grid.addWidget(QLabel("Trigger Data:"), 0, 2, Qt.AlignLeft)
         grid.addWidget(self.trig_data, 0, 3)
@@ -850,20 +862,31 @@ class PlotWidget(QWidget):
         super().__init__()
         self.ds = ds
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 2, 5, 2)
+        layout.setSpacing(2)
         
         top_bar = QHBoxLayout()
+        top_bar.setContentsMargins(0, 0, 0, 0)
+        top_bar.setSpacing(10)
         top_bar.addWidget(QLabel("Select Joint:"))
         self.joint_combo = QComboBox()
         self.joint_combo.setMinimumWidth(200) # Wider combo box
+        self.joint_combo.setFixedHeight(24)
         self.joint_combo.currentIndexChanged.connect(self.on_joint_changed)
         top_bar.addWidget(self.joint_combo)
         
         self.load_btn = QPushButton("Load CSV")
+        self.load_btn.setFixedHeight(24)
         self.load_btn.clicked.connect(self.manual_load)
         top_bar.addWidget(self.load_btn)
+
+        self.file_path_label = QLabel("")
+        self.file_path_label.setStyleSheet("color: #666; font-style: italic; margin-left: 5px;")
+        top_bar.addWidget(self.file_path_label)
         
         top_bar.addStretch()
         layout.addLayout(top_bar)
+        layout.addSpacing(5) # Reduced gap
         
         # Scroll area for vertical plots
         self.plot_scroll = QScrollArea()
@@ -879,7 +902,14 @@ class PlotWidget(QWidget):
         # Reduce vertical distance between subplots
         self.canvas.figure.tight_layout(pad=1.5, h_pad=1.0)
         
-        self.plot_layout.addWidget(NavigationToolbar(self.canvas, self))
+        # More compact toolbar
+        self.toolbar = NavigationToolbar(self.canvas, self)
+        self.toolbar.setIconSize(QSize(20, 20))
+        self.toolbar.setFixedHeight(30) # Default is usually larger
+        self.plot_layout.setSpacing(1)
+        self.plot_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.plot_layout.addWidget(self.toolbar)
         self.plot_layout.addWidget(self.canvas)
         
         # Reduced minimum height to 600 for better initial fit
@@ -910,11 +940,21 @@ class PlotWidget(QWidget):
             self.refresh_plots()
 
     def manual_load(self):
-        p, _ = QFileDialog.getOpenFileName(self, "Open CSV", "", "CSV (*.csv)")
+        # Default to the log folder (script/../log)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        log_dir = os.path.join(os.path.dirname(script_dir), "log")
+        if not os.path.exists(log_dir):
+            log_dir = "" # Fallback to current dir if log folder doesn't exist
+            
+        p, _ = QFileDialog.getOpenFileName(self, "Open CSV", log_dir, "CSV (*.csv)")
         if p: self.load_csv(p)
 
     def load_csv(self, path):
         try:
+            # Update path label (showing only filename for space)
+            filename = os.path.basename(path)
+            self.file_path_label.setText(f"{filename}")
+            
             import pandas as pd
             self.csv_data = pd.read_csv(path)
             self.refresh_plots()
@@ -992,32 +1032,32 @@ class PlotWidget(QWidget):
         # 1. Pos Cmd vs Fbk
         ax0 = self.axes[0]
         ax0.clear()
-        ax0.plot(t, p_fbk, 'b-', label='Feedback')
-        ax0.plot(t, p_cmd, 'r--', label='Command')
-        ax0.set_ylabel("Position (rad)", fontweight='bold', fontsize=12)
+        ax0.plot(t, p_fbk, 'b-', label='Feedback', linewidth=0.8)
+        ax0.plot(t, p_cmd, 'r--', label='Command', linewidth=0.8)
+        ax0.set_ylabel("Position (rad)", fontweight='bold', fontsize=10)
         ax0.legend(); ax0.grid(True)
 
         # 2. Pos Error
         ax1 = self.axes[1]
         ax1.clear()
-        ax1.plot(t, p_err, 'g-', label='Position Error')
-        ax1.set_ylabel("Pos Error (rad)", fontweight='bold', fontsize=12)
+        ax1.plot(t, p_err, 'g-', label='Position Error', linewidth=0.8)
+        ax1.set_ylabel("Pos Error (rad)", fontweight='bold', fontsize=10)
         ax1.legend(); ax1.grid(True)
 
         # 3. Vel Cmd vs Fbk
         ax2 = self.axes[2]
         ax2.clear()
-        ax2.plot(t, v_fbk, 'g-', label='Feedback') # Green for vel feedback
-        ax2.plot(t, v_cmd, 'r--', label='Command')
-        ax2.set_ylabel("Velocity (rad/s)", fontweight='bold', fontsize=12)
+        ax2.plot(t, v_fbk, 'g-', label='Feedback', linewidth=0.8) # Green for vel feedback
+        ax2.plot(t, v_cmd, 'r--', label='Command', linewidth=0.8)
+        ax2.set_ylabel("Velocity (rad/s)", fontweight='bold', fontsize=10)
         ax2.legend(); ax2.grid(True)
 
         # 4. Torque Cmd vs Fbk
         ax3 = self.axes[3]
         ax3.clear()
-        ax3.plot(t, t_fbk, 'm-', label='Feedback') # Magenta for torque feedback
-        ax3.plot(t, t_cmd, 'r--', label='Command')
-        ax3.set_ylabel("Torque (Nm)", fontweight='bold', fontsize=12)
+        ax3.plot(t, t_fbk, 'm-', label='Feedback', linewidth=0.8) # Magenta for torque feedback
+        ax3.plot(t, t_cmd, 'r--', label='Command', linewidth=0.8)
+        ax3.set_ylabel("Torque (Nm)", fontweight='bold', fontsize=10)
         ax3.set_xlabel("Time (s)")
         ax3.legend(); ax3.grid(True)
 
