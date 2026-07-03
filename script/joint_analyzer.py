@@ -18,9 +18,9 @@ from datetime import datetime
 # PyQt5 imports
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QFileDialog,
+    QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel, QLineEdit, QFileDialog,
     QTabWidget, QHeaderView, QGroupBox, QFormLayout, QDoubleSpinBox, QSplitter, QComboBox,
-    QScrollArea
+    QScrollArea, QProgressBar
 )
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal, QObject
 from PyQt5.QtGui import QColor, QFont
@@ -189,6 +189,7 @@ def interpret_control_word(cw):
 class DataService(QObject):
     updated = pyqtSignal()
     record_status = pyqtSignal(str, bool) # status_msg, is_active
+    record_progress = pyqtSignal(int) # 0-100 percentage
     recording_done = pyqtSignal(str) # Path to CSV
 
     def __init__(self, use_sim=False):
@@ -396,6 +397,8 @@ class DataService(QObject):
                 next_sample = start_time
                 while time.perf_counter() < end_time and not self.record_stop_event.is_set():
                     now = time.perf_counter()
+                    progress = int((now - start_time) / duration * 100)
+                    self.record_progress.emit(min(100, progress))
                     
                     row = [now - start_time]
                     fbk_elem, ctrl_elem = None, None
@@ -527,8 +530,9 @@ class StepButton(QPushButton):
 
     def on_released(self):
         if not self.is_long_press:
-            # Short click: 0.001 rad (min step)
-            self.parent_ctrl.increment_cmd(self.joint_name, 0.001 * self.direction)
+            # Short click: Use step size from control widget
+            step = self.parent_ctrl.step_spin.value()
+            self.parent_ctrl.increment_cmd(self.joint_name, step * self.direction)
         
         self.long_press_timer.stop()
         self.pulse_timer.stop()
@@ -539,8 +543,11 @@ class StepButton(QPushButton):
         self.pulse_timer.start(20) # 50Hz
 
     def pulse_move(self):
-        # 0.1 rad/s -> 0.002 rad per 20ms
-        self.parent_ctrl.increment_cmd(self.joint_name, 0.002 * self.direction)
+        # Continuous move: Proportional to manual step but capped for safety
+        # Cap at 0.005 rad per pulse (at 50Hz, this is 0.25 rad/s)
+        step = self.parent_ctrl.step_spin.value()
+        continuous_step = min(step, 0.005)
+        self.parent_ctrl.increment_cmd(self.joint_name, continuous_step * self.direction)
 
 class ControlWidget(QWidget):
     def __init__(self, ds):
@@ -562,9 +569,31 @@ class ControlWidget(QWidget):
         header = QWidget()
         h_layout = QHBoxLayout(header)
         h_layout.setContentsMargins(5, 5, 5, 5)
-        h_layout.addWidget(QLabel("<b>Joint</b>"), 0)
+        
+        joint_lbl = QLabel("<b>Joint</b>")
+        joint_lbl.setFixedWidth(120)
+        joint_lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        h_layout.addWidget(joint_lbl)
+        
         h_layout.addStretch()
-        h_layout.addWidget(QLabel("<b>Position (rad)</b>"), 0)
+        
+        pos_step_lbl = QLabel("<b>Position Step (rad)</b>")
+        pos_step_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        h_layout.addWidget(pos_step_lbl)
+        
+        # Step Size Control - No extra spacing, tightly coupled to label
+        self.step_spin = QDoubleSpinBox()
+        self.step_spin.setRange(0.0001, 1.0)
+        self.step_spin.setValue(0.001)
+        self.step_spin.setSingleStep(0.001)
+        self.step_spin.setDecimals(4)
+        self.step_spin.setFixedWidth(70)
+        self.step_spin.setToolTip("Click step size (rad)")
+        self.step_spin.valueChanged.connect(self._update_spin_step)
+        # Initialize the singleStep based on the initial value (0.001)
+        self._update_spin_step(self.step_spin.value())
+        h_layout.addWidget(self.step_spin)
+        
         self.joint_layout.addWidget(header)
         
         self.scroll.setWidget(self.container)
@@ -572,7 +601,7 @@ class ControlWidget(QWidget):
         
         btn_layout = QHBoxLayout()
         self.clear_btn = QPushButton("Clear Error")
-        self.clear_btn.setStyleSheet("font-weight: bold;")
+        self.clear_btn.setStyleSheet("")
         self.clear_btn.clicked.connect(self.ds.clear_errors)
         btn_layout.addWidget(self.clear_btn)
         
@@ -583,7 +612,7 @@ class ControlWidget(QWidget):
         self.drag_btn = QPushButton("Enable Drag")
         self.drag_btn.setCheckable(True)
         self.drag_btn.setStyleSheet("""
-            QPushButton { background-color: #f5f5f5; font-weight: bold; }
+            QPushButton { background-color: #f5f5f5; }
             QPushButton:checked { background-color: #ffe082; color: #795548; }
         """)
         self.drag_btn.clicked.connect(self.toggle_drag)
@@ -594,6 +623,19 @@ class ControlWidget(QWidget):
         self.ds.updated.connect(self.update_ui)
         self.cmd_positions = {} # name -> value
         self.joint_widgets = {} # name -> {'pos_label': QLabel, 'row_widget': QWidget}
+
+    def _update_spin_step(self, val):
+        import math
+        if val <= 0: return
+        # Find the smallest power of 10 that is <= val
+        # To handle floating point precision issues (e.g. 0.0001 being 0.000099999),
+        # we add a small epsilon before log10.
+        mag = math.floor(math.log10(val + 1e-10))
+        new_step = 10**mag
+        
+        # Only update if it actually changed to avoid redundant signals
+        if abs(self.step_spin.singleStep() - new_step) > 1e-10:
+            self.step_spin.setSingleStep(new_step)
 
     def update_ui(self):
         # We need a copy of the list to avoid modification during iteration
@@ -613,7 +655,7 @@ class ControlWidget(QWidget):
                 
                 name_label = QLabel(name)
                 name_label.setFixedWidth(120)
-                name_label.setStyleSheet("font-weight: bold;")
+                name_label.setStyleSheet("")
                 
                 pos_label = QLabel("0.0000")
                 pos_label.setFixedWidth(80)
@@ -670,98 +712,101 @@ class RecordWidget(QWidget):
         
         group = QGroupBox("Data Acquisition")
         group_layout = QVBoxLayout(group)
-        group_layout.setContentsMargins(5, 5, 5, 5)
-        group_layout.setSpacing(5)
+        group_layout.setContentsMargins(10, 10, 10, 10)
+        group_layout.setSpacing(8)
         
-        # Row 1: Trigger settings and Duration (Targeting Trigger row on top)
-        trigger_layout = QHBoxLayout()
-        trigger_layout.setSpacing(10)
+        # 1. Path section at the top
+        path_layout = QVBoxLayout()
+        path_layout.setSpacing(2)
+        path_layout.addWidget(QLabel("Record Path:"))
         
-        # Helper to create tight label+widget pairs
-        def add_pair(lay, label_text, widget):
-            pair = QHBoxLayout()
-            pair.setSpacing(2)
-            lbl = QLabel(label_text)
-            pair.addWidget(lbl)
-            pair.addWidget(widget)
-            lay.addLayout(pair)
-
+        path_row = QHBoxLayout()
+        self.path_edit = QLineEdit(os.path.join(os.getcwd(), f"log_{datetime.now().strftime('%H%M%S')}.csv"))
+        path_btn = QPushButton("...")
+        path_btn.setFixedWidth(35)
+        path_btn.clicked.connect(self.browse)
+        path_row.addWidget(self.path_edit)
+        path_row.addWidget(path_btn)
+        path_layout.addLayout(path_row)
+        group_layout.addLayout(path_layout)
+        
+        # 2. Grid layout for trigger settings and Record button
+        grid = QGridLayout()
+        grid.setVerticalSpacing(10)
+        grid.setHorizontalSpacing(10)
+        
+        # Row 0: Joint & Data
         self.trig_joint = QComboBox()
-        self.trig_joint.setFixedWidth(120)
-        add_pair(trigger_layout, "Trigger Joint:", self.trig_joint)
+        self.trig_joint.setFixedWidth(150)
+        grid.addWidget(QLabel("Trigger Joint:"), 0, 0, Qt.AlignLeft)
+        grid.addWidget(self.trig_joint, 0, 1)
         
         self.trig_data = QComboBox()
         self.trig_data.addItems([
             "Position (rad)", "Position Error (rad)", "Velocity (rad/s)", "Torque (Nm)",
             "Target Position (rad)", "Target Velocity (rad/s)", "Target Torque (Nm)"
         ])
-        self.trig_data.setFixedWidth(160)
-        add_pair(trigger_layout, "Trigger Data:", self.trig_data)
+        self.trig_data.setFixedWidth(150)
+        grid.addWidget(QLabel("Trigger Data:"), 0, 2, Qt.AlignLeft)
+        grid.addWidget(self.trig_data, 0, 3)
         
+        # Row 1: Mode & Threshold
         self.trig_mode = QComboBox()
         self.trig_mode.addItems(["None", "Rising Edge", "Falling Edge", "Delta Trigger"])
-        self.trig_mode.setFixedWidth(120)
-        add_pair(trigger_layout, "Trigger Mode:", self.trig_mode)
+        self.trig_mode.setFixedWidth(150)
+        grid.addWidget(QLabel("Trigger Mode:"), 1, 0, Qt.AlignLeft)
+        grid.addWidget(self.trig_mode, 1, 1)
         
         self.trig_threshold = QDoubleSpinBox()
         self.trig_threshold.setRange(-1000, 1000); self.trig_threshold.setValue(0.01); self.trig_threshold.setDecimals(3)
         self.trig_threshold.setSingleStep(0.01)
-        self.trig_threshold.setFixedWidth(80)
-        self.trig_threshold.setGroupSeparatorShown(False)
-        self.trig_threshold.setProperty("compact", True) 
-        add_pair(trigger_layout, "Trigger Threshold:", self.trig_threshold)
+        self.trig_threshold.setFixedWidth(150)
+        grid.addWidget(QLabel("Threshold:"), 1, 2, Qt.AlignLeft)
+        grid.addWidget(self.trig_threshold, 1, 3)
 
+        # Row 2: Duration & Record button
         self.dur_spin = QDoubleSpinBox()
         self.dur_spin.setRange(1, 3600); self.dur_spin.setValue(8.0); self.dur_spin.setSuffix("s")
-        self.dur_spin.setFixedWidth(80)
-        add_pair(trigger_layout, "Record Duration:", self.dur_spin)
-
-        trigger_layout.addStretch()
-        group_layout.addLayout(trigger_layout)
+        self.dur_spin.setFixedWidth(150)
+        grid.addWidget(QLabel("Duration:"), 2, 0, Qt.AlignLeft)
+        grid.addWidget(self.dur_spin, 2, 1)
         
-        # Row 2: Path and Record button
-        path_layout = QHBoxLayout()
-        path_layout.setSpacing(5)
-        
-        self.path_edit = QLineEdit(os.path.join(os.getcwd(), f"log_{datetime.now().strftime('%H%M%S')}.csv"))
-        self.path_edit.setFixedWidth(400) # Fixed width for path box
-        path_btn = QPushButton("...")
-        path_btn.setFixedWidth(30)
-        path_btn.clicked.connect(self.browse)
-        
-        path_layout.addWidget(QLabel("Record Path:"))
-        path_layout.addWidget(self.path_edit)
-        path_layout.addWidget(path_btn)
-        
-        path_layout.addSpacing(20)
-        
-        self.live_btn = QPushButton("Resume Live")
-        self.live_btn.setFixedWidth(100)
-        self.live_btn.clicked.connect(self.on_resume_live_clicked)
-        path_layout.addWidget(self.live_btn)
-
         self.rec_btn = QPushButton("Record")
-        self.rec_btn.setStyleSheet("background-color: #c8e6c9; font-weight: bold;")
+        self.rec_btn.setFixedHeight(28)
+        self.rec_btn.setStyleSheet("background-color: #c8e6c9;")
         self.rec_btn.clicked.connect(self.toggle_rec)
-        self.rec_btn.setFixedWidth(100)
-        path_layout.addWidget(self.rec_btn)
+        # Span both label and widget columns (e.g., columns 2 and 3)
+        grid.addWidget(self.rec_btn, 2, 2, 1, 2)
+
+        group_layout.addLayout(grid)
         
+        # Status Label (Hidden)
         self.status = QLabel("Ready")
-        self.status.setMinimumWidth(200)
-        path_layout.addWidget(self.status)
+        self.status.setVisible(False)
+        group_layout.addWidget(self.status)
         
-        path_layout.addStretch() # Push everything to the left
-        
-        group_layout.addLayout(path_layout)
+        # Progress Bar at the bottom
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setTextVisible(True)
+        self.progress.setFixedHeight(15)
+        self.progress.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #ddd;
+                border-radius: 2px;
+                background-color: #f5f5f5;
+                text-align: center;
+            }
+            QProgressBar::chunk {
+                background-color: #81c784;
+            }
+        """)
+        group_layout.addWidget(self.progress)
         
         layout.addWidget(group)
         self.ds.record_status.connect(self.on_status)
-        self.ds.updated.connect(self.update_joint_list)
-        
-        self.update_live_btn_style()
-        
-        layout.addWidget(group)
-        self.ds.record_status.connect(self.on_status)
+        self.ds.record_progress.connect(self.progress.setValue)
         self.ds.updated.connect(self.update_joint_list)
 
     def update_joint_list(self):
@@ -793,37 +838,12 @@ class RecordWidget(QWidget):
     def on_status(self, msg, active):
         self.status.setText(msg)
         if active:
-            self.rec_btn.setText("STOP")
-            self.rec_btn.setStyleSheet("background-color: #ffcdd2; font-weight: bold;")
+            self.rec_btn.setText("Stop")
+            self.rec_btn.setStyleSheet("background-color: #ffcdd2;")
         else:
             self.rec_btn.setText("Record")
-            self.rec_btn.setStyleSheet("background-color: #c8e6c9; font-weight: bold;")
-
-    def on_resume_live_clicked(self):
-        # Notify the plot widget to resume live mode
-        # Since PlotWidget is a sibling/separate, we find it through MainWindow or use the ds as bridge
-        # But per current structure, MainWindow owns both. Let's add a signal to DataService or call it directly if we have a ref
-        main_win = self.window()
-        if hasattr(main_win, 'plot_box'):
-            main_win.plot_box.resume_live()
-            self.update_live_btn_style()
-
-    def update_live_btn_style(self):
-        main_win = self.window()
-        is_csv = False
-        if hasattr(main_win, 'plot_box'):
-            is_csv = main_win.plot_box.csv_data is not None
-        
-        if is_csv:
-            self.live_btn.setEnabled(True)
-            self.live_btn.setStyleSheet("background-color: #c8e6c9; font-weight: bold;") # Green when clickable
-            self.rec_btn.setEnabled(False)
-            self.rec_btn.setStyleSheet("background-color: #f5f5f5; color: #9e9e9e;") # Grey when viewing CSV
-        else:
-            self.live_btn.setEnabled(False)
-            self.live_btn.setStyleSheet("background-color: #f5f5f5; color: #9e9e9e;") # Grey when disabled
-            self.rec_btn.setEnabled(True)
-            self.rec_btn.setStyleSheet("background-color: #c8e6c9; font-weight: bold;") # Normal record style
+            self.rec_btn.setStyleSheet("background-color: #c8e6c9;")
+            self.progress.setValue(0) # Reset progress on stop/finish
 
 class PlotWidget(QWidget):
     def __init__(self, ds):
@@ -842,14 +862,6 @@ class PlotWidget(QWidget):
         self.load_btn.clicked.connect(self.manual_load)
         top_bar.addWidget(self.load_btn)
         
-        top_bar.addSpacing(20)
-        top_bar.addWidget(QLabel("Live Window:"))
-        self.window_spin = QDoubleSpinBox()
-        self.window_spin.setRange(1.0, 60.0); self.window_spin.setValue(8.0); self.window_spin.setSuffix("s")
-        self.window_spin.setFixedWidth(80)
-        self.window_spin.valueChanged.connect(self.update_window_size)
-        top_bar.addWidget(self.window_spin)
-        
         top_bar.addStretch()
         layout.addLayout(top_bar)
         
@@ -864,106 +876,18 @@ class PlotWidget(QWidget):
         self.canvas = FigureCanvas(Figure(figsize=(8, 12)))
         # Create 4x1 subplots (vertical)
         self.axes = self.canvas.figure.subplots(4, 1, sharex=True)
-        self.canvas.figure.tight_layout(pad=3.0)
+        # Reduce vertical distance between subplots
+        self.canvas.figure.tight_layout(pad=1.5, h_pad=1.0)
         
         self.plot_layout.addWidget(NavigationToolbar(self.canvas, self))
         self.plot_layout.addWidget(self.canvas)
         
-        # Ensure a minimum height for the plots to prevent squashing when windowed
-        self.canvas.setMinimumHeight(1000)
-        
-        self.live_data = {
-            't': [], 'p_fbk': [], 'p_cmd': [], 
-            'p_err': [],
-            'v_fbk': [], 'v_cmd': [],
-            't_fbk': [], 't_cmd': []
-        }
-        self.max_live_points = 200 # ~4 seconds at 50Hz
+        # Reduced minimum height to 600 for better initial fit
+        self.canvas.setMinimumHeight(600)
         
         self.csv_data = None
         self.ds.recording_done.connect(self.load_csv)
         self.ds.updated.connect(self.update_joint_combo)
-        self.ds.updated.connect(self.update_live_plots)
-
-    def update_window_size(self, val):
-        # The cleaning logic is now handled in update_live_plots via time comparison
-        pass
-
-    def update_live_plots(self):
-        if self.csv_data is not None: return # Don't update live if viewing CSV
-        
-        joint_name = self.joint_combo.currentText()
-        if not joint_name: return
-        
-        data = self.ds.joint_data.get(joint_name, {})
-        if not data: return
-        
-        now = time.time()
-        if not hasattr(self, '_start_time'): self._start_time = now
-        rel_time = now - self._start_time
-        
-        p_f = data.get('pos', 0.0)
-        p_c = data.get('target_pos', p_f)
-        v_f = data.get('vel', 0.0)
-        v_c = data.get('target_vel', 0.0)
-        t_f = data.get('torque', 0.0)
-        t_c = data.get('target_torque', 0.0)
-        
-        self.live_data['t'].append(rel_time)
-        self.live_data['p_fbk'].append(p_f)
-        self.live_data['p_cmd'].append(p_c)
-        self.live_data['p_err'].append(p_c - p_f)
-        self.live_data['v_fbk'].append(v_f)
-        self.live_data['v_cmd'].append(v_c)
-        self.live_data['t_fbk'].append(t_f)
-        self.live_data['t_cmd'].append(t_c)
-        
-        # Keep buffer size based on time duration instead of point count
-        # This fixes the issue where the window size didn't match the setting
-        duration = self.window_spin.value()
-        while len(self.live_data['t']) > 0 and (rel_time - self.live_data['t'][0] > duration):
-            for key in self.live_data: 
-                self.live_data[key].pop(0)
-            
-        # Draw
-        t = self.live_data['t']
-        
-        # Plot 1: Position
-        self.axes[0].clear()
-        self.axes[0].plot(t, self.live_data['p_fbk'], 'b-', label='Fbk')
-        self.axes[0].plot(t, self.live_data['p_cmd'], 'r--', label='Cmd')
-        self.axes[0].set_title("Position (rad)")
-        self.axes[0].legend(loc='upper right', fontsize='small')
-        
-        # Plot 2: Position Error
-        self.axes[1].clear()
-        self.axes[1].plot(t, self.live_data['p_err'], 'k-', label='Position Error')
-        self.axes[1].set_title("Position Error (rad)")
-        self.axes[1].legend(loc='upper right', fontsize='small')
-        
-        # Plot 3: Velocity
-        self.axes[2].clear()
-        self.axes[2].plot(t, self.live_data['v_fbk'], 'g-', label='Fbk')
-        self.axes[2].plot(t, self.live_data['v_cmd'], 'r--', label='Cmd')
-        self.axes[2].set_title("Velocity (rad/s)")
-        self.axes[2].legend(loc='upper right', fontsize='small')
-        
-        # Plot 4: Torque
-        self.axes[3].clear()
-        self.axes[3].plot(t, self.live_data['t_fbk'], 'm-', label='Fbk')
-        self.axes[3].plot(t, self.live_data['t_cmd'], 'r--', label='Cmd')
-        self.axes[3].set_title("Torque (Nm)")
-        self.axes[3].legend(loc='upper right', fontsize='small')
-        
-        for ax in self.axes: 
-            ax.grid(True)
-            # Ensure a minimum y-scale range to avoid noisy autoscaling on static data
-            y_min, y_max = ax.get_ylim()
-            if y_max - y_min < 0.01:
-                center = (y_min + y_max) / 2
-                ax.set_ylim(center - 0.005, center + 0.005)
-
-        self.canvas.draw()
 
     def update_joint_combo(self):
         current = self.joint_combo.currentText()
@@ -976,12 +900,6 @@ class PlotWidget(QWidget):
             self.joint_combo.blockSignals(False)
 
     def on_joint_changed(self):
-        # Clear live data buffer when switching joints to avoid misleading old data
-        for key in self.live_data:
-            self.live_data[key] = []
-        if hasattr(self, '_start_time'):
-            delattr(self, '_start_time')
-        
         # Clear plots immediately
         for ax in self.axes:
             ax.clear()
@@ -995,46 +913,20 @@ class PlotWidget(QWidget):
         p, _ = QFileDialog.getOpenFileName(self, "Open CSV", "", "CSV (*.csv)")
         if p: self.load_csv(p)
 
-    def resume_live(self):
-        self.csv_data = None
-        # self.live_btn.setVisible(False) # Removed as it's now handled by RecordWidget
-        # Reset live data to start fresh
-        for key in self.live_data:
-            self.live_data[key] = []
-        if hasattr(self, '_start_time'):
-            delattr(self, '_start_time')
-        # Clear plots to avoid ghosts
-        for ax in self.axes:
-            ax.clear()
-        self.canvas.draw()
-        
-        # Update button style in the record box
-        main_win = self.window()
-        if hasattr(main_win, 'rec_box'):
-            main_win.rec_box.update_live_btn_style()
-
     def load_csv(self, path):
         try:
             import pandas as pd
             self.csv_data = pd.read_csv(path)
-            # self.live_btn.setVisible(True) # Removed
             self.refresh_plots()
         except ImportError:
-            # Fallback to csv module if pandas not available
             self.csv_data = []
             with open(path, 'r') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     self.csv_data.append({k: float(v) for k, v in row.items()})
-            # self.live_btn.setVisible(True) # Removed
             self.refresh_plots()
         except Exception as e:
             print(f"Error loading CSV: {e}")
-        
-        # Update button style in the record box
-        main_win = self.window()
-        if hasattr(main_win, 'rec_box'):
-            main_win.rec_box.update_live_btn_style()
 
     def refresh_plots(self):
         if self.csv_data is None: return
@@ -1102,14 +994,14 @@ class PlotWidget(QWidget):
         ax0.clear()
         ax0.plot(t, p_fbk, 'b-', label='Feedback')
         ax0.plot(t, p_cmd, 'r--', label='Command')
-        ax0.set_title("Position (rad)")
+        ax0.set_ylabel("Position (rad)", fontweight='bold', fontsize=12)
         ax0.legend(); ax0.grid(True)
 
         # 2. Pos Error
         ax1 = self.axes[1]
         ax1.clear()
         ax1.plot(t, p_err, 'g-', label='Position Error')
-        ax1.set_title("Position Error (rad)")
+        ax1.set_ylabel("Pos Error (rad)", fontweight='bold', fontsize=12)
         ax1.legend(); ax1.grid(True)
 
         # 3. Vel Cmd vs Fbk
@@ -1117,7 +1009,7 @@ class PlotWidget(QWidget):
         ax2.clear()
         ax2.plot(t, v_fbk, 'g-', label='Feedback') # Green for vel feedback
         ax2.plot(t, v_cmd, 'r--', label='Command')
-        ax2.set_title("Velocity (rad/s)")
+        ax2.set_ylabel("Velocity (rad/s)", fontweight='bold', fontsize=12)
         ax2.legend(); ax2.grid(True)
 
         # 4. Torque Cmd vs Fbk
@@ -1125,7 +1017,8 @@ class PlotWidget(QWidget):
         ax3.clear()
         ax3.plot(t, t_fbk, 'm-', label='Feedback') # Magenta for torque feedback
         ax3.plot(t, t_cmd, 'r--', label='Command')
-        ax3.set_title("Torque (Nm)")
+        ax3.set_ylabel("Torque (Nm)", fontweight='bold', fontsize=12)
+        ax3.set_xlabel("Time (s)")
         ax3.legend(); ax3.grid(True)
 
         for ax in self.axes:
@@ -1133,7 +1026,13 @@ class PlotWidget(QWidget):
             if y_max - y_min < 0.01:
                 center = (y_min + y_max) / 2
                 ax.set_ylim(center - 0.005, center + 0.005)
+            
+            # Ensure X-axis labels show 3 decimal places (1ms precision)
+            ax.xaxis.set_major_formatter(plt.FormatStrFormatter('%.3f'))
+            # Show high precision coordinates in the toolbar status line
+            ax.format_coord = lambda x, y: f't={x:.3f}s, val={y:.6f}'
 
+        self.canvas.figure.tight_layout(pad=1.5, h_pad=1.0)
         self.canvas.draw()
 
 # ==============================================================================
@@ -1156,31 +1055,35 @@ class MainWindow(QMainWindow):
         self.splitter = QSplitter(Qt.Horizontal)
         main_layout.addWidget(self.splitter)
         
-        # Left Side: Control Only
+        # Left Side: Control & Record
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        
         self.ctrl_box = ControlWidget(self.ds)
-        self.ctrl_box.setMinimumWidth(300)
-        
-        # Right Side: Record & Plot
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(0, 0, 0, 0)
         self.rec_box = RecordWidget(self.ds)
+        
+        left_layout.addWidget(self.rec_box)
+        left_layout.addWidget(self.ctrl_box)
+        left_layout.setStretch(0, 0) # Record fixed at top
+        left_layout.setStretch(1, 1) # Control takes remaining space
+        
+        # Right Side: Plot area (Full height)
         self.plot_box = PlotWidget(self.ds)
-        right_layout.addWidget(self.rec_box)
-        right_layout.addWidget(self.plot_box)
-        right_layout.setStretch(0, 0) 
-        right_layout.setStretch(1, 100) # Give high stretch priority to plot area
         
-        self.splitter.addWidget(self.ctrl_box)
-        self.splitter.addWidget(right_widget)
+        self.splitter.addWidget(left_widget)
+        self.splitter.addWidget(self.plot_box)
         
-        # Adjust initial sizes: left panel wider (e.g., 400px), right panel flexible
-        self.splitter.setSizes([450, 1000])
+        # Initial proportions
+        self.splitter.setSizes([450, 1150])
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setHandleWidth(2)
         
-        self.ctrl_box.setMinimumWidth(350)
+        left_widget.setMinimumWidth(380)
+        
+        # Prevent focus jumping to CSV path on startup
+        self.setFocus()
         
         self.statusBar().showMessage("Ready")
         self.status_timer = QTimer()

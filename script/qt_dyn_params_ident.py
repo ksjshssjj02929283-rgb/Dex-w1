@@ -182,6 +182,15 @@ class DynParamIdentifier(Node):
         req.value = str(value)
         self.set_property_srv.call_async(req)
 
+    def clear_error(self):
+        """
+        清除机器人错误
+        """
+        req = SetProperty.Request()
+        req.property_type = "ClearError"
+        req.value = ""
+        self.set_property_srv.call_async(req)
+
     def run_traj_sim(self, traj_path):
         """
         在仿真中测试轨迹的可行性。
@@ -1169,8 +1178,9 @@ class DynParamGUI(QtWidgets.QMainWindow):
         ctrl_layout.addWidget(check_group)
         self.traj_combo.currentTextChanged.connect(self.update_params_from_ui)
         self.arm_combo.currentTextChanged.connect(self.update_params_from_ui)
-        # 停止按钮（左栏最下方，不在真机模块中）
+        # 停止按钮与清错按钮
         self.btn_stop = QtWidgets.QPushButton("停止运行")
+        self.btn_clear = QtWidgets.QPushButton("清错")
         ctrl_layout.addStretch(1)
         # 第二部分：真机采集与控制
         bottom_group = QtWidgets.QGroupBox("轨迹真机采集")
@@ -1253,12 +1263,13 @@ class DynParamGUI(QtWidgets.QMainWindow):
         result_vbox.addWidget(self.btn_write_params)
         ctrl_layout.addWidget(result_group)
         ctrl_layout.addStretch(1)
-        # 第四部分：停止按钮
-        stop_group = QtWidgets.QGroupBox("停止运动与计算")
-        stop_vbox = QtWidgets.QVBoxLayout(stop_group)
-        stop_vbox.setContentsMargins(8, 8, 8, 8)
-        stop_vbox.setSpacing(8)
-        stop_vbox.addWidget(self.btn_stop)
+        # 第四部分：停止与清错控制
+        stop_group = QtWidgets.QGroupBox("停止与清错控制")
+        stop_hbox = QtWidgets.QHBoxLayout(stop_group)
+        stop_hbox.setContentsMargins(8, 8, 8, 8)
+        stop_hbox.setSpacing(8)
+        stop_hbox.addWidget(self.btn_stop)
+        stop_hbox.addWidget(self.btn_clear)
         ctrl_layout.addWidget(stop_group)
         ctrl_layout.addStretch(1)
         ctrl_layout.addStretch(1)
@@ -1334,6 +1345,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.real_right_speed_combo.currentTextChanged.connect(self._on_real_right_speed_changed)
         # 新增：停止按钮连接
         self.btn_stop.clicked.connect(self.on_stop_clicked)
+        self.btn_clear.clicked.connect(self.on_clear_clicked)
         # 新增：图示辨识结果按钮
         self.btn_show_regression.clicked.connect(self.on_show_regression)
         # 可视化子进程句柄
@@ -1428,8 +1440,9 @@ class DynParamGUI(QtWidgets.QMainWindow):
             )
             self.traj_combo.setDisabled(disabled)
             self.arm_combo.setDisabled(disabled)
-            # 停止按钮始终可用
+            # 停止按钮与清错按钮始终可用
             self.btn_stop.setDisabled(False)
+            self.btn_clear.setDisabled(False)
         except Exception:
             pass
 
@@ -2248,6 +2261,13 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 )
             except Exception:
                 pass
+
+    def on_clear_clicked(self):
+        try:
+            self.log_msg("正在请求清除机器人错误...")
+            self.dyn.clear_error()
+        except Exception as e:
+            self.log_msg("清除错误流程出错: " + str(e))
 
     def closeEvent(self, event):
         try:
