@@ -23,6 +23,7 @@ enum for various states and command types
 #include "pinocchio_api.h"
 #include "single_rw_latest_queue.h"
 #include "time_utility.h"
+#include "tool_compensation.h"
 #include "typedef.h"
 
 namespace robot_server_lib {
@@ -283,6 +284,8 @@ struct RobotParams {
     std::vector<std::string> joints_dual_arm;                       // 双臂模式关节名称
     std::optional<Eigen::VectorXd> dyn_base_params_primary;         // 动力学基参数矩阵(非方阵)
     std::optional<Eigen::VectorXd> dyn_base_params_secondary;       // 动力学基参数矩阵(非方阵)
+    dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_primary;  // 主臂末端工具重力补偿参数
+    dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_secondary;  // 从臂末端工具重力补偿参数
 };
 
 struct RobotModel {

@@ -48,8 +48,9 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
             VectorDof torque_integral = (K_p.cwiseProduct(K_i_ratio)).asDiagonal() * integral_error_;
 
             torque_joint_impedance = K_p.asDiagonal() * q_error + K_v.asDiagonal() * dq_error + torque_integral;
-            output_cmd.torque_feedforward = dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq,
-                                                                      VectorDof::Zero());  // 补偿重力, 科氏力, 摩擦力
+            output_cmd.torque_feedforward =
+                dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq,
+                                          VectorDof::Zero());  // 补偿重力, 科氏力, 摩擦力 + 工具重力
             output_cmd.torque_impedance = torque_cart_impedance + output_cmd.torque_feedforward;
             output_cmd.torque = torque_joint_impedance + output_cmd.torque_feedforward;
             output_cmd.q_desired = cmd_q;

@@ -1,5 +1,8 @@
 #include "inverse_dynamics.h"
 
+#include "tool_compensation.h"
+#include "utils.h"
+
 namespace robot_server_lib
 {
 namespace dynamics
@@ -13,6 +16,9 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
     pinocchio::Data data(model);
     VectorDof tau = pinocchio::rnea(model, data, q, dq, ddq).template cast<double>();
 
+    const auto& tool_cfg_primary = robot_model.params_ptr->tool_dynamic_primary;
+    const auto& tool_cfg_secondary = robot_model.params_ptr->tool_dynamic_secondary;
+
     // 如果提供了动力学最小参数集矩阵，则进行替换
     const auto& dyn_base_params_primary = robot_model.params_ptr->dyn_base_params_primary;
     const auto& dyn_base_params_secondary = robot_model.params_ptr->dyn_base_params_secondary;
@@ -23,9 +29,23 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
         if (robot_model.model_ptr->existFrame(first_joint_urdf_name))
         {
             auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, q, robot_model.model_ptr->getFrameId(first_joint_urdf_name) - 1);
-            Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
+            Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.8};
             Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Primary);
             utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Primary);
+
+            // 末端工具重力补偿: 单独算 wrench, J^T 投影到 7 关节, 累加到前馈 (与手臂符号动力学解耦)
+            if (tool_cfg_primary.gravity_enabled && robot_model.primary_arm_model_ptr)
+            {
+                // q_arm 在 InvDynamikBySymbol 内部已提取过一次, 这里为工具补偿的 FK/Jacobian 复用
+                Eigen::VectorXd feedback_q_primary;
+                utils::GetJointFromWholeBody(robot_model, q, feedback_q_primary, MotionGroup::Primary);
+                Eigen::VectorXd tau_tool = tool_compensation::ComputeToolJointGravityTorque(
+                    *robot_model.primary_arm_model_ptr, feedback_q_primary, tool_cfg_primary, gravity_acc_armbase);
+                // MapJointToWholeBody 是覆盖语义 (输出 JointPositionDof), 用临时变量接收再累加
+                VectorDof tau_tool_to_whole_body = VectorDof::Zero();
+                utils::MapJointToWholeBody(robot_model, tau_tool, tau_tool_to_whole_body, MotionGroup::Primary);
+                tau += tau_tool_to_whole_body;
+            }
         }
         else
         {
@@ -41,9 +61,23 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
         if (robot_model.model_ptr->existFrame(first_joint_urdf_name))
         {
             auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, q, robot_model.model_ptr->getFrameId(first_joint_urdf_name) - 1);
-            Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.81};
+            Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.8};
             Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Secondary);
             utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Secondary);
+
+            // 末端工具重力补偿: 单独算 wrench, J^T 投影到 7 关节, 累加到前馈 (与手臂符号动力学解耦)
+            if (tool_cfg_secondary.gravity_enabled && robot_model.secondary_arm_model_ptr)
+            {
+                // q_arm 在 InvDynamikBySymbol 内部已提取过一次, 这里为工具补偿的 FK/Jacobian 复用
+                Eigen::VectorXd feedback_q_secondary;
+                utils::GetJointFromWholeBody(robot_model, q, feedback_q_secondary, MotionGroup::Secondary);
+                Eigen::VectorXd tau_tool = tool_compensation::ComputeToolJointGravityTorque(
+                    *robot_model.secondary_arm_model_ptr, feedback_q_secondary, tool_cfg_secondary, gravity_acc_armbase);
+                // MapJointToWholeBody 是覆盖语义 (输出 JointPositionDof), 用临时变量接收再累加
+                VectorDof tau_tool_to_whole_body = VectorDof::Zero();
+                utils::MapJointToWholeBody(robot_model, tau_tool, tau_tool_to_whole_body, MotionGroup::Secondary);
+                tau += tau_tool_to_whole_body;
+            }
         }
         else
         {

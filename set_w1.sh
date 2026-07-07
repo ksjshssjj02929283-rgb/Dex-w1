@@ -16,8 +16,8 @@ print_usage() {
     echo "Usage: ./set_property.sh <property_type> [value]"
     echo ""
     echo "Available property types:"
-    echo "  echo            - Echo robot server state topic once"
-    echo "  echo_sim        - Echo robot server state sim topic once"
+    echo "  echo [field]      - Echo robot server state topic once (default field: data)"
+    echo "  echo_sim [field]  - Echo robot server state sim topic once (default field: data)"
     echo "  clone ethercat  - Clone dexe_ethercat (dev) repository to parent directory"
     echo "  clone interface - Clone dexe_interfaces (dev) repository to parent directory"
     echo "  home            - Move robot to home joint position"
@@ -59,6 +59,7 @@ print_usage() {
     echo ""
     echo "Examples:"
     echo "  ./set_w1.sh echo"
+    echo "  ./set_w1.sh echo server_version"
     echo "  ./set_w1.sh echo_sim"
     echo "  ./set_w1.sh clone ethercat"
     echo "  ./set_w1.sh clone interface"
@@ -145,13 +146,23 @@ case $PROPERTY_KEY in
         VALUE=""
         ;;
     echo)
-        echo "Echoing robot server state..."
-        ros2 topic echo /feedback/robot_server_state --field data --once
+        if [ -n "$VALUE" ]; then
+            echo "Searching robot server state for keys containing: '$VALUE'..."
+            ros2 topic echo /feedback/robot_server_state --field data --once | python3 -c "import sys, json; raw=sys.stdin.read(); data=json.loads(raw.split('---')[0]); matches={k:v for k,v in data.items() if '$VALUE' in k}; print(json.dumps(matches, indent=2)) if matches else print('No keys containing \'$VALUE\' found')"
+        else
+            echo "Echoing robot server state..."
+            ros2 topic echo /feedback/robot_server_state --field data --once
+        fi
         exit 0
         ;;
     echo_sim)
-        echo "Echoing robot server state sim..."
-        ros2 topic echo /feedback/robot_server_state_sim --field data --once
+        if [ -n "$VALUE" ]; then
+            echo "Searching robot server state sim for keys containing: '$VALUE'..."
+            ros2 topic echo /feedback/robot_server_state_sim --field data --once | python3 -c "import sys, json; raw=sys.stdin.read(); data=json.loads(raw.split('---')[0]); matches={k:v for k,v in data.items() if '$VALUE' in k}; print(json.dumps(matches, indent=2)) if matches else print('No keys containing \'$VALUE\' found')"
+        else
+            echo "Echoing robot server state sim..."
+            ros2 topic echo /feedback/robot_server_state_sim --field data --once
+        fi
         exit 0
         ;;
     clone)
