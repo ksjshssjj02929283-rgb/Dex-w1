@@ -50,6 +50,8 @@ set(MSG_FILES
   "msg/RouteEdge.msg"
   "msg/RoutePlanSegment.msg"
   "msg/RoutePlan.msg"
+  "msg/PathSegment.msg"
+  "msg/TrackingPath.msg"
 )
 
 # 4) 声明要生成的服务
@@ -92,12 +94,14 @@ set(SRV_FILES
   "srv/GetRouteGraph.srv"
   "srv/TransformAssets.srv"
   "srv/ResetMapOriginByXYYaw.srv"
+  "srv/ResolveNavPoints.srv"
 )
 
 # 5) 声明要生成的动作
 set(ACTION_FILES
   "action/NavigateToPoint.action"
   "action/NavigateRoute.action"
+  "action/NavigateThroughPoints.action"
   "action/ExecuteMissionBt.action"
   "action/PreciseControl.action"
 )
