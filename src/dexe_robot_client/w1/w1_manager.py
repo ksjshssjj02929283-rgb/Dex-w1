@@ -100,7 +100,7 @@ class W1Manager:
 
         self._init_kine_solver()
 
-        if not self.set_sim_mode(is_sim):
+        if self.set_sim_mode(is_sim) != StatusCode.SUCCESS:
             if is_sim:
                 self.logger.error(f"Set sim mode failed")
                 raise RuntimeError("Set sim mode failed")
@@ -128,6 +128,8 @@ class W1Manager:
         self._stop_move_event.clear()
 
         self.collision_cnt = 0
+
+        self._last_control_status_time = None
 
     def _init_fcl_checker(self,
                           arm_type: W1ArmType,
@@ -226,6 +228,8 @@ class W1Manager:
             self._robot_client_real = RobotClient(is_sim=False)
             self._chassis_client_real = ChassisClient(is_sim=False)
             self.robot_client = self._robot_client_sim
+            if self._use_nav:
+                self.chassis_client = self._chassis_client_real
 
             if self._end_effector_type is None:
                 self.logger.info(f"No movable end effector.")
@@ -699,8 +703,7 @@ class W1Manager:
             self.left_ee_client = target_left_ee_client
             self.right_ee_client = target_right_ee_client
         self._is_sim = enable_sim
-        if self._use_nav and target_chassis_client is not None:
-            self.chassis_client = target_chassis_client
+        self.chassis_client = target_chassis_client if self._use_nav else None
         self.logger.info(f"W1 manager set to {target_name} mode.")
         return StatusCode.SUCCESS
 
@@ -726,6 +729,8 @@ class W1Manager:
             return StatusCode.FAIL
         res = self._get_chassis_client().set_chassis_control_position(
             base_position)
+        control_status = self.get_control_status()
+        self.logger.info(f"导航控制状态 {control_status}, res={res}")
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def get_current_chassis_pose(self) -> tuple[StatusCode, np.ndarray]:
@@ -780,16 +785,28 @@ class W1Manager:
 
     def get_control_status(self) -> str:
         """获取底盘控制状态"""
+        now = time.time()
+        if self._last_control_status_time is not None:
+            interval = now - self._last_control_status_time
+        else:
+            interval = 0.0
+        self._last_control_status_time = now
+
         if not self._use_nav:
             self.logger.error("Navigation function is disabled.")
-            self.logger.info("Chassis control status: DISABLED")
+            self.logger.info(
+                f"Chassis control status: DISABLED, interval={interval:.3f}s")
             return StatusCode.FAIL, "DISABLED"
         if not self._has_chassis_client():
             self.logger.error("Chassis client has not initialized")
-            self.logger.info("Chassis control status: NOT_INITIALIZED")
+            self.logger.info(
+                f"Chassis control status: NOT_INITIALIZED, interval={interval:.3f}s"
+            )
             return StatusCode.FAIL, "NOT_INITIALIZED"
         control_status = self._get_chassis_client().get_control_status()
-        self.logger.info(f"Chassis control status: {control_status}")
+        self.logger.info(
+            f"Chassis control status: {control_status}, interval={interval:.3f}s"
+        )
         return StatusCode.SUCCESS, control_status
 
     def set_auto_charging(self) -> StatusCode:

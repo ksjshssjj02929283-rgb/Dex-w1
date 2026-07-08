@@ -93,6 +93,9 @@ class NavigationClient(ABC, Node):
         self._control_status_requesting = False
         self._last_control_status_time = None
         self._control_status_timeout = 1.0  # 秒，超过认为状态陈旧
+        # 诊断：记录请求发出时刻、连续跳过次数
+        self._control_status_request_sent_time = None
+        self._control_status_skip_count = 0
 
         self._init_subscriber(is_sim)
         self._init_publisher(is_sim)
@@ -103,8 +106,10 @@ class NavigationClient(ABC, Node):
 
     def _check_connection_status(self):
         """定时检查消息是否超时"""
+        cur_time = self.get_clock().now().nanoseconds / 1e9
+        # self.get_logger().info(f"connection check: last_msg={self._last_msg_time}, clock={cur_time}",
+        #                        once=False)
         if self._last_msg_time is not None:
-            cur_time = self.get_clock().now().nanoseconds / 1e9
             if (cur_time - self._last_msg_time) > self._connection_timeout:
                 self._cur_pos = None
                 self._last_msg_time = None
@@ -149,6 +154,7 @@ class NavigationClient(ABC, Node):
         return header
 
     def _chassis_feedback_callback(self, msg):
+        self.get_logger().info("chassis feedback received", once=True)
         processed = {"header": {}, "data": {}}
         processed["header"] = self._parse_msg_header(msg)
         processed["data"] = {
@@ -163,6 +169,7 @@ class NavigationClient(ABC, Node):
 
         self._last_chassis_processed_feedback = processed
         self._last_msg_time = time.time()
+        # self.get_logger().info(f"feedback received, _last_msg_time={self._last_msg_time}", once=False)
 
     def _battery_feedback_callback(self, msg):
         '''解析电池状态消息'''
@@ -528,18 +535,28 @@ class NavigationClient(ABC, Node):
         获取当前缓存的底层控制状态（不触发服务调用）
 
         Returns:
-            str:
-                - "IDLE"
-                - "CONTROL"
-                - "CANCEL CONTROL"
-                - "UNKNOWN"
+            str: 控制状态字符串，可能的取值：
+                - "IDLE": 空闲，未在控制
+                - "CONTROL": 正在执行控制指令
+                - "SUCCEEDED": 控制已完成（仅首次查询时返回一次，之后变为 IDLE）
+                - "CANCELLING": 正在取消，平滑停止中
+                - "CANCELLED": 已取消（仅首次查询时返回一次，之后变为 IDLE）
+                - "UNKNOWN": 状态未知（服务未响应或缓存过期）
         """
         self.spin_once()
         if self._last_control_status_success and self._last_control_status_time:
             # 防止返回陈旧状态
-            if (time.time() - self._last_control_status_time
-               ) <= self._control_status_timeout:
+            cache_age = time.time() - self._last_control_status_time
+            if cache_age <= self._control_status_timeout:
                 return self._last_control_status
+            else:
+                self.get_logger().warn(
+                    f"[诊断] get_control_status 返回 UNKNOWN: "
+                    f"缓存已过期, cache_age={cache_age:.3f}s, "
+                    f"cached_status={self._last_control_status}, "
+                    f"requesting={self._control_status_requesting}, "
+                    f"skip_count={self._control_status_skip_count}"
+                )
 
         return "UNKNOWN"
 
@@ -551,6 +568,14 @@ class NavigationClient(ABC, Node):
         """
         # 防止请求堆积
         if self._control_status_requesting:
+            self._control_status_skip_count += 1
+            sent_age = (time.time() - self._control_status_request_sent_time
+                        ) if self._control_status_request_sent_time else -1.0
+            self.get_logger().warn(
+                f"[诊断] refresh_control_status 被防抖跳过: "
+                f"skip_count={self._control_status_skip_count}, "
+                f"上次请求已等待={sent_age:.3f}s"
+            )
             return False
 
         if not hasattr(self, '_get_status_client') or \
@@ -560,6 +585,8 @@ class NavigationClient(ABC, Node):
         request = Trigger.Request()
         try:
             self._control_status_requesting = True
+            self._control_status_request_sent_time = time.time()
+            self._control_status_skip_count = 0
             future = self._get_status_client.call_async(request)
             future.add_done_callback(self._on_get_control_status_response)
             return True
@@ -846,20 +873,29 @@ class NavigationClient(ABC, Node):
             self.get_logger().error(f"Error in cancel control response: {e}")
 
     def _on_get_control_status_response(self, future):
-        """Callback for get_control_status async response (non-blocking)."""
+        """Callback for get_control status async response (non-blocking)."""
         self._control_status_requesting = False
 
         try:
             response = future.result()
 
+            # 诊断：计算请求往返延迟
+            rtt = (time.time() - self._control_status_request_sent_time
+                   ) if self._control_status_request_sent_time else -1.0
+
             # 记录时间戳
             self._last_control_status_time = time.time()
 
             # 直接缓存（假设底层返回的就是合法状态）
+            old_status = self._last_control_status
             self._last_control_status = response.message
             self._last_control_status_success = bool(response.success)
 
-            # self.get_logger().info(f"Control status updated: {response.message}")
+            if old_status != self._last_control_status:
+                self.get_logger().info(
+                    f"[诊断] 控制状态变化: {old_status} -> {self._last_control_status}, "
+                    f"rtt={rtt:.3f}s"
+                )
         except Exception as e:
             self._last_control_status_success = False
             self.get_logger().error(
