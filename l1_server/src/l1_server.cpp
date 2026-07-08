@@ -25,6 +25,17 @@ RobotServer::RobotServer(const std::string& config_path) : Node("robot_server") 
     pm_ankle_right_ = utils::PMAnkle(false, config.right_ankle_params);
     RCLCPP_INFO(this->get_logger(), "Config loaded from %s, run_mode=%d", config_path.c_str(), run_mode_);
 
+    // 初始化关节索引缓存
+    idx_l_ankle_pitch_ = GetJointIndexByName("ANKLE_PITCH_L_J5");
+    idx_l_ankle_roll_ = GetJointIndexByName("ANKLE_ROLL_L_J6");
+    idx_r_ankle_pitch_ = GetJointIndexByName("ANKLE_PITCH_R_J5");
+    idx_r_ankle_roll_ = GetJointIndexByName("ANKLE_ROLL_R_J6");
+
+    if (idx_l_ankle_pitch_ == -1 || idx_l_ankle_roll_ == -1 || idx_r_ankle_pitch_ == -1 || idx_r_ankle_roll_ == -1) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to find ankle joint indices by name!");
+        throw std::runtime_error("Ankle joint indices not found");
+    }
+
     LOG_INFO << "";
     LOG_INFO
         << "---------------------------------------L1 Robot Server Initializing---------------------------------------";
@@ -58,7 +69,7 @@ RobotServer::~RobotServer() {
 void RobotServer::JointCommandCallback(const JointCommandMsg::SharedPtr msg) {
     auto robot_control_temp = robot_control_;
     for (size_t i = 0; i < msg->name.size(); ++i) {
-        for (int j = 0; j < ndof_body_ + ndof_legs_; ++j) {
+        for (int j = 0; j < ndof_total_; ++j) {
             if (joint_name_[j] == msg->name[i]) {
                 robot_control_temp.joint_control[j].joint_position = msg->position[i];
                 robot_control_temp.joint_control[j].joint_velocity = msg->velocity[i];
@@ -99,7 +110,7 @@ void RobotServer::JointControlThreadFunc() {
         }
         if (ret) {
             // 电机空间 → 用户空间：对 minus 关节取反 position/velocity/torque
-            for (int i = 0; i < ndof_body_ + ndof_legs_; ++i) {
+            for (int i = 0; i < ndof_total_; ++i) {
                 int sign = GetJointSign(i);
                 robot_feedback_tmp.joint_feedback[i].joint_position *= sign;
                 robot_feedback_tmp.joint_feedback[i].joint_velocity *= sign;
@@ -202,7 +213,7 @@ void RobotServer::JointControlThreadFunc() {
                 robot_control_.joint_control[i].joint_Kd * vel_error;
         }
         // 保存实际下发的力矩前馈（含上肢 PD 叠加和踝关节耦合项，用户空间）
-        for (int i = 0; i < ndof_body_ + ndof_legs_; ++i) {
+        for (int i = 0; i < ndof_total_; ++i) {
             joint_torque_feedforward_[i] = robot_control_temp.joint_control[i].joint_torque_feedforward;
             // 用户空间 → 电机空间：对 minus 关节取反 position/velocity/torque/torque_feedforward
             int sign = GetJointSign(i);
@@ -217,7 +228,7 @@ void RobotServer::JointControlThreadFunc() {
 }
 
 bool RobotServer::SortFeedbackByJointName(RobotFeedback& feedback) {
-    const int ndof_total = ndof_body_ + ndof_legs_;
+    const int ndof_total = ndof_total_;
 
     // 检测反馈数据中的有效关节数量
     int valid_count = 0;
@@ -284,10 +295,10 @@ void RobotServer::WriteFeedbackToControl() {
 void RobotServer::JointStatePublisher() {
     auto joint_state_msg = sensor_msgs::msg::JointState();
     joint_state_msg.header.stamp = this->now();
-    joint_state_msg.name.resize(this->ndof_body_ + this->ndof_legs_);
-    joint_state_msg.position.resize(this->ndof_body_ + this->ndof_legs_);
-    joint_state_msg.velocity.resize(this->ndof_body_ + this->ndof_legs_);
-    joint_state_msg.effort.resize(this->ndof_body_ + this->ndof_legs_);
+    joint_state_msg.name.resize(ndof_total_);
+    joint_state_msg.position.resize(ndof_total_);
+    joint_state_msg.velocity.resize(ndof_total_);
+    joint_state_msg.effort.resize(ndof_total_);
     for (int i = 0; i < this->ndof_body_; ++i) {
         joint_state_msg.name[i] = this->joint_name_[i];
         joint_state_msg.position[i] = robot_feedback_.joint_feedback[i].joint_position;
@@ -321,7 +332,7 @@ void RobotServer::JointStatePublisherThreadFunc() {
 
 std::string RobotServer::GetRobotStatusString() {
     uint64_t timestamp_ns = this->now().nanoseconds();
-    const int ndof_total = ndof_body_ + ndof_legs_;
+    const int ndof_total = ndof_total_;
 
     // 从统一 joint_feedback / joint_control 数组中提取所有关节字段
     std::vector<double> joint_position(ndof_total), joint_velocity(ndof_total), joint_torque(ndof_total);
@@ -338,12 +349,14 @@ std::string RobotServer::GetRobotStatusString() {
     }
 
     // 构建脚踝电机原始数据
-    std::vector<double> ankle_motor_torque = {ankle_motor_torque_[0], ankle_motor_torque_[1], ankle_motor_torque_[2],
-                                              ankle_motor_torque_[3]};
-    std::vector<double> ankle_motor_position_fb = {ankle_motor_position_fb_[0], ankle_motor_position_fb_[1],
-                                                   ankle_motor_position_fb_[2], ankle_motor_position_fb_[3]};
-    std::vector<double> ankle_motor_position_cmd = {ankle_motor_position_cmd_[0], ankle_motor_position_cmd_[1],
-                                                    ankle_motor_position_cmd_[2], ankle_motor_position_cmd_[3]};
+    std::vector<double> ankle_motor_torque = {ankle_motor_torque_[L_ANKLE_MOTOR_1], ankle_motor_torque_[L_ANKLE_MOTOR_2],
+                                              ankle_motor_torque_[R_ANKLE_MOTOR_1], ankle_motor_torque_[R_ANKLE_MOTOR_2]};
+    std::vector<double> ankle_motor_position_fb = {
+        ankle_motor_position_fb_[L_ANKLE_MOTOR_1], ankle_motor_position_fb_[L_ANKLE_MOTOR_2],
+        ankle_motor_position_fb_[R_ANKLE_MOTOR_1], ankle_motor_position_fb_[R_ANKLE_MOTOR_2]};
+    std::vector<double> ankle_motor_position_cmd = {
+        ankle_motor_position_cmd_[L_ANKLE_MOTOR_1], ankle_motor_position_cmd_[L_ANKLE_MOTOR_2],
+        ankle_motor_position_cmd_[R_ANKLE_MOTOR_1], ankle_motor_position_cmd_[R_ANKLE_MOTOR_2]};
     // 构建关节名称 JSON 数组
     std::string joint_names_str = "[";
     for (int i = 0; i < ndof_total; ++i) {
@@ -425,29 +438,29 @@ void RobotServer::SetupRealtime() {
 RobotFeedback RobotServer::ConvertAnkleMotorsToPitchRoll(const RobotFeedback& robot_feedback) {
     RobotFeedback result = robot_feedback;
 
-    ankle_motor_torque_[0] = robot_feedback.joint_feedback[ndof_body_ + 4].joint_torque;
-    ankle_motor_torque_[1] = robot_feedback.joint_feedback[ndof_body_ + 5].joint_torque;
-    ankle_motor_torque_[2] = robot_feedback.joint_feedback[ndof_body_ + 10].joint_torque;
-    ankle_motor_torque_[3] = robot_feedback.joint_feedback[ndof_body_ + 11].joint_torque;
+    ankle_motor_torque_[L_ANKLE_MOTOR_1] = robot_feedback.joint_feedback[idx_l_ankle_pitch_].joint_torque;
+    ankle_motor_torque_[L_ANKLE_MOTOR_2] = robot_feedback.joint_feedback[idx_l_ankle_roll_].joint_torque;
+    ankle_motor_torque_[R_ANKLE_MOTOR_1] = robot_feedback.joint_feedback[idx_r_ankle_pitch_].joint_torque;
+    ankle_motor_torque_[R_ANKLE_MOTOR_2] = robot_feedback.joint_feedback[idx_r_ankle_roll_].joint_torque;
 
-    ankle_motor_position_fb_[0] = robot_feedback.joint_feedback[ndof_body_ + 4].joint_position;
-    ankle_motor_position_fb_[1] = robot_feedback.joint_feedback[ndof_body_ + 5].joint_position;
-    ankle_motor_position_fb_[2] = robot_feedback.joint_feedback[ndof_body_ + 10].joint_position;
-    ankle_motor_position_fb_[3] = robot_feedback.joint_feedback[ndof_body_ + 11].joint_position;
+    ankle_motor_position_fb_[L_ANKLE_MOTOR_1] = robot_feedback.joint_feedback[idx_l_ankle_pitch_].joint_position;
+    ankle_motor_position_fb_[L_ANKLE_MOTOR_2] = robot_feedback.joint_feedback[idx_l_ankle_roll_].joint_position;
+    ankle_motor_position_fb_[R_ANKLE_MOTOR_1] = robot_feedback.joint_feedback[idx_r_ankle_pitch_].joint_position;
+    ankle_motor_position_fb_[R_ANKLE_MOTOR_2] = robot_feedback.joint_feedback[idx_r_ankle_roll_].joint_position;
 
-    const double ankle_motor1_left = robot_feedback.joint_feedback[ndof_body_ + 4].joint_position;
-    const double ankle_motor2_left = robot_feedback.joint_feedback[ndof_body_ + 5].joint_position;
-    const double ankle_vel_motor1_left = robot_feedback.joint_feedback[ndof_body_ + 4].joint_velocity;
-    const double ankle_vel_motor2_left = robot_feedback.joint_feedback[ndof_body_ + 5].joint_velocity;
-    const double ankle_tau_motor1_left = robot_feedback.joint_feedback[ndof_body_ + 4].joint_torque;
-    const double ankle_tau_motor2_left = robot_feedback.joint_feedback[ndof_body_ + 5].joint_torque;
+    const double ankle_motor1_left = robot_feedback.joint_feedback[idx_l_ankle_pitch_].joint_position;
+    const double ankle_motor2_left = robot_feedback.joint_feedback[idx_l_ankle_roll_].joint_position;
+    const double ankle_vel_motor1_left = robot_feedback.joint_feedback[idx_l_ankle_pitch_].joint_velocity;
+    const double ankle_vel_motor2_left = robot_feedback.joint_feedback[idx_l_ankle_roll_].joint_velocity;
+    const double ankle_tau_motor1_left = robot_feedback.joint_feedback[idx_l_ankle_pitch_].joint_torque;
+    const double ankle_tau_motor2_left = robot_feedback.joint_feedback[idx_l_ankle_roll_].joint_torque;
 
-    const double ankle_motor1_right = robot_feedback.joint_feedback[ndof_body_ + 10].joint_position;
-    const double ankle_motor2_right = robot_feedback.joint_feedback[ndof_body_ + 11].joint_position;
-    const double ankle_vel_motor1_right = robot_feedback.joint_feedback[ndof_body_ + 10].joint_velocity;
-    const double ankle_vel_motor2_right = robot_feedback.joint_feedback[ndof_body_ + 11].joint_velocity;
-    const double ankle_tau_motor1_right = robot_feedback.joint_feedback[ndof_body_ + 10].joint_torque;
-    const double ankle_tau_motor2_right = robot_feedback.joint_feedback[ndof_body_ + 11].joint_torque;
+    const double ankle_motor1_right = robot_feedback.joint_feedback[idx_r_ankle_pitch_].joint_position;
+    const double ankle_motor2_right = robot_feedback.joint_feedback[idx_r_ankle_roll_].joint_position;
+    const double ankle_vel_motor1_right = robot_feedback.joint_feedback[idx_r_ankle_pitch_].joint_velocity;
+    const double ankle_vel_motor2_right = robot_feedback.joint_feedback[idx_r_ankle_roll_].joint_velocity;
+    const double ankle_tau_motor1_right = robot_feedback.joint_feedback[idx_r_ankle_pitch_].joint_torque;
+    const double ankle_tau_motor2_right = robot_feedback.joint_feedback[idx_r_ankle_roll_].joint_torque;
 
     Eigen::Vector2d ankle_pose_left = pm_ankle_left_.GetAnklePoseFromMotorAngles(ankle_motor1_left, ankle_motor2_left);
     double ankle_pitch_left = ankle_pose_left(0);
@@ -458,30 +471,30 @@ RobotFeedback RobotServer::ConvertAnkleMotorsToPitchRoll(const RobotFeedback& ro
     double ankle_pitch_right = ankle_pose_right(0);
     double ankle_roll_right = ankle_pose_right(1);
 
-    result.joint_feedback[ndof_body_ + 4].joint_position = ankle_pitch_left;
-    result.joint_feedback[ndof_body_ + 5].joint_position = ankle_roll_left;
-    result.joint_feedback[ndof_body_ + 10].joint_position = ankle_pitch_right;
-    result.joint_feedback[ndof_body_ + 11].joint_position = ankle_roll_right;
+    result.joint_feedback[idx_l_ankle_pitch_].joint_position = ankle_pitch_left;
+    result.joint_feedback[idx_l_ankle_roll_].joint_position = ankle_roll_left;
+    result.joint_feedback[idx_r_ankle_pitch_].joint_position = ankle_pitch_right;
+    result.joint_feedback[idx_r_ankle_roll_].joint_position = ankle_roll_right;
 
     Eigen::Vector2d ankle_vel_left = pm_ankle_left_.GetTaskVelocitiesFromMotorVelocities(
         ankle_pitch_left, ankle_roll_left, ankle_vel_motor1_left, ankle_vel_motor2_left);
     Eigen::Vector2d ankle_vel_right = pm_ankle_right_.GetTaskVelocitiesFromMotorVelocities(
         ankle_pitch_right, ankle_roll_right, ankle_vel_motor1_right, ankle_vel_motor2_right);
 
-    result.joint_feedback[ndof_body_ + 4].joint_velocity = ankle_vel_left(0);
-    result.joint_feedback[ndof_body_ + 5].joint_velocity = ankle_vel_left(1);
-    result.joint_feedback[ndof_body_ + 10].joint_velocity = ankle_vel_right(0);
-    result.joint_feedback[ndof_body_ + 11].joint_velocity = ankle_vel_right(1);
+    result.joint_feedback[idx_l_ankle_pitch_].joint_velocity = ankle_vel_left(0);
+    result.joint_feedback[idx_l_ankle_roll_].joint_velocity = ankle_vel_left(1);
+    result.joint_feedback[idx_r_ankle_pitch_].joint_velocity = ankle_vel_right(0);
+    result.joint_feedback[idx_r_ankle_roll_].joint_velocity = ankle_vel_right(1);
 
     Eigen::Vector2d ankle_tau_left = pm_ankle_left_.GetTaskTorquesFromMotorTorques(
         ankle_pitch_left, ankle_roll_left, ankle_tau_motor1_left, ankle_tau_motor2_left);
     Eigen::Vector2d ankle_tau_right = pm_ankle_right_.GetTaskTorquesFromMotorTorques(
         ankle_pitch_right, ankle_roll_right, ankle_tau_motor1_right, ankle_tau_motor2_right);
 
-    result.joint_feedback[ndof_body_ + 4].joint_torque = ankle_tau_left(0);
-    result.joint_feedback[ndof_body_ + 5].joint_torque = ankle_tau_left(1);
-    result.joint_feedback[ndof_body_ + 10].joint_torque = ankle_tau_right(0);
-    result.joint_feedback[ndof_body_ + 11].joint_torque = ankle_tau_right(1);
+    result.joint_feedback[idx_l_ankle_pitch_].joint_torque = ankle_tau_left(0);
+    result.joint_feedback[idx_l_ankle_roll_].joint_torque = ankle_tau_left(1);
+    result.joint_feedback[idx_r_ankle_pitch_].joint_torque = ankle_tau_right(0);
+    result.joint_feedback[idx_r_ankle_roll_].joint_torque = ankle_tau_right(1);
 
     return result;
 }
@@ -489,75 +502,72 @@ RobotFeedback RobotServer::ConvertAnkleMotorsToPitchRoll(const RobotFeedback& ro
 RobotControl RobotServer::ConvertPitchRollToAnkleMotors(const RobotControl& robot_control) {
     RobotControl result = robot_control;
 
-    ankle_motor_position_cmd_[0] = robot_control.joint_control[ndof_body_ + 4].joint_position;
-    ankle_motor_position_cmd_[1] = robot_control.joint_control[ndof_body_ + 5].joint_position;
-    ankle_motor_position_cmd_[2] = robot_control.joint_control[ndof_body_ + 10].joint_position;
-    ankle_motor_position_cmd_[3] = robot_control.joint_control[ndof_body_ + 11].joint_position;
+    ankle_motor_position_cmd_[L_ANKLE_MOTOR_1] = robot_control.joint_control[idx_l_ankle_pitch_].joint_position;
+    ankle_motor_position_cmd_[L_ANKLE_MOTOR_2] = robot_control.joint_control[idx_l_ankle_roll_].joint_position;
+    ankle_motor_position_cmd_[R_ANKLE_MOTOR_1] = robot_control.joint_control[idx_r_ankle_pitch_].joint_position;
+    ankle_motor_position_cmd_[R_ANKLE_MOTOR_2] = robot_control.joint_control[idx_r_ankle_roll_].joint_position;
 
-    const double ankle_pitch_left =
-        std::clamp(robot_control.joint_control[ndof_body_ + 4].joint_position, -1.0472, 0.61087);
-    const double ankle_roll_left =
-        std::clamp(robot_control.joint_control[ndof_body_ + 5].joint_position, -0.2618, 0.2618);
-    const double ankle_tau_pitch_left = robot_control.joint_control[ndof_body_ + 4].joint_torque;
-    const double ankle_tau_roll_left = robot_control.joint_control[ndof_body_ + 5].joint_torque;
-    const double ankle_ff_pitch_left = robot_control.joint_control[ndof_body_ + 4].joint_torque_feedforward;
-    const double ankle_ff_roll_left = robot_control.joint_control[ndof_body_ + 5].joint_torque_feedforward;
-    const double ankle_k_pitch_left = robot_control.joint_control[ndof_body_ + 4].joint_Kp;
-    const double ankle_k_roll_left = robot_control.joint_control[ndof_body_ + 5].joint_Kp;
-    const double ankle_d_pitch_left = robot_control.joint_control[ndof_body_ + 4].joint_Kd;
-    const double ankle_d_roll_left = robot_control.joint_control[ndof_body_ + 5].joint_Kd;
+    const double ankle_pitch_left = std::clamp(robot_control.joint_control[idx_l_ankle_pitch_].joint_position, -1.0472, 0.61087);
+    const double ankle_roll_left = std::clamp(robot_control.joint_control[idx_l_ankle_roll_].joint_position, -0.2618, 0.2618);
+    const double ankle_tau_pitch_left = robot_control.joint_control[idx_l_ankle_pitch_].joint_torque;
+    const double ankle_tau_roll_left = robot_control.joint_control[idx_l_ankle_roll_].joint_torque;
+    const double ankle_ff_pitch_left = robot_control.joint_control[idx_l_ankle_pitch_].joint_torque_feedforward;
+    const double ankle_ff_roll_left = robot_control.joint_control[idx_l_ankle_roll_].joint_torque_feedforward;
+    const double ankle_k_pitch_left = robot_control.joint_control[idx_l_ankle_pitch_].joint_Kp;
+    const double ankle_k_roll_left = robot_control.joint_control[idx_l_ankle_roll_].joint_Kp;
+    const double ankle_d_pitch_left = robot_control.joint_control[idx_l_ankle_pitch_].joint_Kd;
+    const double ankle_d_roll_left = robot_control.joint_control[idx_l_ankle_roll_].joint_Kd;
 
     const double ankle_pitch_right =
-        std::clamp(robot_control.joint_control[ndof_body_ + 10].joint_position, -1.0472, 0.61087);
-    const double ankle_roll_right =
-        std::clamp(robot_control.joint_control[ndof_body_ + 11].joint_position, -0.2618, 0.2618);
-    const double ankle_tau_pitch_right = robot_control.joint_control[ndof_body_ + 10].joint_torque;
-    const double ankle_tau_roll_right = robot_control.joint_control[ndof_body_ + 11].joint_torque;
-    const double ankle_ff_pitch_right = robot_control.joint_control[ndof_body_ + 10].joint_torque_feedforward;
-    const double ankle_ff_roll_right = robot_control.joint_control[ndof_body_ + 11].joint_torque_feedforward;
-    const double ankle_k_pitch_right = robot_control.joint_control[ndof_body_ + 10].joint_Kp;
-    const double ankle_k_roll_right = robot_control.joint_control[ndof_body_ + 11].joint_Kp;
-    const double ankle_d_pitch_right = robot_control.joint_control[ndof_body_ + 10].joint_Kd;
-    const double ankle_d_roll_right = robot_control.joint_control[ndof_body_ + 11].joint_Kd;
+        std::clamp(robot_control.joint_control[idx_r_ankle_pitch_].joint_position, -1.0472, 0.61087);
+    const double ankle_roll_right = std::clamp(robot_control.joint_control[idx_r_ankle_roll_].joint_position, -0.2618, 0.2618);
+    const double ankle_tau_pitch_right = robot_control.joint_control[idx_r_ankle_pitch_].joint_torque;
+    const double ankle_tau_roll_right = robot_control.joint_control[idx_r_ankle_roll_].joint_torque;
+    const double ankle_ff_pitch_right = robot_control.joint_control[idx_r_ankle_pitch_].joint_torque_feedforward;
+    const double ankle_ff_roll_right = robot_control.joint_control[idx_r_ankle_roll_].joint_torque_feedforward;
+    const double ankle_k_pitch_right = robot_control.joint_control[idx_r_ankle_pitch_].joint_Kp;
+    const double ankle_k_roll_right = robot_control.joint_control[idx_r_ankle_roll_].joint_Kp;
+    const double ankle_d_pitch_right = robot_control.joint_control[idx_r_ankle_pitch_].joint_Kd;
+    const double ankle_d_roll_right = robot_control.joint_control[idx_r_ankle_roll_].joint_Kd;
 
     utils::AnkleIKSolution motor_angles_left = pm_ankle_left_.GetAnkleMotorAngles(ankle_pitch_left, ankle_roll_left);
     utils::AnkleIKSolution motor_angles_right =
         pm_ankle_right_.GetAnkleMotorAngles(ankle_pitch_right, ankle_roll_right);
 
-    result.joint_control[ndof_body_ + 4].joint_position = motor_angles_left.theta_1_rad;
-    result.joint_control[ndof_body_ + 5].joint_position = motor_angles_left.theta_2_rad;
-    result.joint_control[ndof_body_ + 10].joint_position = motor_angles_right.theta_1_rad;
-    result.joint_control[ndof_body_ + 11].joint_position = motor_angles_right.theta_2_rad;
+    result.joint_control[idx_l_ankle_pitch_].joint_position = motor_angles_left.theta_1_rad;
+    result.joint_control[idx_l_ankle_roll_].joint_position = motor_angles_left.theta_2_rad;
+    result.joint_control[idx_r_ankle_pitch_].joint_position = motor_angles_right.theta_1_rad;
+    result.joint_control[idx_r_ankle_roll_].joint_position = motor_angles_right.theta_2_rad;
 
     Eigen::Matrix2d ankle_k_left = pm_ankle_left_.GetMotorStiffnessMatrixFromTaskStiffness(
         ankle_pitch_left, ankle_roll_left, ankle_k_pitch_left, ankle_k_roll_left);
     Eigen::Matrix2d ankle_k_right = pm_ankle_right_.GetMotorStiffnessMatrixFromTaskStiffness(
         ankle_pitch_right, ankle_roll_right, ankle_k_pitch_right, ankle_k_roll_right);
 
-    result.joint_control[ndof_body_ + 4].joint_Kp = ankle_k_left(0, 0);
-    result.joint_control[ndof_body_ + 5].joint_Kp = ankle_k_left(1, 1);
-    result.joint_control[ndof_body_ + 10].joint_Kp = ankle_k_right(0, 0);
-    result.joint_control[ndof_body_ + 11].joint_Kp = ankle_k_right(1, 1);
+    result.joint_control[idx_l_ankle_pitch_].joint_Kp = ankle_k_left(0, 0);
+    result.joint_control[idx_l_ankle_roll_].joint_Kp = ankle_k_left(1, 1);
+    result.joint_control[idx_r_ankle_pitch_].joint_Kp = ankle_k_right(0, 0);
+    result.joint_control[idx_r_ankle_roll_].joint_Kp = ankle_k_right(1, 1);
 
     Eigen::Matrix2d ankle_d_left = pm_ankle_left_.GetMotorDampingMatrixFromTaskDamping(
         ankle_pitch_left, ankle_roll_left, ankle_d_pitch_left, ankle_d_roll_left);
     Eigen::Matrix2d ankle_d_right = pm_ankle_right_.GetMotorDampingMatrixFromTaskDamping(
         ankle_pitch_right, ankle_roll_right, ankle_d_pitch_right, ankle_d_roll_right);
 
-    result.joint_control[ndof_body_ + 4].joint_Kd = ankle_d_left(0, 0);
-    result.joint_control[ndof_body_ + 5].joint_Kd = ankle_d_left(1, 1);
-    result.joint_control[ndof_body_ + 10].joint_Kd = ankle_d_right(0, 0);
-    result.joint_control[ndof_body_ + 11].joint_Kd = ankle_d_right(1, 1);
+    result.joint_control[idx_l_ankle_pitch_].joint_Kd = ankle_d_left(0, 0);
+    result.joint_control[idx_l_ankle_roll_].joint_Kd = ankle_d_left(1, 1);
+    result.joint_control[idx_r_ankle_pitch_].joint_Kd = ankle_d_right(0, 0);
+    result.joint_control[idx_r_ankle_roll_].joint_Kd = ankle_d_right(1, 1);
 
     Eigen::Vector2d ankle_tau_left = pm_ankle_left_.GetMotorTorquesFromTaskTorques(
         ankle_pitch_left, ankle_roll_left, ankle_tau_pitch_left, ankle_tau_roll_left);
     Eigen::Vector2d ankle_tau_right = pm_ankle_right_.GetMotorTorquesFromTaskTorques(
         ankle_pitch_right, ankle_roll_right, ankle_tau_pitch_right, ankle_tau_roll_right);
 
-    result.joint_control[ndof_body_ + 4].joint_torque = ankle_tau_left(0);
-    result.joint_control[ndof_body_ + 5].joint_torque = ankle_tau_left(1);
-    result.joint_control[ndof_body_ + 10].joint_torque = ankle_tau_right(0);
-    result.joint_control[ndof_body_ + 11].joint_torque = ankle_tau_right(1);
+    result.joint_control[idx_l_ankle_pitch_].joint_torque = ankle_tau_left(0);
+    result.joint_control[idx_l_ankle_roll_].joint_torque = ankle_tau_left(1);
+    result.joint_control[idx_r_ankle_pitch_].joint_torque = ankle_tau_right(0);
+    result.joint_control[idx_r_ankle_roll_].joint_torque = ankle_tau_right(1);
 
     Eigen::Vector2d ankle_ff_left = pm_ankle_left_.GetMotorTorquesFromTaskTorques(
         ankle_pitch_left, ankle_roll_left, ankle_ff_pitch_left, ankle_ff_roll_left);
@@ -565,19 +575,19 @@ RobotControl RobotServer::ConvertPitchRollToAnkleMotors(const RobotControl& robo
         ankle_pitch_right, ankle_roll_right, ankle_ff_pitch_right, ankle_ff_roll_right);
 
     // 计算电机角度误差（使用原始的电机角度反馈值）
-    const double motor1_left_error = motor_angles_left.theta_1_rad - ankle_motor_position_fb_[0];
-    const double motor2_left_error = motor_angles_left.theta_2_rad - ankle_motor_position_fb_[1];
-    const double motor1_right_error = motor_angles_right.theta_1_rad - ankle_motor_position_fb_[2];
-    const double motor2_right_error = motor_angles_right.theta_2_rad - ankle_motor_position_fb_[3];
+    const double motor1_left_error = motor_angles_left.theta_1_rad - ankle_motor_position_fb_[L_ANKLE_MOTOR_1];
+    const double motor2_left_error = motor_angles_left.theta_2_rad - ankle_motor_position_fb_[L_ANKLE_MOTOR_2];
+    const double motor1_right_error = motor_angles_right.theta_1_rad - ankle_motor_position_fb_[R_ANKLE_MOTOR_1];
+    const double motor2_right_error = motor_angles_right.theta_2_rad - ankle_motor_position_fb_[R_ANKLE_MOTOR_2];
 
     // 将交叉耦合项加到前馈力矩中
-    result.joint_control[ndof_body_ + 4].joint_torque_feedforward =
+    result.joint_control[idx_l_ankle_pitch_].joint_torque_feedforward =
         ankle_ff_left(0) + ankle_k_left(0, 1) * motor2_left_error;
-    result.joint_control[ndof_body_ + 5].joint_torque_feedforward =
+    result.joint_control[idx_l_ankle_roll_].joint_torque_feedforward =
         ankle_ff_left(1) + ankle_k_left(1, 0) * motor1_left_error;
-    result.joint_control[ndof_body_ + 10].joint_torque_feedforward =
+    result.joint_control[idx_r_ankle_pitch_].joint_torque_feedforward =
         ankle_ff_right(0) + ankle_k_right(0, 1) * motor2_right_error;
-    result.joint_control[ndof_body_ + 11].joint_torque_feedforward =
+    result.joint_control[idx_r_ankle_roll_].joint_torque_feedforward =
         ankle_ff_right(1) + ankle_k_right(1, 0) * motor1_right_error;
 
     return result;

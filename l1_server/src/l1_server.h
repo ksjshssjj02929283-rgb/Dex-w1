@@ -47,6 +47,15 @@ private:
     std::string GetRobotStatusString();
     // 锁内存并设置 SCHED_FIFO 实时调度
     void SetupRealtime();
+    // 根据名字获取关节索引
+    int GetJointIndexByName(const std::string& name) const {
+        for (int i = 0; i < ndof_total_; ++i) {
+            if (std::string(joint_name_[i]) == name) {
+                return i;
+            }
+        }
+        return -1;
+    }
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr robot_status_publisher_;
@@ -59,13 +68,29 @@ private:
     double ankle_motor_position_fb_[4]{0.0};
     double ankle_motor_position_cmd_[4]{0.0};
 
+    // 缓存关节索引，避免实时线程中通过名字查找
+    int idx_l_ankle_pitch_{-1};
+    int idx_l_ankle_roll_{-1};
+    int idx_r_ankle_pitch_{-1};
+    int idx_r_ankle_roll_{-1};
+
     builtin_interfaces::msg::Time last_command_timestamp_{};
     int command_timeout_ms_ = 200;
 
     Int64 streaming_request_id_{-1};
-    const int ndof_body_ = 18;  // 机器人上半身自由度
-    const int ndof_legs_ = 12;  // 腿部自由度
-    const char* joint_name_[30] = {
+    static constexpr int ndof_body_ = 16;  // 机器人上半身自由度 (HEAD + ARMS)
+    static constexpr int ndof_legs_ = 14;  // 腿部自由度 (WAIST + LEGS)
+    static constexpr int ndof_total_ = ndof_body_ + ndof_legs_;
+
+    // 踝关节电机物理索引
+    enum AnkleMotorIndex {
+        L_ANKLE_MOTOR_1 = 0,
+        L_ANKLE_MOTOR_2 = 1,
+        R_ANKLE_MOTOR_1 = 2,
+        R_ANKLE_MOTOR_2 = 3
+    };
+
+    const char* joint_name_[ndof_total_] = {
         "HEAD_YAW_J1",        "HEAD_PITCH_J2",    "SHOULDER_PITCH_L_J1", "SHOULDER_ROLL_L_J2", "ELBOW_PITCH_L_J3",
         "ELBOW_YAW_L_J4",     "WRIST_PITCH_L_J5", "WRIST_YAW_L_J6",      "WRIST_ROLL_L_J7",    "SHOULDER_PITCH_R_J1",
         "SHOULDER_ROLL_R_J2", "ELBOW_PITCH_R_J3", "ELBOW_YAW_R_J4",      "WRIST_PITCH_R_J5",   "WRIST_YAW_R_J6",
@@ -75,10 +100,10 @@ private:
 
     const char* joint_minus_[4] = {"HIP_PITCH_L_J1", "HIP_ROLL_L_J2", "KNEE_PITCH_L_J4", "HIP_ROLL_R_J2"};
 
-    double torque_limit_Nm_[18] = {10.0, 10.0, 31.0, 31.0, 31.0, 31.0, 10.0, 10.0, 10.0,
-                                   31.0, 31.0, 31.0, 31.0, 10.0, 10.0, 10.0, 87.0, 87.0};
+    double torque_limit_Nm_[ndof_body_] = {10.0, 10.0, 31.0, 31.0, 31.0, 31.0, 10.0, 10.0, 10.0,
+                                           31.0, 31.0, 31.0, 31.0, 10.0, 10.0, 10.0};
 
-    std::vector<double> joint_torque_feedforward_{ndof_body_ + ndof_legs_, 0.0};  // 实际下发到共享内存的力矩前馈
+    std::vector<double> joint_torque_feedforward_{ndof_total_, 0.0};  // 实际下发到共享内存的力矩前馈
 
     bool clear_error_flag_{false};
     bool is_robot_ready_{false};

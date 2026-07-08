@@ -1,5 +1,5 @@
 robot_type: l1
-version: v01
+version: v02
 run_mode: 0   #上肢运动模式: 0为位置模式, 1为力控pd模式
 
 l1_v01:
