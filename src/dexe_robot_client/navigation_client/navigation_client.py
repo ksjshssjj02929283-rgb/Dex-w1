@@ -25,6 +25,11 @@ from ..common import get_logger
 
 
 class NavigationClient(ABC, Node):
+    NAV_CANCELABLE_STATES = {"NAVIGATING"}
+    AUTO_CHARGING_CANCELABLE_STATES = {
+        "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING"
+    }
+
     AUTO_CHARGING_STATUS_NAMES = {
         GoalStatus.STATUS_UNKNOWN: "UNKNOWN",
         GoalStatus.STATUS_ACCEPTED: "ACCEPTED",
@@ -277,6 +282,11 @@ class NavigationClient(ABC, Node):
 
         return self._nav_status
 
+    def has_cancelable_nav_goal(self) -> bool:
+        """Return whether there may be a Nav2 goal worth cancelling."""
+        return (self._nav_status in self.NAV_CANCELABLE_STATES
+                or self._nav_goal_handle is not None)
+
     # def is_nav_done(self) -> bool:
     #     """检查导航是否结束（无论成功、失败还是取消）。"""
     #     return self.get_nav_state() in ["SUCCEEDED", "FAILED", "CANCELLED"]
@@ -296,7 +306,7 @@ class NavigationClient(ABC, Node):
                 time.sleep(0.05)
 
         if self._nav_goal_handle is None:
-            self.get_logger().warning("No active navigation goal to cancel.")
+            self.get_logger().info("No active navigation goal to cancel.")
             return False
 
         # 保存当前任务ID
@@ -389,6 +399,11 @@ class NavigationClient(ABC, Node):
         """获取当前回充 action 状态。"""
         return self._auto_charging_status
 
+    def has_cancelable_auto_charging_goal(self) -> bool:
+        """Return whether there may be an AutoCharging goal worth cancelling."""
+        return (self._auto_charging_status in self.AUTO_CHARGING_CANCELABLE_STATES
+                or self._auto_charging_goal_handle is not None)
+
     def get_auto_charging_result(self) -> tuple[bool, str]:
         """获取最近一次回充 action 结果。"""
         return self._auto_charging_success, self._last_auto_charging_result_message
@@ -412,8 +427,7 @@ class NavigationClient(ABC, Node):
                 time.sleep(0.05)
 
         if self._auto_charging_goal_handle is None:
-            self.get_logger().warning(
-                "No accepted AutoCharging goal to cancel.")
+            self.get_logger().info("No accepted AutoCharging goal to cancel.")
             return False
 
         try:
@@ -521,8 +535,6 @@ class NavigationClient(ABC, Node):
                 - "UNKNOWN"
         """
         self.spin_once()
-        # logger.error(f"#####_last_control_status:{self._last_control_status}")
-        self.get_logger().error(f"#####_last_control_status:{self._last_control_status}")
         if self._last_control_status_success and self._last_control_status_time:
             # 防止返回陈旧状态
             if (time.time() - self._last_control_status_time
@@ -799,8 +811,10 @@ class NavigationClient(ABC, Node):
                 self._nav_status = "FAILED"
                 self.get_logger().error(
                     f"Goal failed with status {result.status}")
+            self._nav_goal_handle = None
         except Exception as e:
             self._nav_status = "ERROR"
+            self._nav_goal_handle = None
             self.get_logger().error(
                 f"Error getting navigation result: {str(e)}")
 

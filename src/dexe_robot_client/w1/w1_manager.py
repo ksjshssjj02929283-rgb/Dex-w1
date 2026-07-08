@@ -782,13 +782,15 @@ class W1Manager:
         """获取底盘控制状态"""
         if not self._use_nav:
             self.logger.error("Navigation function is disabled.")
+            self.logger.info("Chassis control status: DISABLED")
             return StatusCode.FAIL, "DISABLED"
         if not self._has_chassis_client():
             self.logger.error("Chassis client has not initialized")
+            self.logger.info("Chassis control status: NOT_INITIALIZED")
             return StatusCode.FAIL, "NOT_INITIALIZED"
-        self.logger.warning(f"@@@@@@@@@@@@@@@@@@::::{StatusCode.SUCCESS}")
-        return StatusCode.SUCCESS, self._get_chassis_client(
-        ).get_control_status()
+        control_status = self._get_chassis_client().get_control_status()
+        self.logger.info(f"Chassis control status: {control_status}")
+        return StatusCode.SUCCESS, control_status
 
     def set_auto_charging(self) -> StatusCode:
         """调用回充服务"""
@@ -802,7 +804,7 @@ class W1Manager:
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def cancel_chassis_motion(self) -> StatusCode:
-        """统一取消底盘运动，同时调用取消导航和取消控制。"""
+        """统一取消底盘运动，只对正在运行的通道发送取消请求。"""
         if not self._use_nav:
             self.logger.error("Navigation function is disabled.")
             return StatusCode.FAIL
@@ -810,12 +812,44 @@ class W1Manager:
             self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL
 
-        self.logger.info("Sending request to cancel navigation and control...")
-        nav_cancel_ok = self._get_chassis_client().cancel_chassis_nav2()
-        control_cancel_ok = self._get_chassis_client().cancel_chassis_control()
+        chassis_client = self._get_chassis_client()
+        nav_state = chassis_client.get_nav_state()
+        control_state = chassis_client.get_control_status()
+        auto_charging_state = chassis_client.get_auto_charging_status()
+
+        self.logger.info(
+            "Sending request to cancel chassis motion "
+            f"(nav={nav_state}, control={control_state}, "
+            f"auto_charging={auto_charging_state})...")
+
+        cancel_requested = False
+        cancel_ok = False
+
+        if chassis_client.has_cancelable_nav_goal():
+            cancel_requested = True
+            cancel_ok = chassis_client.cancel_chassis_nav2() or cancel_ok
+        else:
+            self.logger.info(f"Skip navigation cancel: state={nav_state}")
+
+        if control_state == "CONTROL":
+            cancel_requested = True
+            cancel_ok = chassis_client.cancel_chassis_control() or cancel_ok
+        else:
+            self.logger.info(f"Skip control cancel: state={control_state}")
+
+        if chassis_client.has_cancelable_auto_charging_goal():
+            cancel_requested = True
+            cancel_ok = chassis_client.cancel_auto_charging() or cancel_ok
+        else:
+            self.logger.info(
+                f"Skip AutoCharging cancel: state={auto_charging_state}")
+
+        if not cancel_requested:
+            self.logger.info("No active chassis motion to cancel.")
+            return StatusCode.SUCCESS
 
         # 只要有一个成功，就认为取消指令已尽力发送
-        if nav_cancel_ok or control_cancel_ok:
+        if cancel_ok:
             return StatusCode.SUCCESS
         return StatusCode.FAIL
 
