@@ -767,16 +767,32 @@ class NavigationClient(ABC, Node):
         return executor is not None and self in executor.get_nodes()
 
     def _wait_for_future(self, future, timeout_sec: float) -> bool:
-        """等待 Future 完成，避免为当前节点启动第二个 Executor。"""
+        """等待 Future 完成，避免为当前节点启动第二个 Executor。
+
+        当节点被 Executor 管理时，不能调用 rclpy.spin_until_future_complete
+        （会为同一节点启动第二个 Executor 导致冲突），改用 busy-wait 轮询。
+        但如果调用方本身就在 Executor 的回调线程中，回调响应无法被调度执行，
+        future 永远不会 done，最终超时。
+        """
         if not self._is_managed_by_executor():
             rclpy.spin_until_future_complete(
                 self, future, timeout_sec=timeout_sec)
+            if not future.done():
+                self.get_logger().warn(
+                    f"_wait_for_future 超时(独立模式): "
+                    f"timeout={timeout_sec}s, future未完成")
             return future.done()
 
+        # 节点被 Executor 管理，用 busy-wait 轮询等待 future 完成
         deadline = time.monotonic() + timeout_sec
         while not future.done():
             remaining = deadline - time.monotonic()
             if remaining <= 0.0:
+                self.get_logger().warn(
+                    f"_wait_for_future 超时(executor模式): "
+                    f"timeout={timeout_sec}s。"
+                    f"可能原因: 1)服务端未响应 2)当前调用线程就是executor回调线程导致响应无法被调度"
+                )
                 return False
             time.sleep(min(0.01, remaining))
         return True
@@ -844,7 +860,10 @@ class NavigationClient(ABC, Node):
                     f"Goal failed with status {result.status}")
             self._nav_goal_handle = None
         except Exception as e:
-            self._nav_status = "ERROR"
+            # future.result() 抛异常（如 action server 崩溃、通信中断等），
+            # 导航确实失败了，归入 FAILED 而非单独的 ERROR，
+            # 避免上层 wait_for_navigation_arrival 不认识 "ERROR" 而卡到超时
+            self._nav_status = "FAILED"
             self._nav_goal_handle = None
             self.get_logger().error(
                 f"Error getting navigation result: {str(e)}")

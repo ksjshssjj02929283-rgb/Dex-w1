@@ -913,15 +913,24 @@ class W1Manager:
 
     def set_chassis_nav_tolerance(self, xy_tol: float,
                                   yaw_tol: float) -> StatusCode:
-        """设置底盘导航容差"""
+        """设置底盘导航容差
+
+        Args:
+            xy_tol (float): xy 方向位置容差，单位米
+            yaw_tol (float): yaw 方向角度容差，单位度。
+                             内部会转换为弧度后设置给 Nav2 的
+                             goal_checker.yaw_goal_tolerance 参数。
+        """
         if not self._use_nav:
             self.logger.error("Navigation function is disabled.")
             return StatusCode.FAIL
         if not self._has_chassis_client():
             self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL
+        # Nav2 的 yaw_goal_tolerance 参数单位为弧度，上层传入的是度，需要转换
+        yaw_tol_rad = np.deg2rad(yaw_tol)
         set_nav_tolerance = self._get_chassis_client().set_goal_tolerance(
-            xy_tol, yaw_tol)
+            xy_tol, yaw_tol_rad)
         if set_nav_tolerance:
             return StatusCode.SUCCESS
         else:
