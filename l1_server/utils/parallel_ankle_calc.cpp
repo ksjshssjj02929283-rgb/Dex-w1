@@ -80,7 +80,7 @@ std::pair<double, bool> PMAnkle::CalculateSingleThetaIInternal(double q_pitch_ra
 
     double theta_i_rad = std::asin(arg_asin);
     // 根据实际电机转向异或取反theta_i_rad
-    if (is_left_ == params.is_first_actuator) {
+    if (is_left_ != params.is_first_actuator) {
         theta_i_rad = -theta_i_rad;
     }
     theta_i_rad += params.alpha_offset_rad;
