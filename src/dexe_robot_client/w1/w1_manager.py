@@ -131,8 +131,6 @@ class W1Manager:
 
         self.collision_cnt = 0
 
-        self._last_control_status_time = None
-
     def _init_fcl_checker(self,
                           arm_type: W1ArmType,
                           w1_version: W1Version = W1Version.V2,
@@ -364,7 +362,9 @@ class W1Manager:
         # 仅在真正使用到底盘相关接口时检查连接状态
         if not self.chassis_client.is_connected():
             self.logger.error(
-                f"{self.chassis_client.node_name} is not connected!")
+                f"底盘客户端 {self.chassis_client.node_name} 尚未就绪："
+                "最近 1.0s 内未收到 /feedback/chassis_pose。"
+                "本次运动指令不会发送，请等待底盘服务启动完成。")
             return False
         return True
 
@@ -720,7 +720,6 @@ class W1Manager:
             self.logger.error("Navigation function is disabled.")
             return StatusCode.FAIL
         if not self._has_chassis_client():
-            self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL
         res = self._get_chassis_client().set_chassis_nav2_position(
             base_position)
@@ -732,14 +731,19 @@ class W1Manager:
             self.logger.error("Navigation function is disabled.")
             return StatusCode.FAIL
         if not self._has_chassis_client():
-            self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL
         res = self._get_chassis_client().set_chassis_control_position(
             base_position)
         control_status = self.get_control_status()
-        self.logger.info(
-            f"底盘控制指令已发送 res={res}, 发送瞬间控制状态={control_status[1]} "
-            f"(注: 该状态反映发送前缓存，不代表指令已生效)")
+        if control_status[1] == "UNKNOWN":
+            self.logger.warning(
+                f"底盘控制指令发送结果={res}；发送瞬间无法取得可靠的底盘控制"
+                "状态（status=UNKNOWN）。指令发送结果与状态查询是两条独立链路："
+                "UNKNOWN 不代表指令发送失败，也不能证明底盘已经开始执行。")
+        else:
+            self.logger.info(
+                f"底盘控制指令发送结果={res}；发送前缓存状态="
+                f"{control_status[1]}。该缓存状态不代表新指令已经生效。")
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def get_current_chassis_pose(self) -> tuple[StatusCode, np.ndarray]:
@@ -803,28 +807,15 @@ class W1Manager:
                  注意：与 get_nav_status() 保持一致的 tuple 返回风格，
                  便于上层用 current_status[1] 统一解包取状态字符串。
         """
-        now = time.time()
-        if self._last_control_status_time is not None:
-            interval = now - self._last_control_status_time
-        else:
-            interval = 0.0
-        self._last_control_status_time = now
-
         if not self._use_nav:
-            self.logger.error("Navigation function is disabled.")
-            self.logger.info(
-                f"Chassis control status: DISABLED, interval={interval:.3f}s")
+            self.logger.error(
+                "无法获取底盘控制状态：导航功能未启用，返回 DISABLED。")
             return StatusCode.FAIL, "DISABLED"
         if not self._has_chassis_client():
-            self.logger.error("Chassis client has not initialized")
-            self.logger.info(
-                f"Chassis control status: NOT_INITIALIZED, interval={interval:.3f}s"
-            )
+            self.logger.error(
+                "无法获取底盘控制状态：底盘客户端未初始化，返回 NOT_INITIALIZED。")
             return StatusCode.FAIL, "NOT_INITIALIZED"
         control_status = self._get_chassis_client().get_control_status()
-        self.logger.info(
-            f"Chassis control status: {control_status}, interval={interval:.3f}s"
-        )
         return StatusCode.SUCCESS, control_status
 
     def set_auto_charging(self) -> StatusCode:

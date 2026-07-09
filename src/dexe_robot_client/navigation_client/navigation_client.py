@@ -93,9 +93,20 @@ class NavigationClient(ABC, Node):
         self._control_status_requesting = False
         self._last_control_status_time = None
         self._control_status_timeout = 1.0  # 秒，超过认为状态陈旧
+        self._control_status_request_timeout = 2.0  # 秒，超过后清理旧请求并重试
         # 诊断：记录请求发出时刻、连续跳过次数
         self._control_status_request_sent_time = None
         self._control_status_skip_count = 0
+        self._control_status_request_id = 0
+        self._control_status_active_request_id = None
+        self._control_status_request_future = None
+        self._control_status_consecutive_timeouts = 0
+        self._control_status_request_lock = threading.Lock()
+        self._control_status_recovery_pending = False
+        self._chassis_connection_recovery_pending = False
+        self._chassis_feedback_received_during_recovery = False
+        self._control_status_unknown_logged = False
+        self._control_status_service_unavailable_logged = False
 
         self._init_subscriber(is_sim)
         self._init_publisher(is_sim)
@@ -173,6 +184,28 @@ class NavigationClient(ABC, Node):
 
         self._last_chassis_processed_feedback = processed
         self._last_msg_time = time.time()
+        should_log_connection_recovered = False
+        with self._control_status_request_lock:
+            if self._chassis_connection_recovery_pending:
+                self._chassis_feedback_received_during_recovery = True
+            control_status_fresh = (
+                self._last_control_status_success and
+                self._last_control_status_time is not None and
+                time.time() - self._last_control_status_time <=
+                self._control_status_timeout
+            )
+            if self._chassis_connection_recovery_pending and \
+                    not self._control_status_recovery_pending and \
+                    control_status_fresh:
+                self._chassis_connection_recovery_pending = False
+                self._chassis_feedback_received_during_recovery = False
+                should_log_connection_recovered = True
+
+        if should_log_connection_recovered:
+            self.get_logger().info(
+                "[底盘客户端连接恢复] 已重新收到 /feedback/chassis_pose，"
+                "且底盘控制状态缓存有效；W1Manager 的底盘连接检查现在可以通过。"
+            )
         # self.get_logger().info(f"feedback received, _last_msg_time={self._last_msg_time}", once=False)
 
     def _battery_feedback_callback(self, msg):
@@ -552,51 +585,151 @@ class NavigationClient(ABC, Node):
             # 防止返回陈旧状态
             cache_age = time.time() - self._last_control_status_time
             if cache_age <= self._control_status_timeout:
+                self._control_status_unknown_logged = False
                 return self._last_control_status
-            else:
-                self.get_logger().warn(
-                    f"[诊断] get_control_status 返回 UNKNOWN: "
-                    f"缓存已过期, cache_age={cache_age:.3f}s, "
-                    f"cached_status={self._last_control_status}, "
-                    f"requesting={self._control_status_requesting}, "
-                    f"skip_count={self._control_status_skip_count}"
-                )
+
+        if not self._control_status_unknown_logged:
+            cache_age = (
+                time.time() - self._last_control_status_time
+                if self._last_control_status_time else -1.0
+            )
+            request_age = (
+                time.time() - self._control_status_request_sent_time
+                if self._control_status_request_sent_time else -1.0
+            )
+            self.get_logger().warn(
+                "[底盘控制状态不可用] 返回 UNKNOWN"
+                f"状态缓存。cached_status={self._last_control_status}, "
+                f"cache_age={cache_age:.3f}s, "
+                f"request_in_flight={self._control_status_requesting}, "
+                f"request_id={self._control_status_request_id}, "
+                f"request_age={request_age:.3f}s。"
+                "UNKNOWN 只表示状态查询结果不可用，不代表底盘已停止、空闲或控制失败。"
+            )
+            self._control_status_unknown_logged = True
 
         return "UNKNOWN"
 
     def refresh_control_status(self) -> bool:
         """
-        主动向底层控制节点请求一次状态（异步，带 in-flight 防抖）
+        主动向底层控制节点请求一次状态（异步，带 in-flight 防抖和超时恢复）
         Returns:
             bool: 请求是否成功发出
         """
-        # 防止请求堆积
-        if self._control_status_requesting:
-            self._control_status_skip_count += 1
-            sent_age = (time.time() - self._control_status_request_sent_time
-                        ) if self._control_status_request_sent_time else -1.0
-            self.get_logger().warn(
-                f"[诊断] refresh_control_status 被防抖跳过: "
-                f"skip_count={self._control_status_skip_count}, "
-                f"上次请求已等待={sent_age:.3f}s"
-            )
+        timed_out_future = None
+        timed_out_request_id = None
+        consecutive_timeouts = 0
+
+        # 防止请求堆积；旧请求超时后主动清理，避免服务重启后永久卡死。
+        with self._control_status_request_lock:
+            if self._control_status_requesting:
+                self._control_status_skip_count += 1
+                sent_age = (
+                    time.time() - self._control_status_request_sent_time
+                    if self._control_status_request_sent_time else -1.0
+                )
+                if sent_age >= self._control_status_request_timeout:
+                    timed_out_future = self._control_status_request_future
+                    timed_out_request_id = \
+                        self._control_status_active_request_id
+                    self._control_status_requesting = False
+                    self._control_status_active_request_id = None
+                    self._control_status_request_future = None
+                    self._control_status_consecutive_timeouts += 1
+                    self._control_status_recovery_pending = True
+                    if not self._chassis_connection_recovery_pending:
+                        self._chassis_feedback_received_during_recovery = False
+                    self._chassis_connection_recovery_pending = True
+                    consecutive_timeouts = \
+                        self._control_status_consecutive_timeouts
+                else:
+                    timed_out_request_id = None
+
+        if timed_out_request_id is None and self._control_status_requesting:
+            # 第一次立即提示，之后每 20 次（约 10 秒）提示一次，避免每 0.5 秒刷屏。
+            if self._control_status_skip_count == 1 or \
+                    self._control_status_skip_count % 20 == 0:
+                self.get_logger().warn(
+                    "[底盘控制状态查询未完成] "
+                    f"request_id={self._control_status_request_id} 对 "
+                    f"/control/get_control_status 的请求已等待 {sent_age:.3f}s，"
+                    f"本次定时查询未发送（连续跳过 "
+                    f"{self._control_status_skip_count} 次）。"
+                    f"本次实时查询尚未完成；状态缓存超过 "
+                    f"{self._control_status_timeout:.1f}s 后，上层将只能得到 "
+                    "UNKNOWN。可能原因包括服务端未响应、服务端重启或 "
+                    "DDS 通信异常。"
+                )
             return False
+
+        if timed_out_request_id is not None:
+            if timed_out_future is not None:
+                try:
+                    self._get_status_client.remove_pending_request(
+                        timed_out_future)
+                except Exception as e:
+                    self.get_logger().error(
+                        "[底盘控制状态旧请求清理异常] "
+                        f"request_id={timed_out_request_id}, error={e}")
+            if consecutive_timeouts == 1 or consecutive_timeouts % 5 == 0:
+                self.get_logger().warn(
+                    "[底盘控制状态查询超时，启动自动恢复] "
+                    f"request_id={timed_out_request_id} 等待超过 "
+                    f"{self._control_status_request_timeout:.1f}s，已清理旧请求并"
+                    f"释放防抖状态（连续超时 {consecutive_timeouts} 次）；"
+                    "现在重新检查 /control/get_control_status，服务恢复后将"
+                    "自动发送新请求。"
+                )
 
         if not hasattr(self, '_get_status_client') or \
         not self._get_status_client.wait_for_service(timeout_sec=0.2):
+            if not self._control_status_service_unavailable_logged:
+                self.get_logger().warn(
+                    "[底盘控制状态服务不可用] 找不到 "
+                    "/control/get_control_status，本轮未发送查询请求；"
+                )
+                self._control_status_service_unavailable_logged = True
+            with self._control_status_request_lock:
+                self._control_status_recovery_pending = True
+                if not self._chassis_connection_recovery_pending:
+                    self._chassis_feedback_received_during_recovery = False
+                self._chassis_connection_recovery_pending = True
             return False
+        self._control_status_service_unavailable_logged = False
 
         request = Trigger.Request()
+        request_id = None
         try:
-            self._control_status_requesting = True
-            self._control_status_request_sent_time = time.time()
-            self._control_status_skip_count = 0
+            with self._control_status_request_lock:
+                self._control_status_request_id += 1
+                request_id = self._control_status_request_id
+                self._control_status_active_request_id = request_id
+                self._control_status_requesting = True
+                self._control_status_request_sent_time = time.time()
+                self._control_status_skip_count = 0
+
             future = self._get_status_client.call_async(request)
-            future.add_done_callback(self._on_get_control_status_response)
+            with self._control_status_request_lock:
+                self._control_status_request_future = future
+
+            future.add_done_callback(
+                lambda completed_future, completed_request_id=request_id:
+                self._on_get_control_status_response(
+                    completed_future, completed_request_id))
             return True
         except Exception as e:
-            self._control_status_requesting = False
-            self.get_logger().error(f"Failed to refresh control status: {e}")
+            with self._control_status_request_lock:
+                if request_id == self._control_status_active_request_id:
+                    self._control_status_requesting = False
+                    self._control_status_active_request_id = None
+                    self._control_status_request_future = None
+                    self._control_status_recovery_pending = True
+                    if not self._chassis_connection_recovery_pending:
+                        self._chassis_feedback_received_during_recovery = False
+                    self._chassis_connection_recovery_pending = True
+            self.get_logger().error(
+                "[底盘控制状态请求发送失败] "
+                f"request_id={request_id}, error={e}")
             return False
 
     def cancel_chassis_control(self) -> bool:
@@ -895,16 +1028,45 @@ class NavigationClient(ABC, Node):
         except Exception as e:
             self.get_logger().error(f"Error in cancel control response: {e}")
 
-    def _on_get_control_status_response(self, future):
+    def _on_get_control_status_response(self, future, request_id):
         """Callback for get_control status async response (non-blocking)."""
-        self._control_status_requesting = False
+        with self._control_status_request_lock:
+            if request_id != self._control_status_active_request_id:
+                self.get_logger().debug(
+                    "[底盘控制状态响应已忽略] "
+                    f"request_id={request_id} 已过期，当前活动请求为 "
+                    f"{self._control_status_active_request_id}。")
+                return
+
+            self._control_status_requesting = False
+            self._control_status_active_request_id = None
+            self._control_status_request_future = None
+            request_sent_time = self._control_status_request_sent_time
+            previous_timeouts = self._control_status_consecutive_timeouts
+            recovery_pending = self._control_status_recovery_pending
+            chassis_connection_recovery_pending = \
+                self._chassis_connection_recovery_pending
+            feedback_received_during_recovery = \
+                self._chassis_feedback_received_during_recovery
 
         try:
             response = future.result()
+            chassis_feedback_connected = (
+                feedback_received_during_recovery and
+                self._last_msg_time is not None and
+                time.time() - self._last_msg_time <= self._connection_timeout
+            )
+            with self._control_status_request_lock:
+                self._control_status_consecutive_timeouts = 0
+                if response.success:
+                    self._control_status_recovery_pending = False
+                    if chassis_feedback_connected:
+                        self._chassis_connection_recovery_pending = False
+                        self._chassis_feedback_received_during_recovery = False
 
             # 诊断：计算请求往返延迟
-            rtt = (time.time() - self._control_status_request_sent_time
-                   ) if self._control_status_request_sent_time else -1.0
+            rtt = (time.time() - request_sent_time
+                   ) if request_sent_time else -1.0
 
             # 记录时间戳
             self._last_control_status_time = time.time()
@@ -913,16 +1075,61 @@ class NavigationClient(ABC, Node):
             old_status = self._last_control_status
             self._last_control_status = response.message
             self._last_control_status_success = bool(response.success)
+            self._control_status_unknown_logged = False
 
             if old_status != self._last_control_status:
                 self.get_logger().info(
-                    f"[诊断] 控制状态变化: {old_status} -> {self._last_control_status}, "
+                    f"[底盘控制状态更新] request_id="
+                    f"{request_id}, "
+                    f"{old_status} -> {self._last_control_status}, "
+                    f"success={response.success}, rtt={rtt:.3f}s"
+                )
+            elif not response.success:
+                self.get_logger().warn(
+                    f"[底盘控制状态查询失败] request_id="
+                    f"{request_id}, "
+                    f"服务返回 success=False, message={response.message}, "
                     f"rtt={rtt:.3f}s"
                 )
+
+            if response.success and recovery_pending:
+                recovery_detail = (
+                    f"期间请求连续超时 {previous_timeouts} 次"
+                    if previous_timeouts > 0 else
+                    "期间检测到状态服务不可用"
+                )
+                self.get_logger().info(
+                    "[底盘控制状态服务恢复] "
+                    f"request_id={request_id} 已重新取得有效状态 "
+                    f"status={response.message}，{recovery_detail}，"
+                    f"rtt={rtt:.3f}s，"
+                    f"chassis_feedback_connected="
+                    f"{chassis_feedback_connected}。"
+                    "此日志只表示 /control/get_control_status 已恢复，"
+                    "不代表底盘客户端已经可以发送运动指令。")
+
+            if response.success and chassis_connection_recovery_pending:
+                if chassis_feedback_connected:
+                    self.get_logger().info(
+                        "[底盘客户端连接恢复] 状态服务和 "
+                        "/feedback/chassis_pose 均已恢复；W1Manager 的底盘"
+                        "连接检查现在可以通过。")
+                elif recovery_pending:
+                    self.get_logger().warn(
+                        "[底盘客户端尚未就绪] 状态服务已经恢复，但最近 "
+                        f"{self._connection_timeout:.1f}s 内仍未收到 "
+                        "/feedback/chassis_pose；此时运动指令会被拒绝，"
+                        "请继续等待底盘位姿反馈恢复。")
         except Exception as e:
             self._last_control_status_success = False
+            with self._control_status_request_lock:
+                self._control_status_recovery_pending = True
+                if not self._chassis_connection_recovery_pending:
+                    self._chassis_feedback_received_during_recovery = False
+                self._chassis_connection_recovery_pending = True
             self.get_logger().error(
-                f"Error in get control status response: {e}")
+                f"[底盘控制状态响应异常] request_id="
+                f"{request_id}, error={e}")
 
     def _get_param(self, client, name: str):
         if not client.wait_for_service(timeout_sec=0.5):
