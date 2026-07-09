@@ -72,6 +72,8 @@ class W1Manager:
         self._right_ee_client_real = None
 
         self._use_nav = use_nav
+        # 保存初始配置，set_sim_mode 切回 real 时据此恢复，避免被 sim 模式单向关闭后无法恢复
+        self._use_nav_initial = use_nav
         self.chassis_client = None
         self._chassis_client_sim = None
         self._chassis_client_real = None
@@ -651,9 +653,12 @@ class W1Manager:
             target_left_ee_client = self._left_ee_client_sim
             target_right_ee_client = self._right_ee_client_sim
             target_chassis_client = None
+            # 导航客户端只有 real 模式，sim 模式下临时关闭 _use_nav。
+            # 注意：不直接改 _use_nav_initial，切回 real 时会从 _use_nav_initial 恢复。
             if self._use_nav:
                 self.logger.info(
-                    "Navigation client only support real mode. use_nav set to False."
+                    "Navigation client only support real mode. "
+                    "use_nav temporarily disabled in sim mode."
                 )
                 self._use_nav = False
         else:
@@ -661,6 +666,8 @@ class W1Manager:
             target_robot_client = self._robot_client_real
             target_left_ee_client = self._left_ee_client_real
             target_right_ee_client = self._right_ee_client_real
+            # 切回 real 时从初始配置恢复 _use_nav，避免 sim 模式单向关闭后无法恢复
+            self._use_nav = self._use_nav_initial
             if self._use_nav:
                 target_chassis_client = self._chassis_client_real
             else:
@@ -731,7 +738,8 @@ class W1Manager:
             base_position)
         control_status = self.get_control_status()
         self.logger.info(
-            f"导航控制状态 {control_status[1]}, res={res}")
+            f"底盘控制指令已发送 res={res}, 发送瞬间控制状态={control_status[1]} "
+            f"(注: 该状态反映发送前缓存，不代表指令已生效)")
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def get_current_chassis_pose(self) -> tuple[StatusCode, np.ndarray]:
@@ -858,7 +866,10 @@ class W1Manager:
         else:
             self.logger.info(f"Skip navigation cancel: state={nav_state}")
 
-        if control_state == "CONTROL":
+        if control_state == "CONTROL" or control_state == "UNKNOWN":
+            # CONTROL: 明确在执行控制指令，需取消
+            # UNKNOWN: 状态缓存过期或服务未响应，无法确认是否在执行，
+            #          为安全起见也尝试取消（cancel 服务是幂等的，空闲时调用无副作用）
             cancel_requested = True
             cancel_ok = chassis_client.cancel_chassis_control() or cancel_ok
         else:
