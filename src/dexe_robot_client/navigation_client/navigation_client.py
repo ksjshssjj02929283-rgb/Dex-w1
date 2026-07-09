@@ -105,10 +105,14 @@ class NavigationClient(ABC, Node):
         self.create_timer(0.5, self.refresh_control_status)
 
     def _check_connection_status(self):
-        """定时检查消息是否超时"""
-        cur_time = self.get_clock().now().nanoseconds / 1e9
-        # self.get_logger().info(f"connection check: last_msg={self._last_msg_time}, clock={cur_time}",
-        #                        once=False)
+        """定时检查消息是否超时
+
+        注意：这里必须用 time.time()（系统时钟）而不是 self.get_clock().now()，
+        因为 _chassis_feedback_callback 里 _last_msg_time 也是用 time.time() 记录的。
+        若混用系统时钟与 ROS 时钟（仿真时 use_sim_time=True 两者不一致），
+        会导致差值无意义，超时检测失效。
+        """
+        cur_time = time.time()
         if self._last_msg_time is not None:
             if (cur_time - self._last_msg_time) > self._connection_timeout:
                 self._cur_pos = None

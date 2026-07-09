@@ -730,7 +730,8 @@ class W1Manager:
         res = self._get_chassis_client().set_chassis_control_position(
             base_position)
         control_status = self.get_control_status()
-        self.logger.info(f"导航控制状态 {control_status}, res={res}")
+        self.logger.info(
+            f"导航控制状态 {control_status[1]}, res={res}")
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def get_current_chassis_pose(self) -> tuple[StatusCode, np.ndarray]:
@@ -783,8 +784,17 @@ class W1Manager:
             return StatusCode.FAIL, "NOT_INITIALIZED"
         return StatusCode.SUCCESS, self._get_chassis_client().get_nav_state()
 
-    def get_control_status(self) -> str:
-        """获取底盘控制状态"""
+    def get_control_status(self) -> tuple[StatusCode, str]:
+        """获取底盘控制状态
+
+        Returns:
+            tuple[StatusCode, str]: (状态码, 控制状态字符串)。
+                 导航未启用时返回 (StatusCode.FAIL, "DISABLED")；
+                 底盘客户端未初始化时返回 (StatusCode.FAIL, "NOT_INITIALIZED")；
+                 正常时返回 (StatusCode.SUCCESS, 底层控制状态)。
+                 注意：与 get_nav_status() 保持一致的 tuple 返回风格，
+                 便于上层用 current_status[1] 统一解包取状态字符串。
+        """
         now = time.time()
         if self._last_control_status_time is not None:
             interval = now - self._last_control_status_time
@@ -881,7 +891,7 @@ class W1Manager:
             self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL
         if len(vertices) != 4:
-            self.get_logger().error("Footprint must have 4 vertices")
+            self.logger.error("Footprint must have 4 vertices")
             return StatusCode.FAIL
         self.logger.info("Sending request to set chassis footprint...")
         set_footprint_ok = self._get_chassis_client().set_footprint(vertices)
