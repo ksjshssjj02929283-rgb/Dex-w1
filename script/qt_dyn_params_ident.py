@@ -94,9 +94,11 @@ class DynParamIdentifier(Node):
         self.status = None
         self.joint_position = None
         self.joint_torque = None
+        self.joint_torque_sensor = None
         self.status_sim = None
         self.joint_position_sim = None
         self.joint_torque_sim = None
+        self.joint_torque_sensor_sim = None
         self.dt = DEFAULT_DT
         self.ndof = DEFAULT_NDOF
         self.movej_started = False
@@ -1187,7 +1189,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         bottom_vbox = QtWidgets.QVBoxLayout(bottom_group)
         bottom_vbox.setContentsMargins(8, 8, 8, 8)
         bottom_vbox.setSpacing(8)
-        self.btn_run_real = QtWidgets.QPushButton("真机采集所有轨迹")
+        self.btn_run_real = QtWidgets.QPushButton("真机采集双臂轨迹")
         
         # 真机采集倍速选择
         self.real_speed_combo = QtWidgets.QComboBox()
@@ -1211,44 +1213,35 @@ class DynParamGUI(QtWidgets.QMainWindow):
         real_row_layout.addWidget(self.real_speed_combo)
         bottom_vbox.addWidget(real_row)
 
-        self.btn_run_real_left = QtWidgets.QPushButton("真机采集左臂轨迹")
-        self.real_left_speed_combo = QtWidgets.QComboBox()
-        self.real_left_speed_combo.addItems(["x1倍速", "x0.5倍速"])
-        self.real_left_speed_combo.setCurrentText("x1倍速")
-        self.real_left_speed_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
-        self.real_left_speed_combo.setFixedWidth(width_real)
-        self.real_left_speed_combo.setFixedHeight(btn_h)
-        self.real_left_speed_combo.setStyleSheet(
+        self.btn_run_real_left = QtWidgets.QPushButton("真机采集左臂")
+        self.btn_run_real_right = QtWidgets.QPushButton("真机采集右臂")
+        self.real_arm_speed_combo = QtWidgets.QComboBox()
+        self.real_arm_speed_combo.addItems(["x1倍速", "x0.5倍速"])
+        self.real_arm_speed_combo.setCurrentText("x1倍速")
+        self.real_arm_speed_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        fm_arm = self.real_arm_speed_combo.fontMetrics()
+        max_text_arm = max(["x1倍速", "x0.5倍速"], key=lambda s: fm_arm.width(s))
+        width_arm = fm_arm.width(max_text_arm) + 36
+        self.real_arm_speed_combo.setFixedWidth(width_arm)
+        self.real_arm_speed_combo.setFixedHeight(btn_h)
+        self.real_arm_speed_combo.setStyleSheet(
             f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}"
         )
-        real_left_row = QtWidgets.QWidget()
-        real_left_row_layout = QtWidgets.QHBoxLayout(real_left_row)
-        real_left_row_layout.setContentsMargins(0, 0, 0, 0)
-        real_left_row_layout.setSpacing(8)
-        real_left_row_layout.addWidget(self.btn_run_real_left)
-        real_left_row_layout.addWidget(self.real_left_speed_combo)
-        bottom_vbox.addWidget(real_left_row)
+        real_arm_row = QtWidgets.QWidget()
+        real_arm_row_layout = QtWidgets.QHBoxLayout(real_arm_row)
+        real_arm_row_layout.setContentsMargins(0, 0, 0, 0)
+        real_arm_row_layout.setSpacing(8)
+        real_arm_row_layout.addWidget(self.btn_run_real_left)
+        real_arm_row_layout.addWidget(self.btn_run_real_right)
+        real_arm_row_layout.addWidget(self.real_arm_speed_combo)
+        bottom_vbox.addWidget(real_arm_row)
 
-        self.btn_run_real_right = QtWidgets.QPushButton("真机采集右臂轨迹")
-        self.real_right_speed_combo = QtWidgets.QComboBox()
-        self.real_right_speed_combo.addItems(["x1倍速", "x0.5倍速"])
-        self.real_right_speed_combo.setCurrentText("x1倍速")
-        self.real_right_speed_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
-        self.real_right_speed_combo.setFixedWidth(width_real)
-        self.real_right_speed_combo.setFixedHeight(btn_h)
-        self.real_right_speed_combo.setStyleSheet(
-            f"QComboBox QAbstractItemView::item{{height:{btn_h - 6}px;}}"
-        )
-        real_right_row = QtWidgets.QWidget()
-        real_right_row_layout = QtWidgets.QHBoxLayout(real_right_row)
-        real_right_row_layout.setContentsMargins(0, 0, 0, 0)
-        real_right_row_layout.setSpacing(8)
-        real_right_row_layout.addWidget(self.btn_run_real_right)
-        real_right_row_layout.addWidget(self.real_right_speed_combo)
-        bottom_vbox.addWidget(real_right_row)
-
-        self.btn_calc_params = QtWidgets.QPushButton("计算动力学参数")
-        self.btn_write_params = QtWidgets.QPushButton("写入辨识参数")
+        self.btn_calc_params = QtWidgets.QPushButton("计算双臂动力学参数")
+        self.btn_calc_params_left = QtWidgets.QPushButton("计算左臂动力学参数")
+        self.btn_calc_params_right = QtWidgets.QPushButton("计算右臂动力学参数")
+        self.btn_write_params = QtWidgets.QPushButton("写入双臂辨识参数")
+        self.btn_write_params_left = QtWidgets.QPushButton("写入左臂辨识参数")
+        self.btn_write_params_right = QtWidgets.QPushButton("写入右臂辨识参数")
         # 图示已采集轨迹放在真机采集所有轨迹下方
         bottom_vbox.addWidget(self.btn_show_plot)
         ctrl_layout.addWidget(bottom_group)
@@ -1259,8 +1252,22 @@ class DynParamGUI(QtWidgets.QMainWindow):
         result_vbox.setContentsMargins(8, 8, 8, 8)
         result_vbox.setSpacing(8)
         result_vbox.addWidget(self.btn_calc_params)
+        calc_arm_row = QtWidgets.QWidget()
+        calc_arm_row_layout = QtWidgets.QHBoxLayout(calc_arm_row)
+        calc_arm_row_layout.setContentsMargins(0, 0, 0, 0)
+        calc_arm_row_layout.setSpacing(8)
+        calc_arm_row_layout.addWidget(self.btn_calc_params_left)
+        calc_arm_row_layout.addWidget(self.btn_calc_params_right)
+        result_vbox.addWidget(calc_arm_row)
         result_vbox.addWidget(self.btn_show_regression)
         result_vbox.addWidget(self.btn_write_params)
+        write_arm_row = QtWidgets.QWidget()
+        write_arm_row_layout = QtWidgets.QHBoxLayout(write_arm_row)
+        write_arm_row_layout.setContentsMargins(0, 0, 0, 0)
+        write_arm_row_layout.setSpacing(8)
+        write_arm_row_layout.addWidget(self.btn_write_params_left)
+        write_arm_row_layout.addWidget(self.btn_write_params_right)
+        result_vbox.addWidget(write_arm_row)
         ctrl_layout.addWidget(result_group)
         ctrl_layout.addStretch(1)
         # 第四部分：停止与清错控制
@@ -1337,12 +1344,15 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_show_reference.clicked.connect(self.on_show_reference)
         self.btn_show_plot.clicked.connect(self.on_show_plot)
         self.btn_calc_params.clicked.connect(self.on_calc_params)
+        self.btn_calc_params_left.clicked.connect(self.on_calc_params_left)
+        self.btn_calc_params_right.clicked.connect(self.on_calc_params_right)
         self.btn_write_params.clicked.connect(self.on_write_params)
+        self.btn_write_params_left.clicked.connect(self.on_write_params_left)
+        self.btn_write_params_right.clicked.connect(self.on_write_params_right)
         # 倍速选择变化
         self.sim_speed_combo.currentTextChanged.connect(self._on_sim_speed_changed)
         self.real_speed_combo.currentTextChanged.connect(self._on_real_speed_changed)
-        self.real_left_speed_combo.currentTextChanged.connect(self._on_real_left_speed_changed)
-        self.real_right_speed_combo.currentTextChanged.connect(self._on_real_right_speed_changed)
+        self.real_arm_speed_combo.currentTextChanged.connect(self._on_real_arm_speed_changed)
         # 新增：停止按钮连接
         self.btn_stop.clicked.connect(self.on_stop_clicked)
         self.btn_clear.clicked.connect(self.on_clear_clicked)
@@ -1372,15 +1382,22 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
         # 初始状态与禁用策略
         self._params_calculated = False
-        self._captured_finished = False
+        self._left_captured = False
+        self._right_captured = False
         self._cancel_requested = False
+        self._left_calculated = False
+        self._right_calculated = False
         self.btn_show_plot.setDisabled(True)
         self.btn_show_regression.setDisabled(True)
         self.btn_write_params.setDisabled(True)
+        self.btn_write_params_left.setDisabled(True)
+        self.btn_write_params_right.setDisabled(True)
         # 控制可见性：仅当脚本以 --dev 参数运行时才显示该按钮
         self._show_dex_features = "--dev" in sys.argv
         if not getattr(self, "_show_dex_features", False):
             self.btn_calc_params.setDisabled(True)
+            self.btn_calc_params_left.setDisabled(True)
+            self.btn_calc_params_right.setDisabled(True)
         else:
             self.btn_show_plot.setDisabled(False)
 
@@ -1419,17 +1436,24 @@ class DynParamGUI(QtWidgets.QMainWindow):
             # 仿真倍速选择在运行/计算时也禁用
             self.sim_speed_combo.setDisabled(disabled)
             self.real_speed_combo.setDisabled(disabled)
-            self.real_left_speed_combo.setDisabled(disabled)
-            self.real_right_speed_combo.setDisabled(disabled)
+            self.real_arm_speed_combo.setDisabled(disabled)
             # 根据采集完成状态决定是否可用
             self.btn_show_plot.setDisabled(
-                True if disabled else (not self._captured_finished)
+                True if disabled else not (self._left_captured or self._right_captured)
             )
             if getattr(self, "_show_dex_features", False):
                 self.btn_calc_params.setDisabled(disabled)
+                self.btn_calc_params_left.setDisabled(disabled)
+                self.btn_calc_params_right.setDisabled(disabled)
             else:
                 self.btn_calc_params.setDisabled(
-                    True if disabled else (not self._captured_finished)
+                    True if disabled else not (self._left_captured and self._right_captured)
+                )
+                self.btn_calc_params_left.setDisabled(
+                    True if disabled else not self._left_captured
+                )
+                self.btn_calc_params_right.setDisabled(
+                    True if disabled else not self._right_captured
                 )
             # 根据计算完成状态决定是否可用
             self.btn_show_regression.setDisabled(
@@ -1437,6 +1461,12 @@ class DynParamGUI(QtWidgets.QMainWindow):
             )
             self.btn_write_params.setDisabled(
                 True if disabled else (not self._params_calculated)
+            )
+            self.btn_write_params_left.setDisabled(
+                True if disabled else (not self._left_calculated)
+            )
+            self.btn_write_params_right.setDisabled(
+                True if disabled else (not self._right_calculated)
             )
             self.traj_combo.setDisabled(disabled)
             self.arm_combo.setDisabled(disabled)
@@ -1495,21 +1525,13 @@ class DynParamGUI(QtWidgets.QMainWindow):
         except Exception:
             self._real_speed_mult = 1.0
 
-    def _on_real_left_speed_changed(self, text: str):
+    def _on_real_arm_speed_changed(self, text: str):
         try:
             mapping = {"x1倍速": 1.0, "x0.5倍速": 0.5}
-            self._real_left_speed_mult = mapping.get(text, 1.0)
-            self.log_msg(f"左臂真机采集速度系数设置为 {self._real_left_speed_mult}x")
+            self._real_arm_speed_mult = mapping.get(text, 1.0)
+            self.log_msg(f"单臂真机采集速度系数设置为 {self._real_arm_speed_mult}x")
         except Exception:
-            self._real_left_speed_mult = 1.0
-
-    def _on_real_right_speed_changed(self, text: str):
-        try:
-            mapping = {"x1倍速": 1.0, "x0.5倍速": 0.5}
-            self._real_right_speed_mult = mapping.get(text, 1.0)
-            self.log_msg(f"右臂真机采集速度系数设置为 {self._real_right_speed_mult}x")
-        except Exception:
-            self._real_right_speed_mult = 1.0
+            self._real_arm_speed_mult = 1.0
 
     def _open_meshcat_url(self):
         try:
@@ -1628,6 +1650,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.log_msg("已取消真机采集。")
             return
         self.log_msg("开始进行真机采集, 请注意安全!")
+        self._left_captured = False
+        self._right_captured = False
         self.disable_buttons(True)
         t = threading.Thread(target=self._thread_run_real, daemon=True)
         t.start()
@@ -1636,7 +1660,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         try:
             if self.dyn.run_real_capture():
                 self.log_msg(f"真机采集结束")
-                self._captured_finished = True
+                self._left_captured = True
+                self._right_captured = True
                 self._plot_records_on_canvas()
         except Exception as e:
             self.log_msg("真机采集出错: " + str(e))
@@ -1652,7 +1677,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.update_params_from_ui()
         try:
             self.dyn._real_dt_override = float(self.dyn.dt) / max(
-                0.1, float(getattr(self, "_real_left_speed_mult", 1.0))
+                0.1, float(getattr(self, "_real_arm_speed_mult", 1.0))
             )
         except Exception:
             self.dyn._real_dt_override = self.dyn.dt
@@ -1676,6 +1701,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.log_msg("已取消左臂真机采集。")
             return
         self.log_msg("开始进行左臂真机采集, 请注意安全!")
+        self._left_captured = False
         self.disable_buttons(True)
         t = threading.Thread(target=self._thread_run_real_left, daemon=True)
         t.start()
@@ -1684,7 +1710,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         try:
             if self.dyn.run_real_capture_arm(is_left=True):
                 self.log_msg("左臂真机采集结束")
-                self._captured_finished = True
+                self._left_captured = True
                 self._plot_records_on_canvas()
         except Exception as e:
             self.log_msg("左臂真机采集出错: " + str(e))
@@ -1700,7 +1726,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.update_params_from_ui()
         try:
             self.dyn._real_dt_override = float(self.dyn.dt) / max(
-                0.1, float(getattr(self, "_real_right_speed_mult", 1.0))
+                0.1, float(getattr(self, "_real_arm_speed_mult", 1.0))
             )
         except Exception:
             self.dyn._real_dt_override = self.dyn.dt
@@ -1724,6 +1750,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.log_msg("已取消右臂真机采集。")
             return
         self.log_msg("开始进行右臂真机采集, 请注意安全!")
+        self._right_captured = False
         self.disable_buttons(True)
         t = threading.Thread(target=self._thread_run_real_right, daemon=True)
         t.start()
@@ -1732,7 +1759,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         try:
             if self.dyn.run_real_capture_arm(is_left=False):
                 self.log_msg("右臂真机采集结束")
-                self._captured_finished = True
+                self._right_captured = True
                 self._plot_records_on_canvas()
         except Exception as e:
             self.log_msg("右臂真机采集出错: " + str(e))
@@ -1784,6 +1811,9 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.update_params_from_ui()
         self.disable_buttons(True)
         self._cancel_requested = False
+        self._left_calculated = False
+        self._right_calculated = False
+        self._params_calculated = False
         t = threading.Thread(target=self._thread_calc_params, daemon=True)
         t.start()
 
@@ -1794,25 +1824,108 @@ class DynParamGUI(QtWidgets.QMainWindow):
                 self.log_msg("左臂动力学参数计算失败。")
                 return
             self.log_msg("左臂动力学参数计算完成。")
+            self._left_calculated = True
+            try:
+                self.btn_write_params_left.setDisabled(False)
+            except Exception:
+                pass
             if getattr(self, "_cancel_requested", False):
                 self.log_msg("已停止后续计算。")
+                self._plot_regression_on_canvas()
                 return
             self.log_msg("开始计算右臂动力学参数...")
             if not self.dyn.calculator_right.calc_dyn_params():
                 self.log_msg("右臂动力学参数计算失败。")
+                self._plot_regression_on_canvas()
                 return
             self.log_msg("右臂动力学参数计算完成。")
             self.log_msg("动力学参数计算全部完成。")
             # 计算完成，启用写入按钮
+            self._right_calculated = True
             self._params_calculated = True
             try:
                 self.btn_write_params.setDisabled(False)
+                self.btn_write_params_right.setDisabled(False)
                 self.btn_show_regression.setDisabled(False)
             except Exception:
                 pass
             self._plot_regression_on_canvas()
         except Exception as e:
             self.log_msg("动力学参数计算出错: " + str(e))
+        finally:
+            try:
+                QtCore.QMetaObject.invokeMethod(
+                    self, "enable_buttons", QtCore.Qt.QueuedConnection
+                )
+            except Exception:
+                pass
+
+    def on_calc_params_left(self):
+        self.update_params_from_ui()
+        self.disable_buttons(True)
+        self._cancel_requested = False
+        self._left_calculated = False
+        self._right_calculated = False
+        self._params_calculated = False
+        t = threading.Thread(target=self._thread_calc_params_left, daemon=True)
+        t.start()
+
+    def _thread_calc_params_left(self):
+        try:
+            self.log_msg("开始计算左臂动力学参数...")
+            if not self.dyn.calculator_left.calc_dyn_params():
+                self.log_msg("左臂动力学参数计算失败。")
+                return
+            self.log_msg("左臂动力学参数计算完成。")
+            self._left_calculated = True
+            try:
+                self.btn_write_params_left.setDisabled(False)
+                if self._left_calculated and self._right_calculated:
+                    self._params_calculated = True
+                    self.btn_write_params.setDisabled(False)
+                self.btn_show_regression.setDisabled(False)
+            except Exception:
+                pass
+            self._plot_regression_on_canvas()
+        except Exception as e:
+            self.log_msg("左臂动力学参数计算出错: " + str(e))
+        finally:
+            try:
+                QtCore.QMetaObject.invokeMethod(
+                    self, "enable_buttons", QtCore.Qt.QueuedConnection
+                )
+            except Exception:
+                pass
+
+    def on_calc_params_right(self):
+        self.update_params_from_ui()
+        self.disable_buttons(True)
+        self._cancel_requested = False
+        self._left_calculated = False
+        self._right_calculated = False
+        self._params_calculated = False
+        t = threading.Thread(target=self._thread_calc_params_right, daemon=True)
+        t.start()
+
+    def _thread_calc_params_right(self):
+        try:
+            self.log_msg("开始计算右臂动力学参数...")
+            if not self.dyn.calculator_right.calc_dyn_params():
+                self.log_msg("右臂动力学参数计算失败。")
+                return
+            self.log_msg("右臂动力学参数计算完成。")
+            self._right_calculated = True
+            try:
+                self.btn_write_params_right.setDisabled(False)
+                if self._left_calculated and self._right_calculated:
+                    self._params_calculated = True
+                    self.btn_write_params.setDisabled(False)
+                self.btn_show_regression.setDisabled(False)
+            except Exception:
+                pass
+            self._plot_regression_on_canvas()
+        except Exception as e:
+            self.log_msg("右臂动力学参数计算出错: " + str(e))
         finally:
             try:
                 QtCore.QMetaObject.invokeMethod(
@@ -1834,9 +1947,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def on_write_params(self):
         try:
-            # 未完成计算则不允许写入
-            if not getattr(self, "_params_calculated", False):
-                self.log_msg("请先完成动力学参数计算后再写入。")
+            if not (self._left_calculated and self._right_calculated):
+                self.log_msg("请先完成双臂动力学参数计算后再写入。")
                 return
 
             # 获取左右臂参数
@@ -1905,6 +2017,104 @@ class DynParamGUI(QtWidgets.QMainWindow):
             )
         except Exception as e:
             self.log_msg("写入辨识参数出错: " + str(e))
+
+    def on_write_params_left(self):
+        try:
+            if not self._left_calculated:
+                self.log_msg("请先完成左臂动力学参数计算后再写入。")
+                return
+            beta_left = self._get_current_beta(True)
+            version_prefix = self.dyn.version[:3]
+            robot_version_key = f"{self.dyn.robot_name}_{version_prefix}"
+            msg = (
+                "将写入左臂辨识参数到机器人配置文件 robot.yaml：\n\n"
+                f"- 版本段：{robot_version_key}\n"
+                f"- 左臂字段：dyn_base_params_primary（{len(beta_left)}维）\n\n"
+                "是否确认写入？"
+            )
+            mbox = QtWidgets.QMessageBox(self)
+            mbox.setIcon(QtWidgets.QMessageBox.NoIcon)
+            mbox.setWindowTitle("确认写入左臂辨识参数")
+            mbox.setText(msg)
+            mbox.setWindowModality(QtCore.Qt.ApplicationModal)
+            mbox.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+            btn_confirm = mbox.addButton("确认", QtWidgets.QMessageBox.YesRole)
+            btn_cancel = mbox.addButton("取消", QtWidgets.QMessageBox.NoRole)
+            mbox.setDefaultButton(btn_cancel)
+            mbox.exec_()
+            if mbox.clickedButton() is not btn_confirm:
+                self.log_msg("已取消写入。")
+                return
+            cfg_path = str(self.dyn.robot_cfg_path)
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            beta_left_list = [float(x) for x in beta_left]
+            def format_float_list(flist):
+                return "[" + ", ".join(map(str, flist)) + "]"
+            import re
+            primary_pattern = rf"({robot_version_key}:.*?dyn_base_params_primary:\s*)\[.*?\]"
+            new_content = content
+            if re.search(primary_pattern, content, re.DOTALL):
+                new_content = re.sub(primary_pattern,
+                                   f"\\1{format_float_list(beta_left_list)}",
+                                   new_content, flags=re.DOTALL)
+                self.log_msg(f"已更新 {robot_version_key} -> dyn_base_params_primary")
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            self.log_msg(
+                f"已写入左臂辨识参数到机器人配置文件{cfg_path}, 重启服务后配置生效."
+            )
+        except Exception as e:
+            self.log_msg("写入左臂辨识参数出错: " + str(e))
+
+    def on_write_params_right(self):
+        try:
+            if not self._right_calculated:
+                self.log_msg("请先完成右臂动力学参数计算后再写入。")
+                return
+            beta_right = self._get_current_beta(False)
+            version_prefix = self.dyn.version[:3]
+            robot_version_key = f"{self.dyn.robot_name}_{version_prefix}"
+            msg = (
+                "将写入右臂辨识参数到机器人配置文件 robot.yaml：\n\n"
+                f"- 版本段：{robot_version_key}\n"
+                f"- 右臂字段：dyn_base_params_secondary（{len(beta_right)}维）\n\n"
+                "是否确认写入？"
+            )
+            mbox = QtWidgets.QMessageBox(self)
+            mbox.setIcon(QtWidgets.QMessageBox.NoIcon)
+            mbox.setWindowTitle("确认写入右臂辨识参数")
+            mbox.setText(msg)
+            mbox.setWindowModality(QtCore.Qt.ApplicationModal)
+            mbox.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+            btn_confirm = mbox.addButton("确认", QtWidgets.QMessageBox.YesRole)
+            btn_cancel = mbox.addButton("取消", QtWidgets.QMessageBox.NoRole)
+            mbox.setDefaultButton(btn_cancel)
+            mbox.exec_()
+            if mbox.clickedButton() is not btn_confirm:
+                self.log_msg("已取消写入。")
+                return
+            cfg_path = str(self.dyn.robot_cfg_path)
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            beta_right_list = [float(x) for x in beta_right]
+            def format_float_list(flist):
+                return "[" + ", ".join(map(str, flist)) + "]"
+            import re
+            secondary_pattern = rf"({robot_version_key}:.*?dyn_base_params_secondary:\s*)\[.*?\]"
+            new_content = content
+            if re.search(secondary_pattern, content, re.DOTALL):
+                new_content = re.sub(secondary_pattern,
+                                   f"\\1{format_float_list(beta_right_list)}",
+                                   new_content, flags=re.DOTALL)
+                self.log_msg(f"已更新 {robot_version_key} -> dyn_base_params_secondary")
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            self.log_msg(
+                f"已写入右臂辨识参数到机器人配置文件{cfg_path}, 重启服务后配置生效."
+            )
+        except Exception as e:
+            self.log_msg("写入右臂辨识参数出错: " + str(e))
 
     @QtCore.pyqtSlot()
     def _plot_records_on_canvas(self):
@@ -2081,149 +2291,160 @@ class DynParamGUI(QtWidgets.QMainWindow):
             rows = math.ceil(ndof / cols)
 
             # 左臂辨识
-            try:
-                self.left_fig.clear()
-                axes_left = [
-                    self.left_fig.add_subplot(rows, cols, j + 1)
-                    for j in range(rows * cols)
-                ]
-                calc_left = self.dyn.calculator_left
-                tL, tau_current_L, tau_sensor_L, tau_pred_L, tau_used_L = calc_left.get_regr_validatation()
-                totalL = tau_used_L.shape[0]
-                r2_list_L = []
-                for i in range(min(ndof, tau_used_L.shape[1])):
-                    ax = axes_left[i]
-                    ax.clear()
-                    current_i = np.asarray(tau_current_L[:, i]).flatten()[:totalL]
-                    sensor_i = np.asarray(tau_sensor_L[:, i]).flatten()[:totalL]
-                    estimated_i = np.asarray(tau_pred_L[:, i]).flatten()[:totalL]
-                    used_i = np.asarray(tau_used_L[:, i]).flatten()[:totalL]
-                    ax.plot(
-                        tL[:totalL],
-                        current_i,
-                        label="Current torque",
-                        color="tab:red",
-                        linewidth=1,
-                    )
-                    if np.any(np.abs(sensor_i) > 1e-9):
+            r2_list_L = []
+            if self._left_calculated:
+                try:
+                    self.left_fig.clear()
+                    axes_left = [
+                        self.left_fig.add_subplot(rows, cols, j + 1)
+                        for j in range(rows * cols)
+                    ]
+                    calc_left = self.dyn.calculator_left
+                    tL, tau_current_L, tau_sensor_L, tau_pred_L, tau_used_L = calc_left.get_regr_validatation()
+                    totalL = tau_used_L.shape[0]
+                    for i in range(min(ndof, tau_used_L.shape[1])):
+                        ax = axes_left[i]
+                        ax.clear()
+                        current_i = np.asarray(tau_current_L[:, i]).flatten()[:totalL]
+                        sensor_i = np.asarray(tau_sensor_L[:, i]).flatten()[:totalL]
+                        estimated_i = np.asarray(tau_pred_L[:, i]).flatten()[:totalL]
+                        used_i = np.asarray(tau_used_L[:, i]).flatten()[:totalL]
                         ax.plot(
                             tL[:totalL],
-                            sensor_i,
-                            label="Sensor torque",
-                            color="tab:orange",
+                            current_i,
+                            label="Current torque",
+                            color="tab:red",
                             linewidth=1,
-                            linestyle="--",
                         )
-                    ax.plot(
-                        tL[:totalL],
-                        estimated_i,
-                        label="Estimated torque",
-                        color="tab:blue",
-                        linewidth=1,
+                        if np.any(np.abs(sensor_i) > 1e-9):
+                            ax.plot(
+                                tL[:totalL],
+                                sensor_i,
+                                label="Sensor torque",
+                                color="tab:orange",
+                                linewidth=1,
+                                linestyle="--",
+                            )
+                        ax.plot(
+                            tL[:totalL],
+                            estimated_i,
+                            label="Estimated torque",
+                            color="tab:blue",
+                            linewidth=1,
+                        )
+                        ss_res = np.sum((used_i - estimated_i) ** 2)
+                        ss_tot = np.sum((used_i - np.mean(used_i)) ** 2)
+                        r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+                        r2_list_L.append(r2)
+                        ax.set_title(f"Joint {i+1}  R²={r2*100:.1f}%")
+                        ax.set_xlabel("Time (s)")
+                        ax.set_ylabel("Torque (Nm)")
+                        ax.grid(True, linestyle="--", alpha=0.4)
+                        ax.legend(loc="upper right", fontsize="small")
+                    for k in range(len(axes_left)):
+                        if k >= ndof:
+                            axes_left[k].set_visible(False)
+                    try:
+                        self.left_fig.tight_layout()
+                    except Exception:
+                        pass
+                    self.left_canvas.draw()
+                    r2_str_L = ", ".join([f"J{i+1}: {v*100:.1f}%" for i, v in enumerate(r2_list_L)])
+                    self.log_msg(f"左臂力矩吻合度 R²: {r2_str_L}, 平均: {np.mean(r2_list_L)*100:.1f}%")
+                except Exception as e:
+                    self.log_msg(
+                        "左臂辨识绘图错误: "
+                        + str(e)
+                        + "。请先计算动力学参数并确保数据存在。"
                     )
-                    ss_res = np.sum((used_i - estimated_i) ** 2)
-                    ss_tot = np.sum((used_i - np.mean(used_i)) ** 2)
-                    r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
-                    r2_list_L.append(r2)
-                    ax.set_title(f"Joint {i+1}  R²={r2*100:.1f}%")
-                    ax.set_xlabel("Time (s)")
-                    ax.set_ylabel("Torque (Nm)")
-                    ax.grid(True, linestyle="--", alpha=0.4)
-                    ax.legend(loc="upper right", fontsize="small")
-                for k in range(len(axes_left)):
-                    if k >= ndof:
-                        axes_left[k].set_visible(False)
-                try:
-                    self.left_fig.tight_layout()
-                except Exception:
-                    pass
-                self.left_canvas.draw()
-                r2_str_L = ", ".join([f"J{i+1}: {v*100:.1f}%" for i, v in enumerate(r2_list_L)])
-                self.log_msg(f"左臂力矩吻合度 R²: {r2_str_L}, 平均: {np.mean(r2_list_L)*100:.1f}%")
-            except Exception as e:
-                self.log_msg(
-                    "左臂辨识绘图错误: "
-                    + str(e)
-                    + "。请先计算动力学参数并确保数据存在。"
-                )
 
             # 右臂辨识
-            try:
-                self.right_fig.clear()
-                axes_right = [
-                    self.right_fig.add_subplot(rows, cols, j + 1)
-                    for j in range(rows * cols)
-                ]
-                calc_right = self.dyn.calculator_right
-                tR, tau_current_R, tau_sensor_R, tau_pred_R, tau_used_R = calc_right.get_regr_validatation()
-                totalR = tau_used_R.shape[0]
-                r2_list_R = []
-                for i in range(min(ndof, tau_used_R.shape[1])):
-                    ax = axes_right[i]
-                    ax.clear()
-                    current_i = np.asarray(tau_current_R[:, i]).flatten()[:totalR]
-                    sensor_i = np.asarray(tau_sensor_R[:, i]).flatten()[:totalR]
-                    estimated_i = np.asarray(tau_pred_R[:, i]).flatten()[:totalR]
-                    used_i = np.asarray(tau_used_R[:, i]).flatten()[:totalR]
-                    ax.plot(
-                        tR[:totalR],
-                        current_i,
-                        label="Current torque",
-                        color="tab:red",
-                        linewidth=1,
-                    )
-                    if np.any(np.abs(sensor_i) > 1e-9):
+            r2_list_R = []
+            if self._right_calculated:
+                try:
+                    self.right_fig.clear()
+                    axes_right = [
+                        self.right_fig.add_subplot(rows, cols, j + 1)
+                        for j in range(rows * cols)
+                    ]
+                    calc_right = self.dyn.calculator_right
+                    tR, tau_current_R, tau_sensor_R, tau_pred_R, tau_used_R = calc_right.get_regr_validatation()
+                    totalR = tau_used_R.shape[0]
+                    for i in range(min(ndof, tau_used_R.shape[1])):
+                        ax = axes_right[i]
+                        ax.clear()
+                        current_i = np.asarray(tau_current_R[:, i]).flatten()[:totalR]
+                        sensor_i = np.asarray(tau_sensor_R[:, i]).flatten()[:totalR]
+                        estimated_i = np.asarray(tau_pred_R[:, i]).flatten()[:totalR]
+                        used_i = np.asarray(tau_used_R[:, i]).flatten()[:totalR]
                         ax.plot(
                             tR[:totalR],
-                            sensor_i,
-                            label="Sensor torque",
-                            color="tab:orange",
+                            current_i,
+                            label="Current torque",
+                            color="tab:red",
                             linewidth=1,
-                            linestyle="--",
                         )
-                    ax.plot(
-                        tR[:totalR],
-                        estimated_i,
-                        label="Estimated torque",
-                        color="tab:blue",
-                        linewidth=1,
+                        if np.any(np.abs(sensor_i) > 1e-9):
+                            ax.plot(
+                                tR[:totalR],
+                                sensor_i,
+                                label="Sensor torque",
+                                color="tab:orange",
+                                linewidth=1,
+                                linestyle="--",
+                            )
+                        ax.plot(
+                            tR[:totalR],
+                            estimated_i,
+                            label="Estimated torque",
+                            color="tab:blue",
+                            linewidth=1,
+                        )
+                        ss_res = np.sum((used_i - estimated_i) ** 2)
+                        ss_tot = np.sum((used_i - np.mean(used_i)) ** 2)
+                        r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+                        r2_list_R.append(r2)
+                        ax.set_title(f"Joint {i+1}  R²={r2*100:.1f}%")
+                        ax.set_xlabel("Time (s)")
+                        ax.set_ylabel("Torque (Nm)")
+                        ax.grid(True, linestyle="--", alpha=0.4)
+                        ax.legend(loc="upper right", fontsize="small")
+                    for k in range(len(axes_right)):
+                        if k >= ndof:
+                            axes_right[k].set_visible(False)
+                    try:
+                        self.right_fig.tight_layout()
+                    except Exception:
+                        pass
+                    self.right_canvas.draw()
+                    r2_str_R = ", ".join([f"J{i+1}: {v*100:.1f}%" for i, v in enumerate(r2_list_R)])
+                    self.log_msg(f"右臂力矩吻合度 R²: {r2_str_R}, 平均: {np.mean(r2_list_R)*100:.1f}%")
+                except Exception as e:
+                    self.log_msg(
+                        "右臂辨识绘图错误: "
+                        + str(e)
+                        + "。请先计算动力学参数并确保数据存在。"
                     )
-                    ss_res = np.sum((used_i - estimated_i) ** 2)
-                    ss_tot = np.sum((used_i - np.mean(used_i)) ** 2)
-                    r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
-                    r2_list_R.append(r2)
-                    ax.set_title(f"Joint {i+1}  R²={r2*100:.1f}%")
-                    ax.set_xlabel("Time (s)")
-                    ax.set_ylabel("Torque (Nm)")
-                    ax.grid(True, linestyle="--", alpha=0.4)
-                    ax.legend(loc="upper right", fontsize="small")
-                for k in range(len(axes_right)):
-                    if k >= ndof:
-                        axes_right[k].set_visible(False)
-                try:
-                    self.right_fig.tight_layout()
-                except Exception:
-                    pass
-                self.right_canvas.draw()
-                r2_str_R = ", ".join([f"J{i+1}: {v*100:.1f}%" for i, v in enumerate(r2_list_R)])
-                self.log_msg(f"右臂力矩吻合度 R²: {r2_str_R}, 平均: {np.mean(r2_list_R)*100:.1f}%")
-            except Exception as e:
-                self.log_msg(
-                    "右臂辨识绘图错误: "
-                    + str(e)
-                    + "。请先计算动力学参数并确保数据存在。"
-                )
 
             r2_threshold = 0.8
             weights = np.array([2, 2, 2, 2, 1, 1, 1])
-            mean_r2_L = np.average(r2_list_L, weights=weights) if r2_list_L else 0.0
-            mean_r2_R = np.average(r2_list_R, weights=weights) if r2_list_R else 0.0
-            if mean_r2_L < r2_threshold or mean_r2_R < r2_threshold:
-                self.log_msg(
-                    f"⚠ 辨识验证未达标（阈值 {r2_threshold*100}%）: 左臂 {mean_r2_L*100:.1f}%, 右臂 {mean_r2_R*100:.1f}%，仍可写入但建议检查数据。"
-                )
+            mean_r2_L = np.average(r2_list_L, weights=weights) if r2_list_L else None
+            mean_r2_R = np.average(r2_list_R, weights=weights) if r2_list_R else None
+            parts = []
+            if mean_r2_L is not None:
+                parts.append(f"左臂 {mean_r2_L*100:.1f}%")
+            if mean_r2_R is not None:
+                parts.append(f"右臂 {mean_r2_R*100:.1f}%")
+            if not parts:
+                pass
             else:
-                self.log_msg(f"辨识验证通过，加权平均吻合度: 左臂 {mean_r2_L*100:.1f}%, 右臂 {mean_r2_R*100:.1f}%, 大于 {r2_threshold*100}%")
+                r2_vals = [v for v in [mean_r2_L, mean_r2_R] if v is not None]
+                all_pass = all(v >= r2_threshold for v in r2_vals)
+                summary = ", ".join(parts)
+                if all_pass:
+                    self.log_msg(f"辨识验证通过，加权平均吻合度: {summary}, 大于 {r2_threshold*100}%")
+                else:
+                    self.log_msg(f"辨识验证未达标（阈值 {r2_threshold*100}%）: {summary}，仍可写入但建议检查数据。")
 
             self.log_msg("辨识结果图绘制完成。")
         finally:

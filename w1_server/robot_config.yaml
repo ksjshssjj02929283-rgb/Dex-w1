@@ -47,18 +47,18 @@ ee_primary_name: LEFT_GRIPPER
 ee_secondary_name: RIGHT_GRIPPER
 
 # === 工具补偿参数 ===
-# 坐标系约定: com_mm 在 EE/法兰系下表达
+# 坐标系约定: com_m 在 EE/法兰系下表达
 # 仅做工具重力补偿 (前馈), 与手臂符号动力学解耦
 tool_dynamics:
   tool_primary_enabled: false
   tool_secondary_enabled: false
 
   BrainCo_Revo1_R:
-    com_mm: [-0.15804154, 0.70721872, 50.33428542]   # COM 相对 EE 原点的偏移, 单位 mm, EE 系下
-    mass_kg: 1.061
+    mass_kg: 1.0
+    com_m: [0.0, 0.0, 0.05]   # COM 相对 EE 原点的偏移, 单位 m, EE 系下
   Linker_L20:
-    com_mm: [-0.15804154, 0.70721872, 50.33428542]   # COM 相对 EE 原点的偏移, 单位 mm, EE 系下
-    mass_kg: 1.061
+    mass_kg: 1.0
+    com_m: [0.0, 0.0, 0.05]   # COM 相对 EE 原点的偏移, 单位 m, EE 系下
 
 # === 通用配置 ===
 enable_record: false

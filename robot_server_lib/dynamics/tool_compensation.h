@@ -14,7 +14,7 @@ namespace tool_compensation {
 struct ToolGravityCompensationConfig {
     bool gravity_enabled = false;
     double mass_kg = 0.0;
-    Vector3d com_m = Vector3d::Zero();  // COM 相对 EE 原点偏移, 单位 m (yaml 中 com_mm / 1000)
+    Vector3d com_m = Vector3d::Zero();  // COM 相对 EE 原点偏移, 单位 m
 };
 
 // 计算工具自重经雅可比转置投影到关节的补偿力矩

@@ -10,6 +10,9 @@ Eigen::VectorXd ComputeToolJointGravityTorque(const pinocchio::Model& arm_model,
                                               const Vector3d& gravity_armbase,
                                               bool* applied,
                                               std::string* failure_reason) {
+    constexpr int kLogInterval = 200;
+    static int64_t call_counter = 0;
+
     if (applied) *applied = false;
     if (failure_reason) failure_reason->clear();
 
@@ -48,25 +51,48 @@ Eigen::VectorXd ComputeToolJointGravityTorque(const pinocchio::Model& arm_model,
         return Eigen::VectorXd::Zero(arm_model.nv);
     }
 
-    // wrench 在 arm base 系: [F ; τ_E], 与 LOCAL_WORLD_ALIGNED 雅可比 (arm-only 模型即 arm base 系) 对齐
-    Vector6d wrench_armbase;
-    wrench_armbase.head<3>() = F_armbase;
-    wrench_armbase.tail<3>() = tau_about_ee_armbase;
+    // wrench 转换到 EE 坐标系 (LOCAL Jacobian 要求 wrench 与 Jacobian 同系)
+    //   F_ee = R^T * F_armbase
+    //   τ_EE_ee = R^T * τ_EE_armbase
+    const Eigen::Matrix3d R_armbase_ee_T = R_armbase_ee.transpose();
+    const Vector3d F_ee = R_armbase_ee_T * F_armbase;
+    const Vector3d tau_ee_ee = R_armbase_ee_T * tau_about_ee_armbase;
+
+    Vector6d wrench_ee;
+    wrench_ee.head<3>() = F_ee;
+    wrench_ee.tail<3>() = tau_ee_ee;
 
     // tau_tool = -J^T * wrench
+    // J 用 LOCAL 坐标系: 线速度和角速度都在 EE 坐标系下表达
     // 取负: J^T * F_g 是重力对关节产生的力矩 (虚功原理), 逆动力学前馈需取负以抵消重力
     const Eigen::MatrixXd jacobian =
-        pinocchio::GetJacobiMatrix(arm_model, feedback_q_arm, pinocchio::LOCAL_WORLD_ALIGNED);
+        pinocchio::GetJacobiMatrix(arm_model, feedback_q_arm, pinocchio::LOCAL);
     if (jacobian.rows() != 6 || jacobian.cols() != arm_model.nv || !jacobian.allFinite()) {
         if (failure_reason) *failure_reason = "Jacobian shape invalid or non-finite";
         return Eigen::VectorXd::Zero(arm_model.nv);
     }
-    const Eigen::VectorXd tau_force = jacobian.topRows<3>().transpose() * wrench_armbase.head<3>();
-    const Eigen::VectorXd tau_moment = jacobian.bottomRows<3>().transpose() * wrench_armbase.tail<3>();
+    const Eigen::VectorXd tau_force = jacobian.topRows<3>().transpose() * wrench_ee.head<3>();
+    const Eigen::VectorXd tau_moment = jacobian.bottomRows<3>().transpose() * wrench_ee.tail<3>();
     const Eigen::VectorXd tau_tool = -(tau_force + tau_moment);
     if (!tau_tool.allFinite()) {
         if (failure_reason) *failure_reason = "tool joint torque is non-finite";
         return Eigen::VectorXd::Zero(arm_model.nv);
+    }
+
+    // 过程数据打印 (每 kLogInterval 周期)
+    call_counter++;
+    if (call_counter % kLogInterval == 0) {
+        std::cout << "[ToolComp] mass =" << config.mass_kg
+                 << "\n gravity_armbase =" << gravity_armbase.transpose()
+                 << "\n gravity_armbase_norm=" << gravity_armbase.norm()
+                 << "\n com_m=" << config.com_m.transpose()
+                 << "\n r_C_armbase=" << r_C_armbase.transpose()
+                 << "\n T_armbase_ee =\n" << T_armbase_ee
+                 << "\n wrench_armbase_F=" << F_armbase.transpose()
+                 << "\n wrench_armbase_tau=" << tau_about_ee_armbase.transpose()
+                 << "\n wrench_ee_F=" << wrench_ee.head<3>().transpose()
+                 << "\n wrench_ee_tau=" << wrench_ee.tail<3>().transpose()
+                 << "\n tau_tool=" << tau_tool.transpose() << std::endl;
     }
 
     if (applied) *applied = true;
