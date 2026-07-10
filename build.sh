@@ -4,8 +4,7 @@ set -e
 WORKSPACE_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="$(cd "${WORKSPACE_DIR}/../install" && pwd 2>/dev/null || echo "${WORKSPACE_DIR}/../install")"
 source /opt/ros/humble/setup.bash
-
-# 构建类型：Release（默认）或 RelWithDebInfo（开发模式，编译更快）
+apt-get update && apt install -y liburdfdom-dev
 BUILD_TYPE=${BUILD_TYPE:-Release}
 
 # colcon 包级并发和单包编译并发默认保守一些，避免大文件编译时被系统直接杀掉
