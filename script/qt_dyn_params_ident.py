@@ -1180,7 +1180,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.arm_combo.currentTextChanged.connect(self.update_params_from_ui)
         # 停止按钮与清错按钮
         self.btn_stop = QtWidgets.QPushButton("停止运行")
-        self.btn_clear = QtWidgets.QPushButton("清错")
+        self.btn_clear = QtWidgets.QPushButton("清除错误")
         ctrl_layout.addStretch(1)
         # 第二部分：真机采集与控制
         bottom_group = QtWidgets.QGroupBox("轨迹真机采集")
@@ -1265,11 +1265,11 @@ class DynParamGUI(QtWidgets.QMainWindow):
         ctrl_layout.addStretch(1)
         # 第四部分：停止与清错控制
         stop_group = QtWidgets.QGroupBox("停止与清错控制")
-        stop_hbox = QtWidgets.QHBoxLayout(stop_group)
-        stop_hbox.setContentsMargins(8, 8, 8, 8)
-        stop_hbox.setSpacing(8)
-        stop_hbox.addWidget(self.btn_stop)
-        stop_hbox.addWidget(self.btn_clear)
+        stop_vbox = QtWidgets.QVBoxLayout(stop_group)
+        stop_vbox.setContentsMargins(8, 8, 8, 8)
+        stop_vbox.setSpacing(8)
+        stop_vbox.addWidget(self.btn_clear)
+        stop_vbox.addWidget(self.btn_stop)
         ctrl_layout.addWidget(stop_group)
         ctrl_layout.addStretch(1)
         ctrl_layout.addStretch(1)
