@@ -1,3 +1,5 @@
+import inspect
+import os
 import time
 import threading
 import numpy as np
@@ -25,6 +27,8 @@ from ..common import get_logger
 
 
 class NavigationClient(ABC, Node):
+    MOTION_PROGRESS_LOG_INTERVAL = 2.0
+
     NAV_CANCELABLE_STATES = {"NAVIGATING"}
     AUTO_CHARGING_CANCELABLE_STATES = {
         "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING"
@@ -50,10 +54,15 @@ class NavigationClient(ABC, Node):
         else:
             self.node_name = name + "_real"
         super().__init__(self.node_name)
+        self.get_logger().info(
+            f"[导航客户端实例创建] node={self.node_name}，"
+            f"pid={os.getpid()}，cwd={os.getcwd()}，"
+            f"source={inspect.getfile(type(self))}，object_id={id(self)}")
         self._last_msg_time = None
         self._last_chassis_processed_feedback = None
         self._cur_pos = None
         self._connection_timeout = 1.0
+        self._chassis_feedback_disconnected = False
         self._set_nav_publisher = None
         self._set_nav_client = None
         self._set_ctrl_publisher = None
@@ -87,13 +96,21 @@ class NavigationClient(ABC, Node):
         self._nav_status = "IDLE"  # 或 NAVIGATING / SUCCEEDED / FAILED / CANCELLED
         self._nav_result = None  # 存储最后的导航结果
         self._nav_task_id = 0  # 导航任务ID，用于区分不同的导航任务
+        self._nav_target_position = None
+        self._nav_started_time = None
+        self._nav_last_progress_log_time = None
         self._last_control_status = None
         self._last_control_status_success = False
+        self._control_target_position = None
+        self._control_started_time = None
+        self._control_last_progress_log_time = None
         # control status 防抖 + 防陈旧
         self._control_status_requesting = False
         self._last_control_status_time = None
         self._control_status_timeout = 1.0  # 秒，超过认为状态陈旧
+        self._control_status_refresh_period = 0.5  # 秒，底盘控制状态查询周期
         self._control_status_request_timeout = 2.0  # 秒，超过后清理旧请求并重试
+        self._control_status_pending_warn_delay = 1.0  # 秒，超过后再提示请求未完成
         # 诊断：记录请求发出时刻、连续跳过次数
         self._control_status_request_sent_time = None
         self._control_status_skip_count = 0
@@ -107,13 +124,17 @@ class NavigationClient(ABC, Node):
         self._chassis_feedback_received_during_recovery = False
         self._control_status_unknown_logged = False
         self._control_status_service_unavailable_logged = False
+        self._control_status_last_failure_log_time = None
+        self._last_auto_charging_feedback_signature = None
+        self._last_auto_charging_feedback_log_time = None
 
         self._init_subscriber(is_sim)
         self._init_publisher(is_sim)
         self.spin_once(timeout_sec=timeout_sec)
 
         self.create_timer(0.1, self._check_connection_status)
-        self.create_timer(0.5, self.refresh_control_status)
+        self.create_timer(
+            self._control_status_refresh_period, self.refresh_control_status)
 
     def _check_connection_status(self):
         """定时检查消息是否超时
@@ -128,6 +149,11 @@ class NavigationClient(ABC, Node):
             if (cur_time - self._last_msg_time) > self._connection_timeout:
                 self._cur_pos = None
                 self._last_msg_time = None
+                self._chassis_feedback_disconnected = True
+                self.get_logger().warn(
+                    "[底盘位姿反馈中断] 超过 "
+                    f"{self._connection_timeout:.1f}s 未收到底盘位姿，"
+                    "上层将拒绝新的底盘运动指令。")
 
     def is_connected(self, timeout_sec: float = 0.1):
         start_time = time.time()
@@ -169,7 +195,13 @@ class NavigationClient(ABC, Node):
         return header
 
     def _chassis_feedback_callback(self, msg):
-        self.get_logger().info("chassis feedback received", once=True)
+        self.get_logger().info(
+            "[底盘位姿反馈已连接] 已收到首条底盘位姿消息。",
+            once=True)
+        if self._chassis_feedback_disconnected:
+            self.get_logger().info(
+                "[底盘位姿反馈恢复] 已重新收到底盘位姿消息。")
+            self._chassis_feedback_disconnected = False
         processed = {"header": {}, "data": {}}
         processed["header"] = self._parse_msg_header(msg)
         processed["data"] = {
@@ -253,7 +285,8 @@ class NavigationClient(ABC, Node):
         self.spin_once()
 
         if self._last_chassis_processed_feedback is None:
-            self.get_logger().error("No chassis feedback received yet.")
+            self.get_logger().error(
+                "[底盘位姿不可用] 尚未收到底盘位姿反馈。")
             return False, None
 
         pos = self._last_chassis_processed_feedback["data"]["position"]
@@ -266,6 +299,19 @@ class NavigationClient(ABC, Node):
         yaw = rotation.as_euler('xyz', degrees=True)[2]
         self._cur_pos = np.array([x, y, yaw])
         return True, self._cur_pos
+
+    def _get_cached_chassis_pose_summary(self) -> str:
+        """不触发额外 ROS spin，直接生成简短的底盘位姿文本。"""
+        if self._last_chassis_processed_feedback is None:
+            return "暂无位姿反馈"
+
+        pos = self._last_chassis_processed_feedback["data"]["position"]
+        q = self._last_chassis_processed_feedback["data"]["orientation"]
+        try:
+            yaw = R.from_quat(q).as_euler('xyz', degrees=True)[2]
+            return f"({pos[0]:.3f}, {pos[1]:.3f}, {yaw:.1f}°)"
+        except ValueError:
+            return f"({pos[0]:.3f}, {pos[1]:.3f}, yaw无效)"
 
     def set_chassis_nav2_position(self, position) -> bool:
         """发送一个导航目标点 (非阻塞)。
@@ -293,7 +339,7 @@ class NavigationClient(ABC, Node):
 
         if not self._set_nav_client.wait_for_server(timeout_sec=1.0):
             self.get_logger().error(
-                "NavigateToPose action server not available.")
+                "[导航目标发送失败] NavigateToPose Action 服务不可用。")
             return False
 
         # 清理旧的导航状态，防止旧回调干扰新任务
@@ -302,13 +348,56 @@ class NavigationClient(ABC, Node):
         self._nav_goal_handle = None
         self._nav_status = "NAVIGATING"
         self._nav_result = None
+        self._nav_target_position = np.asarray(position, dtype=float).copy()
+        self._nav_started_time = time.monotonic()
+        self._nav_last_progress_log_time = None
 
         # 异步发送
-        send_future = self._set_nav_client.send_goal_async(nav2_position)
+        send_future = self._set_nav_client.send_goal_async(
+            nav2_position,
+            feedback_callback=lambda feedback_msg: self._on_nav_feedback(
+                feedback_msg, current_task_id))
         send_future.add_done_callback(
             lambda future: self._on_nav_goal_response(future, current_task_id))
 
+        self.get_logger().info(
+            f"[导航目标已发送] task_id={current_task_id}，"
+            f"目标=({position[0]:.3f}, {position[1]:.3f}, "
+            f"{position[2]:.1f}°)，坐标系=map，"
+            "当前状态=NAVIGATING（等待 Nav2 接受）。")
+
         return True
+
+    def _on_nav_feedback(self, feedback_msg, task_id):
+        """根据 Nav2 feedback 低频记录导航进度。"""
+        if task_id != self._nav_task_id:
+            return
+
+        now = time.monotonic()
+        if self._nav_last_progress_log_time is not None and \
+                now - self._nav_last_progress_log_time < \
+                self.MOTION_PROGRESS_LOG_INTERVAL:
+            return
+        self._nav_last_progress_log_time = now
+
+        feedback = feedback_msg.feedback
+        pose = feedback.current_pose.pose.position
+        navigation_time = (feedback.navigation_time.sec +
+                           feedback.navigation_time.nanosec * 1e-9)
+        estimated_time = (feedback.estimated_time_remaining.sec +
+                          feedback.estimated_time_remaining.nanosec * 1e-9)
+        target = self._nav_target_position
+        target_summary = (
+            f"({target[0]:.3f}, {target[1]:.3f}, {target[2]:.1f}°)"
+            if target is not None else "未记录")
+        self.get_logger().info(
+            f"[导航进度] task_id={task_id}，状态=NAVIGATING，"
+            f"当前位置=({pose.x:.3f}, {pose.y:.3f})，"
+            f"目标={target_summary}，"
+            f"剩余距离={feedback.distance_remaining:.3f}m，"
+            f"已导航={navigation_time:.1f}s，"
+            f"预计剩余={estimated_time:.1f}s，"
+            f"恢复行为次数={feedback.number_of_recoveries}。")
 
     def get_nav_state(self) -> str:
         """获取当前导航状态。
@@ -340,7 +429,8 @@ class NavigationClient(ABC, Node):
         # 如果目标还未被接受，等待最多 1 秒让 goal_handle 被设置
         if self._nav_goal_handle is None and self._nav_status == "NAVIGATING":
             self.get_logger().info(
-                "Waiting for navigation goal to be accepted before cancelling..."
+                "[导航取消等待] 目标尚未被 Nav2 接受，"
+                "最多等待 1.0s 后再尝试取消。"
             )
             start_time = time.time()
             while time.time() - start_time < 1.0:
@@ -350,7 +440,8 @@ class NavigationClient(ABC, Node):
                 time.sleep(0.05)
 
         if self._nav_goal_handle is None:
-            self.get_logger().info("No active navigation goal to cancel.")
+            self.get_logger().info(
+                "[导航取消跳过] 当前没有已接受的导航目标。")
             return False
 
         # 保存当前任务ID
@@ -361,11 +452,14 @@ class NavigationClient(ABC, Node):
             cancel_future.add_done_callback(
                 lambda future: self._on_nav_cancel_response(
                     future, current_task_id))
-            self.get_logger().info("Navigation cancel request sent.")
+            self.get_logger().info(
+                f"[导航取消请求已发送] task_id={current_task_id}，"
+                "等待 Nav2 返回取消结果。")
             return True
         except Exception as e:
             self.get_logger().error(
-                f"Error cancelling navigation goal: {str(e)}")
+                f"[导航取消请求发送异常] task_id={current_task_id}，"
+                f"error={str(e)}")
             return False
 
     def _auto_charging_feedback_callback(self, feedback_msg, task_id):
@@ -379,9 +473,22 @@ class NavigationClient(ABC, Node):
         self._last_auto_charging_feedback = feedback
         if self._auto_charging_status != "CANCELING":
             self._auto_charging_status = "EXECUTING"
-        self.get_logger().info("Auto charging feedback: "
-                               f"state={feedback.current_state}, "
-                               f"retry={feedback.retry_count}")
+
+        now = time.monotonic()
+        feedback_signature = (feedback.current_state, feedback.retry_count)
+        state_changed = (
+            feedback_signature != self._last_auto_charging_feedback_signature)
+        heartbeat_due = (
+            self._last_auto_charging_feedback_log_time is None or
+            now - self._last_auto_charging_feedback_log_time >=
+            self.MOTION_PROGRESS_LOG_INTERVAL)
+        if state_changed or heartbeat_due:
+            self._last_auto_charging_feedback_signature = feedback_signature
+            self._last_auto_charging_feedback_log_time = now
+            self.get_logger().info(
+                f"[自动回充进度] task_id={task_id}，"
+                f"状态={feedback.current_state}，"
+                f"重试次数={feedback.retry_count}。")
 
     def set_chassis_auto_charging(self,
                                   force: bool = True,
@@ -389,17 +496,18 @@ class NavigationClient(ABC, Node):
         """发送回充 action，非阻塞返回是否成功发出。"""
         if self._auto_charging_action_client is None:
             self.get_logger().error(
-                "Auto charging action client not initialized.")
+                "[自动回充发送失败] AutoCharging Action 客户端未初始化。")
             return False
 
         action_name = getattr(self._auto_charging_action_client, "_action_name",
                               "/auto_charging")
         self.get_logger().info(
-            f"Waiting for AutoCharging action server: {action_name}")
+            f"[自动回充准备] 等待 Action 服务 {action_name}。")
         self._auto_charging_status = "WAITING_SERVER"
         if not self._auto_charging_action_client.wait_for_server(
                 timeout_sec=timeout_sec):
-            self.get_logger().error("Auto charging action server not available")
+            self.get_logger().error(
+                "[自动回充发送失败] AutoCharging Action 服务不可用。")
             self._auto_charging_status = "FAILED_TO_SEND"
             self._auto_charging_done = True
             self._auto_charging_success = False
@@ -408,7 +516,8 @@ class NavigationClient(ABC, Node):
         goal_msg = AutoCharging.Goal()
         goal_msg.force = force
 
-        self.get_logger().info(f"Sending AutoCharging goal: force={force}")
+        self.get_logger().info(
+            f"[自动回充目标发送中] force={force}。")
         self._auto_charging_task_id += 1
         current_task_id = self._auto_charging_task_id
         self._auto_charging_done = False
@@ -419,6 +528,8 @@ class NavigationClient(ABC, Node):
         self._auto_charging_cancel_future = None
         self._last_auto_charging_feedback = None
         self._last_auto_charging_result_message = ""
+        self._last_auto_charging_feedback_signature = None
+        self._last_auto_charging_feedback_log_time = None
 
         def auto_charging_feedback_callback(feedback_msg):
             self._auto_charging_feedback_callback(feedback_msg, current_task_id)
@@ -433,7 +544,9 @@ class NavigationClient(ABC, Node):
                     future, current_task_id))
             return True
         except Exception as e:
-            self.get_logger().error(f"Failed to send AutoCharging goal: {e}")
+            self.get_logger().error(
+                f"[自动回充目标发送异常] task_id={current_task_id}，"
+                f"error={e}")
             self._auto_charging_status = "FAILED_TO_SEND"
             self._auto_charging_done = True
             self._auto_charging_success = False
@@ -458,7 +571,8 @@ class NavigationClient(ABC, Node):
                 "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING"
         }:
             self.get_logger().info(
-                "Waiting for AutoCharging goal to be accepted before cancelling..."
+                "[自动回充取消等待] 目标尚未被接受，"
+                "最多等待 1.0s 后再尝试取消。"
             )
             current_task_id = self._auto_charging_task_id
             start_time = time.time()
@@ -471,7 +585,8 @@ class NavigationClient(ABC, Node):
                 time.sleep(0.05)
 
         if self._auto_charging_goal_handle is None:
-            self.get_logger().info("No accepted AutoCharging goal to cancel.")
+            self.get_logger().info(
+                "[自动回充取消跳过] 当前没有已接受的回充目标。")
             return False
 
         try:
@@ -482,10 +597,13 @@ class NavigationClient(ABC, Node):
             self._auto_charging_cancel_future.add_done_callback(
                 lambda future: self._auto_charging_cancel_done_callback(
                     future, current_task_id))
-            self.get_logger().info("AutoCharging cancel request sent.")
+            self.get_logger().info(
+                f"[自动回充取消请求已发送] task_id={current_task_id}。")
             return True
         except Exception as e:
-            self.get_logger().error(f"Failed to cancel AutoCharging goal: {e}")
+            self.get_logger().error(
+                f"[自动回充取消请求异常] task_id={current_task_id}，"
+                f"error={e}")
             return False
 
     def _auto_charging_goal_done_callback(self, future, task_id):
@@ -498,14 +616,17 @@ class NavigationClient(ABC, Node):
         try:
             goal_handle = future.result()
         except Exception as e:
-            self.get_logger().error(f"AutoCharging goal send failed: {e}")
+            self.get_logger().error(
+                f"[自动回充目标响应异常] task_id={task_id}，"
+                f"error={e}")
             self._auto_charging_status = "FAILED_TO_SEND"
             self._auto_charging_done = True
             self._auto_charging_success = False
             return
 
         if not goal_handle.accepted:
-            self.get_logger().error("AutoCharging goal was rejected.")
+            self.get_logger().error(
+                f"[自动回充目标被拒绝] task_id={task_id}。")
             self._auto_charging_status = "REJECTED"
             self._auto_charging_done = True
             self._auto_charging_success = False
@@ -513,7 +634,9 @@ class NavigationClient(ABC, Node):
 
         self._auto_charging_goal_handle = goal_handle
         self._auto_charging_status = "ACCEPTED"
-        self.get_logger().info("AutoCharging goal accepted.")
+        self.get_logger().info(
+            f"[自动回充目标已接受] task_id={task_id}，"
+            "等待回充执行结果。")
         self._auto_charging_result_future = goal_handle.get_result_async()
         self._auto_charging_result_future.add_done_callback(
             lambda future: self._auto_charging_result_done_callback(
@@ -529,10 +652,13 @@ class NavigationClient(ABC, Node):
         try:
             response = future.result()
             self.get_logger().info(
-                f"AutoCharging cancel response: goals_canceling={len(response.goals_canceling)}"
+                f"[自动回充取消响应] task_id={task_id}，"
+                f"正在取消的目标数={len(response.goals_canceling)}。"
             )
         except Exception as e:
-            self.get_logger().error(f"AutoCharging cancel failed: {e}")
+            self.get_logger().error(
+                f"[自动回充取消响应异常] task_id={task_id}，"
+                f"error={e}")
 
     def _auto_charging_result_done_callback(self, future, task_id):
         if task_id != self._auto_charging_task_id:
@@ -555,13 +681,16 @@ class NavigationClient(ABC, Node):
 
             if self._auto_charging_success:
                 self.get_logger().info(
-                    f"AutoCharging succeeded: {result.message}")
+                    f"[自动回充成功] task_id={task_id}，"
+                    f"message={result.message}")
             else:
                 self.get_logger().error(
-                    f"AutoCharging finished with status={self._auto_charging_status}: "
-                    f"{result.message}")
+                    f"[自动回充未成功] task_id={task_id}，"
+                    f"状态={self._auto_charging_status}，"
+                    f"message={result.message}")
         except Exception as e:
-            self.get_logger().error(f"Auto charging result error: {e}")
+            self.get_logger().error(
+                f"[自动回充结果异常] task_id={task_id}，error={e}")
             self._auto_charging_status = "UNKNOWN"
             self._auto_charging_success = False
             self._auto_charging_done = True
@@ -646,9 +775,11 @@ class NavigationClient(ABC, Node):
                     timed_out_request_id = None
 
         if timed_out_request_id is None and self._control_status_requesting:
-            # 第一次立即提示，之后每 20 次（约 10 秒）提示一次，避免每 0.5 秒刷屏。
-            if self._control_status_skip_count == 1 or \
-                    self._control_status_skip_count % 20 == 0:
+            # 偶发 RTT 大于查询周期会导致跳过 1 次，
+            # 这不代表状态异常；只有等待时间超过缓存有效期后再按 warning 提示。
+            if sent_age >= self._control_status_pending_warn_delay and \
+                    (self._control_status_skip_count == 1 or
+                     self._control_status_skip_count % 20 == 0):
                 self.get_logger().warn(
                     "[底盘控制状态查询未完成] "
                     f"request_id={self._control_status_request_id} 对 "
@@ -741,7 +872,8 @@ class NavigationClient(ABC, Node):
         if not hasattr(
                 self, '_cancel_control_client'
         ) or not self._cancel_control_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().error("Cancel control service not available.")
+            self.get_logger().error(
+                "[底盘直控取消失败] 取消控制服务不可用。")
             return False
 
         # 非阻塞调用：发送请求后立即返回，结果由回调处理
@@ -749,11 +881,12 @@ class NavigationClient(ABC, Node):
         try:
             future = self._cancel_control_client.call_async(request)
             future.add_done_callback(self._on_cancel_control_response)
-            self.get_logger().info("Cancel control request sent.")
+            self.get_logger().info(
+                "[底盘直控取消请求已发送] 等待底层响应。")
             return True
         except Exception as e:
             self.get_logger().error(
-                f"Failed to send cancel control request: {e}")
+                f"[底盘直控取消请求异常] error={e}")
             return False
 
     def set_chassis_control_position(self, position) -> bool:
@@ -781,10 +914,19 @@ class NavigationClient(ABC, Node):
         chassis_position.pose.orientation.w = quat_arry[3]
         if position[0] != 0.0 and position[2] != 0:
             self.get_logger().info(
-                "illegal position, x and yaw should not be set together.")
+                "[底盘直控目标非法] x 和 yaw 不能同时为非零值，"
+                f"当前目标=({position[0]:.3f}, {position[2]:.1f}°)。")
             return False
 
         self._set_ctrl_publisher.publish(chassis_position)
+        self._control_target_position = np.asarray(position,
+                                                   dtype=float).copy()
+        self._control_started_time = time.monotonic()
+        self._control_last_progress_log_time = None
+        self.get_logger().info(
+            f"[底盘直控目标已发送] 相对位移={position[0]:.3f}m，"
+            f"相对转角={position[2]:.1f}°，坐标系=base_link，"
+            "等待底层控制状态更新。")
         return True
 
     def set_goal_tolerance(self, xy_tolerance: float,
@@ -953,14 +1095,25 @@ class NavigationClient(ABC, Node):
             )
             return
 
-        goal_handle = future.result()
-        if not goal_handle.accepted:
-            self.get_logger().error("Goal was rejected.")
+        try:
+            goal_handle = future.result()
+        except Exception as e:
             self._nav_status = "FAILED"
+            self.get_logger().error(
+                f"[导航目标响应异常] task_id={task_id}，"
+                f"状态=FAILED，error={e}")
             return
 
-        self.get_logger().info("Goal accepted.")
+        if not goal_handle.accepted:
+            self._nav_status = "FAILED"
+            self.get_logger().error(
+                f"[导航目标被拒绝] task_id={task_id}，状态=FAILED。")
+            return
+
         self._nav_goal_handle = goal_handle
+        self.get_logger().info(
+            f"[导航目标已接受] task_id={task_id}，"
+            "Nav2 已开始执行，状态=NAVIGATING。")
 
         # 异步等待结果
         self._nav_result_future = goal_handle.get_result_async()
@@ -983,14 +1136,21 @@ class NavigationClient(ABC, Node):
 
             if result.status == GoalStatus.STATUS_SUCCEEDED:
                 self._nav_status = "SUCCEEDED"
-                self.get_logger().info("Goal reached successfully.")
+                elapsed = (time.monotonic() - self._nav_started_time
+                           if self._nav_started_time is not None else -1.0)
+                self.get_logger().info(
+                    f"[导航任务成功] task_id={task_id}，"
+                    f"状态=SUCCEEDED，总耗时={elapsed:.1f}s。")
             elif result.status == GoalStatus.STATUS_CANCELED:
                 self._nav_status = "CANCELLED"
-                self.get_logger().info("Goal was cancelled.")
+                self.get_logger().info(
+                    f"[导航任务已取消] task_id={task_id}，"
+                    "状态=CANCELLED。")
             else:
                 self._nav_status = "FAILED"
                 self.get_logger().error(
-                    f"Goal failed with status {result.status}")
+                    f"[导航任务失败] task_id={task_id}，"
+                    f"状态=FAILED，Nav2 结果码={result.status}。")
             self._nav_goal_handle = None
         except Exception as e:
             # future.result() 抛异常（如 action server 崩溃、通信中断等），
@@ -999,7 +1159,8 @@ class NavigationClient(ABC, Node):
             self._nav_status = "FAILED"
             self._nav_goal_handle = None
             self.get_logger().error(
-                f"Error getting navigation result: {str(e)}")
+                f"[导航结果获取异常] task_id={task_id}，"
+                f"状态=FAILED，error={str(e)}")
 
     def _on_nav_cancel_response(self, future, task_id):
         """Callback for navigation cancel response.
@@ -1015,18 +1176,24 @@ class NavigationClient(ABC, Node):
             _ = future.result()
             self._nav_status = "CANCELLED"
             self._nav_goal_handle = None
-            self.get_logger().info("Navigation goal cancelled.")
+            self.get_logger().info(
+                f"[导航取消响应已收到] task_id={task_id}，"
+                "状态=CANCELLED。")
         except Exception as e:
-            self.get_logger().error(f"Error in cancel response: {str(e)}")
+            self.get_logger().error(
+                f"[导航取消响应异常] task_id={task_id}，"
+                f"error={str(e)}")
 
     def _on_cancel_control_response(self, future):
         """Callback for cancel control service response (non-blocking)."""
         try:
             response = future.result()
-            self.get_logger().info(
-                f"Cancel control response: {response.message}")
+            log = (self.get_logger().info
+                   if response.success else self.get_logger().warn)
+            log(f"[底盘直控取消响应] success={response.success}，"
+                f"message={response.message}")
         except Exception as e:
-            self.get_logger().error(f"Error in cancel control response: {e}")
+            self.get_logger().error(f"[底盘直控取消响应异常] error={e}")
 
     def _on_get_control_status_response(self, future, request_id):
         """Callback for get_control status async response (non-blocking)."""
@@ -1076,21 +1243,64 @@ class NavigationClient(ABC, Node):
             self._last_control_status = response.message
             self._last_control_status_success = bool(response.success)
             self._control_status_unknown_logged = False
+            if response.success:
+                self._control_status_last_failure_log_time = None
 
             if old_status != self._last_control_status:
+                status_descriptions = {
+                    "IDLE": "空闲",
+                    "CONTROL": "正在执行底盘直控",
+                    "SUCCEEDED": "底盘直控已完成",
+                    "CANCELLING": "正在平滑停止",
+                    "CANCELLED": "底盘直控已取消",
+                    "UNKNOWN": "底层状态未知",
+                }
+                description = status_descriptions.get(
+                    self._last_control_status, "底层返回未知状态")
                 self.get_logger().info(
-                    f"[底盘控制状态更新] request_id="
-                    f"{request_id}, "
-                    f"{old_status} -> {self._last_control_status}, "
-                    f"success={response.success}, rtt={rtt:.3f}s"
+                    f"[底盘直控状态变化] {old_status} -> "
+                    f"{self._last_control_status}（{description}），"
+                    f"当前位姿={self._get_cached_chassis_pose_summary()}，"
+                    f"request_id={request_id}，rtt={rtt:.3f}s。"
                 )
+                if not response.success:
+                    self._control_status_last_failure_log_time = \
+                        time.monotonic()
+                if self._last_control_status == "CONTROL":
+                    if self._control_started_time is None:
+                        self._control_started_time = time.monotonic()
+                    self._control_last_progress_log_time = time.monotonic()
             elif not response.success:
-                self.get_logger().warn(
-                    f"[底盘控制状态查询失败] request_id="
-                    f"{request_id}, "
-                    f"服务返回 success=False, message={response.message}, "
-                    f"rtt={rtt:.3f}s"
-                )
+                now = time.monotonic()
+                if self._control_status_last_failure_log_time is None or \
+                        now - self._control_status_last_failure_log_time >= \
+                        self.MOTION_PROGRESS_LOG_INTERVAL:
+                    self._control_status_last_failure_log_time = now
+                    self.get_logger().warn(
+                        f"[底盘控制状态查询失败] request_id="
+                        f"{request_id}，服务返回 success=False，"
+                        f"message={response.message}，rtt={rtt:.3f}s。"
+                        f"同类日志最多每 "
+                        f"{self.MOTION_PROGRESS_LOG_INTERVAL:.0f}s 记录一次。")
+            elif self._last_control_status == "CONTROL":
+                now = time.monotonic()
+                if self._control_last_progress_log_time is None or \
+                        now - self._control_last_progress_log_time >= \
+                        self.MOTION_PROGRESS_LOG_INTERVAL:
+                    self._control_last_progress_log_time = now
+                    elapsed = (now - self._control_started_time
+                               if self._control_started_time is not None
+                               else -1.0)
+                    target = self._control_target_position
+                    target_summary = (
+                        f"相对位移={target[0]:.3f}m，"
+                        f"相对转角={target[2]:.1f}°"
+                        if target is not None else "目标未记录")
+                    self.get_logger().info(
+                        f"[底盘直控进度] 状态=CONTROL，"
+                        f"{target_summary}，已执行={elapsed:.1f}s，"
+                        f"当前位姿="
+                        f"{self._get_cached_chassis_pose_summary()}。")
 
             if response.success and recovery_pending:
                 recovery_detail = (
