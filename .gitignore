@@ -8,6 +8,7 @@ build*/
 install/
 dist/
 
+/.idea
 __pycache__/
 *.pyc
 *.egg-info/

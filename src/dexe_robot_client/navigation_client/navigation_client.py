@@ -5,11 +5,11 @@ import math
 from abc import ABC, abstractmethod
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Pose2D
 from action_msgs.msg import GoalStatus
 from scipy.spatial.transform import Rotation as R
 from nav2_msgs.action import NavigateThroughPoses, NavigateToPose
-from nav_interfaces.action import PreciseControl
+from nav_interfaces.action import PreciseControl, NavigateThroughPoints
 from nav_interfaces.msg import NavPoint
 from nav_interfaces.srv import GetAllNavPoints
 from chassis_interfaces.action import AutoCharging
@@ -37,6 +37,7 @@ class NavigationClient(ABC, Node):
         GoalStatus.STATUS_ABORTED: "ABORTED",
     }
     ROAD_NAV_STATUS_NAMES = AUTO_CHARGING_STATUS_NAMES
+    PATH_NAV_STATUS_NAMES = AUTO_CHARGING_STATUS_NAMES
 
     def __init__(self,
                  name: str,
@@ -95,6 +96,18 @@ class NavigationClient(ABC, Node):
         self._last_road_nav_feedback = None
         self._last_road_nav_result_message = ""
         self._nav_points_client = None
+
+        self._path_nav_action_client = None
+        self._path_nav_goal_handle = None
+        self._path_nav_send_goal_future = None
+        self._path_nav_result_future = None
+        self._path_nav_cancel_future = None
+        self._path_nav_status = "IDLE"
+        self._path_nav_done = False
+        self._path_nav_success = False
+        self._last_path_nav_feedback = None
+        self._last_path_nav_result_message = ""
+        self._path_nav_task_id = 0
         self._nav_points_timeout_sec = 10.0
         self._control_lock = threading.Lock()
         self._control_goal_handle = None
@@ -464,6 +477,147 @@ class NavigationClient(ABC, Node):
                 f"Failed to cancel NavigateThroughPoses goal: {e}")
             return False
 
+    def set_chassis_path_navigation(self,
+                                    nav_point_names: list,
+                                    nav_point_ids: list = None,
+                                    pose: Pose2D = None,
+                                    target_yaw: float = None,
+                                    timeout_sec: float = 10.0) -> bool:
+        """发送路径导航任务（NavigateThroughPoints action），非阻塞返回是否成功发出。
+
+        通过 `/navigate_through_points`（nav_interfaces/action/NavigateThroughPoints）
+        按点位名称串接路径，由 route_executor 解析路点并逐段执行。
+
+        Args:
+            nav_point_names (list[str]): 路点名称序列，按顺序串接成路径。
+            nav_point_ids (list[str] | None): 可选路点 ID 序列，透传给服务端。
+            pose (Pose2D | None): 可选附加位姿，透传给服务端。
+            target_yaw (float | None): 可选目标朝向（弧度），透传给服务端。
+            timeout_sec (float): 等待 action server 的超时时间，秒。
+
+        Returns:
+            bool: 目标成功发出返回 True，否则返回 False。
+        """
+        if self._path_nav_action_client is None:
+            self.get_logger().error(
+                "NavigateThroughPoints action client not initialized.")
+            return False
+
+        action_name = getattr(self._path_nav_action_client, "_action_name",
+                              "/navigate_through_points")
+        self.get_logger().info(
+            f"Waiting for NavigateThroughPoints action server: {action_name}")
+        self._path_nav_status = "WAITING_SERVER"
+        if not self._path_nav_action_client.wait_for_server(
+                timeout_sec=timeout_sec):
+            self.get_logger().error(
+                "NavigateThroughPoints action server is not available.")
+            self._path_nav_status = "FAILED_TO_SEND"
+            self._path_nav_done = True
+            self._path_nav_success = False
+            return False
+
+        try:
+            goal = NavigateThroughPoints.Goal()
+            goal.nav_point_names = [str(name) for name in nav_point_names]
+            if nav_point_ids is not None:
+                goal.nav_point_ids = [str(pid) for pid in nav_point_ids]
+            if pose is not None:
+                goal.pose = pose
+            if target_yaw is not None:
+                goal.target_yaw = float(target_yaw)
+        except (TypeError, ValueError) as e:
+            self.get_logger().error(
+                f"Invalid path navigation nav_point_names: {e}")
+            self._path_nav_status = "FAILED_TO_SEND"
+            self._path_nav_done = True
+            self._path_nav_success = False
+            return False
+
+        self.get_logger().info(
+            f"Sending NavigateThroughPoints goal with "
+            f"{len(goal.nav_point_names)} nav_point_names.")
+        for index, name in enumerate(goal.nav_point_names, start=1):
+            self.get_logger().info(f"  {index}: {name}")
+
+        self._path_nav_task_id += 1
+        current_task_id = self._path_nav_task_id
+        self._path_nav_done = False
+        self._path_nav_success = False
+        self._path_nav_status = "SENDING"
+        self._path_nav_goal_handle = None
+        self._path_nav_send_goal_future = None
+        self._path_nav_result_future = None
+        self._path_nav_cancel_future = None
+        self._last_path_nav_feedback = None
+        self._last_path_nav_result_message = ""
+
+        def path_nav_feedback_callback(feedback_msg):
+            self._path_nav_feedback_callback(feedback_msg, current_task_id)
+
+        try:
+            self._path_nav_send_goal_future = (
+                self._path_nav_action_client.send_goal_async(
+                    goal, feedback_callback=path_nav_feedback_callback))
+            self._path_nav_send_goal_future.add_done_callback(
+                lambda future: self._path_nav_goal_done_callback(
+                    future, current_task_id))
+            return True
+        except Exception as e:
+            self.get_logger().error(
+                f"Failed to send NavigateThroughPoints goal: {e}")
+            self._path_nav_status = "FAILED_TO_SEND"
+            self._path_nav_done = True
+            self._path_nav_success = False
+            return False
+
+    def get_path_navigation_status(self) -> str:
+        """获取当前路径导航（NavigateThroughPoints）状态。"""
+        return self._path_nav_status
+
+    def get_path_navigation_result(self) -> tuple[bool, str]:
+        """获取最近一次路径导航（NavigateThroughPoints）结果。"""
+        return self._path_nav_success, self._last_path_nav_result_message
+
+    def cancel_path_navigation(self) -> bool:
+        """取消当前路径导航（NavigateThroughPoints）任务。"""
+        if self._path_nav_goal_handle is None and self._path_nav_status in {
+                "SENDING", "ACCEPTED", "WAITING_SERVER"
+        }:
+            self.get_logger().info(
+                "Waiting for path navigation goal to be accepted before cancelling..."
+            )
+            current_task_id = self._path_nav_task_id
+            start_time = time.time()
+            while time.time() - start_time < 1.0:
+                if current_task_id != self._path_nav_task_id:
+                    break
+                self.spin_once(timeout_sec=0.05)
+                if self._path_nav_goal_handle is not None:
+                    break
+                time.sleep(0.05)
+
+        if self._path_nav_goal_handle is None:
+            self.get_logger().warning(
+                "No accepted NavigateThroughPoints goal to cancel.")
+            return False
+
+        try:
+            current_task_id = self._path_nav_task_id
+            self._path_nav_status = "CANCELING"
+            self._path_nav_cancel_future = (
+                self._path_nav_goal_handle.cancel_goal_async())
+            self._path_nav_cancel_future.add_done_callback(
+                lambda future: self._path_nav_cancel_done_callback(
+                    future, current_task_id))
+            self.get_logger().info(
+                "NavigateThroughPoints cancel request sent.")
+            return True
+        except Exception as e:
+            self.get_logger().error(
+                f"Failed to cancel NavigateThroughPoints goal: {e}")
+            return False
+
     def _parse_nav_point(
             self,
             point: NavPoint) -> tuple[str, tuple[float, float, float]] | None:
@@ -787,6 +941,104 @@ class NavigationClient(ABC, Node):
             self._road_nav_status = "UNKNOWN"
             self._road_nav_success = False
             self._road_nav_done = True
+
+    def _path_nav_feedback_callback(self, feedback_msg, task_id):
+        if task_id != self._path_nav_task_id:
+            self.get_logger().debug(
+                f"Ignoring feedback for old path navigation task {task_id} "
+                f"(current: {self._path_nav_task_id})")
+            return
+
+        feedback = feedback_msg.feedback
+        self._last_path_nav_feedback = feedback
+        if self._path_nav_status != "CANCELING":
+            self._path_nav_status = "EXECUTING"
+        self.get_logger().info(
+            "NavigateThroughPoints feedback: "
+            f"status={feedback.current_status}, "
+            f"point={feedback.current_point_index}/{feedback.total_points}")
+
+    def _path_nav_goal_done_callback(self, future, task_id):
+        if task_id != self._path_nav_task_id:
+            self.get_logger().debug(
+                f"Ignoring goal response for old path navigation task {task_id} "
+                f"(current: {self._path_nav_task_id})")
+            return
+
+        try:
+            goal_handle = future.result()
+        except Exception as e:
+            self.get_logger().error(
+                f"NavigateThroughPoints goal send failed: {e}")
+            self._path_nav_status = "FAILED_TO_SEND"
+            self._path_nav_done = True
+            self._path_nav_success = False
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().error("NavigateThroughPoints goal was rejected.")
+            self._path_nav_status = "REJECTED"
+            self._path_nav_done = True
+            self._path_nav_success = False
+            return
+
+        self._path_nav_goal_handle = goal_handle
+        self._path_nav_status = "ACCEPTED"
+        self.get_logger().info("NavigateThroughPoints goal accepted.")
+        self._path_nav_result_future = goal_handle.get_result_async()
+        self._path_nav_result_future.add_done_callback(
+            lambda future: self._path_nav_result_done_callback(
+                future, task_id))
+
+    def _path_nav_cancel_done_callback(self, future, task_id):
+        if task_id != self._path_nav_task_id:
+            self.get_logger().debug(
+                f"Ignoring cancel response for old path navigation task {task_id} "
+                f"(current: {self._path_nav_task_id})")
+            return
+
+        try:
+            response = future.result()
+            self.get_logger().info(
+                f"NavigateThroughPoints cancel response: "
+                f"goals_canceling={len(response.goals_canceling)}")
+        except Exception as e:
+            self.get_logger().error(
+                f"NavigateThroughPoints cancel failed: {e}")
+
+    def _path_nav_result_done_callback(self, future, task_id):
+        if task_id != self._path_nav_task_id:
+            self.get_logger().debug(
+                f"Ignoring result for old path navigation task {task_id} "
+                f"(current: {self._path_nav_task_id})")
+            return
+
+        try:
+            response = future.result()
+            result = response.result
+            self._path_nav_status = self.PATH_NAV_STATUS_NAMES.get(
+                response.status, "UNKNOWN")
+            self._path_nav_success = (self._path_nav_status == "SUCCEEDED"
+                                      and bool(result.success))
+            self._last_path_nav_result_message = result.message
+            self._path_nav_done = True
+            self._path_nav_goal_handle = None
+
+            if self._path_nav_success:
+                self.get_logger().info(
+                    f"NavigateThroughPoints succeeded: {result.message}")
+            else:
+                self.get_logger().error(
+                    f"NavigateThroughPoints finished with "
+                    f"status={self._path_nav_status}({response.status}): "
+                    f"{result.message}")
+        except Exception as e:
+            self.get_logger().error(
+                f"NavigateThroughPoints result error: {e}")
+            self._path_nav_status = "UNKNOWN"
+            self._path_nav_success = False
+            self._path_nav_done = True
+            self._path_nav_goal_handle = None
 
     def get_control_status(self, consume: bool = True) -> str:
         """

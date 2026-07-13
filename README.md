@@ -98,6 +98,8 @@ More examlpes see `dexe_robot_client/examples`.
 
 路网导航通过 `/navigate_through_poses` (`nav2_msgs/action/NavigateThroughPoses`) 发送多路点任务，`waypoints` 使用 `[x, y, yaw_rad]`；`get_all_nav_points()` 通过 `/map_asset_manager/get_all_nav_points` (`nav_interfaces/srv/GetAllNavPoints`) 获取点位名称到 `(x, y, theta_rad)` 的映射。
 
+路径导航通过 `/navigate_through_points` (`nav_interfaces/action/NavigateThroughPoints`) 按 `nav_point_names` 串接多段路径任务，由 route_executor 解析路点逐段执行；`set_chassis_path_navigation(nav_point_names, ...)` 非阻塞发送，`get_path_navigation_status()` / `get_path_navigation_result()` 查询状态与结果，`cancel_path_navigation()` 取消。客户端不校验点位数量、不拦截并发，是否接受由服务端裁决。
+
 
 ## 🏷️ Others
 #### Branches

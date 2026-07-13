@@ -4,7 +4,7 @@ from geometry_msgs.msg import PoseStamped
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateThroughPoses, NavigateToPose
-from nav_interfaces.action import PreciseControl
+from nav_interfaces.action import PreciseControl, NavigateThroughPoints
 from nav_interfaces.srv import GetAllNavPoints
 from chassis_interfaces.action import AutoCharging
 from rcl_interfaces.srv import GetParameters, SetParameters
@@ -50,6 +50,8 @@ class ChassisClient(NavigationClient):
                                                 'navigate_to_pose')
             self._road_nav_action_client = ActionClient(
                 self, NavigateThroughPoses, '/navigate_through_poses')
+            self._path_nav_action_client = ActionClient(
+                self, NavigateThroughPoints, '/navigate_through_points')
             self._nav_points_client = self.create_client(
                 GetAllNavPoints, '/map_asset_manager/get_all_nav_points')
             self._set_ctrl_client = ActionClient(self, PreciseControl,

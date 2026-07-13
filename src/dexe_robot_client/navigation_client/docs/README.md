@@ -24,6 +24,7 @@
 | 底盘位姿反馈 | `/feedback/chassis_pose` | `/feedback_sim/chassis_pose` | `PoseStamped` |
 | Nav2 导航 | `navigate_to_pose` action | 未初始化 action client | 仿真模式调用 `set_chassis_nav2_position()` 当前会有空指针风险 |
 | 路网/多路点导航 | `/navigate_through_poses` action | 未初始化 action client | `NavigateThroughPoses`，waypoints yaw 使用弧度 |
+| 路径导航 | `/navigate_through_points` action | 未初始化 action client | `nav_interfaces/action/NavigateThroughPoints`，按 `nav_point_names` 串接路径，由 route_executor 解析路点逐段执行 |
 | 路网导航点映射 | `/map_asset_manager/get_all_nav_points` service | `/map_asset_manager/get_all_nav_points` service | 返回点位名称到 `(x, y, theta_rad)` 的映射 |
 | Nav2 pose publisher | `/control/nav2_pose` | `/control_sim/nav2_pose` | 已创建，但当前导航发送逻辑不使用 publisher |
 | 底盘精控 | `control/precise_control` action | `control/precise_control` action | 目标 frame 为 `base_link` |
@@ -55,6 +56,7 @@
 | --- | --- | --- | --- | --- | --- |
 | `navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | `set_chassis_nav2_position()`、`cancel_chassis_nav2()` | `map` | `[x, y, yaw_deg]` | action result，本地缓存 `_nav_status` |
 | `/navigate_through_poses` | `nav2_msgs/action/NavigateThroughPoses` | `set_chassis_road_navigation()`、`cancel_road_navigation()` | 默认 `map` | `[[x, y, yaw_rad], ...]`，至少 1 个路点 | action feedback/result，本地缓存 `_road_nav_status` |
+| `/navigate_through_points` | `nav_interfaces/action/NavigateThroughPoints` | `set_chassis_path_navigation()`、`cancel_path_navigation()` | 服务端默认 `map` | `nav_point_names: list[str]`（`nav_point_ids`/`pose`/`target_yaw` 可选透传，当前服务端未消费） | action feedback/result，本地缓存 `_path_nav_status` |
 | `control/precise_control` | `nav_interfaces/action/PreciseControl` | `set_chassis_control_position()`、`cancel_chassis_control()` | `base_link` | `[x, 0, yaw_deg]`，`x` 和 `yaw` 不能同时非零 | action feedback/result，本地缓存 `_control_status` |
 | `/auto_charging` | `chassis_interfaces/action/AutoCharging` | `set_chassis_auto_charging()`、`cancel_auto_charging()` | 无 | `force: bool`，默认 `True` | action feedback/result，本地缓存 `_auto_charging_status` |
 
@@ -94,6 +96,17 @@ Nav2 发送流程：
 3. 服务返回 `success=False`、调用超时或异常时返回空字典。
 4. 对 `response.points` 中的 `nav_interfaces/msg/NavPoint` 逐个解析，跳过空名称或非预期类型。
 5. 返回 `dict[str, tuple[float, float, float]]`，键为点位名称，值为 `(x, y, theta_rad)`。
+
+路径导航发送流程：
+
+1. 检查 `_path_nav_action_client` 已初始化（仅真实模式）。
+2. 等待 `/navigate_through_points` action server，默认最多 10 秒。
+3. 构造 `NavigateThroughPoints.Goal()`，写入 `nav_point_names`；`nav_point_ids`、`pose`、`target_yaw` 为可选透传字段，当前服务端未消费。
+4. 客户端不校验 `nav_point_names` 数量，也不拦截并发 goal，是否接受完全由服务端裁决；被拒绝的 goal 走 `REJECTED` 状态分支。
+5. 每次发送前自增 `_path_nav_task_id`，后续 feedback、goal response、cancel response 和 result callback 只处理当前 task，忽略旧回调。
+6. 异步 `send_goal_async()` 并注册带 task id 的 feedback callback。
+7. feedback 记录 `current_status`、`current_point_index`、`total_points`，状态置 `EXECUTING`。
+8. result 根据 action status 映射状态名，`success` 要求 `status==SUCCEEDED` 且 `result.success` 为真，message 取自 `result.message`。
 
 回充发送流程：
 
@@ -148,6 +161,10 @@ Nav2 发送流程：
 | `get_road_navigation_status()` | 无 | `str` | 返回本地路网导航状态缓存 |
 | `get_road_navigation_result()` | 无 | `(bool, str)` | 返回最近一次路网导航结果成功标志和消息 |
 | `cancel_road_navigation()` | 无 | `bool` | 通过当前路网导航 goal handle 发送取消请求 |
+| `set_chassis_path_navigation(nav_point_names, nav_point_ids=None, pose=None, target_yaw=None, timeout_sec=10.0)` | `list[str]` 路点名称，可选 ID/位姿/目标朝向 | `bool` | 发送 `/navigate_through_points` 路径导航目标，非阻塞；不校验点位数量、不拦截并发 |
+| `get_path_navigation_status()` | 无 | `str` | 返回本地路径导航状态缓存 |
+| `get_path_navigation_result()` | 无 | `(bool, str)` | 返回最近一次路径导航结果成功标志和消息 |
+| `cancel_path_navigation()` | 无 | `bool` | 通过当前路径导航 goal handle 发送取消请求；goal handle 尚未生成时最多等待 1 秒 |
 | `get_all_nav_points()` | 无 | `dict[str, tuple[float, float, float]]` | 获取所有路网导航点，返回点位名称到 `(x, y, theta_rad)` 的映射 |
 | `set_chassis_control_position(position)` | `[x, 0, yaw_deg]` | `bool` | 发送底盘精控 action，非阻塞 |
 | `get_control_status(consume=True)` | 兼容参数 | `str` | 返回本地精控状态缓存，当前不消费终态 |

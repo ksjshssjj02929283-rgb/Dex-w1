@@ -1,6 +1,8 @@
 # CHANGELOG
 
 ## [Unrelease]
+### Feat
+- 新增路径导航接口，通过 `/navigate_through_points`（`nav_interfaces/action/NavigateThroughPoints`）按 `nav_point_names` 发送多段路径任务，支持 `set_chassis_path_navigation()`、`get_path_navigation_status()`、`get_path_navigation_result()`、`cancel_path_navigation()`
 
 ## [V0.6.0]
 ### Feat
