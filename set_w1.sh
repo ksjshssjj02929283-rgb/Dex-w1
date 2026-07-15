@@ -16,8 +16,10 @@ print_usage() {
     echo "Usage: ./set_property.sh <property_type> [value]"
     echo ""
     echo "Available property types:"
-    echo "  echo            - Echo robot server state topic once"
-    echo "  echo_sim        - Echo robot server state sim topic once"
+    echo "  echo            - Echo robot server state topic continuously"
+    echo "  echo_once [field] - Echo robot server state topic once (default field: data)"
+    echo "  echo_sim        - Echo robot server state sim topic continuously"
+    echo "  echo_sim_once [field] - Echo robot server state sim topic once (default field: data)"
     echo "  clone ethercat  - Clone dexe_ethercat (dev) repository to parent directory"
     echo "  clone interface - Clone dexe_interfaces (dev) repository to parent directory"
     echo "  home            - Move robot to home joint position"
@@ -42,6 +44,7 @@ print_usage() {
     echo "  codegen         - Generate dynamics code (python3 script/dyn_params_ident/dyn_code_generator.py)"
     echo "  dh [left|right] - Compute DH parameters from URDF (python3 script/dyn_params_ident/urdf2dh.py)"
     echo "  gui             - Robot Launcher GUI (python3 script/gui.py)"
+    echo "  tool            - Edit end-effector tool dynamics config (python3 script/set_tool_dynamics.py)"
     echo "  trajgen         - Trajectory generator (python3 script/traj_generator.py)"
     echo "  vis             - Visualization ROS2 node (python3 script/visual_ros2_node.py)"
     echo "  config          - Edit robot_config.yaml (gedit/vim ~/dexe_robot_server_data/robot_config.yaml)"
@@ -59,7 +62,10 @@ print_usage() {
     echo ""
     echo "Examples:"
     echo "  ./set_w1.sh echo"
+    echo "  ./set_w1.sh echo_once"
+    echo "  ./set_w1.sh echo_once server_version"
     echo "  ./set_w1.sh echo_sim"
+    echo "  ./set_w1.sh echo_sim_once"
     echo "  ./set_w1.sh clone ethercat"
     echo "  ./set_w1.sh clone interface"
     echo "  ./set_w1.sh home"
@@ -87,6 +93,11 @@ print_usage() {
     echo "  ./set_w1.sh dh left"
     echo "  ./set_w1.sh dh"
     echo "  ./set_w1.sh gui"
+    echo "  ./set_w1.sh tool"
+    echo "  ./set_w1.sh tool --list"
+    echo "  ./set_w1.sh tool --set-enabled primary false"
+    echo "  ./set_w1.sh tool --set-tool 'BrainCo_Revo1_R' 0.5 0.0 0.0 0.0"
+    echo "  ./set_w1.sh tool --set-tool 'BrainCo_Revo1_R'"
     echo "  ./set_w1.sh trajgen"
     echo "  ./set_w1.sh vis"
     echo "  ./set_w1.sh config"
@@ -146,12 +157,32 @@ case $PROPERTY_KEY in
         ;;
     echo)
         echo "Echoing robot server state..."
-        ros2 topic echo /feedback/robot_server_state --field data --once
+        ros2 topic echo /feedback/robot_server_state --field data
+        exit 0
+        ;;
+    echo_once)
+        if [ -n "$VALUE" ]; then
+            echo "Searching robot server state for keys containing: '$VALUE'..."
+            ros2 topic echo /feedback/robot_server_state --field data --once | python3 -c "import sys, json; raw=sys.stdin.read(); data=json.loads(raw.split('---')[0]); matches={k:v for k,v in data.items() if '$VALUE' in k}; print(json.dumps(matches, indent=2)) if matches else print('No keys containing \'$VALUE\' found')"
+        else
+            echo "Echoing robot server state..."
+            ros2 topic echo /feedback/robot_server_state --field data --once
+        fi
         exit 0
         ;;
     echo_sim)
         echo "Echoing robot server state sim..."
-        ros2 topic echo /feedback/robot_server_state_sim --field data --once
+        ros2 topic echo /feedback/robot_server_state_sim --field data
+        exit 0
+        ;;
+    echo_sim_once)
+        if [ -n "$VALUE" ]; then
+            echo "Searching robot server state sim for keys containing: '$VALUE'..."
+            ros2 topic echo /feedback/robot_server_state_sim --field data --once | python3 -c "import sys, json; raw=sys.stdin.read(); data=json.loads(raw.split('---')[0]); matches={k:v for k,v in data.items() if '$VALUE' in k}; print(json.dumps(matches, indent=2)) if matches else print('No keys containing \'$VALUE\' found')"
+        else
+            echo "Echoing robot server state sim..."
+            ros2 topic echo /feedback/robot_server_state_sim --field data --once
+        fi
         exit 0
         ;;
     clone)
@@ -304,6 +335,11 @@ case $PROPERTY_KEY in
     gui)
         echo "Starting Robot Launcher GUI..."
         python3 "${SCRIPT_DIR}/script/gui.py"
+        exit 0
+        ;;
+    tool)
+        echo "Starting Tool Dynamics Config Editor..."
+        python3 "${SCRIPT_DIR}/script/set_tool_dynamics.py" "${@:2}"
         exit 0
         ;;
     trajgen)

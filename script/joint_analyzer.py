@@ -22,8 +22,8 @@ from PyQt5.QtWidgets import (
     QGroupBox, QDoubleSpinBox, QSplitter, QComboBox,
     QScrollArea, QProgressBar
 )
-from PyQt5.QtCore import QTimer, Qt, pyqtSignal, QObject, QSize
-from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal, QObject, QSize, QRect, QPoint
+from PyQt5.QtGui import QColor, QFont, QPainter, QBrush, QPen
 
 # Matplotlib for PyQt5
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -38,6 +38,8 @@ try:
     from sensor_msgs.msg import JointState, Imu
     from joint_interfaces.msg import JointVelocityTorqueLimitFeedback, JointPositionControl
     from robot_server_interfaces.srv import SetProperty
+    from robot_server_interfaces.action import MoveRobot
+    from rclpy.action import ActionClient
     ROS2_AVAILABLE = True
 except ImportError:
     ROS2_AVAILABLE = False
@@ -213,6 +215,7 @@ class DataService(QObject):
             self.node.create_subscription(JointState, f'/feedback/joint{suffix}', self._ros_joint_cb, 10)
             self.pos_pub = self.node.create_publisher(JointPositionControl, f'/control/joint_position{suffix}', 10)
             self.set_prop_cli = self.node.create_client(SetProperty, '/control/set_property')
+            self.move_robot_client = ActionClient(self.node, MoveRobot, '/control/move_robot')
             self.ros_thread = threading.Thread(target=self._ros_spin, daemon=True)
             self.ros_thread.start()
 
@@ -266,6 +269,15 @@ class DataService(QObject):
         req.property_type = prop_type
         req.value = str(value)
         self.set_prop_cli.call_async(req)
+
+    def send_move_action(self, motion_group, joint_type, target, speed=0.1, acceleration=0.1):
+        if not ROS2_AVAILABLE: return
+        goal = MoveRobot.Goal()
+        goal.motion_group = motion_group
+        goal.type = joint_type
+        goal.target = [float(v) for v in target]
+        goal.config = f'{{"speed":{speed},"acceleration":{acceleration}}}'
+        self.move_robot_client.send_goal_async(goal)
 
     def start_recording(self, path, duration, period, trigger_cfg=None):
         if self.is_recording: return
@@ -549,6 +561,117 @@ class StepButton(QPushButton):
         continuous_step = min(step, 0.005)
         self.parent_ctrl.increment_cmd(self.joint_name, continuous_step * self.direction)
 
+class SwitchButton(QPushButton):
+    def __init__(self, parent=None, active_color="#c8e6c9", bg_color="#eeeeee"):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setFixedSize(50, 22) # Reduced width and height
+        self._active_color = QColor(active_color)
+        self._bg_color = QColor(bg_color)
+        self._circle_color = QColor("white")
+        self._border_color = QColor("#cccccc")
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        
+        # Draw track
+        bg = self._active_color if self.isChecked() else self._bg_color
+        p.setBrush(QBrush(bg))
+        p.setPen(QPen(self._border_color, 1))
+        p.drawRoundedRect(1, 1, self.width()-2, self.height()-2, (self.height()-2)/2, (self.height()-2)/2)
+        
+        # Draw thumb
+        p.setBrush(QBrush(self._circle_color))
+        p.setPen(QPen(self._border_color, 0.5))
+        r = self.height() - 6
+        x = self.width() - r - 3 if self.isChecked() else 3
+        p.drawEllipse(x, 3, r, r)
+        
+        # Draw text (Optional, centered in remaining space)
+        p.setPen(QPen(QColor("#ffffff") if self.isChecked() else QColor("#666666")))
+        font = self.font()
+        font.setBold(True)
+        font.setPointSize(6)
+        p.setFont(font)
+        text = "ON" if self.isChecked() else "OFF"
+        
+        if self.isChecked():
+            p.drawText(QRect(4, 0, 28, self.height()), Qt.AlignCenter, text)
+        else:
+            p.drawText(QRect(self.width()-32, 0, 28, self.height()), Qt.AlignCenter, text)
+
+class ActionWidget(QWidget):
+    PRESET_POSITIONS = {
+        'WholeBody': {
+            'Home': [0.0] * 20,
+            'Standby': [0.6, -1.2, 0.6, 0.0, 0.0, 0.0, 0.0,
+                        -1.4, 0.0, -0.6, 0.0, -0.5, -0.5,
+                        0.0, 1.4, 0.0, 0.6, 0.0, 0.5, 0.5],
+        },
+        'Left': {
+            'Home': [0.0] * 7,
+            'Standby': [0.0, -1.4, 0.0, -0.6, 0.0, -0.5, -0.5],
+        },
+        'Right': {
+            'Home': [0.0] * 7,
+            'Standby': [0.0, 1.4, 0.0, 0.6, 0.0, 0.5, 0.5],
+        },
+    }
+
+    def __init__(self, ds):
+        super().__init__()
+        self.ds = ds
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        group = QGroupBox("Quick Actions")
+        group_layout = QVBoxLayout(group)
+        group_layout.setContentsMargins(10, 8, 10, 8)
+        group_layout.setSpacing(6)
+
+        grid = QGridLayout()
+        grid.setSpacing(4)
+        grid.setHorizontalSpacing(6)
+
+        # Header
+        for col, text in enumerate(["", "Home", "Standby"]):
+            lbl = QLabel(f"<b>{text}</b>")
+            lbl.setAlignment(Qt.AlignCenter)
+            grid.addWidget(lbl, 0, col)
+
+        # Preset buttons
+        row_labels = [("WholeBody", "Whole Body"), ("Left", "Left Arm"), ("Right", "Right Arm")]
+        for row, (key, label) in enumerate(row_labels, start=1):
+            grid.addWidget(QLabel(f"<b>{label}</b>"), row, 0)
+            for col, preset in enumerate(["Home", "Standby"], start=1):
+                btn = QPushButton(preset)
+                btn.setFixedHeight(28)
+                btn.clicked.connect(lambda checked, k=key, p=preset: self._send_preset(k, p))
+                grid.addWidget(btn, row, col)
+
+        group_layout.addLayout(grid)
+
+        # Stop button
+        self.stop_btn = QPushButton("Stop Motion")
+        self.stop_btn.setFixedHeight(32)
+        self.stop_btn.setStyleSheet(
+            "QPushButton { background-color: #ffcdd2; font-weight: bold; }"
+            "QPushButton:hover { background-color: #ef9a9a; }"
+        )
+        self.stop_btn.clicked.connect(self._stop_motion)
+        group_layout.addWidget(self.stop_btn)
+
+        layout.addWidget(group)
+
+    def _send_preset(self, group_key, preset_name):
+        group_map = {'WholeBody': 'WholeBody', 'Left': 'Primary', 'Right': 'Secondary'}
+        positions = self.PRESET_POSITIONS[group_key][preset_name]
+        self.ds.send_move_action(group_map[group_key], 'MoveJoint', positions)
+
+    def _stop_motion(self):
+        self.ds.send_move_action('Arm', 'StopMove', [])
+
 class ControlWidget(QWidget):
     def __init__(self, ds):
         super().__init__()
@@ -598,27 +721,92 @@ class ControlWidget(QWidget):
         
         self.scroll.setWidget(self.container)
         main_layout.addWidget(self.scroll)
-        
-        btn_layout = QHBoxLayout()
+
+        # Advanced Controls (Ruckig, Filter, ZVD, Drag)
+        adv_grid = QGridLayout()
+        adv_grid.setSpacing(5)
+        adv_grid.setContentsMargins(5, 5, 5, 5)
+
+        def create_toggle(prop, default_on=True):
+            btn = SwitchButton()
+            btn.setChecked(default_on)
+            btn.clicked.connect(lambda checked: self.ds.set_property(prop, "1" if checked else "0"))
+            return btn
+
+        # Row 0: Ruckig and Filter
+        adv_grid.addWidget(QLabel("Ruckig (Interpolation):"), 0, 0)
+        self.ruckig_btn = create_toggle("EnableStreamingRuckig", True)
+        adv_grid.addWidget(self.ruckig_btn, 0, 1)
+
+        adv_grid.addWidget(QLabel("Butterworth Filter:"), 0, 2)
+        self.filter_btn = create_toggle("EnableButterworthFilter", True)
+        adv_grid.addWidget(self.filter_btn, 0, 3)
+
+        # Row 1: ZVD and Drag Mode
+        adv_grid.addWidget(QLabel("ZVD (Input Shaper):"), 1, 0)
+        self.zvd_btn = create_toggle("EnableInputShaper", True)
+        adv_grid.addWidget(self.zvd_btn, 1, 1)
+
+        adv_grid.addWidget(QLabel("Drag Mode:"), 1, 2)
+        self.drag_btn = create_toggle("EnableDrag", False)
+        adv_grid.addWidget(self.drag_btn, 1, 3)
+
+        main_layout.addLayout(adv_grid)
+
+        # Preset Positions (Home / Standby) - inline, no header
+        preset_grid = QGridLayout()
+        preset_grid.setSpacing(4)
+        preset_grid.setContentsMargins(5, 2, 5, 2)
+
+        preset_positions = {
+            'WholeBody': {
+                'Home': [0.0] * 20,
+                'Standby': [0.6, -1.2, 0.6, 0.0, 0.0, 0.0, 0.0,
+                            -1.4, 0.0, -0.6, 0.0, -0.5, -0.5,
+                            0.0, 1.4, 0.0, 0.6, 0.0, 0.5, 0.5],
+            },
+            'Left': {
+                'Home': [0.0] * 7,
+                'Standby': [0.0, -1.4, 0.0, -0.6, 0.0, -0.5, -0.5],
+            },
+            'Right': {
+                'Home': [0.0] * 7,
+                'Standby': [0.0, 1.4, 0.0, 0.6, 0.0, 0.5, 0.5],
+            },
+        }
+        group_map = {'WholeBody': 'WholeBody', 'Left': 'Primary', 'Right': 'Secondary'}
+        row_labels = [("WholeBody", "Whole Body"), ("Left", "Left Arm"), ("Right", "Right Arm")]
+
+        for row, (key, label) in enumerate(row_labels):
+            preset_grid.addWidget(QLabel(label), row, 0)
+            for col, preset in enumerate(["Home", "Standby"], start=1):
+                btn = QPushButton(preset)
+                btn.setFixedHeight(28)
+                positions = preset_positions[key][preset]
+                mg = group_map[key]
+                btn.clicked.connect(lambda checked, mg=mg, pos=positions: self.ds.send_move_action(mg, 'MoveJoint', pos))
+                preset_grid.addWidget(btn, row, col)
+
+        main_layout.addLayout(preset_grid)
+
+        # Bottom row: Clear Error (left) + Stop Motion (right)
+        bottom_layout = QHBoxLayout()
         self.clear_btn = QPushButton("Clear Error")
+        self.clear_btn.setFixedHeight(32)
         self.clear_btn.setStyleSheet("")
         self.clear_btn.clicked.connect(self.ds.clear_errors)
-        btn_layout.addWidget(self.clear_btn)
-        
-        main_layout.addLayout(btn_layout)
-        
-        # Mode Controls
-        mode_layout = QHBoxLayout()
-        self.drag_btn = QPushButton("Enable Drag")
-        self.drag_btn.setCheckable(True)
-        self.drag_btn.setStyleSheet("""
-            QPushButton { background-color: #f5f5f5; }
-            QPushButton:checked { background-color: #ffe082; color: #795548; }
-        """)
-        self.drag_btn.clicked.connect(self.toggle_drag)
-        mode_layout.addWidget(self.drag_btn)
-        
-        main_layout.addLayout(mode_layout)
+        bottom_layout.addWidget(self.clear_btn)
+
+        self.stop_btn = QPushButton("Stop Motion")
+        self.stop_btn.setFixedHeight(32)
+        self.stop_btn.setStyleSheet(
+            "QPushButton { background-color: #ffcdd2; font-weight: bold; }"
+            "QPushButton:hover { background-color: #ef9a9a; }"
+        )
+        self.stop_btn.clicked.connect(lambda: self.ds.send_move_action('Arm', 'StopMove', []))
+        bottom_layout.addWidget(self.stop_btn)
+
+        main_layout.addLayout(bottom_layout)
         
         self.ds.updated.connect(self.update_ui)
         self.cmd_positions = {} # name -> value
@@ -697,11 +885,6 @@ class ControlWidget(QWidget):
         
         self.cmd_positions[name] += delta
         self.ds.publish_control({name: self.cmd_positions[name]})
-
-    def toggle_drag(self, checked):
-        val = "1" if checked else "0"
-        self.drag_btn.setText("Drag Mode: ON" if checked else "Enable Drag")
-        self.ds.set_property("EnableDrag", val)
 
 class RecordWidget(QWidget):
     def __init__(self, ds):
@@ -1102,7 +1285,7 @@ class MainWindow(QMainWindow):
         
         self.ctrl_box = ControlWidget(self.ds)
         self.rec_box = RecordWidget(self.ds)
-        
+
         left_layout.addWidget(self.rec_box)
         left_layout.addWidget(self.ctrl_box)
         left_layout.setStretch(0, 0) # Record fixed at top

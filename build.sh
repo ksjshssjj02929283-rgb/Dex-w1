@@ -23,11 +23,10 @@ fi
 
 if [ -f "${WORKSPACE_DIR}/.gitmodules" ]; then
     git -C "${WORKSPACE_DIR}" submodule sync --recursive
-    git -C "${WORKSPACE_DIR}" submodule update --init --recursive
+    git -C "${WORKSPACE_DIR}" submodule update --init --recursive --remote
 fi
 cd "${WORKSPACE_DIR}/.."
 
-# 已在 install/ 就跳过——复用独立 ~/zyn/dexe_interfaces 的产物,避免与 build/ 缓存里
 # 记录的源码路径冲突;未装则正常编 submodule 版本(此时无旧缓存,不会冲突)。
 SKIP_INTERFACES=""
 for d in "$WORKSPACE_DIR/dexe_interfaces"/*/; do

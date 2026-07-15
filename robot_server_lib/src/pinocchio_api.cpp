@@ -2,6 +2,37 @@
 
 namespace pinocchio {
 
+namespace {
+// 在模型帧列表中查找 arm_base 帧 (名称以 "_arm_base" 结尾)。
+// 装配 URDF 在 root link 与第一个旋转关节之间插入带旋转的固定连接器关节,
+// 导致 root 坐标系与 arm_base 坐标系不一致。找到该帧后可将 FK / Jacobian
+// 结果从 root 系变换到 arm_base 系, 与旧版独立 arm URDF 保持一致。
+// 若模型中不存在此类帧 (如旧版 URDF), 返回 -1, 函数行为不变。
+int FindArmBaseFrameId(const Model& model) {
+    const std::string suffix = "arm_base";
+    for (FrameIndex i = 0; i < model.nframes; ++i) {
+        const auto& name = model.frames[i].name;
+        if (name.size() >= suffix.size() && name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+// 将 6×nv 雅可比矩阵的参考坐标系从 root 旋转到 arm_base:
+// J_armbase = blkdiag(R^T, R^T) * J_root, 其中 R = arm_base 在 root 系中的旋转。
+// 仅对非 LOCAL 参考系有效: LOCAL 帧的雅可比在 EE 本体系下表达, 不受 base 旋转影响。
+void RotateJacobianToArmBase(Eigen::MatrixXd& J, const Model& model, const Data& data) {
+    int arm_base_id = FindArmBaseFrameId(model);
+    if (arm_base_id < 0) return;
+    const Eigen::Matrix3d Rt = data.oMf[arm_base_id].rotation().transpose();
+    Eigen::MatrixXd tmp = Rt * J.topRows(3);
+    J.topRows(3) = tmp;
+    tmp = Rt * J.bottomRows(3);
+    J.bottomRows(3) = tmp;
+}
+}  // namespace
+
 void PrintModelInfo(const Model& model) {
     std::cout << "==== Model Info ====" << std::endl;
     std::cout << "Number of joints: " << model.nv << std::endl;
@@ -16,7 +47,13 @@ Eigen::Matrix4d GetFK(const Model& model, const Eigen::VectorXd& q) {
     int frame_id = model.nframes - 1;
     forwardKinematics(model, data, q);
     updateFramePlacements(model, data);
-    pose = data.oMf[frame_id];
+
+    int arm_base_id = FindArmBaseFrameId(model);
+    if (arm_base_id >= 0) {
+        pose = data.oMf[arm_base_id].inverse() * data.oMf[frame_id];
+    } else {
+        pose = data.oMf[frame_id];
+    }
     return pose.toHomogeneousMatrix();
 }
 
@@ -36,6 +73,10 @@ Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q, Re
     computeJointJacobians(model, data, q);
 
     computeFrameJacobian(model, data, q, ee_frame_id, frame, J);
+
+    if (frame != LOCAL) {
+        RotateJacobianToArmBase(J, model, data);
+    }
     return J;
 }
 
@@ -60,6 +101,9 @@ Eigen::MatrixXd GetJacobianMatrixDot(const Model& model,
     computeJointJacobiansTimeVariation(model, data, q, dq);
     getFrameJacobianTimeVariation(model, data, ee_frame_id, frame, J_dot);
 
+    if (frame != LOCAL) {
+        RotateJacobianToArmBase(J_dot, model, data);
+    }
     return J_dot;
 }
 

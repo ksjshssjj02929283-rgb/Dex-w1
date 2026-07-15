@@ -100,7 +100,7 @@ ComputeCommandStatus EEVelocityStreamingPlanner::ComputeCommand(const JointMeasu
             } else if (reference_frame_ == ReferenceFrame::WorldBase) {
                 // Primary arm transformation
                 auto primary_armbase_pose_in_worldbase = pinocchio::GetFkByFrameId(
-                    *this->robot_model_.primary_arm_model_ptr, desired_q_primary, this->primary_arm_base_id_);
+                    *this->robot_model_.model_ptr, measurement.q_desired_pre, this->primary_arm_base_id_);
                 input_velocity_primary.head<3>() =
                     primary_armbase_pose_in_worldbase.rotation().transpose() * input_velocity_primary.head<3>();
                 input_velocity_primary.tail<3>() =
@@ -108,7 +108,7 @@ ComputeCommandStatus EEVelocityStreamingPlanner::ComputeCommand(const JointMeasu
 
                 // Secondary arm transformation
                 auto secondary_armbase_pose_in_worldbase = pinocchio::GetFkByFrameId(
-                    *this->robot_model_.secondary_arm_model_ptr, desired_q_secondary, this->secondary_arm_base_id_);
+                    *this->robot_model_.model_ptr, measurement.q_desired_pre, this->secondary_arm_base_id_);
                 input_velocity_secondary.head<3>() =
                     secondary_armbase_pose_in_worldbase.rotation().transpose() * input_velocity_secondary.head<3>();
                 input_velocity_secondary.tail<3>() =

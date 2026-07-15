@@ -236,6 +236,62 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         params.ee_secondary_name = config["ee_secondary_name"].as<std::string>();
     }
 
+    // 解析末端工具重力补偿参数 (tool_dynamics 块, 按手类型索引 + 独立开关)
+    // left_hand_type / right_hand_type 已在上方解析, 在此作为 tool_dynamics 下的工具名 key
+    {
+        const auto tool_dyn_node = config["tool_dynamics"];
+        auto parse_tool = [&tool_dyn_node](const std::string& hand_type, bool enabled,
+                                           dynamics::tool_compensation::ToolGravityCompensationConfig& tool_cfg,
+                                           const char* arm_name) {
+            if (!tool_dyn_node) {
+                return;
+            }
+            if (!enabled) {
+                std::cout << "[INFO] Tool gravity compensation disabled by switch (" << arm_name << ")\n";
+                LOG_INFO << "Tool gravity compensation disabled by switch (" << arm_name << ")";
+                return;
+            }
+            if (hand_type.empty() || hand_type == "null") {
+                std::cout << "[INFO] Tool gravity compensation disabled (" << arm_name << "): no hand_type specified\n";
+                LOG_INFO << "Tool gravity compensation disabled (" << arm_name << "): no hand_type specified";
+                return;
+            }
+            const auto tool_node = tool_dyn_node[hand_type];
+            if (!tool_node || !tool_node["com_m"] || !tool_node["com_m"].IsSequence() ||
+                tool_node["com_m"].size() != 3 || !tool_node["mass_kg"]) {
+                std::cout << "[WARN] Tool gravity compensation: tool_dynamics[" << hand_type
+                          << "] missing or invalid (need com_m[3] and mass_kg), disabled (" << arm_name << ")\n";
+                LOG_WARN << "Tool gravity compensation: tool_dynamics[" << hand_type
+                         << "] missing or invalid (need com_m[3] and mass_kg), disabled (" << arm_name << ")";
+                return;
+            }
+            Vector3d com_m = Vector3d::Zero();
+            for (int i = 0; i < 3; ++i) {
+                com_m[i] = tool_node["com_m"][i].as<double>();
+            }
+            tool_cfg.mass_kg = tool_node["mass_kg"].as<double>();
+            tool_cfg.com_m = com_m;  // 直接使用米为单位的值
+            if (std::isfinite(tool_cfg.mass_kg) && tool_cfg.mass_kg > FloatZeroTol && tool_cfg.com_m.allFinite()) {
+                tool_cfg.gravity_enabled = true;
+                std::cout << "[INFO] Tool gravity compensation enabled (" << arm_name << ", type=" << hand_type
+                          << "): mass_kg=" << tool_cfg.mass_kg << ", com_m=" << tool_cfg.com_m.transpose() << "\n";
+                LOG_INFO << "Tool gravity compensation enabled (" << arm_name << ", type=" << hand_type
+                         << "): mass_kg=" << tool_cfg.mass_kg << ", com_m=" << tool_cfg.com_m.transpose();
+            } else {
+                std::cout << "[WARN] Tool gravity compensation (" << arm_name << ", type=" << hand_type
+                          << ") mass_kg/com_m invalid, disabled\n";
+                LOG_WARN << "Tool gravity compensation (" << arm_name << ", type=" << hand_type
+                         << ") mass_kg/com_m invalid, disabled";
+            }
+        };
+        const bool primary_enabled =
+            tool_dyn_node && tool_dyn_node["tool_primary_enabled"] && tool_dyn_node["tool_primary_enabled"].as<bool>();
+        const bool secondary_enabled = tool_dyn_node && tool_dyn_node["tool_secondary_enabled"] &&
+                                       tool_dyn_node["tool_secondary_enabled"].as<bool>();
+        parse_tool(params.left_hand_type, primary_enabled, params.tool_dynamic_primary, "primary");
+        parse_tool(params.right_hand_type, secondary_enabled, params.tool_dynamic_secondary, "secondary");
+    }
+
     std::filesystem::path robot_urdf_path;
     std::filesystem::path primary_arm_urdf_path;
     std::filesystem::path secondary_arm_urdf_path;
