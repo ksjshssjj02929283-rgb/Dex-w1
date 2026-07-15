@@ -21,22 +21,26 @@ robot_server_lib::AnkleParams MakeAnkleParams(bool is_left) {
         p.l_bar1 = 60.0;
         p.l_rod1 = 268.354;
         p.alpha_1_rad = 0.1745;
+        p.is_left_motor1 = true;
         p.r_a2 = {-46.0, 0.0, 177.94};
         p.r_c2 = {-46.0, 59.0, 0.0};
         p.l_bar2 = 60.0;
         p.l_rod2 = 188.355;
         p.alpha_2_rad = -0.1745;
+        p.is_left_motor2 = false;
     } else {
         p.r_a1 = {-46.0, 0.0, 257.94};
         p.r_c1 = {-46.0, 59.0, 0.0};
         p.l_bar1 = 60.0;
         p.l_rod1 = 268.354;
         p.alpha_1_rad = -0.1745;
+        p.is_left_motor1 = false;
         p.r_a2 = {-46.0, 0.0, 177.94};
         p.r_c2 = {-46.0, -59.0, 0.0};
         p.l_bar2 = 60.0;
         p.l_rod2 = 188.355;
         p.alpha_2_rad = 0.1745;
+        p.is_left_motor2 = true;
     }
     return p;
 }

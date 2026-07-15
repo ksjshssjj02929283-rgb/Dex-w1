@@ -77,12 +77,14 @@ AnkleParams ParseAnkleParams(const YAML::Node& node) {
     params.r_roll_center = ParseVec3(node["r_roll_center"]);
     params.r_pitch_center = ParseVec3(node["r_pitch_center"]);
 
+    params.is_left_motor1 = node["is_left_motor1"].as<bool>(true);
     params.r_a1 = ParseVec3(node["r_a1"]);
     params.r_c1 = ParseVec3(node["r_c1"]);
     params.l_bar1 = node["l_bar1"].as<double>(0.0);
     params.l_rod1 = node["l_rod1"].as<double>(0.0);
     params.alpha_1_rad = node["alpha_1_rad"].as<double>(0.0);
 
+    params.is_left_motor2 = node["is_left_motor2"].as<bool>(false);
     params.r_a2 = ParseVec3(node["r_a2"]);
     params.r_c2 = ParseVec3(node["r_c2"]);
     params.l_bar2 = node["l_bar2"].as<double>(0.0);

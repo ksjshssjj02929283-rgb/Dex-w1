@@ -174,6 +174,7 @@ void RobotServer::JointControlThreadFunc() {
         // 如果指令超时则腿部指令置零
         if (last_command_timestamp_.sec == 0 && last_command_timestamp_.nanosec == 0 ||
             diff.nanoseconds() > static_cast<int64_t>(command_timeout_ms_) * 1000000LL) {
+            LOG_WARN_THROTTLE(1000) << "Command timeout, setting leg joint commands to zero";
             for (int i = 0; i < ndof_legs_; i++) {
                 int idx = i + ndof_body_;
                 robot_control_.joint_control[idx].joint_position = robot_feedback_.joint_feedback[idx].joint_position;

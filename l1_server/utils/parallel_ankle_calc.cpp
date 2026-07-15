@@ -18,9 +18,9 @@ Eigen::Matrix3d Ry(double angle_rad) {
 
 PMAnkle::PMAnkle(bool is_left, const AnkleParams& params) : is_left_(is_left) {
     // 执行器1
-    params_1_ = AnkleActuatorParams(true, params.r_a1, params.r_c1, params.l_bar1, params.l_rod1, params.alpha_1_rad);
+    params_1_ = AnkleActuatorParams(true, params.r_a1, params.r_c1, params.l_bar1, params.l_rod1, params.alpha_1_rad, params.is_left_motor1);
     // 执行器2
-    params_2_ = AnkleActuatorParams(false, params.r_a2, params.r_c2, params.l_bar2, params.l_rod2, params.alpha_2_rad);
+    params_2_ = AnkleActuatorParams(false, params.r_a2, params.r_c2, params.l_bar2, params.l_rod2, params.alpha_2_rad, params.is_left_motor2);
 
     // 旋转中心
     roll_center_ = params.r_roll_center;
@@ -79,8 +79,8 @@ std::pair<double, bool> PMAnkle::CalculateSingleThetaIInternal(double q_pitch_ra
     arg_asin = std::max(-1.0, std::min(1.0, arg_asin));
 
     double theta_i_rad = std::asin(arg_asin);
-    // 根据实际电机转向异或取反theta_i_rad
-    if (is_left_ != params.is_first_actuator) {
+    // 根据电机配置的物理位置（左/右电机）转换方向：
+    if (!params.is_left_motor) {
         theta_i_rad = -theta_i_rad;
     }
     theta_i_rad += params.alpha_offset_rad;

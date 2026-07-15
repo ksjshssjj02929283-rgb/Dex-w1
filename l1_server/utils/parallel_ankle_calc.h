@@ -19,25 +19,28 @@ struct AnkleActuatorParams {
     double l_bar;
     double l_rod;
     double alpha_offset_rad;
+    bool is_left_motor;
 
     double l_bar_sq;
     double l_rod_sq;
 
     AnkleActuatorParams()
-        : is_first_actuator(true), l_bar(0), l_rod(0), alpha_offset_rad(0), l_bar_sq(0), l_rod_sq(0) {}
+        : is_first_actuator(true), l_bar(0), l_rod(0), alpha_offset_rad(0), is_left_motor(true), l_bar_sq(0), l_rod_sq(0) {}
 
     AnkleActuatorParams(bool is_first_actuator,
                         const Eigen::Vector3d& r_ai_0,
                         const Eigen::Vector3d& r_ci_0_initial,
                         double l_bar,
                         double l_rod,
-                        double alpha_offset_rad)
+                        double alpha_offset_rad,
+                        bool is_left_motor)
         : is_first_actuator(is_first_actuator),
           r_ai_0(r_ai_0),
           r_ci_0_initial(r_ci_0_initial),
           l_bar(l_bar),
           l_rod(l_rod),
-          alpha_offset_rad(alpha_offset_rad) {
+          alpha_offset_rad(alpha_offset_rad),
+          is_left_motor(is_left_motor) {
         if (l_bar <= 1e-9) {
             throw std::runtime_error("l_bar必须大于零");
         }

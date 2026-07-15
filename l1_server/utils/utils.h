@@ -154,12 +154,14 @@ struct AnkleParams {
     Eigen::Vector3d r_roll_center{0.0, 0.0, 0.0};   // roll 旋转中心（基坐标系）
     Eigen::Vector3d r_pitch_center{0.0, 0.0, 0.0};  // pitch 旋转中心（基坐标系）
 
+    bool is_left_motor1 = true;           // 执行器1 电机物理位置是否为左电机
     Eigen::Vector3d r_a1{0.0, 0.0, 0.0};  // 执行器1 A点坐标
     Eigen::Vector3d r_c1{0.0, 0.0, 0.0};  // 执行器1 C点初始坐标
     double l_bar1 = 0.0;                  // 执行器1 法兰杆长度
     double l_rod1 = 0.0;                  // 执行器1 连杆长度
     double alpha_1_rad = 0.0;             // 执行器1 零位偏移
 
+    bool is_left_motor2 = false;          // 执行器2 电机物理位置是否为左电机
     Eigen::Vector3d r_a2{0.0, 0.0, 0.0};  // 执行器2 A点坐标
     Eigen::Vector3d r_c2{0.0, 0.0, 0.0};  // 执行器2 C点初始坐标
     double l_bar2 = 0.0;                  // 执行器2 法兰杆长度
