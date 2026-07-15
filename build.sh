@@ -31,25 +31,9 @@ if [ -f "${WORKSPACE_DIR}/.gitmodules" ]; then
 fi
 cd "${WORKSPACE_DIR}/.."
 
-# === 2.5 检测 submodule 是否变更，若变更则清除旧接口产物（避免 install/ 中残留旧分支编译结果）===
-SUBMODULE_HASH=$(git -C "${WORKSPACE_DIR}/dexe_interfaces" rev-parse HEAD 2>/dev/null || echo "")
-HASH_FILE="${WORKSPACE_DIR}/.dexe_interfaces_hash"
-if [ -n "$SUBMODULE_HASH" ]; then
-    if [ -f "$HASH_FILE" ] && [ "$(cat "$HASH_FILE")" = "$SUBMODULE_HASH" ]; then
-        echo "    - dexe_interfaces 未变化 ($SUBMODULE_HASH)，复用 install/ 中的接口包"
-    else
-        echo "    - dexe_interfaces 已更新 ($SUBMODULE_HASH)，清除旧接口产物以强制重编译"
-        for d in "$WORKSPACE_DIR/dexe_interfaces"/*/; do
-            [ -d "$d" ] || continue
-            pkg=$(basename "$d")
-            rm -rf "install/$pkg" "build/$pkg"
-        done
-        echo "$SUBMODULE_HASH" > "$HASH_FILE"
-    fi
-fi
-
-# === 3. 复用已安装的 interfaces 包，避免与 build/ 缓存里的源码路径冲突 ===
-# 已在 install/ 就跳过——复用独立 ~/zyn/dexe_interfaces 的产物；未装则正常编 submodule 版本
+# === 3. 复用已存在的已构建产物：install/ 中已有的包跳过，避免重复编译 ===
+# colcon 通过 --packages-up-to l1_server 确定编译范围（l1_server 及其全部依赖），
+# 再用 --packages-skip 排除其中已在 install/ 中存在的包，二者取交集，安全。
 SKIP_INTERFACES=""
 for d in "$WORKSPACE_DIR/dexe_interfaces"/*/; do
   [ -d "$d" ] || continue
@@ -57,8 +41,6 @@ for d in "$WORKSPACE_DIR/dexe_interfaces"/*/; do
   if [ -d "install/$pkg" ]; then
     SKIP_INTERFACES="$SKIP_INTERFACES $pkg"
     echo "    - 跳过 $pkg (已在 install/ 中存在)"
-  else
-    echo "    - 编译 $pkg (install/ 中不存在,从 submodule 编译)"
   fi
 done
 SKIP_ARGS=""

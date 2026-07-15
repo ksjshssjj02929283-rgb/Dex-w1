@@ -22,9 +22,24 @@ static void CheckConfig(const std::filesystem::path& default_cfg_path, const std
         return;
     }
 
-    // 用户配置存在，检查缺失字段并补充
+    // 用户配置存在，检查配置版本；默认版本领先则整体覆盖用户配置
     YAML::Node default_config = YAML::LoadFile(default_cfg_path.string());
     YAML::Node user_config = YAML::LoadFile(user_cfg_path.string());
+
+    std::string default_version =
+        default_config["config_version"] ? default_config["config_version"].as<std::string>() : "";
+    std::string user_version =
+        user_config["config_version"] ? user_config["config_version"].as<std::string>() : "";
+
+    // 版本格式 "vXX"，字符串比较即可判断先后；用户版本缺失视为过旧需覆盖
+    if (default_version > user_version) {
+        std::cout << "[INFO] Default config version (" << default_version
+                  << ") is newer than user config version ("
+                  << (user_version.empty() ? "none" : user_version) << "). Overwriting user config." << std::endl;
+        std::filesystem::copy_file(default_cfg_path, user_cfg_path, std::filesystem::copy_options::overwrite_existing);
+        user_config = YAML::LoadFile(user_cfg_path.string());
+    }
+
     bool modified = false;
 
     for (const auto& default_kv : default_config) {
