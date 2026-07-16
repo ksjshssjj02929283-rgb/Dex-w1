@@ -9,11 +9,23 @@
 - 默认（standalone=False）：与旧版一致，由外部 Executor（如 W1Manager）spin；
   独立使用时读接口内部的 spin_once 也能推进回调。
 - standalone=True：自建后台执行器线程，用完调 close()。
+
+延迟诊断：四个"触发类"公开方法（set_chassis_nav2_position / set_chassis_
+road_navigation / set_chassis_control_position / set_chassis_auto_charging）
+入口处打印链路起点"触发"检查点（挂钟时间），这是"上层 application 调用
+本客户端"与"客户端实际收到调用"之间可比较的最早时间点——与上层自己记录
+的调用时刻相减，即知道 app→client 这一段延迟。触发时刻会传给对应
+feature 的 send()/start()，串成同一个 task_id 上的检查点链：
+**发送链路**（触发→server就绪→已发出→accepted，见 chassis_client 本身
+与 common/action_task_client.py）+ **反馈链路**（进度→result，同样在
+action_task_client.py）。全链路统一用 `common/timing.format_checkpoint()`
+生成日志行，格式完全一致（阶段名 + 挂钟时间 + 相对上一检查点增量 +
+相对触发的累计耗时）。
 """
 
 from rclpy.node import Node
 
-from .common import runtime
+from .common import runtime, timing
 from .features import (AutoChargingFeature, ChassisStateFeature,
                        Nav2NavigationFeature, Nav2ParamsFeature,
                        NavPointsFeature, PreciseControlFeature,
@@ -66,6 +78,15 @@ class ChassisClient(Node):
     def spin(self):
         runtime.spin(self)
 
+    def _log_trigger(self, label: str) -> float:
+        """延迟诊断【链路起点】：打印客户端方法被调用的挂钟时刻（阶段=触发）。
+        返回值需传给对应 feature 的 send()/start()（trigger_ts 参数），
+        作为该任务后续所有检查点的"累计"计算基准；格式与下游检查点完全
+        一致，统一由 common/timing.format_checkpoint() 生成。"""
+        ts = timing.now()
+        self.get_logger().info(timing.format_checkpoint(label, "触发", ts))
+        return ts
+
     # ------------------------------------------------ 连接 / 底盘状态
     def is_connected(self, timeout_sec: float = 0.1) -> bool:
         import time as _time
@@ -95,7 +116,8 @@ class ChassisClient(Node):
     # ------------------------------------------------ Nav2 导航
     def set_chassis_nav2_position(self, position) -> bool:
         """发送导航目标（非阻塞）。position=[x, y, yaw]，yaw 单位：度，frame=map。"""
-        return self._nav.send(position)
+        trigger_ts = self._log_trigger("Nav2 导航")
+        return self._nav.send(position, trigger_ts=trigger_ts)
 
     def get_nav_state(self) -> str:
         """IDLE / NAVIGATING / SUCCEEDED / FAILED / CANCELLED（取值与旧版一致）。"""
@@ -115,9 +137,11 @@ class ChassisClient(Node):
                                     behavior_tree: str = "") -> bool:
         """发送路网/多路点导航（非阻塞）。waypoints 为 [x, y, yaw_rad, ...] 列表，
         yaw 单位：弧度（与 Nav2 NavigateThroughPoses 原生接口一致）。"""
+        trigger_ts = self._log_trigger("路网导航")
         return self._road_nav.send(waypoints, frame_id=frame_id,
                                    timeout_sec=timeout_sec,
-                                   behavior_tree=behavior_tree)
+                                   behavior_tree=behavior_tree,
+                                   trigger_ts=trigger_ts)
 
     def get_road_navigation_status(self) -> str:
         self.spin_once()
@@ -140,7 +164,8 @@ class ChassisClient(Node):
     # ------------------------------------------------ 底盘精控
     def set_chassis_control_position(self, position) -> bool:
         """发送精控目标（action）。position=[x, 0, yaw]，yaw 单位：度，x/yaw 互斥，frame=base_link。"""
-        return self._control.send(position)
+        trigger_ts = self._log_trigger("底盘精控")
+        return self._control.send(position, trigger_ts=trigger_ts)
 
     def get_control_status(self, consume: bool = True) -> str:
         """IDLE / CONTROL / SUCCEEDED / CANCELLING / CANCELLED / FAILED（action 驱动）。"""
@@ -159,7 +184,9 @@ class ChassisClient(Node):
     # ------------------------------------------------ 自动回充
     def set_chassis_auto_charging(self, force: bool = True,
                                   timeout_sec: float = 10.0) -> bool:
-        return self._charging.start(force=force, timeout_sec=timeout_sec)
+        trigger_ts = self._log_trigger("自动回充")
+        return self._charging.start(force=force, timeout_sec=timeout_sec,
+                                    trigger_ts=trigger_ts)
 
     def get_auto_charging_status(self) -> str:
         self.spin_once()

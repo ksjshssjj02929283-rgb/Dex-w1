@@ -17,10 +17,12 @@ class AutoChargingFeature:
             label="自动回充", wait_server_timeout=10.0,
             feedback_formatter=_feedback_summary)
 
-    def start(self, force: bool = True, timeout_sec: float = 10.0) -> bool:
+    def start(self, force: bool = True, timeout_sec: float = 10.0, *,
+             trigger_ts: float = None) -> bool:
         goal = AutoCharging.Goal()
         goal.force = force
-        return self._task.send(goal, wait_server_timeout=timeout_sec)
+        return self._task.send(goal, wait_server_timeout=timeout_sec,
+                               trigger_ts=trigger_ts)
 
     def status(self) -> str:
         state = self._task.state

@@ -82,6 +82,33 @@ navigation_client/
 
 单点导航/精控的 yaw 用度（贴近业务层直觉），路网导航/导航点/参数服务的 yaw 用弧度（直接透传 Nav2 原生语义）。**这是历史遗留的单位不一致，本次未统一**（改动会牵涉 `W1Manager` 调用方约定，属于 red line 之外的改动，见项目方案文档）。
 
+## 延迟诊断打点（统一检查点链）
+
+四个"触发类"公开方法（`set_chassis_nav2_position` / `set_chassis_road_navigation` /
+`set_chassis_control_position` / `set_chassis_auto_charging`）会在同一个
+task_id 上打印一串**检查点**，覆盖**发送链路**（触发→server就绪→已发出→
+accepted）和**反馈链路**（进度→result），全部由 `common/timing.format_checkpoint()`
+生成，**格式完全一致**：
+
+```
+[延迟诊断][<label>] task_id=<N> 阶段=<阶段名> wall=<HH:MM:SS.mmm>  Δ(<上一阶段>→<阶段名>)=<X.X>ms  累计(自触发)=<Y.Y>ms
+```
+
+| 检查点 | 所在链路 | 含义 |
+|-------|---------|------|
+| `触发` | 发送链路起点 | `chassis_client.py` 方法入口——客户端收到上层调用的时刻（**唯一**没有 `Δ`/`累计` 字段，因为它是基准）。与上层 application 自己记录的调用时刻相减 → app→client 延迟 |
+| `server就绪` | 发送链路 | `wait_for_server()` 返回后——`Δ` 反映 DDS graph 查询 + 触发到这里的客户端开销 |
+| `已发出` | 发送链路 | 真正调用 `send_goal_async` 前一刻——`Δ` 反映 `server就绪` 到这里的代码开销（正常应接近 0）|
+| `accepted` | 发送链路 | 收到 goal 被接受的响应——`Δ` = 网络 + server 处理耗时（原"accept 往返"）|
+| `进度` | 反馈链路 | 每条 feedback 到达（受 `feedback_log_interval` 节流打印，但**内部记账不节流**）——`Δ` 反映相邻两次 feedback（或 accepted→首次 feedback）间隔 |
+| `result` | 反馈链路 | goal 完成/取消/中止——`Δ(进度→result)` = **result 回传本身的通信延时**（不含执行耗时，这是"success 传回延时"的近似）；`累计(自触发)` = 端到端总耗时 |
+
+`wall`（挂钟时间 `time.time()`，非 ROS clock/monotonic）用于跨进程比较（与上层 application 自己的时间戳相减）；`Δ`/`累计` 用同一挂钟时间做差，同进程内做减法不受时钟源选择影响。发送链路和反馈链路共用同一套 `_checkpoint()`/`format_checkpoint()` 实现，不是两套格式——这也是为什么每一行日志的字段结构完全相同。
+
+### 已知注意事项：日志打印顺序可能与真实执行顺序不一致
+
+`MultiThreadedExecutor` 下，触发回调（用户调用 `set_chassis_control_position` 等）与 `send_goal_async` 的响应回调（`_on_goal_response`/`_on_feedback`）可能跑在不同线程上。曾在真机日志上观察到："已发出"检查点这行打印，**在日志文件里出现在**"accepted"检查点甚至"SENDING -> ACCEPTED"状态转移**之后**——这不是时间戳错误（每个检查点的 `ts` 都是在对应事件发生的那一刻捕获的，数值可信），而是打印该行日志的线程本身被调度延迟了（GIL 竞争 / 其他回调线程抢先执行）。**结论：诊断延迟时永远看 `wall`/`Δ`/`累计` 的数值，不要看日志文件里几行谁先谁后。**
+
 ## 状态字符串（对外兼容）
 
 `ActionTaskClient` 内部用 `TaskState` 枚举，但公开方法仍返回旧版字符串，保证 `W1Manager` 不用改：

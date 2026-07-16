@@ -36,7 +36,7 @@ class PreciseControlFeature:
             label="底盘精控", wait_server_timeout=1.0)
         self._last_feedback_status = "IDLE"
 
-    def send(self, position) -> bool:
+    def send(self, position, *, trigger_ts: float = None) -> bool:
         vals = parse_pose3(position)
         if vals is None:
             self._node.get_logger().error(
@@ -60,7 +60,7 @@ class PreciseControlFeature:
         goal.target_pose.pose.orientation.w = quat[3]
 
         self._last_feedback_status = "IDLE"
-        return self._task.send(goal)
+        return self._task.send(goal, trigger_ts=trigger_ts)
 
     def status(self, consume: bool = True) -> str:
         """IDLE/CONTROL/SUCCEEDED/CANCELLING/CANCELLED/FAILED/UNKNOWN。

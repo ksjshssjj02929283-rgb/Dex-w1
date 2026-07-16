@@ -41,7 +41,7 @@ class Nav2NavigationFeature:
             label="导航", wait_server_timeout=1.0,
             feedback_formatter=_feedback_summary)
 
-    def send(self, position) -> bool:
+    def send(self, position, *, trigger_ts: float = None) -> bool:
         vals = parse_pose3(position)
         if vals is None:
             self._node.get_logger().error(
@@ -60,7 +60,7 @@ class Nav2NavigationFeature:
         goal.pose.pose.orientation.z = quat[2]
         goal.pose.pose.orientation.w = quat[3]
 
-        sent = self._task.send(goal)
+        sent = self._task.send(goal, trigger_ts=trigger_ts)
         if sent:
             self._node.get_logger().info(
                 f"[导航目标] ({x:.3f}, {y:.3f}, {yaw_deg:.1f}°)，坐标系=map。")

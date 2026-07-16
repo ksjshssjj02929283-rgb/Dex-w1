@@ -8,9 +8,16 @@
 - pending-cancel：goal 尚未被接受时取消 → 登记标志立即返回，接受回调里
   自动补发取消（无阻塞、无轮询、不丢取消）；
 - 异常路径全部收敛为状态转移（FAILED_TO_SEND / LOST），不静默吞掉；
-- feedback 缓存 + 节流心跳日志。
+- feedback 缓存 + 节流心跳日志；
+- **统一格式的延迟诊断检查点链**：send() 之前由调用方（chassis_client.py）
+  打印链路起点"触发"，随后本类在同一 task_id 上依次打印 "server就绪" →
+  "已发出" → "accepted"（**发送链路**）、"进度"（节流）→ "result"（**反馈
+  链路**）。每个检查点都通过 `timing.format_checkpoint()` 生成，格式完全
+  一致：阶段名 + 挂钟时间 + 相对上一检查点的增量 + 相对"触发"的累计耗时——
+  发送链路和反馈链路共用同一套打印逻辑，不是两套不同格式。
 
-使用方（features 层）只需构造 goal 与状态取值映射，各自约 50-80 行。
+使用方（features 层）只需构造 goal 与状态取值映射，各自约 50-80 行；
+把上层传入的 `trigger_ts` 透传给 `send()` 即可接入统一检查点链。
 """
 
 import threading
@@ -20,6 +27,7 @@ from action_msgs.msg import GoalStatus
 from rclpy.action import ActionClient
 
 from .states import TaskState, ACTIVE_STATES
+from . import timing
 
 
 class ActionTaskClient:
@@ -50,6 +58,11 @@ class ActionTaskClient:
         self._last_fb_log = None
         self._watchdog = None
 
+        # 延迟诊断检查点链（发送链路 + 反馈链路共用）
+        self._trigger_ts = None    # 链路起点：上层调用客户端方法的挂钟时刻
+        self._last_cp_ts = None    # 最近一个检查点的挂钟时刻
+        self._last_cp_stage = None  # 最近一个检查点的阶段名
+
     # ------------------------------------------------ 查询接口
     @property
     def state(self) -> TaskState:
@@ -69,13 +82,51 @@ class ActionTaskClient:
         with self._lock:
             return self._last_feedback, self._last_feedback_time
 
+    # ------------------------------------------------ 延迟诊断检查点
+    def _record_checkpoint(self, tid, stage, ts):
+        """静默登记检查点（不打印），返回 (上一检查点时刻, 上一阶段名, 触发时刻)。
+
+        任务已过期（tid 不是当前任务）时返回 (None, None, None)，调用方应
+        跳过打印。feedback 检查点即使因节流不打印，也要调用本方法登记，
+        这样 result 到达时能算出真实的"末次进度→result"增量。
+        """
+        with self._lock:
+            if tid != self._task_id:
+                return None, None, None
+            prev_ts = self._last_cp_ts
+            prev_stage = self._last_cp_stage
+            trigger_ts = self._trigger_ts
+            self._last_cp_ts = ts
+            self._last_cp_stage = stage
+        return prev_ts, prev_stage, trigger_ts
+
+    def _checkpoint(self, tid, stage, ts=None):
+        """登记并打印一个检查点（统一格式，发送链路和反馈链路通用）。"""
+        ts = ts if ts is not None else timing.now()
+        prev_ts, prev_stage, trigger_ts = self._record_checkpoint(tid, stage, ts)
+        if prev_ts is None and trigger_ts is None:
+            return  # 任务已过期，不打印
+        self._node.get_logger().info(
+            timing.format_checkpoint(
+                self._label, stage, ts, tid=tid,
+                prev_ts=prev_ts, prev_stage=prev_stage, trigger_ts=trigger_ts))
+
     # ------------------------------------------------ 发送
-    def send(self, goal, *, wait_server_timeout: float = None) -> bool:
+    def send(self, goal, *, wait_server_timeout: float = None,
+             trigger_ts: float = None) -> bool:
+        """发送 goal（非阻塞）。
+
+        Args:
+            trigger_ts: 上层调用入口（chassis_client.py `_log_trigger`）记录
+                的挂钟时刻，作为本任务延迟诊断检查点链的"触发"基准；不传则
+                以进入本方法的时刻为基准。
+        """
         if self._client is None:
             self._node.get_logger().warn(
                 f"[{self._label}] 当前模式未配置该 action，忽略发送。")
             return False
 
+        entry_ts = timing.now()
         with self._lock:
             self._task_id += 1
             tid = self._task_id
@@ -85,23 +136,34 @@ class ActionTaskClient:
             self._result_ok = False
             self._result_msg = ""
             self._last_feedback = None
+            self._last_feedback_time = None
             self._last_fb_log = None
             self._cancel_watchdog_locked()
+            self._trigger_ts = trigger_ts if trigger_ts is not None else entry_ts
+            self._last_cp_ts = self._trigger_ts
+            self._last_cp_stage = "触发"
 
         timeout = (wait_server_timeout if wait_server_timeout is not None
                    else self._wait_server_timeout)
         if not self._client.wait_for_server(timeout_sec=timeout):
+            self._checkpoint(tid, "server不可用")
             self._transition(tid, TaskState.FAILED_TO_SEND, "action server 不可用")
             return False
+        self._checkpoint(tid, "server就绪")
 
         self._transition(tid, TaskState.SENDING)
+        send_ts = timing.now()
         try:
             send_future = self._client.send_goal_async(
                 goal,
                 feedback_callback=lambda m, _tid=tid: self._on_feedback(m, _tid))
         except Exception as e:  # noqa: BLE001
+            self._checkpoint(tid, "发送异常")
             self._transition(tid, TaskState.FAILED_TO_SEND, f"发送异常：{e}")
             return False
+        self._node.get_logger().info(
+            f"[{self._label}] 目标已发送 task_id={tid}，等待 server 接受。")
+        self._checkpoint(tid, "已发出", send_ts)
         send_future.add_done_callback(
             lambda f, _tid=tid: self._on_goal_response(f, _tid))
 
@@ -111,9 +173,6 @@ class ActionTaskClient:
         with self._lock:
             self._watchdog = watchdog
         watchdog.start()
-
-        self._node.get_logger().info(
-            f"[{self._label}] 目标已发送 task_id={tid}，等待 server 接受。")
         return True
 
     # ------------------------------------------------ 取消
@@ -177,6 +236,7 @@ class ActionTaskClient:
         with self._lock:
             if tid != self._task_id or self._state != TaskState.SENDING:
                 return
+        self._checkpoint(tid, "accept超时")
         self._transition(
             tid, TaskState.LOST,
             f"accept watchdog：{self._accept_timeout:.1f}s 未收到 goal response，"
@@ -190,23 +250,28 @@ class ActionTaskClient:
         try:
             goal_handle = future.result()
         except Exception as e:  # noqa: BLE001
+            self._checkpoint(tid, "response异常")
             self._transition(tid, TaskState.LOST, f"goal response 异常：{e}")
             return
         if not goal_handle.accepted:
+            self._checkpoint(tid, "rejected")
             self._transition(tid, TaskState.REJECTED)
             return
 
+        accept_ts = timing.now()
         with self._lock:
             if tid != self._task_id:
                 return
             self._goal_handle = goal_handle
             do_cancel = self._pending_cancel
             self._pending_cancel = False
+        self._checkpoint(tid, "accepted", accept_ts)
         self._transition(tid, TaskState.ACCEPTED)
 
         try:
             result_future = goal_handle.get_result_async()
         except Exception as e:  # noqa: BLE001
+            self._checkpoint(tid, "注册result回调异常")
             self._transition(tid, TaskState.LOST, f"注册 result 回调异常：{e}")
             return
         result_future.add_done_callback(
@@ -218,6 +283,7 @@ class ActionTaskClient:
             self._do_cancel(goal_handle, tid)
 
     def _on_feedback(self, feedback_msg, tid):
+        fb_ts = timing.now()
         with self._lock:
             if tid != self._task_id:
                 return
@@ -225,28 +291,40 @@ class ActionTaskClient:
             self._last_feedback_time = time.monotonic()
             if self._state == TaskState.ACCEPTED:
                 self._state = TaskState.EXECUTING
-            now = time.monotonic()
-            if (self._last_fb_log is not None and
-                    now - self._last_fb_log < self._fb_interval):
-                return
-            self._last_fb_log = now
+            now_mono = time.monotonic()
+            do_log = (self._last_fb_log is None or
+                     now_mono - self._last_fb_log >= self._fb_interval)
+            if do_log:
+                self._last_fb_log = now_mono
+
+        # 无论本次是否打印，都登记检查点——保证 result 到达时"末次进度→result"
+        # 反映的是真实最后一次 feedback，而不是最后一次被打印出来的 feedback。
+        prev_ts, prev_stage, trigger_ts = self._record_checkpoint(tid, "进度", fb_ts)
+        if not do_log or prev_ts is None:
+            return
+
         detail = ""
         if self._fb_formatter is not None:
             try:
                 detail = self._fb_formatter(feedback_msg.feedback)
             except Exception:  # noqa: BLE001 —— 格式化失败不影响主流程
                 detail = ""
-        self._node.get_logger().info(
-            f"[{self._label}] 进度 task_id={tid}" +
-            (f"，{detail}" if detail else ""))
+        line = timing.format_checkpoint(
+            self._label, "进度", fb_ts, tid=tid,
+            prev_ts=prev_ts, prev_stage=prev_stage, trigger_ts=trigger_ts)
+        if detail:
+            line += f"  内容={detail}"
+        self._node.get_logger().info(line)
 
     def _on_result(self, future, tid):
+        result_ts = timing.now()
         try:
             response = future.result()
         except Exception as e:  # noqa: BLE001
             with self._lock:
                 if tid == self._task_id:
                     self._goal_handle = None
+            self._checkpoint(tid, "result异常")
             self._transition(tid, TaskState.LOST, f"result 获取异常：{e}")
             return
 
@@ -260,6 +338,8 @@ class ActionTaskClient:
             self._result_ok = (response.status == GoalStatus.STATUS_SUCCEEDED
                                and success_flag)
             self._result_msg = message
+
+        self._checkpoint(tid, "result", result_ts)
 
         if response.status == GoalStatus.STATUS_SUCCEEDED:
             self._transition(tid, TaskState.SUCCEEDED, message)

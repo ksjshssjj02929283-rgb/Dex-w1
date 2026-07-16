@@ -55,7 +55,8 @@ class RoadNavigationFeature:
             feedback_formatter=_feedback_summary)
 
     def send(self, waypoints: list, frame_id: str = "map",
-             timeout_sec: float = 10.0, behavior_tree: str = "") -> bool:
+             timeout_sec: float = 10.0, behavior_tree: str = "", *,
+             trigger_ts: float = None) -> bool:
         if not waypoints:
             self._node.get_logger().error("[路网导航目标非法] waypoints 为空。")
             return False
@@ -69,7 +70,8 @@ class RoadNavigationFeature:
         except (TypeError, ValueError) as e:
             self._node.get_logger().error(f"[路网导航目标非法] {e}")
             return False
-        return self._task.send(goal, wait_server_timeout=timeout_sec)
+        return self._task.send(goal, wait_server_timeout=timeout_sec,
+                               trigger_ts=trigger_ts)
 
     def status(self) -> str:
         return _LEGACY[self._task.state]
