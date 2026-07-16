@@ -82,28 +82,47 @@ navigation_client/
 
 单点导航/精控的 yaw 用度（贴近业务层直觉），路网导航/导航点/参数服务的 yaw 用弧度（直接透传 Nav2 原生语义）。**这是历史遗留的单位不一致，本次未统一**（改动会牵涉 `W1Manager` 调用方约定，属于 red line 之外的改动，见项目方案文档）。
 
-## 延迟诊断打点（统一检查点链）
+## 延迟诊断打点（统一检查点链，默认关闭）
 
 四个"触发类"公开方法（`set_chassis_nav2_position` / `set_chassis_road_navigation` /
-`set_chassis_control_position` / `set_chassis_auto_charging`）会在同一个
-task_id 上打印一串**检查点**，覆盖**发送链路**（触发→server就绪→已发出→
-accepted）和**反馈链路**（进度→result），全部由 `common/timing.format_checkpoint()`
-生成，**格式完全一致**：
+`set_chassis_control_position` / `set_chassis_auto_charging`）在同一个
+task_id 上走一串**检查点**，覆盖**发送链路**（触发→server就绪→已发出→
+accepted）和**反馈链路**（进度→result）。
+
+### 正常模式（默认，诊断关闭）
+
+只打印两行**普通日志**（不带 `[延迟诊断]` 标签），不刷屏：
+
+```
+[<label>] 触发 wall=<HH:MM:SS.mmm>
+[<label>] task_id=<N> 返回 wall=<HH:MM:SS.mmm>  耗时=<总耗时>
+```
+
+### 诊断模式（排查问题时打开）
+
+打开后，中间检查点（`server就绪`/`已发出`/`accepted`/`进度`）也会打印，全部由
+`common/timing.format_checkpoint()` 生成，**格式完全一致**：
 
 ```
 [延迟诊断][<label>] task_id=<N> 阶段=<阶段名> wall=<HH:MM:SS.mmm>  Δ(<上一阶段>→<阶段名>)=<X.X>ms  累计(自触发)=<Y.Y>ms
 ```
 
+打开方式（二选一）：
+- 环境变量（启动前设置，进程级）：`export DEXE_NAV_CLIENT_DIAGNOSTICS=1`
+- 代码里调用（运行时切换）：`from dexe_robot_client.navigation_client.common import timing; timing.set_diagnostics_enabled(True)`
+
+排查完问题记得关掉（或直接不设环境变量重启），避免正常运行时刷屏。
+
 | 检查点 | 所在链路 | 含义 |
 |-------|---------|------|
-| `触发` | 发送链路起点 | `chassis_client.py` 方法入口——客户端收到上层调用的时刻（**唯一**没有 `Δ`/`累计` 字段，因为它是基准）。与上层 application 自己记录的调用时刻相减 → app→client 延迟 |
-| `server就绪` | 发送链路 | `wait_for_server()` 返回后——`Δ` 反映 DDS graph 查询 + 触发到这里的客户端开销 |
-| `已发出` | 发送链路 | 真正调用 `send_goal_async` 前一刻——`Δ` 反映 `server就绪` 到这里的代码开销（正常应接近 0）|
-| `accepted` | 发送链路 | 收到 goal 被接受的响应——`Δ` = 网络 + server 处理耗时（原"accept 往返"）|
-| `进度` | 反馈链路 | 每条 feedback 到达（受 `feedback_log_interval` 节流打印，但**内部记账不节流**）——`Δ` 反映相邻两次 feedback（或 accepted→首次 feedback）间隔 |
-| `result` | 反馈链路 | goal 完成/取消/中止——`Δ(进度→result)` = **result 回传本身的通信延时**（不含执行耗时，这是"success 传回延时"的近似）；`累计(自触发)` = 端到端总耗时 |
+| `触发` | 发送链路起点 | `chassis_client.py` 方法入口——客户端收到上层调用的时刻（**唯一**没有 `Δ`/`累计` 字段，因为它是基准；两种模式下都会打印）。与上层 application 自己记录的调用时刻相减 → app→client 延迟 |
+| `server就绪` | 发送链路 | `wait_for_server()` 返回后——`Δ` 反映 DDS graph 查询 + 触发到这里的客户端开销（仅诊断模式打印）|
+| `已发出` | 发送链路 | 真正调用 `send_goal_async` 前一刻——`Δ` 反映 `server就绪` 到这里的代码开销，正常应接近 0（仅诊断模式打印）|
+| `accepted` | 发送链路 | 收到 goal 被接受的响应——`Δ` = 网络 + server 处理耗时（原"accept 往返"，仅诊断模式打印）|
+| `进度` | 反馈链路 | 每条 feedback 到达（受 `feedback_log_interval` 节流打印，内部记账不节流）——`Δ` 反映相邻两次 feedback 间隔；正常模式下只打印内容（无诊断数值），诊断模式下带完整 `Δ`/`累计` |
+| `result`/`返回` | 反馈链路 | goal 完成/取消/中止（**两种模式下都会打印**，格式不同）——诊断模式的 `Δ(进度→result)` = **result 回传本身的通信延时**（不含执行耗时）；正常模式的"耗时"= 端到端总耗时（触发→返回）|
 
-`wall`（挂钟时间 `time.time()`，非 ROS clock/monotonic）用于跨进程比较（与上层 application 自己的时间戳相减）；`Δ`/`累计` 用同一挂钟时间做差，同进程内做减法不受时钟源选择影响。发送链路和反馈链路共用同一套 `_checkpoint()`/`format_checkpoint()` 实现，不是两套格式——这也是为什么每一行日志的字段结构完全相同。
+`wall`（挂钟时间 `time.time()`，非 ROS clock/monotonic）用于跨进程比较（与上层 application 自己的时间戳相减）；`Δ`/`累计`/"耗时"都用同一挂钟时间做差。发送链路和反馈链路共用同一套 `_checkpoint()`/`format_checkpoint()`/`format_plain_*()` 实现，两种模式下格式内部各自完全一致。
 
 ### 已知注意事项：日志打印顺序可能与真实执行顺序不一致
 

@@ -9,15 +9,18 @@
   自动补发取消（无阻塞、无轮询、不丢取消）；
 - 异常路径全部收敛为状态转移（FAILED_TO_SEND / LOST），不静默吞掉；
 - feedback 缓存 + 节流心跳日志；
-- **统一格式的延迟诊断检查点链**：send() 之前由调用方（chassis_client.py）
-  打印链路起点"触发"，随后本类在同一 task_id 上依次打印 "server就绪" →
-  "已发出" → "accepted"（**发送链路**）、"进度"（节流）→ "result"（**反馈
-  链路**）。每个检查点都通过 `timing.format_checkpoint()` 生成，格式完全
-  一致：阶段名 + 挂钟时间 + 相对上一检查点的增量 + 相对"触发"的累计耗时——
-  发送链路和反馈链路共用同一套打印逻辑，不是两套不同格式。
+- **延迟诊断检查点链（受开关控制，默认关闭）**：send() 之前由调用方
+  （chassis_client.py）打印链路起点"触发"，随后本类在同一 task_id 上依次
+  记录 "server就绪" → "已发出" → "accepted"（**发送链路**）、"进度"（节流）
+  → "result"（**反馈链路**）。`timing.diagnostics_enabled()` 打开时，每个
+  中间检查点都以 `timing.format_checkpoint()` 生成的统一格式打印（阶段名 +
+  挂钟时间 + 相对上一检查点增量 + 相对"触发"累计耗时）；关闭时（默认）只有
+  "触发"和"result/返回"两行普通日志会打印（无 `[延迟诊断]` 标签，返回那行
+  带总耗时），中间检查点仍静默记账（保证关闭状态下"返回"的总耗时依然准确），
+  只是不打印。
 
 使用方（features 层）只需构造 goal 与状态取值映射，各自约 50-80 行；
-把上层传入的 `trigger_ts` 透传给 `send()` 即可接入统一检查点链。
+把上层传入的 `trigger_ts` 透传给 `send()` 即可接入检查点链。
 """
 
 import threading
@@ -101,11 +104,17 @@ class ActionTaskClient:
         return prev_ts, prev_stage, trigger_ts
 
     def _checkpoint(self, tid, stage, ts=None):
-        """登记并打印一个检查点（统一格式，发送链路和反馈链路通用）。"""
+        """登记一个中间检查点；仅在诊断开关打开时打印（统一格式）。
+
+        关闭时仍会记账（更新 _last_cp_ts/_last_cp_stage），只是不打印——
+        保证"result/返回"检查点在关闭状态下依然能算出正确的总耗时。
+        """
         ts = ts if ts is not None else timing.now()
         prev_ts, prev_stage, trigger_ts = self._record_checkpoint(tid, stage, ts)
         if prev_ts is None and trigger_ts is None:
             return  # 任务已过期，不打印
+        if not timing.diagnostics_enabled():
+            return
         self._node.get_logger().info(
             timing.format_checkpoint(
                 self._label, stage, ts, tid=tid,
@@ -309,12 +318,17 @@ class ActionTaskClient:
                 detail = self._fb_formatter(feedback_msg.feedback)
             except Exception:  # noqa: BLE001 —— 格式化失败不影响主流程
                 detail = ""
-        line = timing.format_checkpoint(
-            self._label, "进度", fb_ts, tid=tid,
-            prev_ts=prev_ts, prev_stage=prev_stage, trigger_ts=trigger_ts)
-        if detail:
-            line += f"  内容={detail}"
-        self._node.get_logger().info(line)
+
+        if timing.diagnostics_enabled():
+            line = timing.format_checkpoint(
+                self._label, "进度", fb_ts, tid=tid,
+                prev_ts=prev_ts, prev_stage=prev_stage, trigger_ts=trigger_ts)
+            if detail:
+                line += f"  内容={detail}"
+            self._node.get_logger().info(line)
+        elif detail:
+            # 正常模式：只输出内容型进度日志，不含诊断标签/数值
+            self._node.get_logger().info(f"[{self._label}] 进度 task_id={tid}，{detail}")
 
     def _on_result(self, future, tid):
         result_ts = timing.now()
@@ -339,7 +353,21 @@ class ActionTaskClient:
                                and success_flag)
             self._result_msg = message
 
-        self._checkpoint(tid, "result", result_ts)
+        # "返回"检查点始终打印（不受诊断开关影响），格式随开关切换：
+        # 打开=完整检查点行（含 Δ/累计，[延迟诊断] 标签）；
+        # 关闭（默认）=普通日志，只给挂钟时间 + 总耗时。
+        prev_ts, prev_stage, trigger_ts = self._record_checkpoint(tid, "result", result_ts)
+        if prev_ts is not None or trigger_ts is not None:
+            if timing.diagnostics_enabled():
+                self._node.get_logger().info(
+                    timing.format_checkpoint(
+                        self._label, "result", result_ts, tid=tid,
+                        prev_ts=prev_ts, prev_stage=prev_stage,
+                        trigger_ts=trigger_ts))
+            else:
+                self._node.get_logger().info(
+                    timing.format_plain_return(
+                        self._label, result_ts, trigger_ts, tid=tid))
 
         if response.status == GoalStatus.STATUS_SUCCEEDED:
             self._transition(tid, TaskState.SUCCEEDED, message)

@@ -80,11 +80,18 @@ class ChassisClient(Node):
 
     def _log_trigger(self, label: str) -> float:
         """延迟诊断【链路起点】：打印客户端方法被调用的挂钟时刻（阶段=触发）。
-        返回值需传给对应 feature 的 send()/start()（trigger_ts 参数），
-        作为该任务后续所有检查点的"累计"计算基准；格式与下游检查点完全
-        一致，统一由 common/timing.format_checkpoint() 生成。"""
+        返回值需传给对应 feature 的 send()/start()（trigger_ts 参数），作为
+        该任务后续所有检查点的"累计"计算基准。
+
+        本行始终打印（不受诊断开关影响），格式随 timing.diagnostics_enabled()
+        切换：打开=完整检查点格式（[延迟诊断] 标签，与下游检查点一致）；
+        关闭（默认）=普通日志，只给挂钟时间，配合 result 的"返回"行看总耗时。
+        """
         ts = timing.now()
-        self.get_logger().info(timing.format_checkpoint(label, "触发", ts))
+        if timing.diagnostics_enabled():
+            self.get_logger().info(timing.format_checkpoint(label, "触发", ts))
+        else:
+            self.get_logger().info(timing.format_plain_trigger(label, ts))
         return ts
 
     # ------------------------------------------------ 连接 / 底盘状态
