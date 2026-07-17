@@ -9,7 +9,6 @@ import os
 import re
 import sys
 import threading
-from sympy import true
 import websockets
 import time
 import copy
@@ -129,6 +128,10 @@ class ExecuteTaskThread(QThread):
             task_success = False
             
         finally:
+            # 底盘占用状态必须在所有任务退出路径中释放。该调用放在 Policy
+            # 恢复逻辑之前，避免下面的提前 return 使低电量待回充永远不再执行。
+            self.w1_controller._on_execute_task_finished(self)
+
             # 只有当：1. 原本处于 ACT 模式 (need_resume) 且 2. 任务执行成功 (task_success) 时，才恢复
             if need_resume:
                 # 判断自己是否还是主控制器的最新活动线程
@@ -298,55 +301,113 @@ class RosBatteryMonitorThread(QThread):
                 return str(value).strip().lower() in {
                     'true', '1', 'yes', 'on'
                 }
+            ####################################原来的代码逻辑 ###################
+            # def battery_callback(self, msg):
+            #     try:
+            #         charging_state_changed = False
+            #         for status in msg.status:
+            #             # 放宽匹配条件，只要包含 PowerBoard 就行
+            #             if "PowerBoard" in status.name:
+            #                 for value in status.values:
+            #                     if value.key == "battery_percentage":
+            #                         # 过滤掉可能的 "%" 等非数字字符，提升稳定性
+            #                         val_str = str(value.value).replace('%', '').strip()
+            #                         percentage = float(val_str)
+                                    
+            #                         current_time = time.time()
+
+            #                         # --- 新增：独立的日志定时器 ---
+
+            #                         # last_log_time = getattr(self, '_last_log_time', 0.0)
+            #                         # if current_time - last_log_time >= 2.0:
+            #                         #     logging.warning(f"[Battery Log] 当前电量: {percentage}%")
+            #                         #     self._last_log_time = current_time
+
+            #                         # ------------------------------ 
+
+            #                         # 防抖：2秒内或电量改变才更新一次UI
+            #                         if current_time - self._last_update_time > 2.0 or percentage != self._last_battery_percentage:
+            #                             self._last_battery_percentage = percentage
+            #                             self._last_update_time = current_time
+            #                             # 格式需要符合原UI的切割要求：包含“电量：XX”
+            #                             self.update_sig.emit(f"电量：{int(percentage)}")
+            #                     elif value.key == "battery_charging":
+            #                         battery_charging = self.parse_bool(value.value)
+            #                         if battery_charging != self._battery_charging:
+            #                             self._battery_charging = battery_charging
+            #                             charging_state_changed = True
+            #                     elif value.key == "charger_connect_state":
+            #                         charger_connected = self.parse_bool(value.value)
+            #                         if charger_connected != self._charger_connected:
+            #                             self._charger_connected = charger_connected
+            #                             charging_state_changed = True
+
+            #         if charging_state_changed:
+            #             self.charging_state_sig.emit(
+            #                 bool(self._battery_charging),
+            #                 bool(self._charger_connected))
+            #     except Exception as e:
+            #         # 🚨 把报错打印出来，别直接 pass 被吞掉
+            #         print(f"ROS 解析电量回调发生异常: {e}")
 
             def battery_callback(self, msg):
                 try:
                     charging_state_changed = False
+
                     for status in msg.status:
-                        # 放宽匹配条件，只要包含 PowerBoard 就行
-                        if "PowerBoard" in status.name:
-                            for value in status.values:
-                                if value.key == "battery_percentage":
-                                    # 过滤掉可能的 "%" 等非数字字符，提升稳定性
-                                    val_str = str(value.value).replace('%', '').strip()
-                                    percentage = float(val_str)
-                                    
-                                    current_time = time.time()
+                        if "PowerBoard" not in status.name:
+                            continue
 
-                                    # --- 新增：独立的日志定时器 ---
+                        battery_info = {
+                            value.key: str(value.value).strip()
+                            for value in status.values
+                        }
 
-                                    # last_log_time = getattr(self, '_last_log_time', 0.0)
-                                    # if current_time - last_log_time >= 2.0:
-                                    #     logging.warning(f"[Battery Log] 当前电量: {percentage}%")
-                                    #     self._last_log_time = current_time
+                        if "battery_percentage" in battery_info:
+                            percentage_str = battery_info["battery_percentage"].replace('%', '').strip()
+                            percentage = float(percentage_str)
 
-                                    # ------------------------------ 
+                            voltage = battery_info.get("battery_voltage", "--")
+                            current = battery_info.get("battery_current", "--")
 
-                                    # 防抖：2秒内或电量改变才更新一次UI
-                                    if current_time - self._last_update_time > 2.0 or percentage != self._last_battery_percentage:
-                                        self._last_battery_percentage = percentage
-                                        self._last_update_time = current_time
-                                        # 格式需要符合原UI的切割要求：包含“电量：XX”
-                                        self.update_sig.emit(f"电量：{int(percentage)}")
-                                elif value.key == "battery_charging":
-                                    battery_charging = self.parse_bool(value.value)
-                                    if battery_charging != self._battery_charging:
-                                        self._battery_charging = battery_charging
-                                        charging_state_changed = True
-                                elif value.key == "charger_connect_state":
-                                    charger_connected = self.parse_bool(value.value)
-                                    if charger_connected != self._charger_connected:
-                                        self._charger_connected = charger_connected
-                                        charging_state_changed = True
+                            current_time = time.time()
+
+                            if percentage != self._last_battery_percentage:
+                                self._last_battery_percentage = percentage
+                                self._last_update_time = current_time
+
+                                print(
+                                    f"[Battery] 电量: {int(percentage)}%, "
+                                    f"电压: {voltage}V, "
+                                    f"电流: {current}A"
+                                )
+
+                                self.update_sig.emit(
+                                    f"电量：{int(percentage)}\n"
+                                    f"电压：{voltage}V\n"
+                                    f"电流：{current}A"
+                                )
+
+                        if "battery_charging" in battery_info:
+                            battery_charging = self.parse_bool(battery_info["battery_charging"])
+                            if battery_charging != self._battery_charging:
+                                self._battery_charging = battery_charging
+                                charging_state_changed = True
+
+                        if "charger_connect_state" in battery_info:
+                            charger_connected = self.parse_bool(battery_info["charger_connect_state"])
+                            if charger_connected != self._charger_connected:
+                                self._charger_connected = charger_connected
+                                charging_state_changed = True
 
                     if charging_state_changed:
                         self.charging_state_sig.emit(
                             bool(self._battery_charging),
-                            bool(self._charger_connected))
-                except Exception as e:
-                    # 🚨 把报错打印出来，别直接 pass 被吞掉
-                    print(f"ROS 解析电量回调发生异常: {e}")
+                            bool(self._charger_connected)
+                        )
 
+                except Exception as e:
+                    print(f"ROS 解析电量回调发生异常: {e}")
         while self.running: 
             # 创建一个完全独立的 ROS Context
             isolated_context = Context()
@@ -1184,6 +1245,15 @@ class W1Controller(W1Displayui):  # 主流程
         self.last_checked_battery = -1 
         self.is_force_working = False 
         self.is_charging_cycle = False   # 初始化为 False，代表开机时没在充电周期里
+        self.pending_auto_charging = False
+        # 电量回调、任务线程可能并发修改回充状态，统一由此锁保护。
+        self._chassis_state_lock = threading.RLock()
+        self._auto_charging_requesting = False
+        self._last_auto_charging_attempt_time = 0.0
+        self._full_charge_undocking = False
+        self._last_full_charge_undock_attempt_time = 0.0
+        self._auto_charging_retry_interval = 30.0
+        self._full_charge_undock_retry_interval = 30.0
         self.is_battery_charging = False
         self.is_charger_connected = False
         self.signals = ControllerSignals()
@@ -1271,6 +1341,8 @@ class W1Controller(W1Displayui):  # 主流程
     def _refresh_recorder_light(self):
         """根据 auto_config 中的 recorder_status 更新录制指示灯"""
         try:
+            if not isinstance(getattr(self, "device_cfg", None), dict):
+                return
             status_data = self._read_status_file()
             recording = status_data.get("recorder_status", False)
             if hasattr(self, "L_recorder_status"):
@@ -1682,7 +1754,7 @@ class W1Controller(W1Displayui):  # 主流程
 
     def return_ip(self):
         try:
-            iface = "wlan0" 
+            iface = "LAN1" 
             addrs = netifaces.ifaddresses(iface)
             ip_info = addrs.get(netifaces.AF_INET)
             if ip_info:
@@ -1746,6 +1818,21 @@ class W1Controller(W1Displayui):  # 主流程
         card = data.get("card") 
         temperature = data.get("temperature") 
         is_auto = data.get("is_auto", False)
+#####################重复订单号不执行
+        order_sn = data.get("orderSn")
+
+        if order_sn:
+            now = time.time()
+            last_order_sn = getattr(self, "_last_trigger_order_sn", None)
+            last_trigger_time = getattr(self, "_last_trigger_order_time", 0)
+
+            if last_order_sn == order_sn and now - last_trigger_time < 300:
+                logging.warning(f"重复订单触发已忽略: orderSn={order_sn}, task={task}")
+                return
+
+            self._last_trigger_order_sn = order_sn
+            self._last_trigger_order_time = now
+#####################重复订单号不执行
 
         if str(card) == "1": 
             task = temperature + task 
@@ -2933,75 +3020,155 @@ class W1Controller(W1Displayui):  # 主流程
             logging.info(f"配置文件读取错误: {str(e)}")
             self.update_light(self.G3, False)
 
+    def _request_auto_charging(self, trigger: str) -> bool:
+        """在非任务状态下请求一次回充，避免并发或失败后高频重复发送。"""
+        now = time.monotonic()
+        with self._chassis_state_lock:
+            if self.is_force_working:
+                self.pending_auto_charging = True
+                return False
+            if self.is_charging_cycle or self._auto_charging_requesting:
+                return False
+            if now - self._last_auto_charging_attempt_time < \
+                    self._auto_charging_retry_interval:
+                return False
+            self._auto_charging_requesting = True
+
+        logging.warning(f"[低电量回充] 电量触发，开始请求回充（{trigger}）。")
+        try:
+            result = self.w1.w1_manager.set_auto_charging()
+            request_success = getattr(result, "name", None) == "SUCCESS"
+        except Exception as e:
+            logging.error(f"[低电量回充] 回充请求异常: {str(e)}")
+            request_success = False
+
+        with self._chassis_state_lock:
+            self._auto_charging_requesting = False
+            self._last_auto_charging_attempt_time = now
+            if request_success:
+                # 这里只表示 goal 已成功发出，回充是否完成仍由 Action 状态决定。
+                self.is_charging_cycle = True
+                self.pending_auto_charging = False
+            else:
+                # 保留待回充标记；下一次有效电量回调会在冷却结束后重试。
+                self.pending_auto_charging = True
+
+        if request_success:
+            logging.info("[低电量回充] 回充目标已发送。")
+        else:
+            logging.error("[低电量回充] 回充目标发送失败，30 秒后允许重试。")
+        return request_success
+
+    def _on_execute_task_finished(self, task_thread):
+        """任务线程退出时释放底盘占用，并接续被延后的低电量回充。"""
+        should_request_auto_charging = False
+        with self._chassis_state_lock:
+            # 旧任务结束时不能清除新任务的占用状态。
+            if getattr(self, "thread", None) is not task_thread:
+                return
+            self.is_force_working = False
+            should_request_auto_charging = (
+                self.pending_auto_charging and not self.is_charging_cycle)
+
+        if should_request_auto_charging:
+            logging.info("[低电量回充] 当前任务结束，继续执行待回充请求。")
+            self._request_auto_charging("任务结束")
+
+    def _undock_after_full_charge(self, current_battery: int) -> None:
+        """满电后先确认离桩成功，再允许导航到接待处。"""
+        now = time.monotonic()
+        with self._chassis_state_lock:
+            if self.is_force_working:
+                logging.info("[满电离桩] 任务正在使用底盘，跳过自动回接待处。")
+                return
+            if not self.is_charging_cycle or self._full_charge_undocking:
+                return
+            if now - self._last_full_charge_undock_attempt_time < \
+                    self._full_charge_undock_retry_interval:
+                return
+            self._full_charge_undocking = True
+            self._last_full_charge_undock_attempt_time = now
+
+        logging.info(f"[满电离桩] 当前电量 {current_battery}%，发送离桩直控目标。")
+        result = self.w1.w1_manager.move_chassis_ctrl([0.3, 0, 0])
+        if getattr(result, "name", None) != "SUCCESS":
+            with self._chassis_state_lock:
+                self._full_charge_undocking = False
+            logging.error("[满电离桩] 离桩直控目标发送失败，不导航到接待处。")
+            return
+
+        undock_success = self.wait_for_navigation_arrival(
+            "ctrl", timeout=15.0, cancel_on_timeout=True)
+        with self._chassis_state_lock:
+            self._full_charge_undocking = False
+            if not undock_success:
+                logging.error("[满电离桩] 离桩未成功，不导航到接待处。")
+                return
+            self.is_charging_cycle = False
+
+        nav_result = self.w1.w1_manager.move_chassis_nav2([0.8, 0.41, 0])
+        if getattr(nav_result, "name", None) == "SUCCESS":
+            logging.info("[满电离桩] 离桩成功，已发送接待处导航目标。")
+        else:
+            logging.error("[满电离桩] 离桩成功，但接待处导航目标发送失败。")
 
     def low_battery_go_home(self, battery_info: str):
         if not hasattr(self, "w1") or self.w1 is None:
             logging.info("电量已更新，但机器人尚未初始化。")
             return
         try:
-            current_battery = int(battery_info.replace("电量：", ""))
-            if current_battery != self.last_checked_battery:
-                self.last_checked_battery = current_battery
-                logging.info(f"【当前电量】: {current_battery}%")
-                if current_battery <=30:
-                    if not self.is_charging_cycle and not self.is_force_working:
-                        logging.warning(f"🚨 警告：电量低至 {current_battery}%！切换为充电模式，开始自动返航...")
-                        auto_charging_result = self.w1.w1_manager.set_auto_charging()
-                        # 这里只确认 Action goal 是否成功发出；回充执行状态由
-                        # W1Manager.get_auto_charging_status() 提供。
-                        if getattr(auto_charging_result, "name", None) == "SUCCESS":
-                            self.is_charging_cycle = True
-                elif current_battery >= 90:
-                    if self.is_charging_cycle:
-                        logging.info(f"🔋 提示：电量已充至 {current_battery}%！满足要求，停止充电...")
-                        self.w1.w1_manager.move_chassis_ctrl([0.3,0,0])
-                
-                        start_time = time.time()
-                        timeout = 15
-
-                        # 循环条件直接包含时间判断：未超时且未成功则继续
-                        while time.time() - start_time < timeout:
-                            time.sleep(0.1)
-                            _, control_status = self.w1.w1_manager.get_control_status()
-                            if control_status == "SUCCEEDED":
-                                break  # 成功则跳出循环，跳过 else 块
-                            if control_status in {"FAILED", "CANCELLED"}:
-                                break
-                        else:
-                            # 只有当循环因为条件不满足（即超时）自然结束，且没有被 break 打断时，才会执行这里
-                            logging.info(f"超时{timeout}s,退出")
-        
-                        # while True:
-                        #     time.sleep(0.1)
-                        #     p2 = self.w1.w1_manager.get_control_status()
-                        #     if "SUCCEEDED" in p2:break
-
-                        self.w1.w1_manager.move_chassis_nav2([0.8,0.41,0])
-                        self.is_charging_cycle = False 
-                else:
-                    pass
-
-        except ValueError:
+            current_battery = int(
+                float(battery_info.split("电量：", 1)[1].split("\n", 1)[0].strip()))
+        except (IndexError, ValueError):
             logging.error("电量数据解析异常")
+            return
+
+        # 已知底盘会偶发上报 0%；该值不参与回充/离桩决策。
+        if current_battery <= 0:
+            logging.warning(f"[电量异常] 忽略 {current_battery}% 电量上报。")
+            return
+
+        if current_battery != self.last_checked_battery:
+            self.last_checked_battery = current_battery
+            logging.info(f"[当前电量] {current_battery}%")
+
+        # 决策不能只依赖“电量变化”：例如一次回充请求发送失败后，电量仍为
+        # 30% 时也必须允许后续回调在冷却结束后重试。
+        if current_battery <= 30:
+            with self._chassis_state_lock:
+                if self.is_force_working:
+                    if not self.pending_auto_charging:
+                        self.pending_auto_charging = True
+                        logging.warning(
+                            f"[低电量回充] 当前电量 {current_battery}%，"
+                            "任务结束后自动回充。")
+                    return
+            self._request_auto_charging(f"当前电量 {current_battery}%")
+        elif current_battery >= 90:
+            self._undock_after_full_charge(current_battery)
 
     def update_charging_state(self, battery_charging: bool,
                               charger_connected: bool):
         """保存诊断信息中的充电与充电器连接状态。"""
-        self.is_battery_charging = battery_charging
-        self.is_charger_connected = charger_connected
+        with self._chassis_state_lock:
+            self.is_battery_charging = battery_charging
+            self.is_charger_connected = charger_connected
 
     # -------------------------------------------------- 路点导航 --------------------------------------------------
     def start_undocking_emit(self, x, y, w):
         """
         统一发射离桩导航信号
         """
-        try: 
+        try:
             with _global_lock:
-                self.w1.w1_manager.move_chassis_ctrl([float(x),float(y),float(w)])
-            self.wait_for_navigation_arrival("ctrl")
-            
+                result = self.w1.w1_manager.move_chassis_ctrl(
+                    [float(x), float(y), float(w)])
+            if getattr(result, "name", None) != "SUCCESS":
+                logging.error("离桩直控目标发送失败")
+                return False
+            return self.wait_for_navigation_arrival("ctrl")
 
-        except Exception as e: 
+        except Exception as e:
             logging.error(f"离桩信号转换或发送异常: {str(e)}")
             return False
 
@@ -3014,33 +3181,34 @@ class W1Controller(W1Displayui):  # 主流程
             logging.error(f"当前点位获取异常: {str(e)}")
             return [0.0,0.0,0.0]
 
-    def wait_for_navigation_arrival(self, status, timeout=600.0):
+    def wait_for_navigation_arrival(self, status, timeout=600.0,
+                                    cancel_on_timeout=True):
         """
         等待导航或底盘直控 Action 进入最终状态。
 
         W1Manager 状态查询接口返回 ``(StatusCode, Action状态)``；这里只判断
         第二项。仅 SUCCEEDED 返回 True，失败、取消、接口不可用或超时返回 False。
         """
-        start_time = time.time()
-        
+        start_time = time.monotonic()
+        action_name = "导航" if status == "nav" else "底盘直控"
 
-        while true:
+        while True:
             # 1. 获取当前控制状态
-            current_status = ""
             if status == "nav":
                 with _global_lock:
                     current_status = self.w1.w1_manager.get_nav_status()
             elif status == "ctrl":
                 with _global_lock:
                     current_status = self.w1.w1_manager.get_control_status()
-            
+            else:
+                logging.error(f"未知的底盘等待类型: {status}")
+                return False
 
             # 状态查询失败时，第二项为 DISABLED 或 NOT_INITIALIZED。
             action_status = current_status[1]
-
             # 2. 检查是否成功到达
             if action_status == "SUCCEEDED":
-                logging.info("导航任务成功完成，已到达目标点。")
+                logging.info(f"[{action_name}] 已成功完成。")
                 return True
                 
             # 3. 检查是否进入了失败或取消的状态
@@ -3048,15 +3216,17 @@ class W1Controller(W1Displayui):  # 主流程
                     "FAILED", "CANCELLED", "ABORTED", "DISABLED",
                     "NOT_INITIALIZED"
             }:
-                logging.error(f"导航任务失败，当前状态为: {current_status}")
+                logging.error(f"[{action_name}] 未完成，状态={action_status}。")
                 return False
 
             # 4. 超时检查
-            if time.time() - start_time > timeout:
-                logging.error(f"导航任务超时 (超过 {timeout} 秒)。")
-                start_time = time.time()
-                # 超时后通常建议发送一个停止指令
-                self.on_stop_execution(True) 
+            if time.monotonic() - start_time > timeout:
+                logging.error(f"[{action_name}] 超时（{timeout:.1f}s）。")
+                if cancel_on_timeout:
+                    if status == "ctrl":
+                        self.w1.w1_manager.cancel_chassis_control()
+                    else:
+                        self.w1.w1_manager.cancel_chassis_motion()
                 return False
 
             # 5. 频率控制
@@ -3067,12 +3237,11 @@ class W1Controller(W1Displayui):  # 主流程
     def smart_chess(self, x, y, w, wait=True):
         try:
             with _global_lock:
-                self.w1.w1_manager.move_chassis_nav2([x,y,w])
-                
-            if wait: 
-                self.wait_for_navigation_arrival("nav")
-                
-            return True
+                result = self.w1.w1_manager.move_chassis_nav2([x, y, w])
+            if getattr(result, "name", None) != "SUCCESS":
+                logging.error("导航目标发送失败")
+                return False
+            return self.wait_for_navigation_arrival("nav") if wait else True
         except Exception as e:
             logging.error(f"底盘运动出错: {str(e)}")
             return False
@@ -3179,8 +3348,14 @@ class W1Controller(W1Displayui):  # 主流程
                     with open(status_file, "w", encoding="utf-8") as f:
                         json.dump(status_data, f, indent=2, ensure_ascii=False)
             time.sleep(0.1)
+        # except Exception as e:
+        #     print(f"写入状态文件失败: {e}")
+        #测试
         except Exception as e:
-            print(f"写入状态文件失败: {e}")
+            import traceback
+            print(f"[W1Controller._write_status_file] 写入失败: name={name}, status={status}, error={e}")
+            traceback.print_exc()
+        #测试
 
     def _read_status_file(self):  # 读取auto_config.json信息
         """读取auto_config.json信息"""
@@ -3196,8 +3371,14 @@ class W1Controller(W1Displayui):  # 主流程
                     status_data = {}
             time.sleep(0.1)
             return status_data
+        # except Exception as e:
+        #     print(f"写入状态文件失败: {e}")
+        #测试
         except Exception as e:
-            print(f"写入状态文件失败: {e}")
+            import traceback
+            print(f"[W1Controller._read_status_file] 读取失败: error={e}")
+            traceback.print_exc()
+        #测试
 
     def on_timestamp_display_changed(self, state):  # 日志时间戳显示设置改变
         """时间戳显示设置改变"""
@@ -3758,8 +3939,10 @@ class W1Controller(W1Displayui):  # 主流程
         # 低电量回充流程、正在充电或仍连接充电器时，先完成离桩再执行任务。
         if (self.is_charging_cycle or self.is_battery_charging or
                 self.is_charger_connected):
+            self.is_force_working = True
             control_result = self.w1.w1_manager.move_chassis_ctrl([0.3, 0, 0])
             if getattr(control_result, "name", None) != "SUCCESS":
+                self.is_force_working = False
                 logging.warning("离开充电桩运动控制目标发送失败，取消本次任务执行")
                 return
 
@@ -3776,10 +3959,13 @@ class W1Controller(W1Displayui):  # 主流程
                     self.is_force_working = True
                     logging.info("机器人已离开充电桩，开始执行任务")
                     break
-                if control_status in {"FAILED", "CANCELLED"}:
+                if control_status in {"FAILED", "CANCELLED", "ABORTED"}:
+                    logging.error(f"离开充电桩失败，状态={control_status}，取消本次任务执行")
+                    self.is_force_working = False
                     return
             else:
                 logging.warning(f"离开充电桩超时，超过 {timeout}s 未完成，取消本次任务执行")
+                self.is_force_working = False
                 return
 
         if self.payment_manager != None and self.is_payment and module_name=="泡咖啡":
@@ -3792,12 +3978,13 @@ class W1Controller(W1Displayui):  # 主流程
 
         # self.function.stop_squence = False
         current_status = self._read_status_file()
+        self._write_status_file("status", "running")
         
        
         if interface_trigger == True:  # 界面触发
             if  hasattr(self, 'picklight_vision') and self.picklight_vision!=None and self.picklight_vision.face_tracking_status == True:
                 self.picklight_vision.face_tracking_status = False
-            self._write_status_file("status", "running")
+            # self._write_status_file("status", "running")
             if not is_new_ui:
                 task_msg = self.select_module.currentText()
                 module_name = task_msg.split(": ")[1] if ": " in task_msg else task_msg
@@ -3807,6 +3994,8 @@ class W1Controller(W1Displayui):  # 主流程
             exclusive_params = self.get_isolated_task_config(get_config_by_name)
             self.thread = ExecuteTaskThread(w1_controller=self, voice_msg=voice_msg, module_name=module_name, task_config=exclusive_params)
             self.active_threads.append(self.thread)
+            #为了避免执行任务时，回去充电
+            self.is_force_working = True
             self.thread.start()
 
 
@@ -3817,10 +4006,10 @@ class W1Controller(W1Displayui):  # 主流程
                     current_status = self._read_status_file()
                     logging.info(f"人脸跟踪状态为：{current_status['face_tracking']},关闭中...")
                     time.sleep(0.2)
-            if module_name=="说话手势":
-                self._write_status_file("status", "talking")
-            else:
-                self._write_status_file("status", "running")
+            # if module_name=="说话手势":
+            #     self._write_status_file("status", "talking")
+            # else:
+            #     self._write_status_file("status", "running")
             self._write_status_file("statusCoffee","origin")
             get_config_by_name = module_name
             if task_list!=[]:
@@ -3828,6 +4017,8 @@ class W1Controller(W1Displayui):  # 主流程
             exclusive_params = self.get_isolated_task_config(get_config_by_name)
             self.thread = ExecuteTaskThread(w1_controller=self, voice_msg=voice_msg, module_name=module_name, task_config=exclusive_params)
             self.active_threads.append(self.thread)
+            #为了避免执行任务时，回去充电
+            self.is_force_working = True
             self.thread.start()
             
 

@@ -721,13 +721,14 @@ class W1Manager:
             return StatusCode.FAIL
         if not self._has_chassis_client():
             return StatusCode.FAIL
-        res = self._get_chassis_client().set_chassis_nav2_position(
-            base_position)
-        nav_status = self._get_chassis_client().get_nav_state()
+        chassis_client = self._get_chassis_client()
+        if chassis_client.has_cancelable_nav_goal():
+            self.logger.info(
+                "[导航] 新目标将覆盖当前导航目标。")
+        res = chassis_client.set_chassis_nav2_position(base_position)
+        nav_status = chassis_client.get_nav_state()
         self.logger.info(
-            f"[导航请求结果] goal请求是否发出={res}，"
-            f"当前客户端状态={nav_status}。"
-            "该返回值只表示请求是否发出，最终是否到达请轮询 get_nav_status()。")
+            f"[导航] 目标{'已发送' if res else '发送失败'}，状态={nav_status}。")
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def move_chassis_ctrl(self, base_position: np.ndarray) -> StatusCode:
@@ -741,10 +742,8 @@ class W1Manager:
             base_position)
         control_status = self._get_chassis_client().get_control_status()
         self.logger.info(
-            f"底盘直控 Action goal 发送结果={res}；"
-            f"当前客户端状态={control_status}。"
-            "该返回值只表示 goal 请求已发出，最终结果请通过 "
-            "get_control_status() 获取。")
+            f"[底盘直控] 目标{'已发送' if res else '发送失败'}，"
+            f"状态={control_status}。")
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def get_current_chassis_pose(self) -> tuple[StatusCode, np.ndarray]:
@@ -849,13 +848,18 @@ class W1Manager:
         if not self._has_chassis_client():
             self.logger.error("无法发送自动回充目标：底盘客户端未初始化。")
             return StatusCode.FAIL
-        res = self._get_chassis_client().set_chassis_auto_charging()
-        charging_status = (
-            self._get_chassis_client().get_auto_charging_status())
+        chassis_client = self._get_chassis_client()
+        if chassis_client.has_cancelable_auto_charging_goal():
+            charging_status = chassis_client.get_auto_charging_status()
+            self.logger.warning(
+                f"[自动回充] 已在执行中，忽略重复请求（状态={charging_status}）。")
+            return StatusCode.FAIL
+
+        res = chassis_client.set_chassis_auto_charging()
+        charging_status = chassis_client.get_auto_charging_status()
         self.logger.info(
-            f"[自动回充请求结果] goal请求是否发出={res}，"
-            f"当前客户端状态={charging_status}。"
-            "该返回值只表示请求是否发出，最终结果请轮询回充状态。")
+            f"[自动回充] 目标{'已发送' if res else '发送失败'}，"
+            f"状态={charging_status}。")
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
     def cancel_chassis_motion(self) -> StatusCode:
@@ -874,9 +878,8 @@ class W1Manager:
         auto_charging_state = chassis_client.get_auto_charging_status()
 
         self.logger.info(
-            "[底盘运动取消检查] "
-            f"导航状态={nav_state}，直控状态={control_state}，"
-            f"自动回充状态={auto_charging_state}。")
+            f"[底盘取消] 导航={nav_state}，直控={control_state}，"
+            f"回充={auto_charging_state}。")
 
         cancel_requested = False
         cancel_ok = False
@@ -905,19 +908,34 @@ class W1Manager:
                 "没有可取消的 goal。")
 
         if not cancel_requested:
-            self.logger.info("[底盘运动取消完成] 当前没有正在执行的底盘任务。")
+            self.logger.info("[底盘取消] 无正在执行的底盘任务。")
             return StatusCode.SUCCESS
 
         # 此处的“成功”只表示至少一个取消请求已发出，不表示机器人已经停止。
         if cancel_ok:
             self.logger.info(
-                "[底盘运动取消请求已发出] 请继续轮询各通道状态；"
-                "只有 Action 最终结果为已取消，才表示对应任务取消完成。")
+                "[底盘取消] 取消请求已发送，等待 Action 最终结果。")
             return StatusCode.SUCCESS
         self.logger.error(
             "[底盘运动取消请求失败] 检测到可取消任务，但所有取消请求均未发出。"
             f"导航状态={nav_state}，直控状态={control_state}，"
             f"自动回充状态={auto_charging_state}。")
+        return StatusCode.FAIL
+
+    def cancel_chassis_control(self) -> StatusCode:
+        """仅取消底盘直控，避免离桩超时时误取消导航或自动回充。"""
+        if not self._use_nav or not self._has_chassis_client():
+            return StatusCode.SUCCESS
+
+        chassis_client = self._get_chassis_client()
+        if not chassis_client.has_cancelable_control_goal():
+            return StatusCode.SUCCESS
+
+        if chassis_client.cancel_chassis_control():
+            self.logger.info("[底盘直控] 已发送取消请求。")
+            return StatusCode.SUCCESS
+
+        self.logger.error("[底盘直控] 取消请求发送失败。")
         return StatusCode.FAIL
 
     def set_chassis_footprint(self, vertices: list) -> StatusCode:

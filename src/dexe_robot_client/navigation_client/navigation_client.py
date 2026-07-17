@@ -1,5 +1,3 @@
-import inspect
-import os
 import time
 import threading
 import numpy as np
@@ -19,10 +17,6 @@ except ImportError as e:
     # 允许使用旧版 nav_interfaces 的环境先启动其他功能；直控接口会保持不可用。
     PreciseControl = None
     PRECISE_CONTROL_IMPORT_ERROR = str(e)
-from rcl_interfaces.srv import SetParameters, GetParameters
-from rcl_interfaces.msg import ParameterType
-from rclpy.parameter import Parameter
-from geometry_msgs.msg import Polygon, Point32
 from rcl_interfaces.srv import SetParameters, GetParameters
 from rcl_interfaces.msg import ParameterType
 from rclpy.parameter import Parameter
@@ -73,10 +67,7 @@ class NavigationClient(ABC, Node):
         else:
             self.node_name = name + "_real"
         super().__init__(self.node_name)
-        self.get_logger().info(
-            f"[导航客户端实例创建] node={self.node_name}，"
-            f"pid={os.getpid()}，cwd={os.getcwd()}，"
-            f"source={inspect.getfile(type(self))}，object_id={id(self)}")
+        self.get_logger().info(f"[导航客户端] 已创建：{self.node_name}")
         self._last_msg_time = None
         self._last_chassis_processed_feedback = None
         self._cur_pos = None
@@ -137,6 +128,11 @@ class NavigationClient(ABC, Node):
         self._nav_cancel_requested_time = None
         self._nav_last_progress_log_time = None
         self._nav_last_feedback_summary = None
+        # 业务线程和 ROS 回调线程可能同时访问 Action 状态。发送入口串行化后，
+        # 每次 task_id 与对应目标状态可以作为一个整体完成初始化。
+        self._nav_request_lock = threading.Lock()
+        self._auto_charging_request_lock = threading.Lock()
+        self._control_request_lock = threading.Lock()
         self._control_target_position = None
         self._control_started_time = None
         self._control_last_progress_log_time = None
@@ -344,10 +340,8 @@ class NavigationClient(ABC, Node):
             self._last_chassis_command_detail = detail
             self._last_chassis_command_time = now
 
-        self.get_logger().info(
-            f"[底盘指令记录] 第 {sequence} 条：已发起“{command_type}”；"
-            f"发送方式={channel}；具体内容={detail}。"
-            "看到这类日志，才表示本底盘客户端确实发起了运动或取消请求。")
+        self.get_logger().debug(
+            f"[底盘指令] #{sequence} {command_type}，{detail}")
         return sequence
 
     def _get_chassis_command_audit_summary(self) -> str:
@@ -369,7 +363,32 @@ class NavigationClient(ABC, Node):
             f"“{command_type}”，发送方式={channel}，具体内容={detail}，"
             f"发生在 {age:.3f} 秒前")
 
+    def _normalize_motion_target(self, position, label: str):
+        """校验并复制三维运动目标，避免非法输入破坏当前任务状态。"""
+        try:
+            target = np.asarray(position, dtype=float).reshape(-1)
+        except (TypeError, ValueError) as e:
+            self.get_logger().error(
+                f"[{label}目标非法] 无法转换为数值数组，目标={position}，error={e}")
+            return None
+
+        if target.size != 3:
+            self.get_logger().error(
+                f"[{label}目标非法] 目标必须包含 [x, y, yaw] 三个数值，"
+                f"当前元素数量={target.size}，目标={position}。")
+            return None
+        if not np.all(np.isfinite(target)):
+            self.get_logger().error(
+                f"[{label}目标非法] 目标包含 NaN 或无穷大，目标={target.tolist()}。")
+            return None
+        return target.copy()
+
     def set_chassis_nav2_position(self, position) -> bool:
+        """串行发送 Nav2 目标；同一客户端中后调用的目标具有更高优先级。"""
+        with self._nav_request_lock:
+            return self._set_chassis_nav2_position(position)
+
+    def _set_chassis_nav2_position(self, position) -> bool:
         """异步发送 Nav2 导航目标。
 
         Args:
@@ -383,13 +402,17 @@ class NavigationClient(ABC, Node):
                 "[导航目标发送失败] NavigateToPose Action 客户端未初始化。")
             return False
 
+        target = self._normalize_motion_target(position, "导航")
+        if target is None:
+            return False
+
         self._nav_task_id += 1
         current_task_id = self._nav_task_id
         self._nav_goal_handle = None
         self._nav_result_future = None
         self._nav_cancel_future = None
         self._nav_result = None
-        self._nav_target_position = np.asarray(position, dtype=float).copy()
+        self._nav_target_position = target
         self._nav_started_time = time.monotonic()
         self._nav_accepted_time = None
         self._nav_cancel_requested_time = None
@@ -403,11 +426,11 @@ class NavigationClient(ABC, Node):
         nav2_position.pose = PoseStamped()
         nav2_position.pose.header.frame_id = "map"
         nav2_position.pose.header.stamp = self.get_clock().now().to_msg()
-        nav2_position.pose.pose.position.x = position[0]
-        nav2_position.pose.pose.position.y = position[1]
+        nav2_position.pose.pose.position.x = target[0]
+        nav2_position.pose.pose.position.y = target[1]
         nav2_position.pose.pose.position.z = 0.0
 
-        rotation = R.from_euler('xyz', [0, 0, position[2]], degrees=True)
+        rotation = R.from_euler('xyz', [0, 0, target[2]], degrees=True)
         quat_arry = rotation.as_quat()
 
         nav2_position.pose.pose.orientation.x = quat_arry[0]
@@ -441,10 +464,9 @@ class NavigationClient(ABC, Node):
                 "导航到目标点", "导航 Action（/navigate_to_pose）",
                 f"任务编号={current_task_id}，目标={self._nav_target_summary()}")
             self.get_logger().info(
-                f"[导航目标请求已发出] task_id={current_task_id}，"
-                f"目标={self._nav_target_summary()}，坐标系=map，"
-                f"等待服务耗时={wait_server_elapsed:.3f}s，"
-                "当前仅表示请求已发出，尚未表示 Nav2 已接受或导航成功。")
+                f"[导航] 已发送 task_id={current_task_id}，"
+                f"目标={self._nav_target_summary()}，"
+                f"服务等待={wait_server_elapsed:.2f}s。")
             return True
         except Exception as e:
             self._set_nav_status(
@@ -467,21 +489,10 @@ class NavigationClient(ABC, Node):
         if old_status == status:
             return
 
-        descriptions = {
-            "IDLE": "空闲",
-            "NAVIGATING": "正在导航",
-            "CANCELLING": "正在取消导航",
-            "SUCCEEDED": "导航成功",
-            "FAILED": "导航失败",
-            "CANCELLED": "导航已取消",
-        }
         reason_text = f"，原因={reason}" if reason else ""
         self.get_logger().info(
-            f"[导航状态变化] task_id={task_id}，{old_status} -> {status}"
-            f"（{descriptions.get(status, '未知状态')}），"
-            f"任务耗时={self._elapsed_since(self._nav_started_time):.3f}s，"
-            f"目标={self._nav_target_summary()}，"
-            f"当前位置={self._get_cached_chassis_pose_summary()}"
+            f"[导航状态] id={task_id} {old_status}->{status}，"
+            f"耗时={self._elapsed_since(self._nav_started_time):.1f}s"
             f"{reason_text}。")
 
     def _on_nav_feedback(self, feedback_msg, task_id):
@@ -511,13 +522,8 @@ class NavigationClient(ABC, Node):
             "recoveries": feedback.number_of_recoveries,
         }
         self.get_logger().info(
-            f"[导航进度] task_id={task_id}，状态=NAVIGATING，"
-            f"当前位置=({pose.x:.3f}, {pose.y:.3f})，"
-            f"目标={self._nav_target_summary()}，"
-            f"剩余距离={feedback.distance_remaining:.3f}m，"
-            f"已导航={navigation_time:.1f}s，"
-            f"客户端任务耗时={self._elapsed_since(self._nav_started_time):.1f}s，"
-            f"恢复行为次数={feedback.number_of_recoveries}。")
+            f"[导航进度] id={task_id}，剩余={feedback.distance_remaining:.2f}m，"
+            f"已运行={navigation_time:.1f}s，恢复={feedback.number_of_recoveries}。")
 
     def get_nav_state(self) -> str:
         """获取当前导航状态。
@@ -528,6 +534,7 @@ class NavigationClient(ABC, Node):
                 - "NAVIGATING": 导航中
                 - "CANCELLING": 正在取消，等待 Nav2 最终结果
                 - "SUCCEEDED": 成功
+                - "ABORTED": Nav2 服务端中止
                 - "FAILED": 失败
                 - "CANCELLED": 已取消
         """
@@ -608,28 +615,10 @@ class NavigationClient(ABC, Node):
         if old_status == status:
             return
 
-        descriptions = {
-            "IDLE": "空闲",
-            "WAITING_SERVER": "等待回充 Action 服务",
-            "SENDING": "正在发送回充 goal",
-            "ACCEPTED": "回充 goal 已接受",
-            "EXECUTING": "正在执行回充",
-            "CANCELING": "正在取消回充",
-            "SUCCEEDED": "回充成功",
-            "CANCELED": "回充已取消",
-            "ABORTED": "回充被服务端中止",
-            "REJECTED": "回充 goal 被拒绝",
-            "FAILED_TO_SEND": "回充 goal 发送失败",
-            "UNKNOWN": "回充状态未知",
-        }
         reason_text = f"，原因={reason}" if reason else ""
         self.get_logger().info(
-            f"[自动回充状态变化] task_id={task_id}，"
-            f"{old_status} -> {status}"
-            f"（{descriptions.get(status, '未知状态')}），"
-            f"任务耗时="
-            f"{self._elapsed_since(self._auto_charging_started_time):.3f}s，"
-            f"当前位置={self._get_cached_chassis_pose_summary()}"
+            f"[自动回充状态] id={task_id} {old_status}->{status}，"
+            f"耗时={self._elapsed_since(self._auto_charging_started_time):.1f}s"
             f"{reason_text}。")
 
     def _auto_charging_feedback_callback(self, feedback_msg, task_id):
@@ -658,21 +647,32 @@ class NavigationClient(ABC, Node):
             self._last_auto_charging_feedback_signature = feedback_signature
             self._last_auto_charging_feedback_log_time = now
             self.get_logger().info(
-                f"[自动回充进度] task_id={task_id}，"
-                f"客户端状态={self._auto_charging_status}，"
-                f"服务端阶段={feedback.current_state}，"
-                f"重试次数={feedback.retry_count}，"
-                f"任务耗时="
-                f"{self._elapsed_since(self._auto_charging_started_time):.1f}s，"
-                f"当前位置={self._get_cached_chassis_pose_summary()}。")
+                f"[自动回充进度] id={task_id}，阶段={feedback.current_state}，"
+                f"重试={feedback.retry_count}，"
+                f"已运行={self._elapsed_since(self._auto_charging_started_time):.1f}s。")
 
     def set_chassis_auto_charging(self,
                                   force: bool = True,
                                   timeout_sec: float = 10.0) -> bool:
+        """串行发送回充目标，拒绝同一客户端重复启动回充任务。"""
+        with self._auto_charging_request_lock:
+            return self._set_chassis_auto_charging(force, timeout_sec)
+
+    def _set_chassis_auto_charging(self,
+                                   force: bool = True,
+                                   timeout_sec: float = 10.0) -> bool:
         """异步发送回充 goal；返回值不代表最终回充成功。"""
         if self._auto_charging_action_client is None:
             self.get_logger().error(
                 "[自动回充发送失败] AutoCharging Action 客户端未初始化。")
+            return False
+
+        if self.has_cancelable_auto_charging_goal():
+            self.get_logger().warn(
+                "[自动回充重复请求已拒绝] "
+                f"当前 task_id={self._auto_charging_task_id}，"
+                f"状态={self._auto_charging_status}。"
+                "请等待当前回充结束或先取消当前回充任务。")
             return False
 
         action_name = getattr(self._auto_charging_action_client, "_action_name",
@@ -734,10 +734,9 @@ class NavigationClient(ABC, Node):
                 f"任务编号={current_task_id}，是否强制回充="
                 f"{'是' if force else '否'}")
             self.get_logger().info(
-                f"[自动回充目标请求已发出] task_id={current_task_id}，"
-                f"force={'true' if force else 'false'}，"
-                f"等待服务耗时={wait_server_elapsed:.3f}s。"
-                "当前仅表示请求已发出，最终结果以 Action result 为准。")
+                f"[自动回充] 已发送 id={current_task_id}，"
+                f"force={str(force).lower()}，"
+                f"服务等待={wait_server_elapsed:.2f}s。")
             return True
         except Exception as e:
             self._set_auto_charging_status(
@@ -1031,6 +1030,11 @@ class NavigationClient(ABC, Node):
             return False
 
     def set_chassis_control_position(self, position) -> bool:
+        """串行发送底盘直控目标，避免多个业务线程同时创建任务。"""
+        with self._control_request_lock:
+            return self._set_chassis_control_position(position)
+
+    def _set_chassis_control_position(self, position) -> bool:
         """发送一个底盘控制目标点，精度较高。
 
         Args:
@@ -1040,10 +1044,14 @@ class NavigationClient(ABC, Node):
         Returns:
             bool: 如果目标发送成功则为 True。
         """
-        if position[0] != 0.0 and position[2] != 0:
+        target = self._normalize_motion_target(position, "底盘直控")
+        if target is None:
+            return False
+
+        if target[0] != 0.0 and target[2] != 0:
             self.get_logger().info(
                 "[底盘直控目标非法] x 和 yaw 不能同时为非零值，"
-                f"当前目标=({position[0]:.3f}, {position[2]:.1f}°)。")
+                f"当前目标=({target[0]:.3f}, {target[2]:.1f}°)。")
             return False
 
         if self._control_action_client is None:
@@ -1067,8 +1075,7 @@ class NavigationClient(ABC, Node):
         self._control_success = False
         self._last_control_feedback = None
         self._last_control_result_message = ""
-        self._control_target_position = np.asarray(position,
-                                                   dtype=float).copy()
+        self._control_target_position = target
         self._control_started_time = time.monotonic()
         self._control_accepted_time = None
         self._control_cancel_requested_time = None
@@ -1087,8 +1094,8 @@ class NavigationClient(ABC, Node):
                 f"[底盘直控目标发送失败] task_id={current_task_id}，"
                 "/control/precise_control Action 服务不可用，"
                 f"等待服务耗时={self._elapsed_since(wait_started_time):.3f}s，"
-                f"目标=相对位移{position[0]:.3f}m/"
-                f"相对转角{position[2]:.1f}°。"
+                f"目标=相对位移{target[0]:.3f}m/"
+                f"相对转角{target[2]:.1f}°。"
                 "请确认 mobile_control_action_node 已启动，"
                 "且旧 mobile_control_node 未同时控制 /control/cmd_vel。")
             return False
@@ -1097,11 +1104,11 @@ class NavigationClient(ABC, Node):
         chassis_position = PoseStamped()
         chassis_position.header.frame_id = "base_link"
         chassis_position.header.stamp = self.get_clock().now().to_msg()
-        chassis_position.pose.position.x = position[0]
+        chassis_position.pose.position.x = target[0]
         chassis_position.pose.position.y = 0.0
         chassis_position.pose.position.z = 0.0
 
-        rotation = R.from_euler('xyz', [0, 0, position[2]], degrees=True)
+        rotation = R.from_euler('xyz', [0, 0, target[2]], degrees=True)
         quat_arry = rotation.as_quat()
         chassis_position.pose.orientation.x = quat_arry[0]
         chassis_position.pose.orientation.y = quat_arry[1]
@@ -1113,8 +1120,8 @@ class NavigationClient(ABC, Node):
 
         self._record_chassis_command(
             "底盘直控", "Action（/control/precise_control）",
-            f"任务编号={current_task_id}，相对前后移动={position[0]:.3f}m，"
-            f"旋转角度={position[2]:.1f}°")
+            f"任务编号={current_task_id}，相对前后移动={target[0]:.3f}m，"
+            f"旋转角度={target[2]:.1f}°")
         self._set_control_status(
             "SENDING", current_task_id,
             f"Action 服务已发现，等待服务耗时 {wait_server_elapsed:.3f}s")
@@ -1130,10 +1137,9 @@ class NavigationClient(ABC, Node):
                 lambda future: self._on_control_goal_response(
                     future, current_task_id))
             self.get_logger().info(
-                f"[底盘直控目标已发送] task_id={current_task_id}，"
-                f"相对位移={position[0]:.3f}m，相对转角={position[2]:.1f}°，"
-                f"坐标系=base_link，等待服务耗时={wait_server_elapsed:.3f}s。"
-                "当前仅表示请求已发出，最终结果以 Action result 为准。")
+                f"[底盘直控] 已发送 id={current_task_id}，"
+                f"相对位移={target[0]:.3f}m，相对转角={target[2]:.1f}°，"
+                f"服务等待={wait_server_elapsed:.2f}s。")
             return True
         except Exception as e:
             self._control_done = True
@@ -1154,24 +1160,10 @@ class NavigationClient(ABC, Node):
         old_status = self._control_status
         self._control_status = status
         if old_status != status:
-            status_descriptions = {
-                "IDLE": "空闲",
-                "WAITING_SERVER": "等待 Action 服务",
-                "SENDING": "正在发送 Action goal",
-                "CONTROL": "正在执行底盘直控",
-                "SUCCEEDED": "底盘直控已完成",
-                "CANCELLING": "正在平滑停止",
-                "CANCELLED": "底盘直控已取消",
-                "FAILED": "底盘直控失败",
-            }
             reason_text = f"，原因={reason}" if reason else ""
             self.get_logger().info(
-                f"[底盘直控状态变化] task_id={task_id}，"
-                f"{old_status} -> {status}"
-                f"（{status_descriptions.get(status, '未知状态')}），"
-                f"任务耗时="
-                f"{self._elapsed_since(self._control_started_time):.3f}s，"
-                f"当前位姿={self._get_cached_chassis_pose_summary()}"
+                f"[底盘直控状态] id={task_id} {old_status}->{status}，"
+                f"耗时={self._elapsed_since(self._control_started_time):.1f}s"
                 f"{reason_text}。")
 
         if status != "CONTROL":
@@ -1192,9 +1184,8 @@ class NavigationClient(ABC, Node):
             f"相对位移={target[0]:.3f}m，相对转角={target[2]:.1f}°"
             if target is not None else "目标未记录")
         self.get_logger().info(
-            f"[底盘直控进度] task_id={task_id}，状态=CONTROL，"
-            f"{target_summary}，已执行={elapsed:.1f}s，"
-            f"当前位姿={self._get_cached_chassis_pose_summary()}。")
+            f"[底盘直控进度] id={task_id}，{target_summary}，"
+            f"已执行={elapsed:.1f}s。")
 
     def _on_control_feedback(self, feedback_msg, task_id: int) -> None:
         """处理 PreciseControl feedback，并忽略旧任务的迟到反馈。"""
@@ -1332,15 +1323,9 @@ class NavigationClient(ABC, Node):
             elapsed = (time.monotonic() - self._control_started_time
                        if self._control_started_time is not None else -1.0)
             message = (
-                f"[底盘直控最终结果] task_id={task_id}，"
-                f"客户端状态={final_status}，"
-                f"Action结果={self._action_result_status_name(response.status)}，"
-                f"success={bool(result.success)}，message={result.message}，"
-                f"总耗时={elapsed:.3f}s，接受后执行耗时="
-                f"{self._elapsed_since(self._control_accepted_time):.3f}s，"
-                f"目标=相对位移{self._control_target_position[0]:.3f}m/"
-                f"相对转角{self._control_target_position[2]:.1f}°，"
-                f"最终位姿={self._get_cached_chassis_pose_summary()}。")
+                f"[底盘直控结果] id={task_id}，状态={final_status}，"
+                f"success={bool(result.success)}，耗时={elapsed:.1f}s，"
+                f"message={result.message}。")
             if final_status in {"SUCCEEDED", "CANCELLED"}:
                 self.get_logger().info(message)
             else:
@@ -1570,6 +1555,8 @@ class NavigationClient(ABC, Node):
                 final_status = "SUCCEEDED"
             elif response.status == GoalStatus.STATUS_CANCELED:
                 final_status = "CANCELLED"
+            elif response.status == GoalStatus.STATUS_ABORTED:
+                final_status = "ABORTED"
             else:
                 final_status = "FAILED"
 
