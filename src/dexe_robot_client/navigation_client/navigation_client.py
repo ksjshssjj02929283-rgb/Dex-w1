@@ -823,6 +823,53 @@ class NavigationClient(ABC, Node):
                 f"error={e}")
             return False
 
+    def wait_for_auto_charging_done(self, timeout: float = 300.0,
+                                    cancel_on_timeout: bool = True
+                                    ) -> tuple[bool, str]:
+        """轮询等待回充 Action 进入最终状态；风格与 wait_for_navigation_arrival 一致。
+
+        Args:
+            timeout: 总超时秒数。行为树 Dock 60s×3 + CheckCharging 20s×3，
+                理论上限约 240s，默认 300s 留余量。
+            cancel_on_timeout: 超时是否主动取消回充 goal。
+
+        Returns:
+            (success, message)：
+                - success=True 仅当 Action 状态为 SUCCEEDED 且 result.success=True；
+                - 其余终态（FAILED/CANCELED/ABORTED/REJECTED/FAILED_TO_SEND）、
+                  超时或接口不可用均返回 False，message 携带原因。
+        """
+        start_time = time.monotonic()
+        while True:
+            self.spin_once()
+            status = self._auto_charging_status
+
+            if status == "SUCCEEDED":
+                success = bool(self._auto_charging_success)
+                message = self._last_auto_charging_result_message or "回充完成"
+                self.get_logger().info(
+                    f"[自动回充等待结束] 成功={success}，message={message}，"
+                    f"耗时={time.monotonic() - start_time:.1f}s。")
+                return success, message
+
+            if status in {"FAILED", "FAILED_TO_SEND", "CANCELED",
+                          "CANCELLED", "ABORTED", "REJECTED", "UNKNOWN"}:
+                message = self._last_auto_charging_result_message or status
+                self.get_logger().error(
+                    f"[自动回充等待结束] 终态={status}，message={message}，"
+                    f"耗时={time.monotonic() - start_time:.1f}s。")
+                return False, message
+
+            if time.monotonic() - start_time > timeout:
+                self.get_logger().error(
+                    f"[自动回充等待超时] 当前状态={status}，"
+                    f"超时={timeout:.1f}s。")
+                if cancel_on_timeout:
+                    self.cancel_auto_charging()
+                return False, f"回充等待超时（{timeout:.1f}s）"
+
+            time.sleep(0.1)
+
     def _auto_charging_goal_done_callback(self, future, task_id):
         if task_id != self._auto_charging_task_id:
             self.get_logger().debug(

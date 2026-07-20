@@ -862,6 +862,26 @@ class W1Manager:
             f"状态={charging_status}。")
         return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
+    def wait_for_auto_charging_done(self, timeout: float = 300.0
+                                    ) -> tuple[StatusCode, bool, str]:
+        """轮询等待回充 Action 进入终态；与 wait_for_navigation_arrival 风格一致。
+
+        Returns:
+            tuple[StatusCode, bool, str]：
+                - StatusCode：接口是否可用（SUCCESS/FAIL）；
+                - bool：回充是否真正成功（仅 Action SUCCEEDED 且 result.success=True）；
+                - str：结果消息或失败原因。
+        """
+        if not self._use_nav:
+            self.logger.error("无法等待回充结果：导航功能未启用。")
+            return StatusCode.FAIL, False, "DISABLED"
+        if not self._has_chassis_client():
+            self.logger.error("无法等待回充结果：底盘客户端未初始化。")
+            return StatusCode.FAIL, False, "NOT_INITIALIZED"
+        success, message = self._get_chassis_client().wait_for_auto_charging_done(
+            timeout=timeout)
+        return StatusCode.SUCCESS, success, message
+
     def cancel_chassis_motion(self) -> StatusCode:
         """统一取消底盘运动，只对正在运行的通道发送取消请求。"""
         if not self._use_nav:

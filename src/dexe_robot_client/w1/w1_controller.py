@@ -1819,19 +1819,19 @@ class W1Controller(W1Displayui):  # 主流程
         temperature = data.get("temperature") 
         is_auto = data.get("is_auto", False)
 #####################重复订单号不执行
-        order_sn = data.get("orderSn")
+        # order_sn = data.get("orderSn")
 
-        if order_sn:
-            now = time.time()
-            last_order_sn = getattr(self, "_last_trigger_order_sn", None)
-            last_trigger_time = getattr(self, "_last_trigger_order_time", 0)
+        # if order_sn:
+        #     now = time.time()
+        #     last_order_sn = getattr(self, "_last_trigger_order_sn", None)
+        #     last_trigger_time = getattr(self, "_last_trigger_order_time", 0)
 
-            if last_order_sn == order_sn and now - last_trigger_time < 300:
-                logging.warning(f"重复订单触发已忽略: orderSn={order_sn}, task={task}")
-                return
+        #     if last_order_sn == order_sn and now - last_trigger_time < 300:
+        #         logging.warning(f"重复订单触发已忽略: orderSn={order_sn}, task={task}")
+        #         return
 
-            self._last_trigger_order_sn = order_sn
-            self._last_trigger_order_time = now
+        #     self._last_trigger_order_sn = order_sn
+        #     self._last_trigger_order_time = now
 #####################重复订单号不执行
 
         if str(card) == "1": 
@@ -3042,22 +3042,49 @@ class W1Controller(W1Displayui):  # 主流程
             logging.error(f"[低电量回充] 回充请求异常: {str(e)}")
             request_success = False
 
+        if not request_success:
+            # goal 没发出去，按原有冷却逻辑保留待回充标记，等待下次重试。
+            with self._chassis_state_lock:
+                self._auto_charging_requesting = False
+                self._last_auto_charging_attempt_time = now
+                self.pending_auto_charging = True
+            logging.error("[低电量回充] 回充目标发送失败，30 秒后允许重试。")
+            return False
+
+        # goal 已发出：阻塞等待回充 Action 进入终态，风格与导航/直控一致。
+        # Action 成功才标记 is_charging_cycle=True；失败则保留 pending_auto_charging，
+        # 由冷却结束后重试。/diagnostics 仍由 update_charging_state 维护，作为兜底。
+        wait_success = False
+        wait_message = ""
+        try:
+            _, wait_success, wait_message = (
+                self.w1.w1_manager.wait_for_auto_charging_done(timeout=300.0))
+        except Exception as e:
+            logging.error(f"[低电量回充] 等待回充结果异常: {str(e)}")
+            wait_success = False
+            wait_message = str(e)
+
         with self._chassis_state_lock:
             self._auto_charging_requesting = False
-            self._last_auto_charging_attempt_time = now
-            if request_success:
-                # 这里只表示 goal 已成功发出，回充是否完成仍由 Action 状态决定。
+            self._last_auto_charging_attempt_time = time.monotonic()
+            if wait_success:
+                # 回充 Action 已确认成功；/diagnostics 的 battery_charging 作为二次校验
+                # 由 update_charging_state 继续维护，满电离桩逻辑不变。
                 self.is_charging_cycle = True
                 self.pending_auto_charging = False
             else:
-                # 保留待回充标记；下一次有效电量回调会在冷却结束后重试。
+                # Action 失败或超时：清除充电周期标记，保留待回充标记以便重试。
+                self.is_charging_cycle = False
                 self.pending_auto_charging = True
 
-        if request_success:
-            logging.info("[低电量回充] 回充目标已发送。")
+        if wait_success:
+            logging.info(
+                f"[低电量回充] 回充成功，message={wait_message}。")
         else:
-            logging.error("[低电量回充] 回充目标发送失败，30 秒后允许重试。")
-        return request_success
+            logging.error(
+                f"[低电量回充] 回充失败，message={wait_message}，"
+                f"{self._auto_charging_retry_interval:.0f} 秒后允许重试。")
+        return wait_success
 
     def _on_execute_task_finished(self, task_thread):
         """任务线程退出时释放底盘占用，并接续被延后的低电量回充。"""
@@ -3936,9 +3963,10 @@ class W1Controller(W1Displayui):  # 主流程
         #     self.is_charging_cycle = False
         #     self.is_force_working = True
 
-        # 低电量回充流程、正在充电或仍连接充电器时，先完成离桩再执行任务。
-        if (self.is_charging_cycle or self.is_battery_charging or
-                self.is_charger_connected):
+        # 仅当物理上仍在充电桩上（正在充电或仍连接充电器）时，才先离桩再执行任务。
+        # is_charging_cycle 只代表"回充流程已成功完成"，不代表机器人此刻还在桩上，
+        # 不能作为退桩依据，否则会在机器人已离开充电桩后仍触发误退桩。
+        if (self.is_battery_charging or self.is_charger_connected):
             self.is_force_working = True
             control_result = self.w1.w1_manager.move_chassis_ctrl([0.3, 0, 0])
             if getattr(control_result, "name", None) != "SUCCESS":
