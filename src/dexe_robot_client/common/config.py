@@ -28,4 +28,9 @@ MODEL_DIR.mkdir(parents=True, exist_ok=True)
 ENVIRONMENT_DIR = ASSETS_DIR / "Environment"
 ENVIRONMENT_DIR.mkdir(parents=True, exist_ok=True)
 
+CACHE_DEXE_DATA = pathlib.Path.home() / ".cache" / "dexe_data"
+CACHE_ASSEMBLED_DIR = CACHE_DEXE_DATA / "assembled"
+CACHE_DOWNLOADS_DIR = CACHE_DEXE_DATA / "downloads"
+CACHE_EXTRACTED_DIR = CACHE_DEXE_DATA / "extracted"
+
 URL_PREFIX = "http://192.168.3.120/CoreEngine/Data/RLIA/rlia_data/RobotModel/Dexe_robot_client"

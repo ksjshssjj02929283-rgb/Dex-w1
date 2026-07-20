@@ -81,14 +81,12 @@ def generate_calib_pose(
 
 
 if __name__ == "__main__":
-    from dexe_robot_client.common import W1ArmType, W1Version
-    from dexe_robot_client.end_effector_client.end_effector_type import EndEffectorType
     from dexe_robot_client.w1 import W1Manager, PathRnBezier, PathType
+    from dexe_rp import EndEffectorType, RobotVersion, StatusType
 
     w1_manager = W1Manager(is_sim=True,
-                           arm_type=W1ArmType.ANTHROPOMORPHIC,
-                           w1_version=W1Version.V2,
-                           end_effector_type=EndEffectorType.BRAINCO_HAND)
+                           robot_version=RobotVersion.W1V024,
+                           end_effector_type=EndEffectorType.BrainCo_Revo1_R)
 
     init_qpos = np.array(
         [-0.5, -0.5, 0.9169, -1.3845, -1.8167, 0.3516, -0.7812])
@@ -112,9 +110,8 @@ if __name__ == "__main__":
     total_qpos = []
     arm_kine = w1_manager._get_arm_kine("left_arm")
     for pose in total_pose:
-        res_ik_status, cur_qpos = arm_kine.get_nearest_ik(xpos=pose,
-                                                          qpos_seed=init_qpos)
-        if res_ik_status.value < 0:
+        res_ik_status, cur_qpos = arm_kine.get_nearest_ik(pose, init_qpos)
+        if res_ik_status != StatusType.Success:
             exit(-2)
         total_qpos.append(cur_qpos)
 

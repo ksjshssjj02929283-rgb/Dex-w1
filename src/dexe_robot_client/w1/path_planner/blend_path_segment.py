@@ -130,6 +130,33 @@ def calc_5th_bezier_SO3_control_points(
     return True, control_points, length
 
 
+def check_SE3_sparse_waypoints(waypoints: np.ndarray, threshold=0.005) -> bool:
+    waypoints_1 = [waypoints[0]]
+    angle_threshold = weighted_norm(np.deg2rad([1.] * 3))
+    for i in range(1, len(waypoints)):
+        dist_R3 = weighted_norm(
+            pin.log6(np.linalg.inv(waypoints[i - 1]) @ waypoints[i]).vector,
+            np.diag([1., 1., 1., 0., 0., 0.]))
+        dist_SO3 = weighted_norm(
+            pin.log6(np.linalg.inv(waypoints[i - 1]) @ waypoints[i]).vector,
+            np.diag([0., 0., 0., 2., 2., 2.]))
+        if dist_R3 < SMALL and dist_SO3 < angle_threshold:
+            continue
+        waypoints_1.append(waypoints[i])
+    if len(waypoints_1) < 2:
+        return False
+    elif len(waypoints_1) == 2:
+        return True
+
+    for i in range(1, len(waypoints_1)):
+        dist = weighted_norm(
+            pin.log6(np.linalg.inv(waypoints_1[i - 1]) @ waypoints_1[i]).vector,
+            np.diag([1., 1., 1., 2., 2., 2.]))
+        if dist < threshold:
+            return False
+    return True
+
+
 class PathSegmentBase(ABC):
 
     def __init__(self, length: float, s0_global=0.):

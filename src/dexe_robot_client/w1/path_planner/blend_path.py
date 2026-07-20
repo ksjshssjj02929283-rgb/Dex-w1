@@ -15,8 +15,8 @@ from ...common import get_logger
 from .blend_path_segment import (SMALL, EPSILON, weighted_norm,
                                  calc_5th_bezier_Rn_control_points,
                                  calc_5th_bezier_SO3_control_points,
-                                 PathSegmentBase, PathSegRnBezier,
-                                 PathSegR3xSO3Bezier)
+                                 check_SE3_sparse_waypoints, PathSegmentBase,
+                                 PathSegRnBezier, PathSegR3xSO3Bezier)
 
 
 class PathType(Enum):

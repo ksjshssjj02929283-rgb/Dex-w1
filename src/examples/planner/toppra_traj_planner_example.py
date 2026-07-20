@@ -65,7 +65,8 @@ def main():
         qpos_array, qvel_array)
     # res, pos_array, vel_array, acc_array, duration = planner.plan(qpos_array)
 
-    plot_trajectory(pos_array, vel_array, acc_array)
+    if res:
+        plot_trajectory(pos_array, vel_array, acc_array)
 
     qpos_array2 = np.array([[0., 0., 0.], [1., 2., 3.], [1.5, 2.5, 3.135],
                             [1.5, 2.5, 3.138], [1.5, 2.5, 3.139], [3., 2., 1.],
@@ -73,10 +74,11 @@ def main():
     qvel_array2 = np.array([[100., 100., 100.], [1., 1., 1.], [1., 1., 1.],
                             [1., 1., 1.], [1., 1., 1.], [2., 2., 2.],
                             [1., 1., 1.]])
-    res, pos_array2, vel_array2, acc_array2, duration2 = planner.plan(
+    res2, pos_array2, vel_array2, acc_array2, duration2 = planner.plan(
         qpos_array2, qvel_array2)
 
-    plot_trajectory(pos_array2, vel_array2, acc_array2)
+    if res2:
+        plot_trajectory(pos_array2, vel_array2, acc_array2)
 
 
 if __name__ == "__main__":
