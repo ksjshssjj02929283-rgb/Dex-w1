@@ -13,6 +13,7 @@ from typing import Any, Optional
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
+from rclpy.callback_groups import ReentrantCallbackGroup
 from std_msgs.msg import String
 from robot_server_interfaces.srv import GetProperty, SetProperty
 from robot_server_interfaces.action import MoveRobot
@@ -35,6 +36,9 @@ class RobotClientRos2(Node, RobotClient):
         RobotClient.__init__(self, is_sim=is_sim)
         self._last_msg_time = None
         self._connection_timeout = 1.0
+
+        self._action_cb_group = ReentrantCallbackGroup()
+        self._srv_cb_group = ReentrantCallbackGroup()
 
         self._init_subscriber()
         rclpy.spin_once(self, timeout_sec=timeout_sec)
@@ -170,7 +174,14 @@ class RobotClientRos2(Node, RobotClient):
 
         config_dict = {}
         if request.kwargs is not None:
-            config_dict.update(request.kwargs)
+            for k, v in request.kwargs.items():
+                if isinstance(v, Enum):
+                    config_dict[k] = v.name
+                elif isinstance(v, np.ndarray):
+                    config_dict[k] = v.tolist()
+                else:
+                    config_dict[k] = v
+
         if config_dict:
             goal_msg.config = json.dumps(config_dict)
         else:
@@ -246,11 +257,17 @@ class RobotClientRos2(Node, RobotClient):
 
     def _init_action_client(self):
         if self.is_sim:
-            self._action_move_robot = ActionClient(self, MoveRobot,
-                                                   "/control/move_robot_sim")
+            self._action_move_robot = ActionClient(
+                self,
+                MoveRobot,
+                "/control/move_robot_sim",
+                callback_group=self._action_cb_group)
         else:
-            self._action_move_robot = ActionClient(self, MoveRobot,
-                                                   "/control/move_robot")
+            self._action_move_robot = ActionClient(
+                self,
+                MoveRobot,
+                "/control/move_robot",
+                callback_group=self._action_cb_group)
 
     def _feedback_move_robot_callback(self, feedback_msg):
         feedback = feedback_msg.feedback
@@ -310,10 +327,14 @@ class RobotClientRos2(Node, RobotClient):
     def _init_service_client(self):
         if self.is_sim:
             self._srv_set_property = self.create_client(
-                SetProperty, "/control/set_property_sim")
+                SetProperty,
+                "/control/set_property_sim",
+                callback_group=self._srv_cb_group)
         else:
             self._srv_set_property = self.create_client(
-                SetProperty, "/control/set_property")
+                SetProperty,
+                "/control/set_property",
+                callback_group=self._srv_cb_group)
 
     """ ---------------------------------------------------------------------------
     callbacks for subscribers

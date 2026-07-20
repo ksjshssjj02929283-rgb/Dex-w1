@@ -86,7 +86,10 @@ class HybridPlanner:
             - If ee_type is None, it will not use the end effector
         """
         if ee_type is not None:
-            if ee_type != EndEffectorType.AGILEX_Pika and ee_type != EndEffectorType.AGILEX_PiPER_L100:
+            if ee_type in [
+                    EndEffectorType.DH_PGC_140_50,
+                    EndEffectorType.BrainCo_Revo1_R, EndEffectorType.Linker_L6
+            ]:
                 cls.ee_type = ee_type
                 cls.use_ee = True
             else:

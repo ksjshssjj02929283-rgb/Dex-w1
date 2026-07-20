@@ -153,5 +153,5 @@ def value_to_string(value) -> str:
     if isinstance(value, (list, tuple, np.ndarray)):
         return ",".join(str(float(v)) for v in value)
     if isinstance(value, Enum):
-        return value.name()
+        return value.name
     return str(value)

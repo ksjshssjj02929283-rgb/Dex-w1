@@ -1,6 +1,8 @@
 # CHANGELOG
 
 ## [Unrelease]
+
+## [V0.7.0]
 ### Feat
 - 支持W1 V030硬件版本
 - 支持 W1Manager 类构造函数，自动从系统配置中读取类型
@@ -12,6 +14,9 @@
 - 移除move_torso_linear()、move_arm_linear()、rotate_arm_linear()
 - 移除transfer_grasp_pose()
 - 移除 W1ArmType、W1Version 和 EndEffectorType
+
+### Improve
+- 优化StatusCode日志输出
 
 ## [V0.6.0]
 ### Feat
