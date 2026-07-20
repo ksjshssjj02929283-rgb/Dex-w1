@@ -50,6 +50,7 @@ class EndEffectorParamsRegistry:
         return cls._registry[ee_type]()
 
 
+# yapf: disable
 @EndEffectorParamsRegistry.register(DexeRP_EEType.AGILEX_PiPER_L100)
 def _():
     return EndEffectorParams(
@@ -139,13 +140,17 @@ def _():
     return EndEffectorParams(
         dof=16,
         joint_names=("T_CMC_ROLL", "T_CMC_YAW", "T_CMC_PITCH", "T_MCP",
-                     "IF_MCP_ROLL", "IF_MCP_PITCH", "IF_PIP", "MF_MCP_ROLL",
-                     "MF_MCP_PITCH", "MF_PIP", "RF_MCP_ROLL", "RF_MCP_PITCH",
-                     "RF_PIP", "LF_MCP_ROLL", "LF_MCP_PITCH", "LF_PIP"),
+                     "IF_MCP_ROLL", "IF_MCP_PITCH", "IF_PIP",
+                     "MF_MCP_ROLL", "MF_MCP_PITCH", "MF_PIP",
+                     "RF_MCP_ROLL", "RF_MCP_PITCH", "RF_PIP",
+                     "LF_MCP_ROLL", "LF_MCP_PITCH", "LF_PIP"),
         supported_modes=(EEJointControlMode.POSITION,),
-        position=Limit(
-            (0, 0, 0, 0, -100, 0, 0, -100, 0, 0, -100, 0, 0, -100, 0, 0),
-            (100,) * 16),
+        position=Limit((0, 0, 0, 0,
+                        -100, 0, 0,
+                        -100, 0, 0,
+                        -100, 0, 0,
+                        -100, 0, 0),
+                    (100,) * 16),
         velocity=Limit((-100,) * 16, (100,) * 16),
         current=Limit((-100,) * 16, (100,) * 16),
         force=Limit((-100,) * 16, (100,) * 16),
@@ -156,13 +161,18 @@ def _():
 def _():
     return EndEffectorParams(
         dof=13,
-        joint_names=("IF_MCP_ROLL", "IF_MCP_PITCH", "IF_PIP", "MF_MCP_ROLL",
-                     "MF_MCP_PITCH", "MF_PIP", "RF_MCP_ROLL", "RF_MCP_PITCH",
-                     "RF_PIP", "T_CMC_ROLL", "T_CMC_YAW", "T_MCP", "T_IP"),
+        joint_names=("IF_MCP_ROLL", "IF_MCP_PITCH", "IF_PIP",
+                     "MF_MCP_ROLL", "MF_MCP_PITCH", "MF_PIP",
+                     "RF_MCP_ROLL", "RF_MCP_PITCH", "RF_PIP",
+                     "T_CMC_ROLL", "T_CMC_YAW", "T_MCP", "T_IP"),
         supported_modes=(EEJointControlMode.POSITION,),
-        position=Limit((-100, 0, 0, -100, 0, 0, -100, 0, 0, 0, 0, 0, 0),
-                       (100,) * 13),
+        position=Limit((-100, 0, 0,
+                        -100, 0, 0,
+                        -100, 0, 0,
+                        0, 0, 0, 0),
+                    (100,) * 13),
         velocity=Limit((-100,) * 13, (100,) * 13),
         current=Limit((-100,) * 13, (100,) * 13),
         force=Limit((-100,) * 13, (100,) * 13),
     )
+# yapf: enable

@@ -27,8 +27,10 @@ class Planner_Pin:
         self.real2pin_idx = get_real2pin_idx(robot_urdf, robot_type)
 
         if end_effector_type is not None and isinstance(
-                end_effector_type, EndEffectorType
-        ) and end_effector_type != EndEffectorType.AGILEX_Pika and end_effector_type != EndEffectorType.AGILEX_PiPER_L100:
+                end_effector_type, EndEffectorType) and end_effector_type in [
+                    EndEffectorType.DH_PGC_140_50,
+                    EndEffectorType.BrainCo_Revo1_R, EndEffectorType.Linker_L6
+                ]:
             self.use_ee = True
             self.ee_type = end_effector_type
             self.pin_torso_idx, self.pin_head_idx, self.pin_arml_idx, self.pin_armr_idx, \

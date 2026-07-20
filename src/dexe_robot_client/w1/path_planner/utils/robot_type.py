@@ -228,7 +228,7 @@ def get_robot_urdf(robot_type: RobotType,
                     raise ValueError(
                         "Unsupported robot type. Please use W1V02_1, W1V02_2 or W1V03_1."
                     )
-            elif ee_type == EndEffectorType.AGILEX_Pika or ee_type == EndEffectorType.AGILEX_PiPER_L100:
+            else:
                 if robot_type == RobotType.W1V02_1:
                     return RobotURDF.W1V02_1.value
                 elif robot_type == RobotType.W1V02_2:
@@ -452,12 +452,9 @@ def get_ee_joint_names(ee_type: EndEffectorType = None,
             return PGC_BASE_JOINT_NAMES[0], PGC_BASE_JOINT_NAMES[1]
         elif ee_type == EndEffectorType.Linker_L6:
             return LINKER_BASE_JOINT_NAMES[0], LINKER_BASE_JOINT_NAMES[1]
-        elif ee_type == EndEffectorType.AGILEX_Pika or ee_type == EndEffectorType.AGILEX_PiPER_L100:
-            return FLANGE_JOINT_NAMES[0], FLANGE_JOINT_NAMES[1]
         else:
-            raise ValueError(
-                "Unsupported end effector type. Please use BrainCo_Revo1_R or DH_PGC_140_50 or Linker_L6."
-            )
+            return FLANGE_JOINT_NAMES[0], FLANGE_JOINT_NAMES[1]
+
     elif robot_version == RobotType.W1V03_1:
         if ee_type is None:
             return "LEFT_EE", "RIGHT_EE"
@@ -467,9 +464,5 @@ def get_ee_joint_names(ee_type: EndEffectorType = None,
             return "LEFT_CONNECTOR", "RIGHT_CONNECTOR"
         elif ee_type == EndEffectorType.Linker_L6:
             return "LEFT_CONNECTOR", "RIGHT_CONNECTOR"
-        elif ee_type == EndEffectorType.AGILEX_Pika or ee_type == EndEffectorType.AGILEX_PiPER_L100:
-            return "LEFT_EE", "RIGHT_EE"
         else:
-            raise ValueError(
-                "Unsupported end effector type. Please use BrainCo_Revo1_R or DH_PGC_140_50 or Linker_L6."
-            )
+            return "LEFT_EE", "RIGHT_EE"

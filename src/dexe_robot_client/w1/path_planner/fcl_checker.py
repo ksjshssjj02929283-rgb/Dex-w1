@@ -72,7 +72,11 @@ class FCLChecker:
         self.use_ee = False
         if end_effector_type is not None:
             if isinstance(end_effector_type, EndEffectorType):
-                if end_effector_type != EndEffectorType.AGILEX_Pika and end_effector_type != EndEffectorType.AGILEX_PiPER_L100:
+                if end_effector_type in [
+                        EndEffectorType.DH_PGC_140_50,
+                        EndEffectorType.BrainCo_Revo1_R,
+                        EndEffectorType.Linker_L6
+                ]:
                     self.armlee_full_path, self.armree_full_path = get_ee_full_path(
                         robot_type, end_effector_type)
                     # self.arml_full_path.append(self.ee_full_path[0])
