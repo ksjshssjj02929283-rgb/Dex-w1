@@ -11,26 +11,29 @@ import rclpy
 import threading
 from rclpy.executors import MultiThreadedExecutor
 
-from dexe_robot_client.end_effector_client import EndEffectorType, create_end_effector_client
+from dexe_robot_client.end_effector_client import EndEffectorClient
+from dexe_rp import EndEffectorType
 
 
 def main(is_sim: bool = True,
-         left_ee_type: EndEffectorType = EndEffectorType.BRAINCO_HAND,
-         right_ee_type: EndEffectorType = EndEffectorType.BRAINCO_HAND):
+         left_ee_type: EndEffectorType = EndEffectorType.BrainCo_Revo1_R,
+         right_ee_type: EndEffectorType = EndEffectorType.BrainCo_Revo1_R):
     rclpy.init()
 
     executor = MultiThreadedExecutor()
 
     left_ee_node = None
     if left_ee_type is not None:
-        left_ee_node = create_end_effector_client(
-            end_effector_type=left_ee_type, is_left=True, is_sim=is_sim)
+        left_ee_node = EndEffectorClient(ee_type=left_ee_type,
+                                         is_left=True,
+                                         is_sim=is_sim)
         executor.add_node(left_ee_node)
 
     right_ee_node = None
     if right_ee_type is not None:
-        right_ee_node = create_end_effector_client(
-            end_effector_type=right_ee_type, is_left=False, is_sim=is_sim)
+        right_ee_node = EndEffectorClient(ee_type=right_ee_type,
+                                          is_left=False,
+                                          is_sim=is_sim)
         executor.add_node(right_ee_node)
 
     bg_thread = threading.Thread(target=executor.spin, daemon=True)
@@ -71,7 +74,7 @@ def main(is_sim: bool = True,
 
 if __name__ == "__main__":
     main(is_sim=True,
-         left_ee_type=EndEffectorType.BRAINCO_HAND,
-         right_ee_type=EndEffectorType.BRAINCO_HAND)
-    # main(is_sim=True, left_ee_type=EndEffectorType.LINKER_HAND, right_ee_type=EndEffectorType.LINKER_HAND)
-    # main(is_sim=True, left_ee_type=EndEffectorType.PGC_GRIPPER, right_ee_type=EndEffectorType.PGC_GRIPPER)
+         left_ee_type=EndEffectorType.BrainCo_Revo1_R,
+         right_ee_type=EndEffectorType.BrainCo_Revo1_R)
+    # main(is_sim=True, left_ee_type=EndEffectorType.Linker_L6, right_ee_type=EndEffectorType.Linker_L6)
+    # main(is_sim=True, left_ee_type=EndEffectorType.DH_PGC_140_50, right_ee_type=EndEffectorType.DH_PGC_140_50)

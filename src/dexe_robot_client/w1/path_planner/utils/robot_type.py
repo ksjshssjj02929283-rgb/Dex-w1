@@ -10,8 +10,8 @@ from enum import Enum, auto
 import os
 import pathlib
 import numpy as np
-from ....common.config import ASSETS_DIR, DATA_DIR, MODEL_DIR, ENVIRONMENT_DIR
-from ....end_effector_client import EndEffectorType
+from ....common import DATA_DIR, MODEL_DIR, CACHE_ASSEMBLED_DIR, CACHE_EXTRACTED_DIR, RobotType
+from dexe_rp import EndEffectorType
 
 SINGLE_ARM_DIM = 7
 DUAL_ARM_DIM = 14
@@ -133,11 +133,6 @@ LINKER_BASE_JOINT_NAMES = [
 ]
 
 
-class RobotType(Enum):
-    W1V02_1 = auto()
-    W1V02_2 = auto()
-
-
 class RobotURDF(Enum):
     W1V02_1 = os.path.join(ANTH_MODEL_DIR, "W1_V2_A.urdf")
     W1V02_2 = os.path.join(INDU_MODEL_DIR, "W1_V2_I.urdf")
@@ -189,41 +184,64 @@ def get_robot_urdf(robot_type: RobotType,
             return RobotURDF.W1V02_1.value
         elif robot_type == RobotType.W1V02_2:
             return RobotURDF.W1V02_2.value
+        elif robot_type == RobotType.W1V03_1:
+            return os.path.join(CACHE_ASSEMBLED_DIR, "w1", "robot.urdf")
         else:
             raise ValueError(
-                "Unsupported robot type. Please use W1V02_1 or W1V02_2.")
+                "Unsupported robot type. Please use W1V02_1, W1V02_2 and W1V03_1."
+            )
     else:
         if isinstance(ee_type, EndEffectorType):
-            if ee_type == EndEffectorType.BRAINCO_HAND:
+            if ee_type == EndEffectorType.BrainCo_Revo1_R:
                 if robot_type == RobotType.W1V02_1:
                     return RobotURDF.W1V02_1_BRAINCO.value
                 elif robot_type == RobotType.W1V02_2:
                     return RobotURDF.W1V02_2_BRAINCO.value
+                elif robot_type == RobotType.W1V03_1:
+                    return os.path.join(CACHE_ASSEMBLED_DIR, "w1",
+                                        "robot_with_ee.urdf")
                 else:
                     raise ValueError(
-                        "Unsupported robot type. Please use W1V02_1 or W1V02_2."
+                        "Unsupported robot type. Please use W1V02_1, W1V02_2 or W1V03_1."
                     )
-            elif ee_type == EndEffectorType.PGC_GRIPPER:
+            elif ee_type == EndEffectorType.DH_PGC_140_50:
                 if robot_type == RobotType.W1V02_1:
                     return RobotURDF.W1V02_1_PGC.value
                 elif robot_type == RobotType.W1V02_2:
                     return RobotURDF.W1V02_2_PGC.value
+                elif robot_type == RobotType.W1V03_1:
+                    return os.path.join(CACHE_ASSEMBLED_DIR, "w1",
+                                        "robot_with_ee.urdf")
                 else:
                     raise ValueError(
-                        "Unsupported robot type. Please use W1V02_1 or W1V02_2."
+                        "Unsupported robot type. Please use W1V02_1, W1V02_2 or W1V03_1."
                     )
-            elif ee_type == EndEffectorType.LINKER_HAND:
+            elif ee_type == EndEffectorType.Linker_L6:
                 if robot_type == RobotType.W1V02_1:
                     return RobotURDF.W1V02_1_LINKER.value
                 elif robot_type == RobotType.W1V02_2:
                     return RobotURDF.W1V02_2_LINKER.value
+                elif robot_type == RobotType.W1V03_1:
+                    return os.path.join(CACHE_ASSEMBLED_DIR, "w1",
+                                        "robot_with_ee.urdf")
                 else:
                     raise ValueError(
-                        "Unsupported robot type. Please use W1V02_1 or W1V02_2."
+                        "Unsupported robot type. Please use W1V02_1, W1V02_2 or W1V03_1."
+                    )
+            else:
+                if robot_type == RobotType.W1V02_1:
+                    return RobotURDF.W1V02_1.value
+                elif robot_type == RobotType.W1V02_2:
+                    return RobotURDF.W1V02_2.value
+                elif robot_type == RobotType.W1V03_1:
+                    return os.path.join(CACHE_ASSEMBLED_DIR, "w1", "robot.urdf")
+                else:
+                    raise ValueError(
+                        "Unsupported robot type. Please use W1V02_1, W1V02_2 or W1V03_1."
                     )
         else:
             raise ValueError(
-                "Unsupported end effector type. Please use BRAINCO_HAND or PGC_GRIPPER or LINKER_HAND."
+                "Unsupported end effector type. Please use DH_PGC_140_50 or BrainCo_Revo1_R or Linker_L6."
             )
 
 
@@ -234,6 +252,16 @@ def get_robot_mesh_path(robot_type: RobotType) -> str:
     elif robot_type == RobotType.W1V02_2:
         return RobotCollision.W1V02_INDUSTRIAL_HEAD.value, RobotCollision.W1V02_INDUSTRIAL_TORSO.value, \
                 RobotCollision.W1V02_INDUSTRIAL_LEFTARM.value, RobotCollision.W1V02_INDUSTRIAL_RIGHTARM.value
+    elif robot_type == RobotType.W1V03_1:
+        head_path = os.path.join(CACHE_EXTRACTED_DIR, "w1", "v030", "head",
+                                 "collision", "rough")
+        torso_path = os.path.join(CACHE_EXTRACTED_DIR, "w1", "v030", "torso",
+                                  "collision", "rough")
+        left_arm_path = os.path.join(CACHE_EXTRACTED_DIR, "w1", "v030",
+                                     "left_arm", "collision", "rough")
+        right_arm_path = os.path.join(CACHE_EXTRACTED_DIR, "w1", "v030",
+                                      "right_arm", "collision", "rough")
+        return head_path, torso_path, left_arm_path, right_arm_path
     else:
         raise ValueError(
             "Unsupported robot type. Please use W1V02_1 or W1V02_2.")
@@ -253,6 +281,18 @@ def get_arml_full_path(robot_type: RobotType = None):
             RobotCollision.W1V02_INDUSTRIAL_LEFTARM.value + "/" + name
             for name in ARML_LINK_NAMES
         ]
+    elif robot_type == RobotType.W1V03_1:
+        v030_left_arm_names = [
+            "shoulder_pitch_l_j1_link.obj", "shoulder_roll_l_j2_link.obj",
+            "elbow_pitch_l_j3_link.obj", "elbow_yaw_l_j4_link.obj",
+            "wrist_pitch_l_j5_link.obj", "wrist_yaw_l_j6_link.obj",
+            "wrist_roll_l_j7_link.obj"
+        ]
+        left_arm_path = os.path.join(CACHE_EXTRACTED_DIR, "w1", "v030",
+                                     "left_arm", "collision", "rough")
+        arml_full_path = [
+            os.path.join(left_arm_path, name) for name in v030_left_arm_names
+        ]
     return arml_full_path
 
 
@@ -269,6 +309,18 @@ def get_armr_full_path(robot_type: RobotType = None):
         armr_full_path = [
             RobotCollision.W1V02_INDUSTRIAL_RIGHTARM.value + "/" + name
             for name in ARMR_LINK_NAMES
+        ]
+    elif robot_type == RobotType.W1V03_1:
+        v030_right_arm_names = [
+            "shoulder_pitch_r_j1_link.obj", "shoulder_roll_r_j2_link.obj",
+            "elbow_pitch_r_j3_link.obj", "elbow_yaw_r_j4_link.obj",
+            "wrist_pitch_r_j5_link.obj", "wrist_yaw_r_j6_link.obj",
+            "wrist_roll_r_j7_link.obj"
+        ]
+        right_arm_path = os.path.join(CACHE_EXTRACTED_DIR, "w1", "v030",
+                                      "right_arm", "collision", "rough")
+        armr_full_path = [
+            os.path.join(right_arm_path, name) for name in v030_right_arm_names
         ]
     return armr_full_path
 
@@ -287,6 +339,13 @@ def get_head_full_path(robot_type: RobotType = None):
             RobotCollision.W1V02_INDUSTRIAL_HEAD.value + "/" + name
             for name in HEAD_LINK_NAMES
         ]
+    elif robot_type == RobotType.W1V03_1:
+        v030_head_names = ["head_yaw_j1_link.obj", "head_pitch_j2_link.obj"]
+        head_path = os.path.join(CACHE_EXTRACTED_DIR, "w1", "v030", "head",
+                                 "collision", "rough")
+        head_full_path = [
+            os.path.join(head_path, name) for name in v030_head_names
+        ]
     return head_full_path
 
 
@@ -304,39 +363,61 @@ def get_torso_full_path(robot_type: RobotType = None):
             RobotCollision.W1V02_INDUSTRIAL_TORSO.value + "/" + name
             for name in TORSO_LINK_NAMES
         ]
+    elif robot_type == RobotType.W1V03_1:
+        v030_torso_names = [
+            "ankle_pitch_link.obj", "knee_pitch_link.obj",
+            "buttock_pitch_link.obj", "waist_yaw_link.obj"
+        ]
+        torso_path = os.path.join(CACHE_EXTRACTED_DIR, "w1", "v030", "torso",
+                                  "collision", "rough")
+        torso_full_path = [
+            os.path.join(torso_path, name) for name in v030_torso_names
+        ]
     return torso_full_path
 
 
 def get_ee_full_path(robot_type: RobotType, ee_type: EndEffectorType):
     if ee_type is None:
         return [], []
-    if ee_type == EndEffectorType.BRAINCO_HAND:
+    if ee_type == EndEffectorType.BrainCo_Revo1_R:
         if robot_type == RobotType.W1V02_1:
             return [RobotEE.BRAINCO_LEFT_HAND.value + "/" + name for name in BRAINCO_LEFT_LINK_NAMES], \
                      [RobotEE.BRAINCO_RIGHT_HAND.value + "/" + name for name in BRAINCO_RIGHT_LINK_NAMES]
         if robot_type == RobotType.W1V02_2:
             return [RobotEE.BRAINCO_LEFT_HAND.value + "/" + name for name in BRAINCO_LEFT_LINK_NAMES], \
                      [RobotEE.BRAINCO_RIGHT_HAND.value + "/" + name for name in BRAINCO_RIGHT_LINK_NAMES]
+        if robot_type == RobotType.W1V03_1:
+            # TODO: temporarily use simplified brainco hands which are same as W1V02_1 and W1V02_2，will be updated to new assets
+            return [RobotEE.BRAINCO_LEFT_HAND.value + "/" + name for name in BRAINCO_LEFT_LINK_NAMES], \
+                     [RobotEE.BRAINCO_RIGHT_HAND.value + "/" + name for name in BRAINCO_RIGHT_LINK_NAMES]
         if robot_type is None or not isinstance(robot_type, RobotType):
             raise ValueError(
                 f"Unsupported robot type: {robot_type}. Please use W1V02_1 or W1V02_2."
             )
-    elif ee_type == EndEffectorType.PGC_GRIPPER:
+    elif ee_type == EndEffectorType.DH_PGC_140_50:
         if robot_type == RobotType.W1V02_1:
             return [RobotEE.PGC_LEFT_HAND.value + "/" + name for name in PGC_LEFT_LINK_NAMES], \
                      [RobotEE.PGC_RIGHT_HAND.value + "/" + name for name in PGC_RIGHT_LINK_NAMES]
         if robot_type == RobotType.W1V02_2:
             return [RobotEE.PGC_LEFT_HAND.value + "/" + name for name in PGC_LEFT_LINK_NAMES], \
                      [RobotEE.PGC_RIGHT_HAND.value + "/" + name for name in PGC_RIGHT_LINK_NAMES]
+        if robot_type == RobotType.W1V03_1:
+            # TODO: temporarily use simplified PGC grippers which are same as W1V02_1 and W1V02_2，will be updated to new assets
+            return [RobotEE.PGC_LEFT_HAND.value + "/" + name for name in PGC_LEFT_LINK_NAMES], \
+                     [RobotEE.PGC_RIGHT_HAND.value + "/" + name for name in PGC_RIGHT_LINK_NAMES]
         if robot_type is None or not isinstance(robot_type, RobotType):
             raise ValueError(
                 f"Unsupported robot type: {robot_type}. Please use W1V02_1 or W1V02_2."
             )
-    elif ee_type == EndEffectorType.LINKER_HAND:
+    elif ee_type == EndEffectorType.Linker_L6:
         if robot_type == RobotType.W1V02_1:
             return [RobotEE.LINKER_LEFT_HAND.value + "/" + name for name in LINKER_LEFT_LINK_NAMES], \
                         [RobotEE.LINKER_RIGHT_HAND.value + "/" + name for name in LINKER_RIGHT_LINK_NAMES]
         if robot_type == RobotType.W1V02_2:
+            return [RobotEE.LINKER_LEFT_HAND.value + "/" + name for name in LINKER_LEFT_LINK_NAMES], \
+                        [RobotEE.LINKER_RIGHT_HAND.value + "/" + name for name in LINKER_RIGHT_LINK_NAMES]
+        if robot_type == RobotType.W1V03_1:
+            # TODO: temporarily use simplified linker L6 hands which are same as W1V02_1 and W1V02_2，will be updated to new assets
             return [RobotEE.LINKER_LEFT_HAND.value + "/" + name for name in LINKER_LEFT_LINK_NAMES], \
                         [RobotEE.LINKER_RIGHT_HAND.value + "/" + name for name in LINKER_RIGHT_LINK_NAMES]
         if robot_type is None or not isinstance(robot_type, RobotType):
@@ -345,7 +426,7 @@ def get_ee_full_path(robot_type: RobotType, ee_type: EndEffectorType):
             )
     else:
         raise ValueError(
-            f"Unsupported end effector type: {ee_type}. Please use PGC_GRIPPER or BRAINCO_HAND or LINKER_HAND."
+            f"Unsupported end effector type: {ee_type}. Please use DH_PGC_140_50 or BrainCo_Revo1_R or Linker_L6."
         )
 
 
@@ -357,19 +438,31 @@ def get_env_json_path():
     return os.path.join(DATA_DIR, "environment", "environment.json")
 
 
-def get_ee_joint_names(ee_type: EndEffectorType = None):
+def get_ee_joint_names(ee_type: EndEffectorType = None,
+                       robot_version: RobotType = RobotType.W1V02_1):
     """
     Get the names of the end effector joints which will be used in Pinocchio Forward Kinematics
     """
-    if ee_type is None:
-        return FLANGE_JOINT_NAMES[0], FLANGE_JOINT_NAMES[1]
-    if ee_type == EndEffectorType.BRAINCO_HAND:
-        return BRAINCO_BASE_JOINT_NAMES[0], BRAINCO_BASE_JOINT_NAMES[1]
-    elif ee_type == EndEffectorType.PGC_GRIPPER:
-        return PGC_BASE_JOINT_NAMES[0], PGC_BASE_JOINT_NAMES[1]
-    elif ee_type == EndEffectorType.LINKER_HAND:
-        return LINKER_BASE_JOINT_NAMES[0], LINKER_BASE_JOINT_NAMES[1]
-    else:
-        raise ValueError(
-            "Unsupported end effector type. Please use BRAINCO_HAND or PGC_GRIPPER or LINKER_HAND."
-        )
+    if robot_version == RobotType.W1V02_1 or robot_version == RobotType.W1V02_2:
+        if ee_type is None:
+            return FLANGE_JOINT_NAMES[0], FLANGE_JOINT_NAMES[1]
+        if ee_type == EndEffectorType.BrainCo_Revo1_R:
+            return BRAINCO_BASE_JOINT_NAMES[0], BRAINCO_BASE_JOINT_NAMES[1]
+        elif ee_type == EndEffectorType.DH_PGC_140_50:
+            return PGC_BASE_JOINT_NAMES[0], PGC_BASE_JOINT_NAMES[1]
+        elif ee_type == EndEffectorType.Linker_L6:
+            return LINKER_BASE_JOINT_NAMES[0], LINKER_BASE_JOINT_NAMES[1]
+        else:
+            return FLANGE_JOINT_NAMES[0], FLANGE_JOINT_NAMES[1]
+
+    elif robot_version == RobotType.W1V03_1:
+        if ee_type is None:
+            return "LEFT_EE", "RIGHT_EE"
+        if ee_type == EndEffectorType.BrainCo_Revo1_R:
+            return "LEFT_CONNECTOR", "RIGHT_CONNECTOR"
+        elif ee_type == EndEffectorType.DH_PGC_140_50:
+            return "LEFT_CONNECTOR", "RIGHT_CONNECTOR"
+        elif ee_type == EndEffectorType.Linker_L6:
+            return "LEFT_CONNECTOR", "RIGHT_CONNECTOR"
+        else:
+            return "LEFT_EE", "RIGHT_EE"

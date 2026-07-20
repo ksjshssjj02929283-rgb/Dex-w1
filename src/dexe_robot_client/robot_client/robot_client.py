@@ -596,9 +596,13 @@ class RobotClient(ABC):
         """
         self.wait_request_finish()
 
+        kwargs = {}
+        if reference_frame is not None:
+            kwargs["reference_frame"] = reference_frame.name
+
         request = MoveRequest(type=MotionType.StartEEVelocityStreaming,
                               motion_group=motion_group,
-                              reference_frame=reference_frame)
+                              kwargs=kwargs)
         return self.send_move_robot_request(request)
 
     def send_streaming_command(

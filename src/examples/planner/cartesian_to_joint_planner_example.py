@@ -8,9 +8,9 @@ All rights reserved.
 
 from dexe_robot_client.w1.path_planner.cartesian_planner import CartesianPlanner
 from dexe_robot_client.w1.path_planner.cartesian_to_joint_planner import CartesianToJointPlanner
-from dexe_robot_client.common import W1ArmType, W1Version
-from dexe_robot_client.end_effector_client import EndEffectorType
 from dexe_robot_client.w1.utils.unit_conversion import *
+
+from dexe_rp import EndEffectorType, RobotVersion
 
 from loop_rate_limiters import RateLimiter
 from dexe_rp import W1Vis, pos_wxyz_to_homogeneous, Box, Material
@@ -22,15 +22,13 @@ import time
 
 def test_cartesian_to_joint_planner():
     cartesian_joint_planner = CartesianToJointPlanner(
-        arm_type=W1ArmType.ANTHROPOMORPHIC,
-        w1_version=W1Version.V2,
-        end_effector_type=EndEffectorType.BRAINCO_HAND,
+        robot_version=RobotVersion.W1V024,
+        end_effector_type=EndEffectorType.BrainCo_Revo1_R,
     )
 
     cartesian_planner = CartesianPlanner(
-        arm_type=W1ArmType.ANTHROPOMORPHIC,
-        w1_version=W1Version.V2,
-        end_effector_type=EndEffectorType.BRAINCO_HAND)
+        robot_version=RobotVersion.W1V024,
+        end_effector_type=EndEffectorType.BrainCo_Revo1_R)
 
     cartesian_joint_planner.set_arm_tcp("left_arm", np.eye(4))
     cartesian_planner.set_arm_tcp("left_arm", np.eye(4))
@@ -62,11 +60,11 @@ def test_cartesian_to_joint_planner():
         [-1.106, -1.351, 1.472, -0.894, -1.233, -0.368, -0.201])
     right_start_qpos = np.asarray(
         [1.106, 1.351, -1.472, 0.894, 1.233, 0.368, 0.201])
-    left_res, left_joint_traj = cartesian_joint_planner.plan(
+    left_res, left_joint_traj = cartesian_joint_planner.plan_single_arm(
         name="left_arm",
         start_qpos=left_start_qpos,
         end_effector_traj=left_pose_array)
-    right_res, right_joint_traj = cartesian_joint_planner.plan(
+    right_res, right_joint_traj = cartesian_joint_planner.plan_single_arm(
         name="right_arm",
         start_qpos=right_start_qpos,
         end_effector_traj=right_pose_array)

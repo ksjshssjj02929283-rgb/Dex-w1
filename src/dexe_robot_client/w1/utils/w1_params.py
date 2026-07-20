@@ -9,47 +9,44 @@ All rights reserved.
 import json
 import numpy as np
 import pinocchio as pin
-from ...end_effector_client.end_effector_type import EndEffectorType
-from ...common import get_logger, DATA_DIR, W1ArmType, W1Version, get_pin2real_idx
+from ...end_effector_client import EndEffectorParamsRegistry
+from ...common import get_logger, DATA_DIR, get_pin2real_idx
 from ..path_planner.utils.robot_type import get_robot_urdf, RobotType
+
+from dexe_rp import RobotVersion, EndEffectorType
 
 
 class W1Params:
 
     def __init__(self,
-                 arm_type: W1ArmType,
-                 w1_version: W1Version = W1Version.V2,
+                 robot_version: RobotVersion,
                  end_effector_type: EndEffectorType = None):
         self.logger = get_logger()
 
-        self._arm_type = arm_type
+        self._robot_version = robot_version
+        if not self._robot_version.robot_family.startswith("w1"):
+            raise ValueError(f"Unsupport RobotVersion: {self._robot_version}.")
 
-        self._w1_version = w1_version
-        if self._w1_version != W1Version.V2:
-            raise ValueError(
-                f"W1Version {self._w1_version.name} are not support.")
-
-        self.arm_ee_dofs = None
         self._end_effector_type = end_effector_type
-        if self._end_effector_type is None:
-            self.logger.info(f"No movable end effector.")
-        elif self._end_effector_type == EndEffectorType.BRAINCO_HAND:
-            self.arm_ee_dofs = 6
-        elif self._end_effector_type == EndEffectorType.LINKER_HAND:
-            self.arm_ee_dofs = 6
-        elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
-            self.arm_ee_dofs = 1
-        else:
-            raise ValueError(
-                f"Unsupport end effector type: {self._end_effector_type.name}.")
+        self._end_effector_params = None
+        self.arm_ee_dofs = None
+        if self._end_effector_type is not None:
+            self._end_effector_params = EndEffectorParamsRegistry.get(
+                end_effector_type)
+            self.arm_ee_dofs = self._end_effector_params.dof
 
-        if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
-            robot_urdf = get_robot_urdf(RobotType.W1V02_1)
-        else:
-            robot_urdf = get_robot_urdf(RobotType.W1V02_2)
+        self.robot_type = None
+        if self._robot_version.version_value.startswith("v02"):
+            if self._robot_version.robot_family.endswith("i"):
+                self.robot_type = RobotType.W1V02_2
+            else:
+                self.robot_type = RobotType.W1V02_1
+        elif self._robot_version.version_value.startswith("v03"):
+            self.robot_type = RobotType.W1V03_1
 
+        robot_urdf = get_robot_urdf(self.robot_type)
+        self._pin2real_idx = get_pin2real_idx(robot_urdf, self.robot_type)
         self._pin_model = pin.buildModelFromUrdf(robot_urdf)
-        self._pin2real_idx = get_pin2real_idx(robot_urdf)
 
         self.torso_dofs = 4
         self.head_dofs = 2
@@ -128,7 +125,7 @@ class W1Params:
     def update_params(self, file_path=DATA_DIR / "config.json") -> bool:
         if not file_path.exists() or file_path.stat().st_size == 0:
             self.logger.warning(
-                f"{str(file_path)} does not exist, would be created automatically."
+                f"{str(file_path)} does not exist, would be created automatically with default values."
             )
             template_json_data = self._parse_to_dict()
             file_path.write_text(json.dumps(template_json_data,
@@ -181,13 +178,22 @@ class W1Params:
                     self.right_arm_ub, self.qpos_ub[self.right_arm_index])
                 self.logger.debug(f"Update qpos_limits from json.")
 
+        min_qvel = data.get("min_qvel")
+        if min_qvel is not None:
+            if len(min_qvel) != self.full_body_dofs:
+                self.logger.error(f"min_qvel dimension mismatch!")
+                return False
+            else:
+                self.min_qvel = np.clip(min_qvel, 0., 10)
+                self.logger.debug(f"Update min_qvel from json.")
+
         max_qvel = data.get("max_qvel")
         if max_qvel is not None:
             if len(max_qvel) != self.full_body_dofs:
                 self.logger.error(f"max_qvel dimension mismatch!")
                 return False
             else:
-                self.max_qvel = np.clip(max_qvel, 0., 1.5)
+                self.max_qvel = np.clip(max_qvel, 0., 10)
                 self.logger.debug(f"Update max_qvel from json.")
 
         max_qacc = data.get("max_qacc")
@@ -196,8 +202,17 @@ class W1Params:
                 self.logger.error(f"max_qacc dimension mismatch!")
                 return False
             else:
-                self.max_qacc = np.clip(max_qacc, 0., 15.)
+                self.max_qacc = np.clip(max_qacc, 0., 100)
                 self.logger.debug(f"Update max_qacc from json.")
+
+        max_qjerk = data.get("max_qjerk")
+        if max_qjerk is not None:
+            if len(max_qjerk) != self.full_body_dofs:
+                self.logger.error(f"max_qjerk dimension mismatch!")
+                return False
+            else:
+                self.max_qjerk = np.clip(max_qjerk, 0., 1000)
+                self.logger.debug(f"Update max_qjerk from json.")
 
         default_qvel = data.get("default_qvel")
         if default_qvel is not None:
@@ -210,12 +225,66 @@ class W1Params:
                     self.max_qvel)
                 self.logger.debug(f"Update default_qvel from json.")
 
+        min_vel = data.get("min_vel")
+        if min_vel is not None:
+            if len(min_vel) != 6:
+                self.logger.error(f"min_vel dimension mismatch!")
+                return False
+            else:
+                self.min_vel = np.clip(min_vel, 0., 5)
+                self.logger.debug(f"Update min_vel from json.")
+
+        max_vel = data.get("max_vel")
+        if max_vel is not None:
+            if len(max_vel) != 6:
+                self.logger.error(f"max_vel dimension mismatch!")
+                return False
+            else:
+                self.max_vel = np.clip(max_vel, 0., 5)
+                self.logger.debug(f"Update max_vel from json.")
+
+        max_acc = data.get("max_acc")
+        if max_acc is not None:
+            if len(max_acc) != 6:
+                self.logger.error(f"max_acc dimension mismatch!")
+                return False
+            else:
+                self.max_acc = np.clip(max_acc, 0., 50)
+                self.logger.debug(f"Update max_acc from json.")
+
+        max_jerk = data.get("max_jerk")
+        if max_jerk is not None:
+            if len(max_jerk) != 6:
+                self.logger.error(f"max_jerk dimension mismatch!")
+                return False
+            else:
+                self.max_jerk = np.clip(max_jerk, 0., 500)
+                self.logger.debug(f"Update max_jerk from json.")
+
+        default_vel = data.get("default_vel")
+        if default_vel is not None:
+            if len(default_vel) != 6:
+                self.logger.error(f"default_vel dimension mismatch!")
+                return False
+            else:
+                self.default_vel = np.clip(default_vel, np.array([0.] * 6),
+                                           self.max_vel)
+                self.logger.debug(f"Update default_vel from json.")
+
+    # TODO: yaml
     def _parse_to_dict(self) -> dict:
         data = {
             "home_qpos": self.home_qpos.tolist(),
             "qpos_limits": np.vstack((self.qpos_lb, self.qpos_ub)).T.tolist(),
+            "min_qvel": self.min_qvel.tolist(),
             "max_qvel": self.max_qvel.tolist(),
             "max_qacc": self.max_qacc.tolist(),
-            "default_qvel": self.default_qvel.tolist()
+            "max_qjerk": self.max_qjerk.tolist(),
+            "default_qvel": self.default_qvel.tolist(),
+            "min_vel": self.min_vel.tolist(),
+            "max_vel": self.max_vel.tolist(),
+            "max_acc": self.max_acc.tolist(),
+            "max_jerk": self.max_jerk.tolist(),
+            "default_vel": self.default_vel.tolist(),
         }
         return data
