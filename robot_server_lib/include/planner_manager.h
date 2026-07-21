@@ -77,6 +77,9 @@ private:
         Eigen::VectorXd publish_measurement_torso;
         Eigen::VectorXd publish_ee_pose;
         Eigen::VectorXd publish_torso_X_Z_RY;
+
+        // 安全检测器 (有状态: 速度滤波 + 位置越限连续帧确认)
+        SafetyChecker safety_checker;
     } runtime_data_;
 
     void Initialize();

@@ -72,7 +72,8 @@ TEST(SRSKinematicsTest, CheckSafety) {
     safety_config.check_position_limit = true;
     safety_config.check_velocity_limit = true;
     safety_config.check_torque_limit = true;
-    bool result = CheckSafety(measurement, robot_model, error_codes, safety_config);
+    SafetyChecker safety_checker;
+    bool result = safety_checker.Check(measurement, robot_model, error_codes, safety_config);
     EXPECT_TRUE(result);
     for (auto code : error_codes) {
         EXPECT_EQ(code, ErrorCode::None);

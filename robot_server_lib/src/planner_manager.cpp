@@ -67,7 +67,8 @@ void PlannerManager::LoopOnce() {
         safety_config.check_position_limit =
             robot_property_.safety_check_config.check_position_limit &&
             !(robot_property_.run_mode == RunMode::Drag || robot_property_.run_mode == RunMode::DragImpedance);
-        if (!CheckSafety(measurement, robot_model_, robot_property_.error_codes, safety_config) &&
+        if (!runtime_data_.safety_checker.Check(measurement, robot_model_, robot_property_.error_codes,
+                                                safety_config) &&
             manager_state_ != Status::Error) {
             runtime_data_.last_finished_request_id = runtime_data_.latest_processing_request_id;
             ReportRequestStatus(runtime_data_.latest_processing_request_id,
@@ -223,6 +224,7 @@ RequestResponse PlannerManager::OnRequestStateInit() {
     // If the measurement time is invalid, the new measurement is not here yet
     if (time_meta.measurement_time.is_invalid()) {
         manager_buffer_.planner_manager_command->Reset();  // 重置命令缓冲区 Reset the command buffer
+        runtime_data_.safety_checker.Reset();              // 重置安全检测器 Reset the safety checker
         switch (request.type) {
             case RequestType::ClearError: {
                 // 清除错误状态 Clear error state
@@ -427,6 +429,7 @@ RequestResponse PlannerManager::OnRequestStateError() {
     // current_planner_ switch to nullptr
     current_planner_ = nullptr;
     robot_property_.run_mode = RunMode::Position;  // 错误模式下强制切换为位置模式 In error mode, force to position mode
+    runtime_data_.safety_checker.Reset();  // 重置安全检测器 Reset the safety checker
 
     // 处理错误状态，重置或清除错误 Handle error state, reset or clear errors
     if (request.type == RequestType::ClearError) {
