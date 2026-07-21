@@ -66,21 +66,26 @@ python3 ./brainco_hand/brainco_sim_server.py
 
 #### Run examples
 ```python
-from dexe_robot_client.end_effector_client import EndEffectorType 
-from dexe_robot_client.common import W1Version, W1ArmType
 from dexe_robot_client.w1 import W1Manager
-
-w1_manager = W1Manager(is_sim = True,
-                        arm_type=W1ArmType.ANTHROPOMORPHIC, 
-                        w1_version=W1Version.V2, 
-                        end_effector_type = EndEffectorType.BRAINCO_HAND)
-
-if not w1_manager.connect() and not w1_manager.is_enabled():
+w1_manager = W1Manager.create(is_sim=True, use_nav=False)
+if not w1_manager.connect():
     return
-    
 w1_manager.set_sim_mode(enable_sim = False)
 #w1_manager.set_sim_mode(enable_sim = True)
 pass
+```
+
+```python
+from dexe_rp import EndEffectorType, RobotVersion
+from dexe_robot_client.w1 import W1Manager
+w1_manager = W1Manager(is_sim=is_sim, 
+                       robot_version=RobotVersion.W1V024,                       
+                       end_effector_type=EndEffectorType.BrainCo_Revo1_R,
+                       use_nav=False)
+if not w1_manager.connect():
+    return
+w1_manager.set_sim_mode(enable_sim = False)
+#w1_manager.set_sim_mode(enable_sim = True)
 ```
 More examlpes see `dexe_robot_client/examples`.
 

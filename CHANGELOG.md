@@ -2,6 +2,23 @@
 
 ## [Unrelease]
 
+### Feat
+- 新增coal collision checker
+
+### Refactor
+- 重构全身IK模块，提供IK manager
+
+### Improve
+- 自动从urdf的link tree加载碰撞体
+
+### Remove
+- 移除 dexsim server
+- 移除 fcl_checker
+- 移除 planner_pinocchio
+- 移除 030硬件专用全身IK
+- 暂时移除 ompl planner、hybrid planner 和 trajectory coordination
+
+
 ## [V0.7.0]
 ### Feat
 - 支持W1 V030硬件版本
