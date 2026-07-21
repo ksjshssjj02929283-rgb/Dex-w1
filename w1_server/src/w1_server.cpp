@@ -412,38 +412,34 @@ void RobotServer::TorqueControlThreadFunc() {
             last_control_word_ = robot_control_.robot_control_word;
         }
 
-        // 底盘控制：应用输入整形并写入共享内存
-        if (robot_mode_ == RobotMode::W1) {
-            robot_control_.chassis_control.chassis_mode = chassis_control_target_.chassis_mode;
-            robot_control_.chassis_control.cnt++;
+        // 底盘控制：应用输入整形并写入共享内存 (与上半身关节模式解耦, 始终透传)
+        robot_control_.chassis_control.chassis_mode = chassis_control_target_.chassis_mode;
+        robot_control_.chassis_control.cnt++;
 
-            if (chassis_control_target_.chassis_mode == 1) {
-                // 差速模式：对左右轮速度应用输入整形
-                if (this->manager_info_.robot_property.enable_chassis_shaper) {
-                    auto [shaper_left, shaper_right] = chassis_shaper_->Apply(
-                        chassis_control_target_.chassis_left_velocity, chassis_control_target_.chassis_right_velocity);
-                    robot_control_.chassis_control.chassis_left_velocity = shaper_left;
-                    robot_control_.chassis_control.chassis_right_velocity = shaper_right;
-                } else {
-                    chassis_shaper_->Reset();
-                    robot_control_.chassis_control.chassis_left_velocity =
-                        chassis_control_target_.chassis_left_velocity;
-                    robot_control_.chassis_control.chassis_right_velocity =
-                        chassis_control_target_.chassis_right_velocity;
-                }
-            } else if (chassis_control_target_.chassis_mode == 2) {
-                // 全向电机控制模式：直接复制
-                for (size_t i = 0; i < OMNI_MOTOR_NUM; i++) {
-                    robot_control_.chassis_control.chassis_motor_velocity[i] =
-                        chassis_control_target_.chassis_motor_velocity[i];
-                    robot_control_.chassis_control.chassis_motor_direction[i] =
-                        chassis_control_target_.chassis_motor_direction[i];
-                }
-                robot_control_.chassis_control.chassis_estop = chassis_control_target_.chassis_estop;
-                robot_control_.chassis_control.chassis_neutral = chassis_control_target_.chassis_neutral;
-            } else if (chassis_control_target_.chassis_mode == 0) {
-                RCLCPP_WARN_ONCE(this->get_logger(), "Whole chassis mode is not supported");
+        if (chassis_control_target_.chassis_mode == 1) {
+            // 差速模式：对左右轮速度应用输入整形
+            if (this->manager_info_.robot_property.enable_chassis_shaper) {
+                auto [shaper_left, shaper_right] = chassis_shaper_->Apply(
+                    chassis_control_target_.chassis_left_velocity, chassis_control_target_.chassis_right_velocity);
+                robot_control_.chassis_control.chassis_left_velocity = shaper_left;
+                robot_control_.chassis_control.chassis_right_velocity = shaper_right;
+            } else {
+                chassis_shaper_->Reset();
+                robot_control_.chassis_control.chassis_left_velocity = chassis_control_target_.chassis_left_velocity;
+                robot_control_.chassis_control.chassis_right_velocity = chassis_control_target_.chassis_right_velocity;
             }
+        } else if (chassis_control_target_.chassis_mode == 2) {
+            // 全向电机控制模式：直接复制
+            for (size_t i = 0; i < OMNI_MOTOR_NUM; i++) {
+                robot_control_.chassis_control.chassis_motor_velocity[i] =
+                    chassis_control_target_.chassis_motor_velocity[i];
+                robot_control_.chassis_control.chassis_motor_direction[i] =
+                    chassis_control_target_.chassis_motor_direction[i];
+            }
+            robot_control_.chassis_control.chassis_estop = chassis_control_target_.chassis_estop;
+            robot_control_.chassis_control.chassis_neutral = chassis_control_target_.chassis_neutral;
+        } else if (chassis_control_target_.chassis_mode == 0) {
+            RCLCPP_WARN_ONCE(this->get_logger(), "Whole chassis mode is not supported");
         }
         RobotControl robot_control_temp = robot_control_;
         SortControlByJointName(robot_control_temp);
