@@ -17,3 +17,5 @@ __pycache__/
 CLAUDE.md
 .codex
 AGENTS.md
+.agents/
+

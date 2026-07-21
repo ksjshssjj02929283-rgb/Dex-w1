@@ -9,11 +9,13 @@ All rights reserved.
 import json
 import numpy as np
 import pinocchio as pin
+from pathlib import Path
 from ...end_effector_client import EndEffectorParamsRegistry
-from ...common import get_logger, DATA_DIR, get_pin2real_idx
-from ..path_planner.utils.robot_type import get_robot_urdf, RobotType
+from ...common import get_logger, DATA_DIR
+from ..kinematics.pinocchio_kinematics import PinocchioMappingGenerator
 
 from dexe_rp import RobotVersion, EndEffectorType
+from dexe_rp.toolkits.data import get_data_path
 
 
 class W1Params:
@@ -35,17 +37,14 @@ class W1Params:
                 end_effector_type)
             self.arm_ee_dofs = self._end_effector_params.dof
 
-        self.robot_type = None
-        if self._robot_version.version_value.startswith("v02"):
-            if self._robot_version.robot_family.endswith("i"):
-                self.robot_type = RobotType.W1V02_2
-            else:
-                self.robot_type = RobotType.W1V02_1
-        elif self._robot_version.version_value.startswith("v03"):
-            self.robot_type = RobotType.W1V03_1
-
-        robot_urdf = get_robot_urdf(self.robot_type)
-        self._pin2real_idx = get_pin2real_idx(robot_urdf, self.robot_type)
+        robot_urdf = get_data_path(
+            str(Path(self._robot_version.robot_family) / "robot.urdf"),
+            self._robot_version.version_value)
+        pinocchio_mapping_generator = PinocchioMappingGenerator(
+            robot_version=self._robot_version,
+            left_end_effector_type=end_effector_type,
+            right_end_effector_type=end_effector_type)
+        self._pin2real_idx = pinocchio_mapping_generator.robot_pin2real_mapping
         self._pin_model = pin.buildModelFromUrdf(robot_urdf)
 
         self.torso_dofs = 4

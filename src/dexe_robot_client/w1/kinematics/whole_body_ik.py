@@ -1,3 +1,11 @@
+'''
+----------------------------------------------------------------------------
+Copyright (c) 2021-2026 DexForce Technology Co., Ltd.
+
+All rights reserved.
+----------------------------------------------------------------------------
+'''
+
 import os
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -193,6 +201,30 @@ class IpoptOptions(SolverOptions):
             "calc_lam_p": self.calc_lam_p,
         }
         return opts
+
+@dataclass
+class SqpMethodOptions(SolverOptions):
+    name: str = "sqpmethod"
+    max_iter: int = 100
+    tol_pr: float = 1e-6
+    tol_du: float = 1e-6
+
+    def to_casadi_options(self):
+        return {
+            "qpsol": "qrqp",
+            "max_iter": self.max_iter,
+            "tol_pr": self.tol_pr,
+            "tol_du": self.tol_du,
+            "print_header": False,
+            "print_iteration": False,
+            "print_status": False,
+            "print_time": False,
+            "qpsol_options": {
+                "print_header": False,
+                "print_iter": False,
+                "print_info": False,
+            },
+        }
 
 @dataclass
 class WeightConfig:
@@ -1056,8 +1088,8 @@ class WholeBodyIK:
             self.opti.set_value(self.param_translation_error_threshold, 1e-6)
             self.opti.set_value(self.param_rotation_error_threshold, 5e-5)
         else:
-            self.opti.set_value(self.param_translation_error_threshold, 1e4)
-            self.opti.set_value(self.param_rotation_error_threshold, 1e3)
+            self.opti.set_value(self.param_translation_error_threshold, 1e6)
+            self.opti.set_value(self.param_rotation_error_threshold, 1e5)
 
         try:
             solution = self.opti.solve()

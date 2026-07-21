@@ -8,11 +8,9 @@ All rights reserved.
 
 import numpy as np
 
-from ...common import get_logger, RobotType
+from ...common import get_logger
 from ..utils.w1_params import W1Params
 from ..path_planner.blend_path import PathR3xSO3Bezier
-from .utils.robot_type import *
-from .planner_pinocchio import Planner_Pin
 
 from dexe_rp import DexforceW1Kinematics, RobotVersion, EndEffectorType
 
@@ -32,7 +30,6 @@ class CartesianPlanner:
         self.w1_params = W1Params(self._robot_version, self._end_effector_type)
 
         self._init_kine_solver()
-        self._init_pinocchio(self._robot_version, self._end_effector_type)
         self._init_arml_base_T_armr_base()
 
     def _init_kine_solver(self):
@@ -41,23 +38,6 @@ class CartesianPlanner:
                                        self.w1_params.qpos_ub)
 
         self.logger.info(f"Initialize kinematic solver for Cartesian Planner")
-
-    def _init_pinocchio(self,
-                        robot_version: RobotVersion,
-                        end_effector_type: EndEffectorType = None):
-        """
-        Initialize the pinocchio model and data for the robot.
-        """
-        pin_robot_type = None
-        if robot_version.version_value.startswith("v02"):
-            if robot_version.version_value.endswith("i"):
-                pin_robot_type = RobotType.W1V02_2
-            else:
-                pin_robot_type = RobotType.W1V02_1
-        elif robot_version.version_value.startswith("v03"):
-            pin_robot_type = RobotType.W1V03_1
-
-        self._pin_kine = Planner_Pin(pin_robot_type, end_effector_type)
 
     def set_arm_tcp(self, name: str, pose: np.ndarray):
         return self.kine.set_tcp(name, pose)
@@ -72,12 +52,18 @@ class CartesianPlanner:
 
     def _init_arml_base_T_armr_base(self):
         real_qpos = np.zeros(20)
-        torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(
-            real_qpos=real_qpos)
-        arml_base_tf, armr_base_tf = self._pin_kine.get_arm_base_tf(
-            real_qpos=real_qpos)
-        self.waist_T_arml_base = np.linalg.inv(torso_tf[-1]) @ arml_base_tf
-        self.waist_T_armr_base = np.linalg.inv(torso_tf[-1]) @ armr_base_tf
+        # torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(
+        #     real_qpos=real_qpos)
+        waist_res, waist_tf = self.kine.get_fk(name="waist", qpos=real_qpos)
+        # arml_base_tf, armr_base_tf = self._pin_kine.get_arm_base_tf(
+        #     real_qpos=real_qpos)
+        arml_base_res, arml_base_tf = self.kine.get_fk(name="left_arm_base",
+                                                       qpos=real_qpos)
+        armr_base_res, armr_base_tf = self.kine.get_fk(name="right_arm_base",
+                                                       qpos=real_qpos)
+
+        self.waist_T_arml_base = np.linalg.inv(waist_tf) @ arml_base_tf
+        self.waist_T_armr_base = np.linalg.inv(waist_tf) @ armr_base_tf
         self.armr_base_T_arml_base = np.linalg.inv(
             self.waist_T_armr_base) @ self.waist_T_arml_base
         self.arml_base_T_armr_base = np.linalg.inv(self.armr_base_T_arml_base)

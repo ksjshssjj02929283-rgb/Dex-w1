@@ -8,8 +8,6 @@ All rights reserved.
 
 import numpy as np
 from dexe_robot_client.w1 import W1Manager
-from dexe_robot_client.w1.path_planner.utils.robot_type import *
-from dexe_robot_client.common.mapping_index import *
 from scipy.spatial.transform import Rotation as R
 from IPython import embed
 from dexe_robot_client.w1.utils.unit_conversion import *
