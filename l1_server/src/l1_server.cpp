@@ -93,10 +93,21 @@ void RobotServer::JointControlThreadFunc() {
 
     Int64 loop_counter = 0;
     auto next_cycle_time_point = std::chrono::steady_clock::now();
+    auto last_cycle_start = next_cycle_time_point;
+    const auto elapsed_us = [](const auto& begin, const auto& end) {
+        return std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
+    };
     while (rclcpp::ok()) {
+        const auto scheduled_cycle_time = next_cycle_time_point;
+        const auto cycle_start = std::chrono::steady_clock::now();
+        const int64_t cycle_interval_us = loop_counter == 0 ? 0 : elapsed_us(last_cycle_start, cycle_start);
+        const int64_t wake_lateness_us = std::max<int64_t>(0, elapsed_us(scheduled_cycle_time, cycle_start));
+        last_cycle_start = cycle_start;
+
         rclcpp::Time current_time = this->get_clock()->now();
         rclcpp::Time last_time(last_command_timestamp_);
         rclcpp::Duration diff = current_time - last_time;
+        const auto after_clock = std::chrono::steady_clock::now();
         loop_counter++;
         next_cycle_time_point += std::chrono::microseconds(torque_ctrl_dt_micro);
         // 根据状态写入机器人控制字
@@ -105,6 +116,7 @@ void RobotServer::JointControlThreadFunc() {
 
         RobotFeedback robot_feedback_tmp;
         bool ret = feedback_shm_instance.PeekLatest(&robot_feedback_tmp) && robot_feedback_tmp.cnt > 0;
+        const auto after_shm_read = std::chrono::steady_clock::now();
         if (ret && !SortFeedbackByJointName(robot_feedback_tmp)) {
             ret = false;
         }
@@ -153,6 +165,7 @@ void RobotServer::JointControlThreadFunc() {
                 this->clear_error_flag_ = false;
             }
         }
+        const auto after_feedback_process = std::chrono::steady_clock::now();
         // 如果机器人未就绪则重置反馈共享内存
         if (!this->is_robot_ready_) {
             if (loop_counter % 5000 == 0) {
@@ -201,7 +214,9 @@ void RobotServer::JointControlThreadFunc() {
             last_status_word_ = robot_feedback_.robot_status_word;
             last_control_word_ = robot_control_.robot_control_word;
         }
+        const auto after_state_process = std::chrono::steady_clock::now();
         RobotControl robot_control_temp = ConvertPitchRollToAnkleMotors(robot_control_);
+        const auto after_command_ankle = std::chrono::steady_clock::now();
         // 上肢 PD 控制：底层电机不支持 PD，在 server 侧手动计算并叠加到力矩前馈
         for (int i = 0; i < ndof_body_; ++i) {
             double pos_error =
@@ -223,7 +238,45 @@ void RobotServer::JointControlThreadFunc() {
             robot_control_temp.joint_control[i].joint_torque *= sign;
             robot_control_temp.joint_control[i].joint_torque_feedforward *= sign;
         }
-        control_shm_instance.AppendNewElement(robot_control_temp);
+        const auto after_pd_transform = std::chrono::steady_clock::now();
+        const bool control_write_ok = control_shm_instance.AppendNewElement(robot_control_temp);
+        const auto cycle_end = std::chrono::steady_clock::now();
+
+        ControlLoopTiming timing;
+        timing.cycle_interval_us = cycle_interval_us;
+        timing.wake_lateness_us = wake_lateness_us;
+        timing.body_us = elapsed_us(cycle_start, cycle_end);
+        timing.clock_us = elapsed_us(cycle_start, after_clock);
+        timing.shm_read_us = elapsed_us(after_clock, after_shm_read);
+        timing.feedback_process_us = elapsed_us(after_shm_read, after_feedback_process);
+        timing.state_process_us = elapsed_us(after_feedback_process, after_state_process);
+        timing.command_ankle_us = elapsed_us(after_state_process, after_command_ankle);
+        timing.pd_transform_us = elapsed_us(after_command_ankle, after_pd_transform);
+        timing.shm_write_us = elapsed_us(after_pd_transform, cycle_end);
+        timing.feedback_ok = ret;
+        timing.control_write_ok = control_write_ok;
+        if (cycle_interval_us > 2000) timing.reason_flags |= timing_reason_interval_;
+        if (wake_lateness_us > 1000) timing.reason_flags |= timing_reason_wake_late_;
+        if (timing.body_us > torque_ctrl_dt_micro) timing.reason_flags |= timing_reason_body_;
+        if (!ret) timing.reason_flags |= timing_reason_feedback_unavailable_;
+
+        if (timing.reason_flags != 0) {
+            timing.cpu = sched_getcpu();
+            timing.sched_policy = sched_getscheduler(0);
+            sched_param current_sched_param{};
+            if (sched_getparam(0, &current_sched_param) == 0) {
+                timing.sched_priority = current_sched_param.sched_priority;
+            }
+
+            const uint64_t write_index = timing_write_index_.load(std::memory_order_relaxed);
+            const uint64_t read_index = timing_read_index_.load(std::memory_order_acquire);
+            if (write_index - read_index < timing_queue_capacity_) {
+                timing_queue_[write_index % timing_queue_capacity_] = timing;
+                timing_write_index_.store(write_index + 1, std::memory_order_release);
+            } else {
+                timing_dropped_.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }
@@ -326,9 +379,57 @@ void RobotServer::JointStatePublisherThreadFunc() {
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok()) {
         next_cycle_time_point += std::chrono::microseconds(publish_dt_micro);
+        this->ReportControlLoopTiming();
         this->JointStatePublisher();
         std::this_thread::sleep_until(next_cycle_time_point);
     }
+}
+
+void RobotServer::ReportControlLoopTiming() {
+    uint64_t read_index = timing_read_index_.load(std::memory_order_relaxed);
+    const uint64_t write_index = timing_write_index_.load(std::memory_order_acquire);
+    const auto severity_us = [](const ControlLoopTiming& timing) {
+        return std::max({timing.cycle_interval_us, timing.wake_lateness_us, timing.body_us});
+    };
+    while (read_index < write_index) {
+        const auto& candidate = timing_queue_[read_index % timing_queue_capacity_];
+        if (pending_timing_count_ == 0 || severity_us(candidate) > severity_us(pending_timing_)) {
+            pending_timing_ = candidate;
+        }
+        ++pending_timing_count_;
+        ++read_index;
+    }
+    timing_read_index_.store(read_index, std::memory_order_release);
+    pending_timing_dropped_ += timing_dropped_.exchange(0, std::memory_order_relaxed);
+
+    if (pending_timing_count_ == 0) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (last_timing_report_.time_since_epoch().count() != 0 && now - last_timing_report_ < std::chrono::seconds(1)) {
+        return;
+    }
+    last_timing_report_ = now;
+
+    const auto& t = pending_timing_;
+    RCLCPP_WARN(this->get_logger(),
+                "Control loop timing event: flags=%u(interval=1,wake=2,body=4,feedback_unavailable=8) events=%lu "
+                "dropped=%lu interval=%ldus wake_late=%ldus "
+                "body=%ldus phases[clock=%ld shm_read=%ld feedback=%ld state=%ld ankle_cmd=%ld pd=%ld shm_write=%ld] "
+                "feedback_ok=%d control_write_ok=%d cpu=%d policy=%d priority=%d",
+                t.reason_flags, pending_timing_count_, pending_timing_dropped_, t.cycle_interval_us,
+                t.wake_lateness_us, t.body_us, t.clock_us, t.shm_read_us, t.feedback_process_us,
+                t.state_process_us, t.command_ankle_us, t.pd_transform_us, t.shm_write_us, t.feedback_ok,
+                t.control_write_ok, t.cpu, t.sched_policy, t.sched_priority);
+    LOG_WARN << "Control loop timing event: flags=" << t.reason_flags << ", events=" << pending_timing_count_
+             << ", dropped=" << pending_timing_dropped_ << ", interval_us=" << t.cycle_interval_us
+             << ", wake_late_us=" << t.wake_lateness_us << ", body_us=" << t.body_us
+             << ", clock_us=" << t.clock_us << ", shm_read_us=" << t.shm_read_us
+             << ", feedback_us=" << t.feedback_process_us << ", state_us=" << t.state_process_us
+             << ", ankle_cmd_us=" << t.command_ankle_us << ", pd_us=" << t.pd_transform_us
+             << ", shm_write_us=" << t.shm_write_us << ", feedback_ok=" << t.feedback_ok
+             << ", control_write_ok=" << t.control_write_ok << ", cpu=" << t.cpu << ", policy=" << t.sched_policy
+             << ", priority=" << t.sched_priority;
+    pending_timing_count_ = 0;
+    pending_timing_dropped_ = 0;
 }
 
 std::string RobotServer::GetRobotStatusString() {

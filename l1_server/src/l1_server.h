@@ -2,6 +2,8 @@
 
 #include <builtin_interfaces/msg/time.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <array>
+#include <atomic>
 #include <numeric>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
@@ -26,6 +28,32 @@ public:
 private:
     void JointControlThreadFunc();
     void JointStatePublisherThreadFunc();  // 100Hz关节状态发布线程
+    void ReportControlLoopTiming();
+
+    struct ControlLoopTiming {
+        uint32_t reason_flags{0};
+        int64_t cycle_interval_us{0};
+        int64_t wake_lateness_us{0};
+        int64_t body_us{0};
+        int64_t clock_us{0};
+        int64_t shm_read_us{0};
+        int64_t feedback_process_us{0};
+        int64_t state_process_us{0};
+        int64_t command_ankle_us{0};
+        int64_t pd_transform_us{0};
+        int64_t shm_write_us{0};
+        int cpu{-1};
+        int sched_policy{-1};
+        int sched_priority{-1};
+        bool feedback_ok{false};
+        bool control_write_ok{false};
+    };
+
+    static constexpr uint32_t timing_reason_interval_ = 1U << 0;
+    static constexpr uint32_t timing_reason_wake_late_ = 1U << 1;
+    static constexpr uint32_t timing_reason_body_ = 1U << 2;
+    static constexpr uint32_t timing_reason_feedback_unavailable_ = 1U << 3;
+    static constexpr size_t timing_queue_capacity_ = 64;
 
     // 获取关节符号：minus 关节返回 -1，其余返回 1
     int GetJointSign(int joint_index) const {
@@ -103,7 +131,8 @@ private:
     double torque_limit_Nm_[ndof_body_] = {10.0, 10.0, 31.0, 31.0, 31.0, 31.0, 10.0, 10.0, 10.0,
                                            31.0, 31.0, 31.0, 31.0, 10.0, 10.0, 10.0};
 
-    std::vector<double> joint_torque_feedforward_{ndof_total_, 0.0};  // 实际下发到共享内存的力矩前馈
+    std::vector<double> joint_torque_feedforward_ =
+        std::vector<double>(ndof_total_, 0.0);  // 实际下发到共享内存的力矩前馈
 
     bool clear_error_flag_{false};
     bool is_robot_ready_{false};
@@ -111,6 +140,15 @@ private:
 
     std::thread torque_control_thread_;         // 关节控制线程
     std::thread joint_state_publisher_thread_;  // 100Hz关节状态发布线程
+
+    std::array<ControlLoopTiming, timing_queue_capacity_> timing_queue_{};
+    std::atomic<uint64_t> timing_write_index_{0};
+    std::atomic<uint64_t> timing_read_index_{0};
+    std::atomic<uint64_t> timing_dropped_{0};
+    ControlLoopTiming pending_timing_{};
+    uint64_t pending_timing_count_{0};
+    uint64_t pending_timing_dropped_{0};
+    std::chrono::steady_clock::time_point last_timing_report_{};
 
     utils::PMAnkle pm_ankle_left_;
     utils::PMAnkle pm_ankle_right_;
