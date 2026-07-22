@@ -40,6 +40,7 @@ import order_detail
 import netifaces
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.context import Context
+from rclpy.executors import SingleThreadedExecutor
 
 
 class PC1LogSaveSimpleThread(QThread):
@@ -92,13 +93,19 @@ class LoadingDialog(QDialog):
 
 class ExecuteTaskThread(QThread):
 
-    def __init__(self, w1_controller=None, voice_msg="", module_name="", task_config=None):
+    def __init__(self, w1_controller=None, voice_msg="", module_name="",
+                 task_config=None, policy_need_resume=None,
+                 task_request_serial=None):
         super().__init__()
         self.voice_msg = voice_msg
         self.module_name = module_name
         self.w1_controller = w1_controller
         self._stop_event = threading.Event()
         self.task_config = task_config
+        self.policy_need_resume = policy_need_resume
+        self.task_request_serial = (
+            task_request_serial if task_request_serial is not None else
+            getattr(w1_controller, "_task_request_serial", 0))
 
 
     def stop(self):
@@ -107,8 +114,12 @@ class ExecuteTaskThread(QThread):
     def run(self):
         actual_module_name = self.module_name if self.module_name != "" else "语音连续运行"
         
-        # 1. 判断是否需要挂起 Policy
-        need_resume = self.w1_controller.try_suspend_policy_service()
+        # 退桩前若已由 on_execute 挂起 Policy，这里继承恢复责任，不能再次
+        # 调用后得到 False，否则任务结束后将无人恢复 Policy。
+        if self.policy_need_resume is None:
+            need_resume = self.w1_controller.try_suspend_policy_service()
+        else:
+            need_resume = bool(self.policy_need_resume)
         
         task_success = False 
         
@@ -130,7 +141,10 @@ class ExecuteTaskThread(QThread):
         finally:
             # 底盘占用状态必须在所有任务退出路径中释放。该调用放在 Policy
             # 恢复逻辑之前，避免下面的提前 return 使低电量待回充永远不再执行。
-            self.w1_controller._on_execute_task_finished(self)
+            boundary_success = (
+                self.w1_controller._on_execute_task_finished(self))
+            if boundary_success is False:
+                task_success = False
 
             # 只有当：1. 原本处于 ACT 模式 (need_resume) 且 2. 任务执行成功 (task_success) 时，才恢复
             if need_resume:
@@ -139,6 +153,9 @@ class ExecuteTaskThread(QThread):
                 if hasattr(self.w1_controller, 'thread') and self.w1_controller.thread is not None:
                     if self.w1_controller.thread is not self:
                         is_latest_thread = False
+                if (getattr(self.w1_controller, "_task_request_serial", 0) !=
+                        self.task_request_serial):
+                    is_latest_thread = False
 
                 # 检查是否被硬打断 只要 stop_squence 为 True
                 is_interrupted = getattr(self.w1_controller.function, "stop_squence", False)
@@ -163,7 +180,12 @@ class ExecuteTaskThread(QThread):
                 
                 while elapsed < wait_time:
                     # 1. 检查是否在等待期间被新任务顶替
-                    if hasattr(self.w1_controller, 'thread') and self.w1_controller.thread is not None and self.w1_controller.thread is not self:
+                    if ((hasattr(self.w1_controller, 'thread') and
+                         self.w1_controller.thread is not None and
+                         self.w1_controller.thread is not self) or
+                            getattr(self.w1_controller,
+                                    "_task_request_serial", 0) !=
+                            self.task_request_serial):
                         logging.info("🛑 在等待期间检测到新任务触发，取消当前 Policy 恢复！")
                         cancel_resume = True
                         break
@@ -180,7 +202,8 @@ class ExecuteTaskThread(QThread):
                 # 过等待期，执行恢复
                 if not cancel_resume:
                     logging.info("✅ 等待期平稳结束，正式请求恢复 Policy...")
-                    self.w1_controller.try_resume_policy_service(force=True)
+                    self.w1_controller.try_resume_policy_for_task(
+                        self.task_request_serial)
     
     def _execute_task_with_vision(self, actual_module_name):
         self.w1_controller.config['parameter_cfg']["workspace"] = self.task_config["workspace"]
@@ -260,13 +283,56 @@ class PolicyControlThread(QThread):
 class RosBatteryMonitorThread(QThread):
     """基于ROS2诊断信息的电量监控线程"""
     update_signal = Signal(str)
-    charging_state_signal = Signal(bool, bool, float)
+    refresh_signal = Signal(str)
+    charging_state_signal = Signal(bool, bool, bool, float)
 
     def __init__(self, controller):
         super().__init__()
         self.controller = controller
         self.running = True
         self.node = None
+        self.executor = None
+        self._battery_sample_condition = threading.Condition()
+        self._latest_battery_text = None
+        self._latest_battery_sample_time = None
+
+    def _store_battery_sample(self, battery_text: str,
+                              sample_time: float) -> None:
+        """缓存每帧完整电量数据，供任务边界主动刷新显示。"""
+        with self._battery_sample_condition:
+            self._latest_battery_text = battery_text
+            self._latest_battery_sample_time = sample_time
+            self._battery_sample_condition.notify_all()
+
+    def refresh_latest_battery(self, reason: str,
+                               timeout: float = 3.0) -> bool:
+        """等待一帧新诊断后刷新UI；超时则使用最近一次有效样本。"""
+        request_time = time.monotonic()
+        with self._battery_sample_condition:
+            deadline = request_time + timeout
+            while (self.running and
+                   (self._latest_battery_sample_time is None or
+                    self._latest_battery_sample_time <= request_time)):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._battery_sample_condition.wait(timeout=remaining)
+
+            battery_text = self._latest_battery_text
+            sample_time = self._latest_battery_sample_time
+
+        if battery_text is None or sample_time is None:
+            logging.warning(
+                f"[电量刷新][{reason}] 等待 {timeout:.0f} 秒仍无有效电量样本。")
+            return False
+
+        sample_age = max(0.0, time.monotonic() - sample_time)
+        self.refresh_signal.emit(battery_text)
+        compact_text = battery_text.replace('\n', '，')
+        logging.info(
+            f"[电量刷新][{reason}] {compact_text}，"
+            f"样本年龄={sample_age:.1f}秒。")
+        return True
 
     def run(self):
         try:
@@ -277,15 +343,14 @@ class RosBatteryMonitorThread(QThread):
             print("未找到ROS2环境或 diagnostic_msgs，电量监控已禁用")
             return
 
-        if not rclpy.ok():
-            rclpy.init()
-
         class BatteryNode(Node):
-            def __init__(self, update_sig, charging_state_sig, context=None): 
+            def __init__(self, update_sig, charging_state_sig,
+                         sample_callback, context=None):
                 # 🌟 修改点 2：必须把 context 透传给父类 Node
                 super().__init__('ui_battery_monitor', context=context)
                 self.update_sig = update_sig
                 self.charging_state_sig = charging_state_sig
+                self.sample_callback = sample_callback
                 self.subscription = self.create_subscription(
                     DiagnosticArray,
                     '/diagnostics',
@@ -295,6 +360,7 @@ class RosBatteryMonitorThread(QThread):
                 self._last_update_time = time.time()
                 self._battery_charging = None
                 self._charger_connected = None
+                self._charging_current_detected = None
 
             @staticmethod
             def parse_bool(value):
@@ -369,6 +435,12 @@ class RosBatteryMonitorThread(QThread):
 
                             voltage = battery_info.get("battery_voltage", "--")
                             current = battery_info.get("battery_current", "--")
+                            battery_text = (
+                                f"电量：{int(percentage)}\n"
+                                f"电压：{voltage}V\n"
+                                f"电流：{current}A")
+                            self.sample_callback(
+                                battery_text, time.monotonic())
 
                             current_time = time.time()
 
@@ -382,11 +454,7 @@ class RosBatteryMonitorThread(QThread):
                                     f"电流: {current}A"
                                 )
 
-                                self.update_sig.emit(
-                                    f"电量：{int(percentage)}\n"
-                                    f"电压：{voltage}V\n"
-                                    f"电流：{current}A"
-                                )
+                                self.update_sig.emit(battery_text)
 
                         if "battery_charging" in battery_info:
                             battery_charging = self.parse_bool(battery_info["battery_charging"])
@@ -396,9 +464,25 @@ class RosBatteryMonitorThread(QThread):
                             charger_connected = self.parse_bool(battery_info["charger_connect_state"])
                             self._charger_connected = charger_connected
 
-                        charging_state_observed = charging_state_observed or (
-                            "battery_charging" in battery_info and
-                            "charger_connect_state" in battery_info)
+                        # 实机日志已确认：放电约为负电流，插桩充电约为 +35A。
+                        # 当部分固件缺少充电布尔字段时，用明显正向电流作为辅助证据。
+                        charging_current_observed = False
+                        if "battery_current" in battery_info:
+                            try:
+                                current_value = float(
+                                    battery_info["battery_current"]
+                                    .replace('A', '').replace('a', '').strip())
+                                self._charging_current_detected = (
+                                    current_value > 1.0)
+                                charging_current_observed = True
+                            except ValueError:
+                                pass
+
+                        charging_state_observed = (
+                            charging_state_observed or
+                            "battery_charging" in battery_info or
+                            "charger_connect_state" in battery_info or
+                            charging_current_observed)
 
                     # 连续稳定判断需要每一帧诊断样本，不能只在状态变化时发送。
                     # 同时携带采样时间，防止主线程阻塞后把排队的旧样本当成新状态。
@@ -406,44 +490,72 @@ class RosBatteryMonitorThread(QThread):
                         self.charging_state_sig.emit(
                             bool(self._battery_charging),
                             bool(self._charger_connected),
+                            bool(self._charging_current_detected),
                             time.monotonic()
                         )
 
                 except Exception as e:
                     print(f"ROS 解析电量回调发生异常: {e}")
-        while self.running: 
-            # 创建一个完全独立的 ROS Context
+        while self.running:
+            # 电量监控独占一套 Context + Executor，不能通过 rclpy.spin_once()
+            # 借用全局 Executor，否则会与 Policy 的 ROS 订阅争用 WaitSet。
             isolated_context = Context()
-            rclpy.init(context=isolated_context)
-            
-            # 🌟 修改点 4：把 independent context 塞进节点
-            self.node = BatteryNode(
-                self.update_signal,
-                self.charging_state_signal,
-                context=isolated_context) 
-            
-            try: 
-                # 🌟 修改点 5：检查独立上下文的状态，而不是全局的 rclpy.ok()
-                while self.running and rclpy.ok(context=isolated_context): 
-                    rclpy.spin_once(self.node, timeout_sec=0.5) 
-                    
-            except Exception as e: 
-                # 捕获异常，打破内层循环，此时不会影响导航节点！
-                logging.error(f"🚨 ROS电量监控节点出错: {e}，2秒后尝试重启节点...") 
-                time.sleep(2.0) 
-                
-            finally: 
-                # 🌟 修改点 6：销毁崩溃的旧节点，并彻底关掉这个旧沙箱
-                if self.node: 
-                    self.node.destroy_node() 
-                    self.node = None 
-                
-                # 务必关闭独立上下文，防止内存泄漏
+            executor = None
+            try:
+                rclpy.init(context=isolated_context)
+                self.node = BatteryNode(
+                    self.update_signal,
+                    self.charging_state_signal,
+                    self._store_battery_sample,
+                    context=isolated_context)
+                executor = SingleThreadedExecutor(context=isolated_context)
+                self.executor = executor
+                executor.add_node(self.node)
+
+                while self.running and rclpy.ok(context=isolated_context):
+                    executor.spin_once(timeout_sec=0.5)
+
+            except Exception as e:
+                if self.running:
+                    logging.error(
+                        f"🚨 ROS电量监控节点出错: {e}，2秒后尝试重启节点...")
+                    # 分段等待，关闭程序时不必固定再等2秒。
+                    for _ in range(20):
+                        if not self.running:
+                            break
+                        time.sleep(0.1)
+
+            finally:
+                if executor is not None:
+                    if self.node is not None:
+                        try:
+                            executor.remove_node(self.node)
+                        except Exception:
+                            pass
+                    try:
+                        executor.shutdown()
+                    except Exception as e:
+                        if self.running:
+                            logging.warning(
+                                f"ROS电量监控 Executor 关闭异常: {str(e)}")
+                self.executor = None
+
+                if self.node is not None:
+                    self.node.destroy_node()
+                    self.node = None
+
                 if rclpy.ok(context=isolated_context):
                     rclpy.shutdown(context=isolated_context)
 
     def stop_monitoring(self):
         self.running = False
+        with self._battery_sample_condition:
+            self._battery_sample_condition.notify_all()
+        if self.executor is not None:
+            try:
+                self.executor.wake()
+            except Exception:
+                pass
 
 class StatusMonitorThread(QThread):  
     """仅保留TCP命令连接功能，不再轮询OP和电量"""
@@ -1251,7 +1363,13 @@ class W1Controller(W1Displayui):  # 主流程
         self.pending_auto_charging = False
         # 电量回调、任务线程可能并发修改回充状态，统一由此锁保护。
         self._chassis_state_lock = threading.RLock()
+        # 新任务在真正创建线程前可能需要等待诊断和执行退桩；使用请求序号让
+        # 旧任务的 Policy 恢复等待立即失效，避免退桩期间错误恢复 Policy。
+        self._task_request_serial = 0
+        self._charging_state_condition = threading.Condition(
+            self._chassis_state_lock)
         self._auto_charging_requesting = False
+        self._auto_charging_worker = None
         self._last_auto_charging_attempt_time = 0.0
         self._full_charge_undocking = False
         self._last_full_charge_undock_attempt_time = 0.0
@@ -1259,6 +1377,10 @@ class W1Controller(W1Displayui):  # 主流程
         self._full_charge_undock_retry_interval = 30.0
         self.is_battery_charging = False
         self.is_charger_connected = False
+        self.is_charging_current_detected = False
+        self._has_charging_state_observation = False
+        self._last_charging_state_observed_time = None
+        self._charging_state_freshness_timeout = 5.0
         self._charger_disconnected_stable_count = 0
         self._charger_disconnected_stable_threshold = 5
         self._charging_cycle_confirmed_time = None
@@ -1339,6 +1461,12 @@ class W1Controller(W1Displayui):  # 主流程
         self.heartbeat_timer = QTimer()
         self.heartbeat_timer.timeout.connect(self._write_heartbeat)
         self.heartbeat_timer.start(5000)
+
+        # 回充失败后的重试不能依赖电量百分比再次变化。
+        self.auto_charging_retry_timer = QTimer()
+        self.auto_charging_retry_timer.timeout.connect(
+            self._retry_pending_auto_charging)
+        self.auto_charging_retry_timer.start(1000)
 
         self.policy_control_thread = None # 初始化 Policy 线程变量
         self.origin_cfg = None
@@ -2056,6 +2184,18 @@ class W1Controller(W1Displayui):  # 主流程
             except Exception as e:
                 logging.info(f"Policy恢复失败: {str(e)}")
 
+    def try_resume_policy_for_task(self, task_request_serial: int) -> bool:
+        """仅允许当前最新任务恢复 Policy，避免与新任务退桩发生竞态。"""
+        with self._chassis_state_lock:
+            if self._task_request_serial != task_request_serial:
+                logging.info(
+                    "[Policy恢复] 已有更新任务请求，忽略旧任务恢复："
+                    f"旧序号={task_request_serial}，"
+                    f"当前序号={self._task_request_serial}。")
+                return False
+            self.try_resume_policy_service(force=True)
+            return True
+
     def on_manual_resume_policy(self):
         """手动点击恢复Policy按钮"""
         # 防呆机制：点击后立刻禁用
@@ -2665,8 +2805,10 @@ class W1Controller(W1Displayui):  # 主流程
             self.ros_battery_thread = RosBatteryMonitorThread(self)
             self.ros_battery_thread.update_signal.connect(self.op_clec_update)
             self.ros_battery_thread.update_signal.connect(self.low_battery_go_home)
+            self.ros_battery_thread.refresh_signal.connect(self.op_clec_update)
             self.ros_battery_thread.charging_state_signal.connect(
-                self.update_charging_state)
+                self.update_charging_state,
+                Qt.ConnectionType.DirectConnection)
             self.ros_battery_thread.start()
 
             target_task, task_id = self._find_first_active_task(self.task_cfg)
@@ -2976,8 +3118,10 @@ class W1Controller(W1Displayui):  # 主流程
             self.ros_battery_thread = RosBatteryMonitorThread(self)
             self.ros_battery_thread.update_signal.connect(self.op_clec_update)
             self.ros_battery_thread.update_signal.connect(self.low_battery_go_home)
+            self.ros_battery_thread.refresh_signal.connect(self.op_clec_update)
             self.ros_battery_thread.charging_state_signal.connect(
-                self.update_charging_state)
+                self.update_charging_state,
+                Qt.ConnectionType.DirectConnection)
             self.ros_battery_thread.start()
 
 
@@ -3027,8 +3171,22 @@ class W1Controller(W1Displayui):  # 主流程
             self.update_light(self.G3, False)
 
     def _request_auto_charging(self, trigger: str) -> bool:
-        """在非任务状态下请求一次回充，避免并发或失败后高频重复发送。"""
+        """在非任务状态下启动一次后台回充，避免阻塞界面与重试定时器。"""
         now = time.monotonic()
+
+        charging_status = self._get_auto_charging_runtime_status()
+        if charging_status in {
+                "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING",
+                "CANCELING"}:
+            with self._chassis_state_lock:
+                # 保留待回充标志：若现有回充失败，定时器还能继续接手；一旦
+                # 诊断确认已经充电，update_charging_state() 会清除此标志。
+                self.pending_auto_charging = True
+            logging.info(
+                "[低电量回充] 跳过重复请求：已有回充 Action 正在执行，"
+                f"状态={charging_status}（{trigger}）。")
+            return False
+
         with self._chassis_state_lock:
             if self.is_force_working:
                 self.pending_auto_charging = True
@@ -3037,9 +3195,10 @@ class W1Controller(W1Displayui):  # 主流程
                     f"已标记待回充（{trigger}）。")
                 return False
             if self.is_charging_cycle:
+                self.pending_auto_charging = True
                 logging.info(
                     f"[低电量回充] 跳过请求：当前仍处于充电周期"
-                    f"（{trigger}）。")
+                    f"，已保留待回充状态（{trigger}）。")
                 return False
             if self._auto_charging_requesting:
                 logging.info(
@@ -3056,73 +3215,219 @@ class W1Controller(W1Displayui):  # 主流程
             self._auto_charging_requesting = True
 
         logging.warning(f"[低电量回充] 电量触发，开始请求回充（{trigger}）。")
+        worker = threading.Thread(
+            target=self._run_auto_charging_request,
+            args=(trigger,),
+            name="auto_charging_worker",
+            daemon=True)
+        self._auto_charging_worker = worker
         try:
-            result = self.w1.w1_manager.set_auto_charging()
-            request_success = getattr(result, "name", None) == "SUCCESS"
+            worker.start()
         except Exception as e:
-            logging.error(f"[低电量回充] 回充请求异常: {str(e)}")
-            request_success = False
-
-        if not request_success:
-            # goal 没发出去，按原有冷却逻辑保留待回充标记，等待下次重试。
             with self._chassis_state_lock:
                 self._auto_charging_requesting = False
-                self._last_auto_charging_attempt_time = now
+                self._last_auto_charging_attempt_time = time.monotonic()
                 self.pending_auto_charging = True
-            logging.error("[低电量回充] 回充目标发送失败，30 秒后允许重试。")
+            self._auto_charging_worker = None
+            logging.error(f"[低电量回充] 后台线程启动失败: {str(e)}")
             return False
+        return True
 
-        # goal 已发出：阻塞等待回充 Action 进入终态，风格与导航/直控一致。
-        # Action 成功才标记 is_charging_cycle=True；失败则保留 pending_auto_charging，
-        # 由冷却结束后重试。/diagnostics 仍由 update_charging_state 维护，作为兜底。
-        wait_success = False
-        wait_message = ""
+    def _get_auto_charging_runtime_status(self) -> str:
+        """读取真实回充 Action 状态；不可用时返回 UNKNOWN。"""
+        manager = (getattr(self.w1, "w1_manager", None)
+                   if self.w1 is not None else None)
+        if manager is None:
+            return "UNKNOWN"
         try:
-            _, wait_success, wait_message = (
-                self.w1.w1_manager.wait_for_auto_charging_done(timeout=300.0))
+            _, status = manager.get_auto_charging_status()
+            return status
         except Exception as e:
-            logging.error(f"[低电量回充] 等待回充结果异常: {str(e)}")
+            logging.warning(f"[低电量回充] 查询回充 Action 状态失败: {str(e)}")
+            return "UNKNOWN"
+
+    def _run_auto_charging_request(self, trigger: str) -> None:
+        """后台发送回充目标并等待结果，失败后保留待回充状态。"""
+        try:
+            try:
+                result = self.w1.w1_manager.set_auto_charging()
+                request_success = getattr(result, "name", None) == "SUCCESS"
+            except Exception as e:
+                logging.error(f"[低电量回充] 回充请求异常: {str(e)}")
+                request_success = False
+
+            if not request_success:
+                charging_status = self._get_auto_charging_runtime_status()
+                with self._chassis_state_lock:
+                    self._auto_charging_requesting = False
+                    self.pending_auto_charging = True
+                    if charging_status not in {
+                            "WAITING_SERVER", "SENDING", "ACCEPTED",
+                            "EXECUTING", "CANCELING"}:
+                        self._last_auto_charging_attempt_time = time.monotonic()
+                if charging_status in {
+                        "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING",
+                        "CANCELING"}:
+                    logging.info(
+                        "[低电量回充] 发送时发现已有回充 Action，"
+                        f"状态={charging_status}；不按失败处理。")
+                    return
+                logging.error(
+                    f"[低电量回充] 回充目标发送失败，"
+                    f"{self._auto_charging_retry_interval:.0f} 秒后自动重试。")
+                return
+
             wait_success = False
-            wait_message = str(e)
+            wait_message = ""
+            try:
+                _, wait_success, wait_message = (
+                    self.w1.w1_manager.wait_for_auto_charging_done(
+                        timeout=300.0))
+            except Exception as e:
+                logging.error(f"[低电量回充] 等待回充结果异常: {str(e)}")
+                wait_message = str(e)
 
-        with self._chassis_state_lock:
-            self._auto_charging_requesting = False
-            self._last_auto_charging_attempt_time = time.monotonic()
+            with self._chassis_state_lock:
+                self._auto_charging_requesting = False
+                self._last_auto_charging_attempt_time = time.monotonic()
+                if wait_success:
+                    self.is_charging_cycle = True
+                    self._charging_cycle_confirmed_time = time.monotonic()
+                    self._charger_disconnected_stable_count = 0
+                    self.pending_auto_charging = False
+                else:
+                    self.is_charging_cycle = False
+                    self.pending_auto_charging = True
+
             if wait_success:
-                # 回充 Action 已确认成功；/diagnostics 的 battery_charging 作为二次校验
-                # 由 update_charging_state 继续维护，满电离桩逻辑不变。
-                self.is_charging_cycle = True
-                self._charging_cycle_confirmed_time = time.monotonic()
-                self._charger_disconnected_stable_count = 0
-                self.pending_auto_charging = False
+                logging.info(
+                    f"[低电量回充] 回充成功，message={wait_message}。")
+                self._refresh_battery_snapshot("回充成功后")
             else:
-                # Action 失败或超时：清除充电周期标记，保留待回充标记以便重试。
-                self.is_charging_cycle = False
+                logging.error(
+                    f"[低电量回充] 回充失败，message={wait_message}，"
+                    f"{self._auto_charging_retry_interval:.0f} 秒后自动重试。")
+        except Exception as e:
+            with self._chassis_state_lock:
+                self._auto_charging_requesting = False
+                self._last_auto_charging_attempt_time = time.monotonic()
                 self.pending_auto_charging = True
+            logging.exception(f"[低电量回充] 后台回充线程异常: {str(e)}")
+        finally:
+            self._auto_charging_worker = None
 
-        if wait_success:
-            logging.info(
-                f"[低电量回充] 回充成功，message={wait_message}。")
+    def _retry_pending_auto_charging(self) -> None:
+        """低电量回充失败后，脱离电量变化事件按冷却时间自动重试。"""
+        now = time.monotonic()
+        charging_status = self._get_auto_charging_runtime_status()
+        charging_action_active = charging_status in {
+            "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING", "CANCELING"
+        }
+        with self._chassis_state_lock:
+            is_startup_pending = self._last_auto_charging_attempt_time <= 0.0
+            should_retry = (
+                self.pending_auto_charging and
+                0 < self.last_checked_battery <= 30 and
+                self.w1 is not None and
+                getattr(self.w1, "w1_manager", None) is not None and
+                not self.is_force_working and
+                not self.is_charging_cycle and
+                not self.is_battery_charging and
+                not self.is_charger_connected and
+                not self.is_charging_current_detected and
+                not self._auto_charging_requesting and
+                not charging_action_active and
+                now - self._last_auto_charging_attempt_time >=
+                self._auto_charging_retry_interval)
+
+        if not should_retry:
+            return
+
+        if is_startup_pending:
+            logging.warning(
+                f"[低电量回充] 机器人初始化完成，当前电量 "
+                f"{self.last_checked_battery}%，开始执行待回充请求。")
+            trigger = "启动后补发低电量回充"
         else:
-            logging.error(
-                f"[低电量回充] 回充失败，message={wait_message}，"
-                f"{self._auto_charging_retry_interval:.0f} 秒后允许重试。")
-        return wait_success
+            logging.warning(
+                f"[低电量回充] 冷却结束，当前电量 "
+                f"{self.last_checked_battery}%，自动重试回充。")
+            trigger = "失败后定时重试"
+        self._request_auto_charging(trigger)
 
-    def _on_execute_task_finished(self, task_thread):
-        """任务线程退出时释放底盘占用，并接续被延后的低电量回充。"""
+    def _refresh_battery_snapshot(self, reason: str) -> None:
+        """在关键流程边界，用最新诊断刷新电量、电压和电流显示。"""
+        battery_thread = getattr(self, "ros_battery_thread", None)
+        if battery_thread is None or not battery_thread.isRunning():
+            logging.warning(f"[电量刷新][{reason}] 电量监控线程未运行。")
+            return
+        battery_thread.refresh_latest_battery(reason, timeout=3.0)
+
+    def _on_execute_task_finished(self, task_thread) -> bool:
+        """等待任务触发的回充终态，再释放底盘占用并恢复后续流程。"""
+        auto_charging_was_active = False
+        auto_charging_success = True
+
         should_request_auto_charging = False
         with self._chassis_state_lock:
             # 旧任务结束时不能清除新任务的占用状态。
             if getattr(self, "thread", None) is not task_thread:
-                return
+                return True
+
+        manager = (getattr(self.w1, "w1_manager", None)
+                   if self.w1 is not None else None)
+        if manager is not None:
+            try:
+                _, charging_status = manager.get_auto_charging_status()
+                auto_charging_was_active = charging_status in {
+                    "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING",
+                    "CANCELING"
+                }
+                if auto_charging_was_active:
+                    logging.info(
+                        "[回充任务收尾] 检测到回充 Action 仍在执行，"
+                        f"当前状态={charging_status}；等待最终结果后再结束任务。")
+                    _, auto_charging_success, charging_message = (
+                        manager.wait_for_auto_charging_done(timeout=300.0))
+                    with self._chassis_state_lock:
+                        if auto_charging_success:
+                            self.is_charging_cycle = True
+                            self._charging_cycle_confirmed_time = (
+                                time.monotonic())
+                            self._charger_disconnected_stable_count = 0
+                            self.pending_auto_charging = False
+                        else:
+                            self.is_charging_cycle = False
+
+                    if auto_charging_success:
+                        logging.info(
+                            "[回充任务收尾] 回充成功，"
+                            f"message={charging_message}。")
+                        self._refresh_battery_snapshot("回充成功后")
+                    else:
+                        logging.error(
+                            "[回充任务收尾] 回充失败，"
+                            f"message={charging_message}。")
+            except Exception as e:
+                auto_charging_was_active = True
+                auto_charging_success = False
+                logging.exception(f"[回充任务收尾] 等待回充结果异常: {str(e)}")
+
+        with self._chassis_state_lock:
+            # 等待期间若新任务已经替换旧任务，不能释放新任务的占用状态。
+            if getattr(self, "thread", None) is not task_thread:
+                return auto_charging_success
             self.is_force_working = False
             should_request_auto_charging = (
                 self.pending_auto_charging and not self.is_charging_cycle)
 
+        if not auto_charging_was_active:
+            self._refresh_battery_snapshot("任务结束后")
+
         if should_request_auto_charging:
             logging.info("[低电量回充] 当前任务结束，继续执行待回充请求。")
             self._request_auto_charging("任务结束")
+        return auto_charging_success
 
     def _undock_after_full_charge(self, current_battery: int) -> None:
         """满电后先确认离桩成功，再允许导航到接待处。"""
@@ -3131,7 +3436,25 @@ class W1Controller(W1Displayui):  # 主流程
             if self.is_force_working:
                 logging.info("[满电离桩] 任务正在使用底盘，跳过自动回接待处。")
                 return
-            if not self.is_charging_cycle or self._full_charge_undocking:
+            # is_charging_cycle 只是回充流程标志，回充被外部中断或手动离桩后
+            # 可能短时间残留，不能单独作为发送退桩运动的依据。
+            charging_state_fresh = (
+                self._last_charging_state_observed_time is not None and
+                now - self._last_charging_state_observed_time <=
+                self._charging_state_freshness_timeout)
+            physically_docked = (
+                charging_state_fresh and
+                (self.is_battery_charging or self.is_charger_connected or
+                 self.is_charging_current_detected))
+            if (not physically_docked or self._full_charge_undocking):
+                if (self.is_charging_cycle and not charging_state_fresh):
+                    logging.warning(
+                        "[满电离桩] 充电物理状态已超过 5 秒未更新；为避免使用"
+                        "过期状态误退桩，本次不发送底盘运动。")
+                elif self.is_charging_cycle and not physically_docked:
+                    logging.warning(
+                        "[满电离桩] 仅检测到充电周期标志，未检测到正在充电或"
+                        "充电器连接；为避免误退桩，本次不发送底盘运动。")
                 return
             if now - self._last_full_charge_undock_attempt_time < \
                     self._full_charge_undock_retry_interval:
@@ -3155,6 +3478,11 @@ class W1Controller(W1Displayui):  # 主流程
                 logging.error("[满电离桩] 离桩未成功，不导航到接待处。")
                 return
             self.is_charging_cycle = False
+            self.is_battery_charging = False
+            self.is_charger_connected = False
+            self.is_charging_current_detected = False
+            self._charging_cycle_confirmed_time = None
+            self._charger_disconnected_stable_count = 0
 
         nav_result = self.w1.w1_manager.move_chassis_nav2([0.8, 0.41, 0])
         if getattr(nav_result, "name", None) == "SUCCESS":
@@ -3163,9 +3491,6 @@ class W1Controller(W1Displayui):  # 主流程
             logging.error("[满电离桩] 离桩成功，但接待处导航目标发送失败。")
 
     def low_battery_go_home(self, battery_info: str):
-        if not hasattr(self, "w1") or self.w1 is None:
-            logging.info("电量已更新，但机器人尚未初始化。")
-            return
         try:
             current_battery = int(
                 float(battery_info.split("电量：", 1)[1].split("\n", 1)[0].strip()))
@@ -3183,37 +3508,72 @@ class W1Controller(W1Displayui):  # 主流程
             logging.info(f"[当前电量] {current_battery}%")
 
         # 决策不能只依赖“电量变化”：例如一次回充请求发送失败后，电量仍为
-        # 30% 时也必须允许后续回调在冷却结束后重试。
+        # 30% 时也必须允许后续定时器在冷却结束后重试。
         if current_battery <= 30:
             with self._chassis_state_lock:
+                self.pending_auto_charging = True
                 if self.is_force_working:
-                    if not self.pending_auto_charging:
-                        self.pending_auto_charging = True
-                        logging.warning(
-                            f"[低电量回充] 当前电量 {current_battery}%，"
-                            "任务结束后自动回充。")
+                    logging.warning(
+                        f"[低电量回充] 当前电量 {current_battery}%，"
+                        "任务结束后自动回充。")
                     return
+
+            if (not hasattr(self, "w1") or self.w1 is None or
+                    getattr(self.w1, "w1_manager", None) is None):
+                logging.info(
+                    f"[低电量回充] 当前电量 {current_battery}%，"
+                    "机器人尚未初始化，已记录待回充状态。")
+                return
+
             self._request_auto_charging(f"当前电量 {current_battery}%")
         elif current_battery >= 90:
+            if (not hasattr(self, "w1") or self.w1 is None or
+                    getattr(self.w1, "w1_manager", None) is None):
+                logging.info(
+                    f"[满电离桩] 当前电量 {current_battery}%，"
+                    "机器人尚未初始化，暂不执行离桩。")
+                return
             self._undock_after_full_charge(current_battery)
 
     def update_charging_state(self, battery_charging: bool,
                               charger_connected: bool,
+                              charging_current_detected: bool,
                               observed_time: float):
         """保存充电状态，连续确认离桩后清除过期的充电周期标记。"""
-        with self._chassis_state_lock:
+        with self._charging_state_condition:
             # 回充等待会阻塞界面线程，期间的诊断信号可能在事件队列中积压。
             # 旧样本不能用于判断刚成功的回充周期是否已经离桩。
             if (self._charging_cycle_confirmed_time is not None and
                     observed_time < self._charging_cycle_confirmed_time):
                 return
 
+            state_changed = (
+                not self._has_charging_state_observation or
+                self.is_battery_charging != battery_charging or
+                self.is_charger_connected != charger_connected or
+                self.is_charging_current_detected != charging_current_detected)
             self.is_battery_charging = battery_charging
             self.is_charger_connected = charger_connected
+            self.is_charging_current_detected = charging_current_detected
+            self._has_charging_state_observation = True
+            self._last_charging_state_observed_time = observed_time
+            # 任务入口可能正在等待首帧/新一帧电源板诊断。
+            self._charging_state_condition.notify_all()
+
+            if state_changed:
+                logging.info(
+                    "[充电物理状态] "
+                    f"正在充电={battery_charging}，"
+                    f"充电器连接={charger_connected}，"
+                    f"检测到正向充电电流={charging_current_detected}。")
 
             if (battery_charging or charger_connected or
+                    charging_current_detected or
                     self._auto_charging_requesting):
                 self._charger_disconnected_stable_count = 0
+                if (battery_charging or charger_connected or
+                        charging_current_detected):
+                    self.pending_auto_charging = False
                 return
 
             if not self.is_charging_cycle:
@@ -3741,6 +4101,9 @@ class W1Controller(W1Displayui):  # 主流程
                 self.ui_timer.stop()
             if hasattr(self, 'heartbeat_timer') and self.heartbeat_timer:
                 self.heartbeat_timer.stop()
+            if (hasattr(self, 'auto_charging_retry_timer') and
+                    self.auto_charging_retry_timer):
+                self.auto_charging_retry_timer.stop()
             if hasattr(self, 'capsule_timer') and self.capsule_timer:
                 self.capsule_timer.stop()
 
@@ -4005,6 +4368,21 @@ class W1Controller(W1Displayui):  # 主流程
         except Exception as e:
             logging.info(f"停止执行时出错: {str(e)}")
             self.update_light(self.G4, False)
+
+    def _abort_task_preparation(self, task_request_serial: int,
+                                policy_need_resume: bool,
+                                reason: str) -> None:
+        """任务线程创建前失败时，释放占用并恢复本次请求挂起的 Policy。"""
+        with self._chassis_state_lock:
+            if self._task_request_serial != task_request_serial:
+                return
+            self.is_force_working = False
+
+        logging.warning(
+            f"[任务准备] 请求序号={task_request_serial} 已取消，原因={reason}。")
+        if policy_need_resume:
+            logging.info("[任务准备] 本次任务未启动，恢复此前挂起的 Policy。")
+            self.try_resume_policy_for_task(task_request_serial)
             
     def on_execute(
         # self, voice_msg="", module_name="", interface_trigger=False ,payment_trigger=False  # 新增参数，标识是否由支付流程触
@@ -4014,20 +4392,97 @@ class W1Controller(W1Displayui):  # 主流程
         self.function.vision_finish=False
         self.picklight_vision.face_tracking_status = False
 
+        # 语音任务必须先确认可接收，不能在最终判定“忙碌”之前就执行退桩。
+        current_status = self._read_status_file()
+        if not interface_trigger and current_status["status"] != "idle":
+            logging.warning(f"已在任务状态:{module_name}!禁止触发")
+            return
+
+        with self._chassis_state_lock:
+            self._task_request_serial += 1
+            task_request_serial = self._task_request_serial
+
+        # 精准退桩本身已经属于新任务的底盘运动，必须在它之前挂起 Policy。
+        # 返回值表示新任务结束后是否需要负责恢复 Policy。
+        policy_need_resume = self.try_suspend_policy_service()
+        logging.info(
+            f"[任务准备] 请求序号={task_request_serial}，"
+            f"Policy恢复责任={policy_need_resume}。")
+
         # if self.is_charging_cycle:
         #     self.w1.w1_manager.move_chassis_ctrl([0.3,0,0])
         #     self.is_charging_cycle = False
         #     self.is_force_working = True
 
-        # 仅当物理上仍在充电桩上（正在充电或仍连接充电器）时，才先离桩再执行任务。
-        # is_charging_cycle 只代表"回充流程已成功完成"，不代表机器人此刻还在桩上，
-        # 不能作为退桩依据，否则会在机器人已离开充电桩后仍触发误退桩。
-        if (self.is_battery_charging or self.is_charger_connected):
-            self.is_force_working = True
+        # 退桩会直接驱动底盘，只允许实时物理状态触发。
+        # is_charging_cycle 只是“曾进入回充流程”的软件标志；回充被中断、
+        # 外部手动离桩后它可能短时间残留，绝不能单独授权退桩运动。
+        with self._charging_state_condition:
+            charging_cycle = self.is_charging_cycle
+            battery_charging = self.is_battery_charging
+            charger_connected = self.is_charger_connected
+            charging_current_detected = self.is_charging_current_detected
+            last_observed_time = self._last_charging_state_observed_time
+            charging_state_fresh = (
+                last_observed_time is not None and
+                time.monotonic() - last_observed_time <=
+                self._charging_state_freshness_timeout)
+            physical_dock_state = (
+                battery_charging or charger_connected or
+                charging_current_detected)
+
+            # 刚启动时 PowerBoard 首帧诊断可能晚于自动回充结果。此时等待新状态，
+            # 既不能直接取消正常任务，也不能凭流程标志盲目退桩。
+            if not charging_state_fresh:
+                wait_timeout = 20.0
+                wait_deadline = time.monotonic() + wait_timeout
+                logging.warning(
+                    "[任务前离桩] 回充状态可能有效，但电源板物理状态尚未更新，"
+                    f"最多等待 {wait_timeout:.0f} 秒确认。")
+                while not charging_state_fresh:
+                    remaining = wait_deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    self._charging_state_condition.wait(timeout=remaining)
+                    charging_cycle = self.is_charging_cycle
+                    battery_charging = self.is_battery_charging
+                    charger_connected = self.is_charger_connected
+                    charging_current_detected = (
+                        self.is_charging_current_detected)
+                    last_observed_time = self._last_charging_state_observed_time
+                    charging_state_fresh = (
+                        last_observed_time is not None and
+                        time.monotonic() - last_observed_time <=
+                        self._charging_state_freshness_timeout)
+                    physical_dock_state = (
+                        battery_charging or charger_connected or
+                        charging_current_detected)
+
+            need_undock = charging_state_fresh and physical_dock_state
+            if need_undock:
+                self.is_force_working = True
+
+        if not charging_state_fresh:
+            logging.error(
+                "[任务前离桩] 等待 20 秒仍未收到新的充电物理状态；为避免"
+                "盲目退桩，取消本次任务。请检查 /diagnostics 电源板状态。")
+            self._abort_task_preparation(
+                task_request_serial, policy_need_resume, "充电物理状态超时")
+            return
+
+        if need_undock:
+            logging.info(
+                "[任务前离桩] 检测到机器人可能仍在充电桩上："
+                f"充电周期={charging_cycle}，正在充电={battery_charging}，"
+                f"充电器连接={charger_connected}，"
+                f"正向充电电流={charging_current_detected}；先执行精准退桩。")
             control_result = self.w1.w1_manager.move_chassis_ctrl([0.3, 0, 0])
             if getattr(control_result, "name", None) != "SUCCESS":
-                self.is_force_working = False
+                with self._chassis_state_lock:
+                    self.is_force_working = False
                 logging.warning("离开充电桩运动控制目标发送失败，取消本次任务执行")
+                self._abort_task_preparation(
+                    task_request_serial, policy_need_resume, "退桩目标发送失败")
                 return
 
             start_time = time.time()
@@ -4037,31 +4492,49 @@ class W1Controller(W1Displayui):  # 主流程
                 time.sleep(0.1)
                 _, control_status = self.w1.w1_manager.get_control_status()
                 if control_status == "SUCCEEDED":
-                    self.is_charging_cycle = False
-                    self.is_battery_charging = False
-                    self.is_charger_connected = False
-                    self.is_force_working = True
+                    with self._chassis_state_lock:
+                        self.is_charging_cycle = False
+                        self.is_battery_charging = False
+                        self.is_charger_connected = False
+                        self.is_charging_current_detected = False
+                        self._charging_cycle_confirmed_time = None
+                        self._charger_disconnected_stable_count = 0
+                        self.is_force_working = True
                     logging.info("机器人已离开充电桩，开始执行任务")
                     break
                 if control_status in {"FAILED", "CANCELLED", "ABORTED"}:
                     logging.error(f"离开充电桩失败，状态={control_status}，取消本次任务执行")
-                    self.is_force_working = False
+                    with self._chassis_state_lock:
+                        self.is_force_working = False
+                    self._abort_task_preparation(
+                        task_request_serial, policy_need_resume,
+                        f"退桩执行失败：{control_status}")
                     return
             else:
                 logging.warning(f"离开充电桩超时，超过 {timeout}s 未完成，取消本次任务执行")
-                self.is_force_working = False
+                with self._chassis_state_lock:
+                    self.is_force_working = False
+                self._abort_task_preparation(
+                    task_request_serial, policy_need_resume, "退桩执行超时")
                 return
+        elif charging_cycle:
+            logging.warning(
+                "[任务前离桩] 仅检测到过期的充电周期标志，物理状态为未充电且"
+                "未连接充电器；为避免误退桩，直接执行本次任务。")
+
+        self._refresh_battery_snapshot("任务开始前")
 
         if self.payment_manager != None and self.is_payment and module_name=="泡咖啡":
                 if self.payment_manager.order_cache.__len__() == 0:
                     self.execute_voice_command(self.parameter_cfg["no_pay"])
+                    self._abort_task_preparation(
+                        task_request_serial, policy_need_resume, "没有可执行订单")
                     return
                 current_order = self.payment_manager.order_cache.current_order
                 self.payment_manager.order_cache.remove_order(current_order.order_sn)
                 self.payment_manager.order_cache.set_next_as_current()
 
         # self.function.stop_squence = False
-        current_status = self._read_status_file()
         self._write_status_file("status", "running")
         
        
@@ -4076,7 +4549,11 @@ class W1Controller(W1Displayui):  # 主流程
             if task_list!=[]:
                 get_config_by_name = task_list[0]
             exclusive_params = self.get_isolated_task_config(get_config_by_name)
-            self.thread = ExecuteTaskThread(w1_controller=self, voice_msg=voice_msg, module_name=module_name, task_config=exclusive_params)
+            self.thread = ExecuteTaskThread(
+                w1_controller=self, voice_msg=voice_msg,
+                module_name=module_name, task_config=exclusive_params,
+                policy_need_resume=policy_need_resume,
+                task_request_serial=task_request_serial)
             self.active_threads.append(self.thread)
             #为了避免执行任务时，回去充电
             self.is_force_working = True
@@ -4099,7 +4576,11 @@ class W1Controller(W1Displayui):  # 主流程
             if task_list!=[]:
                 get_config_by_name = task_list[0]
             exclusive_params = self.get_isolated_task_config(get_config_by_name)
-            self.thread = ExecuteTaskThread(w1_controller=self, voice_msg=voice_msg, module_name=module_name, task_config=exclusive_params)
+            self.thread = ExecuteTaskThread(
+                w1_controller=self, voice_msg=voice_msg,
+                module_name=module_name, task_config=exclusive_params,
+                policy_need_resume=policy_need_resume,
+                task_request_serial=task_request_serial)
             self.active_threads.append(self.thread)
             #为了避免执行任务时，回去充电
             self.is_force_working = True
@@ -4108,6 +4589,8 @@ class W1Controller(W1Displayui):  # 主流程
 
         else:
             logging.warning(f"已在任务状态:{module_name}!禁止触发")
+            self._abort_task_preparation(
+                task_request_serial, policy_need_resume, "任务状态已变化")
 
 
     def w1manage_status_monitor(self, action):  # OP及电量监控
