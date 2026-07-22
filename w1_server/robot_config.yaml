@@ -52,11 +52,16 @@ ee_secondary_name: RIGHT_GRIPPER
 tool_dynamics:
   tool_primary_enabled: true
   tool_secondary_enabled: true
-
+  Default:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]   # COM 相对 EE 原点的偏移, 单位 m, EE 系下; 默认值, 如果 left_hand_type/right_hand_type 没有匹配则使用此默认值
   BrainCo_Revo1_R:
     mass_kg: 0.5
     com_m: [0.0, 0.0, 0.0]   # COM 相对 EE 原点的偏移, 单位 m, EE 系下
   Linker_L20:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]   # COM 相对 EE 原点的偏移, 单位 m, EE 系下
+  Linker_L6:
     mass_kg: 0.5
     com_m: [0.0, 0.0, 0.0]   # COM 相对 EE 原点的偏移, 单位 m, EE 系下
 

@@ -268,31 +268,47 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                 LOG_INFO << "Tool gravity compensation disabled (" << arm_name << "): no hand_type specified";
                 return;
             }
+            // 优先按手类型匹配, 匹配失败则回退到 Default 默认值
+            auto is_valid_tool_node = [](const YAML::Node& n) {
+                return n && n["com_m"] && n["com_m"].IsSequence() && n["com_m"].size() == 3 && n["mass_kg"];
+            };
             const auto tool_node = tool_dyn_node[hand_type];
-            if (!tool_node || !tool_node["com_m"] || !tool_node["com_m"].IsSequence() ||
-                tool_node["com_m"].size() != 3 || !tool_node["mass_kg"]) {
+            const auto default_node = tool_dyn_node["Default"];
+            YAML::Node selected_node;
+            std::string selected_type;
+            if (is_valid_tool_node(tool_node)) {
+                selected_node = tool_node;
+                selected_type = hand_type;
+            } else if (is_valid_tool_node(default_node)) {
+                selected_node = default_node;
+                selected_type = "Default";
+                std::cout << "[INFO] Tool gravity compensation: tool_dynamics[" << hand_type
+                          << "] not matched, falling back to Default (" << arm_name << ")\n";
+                LOG_INFO << "Tool gravity compensation: tool_dynamics[" << hand_type
+                         << "] not matched, falling back to Default (" << arm_name << ")";
+            } else {
                 std::cout << "[WARN] Tool gravity compensation: tool_dynamics[" << hand_type
-                          << "] missing or invalid (need com_m[3] and mass_kg), disabled (" << arm_name << ")\n";
+                          << "] missing or invalid and no valid Default, disabled (" << arm_name << ")\n";
                 LOG_WARN << "Tool gravity compensation: tool_dynamics[" << hand_type
-                         << "] missing or invalid (need com_m[3] and mass_kg), disabled (" << arm_name << ")";
+                         << "] missing or invalid and no valid Default, disabled (" << arm_name << ")";
                 return;
             }
             Vector3d com_m = Vector3d::Zero();
             for (int i = 0; i < 3; ++i) {
-                com_m[i] = tool_node["com_m"][i].as<double>();
+                com_m[i] = selected_node["com_m"][i].as<double>();
             }
-            tool_cfg.mass_kg = tool_node["mass_kg"].as<double>();
+            tool_cfg.mass_kg = selected_node["mass_kg"].as<double>();
             tool_cfg.com_m = com_m;  // 直接使用米为单位的值
             if (std::isfinite(tool_cfg.mass_kg) && tool_cfg.mass_kg > FloatZeroTol && tool_cfg.com_m.allFinite()) {
                 tool_cfg.gravity_enabled = true;
-                std::cout << "[INFO] Tool gravity compensation enabled (" << arm_name << ", type=" << hand_type
+                std::cout << "[INFO] Tool gravity compensation enabled (" << arm_name << ", type=" << selected_type
                           << "): mass_kg=" << tool_cfg.mass_kg << ", com_m=" << tool_cfg.com_m.transpose() << "\n";
-                LOG_INFO << "Tool gravity compensation enabled (" << arm_name << ", type=" << hand_type
+                LOG_INFO << "Tool gravity compensation enabled (" << arm_name << ", type=" << selected_type
                          << "): mass_kg=" << tool_cfg.mass_kg << ", com_m=" << tool_cfg.com_m.transpose();
             } else {
-                std::cout << "[WARN] Tool gravity compensation (" << arm_name << ", type=" << hand_type
+                std::cout << "[WARN] Tool gravity compensation (" << arm_name << ", type=" << selected_type
                           << ") mass_kg/com_m invalid, disabled\n";
-                LOG_WARN << "Tool gravity compensation (" << arm_name << ", type=" << hand_type
+                LOG_WARN << "Tool gravity compensation (" << arm_name << ", type=" << selected_type
                          << ") mass_kg/com_m invalid, disabled";
             }
         };
