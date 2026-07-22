@@ -69,7 +69,7 @@ case "\$1" in
     echo "安装成功！包已安装到dexforce用户的本地目录"
     
     # 清理whl文件
-    rm -f ./*.whl
+    rm -f \$TARGET_DIR/*.whl
     echo "安装完成"
     ;;
 esac
