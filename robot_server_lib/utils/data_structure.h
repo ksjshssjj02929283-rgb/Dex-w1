@@ -52,14 +52,16 @@ struct JointMeasurement {
 struct JointRawMeasurement {
     VectorDof position;                          // 关节位置
     VectorDof velocity;                          // 关节速度
-    VectorDof effort;                            // 关节力矩
+    VectorDof torque;                            // 关节力矩
+    VectorDof sensor_torque{VectorDof::Zero()};  // 关节力矩传感器读数(用于外力估算)
     Vector12d sensor_wrench{Vector12d::Zero()};  // 六维力传感器数据
     TimePointSystem time_point;
 
     std::string ToString() const {
         std::stringstream ss;
         ss << "Position: " << position.transpose() << ", Velocity: " << velocity.transpose()
-           << ", Effort: " << effort.transpose() << ", Sensor Wrench: " << sensor_wrench.transpose();
+           << ", Torque: " << torque.transpose() << ", Sensor Torque: " << sensor_torque.transpose()
+           << ", Sensor Wrench: " << sensor_wrench.transpose();
         return ss.str();
     }
 };
@@ -102,6 +104,21 @@ struct TrajectoryBounds {
     }
 };
 
+// 关节导纳控制的单关节配置: 描述虚拟二阶系统 (ddq + D·dq + K·q = torque_ext, M=1) 的参数
+struct JointAdmittanceJointConfig {
+    bool enabled{false};               // 是否对该关节启用导纳
+    double natural_frequency_hz{1.5};  // 自然频率 fn (Hz), 决定刚度 K = (2π·fn)²
+    double damping_ratio{1.2};         // 阻尼比 ζ, 决定阻尼 D = 2·ζ·(2π·fn), 1.0=临界阻尼
+    double offset_limit{0.05};         // 位置偏移限幅 (rad), 防止偏移过大
+    double velocity_limit{0.4};        // 速度偏移限幅 (rad/s)
+    double acceleration_limit{5.0};    // 加速度偏移限幅 (rad/s²)
+};
+
+// 关节导纳控制全局配置
+struct JointAdmittanceConfig {
+    std::array<JointAdmittanceJointConfig, ndof_robot> joints{};
+};
+
 struct RobotProperty {
     pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
@@ -115,6 +132,7 @@ struct RobotProperty {
     VectorDof joint_stiffness = VectorDof::Constant(200.0);
     VectorDof joint_damping = VectorDof::Constant(20.0);
     VectorDof joint_integral_ratio = VectorDof::Constant(0.01);
+    JointAdmittanceConfig joint_admittance;  // 关节导纳控制配置
     Vector12d cart_stiffness = Vector12d::Constant(200.0);
     Vector12d cart_damping_ratio = Vector12d::Constant(1.0);  // 阻尼比 范围0.5 ~ 1.5
     std::array<ErrorCode, ndof_robot> error_codes{};

@@ -1,5 +1,5 @@
 # === 机器人基本配置 ===
-config_version: v04
+config_version: v05
 robot_type: w1
 version: v024
 left_hand_type: BrainCo_Revo1_R
@@ -107,10 +107,12 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 2.9
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: false
 
     - name: KNEE
       index: 1
@@ -123,10 +125,12 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 2.9
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: false
 
     - name: BUTTOCK
       index: 2
@@ -139,10 +143,12 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 2.9
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: false
 
     - name: WAIST
       index: 3
@@ -155,10 +161,12 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 3.5
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: false
 
     - name: NECK1
       index: 4
@@ -171,6 +179,8 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
+      joint_admittance:
+        enabled: false
 
     - name: NECK2
       index: 5
@@ -183,10 +193,12 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: false
 
     - name: LEFT_J1
       index: 6
@@ -199,10 +211,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 6.7
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 900.0
         damping: 70.0
         integral_ratio: 0.02
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
     - name: LEFT_J2
       index: 7
@@ -215,10 +234,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 9.5
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 750.0
         damping: 62.0
         integral_ratio: 0.03
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
     - name: LEFT_J3
       index: 8
@@ -231,10 +257,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 9.5
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 650.0
         damping: 35.0
         integral_ratio: 0.03
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
     - name: LEFT_J4
       index: 9
@@ -247,10 +280,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 600.0
         damping: 33.0
         integral_ratio: 0.03
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
     - name: LEFT_J5
       index: 10
@@ -263,10 +303,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
     - name: LEFT_J6
       index: 11
@@ -279,10 +326,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
     - name: LEFT_J7
       index: 12
@@ -295,10 +349,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 20.0
         damping: 1.5
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
     - name: RIGHT_J1
       index: 13
@@ -311,10 +372,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 6.7
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 900.0
         damping: 70.0
         integral_ratio: 0.02
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
     - name: RIGHT_J2
       index: 14
@@ -327,10 +395,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 9.5
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 750.0
         damping: 62.0
         integral_ratio: 0.03
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
     - name: RIGHT_J3
       index: 15
@@ -343,10 +418,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 9.5
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 650.0
         damping: 35.0
         integral_ratio: 0.03
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
     - name: RIGHT_J4
       index: 16
@@ -359,10 +441,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 600.0
         damping: 33.0
         integral_ratio: 0.03
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
     - name: RIGHT_J5
       index: 17
@@ -375,10 +464,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
     - name: RIGHT_J6
       index: 18
@@ -391,10 +487,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
     - name: RIGHT_J7
       index: 19
@@ -407,10 +510,17 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 20.0
         damping: 1.5
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
 w1_v03:
   # === streaming运动参数 ===
@@ -448,10 +558,12 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 5.0
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: false
     - name: KNEE
       index: 1
       velocity_limit: 3.1416
@@ -463,10 +575,12 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 5.0
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: false
     - name: BUTTOCK
       index: 2
       velocity_limit: 3.1416
@@ -478,10 +592,12 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 5.0
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: false
     - name: WAIST
       index: 3
       velocity_limit: 3.1416
@@ -493,10 +609,12 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 9.0
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: false
     - name: NECK1
       index: 4
       velocity_limit: 3.1416
@@ -508,6 +626,8 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
+      joint_admittance:
+        enabled: false
     - name: NECK2
       index: 5
       velocity_limit: 3.1416
@@ -519,10 +639,12 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: false
     - name: LEFT_J1
       index: 6
       velocity_limit: 3.1416
@@ -534,10 +656,17 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 13.5
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 900.0
         damping: 70.0
         integral_ratio: 0.02
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
     - name: LEFT_J2
       index: 7
       velocity_limit: 3.1416
@@ -549,10 +678,17 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 20.0
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 750.0
         damping: 62.0
         integral_ratio: 0.03
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
     - name: LEFT_J3
       index: 8
       velocity_limit: 3.1416
@@ -564,10 +700,17 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 20.0
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 650.0
         damping: 35.0
         integral_ratio: 0.03
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
     - name: LEFT_J4
       index: 9
       velocity_limit: 3.1416
@@ -579,10 +722,17 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 600.0
         damping: 33.0
         integral_ratio: 0.03
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
     - name: LEFT_J5
       index: 10
       velocity_limit: 3.1416
@@ -594,10 +744,17 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
     - name: LEFT_J6
       index: 11
       velocity_limit: 3.1416
@@ -609,10 +766,17 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
     - name: LEFT_J7
       index: 12
       velocity_limit: 3.1416
@@ -624,10 +788,17 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 20.0
         damping: 1.5
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
     - name: RIGHT_J1
       index: 13
       velocity_limit: 3.1416
@@ -639,10 +810,17 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 13.5
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 900.0
         damping: 70.0
         integral_ratio: 0.02
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
     - name: RIGHT_J2
       index: 14
       velocity_limit: 3.1416
@@ -654,10 +832,17 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 20
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 750.0
         damping: 62.0
         integral_ratio: 0.03
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
     - name: RIGHT_J3
       index: 15
       velocity_limit: 3.1416
@@ -669,10 +854,17 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 20
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 650.0
         damping: 35.0
         integral_ratio: 0.03
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
     - name: RIGHT_J4
       index: 16
       velocity_limit: 3.1416
@@ -684,10 +876,17 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 600.0
         damping: 33.0
         integral_ratio: 0.03
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
     - name: RIGHT_J5
       index: 17
       velocity_limit: 3.1416
@@ -699,10 +898,17 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
     - name: RIGHT_J6
       index: 18
       velocity_limit: 3.1416
@@ -714,10 +920,17 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
     - name: RIGHT_J7
       index: 19
       velocity_limit: 3.1416
@@ -729,7 +942,14 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_impedance_control:
+      joint_pd_control:
         stiffness: 20.0
         damping: 1.5
         integral_ratio: 0.05
+      joint_admittance:
+        enabled: true
+        natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
+        damping_ratio: 1.0  # 阻尼比 ζ (无量纲, 1.0=临界阻尼)
+        offset_limit: 0.2  # 位置偏移限幅 (rad)
+        velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
+        acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)

@@ -340,7 +340,8 @@ def monitor(stdscr):
 
             addstr_safe(
                 stdscr, row, 0,
-                "Joint  Name       Pos      Vel      Torque   AL  Err   Temp")
+                "Joint  Name       Pos      Vel   Torque  SensorT  AL  Err   Temp"
+            )
             row += 1
             for i in range(min(MAX_JOINT_NUM, 20)):
                 joint_name = cstr_to_py(data.joint_feedback[i].joint_name)
@@ -348,7 +349,7 @@ def monitor(stdscr):
                     stdscr,
                     row,
                     0,
-                    f"{i:2d}     {joint_name:10.10s} {data.joint_feedback[i].joint_position:6.3f}   {data.joint_feedback[i].joint_velocity:6.3f}   {data.joint_feedback[i].joint_torque:6.3f}   {data.al_status[i]:2d}  {data.joint_feedback[i].joint_error_code:04X}  {data.joint_feedback[i].joint_temperature:6.1f}",
+                    f"{i:2d}     {joint_name:10.10s} {data.joint_feedback[i].joint_position:6.3f}   {data.joint_feedback[i].joint_velocity:6.3f}   {data.joint_feedback[i].joint_torque:6.3f}  {data.joint_feedback[i].joint_sensor_torque:6.3f}  {data.al_status[i]:2d}  {data.joint_feedback[i].joint_error_code:04X}  {data.joint_feedback[i].joint_temperature:6.1f}",
                 )
                 row += 1
         else:

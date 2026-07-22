@@ -29,6 +29,7 @@ constexpr double IdleVelocityThreshold = 0.05 / 180 * M_PI;  // 静止状态的�
 constexpr double PositionThreshold = 1e-6;                   // 位置误差容忍度
 constexpr double FloatZeroTol = 1e-9;                        // 浮点数零值容忍度
 constexpr double StreamingCommandTimeout = 10;               // 流式命令超时10秒
+constexpr double TorqueExtDeadzone = 0.5;                    // 外力死区 (N·m)
 
 using Int64 = std::int64_t;
 using VectorDof = Eigen::Matrix<double, ndof_robot, 1>;

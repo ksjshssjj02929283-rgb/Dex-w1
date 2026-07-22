@@ -45,12 +45,6 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
             auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, q, robot_model.model_ptr->getFrameId(first_joint_urdf_name) - 1);
             Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.8};
 
-            // 调试: 打印重力向量信息
-            static int64_t dbg_counter_pri = 0;
-            if (++dbg_counter_pri % 1000 == 0) {
-                int frame_id = robot_model.model_ptr->getFrameId(first_joint_urdf_name) - 1;
-            }
-
             t_seg = std::chrono::steady_clock::now();
             Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Primary);
             us_sym_pri = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -86,12 +80,6 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
         {
             auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, q, robot_model.model_ptr->getFrameId(first_joint_urdf_name) - 1);
             Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.8};
-
-            // 调试: 打印重力向量信息
-            static int64_t dbg_counter_sec = 0;
-            if (++dbg_counter_sec % 1000 == 0) {
-                int frame_id = robot_model.model_ptr->getFrameId(first_joint_urdf_name) - 1;
-            }
 
             t_seg = std::chrono::steady_clock::now();
             Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Secondary);

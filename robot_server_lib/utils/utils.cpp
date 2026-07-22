@@ -1,5 +1,7 @@
 #include "utils.h"
 
+#include <unistd.h>
+
 #include <cstdlib>
 
 namespace robot_server_lib {
@@ -30,16 +32,32 @@ YAML::Node MergeYamlNode(const YAML::Node& user_node,
     }
     return result;
 }
+
+// 原子写入 YAML 配置: 先写临时文件(PID 命名避免多进程冲突), 再 rename 原子替换
+// 读者要么看到完整旧文件, 要么看到完整新文件, 不会读到半写状态
+void AtomicWriteYaml(const std::filesystem::path& target_path, const YAML::Node& config) {
+    std::filesystem::path tmp_path = target_path.string() + ".tmp." + std::to_string(::getpid());
+    std::ofstream fout(tmp_path.string());
+    if (!fout.is_open()) {
+        std::cerr << "[ERROR] Failed to open temp file for writing: " << tmp_path << std::endl;
+        return;
+    }
+    fout << config;
+    fout.close();
+    if (!fout) {
+        std::cerr << "[ERROR] Failed to write config to temp file: " << tmp_path << std::endl;
+        std::filesystem::remove(tmp_path);
+        return;
+    }
+    std::filesystem::rename(tmp_path, target_path);
+}
 }  // namespace
 
 void CheckConfig(const std::filesystem::path& default_cfg_path, const std::filesystem::path& user_cfg_path) {
     if (!std::filesystem::exists(user_cfg_path)) {
-        // 用户配置文件不存在，执行完全拷贝
-        if (!std::filesystem::copy_file(default_cfg_path, user_cfg_path,
-                                        std::filesystem::copy_options::overwrite_existing)) {
-            std::cerr << "[ERROR] Failed to copy default config file: " << user_cfg_path << std::endl;
-            std::exit(1);
-        }
+        // 用户配置文件不存在，用默认配置原子写入创建
+        YAML::Node fresh_config = YAML::LoadFile(default_cfg_path.string());
+        AtomicWriteYaml(user_cfg_path, fresh_config);
         std::cout << "[INFO] Created default config file: " << user_cfg_path << std::endl;
     } else {
         // 加载默认配置和用户修改过的配置进行对比合并
@@ -54,14 +72,12 @@ void CheckConfig(const std::filesystem::path& default_cfg_path, const std::files
         // 字符串比较版本号，假设版本格式为 "vXX"，直接比较字符串即可判断版本先后, 如果用户版本不存在则视为过旧需要覆盖
         if (default_version > user_version) {
             std::cout << "[INFO] Default config version (" << default_version << ") is newer than user config version ("
-                      << (user_version.empty() ? "none" : user_version) << "). Overwriting user config." << std::endl;
-            if (!std::filesystem::copy_file(default_cfg_path, user_cfg_path,
-                                            std::filesystem::copy_options::overwrite_existing)) {
-                std::cerr << "[ERROR] Failed to overwrite config file: " << user_cfg_path << std::endl;
-                std::exit(1);
-            }
-            // 覆盖后重新加载最新的配置内容，以便于继续执行后续正常的一致性动作
-            user_config = YAML::LoadFile(user_cfg_path.string());
+                      << (user_version.empty() ? "none" : user_version) << "). Replacing user config." << std::endl;
+            // 先删除旧文件, 再用默认配置原子写入, 避免非原子 copy_file 导致并发撕裂
+            std::filesystem::remove(user_cfg_path);
+            YAML::Node fresh_config = YAML::LoadFile(default_cfg_path.string());
+            AtomicWriteYaml(user_cfg_path, fresh_config);
+            user_config = fresh_config;
         }
 
         bool modified = false;
@@ -102,10 +118,8 @@ void CheckConfig(const std::filesystem::path& default_cfg_path, const std::files
         }
 
         if (modified) {
-            // 如果上述检查补齐了任何字段，将完整的用户配置覆盖写回原文件
-            std::ofstream fout(user_cfg_path.string());
-            fout << user_config;
-            fout.close();
+            // 原子写入: 先写临时文件再 rename, 避免多进程并发写导致文件撕裂
+            AtomicWriteYaml(user_cfg_path, user_config);
             std::cout << "[INFO] Updated config file with missing fields: " << user_cfg_path << std::endl;
         }
     }
@@ -130,9 +144,7 @@ void SyncHardwareConfig(const std::filesystem::path& robot_cfg_path) {
         }
 
         if (modified) {
-            std::ofstream fout(robot_cfg_path.string());
-            fout << robot_config;
-            fout.close();
+            AtomicWriteYaml(robot_cfg_path, robot_config);
             std::cout << "[INFO] Synchronized all hardware fields from " << external_cfg_path << " to "
                       << robot_cfg_path << std::endl;
         }
@@ -381,6 +393,40 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         robot_property.enable_cartesian_impedance = version_cfg["enable_cartesian_impedance"].as<bool>();
     }
 
+    // 关节导纳参数解析辅助: 非法值回退默认并告警, 保证控制器参数始终有效
+    auto read_joint_admittance_bounded = [](const YAML::Node& node, const char* key, double& target, double min_value,
+                                            bool strict_min) {
+        if (!node || !node[key]) {
+            return;
+        }
+        const double value = node[key].as<double>();
+        const bool valid_min = strict_min ? value > min_value : value >= min_value;
+        if (!std::isfinite(value) || !valid_min) {
+            LOG_WARN << "Invalid joint_admittance." << key << ": " << value << ", keep default " << target;
+            return;
+        }
+        target = value;
+    };
+    auto read_joint_admittance_bool = [](const YAML::Node& node, const char* key, bool& target) {
+        if (node && node[key]) {
+            target = node[key].as<bool>();
+        }
+    };
+    auto apply_joint_admittance_node = [&](const YAML::Node& node, JointAdmittanceJointConfig& target) {
+        if (!node || !node.IsMap()) {
+            return;
+        }
+        read_joint_admittance_bool(node, "enabled", target.enabled);
+        if (!target.enabled) {
+            return;  // 关闭的关节跳过具体参数解析
+        }
+        read_joint_admittance_bounded(node, "natural_frequency_hz", target.natural_frequency_hz, 0.0, true);
+        read_joint_admittance_bounded(node, "damping_ratio", target.damping_ratio, 0.0, true);
+        read_joint_admittance_bounded(node, "offset_limit", target.offset_limit, 0.0, false);
+        read_joint_admittance_bounded(node, "velocity_limit", target.velocity_limit, 0.0, false);
+        read_joint_admittance_bounded(node, "acceleration_limit", target.acceleration_limit, 0.0, false);
+    };
+
     if (version_cfg["joint_streaming_bounds"] && version_cfg["joint_streaming_bounds"].IsMap()) {
         if (version_cfg["joint_streaming_bounds"]["max_velocity"]) {
             robot_property.joint_streaming_bounds.max_velocity =
@@ -453,18 +499,38 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                 params.joint_limit_margin_deg[joint_idx] = joint_config["position_limit_margin_deg"].as<double>();
             }
 
-            if (joint_config["joint_impedance_control"]) {
-                if (joint_config["joint_impedance_control"]["stiffness"]) {
+            if (joint_config["joint_pd_control"]) {
+                if (joint_config["joint_pd_control"]["stiffness"]) {
                     robot_property.joint_stiffness[joint_idx] =
-                        joint_config["joint_impedance_control"]["stiffness"].as<double>();
+                        joint_config["joint_pd_control"]["stiffness"].as<double>();
                 }
-                if (joint_config["joint_impedance_control"]["damping"]) {
-                    robot_property.joint_damping[joint_idx] =
-                        joint_config["joint_impedance_control"]["damping"].as<double>();
+                if (joint_config["joint_pd_control"]["damping"]) {
+                    robot_property.joint_damping[joint_idx] = joint_config["joint_pd_control"]["damping"].as<double>();
                 }
-                if (joint_config["joint_impedance_control"]["integral_ratio"]) {
-                    robot_property.joint_integral_ratio[joint_idx] =
-                        joint_config["joint_impedance_control"]["integral_ratio"].as<double>();
+                if (joint_config["joint_pd_control"]["integral_ratio"]) {
+                    double integral_ratio = joint_config["joint_pd_control"]["integral_ratio"].as<double>();
+                    if (std::isfinite(integral_ratio) && integral_ratio >= 0.0) {
+                        robot_property.joint_integral_ratio[joint_idx] = integral_ratio;
+                    } else {
+                        LOG_WARN << "Invalid integral_ratio for joint " << joint_name << ": " << integral_ratio
+                                 << ", keep default " << robot_property.joint_integral_ratio[joint_idx];
+                    }
+                }
+            }
+
+            // 解析单关节导纳参数 (per-joint, 在 joints 列表中配置)
+            if (joint_config["joint_admittance"] && joint_config["joint_admittance"].IsMap()) {
+                apply_joint_admittance_node(joint_config["joint_admittance"],
+                                            robot_property.joint_admittance.joints[joint_idx]);
+                // 保险: 非手臂关节强制禁用导纳, 防止误配置
+                bool is_arm_joint =
+                    std::find(params.joints_primary_names.begin(), params.joints_primary_names.end(), joint_name) !=
+                        params.joints_primary_names.end() ||
+                    std::find(params.joints_secondary_names.begin(), params.joints_secondary_names.end(), joint_name) !=
+                        params.joints_secondary_names.end();
+                if (!is_arm_joint && robot_property.joint_admittance.joints[joint_idx].enabled) {
+                    LOG_WARN << "joint_admittance disabled for non-arm joint: " << joint_name;
+                    robot_property.joint_admittance.joints[joint_idx].enabled = false;
                 }
             }
 

@@ -143,6 +143,12 @@ inline bool FloatEqual(double a, double b, double tol = 1e-9) noexcept {
     return diff <= tol || diff <= tol * scale;
 }
 
+// 死区滤波: |value| <= deadzone 时输出0, 否则减去死区量级保留符号
+inline double DeadZoneFilter(double value, double deadzone) noexcept {
+    if (std::abs(value) <= deadzone) return 0.0;
+    return std::copysign(std::abs(value) - deadzone, value);
+}
+
 // 三向比较: -1 (<), 0 (≈), 1 (>)
 inline int FloatCompare(double a, double b, double tol = 1e-9) noexcept {
     double diff = a - b;

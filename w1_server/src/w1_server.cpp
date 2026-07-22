@@ -215,7 +215,8 @@ void RobotServer::TorqueControlThreadFunc() {
             for (int i = 0; i < ndof_robot; ++i) {
                 raw_measurement.position[i] = robot_feedback_.joint_feedback[i].joint_position;
                 raw_measurement.velocity[i] = robot_feedback_.joint_feedback[i].joint_velocity;
-                raw_measurement.effort[i] = robot_feedback_.joint_feedback[i].joint_torque;
+                raw_measurement.torque[i] = robot_feedback_.joint_feedback[i].joint_torque;
+                raw_measurement.sensor_torque[i] = robot_feedback_.joint_feedback[i].joint_sensor_torque;
                 // 检测力矩限制是否达到阈值
                 if (robot_feedback_.joint_feedback[i].joint_torque >=
                         robot_control_.joint_control[i].joint_positive_torque_limit * 0.9 ||
@@ -281,7 +282,7 @@ void RobotServer::TorqueControlThreadFunc() {
                                 manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
                             }
                             this->robot_control_.joint_control[i].joint_torque_feedforward =
-                                torque_cmd.torque_feedforward[i];
+                                torque_cmd.torque_feedforward[i];  // 切换模式时保持仅前馈力矩
                             this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
                         } else {
                             switch_counter_ = 0;

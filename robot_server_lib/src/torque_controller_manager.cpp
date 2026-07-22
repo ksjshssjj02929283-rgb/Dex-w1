@@ -72,7 +72,7 @@ void TorqueControllerManager::LoopOnce() {
         JointMeasurement manager_measurement{};
         manager_measurement.position = runtime_data_.raw_measurement.position;
         manager_measurement.velocity = runtime_data_.raw_measurement.velocity;
-        manager_measurement.effort = runtime_data_.raw_measurement.effort;
+        manager_measurement.effort = runtime_data_.raw_measurement.torque;
         manager_measurement.q_desired_pre = runtime_data_.output_cmd.q_desired;
         manager_measurement.sensor_wrench = runtime_data_.raw_measurement.sensor_wrench;
         manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);

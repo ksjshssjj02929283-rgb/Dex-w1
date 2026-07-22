@@ -52,7 +52,7 @@ void RobotServer::RobotThreadFunc() {
     raw_measurement.position << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.2, 0.0, -1.0, 0.0, -0.5, -0.5, 0.0, 1.2, 0.0, 1.0,
         0.0, 0.5, 0.5;
     raw_measurement.velocity.setZero();
-    raw_measurement.effort.setZero();
+    raw_measurement.torque.setZero();
     raw_measurement.sensor_wrench = Eigen::VectorXd::Zero(12);
     raw_measurement.time_point = TimePointSystem::Now();
     this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
@@ -74,7 +74,7 @@ void RobotServer::RobotThreadFunc() {
             raw_measurement.position += simulation_dt * raw_measurement.velocity;
             raw_measurement.position.segment(0, 6) =
                 q_cmd.cmd.position.segment(0, 6);  // 保持躯干和头部由位置控制器控制
-            raw_measurement.effort = torque_cmd.torque;
+            raw_measurement.torque = torque_cmd.torque;
             raw_measurement.time_point = TimePointSystem::Now();
             this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
         }
@@ -147,7 +147,7 @@ void RobotServer::PublishFeedback() {
             feedback_msg.name[i] = this->robot_model_.params_ptr->joint_names[i];
             feedback_msg.position[i] = raw_measurement.position[i];
             feedback_msg.velocity[i] = raw_measurement.velocity[i];
-            feedback_msg.effort[i] = raw_measurement.effort[i];
+            feedback_msg.effort[i] = raw_measurement.torque[i];
         }
         feedback_publisher_->publish(feedback_msg);
     }

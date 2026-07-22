@@ -75,7 +75,7 @@ Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q, Re
     computeFrameJacobian(model, data, q, ee_frame_id, frame, J);
 
     if (frame != LOCAL) {
-        RotateJacobianToArmBase(J, model, data);
+        RotateJacobianToArmBase(J, model, data);  // 将雅可比从 root 系旋转到 arm_base 系, 与旧版 URDF 保持一致
     }
     return J;
 }
