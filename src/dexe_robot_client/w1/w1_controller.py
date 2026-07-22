@@ -260,7 +260,7 @@ class PolicyControlThread(QThread):
 class RosBatteryMonitorThread(QThread):
     """基于ROS2诊断信息的电量监控线程"""
     update_signal = Signal(str)
-    charging_state_signal = Signal(bool, bool)
+    charging_state_signal = Signal(bool, bool, float)
 
     def __init__(self, controller):
         super().__init__()
@@ -352,7 +352,7 @@ class RosBatteryMonitorThread(QThread):
 
             def battery_callback(self, msg):
                 try:
-                    charging_state_changed = False
+                    charging_state_observed = False
 
                     for status in msg.status:
                         if "PowerBoard" not in status.name:
@@ -390,20 +390,23 @@ class RosBatteryMonitorThread(QThread):
 
                         if "battery_charging" in battery_info:
                             battery_charging = self.parse_bool(battery_info["battery_charging"])
-                            if battery_charging != self._battery_charging:
-                                self._battery_charging = battery_charging
-                                charging_state_changed = True
+                            self._battery_charging = battery_charging
 
                         if "charger_connect_state" in battery_info:
                             charger_connected = self.parse_bool(battery_info["charger_connect_state"])
-                            if charger_connected != self._charger_connected:
-                                self._charger_connected = charger_connected
-                                charging_state_changed = True
+                            self._charger_connected = charger_connected
 
-                    if charging_state_changed:
+                        charging_state_observed = charging_state_observed or (
+                            "battery_charging" in battery_info and
+                            "charger_connect_state" in battery_info)
+
+                    # 连续稳定判断需要每一帧诊断样本，不能只在状态变化时发送。
+                    # 同时携带采样时间，防止主线程阻塞后把排队的旧样本当成新状态。
+                    if charging_state_observed:
                         self.charging_state_sig.emit(
                             bool(self._battery_charging),
-                            bool(self._charger_connected)
+                            bool(self._charger_connected),
+                            time.monotonic()
                         )
 
                 except Exception as e:
@@ -1256,6 +1259,9 @@ class W1Controller(W1Displayui):  # 主流程
         self._full_charge_undock_retry_interval = 30.0
         self.is_battery_charging = False
         self.is_charger_connected = False
+        self._charger_disconnected_stable_count = 0
+        self._charger_disconnected_stable_threshold = 5
+        self._charging_cycle_confirmed_time = None
         self.signals = ControllerSignals()
         # 初始化所有配置变量
         self.config = None
@@ -3026,11 +3032,26 @@ class W1Controller(W1Displayui):  # 主流程
         with self._chassis_state_lock:
             if self.is_force_working:
                 self.pending_auto_charging = True
+                logging.info(
+                    f"[低电量回充] 暂不请求：任务正在占用底盘，"
+                    f"已标记待回充（{trigger}）。")
                 return False
-            if self.is_charging_cycle or self._auto_charging_requesting:
+            if self.is_charging_cycle:
+                logging.info(
+                    f"[低电量回充] 跳过请求：当前仍处于充电周期"
+                    f"（{trigger}）。")
                 return False
-            if now - self._last_auto_charging_attempt_time < \
-                    self._auto_charging_retry_interval:
+            if self._auto_charging_requesting:
+                logging.info(
+                    f"[低电量回充] 跳过请求：已有回充请求正在处理"
+                    f"（{trigger}）。")
+                return False
+            elapsed = now - self._last_auto_charging_attempt_time
+            if elapsed < self._auto_charging_retry_interval:
+                remaining = self._auto_charging_retry_interval - elapsed
+                logging.info(
+                    f"[低电量回充] 暂不重试：处于请求冷却期，"
+                    f"剩余 {remaining:.1f} 秒（{trigger}）。")
                 return False
             self._auto_charging_requesting = True
 
@@ -3071,6 +3092,8 @@ class W1Controller(W1Displayui):  # 主流程
                 # 回充 Action 已确认成功；/diagnostics 的 battery_charging 作为二次校验
                 # 由 update_charging_state 继续维护，满电离桩逻辑不变。
                 self.is_charging_cycle = True
+                self._charging_cycle_confirmed_time = time.monotonic()
+                self._charger_disconnected_stable_count = 0
                 self.pending_auto_charging = False
             else:
                 # Action 失败或超时：清除充电周期标记，保留待回充标记以便重试。
@@ -3175,11 +3198,44 @@ class W1Controller(W1Displayui):  # 主流程
             self._undock_after_full_charge(current_battery)
 
     def update_charging_state(self, battery_charging: bool,
-                              charger_connected: bool):
-        """保存诊断信息中的充电与充电器连接状态。"""
+                              charger_connected: bool,
+                              observed_time: float):
+        """保存充电状态，连续确认离桩后清除过期的充电周期标记。"""
         with self._chassis_state_lock:
+            # 回充等待会阻塞界面线程，期间的诊断信号可能在事件队列中积压。
+            # 旧样本不能用于判断刚成功的回充周期是否已经离桩。
+            if (self._charging_cycle_confirmed_time is not None and
+                    observed_time < self._charging_cycle_confirmed_time):
+                return
+
             self.is_battery_charging = battery_charging
             self.is_charger_connected = charger_connected
+
+            if (battery_charging or charger_connected or
+                    self._auto_charging_requesting):
+                self._charger_disconnected_stable_count = 0
+                return
+
+            if not self.is_charging_cycle:
+                self._charger_disconnected_stable_count = 0
+                return
+
+            self._charger_disconnected_stable_count += 1
+            stable_count = self._charger_disconnected_stable_count
+            stable_threshold = self._charger_disconnected_stable_threshold
+            logging.info(
+                "[充电周期状态校验] 连续检测到未充电且未连接充电器："
+                f"{stable_count}/{stable_threshold}。")
+
+            if stable_count < stable_threshold:
+                return
+
+            self.is_charging_cycle = False
+            self._charging_cycle_confirmed_time = None
+            self._charger_disconnected_stable_count = 0
+            logging.warning(
+                "[充电周期状态校验] 已连续确认机器人未充电且未连接充电器，"
+                "清除过期的 is_charging_cycle 状态。")
 
     # -------------------------------------------------- 路点导航 --------------------------------------------------
     def start_undocking_emit(self, x, y, w):
