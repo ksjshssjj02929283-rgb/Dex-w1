@@ -604,11 +604,6 @@ RobotFeedback RobotServer::ConvertAnkleMotorsToPitchRoll(const RobotFeedback& ro
 RobotControl RobotServer::ConvertPitchRollToAnkleMotors(const RobotControl& robot_control) {
     RobotControl result = robot_control;
 
-    ankle_motor_position_cmd_[L_ANKLE_MOTOR_1] = robot_control.joint_control[idx_l_ankle_pitch_].joint_position;
-    ankle_motor_position_cmd_[L_ANKLE_MOTOR_2] = robot_control.joint_control[idx_l_ankle_roll_].joint_position;
-    ankle_motor_position_cmd_[R_ANKLE_MOTOR_1] = robot_control.joint_control[idx_r_ankle_pitch_].joint_position;
-    ankle_motor_position_cmd_[R_ANKLE_MOTOR_2] = robot_control.joint_control[idx_r_ankle_roll_].joint_position;
-
     const double ankle_pitch_left = std::clamp(robot_control.joint_control[idx_l_ankle_pitch_].joint_position, -1.0472, 0.61087);
     const double ankle_roll_left = std::clamp(robot_control.joint_control[idx_l_ankle_roll_].joint_position, -0.2618, 0.2618);
     const double ankle_tau_pitch_left = robot_control.joint_control[idx_l_ankle_pitch_].joint_torque;
@@ -636,10 +631,10 @@ RobotControl RobotServer::ConvertPitchRollToAnkleMotors(const RobotControl& robo
     utils::AnkleIKSolution motor_angles_right =
         pm_ankle_right_.GetAnkleMotorAngles(ankle_pitch_right, ankle_roll_right);
 
-    result.joint_control[idx_l_ankle_pitch_].joint_position = motor_angles_left.theta_1_rad;
-    result.joint_control[idx_l_ankle_roll_].joint_position = motor_angles_left.theta_2_rad;
-    result.joint_control[idx_r_ankle_pitch_].joint_position = motor_angles_right.theta_1_rad;
-    result.joint_control[idx_r_ankle_roll_].joint_position = motor_angles_right.theta_2_rad;
+    result.joint_control[idx_l_ankle_pitch_].joint_position = ankle_motor_position_cmd_[L_ANKLE_MOTOR_1] = motor_angles_left.theta_1_rad;
+    result.joint_control[idx_l_ankle_roll_].joint_position = ankle_motor_position_cmd_[L_ANKLE_MOTOR_2] = motor_angles_left.theta_2_rad;
+    result.joint_control[idx_r_ankle_pitch_].joint_position = ankle_motor_position_cmd_[R_ANKLE_MOTOR_1] = motor_angles_right.theta_1_rad;
+    result.joint_control[idx_r_ankle_roll_].joint_position = ankle_motor_position_cmd_[R_ANKLE_MOTOR_2] = motor_angles_right.theta_2_rad;
 
     Eigen::Matrix2d ankle_k_left = pm_ankle_left_.GetMotorStiffnessMatrixFromTaskStiffness(
         ankle_pitch_left, ankle_roll_left, ankle_k_pitch_left, ankle_k_roll_left);

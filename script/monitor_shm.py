@@ -340,17 +340,16 @@ def monitor(stdscr):
 
             addstr_safe(
                 stdscr, row, 0,
-                "Id Name                     Pos     Vel  Torque SensorT AL  Err  Temp"
+                "Joint  Name       Pos      Vel   Torque  SensorT  AL  Err   Temp"
             )
             row += 1
             for i in range(min(MAX_JOINT_NUM, 20)):
-                jf = data.joint_feedback[i]
-                joint_name = cstr_to_py(jf.joint_name)
+                joint_name = cstr_to_py(data.joint_feedback[i].joint_name)
                 addstr_safe(
                     stdscr,
                     row,
                     0,
-                    f"{i:2d} {joint_name:20.20s} {jf.joint_position:7.3f} {jf.joint_velocity:7.3f} {jf.joint_torque:7.3f} {jf.joint_sensor_torque:7.3f} {data.al_status[i]:2d} {jf.joint_error_code:04X} {jf.joint_temperature:5.1f}",
+                    f"{i:2d}     {joint_name:10.10s} {data.joint_feedback[i].joint_position:6.3f}   {data.joint_feedback[i].joint_velocity:6.3f}   {data.joint_feedback[i].joint_torque:6.3f}  {data.joint_feedback[i].joint_sensor_torque:6.3f}  {data.al_status[i]:2d}  {data.joint_feedback[i].joint_error_code:04X}  {data.joint_feedback[i].joint_temperature:6.1f}",
                 )
                 row += 1
         else:
@@ -417,16 +416,15 @@ def monitor(stdscr):
             row += 1
 
             addstr_safe(stdscr, row, 0,
-                        "Id Name                     Pos     Vel   TorqueFF")
+                        "Joint  Name       Pos      Vel      TorqueFF")
             row += 1
             for i in range(min(MAX_JOINT_NUM, 20)):
-                jc = data.joint_control[i]
-                joint_name = cstr_to_py(jc.joint_name)
+                joint_name = cstr_to_py(data.joint_control[i].joint_name)
                 addstr_safe(
                     stdscr,
                     row,
                     0,
-                    f"{i:2d} {joint_name:20.20s} {jc.joint_position:7.3f} {jc.joint_velocity:7.3f} {jc.joint_torque_feedforward:7.3f}",
+                    f"{i:2d}     {joint_name:10.10s} {data.joint_control[i].joint_position:6.3f}   {data.joint_control[i].joint_velocity:6.3f}   {data.joint_control[i].joint_torque_feedforward:6.3f}",
                 )
                 row += 1
         else:

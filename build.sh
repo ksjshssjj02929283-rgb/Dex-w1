@@ -22,13 +22,13 @@ if [ -z "$ROS_DISTRO" ]; then
 fi
 
 # === 2. 初始化 submodule（dexe_interfaces 使用 dev_l1 分支，含 JointCommand.msg 等 L1 接口定义）===
-if [ -f "${WORKSPACE_DIR}/.gitmodules" ]; then
-    git -C "${WORKSPACE_DIR}" submodule sync --recursive
-    git -C "${WORKSPACE_DIR}" submodule update --init --recursive
-    # 切换 dexe_interfaces 到 dev_l1 分支（L1 双足人形接口）
-    git -C "${WORKSPACE_DIR}/dexe_interfaces" fetch origin
-    git -C "${WORKSPACE_DIR}/dexe_interfaces" checkout origin/dev_l1
-fi
+# if [ -f "${WORKSPACE_DIR}/.gitmodules" ]; then
+#     git -C "${WORKSPACE_DIR}" submodule sync --recursive
+#     git -C "${WORKSPACE_DIR}" submodule update --init --recursive
+#     # 切换 dexe_interfaces 到 dev_l1 分支（L1 双足人形接口）
+#     git -C "${WORKSPACE_DIR}/dexe_interfaces" fetch origin
+#     git -C "${WORKSPACE_DIR}/dexe_interfaces" checkout origin/dev_l1
+# fi
 cd "${WORKSPACE_DIR}/.."
 
 # === 3. 复用已存在的已构建产物：install/ 中已有的包跳过，避免重复编译 ===
