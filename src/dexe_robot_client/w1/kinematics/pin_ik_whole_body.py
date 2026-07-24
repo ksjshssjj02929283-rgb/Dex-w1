@@ -1174,3 +1174,42 @@ class PinIKWholeBody:
             print(f"rotational error: {self.opti.debug.value(rot_err)}")
 
             return False, None
+
+    def get_rough_eye_focus_point(self, qpos: np.ndarray,
+                                  next_eye_focus_point: np.ndarray):
+        """Estimate a focus point along the current eye viewing ray."""
+        qpos = np.asarray(qpos, dtype=float).reshape(-1)
+        next_eye_focus_point = np.asarray(
+            next_eye_focus_point, dtype=float).reshape(-1)
+        if qpos.size != self.robot_.model.nq or next_eye_focus_point.size != 3:
+            return False, None
+        if not np.all(np.isfinite(qpos)) or not np.all(
+                np.isfinite(next_eye_focus_point)):
+            return False, None
+        pinocchio.framesForwardKinematics(self.robot_.model, self.robot_.data,
+                                          qpos)
+        world_T_eyes = self.robot_.data.oMf[self.head_id]
+        ray_origin = np.asarray(world_T_eyes.translation).reshape(3)
+        # The head tracking frame is also the eye frame, whose +X axis points
+        # forward along the viewing frustum.
+        ray_direction = np.asarray(world_T_eyes.rotation)[:, 0]
+        target_z = next_eye_focus_point[2]
+        delta_z = target_z - ray_origin[2]
+        minimum_focus_distance = 1e-3
+        reference_distance = max(
+            np.linalg.norm(next_eye_focus_point - ray_origin),
+            minimum_focus_distance)
+        maximum_intersection_distance = 3.0 * reference_distance
+        use_plane_intersection = False
+        if not np.isclose(ray_direction[2], 0.0):
+            ray_distance = delta_z / ray_direction[2]
+            use_plane_intersection = (
+                minimum_focus_distance <= ray_distance
+                <= maximum_intersection_distance)
+        if use_plane_intersection:
+            rough_eye_focus_point = ray_origin + ray_distance * ray_direction
+            rough_eye_focus_point[2] = target_z
+        else:
+            rough_eye_focus_point = (
+                ray_origin + reference_distance * ray_direction)
+        return True, rough_eye_focus_point
