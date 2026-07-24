@@ -1,0 +1,124 @@
+<mxfile host="app.diagrams.net" agent="Codex">
+  <diagram id="system-architecture" name="系统架构">
+    <mxGraphModel dx="2934" dy="1601" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1950" pageHeight="1020" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="serverBoundary" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FCFCFD;strokeColor=#98A2B3;strokeWidth=2;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="" vertex="1">
+          <mxGeometry height="865" width="1840" x="40" y="245" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#F9FCFA;strokeColor=#278764;strokeWidth=2.5;" value="" vertex="1">
+          <mxGeometry height="370" width="780" x="1030" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="title" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;fontColor=#101828;" value="dexe_robot_server 系统架构与实时控制闭环" vertex="1">
+          <mxGeometry height="45" width="650" x="660" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-2" edge="1" parent="1" source="clients" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" target="ros">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="clients" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#EEF4FF;strokeColor=#4C78D4;strokeWidth=2;fontColor=#173B73;fontSize=18;spacing=8;" value="&lt;b&gt;上游 Client&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#101828&quot;&gt;robot client · chassis client&lt;/font&gt;" vertex="1">
+          <mxGeometry height="120" width="320" x="80" y="78" as="geometry" />
+        </mxCell>
+        <mxCell id="serverLabel" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontSize=21;fontStyle=1;fontColor=#101828;" value="dexe_robot_server" vertex="1">
+          <mxGeometry height="32" width="360" x="450" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-4" edge="1" parent="1" source="ros" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" target="chassis">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-9" edge="1" parent="1" source="ros" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="queues">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ros" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#EEF4FF;strokeColor=#4C78D4;strokeWidth=2;fontColor=#173B73;fontSize=17;spacing=8;" value="&lt;b&gt;Ros2 Interfaces&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#101828&quot;&gt;Action · Service · Topic&lt;br&gt;请求解析 · 状态发布&lt;/font&gt;" vertex="1">
+          <mxGeometry height="120" width="240" x="120" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-10" edge="1" parent="1" source="queues" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="planner">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="queues" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#F8FAFF;strokeColor=#7C9DDB;strokeWidth=2;fontColor=#173B73;fontSize=16;spacing=8;" value="&lt;b&gt;Request压入有序队列&lt;/b&gt;&lt;br&gt;&lt;div&gt;&lt;span style=&quot;color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;manager_buffers_.request_queue-&amp;gt;EnQueue()&lt;/span&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="71.25" width="370" x="580" y="364.37" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-22" edge="1" parent="1" source="planner" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="plannerCommand">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="planner" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#EAF8F1;strokeColor=#278764;strokeWidth=2.5;fontColor=#164F3C;fontSize=17;spacing=8;" value="&lt;b&gt;PlannerManager Loop&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#101828&quot;&gt;处理请求队列 状态机&amp;nbsp;&lt;/font&gt;&lt;div&gt;&lt;font color=&quot;#101828&quot;&gt;安全检测&amp;nbsp;轨迹规划等&lt;/font&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="140" width="310" x="1250" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="torqueBoundary" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#F9FCFA;strokeColor=#278764;strokeWidth=2.5;" value="" vertex="1">
+          <mxGeometry height="370" width="780" x="1020" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-42" edge="1" parent="1" source="plannerCommand" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" target="calc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="plannerCommand" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=30;fillColor=#EAF8F1;strokeColor=#278764;strokeWidth=2;fontColor=#164F3C;fontSize=16;spacing=10;" value="&lt;span&gt;&lt;b style=&quot;&quot;&gt;PlannerManagerCommand 规划层指令&lt;br&gt;&lt;/b&gt;&lt;span style=&quot;color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;位置 速度前馈 力矩前馈等&lt;br&gt;manager_buffer_.planner_manager_command&lt;/span&gt;&lt;/span&gt;" vertex="1">
+          <mxGeometry height="100" width="350" x="1410" y="510.31" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-21" edge="1" parent="1" source="jointMeasurement" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" target="planner">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jointMeasurement" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=30;fillColor=#F2EEFA;strokeColor=#7657A6;strokeWidth=2;fontColor=#422A68;fontSize=16;spacing=10;" value="&lt;b&gt;JointMeasurement 规划层反馈&lt;br&gt;&lt;/b&gt;&lt;font color=&quot;#101828&quot;&gt;反馈位置, 速度力矩, 预期关节位置&lt;br&gt;manager_buffers_.joint_measurement&lt;/font&gt;" vertex="1">
+          <mxGeometry height="100.31" width="342.5" x="1057.5" y="510" as="geometry" />
+        </mxCell>
+        <mxCell id="torqueLabel" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontSize=19;fontStyle=1;fontColor=#164F3C;" value="Torque Thread 1 kHz&amp;nbsp; RT线程" vertex="1">
+          <mxGeometry height="32" width="340" x="1020" y="720" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-28" edge="1" parent="1" source="raw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="calc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="raw" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#F2EEFA;strokeColor=#7657A6;strokeWidth=2;fontColor=#422A68;fontSize=16;spacing=10;" value="&lt;b&gt;JointRawMeasurement&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#101828&quot;&gt;力矩层原始关节反馈&lt;/font&gt;&lt;div&gt;&lt;font color=&quot;#101828&quot;&gt;robot_buffer_.torque_controller_command&lt;/font&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="95" width="320" x="1057.5" y="780" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-40" edge="1" parent="1" source="calc" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=0;exitDx=0;exitDy=0;" target="jointMeasurement">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1520" y="780" />
+              <mxPoint x="1520" y="670" />
+              <mxPoint x="1228.71" y="670" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-46" edge="1" parent="1" source="calc" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="torqueCommand">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="calc" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#EAF8F1;strokeColor=#278764;strokeWidth=2;fontColor=#164F3C;fontSize=16;spacing=10;" value="&lt;b&gt;TorqueController Loop&lt;/b&gt;&lt;br&gt;&lt;font&gt;&lt;span style=&quot;color: light-dark(rgb(16, 24, 40), rgb(212, 218, 232));&quot;&gt;位置层 CMD + RawMeasurement&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;color: light-dark(rgb(16, 24, 40), rgb(212, 218, 232));&quot;&gt;逆动力学 · PD · 导纳 · 阻抗&lt;/span&gt;&lt;br&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="96.5" width="320" x="1430" y="780" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-30" edge="1" parent="1" source="torqueCommand" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="controlShm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="torqueCommand" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#EAF8F1;strokeColor=#278764;strokeWidth=2;fontColor=#164F3C;fontSize=15;spacing=10;" value="&lt;b&gt;TorqueControllerCommand&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#101828&quot;&gt;力矩层指令 - 力矩 力矩前馈等&lt;br&gt;&lt;span style=&quot;font-size: 16px;&quot;&gt;robot_buffer_.joint_raw_measurement&lt;/span&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="105" width="320" x="1057.5" y="922.87" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-7" edge="1" parent="1" source="feedbackShm" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.25;entryDx=0;entryDy=0;" target="chassis">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-23" edge="1" parent="1" source="feedbackShm" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="raw">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="feedbackShm" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#F2EEFA;strokeColor=#7657A6;strokeWidth=2;fontColor=#422A68;fontSize=16;spacing=10;" value="&lt;b&gt;FeedbackSharedMemory&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#101828&quot;&gt;关节 · 状态字 · IMU · 底盘&lt;/font&gt;" vertex="1">
+          <mxGeometry height="67.5" width="240" x="720" y="794.5" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-49" edge="1" parent="1" source="controlShm" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" target="ethercat">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="controlShm" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#EAF8F1;strokeColor=#278764;strokeWidth=2;fontColor=#164F3C;fontSize=16;spacing=10;" value="&lt;b&gt;ControlSharedMemory&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#101828&quot;&gt;位置 · 速度 · 力矩&lt;br&gt;控制字 · 底盘&lt;/font&gt;" vertex="1">
+          <mxGeometry height="69.25" width="240" x="500" y="940.75" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-3" edge="1" parent="1" source="chassis" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.75;exitDx=0;exitDy=0;" target="controlShm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="chassis" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFF7E8;strokeColor=#C98A24;strokeWidth=2;fontColor=#69430E;fontSize=16;spacing=8;" value="&lt;b&gt;Chassis Node&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#101828&quot;&gt;读取底盘 / IMU 反馈&lt;br&gt;IMU 融合 · Odom · TF 发布&lt;/font&gt;" vertex="1">
+          <mxGeometry height="300" width="245" x="120" y="752" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-47" edge="1" parent="1" source="ethercat" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="feedbackShm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ethercat" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#F4F6F8;strokeColor=#101828;strokeWidth=2;fontColor=#1D2939;fontSize=18;spacing=8;" value="&lt;b&gt;dexe_ethercat&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#101828&quot;&gt;电机 · 底盘&lt;/font&gt;" vertex="1">
+          <mxGeometry height="180" width="440" x="510" y="1160" as="geometry" />
+        </mxCell>
+        <mxCell id="7nlRB-wFcCEr6M9mtEuT-14" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontSize=19;fontStyle=1;fontColor=#164F3C;" value="PlannerManagerThread 250 Hz 准RT线程" vertex="1">
+          <mxGeometry height="32" width="340" x="1070" y="292" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -74,33 +74,57 @@ colcon build --cmake-args -DENABLE_TORQUE_CONTROL_SIMULATION=ON
 
 ---
 
-## 运行参数设置
+## 配置参数
 
-运行前需在 `/xxx/robot.cfg` 文件中配置参数。 xxx为具体的implement包, 如w1_control, sim_server中等
+项目使用 YAML 配置，不再使用旧版 `robot.cfg`：
 
-### 配置参数说明
+| 配置 | 路径 | 用途 |
+|---|---|---|
+| 随包默认配置 | [`w1_server/robot_config.yaml`](w1_server/robot_config.yaml) | 提供完整字段、默认参数和 `config_version` |
+| 真机用户配置 | `~/dexe_robot_server_data/robot_config.yaml` | `w1_server` 实际加载并保留本机参数的配置 |
 
-**robot.cfg** 示例：
+首次启动 `w1_server` 时，如果用户配置不存在，程序会从随包默认配置创建一份。后续启动会比较 `config_version`：默认配置版本更新时替换旧用户配置；版本一致时补齐缺失字段和关节属性，并保留已有参数。`~/.cache/dexe_data/config.yaml` 中的硬件信息也会在启动时同步到机器人配置。
 
-```json
-{
-    "robot_name": "W1Industrial",
-    "left_arm_name": "W1LeftArmIndustrial",
-    "right_arm_name": "W1RightArmIndustrial",
-    "joints_primary": [6, 7, 8, 9, 10, 11, 12],
-    "joints_secondary": [13, 14, 15, 16, 17, 18, 19]
-}
+`sim_server` 直接读取随包默认配置，不读写真机用户配置，避免仿真和真机进程并发修改同一文件。
+
+配置以 `robot_type` 和 `version` 选择对应的型号配置块。例如：
+
+```yaml
+config_version: v05
+robot_type: w1
+version: v024
+
+file_path:
+  robot_urdf: ../install/robot_server_lib/share/robot_server_lib/robot_models/w1/robot.urdf
+
+joints_primary_names: [LEFT_J1, LEFT_J2, LEFT_J3, LEFT_J4, LEFT_J5, LEFT_J6, LEFT_J7]
+joints_secondary_names: [RIGHT_J1, RIGHT_J2, RIGHT_J3, RIGHT_J4, RIGHT_J5, RIGHT_J6, RIGHT_J7]
+
+w1_v02:
+  enable_streaming_ruckig: true
+  joint_streaming_bounds:
+    max_velocity: 3.1416
+    max_acceleration: 9.4248
+    max_jerk: 157.08
+  safety_check_config:
+    enable_position_limit_check: true
+    enable_torque_limit_check: true
+    enable_velocity_limit_check: true
 ```
 
-**参数说明：**
+主要配置内容包括机器人型号与 URDF、关节映射和运动分组、安全限制、PD 与柔顺控制、轨迹滤波与抑振、Streaming 限制、动力学参数、工具补偿以及底盘和 IMU 参数。
 
-- `robot_name`：机器人模型名称，用于在 `/robot_models` 中根据 urdf 建立模型
-- `left_arm_name`：左臂控制器名称（单臂机器人可不填）
-- `right_arm_name`：右臂控制器名称（单臂机器人可不填）
-- `joints_primary`：主要关节（左臂）索引数组（单臂机器人可不填）
-- `joints_secondary`：次要关节（右臂）索引数组（单臂机器人可不填）
+可通过以下入口修改配置：
 
-> **注意**：关节索引从 0 开始计数，请根据实际机器人 URDF 模型中的关节定义配置正确的索引值。
+```bash
+./set_w1.sh config          # 打开真机用户配置
+./set_w1.sh ruckig true     # 修改 YAML 并同步运行时参数
+./set_w1.sh filter true     # 修改滤波配置并同步运行时参数
+./set_w1.sh zvd true        # 修改 Input Shaper 配置并同步运行时参数
+./set_w1.sh tool            # 编辑末端工具动力学配置
+```
+
+通过 `/control/set_property` 修改的参数通常只在当前进程中生效；需要重启后保留的参数应写入用户 YAML。完整配置读写逻辑参见 [dexe_robot_server 设计文档](document/dexe_robot_server_design.md#5-配置参数)，脚本命令参见 [set_w1.sh 使用指南](document/set_w1_guide.md)。
 
 ---
 
