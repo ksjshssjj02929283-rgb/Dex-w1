@@ -1232,7 +1232,7 @@ class W1Manager:
                                                      right_ee_pulse=armree_qpos,
                                                      robot_name=robot_name,
                                                      save_scene=save_scene)
-        # StatusCode.SUCCESS when no collision, StatusCode.FAIL when collision happened
+        # StatusCode.SUCCESS when no collision, StatusCode.COLLISION_FAIL when collision happened
         return res
 
     def _is_traj_collision(self,
@@ -1301,24 +1301,26 @@ class W1Manager:
             right_arm_ee_qpos_array_check = np.vstack(
                 (right_arm_ee_qpos_array[::step], right_arm_ee_qpos_array[-1]))
             for idx in range(qpos_array_check.shape[0]):
-                if self.is_collision(qpos_array_check[idx],
-                                     left_arm_ee_qpos_array_check[idx],
-                                     right_arm_ee_qpos_array_check[idx],
-                                     save_scene=save_scene) == StatusCode.FAIL:
+                if self.is_collision(
+                        qpos_array_check[idx],
+                        left_arm_ee_qpos_array_check[idx],
+                        right_arm_ee_qpos_array_check[idx],
+                        save_scene=save_scene) == StatusCode.COLLISION_FAIL:
                     self.logger.error(
                         f"[{StatusCode.COLLISION_FAIL.value}]:Traj is collision at idx {idx}, qpos {qpos_array_check[idx]}, do not executed!"
                     )
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
             return StatusCode.SUCCESS
         else:
             qpos_array_check = np.vstack((qpos_array[::step], qpos_array[-1]))
             for qpos in qpos_array_check:
-                if self.is_collision(qpos,
-                                     save_scene=save_scene) == StatusCode.FAIL:
+                if self.is_collision(
+                        qpos,
+                        save_scene=save_scene) == StatusCode.COLLISION_FAIL:
                     self.logger.error(
                         f"[{StatusCode.COLLISION_FAIL.value}]:Traj is collision at {qpos}, do not executed!"
                     )
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
             return StatusCode.SUCCESS
 
     def plan_joint_traj(
@@ -2719,7 +2721,7 @@ class W1Manager:
                     right_arm_start_ee_qpos=start_right_arm_ee_qpos,
                     left_arm_ee_trigger_list=left_arm_ee_trigger_list,
                     right_arm_ee_trigger_list=right_arm_ee_trigger_list
-            ) == StatusCode.FAIL:
+            ) == StatusCode.COLLISION_FAIL:
                 status = StatusCode.COLLISION_FAIL
                 self.logger.error(
                     f"[{status.value}]:Full body linear traj collision detected!"
@@ -3145,7 +3147,7 @@ class W1Manager:
                     right_arm_start_ee_qpos=start_right_arm_ee_qpos,
                     left_arm_ee_trigger_list=left_arm_ee_trigger_list,
                     right_arm_ee_trigger_list=right_arm_ee_trigger_list
-            ) == StatusCode.FAIL:
+            ) == StatusCode.COLLISION_FAIL:
                 status = StatusCode.COLLISION_FAIL
                 self.logger.error(
                     f"[{status.value}]:Full body linear traj collision detected!"
@@ -3454,7 +3456,8 @@ class W1Manager:
                         left_arm_start_ee_qpos=start_left_arm_ee_qpos,
                         right_arm_start_ee_qpos=start_right_arm_ee_qpos,
                         left_arm_ee_trigger_list=None,
-                        right_arm_ee_trigger_list=None) == StatusCode.FAIL:
+                        right_arm_ee_trigger_list=None
+                ) == StatusCode.COLLISION_FAIL:
                     status = StatusCode.COLLISION_FAIL
                     self.logger.error(
                         f"[{status.value}]:Collision detected in plan_linear_dual_arm_sync."
@@ -3496,7 +3499,8 @@ class W1Manager:
                         left_arm_start_ee_qpos=start_left_arm_ee_qpos,
                         right_arm_start_ee_qpos=start_right_arm_ee_qpos,
                         left_arm_ee_trigger_list=None,
-                        right_arm_ee_trigger_list=None) == StatusCode.FAIL:
+                        right_arm_ee_trigger_list=None
+                ) == StatusCode.COLLISION_FAIL:
                     status = StatusCode.COLLISION_FAIL
                     self.logger.error(
                         f"[{status.value}]:Collision detected in plan_linear_dual_arm_sync."
@@ -4248,7 +4252,7 @@ class W1Manager:
                     right_arm_start_ee_qpos=start_right_arm_ee_qpos,
                     left_arm_ee_trigger_list=left_arm_ee_trigger_list,
                     right_arm_ee_trigger_list=right_arm_ee_trigger_list
-            ) == StatusCode.FAIL:
+            ) == StatusCode.COLLISION_FAIL:
                 status = StatusCode.COLLISION_FAIL
                 self.logger.error(
                     f"[{status.value}]:Collision detected in plan_linear_whole_body_ik."

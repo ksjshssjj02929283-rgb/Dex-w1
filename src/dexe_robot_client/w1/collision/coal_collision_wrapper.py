@@ -299,6 +299,12 @@ class CoalCollisionWrapper:
         else:
             return StatusCode.FAIL
 
+    def _return_opposite_status_code(self, res: bool):
+        if res:
+            return StatusCode.COLLISION_FAIL
+        else:
+            return StatusCode.SUCCESS
+
     def set_verbose(self, verbose: bool):
         self.coal_collision_.set_verbose(verbose)
 
@@ -405,7 +411,7 @@ class CoalCollisionWrapper:
         else:
             res = self.coal_collision_.check_component_collision_with_obstacles(
                 component_name)
-        return self._return_status_code(res)
+        return self._return_opposite_status_code(res)
 
     def check_components_collision(self,
                                    component_name1: str = None,
@@ -420,7 +426,7 @@ class CoalCollisionWrapper:
                 "Both component_name1 and component_name2 should be provided or both should be None."
             )
             return StatusCode.INPUT_INVALID
-        return self._return_status_code(res)
+        return self._return_opposite_status_code(res)
 
     def check_component_self_collision(self, component_name: str = None):
         if component_name is None:
@@ -428,31 +434,31 @@ class CoalCollisionWrapper:
         else:
             res = self.coal_collision_.check_component_self_collision(
                 component_name)
-        return self._return_status_code(res)
+        return self._return_opposite_status_code(res)
 
     def check_link_collision_with_obstacle(self, component_name: str,
                                            link_name: str, obstacle_name: str):
         res = self.coal_collision_.check_link_collision_with_obstacle(
             component_name, link_name, obstacle_name)
-        return self._return_status_code(res)
+        return self._return_opposite_status_code(res)
 
     def check_objects_collision(self, object_name1: str, object_name2: str):
         res = self.coal_collision_.check_objects_collision(
             object_name1, object_name2)
-        return self._return_status_code(res)
+        return self._return_opposite_status_code(res)
 
     def check_collision(self, robot_name: str = "whole_body"):
-        # Note: return FAIL when collision is detected, return SUCCESS when no collision is detected
+        # Note: return StatusCode.COLLISION_FAIL when collision is detected, return SUCCESS when no collision is detected
         # Ignore the self-collision of the robot's end effectors
 
         if robot_name == "whole_body":
             res1 = self.coal_collision_.check_component_collision_with_obstacles(
             )
             if res1:
-                return StatusCode.FAIL
+                return StatusCode.COLLISION_FAIL
             res2 = self.coal_collision_.check_components_collision()
             if res2:
-                return StatusCode.FAIL
+                return StatusCode.COLLISION_FAIL
             if self.robot_family == "w1":
                 res3 = self.coal_collision_.check_component_self_collision(
                     "torso")
@@ -463,7 +469,7 @@ class CoalCollisionWrapper:
                 res6 = self.coal_collision_.check_component_self_collision(
                     "right_arm")
                 if res3 or res4 or res5 or res6:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
             elif self.robot_family == "a1":
                 pass
             elif self.robot_family == "l1":
@@ -474,43 +480,43 @@ class CoalCollisionWrapper:
                 res1 = self.coal_collision_.check_component_collision_with_obstacles(
                     "left_arm")
                 if res1:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res2 = self.coal_collision_.check_component_collision_with_obstacles(
                     "torso")
                 if res2:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res3 = self.coal_collision_.check_component_collision_with_obstacles(
                     "head")
                 if res3:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res4 = self.coal_collision_.check_components_collision(
                     "left_arm", "right_arm")
                 if res4:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res5 = self.coal_collision_.check_components_collision(
                     "left_arm", "torso")
                 if res5:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res6 = self.coal_collision_.check_components_collision(
                     "left_arm", "head")
                 if res6:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res7 = self.coal_collision_.check_components_collision(
                     "torso", "head")
                 if res7:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res8 = self.coal_collision_.check_component_self_collision(
                     "torso")
                 if res8:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res9 = self.coal_collision_.check_component_self_collision(
                     "head")
                 if res9:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res10 = self.coal_collision_.check_component_self_collision(
                     "left_arm")
                 if res10:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
             elif self.robot_family == "a1":
                 pass
             elif self.robot_family == "l1":
@@ -522,43 +528,43 @@ class CoalCollisionWrapper:
                 res1 = self.coal_collision_.check_component_collision_with_obstacles(
                     "right_arm")
                 if res1:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res2 = self.coal_collision_.check_component_collision_with_obstacles(
                     "torso")
                 if res2:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res3 = self.coal_collision_.check_component_collision_with_obstacles(
                     "head")
                 if res3:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res4 = self.coal_collision_.check_components_collision(
                     "left_arm", "right_arm")
                 if res4:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res5 = self.coal_collision_.check_components_collision(
                     "right_arm", "torso")
                 if res5:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res6 = self.coal_collision_.check_components_collision(
                     "right_arm", "head")
                 if res6:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res7 = self.coal_collision_.check_components_collision(
                     "torso", "head")
                 if res7:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res8 = self.coal_collision_.check_component_self_collision(
                     "torso")
                 if res8:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res9 = self.coal_collision_.check_component_self_collision(
                     "head")
                 if res9:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
                 res10 = self.coal_collision_.check_component_self_collision(
                     "right_arm")
                 if res10:
-                    return StatusCode.FAIL
+                    return StatusCode.COLLISION_FAIL
             elif self.robot_family == "a1":
                 pass
             elif self.robot_family == "l1":
@@ -576,5 +582,3 @@ class CoalCollisionWrapper:
             return StatusCode.SUCCESS, component_name, link_index
         else:
             return StatusCode.FAIL, None, None
-
-    #对灵巧手的robot link name除了从文件名获取之外，需要根据side添加前缀防止相同名字

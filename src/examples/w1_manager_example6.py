@@ -68,10 +68,11 @@ task_dict1 = {
 }
 
 if __name__ == "__main__":
-    w1_manager = W1Manager(is_sim=True,
-                           robot_version=ROBOT_VERSION,
-                           end_effector_type=END_EFFECTOR_TYPE,
-                           collision_logger_verbose=False)
+    w1_manager = W1Manager(
+        is_sim=True,
+        robot_version=ROBOT_VERSION,
+        end_effector_type=END_EFFECTOR_TYPE,
+    )
 
     # # judge w1_manager is connected and enabled
     # if not w1_manager.connect() and not w1_manager.is_enabled():
