@@ -19,7 +19,8 @@ class W1Params:
     def __init__(self,
                  arm_type: W1ArmType,
                  w1_version: W1Version = W1Version.V2,
-                 end_effector_type: EndEffectorType = None):
+                 left_ee_type: EndEffectorType = None,
+                 right_ee_type: EndEffectorType = None):
         self.logger = get_logger()
 
         self._arm_type = arm_type
@@ -29,20 +30,38 @@ class W1Params:
             raise ValueError(
                 f"W1Version {self._w1_version.name} are not support.")
 
-        self.arm_ee_dofs = None
-        self._end_effector_type = end_effector_type
-        if self._end_effector_type is None:
+        self.left_ee_dofs = None
+        self._left_ee_type = left_ee_type
+        if self._left_ee_type is None:
             self.logger.info(f"No movable end effector.")
-        elif self._end_effector_type == EndEffectorType.BRAINCO_HAND:
-            self.arm_ee_dofs = 6
-        elif self._end_effector_type == EndEffectorType.LINKER_HAND:
-            self.arm_ee_dofs = 6
-        elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
-            self.arm_ee_dofs = 1
+        elif self._left_ee_type == EndEffectorType.BRAINCO_HAND:
+            self.left_ee_dofs = 6
+        elif self._left_ee_type == EndEffectorType.LINKER_HAND:
+            self.left_ee_dofs = 6
+        elif self._left_ee_type == EndEffectorType.PGC_GRIPPER:
+            self.left_ee_dofs = 1
+        elif self._left_ee_type == EndEffectorType.HITBOT_SUCTION:
+            self.left_ee_dofs = 1
         else:
             raise ValueError(
-                f"Unsupport end effector type: {self._end_effector_type.name}.")
-
+                f"Unsupport end effector type: {self._left_ee_type.name}.")
+        
+        self.right_ee_dofs = None
+        self._right_ee_type = right_ee_type
+        if self._right_ee_type is None:
+            self.logger.info(f"No movable end effector.")
+        elif self._right_ee_type == EndEffectorType.BRAINCO_HAND:
+            self.right_ee_dofs = 6
+        elif self._right_ee_type == EndEffectorType.LINKER_HAND:
+            self.right_ee_dofs = 6
+        elif self._right_ee_type == EndEffectorType.PGC_GRIPPER:
+            self.right_ee_dofs = 1
+        elif self._right_ee_type == EndEffectorType.HITBOT_SUCTION:
+            self.right_ee_dofs = 1
+        else:
+            raise ValueError(
+                f"Unsupport end effector type: {self._right_ee_type.name}.")
+        
         if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
             robot_urdf = get_robot_urdf(RobotType.W1V02_1)
         else:

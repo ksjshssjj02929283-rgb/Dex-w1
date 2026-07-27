@@ -61,7 +61,8 @@ class W1Manager:
                  is_sim: bool,
                  arm_type: W1ArmType,
                  w1_version: W1Version = W1Version.V2,
-                 end_effector_type: EndEffectorType = None,
+                 left_ee_type: EndEffectorType = None,
+                 right_ee_type: EndEffectorType = None,
                  use_nav: bool = False):
         self.logger = get_logger()
 
@@ -92,22 +93,24 @@ class W1Manager:
         self._is_sim = None
         self._arm_type = arm_type
         self._w1_version = w1_version
-        self._end_effector_type = end_effector_type
+        self._left_ee_type = left_ee_type
+        self._right_ee_type = right_ee_type
 
         self.logger.info(
-            f"Initialize W1 manager: \narm type: {arm_type}\nw1 version: {w1_version}\nend effector type: {end_effector_type}\nuse_nav: {use_nav}"
+            f"Initialize W1 manager: \narm type: {arm_type}\nw1 version: {w1_version}\n\
+                left end effector type: {left_ee_type}\nright end effector type: {right_ee_type}\nuse_nav: {use_nav}"
         )
         if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
             self.SRSConfig = SRSAKinematics.Config
         else:
             self.SRSConfig = SRSIKinematics.Config
 
-        res, file_path = download_w1_urdf(arm_type, w1_version,
-                                          end_effector_type)
+        # res, file_path = download_w1_urdf(arm_type, w1_version,
+        #                                   end_effector_type)
         res, file_path = download_w1_urdf(arm_type, w1_version, None)
 
         self.w1_params = W1Params(self._arm_type, self._w1_version,
-                                  self._end_effector_type)
+                                  self._left_ee_type, self._right_ee_type)
 
         # 在主线程中正常退出时自动调用
         atexit.register(self._destroy_clients)
@@ -126,19 +129,19 @@ class W1Manager:
         # initialize fcl checker and pinocchio model and planner
         self._init_fcl_checker(arm_type=arm_type,
                                w1_version=w1_version,
-                               end_effector_type=end_effector_type)
+                               end_effector_type=None)
         self._init_pinocchio(arm_type=arm_type,
                              w1_version=w1_version,
-                             end_effector_type=end_effector_type)
+                             end_effector_type=None)
         self.real_torso_idx, self.real_head_idx, self.real_arml_idx, self.real_armr_idx = get_real_idx(
         )
         self._init_planner(arm_type=arm_type,
                            w1_version=w1_version,
-                           end_effector_type=end_effector_type)
+                           end_effector_type=None)
 
         self._init_cartesian_planner(arm_type=arm_type,
                                      w1_version=w1_version,
-                                     end_effector_type=end_effector_type)
+                                     end_effector_type=None)
 
         self._stop_move_event = threading.Event()
         self._stop_move_event.clear()
@@ -243,7 +246,7 @@ class W1Manager:
             self._chassis_client_real = ChassisClient(is_sim=False)
             self.robot_client = self._robot_client_sim
 
-            if self._end_effector_type is None:
+            if self._left_ee_type is None and self._right_ee_type is None:
                 self.logger.info(f"No movable end effector.")
                 if self._use_nav:
                     self._clients = [
@@ -258,19 +261,19 @@ class W1Manager:
                 self._left_ee_client_sim = create_end_effector_client(
                     is_left=True,
                     is_sim=True,
-                    end_effector_type=self._end_effector_type)
+                    end_effector_type=self._left_ee_type)
                 self._right_ee_client_sim = create_end_effector_client(
                     is_left=False,
                     is_sim=True,
-                    end_effector_type=self._end_effector_type)
+                    end_effector_type=self._right_ee_type)
                 self._left_ee_client_real = create_end_effector_client(
                     is_left=True,
                     is_sim=False,
-                    end_effector_type=self._end_effector_type)
+                    end_effector_type=self._left_ee_type)
                 self._right_ee_client_real = create_end_effector_client(
                     is_left=False,
                     is_sim=False,
-                    end_effector_type=self._end_effector_type)
+                    end_effector_type=self._right_ee_type)
                 self.left_ee_client = self._left_ee_client_sim
                 self.right_ee_client = self._right_ee_client_sim
 
@@ -419,7 +422,9 @@ class W1Manager:
         if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name):
                 return False
-            dofs = self.w1_params.arm_ee_dofs
+            dofs = self.w1_params.left_ee_dofs
+            if name == "right_arm_ee":
+                dofs = self.w1_params.right_ee_dofs
         elif self._check_name(name):
             dofs = self.w1_params.index_infos[name]["dofs"]
         else:
@@ -684,7 +689,7 @@ class W1Manager:
                 f"{target_robot_client.node_name} is not connected!")
             return StatusCode.ROBOT_NOT_CONNECT
 
-        if self._end_effector_type is not None:
+        if self._left_ee_type is not None:
             if not target_left_ee_client.is_connected():
                 self.logger.error(
                     f"{target_left_ee_client.node_name} is not connected!")
@@ -700,7 +705,7 @@ class W1Manager:
                 f"{self.robot_client.node_name} is not connected!")
             return StatusCode.ROBOT_NOT_CONNECT
 
-        if self._end_effector_type is not None:
+        if self._left_ee_type is not None:
             if not self.left_ee_client.is_connected():
                 self.logger.error(
                     f"{self.left_ee_client.node_name} is not connected!")
@@ -711,7 +716,7 @@ class W1Manager:
                 return StatusCode.EE_NOT_CONNECT
 
         self.robot_client = target_robot_client
-        if self._end_effector_type is not None:
+        if self._left_ee_type is not None:
             self.left_ee_client = target_left_ee_client
             self.right_ee_client = target_right_ee_client
         self._is_sim = enable_sim
@@ -1030,8 +1035,11 @@ class W1Manager:
         if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name):
                 return StatusCode.FAIL, None, None
-            qpos_lb = np.array([0.] * self.w1_params.arm_ee_dofs)
-            qpos_ub = np.array([100.] * self.w1_params.arm_ee_dofs)
+            qpos_lb = np.array([0.] * self.w1_params.left_ee_dofs)
+            qpos_ub = np.array([100.] * self.w1_params.left_ee_dofs)
+            if name == "right_arm_ee":
+                qpos_lb = np.array([0.] * self.w1_params.right_ee_dofs)
+                qpos_ub = np.array([100.] * self.w1_params.right_ee_dofs)
 
         elif not self._check_name(name):
             return StatusCode.NAME_MISMATCH, None, None
