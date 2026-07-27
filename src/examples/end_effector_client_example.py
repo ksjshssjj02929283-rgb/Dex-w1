@@ -71,7 +71,7 @@ def main(is_sim: bool = True,
 
 if __name__ == "__main__":
     main(is_sim=True,
-         left_ee_type=EndEffectorType.BRAINCO_HAND,
-         right_ee_type=EndEffectorType.BRAINCO_HAND)
+         left_ee_type=EndEffectorType.HITBOT_SUCTION,
+         right_ee_type=EndEffectorType.HITBOT_SUCTION)
     # main(is_sim=True, left_ee_type=EndEffectorType.LINKER_HAND, right_ee_type=EndEffectorType.LINKER_HAND)
     # main(is_sim=True, left_ee_type=EndEffectorType.PGC_GRIPPER, right_ee_type=EndEffectorType.PGC_GRIPPER)

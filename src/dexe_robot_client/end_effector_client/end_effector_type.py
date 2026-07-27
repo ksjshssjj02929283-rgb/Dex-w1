@@ -14,3 +14,8 @@ class EndEffectorType(Enum):
     PGC_GRIPPER = auto()
     BRAINCO_HAND = auto()
     LINKER_HAND = auto()
+    HITBOT_SUCTION = auto()
+
+
+class DexeRP_EETypeFake(str, Enum):
+    HITBOT_Z_ESC_70 = "hitbot_z_esc_70"

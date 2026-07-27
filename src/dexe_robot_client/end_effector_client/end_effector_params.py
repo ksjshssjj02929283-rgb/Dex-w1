@@ -13,6 +13,8 @@ from end_effector_interfaces.msg import EEJointControlMode
 
 from dexe_rp.utils.type import EndEffectorType as DexeRP_EEType
 
+from .end_effector_type import DexeRP_EETypeFake
+
 
 @dataclass(frozen=True, slots=True)
 class Limit:
@@ -49,6 +51,18 @@ class EndEffectorFactory:
             raise ValueError(f"Unsupport EndEffectorType: {ee_type}")
         return cls._registry[ee_type]()
 
+
+@EndEffectorFactory.register(DexeRP_EETypeFake.HITBOT_Z_ESC_70)
+def _():
+    return EndEffectorParams(
+        dof=1,
+        joint_names=("FINGER1",),
+        supported_modes=(EEJointControlMode.POSITION,),
+        position=Limit((0,), (100,)),
+        velocity=Limit((-100,), (100,)),
+        current=Limit((-100,), (100,)),
+        force=Limit((-100,), (100,)),
+    )
 
 @EndEffectorFactory.register(DexeRP_EEType.DH_PGC_140_50)
 def _():

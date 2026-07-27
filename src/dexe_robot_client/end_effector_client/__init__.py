@@ -6,7 +6,7 @@ All rights reserved.
 ----------------------------------------------------------------------------
 '''
 
-from .end_effector_type import EndEffectorType
+from .end_effector_type import EndEffectorType, DexeRP_EETypeFake
 from .end_effector_params import *
 from .end_effector_client import EndEffectorInfo, EndEffectorClient
 from .end_effector_factory import create_end_effector_client
