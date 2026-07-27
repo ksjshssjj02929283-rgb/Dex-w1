@@ -274,9 +274,114 @@ class CollisionCheckerWrapper:
 
         res = self.coal_collision.check_collision(robot_name=robot_name)
 
-        if res == StatusCode.FAIL:
+        if res == StatusCode.COLLISION_FAIL:
             if save_scene:
                 self.coal_collision.export_scene_to_ply(
                     str(Path.home() / f"log/collision_check_scene.ply"))
 
         return res
+
+    def check_collision_between_arms(self,
+                                     left_arm_qpos: np.ndarray,
+                                     right_arm_qpos: np.ndarray,
+                                     left_ee_pulse: np.ndarray = None,
+                                     right_ee_pulse: np.ndarray = None):
+        left_arm_qpos = np.asarray(left_arm_qpos).reshape(-1)
+        right_arm_qpos = np.asarray(right_arm_qpos).reshape(-1)
+
+        if self.left_ee_type is not None:
+            if left_ee_pulse is None:
+                self.logger.error(
+                    "Left end effector pulse values are required but not provided."
+                )
+                return StatusCode.INPUT_INVALID
+            left_ee_pulse = np.asarray(left_ee_pulse).reshape(-1)
+            left_ee_pin_qpos = self.pin_mapping_generator.left_end_effector_pulse_to_pin_qpos(
+                pulse_values=left_ee_pulse,
+                pulse_min=END_EFFECTOR_PULSE_MIN_MAX.get(self.left_ee_type,
+                                                         {}).get("min"),
+                pulse_max=END_EFFECTOR_PULSE_MIN_MAX.get(self.left_ee_type,
+                                                         {}).get("max"),
+                clip=True)
+        if self.right_ee_type is not None:
+            if right_ee_pulse is None:
+                self.logger.error(
+                    "Right end effector pulse values are required but not provided."
+                )
+                return StatusCode.INPUT_INVALID
+            right_ee_pulse = np.asarray(right_ee_pulse).reshape(-1)
+            right_ee_pin_qpos = self.pin_mapping_generator.right_end_effector_pulse_to_pin_qpos(
+                pulse_values=right_ee_pulse,
+                pulse_min=END_EFFECTOR_PULSE_MIN_MAX.get(
+                    self.right_ee_type, {}).get("min"),
+                pulse_max=END_EFFECTOR_PULSE_MIN_MAX.get(
+                    self.right_ee_type, {}).get("max"),
+                clip=True)
+
+        if self.robot_family == "w1":
+            torso_qpos, head_qpos = np.zeros(4), np.zeros(2)
+            robot_real_qpos = np.concatenate(
+                [torso_qpos, head_qpos, left_arm_qpos, right_arm_qpos])
+            robot_pin_qpos = robot_real_qpos[self.robot_real2pin_mapping]
+
+            self.robot_pin_kine.update_frame_placements(robot_pin_qpos)
+            left_arm_link_tfs = self.robot_pin_kine.get_ordered_poses_by_frame_ids(
+                self.robot_component_frame_ids.get("left_arm", []))
+            right_arm_link_tfs = self.robot_pin_kine.get_ordered_poses_by_frame_ids(
+                self.robot_component_frame_ids.get("right_arm", []))
+            self.coal_collision.update_robot_component_pose(
+                "left_arm", left_arm_link_tfs)
+            self.coal_collision.update_robot_component_pose(
+                "right_arm", right_arm_link_tfs)
+
+            if self.left_ee_type is not None:
+                self.left_ee_pin_kine.update_frame_placements(left_ee_pin_qpos)
+                left_ee_tfs = self.left_ee_pin_kine.get_ordered_poses_by_frame_ids(
+                    self.left_ee_frame_ids)
+                left_ee_flange_tf = self.robot_pin_kine.get_frame_pose_by_id(
+                    self.left_ee_flange_frame_id)
+                left_ee_link_tfs = [
+                    left_ee_flange_tf @ self.left_ee_attach_pose @ tf
+                    for tf in left_ee_tfs
+                ]
+                self.coal_collision.update_robot_component_pose(
+                    "left_end_effector", left_ee_link_tfs)
+            if self.right_ee_type is not None:
+                self.right_ee_pin_kine.update_frame_placements(
+                    right_ee_pin_qpos)
+                right_ee_tfs = self.right_ee_pin_kine.get_ordered_poses_by_frame_ids(
+                    self.right_ee_frame_ids)
+                right_ee_flange_tf = self.robot_pin_kine.get_frame_pose_by_id(
+                    self.right_ee_flange_frame_id)
+                right_ee_link_tfs = [
+                    right_ee_flange_tf @ self.right_ee_attach_pose @ tf
+                    for tf in right_ee_tfs
+                ]
+                self.coal_collision.update_robot_component_pose(
+                    "right_end_effector", right_ee_link_tfs)
+        elif self.robot_family == "a1":
+            pass
+        elif self.robot_family == "l1":
+            pass
+
+        res1 = self.coal_collision.check_components_collision(
+            "left_arm", "right_arm")
+        if res1 == StatusCode.COLLISION_FAIL:
+            return res1
+
+        res2 = self.coal_collision.check_components_collision(
+            "left_end_effector", "right_arm")
+        if res2 == StatusCode.COLLISION_FAIL:
+            return res2
+
+        res3 = self.coal_collision.check_components_collision(
+            "right_end_effector", "left_arm")
+        if res3 == StatusCode.COLLISION_FAIL:
+            return res3
+
+        res4 = self.coal_collision.check_components_collision(
+            "left_end_effector", "right_end_effector")
+        if res4 == StatusCode.COLLISION_FAIL:
+            return res4
+
+        return StatusCode.SUCCESS
