@@ -96,10 +96,12 @@ class W1Manager:
         self._left_ee_type = left_ee_type
         self._right_ee_type = right_ee_type
 
-        self.logger.info(
-            f"Initialize W1 manager: \narm type: {arm_type}\nw1 version: {w1_version}\n\
-                left end effector type: {left_ee_type}\nright end effector type: {right_ee_type}\nuse_nav: {use_nav}"
-        )
+        self.logger.info(f"Initialize W1 manager:" \
+                         f"\narm type: {arm_type}" \
+                         f"\nw1 version: {w1_version}" \
+                         f"\nleft end effector type: {left_ee_type}" \
+                         f"\nright end effector type: {right_ee_type}" \
+                         f"\nuse_nav: {use_nav}")
         if self._arm_type == W1ArmType.ANTHROPOMORPHIC:
             self.SRSConfig = SRSAKinematics.Config
         else:
@@ -694,6 +696,7 @@ class W1Manager:
                 self.logger.error(
                     f"{target_left_ee_client.node_name} is not connected!")
                 return StatusCode.EE_NOT_CONNECT
+        if self._right_ee_type is not None:
             if not target_right_ee_client.is_connected():
                 self.logger.error(
                     f"{target_right_ee_client.node_name} is not connected!")
@@ -710,6 +713,7 @@ class W1Manager:
                 self.logger.error(
                     f"{self.left_ee_client.node_name} is not connected!")
                 return StatusCode.EE_NOT_CONNECT
+        if self._right_ee_type is not None:
             if not self.right_ee_client.is_connected():
                 self.logger.error(
                     f"{self.right_ee_client.node_name} is not connected!")
@@ -718,6 +722,7 @@ class W1Manager:
         self.robot_client = target_robot_client
         if self._left_ee_type is not None:
             self.left_ee_client = target_left_ee_client
+        if self._right_ee_type is not None:
             self.right_ee_client = target_right_ee_client
         self._is_sim = enable_sim
         if self._use_nav and target_chassis_client is not None:

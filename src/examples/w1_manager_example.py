@@ -17,14 +17,18 @@ from dexe_robot_client.w1 import W1Manager, xpos_to_user_pose, user_pose_to_xpos
 def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
     """move_joint_full_body()的使用示例"""
     if move_with_ee:
-        end_effector_type = EndEffectorType.BRAINCO_HAND
+        left_ee_type = EndEffectorType.HITBOT_SUCTION
+        right_ee_type = EndEffectorType.LINKER_HAND
     else:
-        end_effector_type = None
+        left_ee_type = None
+        right_ee_type = None
 
     w1_manager = W1Manager(is_sim=is_sim,
                            arm_type=W1ArmType.ANTHROPOMORPHIC,
                            w1_version=W1Version.V2,
-                           end_effector_type=end_effector_type)
+                            left_ee_type=left_ee_type,
+                            right_ee_type=right_ee_type)
+    
     if not w1_manager.connect() and not w1_manager.is_enabled():
         return
 
@@ -34,7 +38,7 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
                                          -5, 45, 5, 90, 0, 15, 0]),
                              save_to_file=False)
     if move_with_ee:
-        w1_manager.set_ee_qpos("left_arm_ee", np.array([0.] * 6))
+        w1_manager.set_ee_qpos("left_arm_ee", np.array([0.]))
         w1_manager.set_ee_qpos("right_arm_ee", np.array([0.] * 6))
     w1_manager.go_home(0.5)
 
@@ -50,10 +54,10 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
                                      [-5., -35., 5., -80., -10., 10., -10.],
                                      [5., -45., -5., -90., 0., -15., 0.]])
 
-    left_arm_ee_states = [[0., [0., 50., 50., 50., 50., 50.], 0.5],
-                          [0., [0., 0., 0., 0., 0., 0.], 0.5],
-                          [0., [100., 100., 0., 0., 100., 100.], 0.5],
-                          [0., [0., 0., 0., 0., 0., 0.], 0.]]
+    left_arm_ee_states = [[0., [0], 0.5],
+                          [0., [0], 0.5],
+                          [0., [100], 0.5],
+                          [0., [0], 0.]]
 
     right_arm_waypoints = -left_arm_waypoints
 
@@ -186,5 +190,5 @@ def move_full_body_example2(move_with_ee: bool,
 
 
 if __name__ == "__main__":
-    # move_full_body_example1(move_with_ee = True, is_sim = True)
-    move_full_body_example2(move_with_ee=True, is_sim=True, is_local=False)
+    move_full_body_example1(move_with_ee = True, is_sim = True)
+    # move_full_body_example2(move_with_ee=True, is_sim=True, is_local=False)
