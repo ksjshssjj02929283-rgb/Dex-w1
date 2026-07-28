@@ -16,6 +16,8 @@ from dexe_rp import RobotVersion, EndEffectorType
 from dexe_rp.toolkits.urdf_assembly.type import MeshType
 from dexe_rp.toolkits.data import get_data_path
 from dexe_rp.toolkits.urdf_assembly.ee_config import END_EFFECTORS_URDF_PATHS
+from dexe_rp.toolkits.data.config import BASE_ASSETS_MODEL_URL_PREFIX, DATA_DIR, _build_assets_url
+from dexe_rp.toolkits.data.utils import DataUtility
 
 END_EFFECTOR_PULSE_MIN_MAX = {
     EndEffectorType.DH_PGC_140_50: {
@@ -96,6 +98,22 @@ class CollisionCheckerWrapper:
                                                    {}).get("right", None)
             self.right_ee_urdf_path = get_data_path(right_ee_urdf_path,
                                                     robot_version.version_value)
+
+        collision_pairs_json_name = "ignored_collision_pairs.json"
+        collision_pairs_json_url = _build_assets_url(str(self.robot_family),
+                                                     collision_pairs_json_name)
+        collision_pairs_json_destination = DATA_DIR / collision_pairs_json_name
+        if DataUtility.file_exists(collision_pairs_json_destination):
+            self.logger.info(
+                f"Collision pairs JSON file already exists at {collision_pairs_json_destination}."
+            )
+        else:
+            self.logger.info(
+                f"Downloading collision pairs JSON file from {collision_pairs_json_url} to {collision_pairs_json_destination}."
+            )
+            DataUtility.make_directory_hierarchy(str(DATA_DIR))
+            DataUtility.download_file(collision_pairs_json_url,
+                                      collision_pairs_json_destination)
 
         self.coal_collision = CoalCollisionWrapper(
             robot_version=robot_version,
