@@ -1,6 +1,9 @@
 # CHANGELOG
 
 ## [Unrelease]
+### Feat
+- 适配慧灵吸盘 HITBOT_SUCTION
+
 
 ## [V0.6.0]
 ### Feat
