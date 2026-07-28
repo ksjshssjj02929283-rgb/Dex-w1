@@ -46,7 +46,6 @@ enum class RunMode {
     Torque,              // torque control
     Drag,                // zero-stiff control
     CartesianImpedance,  // impedance control
-    DragImpedance,       // mixed drag and impedance control
     Sleep,               // sleep mode, motors disabled
     QuickStop,           // quickstop mode
     Unknown

@@ -22,6 +22,7 @@ print_usage() {
     echo "  echo_sim_once [field] - Echo robot server state sim topic once (default field: data)"
     echo "  clone ethercat  - Clone dexe_ethercat (dev) repository to parent directory"
     echo "  clone interface - Clone dexe_interfaces (dev) repository to parent directory"
+    echo "  clone server    - Clone dexe_robot_server (dev_w1) repository to parent directory"
     echo "  home            - Move robot to home joint position"
     echo "  standby         - Move robot to standby joint position"
     echo "  left            - Move left arm (7 joints, value: '[j1,j2,...]' or home/standby)"
@@ -68,6 +69,7 @@ print_usage() {
     echo "  ./set_w1.sh echo_sim_once"
     echo "  ./set_w1.sh clone ethercat"
     echo "  ./set_w1.sh clone interface"
+    echo "  ./set_w1.sh clone server"
     echo "  ./set_w1.sh home"
     echo "  ./set_w1.sh standby"
     echo "  ./set_w1.sh left home"
@@ -195,8 +197,30 @@ case $PROPERTY_KEY in
             echo "Cloning dexe_interfaces (dev) to ${PARENT_DIR}..."
             rm -rf "${PARENT_DIR}/dexe_interfaces"
             git clone -b dev http://192.168.3.16/dexembodied/dexe_interfaces.git "${PARENT_DIR}/dexe_interfaces"
+        elif [ "$VALUE" == "server" ]; then
+            # 注意: 当前脚本就运行在 dexe_robot_server 内, 不能直接删除当前目录
+            # 策略: 先克隆到 .tmp 目录, 脚本退出后由后台进程把旧目录改名(.old 备份), 再把 .tmp 移到原位置
+            TMP_DIR="${PARENT_DIR}/dexe_robot_server.tmp"
+            OLD_DIR="${PARENT_DIR}/dexe_robot_server.old"
+            echo "Cloning dexe_robot_server (dev_w1) to ${TMP_DIR}..."
+            rm -rf "${TMP_DIR}"
+            git clone -b dev_w1 http://192.168.3.16/dexembodied/dexe_robot_server.git "${TMP_DIR}"
+            if [ ! -d "${TMP_DIR}" ]; then
+                echo "Error: Clone failed, abort."
+                exit 1
+            fi
+            echo "Clone complete. Will replace current directory after this script exits (old version backed up to ${OLD_DIR})."
+            # 后台进程: 等当前脚本退出后执行替换
+            nohup bash -c "
+                sleep 2
+                if [ -d \"${OLD_DIR}\" ]; then rm -rf \"${OLD_DIR}\"; fi
+                mv \"${SCRIPT_DIR}\" \"${OLD_DIR}\"
+                mv \"${TMP_DIR}\" \"${SCRIPT_DIR}\"
+                echo \"[INFO] Replaced dexe_robot_server. Old version backed up at ${OLD_DIR}\"
+            " >/dev/null 2>&1 &
+            exit 0
         else
-            echo "Usage: ./set_w1.sh clone [ethercat|interface]"
+            echo "Usage: ./set_w1.sh clone [ethercat|interface|server]"
         fi
         exit 0
         ;;

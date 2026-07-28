@@ -150,7 +150,6 @@ TorqueControlThread 以 1 kHz 运行。每个周期先从 `FeedbackSharedMemory`
 | `Torque` | 使用 **CST**。Torque Controller 内部计算“逆动力学前馈 + 关节 PD/积分阻抗力矩”；Operating 状态下还会根据“模型前馈力矩 − 实测力矩”估计外力，经死区和导纳环节得到位置、速度偏移。内部结果为 `TorqueCtrlCommand::torque`，随后被复制到共享内存的 `joint_torque_feedforward` 下发。 |
 | `Drag` | 动力学参数可用时使用 **CST**，期望位置持续对齐反馈位置，`joint_torque_feedforward` 仅输出逆动力学补偿，使关节呈低刚度拖动效果。动力学参数不可用时不置 CST 位，走 **CSP 兼容逻辑**，并按前馈方向收紧正负力矩限制。 |
 | `CartesianImpedance` | 使用 **CST**。Planner Manager 生成笛卡尔阻抗力矩，Torque Controller 将其与逆动力学前馈相加得到 `TorqueCtrlCommand::torque_impedance`，再复制到共享内存的 `joint_torque_feedforward` 下发。 |
-| `DragImpedance` | 使用 **CST**。期望位置持续对齐反馈位置，在拖动基础上保留关节阻抗和导纳计算；内部 `TorqueCtrlCommand::torque` 最终复制到共享内存的 `joint_torque_feedforward` 下发。 |
 | `Sleep` / `QuickStop` | 使用 **Quick Stop 控制字**，不处于正常 CSP/CST 闭环；保持当前位置、停止正常力矩下发并清除可供上层使用的有效测量，待退出该模式且硬件重新 Ready 后恢复控制链路。 |
 
 控制模式说明：

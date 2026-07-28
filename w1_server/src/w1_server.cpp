@@ -349,18 +349,6 @@ void RobotServer::TorqueControlThreadFunc() {
                         this->robot_control_.joint_control[i].joint_torque_feedforward = torque_cmd.torque_impedance[i];
                         this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
                         break;
-                    case RunMode::DragImpedance:
-                        previous_mode_ = this->manager_info_.robot_property.run_mode;
-                        this->robot_control_.joint_control[i].joint_torque_feedforward = torque_cmd.torque[i];
-                        this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
-                        // 位置等于反馈位置
-                        if (manager_buffers_.joint_measurement->PeekLatest(&manager_measurement)) {
-                            if (IsArmJoint(i)) {
-                                manager_measurement.q_desired_pre[i] = robot_feedback_.joint_feedback[i].joint_position;
-                            }
-                            manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
-                        }
-                        break;
                     case RunMode::Sleep:
                     case RunMode::QuickStop:
                         previous_mode_ = this->manager_info_.robot_property.run_mode;
@@ -470,15 +458,17 @@ void RobotServer::TorqueControlThreadFunc() {
 
         if (now_time > next_cycle_time_point) {
             auto expected_start = next_cycle_time_point - std::chrono::microseconds(torque_ctrl_dt_micro);
-            auto elapsed_micro =
-                std::chrono::duration_cast<std::chrono::microseconds>(now_time - expected_start).count();
-            double usage = static_cast<double>(elapsed_micro) / torque_ctrl_dt_micro * 100.0;
+            auto wake_lateness_us = std::max<int64_t>(
+                0, std::chrono::duration_cast<std::chrono::microseconds>(t_start - expected_start).count());
+            auto deadline_lateness_us =
+                std::chrono::duration_cast<std::chrono::microseconds>(now_time - next_cycle_time_point).count();
             auto dt_feedback = std::chrono::duration_cast<std::chrono::microseconds>(t_feedback - t_start).count();
             auto dt_log = std::chrono::duration_cast<std::chrono::microseconds>(t_log - t_feedback).count();
             auto dt_torque = std::chrono::duration_cast<std::chrono::microseconds>(t_torque - t_log).count();
             auto dt_cmd = std::chrono::duration_cast<std::chrono::microseconds>(now_time - t_torque).count();
-            LOG_WARN_THROTTLE(1000) << "Torque control thread cycle time exceeded 100%! Usage: " << usage
-                                    << "%. Breakdown(us): Feedback=" << dt_feedback << ", Log=" << dt_log
+            LOG_WARN_THROTTLE(1000) << "Torque control thread missed deadline. Compute usage: " << current_usage
+                                    << "%, WakeLate=" << wake_lateness_us << "us, DeadlineLate=" << deadline_lateness_us
+                                    << "us. Breakdown(us): Feedback=" << dt_feedback << ", Log=" << dt_log
                                     << ", Torque=" << dt_torque << ", CmdAndWrite=" << dt_cmd;
             next_cycle_time_point = now_time;
         }

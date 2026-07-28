@@ -65,8 +65,7 @@ void PlannerManager::LoopOnce() {
         // 拖动模式下跳过位置限位检测（允许超出位置限位），但仍检测速度和力矩限位
         SafetyCheckConfig safety_config = robot_property_.safety_check_config;
         safety_config.check_position_limit =
-            robot_property_.safety_check_config.check_position_limit &&
-            !(robot_property_.run_mode == RunMode::Drag || robot_property_.run_mode == RunMode::DragImpedance);
+            robot_property_.safety_check_config.check_position_limit && !(robot_property_.run_mode == RunMode::Drag);
         if (!runtime_data_.safety_checker.Check(measurement, robot_model_, robot_property_.error_codes,
                                                 safety_config) &&
             manager_state_ != Status::Error) {
@@ -568,21 +567,6 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
                     } else {
                         std::cout << "[WARN] Dynamic parameters not available, cannot enable impedance control mode.\n";
                         LOG_WARN << "Dynamic parameters not available, cannot enable impedance control mode.";
-                    }
-                    break;
-                case RunMode::DragImpedance:
-                    if (!robot_property_.allow_force_control) {
-                        std::cout << "[WARN] Force control is not allowed by configuration.\n";
-                        LOG_WARN << "Force control is not allowed by configuration.";
-                    } else if (!robot_property_.enable_cartesian_impedance) {
-                        std::cout << "[WARN] Cartesian impedance is not enabled by configuration.\n";
-                        LOG_WARN << "Cartesian impedance is not enabled by configuration.";
-                    } else if (this->robot_model_.IsDynamicParamsAvailable()) {
-                        robot_property_.run_mode = RunMode::DragImpedance;
-                    } else {
-                        std::cout
-                            << "[WARN] Dynamic parameters not available, cannot enable drag impedance control mode.\n";
-                        LOG_WARN << "Dynamic parameters not available, cannot enable drag impedance control mode.";
                     }
                     break;
                 default:
