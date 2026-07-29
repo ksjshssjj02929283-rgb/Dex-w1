@@ -1,6 +1,7 @@
 #include "w1_server.h"
 
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <set>
@@ -111,12 +112,18 @@ void RobotServer::TorqueControlThreadFunc() {
     double usage_sum = 0.0;
     double peak_usage = 0.0;
     int usage_count = 0;
+    auto thread_cpu_time_us = []() {
+        timespec ts{};
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+        return static_cast<int64_t>(ts.tv_sec) * 1000000 + ts.tv_nsec / 1000;
+    };
 
     while (rclcpp::ok()) {
         loop_counter++;
         next_cycle_time_point += std::chrono::microseconds(torque_ctrl_dt_micro);
 
         auto t_start = std::chrono::steady_clock::now();
+        const int64_t thread_cpu_start_us = thread_cpu_time_us();
 
         // 读取力传感器数据
         Vector6d sensor_data_primary = Vector6d::Zero();
@@ -435,26 +442,29 @@ void RobotServer::TorqueControlThreadFunc() {
         robot_control_temp.timestamp = this->now().nanoseconds();
         control_shm_instance.AppendNewElement(robot_control_temp);
 
-        auto now_time = std::chrono::steady_clock::now();
-        double current_usage =
-            static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(now_time - t_start).count()) /
+        const auto work_end_time = std::chrono::steady_clock::now();
+        const double work_usage =
+            static_cast<double>(
+                std::chrono::duration_cast<std::chrono::microseconds>(work_end_time - t_start).count()) /
             torque_ctrl_dt_micro * 100.0;
-        usage_sum += current_usage;
+        usage_sum += work_usage;
         usage_count++;
-        if (current_usage > peak_usage) {
-            peak_usage = current_usage;
-        }
+        peak_usage = std::max(peak_usage, work_usage);
 
         static nanolog::ThrottleState stats_throttle;
         if (stats_throttle.should_log(5000)) {
-            RCLCPP_INFO(this->get_logger(), "Avg Usage(last 5s): %.2f%%, Peak Usage: %.2f%%",
-                        (usage_sum / std::max(1, usage_count)), peak_usage);
-            LOG_INFO << "Avg Usage(last 5s): " << (usage_sum / std::max(1, usage_count)) << "%, Peak: " << peak_usage
+            LOG_INFO << "Avg Usage(last 5s): " << usage_sum / std::max(1, usage_count) << "%, Peak: " << peak_usage
                      << "%";
             usage_sum = 0.0;
             usage_count = 0;
             peak_usage = 0.0;
         }
+
+        const auto now_time = std::chrono::steady_clock::now();
+        const int64_t thread_cpu_elapsed_us = thread_cpu_time_us() - thread_cpu_start_us;
+        const double current_usage =
+            static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(now_time - t_start).count()) /
+            torque_ctrl_dt_micro * 100.0;
 
         if (now_time > next_cycle_time_point) {
             auto expected_start = next_cycle_time_point - std::chrono::microseconds(torque_ctrl_dt_micro);
@@ -468,6 +478,7 @@ void RobotServer::TorqueControlThreadFunc() {
             auto dt_cmd = std::chrono::duration_cast<std::chrono::microseconds>(now_time - t_torque).count();
             LOG_WARN_THROTTLE(1000) << "Torque control thread missed deadline. Compute usage: " << current_usage
                                     << "%, WakeLate=" << wake_lateness_us << "us, DeadlineLate=" << deadline_lateness_us
+                                    << "us, ThreadCPU=" << thread_cpu_elapsed_us
                                     << "us. Breakdown(us): Feedback=" << dt_feedback << ", Log=" << dt_log
                                     << ", Torque=" << dt_torque << ", CmdAndWrite=" << dt_cmd;
             next_cycle_time_point = now_time;

@@ -27,6 +27,7 @@ void TorqueControllerManager::Initialize() {
 }
 
 void TorqueControllerManager::LoopOnce() {
+    const auto t_start = std::chrono::steady_clock::now();
     runtime_data_.loop_counter++;
 
     // 尝试获取最新的关节测量值 Try to peek the latest joint raw_measurement
@@ -43,6 +44,7 @@ void TorqueControllerManager::LoopOnce() {
     } else {
         runtime_data_.input_joint_cmd.time_point = TimePointSystem::Now();
     }
+    const auto t_input = std::chrono::steady_clock::now();
 
     ProcessResponse response;
     response.re_run = true;  // first run
@@ -64,11 +66,14 @@ void TorqueControllerManager::LoopOnce() {
                 assert(false && "Unknown state in TorqueControllerManager");
         }
     }
+    const auto t_state = std::chrono::steady_clock::now();
 
     // Publish
+    auto t_compute = t_state;
     if (TimePointSystem::IsValid(runtime_data_.time_meta.measurement_time)) {
         torque_controller_->ComputeCommand(runtime_data_.raw_measurement, runtime_data_.input_joint_cmd.cmd,
                                            runtime_data_.output_cmd);
+        t_compute = std::chrono::steady_clock::now();
         JointMeasurement manager_measurement{};
         manager_measurement.position = runtime_data_.raw_measurement.position;
         manager_measurement.velocity = runtime_data_.raw_measurement.velocity;
@@ -84,6 +89,16 @@ void TorqueControllerManager::LoopOnce() {
         if (runtime_data_.loop_counter % 3000 == 0) {
             LOG_CRIT << "No Raw joint measurement available, skipping loop.";
         }
+    }
+    const auto t_end = std::chrono::steady_clock::now();
+    const auto total_us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
+    if (total_us > torque_ctrl_dt_micro) {
+        LOG_CRIT_THROTTLE(1000)
+            << "[TorqueControllerManager] Total=" << total_us
+            << "us | Input=" << std::chrono::duration_cast<std::chrono::microseconds>(t_input - t_start).count()
+            << " State=" << std::chrono::duration_cast<std::chrono::microseconds>(t_state - t_input).count()
+            << " Compute=" << std::chrono::duration_cast<std::chrono::microseconds>(t_compute - t_state).count()
+            << " Publish=" << std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_compute).count();
     }
 }
 
