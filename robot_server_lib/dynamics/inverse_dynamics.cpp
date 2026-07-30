@@ -15,8 +15,15 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
     auto t_seg = t_start;
 
     const auto& model = *robot_model.model_ptr;
-    // URDF 顺序与控制顺序一致，无需映射
-    pinocchio::Data data(model);
+    // thread_local 缓存 Data 避免每周期动态分配, 消除偶发 ~800us 分配器慢路径
+    // 全身、左臂、右臂各一份, 分别用于 RNEA/GetFkByFrameId 和 GetFK/GetJacobiMatrix
+    thread_local std::optional<pinocchio::Data> cached_data_whole;
+    thread_local std::optional<pinocchio::Data> cached_data_primary_arm;
+    thread_local std::optional<pinocchio::Data> cached_data_secondary_arm;
+    if (!cached_data_whole.has_value()) {
+        cached_data_whole.emplace(model);
+    }
+    pinocchio::Data& data = *cached_data_whole;
     double us_data_construct = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - t_seg).count();
     t_seg = std::chrono::steady_clock::now();
@@ -40,7 +47,7 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
         if (robot_model.model_ptr->existFrame(first_joint_urdf_name))
         {
             t_seg = std::chrono::steady_clock::now();
-            auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, q, robot_model.model_ptr->getFrameId(first_joint_urdf_name) - 1);
+            auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, q, robot_model.model_ptr->getFrameId(first_joint_urdf_name) - 1, data);
             Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.8};
             us_fk_pri = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - t_seg).count();
@@ -54,12 +61,16 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
             // 末端工具重力补偿: 单独算 wrench, J^T 投影到 7 关节, 累加到前馈 (与手臂符号动力学解耦)
             if (tool_cfg_primary.gravity_enabled && robot_model.primary_arm_model_ptr)
             {
+                if (!cached_data_primary_arm.has_value()) {
+                    cached_data_primary_arm.emplace(*robot_model.primary_arm_model_ptr);
+                }
                 t_seg = std::chrono::steady_clock::now();
                 // q_arm 在 InvDynamikBySymbol 内部已提取过一次, 这里为工具补偿的 FK/Jacobian 复用
                 Eigen::VectorXd feedback_q_primary;
                 utils::GetJointFromWholeBody(robot_model, q, feedback_q_primary, MotionGroup::Primary);
                 Eigen::VectorXd tau_tool = tool_compensation::ComputeToolJointGravityTorque(
-                    *robot_model.primary_arm_model_ptr, feedback_q_primary, tool_cfg_primary, gravity_acc_armbase);
+                    *robot_model.primary_arm_model_ptr, feedback_q_primary, tool_cfg_primary, gravity_acc_armbase,
+                    *cached_data_primary_arm);
                 // MapJointToWholeBody 是覆盖语义 (输出 JointPositionDof), 用临时变量接收再累加
                 VectorDof tau_tool_to_whole_body = VectorDof::Zero();
                 utils::MapJointToWholeBody(robot_model, tau_tool, tau_tool_to_whole_body, MotionGroup::Primary);
@@ -82,7 +93,7 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
         if (robot_model.model_ptr->existFrame(first_joint_urdf_name))
         {
             t_seg = std::chrono::steady_clock::now();
-            auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, q, robot_model.model_ptr->getFrameId(first_joint_urdf_name) - 1);
+            auto pose = pinocchio::GetFkByFrameId(*robot_model.model_ptr, q, robot_model.model_ptr->getFrameId(first_joint_urdf_name) - 1, data);
             Vector3d gravity_acc_armbase = pose.rotation().transpose() * Vector3d{0.0, 0.0, -9.8};
             us_fk_sec = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - t_seg).count();
@@ -96,12 +107,16 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
             // 末端工具重力补偿: 单独算 wrench, J^T 投影到 7 关节, 累加到前馈 (与手臂符号动力学解耦)
             if (tool_cfg_secondary.gravity_enabled && robot_model.secondary_arm_model_ptr)
             {
+                if (!cached_data_secondary_arm.has_value()) {
+                    cached_data_secondary_arm.emplace(*robot_model.secondary_arm_model_ptr);
+                }
                 t_seg = std::chrono::steady_clock::now();
                 // q_arm 在 InvDynamikBySymbol 内部已提取过一次, 这里为工具补偿的 FK/Jacobian 复用
                 Eigen::VectorXd feedback_q_secondary;
                 utils::GetJointFromWholeBody(robot_model, q, feedback_q_secondary, MotionGroup::Secondary);
                 Eigen::VectorXd tau_tool = tool_compensation::ComputeToolJointGravityTorque(
-                    *robot_model.secondary_arm_model_ptr, feedback_q_secondary, tool_cfg_secondary, gravity_acc_armbase);
+                    *robot_model.secondary_arm_model_ptr, feedback_q_secondary, tool_cfg_secondary, gravity_acc_armbase,
+                    *cached_data_secondary_arm);
                 // MapJointToWholeBody 是覆盖语义 (输出 JointPositionDof), 用临时变量接收再累加
                 VectorDof tau_tool_to_whole_body = VectorDof::Zero();
                 utils::MapJointToWholeBody(robot_model, tau_tool, tau_tool_to_whole_body, MotionGroup::Secondary);

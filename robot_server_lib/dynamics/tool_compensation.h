@@ -20,6 +20,11 @@ Eigen::VectorXd ComputeToolJointGravityTorque(const pinocchio::Model& arm_model,
                                               const Eigen::VectorXd& feedback_q_arm,
                                               const ToolGravityCompensationConfig& config,
                                               const Vector3d& gravity_armbase);
+Eigen::VectorXd ComputeToolJointGravityTorque(const pinocchio::Model& arm_model,
+                                              const Eigen::VectorXd& feedback_q_arm,
+                                              const ToolGravityCompensationConfig& config,
+                                              const Vector3d& gravity_armbase,
+                                              pinocchio::Data& arm_data);
 
 }  // namespace tool_compensation
 }  // namespace dynamics

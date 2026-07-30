@@ -534,9 +534,9 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
                     robot_property_.run_mode = RunMode::Position;
                     break;
                 case RunMode::Torque:
-                    if (!robot_property_.allow_force_control) {
-                        std::cout << "[WARN] Force control is not allowed by configuration.\n";
-                        LOG_WARN << "Force control is not allowed by configuration.";
+                    if (!robot_property_.allow_torque_control) {
+                        std::cout << "[WARN] Torque control is not allowed by configuration.\n";
+                        LOG_WARN << "Torque control is not allowed by configuration.";
                     } else if (this->robot_model_.IsDynamicParamsAvailable()) {
                         robot_property_.run_mode = RunMode::Torque;
                     } else {
@@ -545,9 +545,9 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
                     }
                     break;
                 case RunMode::Drag:
-                    if (!robot_property_.allow_force_control) {
-                        std::cout << "[WARN] Force control is not allowed by configuration.\n";
-                        LOG_WARN << "Force control is not allowed by configuration.";
+                    if (!robot_property_.allow_torque_control) {
+                        std::cout << "[WARN] Torque control is not allowed by configuration.\n";
+                        LOG_WARN << "Torque control is not allowed by configuration.";
                     } else {
                         if (robot_property_.run_mode != RunMode::Drag) {
                             previous_run_mode_ = robot_property_.run_mode;
@@ -556,9 +556,9 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
                     }
                     break;
                 case RunMode::CartesianImpedance:
-                    if (!robot_property_.allow_force_control) {
-                        std::cout << "[WARN] Force control is not allowed by configuration.\n";
-                        LOG_WARN << "Force control is not allowed by configuration.";
+                    if (!robot_property_.allow_torque_control) {
+                        std::cout << "[WARN] Torque control is not allowed by configuration.\n";
+                        LOG_WARN << "Torque control is not allowed by configuration.";
                     } else if (!robot_property_.enable_cartesian_impedance) {
                         std::cout << "[WARN] Cartesian impedance is not enabled by configuration.\n";
                         LOG_WARN << "Cartesian impedance is not enabled by configuration.";
@@ -580,9 +580,9 @@ void PlannerManager::SetProperty(const PlannerRequest& request) {
         case RequestType::EnableDrag: {
             assert(request.data.has_value() && std::holds_alternative<bool>(request.data.value()));
             bool enable_drag = std::get<bool>(request.data.value());
-            if (enable_drag && !robot_property_.allow_force_control) {
-                std::cout << "[WARN] Force control is not allowed by configuration.\n";
-                LOG_WARN << "Force control is not allowed by configuration.";
+            if (enable_drag && !robot_property_.allow_torque_control) {
+                std::cout << "[WARN] Torque control is not allowed by configuration.\n";
+                LOG_WARN << "Torque control is not allowed by configuration.";
                 return;
             }
             if (enable_drag) {

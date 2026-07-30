@@ -401,8 +401,8 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
 
     RobotProperty robot_property;
 
-    if (version_cfg["allow_force_control"]) {
-        robot_property.allow_force_control = version_cfg["allow_force_control"].as<bool>();
+    if (version_cfg["allow_torque_control"]) {
+        robot_property.allow_torque_control = version_cfg["allow_torque_control"].as<bool>();
     }
 
     if (version_cfg["enable_cartesian_impedance"]) {

@@ -140,32 +140,33 @@ void RobotServer::TorqueControlThreadFunc() {
 
         // 使用临时变量接收共享内存数据
         RobotFeedback feedback_temp{};
-        bool ret = feedback_shm_instance.PeekLatest(&feedback_temp) && feedback_temp.cnt > 0;
+        bool feedback_valid = feedback_shm_instance.PeekLatest(&feedback_temp) && feedback_temp.cnt > 0;
 
         // 根据模式排序反馈数据到ndof_robot个关节标准顺序
-        if (ret) {
+        if (feedback_valid) {
             if (!robot_mode_auto_detected_ && RobotMode::Unknown != DetectRobotModeFromFeedback(feedback_temp)) {
                 robot_mode_auto_detected_ = true;
             }
+            feedback_valid = SortFeedbackByJointName(feedback_temp);
+        }
 
-            if (SortFeedbackByJointName(feedback_temp)) {
-                robot_feedback_ = feedback_temp;
-            } else {
-                ret = false;
-            }
+        if (feedback_valid) {
+            robot_feedback_ = feedback_temp;
         } else {
+            // 共享内存无效或关节排序失败时清理状态，避免发布上一个周期遗留的 OP/错误数据。
             robot_feedback_.robot_status_word = 0;
             for (int i = 0; i < MAX_JOINT_NUM; ++i) {
                 robot_feedback_.al_status[i] = 0;
-                robot_feedback_.joint_feedback[i].joint_error_code = 0;
                 robot_feedback_.joint_feedback[i].joint_temperature = 0;
             }
         }
+        // 底盘反馈独立于上半身关节数据，直接透传，不受上半身反馈有效性和关节排序结果影响。
+        robot_feedback_.chassis_feedback = feedback_temp.chassis_feedback;
 
         // 根据状态写入机器人控制字
         this->is_robot_ready_ = false;
         robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
-        if (ret) {
+        if (feedback_valid) {
             this->SwitchControlWord();
         }
 
@@ -239,9 +240,9 @@ void RobotServer::TorqueControlThreadFunc() {
         } else {
             this->robot_buffers_.joint_raw_measurement->Reset();
             RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                                 "Robot is not ready, shm status: %d, statusword: %s", ret,
+                                 "Robot is not ready, shm status: %d, statusword: %s", feedback_valid,
                                  utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
-            LOG_CRIT_THROTTLE(5000) << "Robot is not ready, shm status: " << ret
+            LOG_CRIT_THROTTLE(5000) << "Robot is not ready, shm status: " << feedback_valid
                                     << ", statusword: " << robot_feedback_.robot_status_word;
         }
         auto t_log = std::chrono::steady_clock::now();
@@ -621,7 +622,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"motor_error_code\":" + utils::VectorToJsonArrayString(error_code_arr_, index_offset, ndof_config_).str() +
         ",\n  \"motor_temperature\":" + utils::VectorToJsonArrayString(temperature_arr_, index_offset, ndof_config_).str() +
         ",\n  \"run_mode\":\"" + ToString(this->manager_info_.robot_property.run_mode) + "\"" +
-        ", \"allow_force_control\":\"" + std::to_string(this->manager_info_.robot_property.allow_force_control) + "\"" +
+        ", \"allow_torque_control\":\"" + std::to_string(this->manager_info_.robot_property.allow_torque_control) + "\"" +
         ", \"enable_cartesian_impedance\":\"" + std::to_string(this->manager_info_.robot_property.enable_cartesian_impedance) + "\"" +
         ", \"server_error_code\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.error_codes).str() +
         ", \"safe_level\":\"" + std::to_string(this->manager_info_.robot_property.safe_level) + "\"" +

@@ -1,21 +1,16 @@
 import subprocess
 import time
-import json
+import yaml
 import sys
 import os
 import re
 
-DEXE_RP_DATA_PATH = os.environ.get('DEXE_RP_DATA_PATH', '/home/dexforce/dexe_rp_data')
+DEXE_RP_DATA_PATH = os.environ.get('DEXE_RP_DATA_PATH', os.path.expanduser('~/dexe_rp_data'))
+CALIBRATION_FILE = os.path.join(DEXE_RP_DATA_PATH, 'w1_calibration.yaml')
 
 def _pulse_to_degree(pulse):
     degree = ((pulse - 262144) / 262144) * 360.0
     return degree
-
-def _to_complement_hex(value, bits=32):
-    if value < 0:
-        value = (1 << bits) + value
-    hex_value = hex(value)
-    return hex_value
 
 def _parse_ethercat_value(result, label):
     if result.returncode != 0:
@@ -88,7 +83,7 @@ def _write_zero_offset(index_list: list, zero_offset_list: list, joint_ids: list
         new_offset = (pre_offset + round(offset / 360.0 * 262144)) & 0xFFFFFFFF
         new_offset_list.append(new_offset)
 
-        result = subprocess.run(['ethercat', 'download', '-p', str(index), '0x3b75', '0', _to_complement_hex(new_offset)], capture_output=True, text=True)
+        result = subprocess.run(['ethercat', 'download', '-p', str(index), '0x3b75', '0', hex(new_offset)], capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f'写入电机 {index} 零位偏移失败 (returncode={result.returncode}): {result.stderr.strip()}')
 
@@ -110,38 +105,50 @@ def set_zero_offset(zero_offsets_deg: list, joint_ids: list, expected_motor_coun
     print("Current motor positions (deg) after calibration:", qpos_list)
     return True
 
-def _load_offsets(json_path: str) -> tuple[list, bool]:
-    if not os.path.exists(json_path):
-        print(f"File not found: {json_path}")
+def _load_section(section_name: str) -> tuple:
+    if not os.path.exists(CALIBRATION_FILE):
+        print(f"File not found: {CALIBRATION_FILE}")
         return None, False
-    with open(json_path, 'r') as f:
-        data = json.load(f)
-    return data['zero_offset'], data.get('is_calibrated', False)
+    with open(CALIBRATION_FILE, "r") as f:
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        print(f"Invalid or empty YAML: {CALIBRATION_FILE}")
+        return None, False
+    section = data.get(section_name)
+    if section is None:
+        print(f"Section '{section_name}' not found in {CALIBRATION_FILE}")
+        return None, False
+    return section.get('zero_offset'), section.get('is_calibrated', False)
 
-def load_zero_offsets(is_left: bool) -> tuple[list, bool]:
-    json_path = f'{DEXE_RP_DATA_PATH}/W1_V02_L.json' if is_left else f'{DEXE_RP_DATA_PATH}/W1_V02_R.json'
-    return _load_offsets(json_path)
+def load_zero_offsets(is_left: bool) -> tuple:
+    return _load_section('left_arm' if is_left else 'right_arm')
 
-def load_torso_offsets() -> tuple[list, bool]:
-    return _load_offsets(f'{DEXE_RP_DATA_PATH}/W1_V02.json')
+def load_torso_offsets() -> tuple:
+    return _load_section('torso_head')
 
 def _update_calibration_status(is_left: bool = None, is_torso: bool = False):
-    if is_torso:
-        json_path = f'{DEXE_RP_DATA_PATH}/W1_V02.json'
-    else:
-        json_path = f'{DEXE_RP_DATA_PATH}/W1_V02_L.json' if is_left else f'{DEXE_RP_DATA_PATH}/W1_V02_R.json'
-    
-    if not os.path.exists(json_path):
+    if not os.path.exists(CALIBRATION_FILE):
         return
-    
-    with open(json_path, 'r') as f:
-        data = json.load(f)
-    
-    data['is_calibrated'] = True
-    
-    with open(json_path, 'w') as f:
-        json.dump(data, f, indent=4)
-    print(f"Updated {json_path} with is_calibrated = true")
+
+    with open(CALIBRATION_FILE, "r") as f:
+        data = yaml.safe_load(f)
+
+    if not isinstance(data, dict):
+        return
+
+    if is_torso:
+        section_name = 'torso_head'
+    else:
+        section_name = 'left_arm' if is_left else 'right_arm'
+
+    if section_name not in data:
+        return
+
+    data[section_name]['is_calibrated'] = True
+
+    with open(CALIBRATION_FILE, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    print(f"Updated {CALIBRATION_FILE} [{section_name}] is_calibrated = true")
 
 def main():
     a1_mode = '--a1' in sys.argv or 'a1' in sys.argv

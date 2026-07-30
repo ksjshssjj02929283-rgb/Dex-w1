@@ -42,8 +42,17 @@ void PrintModelInfo(const Model& model) {
 }
 
 Eigen::Matrix4d GetFK(const Model& model, const Eigen::VectorXd& q) {
+    thread_local const Model* cached_model = nullptr;
+    thread_local std::optional<Data> cached_data;
+    if (cached_model != &model) {
+        cached_data.emplace(model);
+        cached_model = &model;
+    }
+    return GetFK(model, q, *cached_data);
+}
+
+Eigen::Matrix4d GetFK(const Model& model, const Eigen::VectorXd& q, Data& data) {
     SE3 pose;
-    Data data(model);
     int frame_id = model.nframes - 1;
     forwardKinematics(model, data, q);
     updateFramePlacements(model, data);
@@ -58,6 +67,16 @@ Eigen::Matrix4d GetFK(const Model& model, const Eigen::VectorXd& q) {
 }
 
 Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q, ReferenceFrame frame) {
+    thread_local const Model* cached_model = nullptr;
+    thread_local std::optional<Data> cached_data;
+    if (cached_model != &model) {
+        cached_data.emplace(model);
+        cached_model = &model;
+    }
+    return GetJacobiMatrix(model, q, frame, *cached_data);
+}
+
+Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q, ReferenceFrame frame, Data& data) {
     int nv = model.nv;
     Eigen::MatrixXd J = Eigen::MatrixXd::Zero(6, nv);
 
@@ -67,7 +86,6 @@ Eigen::MatrixXd GetJacobiMatrix(const Model& model, const Eigen::VectorXd& q, Re
         return J;
     }
 
-    Data data(model);
     forwardKinematics(model, data, q);
     updateFramePlacements(model, data);
     computeJointJacobians(model, data, q);
@@ -84,7 +102,17 @@ Eigen::MatrixXd GetJacobianMatrixDot(const Model& model,
                                      const Eigen::VectorXd& q,
                                      const Eigen::VectorXd& dq,
                                      ReferenceFrame frame) {
-    Data data(model);
+    thread_local const Model* cached_model = nullptr;
+    thread_local std::optional<Data> cached_data;
+    if (cached_model != &model) {
+        cached_data.emplace(model);
+        cached_model = &model;
+    }
+    return GetJacobianMatrixDot(model, q, dq, frame, *cached_data);
+}
+
+Eigen::MatrixXd GetJacobianMatrixDot(
+    const Model& model, const Eigen::VectorXd& q, const Eigen::VectorXd& dq, ReferenceFrame frame, Data& data) {
     int ee_frame_id = model.nframes - 1;
     Eigen::MatrixXd J_dot(6, model.nv);
     if (ee_frame_id < 0) {
@@ -108,7 +136,16 @@ Eigen::MatrixXd GetJacobianMatrixDot(const Model& model,
 }
 
 SE3 GetFkByFrameId(const Model& model, const Eigen::VectorXd& q_urdf_in, int frame_id) {
-    Data data(model);
+    thread_local const Model* cached_model = nullptr;
+    thread_local std::optional<Data> cached_data;
+    if (cached_model != &model) {
+        cached_data.emplace(model);
+        cached_model = &model;
+    }
+    return GetFkByFrameId(model, q_urdf_in, frame_id, *cached_data);
+}
+
+SE3 GetFkByFrameId(const Model& model, const Eigen::VectorXd& q_urdf_in, int frame_id, Data& data) {
     forwardKinematics(model, data, q_urdf_in);
     updateFramePlacements(model, data);
 
@@ -156,7 +193,16 @@ void PseudoInverse(const Eigen::MatrixXd& M_, Eigen::MatrixXd& M_pinv_, bool dam
 }
 
 Eigen::MatrixXd GetInertiaMatrix(const Model& model, const Eigen::VectorXd& q) {
-    Data data(model);
+    thread_local const Model* cached_model = nullptr;
+    thread_local std::optional<Data> cached_data;
+    if (cached_model != &model) {
+        cached_data.emplace(model);
+        cached_model = &model;
+    }
+    return GetInertiaMatrix(model, q, *cached_data);
+}
+
+Eigen::MatrixXd GetInertiaMatrix(const Model& model, const Eigen::VectorXd& q, Data& data) {
     crba(model, data, q);
     data.M.triangularView<Eigen::StrictlyLower>() = data.M.transpose().triangularView<Eigen::StrictlyLower>();
     return data.M;

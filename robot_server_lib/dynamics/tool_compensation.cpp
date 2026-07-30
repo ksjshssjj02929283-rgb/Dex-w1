@@ -8,6 +8,20 @@ Eigen::VectorXd ComputeToolJointGravityTorque(const pinocchio::Model& arm_model,
                                               const Eigen::VectorXd& feedback_q_arm,
                                               const ToolGravityCompensationConfig& config,
                                               const Vector3d& gravity_armbase) {
+    thread_local const pinocchio::Model* cached_model = nullptr;
+    thread_local std::optional<pinocchio::Data> cached_data;
+    if (cached_model != &arm_model) {
+        cached_data.emplace(arm_model);
+        cached_model = &arm_model;
+    }
+    return ComputeToolJointGravityTorque(arm_model, feedback_q_arm, config, gravity_armbase, *cached_data);
+}
+
+Eigen::VectorXd ComputeToolJointGravityTorque(const pinocchio::Model& arm_model,
+                                              const Eigen::VectorXd& feedback_q_arm,
+                                              const ToolGravityCompensationConfig& config,
+                                              const Vector3d& gravity_armbase,
+                                              pinocchio::Data& arm_data) {
     if (!config.gravity_enabled) {
         return Eigen::VectorXd::Zero(arm_model.nv);
     }
@@ -25,7 +39,7 @@ Eigen::VectorXd ComputeToolJointGravityTorque(const pinocchio::Model& arm_model,
     }
 
     // arm-only FK: 取 arm base <- EE 的旋转和 COM 在 arm base 系下的位置
-    const Eigen::Matrix4d T_armbase_ee = pinocchio::GetFK(arm_model, feedback_q_arm);
+    const Eigen::Matrix4d T_armbase_ee = pinocchio::GetFK(arm_model, feedback_q_arm, arm_data);
     const Eigen::Matrix3d R_armbase_ee = T_armbase_ee.topLeftCorner<3, 3>();
     const Vector3d r_C_armbase = (R_armbase_ee * config.com_m).eval();  // COM 相对 EE 原点, arm base 系下
     if (!R_armbase_ee.allFinite() || !r_C_armbase.allFinite()) {
@@ -48,7 +62,7 @@ Eigen::VectorXd ComputeToolJointGravityTorque(const pinocchio::Model& arm_model,
     wrench_ee.tail<3>() = tau_ee_ee;
 
     const Eigen::MatrixXd jacobian =
-        pinocchio::GetJacobiMatrix(arm_model, feedback_q_arm, pinocchio::LOCAL);
+        pinocchio::GetJacobiMatrix(arm_model, feedback_q_arm, pinocchio::LOCAL, arm_data);
     if (jacobian.rows() != 6 || jacobian.cols() != arm_model.nv || !jacobian.allFinite()) {
         return Eigen::VectorXd::Zero(arm_model.nv);
     }

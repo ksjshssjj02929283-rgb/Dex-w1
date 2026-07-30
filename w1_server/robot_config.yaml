@@ -1,5 +1,5 @@
 # === 机器人基本配置 ===
-config_version: v05
+config_version: v06
 robot_type: w1
 version: v024
 left_hand_type: BrainCo_Revo1_R
@@ -90,8 +90,8 @@ w1_v02:
     enable_torque_limit_check: true
     enable_velocity_limit_check: true
 
-  # === 是否允许开启力控 ===
-  allow_force_control: true
+  # === 是否允许开启力矩控制 ===
+  allow_torque_control: true
   enable_cartesian_impedance: false
 
   cart_stiffness: [200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0]
@@ -104,7 +104,7 @@ w1_v02:
     - name: ANKLE
       index: 0
       velocity_limit: 3.1416
-      torque_limit: 87.0
+      torque_limit: 130.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -122,7 +122,7 @@ w1_v02:
     - name: KNEE
       index: 1
       velocity_limit: 3.1416
-      torque_limit: 87.0
+      torque_limit: 130.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -140,7 +140,7 @@ w1_v02:
     - name: BUTTOCK
       index: 2
       velocity_limit: 3.1416
-      torque_limit: 87.0
+      torque_limit: 130.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -158,7 +158,7 @@ w1_v02:
     - name: WAIST
       index: 3
       velocity_limit: 3.1416
-      torque_limit: 87.0
+      torque_limit: 130.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -176,7 +176,7 @@ w1_v02:
     - name: NECK1
       index: 4
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 15
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -190,7 +190,7 @@ w1_v02:
     - name: NECK2
       index: 5
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 15
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -208,7 +208,7 @@ w1_v02:
     - name: LEFT_J1
       index: 6
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 46.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -231,7 +231,7 @@ w1_v02:
     - name: LEFT_J2
       index: 7
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 46.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -254,7 +254,7 @@ w1_v02:
     - name: LEFT_J3
       index: 8
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 46.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -277,7 +277,7 @@ w1_v02:
     - name: LEFT_J4
       index: 9
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 46.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -300,7 +300,7 @@ w1_v02:
     - name: LEFT_J5
       index: 10
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 15
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -323,7 +323,7 @@ w1_v02:
     - name: LEFT_J6
       index: 11
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 15
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -346,7 +346,7 @@ w1_v02:
     - name: LEFT_J7
       index: 12
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 15
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -369,7 +369,7 @@ w1_v02:
     - name: RIGHT_J1
       index: 13
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 46.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -392,7 +392,7 @@ w1_v02:
     - name: RIGHT_J2
       index: 14
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 46.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -415,7 +415,7 @@ w1_v02:
     - name: RIGHT_J3
       index: 15
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 46.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -438,7 +438,7 @@ w1_v02:
     - name: RIGHT_J4
       index: 16
       velocity_limit: 3.1416
-      torque_limit: 31.0
+      torque_limit: 46.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -461,7 +461,7 @@ w1_v02:
     - name: RIGHT_J5
       index: 17
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 15
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -484,7 +484,7 @@ w1_v02:
     - name: RIGHT_J6
       index: 18
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 15
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -507,7 +507,7 @@ w1_v02:
     - name: RIGHT_J7
       index: 19
       velocity_limit: 3.1416
-      torque_limit: 10.0
+      torque_limit: 15
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -541,8 +541,8 @@ w1_v03:
     enable_torque_limit_check: true
     enable_velocity_limit_check: true
 
-  # === 是否允许开启力控 ===
-  allow_force_control: true
+  # === 是否允许开启力矩控制 ===
+  allow_torque_control: true
   enable_cartesian_impedance: false
 
   cart_stiffness: [200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0]
@@ -555,7 +555,7 @@ w1_v03:
     - name: ANKLE
       index: 0
       velocity_limit: 3.1416
-      torque_limit: 160.0
+      torque_limit: 199.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -572,7 +572,7 @@ w1_v03:
     - name: KNEE
       index: 1
       velocity_limit: 3.1416
-      torque_limit: 160.0
+      torque_limit: 199.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -589,7 +589,7 @@ w1_v03:
     - name: BUTTOCK
       index: 2
       velocity_limit: 3.1416
-      torque_limit: 160.0
+      torque_limit: 199.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -606,7 +606,7 @@ w1_v03:
     - name: WAIST
       index: 3
       velocity_limit: 3.1416
-      torque_limit: 160.0
+      torque_limit: 91.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -623,7 +623,7 @@ w1_v03:
     - name: NECK1
       index: 4
       velocity_limit: 3.1416
-      torque_limit: 30.0
+      torque_limit: 14.25
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -636,7 +636,7 @@ w1_v03:
     - name: NECK2
       index: 5
       velocity_limit: 3.1416
-      torque_limit: 30.0
+      torque_limit: 14.25
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -653,7 +653,7 @@ w1_v03:
     - name: LEFT_J1
       index: 6
       velocity_limit: 3.1416
-      torque_limit: 90.0
+      torque_limit: 91.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -675,7 +675,7 @@ w1_v03:
     - name: LEFT_J2
       index: 7
       velocity_limit: 3.1416
-      torque_limit: 90.0
+      torque_limit: 91.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -697,7 +697,7 @@ w1_v03:
     - name: LEFT_J3
       index: 8
       velocity_limit: 3.1416
-      torque_limit: 60.0
+      torque_limit: 72.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -719,7 +719,7 @@ w1_v03:
     - name: LEFT_J4
       index: 9
       velocity_limit: 3.1416
-      torque_limit: 60.0
+      torque_limit: 72.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -741,7 +741,7 @@ w1_v03:
     - name: LEFT_J5
       index: 10
       velocity_limit: 3.1416
-      torque_limit: 30.0
+      torque_limit: 14.25
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -750,7 +750,7 @@ w1_v03:
         enabled: true
         frequency: 22
       joint_pd_control:
-        stiffness: 30.0
+        stiffness: 14.25
         damping: 2.0
         integral_ratio: 0.05
       joint_admittance:
@@ -763,7 +763,7 @@ w1_v03:
     - name: LEFT_J6
       index: 11
       velocity_limit: 3.1416
-      torque_limit: 30.0
+      torque_limit: 14.25
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -772,7 +772,7 @@ w1_v03:
         enabled: true
         frequency: 22
       joint_pd_control:
-        stiffness: 30.0
+        stiffness: 14.25
         damping: 2.0
         integral_ratio: 0.05
       joint_admittance:
@@ -785,7 +785,7 @@ w1_v03:
     - name: LEFT_J7
       index: 12
       velocity_limit: 3.1416
-      torque_limit: 30.0
+      torque_limit: 14.25
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -807,7 +807,7 @@ w1_v03:
     - name: RIGHT_J1
       index: 13
       velocity_limit: 3.1416
-      torque_limit: 90.0
+      torque_limit: 91.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -829,7 +829,7 @@ w1_v03:
     - name: RIGHT_J2
       index: 14
       velocity_limit: 3.1416
-      torque_limit: 90.0
+      torque_limit: 91.5
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -851,7 +851,7 @@ w1_v03:
     - name: RIGHT_J3
       index: 15
       velocity_limit: 3.1416
-      torque_limit: 60.0
+      torque_limit: 72.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -873,7 +873,7 @@ w1_v03:
     - name: RIGHT_J4
       index: 16
       velocity_limit: 3.1416
-      torque_limit: 60.0
+      torque_limit: 72.0
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -895,7 +895,7 @@ w1_v03:
     - name: RIGHT_J5
       index: 17
       velocity_limit: 3.1416
-      torque_limit: 30.0
+      torque_limit: 14.25
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -917,7 +917,7 @@ w1_v03:
     - name: RIGHT_J6
       index: 18
       velocity_limit: 3.1416
-      torque_limit: 30.0
+      torque_limit: 14.25
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -939,7 +939,7 @@ w1_v03:
     - name: RIGHT_J7
       index: 19
       velocity_limit: 3.1416
-      torque_limit: 30.0
+      torque_limit: 14.25
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
