@@ -11,6 +11,7 @@
 #include <std_msgs/msg/float64_multi_array.hpp>
 #include <std_msgs/msg/string.hpp>
 
+#include "message_buffer_map.h"
 #include "planner_manager.h"
 #include "rclcpp/rclcpp.hpp"
 #include "torque_controller_manager.h"
@@ -63,8 +64,8 @@ protected:
     TorqueControlBuffer robot_buffers_;
     Status manager_state_{Status::Init};
     Int64 latest_received_id_{-1};
-    BoundedQueue<std::shared_ptr<rclcpp_action::ServerGoalHandle<robot_server_interfaces::action::MoveRobot>>>
-        request_handle_queue_{32};
+    using RequestHandle = std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>>;
+    SingleReaderMessageBufferMap<RequestHandle> request_handle_buffer_;
     std::filesystem::path server_data_dir_ = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";
     std::filesystem::path home_dir = std::filesystem::path(std::getenv("HOME"));
     // 记录最新的 streaming command 输入的关节位置
