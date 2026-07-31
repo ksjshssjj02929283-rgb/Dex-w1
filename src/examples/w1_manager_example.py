@@ -10,6 +10,7 @@ import numpy as np
 from copy import deepcopy
 
 from dexe_rp import EndEffectorType, RobotVersion
+from dexe_robot_client.common import StatusCode
 from dexe_robot_client.w1 import W1Manager, xpos_to_user_pose, user_pose_to_xpos
 
 
@@ -25,15 +26,21 @@ def mirror_left_to_right(robot_version: RobotVersion,
 def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
     """move_joint_full_body()的使用示例"""
     if move_with_ee:
-        end_effector_type = EndEffectorType.BrainCo_Revo1_R
+        left_ee_type = EndEffectorType.HITBOT_Z_ESC_70
+        right_ee_type = EndEffectorType.Linker_L6
     else:
-        end_effector_type = None
+        left_ee_type = None
+        right_ee_type = None
 
     w1_manager = W1Manager(is_sim=is_sim,
                            robot_version=RobotVersion.W1V024,
-                           end_effector_type=end_effector_type)
-    if not w1_manager.connect() and not w1_manager.is_enabled():
+                           left_ee_type=left_ee_type,
+                           right_ee_type=right_ee_type)
+    if w1_manager.connect() != StatusCode.SUCCESS and w1_manager.is_enabled(
+    ) != StatusCode.SUCCESS:
         return
+
+    w1_manager.set_collision_checker_verbose(True)
 
     # yapf: disable
     w1_manager.set_home_qpos(np.deg2rad([45, -90, 45, 0, 0, 0,
@@ -41,7 +48,7 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
                                          -5, 45, 5, 90, 0, 15, 0]),
                              save_to_file=False)
     if move_with_ee:
-        w1_manager.set_ee_qpos("left_arm_ee", np.array([0.] * 6))
+        w1_manager.set_ee_qpos("left_arm_ee", np.array([0.] * 1))
         w1_manager.set_ee_qpos("right_arm_ee", np.array([0.] * 6))
     w1_manager.go_home(0.5)
 
@@ -57,10 +64,10 @@ def move_full_body_example1(move_with_ee: bool, is_sim: bool = True):
                                      [-5., -35., 5., -80., -10., 10., -10.],
                                      [5., -45., -5., -90., 0., -15., 0.]])
 
-    left_arm_ee_states = [[0., [0., 50., 50., 50., 50., 50.], 0.5],
-                          [0., [0., 0., 0., 0., 0., 0.], 0.5],
-                          [0., [100., 100., 0., 0., 100., 100.], 0.5],
-                          [0., [0., 0., 0., 0., 0., 0.], 0.]]
+    left_arm_ee_states = [[0., [0.], 0.5],
+                          [0., [50.], 0.5],
+                          [0., [100.], 0.5],
+                          [0., [0.], 0.]]
 
     right_arm_waypoints = mirror_left_to_right(w1_manager._robot_version, left_arm_waypoints)
 
@@ -99,14 +106,18 @@ def move_full_body_example2(move_with_ee: bool,
                             is_local: bool = False):
     """move_linear_full_body()的使用示例"""
     if move_with_ee:
-        end_effector_type = EndEffectorType.BrainCo_Revo1_R
+        left_ee_type = EndEffectorType.HITBOT_Z_ESC_70
+        right_ee_type = EndEffectorType.Linker_L6
     else:
-        end_effector_type = None
+        left_ee_type = None
+        right_ee_type = None
 
     w1_manager = W1Manager(is_sim=is_sim,
                            robot_version=RobotVersion.W1V024,
-                           end_effector_type=end_effector_type)
-    if not w1_manager.connect() and not w1_manager.is_enabled():
+                           left_ee_type=left_ee_type,
+                           right_ee_type=right_ee_type)
+    if w1_manager.connect() != StatusCode.SUCCESS and w1_manager.is_enabled(
+    ) != StatusCode.SUCCESS:
         return
 
     w1_manager.set_tcp("left_arm", np.eye(4))
@@ -118,7 +129,7 @@ def move_full_body_example2(move_with_ee: bool,
                                          -5, 45, 5, 90, 0, 15, 0]),
                              save_to_file=False)
     if move_with_ee:
-        w1_manager.set_ee_qpos("left_arm_ee", np.array([0.] * 6))
+        w1_manager.set_ee_qpos("left_arm_ee", np.array([0.] * 1))
         w1_manager.set_ee_qpos("right_arm_ee", np.array([0.] * 6))
     w1_manager.go_home(0.5)
 
@@ -154,10 +165,10 @@ def move_full_body_example2(move_with_ee: bool,
             for pose in left_arm_waypoints
         ]
         left_arm_waypoints = [xpos_to_user_pose(xpos) for xpos in temp]
-    left_arm_ee_states = [[0., [0., 50., 50., 50., 50., 50.], 0.5],
-                          [0., [0., 0., 0., 0., 0., 0.], 0.5],
-                          [0., [100., 100., 0., 0., 100., 100.], 0.5],
-                          [0., [0., 0., 0., 0., 0., 0.], 0.]]
+    left_arm_ee_states = [[0., [0.], 0.5],
+                          [0., [0.], 0.5],
+                          [0., [100.], 0.5],
+                          [0., [0.], 0.]]
 
     cur_r_pose = w1_manager.get_current_pose("right_arm")[1]
     if w1_manager._robot_version.version_value.startswith("v02"):
@@ -216,5 +227,5 @@ def move_full_body_example2(move_with_ee: bool,
 
 
 if __name__ == "__main__":
-    # move_full_body_example1(move_with_ee = True, is_sim = True)
-    move_full_body_example2(move_with_ee=False, is_sim=True, is_local=True)
+    move_full_body_example1(move_with_ee=True, is_sim=True)
+    # move_full_body_example2(move_with_ee=True, is_sim=True, is_local=True)

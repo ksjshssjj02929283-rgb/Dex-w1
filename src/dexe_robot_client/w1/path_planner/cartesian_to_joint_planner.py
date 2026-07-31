@@ -24,14 +24,16 @@ class CartesianToJointPlanner:
     def __init__(
             self,
             robot_version: RobotVersion,
-            end_effector_type: EndEffectorType = EndEffectorType.BrainCo_Revo1_R
-    ):
+            left_ee_type: EndEffectorType = EndEffectorType.BrainCo_Revo1_R,
+            right_ee_type: EndEffectorType = EndEffectorType.BrainCo_Revo1_R):
         self.logger = get_logger()
 
         self._robot_version = robot_version
-        self._end_effector_type = end_effector_type
+        self._left_ee_type = left_ee_type
+        self._right_ee_type = right_ee_type
 
-        self.w1_params = W1Params(self._robot_version, self._end_effector_type)
+        self.w1_params = W1Params(self._robot_version, self._left_ee_type,
+                                  self._right_ee_type)
 
         self._init_kine_solver()
 
