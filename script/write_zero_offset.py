@@ -23,37 +23,68 @@ def _parse_ethercat_value(result, label):
     except ValueError:
         raise RuntimeError(f'{label} 输出无法解析: {result.stdout!r}')
 
+def _detect_config(ethercat_output: str) -> tuple:
+    """从 ethercat sl 输出自动检测电机类型和构型, 返回 (is_v03, is_a1, motor_count)"""
+    NON_MOTOR_KEYWORDS = ['jbox', 'junction', 'power', 'coupler', 'ek1100']
+    output_upper = ethercat_output.upper()
+
+    # 检测电机类型
+    if 'ZERO_ERROR' in output_upper or 'ZEROERR' in output_upper:
+        is_v03 = False
+    elif 'TC' in output_upper:
+        is_v03 = True
+    else:
+        raise RuntimeError('无法识别电机类型, ethercat sl 输出中未找到 ZERO_ERROR 或 TC 关键字')
+
+    # 统计电机数量
+    motor_count = 0
+    for line in ethercat_output.splitlines():
+        line_lower = line.lower()
+        if any(kw in line_lower for kw in NON_MOTOR_KEYWORDS):
+            continue
+        if re.match(r'^\s*\d+\s+\S+\s+[A-Z]+\b', line):
+            motor_count += 1
+
+    # 检测构型: 20=W1, 14/16=A1
+    if motor_count == 20:
+        is_a1 = False
+    elif motor_count in (14, 16):
+        is_a1 = True
+    else:
+        raise RuntimeError(f'无法识别构型, 电机数量 {motor_count} 不匹配 W1(20) 或 A1(14/16)')
+
+    return is_v03, is_a1, motor_count
+
 def _get_motor_index_and_check_status(expected_count: int) -> list:
     try:
         result = subprocess.run(['ethercat', 'sl'], capture_output=True, text=True, check=True)
     except Exception as e:
         raise RuntimeError(f'执行 "ethercat sl" 失败: {e}')
 
+    # 非电机从站关键词, 这些行不会被识别为关节电机
+    NON_MOTOR_KEYWORDS = ['jbox', 'junction', 'power', 'coupler', 'ek1100']
+
     driver_positions = []
     non_preop = []
 
     for line in result.stdout.splitlines():
-        if 'ZeroErr Driver' in line:
-            m = re.match(r'^\s*(\d+)\s+\S+\s+([A-Z]+)\b.*ZeroErr Driver', line)
-            if m:
-                idx = int(m.group(1))
-                state = m.group(2)
-                driver_positions.append(idx)
-                if state != 'PREOP':
-                    non_preop.append((idx, state))
-            else:
-                m2 = re.match(r'^\s*(\d+)\b', line)
-                if m2:
-                    idx = int(m2.group(1))
-                    driver_positions.append(idx)
-                    non_preop.append((idx, 'UNKNOWN'))
+        line_lower = line.lower()
+        if any(kw in line_lower for kw in NON_MOTOR_KEYWORDS):
+            continue
+        m = re.match(r'^\s*(\d+)\s+\S+\s+([A-Z]+)\b', line)
+        if m:
+            idx = int(m.group(1))
+            state = m.group(2)
+            driver_positions.append(idx)
+            if state != 'PREOP':
+                non_preop.append((idx, state))
 
     if len(driver_positions) != expected_count:
-        raise RuntimeError(f'期望 {expected_count} 个 ZeroErr Driver，实际为 {len(driver_positions)}: {driver_positions}')
+        raise RuntimeError(f'期望 {expected_count} 个电机, 实际为 {len(driver_positions)}: {driver_positions}')
 
     if non_preop:
         details = ', '.join(f'{idx}:{state}' for idx, state in non_preop)
-        raise RuntimeError(f'以下 ZeroErr Driver 非 PREOP 状态: {details}')
+        raise RuntimeError(f'以下电机非 PREOP 状态: {details}')
 
     print(f"Motor index: [{', '.join(map(str, driver_positions))}], total {len(driver_positions)} motors, all in PREOP state.")
     return driver_positions
@@ -151,31 +182,48 @@ def _update_calibration_status(is_left: bool = None, is_torso: bool = False):
     print(f"Updated {CALIBRATION_FILE} [{section_name}] is_calibrated = true")
 
 def main():
-    a1_mode = '--a1' in sys.argv or 'a1' in sys.argv
-
-    if a1_mode:
-        print("=== A1 模式 ===")
-        # A1 物理顺序可能为: 头部(0-1) -> 左臂(2-8) -> 右臂(9-15)
-        # 总电机数预期为 16 (基于头部2 + 左右各7)
-        # 如果没有头部，则左臂(0-6), 右臂(7-13), 总数 14
-        
-        # 自动探测总电机数
+    # 获取 ethercat sl 输出, 自动检测电机类型和构型
+    try:
         result = subprocess.run(['ethercat', 'sl'], capture_output=True, text=True, check=True)
-        motor_count = len(re.findall(r'ZeroErr Driver', result.stdout))
-        print(f"Detected {motor_count} ZeroErr Drivers on bus.")
+    except Exception as e:
+        raise RuntimeError(f'执行 "ethercat sl" 失败: {e}')
 
+    # 允许命令行覆盖自动检测结果
+    force_a1 = '--a1' in sys.argv or 'a1' in sys.argv
+    force_v03 = '--v03' in sys.argv or 'v03' in sys.argv
+
+    is_v03, is_a1, motor_count = _detect_config(result.stdout)
+    if force_a1:
+        is_a1 = True
+    if force_v03:
+        is_v03 = True
+
+    motor_type = 'V03 (同川)' if is_v03 else 'V02 (零差)'
+    config_type = 'A1' if is_a1 else 'W1'
+    print(f"检测到: {motor_type} 电机, {motor_count} 个, {config_type} 模式")
+
+    # 关节映射
+    # YAML torso_head zero_offset 顺序固定: ANKLE KNEE BUTTOCK WAIST NECK1 NECK2
+    if is_v03:
+        torso_joint_ids = [19, 18, 17, 16, 0, 1]
+        left_joint_ids = [2, 3, 4, 5, 6, 7, 8]
+        right_joint_ids = [9, 10, 11, 12, 13, 14, 15]
+    else:
+        torso_joint_ids = [0, 1, 2, 3, 4, 5]
+        left_joint_ids = [6, 7, 8, 9, 10, 11, 12]
+        right_joint_ids = [13, 14, 15, 16, 17, 18, 19]
+
+    if is_a1:
         if motor_count == 16:
-            # 头部(0,1) -> 左臂(2-8) -> 右臂(9-15)
-            left_ids = list(range(2, 9))
-            right_ids = list(range(9, 16))
+            a1_left_ids = list(range(2, 9))
+            a1_right_ids = list(range(9, 16))
         else:
-            # 左臂(0-6) -> 右臂(7-13)
-            left_ids = list(range(7))
-            right_ids = list(range(7, 14))
+            a1_left_ids = list(range(7))
+            a1_right_ids = list(range(7, 14))
 
         left_zero_offsets, left_calibrated = load_zero_offsets(is_left=True)
         if left_zero_offsets is not None and not left_calibrated:
-            set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=left_ids, expected_motor_count=motor_count)
+            set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=a1_left_ids, expected_motor_count=motor_count)
             _update_calibration_status(is_left=True)
         elif left_zero_offsets is None:
             print("Left arm offset file missing, skipping.")
@@ -184,42 +232,37 @@ def main():
 
         right_zero_offsets, right_calibrated = load_zero_offsets(is_left=False)
         if right_zero_offsets is not None and not right_calibrated:
-            set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=right_ids, expected_motor_count=motor_count)
+            set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=a1_right_ids, expected_motor_count=motor_count)
             _update_calibration_status(is_left=False)
         elif right_zero_offsets is None:
             print("Right arm offset file missing, skipping.")
         else:
             print("Right arm already calibrated, skipping.")
     else:
-        print("=== W1 模式 ===")
-        # 物理顺序: 躯干(0-5) -> 左臂(6-12) -> 右臂(13-19)
-        # 躯干校准 (Joint IDs: 0, 1, 2, 3, 4, 5)
-        joint_ids = list(range(6))
+        # 躯干/头部校准
         torso_zero_offsets, torso_calibrated = load_torso_offsets()
         if torso_zero_offsets is not None and not torso_calibrated:
-            set_zero_offset(zero_offsets_deg=torso_zero_offsets, joint_ids=joint_ids)
+            set_zero_offset(zero_offsets_deg=torso_zero_offsets, joint_ids=torso_joint_ids)
             _update_calibration_status(is_torso=True)
         elif torso_zero_offsets is None:
             print("Torso offset file missing, skipping.")
         else:
             print("Torso already calibrated, skipping.")
 
-        # 左臂校准 (Joint IDs: 6, 7, 8, 9, 10, 11, 12)
-        joint_ids = list(range(6, 13))
+        # 左臂校准
         left_zero_offsets, left_calibrated = load_zero_offsets(is_left=True)
         if left_zero_offsets is not None and not left_calibrated:
-            set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=joint_ids)
+            set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=left_joint_ids)
             _update_calibration_status(is_left=True)
         elif left_zero_offsets is None:
             print("Left arm offset file missing, skipping.")
         else:
             print("Left arm already calibrated, skipping.")
 
-        # 右臂校准 (Joint IDs: 13, 14, 15, 16, 17, 18, 19)
-        joint_ids = list(range(13, 20))
+        # 右臂校准
         right_zero_offsets, right_calibrated = load_zero_offsets(is_left=False)
         if right_zero_offsets is not None and not right_calibrated:
-            set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=joint_ids)
+            set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=right_joint_ids)
             _update_calibration_status(is_left=False)
         elif right_zero_offsets is None:
             print("Right arm offset file missing, skipping.")
