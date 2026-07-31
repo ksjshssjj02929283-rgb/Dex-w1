@@ -32,7 +32,7 @@ from .collision.collision_checker_wrapper import CollisionCheckerWrapper
 from .utils.w1_params import W1Params
 from .utils.unit_conversion import user_pose_to_xpos, xpos_to_user_pose
 
-from dexe_rp import StatusType, RobotVersion, EndEffectorType, read_config
+from dexe_rp import StatusType, RobotVersion, EndEffectorType, ChassisType, read_config
 from dexe_rp import (R2, R2Tangent, R4, R4Tangent, R7, R7Tangent, R20,
                      R20Tangent, SE3, R3xSO3, R3xSO3Tangent,
                      TrajectoryConstraint, BlendType,
@@ -60,14 +60,21 @@ class W1Manager:
         config = read_config()
         robot_version = RobotVersion.from_robot_and_version_safe(
             config["robot_type"], config["version"])
-        end_effector_type = EndEffectorType.from_string_safe(
+        left_ee_type = EndEffectorType.from_string_safe(
             config["left_hand_type"])
-        return cls(is_sim, robot_version, end_effector_type, use_nav)
+        right_ee_type = EndEffectorType.from_string_safe(
+            config["right_hand_type"])
+        chassis_type = ChassisType.from_string_safe(config["chassis_type"])
+        if chassis_type == None or chassis_type == ChassisType.CORE:
+            if use_nav:
+                raise ValueError(f"底盘类型错配，请检查！！！")
+        return cls(is_sim, robot_version, left_ee_type, right_ee_type, use_nav)
 
     def __init__(self,
                  is_sim: bool,
                  robot_version: RobotVersion,
-                 end_effector_type: EndEffectorType,
+                 left_ee_type: EndEffectorType = None,
+                 right_ee_type: EndEffectorType = None,
                  use_nav: bool = False):
         self.logger = get_logger()
 
@@ -96,14 +103,20 @@ class W1Manager:
 
         self._is_sim = None
         self._robot_version = robot_version
-        self._end_effector_type = end_effector_type
+        self._left_ee_type = left_ee_type
+        self._right_ee_type = right_ee_type
         self._use_nav = use_nav
 
         self.logger.info(
-            f"Initialize W1 manager: \nrobot version: {robot_version}\nend effector type: {end_effector_type}\nuse_nav: {use_nav}"
+            f"Initialize W1 manager: " \
+            f"\nrobot version: {robot_version}" \
+            f"\nleft ee type: {left_ee_type}" \
+            f"\nright ee type: {right_ee_type}" \
+            f"\nuse_nav: {use_nav}"
         )
 
-        self.w1_params = W1Params(self._robot_version, self._end_effector_type)
+        self.w1_params = W1Params(self._robot_version, self._left_ee_type,
+                                  self._right_ee_type)
 
         # 在主线程中正常退出时自动调用
         atexit.register(self._destroy_clients)
@@ -112,7 +125,7 @@ class W1Manager:
 
         self._init_kine_solver()
 
-        if not self.set_sim_mode(is_sim):
+        if self.set_sim_mode(is_sim) != StatusCode.SUCCESS:
             if is_sim:
                 self.logger.error(f"Set sim mode failed")
                 raise RuntimeError("Set sim mode failed")
@@ -124,22 +137,22 @@ class W1Manager:
 
         self.collision_checker = CollisionCheckerWrapper(
             robot_version=self._robot_version,
-            left_end_effector_type=self._end_effector_type,
-            right_end_effector_type=self._end_effector_type,
+            left_end_effector_type=None,
+            right_end_effector_type=None,
             verbose=False)
-        self._init_cartesian_planner(self._robot_version,
-                                     self._end_effector_type)
+        self._init_cartesian_planner(self._robot_version)
 
         self._stop_move_event = threading.Event()
         self._stop_move_event.clear()
 
     def _init_cartesian_planner(self,
                                 robot_version: RobotVersion,
-                                end_effector_type: EndEffectorType = None):
+                                left_ee_type: EndEffectorType = None,
+                                right_ee_type: EndEffectorType = None):
         self.cartesian_joint_planner = CartesianToJointPlanner(
-            robot_version, end_effector_type)
-        self.cartesian_planner = CartesianPlanner(robot_version,
-                                                  end_effector_type)
+            robot_version, left_ee_type, right_ee_type)
+        self.cartesian_planner = CartesianPlanner(robot_version, left_ee_type,
+                                                  right_ee_type)
 
     def _init_clients(self):
         if self._executor is not None:
@@ -157,47 +170,32 @@ class W1Manager:
         try:
             self._robot_client_sim = RobotClient(is_sim=True)
             self._robot_client_real = RobotClient(is_sim=False)
-            self._chassis_client_real = ChassisClient(is_sim=False)
             self.robot_client = self._robot_client_sim
+            self._clients.append(self._robot_client_sim)
+            self._clients.append(self._robot_client_real)
 
-            if self._end_effector_type is None:
-                self.logger.info(f"No movable end effector.")
-                if self._use_nav:
-                    self._clients = [
-                        self._robot_client_sim, self._robot_client_real,
-                        self._chassis_client_real
-                    ]
-                else:
-                    self._clients = [
-                        self._robot_client_sim, self._robot_client_real
-                    ]
-            else:
+            if self._use_nav:
+                self._chassis_client_real = ChassisClient(is_sim=False)
+                self._clients.append(self._chassis_client_real)
+
+            if self._left_ee_type is not None:
                 self._left_ee_client_sim = EndEffectorClient(
-                    ee_type=self._end_effector_type, is_left=True, is_sim=True)
-                self._right_ee_client_sim = EndEffectorClient(
-                    ee_type=self._end_effector_type, is_left=False, is_sim=True)
+                    ee_type=self._left_ee_type, is_left=True, is_sim=True)
                 self._left_ee_client_real = EndEffectorClient(
-                    ee_type=self._end_effector_type, is_left=True, is_sim=False)
-                self._right_ee_client_real = EndEffectorClient(
-                    ee_type=self._end_effector_type,
-                    is_left=False,
-                    is_sim=False)
+                    ee_type=self._left_ee_type, is_left=True, is_sim=False)
                 self.left_ee_client = self._left_ee_client_sim
-                self.right_ee_client = self._right_ee_client_sim
+                self._clients.append(self._left_ee_client_sim)
+                self._clients.append(self._left_ee_client_real)
 
-                if self._use_nav:
-                    self._clients = [
-                        self._robot_client_sim, self._robot_client_real,
-                        self._left_ee_client_sim, self._left_ee_client_real,
-                        self._right_ee_client_sim, self._right_ee_client_real,
-                        self._chassis_client_real
-                    ]
-                else:
-                    self._clients = [
-                        self._robot_client_sim, self._robot_client_real,
-                        self._left_ee_client_sim, self._left_ee_client_real,
-                        self._right_ee_client_sim, self._right_ee_client_real
-                    ]
+            if self._right_ee_type is not None:
+                self._right_ee_client_sim = EndEffectorClient(
+                    ee_type=self._right_ee_type, is_left=False, is_sim=True)
+                self._right_ee_client_real = EndEffectorClient(
+                    ee_type=self._right_ee_type, is_left=False, is_sim=False)
+                self.right_ee_client = self._right_ee_client_sim
+                self._clients.append(self._right_ee_client_sim)
+                self._clients.append(self._right_ee_client_real)
+
         except Exception as e:
             self._destroy_clients()
             self.logger.error(
@@ -342,7 +340,9 @@ class W1Manager:
         if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name):
                 return False
-            dofs = self.w1_params.arm_ee_dofs
+            dofs = self.w1_params.left_arm_ee_dofs
+            if name == "right_arm_ee":
+                dofs = self.w1_params.right_arm_ee_dofs
         elif self._check_name(name):
             dofs = self.w1_params.index_infos[name]["dofs"]
         else:
@@ -375,7 +375,8 @@ class W1Manager:
             return False
         return True
 
-    def _check_arm_ee_states(self, arm_ee_state_list: list) -> bool:
+    def _check_arm_ee_states(self, ee_name: str,
+                             arm_ee_state_list: list) -> bool:
         if len(arm_ee_state_list) == 0:
             self.logger.error(
                 f"[{StatusCode.INPUT_INVALID.value}]:Unexpected error, FIXME!")
@@ -392,7 +393,7 @@ class W1Manager:
             )
             return False
         if not self._check_qpos_dimension(
-                "left_arm_ee", [ee_state[1] for ee_state in valid_ee_state]):
+                ee_name, [ee_state[1] for ee_state in valid_ee_state]):
             return False
         return True
 
@@ -627,13 +628,15 @@ class W1Manager:
             )
             return status
 
-        if self._end_effector_type is not None:
+        if self._left_ee_type is not None:
             if not target_left_ee_client.is_connected():
                 status = StatusCode.LEFT_EE_NOT_CONNECT
                 self.logger.error(
                     f"[{status.value}]:{target_left_ee_client.node_name} is not connected!"
                 )
                 return status
+
+        if self._right_ee_type is not None:
             if not target_right_ee_client.is_connected():
                 status = StatusCode.RIGHT_EE_NOT_CONNECT
                 self.logger.error(
@@ -649,13 +652,15 @@ class W1Manager:
             status = StatusCode.ROBOT_NOT_CONNECT
             return status
 
-        if self._end_effector_type is not None:
+        if self._left_ee_type is not None:
             if not self.left_ee_client.is_connected():
                 status = StatusCode.LEFT_EE_NOT_CONNECT
                 self.logger.error(
                     f"[{status.value}]:{self.left_ee_client.node_name} is not connected!"
                 )
                 return status
+
+        if self._right_ee_type is not None:
             if not self.right_ee_client.is_connected():
                 status = StatusCode.RIGHT_EE_NOT_CONNECT
                 self.logger.error(
@@ -664,12 +669,13 @@ class W1Manager:
                 return status
 
         self.robot_client = target_robot_client
-        if self._end_effector_type is not None:
+        if self._left_ee_type is not None:
             self.left_ee_client = target_left_ee_client
+        if self._right_ee_type is not None:
             self.right_ee_client = target_right_ee_client
-        self._is_sim = enable_sim
         if self._use_nav and target_chassis_client is not None:
             self.chassis_client = target_chassis_client
+        self._is_sim = enable_sim
         self.logger.info(f"W1 manager set to {target_name} mode.")
         return StatusCode.SUCCESS
 
@@ -1000,8 +1006,11 @@ class W1Manager:
         if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name):
                 return StatusCode.FAIL, None, None
-            qpos_lb = np.array([0.] * self.w1_params.arm_ee_dofs)
-            qpos_ub = np.array([100.] * self.w1_params.arm_ee_dofs)
+            qpos_lb = np.array([0.] * self.w1_params.left_arm_ee_dofs)
+            qpos_ub = np.array([100.] * self.w1_params.left_arm_ee_dofs)
+            if name == "right_arm_ee":
+                qpos_lb = np.array([0.] * self.w1_params.right_arm_ee_dofs)
+                qpos_ub = np.array([100.] * self.w1_params.right_arm_ee_dofs)
 
         elif not self._check_name(name):
             return StatusCode.NAME_MISMATCH, None, None
@@ -1261,67 +1270,66 @@ class W1Manager:
         """
         # NOTE: 最大速度 伸直构型下 仅基座关节运动导致的末端位移 5 * 0.01s * 1rad/s * 0.7m = 3.5cm
 
-        if self._has_arm_ee_client("left_arm_ee",
-                                   False) and self._has_arm_ee_client(
-                                       "right_arm_ee", False):
-            if left_arm_start_ee_qpos is None or not self._check_qpos_dimension(
-                    "left_arm_ee", left_arm_start_ee_qpos):
-                raise ValueError(
-                    "Left arm start ee qpos is required and should have correct dimension."
-                )
-            if right_arm_start_ee_qpos is None or not self._check_qpos_dimension(
-                    "right_arm_ee", right_arm_start_ee_qpos):
-                raise ValueError(
-                    "Right arm start ee qpos is required and should have correct dimension."
-                )
-            cur_left_ee_qpos = np.asarray(left_arm_start_ee_qpos)
-            cur_right_ee_qpos = np.asarray(right_arm_start_ee_qpos)
+        # if self._has_arm_ee_client("left_arm_ee",
+        #                            False) and self._has_arm_ee_client(
+        #                                "right_arm_ee", False):
+        #     if left_arm_start_ee_qpos is None or not self._check_qpos_dimension(
+        #             "left_arm_ee", left_arm_start_ee_qpos):
+        #         raise ValueError(
+        #             "Left arm start ee qpos is required and should have correct dimension."
+        #         )
+        #     if right_arm_start_ee_qpos is None or not self._check_qpos_dimension(
+        #             "right_arm_ee", right_arm_start_ee_qpos):
+        #         raise ValueError(
+        #             "Right arm start ee qpos is required and should have correct dimension."
+        #         )
+        #     cur_left_ee_qpos = np.asarray(left_arm_start_ee_qpos)
+        #     cur_right_ee_qpos = np.asarray(right_arm_start_ee_qpos)
 
-            if left_arm_ee_trigger_list is None:
-                left_arm_ee_qpos_array = np.tile(cur_left_ee_qpos,
-                                                 (qpos_array.shape[0], 1))
-            else:
-                left_arm_ee_qpos_array = np.tile(cur_left_ee_qpos,
-                                                 (qpos_array.shape[0], 1))
-                for idx, target_qpos in left_arm_ee_trigger_list:
-                    left_arm_ee_qpos_array[idx:, :] = np.tile(
-                        np.asarray(target_qpos), (qpos_array.shape[0] - idx, 1))
-            if right_arm_ee_trigger_list is None:
-                right_arm_ee_qpos_array = np.tile(cur_right_ee_qpos,
-                                                  (qpos_array.shape[0], 1))
-            else:
-                right_arm_ee_qpos_array = np.tile(cur_right_ee_qpos,
-                                                  (qpos_array.shape[0], 1))
-                for idx, target_qpos in right_arm_ee_trigger_list:
-                    right_arm_ee_qpos_array[idx:, :] = np.tile(
-                        np.asarray(target_qpos), (qpos_array.shape[0] - idx, 1))
-            qpos_array_check = np.vstack((qpos_array[::step], qpos_array[-1]))
-            left_arm_ee_qpos_array_check = np.vstack(
-                (left_arm_ee_qpos_array[::step], left_arm_ee_qpos_array[-1]))
-            right_arm_ee_qpos_array_check = np.vstack(
-                (right_arm_ee_qpos_array[::step], right_arm_ee_qpos_array[-1]))
-            for idx in range(qpos_array_check.shape[0]):
-                if self.is_collision(
-                        qpos_array_check[idx],
-                        left_arm_ee_qpos_array_check[idx],
-                        right_arm_ee_qpos_array_check[idx],
-                        save_scene=save_scene) == StatusCode.COLLISION_FAIL:
-                    self.logger.error(
-                        f"[{StatusCode.COLLISION_FAIL.value}]:Traj is collision at idx {idx}, qpos {qpos_array_check[idx]}, do not executed!"
-                    )
-                    return StatusCode.COLLISION_FAIL
-            return StatusCode.SUCCESS
-        else:
-            qpos_array_check = np.vstack((qpos_array[::step], qpos_array[-1]))
-            for qpos in qpos_array_check:
-                if self.is_collision(
-                        qpos,
-                        save_scene=save_scene) == StatusCode.COLLISION_FAIL:
-                    self.logger.error(
-                        f"[{StatusCode.COLLISION_FAIL.value}]:Traj is collision at {qpos}, do not executed!"
-                    )
-                    return StatusCode.COLLISION_FAIL
-            return StatusCode.SUCCESS
+        #     if left_arm_ee_trigger_list is None:
+        #         left_arm_ee_qpos_array = np.tile(cur_left_ee_qpos,
+        #                                          (qpos_array.shape[0], 1))
+        #     else:
+        #         left_arm_ee_qpos_array = np.tile(cur_left_ee_qpos,
+        #                                          (qpos_array.shape[0], 1))
+        #         for idx, target_qpos in left_arm_ee_trigger_list:
+        #             left_arm_ee_qpos_array[idx:, :] = np.tile(
+        #                 np.asarray(target_qpos), (qpos_array.shape[0] - idx, 1))
+        #     if right_arm_ee_trigger_list is None:
+        #         right_arm_ee_qpos_array = np.tile(cur_right_ee_qpos,
+        #                                           (qpos_array.shape[0], 1))
+        #     else:
+        #         right_arm_ee_qpos_array = np.tile(cur_right_ee_qpos,
+        #                                           (qpos_array.shape[0], 1))
+        #         for idx, target_qpos in right_arm_ee_trigger_list:
+        #             right_arm_ee_qpos_array[idx:, :] = np.tile(
+        #                 np.asarray(target_qpos), (qpos_array.shape[0] - idx, 1))
+        #     qpos_array_check = np.vstack((qpos_array[::step], qpos_array[-1]))
+        #     left_arm_ee_qpos_array_check = np.vstack(
+        #         (left_arm_ee_qpos_array[::step], left_arm_ee_qpos_array[-1]))
+        #     right_arm_ee_qpos_array_check = np.vstack(
+        #         (right_arm_ee_qpos_array[::step], right_arm_ee_qpos_array[-1]))
+        #     for idx in range(qpos_array_check.shape[0]):
+        #         if self.is_collision(
+        #                 qpos_array_check[idx],
+        #                 left_arm_ee_qpos_array_check[idx],
+        #                 right_arm_ee_qpos_array_check[idx],
+        #                 save_scene=save_scene) == StatusCode.COLLISION_FAIL:
+        #             self.logger.error(
+        #                 f"[{StatusCode.COLLISION_FAIL.value}]:Traj is collision at idx {idx}, qpos {qpos_array_check[idx]}, do not executed!"
+        #             )
+        #             return StatusCode.COLLISION_FAIL
+        #     return StatusCode.SUCCESS
+        # else:
+        qpos_array_check = np.vstack((qpos_array[::step], qpos_array[-1]))
+        for qpos in qpos_array_check:
+            if self.is_collision(
+                    qpos, save_scene=save_scene) == StatusCode.COLLISION_FAIL:
+                self.logger.error(
+                    f"[{StatusCode.COLLISION_FAIL.value}]:Traj is collision at {qpos}, do not executed!"
+                )
+                return StatusCode.COLLISION_FAIL
+        return StatusCode.SUCCESS
 
     def plan_joint_traj(
             self,
@@ -1572,14 +1580,14 @@ class W1Manager:
                 return status, None
             return StatusCode.SUCCESS, np.array(qpos_traj)
 
-    def plan_arm_ee_trigger(self,
+    def plan_arm_ee_trigger(self, ee_name: str,
                             arm_ee_state_list: list) -> tuple[StatusCode, list]:
         # TODO: 存在延时的才分段，否则不分段且全部waypoint ee_qpos都到点触发？
-        if not self._check_arm_ee_states(arm_ee_state_list):
+        if not self._check_arm_ee_states(ee_name, arm_ee_state_list):
             return StatusCode.INPUT_INVALID, None
         ee_qpos_array = np.array(
             [ee_qpos for _, ee_qpos, _ in arm_ee_state_list])
-        if not self._check_qpos_limits("left_arm_ee", ee_qpos_array):
+        if not self._check_qpos_limits(ee_name, ee_qpos_array):
             return StatusCode.EXCEED_LIMIT, None
 
         segment_list = []
@@ -1594,7 +1602,8 @@ class W1Manager:
 
         if start_idx < len(arm_ee_state_list) - 1:
             segment_list.append([start_idx, len(arm_ee_state_list) - 1])
-        self.logger.debug(f"plan_arm_ee_trigger result: {segment_list}.")
+        self.logger.debug(
+            f"plan_arm_ee_trigger {ee_name} result: {segment_list}.")
         return StatusCode.SUCCESS, segment_list
 
     def execute_joint_traj(
@@ -1888,7 +1897,7 @@ class W1Manager:
                     f"[{status.value}]:{name} qpos and arm_ee_state dimension mismatch."
                 )
                 return status, None, None, None
-            elif not self._check_arm_ee_states(arm_ee_state_list):
+            elif not self._check_arm_ee_states(f"{name}_ee", arm_ee_state_list):
                 return StatusCode.INPUT_INVALID, None, None, None
 
         return StatusCode.SUCCESS, np.array(
@@ -2054,7 +2063,8 @@ class W1Manager:
 
         # segment raw waypoint
         arm_ee_trigger_list = []  # (count, ee_qpos)
-        res, segment_list = self.plan_arm_ee_trigger(arm_ee_state_list_)
+        res, segment_list = self.plan_arm_ee_trigger(f"{name}_ee",
+                                                     arm_ee_state_list_)
         if res.value < 0:
             return res, None, None
 
@@ -2715,13 +2725,12 @@ class W1Manager:
             return StatusCode.FAIL, None, None, None
 
         if use_collision_validator:
-            if self._is_traj_collision(
-                    qpos_array=total_qpos_array,
-                    left_arm_start_ee_qpos=start_left_arm_ee_qpos,
-                    right_arm_start_ee_qpos=start_right_arm_ee_qpos,
-                    left_arm_ee_trigger_list=left_arm_ee_trigger_list,
-                    right_arm_ee_trigger_list=right_arm_ee_trigger_list
-            ) == StatusCode.COLLISION_FAIL:
+            if self._is_traj_collision(qpos_array=total_qpos_array,
+                                       left_arm_start_ee_qpos=None,
+                                       right_arm_start_ee_qpos=None,
+                                       left_arm_ee_trigger_list=None,
+                                       right_arm_ee_trigger_list=None
+                                      ) == StatusCode.COLLISION_FAIL:
                 status = StatusCode.COLLISION_FAIL
                 self.logger.error(
                     f"[{status.value}]:Full body linear traj collision detected!"
@@ -3141,13 +3150,12 @@ class W1Manager:
             return StatusCode.FAIL, None, None, None
 
         if use_collision_validator:
-            if self._is_traj_collision(
-                    qpos_array=total_qpos_array,
-                    left_arm_start_ee_qpos=start_left_arm_ee_qpos,
-                    right_arm_start_ee_qpos=start_right_arm_ee_qpos,
-                    left_arm_ee_trigger_list=left_arm_ee_trigger_list,
-                    right_arm_ee_trigger_list=right_arm_ee_trigger_list
-            ) == StatusCode.COLLISION_FAIL:
+            if self._is_traj_collision(qpos_array=total_qpos_array,
+                                       left_arm_start_ee_qpos=None,
+                                       right_arm_start_ee_qpos=None,
+                                       left_arm_ee_trigger_list=None,
+                                       right_arm_ee_trigger_list=None
+                                      ) == StatusCode.COLLISION_FAIL:
                 status = StatusCode.COLLISION_FAIL
                 self.logger.error(
                     f"[{status.value}]:Full body linear traj collision detected!"
@@ -3451,13 +3459,12 @@ class W1Manager:
                 )
                 return status, None
             if use_collision_validator:
-                if self._is_traj_collision(
-                        qpos_array=move_arml_armr_traj,
-                        left_arm_start_ee_qpos=start_left_arm_ee_qpos,
-                        right_arm_start_ee_qpos=start_right_arm_ee_qpos,
-                        left_arm_ee_trigger_list=None,
-                        right_arm_ee_trigger_list=None
-                ) == StatusCode.COLLISION_FAIL:
+                if self._is_traj_collision(qpos_array=move_arml_armr_traj,
+                                           left_arm_start_ee_qpos=None,
+                                           right_arm_start_ee_qpos=None,
+                                           left_arm_ee_trigger_list=None,
+                                           right_arm_ee_trigger_list=None
+                                          ) == StatusCode.COLLISION_FAIL:
                     status = StatusCode.COLLISION_FAIL
                     self.logger.error(
                         f"[{status.value}]:Collision detected in plan_linear_dual_arm_sync."
@@ -3494,13 +3501,12 @@ class W1Manager:
             move_arml_armr_traj = full_body_joint_traj_
 
             if use_collision_validator:
-                if self._is_traj_collision(
-                        qpos_array=move_arml_armr_traj,
-                        left_arm_start_ee_qpos=start_left_arm_ee_qpos,
-                        right_arm_start_ee_qpos=start_right_arm_ee_qpos,
-                        left_arm_ee_trigger_list=None,
-                        right_arm_ee_trigger_list=None
-                ) == StatusCode.COLLISION_FAIL:
+                if self._is_traj_collision(qpos_array=move_arml_armr_traj,
+                                           left_arm_start_ee_qpos=None,
+                                           right_arm_start_ee_qpos=None,
+                                           left_arm_ee_trigger_list=None,
+                                           right_arm_ee_trigger_list=None
+                                          ) == StatusCode.COLLISION_FAIL:
                     status = StatusCode.COLLISION_FAIL
                     self.logger.error(
                         f"[{status.value}]:Collision detected in plan_linear_dual_arm_sync."
@@ -4246,13 +4252,12 @@ class W1Manager:
         ])
 
         if use_collision_validator:
-            if self._is_traj_collision(
-                    qpos_array=full_body_joint_traj_,
-                    left_arm_start_ee_qpos=start_left_arm_ee_qpos,
-                    right_arm_start_ee_qpos=start_right_arm_ee_qpos,
-                    left_arm_ee_trigger_list=left_arm_ee_trigger_list,
-                    right_arm_ee_trigger_list=right_arm_ee_trigger_list
-            ) == StatusCode.COLLISION_FAIL:
+            if self._is_traj_collision(qpos_array=full_body_joint_traj_,
+                                       left_arm_start_ee_qpos=None,
+                                       right_arm_start_ee_qpos=None,
+                                       left_arm_ee_trigger_list=None,
+                                       right_arm_ee_trigger_list=None
+                                      ) == StatusCode.COLLISION_FAIL:
                 status = StatusCode.COLLISION_FAIL
                 self.logger.error(
                     f"[{status.value}]:Collision detected in plan_linear_whole_body_ik."

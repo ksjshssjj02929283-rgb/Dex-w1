@@ -11,7 +11,7 @@ from typing import Tuple
 
 from end_effector_interfaces.msg import EEJointControlMode
 
-from dexe_rp import EndEffectorType as DexeRP_EEType
+from dexe_rp import EndEffectorType
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +35,7 @@ class EndEffectorParamsRegistry:
     _registry = {}
 
     @classmethod
-    def register(cls, ee_type: DexeRP_EEType):
+    def register(cls, ee_type: EndEffectorType):
 
         def wrapper(fn):
             cls._registry[ee_type] = fn
@@ -44,14 +44,38 @@ class EndEffectorParamsRegistry:
         return wrapper
 
     @classmethod
-    def get(cls, ee_type: DexeRP_EEType) -> EndEffectorParams:
+    def get(cls, ee_type: EndEffectorType) -> EndEffectorParams:
         if ee_type not in cls._registry:
             raise ValueError(f"Unsupport EndEffectorType: {ee_type}")
         return cls._registry[ee_type]()
 
 
 # yapf: disable
-@EndEffectorParamsRegistry.register(DexeRP_EEType.AGILEX_PiPER_L100)
+@EndEffectorParamsRegistry.register(EndEffectorType.Lansi_DualSuction)
+def _():
+    return EndEffectorParams(
+        dof=4,
+        joint_names=("MOTOR_1", "MOTOR_2", "SUCTION_1", "SUCTION_2",),
+        supported_modes=(EEJointControlMode.POSITION,),
+        position=Limit((0,)*4, (100,)*4),
+        velocity=Limit((-100,)*4, (100,)*4),
+        current=Limit((-100,)*4, (100,)*4),
+        force=Limit((-100,)*4, (100,)*4),
+    )
+
+@EndEffectorParamsRegistry.register(EndEffectorType.HITBOT_Z_ESC_70)
+def _():
+    return EndEffectorParams(
+        dof=1,
+        joint_names=("FINGER1",),
+        supported_modes=(EEJointControlMode.POSITION,),
+        position=Limit((0,), (100,)),
+        velocity=Limit((-100,), (100,)),
+        current=Limit((-100,), (100,)),
+        force=Limit((-100,), (100,)),
+    )
+
+@EndEffectorParamsRegistry.register(EndEffectorType.AGILEX_PiPER_L100)
 def _():
     return EndEffectorParams(
         dof=1,
@@ -64,7 +88,7 @@ def _():
     )
 
 
-@EndEffectorParamsRegistry.register(DexeRP_EEType.AGILEX_Pika)
+@EndEffectorParamsRegistry.register(EndEffectorType.AGILEX_Pika)
 def _():
     return EndEffectorParams(
         dof=1,
@@ -77,7 +101,7 @@ def _():
     )
 
 
-@EndEffectorParamsRegistry.register(DexeRP_EEType.DH_PGC_140_50)
+@EndEffectorParamsRegistry.register(EndEffectorType.DH_PGC_140_50)
 def _():
     return EndEffectorParams(
         dof=1,
@@ -90,7 +114,7 @@ def _():
     )
 
 
-@EndEffectorParamsRegistry.register(DexeRP_EEType.DH_AG_160_95)
+@EndEffectorParamsRegistry.register(EndEffectorType.DH_AG_160_95)
 def _():
     return EndEffectorParams(
         dof=1,
@@ -103,7 +127,7 @@ def _():
     )
 
 
-@EndEffectorParamsRegistry.register(DexeRP_EEType.BrainCo_Revo1_R)
+@EndEffectorParamsRegistry.register(EndEffectorType.BrainCo_Revo1_R)
 def _():
     return EndEffectorParams(
         dof=6,
@@ -120,8 +144,24 @@ def _():
         force=Limit((-100,) * 6, (100,) * 6),
     )
 
+@EndEffectorParamsRegistry.register(EndEffectorType.BrainCo_Revo1_E)
+def _():
+    return EndEffectorParams(
+        dof=6,
+        joint_names=("T_MCP", "T_CMC_YAW", "IF_MCP_PITCH", "MF_MCP_PITCH",
+                     "RF_MCP_PITCH", "LF_MCP_PITCH"),
+        supported_modes=(
+            EEJointControlMode.POSITION,
+            EEJointControlMode.VELOCITY,
+            EEJointControlMode.CURRENT,
+        ),
+        position=Limit((0,) * 6, (100,) * 6),
+        velocity=Limit((-100,) * 6, (100,) * 6),
+        current=Limit((-100,) * 6, (100,) * 6),
+        force=Limit((-100,) * 6, (100,) * 6),
+    )
 
-@EndEffectorParamsRegistry.register(DexeRP_EEType.Linker_L6)
+@EndEffectorParamsRegistry.register(EndEffectorType.Linker_L6)
 def _():
     return EndEffectorParams(
         dof=6,
@@ -135,7 +175,7 @@ def _():
     )
 
 
-@EndEffectorParamsRegistry.register(DexeRP_EEType.Linker_L20)
+@EndEffectorParamsRegistry.register(EndEffectorType.Linker_L20)
 def _():
     return EndEffectorParams(
         dof=16,
@@ -157,7 +197,7 @@ def _():
     )
 
 
-@EndEffectorParamsRegistry.register(DexeRP_EEType.PaXini_Dex_H13)
+@EndEffectorParamsRegistry.register(EndEffectorType.PaXini_Dex_H13)
 def _():
     return EndEffectorParams(
         dof=13,

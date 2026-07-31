@@ -4,6 +4,7 @@
 
 ### Feat
 - 新增coal collision checker
+- 支持左右不同末端执行器类型
 
 ### Refactor
 - 重构全身IK模块，提供IK manager
@@ -16,7 +17,8 @@
 - 移除 fcl_checker
 - 移除 planner_pinocchio
 - 移除 030硬件专用全身IK
-- 暂时移除 ompl planner、hybrid planner 和 trajectory coordination
+- 暂时移除 ompl planner、hybrid planner
+- 暂时移除 末端执行器的碰撞检测
 
 
 ## [V0.7.0]

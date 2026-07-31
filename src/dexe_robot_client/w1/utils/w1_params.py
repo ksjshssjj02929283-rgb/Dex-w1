@@ -22,28 +22,35 @@ class W1Params:
 
     def __init__(self,
                  robot_version: RobotVersion,
-                 end_effector_type: EndEffectorType = None):
+                 left_ee_type: EndEffectorType = None,
+                 right_ee_type: EndEffectorType = None):
         self.logger = get_logger()
 
         self._robot_version = robot_version
         if not self._robot_version.robot_family.startswith("w1"):
             raise ValueError(f"Unsupport RobotVersion: {self._robot_version}.")
 
-        self._end_effector_type = end_effector_type
-        self._end_effector_params = None
-        self.arm_ee_dofs = None
-        if self._end_effector_type is not None:
-            self._end_effector_params = EndEffectorParamsRegistry.get(
-                end_effector_type)
-            self.arm_ee_dofs = self._end_effector_params.dof
+        self._left_ee_type = left_ee_type
+        self._left_ee_params = None
+        self.left_arm_ee_dofs = None
+        if self._left_ee_type is not None:
+            self._left_ee_params = EndEffectorParamsRegistry.get(left_ee_type)
+            self.left_arm_ee_dofs = self._left_ee_params.dof
+
+        self._right_ee_type = right_ee_type
+        self._right_ee_params = None
+        self.right_arm_ee_dofs = None
+        if self._right_ee_type is not None:
+            self._right_ee_params = EndEffectorParamsRegistry.get(right_ee_type)
+            self.right_arm_ee_dofs = self._right_ee_params.dof
 
         robot_urdf = get_data_path(
             str(Path(self._robot_version.robot_family) / "robot.urdf"),
             self._robot_version.version_value)
         pinocchio_mapping_generator = PinocchioMappingGenerator(
             robot_version=self._robot_version,
-            left_end_effector_type=end_effector_type,
-            right_end_effector_type=end_effector_type)
+            left_end_effector_type=None,
+            right_end_effector_type=None)
         self._pin2real_idx = pinocchio_mapping_generator.robot_pin2real_mapping
         self._pin_model = pin.buildModelFromUrdf(robot_urdf)
 
