@@ -20,6 +20,7 @@ dexe_interfaces/
 ├── robot_server_interfaces/        # Interfaces for the robot server managing overall state.
 ├── sensor_interfaces/              # Custom interfaces for non-standard sensors.
 ├── template_interfaces/            # Template package for creating new interface packages.
+├── teleop_interfaces/              # Interfaces for teleoperation configuration read/write.
 ├── ...
 ├── .gitignore
 └── README.md
@@ -52,6 +53,7 @@ This repository contains the following interface packages at its root:
 - `robot_server_interfaces`: Interfaces for the robot server, which manages the overall robot state and provides high-level commands.
 - `sensor_interfaces`: Custom interfaces for non-standard sensors. For standard hardware like cameras and Lidars, we use the official `sensor_msgs` package.
 - `template_interfaces`: A template package that can be copied to create new interface packages.
+- `teleop_interfaces`: Interfaces for teleoperation configuration read/write, exposing `teleop_config.yaml` to X-Wiz via ROS2 services (`TeleopConfigGet` / `TeleopConfigSet`).
 
 ## Usage
 
