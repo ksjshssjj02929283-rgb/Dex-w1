@@ -16,6 +16,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(action_msgs REQUIRED)
 find_package(actionlib_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 
 # 3) 声明要生成的消息
 set(MSG_FILES
@@ -40,8 +41,11 @@ set(MSG_FILES
   "msg/TargetInfo.msg"
   "msg/TargetMapInfo.msg"
   "msg/LocalizationState.msg"
+  "msg/MapState.msg"
+  "msg/MappingState.msg"
   "msg/RobotStatus.msg"
   "msg/NavigationStatus.msg"
+  "msg/NavSystemStatus.msg"
   "msg/ChangeTopology.msg"
   "msg/TopologyLine.msg"
   "msg/Route.msg"
@@ -50,6 +54,16 @@ set(MSG_FILES
   "msg/RouteEdge.msg"
   "msg/RoutePlanSegment.msg"
   "msg/RoutePlan.msg"
+  "msg/RoomBehavior.msg"
+  "msg/RoomInfo.msg"
+  "msg/RoomInfoArray.msg"
+  "msg/TrajectoryPoint.msg"
+  "msg/RobotTrajectory.msg"
+  "msg/Story.msg"
+  "msg/RobotStories.msg"
+  "msg/TaskProgress.msg"
+  "msg/PathSegment.msg"
+  "msg/TrackingPath.msg"
 )
 
 # 4) 声明要生成的服务
@@ -78,10 +92,12 @@ set(SRV_FILES
   "srv/RenameMap.srv"
   "srv/GetMapInfo.srv"
   "srv/GetString.srv"
+  "srv/SaveMap.srv"
   "srv/AddAreaInfo.srv"
   "srv/GetAreaInfoList.srv"
   "srv/GetAllAreas.srv"
   "srv/RemoveAreaInfo.srv"
+  "srv/UpdateAreaInfo.srv"
   "srv/NavThroughPosesFile.srv"
   "srv/LoadPoint.srv"
   "srv/AddRouteJunction.srv"
@@ -92,14 +108,25 @@ set(SRV_FILES
   "srv/GetRouteGraph.srv"
   "srv/TransformAssets.srv"
   "srv/ResetMapOriginByXYYaw.srv"
+  "srv/AddRoom.srv"
+  "srv/RemoveRoom.srv"
+  "srv/UpdateRoom.srv"
+  "srv/GetAllRooms.srv"
+  "srv/GetRoomByName.srv"
+  "srv/GetRoomAtPose.srv"
+  "srv/SaveAssets.srv"
+  "srv/RollbackMap.srv"
+  "srv/ResolveNavPoints.srv"
 )
 
 # 5) 声明要生成的动作
 set(ACTION_FILES
   "action/NavigateToPoint.action"
   "action/NavigateRoute.action"
+  "action/NavigateThroughGraphPoints.action"
   "action/ExecuteMissionBt.action"
   "action/PreciseControl.action"
+  "action/SteeringAngleControl.action"
 )
 
 # 6) 生成接口（取代 ROS 1 的 add_message_files / add_service_files / generate_messages）
@@ -113,6 +140,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
     nav_msgs
     action_msgs
     actionlib_msgs
+    builtin_interfaces
 )
 
 # 7) 导出运行期依赖
@@ -123,6 +151,7 @@ ament_export_dependencies(
   nav_msgs
   action_msgs
   actionlib_msgs
+  builtin_interfaces
 )
 
 ament_package()
