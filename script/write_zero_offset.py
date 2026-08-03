@@ -127,8 +127,35 @@ def _write_zero_offset(index_list: list, zero_offset_list: list, joint_ids: list
     time.sleep(2)
     print("Zero offsets updated!")
 
-def set_zero_offset(zero_offsets_deg: list, joint_ids: list, expected_motor_count: int = 20) -> bool:
-    motor_index_list = _get_motor_index_and_check_status(expected_motor_count)
+def _set_tc_zero(index_list: list, joint_ids: list, section_name: str):
+    """同川电机标零: 将当前关节位置设为零点 (0x3801=5)"""
+    print(f"\n=== [{section_name}] 同川电机标零 ===")
+    print("将把以下电机的当前位置设为零点:")
+    for joint_id in joint_ids:
+        index = index_list[joint_id]
+        print(f"  电机 {index} (joint_id={joint_id})")
+
+    confirm = input("\n确认将当前位置设为零点? (Y/y 执行, 其他取消): ").strip()
+    if confirm.lower() != 'y':
+        print("已取消")
+        return False
+
+    for joint_id in joint_ids:
+        index = index_list[joint_id]
+        result = subprocess.run(
+            ['ethercat', 'download', '-p', str(index), '0x3801', '0', '5', '-t', 'uint16'],
+            capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"[ERROR] 电机 {index} 标零失败: {result.stderr.strip()}")
+            return False
+        print(f"[OK] 电机 {index} 标零完成")
+
+    print(f"[{section_name}] 标零完成")
+    return True
+
+def set_zero_offset(zero_offsets_deg: list, joint_ids: list, motor_index_list: list = None, expected_motor_count: int = 20) -> bool:
+    if motor_index_list is None:
+        motor_index_list = _get_motor_index_and_check_status(expected_motor_count)
     qpos_list = _get_motor_position_deg_by_index(motor_index_list)
     print("Current motor positions (deg) before calibration:", qpos_list)
     _write_zero_offset(motor_index_list, zero_offsets_deg, joint_ids)
@@ -181,6 +208,32 @@ def _update_calibration_status(is_left: bool = None, is_torso: bool = False):
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
     print(f"Updated {CALIBRATION_FILE} [{section_name}] is_calibrated = true")
 
+def _calibrate_section(is_v03: bool, motor_index_list: list, joint_ids: list,
+                       section_name: str, is_left: bool, is_torso: bool) -> bool:
+    """统一的分部位标零入口, 根据 is_v03 选择标零方式"""
+    if is_torso:
+        zero_offsets, calibrated = load_torso_offsets()
+    else:
+        zero_offsets, calibrated = load_zero_offsets(is_left=is_left)
+
+    if calibrated:
+        print(f"{section_name} already calibrated, skipping.")
+        return True
+    if zero_offsets is None and not is_v03:
+        print(f"{section_name} offset file missing, skipping.")
+        return False
+
+    if is_v03:
+        success = _set_tc_zero(motor_index_list, joint_ids, section_name)
+    else:
+        success = set_zero_offset(
+            zero_offsets_deg=zero_offsets, joint_ids=joint_ids,
+            motor_index_list=motor_index_list)
+
+    if success:
+        _update_calibration_status(is_left=is_left, is_torso=is_torso)
+    return success
+
 def main():
     # 获取 ethercat sl 输出, 自动检测电机类型和构型
     try:
@@ -202,6 +255,10 @@ def main():
     config_type = 'A1' if is_a1 else 'W1'
     print(f"检测到: {motor_type} 电机, {motor_count} 个, {config_type} 模式")
 
+    if is_v03:
+        print("\n*** V03 同川电机标零模式: 将当前关节位置直接设为零点 ***")
+        print("*** 请确保机器人已处于期望的零位姿态 ***\n")
+
     # 关节映射
     # YAML torso_head zero_offset 顺序固定: ANKLE KNEE BUTTOCK WAIST NECK1 NECK2
     if is_v03:
@@ -221,53 +278,21 @@ def main():
             a1_left_ids = list(range(7))
             a1_right_ids = list(range(7, 14))
 
-        left_zero_offsets, left_calibrated = load_zero_offsets(is_left=True)
-        if left_zero_offsets is not None and not left_calibrated:
-            set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=a1_left_ids, expected_motor_count=motor_count)
-            _update_calibration_status(is_left=True)
-        elif left_zero_offsets is None:
-            print("Left arm offset file missing, skipping.")
-        else:
-            print("Left arm already calibrated, skipping.")
+        motor_index_list = _get_motor_index_and_check_status(motor_count)
 
-        right_zero_offsets, right_calibrated = load_zero_offsets(is_left=False)
-        if right_zero_offsets is not None and not right_calibrated:
-            set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=a1_right_ids, expected_motor_count=motor_count)
-            _update_calibration_status(is_left=False)
-        elif right_zero_offsets is None:
-            print("Right arm offset file missing, skipping.")
-        else:
-            print("Right arm already calibrated, skipping.")
+        left_calibrated = _calibrate_section(
+            is_v03, motor_index_list, a1_left_ids, 'left_arm', is_left=True, is_torso=False)
+        right_calibrated = _calibrate_section(
+            is_v03, motor_index_list, a1_right_ids, 'right_arm', is_left=False, is_torso=False)
     else:
-        # 躯干/头部校准
-        torso_zero_offsets, torso_calibrated = load_torso_offsets()
-        if torso_zero_offsets is not None and not torso_calibrated:
-            set_zero_offset(zero_offsets_deg=torso_zero_offsets, joint_ids=torso_joint_ids)
-            _update_calibration_status(is_torso=True)
-        elif torso_zero_offsets is None:
-            print("Torso offset file missing, skipping.")
-        else:
-            print("Torso already calibrated, skipping.")
+        motor_index_list = _get_motor_index_and_check_status(motor_count)
 
-        # 左臂校准
-        left_zero_offsets, left_calibrated = load_zero_offsets(is_left=True)
-        if left_zero_offsets is not None and not left_calibrated:
-            set_zero_offset(zero_offsets_deg=left_zero_offsets, joint_ids=left_joint_ids)
-            _update_calibration_status(is_left=True)
-        elif left_zero_offsets is None:
-            print("Left arm offset file missing, skipping.")
-        else:
-            print("Left arm already calibrated, skipping.")
-
-        # 右臂校准
-        right_zero_offsets, right_calibrated = load_zero_offsets(is_left=False)
-        if right_zero_offsets is not None and not right_calibrated:
-            set_zero_offset(zero_offsets_deg=right_zero_offsets, joint_ids=right_joint_ids)
-            _update_calibration_status(is_left=False)
-        elif right_zero_offsets is None:
-            print("Right arm offset file missing, skipping.")
-        else:
-            print("Right arm already calibrated, skipping.")
+        _calibrate_section(
+            is_v03, motor_index_list, torso_joint_ids, 'torso_head', is_left=False, is_torso=True)
+        _calibrate_section(
+            is_v03, motor_index_list, left_joint_ids, 'left_arm', is_left=True, is_torso=False)
+        _calibrate_section(
+            is_v03, motor_index_list, right_joint_ids, 'right_arm', is_left=False, is_torso=False)
 
 if __name__ == '__main__':
     main()
