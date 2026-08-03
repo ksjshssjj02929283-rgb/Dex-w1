@@ -1150,7 +1150,11 @@ class NavigationClient(ABC, Node):
 
         chassis_position = PoseStamped()
         chassis_position.header.frame_id = "base_link"
-        chassis_position.header.stamp = self.get_clock().now().to_msg()
+        # chassis_position.header.stamp = self.get_clock().now().to_msg()
+        # 相对底盘目标使用最新可用 TF；若填写当前时间，定位 TF 的发布延迟
+        # 可能导致服务端向未来外推，并在 0.1 秒等待后拒绝 goal。
+        chassis_position.header.stamp.sec = 0
+        chassis_position.header.stamp.nanosec = 0
         chassis_position.pose.position.x = target[0]
         chassis_position.pose.position.y = 0.0
         chassis_position.pose.position.z = 0.0

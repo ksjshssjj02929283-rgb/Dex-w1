@@ -284,7 +284,7 @@ class RosBatteryMonitorThread(QThread):
     """基于ROS2诊断信息的电量监控线程"""
     update_signal = Signal(str)
     refresh_signal = Signal(str)
-    charging_state_signal = Signal(bool, bool, bool, float)
+    charging_state_signal = Signal(bool, bool, float)
 
     def __init__(self, controller):
         super().__init__()
@@ -360,7 +360,6 @@ class RosBatteryMonitorThread(QThread):
                 self._last_update_time = time.time()
                 self._battery_charging = None
                 self._charger_connected = None
-                self._charging_current_detected = None
 
             @staticmethod
             def parse_bool(value):
@@ -464,25 +463,12 @@ class RosBatteryMonitorThread(QThread):
                             charger_connected = self.parse_bool(battery_info["charger_connect_state"])
                             self._charger_connected = charger_connected
 
-                        # 实机日志已确认：放电约为负电流，插桩充电约为 +35A。
-                        # 当部分固件缺少充电布尔字段时，用明显正向电流作为辅助证据。
-                        charging_current_observed = False
-                        if "battery_current" in battery_info:
-                            try:
-                                current_value = float(
-                                    battery_info["battery_current"]
-                                    .replace('A', '').replace('a', '').strip())
-                                self._charging_current_detected = (
-                                    current_value > 1.0)
-                                charging_current_observed = True
-                            except ValueError:
-                                pass
-
+                        # 电流大小和方向随电池型号、固件定义而变化，只用于界面显示；
+                        # 充电与在桩判断仅使用电源板明确提供的两个布尔状态。
                         charging_state_observed = (
                             charging_state_observed or
                             "battery_charging" in battery_info or
-                            "charger_connect_state" in battery_info or
-                            charging_current_observed)
+                            "charger_connect_state" in battery_info)
 
                     # 连续稳定判断需要每一帧诊断样本，不能只在状态变化时发送。
                     # 同时携带采样时间，防止主线程阻塞后把排队的旧样本当成新状态。
@@ -490,7 +476,6 @@ class RosBatteryMonitorThread(QThread):
                         self.charging_state_sig.emit(
                             bool(self._battery_charging),
                             bool(self._charger_connected),
-                            bool(self._charging_current_detected),
                             time.monotonic()
                         )
 
@@ -1377,7 +1362,6 @@ class W1Controller(W1Displayui):  # 主流程
         self._full_charge_undock_retry_interval = 30.0
         self.is_battery_charging = False
         self.is_charger_connected = False
-        self.is_charging_current_detected = False
         self._has_charging_state_observation = False
         self._last_charging_state_observed_time = None
         self._charging_state_freshness_timeout = 5.0
@@ -3334,7 +3318,6 @@ class W1Controller(W1Displayui):  # 主流程
                 not self.is_charging_cycle and
                 not self.is_battery_charging and
                 not self.is_charger_connected and
-                not self.is_charging_current_detected and
                 not self._auto_charging_requesting and
                 not charging_action_active and
                 now - self._last_auto_charging_attempt_time >=
@@ -3444,8 +3427,7 @@ class W1Controller(W1Displayui):  # 主流程
                 self._charging_state_freshness_timeout)
             physically_docked = (
                 charging_state_fresh and
-                (self.is_battery_charging or self.is_charger_connected or
-                 self.is_charging_current_detected))
+                (self.is_battery_charging or self.is_charger_connected))
             if (not physically_docked or self._full_charge_undocking):
                 if (self.is_charging_cycle and not charging_state_fresh):
                     logging.warning(
@@ -3480,7 +3462,6 @@ class W1Controller(W1Displayui):  # 主流程
             self.is_charging_cycle = False
             self.is_battery_charging = False
             self.is_charger_connected = False
-            self.is_charging_current_detected = False
             self._charging_cycle_confirmed_time = None
             self._charger_disconnected_stable_count = 0
 
@@ -3537,7 +3518,6 @@ class W1Controller(W1Displayui):  # 主流程
 
     def update_charging_state(self, battery_charging: bool,
                               charger_connected: bool,
-                              charging_current_detected: bool,
                               observed_time: float):
         """保存充电状态，连续确认离桩后清除过期的充电周期标记。"""
         with self._charging_state_condition:
@@ -3550,11 +3530,9 @@ class W1Controller(W1Displayui):  # 主流程
             state_changed = (
                 not self._has_charging_state_observation or
                 self.is_battery_charging != battery_charging or
-                self.is_charger_connected != charger_connected or
-                self.is_charging_current_detected != charging_current_detected)
+                self.is_charger_connected != charger_connected)
             self.is_battery_charging = battery_charging
             self.is_charger_connected = charger_connected
-            self.is_charging_current_detected = charging_current_detected
             self._has_charging_state_observation = True
             self._last_charging_state_observed_time = observed_time
             # 任务入口可能正在等待首帧/新一帧电源板诊断。
@@ -3564,15 +3542,12 @@ class W1Controller(W1Displayui):  # 主流程
                 logging.info(
                     "[充电物理状态] "
                     f"正在充电={battery_charging}，"
-                    f"充电器连接={charger_connected}，"
-                    f"检测到正向充电电流={charging_current_detected}。")
+                    f"充电器连接={charger_connected}。")
 
             if (battery_charging or charger_connected or
-                    charging_current_detected or
                     self._auto_charging_requesting):
                 self._charger_disconnected_stable_count = 0
-                if (battery_charging or charger_connected or
-                        charging_current_detected):
+                if battery_charging or charger_connected:
                     self.pending_auto_charging = False
                 return
 
@@ -4421,15 +4396,12 @@ class W1Controller(W1Displayui):  # 主流程
             charging_cycle = self.is_charging_cycle
             battery_charging = self.is_battery_charging
             charger_connected = self.is_charger_connected
-            charging_current_detected = self.is_charging_current_detected
             last_observed_time = self._last_charging_state_observed_time
             charging_state_fresh = (
                 last_observed_time is not None and
                 time.monotonic() - last_observed_time <=
                 self._charging_state_freshness_timeout)
-            physical_dock_state = (
-                battery_charging or charger_connected or
-                charging_current_detected)
+            physical_dock_state = battery_charging or charger_connected
 
             # 刚启动时 PowerBoard 首帧诊断可能晚于自动回充结果。此时等待新状态，
             # 既不能直接取消正常任务，也不能凭流程标志盲目退桩。
@@ -4447,18 +4419,16 @@ class W1Controller(W1Displayui):  # 主流程
                     charging_cycle = self.is_charging_cycle
                     battery_charging = self.is_battery_charging
                     charger_connected = self.is_charger_connected
-                    charging_current_detected = (
-                        self.is_charging_current_detected)
                     last_observed_time = self._last_charging_state_observed_time
                     charging_state_fresh = (
                         last_observed_time is not None and
                         time.monotonic() - last_observed_time <=
                         self._charging_state_freshness_timeout)
                     physical_dock_state = (
-                        battery_charging or charger_connected or
-                        charging_current_detected)
+                        battery_charging or charger_connected)
 
-            need_undock = charging_state_fresh and physical_dock_state
+            # need_undock = charging_state_fresh and physical_dock_state
+            need_undock = False
             if need_undock:
                 self.is_force_working = True
 
@@ -4474,8 +4444,7 @@ class W1Controller(W1Displayui):  # 主流程
             logging.info(
                 "[任务前离桩] 检测到机器人可能仍在充电桩上："
                 f"充电周期={charging_cycle}，正在充电={battery_charging}，"
-                f"充电器连接={charger_connected}，"
-                f"正向充电电流={charging_current_detected}；先执行精准退桩。")
+                f"充电器连接={charger_connected}；先执行精准退桩。")
             control_result = self.w1.w1_manager.move_chassis_ctrl([0.3, 0, 0])
             if getattr(control_result, "name", None) != "SUCCESS":
                 with self._chassis_state_lock:
@@ -4496,7 +4465,6 @@ class W1Controller(W1Displayui):  # 主流程
                         self.is_charging_cycle = False
                         self.is_battery_charging = False
                         self.is_charger_connected = False
-                        self.is_charging_current_detected = False
                         self._charging_cycle_confirmed_time = None
                         self._charger_disconnected_stable_count = 0
                         self.is_force_working = True
