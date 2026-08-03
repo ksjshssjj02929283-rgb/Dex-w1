@@ -882,6 +882,32 @@ class W1Manager:
             timeout=timeout)
         return StatusCode.SUCCESS, success, message
 
+    def cancel_auto_charging(self) -> StatusCode:
+        """仅取消自动回充，不影响导航和底盘直控任务。"""
+        if not self._use_nav:
+            self.logger.error("无法取消自动回充：导航功能未启用。")
+            return StatusCode.FAIL
+        if not self._has_chassis_client():
+            self.logger.error("无法取消自动回充：底盘客户端未初始化。")
+            return StatusCode.FAIL
+
+        chassis_client = self._get_chassis_client()
+        charging_status = chassis_client.get_auto_charging_status()
+        if not chassis_client.has_cancelable_auto_charging_goal():
+            self.logger.info(
+                f"[自动回充取消跳过] 当前状态={charging_status}，"
+                "没有可取消的 goal。")
+            return StatusCode.SUCCESS
+
+        if chassis_client.cancel_auto_charging():
+            self.logger.info(
+                f"[自动回充取消] 取消请求已发送，原状态={charging_status}。")
+            return StatusCode.SUCCESS
+
+        self.logger.error(
+            f"[自动回充取消失败] 当前状态={charging_status}。")
+        return StatusCode.FAIL
+
     def cancel_chassis_motion(self) -> StatusCode:
         """统一取消底盘运动，只对正在运行的通道发送取消请求。"""
         if not self._use_nav:

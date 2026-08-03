@@ -1340,6 +1340,15 @@ class ControllerSignals(QObject):
 
 class W1Controller(W1Displayui):  # 主流程
 
+    # 自动回充状态统一在此维护。安全边界采用终态白名单：新增状态若未明确
+    # 分类，默认不允许前端任务继续，避免未知状态下并发控制底盘。
+    AUTO_CHARGING_ACTIVE_STATUSES = frozenset({
+        "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING", "CANCELING"
+    })
+    AUTO_CHARGING_TERMINAL_STATUSES = frozenset({
+        "IDLE", "SUCCEEDED", "CANCELED", "CANCELLED", "ABORTED",
+        "REJECTED", "FAILED", "FAILED_TO_SEND"
+    })
     def __init__(self, main_window=None):
         super().__init__()
         self.last_checked_battery = -1 
@@ -1351,11 +1360,27 @@ class W1Controller(W1Displayui):  # 主流程
         # 新任务在真正创建线程前可能需要等待诊断和执行退桩；使用请求序号让
         # 旧任务的 Policy 恢复等待立即失效，避免退桩期间错误恢复 Policy。
         self._task_request_serial = 0
+        # 当前活动任务序号：0 表示无任务占用底盘，>0 表示任务正在执行或准备。
+        # 用单一数值表达活动状态，避免多个布尔标志组合产生非法状态。
+        # on_execute 入口立即占位，所有结束路径（含异常）必须清零，确保
+        # 电量回充判据不受 is_force_working 设置滞后的影响。
+        self._active_task_request_serial = 0
         self._charging_state_condition = threading.Condition(
             self._chassis_state_lock)
+        # 串行化“发送回充目标”和“前端任务抢占回充”，防止目标尚未发送时
+        # 下单线程误判为空闲，随后两个线程各自启动底盘任务。
+        # 锁顺序固定为：先 _auto_charging_command_lock，再
+        # _chassis_state_lock；禁止持有状态锁后反向获取命令锁。
+        self._auto_charging_command_lock = threading.Lock()
         self._auto_charging_requesting = False
         self._auto_charging_worker = None
+        self._auto_charging_preempted_task_serial = 0
         self._last_auto_charging_attempt_time = 0.0
+        # 前端任务等待回充 Action 进入终态的上限（秒）；超时后不启动任务，
+        # 防止取消尚未生效时与回充并发控制底盘。
+        self._auto_charging_cancel_timeout = 15.0
+        # Action 进入终态后，等待后台回充线程完成状态写回的上限（秒）。
+        self._auto_charging_worker_settle_timeout = 2.0
         self._full_charge_undocking = False
         self._last_full_charge_undock_attempt_time = 0.0
         self._auto_charging_retry_interval = 30.0
@@ -2169,13 +2194,22 @@ class W1Controller(W1Displayui):  # 主流程
                 logging.info(f"Policy恢复失败: {str(e)}")
 
     def try_resume_policy_for_task(self, task_request_serial: int) -> bool:
-        """仅允许当前最新任务恢复 Policy，避免与新任务退桩发生竞态。"""
+        """仅允许最新且无回充冲突的任务恢复 Policy。"""
         with self._chassis_state_lock:
             if self._task_request_serial != task_request_serial:
                 logging.info(
                     "[Policy恢复] 已有更新任务请求，忽略旧任务恢复："
                     f"旧序号={task_request_serial}，"
                     f"当前序号={self._task_request_serial}。")
+                return False
+            if (self.pending_auto_charging or
+                    self._auto_charging_requesting or
+                    self.is_charging_cycle or
+                    self.is_battery_charging or
+                    self.is_charger_connected):
+                logging.info(
+                    "[Policy恢复] 当前存在待回充或充电状态，保持 Policy 挂起："
+                    f"请求序号={task_request_serial}。")
                 return False
             self.try_resume_policy_service(force=True)
             return True
@@ -2327,7 +2361,8 @@ class W1Controller(W1Displayui):  # 主流程
         self.update_config.clicked.connect(self.update_json)
         self.save_pc1_log.clicked.connect(self.save_pc1)      
 
-        self.B6.clicked.connect(lambda: self.on_execute(interface_trigger=True))
+        # 任务准备可能等待回充取消、充电状态刷新和退桩，不能阻塞 Qt 主线程。
+        self.B6.clicked.connect(self._start_interface_execute)
         self.B9.clicked.connect(lambda: self.on_stop_execution(stop_gohome='1')) 
         self.ppp1.clicked.connect(lambda: self.set_recharge_point()) 
         # self.B9.clicked.connect(self.on_stop_execution)
@@ -3159,9 +3194,7 @@ class W1Controller(W1Displayui):  # 主流程
         now = time.monotonic()
 
         charging_status = self._get_auto_charging_runtime_status()
-        if charging_status in {
-                "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING",
-                "CANCELING"}:
+        if charging_status in self.AUTO_CHARGING_ACTIVE_STATUSES:
             with self._chassis_state_lock:
                 # 保留待回充标志：若现有回充失败，定时器还能继续接手；一旦
                 # 诊断确认已经充电，update_charging_state() 会清除此标志。
@@ -3172,10 +3205,11 @@ class W1Controller(W1Displayui):  # 主流程
             return False
 
         with self._chassis_state_lock:
-            if self.is_force_working:
+            if self._active_task_request_serial != 0:
                 self.pending_auto_charging = True
                 logging.info(
                     f"[低电量回充] 暂不请求：任务正在占用底盘，"
+                    f"活动序号={self._active_task_request_serial}，"
                     f"已标记待回充（{trigger}）。")
                 return False
             if self.is_charging_cycle:
@@ -3233,25 +3267,37 @@ class W1Controller(W1Displayui):  # 主流程
     def _run_auto_charging_request(self, trigger: str) -> None:
         """后台发送回充目标并等待结果，失败后保留待回充状态。"""
         try:
-            try:
-                result = self.w1.w1_manager.set_auto_charging()
-                request_success = getattr(result, "name", None) == "SUCCESS"
-            except Exception as e:
-                logging.error(f"[低电量回充] 回充请求异常: {str(e)}")
-                request_success = False
+            # 与 on_execute 的任务占位使用同一个命令仲裁锁。前端任务一旦
+            # 抢到占位，本线程必须放弃发送，不能在取消检查之后补发回充。
+            with self._auto_charging_command_lock:
+                with self._chassis_state_lock:
+                    task_request_serial = self._active_task_request_serial
+                if task_request_serial != 0:
+                    with self._chassis_state_lock:
+                        self._auto_charging_requesting = False
+                        self.pending_auto_charging = True
+                    logging.info(
+                        "[低电量回充] 前端任务已取得底盘，取消本次回充发送："
+                        f"活动序号={task_request_serial}（{trigger}）。")
+                    return
+
+                try:
+                    result = self.w1.w1_manager.set_auto_charging()
+                    request_success = (
+                        getattr(result, "name", None) == "SUCCESS")
+                except Exception as e:
+                    logging.error(f"[低电量回充] 回充请求异常: {str(e)}")
+                    request_success = False
 
             if not request_success:
                 charging_status = self._get_auto_charging_runtime_status()
                 with self._chassis_state_lock:
                     self._auto_charging_requesting = False
                     self.pending_auto_charging = True
-                    if charging_status not in {
-                            "WAITING_SERVER", "SENDING", "ACCEPTED",
-                            "EXECUTING", "CANCELING"}:
+                    if (charging_status not in
+                            self.AUTO_CHARGING_ACTIVE_STATUSES):
                         self._last_auto_charging_attempt_time = time.monotonic()
-                if charging_status in {
-                        "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING",
-                        "CANCELING"}:
+                if charging_status in self.AUTO_CHARGING_ACTIVE_STATUSES:
                     logging.info(
                         "[低电量回充] 发送时发现已有回充 Action，"
                         f"状态={charging_status}；不按失败处理。")
@@ -3273,8 +3319,17 @@ class W1Controller(W1Displayui):  # 主流程
 
             with self._chassis_state_lock:
                 self._auto_charging_requesting = False
-                self._last_auto_charging_attempt_time = time.monotonic()
-                if wait_success:
+                preempted_by_task = (
+                    self._auto_charging_preempted_task_serial != 0)
+                self._last_auto_charging_attempt_time = (
+                    0.0 if preempted_by_task else time.monotonic())
+                # 前端任务的抢占意图优先于 Action 结果。取消请求与成功结果
+                # 可能同时到达；即使最终状态为 SUCCEEDED，也必须保留任务
+                # 结束后重新回充的需求，不能由后台线程覆盖。
+                if preempted_by_task:
+                    self.is_charging_cycle = False
+                    self.pending_auto_charging = True
+                elif wait_success:
                     self.is_charging_cycle = True
                     self._charging_cycle_confirmed_time = time.monotonic()
                     self._charger_disconnected_stable_count = 0
@@ -3283,7 +3338,11 @@ class W1Controller(W1Displayui):  # 主流程
                     self.is_charging_cycle = False
                     self.pending_auto_charging = True
 
-            if wait_success:
+            if preempted_by_task:
+                logging.info(
+                    "[低电量回充] 已由前端任务抢占，任务结束后重新回充，"
+                    f"Action成功={wait_success}，message={wait_message}。")
+            elif wait_success:
                 logging.info(
                     f"[低电量回充] 回充成功，message={wait_message}。")
                 self._refresh_battery_snapshot("回充成功后")
@@ -3294,19 +3353,23 @@ class W1Controller(W1Displayui):  # 主流程
         except Exception as e:
             with self._chassis_state_lock:
                 self._auto_charging_requesting = False
-                self._last_auto_charging_attempt_time = time.monotonic()
+                self._last_auto_charging_attempt_time = (
+                    0.0 if self._auto_charging_preempted_task_serial != 0
+                    else time.monotonic())
                 self.pending_auto_charging = True
             logging.exception(f"[低电量回充] 后台回充线程异常: {str(e)}")
         finally:
-            self._auto_charging_worker = None
+            with self._chassis_state_lock:
+                # 旧线程结束时不能清除后来创建的新 worker 引用。
+                if self._auto_charging_worker is threading.current_thread():
+                    self._auto_charging_worker = None
 
     def _retry_pending_auto_charging(self) -> None:
         """低电量回充失败后，脱离电量变化事件按冷却时间自动重试。"""
         now = time.monotonic()
         charging_status = self._get_auto_charging_runtime_status()
-        charging_action_active = charging_status in {
-            "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING", "CANCELING"
-        }
+        charging_action_active = (
+            charging_status in self.AUTO_CHARGING_ACTIVE_STATUSES)
         with self._chassis_state_lock:
             is_startup_pending = self._last_auto_charging_attempt_time <= 0.0
             should_retry = (
@@ -3314,7 +3377,7 @@ class W1Controller(W1Displayui):  # 主流程
                 0 < self.last_checked_battery <= 30 and
                 self.w1 is not None and
                 getattr(self.w1, "w1_manager", None) is not None and
-                not self.is_force_working and
+                self._active_task_request_serial == 0 and
                 not self.is_charging_cycle and
                 not self.is_battery_charging and
                 not self.is_charger_connected and
@@ -3347,70 +3410,41 @@ class W1Controller(W1Displayui):  # 主流程
         battery_thread.refresh_latest_battery(reason, timeout=3.0)
 
     def _on_execute_task_finished(self, task_thread) -> bool:
-        """等待任务触发的回充终态，再释放底盘占用并恢复后续流程。"""
-        auto_charging_was_active = False
-        auto_charging_success = True
-
+        """释放已完成的前端任务占用；自动回充作为独立后台任务继续。"""
         should_request_auto_charging = False
         with self._chassis_state_lock:
-            # 旧任务结束时不能清除新任务的占用状态。
-            if getattr(self, "thread", None) is not task_thread:
+            # 线程对象和请求序号都属于当前任务时，才允许进入收尾流程。
+            # 防止旧任务在新任务准备期间结束，错误清除新任务的占用状态。
+            if (getattr(self, "thread", None) is not task_thread or
+                    self._active_task_request_serial !=
+                    task_thread.task_request_serial):
                 return True
-
-        manager = (getattr(self.w1, "w1_manager", None)
-                   if self.w1 is not None else None)
-        if manager is not None:
-            try:
-                _, charging_status = manager.get_auto_charging_status()
-                auto_charging_was_active = charging_status in {
-                    "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING",
-                    "CANCELING"
-                }
-                if auto_charging_was_active:
-                    logging.info(
-                        "[回充任务收尾] 检测到回充 Action 仍在执行，"
-                        f"当前状态={charging_status}；等待最终结果后再结束任务。")
-                    _, auto_charging_success, charging_message = (
-                        manager.wait_for_auto_charging_done(timeout=300.0))
-                    with self._chassis_state_lock:
-                        if auto_charging_success:
-                            self.is_charging_cycle = True
-                            self._charging_cycle_confirmed_time = (
-                                time.monotonic())
-                            self._charger_disconnected_stable_count = 0
-                            self.pending_auto_charging = False
-                        else:
-                            self.is_charging_cycle = False
-
-                    if auto_charging_success:
-                        logging.info(
-                            "[回充任务收尾] 回充成功，"
-                            f"message={charging_message}。")
-                        self._refresh_battery_snapshot("回充成功后")
-                    else:
-                        logging.error(
-                            "[回充任务收尾] 回充失败，"
-                            f"message={charging_message}。")
-            except Exception as e:
-                auto_charging_was_active = True
-                auto_charging_success = False
-                logging.exception(f"[回充任务收尾] 等待回充结果异常: {str(e)}")
-
-        with self._chassis_state_lock:
-            # 等待期间若新任务已经替换旧任务，不能释放新任务的占用状态。
-            if getattr(self, "thread", None) is not task_thread:
-                return auto_charging_success
             self.is_force_working = False
+            # 回充不属于前端任务生命周期。这里先释放占用，确保后续订单能
+            # 取得新序号，并通过 on_execute 的抢占流程取消正在执行的回充。
+            self._active_task_request_serial = 0
+            if (self._auto_charging_preempted_task_serial ==
+                    task_thread.task_request_serial):
+                # 前端任务主动取消的回充不属于故障重试，任务结束后应立即
+                # 允许重新发起，而不是再等待失败冷却时间。
+                self.pending_auto_charging = True
+                self._auto_charging_preempted_task_serial = 0
+                self._last_auto_charging_attempt_time = 0.0
             should_request_auto_charging = (
                 self.pending_auto_charging and not self.is_charging_cycle)
 
-        if not auto_charging_was_active:
-            self._refresh_battery_snapshot("任务结束后")
+        logging.info(
+            "[任务收尾] 已释放前端任务占用，"
+            f"请求序号={task_thread.task_request_serial}；"
+            "后续自动回充由后台独立管理。")
+        self._refresh_battery_snapshot("任务结束后")
 
         if should_request_auto_charging:
             logging.info("[低电量回充] 当前任务结束，继续执行待回充请求。")
             self._request_auto_charging("任务结束")
-        return auto_charging_success
+        # 前端任务结果与后台回充结果相互独立；Policy 恢复仍会被待回充或
+        # 活动回充状态拦截。
+        return True
 
     def _undock_after_full_charge(self, current_battery: int) -> None:
         """满电后先确认离桩成功，再允许导航到接待处。"""
@@ -3489,13 +3523,16 @@ class W1Controller(W1Displayui):  # 主流程
             logging.info(f"[当前电量] {current_battery}%")
 
         # 决策不能只依赖“电量变化”：例如一次回充请求发送失败后，电量仍为
-        # 30% 时也必须允许后续定时器在冷却结束后重试。
+        # 阈值内电量不变化时，也必须允许定时器在冷却结束后重试。
         if current_battery <= 30:
             with self._chassis_state_lock:
                 self.pending_auto_charging = True
-                if self.is_force_working:
+                # 活动任务序号覆盖准备和执行阶段，避免任务准备期间
+                # 误触发回充抢占底盘。
+                if self._active_task_request_serial != 0:
                     logging.warning(
                         f"[低电量回充] 当前电量 {current_battery}%，"
+                        f"活动任务序号={self._active_task_request_serial}，"
                         "任务结束后自动回充。")
                     return
 
@@ -3547,7 +3584,11 @@ class W1Controller(W1Displayui):  # 主流程
             if (battery_charging or charger_connected or
                     self._auto_charging_requesting):
                 self._charger_disconnected_stable_count = 0
-                if battery_charging or charger_connected:
+                if ((battery_charging or charger_connected) and
+                        self._auto_charging_preempted_task_serial == 0):
+                    # 普通回充确认接触充电桩后可以清除待回充；但前端任务
+                    # 抢占期间的物理连接只是旧回充残留，不能清掉“任务结束
+                    # 后重新回充”的明确意图。
                     self.pending_auto_charging = False
                 return
 
@@ -4344,45 +4385,236 @@ class W1Controller(W1Displayui):  # 主流程
             logging.info(f"停止执行时出错: {str(e)}")
             self.update_light(self.G4, False)
 
+    def _preempt_auto_charging_for_task(
+            self, task_request_serial: int) -> bool:
+        """取消正在执行的回充，并确认 Action 终止后才允许前端任务继续。"""
+        manager = (getattr(self.w1, "w1_manager", None)
+                   if self.w1 is not None else None)
+        if manager is None:
+            logging.error("[任务抢占回充] 底盘管理器未初始化，取消前端任务。")
+            return False
+
+        charging_status = self._get_auto_charging_runtime_status()
+        with self._chassis_state_lock:
+            if self._active_task_request_serial != task_request_serial:
+                return False
+            request_in_progress = self._auto_charging_requesting
+
+        if (not request_in_progress and
+                charging_status not in self.AUTO_CHARGING_ACTIVE_STATUSES):
+            if charging_status not in self.AUTO_CHARGING_TERMINAL_STATUSES:
+                logging.error(
+                    "[任务抢占回充] 回充状态不可确认，取消前端任务："
+                    f"状态={charging_status}。")
+                return False
+            with self._chassis_state_lock:
+                if self._active_task_request_serial != task_request_serial:
+                    return False
+                self.pending_auto_charging = True
+                self.is_charging_cycle = False
+                self._auto_charging_preempted_task_serial = (
+                    task_request_serial)
+            logging.info(
+                "[任务抢占回充] 回充已在抢占前进入终态，允许前端任务继续："
+                f"请求序号={task_request_serial}，状态={charging_status}。")
+            return True
+
+        logging.warning(
+            "[任务抢占回充] 前端任务优先，开始取消自动回充："
+            f"请求序号={task_request_serial}，状态={charging_status}。")
+        try:
+            cancel_result = manager.cancel_auto_charging()
+            cancel_requested = (
+                getattr(cancel_result, "name", None) == "SUCCESS")
+        except Exception as e:
+            logging.exception(f"[任务抢占回充] 发送取消请求异常: {str(e)}")
+            cancel_requested = False
+
+        # 即使取消接口报告失败，Action 也可能恰好自行结束；统一查询终态，
+        # 但绝不能在仍为活动状态时启动前端导航。
+        charging_status = self._get_auto_charging_runtime_status()
+        if charging_status in self.AUTO_CHARGING_ACTIVE_STATUSES:
+            try:
+                manager.wait_for_auto_charging_done(
+                    timeout=self._auto_charging_cancel_timeout)
+            except Exception as e:
+                logging.exception(
+                    f"[任务抢占回充] 等待回充终止异常: {str(e)}")
+
+        final_status = self._get_auto_charging_runtime_status()
+        if final_status not in self.AUTO_CHARGING_TERMINAL_STATUSES:
+            logging.error(
+                "[任务抢占回充] 未确认回充已经终止，取消前端任务："
+                f"取消请求={'已发送' if cancel_requested else '发送失败'}，"
+                f"最终状态={final_status}，"
+                f"超时={self._auto_charging_cancel_timeout:.1f}s。")
+            return False
+
+        # Action 终态回调与后台 worker 的状态写回不是同一个原子操作。
+        # 必须等 worker 清除 requesting，避免前端任务很快结束时，旧线程
+        # 再把 pending_auto_charging 或冷却时间覆盖回去。
+        settle_deadline = (
+            time.monotonic() + self._auto_charging_worker_settle_timeout)
+        while True:
+            with self._chassis_state_lock:
+                request_in_progress = self._auto_charging_requesting
+            if not request_in_progress:
+                break
+            if time.monotonic() >= settle_deadline:
+                logging.error(
+                    "[任务抢占回充] 回充 Action 已终止，但后台状态未及时收敛，"
+                    f"取消前端任务：最终状态={final_status}，"
+                    f"超时={self._auto_charging_worker_settle_timeout:.1f}s。")
+                return False
+            time.sleep(0.02)
+
+        with self._chassis_state_lock:
+            if self._active_task_request_serial != task_request_serial:
+                return False
+            # 本次回充是被高优先级任务中断，而不是回充需求消失。任务结束
+            # 后必须重新回充；同时清除旧充电周期，避免它阻止补发请求。
+            self.pending_auto_charging = True
+            self.is_charging_cycle = False
+            self._auto_charging_preempted_task_serial = task_request_serial
+
+        logging.info(
+            "[任务抢占回充] 自动回充已终止，允许前端任务继续："
+            f"请求序号={task_request_serial}，最终状态={final_status}。")
+        return True
+
     def _abort_task_preparation(self, task_request_serial: int,
                                 policy_need_resume: bool,
                                 reason: str) -> None:
         """任务线程创建前失败时，释放占用并恢复本次请求挂起的 Policy。"""
+        should_request_auto_charging = False
         with self._chassis_state_lock:
-            if self._task_request_serial != task_request_serial:
+            # 只能释放自己申请的占用，禁止旧请求清除后续任务状态。
+            if self._active_task_request_serial != task_request_serial:
                 return
             self.is_force_working = False
+            self._active_task_request_serial = 0
+            if (self._auto_charging_preempted_task_serial ==
+                    task_request_serial):
+                self.pending_auto_charging = True
+                self._auto_charging_preempted_task_serial = 0
+                self._last_auto_charging_attempt_time = 0.0
+            should_request_auto_charging = (
+                self.pending_auto_charging and not self.is_charging_cycle)
 
         logging.warning(
             f"[任务准备] 请求序号={task_request_serial} 已取消，原因={reason}。")
+        if should_request_auto_charging:
+            logging.info(
+                "[低电量回充] 任务准备已取消，继续执行待回充请求："
+                f"原因={reason}。")
+            self._request_auto_charging("任务准备取消")
+            return
         if policy_need_resume:
             logging.info("[任务准备] 本次任务未启动，恢复此前挂起的 Policy。")
             self.try_resume_policy_for_task(task_request_serial)
             
-    def on_execute(
-        # self, voice_msg="", module_name="", interface_trigger=False ,payment_trigger=False  # 新增参数，标识是否由支付流程触
-        # ):  # 任务执行函数
-        self, voice_msg="", module_name="", interface_trigger=False , task_list=[], is_new_ui=False): 
-        """voice_msg: '语音识别文本', module_name: "执行模块名",若不填默认"""
-        self.function.vision_finish=False
-        self.picklight_vision.face_tracking_status = False
+    def _start_interface_execute(self) -> None:
+        """从界面异步启动任务准备，避免回充抢占和退桩等待卡住 Qt。"""
+        # Qt 控件只能在主线程读取，因此启动后台线程前先复制当前选项。
+        task_msg = self.select_module.currentText()
+        module_name = task_msg.split(": ")[1] if ": " in task_msg else task_msg
+        worker = threading.Thread(
+            target=self.on_execute,
+            kwargs={
+                "module_name": module_name,
+                "interface_trigger": True,
+                # module_name 已在主线程读取，后台线程不得再次访问 Qt 控件。
+                "is_new_ui": True,
+            },
+            name="interface-task-preparation",
+            daemon=True)
+        worker.start()
 
-        # 语音任务必须先确认可接收，不能在最终判定“忙碌”之前就执行退桩。
+    def on_execute(
+        self, voice_msg="", module_name="", interface_trigger=False , task_list=[], is_new_ui=False):
+        """任务执行入口。统一在入口占位、所有路径释放占位，避免任务准备期间
+        电量回充因 is_force_working 设置滞后而误触发。"""
+        # 先做外部状态检查。被拒绝的请求不能生成新序号，更不能覆盖正在执行
+        # 的任务占用。
         current_status = self._read_status_file()
         if not interface_trigger and current_status["status"] != "idle":
             logging.warning(f"已在任务状态:{module_name}!禁止触发")
             return
 
-        with self._chassis_state_lock:
-            self._task_request_serial += 1
-            task_request_serial = self._task_request_serial
+        # 与回充目标发送串行仲裁：退出这个临界区时，要么回充目标已经发送
+        # 且本任务负责取消它，要么本任务已占位使回充线程无法再补发目标。
+        with self._auto_charging_command_lock:
+            charging_status = self._get_auto_charging_runtime_status()
+            charging_action_active = (
+                charging_status in self.AUTO_CHARGING_ACTIVE_STATUSES)
+            with self._chassis_state_lock:
+                # 前端任务统一串行执行。即使两个后台入口同时读到 idle，也只有
+                # 第一个请求能够在锁内取得活动任务所有权。
+                if self._active_task_request_serial != 0:
+                    logging.warning(
+                        f"[任务准备] 已有活动任务，拒绝新请求："
+                        f"活动序号={self._active_task_request_serial}，"
+                        f"模块={module_name}。")
+                    return
 
-        # 精准退桩本身已经属于新任务的底盘运动，必须在它之前挂起 Policy。
-        # 返回值表示新任务结束后是否需要负责恢复 Policy。
-        policy_need_resume = self.try_suspend_policy_service()
-        logging.info(
-            f"[任务准备] 请求序号={task_request_serial}，"
-            f"Policy恢复责任={policy_need_resume}。")
+                self._task_request_serial += 1
+                task_request_serial = self._task_request_serial
+                # 活动序号是前端任务的权威占用状态；is_force_working 暂时作为
+                # 兼容镜像保留，两者必须在同一个临界区内同步更新。
+                self._active_task_request_serial = task_request_serial
+                self.is_force_working = True
+                should_preempt_auto_charging = (
+                    self._auto_charging_requesting or
+                    charging_action_active)
+                if should_preempt_auto_charging:
+                    # 抢占只暂停本轮回充需求，任务结束后仍需重新回充。
+                    self.pending_auto_charging = True
+                    self._auto_charging_preempted_task_serial = (
+                        task_request_serial)
+
+        policy_need_resume = False
+        try:
+            if (should_preempt_auto_charging and
+                    not self._preempt_auto_charging_for_task(
+                        task_request_serial)):
+                self._abort_task_preparation(
+                    task_request_serial, policy_need_resume,
+                    "自动回充取消失败或未进入终态")
+                return
+
+            # Policy 恢复责任保存在外层，即使后续准备流程抛出异常，也能恢复。
+            policy_need_resume = self.try_suspend_policy_service()
+            logging.info(
+                f"[任务准备] 请求序号={task_request_serial}，"
+                f"Policy恢复责任={policy_need_resume}。")
+            self._on_execute_impl(
+                voice_msg=voice_msg, module_name=module_name,
+                interface_trigger=interface_trigger,
+                task_list=task_list, is_new_ui=is_new_ui,
+                task_request_serial=task_request_serial,
+                policy_need_resume=policy_need_resume)
+        except Exception:
+            # 覆盖 _on_execute_impl 内部未捕获的异常路径，确保占位被释放。
+            logging.exception("[任务准备] on_execute 异常，释放底盘占位。")
+            self._abort_task_preparation(
+                task_request_serial, policy_need_resume, "on_execute 异常")
+
+    def _on_execute_impl(
+        self, voice_msg="", module_name="", interface_trigger=False ,
+        task_list=[], is_new_ui=False, task_request_serial: int = 0,
+        policy_need_resume: bool = False):
+        """voice_msg: '语音识别文本', module_name: "执行模块名",若不填默认"""
+        self.function.vision_finish=False
+        self.picklight_vision.face_tracking_status = False
+
+        # 回充抢占可能持续数秒，期间外部状态可能变化，因此这里必须复检；
+        # 语音任务不能在最终判定“忙碌”之前执行退桩。
+        current_status = self._read_status_file()
+        if not interface_trigger and current_status["status"] != "idle":
+            logging.warning(f"已在任务状态:{module_name}!禁止触发")
+            self._abort_task_preparation(
+                task_request_serial, policy_need_resume, "任务状态非 idle")
+            return
 
         # if self.is_charging_cycle:
         #     self.w1.w1_manager.move_chassis_ctrl([0.3,0,0])
@@ -4427,8 +4659,7 @@ class W1Controller(W1Displayui):  # 主流程
                     physical_dock_state = (
                         battery_charging or charger_connected)
 
-            # need_undock = charging_state_fresh and physical_dock_state
-            need_undock = False
+            need_undock = charging_state_fresh and physical_dock_state
             if need_undock:
                 self.is_force_working = True
 
@@ -4447,8 +4678,6 @@ class W1Controller(W1Displayui):  # 主流程
                 f"充电器连接={charger_connected}；先执行精准退桩。")
             control_result = self.w1.w1_manager.move_chassis_ctrl([0.3, 0, 0])
             if getattr(control_result, "name", None) != "SUCCESS":
-                with self._chassis_state_lock:
-                    self.is_force_working = False
                 logging.warning("离开充电桩运动控制目标发送失败，取消本次任务执行")
                 self._abort_task_preparation(
                     task_request_serial, policy_need_resume, "退桩目标发送失败")
@@ -4472,16 +4701,12 @@ class W1Controller(W1Displayui):  # 主流程
                     break
                 if control_status in {"FAILED", "CANCELLED", "ABORTED"}:
                     logging.error(f"离开充电桩失败，状态={control_status}，取消本次任务执行")
-                    with self._chassis_state_lock:
-                        self.is_force_working = False
                     self._abort_task_preparation(
                         task_request_serial, policy_need_resume,
                         f"退桩执行失败：{control_status}")
                     return
             else:
                 logging.warning(f"离开充电桩超时，超过 {timeout}s 未完成，取消本次任务执行")
-                with self._chassis_state_lock:
-                    self.is_force_working = False
                 self._abort_task_preparation(
                     task_request_serial, policy_need_resume, "退桩执行超时")
                 return
@@ -4503,9 +4728,6 @@ class W1Controller(W1Displayui):  # 主流程
                 self.payment_manager.order_cache.set_next_as_current()
 
         # self.function.stop_squence = False
-        self._write_status_file("status", "running")
-        
-       
         if interface_trigger == True:  # 界面触发
             if  hasattr(self, 'picklight_vision') and self.picklight_vision!=None and self.picklight_vision.face_tracking_status == True:
                 self.picklight_vision.face_tracking_status = False
@@ -4522,10 +4744,13 @@ class W1Controller(W1Displayui):  # 主流程
                 module_name=module_name, task_config=exclusive_params,
                 policy_need_resume=policy_need_resume,
                 task_request_serial=task_request_serial)
+            self._write_status_file("status", "running")
+            try:
+                self.thread.start()
+            except Exception:
+                self._write_status_file("status", "idle")
+                raise
             self.active_threads.append(self.thread)
-            #为了避免执行任务时，回去充电
-            self.is_force_working = True
-            self.thread.start()
 
 
         elif current_status["status"] == "idle" : # 语音触发
@@ -4549,10 +4774,13 @@ class W1Controller(W1Displayui):  # 主流程
                 module_name=module_name, task_config=exclusive_params,
                 policy_need_resume=policy_need_resume,
                 task_request_serial=task_request_serial)
+            self._write_status_file("status", "running")
+            try:
+                self.thread.start()
+            except Exception:
+                self._write_status_file("status", "idle")
+                raise
             self.active_threads.append(self.thread)
-            #为了避免执行任务时，回去充电
-            self.is_force_working = True
-            self.thread.start()
             
 
         else:

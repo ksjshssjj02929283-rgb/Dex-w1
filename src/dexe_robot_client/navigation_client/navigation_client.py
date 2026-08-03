@@ -81,6 +81,9 @@ class NavigationClient(ABC, Node):
         self._auto_charging_send_goal_future = None
         self._auto_charging_result_future = None
         self._auto_charging_cancel_future = None
+        # goal 尚未被 Action server 接受时保存取消意图；一旦接受立即取消，
+        # 避免 SENDING 阶段的短暂竞态导致上层前端任务被丢弃。
+        self._auto_charging_cancel_pending = False
         self._auto_charging_task_id = 0
         self._auto_charging_status = "IDLE"
         self._auto_charging_done = False
@@ -517,13 +520,12 @@ class NavigationClient(ABC, Node):
         self._nav_last_feedback_summary = {
             "current_x": pose.x,
             "current_y": pose.y,
-            "distance_remaining": feedback.distance_remaining,
             "navigation_time": navigation_time,
             "recoveries": feedback.number_of_recoveries,
         }
         self.get_logger().info(
-            f"[导航进度] id={task_id}，剩余={feedback.distance_remaining:.2f}m，"
-            f"已运行={navigation_time:.1f}s，恢复={feedback.number_of_recoveries}。")
+            f"[导航进度] id={task_id}，已运行={navigation_time:.1f}s，"
+            f"恢复={feedback.number_of_recoveries}。")
 
     def get_nav_state(self) -> str:
         """获取当前导航状态。
@@ -688,6 +690,7 @@ class NavigationClient(ABC, Node):
         self._auto_charging_goal_handle = None
         self._auto_charging_result_future = None
         self._auto_charging_cancel_future = None
+        self._auto_charging_cancel_pending = False
         self._last_auto_charging_feedback = None
         self._last_auto_charging_result_message = ""
         self._last_auto_charging_feedback_signature = None
@@ -708,6 +711,7 @@ class NavigationClient(ABC, Node):
                 f"等待服务耗时={self._elapsed_since(wait_started_time):.3f}s。"
                 "请检查 auto_charging Action server 是否启动。")
             self._auto_charging_done = True
+            self._auto_charging_cancel_pending = False
             return False
         wait_server_elapsed = self._elapsed_since(wait_started_time)
 
@@ -748,6 +752,7 @@ class NavigationClient(ABC, Node):
                 f"{self._elapsed_since(self._auto_charging_started_time):.3f}s，"
                 f"error={e}")
             self._auto_charging_done = True
+            self._auto_charging_cancel_pending = False
             return False
 
     def get_auto_charging_status(self) -> str:
@@ -771,21 +776,16 @@ class NavigationClient(ABC, Node):
                 "取消请求已经发送，正在等待最终结果。")
             return True
 
-        if self._auto_charging_goal_handle is None and self._auto_charging_status in {
-                "WAITING_SERVER", "SENDING", "ACCEPTED", "EXECUTING"
-        }:
+        if (self._auto_charging_goal_handle is None and
+                self._auto_charging_status in
+                self.AUTO_CHARGING_CANCELABLE_STATES):
+            self._auto_charging_cancel_pending = True
+            self._auto_charging_cancel_requested_time = time.monotonic()
             self.get_logger().info(
-                f"[自动回充取消等待] task_id={self._auto_charging_task_id}，"
-                "目标尚未被接受，最多等待 1.0s。")
-            current_task_id = self._auto_charging_task_id
-            start_time = time.time()
-            while time.time() - start_time < 1.0:
-                if current_task_id != self._auto_charging_task_id:
-                    break
-                self._spin_once_if_not_executed(timeout_sec=0.05)
-                if self._auto_charging_goal_handle is not None:
-                    break
-                time.sleep(0.05)
+                f"[自动回充取消已锁存] task_id={self._auto_charging_task_id}，"
+                f"当前状态={self._auto_charging_status}；"
+                "goal 被接受后将立即发送取消请求。")
+            return True
 
         if self._auto_charging_goal_handle is None:
             self.get_logger().info(
@@ -797,6 +797,7 @@ class NavigationClient(ABC, Node):
 
         try:
             current_task_id = self._auto_charging_task_id
+            self._auto_charging_cancel_pending = False
             self._auto_charging_cancel_requested_time = time.monotonic()
             self._set_auto_charging_status(
                 "CANCELING", current_task_id,
@@ -888,6 +889,7 @@ class NavigationClient(ABC, Node):
                 f"{self._elapsed_since(self._auto_charging_started_time):.3f}s，"
                 f"error={e}")
             self._auto_charging_done = True
+            self._auto_charging_cancel_pending = False
             return
 
         if not goal_handle.accepted:
@@ -899,6 +901,7 @@ class NavigationClient(ABC, Node):
                 f"{self._elapsed_since(self._auto_charging_started_time):.3f}s。"
                 "请检查是否已有回充任务、服务端前置条件和回充状态机日志。")
             self._auto_charging_done = True
+            self._auto_charging_cancel_pending = False
             return
 
         self._auto_charging_goal_handle = goal_handle
@@ -914,6 +917,11 @@ class NavigationClient(ABC, Node):
         self._auto_charging_result_future.add_done_callback(
             lambda future: self._auto_charging_result_done_callback(
                 future, task_id))
+        if self._auto_charging_cancel_pending:
+            self.get_logger().info(
+                f"[自动回充取消锁存生效] task_id={task_id}，"
+                "goal 已接受，立即发送取消请求。")
+            self.cancel_auto_charging()
 
     def _auto_charging_cancel_done_callback(self, future, task_id):
         if task_id != self._auto_charging_task_id:
@@ -959,6 +967,7 @@ class NavigationClient(ABC, Node):
             self._auto_charging_done = True
             self._auto_charging_goal_handle = None
             self._auto_charging_cancel_future = None
+            self._auto_charging_cancel_pending = False
             self._set_auto_charging_status(
                 final_status, task_id,
                 f"收到 Action result："
@@ -997,6 +1006,7 @@ class NavigationClient(ABC, Node):
             self._auto_charging_done = True
             self._auto_charging_goal_handle = None
             self._auto_charging_cancel_future = None
+            self._auto_charging_cancel_pending = False
 
     def get_control_status(self) -> str:
         """获取当前底盘直控 Action 状态。
@@ -1622,7 +1632,6 @@ class NavigationClient(ABC, Node):
 
             feedback = self._nav_last_feedback_summary
             feedback_summary = (
-                f"最后反馈剩余距离={feedback['distance_remaining']:.3f}m，"
                 f"Nav2导航耗时={feedback['navigation_time']:.1f}s，"
                 f"恢复行为次数={feedback['recoveries']}"
                 if feedback is not None else "未收到导航进度反馈")
