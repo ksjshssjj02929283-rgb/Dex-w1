@@ -1,19 +1,28 @@
-# Start Inference Service
+# StartInference 服务
 
-# Inference Mode
-uint8 SIMULATION = 1
-uint8 REAL = 2
+# 推理模式
+uint8 SIMULATION = 1  # 仿真
+uint8 REAL = 2        # 真机
 
-uint8 mode  # Inference Mode
-
-# model id located in XWiz inference model path 
-# ~/.dexforce/XWiz/model_deployments/models
-uint8 model
-
-# task id located in Xwiz inference task path
-# ~/.dexforce/XWiz/model_deployments/tasks
-uint8 task
+# 请求参数
+uint8 mode         # 推理模式：1=仿真，2=真机
+uint8 model        # 模型 id，对应 X-Wiz 模型部署目录, ~/.dexforce/XWiz/model_deployments/models
+uint8 task         # 任务 id，对应 X-Wiz 任务部署目录，~/.dexforce/XWiz/model_deployments/tasks
+string session_id  # 会话 ID（YYYYMMDD_HHMMSS），由启动入口生成
 
 ---
-bool success   # indicate successful run of service
-string message # informational, e.g. for error messages
+
+# 统一响应 code
+uint8 OK = 0
+uint8 INVALID_PARAM = 1
+uint8 SESSION_BUSY = 2
+uint8 NO_ACTIVE_SESSION = 3
+uint8 MODEL_NOT_FOUND = 4
+uint8 MODEL_LOAD_FAILED = 5
+uint8 INVALID_STATE = 7
+uint8 INTERNAL_ERROR = 255
+
+# 响应结果
+bool success       # true=启动成功，false=启动失败
+uint8 code         # 状态码，使用本响应定义的响应码常量
+string message     # 人类可读描述

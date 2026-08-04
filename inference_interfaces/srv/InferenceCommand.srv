@@ -1,0 +1,25 @@
+# InferenceCommand 服务类型
+#
+# 用于空请求的推理命令，例如：
+# - /inference/stop
+# - /inference/intervene
+# - /inference/resume
+#
+# 具体命令由 service 名称承载，请求体保持为空。
+
+---
+
+# 统一响应 code
+uint8 OK = 0
+uint8 INVALID_PARAM = 1
+uint8 SESSION_BUSY = 2
+uint8 NO_ACTIVE_SESSION = 3
+uint8 MODEL_NOT_FOUND = 4
+uint8 MODEL_LOAD_FAILED = 5
+uint8 INVALID_STATE = 7
+uint8 INTERNAL_ERROR = 255
+
+# 响应结果
+bool success       # true=处理成功，false=处理失败
+uint8 code         # 状态码，使用本响应定义的响应码常量
+string message     # 人类可读描述
