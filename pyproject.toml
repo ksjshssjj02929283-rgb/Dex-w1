@@ -8,6 +8,14 @@ include-package-data = true
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"dexe_robot_client.navigation_client" = [
+    "README.md",
+    "docs/*.md",
+    "docs/*.json",
+    "docs/*.py",
+]
+
 [project]
 name = "dexe_robot_client"
 version = "0.7.1"
@@ -29,6 +37,7 @@ dependencies = [
 
 [project.scripts]
 dexe_robot_client-install-scripts = "dexe_robot_client.cli:export_scripts"
+dexe-navigation-client-test = "dexe_robot_client.navigation_client.interface_test:main"
 
 [project.optional-dependencies]
 dev = [

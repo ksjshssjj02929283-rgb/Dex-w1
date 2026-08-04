@@ -57,21 +57,65 @@ class Nav2ParamsFeature:
     # ------------------------------------------------ 公共接口
     def set_goal_tolerance(self, xy_tolerance: float,
                            yaw_tolerance: float) -> bool:
-        """yaw_tolerance 单位：弧度（Nav2 参数语义）。"""
+        """更新当前 GoalChecker 支持的容差；yaw_tolerance 单位为弧度。"""
+        if not self._positive_finite(xy_tolerance) or not self._positive_finite(
+                yaw_tolerance):
+            self._node.get_logger().error(
+                "[目标容差非法] xy/yaw 必须为大于 0 的有限数值。")
+            return False
+
+        active_checker = self._get_param(
+            self._controller_get, "current_goal_checker", quiet=True)
+        if not isinstance(active_checker, str) or not active_checker:
+            self._node.get_logger().error(
+                "[目标容差写入失败] 无法确定 current_goal_checker。")
+            return False
+
+        candidate_values = {
+            f"{active_checker}.xy_goal_tolerance": xy_tolerance,
+            f"{active_checker}.lon_goal_tolerance": xy_tolerance,
+            f"{active_checker}.lat_goal_tolerance": xy_tolerance,
+            f"{active_checker}.yaw_goal_tolerance": yaw_tolerance,
+        }
+        available = {
+            name: value
+            for name, value in candidate_values.items()
+            if self._get_param(self._controller_get, name, quiet=True) is not None
+        }
+
+        xy_name = f"{active_checker}.xy_goal_tolerance"
+        lon_name = f"{active_checker}.lon_goal_tolerance"
+        lat_name = f"{active_checker}.lat_goal_tolerance"
+        yaw_name = f"{active_checker}.yaw_goal_tolerance"
+        if (lon_name in available) != (lat_name in available):
+            self._node.get_logger().error(
+                f"[目标容差写入失败] {active_checker} 的 lon/lat 参数不完整。")
+            return False
+        if not any(name in available for name in (xy_name, lon_name, yaw_name)):
+            self._node.get_logger().error(
+                f"[目标容差写入失败] {active_checker} 未提供受支持的容差参数。")
+            return False
+
+        ordered_names = (xy_name, lon_name, lat_name, yaw_name)
         results = [
-            self._set_param(self._controller_set, self._controller_get,
-                            'goal_checker.lon_goal_tolerance', xy_tolerance),
-            self._set_param(self._controller_set, self._controller_get,
-                            'goal_checker.lat_goal_tolerance', xy_tolerance),
-            self._set_param(self._controller_set, self._controller_get,
-                            'goal_checker.yaw_goal_tolerance', yaw_tolerance),
+            self._set_param(
+                self._controller_set, self._controller_get, name, available[name])
+            for name in ordered_names if name in available
         ]
-        return all(results)
+        return bool(results) and all(results)
 
     def set_footprint(self, vertices: list) -> bool:
-        if not isinstance(vertices, (list, tuple)) or len(vertices) < 3:
+        if not isinstance(vertices, (list, tuple)) or len(vertices) < 4:
             self._node.get_logger().error(
-                "[footprint 非法] 至少需要 3 个 [x, y] 顶点。")
+                "[footprint 非法] 至少需要 4 个 [x, y] 顶点。")
+            return False
+        if any(
+            not isinstance(vertex, (list, tuple)) or len(vertex) != 2 or
+            any(not self._finite_number(value) for value in vertex)
+            for vertex in vertices
+        ):
+            self._node.get_logger().error(
+                "[footprint 非法] 每个顶点必须是两个有限数值组成的 [x, y]。")
             return False
         footprint = "[" + ",".join(
             f"[{v[0]},{v[1]}]" for v in vertices) + "]"
@@ -93,6 +137,27 @@ class Nav2ParamsFeature:
                                 'FollowPath.wz_max', wz_max))
 
     # ------------------------------------------------ 内部
+    @staticmethod
+    def _finite_number(value) -> bool:
+        return (isinstance(value, (int, float)) and
+                not isinstance(value, bool) and math.isfinite(float(value)))
+
+    @classmethod
+    def _positive_finite(cls, value) -> bool:
+        return cls._finite_number(value) and float(value) > 0.0
+
+    def _get_param(self, get_client, name: str, quiet: bool = False):
+        request = GetParameters.Request()
+        request.names = [name]
+        response = call_service(self._node, get_client, request,
+                                timeout_sec=1.0, label=f"参数读取 {name}")
+        if response is None or not response.values:
+            if not quiet:
+                self._node.get_logger().error(
+                    f"[参数读取失败] {name}：读取失败。")
+            return None
+        return _param_to_python(response.values[0])
+
     def _set_param(self, set_client, get_client, name: str, value) -> bool:
         request = SetParameters.Request()
         request.parameters = [
@@ -106,14 +171,7 @@ class Nav2ParamsFeature:
             return False
 
         time.sleep(0.1)  # 等服务端应用后再读校验
-        get_request = GetParameters.Request()
-        get_request.names = [name]
-        get_response = call_service(self._node, get_client, get_request,
-                                    timeout_sec=1.0, label=f"参数校验 {name}")
-        if get_response is None or not get_response.values:
-            self._node.get_logger().error(f"[参数校验失败] {name}：读取失败。")
-            return False
-        retrieved = _param_to_python(get_response.values[0])
+        retrieved = self._get_param(get_client, name)
         if retrieved is None or not _values_match(value, retrieved):
             self._node.get_logger().error(
                 f"[参数校验失败] {name}：期望 {value}，实际 {retrieved}。")

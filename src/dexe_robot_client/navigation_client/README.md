@@ -2,7 +2,11 @@
 
 底盘 / 导航能力的客户端封装，供 `w1.W1Manager` 及以上业务层调用。本文档面向本模块的维护者与直接使用者。
 
-> 分支：`glf/modify_navigation`（基线 `dev_w1`）。本文档描述**重构 v2** 之后的结构（原单文件 `navigation_client.py` 已拆分并删除）。
+> 包版本：`dexe_robot_client 0.7.1`；代码基线：`glf/modify_navigation@7e07427` + 当前工作树（基于 `dev_w1`）。本文档描述**重构 v2** 之后的结构（原单文件 `navigation_client.py` 已拆分并删除）。
+>
+> 正式交付文档：[`docs/README.md`](docs/README.md)；开发侧设计见
+> [`docs/design.md`](docs/design.md)，调用侧接口说明见
+> [`docs/api_and_usage.md`](docs/api_and_usage.md)。`docs/` 是随代码版本维护的交付文档 SSOT。
 
 ## 目录结构
 
@@ -11,6 +15,9 @@ navigation_client/
 ├── __init__.py                  # 导出 ChassisClient
 ├── chassis_client.py             # 对外门面：全部公开 API，组合 features，按 is_sim 选配置
 ├── interfaces.py                 # 接口配置表：REAL / SIM 两份 topic/action/service 名称
+├── interface_test.py             # RC-A-01～16 自动接口自测入口
+├── test_support/                 # 自动自测的进程内 ROS2 mock peers
+├── docs/                         # 随包版本维护的交付文档、版本清单与一致性检查
 ├── common/                       # 本模块内部通用机制（与具体功能无关）
 │   ├── states.py                 #   TaskState 枚举 + 活跃/终态集合
 │   ├── action_task_client.py     #   ⭐ 通用 action 二次封装（发送/取消/状态机/watchdog）
@@ -34,7 +41,7 @@ navigation_client/
 ## 设计原则
 
 1. **组合替代继承**：`ChassisClient` 是唯一的 `rclpy.node.Node`，持有 7 个 feature 实例；不再有"抽象基类塞满逻辑、子类只拼接口"的倒挂结构。
-2. **接口配置化**（`interfaces.py`）：真实/仿真的差异是数据，不是代码分支。仿真缺失的能力（导航/路网/回充/参数/导航点）配置里就是 `None`，`common` 层统一守卫——调用方永远拿到明确的 `False`/空结果/日志，不会 `AttributeError`。
+2. **接口配置化**（`interfaces.py`）：真实/仿真的差异是数据，不是代码分支。仿真支持位姿、精控和 controller 参数；缺失的导航/路网/回充/导航点配置为 `None`，由 `common` 层统一守卫。
 3. **对外契约不变**：`ChassisClient` 的公开方法签名、参数含义、状态字符串取值均与 `dev_w1` 基线一致，`W1Manager` 侧零改动。
 4. **通信稳健性由 `ActionTaskClient` 统一保证**，不是每个 action 各写一遍（见下）。
 
@@ -78,7 +85,7 @@ navigation_client/
 | `set_chassis_control_position([x, 0, yaw])` | 相对位移/转角，x 与 yaw 互斥 | **度** | base_link |
 | `set_chassis_road_navigation(waypoints)` | 路点列表 | **弧度** | map（默认，可传 `frame_id` 覆盖）|
 | `get_all_nav_points()` 返回值 | 点位坐标 | **弧度**（`theta`）| map |
-| `set_goal_tolerance(xy, yaw)` | 到达容差 | **弧度**（Nav2 参数原生单位）| — |
+| `set_goal_tolerance(xy, yaw)` | 当前 GoalChecker 的到达容差 | yaw 为**弧度**（Nav2 参数原生单位）| — |
 
 单点导航/精控的 yaw 用度（贴近业务层直觉），路网导航/导航点/参数服务的 yaw 用弧度（直接透传 Nav2 原生语义）。**这是历史遗留的单位不一致，本次未统一**（改动会牵涉 `W1Manager` 调用方约定，属于 red line 之外的改动，见项目方案文档）。
 
@@ -156,12 +163,48 @@ client.set_chassis_nav2_position([1.0, 0.5, 90.0])
 client.close()   # 释放执行器线程 + 销毁节点
 ```
 
-### 测试（无硬件、无 W1Manager）
+### 自动接口自测（无硬件、无 W1Manager）
 
-`src/examples/navigation_client_mock_server.py` + `navigation_client_standalone_test.py`：mock 底盘服务端 + 38 项自动判定驱动，覆盖导航/路网导航/导航点/精控/回充/参数/连接的正常与取消路径（分组：`conn`/`nav`/`road`/`points`/`ctrl`/`charge`/`param`，`--only <组>` 单跑）。运行方式与已知环境注意事项（务必用独立 `ROS_DOMAIN_ID` 隔离本机其他 nav2 进程）见脚本内 docstring。
+当前正式自动目录为 `RC-A-01～RC-A-16`。进程内 mock 通过真实 rclpy
+topic/action/service/parameter 通道覆盖连接与状态读取、Nav2 单点导航、导航点查询、
+精控、回充、参数读写和仿真能力边界；每个用例默认连续执行 15 轮，以
+`RC-A-xx/R01～R15` 记录逐轮期望—实际和状态，再按用例汇总 15/15。真实运动与人工观察
+不进入自动结论。
+
+PC2 当前采用“复制 `navigation_client/` 到 Python `site-packages`”的更新方式，正式入口
+使用模块调用，不依赖 console script：
+
+```bash
+python3 -m dexe_robot_client.navigation_client.interface_test list-tests
+python3 -m dexe_robot_client.navigation_client.interface_test mock --domain-id 188
+```
+
+`mock` 的 `--repeat` 默认值和下限均为 `15`，可为压力验证提高轮次，但不能降到 15 以下。
+成功用例只验证成功路径；`RC-A-11` 每轮依次验证四点、六点两种合法 footprint，且两次
+都要求 local/global costmap 精确回读一致。导航非法输入和三点 footprint 分别由
+`RC-A-15/16` 验证“返回 false 且未发送 goal/未修改参数”。正式全量仍为 16×15=240 轮，
+其中 `RC-A-11` 在 15 轮内共执行 30 次合法 footprint 设置。
+
+全部选定用例结束后，终端会输出“自动测试最终结果”表格，逐项列出计划、完成、
+PASS、FAIL、ERROR、PENDING_ENV 和结论，并以 `TOTAL` 行给出总体结果；详细逐轮记录继续
+写入 `summary.json` 与 `summary.md`。
+
+`ROS_DOMAIN_ID=188` 用于隔离本机其他 Nav2 进程；如现场已占用，应换成批准的空闲域。
+运行结果写入
+`${HOME}/.dexe/navigation/robot_client_interface_test/mock_<时间戳>/`。
+
+只有执行过 pip/wheel 安装并生成 console script 后，才可使用等价的可选短命令：
+
+```bash
+dexe-navigation-client-test list-tests
+dexe-navigation-client-test mock --domain-id 188
+```
+
+直接复制包目录不会创建 `${HOME}/.local/bin/dexe-navigation-client-test`，因此不能用
+`command -v dexe-navigation-client-test` 作为 PC2 当前部署方式的前置门禁。
 
 ## 已知限制 / TODO
 
 - yaw 单位在导航/精控（度）与路网导航/参数（弧度）之间不统一，未在本次改动。
-- 仿真模式当前仅支持：位姿反馈 + 精控 action；导航/路网导航/回充/参数/导航点接口在仿真下会安全返回 `False`/空结果（不崩溃，但也不可用）。
+- 仿真模式当前支持：位姿反馈、精控 action、`/controller_server` 目标容差参数；导航/路网导航/回充/导航点接口会安全返回 `False`/空结果。
 - 底盘精控的 sim 端 action server 是否真实存在未验证（仅确认真实模式 server 存在，见 `mobile_control_action_node.cpp`）。

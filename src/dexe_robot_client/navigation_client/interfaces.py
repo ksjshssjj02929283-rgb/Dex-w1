@@ -39,9 +39,10 @@ REAL = InterfaceConfig(
     global_costmap_param_node="/global_costmap/global_costmap",
 )
 
-# 仿真当前仅提供：底盘位姿反馈 + 精控 action（导航/路网/回充/参数/导航点在
-# 仿真下不可用，调用会安全返回 False/空结果，不崩溃）。
+# 仿真当前提供：底盘位姿反馈、精控 action，以及 controller_server 参数服务。
+# 导航/路网/回充/导航点在仿真下不可用，调用会安全返回 False/空结果，不崩溃。
 SIM = InterfaceConfig(
     chassis_pose_topic="/feedback_sim/chassis_pose",
     precise_control_action="control/precise_control",
+    controller_param_node="/controller_server",
 )
