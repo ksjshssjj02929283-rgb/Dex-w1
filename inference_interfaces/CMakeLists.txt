@@ -12,7 +12,6 @@ find_package(rosidl_default_generators REQUIRED)
 # Msg files
 set(MSG_FILES
   "msg/InferenceStatus.msg"
-  "msg/TeleopStatus.msg"
   "msg/JointGroup.msg"
   "msg/ShadowSegment.msg"
 )

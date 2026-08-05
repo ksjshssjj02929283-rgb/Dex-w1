@@ -9,6 +9,11 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
+# Msg files
+set(MSG_FILES
+  "msg/TeleopStatus.msg"
+)
+
 # Srv files
 set(SRV_FILES
   "srv/TeleopConfigGet.srv"
@@ -17,6 +22,7 @@ set(SRV_FILES
 
 # Generate interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
+  ${MSG_FILES}
   ${SRV_FILES}
 )
 
