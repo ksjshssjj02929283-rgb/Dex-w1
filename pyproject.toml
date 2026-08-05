@@ -36,7 +36,6 @@ dependencies = [
 ]
 
 [project.scripts]
-dexe_robot_client-install-scripts = "dexe_robot_client.cli:export_scripts"
 dexe-navigation-client-test = "dexe_robot_client.navigation_client.interface_test:main"
 
 [project.optional-dependencies]

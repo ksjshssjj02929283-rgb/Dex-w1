@@ -5,9 +5,11 @@
 ### Feat
 - 新增coal collision checker
 - 支持左右不同末端执行器类型
+- 新增调度路网接口graph points client
 
 ### Refactor
 - 重构全身IK模块，提供IK manager
+- 重构navigation client
 
 ### Improve
 - 自动从urdf的link tree加载碰撞体
