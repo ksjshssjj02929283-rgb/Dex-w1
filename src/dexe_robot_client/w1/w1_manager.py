@@ -340,7 +340,9 @@ class W1Manager:
         if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name):
                 return False
-            dofs = self.w1_params.left_arm_ee_dofs
+            dofs = None
+            if name == "left_arm_ee":
+                dofs = self.w1_params.left_arm_ee_dofs
             if name == "right_arm_ee":
                 dofs = self.w1_params.right_arm_ee_dofs
         elif self._check_name(name):
@@ -1006,11 +1008,14 @@ class W1Manager:
         if name in self.w1_params.arm_ee_names:
             if not self._has_arm_ee_client(name):
                 return StatusCode.FAIL, None, None
-            qpos_lb = np.array([0.] * self.w1_params.left_arm_ee_dofs)
-            qpos_ub = np.array([100.] * self.w1_params.left_arm_ee_dofs)
+            qpos_lb = None
+            qpos_ub = None
+            if name == "left_arm_ee":
+                qpos_lb = np.array(self.w1_params._left_ee_params.position.lb)
+                qpos_ub = np.array(self.w1_params._left_ee_params.position.ub)
             if name == "right_arm_ee":
-                qpos_lb = np.array([0.] * self.w1_params.right_arm_ee_dofs)
-                qpos_ub = np.array([100.] * self.w1_params.right_arm_ee_dofs)
+                qpos_lb = np.array(self.w1_params._right_ee_params.position.lb)
+                qpos_ub = np.array(self.w1_params._right_ee_params.position.ub)
 
         elif not self._check_name(name):
             return StatusCode.NAME_MISMATCH, None, None
