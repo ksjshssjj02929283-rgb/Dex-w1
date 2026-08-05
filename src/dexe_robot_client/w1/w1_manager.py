@@ -869,13 +869,15 @@ class W1Manager:
         )
         nav_cancel_ok = self._get_chassis_client().cancel_chassis_nav2()
         road_nav_cancel_ok = self._get_chassis_client().cancel_road_navigation()
+        graph_points_nav_cancel_ok = (
+            self._get_chassis_client().cancel_graph_points_navigation())
         control_cancel_ok = self._get_chassis_client().cancel_chassis_control()
         auto_charging_cancel_ok = (
             self._get_chassis_client().cancel_auto_charging())
 
         # 只要有一个成功，就认为取消指令已尽力发送
-        if (nav_cancel_ok or road_nav_cancel_ok or control_cancel_ok or
-                auto_charging_cancel_ok):
+        if (nav_cancel_ok or road_nav_cancel_ok or graph_points_nav_cancel_ok or
+                control_cancel_ok or auto_charging_cancel_ok):
             return StatusCode.SUCCESS
         status = StatusCode.CHASSIS_CANCEL_MOTION_FAIL
         self.logger.error(f"[{status.value}]:Cancel chassis motion failed")
