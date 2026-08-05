@@ -64,8 +64,8 @@ class W1Manager:
             config["left_hand_type"])
         right_ee_type = EndEffectorType.from_string_safe(
             config["right_hand_type"])
-        chassis_type = ChassisType.from_string_safe(config["chassis_type"])
-        if chassis_type == None or chassis_type == ChassisType.CORE:
+        chassis_type = ChassisType.from_string_safe(config.get("chassis_type"))
+        if chassis_type is None or chassis_type == ChassisType.CORE:
             if use_nav:
                 raise ValueError(f"底盘类型错配，请检查！！！")
         return cls(is_sim, robot_version, left_ee_type, right_ee_type, use_nav)
