@@ -1,8 +1,9 @@
 # StartInference 服务
 
 # 推理模式
-uint8 SIMULATION = 1  # 仿真
-uint8 REAL = 2        # 真机
+uint8 SIMULATION = 1      # 仿真
+uint8 REAL = 2            # 真机
+uint8 UPLOAD_CONFIG = 3   # 配置上传，不推理
 
 # 请求参数
 uint8 mode         # 推理模式：1=仿真，2=真机
