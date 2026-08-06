@@ -2,6 +2,28 @@
 
 ## [Unrelease]
 
+## [V0.8.0]
+### Feat
+- 新增coal collision checker
+- 支持左右不同末端执行器类型
+- 新增调度路网接口graph points client
+
+### Refactor
+- 重构全身IK模块，提供IK manager
+- 重构navigation client
+
+### Improve
+- 自动从urdf的link tree加载碰撞体
+
+### Remove
+- 移除 dexsim server
+- 移除 fcl_checker
+- 移除 planner_pinocchio
+- 移除 030硬件专用全身IK
+- 暂时移除 ompl planner、hybrid planner
+- 暂时移除 末端执行器的碰撞检测
+
+
 ## [V0.7.0]
 ### Feat
 - 支持W1 V030硬件版本

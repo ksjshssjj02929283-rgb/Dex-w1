@@ -9,43 +9,49 @@ All rights reserved.
 import json
 import numpy as np
 import pinocchio as pin
+from pathlib import Path
 from ...end_effector_client import EndEffectorParamsRegistry
-from ...common import get_logger, DATA_DIR, get_pin2real_idx
-from ..path_planner.utils.robot_type import get_robot_urdf, RobotType
+from ...common import get_logger, DATA_DIR
+from ..kinematics.pinocchio_kinematics import PinocchioMappingGenerator
 
 from dexe_rp import RobotVersion, EndEffectorType
+from dexe_rp.toolkits.data import get_data_path
 
 
 class W1Params:
 
     def __init__(self,
                  robot_version: RobotVersion,
-                 end_effector_type: EndEffectorType = None):
+                 left_ee_type: EndEffectorType = None,
+                 right_ee_type: EndEffectorType = None):
         self.logger = get_logger()
 
         self._robot_version = robot_version
         if not self._robot_version.robot_family.startswith("w1"):
             raise ValueError(f"Unsupport RobotVersion: {self._robot_version}.")
 
-        self._end_effector_type = end_effector_type
-        self._end_effector_params = None
-        self.arm_ee_dofs = None
-        if self._end_effector_type is not None:
-            self._end_effector_params = EndEffectorParamsRegistry.get(
-                end_effector_type)
-            self.arm_ee_dofs = self._end_effector_params.dof
+        self._left_ee_type = left_ee_type
+        self._left_ee_params = None
+        self.left_arm_ee_dofs = None
+        if self._left_ee_type is not None:
+            self._left_ee_params = EndEffectorParamsRegistry.get(left_ee_type)
+            self.left_arm_ee_dofs = self._left_ee_params.dof
 
-        self.robot_type = None
-        if self._robot_version.version_value.startswith("v02"):
-            if self._robot_version.robot_family.endswith("i"):
-                self.robot_type = RobotType.W1V02_2
-            else:
-                self.robot_type = RobotType.W1V02_1
-        elif self._robot_version.version_value.startswith("v03"):
-            self.robot_type = RobotType.W1V03_1
+        self._right_ee_type = right_ee_type
+        self._right_ee_params = None
+        self.right_arm_ee_dofs = None
+        if self._right_ee_type is not None:
+            self._right_ee_params = EndEffectorParamsRegistry.get(right_ee_type)
+            self.right_arm_ee_dofs = self._right_ee_params.dof
 
-        robot_urdf = get_robot_urdf(self.robot_type)
-        self._pin2real_idx = get_pin2real_idx(robot_urdf, self.robot_type)
+        robot_urdf = get_data_path(
+            str(Path(self._robot_version.robot_family) / "robot.urdf"),
+            self._robot_version.version_value)
+        pinocchio_mapping_generator = PinocchioMappingGenerator(
+            robot_version=self._robot_version,
+            left_end_effector_type=None,
+            right_end_effector_type=None)
+        self._pin2real_idx = pinocchio_mapping_generator.robot_pin2real_mapping
         self._pin_model = pin.buildModelFromUrdf(robot_urdf)
 
         self.torso_dofs = 4

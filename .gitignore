@@ -8,12 +8,16 @@ build*/
 install/
 dist/
 debian/
+log/
 
 __pycache__/
 *.pyc
 *.egg-info/
+.idea/
 
 *_dependencies/
 CLAUDE.md
 .codex
 AGENTS.md
+.agents/
+

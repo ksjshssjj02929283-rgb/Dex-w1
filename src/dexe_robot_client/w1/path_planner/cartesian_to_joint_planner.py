@@ -14,10 +14,9 @@ from ...common import get_logger, time_consuming
 from ..utils.w1_params import W1Params
 from ..trajectory_planner.toppra_trajectory_planner import ToppraTrajectoryPlanner
 from ..kinematics.whole_body_ik import *
-from ..kinematics.pin_ik_030 import PinIKWholeBody030
-from .utils.robot_type import *
 
 from dexe_rp import DexforceW1Kinematics, StatusType, RobotVersion, EndEffectorType
+from dexe_rp.toolkits.data import get_data_path
 
 
 class CartesianToJointPlanner:
@@ -25,14 +24,16 @@ class CartesianToJointPlanner:
     def __init__(
             self,
             robot_version: RobotVersion,
-            end_effector_type: EndEffectorType = EndEffectorType.BrainCo_Revo1_R
-    ):
+            left_ee_type: EndEffectorType = EndEffectorType.BrainCo_Revo1_R,
+            right_ee_type: EndEffectorType = EndEffectorType.BrainCo_Revo1_R):
         self.logger = get_logger()
 
         self._robot_version = robot_version
-        self._end_effector_type = end_effector_type
+        self._left_ee_type = left_ee_type
+        self._right_ee_type = right_ee_type
 
-        self.w1_params = W1Params(self._robot_version, self._end_effector_type)
+        self.w1_params = W1Params(self._robot_version, self._left_ee_type,
+                                  self._right_ee_type)
 
         self._init_kine_solver()
 
@@ -44,19 +45,15 @@ class CartesianToJointPlanner:
         self.kine.set_user_qpos_limits(self.w1_params.qpos_lb,
                                        self.w1_params.qpos_ub)
 
-        robot_type = self.w1_params.robot_type
         if self._robot_version.version_value.startswith("v02"):
-            urdf_path = get_robot_urdf(robot_type=robot_type)
+            urdf_path = get_data_path(
+                str(
+                    pathlib.Path(self._robot_version.robot_family) /
+                    "robot.urdf"), self._robot_version.version_value)
 
-            if robot_type == RobotType.W1V02_1 or robot_type == RobotType.W1V02_2:
-                urdf_path = pathlib.Path.home(
-                ) / ".cache/dexe_data/assembled/w1/robot.urdf"
-                tracking_frame_config = TrackingFrameConfig.init_from_urdf(
-                    robot="W1V02X", urdf_path=urdf_path)
-                joint_name_config = JointNameConfig.init_from_robot(
-                    robot="W1V02X")
-            else:
-                raise ValueError(f"Unsupported robot type: {robot_type}")
+            tracking_frame_config = TrackingFrameConfig.init_from_urdf(
+                robot="W1V02X", urdf_path=urdf_path)
+            joint_name_config = JointNameConfig.init_from_robot(robot="W1V02X")
 
             self.whole_body_ik_solver = WholeBodyIK(
                 urdf_path,
@@ -67,12 +64,47 @@ class CartesianToJointPlanner:
                 posture_config=PostureConfig(),
                 freezed_joint_dict=None)
 
+            leg_backward_config = PostureConfig()
+            leg_backward_config.leg_leaning_forward = False
+            self.whole_body_ik_solver_leg_backward = WholeBodyIK(
+                urdf_path,
+                tracking_frame_config=tracking_frame_config,
+                joint_name_config=joint_name_config,
+                solver_options=IpoptOptions(),
+                weight_config=WeightConfig(),
+                posture_config=leg_backward_config,
+                freezed_joint_dict=None)
+
         elif self._robot_version.version_value.startswith("v03"):
-            urdf_path = pathlib.Path.home(
-            ) / ".cache/dexe_data/assembled/w1/robot.urdf"
-            self.whole_body_ik_solver = PinIKWholeBody030(urdf_path,
-                                                          track_type="standard",
-                                                          cost_type="standard")
+            urdf_path = get_data_path(
+                str(
+                    pathlib.Path(self._robot_version.robot_family) /
+                    "robot.urdf"), self._robot_version.version_value)
+
+            tracking_frame_config = TrackingFrameConfig.init_from_urdf(
+                robot="W1V03X", urdf_path=urdf_path)
+            joint_name_config = JointNameConfig.init_from_robot(robot="W1V03X")
+
+            self.whole_body_ik_solver = WholeBodyIK(
+                urdf_path,
+                tracking_frame_config=tracking_frame_config,
+                joint_name_config=joint_name_config,
+                solver_options=IpoptOptions(),
+                weight_config=WeightConfig(),
+                posture_config=PostureConfig(),
+                freezed_joint_dict=None)
+
+            leg_backward_config = PostureConfig()
+            leg_backward_config.leg_leaning_forward = False
+            self.whole_body_ik_solver_leg_backward = WholeBodyIK(
+                urdf_path,
+                tracking_frame_config=tracking_frame_config,
+                joint_name_config=joint_name_config,
+                solver_options=IpoptOptions(),
+                weight_config=WeightConfig(),
+                posture_config=leg_backward_config,
+                freezed_joint_dict=None)
+
         else:
             raise ValueError(f"Unsupported W1 version: {self._robot_version}")
 
@@ -128,7 +160,8 @@ class CartesianToJointPlanner:
                         right_end_effector_traj: np.ndarray,
                         upper_body_leaning_threshold: float = None,
                         eye_focus_point: np.ndarray = None,
-                        is_strict_solution: bool = False):
+                        is_strict_solution: bool = False,
+                        is_leg_leaning_forward: bool = True):
         """
         This function will solve whole body IK by tracking the dual arm end-effector poses
         Args:
@@ -155,13 +188,22 @@ class CartesianToJointPlanner:
         joint_qpos_list = []
         for left_pose, right_pose in zip(left_end_effector_traj,
                                          right_end_effector_traj):
-            res_ik, result_qpos = self.whole_body_ik_solver.solve_ik(
-                left_arm_target=left_pose,
-                right_arm_target=right_pose,
-                ref_qpos=current_qpos,
-                upper_body_leaning_threshold=upper_body_leaning_threshold,
-                eye_focus_point=eye_focus_point,
-                is_strict_solution=is_strict_solution)
+            if is_leg_leaning_forward:
+                res_ik, result_qpos = self.whole_body_ik_solver.solve_ik(
+                    left_arm_target=left_pose,
+                    right_arm_target=right_pose,
+                    ref_qpos=current_qpos,
+                    upper_body_leaning_threshold=upper_body_leaning_threshold,
+                    eye_focus_point=eye_focus_point,
+                    is_strict_solution=is_strict_solution)
+            else:
+                res_ik, result_qpos = self.whole_body_ik_solver_leg_backward.solve_ik(
+                    left_arm_target=left_pose,
+                    right_arm_target=right_pose,
+                    ref_qpos=current_qpos,
+                    upper_body_leaning_threshold=upper_body_leaning_threshold,
+                    eye_focus_point=eye_focus_point,
+                    is_strict_solution=is_strict_solution)
             if not res_ik:
                 self.logger.error(
                     f"Whole body Cartesian_to_joint_planner: solve ik failed, cur_qpos(deg): {np.rad2deg(current_qpos)}"
