@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "package": "dexe_robot_client",
+  "package_version": "0.7.1",
+  "module": "navigation_client",
+  "source_branch": "xmk/modify_navigation1",
+  "source_revision": "483298450cda119ba8f56a1df88aafe9a19bc588",
+  "docs_version": "1.4.0",
+  "updated": "2026-08-04",
+  "contract_fingerprint": "c4868553f5cfc145ca0391bc87deea91bb21bb2529d184fece853546d165c034",
+  "documents": [
+    "README.md",
+    "design.md",
+    "api_and_usage.md"
+  ],
+  "automated_scope": "RC-A-01..RC-A-16",
+  "automated_repeat_per_case": 15,
+  "result_schema_version": 2,
+  "target_execution_status": "pending-execution"
+}

@@ -14,7 +14,6 @@ import time
 from functools import wraps
 from .logger import get_logger
 from .config import DOWNLOAD_DIR, ASSETS_DIR, MODEL_DIR, ENVIRONMENT_DIR, URL_PREFIX
-from .robot_type import RobotType
 
 from dexe_rp import EndEffectorType
 
@@ -81,80 +80,6 @@ def download_and_unzip_file(url: str) -> bool:
     download_file(url, DOWNLOAD_DIR)
     filename = os.path.basename(url)
     return unzip_file(filename, DOWNLOAD_DIR, ASSETS_DIR)
-
-
-def download_w1_urdf(
-        robot_type: RobotType,
-        end_effector_type: EndEffectorType = None) -> tuple[bool, str]:
-    logger = get_logger()
-
-    name = "W1"
-
-    if robot_type != RobotType.W1V02_1 or robot_type != RobotType.W1V02_2:
-        logger.error(f"{robot_type.name} are not support.")
-        return False, None
-
-    name += "_V2"
-    if robot_type == RobotType.W1V02_1:
-        name += "_A"
-    elif robot_type == RobotType.W1V02_2:
-        name += "_I"
-    else:
-        logger.error(f"{robot_type.name} are not support.")
-        return False, None
-
-    if end_effector_type is None:
-        pass
-    elif end_effector_type == EndEffectorType.BrainCo_Revo1_R:
-        name += "_BRAINCO"
-        end_effector_folder_path = MODEL_DIR / "simplified_brainco"
-        if not end_effector_folder_path.exists():
-            end_effector_url = os.path.join(URL_PREFIX, "Model",
-                                            "simplified_brainco.zip")
-            download_file(url=end_effector_url, dest_path=DOWNLOAD_DIR)
-            file_name = "simplified_brainco.zip"
-            unzip_file(filename=file_name,
-                       zip_path=DOWNLOAD_DIR,
-                       unzip_path=MODEL_DIR)
-
-    elif end_effector_type == EndEffectorType.DH_PGC_140_50:
-        name += "_PGC"
-        end_effector_folder_path = MODEL_DIR / "simplified_pgc"
-        if not end_effector_folder_path.exists():
-            end_effector_url = os.path.join(URL_PREFIX, "Model",
-                                            "simplified_pgc.zip")
-            download_file(url=end_effector_url, dest_path=DOWNLOAD_DIR)
-            file_name = "simplified_pgc.zip"
-            unzip_file(filename=file_name,
-                       zip_path=DOWNLOAD_DIR,
-                       unzip_path=MODEL_DIR)
-    elif end_effector_type == EndEffectorType.Linker_L6:
-        name += "_LINKER"
-        end_effector_folder_path = MODEL_DIR / "simplified_linker"
-        if not end_effector_folder_path.exists():
-            end_effector_url = os.path.join(URL_PREFIX, "Model",
-                                            "simplified_linker.zip")
-            download_file(url=end_effector_url, dest_path=DOWNLOAD_DIR)
-            file_name = "simplified_linker.zip"
-            unzip_file(filename=file_name,
-                       zip_path=DOWNLOAD_DIR,
-                       unzip_path=MODEL_DIR)
-    else:
-        logger.error(f"{end_effector_type.name} are not support.")
-        return False, None
-
-    file_path = MODEL_DIR / name / f"{name}.urdf"
-    if file_path.exists():
-        logger.info(f"File already exists: {file_path}, skipping download.")
-        return True, str(file_path)
-
-    model_url = os.path.join(URL_PREFIX, "Model", f"{name}.zip")
-
-    download_file(url=model_url, dest_path=DOWNLOAD_DIR)
-    file_name = f"{name}.zip"
-    unzip_file(filename=file_name, zip_path=DOWNLOAD_DIR, unzip_path=MODEL_DIR)
-
-    return True, str(file_path)
 
 
 def download_environment(env_name: str) -> tuple[bool, str]:

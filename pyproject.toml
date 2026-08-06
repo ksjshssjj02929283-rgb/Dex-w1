@@ -8,9 +8,17 @@ include-package-data = true
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"dexe_robot_client.navigation_client" = [
+    "README.md",
+    "docs/*.md",
+    "docs/*.json",
+    "docs/*.py",
+]
+
 [project]
 name = "dexe_robot_client"
-version = "0.7.0"
+version = "0.8.0"
 description = "DexEmbodied Robot Client"
 authors = [
     { name = "Dexforce", email = "dexforce@dexforce.com" }
@@ -24,11 +32,11 @@ dependencies = [
     "toppra==0.6.3",
     "trimesh>=4.2.4",
     "pathfinding",
-    "dexe_rp>=0.4.0"
+    "dexe_rp>=0.4.2"
 ]
 
 [project.scripts]
-dexe_robot_client-install-scripts = "dexe_robot_client.cli:export_scripts"
+dexe-navigation-client-test = "dexe_robot_client.navigation_client.interface_test:main"
 
 [project.optional-dependencies]
 dev = [
