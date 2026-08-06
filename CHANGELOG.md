@@ -2,6 +2,7 @@
 
 ## [Unrelease]
 
+## [V0.8.0]
 ### Feat
 - 新增coal collision checker
 - 支持左右不同末端执行器类型
