@@ -678,8 +678,6 @@ class W1Manager:
         if self._use_nav and target_chassis_client is not None:
             self.chassis_client = target_chassis_client
         self._is_sim = enable_sim
-        if self._use_nav and target_chassis_client is not None:
-            self.chassis_client = target_chassis_client
         self.logger.info(f"W1 manager set to {target_name} mode.")
         return StatusCode.SUCCESS
 
