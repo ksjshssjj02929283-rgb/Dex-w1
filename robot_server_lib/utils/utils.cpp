@@ -2,12 +2,27 @@
 
 #include <unistd.h>
 
+#include <cctype>
 #include <cstdlib>
 
 namespace robot_server_lib {
 namespace utils {
 
 namespace {
+std::string SnakeCaseToPascalCase(const std::string& value) {
+    std::string result;
+    bool capitalize = true;
+    for (const char character : value) {
+        if (character == '_') {
+            capitalize = true;
+            continue;
+        }
+        result += capitalize ? static_cast<char>(std::toupper(static_cast<unsigned char>(character))) : character;
+        capitalize = false;
+    }
+    return result;
+}
+
 // 递归合并用户节点与默认节点: 将默认配置中存在而用户配置中缺失的字段补充进去
 YAML::Node MergeYamlNode(const YAML::Node& user_node,
                          const YAML::Node& default_node,
@@ -443,6 +458,30 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         read_joint_admittance_bounded(node, "acceleration_limit", target.acceleration_limit, 0.0, false);
     };
 
+    // 解析单关节时延控制参数 (per-joint, 在 joints 列表中配置)
+    auto read_joint_tdc_bounded = [](const YAML::Node& node, const char* key, double& target, double min_value,
+                                     bool strict_min) {
+        if (!node || !node[key]) {
+            return;
+        }
+        const double value = node[key].as<double>();
+        const bool valid_min = strict_min ? value > min_value : value >= min_value;
+        if (!std::isfinite(value) || !valid_min) {
+            LOG_WARN << "Invalid tdc_controller." << key << ": " << value << ", keep default " << target;
+            return;
+        }
+        target = value;
+    };
+    auto apply_joint_tdc_node = [&](const YAML::Node& node, TimeDelayControlJointConfig& target) {
+        if (!node || !node.IsMap()) {
+            return;
+        }
+        read_joint_tdc_bounded(node, "motor_inertia", target.motor_inertia, 0.0, true);
+        read_joint_tdc_bounded(node, "m_bar_norm", target.m_bar_norm, 0.0, true);
+        read_joint_tdc_bounded(node, "stiffness", target.stiffness, 0.0, false);
+        read_joint_tdc_bounded(node, "damping", target.damping, 0.0, false);
+    };
+
     if (version_cfg["joint_streaming_bounds"] && version_cfg["joint_streaming_bounds"].IsMap()) {
         if (version_cfg["joint_streaming_bounds"]["max_velocity"]) {
             robot_property.joint_streaming_bounds.max_velocity =
@@ -460,6 +499,16 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
 
     if (version_cfg["enable_streaming_ruckig"]) {
         robot_property.enable_streaming_ruckig = version_cfg["enable_streaming_ruckig"].as<bool>();
+    }
+
+    if (version_cfg["torque_mode_controller"]) {
+        const std::string selected = version_cfg["torque_mode_controller"].as<std::string>();
+        const auto parsed_type = magic_enum::enum_cast<TorqueControllerType>(SnakeCaseToPascalCase(selected));
+        if (parsed_type.has_value()) {
+            robot_property.torque_mode_controller_type = *parsed_type;
+        } else {
+            LOG_WARN << "Unknown torque mode controller type: " << selected << ", fallback to default PdController";
+        }
     }
 
     if (config["enable_record"]) {
@@ -515,23 +564,21 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                 params.joint_limit_margin_deg[joint_idx] = joint_config["position_limit_margin_deg"].as<double>();
             }
 
-            if (joint_config["joint_pd_control"]) {
-                if (joint_config["joint_pd_control"]["stiffness"]) {
-                    robot_property.joint_stiffness[joint_idx] =
-                        joint_config["joint_pd_control"]["stiffness"].as<double>();
+            if (joint_config["pd_controller"] && joint_config["pd_controller"].IsMap()) {
+                const auto pd_node = joint_config["pd_controller"];
+                if (pd_node["stiffness"]) {
+                    robot_property.joint_stiffness[joint_idx] = pd_node["stiffness"].as<double>();
                 }
-                if (joint_config["joint_pd_control"]["damping"]) {
-                    robot_property.joint_damping[joint_idx] = joint_config["joint_pd_control"]["damping"].as<double>();
+                if (pd_node["damping"]) {
+                    robot_property.joint_damping[joint_idx] = pd_node["damping"].as<double>();
                 }
-                if (joint_config["joint_pd_control"]["integral_ratio"]) {
-                    double integral_ratio = joint_config["joint_pd_control"]["integral_ratio"].as<double>();
-                    if (std::isfinite(integral_ratio) && integral_ratio >= 0.0) {
-                        robot_property.joint_integral_ratio[joint_idx] = integral_ratio;
-                    } else {
-                        LOG_WARN << "Invalid integral_ratio for joint " << joint_name << ": " << integral_ratio
-                                 << ", keep default " << robot_property.joint_integral_ratio[joint_idx];
-                    }
+                if (pd_node["integral_ratio"]) {
+                    robot_property.joint_integral_ratio[joint_idx] = pd_node["integral_ratio"].as<double>();
                 }
+            }
+            if (joint_config["tdc_controller"] && joint_config["tdc_controller"].IsMap()) {
+                apply_joint_tdc_node(joint_config["tdc_controller"],
+                                     robot_property.joint_tdc_control.joints[joint_idx]);
             }
 
             // 解析单关节导纳参数 (per-joint, 在 joints 列表中配置)

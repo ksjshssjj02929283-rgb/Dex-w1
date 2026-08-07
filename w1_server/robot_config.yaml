@@ -93,7 +93,7 @@ w1_v02:
   # === 是否允许开启力矩控制 ===
   allow_torque_control: true
   enable_cartesian_impedance: false
-
+  torque_mode_controller: "pd_controller"
   cart_stiffness: [200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0]
   cart_damping_ratio: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 
@@ -112,10 +112,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 2.9
-      joint_pd_control:
+      pd_controller:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.071  # 电机转动惯量 (kg·m²)
+        m_bar_norm: 2.0       # 归一化最终 m_bar = m_bar_norm * motor_inertia
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: false
 
@@ -130,10 +135,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 2.9
-      joint_pd_control:
+      pd_controller:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.071  # 电机转动惯量 (kg·m²)
+        m_bar_norm: 2.0       # 归一化最终 m_bar = m_bar_norm * motor_inertia
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: false
 
@@ -148,10 +158,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 2.9
-      joint_pd_control:
+      pd_controller:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.071  # 电机转动惯量 (kg·m²)
+        m_bar_norm: 2.0       # 归一化最终 m_bar = m_bar_norm * motor_inertia
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: false
 
@@ -166,10 +181,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 3.5
-      joint_pd_control:
+      pd_controller:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.071  # 电机转动惯量 (kg·m²)
+        m_bar_norm: 2.0       # 归一化最终 m_bar = m_bar_norm * motor_inertia
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: false
 
@@ -184,6 +204,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
+      pd_controller:
+        stiffness: 200.0
+        damping: 20.0
+        integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: false
 
@@ -198,10 +227,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_pd_control:
+      pd_controller:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007  # 电机转动惯量 (kg·m²)
+        m_bar_norm: 2.0       # 归一化最终 m_bar = m_bar_norm * motor_inertia
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: false
 
@@ -216,10 +250,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 6.7
-      joint_pd_control:
+      pd_controller:
         stiffness: 900.0
         damping: 70.0
         integral_ratio: 0.02
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -239,10 +278,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 9.5
-      joint_pd_control:
+      pd_controller:
         stiffness: 750.0
         damping: 62.0
         integral_ratio: 0.03
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -262,10 +306,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 9.5
-      joint_pd_control:
+      pd_controller:
         stiffness: 650.0
         damping: 35.0
         integral_ratio: 0.03
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -285,10 +334,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_pd_control:
+      pd_controller:
         stiffness: 600.0
         damping: 33.0
         integral_ratio: 0.03
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -308,10 +362,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_pd_control:
+      pd_controller:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -331,10 +390,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_pd_control:
+      pd_controller:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -354,10 +418,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_pd_control:
+      pd_controller:
         stiffness: 20.0
         damping: 1.5
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -377,10 +446,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 6.7
-      joint_pd_control:
+      pd_controller:
         stiffness: 900.0
         damping: 70.0
         integral_ratio: 0.02
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -400,10 +474,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 9.5
-      joint_pd_control:
+      pd_controller:
         stiffness: 750.0
         damping: 62.0
         integral_ratio: 0.03
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -423,10 +502,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 9.5
-      joint_pd_control:
+      pd_controller:
         stiffness: 650.0
         damping: 35.0
         integral_ratio: 0.03
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -446,10 +530,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_pd_control:
+      pd_controller:
         stiffness: 600.0
         damping: 33.0
         integral_ratio: 0.03
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -469,10 +558,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_pd_control:
+      pd_controller:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -492,10 +586,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_pd_control:
+      pd_controller:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -515,10 +614,15 @@ w1_v02:
       input_shaper:
         enabled: true
         frequency: 12
-      joint_pd_control:
+      pd_controller:
         stiffness: 20.0
         damping: 1.5
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007  # 电机转动惯量 (kg·m²)
+        m_bar_norm: 2.0       # 归一化最终 m_bar = m_bar_norm * motor_inertia
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -526,6 +630,7 @@ w1_v02:
         offset_limit: 0.2  # 位置偏移限幅 (rad)
         velocity_limit: 1.0  # 速度偏移限幅 (rad/s)
         acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
+
 
 w1_v03:
   # === streaming运动参数 ===
@@ -544,6 +649,7 @@ w1_v03:
   # === 是否允许开启力矩控制 ===
   allow_torque_control: true
   enable_cartesian_impedance: false
+  torque_mode_controller: "pd_controller"
 
   cart_stiffness: [200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0]
   cart_damping_ratio: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
@@ -563,10 +669,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 5.0
-      joint_pd_control:
+      pd_controller:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.071  # 电机转动惯量 (kg·m²)
+        m_bar_norm: 2.0       # 归一化最终 m_bar = m_bar_norm * motor_inertia
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: false
     - name: KNEE
@@ -580,10 +691,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 5.0
-      joint_pd_control:
+      pd_controller:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.071  # 电机转动惯量 (kg·m²)
+        m_bar_norm: 2.0       # 归一化最终 m_bar = m_bar_norm * motor_inertia
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: false
     - name: BUTTOCK
@@ -597,10 +713,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 5.0
-      joint_pd_control:
+      pd_controller:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.071  # 电机转动惯量 (kg·m²)
+        m_bar_norm: 2.0       # 归一化最终 m_bar = m_bar_norm * motor_inertia
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: false
     - name: WAIST
@@ -614,10 +735,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 9.0
-      joint_pd_control:
+      pd_controller:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.071  # 电机转动惯量 (kg·m²)
+        m_bar_norm: 2.0       # 归一化最终 m_bar = m_bar_norm * motor_inertia
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: false
     - name: NECK1
@@ -631,6 +757,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
+      pd_controller:
+        stiffness: 200.0
+        damping: 20.0
+        integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: false
     - name: NECK2
@@ -644,10 +779,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_pd_control:
+      pd_controller:
         stiffness: 200.0
         damping: 20.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007  # 电机转动惯量 (kg·m²)
+        m_bar_norm: 2.0       # 归一化最终 m_bar = m_bar_norm * motor_inertia
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: false
     - name: LEFT_J1
@@ -661,10 +801,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 13.5
-      joint_pd_control:
+      pd_controller:
         stiffness: 900.0
         damping: 70.0
         integral_ratio: 0.02
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -683,10 +828,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 20.0
-      joint_pd_control:
+      pd_controller:
         stiffness: 750.0
         damping: 62.0
         integral_ratio: 0.03
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -705,10 +855,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 20.0
-      joint_pd_control:
+      pd_controller:
         stiffness: 650.0
         damping: 35.0
         integral_ratio: 0.03
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -727,10 +882,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_pd_control:
+      pd_controller:
         stiffness: 600.0
         damping: 33.0
         integral_ratio: 0.03
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -749,10 +909,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_pd_control:
-        stiffness: 14.25
+      pd_controller:
+        stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -771,10 +936,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_pd_control:
-        stiffness: 14.25
+      pd_controller:
+        stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -793,10 +963,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_pd_control:
+      pd_controller:
         stiffness: 20.0
         damping: 1.5
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -815,10 +990,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 13.5
-      joint_pd_control:
+      pd_controller:
         stiffness: 900.0
         damping: 70.0
         integral_ratio: 0.02
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -837,10 +1017,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 20
-      joint_pd_control:
+      pd_controller:
         stiffness: 750.0
         damping: 62.0
         integral_ratio: 0.03
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -859,10 +1044,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 20
-      joint_pd_control:
+      pd_controller:
         stiffness: 650.0
         damping: 35.0
         integral_ratio: 0.03
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -881,10 +1071,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_pd_control:
+      pd_controller:
         stiffness: 600.0
         damping: 33.0
         integral_ratio: 0.03
+      tdc_controller:
+        motor_inertia: 0.015
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -903,10 +1098,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_pd_control:
+      pd_controller:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -925,10 +1125,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_pd_control:
+      pd_controller:
         stiffness: 30.0
         damping: 2.0
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)
@@ -947,10 +1152,15 @@ w1_v03:
       input_shaper:
         enabled: true
         frequency: 22
-      joint_pd_control:
+      pd_controller:
         stiffness: 20.0
         damping: 1.5
         integral_ratio: 0.05
+      tdc_controller:
+        motor_inertia: 0.007
+        m_bar_norm: 2.0
+        stiffness: 100.0
+        damping: 20.0
       joint_admittance:
         enabled: true
         natural_frequency_hz: 1.5  # 自然频率 fn (Hz)

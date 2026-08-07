@@ -119,6 +119,20 @@ struct JointAdmittanceConfig {
     std::array<JointAdmittanceJointConfig, ndof_robot> joints{};
 };
 
+// 关节时延控制配置: TDC 的每关节控制参数
+struct TimeDelayControlJointConfig {
+    double motor_inertia{0.007};
+    double m_bar_norm{2.0};
+    double stiffness{100.0};
+    double damping{20.0};
+};
+
+struct TimeDelayControlConfig {
+    std::array<TimeDelayControlJointConfig, ndof_robot> joints{};
+};
+
+enum class TorqueControllerType { PdController, TdcController };
+
 struct RobotProperty {
     pinocchio::SE3 tcp_frame{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
     pinocchio::SE3 tcp_frame_secondary{Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()};
@@ -132,7 +146,9 @@ struct RobotProperty {
     VectorDof joint_stiffness = VectorDof::Constant(200.0);
     VectorDof joint_damping = VectorDof::Constant(20.0);
     VectorDof joint_integral_ratio = VectorDof::Constant(0.01);
-    JointAdmittanceConfig joint_admittance;  // 关节导纳控制配置
+    JointAdmittanceConfig joint_admittance;    // 关节导纳控制配置
+    TimeDelayControlConfig joint_tdc_control;  // 关节时延控制配置
+    TorqueControllerType torque_mode_controller_type{TorqueControllerType::PdController};
     Vector12d cart_stiffness = Vector12d::Constant(200.0);
     Vector12d cart_damping_ratio = Vector12d::Constant(1.0);  // 阻尼比 范围0.5 ~ 1.5
     std::array<ErrorCode, ndof_robot> error_codes{};

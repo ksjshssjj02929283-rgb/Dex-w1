@@ -2,6 +2,7 @@
 #include "inverse_dynamics.h"
 #include "joint_admittance_controller.h"
 #include "joint_pd_controller.h"
+#include "joint_time_delay_controller.h"
 #include "torque_controller_base.h"
 
 namespace robot_server_lib {
@@ -18,9 +19,11 @@ public:
 
 protected:
     VectorDof idle_q_;
+    TorqueControllerType controller_type_{TorqueControllerType::PdController};
     std::shared_ptr<dynamics::JointPdController> joint_pd_controller_{nullptr};  // 力矩控制(PID)
     std::shared_ptr<dynamics::JointAdmittanceController> joint_admittance_controller_{
         nullptr};  // 导纳控制(外力->位置偏移)
+    std::shared_ptr<dynamics::JointTimeDelayController> joint_time_delay_controller_{nullptr};  // 时延控制
 };
 
 }  // namespace robot_server_lib

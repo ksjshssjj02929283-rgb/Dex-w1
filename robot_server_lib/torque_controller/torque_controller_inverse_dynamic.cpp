@@ -3,7 +3,16 @@
 namespace robot_server_lib {
 
 TorqueControllerInvDynamic::TorqueControllerInvDynamic(RobotModel robot_model) : TorqueControllerBase(robot_model) {
-    joint_pd_controller_ = std::make_shared<dynamics::JointPdController>();
+    controller_type_ = robot_model_.robot_property_default.torque_mode_controller_type;
+    switch (controller_type_) {
+        case TorqueControllerType::PdController:
+            joint_pd_controller_ = std::make_shared<dynamics::JointPdController>();
+            break;
+        case TorqueControllerType::TdcController:
+            joint_time_delay_controller_ = std::make_shared<dynamics::JointTimeDelayController>(
+                robot_model_.robot_property_default.joint_tdc_control);
+            break;
+    }
     joint_admittance_controller_ =
         std::make_shared<dynamics::JointAdmittanceController>(robot_model_.robot_property_default.joint_admittance);
 }
@@ -30,7 +39,16 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
             // 将导纳偏移叠加到期望位置, 阻抗控制: PD + 积分
             const VectorDof q_error = (idle_q_ + q_offset) - feedback_q;
             const VectorDof dq_error = dq_offset - feedback_dq;
-            joint_pd_controller_->UpdateTorqueCommand(q_error, dq_error, K_p, K_v, K_i_ratio, torque_joint_impedance);
+            switch (controller_type_) {
+                case TorqueControllerType::PdController:
+                    joint_pd_controller_->UpdateTorqueCommand(q_error, dq_error, K_p, K_v, K_i_ratio,
+                                                              torque_joint_impedance);
+                    break;
+                case TorqueControllerType::TdcController:
+                    joint_time_delay_controller_->UpdateTorqueCommand(idle_q_ + q_offset, dq_offset, feedback_q,
+                                                                      feedback_dq, torque_joint_impedance);
+                    break;
+            }
             output_cmd.torque_feedforward =
                 dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
@@ -40,10 +58,19 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
         case TorqueControllerState::Decelerating: {
             // 减速态: 仅阻尼项, 跟随当前位置, 导纳衰减
             joint_admittance_controller_->UpdateAdmittanceOffset(VectorDof::Zero(), q_offset, dq_offset);
-            // 将导纳偏移叠加到期望位置(期望=当前位置), 阻抗控制: PD + 积分
-            const VectorDof q_error = (feedback_q + q_offset) - feedback_q;
+            // 减速态期望位置=当前位置, 位置误差即导纳偏移量
+            const VectorDof q_error = q_offset;
             const VectorDof dq_error = dq_offset - feedback_dq;
-            joint_pd_controller_->UpdateTorqueCommand(q_error, dq_error, K_p, K_v, K_i_ratio, torque_joint_impedance);
+            switch (controller_type_) {
+                case TorqueControllerType::PdController:
+                    joint_pd_controller_->UpdateTorqueCommand(q_error, dq_error, K_p, K_v, K_i_ratio,
+                                                              torque_joint_impedance);
+                    break;
+                case TorqueControllerType::TdcController:
+                    joint_time_delay_controller_->UpdateTorqueCommand(feedback_q + q_offset, dq_offset, feedback_q,
+                                                                      feedback_dq, torque_joint_impedance);
+                    break;
+            }
             output_cmd.torque_feedforward =
                 dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
@@ -68,7 +95,16 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
             // 3. 阻抗控制: PD + 积分
             const VectorDof q_error = cmd_q_admittance - feedback_q;
             const VectorDof dq_error = cmd_dq_admittance - feedback_dq;
-            joint_pd_controller_->UpdateTorqueCommand(q_error, dq_error, K_p, K_v, K_i_ratio, torque_joint_impedance);
+            switch (controller_type_) {
+                case TorqueControllerType::PdController:
+                    joint_pd_controller_->UpdateTorqueCommand(q_error, dq_error, K_p, K_v, K_i_ratio,
+                                                              torque_joint_impedance);
+                    break;
+                case TorqueControllerType::TdcController:
+                    joint_time_delay_controller_->UpdateTorqueCommand(cmd_q_admittance, cmd_dq_admittance, feedback_q,
+                                                                      feedback_dq, torque_joint_impedance);
+                    break;
+            }
 
             // 4. 笛卡尔阻抗控制力矩输出
             output_cmd.torque_impedance = torque_cart_impedance + output_cmd.torque_feedforward;
@@ -86,7 +122,12 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
 bool TorqueControllerInvDynamic::ResetForNewEpisode(const JointRawMeasurement& raw_measurement,
                                                     const TorqueControllerState& state) {
     state_ = state;
-    joint_pd_controller_->Reset();
+    if (joint_pd_controller_) {
+        joint_pd_controller_->Reset();
+    }
+    if (joint_time_delay_controller_) {
+        joint_time_delay_controller_->Reset();
+    }
     joint_admittance_controller_->Reset();
     if (state_ == TorqueControllerState::Idle) {
         idle_q_ = raw_measurement.position;
