@@ -57,7 +57,7 @@ def _():
         dof=4,
         joint_names=("MOTOR_1", "MOTOR_2", "SUCTION_1", "SUCTION_2",),
         supported_modes=(EEJointControlMode.POSITION,),
-        position=Limit((0,)*4, (100,)*4),
+        position=Limit((0,)*4, (360, 360, 100, 100, )),
         velocity=Limit((-100,)*4, (100,)*4),
         current=Limit((-100,)*4, (100,)*4),
         force=Limit((-100,)*4, (100,)*4),
