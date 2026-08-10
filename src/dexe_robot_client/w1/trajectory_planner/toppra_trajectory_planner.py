@@ -106,6 +106,13 @@ class ToppraTrajectoryPlanner:
         # Sample trajectory points
         duration = jnt_traj.duration
         ts = np.arange(0, duration, time_step)
+        if ts.size == 0:
+            ts = np.array([0.])
+        if np.isclose(ts[-1], duration, atol=1e-9, rtol=0.0):
+            ts[-1] = duration
+        else:
+            ts = np.append(ts, duration)
+
         pos_array = jnt_traj.eval(ts)
         vel_array = jnt_traj.evald(ts)
         acc_array = jnt_traj.evaldd(ts)

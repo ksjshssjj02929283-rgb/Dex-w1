@@ -1,6 +1,9 @@
 # CHANGELOG
 
 ## [Unrelease]
+### Fix
+- 修复toppra轨迹规划采样漏掉最后到位点的问题
+
 
 ## [V0.8.0]
 ### Feat
