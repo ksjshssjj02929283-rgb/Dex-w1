@@ -11,6 +11,8 @@ find_package(rosidl_default_generators REQUIRED)
 
 # Srv files
 set(SRV_FILES
+  "srv/ImageForwardingGet.srv"
+  "srv/ImageForwardingSet.srv"
   "srv/TeleopConfigGet.srv"
   "srv/TeleopConfigSet.srv"
 )
