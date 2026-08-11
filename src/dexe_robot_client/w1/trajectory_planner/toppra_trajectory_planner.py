@@ -6,11 +6,18 @@ All rights reserved.
 ----------------------------------------------------------------------------
 '''
 
+import logging
 import numpy as np
 import bisect
 import toppra as ta
 import toppra.constraint as constraint
 from ...common import get_logger
+
+
+# Disable toppra logging and prevent being enabled by root logging
+ta_logger = logging.getLogger("toppra")
+ta_logger.propagate = False
+ta.setup_logging("WARN")
 
 
 class ToppraTrajectoryPlanner:
