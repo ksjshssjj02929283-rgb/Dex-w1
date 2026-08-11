@@ -67,21 +67,22 @@ RobotServer::~RobotServer() {
 }
 
 void RobotServer::JointCommandCallback(const JointCommandMsg::SharedPtr msg) {
-    auto robot_control_temp = robot_control_;
+    std::lock_guard<std::mutex> lock(pending_command_mutex_);
     for (size_t i = 0; i < msg->name.size(); ++i) {
         for (int j = 0; j < ndof_total_; ++j) {
             if (joint_name_[j] == msg->name[i]) {
-                robot_control_temp.joint_control[j].joint_position = msg->position[i];
-                robot_control_temp.joint_control[j].joint_velocity = msg->velocity[i];
-                robot_control_temp.joint_control[j].joint_torque_feedforward = msg->torque_feedforward[i];
-                robot_control_temp.joint_control[j].joint_torque = msg->torque[i];
-                robot_control_temp.joint_control[j].joint_Kp = msg->stiffness[i];
-                robot_control_temp.joint_control[j].joint_Kd = msg->damping[i];
+                pending_command_.control.joint_control[j].joint_position = msg->position[i];
+                pending_command_.control.joint_control[j].joint_velocity = msg->velocity[i];
+                pending_command_.control.joint_control[j].joint_torque_feedforward = msg->torque_feedforward[i];
+                pending_command_.control.joint_control[j].joint_torque = msg->torque[i];
+                pending_command_.control.joint_control[j].joint_Kp = msg->stiffness[i];
+                pending_command_.control.joint_control[j].joint_Kd = msg->damping[i];
+                pending_command_.joint_updated[j] = true;
             }
         }
     }
-    last_command_timestamp_ = this->get_clock()->now();
-    robot_control_ = robot_control_temp;
+    pending_command_.timestamp = this->get_clock()->now();
+    pending_command_.available = true;
 }
 
 // 处理反馈数据和发送控制命令的实时线程函数
@@ -94,6 +95,9 @@ void RobotServer::JointControlThreadFunc() {
     Int64 loop_counter = 0;
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     auto last_cycle_start = next_cycle_time_point;
+    builtin_interfaces::msg::Time last_command_timestamp{};
+    std::array<double, ndof_legs_> last_leg_Kp{};
+    std::array<double, ndof_legs_> last_leg_Kd{};
     const auto elapsed_us = [](const auto& begin, const auto& end) {
         return std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
     };
@@ -104,8 +108,37 @@ void RobotServer::JointControlThreadFunc() {
         const int64_t wake_lateness_us = std::max<int64_t>(0, elapsed_us(scheduled_cycle_time, cycle_start));
         last_cycle_start = cycle_start;
 
+        PendingJointCommand pending_command;
+        {
+            std::unique_lock<std::mutex> lock(pending_command_mutex_, std::try_to_lock);
+            if (lock.owns_lock() && pending_command_.available) {
+                pending_command = pending_command_;
+                pending_command_.joint_updated.fill(false);
+                pending_command_.available = false;
+            }
+        }
+        if (pending_command.available) {
+            for (int i = 0; i < ndof_total_; ++i) {
+                if (!pending_command.joint_updated[i]) continue;
+                const auto& source = pending_command.control.joint_control[i];
+                auto& target = robot_control_.joint_control[i];
+                target.joint_position = source.joint_position;
+                target.joint_velocity = source.joint_velocity;
+                target.joint_torque_feedforward = source.joint_torque_feedforward;
+                target.joint_torque = source.joint_torque;
+                target.joint_Kp = source.joint_Kp;
+                target.joint_Kd = source.joint_Kd;
+                if (i >= ndof_body_) {
+                    const int leg_index = i - ndof_body_;
+                    last_leg_Kp[leg_index] = source.joint_Kp;
+                    last_leg_Kd[leg_index] = source.joint_Kd;
+                }
+            }
+            last_command_timestamp = pending_command.timestamp;
+        }
+
         rclcpp::Time current_time = this->get_clock()->now();
-        rclcpp::Time last_time(last_command_timestamp_);
+        rclcpp::Time last_time(last_command_timestamp);
         rclcpp::Duration diff = current_time - last_time;
         const auto after_clock = std::chrono::steady_clock::now();
         loop_counter++;
@@ -184,18 +217,18 @@ void RobotServer::JointControlThreadFunc() {
                 robot_control_.joint_control[idx].joint_Kd = 0.0;
             }
         }
-        // 如果指令超时则腿部指令置零
-        if (last_command_timestamp_.sec == 0 && last_command_timestamp_.nanosec == 0 ||
+        // 指令超时：腿部保持当前位置，力矩置零，Kp/Kd 降为最后有效指令的 30%
+        if ((last_command_timestamp.sec == 0 && last_command_timestamp.nanosec == 0) ||
             diff.nanoseconds() > static_cast<int64_t>(command_timeout_ms_) * 1000000LL) {
-            LOG_WARN_THROTTLE(1000) << "Command timeout, setting leg joint commands to zero";
+            LOG_WARN_THROTTLE(1000) << "Command timeout: zeroing leg velocity/torque and reducing Kp/Kd to 30%";
             for (int i = 0; i < ndof_legs_; i++) {
                 int idx = i + ndof_body_;
                 robot_control_.joint_control[idx].joint_position = robot_feedback_.joint_feedback[idx].joint_position;
                 robot_control_.joint_control[idx].joint_velocity = 0.0;
                 robot_control_.joint_control[idx].joint_torque = 0.0;
                 robot_control_.joint_control[idx].joint_torque_feedforward = 0.0;
-                robot_control_.joint_control[idx].joint_Kp = 0.0;
-                robot_control_.joint_control[idx].joint_Kd = 0.0;
+                robot_control_.joint_control[idx].joint_Kp = last_leg_Kp[i] * 0.3;
+                robot_control_.joint_control[idx].joint_Kd = last_leg_Kd[i] * 0.3;
             }
         }
         // 如果状态字发生变化了则打印
@@ -208,9 +241,9 @@ void RobotServer::JointControlThreadFunc() {
                      << utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str()
                      << ", control word changed to "
                      << utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str();
-            RCLCPP_INFO(this->get_logger(), "Status word: %s, control word: %s",
-                        utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str(),
-                        utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str().c_str());
+            // RCLCPP_INFO(this->get_logger(), "Status word: %s, control word: %s",
+            //             utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str(),
+            //             utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str().c_str());
             last_status_word_ = robot_feedback_.robot_status_word;
             last_control_word_ = robot_control_.robot_control_word;
         }
@@ -415,19 +448,18 @@ void RobotServer::ReportControlLoopTiming() {
                 "dropped=%lu interval=%ldus wake_late=%ldus "
                 "body=%ldus phases[clock=%ld shm_read=%ld feedback=%ld state=%ld ankle_cmd=%ld pd=%ld shm_write=%ld] "
                 "feedback_ok=%d control_write_ok=%d cpu=%d policy=%d priority=%d",
-                t.reason_flags, pending_timing_count_, pending_timing_dropped_, t.cycle_interval_us,
-                t.wake_lateness_us, t.body_us, t.clock_us, t.shm_read_us, t.feedback_process_us,
-                t.state_process_us, t.command_ankle_us, t.pd_transform_us, t.shm_write_us, t.feedback_ok,
-                t.control_write_ok, t.cpu, t.sched_policy, t.sched_priority);
+                t.reason_flags, pending_timing_count_, pending_timing_dropped_, t.cycle_interval_us, t.wake_lateness_us,
+                t.body_us, t.clock_us, t.shm_read_us, t.feedback_process_us, t.state_process_us, t.command_ankle_us,
+                t.pd_transform_us, t.shm_write_us, t.feedback_ok, t.control_write_ok, t.cpu, t.sched_policy,
+                t.sched_priority);
     LOG_WARN << "Control loop timing event: flags=" << t.reason_flags << ", events=" << pending_timing_count_
              << ", dropped=" << pending_timing_dropped_ << ", interval_us=" << t.cycle_interval_us
-             << ", wake_late_us=" << t.wake_lateness_us << ", body_us=" << t.body_us
-             << ", clock_us=" << t.clock_us << ", shm_read_us=" << t.shm_read_us
-             << ", feedback_us=" << t.feedback_process_us << ", state_us=" << t.state_process_us
-             << ", ankle_cmd_us=" << t.command_ankle_us << ", pd_us=" << t.pd_transform_us
-             << ", shm_write_us=" << t.shm_write_us << ", feedback_ok=" << t.feedback_ok
-             << ", control_write_ok=" << t.control_write_ok << ", cpu=" << t.cpu << ", policy=" << t.sched_policy
-             << ", priority=" << t.sched_priority;
+             << ", wake_late_us=" << t.wake_lateness_us << ", body_us=" << t.body_us << ", clock_us=" << t.clock_us
+             << ", shm_read_us=" << t.shm_read_us << ", feedback_us=" << t.feedback_process_us
+             << ", state_us=" << t.state_process_us << ", ankle_cmd_us=" << t.command_ankle_us
+             << ", pd_us=" << t.pd_transform_us << ", shm_write_us=" << t.shm_write_us
+             << ", feedback_ok=" << t.feedback_ok << ", control_write_ok=" << t.control_write_ok << ", cpu=" << t.cpu
+             << ", policy=" << t.sched_policy << ", priority=" << t.sched_priority;
     pending_timing_count_ = 0;
     pending_timing_dropped_ = 0;
 }
@@ -451,8 +483,9 @@ std::string RobotServer::GetRobotStatusString() {
     }
 
     // 构建脚踝电机原始数据
-    std::vector<double> ankle_motor_torque = {ankle_motor_torque_[L_ANKLE_MOTOR_1], ankle_motor_torque_[L_ANKLE_MOTOR_2],
-                                              ankle_motor_torque_[R_ANKLE_MOTOR_1], ankle_motor_torque_[R_ANKLE_MOTOR_2]};
+    std::vector<double> ankle_motor_torque = {
+        ankle_motor_torque_[L_ANKLE_MOTOR_1], ankle_motor_torque_[L_ANKLE_MOTOR_2],
+        ankle_motor_torque_[R_ANKLE_MOTOR_1], ankle_motor_torque_[R_ANKLE_MOTOR_2]};
     std::vector<double> ankle_motor_position_fb = {
         ankle_motor_position_fb_[L_ANKLE_MOTOR_1], ankle_motor_position_fb_[L_ANKLE_MOTOR_2],
         ankle_motor_position_fb_[R_ANKLE_MOTOR_1], ankle_motor_position_fb_[R_ANKLE_MOTOR_2]};
@@ -604,8 +637,10 @@ RobotFeedback RobotServer::ConvertAnkleMotorsToPitchRoll(const RobotFeedback& ro
 RobotControl RobotServer::ConvertPitchRollToAnkleMotors(const RobotControl& robot_control) {
     RobotControl result = robot_control;
 
-    const double ankle_pitch_left = std::clamp(robot_control.joint_control[idx_l_ankle_pitch_].joint_position, -1.0472, 0.61087);
-    const double ankle_roll_left = std::clamp(robot_control.joint_control[idx_l_ankle_roll_].joint_position, -0.2618, 0.2618);
+    const double ankle_pitch_left =
+        std::clamp(robot_control.joint_control[idx_l_ankle_pitch_].joint_position, -1.0472, 0.61087);
+    const double ankle_roll_left =
+        std::clamp(robot_control.joint_control[idx_l_ankle_roll_].joint_position, -0.2618, 0.2618);
     const double ankle_tau_pitch_left = robot_control.joint_control[idx_l_ankle_pitch_].joint_torque;
     const double ankle_tau_roll_left = robot_control.joint_control[idx_l_ankle_roll_].joint_torque;
     const double ankle_ff_pitch_left = robot_control.joint_control[idx_l_ankle_pitch_].joint_torque_feedforward;
@@ -617,7 +652,8 @@ RobotControl RobotServer::ConvertPitchRollToAnkleMotors(const RobotControl& robo
 
     const double ankle_pitch_right =
         std::clamp(robot_control.joint_control[idx_r_ankle_pitch_].joint_position, -1.0472, 0.61087);
-    const double ankle_roll_right = std::clamp(robot_control.joint_control[idx_r_ankle_roll_].joint_position, -0.2618, 0.2618);
+    const double ankle_roll_right =
+        std::clamp(robot_control.joint_control[idx_r_ankle_roll_].joint_position, -0.2618, 0.2618);
     const double ankle_tau_pitch_right = robot_control.joint_control[idx_r_ankle_pitch_].joint_torque;
     const double ankle_tau_roll_right = robot_control.joint_control[idx_r_ankle_roll_].joint_torque;
     const double ankle_ff_pitch_right = robot_control.joint_control[idx_r_ankle_pitch_].joint_torque_feedforward;
@@ -631,10 +667,14 @@ RobotControl RobotServer::ConvertPitchRollToAnkleMotors(const RobotControl& robo
     utils::AnkleIKSolution motor_angles_right =
         pm_ankle_right_.GetAnkleMotorAngles(ankle_pitch_right, ankle_roll_right);
 
-    result.joint_control[idx_l_ankle_pitch_].joint_position = ankle_motor_position_cmd_[L_ANKLE_MOTOR_1] = motor_angles_left.theta_1_rad;
-    result.joint_control[idx_l_ankle_roll_].joint_position = ankle_motor_position_cmd_[L_ANKLE_MOTOR_2] = motor_angles_left.theta_2_rad;
-    result.joint_control[idx_r_ankle_pitch_].joint_position = ankle_motor_position_cmd_[R_ANKLE_MOTOR_1] = motor_angles_right.theta_1_rad;
-    result.joint_control[idx_r_ankle_roll_].joint_position = ankle_motor_position_cmd_[R_ANKLE_MOTOR_2] = motor_angles_right.theta_2_rad;
+    result.joint_control[idx_l_ankle_pitch_].joint_position = ankle_motor_position_cmd_[L_ANKLE_MOTOR_1] =
+        motor_angles_left.theta_1_rad;
+    result.joint_control[idx_l_ankle_roll_].joint_position = ankle_motor_position_cmd_[L_ANKLE_MOTOR_2] =
+        motor_angles_left.theta_2_rad;
+    result.joint_control[idx_r_ankle_pitch_].joint_position = ankle_motor_position_cmd_[R_ANKLE_MOTOR_1] =
+        motor_angles_right.theta_1_rad;
+    result.joint_control[idx_r_ankle_roll_].joint_position = ankle_motor_position_cmd_[R_ANKLE_MOTOR_2] =
+        motor_angles_right.theta_2_rad;
 
     Eigen::Matrix2d ankle_k_left = pm_ankle_left_.GetMotorStiffnessMatrixFromTaskStiffness(
         ankle_pitch_left, ankle_roll_left, ankle_k_pitch_left, ankle_k_roll_left);

@@ -1,9 +1,10 @@
 #pragma once
 
-#include <builtin_interfaces/msg/time.hpp>
-#include <geometry_msgs/msg/twist.hpp>
 #include <array>
 #include <atomic>
+#include <builtin_interfaces/msg/time.hpp>
+#include <geometry_msgs/msg/twist.hpp>
+#include <mutex>
 #include <numeric>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
@@ -47,6 +48,13 @@ private:
         int sched_priority{-1};
         bool feedback_ok{false};
         bool control_write_ok{false};
+    };
+
+    struct PendingJointCommand {
+        RobotControl control{};
+        std::array<bool, MAX_JOINT_NUM> joint_updated{};
+        builtin_interfaces::msg::Time timestamp{};
+        bool available{false};
     };
 
     static constexpr uint32_t timing_reason_interval_ = 1U << 0;
@@ -102,7 +110,8 @@ private:
     int idx_r_ankle_pitch_{-1};
     int idx_r_ankle_roll_{-1};
 
-    builtin_interfaces::msg::Time last_command_timestamp_{};
+    std::mutex pending_command_mutex_;
+    PendingJointCommand pending_command_;
     int command_timeout_ms_ = 200;
 
     Int64 streaming_request_id_{-1};
@@ -111,12 +120,7 @@ private:
     static constexpr int ndof_total_ = ndof_body_ + ndof_legs_;
 
     // 踝关节电机物理索引
-    enum AnkleMotorIndex {
-        L_ANKLE_MOTOR_1 = 0,
-        L_ANKLE_MOTOR_2 = 1,
-        R_ANKLE_MOTOR_1 = 2,
-        R_ANKLE_MOTOR_2 = 3
-    };
+    enum AnkleMotorIndex { L_ANKLE_MOTOR_1 = 0, L_ANKLE_MOTOR_2 = 1, R_ANKLE_MOTOR_1 = 2, R_ANKLE_MOTOR_2 = 3 };
 
     const char* joint_name_[ndof_total_] = {
         "HEAD_YAW_J1",        "HEAD_PITCH_J2",    "SHOULDER_PITCH_L_J1", "SHOULDER_ROLL_L_J2", "ELBOW_PITCH_L_J3",
@@ -128,8 +132,8 @@ private:
 
     const char* joint_minus_[5] = {"WAIST_YAW", "HIP_PITCH_L_J1", "HIP_ROLL_L_J2", "HIP_ROLL_R_J2", "KNEE_PITCH_R_J4"};
 
-    double torque_limit_Nm_[ndof_body_] = {10.0, 10.0, 31.0, 31.0, 31.0, 31.0, 10.0, 10.0, 10.0,
-                                           31.0, 31.0, 31.0, 31.0, 10.0, 10.0, 10.0};
+    double torque_limit_Nm_[ndof_body_] = {10.0, 10.0, 31.0, 31.0, 31.0, 31.0, 10.0, 10.0,
+                                           10.0, 31.0, 31.0, 31.0, 31.0, 10.0, 10.0, 10.0};
 
     std::vector<double> joint_torque_feedforward_ =
         std::vector<double>(ndof_total_, 0.0);  // 实际下发到共享内存的力矩前馈
