@@ -29,9 +29,12 @@ class VisualRos2Node(Node):
         self.create_subscription(String, "/feedback/robot_server_state_sim", self._subscriber_robot_server_state_sim_callback, 10)
 
     def _init_visualization(self):
-        self.robot_cfg_path = (
-            Path.home() / "dexe_robot_server_data/robot_config.yaml"
-        )
+        user_cfg = Path.home() / "dexe_robot_server_data/robot_config.yaml"
+        if user_cfg.exists():
+            self.robot_cfg_path = str(user_cfg)
+        else:
+            share_dir = get_package_share_directory("w1_server")
+            self.robot_cfg_path = str(Path(share_dir) / "robot_config.yaml")
         self.parse_robot_cfg()
         mesh_dir = Path(self.urdf_path).parent
         self.robot = pin.RobotWrapper.BuildFromURDF(self.urdf_path, mesh_dir)
