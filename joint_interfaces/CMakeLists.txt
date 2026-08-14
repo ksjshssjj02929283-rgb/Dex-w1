@@ -13,6 +13,7 @@ find_package(std_msgs REQUIRED)
 # Msg files
 set(MSG_FILES
   "msg/JointControl.msg"
+  "msg/JointCommandEnvelope.msg"
   "msg/JointPositionControl.msg"
   "msg/JointVelocityTorqueLimitFeedback.msg"
 )
@@ -28,4 +29,3 @@ ament_export_dependencies(rosidl_default_runtime)
 ament_export_dependencies(std_msgs)
 
 ament_package()
-
