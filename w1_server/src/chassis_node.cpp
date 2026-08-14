@@ -10,7 +10,7 @@ namespace chassis_node {
 
 ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : rclcpp::Node("chassis_node", options) {
     // 声明参数
-    wheel_track_ = this->declare_parameter<double>("wheel_track", 0.4390);  // 轮距 b（示例值）
+    wheel_track_ = this->declare_parameter<double>("wheel_track", 0.4300);  // 轮距 b（m）
     odom_frame_ = this->declare_parameter<std::string>("odom_frame", "odom");
     base_frame_ = this->declare_parameter<std::string>("base_frame", "base_footprint");
     odom_rate_hz_ = this->declare_parameter<double>("odom_rate_hz", 100.0);
