@@ -1,0 +1,15 @@
+# Establish the only active main-joint command session and latch its target.
+# A successful response is required before session commands may be published.
+uint8 TARGET_SIMULATION=1
+uint8 TARGET_REAL=2
+
+# The current implementation permits VLA or SYSTEM as the initial source.
+uint8 SOURCE_VLA=1
+uint8 SOURCE_SYSTEM=3
+
+string session_id
+uint8 target
+uint8 initial_source
+---
+bool success
+string message

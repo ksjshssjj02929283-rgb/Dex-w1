@@ -13,6 +13,7 @@ The repository is organized into several packages, each containing specific inte
 ```text
 dexe_interfaces/
 ├── chassis_interfaces/             # Interfaces for chassis components.
+├── control_gateway_interfaces/     # Main-joint command arbitration interfaces.
 ├── common_interfaces/              # Interfaces for general robot control like rebooting or diagnostics.
 ├── gripper_interfaces/             # Interfaces for grippers.
 ├── hand_interfaces/                # Interfaces for dexterous hands.
@@ -46,6 +47,7 @@ Each package in this repository follows a consistent structure:
 This repository contains the following interface packages at its root:
 
 - `chassis_interfaces`: Interfaces specific to the chassis, such as wheel encoders and steering.
+- `control_gateway_interfaces`: Command envelopes and semantic START/SWITCH/STOP services for main-joint source arbitration.
 - `common_interfaces`: Interfaces for tasks applicable to multiple hardware components, like rebooting or diagnostics.
 - `gripper_interfaces`: Interfaces for grippers, including control and feedback.
 - `hand_interfaces`: Interfaces for dexterous hands, including finger control and feedback.

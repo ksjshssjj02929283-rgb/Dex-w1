@@ -10,6 +10,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <exec_depend>chassis_interfaces</exec_depend>
+  <exec_depend>control_gateway_interfaces</exec_depend>
   <exec_depend>device_interfaces</exec_depend>
   <exec_depend>end_effector_interfaces</exec_depend>
   <exec_depend>joint_interfaces</exec_depend>

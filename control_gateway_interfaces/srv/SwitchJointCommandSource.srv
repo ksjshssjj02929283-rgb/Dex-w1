@@ -1,0 +1,25 @@
+# Switch the only authorized source of the active main-joint command session.
+uint8 SOURCE_VLA=1
+uint8 SOURCE_TELEOP=2
+
+string session_id
+uint8 next_source
+
+# Optional cross-topic barrier. When required, the Gateway switches only after
+# it has accepted at least ``barrier_command_id`` from the named publisher
+# instance of the currently active source.
+#
+# barrier_required=false requires an empty instance ID and command ID 0.
+# barrier_required=true requires a non-empty instance ID; command ID 0 is valid.
+bool barrier_required
+string barrier_publisher_instance_id
+uint64 barrier_command_id
+---
+# BARRIER_PENDING is the only retryable result. REJECTED covers malformed
+# requests, session mismatch, and illegal source transitions.
+uint8 STATUS_SUCCESS=0
+uint8 STATUS_BARRIER_PENDING=1
+uint8 STATUS_REJECTED=2
+
+uint8 status
+string message

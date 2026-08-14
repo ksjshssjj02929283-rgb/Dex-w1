@@ -1,0 +1,6 @@
+# Close the matching main-joint command session and revoke its authorization.
+# Implementations should treat an already-IDLE Gateway as idempotent success.
+string session_id
+---
+bool success
+string message
