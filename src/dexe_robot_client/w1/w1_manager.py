@@ -324,6 +324,16 @@ class W1Manager:
             return False
         return True
 
+    def _has_chassis_client_initialized(self) -> bool:
+        """检查底盘客户端是否已初始化，不依赖底盘位姿连接状态。"""
+        if not self._use_nav:
+            self.logger.error("导航功能未启用。")
+            return False
+        if self.chassis_client is None:
+            self.logger.error("底盘客户端未初始化。")
+            return False
+        return True
+
     def _get_chassis_client(self):
         if not self._has_chassis_client():
             return None
@@ -803,51 +813,67 @@ class W1Manager:
         return StatusCode.SUCCESS, self._get_chassis_client(
         ).get_control_status()
 
-    def set_auto_charging(self) -> StatusCode:
-        """发送回充 action"""
-        if not self._use_nav:
-            self.logger.error("Navigation function is disabled.")
-            return StatusCode.FAIL
+    def set_auto_charging(self,
+                          force: bool = True,
+                          timeout_sec: float = 10.0) -> StatusCode:
+        """异步发送回充 Action Goal，返回值仅表示发送流程是否启动。"""
         if not self._has_chassis_client():
-            self.logger.error("Chassis client has not initialized")
             return StatusCode.FAIL
-        res = self._get_chassis_client().set_chassis_auto_charging()
-        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
 
-    def cancel_auto_charging(self) -> StatusCode:
-        """取消当前回充 action"""
-        if not self._use_nav:
-            self.logger.error("Navigation function is disabled.")
-            return StatusCode.FAIL
-        if not self._has_chassis_client():
-            self.logger.error("Chassis client has not initialized")
-            return StatusCode.FAIL
-        res = self._get_chassis_client().cancel_auto_charging()
-        return (StatusCode.SUCCESS if res else StatusCode.FAIL)
-
-    def cancel_chassis_motion(self) -> StatusCode:
-        """统一取消底盘运动，同时调用取消导航和取消控制。"""
-        if not self._use_nav:
-            self.logger.error("Navigation function is disabled.")
-            return StatusCode.FAIL
-        if not self._has_chassis_client():
-            self.logger.error("Chassis client has not initialized")
+        res = self.chassis_client.set_chassis_auto_charging(
+            force=force, timeout_sec=timeout_sec)
+        if not res:
+            self.logger.error("回充 Action Goal 发送失败。")
             return StatusCode.FAIL
 
         self.logger.info(
-            "Sending request to cancel navigation, control and auto charging..."
-        )
-        nav_cancel_ok = self._get_chassis_client().cancel_chassis_nav2()
-        road_nav_cancel_ok = self._get_chassis_client().cancel_road_navigation()
-        graph_points_nav_cancel_ok = (
-            self._get_chassis_client().cancel_graph_points_navigation())
-        control_cancel_ok = self._get_chassis_client().cancel_chassis_control()
-        auto_charging_cancel_ok = (
-            self._get_chassis_client().cancel_auto_charging())
+            f"回充 Action Goal 发送流程已启动：force={force}，"
+            "最终结果需通过结果接口获取。")
+        return StatusCode.SUCCESS
 
-        # 只要有一个成功，就认为取消指令已尽力发送
-        #if (nav_cancel_ok or road_nav_cancel_ok or control_cancel_ok or
-        #        auto_charging_cancel_ok):
+    def get_auto_charging_status(self) -> tuple[StatusCode, str]:
+        """获取最近一次回充 Action 的当前状态。"""
+        if not self._has_chassis_client_initialized():
+            reason = "DISABLED" if not self._use_nav else "NOT_INITIALIZED"
+            return StatusCode.FAIL, reason
+        return (StatusCode.SUCCESS,
+                self.chassis_client.get_auto_charging_status())
+
+    def get_auto_charging_result(self) -> tuple[StatusCode, bool, str]:
+        """获取最近一次回充 Action 的结果，应在任务进入终态后调用。"""
+        if not self._has_chassis_client_initialized():
+            reason = "DISABLED" if not self._use_nav else "NOT_INITIALIZED"
+            return StatusCode.FAIL, False, reason
+        success, message = self.chassis_client.get_auto_charging_result()
+        return StatusCode.SUCCESS, success, message
+
+    def cancel_auto_charging(self) -> StatusCode:
+        """异步取消当前回充 Action，不依赖底盘位姿连接状态。"""
+        if not self._has_chassis_client_initialized():
+            return StatusCode.FAIL
+        res = self.chassis_client.cancel_auto_charging()
+        if not res:
+            self.logger.warning(
+                "回充 Action 取消请求未发送，当前可能没有可取消的 Goal。")
+            return StatusCode.FAIL
+        return StatusCode.SUCCESS
+
+    def cancel_chassis_motion(self) -> StatusCode:
+        """统一取消底盘导航、控制和回充 Action。"""
+        if not self._has_chassis_client_initialized():
+            return StatusCode.FAIL
+
+        # 取消依赖已保存的 Action GoalHandle，
+        # 不应因位姿反馈暂时断流而被阻止。
+        self.logger.info("正在取消导航、底盘控制和回充 Action。")
+        nav_cancel_ok = self.chassis_client.cancel_chassis_nav2()
+        road_nav_cancel_ok = self.chassis_client.cancel_road_navigation()
+        graph_points_nav_cancel_ok = (
+            self.chassis_client.cancel_graph_points_navigation())
+        control_cancel_ok = self.chassis_client.cancel_chassis_control()
+        auto_charging_cancel_ok = self.chassis_client.cancel_auto_charging()
+
+        # 只要有一个成功，就认为取消指令已尽力发送。
         if (nav_cancel_ok or road_nav_cancel_ok or graph_points_nav_cancel_ok or
                 control_cancel_ok or auto_charging_cancel_ok):
             return StatusCode.SUCCESS
