@@ -1,7 +1,6 @@
 # Main-joint command submitted to the Control Gateway.
 #
-# ``header.stamp`` belongs to the source publisher clock domain. Gateway
-# receive fields are populated only on the forwarded audit topic.
+# ``header.stamp`` belongs to the source publisher clock domain.
 std_msgs/Header header
 
 uint8 SOURCE_UNKNOWN=0
@@ -22,9 +21,3 @@ string clock_domain
 
 string[] name
 float64[] position
-
-# Populated by the Gateway for accepted/forwarded commands.
-# Acceptance/forwarding does not prove that the hardware executed the command.
-uint64 gateway_sequence_id
-int64 gateway_receive_unix_ms
-uint64 gateway_receive_monotonic_ns

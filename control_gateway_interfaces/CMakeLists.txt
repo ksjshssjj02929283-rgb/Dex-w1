@@ -10,7 +10,8 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
 
 set(MSG_FILES
-  "msg/JointCommandEnvelope.msg"
+  "msg/JointCommand.msg"
+  "msg/ForwardedJointCommand.msg"
 )
 
 set(SRV_FILES

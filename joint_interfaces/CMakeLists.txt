@@ -13,7 +13,6 @@ find_package(std_msgs REQUIRED)
 # Msg files
 set(MSG_FILES
   "msg/JointControl.msg"
-  "msg/JointCommandEnvelope.msg"
   "msg/JointPositionControl.msg"
   "msg/JointVelocityTorqueLimitFeedback.msg"
 )
