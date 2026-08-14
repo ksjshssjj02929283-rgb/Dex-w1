@@ -64,6 +64,7 @@ set(MSG_FILES
   "msg/TaskProgress.msg"
   "msg/PathSegment.msg"
   "msg/TrackingPath.msg"
+  "msg/ObstacleMonitorStatus.msg"
 )
 
 # 4) 声明要生成的服务
@@ -117,6 +118,7 @@ set(SRV_FILES
   "srv/SaveAssets.srv"
   "srv/RollbackMap.srv"
   "srv/ResolveNavPoints.srv"
+  "srv/SetPolygonPadding.srv"
 )
 
 # 5) 声明要生成的动作
