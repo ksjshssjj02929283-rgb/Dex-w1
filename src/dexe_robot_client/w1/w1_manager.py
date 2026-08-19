@@ -4272,3 +4272,57 @@ class W1Manager:
                 return status, None, None, None
 
         return StatusCode.SUCCESS, full_body_joint_traj_, left_arm_ee_trigger_list, right_arm_ee_trigger_list
+
+    def adjust_dual_arm_taught_tcp_poses(self,
+                                         template_box_T_current_box: np.ndarray,
+                                         template_left_tcp_pose: np.ndarray | list[float] = None,
+                                         template_right_tcp_pose: np.ndarray | list[float] = None,
+                                         template_box_T_left_tcp: np.ndarray = None,
+                                         template_box_T_right_tcp: np.ndarray = None
+                                         ) -> tuple[StatusCode, list[float] | None, list[float] | None]:
+        """
+        Args:
+            - template_box_T_current_box (np.ndarray, shape=(4, 4)): Pose of the current box frame expressed in the template box frame.
+                                                                     It maps coordinates from the current box frame to the template box frame.
+            - template_left_tcp_pose (np.ndarray | list[float], shape=(6,) | length=6): left arm template TCP pose in left arm base frame, [x, y, z, rx, ry, rz]
+            - template_right_tcp_pose (np.ndarray | list[float], shape=(6,) | length=6): right arm template TCP pose in right arm base frame, [x, y, z, rx, ry, rz]
+            - template_box_T_left_tcp (np.ndarray, shape=(4, 4)): Pose of the left TCP frame expressed in the template box frame.
+                                                                  It maps coordinates from the left TCP frame to the template box frame.
+            - template_box_T_right_tcp (np.ndarray, shape=(4, 4)): Pose of the right TCP frame expressed in the template box frame.
+                                                                   It maps coordinates from the right TCP frame to the template box frame.
+        """
+
+        if template_left_tcp_pose is None:
+            if template_right_tcp_pose is None:
+                self.logger.error("Both left and right TCP poses are None, at least one should be provided.")
+                return StatusCode.INPUT_INVALID, None, None
+            elif template_box_T_right_tcp is None:
+                self.logger.error("Right TCP pose is provided but template_box_T_right_tcp is None.")
+                return StatusCode.INPUT_INVALID, None, None
+        elif template_box_T_left_tcp is None:
+            self.logger.error("Left TCP pose is provided but template_box_T_left_tcp is None.")
+            return StatusCode.INPUT_INVALID, None, None
+        elif template_right_tcp_pose is not None and template_box_T_right_tcp is None:
+            self.logger.error("Right TCP pose is provided but template_box_T_right_tcp is None.")
+            return StatusCode.INPUT_INVALID, None, None
+
+        left_tcp_adjusted, right_tcp_adjusted = None, None
+        if template_left_tcp_pose is not None:
+            template_left_tcp_pose = np.asarray(template_left_tcp_pose)
+            template_left_tcp_pose = user_pose_to_xpos(template_left_tcp_pose[:3], template_left_tcp_pose[3:])
+
+            left_box_template = template_left_tcp_pose @ np.linalg.inv(template_box_T_left_tcp)
+            left_box_current = left_box_template @ template_box_T_current_box
+            left_tcp_adjusted = left_box_current @ template_box_T_left_tcp
+            left_tcp_adjusted = xpos_to_user_pose(left_tcp_adjusted)
+
+        if template_right_tcp_pose is not None:
+            template_right_tcp_pose = np.asarray(template_right_tcp_pose)
+            template_right_tcp_pose = user_pose_to_xpos(template_right_tcp_pose[:3], template_right_tcp_pose[3:])
+
+            right_box_template = template_right_tcp_pose @ np.linalg.inv(template_box_T_right_tcp)
+            right_box_current = right_box_template @ template_box_T_current_box
+            right_tcp_adjusted = right_box_current @ template_box_T_right_tcp
+            right_tcp_adjusted = xpos_to_user_pose(right_tcp_adjusted)
+
+        return StatusCode.SUCCESS, left_tcp_adjusted, right_tcp_adjusted
