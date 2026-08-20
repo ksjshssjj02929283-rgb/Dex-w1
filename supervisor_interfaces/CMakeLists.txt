@@ -12,6 +12,8 @@ find_package(builtin_interfaces REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ErrorInfo.msg"
+  "msg/ErrorCode.msg"
+  "msg/ModuleErrorStatus.msg"
   "msg/SystemCommand.msg"
   "msg/SystemMode.msg"
   "msg/SystemStatus.msg"
