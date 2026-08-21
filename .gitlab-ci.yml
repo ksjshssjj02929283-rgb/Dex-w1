@@ -1,4 +1,4 @@
 include:
   project: 'commonpub/gitlab_ci_script'
-  ref: main
+  ref: zkh/trigger_job
   file: 'loader.yml'
