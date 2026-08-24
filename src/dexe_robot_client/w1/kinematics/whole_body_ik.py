@@ -18,6 +18,8 @@ import numpy as np
 import pinocchio
 from pinocchio import casadi as pin_casadi
 
+from ..collision.signed_distance_field.sdf_map import load_sdf_map, create_casadi_sdf_function
+
 from ...common import get_logger
 
 CasadiExpr = Union[casadi.SX, casadi.MX, casadi.DM, float]
@@ -149,6 +151,294 @@ class JointNameConfig:
                 extra_joints={"left_leg_joints": ["HIP_PITCH_L_J1", "HIP_ROLL_L_J2", "HIP_YAW_L_J3", "KNEE_PITCH_L_J4", "ANKLE_PITCH_L_J5", "ANKLE_ROLL_L_J6", "FOOT_L_J7"],
                               "right_leg_joints": ["HIP_PITCH_R_J1", "HIP_ROLL_R_J2", "HIP_YAW_R_J3", "KNEE_PITCH_R_J4", "ANKLE_PITCH_R_J5", "ANKLE_ROLL_R_J6", "FOOT_R_J7"]}
             )
+
+@dataclass(frozen=True)
+class CollisionSphere:
+    """A sphere rigidly attached to a Pinocchio BODY frame.
+
+    ``center`` is expressed in ``frame_name`` coordinates.  The sphere is an
+    IK-only collision primitive: no frame or geometry is added to the URDF.
+    """
+
+    name: str
+    frame_name: str
+    center: tuple[float, float, float]
+    radius: float
+    weight: float = 1.0
+
+    def __post_init__(self):
+        center = np.asarray(self.center, dtype=np.float64)
+        if center.shape != (3,) or not np.all(np.isfinite(center)):
+            raise ValueError(
+                f"collision sphere {self.name} center must contain three finite values"
+            )
+        radius = float(self.radius)
+        if not np.isfinite(radius) or radius <= 0.0:
+            raise ValueError(
+                f"collision sphere {self.name} radius must be finite and positive"
+            )
+        weight = float(self.weight)
+        if not np.isfinite(weight) or weight < 0.0:
+            raise ValueError(
+                f"collision sphere {self.name} weight must be finite and non-negative"
+            )
+        object.__setattr__(self, "center", tuple(float(value) for value in center))
+        object.__setattr__(self, "radius", radius)
+        object.__setattr__(self, "weight", weight)
+
+@dataclass
+class CollisionSphereModelConfig:
+    """Robot collision spheres and the common frame used for pair distances.
+
+    Sphere geometry is independent of any collision consumer.  The torso SDF
+    and inter-arm collision terms can therefore share one sphere model without
+    requiring either feature to be enabled.
+    """
+
+    spheres: list[CollisionSphere] = field(default_factory=list)
+
+    def __post_init__(self):
+        self.spheres = list(self.spheres)
+        if not self.spheres:
+            raise ValueError("at least one collision sphere is required")
+        if not all(isinstance(sphere, CollisionSphere) for sphere in self.spheres):
+            raise ValueError("spheres must contain CollisionSphere objects")
+        names = [sphere.name for sphere in self.spheres]
+        if len(set(names)) != len(names):
+            raise ValueError("collision sphere names must be unique")
+
+    @property
+    def sphere_names(self) -> tuple[str, ...]:
+        return tuple(sphere.name for sphere in self.spheres)
+
+    @classmethod
+    def init_from_robot(cls, robot: str) -> "CollisionSphereModelConfig":
+        """
+        Reference eight-sphere fit for both W1V02X/W1V03X forearms.
+        """
+        if robot not in ["W1V02X", "W1V03X", "A1", "L1"]:
+            raise ValueError(f"Unsupported robot: {robot}")
+        if robot == "W1V02X":
+            spheres = [
+                CollisionSphere(
+                    name="left_j4_sphere_0",
+                    frame_name="left_j4",
+                    center=(0.0, 0.005198024034396342, 0.013764243491729777),
+                    radius=0.05,
+                ),
+                CollisionSphere(
+                    name="left_j4_sphere_1",
+                    frame_name="left_j4",
+                    center=(0.0, 0.0774246319826733, 0.013013430258358882),
+                    radius=0.05,
+                ),
+                CollisionSphere(
+                    name="left_j5_sphere_0",
+                    frame_name="left_j5",
+                    center=(0.0, 0.006146499074118017, 0.0),
+                    radius=0.073,
+                ),
+                CollisionSphere(
+                    name="left_j5_sphere_1",
+                    frame_name="left_j5",
+                    center=(0.0, 0.008443805315081043, 0.07204693684518815),
+                    radius=0.073,
+                ),
+                CollisionSphere(
+                    name="right_j4_sphere_0",
+                    frame_name="right_j4",
+                    center=(0.0, -0.002170583599583109, -0.013277989523093447),
+                    radius=0.05,
+                ),
+                CollisionSphere(
+                    name="right_j4_sphere_1",
+                    frame_name="right_j4",
+                    center=(0.0, 0.0798450068846504, -0.018604816259440105),
+                    radius=0.05,
+                ),
+                CollisionSphere(
+                    name="right_j5_sphere_0",
+                    frame_name="right_j5",
+                    center=(0.0, -0.010745722554156956, 0.0),
+                    radius=0.073,
+                ),
+                CollisionSphere(
+                    name="right_j5_sphere_1",
+                    frame_name="right_j5",
+                    center=(0.0, -0.00755619484590242, 0.06617731783309722),
+                    radius=0.073,
+                ),
+            ]
+            return cls(spheres=spheres)
+        elif robot == "W1V03X":
+            spheres = [
+                CollisionSphere(
+                    name="elbow_yaw_l_j4_sphere_0",
+                    frame_name="elbow_yaw_l_j4_link",
+                    center=(0.0, 0.0, 0.0),
+                    radius=0.068,
+                ),
+                CollisionSphere(
+                    name="elbow_yaw_l_j4_sphere_1",
+                    frame_name="elbow_yaw_l_j4_link",
+                    center=(-0.016354907285170625, 0.09797667436914287, 0.0),
+                    radius=0.06,
+                ),
+                CollisionSphere(
+                    name="wrist_pitch_l_j5_sphere_0",
+                    frame_name="wrist_pitch_l_j5_link",
+                    center=(0.0, 0.02623301030282288, 0.0),
+                    radius=0.06,
+                ),
+                CollisionSphere(
+                    name="wrist_pitch_l_j5_sphere_1",
+                    frame_name="wrist_pitch_l_j5_link",
+                    center=(0.0, 0.09072714569980178, 0.0),
+                    radius=0.06,
+                ),
+                CollisionSphere(
+                    name="wrist_yaw_l_j6_sphere_0",
+                    frame_name="wrist_yaw_l_j6_link",
+                    center=(0.0, 0.08525212808751759, -0.005273968312190291),
+                    radius=0.06,
+                ),
+                CollisionSphere(
+                    name="elbow_yaw_r_j4_sphere_0",
+                    frame_name="elbow_yaw_r_j4_link",
+                    center=(0.0, 0.0, 0.0),
+                    radius=0.068,
+                ),
+                CollisionSphere(
+                    name="elbow_yaw_r_j4_sphere_1",
+                    frame_name="elbow_yaw_r_j4_link",
+                    center=(-0.018672402547112693, -0.09758516071329221, 0.0),
+                    radius=0.06,
+                ),
+                CollisionSphere(
+                    name="wrist_pitch_r_j5_sphere_0",
+                    frame_name="wrist_pitch_r_j5_link",
+                    center=(0.0, -0.02572970514618833, 0.0),
+                    radius=0.06,
+                ),
+                CollisionSphere(
+                    name="wrist_pitch_r_j5_sphere_1",
+                    frame_name="wrist_pitch_r_j5_link",
+                    center=(0.0, -0.08960481987966695, 0.0),
+                    radius=0.06,
+                ),
+                CollisionSphere(
+                    name="wrist_yaw_r_j6_sphere_0",
+                    frame_name="wrist_yaw_r_j6_link",
+                    center=(0.0, -0.07164586268679396, 0.0),
+                    radius=0.06,
+                ),
+            ]
+            return cls(spheres=spheres)
+        elif robot == "A1":
+            pass
+        elif robot == "L1":
+            pass
+
+@dataclass
+class TorsoSDFCollisionConfig:
+    """Static sphere-vs-torso SDF collision configuration.
+
+    ``sphere_names`` selects spheres from ``CollisionSphereModelConfig``; an
+    empty tuple selects every configured sphere.  ``torso_T_sdf`` is the fixed
+    pose of the SDF/OBJ frame in the torso BODY frame.
+    """
+
+    sdf_path: str
+    torso_frame_name: str
+    sphere_names: list[str] = field(default_factory=list)
+    torso_T_sdf: np.ndarray = np.eye(4, dtype=np.float64)
+    safety_margin: float = 0.0
+    activation_distance: float = 0.03
+    smooth_epsilon: float = 5.0e-4
+    cost_weight: float = 1.0
+    hard_constraint: bool = False
+
+    def __post_init__(self):
+        if not os.path.exists(self.sdf_path):
+            raise ValueError("sdf_path does not exist: {}".format(self.sdf_path))
+
+        self.sphere_names = list(self.sphere_names)
+        if len(set(self.sphere_names)) != len(self.sphere_names):
+            raise ValueError("sphere_names must be unique")
+
+        transform = np.asarray(self.torso_T_sdf, dtype=np.float64)
+        if transform.shape != (4, 4) or not np.all(np.isfinite(transform)):
+            raise ValueError("torso_T_sdf must be a finite 4x4 transform")
+
+        self.torso_T_sdf = transform.copy()
+
+        if self.safety_margin < 0.0:
+            raise ValueError("safety_margin must be non-negative")
+        if self.activation_distance <= 0.0:
+            raise ValueError("activation_distance must be positive")
+        if self.smooth_epsilon <= 0.0:
+            raise ValueError("smooth_epsilon must be positive")
+        if self.cost_weight < 0.0:
+            raise ValueError("cost_weight must be non-negative")
+
+@dataclass
+class InterArmSphereCollisionConfig:
+    """Soft collision cost for the Cartesian product of two sphere groups.
+
+    Each pair uses the geometric mean of its two sphere weights, so equal
+    per-sphere weights retain the same scale and a zero weight disables only
+    that pair's cost contribution.
+    """
+
+    left_sphere_names: list[str]
+    right_sphere_names: list[str]
+    safety_margin: float = 0.0
+    activation_distance: float = 0.03
+    smooth_epsilon: float = 5.0e-4
+    cost_weight: float = 2.5
+
+    def __post_init__(self):
+        self.left_sphere_names = list(self.left_sphere_names)
+        self.right_sphere_names = list(self.right_sphere_names)
+        for field_name in ("left_sphere_names", "right_sphere_names"):
+            names = getattr(self, field_name)
+            if not names:
+                raise ValueError(f"{field_name} must not be empty")
+            if len(set(names)) != len(names):
+                raise ValueError(f"{field_name} must contain unique sphere names")
+        overlap = set(self.left_sphere_names) & set(self.right_sphere_names)
+        if overlap:
+            raise ValueError(
+                "left and right sphere groups must be disjoint, got "
+                f"{sorted(overlap)}"
+            )
+
+        if self.safety_margin < 0.0:
+            raise ValueError("safety_margin must be non-negative")
+        if self.activation_distance <= 0.0:
+            raise ValueError("activation_distance must be positive")
+        if self.smooth_epsilon <= 0.0:
+            raise ValueError("smooth_epsilon must be positive")
+        if self.cost_weight < 0.0:
+            raise ValueError("cost_weight must be non-negative")
+
+    @classmethod
+    def init_from_robot(cls, robot: str) -> "InterArmSphereCollisionConfig":
+        if robot not in ["W1V02X", "W1V03X", "A1", "L1"]:
+            raise ValueError(f"Unsupported robot: {robot}")
+        if robot == "W1V02X":
+            left_sphere_names = ["left_j4_sphere_0", "left_j4_sphere_1", "left_j5_sphere_0", "left_j5_sphere_1"]
+            right_sphere_names = ["right_j4_sphere_0", "right_j4_sphere_1", "right_j5_sphere_0", "right_j5_sphere_1"]
+
+            return cls(left_sphere_names=left_sphere_names, right_sphere_names=right_sphere_names)
+        elif robot == "W1V03X":
+            left_sphere_names = ["elbow_yaw_l_j4_sphere_0", "elbow_yaw_l_j4_sphere_1", "wrist_pitch_l_j5_sphere_0", "wrist_pitch_l_j5_sphere_1", "wrist_yaw_l_j6_sphere_0"]
+            right_sphere_names = ["elbow_yaw_r_j4_sphere_0", "elbow_yaw_r_j4_sphere_1", "wrist_pitch_r_j5_sphere_0", "wrist_pitch_r_j5_sphere_1", "wrist_yaw_r_j6_sphere_0"]
+            return cls(left_sphere_names=left_sphere_names, right_sphere_names=right_sphere_names)
+        elif robot == "A1":
+            pass
+        elif robot == "L1":
+            pass
 
 class JointIndexResolver:
     def __init__(self, model):
@@ -315,7 +605,10 @@ class WholeBodyIK:
                  solver_options: SolverOptions = None,
                  weight_config: WeightConfig = None,
                  posture_config: PostureConfig = None,
-                 freezed_joint_dict: dict[str, float] = None):
+                 freezed_joint_dict: dict[str, float] = None,
+                 collision_sphere_model_config: CollisionSphereModelConfig = None,
+                 torso_sdf_collision_config: TorsoSDFCollisionConfig = None,
+                 inter_arm_collision_config: InterArmSphereCollisionConfig = None):
         self.logger = get_logger()
         if not os.path.exists(urdf_path):
             self.logger.error(f"URDF file does not exist: {urdf_path}")
@@ -372,8 +665,15 @@ class WholeBodyIK:
         self.cache_extra_targets = {}
         self.cache_solution_q = None
 
+        self.collision_sphere_model_config = collision_sphere_model_config
+        self.torso_sdf_collision_config = torso_sdf_collision_config
+        self.inter_arm_collision_config = inter_arm_collision_config
+
         self._set_tracking_frame(self.tracking_frame_config)
         self._create_symbolic_model()
+        self._initialize_collision_spheres()
+        self._initialize_torso_collision()
+        self._initialize_inter_arm_collision()
 
         self.problem_builders: Dict[str, ProblemBuilder] = {}
         self.problem_overlays: Dict[str, IKProblemSpec] = {}
@@ -462,6 +762,280 @@ class WholeBodyIK:
         pin_casadi.framesForwardKinematics(self.cmodel, self.cdata, self.cq)
         pin_casadi.centerOfMass(self.cmodel, self.cdata, self.cq)
 
+    @property
+    def collision_sphere_model_enabled(self) -> bool:
+        return self.collision_sphere_model_config is not None
+
+    @property
+    def torso_collision_enabled(self) -> bool:
+        return self.torso_sdf_collision_config is not None
+
+    @property
+    def inter_arm_collision_enabled(self) -> bool:
+        return self.inter_arm_collision_config is not None
+
+    def _validate_body_frame(self, frame_name: str):
+        model = self.robot_.model
+        if not model.existFrame(frame_name):
+            raise ValueError(
+                f"collision frame {frame_name!r} does not exist in the Pinocchio model"
+            )
+        frame_id = model.getFrameId(frame_name)
+        if model.frames[frame_id].type != pinocchio.FrameType.BODY:
+            raise ValueError(
+                f"collision frame {frame_name!r} must be a BODY/link frame, "
+                f"got {model.frames[frame_id].type}"
+            )
+
+    def _resolve_collision_spheres(
+            self,
+            sphere_names: Iterable[str],
+            owner: str) -> tuple[tuple[CollisionSphere, ...], tuple[int, ...]]:
+        if not self.collision_sphere_model_enabled:
+            raise ValueError(
+                f"{owner} requires collision_sphere_model_config"
+            )
+        names = tuple(sphere_names)
+        missing_names = [
+            name for name in names
+            if name not in self.collision_sphere_name_to_index
+        ]
+        if missing_names:
+            raise ValueError(
+                f"{owner} references unknown collision spheres: {missing_names}"
+            )
+        indices = tuple(
+            self.collision_sphere_name_to_index[name] for name in names
+        )
+        spheres = tuple(self.collision_spheres[index] for index in indices)
+        return spheres, indices
+
+    def _initialize_collision_spheres(self):
+        """Build shared collision-sphere kinematics independently of consumers."""
+
+        if not self.collision_sphere_model_enabled:
+            if self.torso_collision_enabled or self.inter_arm_collision_enabled:
+                raise ValueError(
+                    "collision_sphere_model_config is required when collision "
+                    "costs are configured"
+                )
+            return
+
+        config = self.collision_sphere_model_config
+        self.collision_spheres = config.spheres
+        self.collision_sphere_name_to_index = {
+            sphere.name: index
+            for index, sphere in enumerate(self.collision_spheres)
+        }
+
+        required_frames = []
+        required_frames.extend(
+            sphere.frame_name for sphere in self.collision_spheres
+        )
+        for frame_name in dict.fromkeys(required_frames):
+            self._validate_body_frame(frame_name)
+
+        centers_world = []
+        for sphere in self.collision_spheres:
+            frame_id = self.cmodel.getFrameId(sphere.frame_name)
+            center_link = casadi.SX(list(sphere.center))
+            center_world = self.cdata.oMf[frame_id] * center_link
+            centers_world.append(center_world)
+
+        centers_world_expression = casadi.horzcat(*centers_world)
+
+        self._collision_sphere_centers_world_expression = centers_world_expression
+
+    def _initialize_torso_collision(self):
+        """Build differentiable sphere/SDF functions once during construction."""
+
+        if not self.torso_collision_enabled:
+            return
+
+        config = self.torso_sdf_collision_config
+        sphere_names = (
+            config.sphere_names
+            if config.sphere_names
+            else self.collision_sphere_model_config.sphere_names
+        )
+        self.torso_collision_spheres, sphere_indices = (
+            self._resolve_collision_spheres(sphere_names, "torso collision")
+        )
+        sdf_path = os.fspath(config.sdf_path)
+        if not os.path.isabs(sdf_path):
+            sdf_path = os.path.join(self.urdf_dir, sdf_path)
+        self.torso_sdf_map = load_sdf_map(sdf_path)
+
+        self._validate_body_frame(config.torso_frame_name)
+
+        boundary_clearance = (
+            float(self.torso_sdf_map.metadata["boundary_min_sdf"])
+            - self.torso_sdf_map.interpolation_error_bound
+        )
+        required_boundary_clearance = max(
+            sphere.radius + config.safety_margin + config.activation_distance
+            for sphere in self.torso_collision_spheres
+        )
+        if boundary_clearance <= required_boundary_clearance:
+            raise ValueError(
+                "torso SDF boundary is too close for the configured spheres: "
+                f"minimum conservative boundary SDF={boundary_clearance:.6g}, "
+                f"required > {required_boundary_clearance:.6g} (maximum sphere "
+                "radius + safety margin + activation distance)"
+            )
+
+        self.torso_sdf_function = create_casadi_sdf_function(
+            self.torso_sdf_map,
+            name="torso_collision_sdf",
+            conservative=True,
+        )
+
+        torso_frame_id = self.cmodel.getFrameId(config.torso_frame_name)
+        world_M_torso = self.cdata.oMf[torso_frame_id]
+        torso_R_sdf = casadi.SX(config.torso_T_sdf[:3, :3])
+        torso_p_sdf = casadi.SX(config.torso_T_sdf[:3, 3])
+
+        centers_sdf = []
+        for sphere_index in sphere_indices:
+            center_world = self._collision_sphere_centers_world_expression[
+                :, sphere_index
+            ]
+            center_torso = world_M_torso.inverse() * center_world
+            # torso_T_sdf maps SDF coordinates into torso coordinates.
+            center_sdf = torso_R_sdf.T @ (center_torso - torso_p_sdf)
+            centers_sdf.append(center_sdf)
+
+        centers_sdf_expression = casadi.horzcat(*centers_sdf)
+
+        sphere_count = len(self.torso_collision_spheres)
+        mapped_sdf = self.torso_sdf_function.map(sphere_count, "serial")
+        sdf_values_expression = mapped_sdf(centers_sdf_expression).T
+        radii = casadi.SX([
+            sphere.radius for sphere in self.torso_collision_spheres
+        ])
+        clearances_expression = (
+            sdf_values_expression - radii - config.safety_margin
+        )
+
+        activated = config.activation_distance - clearances_expression
+        smooth_violation = 0.5 * (
+            activated
+            + casadi.sqrt(activated**2 + config.smooth_epsilon**2)
+        )
+        normalized_violation = smooth_violation / config.activation_distance
+        sphere_weights = casadi.SX([
+            sphere.weight for sphere in self.torso_collision_spheres
+        ])
+        collision_cost_expression = casadi.dot(
+            sphere_weights, normalized_violation**2
+        )
+
+        self.torso_collision_clearance_function = casadi.Function(
+            "torso_collision_clearances",
+            [self.cq],
+            [clearances_expression],
+            ["q"],
+            ["clearances"],
+        )
+
+        self.torso_collision_cost_function = casadi.Function(
+            "torso_collision_cost",
+            [self.cq],
+            [collision_cost_expression],
+            ["q"],
+            ["cost"],
+        )
+
+    @staticmethod
+    def _sphere_pair_soft_collision_terms(
+            squared_distance: CasadiExpr,
+            contact_distance: float,
+            activation_distance: float,
+            smooth_epsilon: float) -> tuple[CasadiExpr, CasadiExpr, CasadiExpr]:
+        """Return separation, activation, and normalized smooth violations.
+
+        All three expressions avoid ``sqrt(squared_distance)``.  The first two
+        retain metre-like scaling at their respective zero crossings, while the
+        normalized violation is approximately one at sphere contact.
+        """
+
+        activation_center_distance = contact_distance + activation_distance
+        # separation_residual = (
+        #     squared_distance - contact_distance**2
+        # ) / (2.0 * contact_distance)
+        activation_residual = (
+            activation_center_distance**2 - squared_distance
+        ) / (2.0 * activation_center_distance)
+        contact_activation_residual = (
+            activation_center_distance**2 - contact_distance**2
+        ) / (2.0 * activation_center_distance)
+        smooth_violation = 0.5 * (
+            activation_residual
+            + casadi.sqrt(activation_residual**2 + smooth_epsilon**2)
+        )
+        normalized_violation = smooth_violation / contact_activation_residual
+        return normalized_violation
+
+
+    def _initialize_inter_arm_collision(self):
+        """Build a smooth, sqrt-free cost for every left/right sphere pair."""
+
+        if not self.inter_arm_collision_enabled:
+            return
+
+        config = self.inter_arm_collision_config
+        left_spheres, left_indices = self._resolve_collision_spheres(
+            config.left_sphere_names, "inter-arm collision left group"
+        )
+        right_spheres, right_indices = self._resolve_collision_spheres(
+            config.right_sphere_names, "inter-arm collision right group"
+        )
+
+        normalized_violations = []
+        pair_weights = []
+        for left_sphere, left_index in zip(left_spheres, left_indices):
+            left_center = self._collision_sphere_centers_world_expression[
+                :, left_index
+            ]
+            for right_sphere, right_index in zip(right_spheres, right_indices):
+                right_center = self._collision_sphere_centers_world_expression[
+                    :, right_index
+                ]
+                delta = left_center - right_center
+                squared_distance = casadi.dot(delta, delta)
+
+                contact_distance = (
+                    left_sphere.radius
+                    + right_sphere.radius
+                    + config.safety_margin
+                )
+                normalized_violation = WholeBodyIK._sphere_pair_soft_collision_terms(
+                    squared_distance=squared_distance,
+                    contact_distance=contact_distance,
+                    activation_distance=config.activation_distance,
+                    smooth_epsilon=config.smooth_epsilon,
+                )
+
+                normalized_violations.append(normalized_violation)
+                pair_weights.append(
+                    np.sqrt(left_sphere.weight * right_sphere.weight)
+                )
+
+        normalized_violations_expression = casadi.vertcat(*normalized_violations)
+        pair_weights_expression = casadi.SX(pair_weights)
+        collision_cost_expression = casadi.dot(
+            pair_weights_expression, normalized_violations_expression**2
+        )
+
+        self.inter_arm_collision_cost_function = casadi.Function(
+            "inter_arm_collision_cost",
+            [self.cq],
+            [collision_cost_expression],
+            ["q"],
+            ["cost"],
+        )
+
+
     def _register_default_problems(self):
         self.register_problem("standard", self._build_standard_problem)
 
@@ -496,37 +1070,76 @@ class WholeBodyIK:
     def _build_standard_problem(self, context: IKBuildContext) -> IKProblemSpec:
         translation_cost = self._translational_tracking_cost(context)
         rotation_cost = self._rotational_tracking_cost(context)
+        # ik_problem_spec = IKProblemSpec(
+        #     name="standard",
+        #     costs=[
+        #         IKCostTerm(
+        #             name="translational_tracking_cost",
+        #             # expression=self._translational_tracking_cost,
+        #             expression=lambda context: translation_cost,
+        #             weight=self.weight_config.translation
+        #         ),
+        #         IKCostTerm(
+        #             name="rotational_tracking_cost",
+        #             # expression=self._rotational_tracking_cost,
+        #             expression=lambda context: rotation_cost,
+        #             weight=self.weight_config.rotation
+        #         ),
+        #         self._regularization_cost(context),
+        #         self._smooth_cost(context),
+        #         self._upper_body_leaning_cost(context),
+        #         self._leg_heaviness_cost(context),
+        #         self._shoulder_angle_barrier_cost(context),
+        #         self._eye_focus_point_cost(context)
+        #     ],
+        #     constraints=[
+        #         self._joint_limit_constraint(context, margin_ratio=self.posture_config.joint_limits_contract_ratio),
+        #         self._upper_body_leaning_constraint(context),
+        #         self._buttock_upright_constraint(context),
+        #         self._leg_leaning_constraint(context, is_leaning_forward=self.posture_config.leg_leaning_forward),
+        #         self._elbow_inward_constraint(context),
+        #         self._com_constraint(context),
+        #         self._strict_tracking_constraint(context, translation_cost, rotation_cost)
+        #     ]
+        # )
+        costs = [
+            IKCostTerm(
+                name="translational_tracking_cost",
+                expression=lambda context: translation_cost,
+                weight=self.weight_config.translation
+            ),
+            IKCostTerm(
+                name="rotational_tracking_cost",
+                expression=lambda context: rotation_cost,
+                weight=self.weight_config.rotation
+            ),
+            self._regularization_cost(context),
+            self._smooth_cost(context),
+            self._upper_body_leaning_cost(context),
+            self._leg_heaviness_cost(context),
+            self._shoulder_angle_barrier_cost(context),
+            self._eye_focus_point_cost(context)
+        ]
+        constraints = [
+            self._joint_limit_constraint(context, margin_ratio=self.posture_config.joint_limits_contract_ratio),
+            self._upper_body_leaning_constraint(context),
+            self._buttock_upright_constraint(context),
+            self._leg_leaning_constraint(context, is_leaning_forward=self.posture_config.leg_leaning_forward),
+            self._elbow_inward_constraint(context),
+            self._com_constraint(context),
+            self._strict_tracking_constraint(context, translation_cost, rotation_cost)
+        ]
+        if self.torso_collision_enabled:
+            costs.append(self._torso_collision_cost(context))
+            if self.torso_sdf_collision_config.hard_constraint:
+                constraints.append(self._torso_collision_constraint(context))
+        if self.inter_arm_collision_enabled:
+            costs.append(self._inter_arm_collision_cost(context))
+
         ik_problem_spec = IKProblemSpec(
             name="standard",
-            costs=[
-                IKCostTerm(
-                    name="translational_tracking_cost",
-                    # expression=self._translational_tracking_cost,
-                    expression=lambda context: translation_cost,
-                    weight=self.weight_config.translation
-                ),
-                IKCostTerm(
-                    name="rotational_tracking_cost",
-                    # expression=self._rotational_tracking_cost,
-                    expression=lambda context: rotation_cost,
-                    weight=self.weight_config.rotation
-                ),
-                self._regularization_cost(context),
-                self._smooth_cost(context),
-                self._upper_body_leaning_cost(context),
-                self._leg_heaviness_cost(context),
-                self._shoulder_angle_barrier_cost(context),
-                self._eye_focus_point_cost(context)
-            ],
-            constraints=[
-                self._joint_limit_constraint(context, margin_ratio=self.posture_config.joint_limits_contract_ratio),
-                self._upper_body_leaning_constraint(context),
-                self._buttock_upright_constraint(context),
-                self._leg_leaning_constraint(context, is_leaning_forward=self.posture_config.leg_leaning_forward),
-                self._elbow_inward_constraint(context),
-                self._com_constraint(context),
-                self._strict_tracking_constraint(context, translation_cost, rotation_cost)
-            ]
+            costs=costs,
+            constraints=constraints,
         )
         return ik_problem_spec
 
@@ -660,7 +1273,44 @@ class WholeBodyIK:
             # upper_body_leaning_weight = WholeBodyIK._lower_side_barrier((context.left_arm_target[0, 3] + context.right_arm_target[0, 3])/2, lower_bound=self.posture_config.dual_ee_flange_centerX_threshold, gain=50)
             upper_body_leaning_weight = WholeBodyIK._lower_side_barrier((left_target_x + right_target_x)/2, lower_bound=self.posture_config.dual_ee_flange_centerX_threshold, gain=50)
 
-            return upper_body_leaning_weight * casadi.sumsqr(upper_body_leaning - context.upper_body_leaning_threshold)
+            # Keep the upright preference at full strength when every collision
+            # sphere is outside the activation band.  As soon as any sphere
+            # enters that band, smoothly reduce (but never remove) this cost so
+            # whole-body redundancy can be used for avoidance.
+            collision_posture_scale = 1.0
+            if self.torso_collision_enabled:
+                clearances = self.torso_collision_clearance_function(context.q)
+                activation_distance = self.torso_sdf_collision_config.activation_distance
+                transition_width = 0.1 * activation_distance
+                sphere_activations = 0.5 * (
+                    1.0
+                    + casadi.tanh(
+                        (activation_distance - clearances) / transition_width
+                    )
+                )
+
+                # Smooth OR: zero when all spheres are inactive and approaches
+                # one when at least one sphere is well inside the activation band.
+                all_spheres_inactive = 1.0
+                for sphere_index in range(len(self.torso_collision_spheres)):
+                    all_spheres_inactive *= 1.0 - sphere_activations[sphere_index]
+                collision_activation = 1.0 - all_spheres_inactive
+
+                minimum_posture_scale = 0.1
+                collision_posture_scale = (
+                    1.0
+                    - (1.0 - minimum_posture_scale) * collision_activation
+                )
+
+            return (
+                upper_body_leaning_weight
+                * collision_posture_scale
+                * casadi.sumsqr(
+                    upper_body_leaning - context.upper_body_leaning_threshold
+                )
+            )
+
+            # return upper_body_leaning_weight * casadi.sumsqr(upper_body_leaning - context.upper_body_leaning_threshold)
 
         return IKCostTerm(
             name=f"upper_body_leaning_cost",
@@ -773,10 +1423,12 @@ class WholeBodyIK:
                 self.logger.warning("All leg joints are locked, skipping upper body leaning constraint.")
                 return []
             upper_body_leaning = ankle_q + knee_q + buttock_q
-            if context.upper_body_leaning_threshold is not None:
-                constraints.append(upper_body_leaning >= context.upper_body_leaning_threshold)
-            else:
-                constraints.append(upper_body_leaning >= 0.0)
+            # if context.upper_body_leaning_threshold is not None:
+            #     constraints.append(upper_body_leaning >= context.upper_body_leaning_threshold)
+            # else:
+            #     constraints.append(upper_body_leaning >= 0.0)
+            maximum_backward_lean = np.deg2rad(30.0)
+            constraints.append(upper_body_leaning >= -maximum_backward_lean)
 
             return constraints
 
@@ -878,6 +1530,32 @@ class WholeBodyIK:
         return IKConstraint(
             name=f"strict_tracking_constraint",
             expressions=constraint_build
+        )
+
+    def _torso_collision_cost(self, context: IKBuildContext) -> IKCostTerm:
+        return IKCostTerm(
+            name="torso_collision_cost",
+            expression=lambda build_context: self.torso_collision_cost_function(
+                build_context.q
+            ),
+            weight=self.torso_sdf_collision_config.cost_weight,
+        )
+
+    def _torso_collision_constraint(self, context: IKBuildContext) -> IKConstraint:
+        return IKConstraint(
+            name="torso_collision_constraint",
+            expressions=lambda build_context: [
+                self.torso_collision_clearance_function(build_context.q) >= 0.0
+            ],
+        )
+
+    def _inter_arm_collision_cost(self, context: IKBuildContext) -> IKCostTerm:
+        return IKCostTerm(
+            name="inter_arm_collision_cost",
+            expression=lambda build_context: self.inter_arm_collision_cost_function(
+                build_context.q
+            ),
+            weight=self.inter_arm_collision_config.cost_weight,
         )
 
     def set_problem(self, problem_name: str = "standard", extra_parameter_shapes: Dict[str, tuple[int, ...]] = None):
