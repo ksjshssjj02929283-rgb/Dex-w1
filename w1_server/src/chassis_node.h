@@ -55,8 +55,16 @@ private:
     // 辅助函数
     bool IsImuAvailable(const rclcpp::Time& curr_time);
 
+    // 仅按编码器轮速更新静止标志，供 IMU 静止初始化做交叉确认。
+    // 必须独立于 is_stopped_：后者依赖 IMU 角速度，而 IMU 初始化又依赖静止判定，
+    // 直接复用会形成循环依赖。本函数无 IMU 依赖，在 onTimer 早期无条件调用。
+    void UpdateWheelStoppedFlag(const ChassisFeedback &chassis_data);
+
     // 读取机器人模型 差速/全向
     void LoadChassisConfig(const std::filesystem::path& cfg_path);
+
+    // 把当前 IMU 相关参数整体下发给 ImuProcessor（热更新各分支共用，避免漏传新参数）
+    void ApplyImuProcessorParams();
 
 private:
     // 参数
@@ -99,6 +107,9 @@ private:
 
     // 运动状态标志（用于控制 IMU 是否积分角度）
     bool is_stopped_ = true;
+    // 纯编码器静止标志（IMU 静止初始化的第二信源，无 IMU 依赖）。
+    // 初值 true：开机时底盘反馈可能晚于 IMU，而此时机器人确实静止。
+    bool is_wheel_stopped_ = true;
     // 全向底盘参数定义（单位：mm，角度：rad）
     static constexpr double CHASSIS_SIZE_L = 460.0;        // 前后轮间距（wheelbase）
     static constexpr double CHASSIS_SIZE_W = 345.0;        // 左右轮间距（track）
@@ -115,12 +126,14 @@ private:
     double odom_factor_ = 1.0;
     double imu_factor_  = 1.0;
 
-    // IMU初始化参数
-    int    imu_max_buff_size_      = 1500;
-    double acc_excite_threshold_   = 0.015;
-    double gyro_excite_threshold_  = 0.002;
-    double imu_reinit_duration_    = 3600.0;
-    double gravity_magnitude_      = 9.7887;
+    // IMU初始化参数（默认值与 declare_parameter / chassis_params.yaml 保持一致）
+    int    imu_max_buff_size_        = 500;
+    double acc_excite_threshold_     = 0.04;
+    double gyro_excite_threshold_    = 0.004;
+    double imu_reinit_duration_      = 3600.0;
+    double gravity_magnitude_        = 9.7887;
+    double gyro_bias_warn_threshold_ = 0.01;  // 零偏告警门限，非静止判据
+    double acc_magnitude_tolerance_  = 0.2;
 
     // 死区参数
     double speed_deadzone_ = 5e-3;  // m/s

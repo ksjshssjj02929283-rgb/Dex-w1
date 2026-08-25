@@ -46,17 +46,25 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : rclcpp::Node("cha
         this->declare_parameter<double>("gyro_excite_threshold", 0.004);  // 角速度标准差阈值 (rad/s ≈ 0.22°/s)
     imu_reinit_duration_ = this->declare_parameter<double>("imu_reinit_duration", 3600.0);  // 重新初始化间隔 (s)
     gravity_magnitude_ = this->declare_parameter<double>("gravity_magnitude", 9.7887);  // 当地重力加速度 (m/s²)
+    // 零偏告警门限：静止时 gyr_avg 即零偏，超过只告警不拒绝初始化（不是静止判据）
+    gyro_bias_warn_threshold_ =
+        this->declare_parameter<double>("gyro_bias_warn_threshold", 0.01);  // rad/s ≈ 0.57°/s
+    acc_magnitude_tolerance_ =
+        this->declare_parameter<double>("acc_magnitude_tolerance", 0.2);  // |‖acc‖-g| 容差 (m/s²)
 
     // 死区参数
     speed_deadzone_ = this->declare_parameter<double>("speed_deadzone", 1e-3);   // 线速度死区 (m/s)
     omega_deadzone_ = this->declare_parameter<double>("omega_deadzone", 0.008);  // 角速度死区 (rad/s)
     imu_timeout_ = this->declare_parameter<double>("imu_timeout", 0.1);          // IMU超时时间 (s)
 
-    // EKF 参数
+    // EKF 参数（Q 为「每秒」量纲，内部乘 dt；勿按每步理解）
     ekf_params_.q_xy    = this->declare_parameter<double>("ekf_q_xy",    1e-4);
-    ekf_params_.q_theta = this->declare_parameter<double>("ekf_q_theta", 1e-3);
-    ekf_params_.q_v     = this->declare_parameter<double>("ekf_q_v",     0.04);
-    ekf_params_.q_omega = this->declare_parameter<double>("ekf_q_omega", 0.01);
+    ekf_params_.q_theta = this->declare_parameter<double>("ekf_q_theta", 1e-6);
+    ekf_params_.q_v     = this->declare_parameter<double>("ekf_q_v",     1.0);
+    ekf_params_.q_omega = this->declare_parameter<double>("ekf_q_omega", 1.0);
+    ekf_params_.q_omega_imu = this->declare_parameter<double>("ekf_q_omega_imu", 1e-4);
+    ekf_params_.r_zupt  = this->declare_parameter<double>("ekf_r_zupt",  1e-6);
+    ekf_params_.q_scale_stopped = this->declare_parameter<double>("ekf_q_scale_stopped", 0.01);
     ekf_params_.r_v           = this->declare_parameter<double>("ekf_r_v",           0.05);
     ekf_params_.r_omega       = this->declare_parameter<double>("ekf_r_omega",       0.01);
     ekf_params_.r_v_aerial    = this->declare_parameter<double>("ekf_r_v_aerial",    100.0);
@@ -77,7 +85,8 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : rclcpp::Node("cha
 
     imu_processor_ = std::make_unique<ImuProcessor>();
     imu_processor_->SetGravityMagnitude(gravity_magnitude_);
-    imu_processor_->SetParam(imu_max_buff_size_, acc_excite_threshold_, gyro_excite_threshold_, imu_reinit_duration_);
+    imu_processor_->SetParam(imu_max_buff_size_, acc_excite_threshold_, gyro_excite_threshold_, imu_reinit_duration_,
+                             gyro_bias_warn_threshold_, acc_magnitude_tolerance_);
 
     ekf_ = std::make_unique<ChassisEkf>(ekf_params_);
 
@@ -145,6 +154,14 @@ void ChassisNode::LoadChassisConfig(const std::filesystem::path& cfg_path) {
     }
 }
 
+void ChassisNode::ApplyImuProcessorParams() {
+    if (!imu_processor_) {
+        return;
+    }
+    imu_processor_->SetParam(imu_max_buff_size_, acc_excite_threshold_, gyro_excite_threshold_, imu_reinit_duration_,
+                             gyro_bias_warn_threshold_, acc_magnitude_tolerance_);
+}
+
 void ChassisNode::ResetOdometry() {
     std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
     odom_x_ = 0.0;
@@ -167,7 +184,14 @@ void ChassisNode::ResetOdometry() {
 }
 
 void ChassisNode::ImuMsgCallback(const sensor_msgs::msg::Imu::SharedPtr msg) {
-    imu_processor_->AddImuData(*msg);
+    // 编码器静止状态作为静止初始化的第二信源：IMU 侧的方差与模值无法区分
+    // 恒定角速度 / 恒定线加速度 / 匀速直线与真静止。
+    bool wheel_stopped = true;
+    {
+        std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
+        wheel_stopped = is_wheel_stopped_;
+    }
+    imu_processor_->AddImuData(*msg, wheel_stopped);
 
     const auto refined_imu = imu_processor_->GetRefinedImuData(*msg);
     if (!refined_imu.has_value()) {
@@ -250,6 +274,36 @@ void ChassisNode::IntegrateImuOnce(const sensor_msgs::msg::Imu& imu) {
     prev_imu_ = curr_imu_;
 }
 
+// 仅按编码器轮速更新静止标志，供 IMU 静止初始化交叉确认。
+// 不掺入 IMU 角速度：IMU 初始化本身依赖该标志，掺入会形成循环依赖。
+void ChassisNode::UpdateWheelStoppedFlag(const ChassisFeedback &chassis_data) {
+    if (chassis_data.timestamp <= 0) {
+        // 反馈无效时保持上次状态（初值 true）：开机阶段底盘反馈常晚于 IMU，
+        // 而此时机器人确实静止，视为静止可让初始化正常起步。
+        return;
+    }
+
+    constexpr double kRpmToRads = 2.0 * M_PI / 60.0;
+    bool stopped = true;
+
+    if (chassis_model_ == 0) {
+        const double v_l = chassis_data.left_velocity * kRpmToRads * wheel_radius_;
+        const double v_r = chassis_data.right_velocity * kRpmToRads * wheel_radius_;
+        stopped = (std::abs(v_l) < speed_deadzone_ && std::abs(v_r) < speed_deadzone_);
+    } else {
+        for (size_t i = 0; i < OMNI_MOTOR_NUM; ++i) {
+            const double v_i = chassis_data.chassis_motor_velocity[i] * 0.001 * OMNI_CHASSIS_WHEEL_D * M_PI / 60.0;
+            if (std::abs(v_i) >= speed_deadzone_) {
+                stopped = false;
+                break;
+            }
+        }
+    }
+
+    std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
+    is_wheel_stopped_ = stopped;
+}
+
 // 检查 IMU 是否可用
 bool ChassisNode::IsImuAvailable(const rclcpp::Time& curr_time) {
     if (!use_imu_yaw_ || curr_imu_ == nullptr) {
@@ -274,9 +328,23 @@ bool ChassisNode::IsImuAvailable(const rclcpp::Time& curr_time) {
 void ChassisNode::onTimer() {
     auto& feedback_shm_instance = FeedbackSharedMemory::GetInstance();
     RobotFeedback feedback_data{};
-    bool ret = feedback_shm_instance.PeekLatest(&feedback_data);
+    const bool feedback_valid = feedback_shm_instance.PeekLatest(&feedback_data);
     const auto& chassis_data = feedback_data.chassis_feedback;
-    PublishOmniMotorFeedback(chassis_data);
+
+    // 共享内存暂无数据时 feedback_data 仍是零初始化值，不能当作真实反馈发出去。
+    // 这里只跳过发布，后续流程保持原样：里程计仍按上一次位姿持续发布，
+    // 避免下游因 odom/TF 中断而超时。
+    if (feedback_valid) {
+        PublishOmniMotorFeedback(chassis_data);
+    } else {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                             "No chassis feedback available from shared memory.");
+    }
+
+    // 必须在下面的 IMU 门禁之前更新：IMU 静止初始化依赖该标志，而非 EKF 模式下
+    // IMU 未初始化又会在此 return，若放到 IntegrateOdomOnce 里更新则二者互相等待。
+    UpdateWheelStoppedFlag(chassis_data);
+
     // 非 EKF 模式且 IMU 未初始化时，等待 IMU
     if (use_imu_yaw_ && !use_ekf_fusion_ && !is_imu_inited_) {
         return;
@@ -370,7 +438,8 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback& chassis_data) {
                                 speed_avg * odom_factor_,
                                 omega_enc,
                                 omega_z_imu,
-                                imu_valid);
+                                imu_valid,
+                                is_stopped);
 
         {
             std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
@@ -695,24 +764,28 @@ rcl_interfaces::msg::SetParametersResult ChassisNode::parametersCallback(
             RCLCPP_INFO(this->get_logger(), "Updated imu_factor: %.3f", imu_factor_);
         } else if (changed_parameter.get_name() == "imu_max_buff_size") {
             imu_max_buff_size_ = changed_parameter.as_int();
-            imu_processor_->SetParam(imu_max_buff_size_, acc_excite_threshold_, gyro_excite_threshold_,
-                                     imu_reinit_duration_);
+            ApplyImuProcessorParams();
             RCLCPP_INFO(this->get_logger(), "Updated imu_max_buff_size: %d", imu_max_buff_size_);
         } else if (changed_parameter.get_name() == "acc_excite_threshold") {
             acc_excite_threshold_ = changed_parameter.as_double();
-            imu_processor_->SetParam(imu_max_buff_size_, acc_excite_threshold_, gyro_excite_threshold_,
-                                     imu_reinit_duration_);
+            ApplyImuProcessorParams();
             RCLCPP_INFO(this->get_logger(), "Updated acc_excite_threshold: %.3f", acc_excite_threshold_);
         } else if (changed_parameter.get_name() == "gyro_excite_threshold") {
             gyro_excite_threshold_ = changed_parameter.as_double();
-            imu_processor_->SetParam(imu_max_buff_size_, acc_excite_threshold_, gyro_excite_threshold_,
-                                     imu_reinit_duration_);
+            ApplyImuProcessorParams();
             RCLCPP_INFO(this->get_logger(), "Updated gyro_excite_threshold: %.3f", gyro_excite_threshold_);
         } else if (changed_parameter.get_name() == "imu_reinit_duration") {
             imu_reinit_duration_ = changed_parameter.as_double();
-            imu_processor_->SetParam(imu_max_buff_size_, acc_excite_threshold_, gyro_excite_threshold_,
-                                     imu_reinit_duration_);
+            ApplyImuProcessorParams();
             RCLCPP_INFO(this->get_logger(), "Updated imu_reinit_duration: %.3f", imu_reinit_duration_);
+        } else if (changed_parameter.get_name() == "gyro_bias_warn_threshold") {
+            gyro_bias_warn_threshold_ = changed_parameter.as_double();
+            ApplyImuProcessorParams();
+            RCLCPP_INFO(this->get_logger(), "Updated gyro_bias_warn_threshold: %.4f rad/s", gyro_bias_warn_threshold_);
+        } else if (changed_parameter.get_name() == "acc_magnitude_tolerance") {
+            acc_magnitude_tolerance_ = changed_parameter.as_double();
+            ApplyImuProcessorParams();
+            RCLCPP_INFO(this->get_logger(), "Updated acc_magnitude_tolerance: %.3f m/s^2", acc_magnitude_tolerance_);
         } else if (changed_parameter.get_name() == "gravity_magnitude") {
             gravity_magnitude_ = changed_parameter.as_double();
             imu_processor_->SetGravityMagnitude(gravity_magnitude_);
@@ -746,24 +819,45 @@ rcl_interfaces::msg::SetParametersResult ChassisNode::parametersCallback(
         } else if (changed_parameter.get_name() == "use_ekf_fusion") {
             use_ekf_fusion_ = changed_parameter.as_bool();
             RCLCPP_INFO(this->get_logger(), "Updated use_ekf_fusion: %s", use_ekf_fusion_ ? "true" : "false");
-        } else if (changed_parameter.get_name() == "ekf.q_xy") {
+            // EKF 参数热更新。名称必须与上面的 declare_parameter 完全一致：
+            // 早期这里写作 "ekf.q_xy" 而 declare 用的是 "ekf_q_xy"，ROS2 不允许设置
+            // 未声明的参数，热更新因此从未生效过。
+        } else if (changed_parameter.get_name() == "ekf_q_xy") {
             ekf_params_.q_xy = changed_parameter.as_double();
             if (ekf_) ekf_->SetParams(ekf_params_);
-        } else if (changed_parameter.get_name() == "ekf.q_theta") {
+            RCLCPP_INFO(this->get_logger(), "Updated ekf_q_xy: %.3e m^2/s", ekf_params_.q_xy);
+        } else if (changed_parameter.get_name() == "ekf_q_theta") {
             ekf_params_.q_theta = changed_parameter.as_double();
             if (ekf_) ekf_->SetParams(ekf_params_);
-        } else if (changed_parameter.get_name() == "ekf.q_v") {
+            RCLCPP_INFO(this->get_logger(), "Updated ekf_q_theta: %.3e rad^2/s", ekf_params_.q_theta);
+        } else if (changed_parameter.get_name() == "ekf_q_v") {
             ekf_params_.q_v = changed_parameter.as_double();
             if (ekf_) ekf_->SetParams(ekf_params_);
-        } else if (changed_parameter.get_name() == "ekf.q_omega") {
+            RCLCPP_INFO(this->get_logger(), "Updated ekf_q_v: %.3e (m/s)^2/s", ekf_params_.q_v);
+        } else if (changed_parameter.get_name() == "ekf_q_omega") {
             ekf_params_.q_omega = changed_parameter.as_double();
             if (ekf_) ekf_->SetParams(ekf_params_);
-        } else if (changed_parameter.get_name() == "ekf.r_v") {
+            RCLCPP_INFO(this->get_logger(), "Updated ekf_q_omega: %.3e (rad/s)^2/s", ekf_params_.q_omega);
+        } else if (changed_parameter.get_name() == "ekf_r_v") {
             ekf_params_.r_v = changed_parameter.as_double();
             if (ekf_) ekf_->SetParams(ekf_params_);
-        } else if (changed_parameter.get_name() == "ekf.r_omega") {
+            RCLCPP_INFO(this->get_logger(), "Updated ekf_r_v: %.3e (m/s)^2", ekf_params_.r_v);
+        } else if (changed_parameter.get_name() == "ekf_r_omega") {
             ekf_params_.r_omega = changed_parameter.as_double();
             if (ekf_) ekf_->SetParams(ekf_params_);
+            RCLCPP_INFO(this->get_logger(), "Updated ekf_r_omega: %.3e (rad/s)^2", ekf_params_.r_omega);
+        } else if (changed_parameter.get_name() == "ekf_q_omega_imu") {
+            ekf_params_.q_omega_imu = changed_parameter.as_double();
+            if (ekf_) ekf_->SetParams(ekf_params_);
+            RCLCPP_INFO(this->get_logger(), "Updated ekf_q_omega_imu: %.3e (rad/s)^2/s", ekf_params_.q_omega_imu);
+        } else if (changed_parameter.get_name() == "ekf_r_zupt") {
+            ekf_params_.r_zupt = changed_parameter.as_double();
+            if (ekf_) ekf_->SetParams(ekf_params_);
+            RCLCPP_INFO(this->get_logger(), "Updated ekf_r_zupt: %.3e", ekf_params_.r_zupt);
+        } else if (changed_parameter.get_name() == "ekf_q_scale_stopped") {
+            ekf_params_.q_scale_stopped = changed_parameter.as_double();
+            if (ekf_) ekf_->SetParams(ekf_params_);
+            RCLCPP_INFO(this->get_logger(), "Updated ekf_q_scale_stopped: %.4f", ekf_params_.q_scale_stopped);
         } else if (changed_parameter.get_name() == "speed_deadzone") {
             speed_deadzone_ = changed_parameter.as_double();
             RCLCPP_INFO(this->get_logger(), "Updated speed_deadzone: %.5f m/s", speed_deadzone_);

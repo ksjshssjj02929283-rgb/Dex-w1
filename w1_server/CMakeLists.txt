@@ -168,5 +168,22 @@ target_link_libraries(feedback PUBLIC
 )
 install(TARGETS feedback DESTINATION lib/${PROJECT_NAME})
 
+# ==================== 单元测试 ====================
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+
+  # chassis_ekf 是纯计算模块，只依赖 Eigen，不牵扯 ROS 运行时与共享内存，
+  # 因此可以脱离节点单独测。测试直接编译 src/chassis_ekf.cpp，不链接主目标。
+  ament_add_gtest(test_chassis_ekf
+    test/test_chassis_ekf.cpp
+    src/chassis_ekf.cpp
+  )
+  if(TARGET test_chassis_ekf)
+    target_include_directories(test_chassis_ekf PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_chassis_ekf Eigen3::Eigen)
+  endif()
+endif()
 
 ament_package()

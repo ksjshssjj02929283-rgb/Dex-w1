@@ -29,6 +29,8 @@
   <build_depend>joint_interfaces</build_depend>
   <build_depend>chassis_interfaces</build_depend>
 
+  <test_depend>ament_cmake_gtest</test_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>
