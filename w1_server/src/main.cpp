@@ -49,6 +49,8 @@ int main(int argc, char* argv[]) {
     rclcpp::executors::MultiThreadedExecutor executor;
     auto node_server = std::make_shared<robot_server_lib::RobotServer>(user_cfg_path, false);
     std::shared_ptr<chassis_node::ChassisNode> node_chassis;
+    // 模式在运行时由反馈自动识别，启动阶段尚不可知，故底盘节点无条件创建；
+    // 无底盘的机型下它读不到 chassis_feedback，会自行保持静默。
     node_chassis = std::make_shared<chassis_node::ChassisNode>();
     executor.add_node(node_chassis);
     executor.add_node(node_server);

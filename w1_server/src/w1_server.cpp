@@ -33,6 +33,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     position_control_subscriber_ = this->create_subscription<JointPositionControlMsg>(
         "/control/joint_position", 10, std::bind(&RobotServer::PositionControlCallback, this, std::placeholders::_1));
 
+    // 模式为运行时自动识别，构造阶段尚不可知，故底盘订阅器无条件创建
     // 创建 /control/omni_chassis 订阅器
     omni_chassis_control_subscriber_ = this->create_subscription<ChassisWholeControlMsg>(
         "/control/omni_chassis", 10, std::bind(&RobotServer::OmniChassisControlCallback, this, std::placeholders::_1));
@@ -166,7 +167,11 @@ void RobotServer::TorqueControlThreadFunc() {
         // 根据状态写入机器人控制字
         this->is_robot_ready_ = false;
         robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
-        if (feedback_valid) {
+        // Chassis 模式没有关节电机：跳过关节状态机切换，控制字保持在 SWITCH_ON，
+        // 永远不会带上 CTRLWORD_MOTOR_ENABLE 位，避免对不存在的从站做使能。
+        // 随之 is_robot_ready_ 恒为 false，关节测量不会写入 planner——这正是期望行为；
+        // 底盘控制的下发不经过该标志，照常工作。
+        if (feedback_valid && robot_mode_ != RobotMode::Chassis) {
             this->SwitchControlWord();
         }
 
@@ -1042,6 +1047,17 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         }
         return true;
     };
+
+    // 关节名集合为空 ⇒ 总线上没有任何关节电机，只有底盘。
+    // 本函数仅在 feedback_valid（PeekLatest 成功且 cnt>0）时被调用，因此这里的「空」
+    // 确实代表「没有关节从站」，而不会与「共享内存尚无数据」混淆。
+    if (feedback_joint_names.empty()) {
+        robot_mode_ = RobotMode::Chassis;
+        ndof_config_ = 0;
+        LOG_INFO << "自动检测到 Chassis 模式（仅底盘，无关节电机）";
+        RCLCPP_INFO(this->get_logger(), "自动检测到 Chassis 模式（仅底盘，无关节电机）");
+        return RobotMode::Chassis;
+    }
 
     if (is_exact_match(robot_model_.params_ptr->joint_names)) {
         robot_mode_ = RobotMode::W1;

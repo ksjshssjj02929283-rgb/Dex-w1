@@ -21,7 +21,16 @@
 
 namespace robot_server_lib {
 
-enum class RobotMode { W1, A1, SingleArm, DualArm, Unknown };
+/**
+ * 机型模式，由 DetectRobotModeFromFeedback() 从反馈中的关节名集合自动识别。
+ *
+ *   Chassis  0 关节，仅底盘 —— 只装了下半身电机的整机调试场景。
+ *            与 A1/SingleArm/DualArm 正好相反：后者是「有上半身没底盘」，
+ *            它是「有底盘没上半身」。该模式下不向关节从站下发使能位
+ *            （不进 SwitchControlWord），避免对不存在的电机做状态机切换；
+ *            底盘控制与 chassis_node 照常工作。
+ */
+enum class RobotMode { W1, A1, SingleArm, DualArm, Chassis, Unknown };
 
 using JointControlMsg = joint_interfaces::msg::JointControl;
 using JointPositionControlMsg = joint_interfaces::msg::JointPositionControl;
