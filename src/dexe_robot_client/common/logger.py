@@ -9,14 +9,18 @@ All rights reserved.
 import logging
 import logging.handlers
 import colorlog
+import math
 import pathlib
 import threading
+import time
+from collections import OrderedDict
 from datetime import datetime
 from pprint import pformat
+from typing import Hashable, Optional
 from .config import LOG_DIR, PACKAGE_NAME
 
 
-def get_logger() -> logging.Logger:
+def get_logger() -> "ThrottledLogger":
     return DexeRobotClientLogger.get_instance()
 
 
@@ -27,6 +31,100 @@ LEVEL_COLORS = {
     "ERROR": "red",
     "CRITICAL": "bold_red",
 }
+
+
+class ThrottleFilter(logging.Filter):
+    """Suppress repeated log records during a caller-defined time interval."""
+
+    _INTERVAL_ATTR = "_dexe_throttle_interval"
+    _KEY_ATTR = "_dexe_throttle_key"
+
+    def __init__(self, max_keys: int = 4096):
+        super().__init__()
+        if max_keys <= 0:
+            raise ValueError("max_keys must be greater than zero")
+        self._max_keys = max_keys
+        self._last_emitted = OrderedDict()
+        self._lock = threading.Lock()
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        interval = getattr(record, self._INTERVAL_ATTR, None)
+        if interval is None or interval == 0:
+            return True
+
+        configured_key = getattr(record, self._KEY_ATTR, None)
+        key = configured_key if configured_key is not None else (
+            record.pathname,
+            record.lineno,
+            record.levelno,
+            record.getMessage(),
+        )
+        now = time.monotonic()
+
+        with self._lock:
+            last_emitted = self._last_emitted.get(key)
+            if last_emitted is not None and now - last_emitted < interval:
+                return False
+
+            self._last_emitted[key] = now
+            self._last_emitted.move_to_end(key)
+            if len(self._last_emitted) > self._max_keys:
+                self._last_emitted.popitem(last=False)
+        return True
+
+    def clear(self):
+        """Forget all throttle state, mainly useful when restarting a task."""
+        with self._lock:
+            self._last_emitted.clear()
+
+
+class ThrottledLogger(logging.Logger):
+    """A standard logger that accepts optional per-call throttling arguments.
+
+    Example::
+
+        logger.warning("connection lost", throttle_interval=5.0)
+        logger.info("state changed", throttle_interval=1.0,
+                    throttle_key="robot-state")
+    """
+
+    def _log(self,
+             level,
+             msg,
+             args,
+             exc_info=None,
+             extra=None,
+             stack_info=False,
+             stacklevel=1,
+             throttle_interval: Optional[float] = None,
+             throttle_key: Optional[Hashable] = None):
+        if throttle_interval is not None:
+            if (isinstance(throttle_interval, bool) or
+                    not isinstance(throttle_interval, (int, float)) or
+                    not math.isfinite(throttle_interval) or
+                    throttle_interval < 0):
+                raise ValueError(
+                    "throttle_interval must be a finite number greater than "
+                    "or equal to zero")
+            try:
+                hash(throttle_key)
+            except TypeError as exc:
+                raise TypeError("throttle_key must be hashable") from exc
+
+            extra = dict(extra) if extra is not None else {}
+            extra[ThrottleFilter._INTERVAL_ATTR] = float(throttle_interval)
+            extra[ThrottleFilter._KEY_ATTR] = throttle_key
+
+        super()._log(
+            level,
+            msg,
+            args,
+            exc_info=exc_info,
+            extra=extra,
+            stack_info=stack_info,
+            # Account for this wrapper so filename/lineno still point
+            # at the application call site.
+            stacklevel=stacklevel + 1)
 
 
 class DexeRobotClientLogger:
@@ -76,7 +174,7 @@ class DexeRobotClientLogger:
     _lock = threading.Lock()
 
     @classmethod
-    def get_instance(cls) -> logging.Logger:
+    def get_instance(cls) -> ThrottledLogger:
         return cls(LOG_DIR / f"{PACKAGE_NAME}.log", PACKAGE_NAME)._logger
 
     @classmethod
@@ -115,11 +213,17 @@ class DexeRobotClientLogger:
             log_dir.mkdir(parents=True, exist_ok=True)
 
         self._logger = logging.getLogger(name)
+        # Keep logging.getLogger(name)'s registered singleton while extending
+        # it with the optional keyword arguments implemented above.
+        if not isinstance(self._logger, ThrottledLogger):
+            self._logger.__class__ = ThrottledLogger
         self._logger.setLevel(logging.DEBUG)
         self._logger.propagate = False
 
         for handler in self._logger.handlers[:]:
             self._logger.removeHandler(handler)
+        self.throttle_filter = ThrottleFilter()
+        self._logger.addFilter(self.throttle_filter)
 
         self.console_handler = logging.StreamHandler()
         self.console_handler.setLevel(console_level)
