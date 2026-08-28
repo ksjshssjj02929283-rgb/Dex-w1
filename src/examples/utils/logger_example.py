@@ -19,3 +19,12 @@ if __name__ == "__main__":
     logger.warning("warning")
     logger.error("error")
     logger.critical("critical")
+
+    # 同一调用位置在 5 秒内最多打印一次；适合轮询、心跳等高频日志。
+    for _ in range(10):
+        logger.warning("throttled warning", throttle_interval=5.0)
+
+    # 指定 key 后，即使消息内容变化，也会共享同一个节流窗口。
+    logger.info("robot state: running",
+                throttle_interval=1.0,
+                throttle_key="robot-state")

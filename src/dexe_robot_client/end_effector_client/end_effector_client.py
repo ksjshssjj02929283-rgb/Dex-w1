@@ -86,6 +86,8 @@ class EndEffectorClient(Node):
             if cur_time - self._last_msg_time > self._connection_timeout:
                 self._cur_ee_info = None
                 self._last_msg_time = None
+                self.logger.error(f"{self.node_name} not connected!",
+                                  throttle_interval=2.0)
 
     def _init_subscriber(self):
         """初始化订阅"""
@@ -192,7 +194,7 @@ class EndEffectorClient(Node):
         pass
 
     def _invalidate_ee_info(self, error_msg: str, cur_msg_time: float):
-        self.logger.error(error_msg)
+        self.logger.error(error_msg, throttle_interval=2.0)
         with self._read_write_lock:
             self._last_msg_time = cur_msg_time
             self._cur_ee_info = None
@@ -203,7 +205,8 @@ class EndEffectorClient(Node):
             return True
         cur_time = self.get_clock().now().nanoseconds / 1e9
         if cur_time - self._last_msg_time > 0.1 * 1.1:  # 与server发布频率相关，允许波动10%
-            self.logger.warning(f"{self.node_name}: data is outdated.")
+            self.logger.warning(f"{self.node_name}: data is outdated.",
+                                throttle_interval=0.5)
             return True
         return False
 
