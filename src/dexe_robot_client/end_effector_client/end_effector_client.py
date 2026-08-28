@@ -65,7 +65,7 @@ class EndEffectorClient(Node):
             ee_type)
 
         self._connection_timeout = 1.0
-        self._read_lock = threading.Lock()
+        self._read_write_lock = threading.Lock()
         self._last_msg_time: float = None
         self._cur_ee_info: EndEffectorInfo = None
         self._joint_names_mapping: List[int] = None
@@ -80,7 +80,7 @@ class EndEffectorClient(Node):
     def _check_connection_status(self):
         """定时连接是否超时"""
         cur_time = self.get_clock().now().nanoseconds / 1e9
-        with self._read_lock:
+        with self._read_write_lock:
             if self._last_msg_time is None:
                 return
             if cur_time - self._last_msg_time > self._connection_timeout:
@@ -101,16 +101,23 @@ class EndEffectorClient(Node):
 
     def _feedback_callback(self, msg):
         """接收反馈消息，更新当前状态"""
+        cur_msg_time = self.get_clock().now().nanoseconds / 1e9
+
         # if msg.ee_name != self.ee_type.name:
         #     self.logger.error(f"Received message for {msg.ee_name}, expected {self.ee_type.name}")
         #     return
+
         if len(msg.joint_states) != self.ee_params.dof:
-            self.logger.error(
-                f"Received joint_states length {len(msg.joint_states)}, expected {self.ee_params.dof}"
-            )
+            self._invalidate_ee_info(
+                f"{self.node_name} received joint_states length {len(msg.joint_states)}, expected {self.ee_params.dof}",
+                cur_msg_time)
             return
 
-        cur_msg_time = self.get_clock().now().nanoseconds / 1e9
+        if msg.status == EEStatus.UNKNOWN:
+            self._invalidate_ee_info(
+                f"{self.node_name} in UNKNOWN status, please check ee_devices server!",
+                cur_msg_time)
+            return
 
         if self._joint_names_mapping is None:
             server_joint_names = [js.name for js in msg.joint_states]
@@ -119,6 +126,25 @@ class EndEffectorClient(Node):
 
         server_joint_position = np.array(
             [js.position for js in msg.joint_states])[self._joint_names_mapping]
+
+        within_lower_bound = (server_joint_position
+                              >= self.ee_params.position.lb) | np.isclose(
+                                  server_joint_position,
+                                  self.ee_params.position.lb,
+                                  rtol=0.0,
+                                  atol=1e-6)
+        within_upper_bound = (server_joint_position
+                              <= self.ee_params.position.ub) | np.isclose(
+                                  server_joint_position,
+                                  self.ee_params.position.ub,
+                                  rtol=0.0,
+                                  atol=1e-6)
+        if not np.all(within_lower_bound & within_upper_bound):
+            self._invalidate_ee_info(
+                f"{self.node_name} feedback joint pos out of range: {server_joint_position}",
+                cur_msg_time)
+            return
+
         server_joint_velocity = np.array(
             [js.velocity for js in msg.joint_states])[self._joint_names_mapping]
         server_joint_current = np.array([js.current for js in msg.joint_states
@@ -132,7 +158,7 @@ class EndEffectorClient(Node):
             js.error_code for js in msg.joint_states
         ])[self._joint_names_mapping]
 
-        with self._read_lock:
+        with self._read_write_lock:
             self._last_msg_time = cur_msg_time
             self._cur_ee_info = EndEffectorInfo(
                 name=msg.ee_name,
@@ -164,6 +190,12 @@ class EndEffectorClient(Node):
     def _init_action(self):
         """初始化动作（预留）"""
         pass
+
+    def _invalidate_ee_info(self, error_msg: str, cur_msg_time: float):
+        self.logger.error(error_msg)
+        with self._read_write_lock:
+            self._last_msg_time = cur_msg_time
+            self._cur_ee_info = None
 
     def _is_outdated(self) -> bool:
         """检查当前状态是否过时"""
@@ -243,7 +275,7 @@ class EndEffectorClient(Node):
         return self._send_control(EEJointControlMode.CURRENT, current)
 
     def get_info(self) -> Tuple[bool, Optional[EndEffectorInfo]]:
-        with self._read_lock:
+        with self._read_write_lock:
             ee_info = self._cur_ee_info
         if ee_info is None:
             return False, None
