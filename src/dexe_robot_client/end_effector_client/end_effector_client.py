@@ -46,11 +46,7 @@ class EndEffectorInfo:
 
 class EndEffectorClient(Node):
 
-    def __init__(self,
-                 ee_type: DexeRP_EEType,
-                 is_left: bool,
-                 is_sim: bool,
-                 timeout_sec: float = 1.0):
+    def __init__(self, ee_type: DexeRP_EEType, is_left: bool, is_sim: bool):
         self.node_name = ee_type.name
         self.node_name += "_left" if is_left else "_right"
         self.node_name += "_sim" if is_sim else ""
@@ -71,7 +67,6 @@ class EndEffectorClient(Node):
         self._joint_names_mapping: List[int] = None
 
         self._init_subscriber()
-        rclpy.spin_once(self, timeout_sec=timeout_sec)
         self._init_publisher()
 
         # 创建定时器检查连接状态

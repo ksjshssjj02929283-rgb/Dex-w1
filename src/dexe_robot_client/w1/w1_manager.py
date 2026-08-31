@@ -117,20 +117,7 @@ class W1Manager:
 
         self.w1_params = W1Params(self._robot_version, self._left_ee_type,
                                   self._right_ee_type)
-
-        # 在主线程中正常退出时自动调用
-        atexit.register(self._destroy_clients)
-
-        self._init_clients()
-
         self._init_kine_solver()
-
-        if self.set_sim_mode(is_sim) != StatusCode.SUCCESS:
-            if is_sim:
-                self.logger.error(f"Set sim mode failed")
-                raise RuntimeError("Set sim mode failed")
-            self.logger.error(f"Set real mode failed")
-            raise RuntimeError("Set real mode failed")
 
         self.real_torso_idx, self.real_head_idx, self.real_arml_idx, self.real_armr_idx = \
             self.w1_params.torso_index, self.w1_params.head_index, self.w1_params.left_arm_index, self.w1_params.right_arm_index
@@ -140,7 +127,20 @@ class W1Manager:
             left_end_effector_type=None,
             right_end_effector_type=None,
             verbose=False)
+
         self._init_cartesian_planner(self._robot_version)
+
+        # 在主线程中正常退出时自动调用
+        atexit.register(self._destroy_clients)
+
+        self._init_clients()
+
+        if self.set_sim_mode(is_sim) != StatusCode.SUCCESS:
+            if is_sim:
+                self.logger.error(f"Set sim mode failed")
+                raise RuntimeError("Set sim mode failed")
+            self.logger.error(f"Set real mode failed")
+            raise RuntimeError("Set real mode failed")
 
         self._stop_move_event = threading.Event()
         self._stop_move_event.clear()
