@@ -1,6 +1,9 @@
 # CHANGELOG
 
 ## [Unrelease]
+### Refactor
+- 优化ros2 client的初始化，避免超时等待
+
 ### Improve
 - logger增加日志节流机制
 

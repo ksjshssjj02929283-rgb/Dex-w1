@@ -39,7 +39,21 @@ def main(is_sim=True):
     "示例: 仿真client, 如需控制真实机器人则将is_sim设置为False"
     rclpy.init()
     executor = MultiThreadedExecutor()
+
     client_sim = RobotClient(is_sim=True)
+    client = client_sim
+    executor.add_node(client_sim)
+
+    client_real = None
+    if not is_sim:
+        client_real = RobotClient(is_sim=False)
+        executor.add_node(client_real)
+        client = client_real
+
+    # 在后台启动 executor
+    ros_thread = threading.Thread(target=executor.spin, daemon=True)
+    ros_thread.start()
+
     if not client_sim.connect_robot():
         print(f"client_sim not connected!")
         if rclpy.ok():
@@ -48,28 +62,17 @@ def main(is_sim=True):
         client_sim.close_client()
         client_sim.destroy_node()
         return
-    executor.add_node(client_sim)
-    client = client_sim
 
-    client_real = None
-    if not is_sim:
-        client_real = RobotClient(is_sim=False)
-        if not client_real.connect_robot():
-            print(f"client_real not connected!")
-            if rclpy.ok():
-                rclpy.shutdown()
-            executor.shutdown()
-            client_sim.close_client()
-            client_sim.destroy_node()
-            client_real.close_client()
-            client_real.destroy_node()
-            return
-        executor.add_node(client_real)
-        client = client_real
-
-    # 在后台启动 executor
-    ros_thread = threading.Thread(target=executor.spin, daemon=True)
-    ros_thread.start()
+    if not is_sim and not client_real.connect_robot():
+        print(f"client_real not connected!")
+        if rclpy.ok():
+            rclpy.shutdown()
+        executor.shutdown()
+        client_sim.close_client()
+        client_sim.destroy_node()
+        client_real.close_client()
+        client_real.destroy_node()
+        return
 
     print(f"[INFO] Robot type: {client.get_robot_type()}")
     print(f"[INFO] Robot arm type: {client.get_arm_type()}")
