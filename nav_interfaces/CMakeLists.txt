@@ -100,6 +100,7 @@ set(SRV_FILES
   "srv/RollbackMap.srv"
   "srv/ResolveNavPoints.srv"
   "srv/SetPolygonPadding.srv"
+  "srv/SetNavigationBackend.srv"
 )
 
 # 5) 声明要生成的动作

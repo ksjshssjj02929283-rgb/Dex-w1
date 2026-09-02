@@ -8,12 +8,15 @@
 #   "该参数不约束/无效"，path_follower 回退到自身默认行为。
 #   target_yaw 的 NaN 另有专义：到点不做最后阶段旋转（见下）。
 #
-# poses 朝向：暂时无意义（path_follower 只用 position），统一置 0；
-#   末点目标朝向用顶层 target_yaw 表达。
+# poses 朝向：每点的**解析切向角**（行进方向），由发布方填入 orientation 的 yaw 分量。
+#   path_follower 据此直接求曲率 kappa = dtheta/ds；未填（全为单位四元数）时它会
+#   自行从 x,y 反推切向与曲率，但那样对位置噪声的放大系数是 4/ds^2，1cm 点距下约 4e4。
+#   倒车段这里仍填行进方向切向，不做 +pi——车头反向由 path_follower 在消费端处理。
+#   末点目标朝向另由顶层 target_yaw 表达。
 
 std_msgs/Header header
 
-# 离散轨迹点（如 5mm 间距）。朝向暂时无意义。
+# 离散轨迹点（默认 1cm 间距）。朝向 = 该点行进方向的解析切向。
 geometry_msgs/Pose[] poses
 
 # 跟踪方式。
