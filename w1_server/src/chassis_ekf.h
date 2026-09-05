@@ -59,8 +59,13 @@ public:
         double q_scale_stopped = 0.01;  // 静止时过程噪声缩放（静止模型近乎完美）
 
         // 初始协方差对角
-        double p0_xy    = 0.01;
-        double p0_theta = 0.01;
+        // odom frame 按定义即启动位姿：启动瞬间 base 与 odom 重合，位姿恒等于 0 且完全确定，
+        // 故初始不确定度应趋近 0。取 1e-9 而非严格 0，只为避开可能的病态求逆路径；
+        // 首次 Predict 后 Q·dt 即把 P 抬到 1e-8~1e-6 量级，不会卡在零。
+        // 用 0.01（σ=0.1 m / 5.73°）会让初值淹没真实漂移：q_theta=1e-6 跑 91 s 才累积
+        // 9.1e-5 rad²，仅占 0.01 的 0.9%，协方差曲线因此几乎是常数、不携带信息。
+        double p0_xy    = 1.0e-9;
+        double p0_theta = 1.0e-9;
         double p0_v     = 1.0;
         double p0_omega = 1.0;
     };
@@ -69,6 +74,13 @@ public:
 
     /** 重置状态为全零，协方差为初始值 */
     void Reset();
+
+    /**
+     * 用外部已知的位姿/速度灌初值，协方差回到 p0_*。
+     * 用于运行中从纯推算切入 EKF：EKF 状态在关闭期间不推进，直接取用会把位姿
+     * 跳回旧值（首次为原点）。位姿 p0 取极小值是对的——灌入的就是当前已知位姿。
+     */
+    void SetState(double x, double y, double theta, double v, double omega);
 
     void SetParams(const Params& p);
 
@@ -144,6 +156,42 @@ private:
     Mat5   P_;           // 状态协方差
     Params params_;
     bool   is_aerial_ = false;
+};
+
+/**
+ * 纯航位推算（非 EKF 模式）的协方差——EKF 的退化形态。
+ *
+ * 位姿方差按与 EKF 同一套 Q 累积：无量测修正故只增不减，静止时不增（与 ZUPT 语义一致）。
+ * twist 方差直接取量测噪声：v 用 r_v；ω 由 IMU 提供时用 q_omega_imu·dt（EKF 中 IMU 驱动
+ * 下的稳态量级），否则用 r_omega。
+ * 两种模式因此共用参数与量纲——标定出的 r_v / q_theta 两边通用，NEES 可跨模式比较；
+ * 也避免了非 EKF 模式发全 0 协方差被上游当成「无限精确」。
+ */
+struct DeadReckoningCov {
+    double var_xy    = 0.0;
+    double var_theta = 0.0;
+    double last_dt   = 0.01;
+
+    void Reset(const ChassisEkf::Params& p) {
+        var_xy    = p.p0_xy;
+        var_theta = p.p0_theta;
+    }
+    void Propagate(const ChassisEkf::Params& p, double dt, bool is_stopped) {
+        if (dt <= 0.0) return;
+        last_dt = dt;
+        if (is_stopped) return;
+        var_xy    += p.q_xy    * dt;
+        var_theta += p.q_theta * dt;
+    }
+    /** 从 EKF 当前协方差接续（EKF → 纯推算切换时保持连续，不产生阶跃） */
+    void SeedFrom(const ChassisEkf::Mat5& P) {
+        var_xy    = P(0, 0) > P(1, 1) ? P(0, 0) : P(1, 1);
+        var_theta = P(2, 2);
+    }
+    double TwistVarV(const ChassisEkf::Params& p) const { return p.r_v; }
+    double TwistVarOmega(const ChassisEkf::Params& p, bool imu_available) const {
+        return imu_available ? p.q_omega_imu * last_dt : p.r_omega;
+    }
 };
 
 }  // namespace chassis_node

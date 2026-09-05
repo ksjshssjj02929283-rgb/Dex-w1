@@ -6,11 +6,14 @@
 
 ### 1.1 融合策略
 
-| 参数 | 值 | 行为 |
-|------|----|------|
-| `use_ekf_fusion = false`（默认） | - | 直接积分；`use_imu_yaw` 控制是否用 IMU 航向 |
-| `use_ekf_fusion = true` | + `use_imu_yaw = true` | **EKF 融合**：IMU 驱动过程模型，编码器做量测 |
-| `use_ekf_fusion = true` | + `use_imu_yaw = false` | **EKF（无IMU）**：匀速预测 + 编码器量测 |
+| `odom_mode` | 行为 | 位置来源 | 航向来源 |
+|------|----|------|------|
+| `encoder_only` | 直接积分 | 编码器 | 编码器 ω 积分 |
+| `imu_yaw` | 直接积分 | 编码器 | 陀螺积分 |
+| `ekf`（默认） | **EKF 融合**：IMU 驱动过程模型，编码器 (v, ω) 做量测与检测 | 编码器量测 | IMU 驱动 |
+| `ekf_no_imu` | **EKF 无 IMU**：匀速预测 + 编码器 2 维量测；`ekf` 在 IMU 掉线时自动退化到此态 | 编码器量测 | 编码器 ω |
+
+> 原 `use_imu_yaw` / `use_ekf_fusion` 两个布尔已合并为单参数 `odom_mode`（2026-09-04）。IMU 在任何模式下都只提供航向/角速度。
 
 ---
 
@@ -249,7 +252,7 @@ else:
     ├── 读编码器 → v_enc = speed_avg * odom_factor
     │             omega_enc = (v_r - v_l) / wheel_track
     │
-    ├── [use_ekf_fusion = true]
+    ├── [odom_mode = ekf | ekf_no_imu]
     │       │
     │       ├── 读 wz_imu = curr_imu_→angular_velocity.z * imu_factor
     │       │
@@ -259,7 +262,7 @@ else:
     │       │
     │       └── 读 EKF 状态 → (odom_x, odom_y, theta, v, omega)
     │
-    └── [use_ekf_fusion = false]
+    └── [odom_mode = encoder_only | imu_yaw]
             └── 现有直接积分逻辑（原代码不变）
 
 [PublishOdometry()]
@@ -305,7 +308,7 @@ imu0_config: [false, false, false,
 
 | 参数名 | 默认值 | 说明 |
 |--------|--------|------|
-| `use_ekf_fusion` | `false` | 是否启用 EKF 融合 |
+| `odom_mode` | `ekf` | 里程计模式四选一：`encoder_only` / `imu_yaw` / `ekf` / `ekf_no_imu`，可热切换 |
 | `ekf_q_xy` | `1e-4` | 位置过程噪声 (m²) |
 | `ekf_q_theta` | `1e-3` | 航向过程噪声 (rad²) |
 | `ekf_q_v` | `0.04` | 线速度过程噪声 ((m/s)²) |

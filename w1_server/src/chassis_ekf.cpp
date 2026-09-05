@@ -6,6 +6,17 @@ namespace chassis_node {
 
 ChassisEkf::ChassisEkf(const Params& p) : params_(p) { Reset(); }
 
+void ChassisEkf::SetState(double x, double y, double theta, double v, double omega) {
+    x_ << x, y, theta, v, omega;
+    P_ = Mat5::Zero();
+    P_(0, 0) = params_.p0_xy;
+    P_(1, 1) = params_.p0_xy;
+    P_(2, 2) = params_.p0_theta;
+    P_(3, 3) = params_.p0_v;
+    P_(4, 4) = params_.p0_omega;
+    is_aerial_ = false;
+}
+
 void ChassisEkf::SetParams(const Params& p) {
     // 只替换参数，不动 x_ / P_。
     // 早期实现会在此把 P_ 打回 p0_*，导致运行中调一个噪声参数就让协方差突然跳变、

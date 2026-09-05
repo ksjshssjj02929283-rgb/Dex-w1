@@ -8,6 +8,7 @@
 // chassis_ekf 只依赖 Eigen，不牵扯 ROS 运行时，故可脱离节点单独测。
 
 #include "chassis_ekf.h"
+#include "odom_mode.h"
 
 #include <gtest/gtest.h>
 
@@ -282,6 +283,99 @@ TEST(ChassisEkfParams, ResetRestoresInitialCovariance) {
     ekf.Reset();
     EXPECT_DOUBLE_EQ(ekf.GetX(), 0.0);
     EXPECT_DOUBLE_EQ(ekf.GetCovariance()(0, 0), DefaultParams().p0_xy);
+}
+
+
+// ---------- 热切换灌初值（R03） ----------
+
+TEST(ChassisEkfSetState, SeedsStateAndRestoresInitialCovariance) {
+    ChassisEkf ekf(DefaultParams());
+    RunStraight(ekf, 10.0);  // 让 x_/P_ 都离开初值
+    ekf.SetState(1.0, 2.0, 0.5, 0.3, 0.1);
+    EXPECT_DOUBLE_EQ(ekf.GetX(), 1.0);
+    EXPECT_DOUBLE_EQ(ekf.GetY(), 2.0);
+    EXPECT_DOUBLE_EQ(ekf.GetTheta(), 0.5);
+    EXPECT_DOUBLE_EQ(ekf.GetV(), 0.3);
+    EXPECT_DOUBLE_EQ(ekf.GetOmega(), 0.1);
+    const auto& P = ekf.GetCovariance();
+    EXPECT_DOUBLE_EQ(P(0, 0), DefaultParams().p0_xy);
+    EXPECT_DOUBLE_EQ(P(2, 2), DefaultParams().p0_theta);
+    EXPECT_DOUBLE_EQ(P(3, 3), DefaultParams().p0_v);
+    EXPECT_FALSE(ekf.IsAerial());
+}
+
+TEST(ChassisEkfSetState, NoPoseJumpOnFirstStepAfterSeed) {
+    // 模拟：纯推算跑到 (5, -3, 1.0 rad)，此时切入 EKF。切换前 EKF 内部状态停在别处。
+    ChassisEkf ekf(DefaultParams());
+    RunStraight(ekf, 10.0);
+    ASSERT_GT(ekf.GetX(), 1.0);
+
+    const double x0 = 5.0, y0 = -3.0, th0 = 1.0, v0 = 0.5;
+    ekf.SetState(x0, y0, th0, v0, 0.0);
+    ekf.Step(kDt, v0, 0.0, 0.0, /*imu_available=*/true, /*is_stopped=*/false);
+
+    // 一步只该走 v·dt = 5 mm，方向沿 th0
+    EXPECT_NEAR(ekf.GetX(), x0 + v0 * kDt * std::cos(th0), 1e-3);
+    EXPECT_NEAR(ekf.GetY(), y0 + v0 * kDt * std::sin(th0), 1e-3);
+    EXPECT_NEAR(ekf.GetTheta(), th0, 1e-3);
+}
+
+// ---------- 非 EKF 模式协方差（R06） ----------
+
+TEST(DeadReckoningCov, GrowsWhileMovingAndHoldsWhileStopped) {
+    const auto p = DefaultParams();
+    DeadReckoningCov dr;
+    dr.Reset(p);
+    EXPECT_DOUBLE_EQ(dr.var_xy, p.p0_xy);
+
+    for (int i = 0; i < 100; ++i) dr.Propagate(p, kDt, /*is_stopped=*/false);  // 1 s 运动
+    EXPECT_NEAR(dr.var_xy,    p.p0_xy    + p.q_xy    * 1.0, 1e-12);
+    EXPECT_NEAR(dr.var_theta, p.p0_theta + p.q_theta * 1.0, 1e-15);
+
+    const double xy_before = dr.var_xy, th_before = dr.var_theta;
+    for (int i = 0; i < 100; ++i) dr.Propagate(p, kDt, /*is_stopped=*/true);   // 1 s 静止
+    EXPECT_DOUBLE_EQ(dr.var_xy, xy_before);
+    EXPECT_DOUBLE_EQ(dr.var_theta, th_before);
+
+    // twist 方差取量测噪声，且永不为 0
+    EXPECT_DOUBLE_EQ(dr.TwistVarV(p), p.r_v);
+    EXPECT_DOUBLE_EQ(dr.TwistVarOmega(p, /*imu_available=*/false), p.r_omega);
+    EXPECT_DOUBLE_EQ(dr.TwistVarOmega(p, /*imu_available=*/true), p.q_omega_imu * kDt);
+    EXPECT_GT(dr.TwistVarOmega(p, true), 0.0);
+}
+
+TEST(DeadReckoningCov, SeedFromEkfCovarianceIsContinuous) {
+    ChassisEkf ekf(DefaultParams());
+    RunStraight(ekf, 10.0);
+    const auto& P = ekf.GetCovariance();
+
+    DeadReckoningCov dr;
+    dr.SeedFrom(P);
+    EXPECT_DOUBLE_EQ(dr.var_theta, P(2, 2));
+    EXPECT_GE(dr.var_xy, P(0, 0));
+    EXPECT_GE(dr.var_xy, P(1, 1));
+}
+
+// ---------- 里程计模式参数（odom_mode 四选一） ----------
+
+TEST(OdomMode, ParsesAllFourNamesAndRejectsOthers) {
+    EXPECT_EQ(ParseOdomMode("encoder_only"), OdomMode::EncoderOnly);
+    EXPECT_EQ(ParseOdomMode("imu_yaw"),      OdomMode::ImuYaw);
+    EXPECT_EQ(ParseOdomMode("ekf"),          OdomMode::Ekf);
+    EXPECT_EQ(ParseOdomMode("ekf_no_imu"),   OdomMode::EkfNoImu);
+    EXPECT_FALSE(ParseOdomMode("pure_imu").has_value());   // 底盘上没有纯 IMU 模式
+    EXPECT_FALSE(ParseOdomMode("EKF").has_value());
+    EXPECT_FALSE(ParseOdomMode("").has_value());
+    for (auto m : {OdomMode::EncoderOnly, OdomMode::ImuYaw, OdomMode::Ekf, OdomMode::EkfNoImu}) {
+        EXPECT_EQ(ParseOdomMode(OdomModeName(m)), m);      // 名字与解析互逆
+    }
+}
+
+TEST(OdomMode, DerivedFlagsMatchTheTwoByTwoMatrix) {
+    EXPECT_FALSE(ModeUsesImu(OdomMode::EncoderOnly)); EXPECT_FALSE(ModeUsesEkf(OdomMode::EncoderOnly));
+    EXPECT_TRUE (ModeUsesImu(OdomMode::ImuYaw));      EXPECT_FALSE(ModeUsesEkf(OdomMode::ImuYaw));
+    EXPECT_TRUE (ModeUsesImu(OdomMode::Ekf));         EXPECT_TRUE (ModeUsesEkf(OdomMode::Ekf));
+    EXPECT_FALSE(ModeUsesImu(OdomMode::EkfNoImu));    EXPECT_TRUE (ModeUsesEkf(OdomMode::EkfNoImu));
 }
 
 }  // namespace

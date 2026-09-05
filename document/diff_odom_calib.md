@@ -274,3 +274,18 @@ v_r = right_rpm * (2π/60) * wheel_radius
 v     = (v_r + v_l) / 2
 omega = (v_r - v_l) / wheel_track_eff
 ```
+
+## 附：尺度参数的分工（2026-09-03 定稿）
+
+三个尺度参数只对应两个可观测量：线尺度 $k_v = r\cdot f_{odom}$，角尺度 $k_\omega = f_{odom}\cdot r / b_{eff}$。多出的一个自由度靠**约定**消除：
+
+| 参数 | 角色 | 谁写 |
+|---|---|---|
+| `wheel_radius` $r$ | 物理常量，钉在名义值 | 人工，不参与标定 |
+| `wheel_track_eff` $b_{eff}$ | 物理常量，钉在名义值 | 人工；本文 §4 的手动标定法仅作理论参考 |
+| `odom_factor` $f_{odom}$ | **线尺度标定量** | `calib_odom_factor`：激光位移 / 里程计位移 |
+| `imu_factor` | **角尺度标定量**（IMU 通路） | `calib_odom_factor`：激光 yaw / IMU yaw |
+
+`odom_factor` 乘在**轮速层**（$v_l, v_r$ 各乘一次），而非只乘合成线速度：轮径误差对 $v$ 与 $\omega_{enc}$ 是同一个比例，只修 $v$ 会迫使 $b_{eff}$ 吸收轮径误差。`ChassisMotorFeedback.speed_mps` 与积分所用轮速为同一量，亦含该系数。
+
+**已知缺口**：编码器角尺度中的 $b_{eff}$ 无标定项。当前 $\omega$ 以 IMU 为主，编码器 $\omega$ 仅用于 IMU 失效回退与 EKF 新息；若需补齐，形态与 `imu_factor` 标定相同（原地转 N 圈，激光 yaw / 编码器 yaw）。

@@ -4,27 +4,31 @@ chassis_node:
     # ================================================================
     # 底盘物理参数
     # ================================================================
-    wheel_track: 0.4390       # 几何轴距 b (m)，卷尺测量
-    wheel_radius: 0.0865        # 轮半径 r (m)，173mm直径的初始值；左右相同
-    wheel_track_eff: 0.4390     # 有效轴距 b_eff (m)，标定后通常略大于 wheel_track
-                                # 标定方法见: document/diff_odom_calib.md
+    # 尺度参数分工：wheel_radius / wheel_track_eff 是物理常量（不参与标定，钉在名义值）；
+    # 线尺度由 odom_factor 承担（calib_odom_factor 标定写入），角尺度由 imu_factor 承担。
+    # 编码器角尺度 = odom_factor·r / b_eff，其中 b_eff 目前无标定项，仅在 IMU 失效回退时起作用。
+    wheel_track: 0.4390       # 几何轴距 b (m)，卷尺测量；仅作参考基准，不参与计算
+    wheel_radius: 0.0865        # 轮半径 r (m)，173mm 直径名义值；左右相同；物理常量
+    wheel_track_eff: 0.4390     # 有效轴距 b_eff (m)；物理常量。理论与手动标定方法见 document/diff_odom_calib.md
     odom_frame:  "odom"       # 里程计坐标系名
     base_frame:  "base_footprint"  # 机体坐标系名
     odom_rate_hz: 100.0       # 里程计发布频率 (Hz)
 
     # ================================================================
-    # IMU / EKF 使用模式
+    # 里程计模式（四选一，可热切换；进/出 EKF 时自动灌初值/接续协方差，无位姿跳变）
     # ================================================================
-    # use_imu_yaw    = true  + use_ekf_fusion = false : 直接 IMU yaw 积分（原逻辑）
-    # use_imu_yaw    = true  + use_ekf_fusion = true  : 完整 EKF 融合
-    # use_imu_yaw    = false                          : 纯编码器（忽略 IMU）
-    use_imu_yaw:      true
-    use_ekf_fusion:   true    # 设为 true 可开启 EKF 融合
+    #   encoder_only : 纯编码器——v 与 θ 都来自编码器（标定 odom_factor / wheel_track_eff 时用）
+    #   imu_yaw      : IMU 航向——v 来自编码器，θ 由陀螺积分（非 EKF 直接积分）
+    #   ekf          : EKF 融合——IMU 驱动预测，编码器 (v, ω) 做量测与检测（运行模式）
+    #   ekf_no_imu   : EKF 无 IMU——匀速假设预测 + 编码器 2 维更新；IMU 掉线时 ekf 自动退化到此态
+    # IMU 在任何模式下都只提供航向/角速度，位置始终来自编码器。
+    odom_mode: ekf
 
     # ================================================================
     # 标定系数
     # ================================================================
-    odom_factor: 1.0    # 编码器线速度/位置整体缩放（等效轮径标定系数）
+    odom_factor: 1.0    # 编码器线尺度标定量，由 calib_odom_factor 用激光真值写入（laser_dist / odom_dist）
+                        # 乘在轮速层：v 与 ω_enc 同时修正，ChassisMotorFeedback.speed_mps 亦含此系数
     imu_factor:  1.0    # IMU 角速度整体缩放（等效陀螺比例误差）
 
     # ================================================================
@@ -49,6 +53,20 @@ chassis_node:
     speed_deadzone: 0.001   # 线速度静止死区 (m/s)
     omega_deadzone: 0.008   # 角速度静止死区 (rad/s ≈ 0.46°/s)
     imu_timeout:    0.1     # IMU 超时时间 (s)，超时后回退编码器
+                            # 判据基准是消息 stamp：两条来源同为节点时钟（w1_server 同进程；
+                            # dexe_sensors/imu 已改用节点时钟），能一并检出订阅队列积压。
+                            # 跨源 sanity 检查在 IsImuAvailable 里兜底。
+    odom_stale_timeout: 0.5 # 底盘反馈失效判定 (s)：反馈持续无效超过此值即停发里程计与 TF，
+                            # 只报 ERROR，恢复后自动续发（fail-fast，不做降级续航）。
+                            # 共享内存读取自带 10 ms 新鲜度门，本值是在其上加的持续时长门槛，
+                            # 用来滤掉抖动；50 个周期，与积分侧 dt > 0.5 s 的丢帧保护同值。
+
+    # IMU 来源自动判定的宽限期 (s)。
+    # 0.3.0 硬件 IMU 挂独立串口由 dexe_sensors/imu 发话题；0.3.1 走 EtherCAT 进共享内存。
+    # 两版话题同名（/imu/chassis），故按「共享内存里 IMU 时间戳是否在变」判定：
+    # 期内观察到变化 => 直接读 shm（少一跳序列化+传输）；超时未变 => 订阅话题。
+    # 判据用「在变」而非「非零」：启动瞬间 EtherCAT 可能未就绪，全零会误判成 0.3.0。
+    imu_source_detect_grace: 5.0
 
     # ================================================================
     # EKF 参数（仅 use_ekf_fusion=true 时生效）
@@ -85,8 +103,13 @@ chassis_node:
     # 值越小检测越敏感（误报率越高）
     ekf_aerial_chi2_threshold: 9.21
 
-    # -- EKF 初始协方差对角（机器人第一次启动时的不确定性）--
-    ekf_p0_xy:    0.01    # 位置初始方差 (m²)
-    ekf_p0_theta: 0.01    # 航向初始方差 (rad²)
+    # -- EKF 初始协方差对角（滤波器复位时的初值）--
+    # ⚠ 位姿两项必须趋近 0，不能按「先给个不确定量」的直觉设。
+    #   odom frame 按定义就是启动位姿：启动瞬间 base 与 odom 重合，(x,y,θ)≡0 且完全确定。
+    #   设成 0.01（σ=0.1 m / 5.73°）的后果是初值淹没真实漂移——q_theta=1e-6 跑 91 s 才累积
+    #   9.1e-5 rad²、仅占 0.01 的 0.9%，σyaw 曲线几乎是常数 5.73°，对上层不携带任何信息。
+    #   取 1e-9 而非严格 0，只为避开可能的病态求逆路径；首次 Predict 的 Q·dt 就会把 P 抬起来。
+    ekf_p0_xy:    1.0e-9  # 位置初始方差 (m²)
+    ekf_p0_theta: 1.0e-9  # 航向初始方差 (rad²)
     ekf_p0_v:     1.0     # 线速度初始方差 ((m/s)²)
     ekf_p0_omega: 1.0     # 角速度初始方差 ((rad/s)²)
