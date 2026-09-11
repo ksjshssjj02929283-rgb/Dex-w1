@@ -67,7 +67,7 @@ private:
     static constexpr double kSlopeWarnDeg = 3.0;
 
     int max_buff_size_ = 500;
-    double acc_excite_threshold_ = 0.04;   // 加速度标准差阈值，判断 IMU 是否受激励
+    double acc_excite_threshold_ = 0.04;    // 加速度标准差阈值，判断 IMU 是否受激励
     double gyro_excite_threshold_ = 0.004;  // 角速度标准差阈值
     // 陀螺零偏告警门限：静止时 gyr_avg 即零偏本身，超过此值只告警不拒绝初始化。
     // 注意它不是静止判据——把待估的零偏当判据量正是 R01 的根因。

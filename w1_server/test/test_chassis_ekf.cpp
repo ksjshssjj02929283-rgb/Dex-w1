@@ -7,25 +7,24 @@
 //
 // chassis_ekf 只依赖 Eigen，不牵扯 ROS 运行时，故可脱离节点单独测。
 
-#include "chassis_ekf.h"
-#include "odom_mode.h"
-
 #include <gtest/gtest.h>
 
 #include <cmath>
+
+#include "chassis_ekf.h"
+#include "odom_mode.h"
 
 namespace chassis_node {
 namespace {
 
 constexpr double kRad2Deg = 57.29577951308232;
-constexpr double kDt = 0.01;          // 100 Hz
+constexpr double kDt = 0.01;             // 100 Hz
 constexpr double kGyroBiasResid = 1e-4;  // rad/s，M2 实测的初始化后零偏残差量级
 
 ChassisEkf::Params DefaultParams() { return ChassisEkf::Params{}; }
 
 /// 静止：编码器 v=ω=0，IMU 只剩零偏残差
-void RunStatic(ChassisEkf& ekf, double seconds, double dt = kDt,
-               double gyro_bias_resid = kGyroBiasResid) {
+void RunStatic(ChassisEkf& ekf, double seconds, double dt = kDt, double gyro_bias_resid = kGyroBiasResid) {
     const int n = static_cast<int>(seconds / dt);
     for (int i = 0; i < n; ++i) {
         ekf.Step(dt, 0.0, 0.0, gyro_bias_resid, /*imu_available=*/true, /*is_stopped=*/true);
@@ -40,9 +39,7 @@ void RunStraight(ChassisEkf& ekf, double seconds, double v = 0.5, double dt = kD
     }
 }
 
-double MaxAsymmetry(const ChassisEkf::Mat5& P) {
-    return (P - P.transpose()).cwiseAbs().maxCoeff();
-}
+double MaxAsymmetry(const ChassisEkf::Mat5& P) { return (P - P.transpose()).cwiseAbs().maxCoeff(); }
 
 double MinEigenvalue(const ChassisEkf::Mat5& P) {
     Eigen::SelfAdjointEigenSolver<ChassisEkf::Mat5> es(P);
@@ -151,9 +148,9 @@ TEST(ChassisEkfZupt, HeadingDoesNotDriftWhileStopped) {
 
 TEST(ChassisEkfZupt, VelocityStatesCollapseToZeroWhileStopped) {
     ChassisEkf ekf(DefaultParams());
-    RunStraight(ekf, 5.0, 0.8);   // 先跑起来
+    RunStraight(ekf, 5.0, 0.8);  // 先跑起来
     ASSERT_GT(ekf.GetV(), 0.5);
-    RunStatic(ekf, 2.0);          // 再停下
+    RunStatic(ekf, 2.0);  // 再停下
     EXPECT_NEAR(ekf.GetV(), 0.0, 1e-6);
     EXPECT_NEAR(ekf.GetOmega(), 0.0, 1e-6);
 }
@@ -186,8 +183,7 @@ TEST(ChassisEkfDetectUpdateSplit, ImuOmegaIsNotDraggedByEncoder) {
         for (int i = 0; i < 300; ++i) {
             ekf.Step(kDt, 0.5, omega_enc, kOmegaTrue, /*imu_available=*/true, false);
         }
-        EXPECT_NEAR(ekf.GetOmega(), kOmegaTrue, 1e-6)
-            << "omega_enc = " << omega_enc << " 时输出被编码器拉偏";
+        EXPECT_NEAR(ekf.GetOmega(), kOmegaTrue, 1e-6) << "omega_enc = " << omega_enc << " 时输出被编码器拉偏";
     }
 }
 
@@ -271,8 +267,7 @@ TEST(ChassisEkfParams, SetParamsDoesNotResetCovarianceOrState) {
     ekf.SetParams(p);
 
     EXPECT_DOUBLE_EQ(ekf.GetX(), x_before);
-    EXPECT_TRUE(ekf.GetCovariance().isApprox(P_before))
-        << "SetParams 不应重置协方差";
+    EXPECT_TRUE(ekf.GetCovariance().isApprox(P_before)) << "SetParams 不应重置协方差";
 }
 
 TEST(ChassisEkfParams, ResetRestoresInitialCovariance) {
@@ -284,7 +279,6 @@ TEST(ChassisEkfParams, ResetRestoresInitialCovariance) {
     EXPECT_DOUBLE_EQ(ekf.GetX(), 0.0);
     EXPECT_DOUBLE_EQ(ekf.GetCovariance()(0, 0), DefaultParams().p0_xy);
 }
-
 
 // ---------- 热切换灌初值（R03） ----------
 
@@ -329,11 +323,11 @@ TEST(DeadReckoningCov, GrowsWhileMovingAndHoldsWhileStopped) {
     EXPECT_DOUBLE_EQ(dr.var_xy, p.p0_xy);
 
     for (int i = 0; i < 100; ++i) dr.Propagate(p, kDt, /*is_stopped=*/false);  // 1 s 运动
-    EXPECT_NEAR(dr.var_xy,    p.p0_xy    + p.q_xy    * 1.0, 1e-12);
+    EXPECT_NEAR(dr.var_xy, p.p0_xy + p.q_xy * 1.0, 1e-12);
     EXPECT_NEAR(dr.var_theta, p.p0_theta + p.q_theta * 1.0, 1e-15);
 
     const double xy_before = dr.var_xy, th_before = dr.var_theta;
-    for (int i = 0; i < 100; ++i) dr.Propagate(p, kDt, /*is_stopped=*/true);   // 1 s 静止
+    for (int i = 0; i < 100; ++i) dr.Propagate(p, kDt, /*is_stopped=*/true);  // 1 s 静止
     EXPECT_DOUBLE_EQ(dr.var_xy, xy_before);
     EXPECT_DOUBLE_EQ(dr.var_theta, th_before);
 
@@ -360,22 +354,26 @@ TEST(DeadReckoningCov, SeedFromEkfCovarianceIsContinuous) {
 
 TEST(OdomMode, ParsesAllFourNamesAndRejectsOthers) {
     EXPECT_EQ(ParseOdomMode("encoder_only"), OdomMode::EncoderOnly);
-    EXPECT_EQ(ParseOdomMode("imu_yaw"),      OdomMode::ImuYaw);
-    EXPECT_EQ(ParseOdomMode("ekf"),          OdomMode::Ekf);
-    EXPECT_EQ(ParseOdomMode("ekf_no_imu"),   OdomMode::EkfNoImu);
-    EXPECT_FALSE(ParseOdomMode("pure_imu").has_value());   // 底盘上没有纯 IMU 模式
+    EXPECT_EQ(ParseOdomMode("imu_yaw"), OdomMode::ImuYaw);
+    EXPECT_EQ(ParseOdomMode("ekf"), OdomMode::Ekf);
+    EXPECT_EQ(ParseOdomMode("ekf_no_imu"), OdomMode::EkfNoImu);
+    EXPECT_FALSE(ParseOdomMode("pure_imu").has_value());  // 底盘上没有纯 IMU 模式
     EXPECT_FALSE(ParseOdomMode("EKF").has_value());
     EXPECT_FALSE(ParseOdomMode("").has_value());
     for (auto m : {OdomMode::EncoderOnly, OdomMode::ImuYaw, OdomMode::Ekf, OdomMode::EkfNoImu}) {
-        EXPECT_EQ(ParseOdomMode(OdomModeName(m)), m);      // 名字与解析互逆
+        EXPECT_EQ(ParseOdomMode(OdomModeName(m)), m);  // 名字与解析互逆
     }
 }
 
 TEST(OdomMode, DerivedFlagsMatchTheTwoByTwoMatrix) {
-    EXPECT_FALSE(ModeUsesImu(OdomMode::EncoderOnly)); EXPECT_FALSE(ModeUsesEkf(OdomMode::EncoderOnly));
-    EXPECT_TRUE (ModeUsesImu(OdomMode::ImuYaw));      EXPECT_FALSE(ModeUsesEkf(OdomMode::ImuYaw));
-    EXPECT_TRUE (ModeUsesImu(OdomMode::Ekf));         EXPECT_TRUE (ModeUsesEkf(OdomMode::Ekf));
-    EXPECT_FALSE(ModeUsesImu(OdomMode::EkfNoImu));    EXPECT_TRUE (ModeUsesEkf(OdomMode::EkfNoImu));
+    EXPECT_FALSE(ModeUsesImu(OdomMode::EncoderOnly));
+    EXPECT_FALSE(ModeUsesEkf(OdomMode::EncoderOnly));
+    EXPECT_TRUE(ModeUsesImu(OdomMode::ImuYaw));
+    EXPECT_FALSE(ModeUsesEkf(OdomMode::ImuYaw));
+    EXPECT_TRUE(ModeUsesImu(OdomMode::Ekf));
+    EXPECT_TRUE(ModeUsesEkf(OdomMode::Ekf));
+    EXPECT_FALSE(ModeUsesImu(OdomMode::EkfNoImu));
+    EXPECT_TRUE(ModeUsesEkf(OdomMode::EkfNoImu));
 }
 
 }  // namespace

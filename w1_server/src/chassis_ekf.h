@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Eigen/Dense>
-
 #include <cmath>
 
 namespace chassis_node {
@@ -25,30 +24,30 @@ namespace chassis_node {
 class ChassisEkf {
 public:
     static constexpr int N = 5;
-    using Vec5  = Eigen::Matrix<double, N, 1>;
-    using Mat5  = Eigen::Matrix<double, N, N>;
-    using Vec2  = Eigen::Matrix<double, 2, 1>;
-    using Mat2  = Eigen::Matrix<double, 2, 2>;
+    using Vec5 = Eigen::Matrix<double, N, 1>;
+    using Mat5 = Eigen::Matrix<double, N, N>;
+    using Vec2 = Eigen::Matrix<double, 2, 1>;
+    using Mat2 = Eigen::Matrix<double, 2, 2>;
     using Mat25 = Eigen::Matrix<double, 2, N>;
 
     struct Params {
         // 过程噪声 Q —— 单位为「每秒」，实际使用时乘 dt。
         // 早期版本按「每步」定义，导致滤波行为随发布频率漂移，且 q_theta 量级偏大
         // 5 个数量级（θ 无量测、只增不减，100 s 后 σ 达 180°，协方差失去意义）。
-        double q_xy    = 1e-4;   // 位置扩散 (m²/s)，模型失配兜底项
-        double q_theta = 1e-6;   // 航向扩散 (rad²/s)，由陀螺零偏残差量级主导
-        double q_v     = 1.0;    // 线速度扩散 ((m/s)²/s)，按底盘加速度能力取
-        double q_omega = 1.0;    // 角速度扩散 ((rad/s)²/s)，**仅无 IMU 时**起作用
+        double q_xy = 1e-4;     // 位置扩散 (m²/s)，模型失配兜底项
+        double q_theta = 1e-6;  // 航向扩散 (rad²/s)，由陀螺零偏残差量级主导
+        double q_v = 1.0;       // 线速度扩散 ((m/s)²/s)，按底盘加速度能力取
+        double q_omega = 1.0;   // 角速度扩散 ((rad/s)²/s)，**仅无 IMU 时**起作用
         // IMU 模式下 ω 是外部输入而非被估计量：F(4,4)=0 使 P(4,4) 的预测值直接等于
         // 本项乘 dt，故它应当描述陀螺的测量噪声，而不是「无 IMU 时的角速度扩散」。
         double q_omega_imu = 1e-4;  // (rad/s)²/s ⇒ dt=0.01 时 σ_ω ≈ 0.001 rad/s
 
         // 编码器量测噪声 R（正常）
-        double r_v     = 0.05;   // (m/s)²
-        double r_omega = 0.01;   // (rad/s)²
+        double r_v = 0.05;      // (m/s)²
+        double r_omega = 0.01;  // (rad/s)²
 
         // 编码器量测噪声 R（悬空/打滑，忽略编码器）
-        double r_v_aerial     = 100.0;
+        double r_v_aerial = 100.0;
         double r_omega_aerial = 100.0;
 
         // Mahalanobis 距离阈值 χ²(2, 99%) = 9.21
@@ -64,9 +63,9 @@ public:
         // 首次 Predict 后 Q·dt 即把 P 抬到 1e-8~1e-6 量级，不会卡在零。
         // 用 0.01（σ=0.1 m / 5.73°）会让初值淹没真实漂移：q_theta=1e-6 跑 91 s 才累积
         // 9.1e-5 rad²，仅占 0.01 的 0.9%，协方差曲线因此几乎是常数、不携带信息。
-        double p0_xy    = 1.0e-9;
+        double p0_xy = 1.0e-9;
         double p0_theta = 1.0e-9;
-        double p0_v     = 1.0;
+        double p0_v = 1.0;
         double p0_omega = 1.0;
     };
 
@@ -97,17 +96,15 @@ public:
      *                      不加此约束时静止期零偏残差会持续积进 θ，而 θ 无量测永不修正。
      * @return true 若检测到悬空/打滑（静止期不做该判定）
      */
-    bool Step(double dt,
-              double v_enc, double omega_enc,
-              double omega_z_imu, bool imu_available,
-              bool is_stopped = false);
+    bool Step(
+        double dt, double v_enc, double omega_enc, double omega_z_imu, bool imu_available, bool is_stopped = false);
 
-    double GetX()     const { return x_(0); }
-    double GetY()     const { return x_(1); }
+    double GetX() const { return x_(0); }
+    double GetY() const { return x_(1); }
     double GetTheta() const { return x_(2); }
-    double GetV()     const { return x_(3); }
+    double GetV() const { return x_(3); }
     double GetOmega() const { return x_(4); }
-    bool   IsAerial() const { return is_aerial_; }
+    bool IsAerial() const { return is_aerial_; }
 
     /** 5×5 状态协方差（供 PublishOdometry 填充消息） */
     const Mat5& GetCovariance() const { return P_; }
@@ -152,10 +149,10 @@ private:
         P_ = IKH * P_ * IKH.transpose() + K * R * K.transpose();
     }
 
-    Vec5   x_;           // 状态均值
-    Mat5   P_;           // 状态协方差
+    Vec5 x_;  // 状态均值
+    Mat5 P_;  // 状态协方差
     Params params_;
-    bool   is_aerial_ = false;
+    bool is_aerial_ = false;
 };
 
 /**
@@ -168,24 +165,24 @@ private:
  * 也避免了非 EKF 模式发全 0 协方差被上游当成「无限精确」。
  */
 struct DeadReckoningCov {
-    double var_xy    = 0.0;
+    double var_xy = 0.0;
     double var_theta = 0.0;
-    double last_dt   = 0.01;
+    double last_dt = 0.01;
 
     void Reset(const ChassisEkf::Params& p) {
-        var_xy    = p.p0_xy;
+        var_xy = p.p0_xy;
         var_theta = p.p0_theta;
     }
     void Propagate(const ChassisEkf::Params& p, double dt, bool is_stopped) {
         if (dt <= 0.0) return;
         last_dt = dt;
         if (is_stopped) return;
-        var_xy    += p.q_xy    * dt;
+        var_xy += p.q_xy * dt;
         var_theta += p.q_theta * dt;
     }
     /** 从 EKF 当前协方差接续（EKF → 纯推算切换时保持连续，不产生阶跃） */
     void SeedFrom(const ChassisEkf::Mat5& P) {
-        var_xy    = P(0, 0) > P(1, 1) ? P(0, 0) : P(1, 1);
+        var_xy = P(0, 0) > P(1, 1) ? P(0, 0) : P(1, 1);
         var_theta = P(2, 2);
     }
     double TwistVarV(const ChassisEkf::Params& p) const { return p.r_v; }

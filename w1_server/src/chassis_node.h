@@ -12,10 +12,10 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include "chassis_ekf.h"
-#include "odom_mode.h"
 #include "chassis_interfaces/msg/chassis_motor_control.hpp"
 #include "chassis_interfaces/msg/chassis_motor_feedback.hpp"
 #include "imu_processor.h"
+#include "odom_mode.h"
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
 #include "shared_memory_def.h"
 
@@ -102,7 +102,7 @@ private:
     // 仅按编码器轮速更新静止标志，供 IMU 静止初始化做交叉确认。
     // 必须独立于 is_stopped_：后者依赖 IMU 角速度，而 IMU 初始化又依赖静止判定，
     // 直接复用会形成循环依赖。本函数无 IMU 依赖，在 onTimer 早期无条件调用。
-    void UpdateWheelStoppedFlag(const ChassisFeedback &chassis_data);
+    void UpdateWheelStoppedFlag(const ChassisFeedback& chassis_data);
 
     // 底盘反馈失效判定（fail-fast）：反馈持续无效超过 odom_stale_timeout_ 即判失效，
     // 失效期间停发里程计与 TF，只报 ERROR；恢复后自动续发。
@@ -135,14 +135,14 @@ private:
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr callback_handle_;
 
     std::unique_ptr<ImuProcessor> imu_processor_;
-    std::unique_ptr<ChassisEkf>   ekf_;
+    std::unique_ptr<ChassisEkf> ekf_;
 
     // 里程计模式（参数 odom_mode，四选一）。下面两个布尔由它派生，供既有分支复用，勿直接改。
-    OdomMode odom_mode_  = OdomMode::Ekf;
-    bool use_imu_yaw_    = true;   // = ModeUsesImu(odom_mode_)
-    bool use_ekf_fusion_ = true;   // = ModeUsesEkf(odom_mode_)
-    bool is_imu_inited_  = false;
-    bool is_aerial_      = false;  // 悬空/打滑检测结果（由 EKF 填写）
+    OdomMode odom_mode_ = OdomMode::Ekf;
+    bool use_imu_yaw_ = true;     // = ModeUsesImu(odom_mode_)
+    bool use_ekf_fusion_ = true;  // = ModeUsesEkf(odom_mode_)
+    bool is_imu_inited_ = false;
+    bool is_aerial_ = false;  // 悬空/打滑检测结果（由 EKF 填写）
 
     // 底盘模型
     int chassis_model_ = 0;
@@ -170,7 +170,7 @@ private:
     static constexpr double CHASSIS_SIZE_W = 345.0;        // 左右轮间距（track）
     static constexpr double OMNI_CHASSIS_WHEEL_D = 107.0;  // 轮径
     // 差速底盘轮参（标定值，单位：m）
-    double wheel_radius_  = 0.0865;  // 轮半径 r（左右相同）
+    double wheel_radius_ = 0.0865;     // 轮半径 r（左右相同）
     double wheel_track_eff_ = 0.4390;  // 有效轴距 b_eff（独立于几何轴距）
     // 发布用的速度
     double speed_v_ = 0.0;
@@ -179,21 +179,21 @@ private:
 
     // param
     double odom_factor_ = 1.0;
-    double imu_factor_  = 1.0;
+    double imu_factor_ = 1.0;
 
     // IMU初始化参数（默认值与 declare_parameter / chassis_params.yaml 保持一致）
-    int    imu_max_buff_size_        = 500;
-    double acc_excite_threshold_     = 0.04;
-    double gyro_excite_threshold_    = 0.004;
-    double imu_reinit_duration_      = 3600.0;
-    double gravity_magnitude_        = 9.7887;
+    int imu_max_buff_size_ = 500;
+    double acc_excite_threshold_ = 0.04;
+    double gyro_excite_threshold_ = 0.004;
+    double imu_reinit_duration_ = 3600.0;
+    double gravity_magnitude_ = 9.7887;
     double gyro_bias_warn_threshold_ = 0.01;  // 零偏告警门限，非静止判据
-    double acc_magnitude_tolerance_  = 0.2;
+    double acc_magnitude_tolerance_ = 0.2;
 
     // 死区参数
     double speed_deadzone_ = 5e-3;  // m/s
     double omega_deadzone_ = 5e-3;  // rad/s
-    double imu_timeout_    = 0.1;   // s
+    double imu_timeout_ = 0.1;      // s
 
     // IMU 超时检测
     // 最近一帧 IMU 的**消息时间戳**。用它而非接收时刻，是因为超时要衡量的是
@@ -211,13 +211,13 @@ private:
     double imu_source_detect_grace_ = 5.0;               // 判定宽限期 (s)
 
     // —— 底盘反馈失效（fail-fast）——
-    double       odom_stale_timeout_   = 0.5;                     // s，持续无效超过即判失效
-    bool         odom_stale_           = false;                   // 当前是否处于失效态
-    bool         has_feedback_ever_    = false;                   // 收到过有效反馈：区分「未初始化」与「运行中失效」
-    rclcpp::Time last_feedback_valid_time_{0, 0, RCL_ROS_TIME};   // 上次 feedback_valid 为真的节点时刻
-    rclcpp::Time odom_stale_since_{0, 0, RCL_ROS_TIME};           // 本次失效起点
-    uint32_t     odom_stale_count_     = 0;                       // 累计失效次数
-    double       odom_stale_total_sec_ = 0.0;                     // 累计失效时长 (s)
+    double odom_stale_timeout_ = 0.5;  // s，持续无效超过即判失效
+    bool odom_stale_ = false;          // 当前是否处于失效态
+    bool has_feedback_ever_ = false;   // 收到过有效反馈：区分「未初始化」与「运行中失效」
+    rclcpp::Time last_feedback_valid_time_{0, 0, RCL_ROS_TIME};  // 上次 feedback_valid 为真的节点时刻
+    rclcpp::Time odom_stale_since_{0, 0, RCL_ROS_TIME};          // 本次失效起点
+    uint32_t odom_stale_count_ = 0;                              // 累计失效次数
+    double odom_stale_total_sec_ = 0.0;                          // 累计失效时长 (s)
 
     // EKF 参数
     ChassisEkf::Params ekf_params_;

@@ -30,8 +30,8 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : rclcpp::Node("cha
     //   wheel_radius / wheel_track_eff —— 物理常量，不参与标定，钉在名义值；
     //   odom_factor / imu_factor       —— 标定量，由 calib_odom_factor 用激光真值写入。
     //   odom_factor 乘在**轮速层**：轮径误差同时污染 v 与 ω，只修 v 会让 wheel_track_eff 被迫吸收轮径误差。
-    wheel_track_     = this->declare_parameter<double>("wheel_track",     0.4390);  // 几何轴距 (m)，仅作参考基准，不参与计算
-    wheel_radius_    = this->declare_parameter<double>("wheel_radius",    0.0865);  // 轮半径 (m)，物理常量
+    wheel_track_ = this->declare_parameter<double>("wheel_track", 0.4390);  // 几何轴距 (m)，仅作参考基准，不参与计算
+    wheel_radius_ = this->declare_parameter<double>("wheel_radius", 0.0865);  // 轮半径 (m)，物理常量
     wheel_track_eff_ = this->declare_parameter<double>("wheel_track_eff", wheel_track_);  // 有效轴距 (m)，物理常量
     odom_frame_ = this->declare_parameter<std::string>("odom_frame", "odom");
     base_frame_ = this->declare_parameter<std::string>("base_frame", "base_footprint");
@@ -46,8 +46,8 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : rclcpp::Node("cha
             RCLCPP_ERROR(this->get_logger(), "Invalid odom_mode '%s', falling back to 'ekf' (valid: %s)",
                          mode_str.c_str(), kOdomModeChoices);
         }
-        odom_mode_      = parsed.value_or(OdomMode::Ekf);
-        use_imu_yaw_    = ModeUsesImu(odom_mode_);
+        odom_mode_ = parsed.value_or(OdomMode::Ekf);
+        use_imu_yaw_ = ModeUsesImu(odom_mode_);
         use_ekf_fusion_ = ModeUsesEkf(odom_mode_);
     }
 
@@ -63,33 +63,32 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : rclcpp::Node("cha
     imu_reinit_duration_ = this->declare_parameter<double>("imu_reinit_duration", 3600.0);  // 重新初始化间隔 (s)
     gravity_magnitude_ = this->declare_parameter<double>("gravity_magnitude", 9.7887);  // 当地重力加速度 (m/s²)
     // 零偏告警门限：静止时 gyr_avg 即零偏，超过只告警不拒绝初始化（不是静止判据）
-    gyro_bias_warn_threshold_ =
-        this->declare_parameter<double>("gyro_bias_warn_threshold", 0.01);  // rad/s ≈ 0.57°/s
+    gyro_bias_warn_threshold_ = this->declare_parameter<double>("gyro_bias_warn_threshold", 0.01);  // rad/s ≈ 0.57°/s
     acc_magnitude_tolerance_ =
         this->declare_parameter<double>("acc_magnitude_tolerance", 0.2);  // |‖acc‖-g| 容差 (m/s²)
 
     // 死区参数
-    speed_deadzone_ = this->declare_parameter<double>("speed_deadzone", 1e-3);   // 线速度死区 (m/s)
-    omega_deadzone_ = this->declare_parameter<double>("omega_deadzone", 0.008);  // 角速度死区 (rad/s)
-    imu_timeout_ = this->declare_parameter<double>("imu_timeout", 0.1);          // IMU超时时间 (s)
+    speed_deadzone_ = this->declare_parameter<double>("speed_deadzone", 1e-3);         // 线速度死区 (m/s)
+    omega_deadzone_ = this->declare_parameter<double>("omega_deadzone", 0.008);        // 角速度死区 (rad/s)
+    imu_timeout_ = this->declare_parameter<double>("imu_timeout", 0.1);                // IMU超时时间 (s)
     odom_stale_timeout_ = this->declare_parameter<double>("odom_stale_timeout", 0.5);  // 底盘反馈失效判定 (s)
 
     // EKF 参数（Q 为「每秒」量纲，内部乘 dt；勿按每步理解）
-    ekf_params_.q_xy    = this->declare_parameter<double>("ekf_q_xy",    1e-4);
+    ekf_params_.q_xy = this->declare_parameter<double>("ekf_q_xy", 1e-4);
     ekf_params_.q_theta = this->declare_parameter<double>("ekf_q_theta", 1e-6);
-    ekf_params_.q_v     = this->declare_parameter<double>("ekf_q_v",     1.0);
+    ekf_params_.q_v = this->declare_parameter<double>("ekf_q_v", 1.0);
     ekf_params_.q_omega = this->declare_parameter<double>("ekf_q_omega", 1.0);
     ekf_params_.q_omega_imu = this->declare_parameter<double>("ekf_q_omega_imu", 1e-4);
-    ekf_params_.r_zupt  = this->declare_parameter<double>("ekf_r_zupt",  1e-6);
+    ekf_params_.r_zupt = this->declare_parameter<double>("ekf_r_zupt", 1e-6);
     ekf_params_.q_scale_stopped = this->declare_parameter<double>("ekf_q_scale_stopped", 0.01);
-    ekf_params_.r_v           = this->declare_parameter<double>("ekf_r_v",           0.05);
-    ekf_params_.r_omega       = this->declare_parameter<double>("ekf_r_omega",       0.01);
-    ekf_params_.r_v_aerial    = this->declare_parameter<double>("ekf_r_v_aerial",    100.0);
-    ekf_params_.r_omega_aerial= this->declare_parameter<double>("ekf_r_omega_aerial",100.0);
+    ekf_params_.r_v = this->declare_parameter<double>("ekf_r_v", 0.05);
+    ekf_params_.r_omega = this->declare_parameter<double>("ekf_r_omega", 0.01);
+    ekf_params_.r_v_aerial = this->declare_parameter<double>("ekf_r_v_aerial", 100.0);
+    ekf_params_.r_omega_aerial = this->declare_parameter<double>("ekf_r_omega_aerial", 100.0);
     ekf_params_.aerial_chi2_threshold = this->declare_parameter<double>("ekf_aerial_chi2_threshold", 9.21);
-    ekf_params_.p0_xy    = this->declare_parameter<double>("ekf_p0_xy",    1.0e-9);
+    ekf_params_.p0_xy = this->declare_parameter<double>("ekf_p0_xy", 1.0e-9);
     ekf_params_.p0_theta = this->declare_parameter<double>("ekf_p0_theta", 1.0e-9);
-    ekf_params_.p0_v     = this->declare_parameter<double>("ekf_p0_v",     1.0);
+    ekf_params_.p0_v = this->declare_parameter<double>("ekf_p0_v", 1.0);
     ekf_params_.p0_omega = this->declare_parameter<double>("ekf_p0_omega", 1.0);
 
     imu_source_detect_grace_ = this->declare_parameter<double>("imu_source_detect_grace", 5.0);
@@ -109,7 +108,6 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : rclcpp::Node("cha
 
     ekf_ = std::make_unique<ChassisEkf>(ekf_params_);
 
-
     dr_cov_.Reset(ekf_params_);
     // 订阅 IMU
     imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
@@ -123,8 +121,8 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : rclcpp::Node("cha
     // 话题名不带 omni：消息已兼容差速与全向，由 chassis_type 区分。
     // 对照控制侧 /control/omni_chassis_motors —— 那个带 omni 是名副其实的
     //（差速的控制走 /control/cmd_vel，根本不经这条链路）。
-    motor_feedback_pub_ = this->create_publisher<chassis_interfaces::msg::ChassisMotorFeedback>(
-        "/feedback/chassis_motor", 10);
+    motor_feedback_pub_ =
+        this->create_publisher<chassis_interfaces::msg::ChassisMotorFeedback>("/feedback/chassis_motor", 10);
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
     // 定时器（按频率发布；若你用纯事件驱动，也可不需要定时器）
@@ -135,10 +133,8 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : rclcpp::Node("cha
     callback_handle_ =
         this->add_on_set_parameters_callback(std::bind(&ChassisNode::parametersCallback, this, std::placeholders::_1));
 
-    RCLCPP_INFO(this->get_logger(),
-                "ChassisNode started. track=%.3f m, rate=%.1f Hz, frames: %s -> %s, odom_mode=%s",
-                wheel_track_, odom_rate_hz_, odom_frame_.c_str(), base_frame_.c_str(),
-                OdomModeName(odom_mode_));
+    RCLCPP_INFO(this->get_logger(), "ChassisNode started. track=%.3f m, rate=%.1f Hz, frames: %s -> %s, odom_mode=%s",
+                wheel_track_, odom_rate_hz_, odom_frame_.c_str(), base_frame_.c_str(), OdomModeName(odom_mode_));
 }
 
 void ChassisNode::ApplyOdomMode(OdomMode new_mode) {
@@ -164,14 +160,14 @@ void ChassisNode::ApplyOdomMode(OdomMode new_mode) {
     }
 
     const OdomMode old_mode = odom_mode_;
-    odom_mode_      = new_mode;
-    use_imu_yaw_    = new_imu;
+    odom_mode_ = new_mode;
+    use_imu_yaw_ = new_imu;
     use_ekf_fusion_ = new_ekf;
-    RCLCPP_INFO(this->get_logger(), "Updated odom_mode: %s -> %s (imu=%s, ekf=%s)%s",
-                OdomModeName(old_mode), OdomModeName(new_mode), new_imu ? "on" : "off", new_ekf ? "on" : "off",
-                (new_ekf != ModeUsesEkf(old_mode))
-                    ? (new_ekf ? " | EKF state seeded from current pose" : " | dead-reckoning covariance seeded from EKF")
-                    : "");
+    RCLCPP_INFO(this->get_logger(), "Updated odom_mode: %s -> %s (imu=%s, ekf=%s)%s", OdomModeName(old_mode),
+                OdomModeName(new_mode), new_imu ? "on" : "off", new_ekf ? "on" : "off",
+                (new_ekf != ModeUsesEkf(old_mode)) ? (new_ekf ? " | EKF state seeded from current pose"
+                                                              : " | dead-reckoning covariance seeded from EKF")
+                                                   : "");
 }
 
 void ChassisNode::LoadChassisConfig(const std::filesystem::path& cfg_path) {
@@ -395,7 +391,7 @@ void ChassisNode::IntegrateImuOnce(const sensor_msgs::msg::Imu& imu) {
 
 // 仅按编码器轮速更新静止标志，供 IMU 静止初始化交叉确认。
 // 不掺入 IMU 角速度：IMU 初始化本身依赖该标志，掺入会形成循环依赖。
-void ChassisNode::UpdateWheelStoppedFlag(const ChassisFeedback &chassis_data) {
+void ChassisNode::UpdateWheelStoppedFlag(const ChassisFeedback& chassis_data) {
     if (chassis_data.timestamp <= 0) {
         // 反馈无效分两种：
         // ① 开机阶段还没来——保持上次状态（初值 true）：此时机器人确实静止，视为静止可让初始化正常起步；
@@ -416,7 +412,8 @@ void ChassisNode::UpdateWheelStoppedFlag(const ChassisFeedback &chassis_data) {
         stopped = (std::abs(v_l) < speed_deadzone_ && std::abs(v_r) < speed_deadzone_);
     } else {
         for (size_t i = 0; i < OMNI_MOTOR_NUM; ++i) {
-            const double v_i = chassis_data.chassis_motor_velocity[i] * 0.001 * OMNI_CHASSIS_WHEEL_D * M_PI / 60.0 * odom_factor_;
+            const double v_i =
+                chassis_data.chassis_motor_velocity[i] * 0.001 * OMNI_CHASSIS_WHEEL_D * M_PI / 60.0 * odom_factor_;
             if (std::abs(v_i) >= speed_deadzone_) {
                 stopped = false;
                 break;
@@ -475,7 +472,8 @@ bool ChassisNode::IsImuAvailable() {
         if (imu_age > 60.0) {
             RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                                   "No IMU data for %.0f s, falling back to encoder-only. "
-                                  "Check whether the IMU driver is disconnected", imu_age);
+                                  "Check whether the IMU driver is disconnected",
+                                  imu_age);
         } else {
             RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
                                  "IMU timeout (%.3f s > %.3f s), falling back to encoder", imu_age, imu_timeout_);
@@ -616,9 +614,9 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback& chassis_data) {
     // 获取轮速数据（RPM → m/s，左右轮半径相同）
     constexpr double kRpmToRads = 2.0 * M_PI / 60.0;
     // odom_factor 在轮速层生效：v 与 ω_enc 同时得到线尺度修正（轮径误差对两者是同一个比例）
-    const double v_l      = curr_chassis_data_->left_velocity  * kRpmToRads * wheel_radius_ * odom_factor_;
-    const double v_r      = curr_chassis_data_->right_velocity * kRpmToRads * wheel_radius_ * odom_factor_;
-    const double v_l_prev = prev_chassis_data_->left_velocity  * kRpmToRads * wheel_radius_ * odom_factor_;
+    const double v_l = curr_chassis_data_->left_velocity * kRpmToRads * wheel_radius_ * odom_factor_;
+    const double v_r = curr_chassis_data_->right_velocity * kRpmToRads * wheel_radius_ * odom_factor_;
+    const double v_l_prev = prev_chassis_data_->left_velocity * kRpmToRads * wheel_radius_ * odom_factor_;
     const double v_r_prev = prev_chassis_data_->right_velocity * kRpmToRads * wheel_radius_ * odom_factor_;
     speed_v_y_ = 0.0;  // 差速底盘无侧向速度；该字段只在全向路径更新
 
@@ -669,17 +667,12 @@ void ChassisNode::IntegrateOdomOnce(const ChassisFeedback& chassis_data) {
 
         // v 与 ω 都用梯形均值（区间中点）：量测模型假设二者同时刻，
         // 混用末端瞬时值会在角加速阶段给新息掺入 ω̇·dt/2 的假残差，抬高 Mahalanobis 距离
-        is_aerial_ = ekf_->Step(dt,
-                                speed_avg,
-                                omega_enc_avg,
-                                omega_z_imu,
-                                imu_valid,
-                                is_stopped);
+        is_aerial_ = ekf_->Step(dt, speed_avg, omega_enc_avg, omega_z_imu, imu_valid, is_stopped);
 
         {
             std::lock_guard<std::mutex> lk(imu_yaw_mutex_);
-            odom_x_     = ekf_->GetX();
-            odom_y_     = ekf_->GetY();
+            odom_x_ = ekf_->GetX();
+            odom_y_ = ekf_->GetY();
             odom_theta_ = ekf_->GetTheta();
         }
         speed_v_ = ekf_->GetV();
@@ -779,9 +772,9 @@ void ChassisNode::PublishMotorFeedback(const ChassisFeedback& chassis_data) {
     msg.header.frame_id = base_frame_;
     msg.shm_timestamp = chassis_data.timestamp;
 
-    msg.robot_overcurrent   = chassis_data.robot_overcurrent;
-    msg.status_word         = chassis_data.status_word;
-    msg.driver_temperature  = chassis_data.driver_temperature;
+    msg.robot_overcurrent = chassis_data.robot_overcurrent;
+    msg.status_word = chassis_data.status_word;
+    msg.driver_temperature = chassis_data.driver_temperature;
 
     if (chassis_model_ == 1) {
         // ---- 全向：4 舵轮，转向角 + 轮速 ----
@@ -790,15 +783,16 @@ void ChassisNode::PublishMotorFeedback(const ChassisFeedback& chassis_data) {
         msg.speed_rpm.resize(OMNI_MOTOR_NUM);
         msg.speed_mps.resize(OMNI_MOTOR_NUM);
         for (size_t i = 0; i < OMNI_MOTOR_NUM; ++i) {
-            msg.position[i]  = chassis_data.chassis_motor_direction[i];   // rad
-            msg.speed_rpm[i] = chassis_data.chassis_motor_velocity[i];    // RPM
+            msg.position[i] = chassis_data.chassis_motor_direction[i];  // rad
+            msg.speed_rpm[i] = chassis_data.chassis_motor_velocity[i];  // RPM
             // 0.001 是 mm→m（OMNI_CHASSIS_WHEEL_D 以毫米计），/60 是每分钟→每秒
-            msg.speed_mps[i] = chassis_data.chassis_motor_velocity[i] * 0.001 * OMNI_CHASSIS_WHEEL_D * M_PI / 60.0 * odom_factor_;
+            msg.speed_mps[i] =
+                chassis_data.chassis_motor_velocity[i] * 0.001 * OMNI_CHASSIS_WHEEL_D * M_PI / 60.0 * odom_factor_;
         }
         msg.wheel_motor_current.resize(OMNI_MOTOR_NUM);
         msg.steering_motor_current.resize(OMNI_MOTOR_NUM);
         for (size_t i = 0; i < OMNI_MOTOR_NUM; ++i) {
-            msg.wheel_motor_current[i]    = chassis_data.wheel_motor_current[i];
+            msg.wheel_motor_current[i] = chassis_data.wheel_motor_current[i];
             msg.steering_motor_current[i] = chassis_data.steering_motor_current[i];
         }
         // 错误码与电机温度：共享内存只有 error_code_left/right 与 left/right_temperature
@@ -818,13 +812,13 @@ void ChassisNode::PublishMotorFeedback(const ChassisFeedback& chassis_data) {
         msg.steering_motor_current.clear();
 
         constexpr double kRpmToRads = 2.0 * M_PI / 60.0;
-        msg.speed_rpm = {chassis_data.left_velocity, chassis_data.right_velocity};          // RPM
+        msg.speed_rpm = {chassis_data.left_velocity, chassis_data.right_velocity};  // RPM
         // 与积分所用轮速同一量：含 odom_factor，否则 NIS 新息里会多出一个常数比例项
-        msg.speed_mps = {chassis_data.left_velocity  * kRpmToRads * wheel_radius_ * odom_factor_,
+        msg.speed_mps = {chassis_data.left_velocity * kRpmToRads * wheel_radius_ * odom_factor_,
                          chassis_data.right_velocity * kRpmToRads * wheel_radius_ * odom_factor_};
         msg.wheel_motor_current = {chassis_data.left_current, chassis_data.right_current};
-        msg.error_code          = {chassis_data.error_code_left, chassis_data.error_code_right};
-        msg.motor_temperature   = {chassis_data.left_temperature, chassis_data.right_temperature};
+        msg.error_code = {chassis_data.error_code_left, chassis_data.error_code_right};
+        msg.motor_temperature = {chassis_data.left_temperature, chassis_data.right_temperature};
     }
 
     motor_feedback_pub_->publish(msg);
@@ -1016,24 +1010,24 @@ void ChassisNode::PublishOdometry() {
     // 填充协方差
     if (use_ekf_fusion_ && ekf_) {
         // EKF 状态协方差：从 EKF 对角线获取
-        const auto &P       = ekf_->GetCovariance();
-        const double scale  = is_aerial_ ? 100.0 : 1.0;
-        auto &Pc            = odom_msg.pose.covariance;
-        auto &Tc            = odom_msg.twist.covariance;
-        Pc[0]  = P(0, 0) * scale;  // x-x
-        Pc[7]  = P(1, 1) * scale;  // y-y
+        const auto& P = ekf_->GetCovariance();
+        const double scale = is_aerial_ ? 100.0 : 1.0;
+        auto& Pc = odom_msg.pose.covariance;
+        auto& Tc = odom_msg.twist.covariance;
+        Pc[0] = P(0, 0) * scale;   // x-x
+        Pc[7] = P(1, 1) * scale;   // y-y
         Pc[35] = P(2, 2) * scale;  // yaw-yaw
-        Tc[0]  = P(3, 3) * scale;  // vx-vx
+        Tc[0] = P(3, 3) * scale;   // vx-vx
         Tc[35] = P(4, 4) * scale;  // wz-wz
     } else {
         // 非 EKF 模式：不能发全 0——上游会把 <1e-9 的方差夹成 1e-9，等价「无限精确」，
         // 其它传感器权重归零；NEES 也直接除零。按 EKF 退化形态填，参数与量纲两模式一致。
-        auto &Pc = odom_msg.pose.covariance;
-        auto &Tc = odom_msg.twist.covariance;
-        Pc[0]  = dr_cov_.var_xy;
-        Pc[7]  = dr_cov_.var_xy;
+        auto& Pc = odom_msg.pose.covariance;
+        auto& Tc = odom_msg.twist.covariance;
+        Pc[0] = dr_cov_.var_xy;
+        Pc[7] = dr_cov_.var_xy;
         Pc[35] = dr_cov_.var_theta;
-        Tc[0]  = dr_cov_.TwistVarV(ekf_params_);
+        Tc[0] = dr_cov_.TwistVarV(ekf_params_);
         Tc[35] = dr_cov_.TwistVarOmega(ekf_params_, last_imu_available_);
     }
 
@@ -1114,7 +1108,8 @@ rcl_interfaces::msg::SetParametersResult ChassisNode::parametersCallback(
             const auto parsed = ParseOdomMode(changed_parameter.as_string());
             if (!parsed) {
                 result.successful = false;
-                result.reason = "Invalid odom_mode '" + changed_parameter.as_string() + "' (valid: " + kOdomModeChoices + ")";
+                result.reason =
+                    "Invalid odom_mode '" + changed_parameter.as_string() + "' (valid: " + kOdomModeChoices + ")";
                 RCLCPP_ERROR(this->get_logger(), "%s", result.reason.c_str());
                 return result;
             }

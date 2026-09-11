@@ -52,16 +52,16 @@ ChassisEkf::Mat5 ChassisEkf::BuildQ(double dt, bool is_stopped, bool use_imu) co
     const double q_om = (use_imu && !is_stopped) ? params_.q_omega_imu : params_.q_omega;
 
     Mat5 Q = Mat5::Zero();
-    Q(0, 0) = params_.q_xy    * scale;
-    Q(1, 1) = params_.q_xy    * scale;
+    Q(0, 0) = params_.q_xy * scale;
+    Q(1, 1) = params_.q_xy * scale;
     Q(2, 2) = params_.q_theta * scale;
-    Q(3, 3) = params_.q_v     * scale;
-    Q(4, 4) = q_om            * scale;
+    Q(3, 3) = params_.q_v * scale;
+    Q(4, 4) = q_om * scale;
     return Q;
 }
 
-bool ChassisEkf::Step(double dt, double v_enc, double omega_enc, double omega_z_imu, bool imu_available,
-                      bool is_stopped) {
+bool ChassisEkf::Step(
+    double dt, double v_enc, double omega_enc, double omega_z_imu, bool imu_available, bool is_stopped) {
     Predict(dt, omega_z_imu, imu_available, is_stopped);
     is_aerial_ = Update(v_enc, omega_enc, is_stopped, imu_available);
     return is_aerial_;
@@ -69,25 +69,25 @@ bool ChassisEkf::Step(double dt, double v_enc, double omega_enc, double omega_z_
 
 void ChassisEkf::Predict(double dt, double omega_z, bool use_imu, bool is_stopped) {
     const double theta = x_(2);
-    const double v     = x_(3);
+    const double v = x_(3);
     const double omega = x_(4);
 
     // 中点航向角（减小一阶非线性误差）
     // 与现有代码的 theta_mid 逻辑一致
     // 静止时强制 ω=0：否则 IMU 的零偏残差（初始化后仍有 ~1e-4 rad/s）会被逐帧积进
     // θ，而 θ 在量测矩阵 H 中没有对应行，这份误差永远得不到修正。
-    const double omega_use  = is_stopped ? 0.0 : (use_imu ? omega_z : omega);
-    const double theta_mid  = theta + 0.5 * omega_use * dt;
-    const double cos_mid    = std::cos(theta_mid);
-    const double sin_mid    = std::sin(theta_mid);
+    const double omega_use = is_stopped ? 0.0 : (use_imu ? omega_z : omega);
+    const double theta_mid = theta + 0.5 * omega_use * dt;
+    const double cos_mid = std::cos(theta_mid);
+    const double sin_mid = std::sin(theta_mid);
 
     // ---- 状态预测 ----
     Vec5 x_pred;
     x_pred(0) = x_(0) + v * cos_mid * dt;
     x_pred(1) = x_(1) + v * sin_mid * dt;
     x_pred(2) = theta + omega_use * dt;
-    x_pred(3) = v;           // 匀速—由编码器量测修正
-    x_pred(4) = omega_use;   // 直接取自 IMU 或保持上一帧
+    x_pred(3) = v;          // 匀速—由编码器量测修正
+    x_pred(4) = omega_use;  // 直接取自 IMU 或保持上一帧
 
     // 角度归一化到 [-π, π]
     x_pred(2) = std::atan2(std::sin(x_pred(2)), std::cos(x_pred(2)));
@@ -97,9 +97,9 @@ void ChassisEkf::Predict(double dt, double omega_z, bool use_imu, bool is_stoppe
     // F[omega_row] w.r.t. omega_state: IMU 模式为 0，无 IMU 模式为 1
     Mat5 F = Mat5::Identity();
     F(0, 2) = -v * sin_mid * dt;
-    F(0, 3) =  cos_mid * dt;
-    F(1, 2) =  v * cos_mid * dt;
-    F(1, 3) =  sin_mid * dt;
+    F(0, 3) = cos_mid * dt;
+    F(1, 2) = v * cos_mid * dt;
+    F(1, 3) = sin_mid * dt;
     if (use_imu && !is_stopped) {
         // IMU 直接给出 omega，状态中的 omega 不影响下一时刻 theta 和 omega
         F(2, 4) = 0.0;
@@ -152,8 +152,8 @@ bool ChassisEkf::Update(double v_enc, double omega_enc, bool is_stopped, bool im
 
     const Mat2 S_test = H * P_ * H.transpose() + R_normal;
     const double det = S_test(0, 0) * S_test(1, 1) - S_test(0, 1) * S_test(1, 0);
-    const bool aerial = (std::abs(det) > 1e-12) &&
-                        ((y.transpose() * S_test.inverse() * y)(0, 0) > params_.aerial_chi2_threshold);
+    const bool aerial =
+        (std::abs(det) > 1e-12) && ((y.transpose() * S_test.inverse() * y)(0, 0) > params_.aerial_chi2_threshold);
 
     // ---- 更新：IMU 模式只取 v 通道 ----
     if (imu_driven) {

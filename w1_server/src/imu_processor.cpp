@@ -16,10 +16,9 @@ void ImuProcessor::SetParam(const int max_buff_size,
                             const double acc_magnitude_tolerance) {
     // 只有影响静止判据的参数变化才需要重新初始化；告警门限与重初始化间隔不影响
     // 已估出的零偏，运行中改它们不应中断里程计输出。
-    const bool criteria_changed = (max_buff_size_ != max_buff_size) ||
-                                  (acc_excite_threshold_ != acc_excite_threshold) ||
-                                  (gyro_excite_threshold_ != gyro_excite_threshold) ||
-                                  (acc_magnitude_tolerance_ != acc_magnitude_tolerance);
+    const bool criteria_changed =
+        (max_buff_size_ != max_buff_size) || (acc_excite_threshold_ != acc_excite_threshold) ||
+        (gyro_excite_threshold_ != gyro_excite_threshold) || (acc_magnitude_tolerance_ != acc_magnitude_tolerance);
 
     max_buff_size_ = max_buff_size;
     acc_excite_threshold_ = acc_excite_threshold;
@@ -228,9 +227,8 @@ bool ImuProcessor::ComputeImuBias() {
     Eigen::Vector3d z = acc_avg.normalized();
 
     // 2) 计算等效 roll/pitch（用于日志和斜坡告警）
-    const double roll_est  = std::atan2(acc_avg.y(), acc_avg.z());
-    const double pitch_est = std::atan2(-acc_avg.x(),
-                                         std::sqrt(acc_avg.y() * acc_avg.y() + acc_avg.z() * acc_avg.z()));
+    const double roll_est = std::atan2(acc_avg.y(), acc_avg.z());
+    const double pitch_est = std::atan2(-acc_avg.x(), std::sqrt(acc_avg.y() * acc_avg.y() + acc_avg.z() * acc_avg.z()));
     // 倾角（IMU Z 轴偏离世界 Z 轴的角度）
     const double tilt_deg = std::acos(std::min(1.0, std::abs(z.z()))) * 180.0 / M_PI;
     // 记录到成员供下游查询：仅打日志不足以让上层知道本次初始化的可信度（R15）
