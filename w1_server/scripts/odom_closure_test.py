@@ -465,7 +465,7 @@ def main():
     print("=" * 64)
     try:
         while rclpy.ok():
-            sys.stdout.write("> ")
+            # sys.stdout.write("> ")
             sys.stdout.flush()
             rl, _, _ = select.select([sys.stdin], [], [], 0.5)
             if not rl:
