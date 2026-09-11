@@ -5,14 +5,16 @@
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <cerrno>
 #include <cstddef>
 #include <cstring>
 #include <iostream>
 
-#define FEEDBACK_SHM_KEY 0x1005
-#define CONTROL_SHM_KEY 0x2005
+#define FEEDBACK_SHM_KEY 0x1006
+#define CONTROL_SHM_KEY 0x2006
 #define MAX_JOINT_NUM 32
 #define OMNI_MOTOR_NUM 4
+#define FAULT_NUMBER 32
 
 struct ChassisFeedback {
     int64_t timestamp = 0;
@@ -28,6 +30,9 @@ struct ChassisFeedback {
     double driver_temperature = 0;
     double left_temperature = 0;
     double right_temperature = 0;
+    double wheel_motor_current[OMNI_MOTOR_NUM] = {0};     // 轮毂电机反馈电流，单位 A
+    double steering_motor_current[OMNI_MOTOR_NUM] = {0};  // 转向电机反馈电流，单位 A
+    int32_t robot_overcurrent = 0;                        // 电源板整机过流原始值
 };
 
 struct Vector3f {
@@ -102,6 +107,8 @@ struct RobotFeedback {
     // 底盘反馈
     ChassisFeedback chassis_feedback;
     ImuData imu_data;
+    uint16_t drag_mode = 0;  // 机械臂拖拽模式反馈，0：关闭，1：开启
+    uint32_t fault_list[FAULT_NUMBER];
 };
 
 struct RobotControl {

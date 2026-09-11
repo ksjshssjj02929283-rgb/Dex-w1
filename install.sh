@@ -99,7 +99,7 @@ chmod 0755 "$DEBIAN_DIR/postinst"
 # --- 自动从 CMakeLists.txt 读取版本号 ---
 VERSION=$(grep "set(W1_SERVER_VERSION" w1_server/CMakeLists.txt | sed -e 's/set(W1_SERVER_VERSION "\(.*\)")/\1/')
 if [ -z "$VERSION" ]; then
-    VERSION="0.4.3"
+    VERSION="0.5.0"
 fi
 
 # --- 自动生成 control ---

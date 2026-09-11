@@ -47,8 +47,8 @@ except ImportError:
 # ==============================================================================
 # Shared Memory Definitions (Sync with record.py / shared_memory_def.h)
 # ==============================================================================
-FEEDBACK_SHM_KEY = 0x1005
-CONTROL_SHM_KEY = 0x2005
+FEEDBACK_SHM_KEY = 0x1006
+CONTROL_SHM_KEY = 0x2006
 MAX_JOINT_NUM = 32
 BUFFER_CAPACITY = 8
 

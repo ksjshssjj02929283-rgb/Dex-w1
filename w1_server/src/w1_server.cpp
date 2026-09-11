@@ -650,6 +650,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"enable_input_shaper\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.enable_input_shaper, index_offset, ndof_config_).str() +
         ",\n  \"input_shaper_frequency\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.input_shaper_frequency, index_offset, ndof_config_).str() +
         ",\n  \"enable_record\":" + std::to_string(this->manager_info_.robot_property.enable_record) +
+        ",\n  \"enable_pos_limit_check\":" + std::to_string(this->manager_info_.robot_property.safety_check_config.check_position_limit) +
         ", \"enable_chassis_shaper\":" + std::to_string(this->manager_info_.robot_property.enable_chassis_shaper) +
         ",\n  \"joint_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_stiffness, index_offset, ndof_config_).str() +
         ",\n  \"joint_damping\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_damping, index_offset, ndof_config_).str() +
