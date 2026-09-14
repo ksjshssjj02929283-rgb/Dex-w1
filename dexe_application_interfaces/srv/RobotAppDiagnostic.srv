@@ -1,0 +1,14 @@
+# Query RobotApp application-layer diagnostic records.
+# A non-empty request_id takes precedence; other fields filter history.
+string request_id
+string operation
+string outcome
+uint32 limit
+bool failures_only
+uint64 since_timestamp_ms
+---
+# success describes the query itself, not the recorded robot operation.
+bool success
+string message
+# Complete single-line JSON records ordered newest first.
+string[] diagnostics_json

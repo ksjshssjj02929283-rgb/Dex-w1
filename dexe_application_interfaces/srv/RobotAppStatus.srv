@@ -1,0 +1,20 @@
+# Empty request: query the application's current motion execution state.
+---
+# Status values inherited from dexe_robot_client.robot_client.Status:
+#   1 = INIT
+#   2 = IDLE
+#   3 = RUNNING
+#   4 = ERROR
+#   5 = UNKNOWN
+uint8 INIT=1
+uint8 IDLE=2
+uint8 RUNNING=3
+uint8 ERROR=4
+uint8 UNKNOWN=5
+uint8 NOT_ENABLED=6
+
+# Upper-body motion state: arms, head, torso, end effectors, Policy, Tele, Replay.
+uint8 upper_body_status
+
+# Chassis motion state: navigation, direct control, charging, undocking, teleop.
+uint8 chassis_status
