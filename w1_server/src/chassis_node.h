@@ -17,6 +17,7 @@
 #include "imu_health.h"
 #include "imu_processor.h"
 #include "odom_mode.h"
+#include "omni_chassis_ekf.h"
 
 #include <diagnostic_updater/diagnostic_updater.hpp>
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
@@ -115,6 +116,8 @@ private:
 
     // 切换里程计模式：派生两个布尔；进/出 EKF 时灌初值/接续协方差；切换航向源时清 IMU 缓存
     void ApplyOdomMode(OdomMode new_mode);
+    // 把 ekf_params_ 同时下发给差速与全向两个 EKF（热更新各分支共用）
+    void ApplyEkfParams();
 
     // 读取机器人模型 差速/全向
     void LoadChassisConfig(const std::filesystem::path& cfg_path);
@@ -149,7 +152,8 @@ private:
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr callback_handle_;
 
     std::unique_ptr<ImuProcessor> imu_processor_;
-    std::unique_ptr<ChassisEkf> ekf_;
+    std::unique_ptr<ChassisEkf> ekf_;           // 差速：5 维 (x, y, θ, v, ω)
+    std::unique_ptr<OmniChassisEkf> omni_ekf_;  // 全向：6 维 (x, y, θ, vx, vy, ω)；按 chassis_model_ 二选一使用
 
     // 里程计模式（参数 odom_mode，四选一）。下面两个布尔由它派生，供既有分支复用，勿直接改。
     OdomMode odom_mode_ = OdomMode::Ekf;

@@ -341,3 +341,14 @@ IMU 可用性（`IsImuAvailable()`）由 `imu_health.h` 的 `ImuHealthMonitor` �
 - 评估在 `onTimer()` 最前独立执行（`UpdateImuHealth()`），不依赖底盘反馈有效。
 - 外发：`diagnostic_updater` → `/diagnostics`，status `chassis_node: IMU`（含 `effective_mode` / `init_*` 进度与拒绝原因 / `gyro_diff_std_rad_s`）与 `chassis_node: odom feedback`（fail-fast 状态）。
 - 单测：`test/test_imu_health.cpp`。
+
+## 10. 全向底盘 6 维 EKF（`omni_chassis_ekf.{h,cpp}`）
+
+全向（舵轮）底盘用独立的 `OmniChassisEkf`，状态 (x, y, θ, v_x, v_y, ω)，与 §2–§7 的差速设计同构、共用 `ChassisEkf::Params`：
+
+- 预测：x += (v_x cosθ_m − v_y sinθ_m)·dt，y += (v_x sinθ_m + v_y cosθ_m)·dt；θ / ω 与差速相同（IMU 驱动时 F(2,5)=F(5,5)=0）
+- 雅可比：F(0,2)=(−v_x s − v_y c)dt，F(0,3)=c·dt，F(0,4)=−s·dt；F(1,2)=(v_x c − v_y s)dt，F(1,3)=s·dt，F(1,4)=c·dt
+- 量测：[v_x, v_y, ω]（四舵轮反解，梯形均值）；检测 3 维新息，阈值 `aerial_chi2_threshold_3d`（χ²(3) 99% = 11.34）；IMU 模式更新只取 v_x、v_y 两行；ZUPT 三维零速
+- 新增参数：`q_vy` `r_vy` `r_vy_aerial` `p0_vy` `aerial_chi2_threshold_3d`；其余与差速共用
+- v_y ≡ 0 时退化为差速 EKF（x / θ / v_x / ω 协方差逐位一致，见 `test/test_omni_chassis_ekf.cpp`）
+- 节点侧：`IntegrateOmniOdomOnce` 在 `use_ekf_fusion_` 时调 `omni_ekf_->Step`；`PublishOdometry` 填 P(4,4) 到 `twist.covariance[7]`；`ApplyOdomMode` 按 `chassis_model_` 灌初值 / 接续协方差

@@ -189,6 +189,19 @@ if(BUILD_TESTING)
     target_link_libraries(test_chassis_ekf Eigen3::Eigen)
   endif()
 
+  # 全向 6 维 EKF：与差速共用 Params，测试同时编译两个滤波器以做退化性对比
+  ament_add_gtest(test_omni_chassis_ekf
+    test/test_omni_chassis_ekf.cpp
+    src/omni_chassis_ekf.cpp
+    src/chassis_ekf.cpp
+  )
+  if(TARGET test_omni_chassis_ekf)
+    target_include_directories(test_omni_chassis_ekf PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_omni_chassis_ekf Eigen3::Eigen)
+  endif()
+
   # imu_health 是无依赖的 header-only 状态机，同样脱离节点单测
   ament_add_gtest(test_imu_health
     test/test_imu_health.cpp

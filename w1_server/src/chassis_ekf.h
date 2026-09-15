@@ -67,6 +67,13 @@ public:
         double p0_theta = 1.0e-9;
         double p0_v = 1.0;
         double p0_omega = 1.0;
+
+        // —— 全向（舵轮）底盘专用：OmniChassisEkf 多出的 vy 一维；差速 EKF 忽略 ——
+        double q_vy = 1.0;                         // 侧向速度扩散 ((m/s)²/s)
+        double r_vy = 0.05;                        // 侧向速度量测噪声 ((m/s)²)；舵轮侧移时轮胎侧向拖拽更常见，可比 r_v 大
+        double r_vy_aerial = 100.0;                // 悬空/打滑时侧向速度量测噪声
+        double p0_vy = 1.0;                        // 侧向速度初始方差 ((m/s)²)
+        double aerial_chi2_threshold_3d = 11.34;   // 3 维新息 [Δvx, Δvy, Δω] 阈值 χ²(3, 99%)
     };
 
     explicit ChassisEkf(const Params& p);
@@ -180,12 +187,15 @@ struct DeadReckoningCov {
         var_xy += p.q_xy * dt;
         var_theta += p.q_theta * dt;
     }
-    /** 从 EKF 当前协方差接续（EKF → 纯推算切换时保持连续，不产生阶跃） */
-    void SeedFrom(const ChassisEkf::Mat5& P) {
+    /** 从 EKF 当前协方差接续（EKF → 纯推算切换时保持连续，不产生阶跃）。
+     *  接受 5×5（差速）或 6×6（全向）：前三维都是 (x, y, θ)。 */
+    template <typename MatT>
+    void SeedFrom(const MatT& P) {
         var_xy = P(0, 0) > P(1, 1) ? P(0, 0) : P(1, 1);
         var_theta = P(2, 2);
     }
     double TwistVarV(const ChassisEkf::Params& p) const { return p.r_v; }
+    double TwistVarVy(const ChassisEkf::Params& p) const { return p.r_vy; }  // 仅全向使用
     double TwistVarOmega(const ChassisEkf::Params& p, bool imu_available) const {
         return imu_available ? p.q_omega_imu * last_dt : p.r_omega;
     }
