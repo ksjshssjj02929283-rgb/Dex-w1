@@ -1,5 +1,7 @@
 #include "imu_processor.h"
 
+#include <cstdio>
+
 #include <Eigen/Dense>
 #include <builtin_interfaces/msg/time.hpp>
 #include <cmath>
@@ -77,6 +79,7 @@ bool ImuProcessor::InitImu() {
         imu_data_buff_.clear();
         imu_data_buff_.shrink_to_fit();
         start_time_.reset();
+        last_reject_.clear();
     }
 
     RCLCPP_INFO(rclcpp::get_logger("ImuProcessor"), "IMU init success.");
@@ -201,9 +204,14 @@ bool ImuProcessor::ComputeImuBias() {
         LOG_WARN << "Reinitialize IMU after " << (max_buff_size_ / 100.0) << " seconds of static.";
         is_need_initialize_ = true;
         {
+            char why[256];
+            std::snprintf(why, sizeof(why), "acc_std %.4f (max %.3f) | gyr_std %.4f (max %.4f) | |acc|-g %.3f (max %.2f)",
+                          acc_std.maxCoeff(), acc_excite_threshold_, gyr_std.maxCoeff(), gyro_excite_threshold_,
+                          acc_mag_bias, acc_magnitude_tolerance_);
             std::lock_guard<std::mutex> lk(buf_mutex_);
             imu_data_buff_.clear();  // 清空数据，重新积累
             start_time_.reset();     // 静止段重新计时，重新等满 5s
+            last_reject_ = why;      // 供 GetInitStatus 外发，告诉上层卡在哪条判据
         }
         return false;
     }
@@ -343,8 +351,10 @@ void ImuProcessor::AddImuData(const sensor_msgs::msg::Imu& imu_data, bool wheel_
                 imu_data_buff_.clear();
                 start_time_.reset();
             }
+            blocked_by_motion_ = true;
             return;
         }
+        blocked_by_motion_ = false;
 
         // 静止段起始后 5s 内的数据不使用：等待上电瞬态与机体余振衰减。
         // 与上面的 clear 同处本分支内，两者门控对称——静止段一旦中断，计时随之归零。
@@ -360,6 +370,20 @@ void ImuProcessor::AddImuData(const sensor_msgs::msg::Imu& imu_data, bool wheel_
     }
 
     InitImu();
+}
+
+ImuProcessor::InitStatus ImuProcessor::GetInitStatus() {
+    InitStatus st;
+    st.done = is_first_initialized_;
+    st.required = max_buff_size_;
+    st.on_slope = is_last_init_on_slope_;
+    st.tilt_deg = last_init_tilt_deg_;
+    std::lock_guard<std::mutex> lk(buf_mutex_);
+    st.blocked_by_motion = blocked_by_motion_;
+    st.settling = start_time_.has_value() && imu_data_buff_.empty();
+    st.collected = static_cast<int>(imu_data_buff_.size());
+    st.last_reject = last_reject_;
+    return st;
 }
 
 void ImuProcessor::MaybeNeedInit() {

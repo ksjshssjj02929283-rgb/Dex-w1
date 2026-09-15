@@ -55,6 +55,8 @@ find_package(pinocchio REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(diagnostic_updater REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 # Other ROS 2 packages
@@ -119,6 +121,8 @@ ament_target_dependencies(${PROJECT_NAME}
   nav_msgs
   tf2_ros
   tf2_geometry_msgs
+  diagnostic_updater
+  diagnostic_msgs
   ament_index_cpp
   Eigen3
   eigen3_cmake_module
@@ -183,6 +187,16 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
     target_link_libraries(test_chassis_ekf Eigen3::Eigen)
+  endif()
+
+  # imu_health 是无依赖的 header-only 状态机，同样脱离节点单测
+  ament_add_gtest(test_imu_health
+    test/test_imu_health.cpp
+  )
+  if(TARGET test_imu_health)
+    target_include_directories(test_imu_health PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
   endif()
 endif()
 

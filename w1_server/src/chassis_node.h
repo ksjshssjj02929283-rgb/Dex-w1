@@ -14,8 +14,11 @@
 #include "chassis_ekf.h"
 #include "chassis_interfaces/msg/chassis_motor_control.hpp"
 #include "chassis_interfaces/msg/chassis_motor_feedback.hpp"
+#include "imu_health.h"
 #include "imu_processor.h"
 #include "odom_mode.h"
+
+#include <diagnostic_updater/diagnostic_updater.hpp>
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
 #include "shared_memory_def.h"
 
@@ -119,6 +122,17 @@ private:
     // 把当前 IMU 相关参数整体下发给 ImuProcessor（热更新各分支共用，避免漏传新参数）
     void ApplyImuProcessorParams();
 
+    // 把超时 / 冻结 / 噪声 / 迟滞等阈值下发给 IMU 健康状态机
+    void ApplyImuHealthParams();
+
+    // 每个定时周期评估一次 IMU 健康并处理状态迁移日志——**不依赖底盘反馈是否有效**，
+    // 否则无底盘反馈时 IMU 状态永远停在初值，diagnostics 只能报空。
+    void UpdateImuHealth();
+
+    // diagnostics 任务：IMU 健康 / 底盘反馈状态（标准 diagnostic_msgs 外发，供上层与 rqt_robot_monitor）
+    void DiagImu(diagnostic_updater::DiagnosticStatusWrapper& st);
+    void DiagOdom(diagnostic_updater::DiagnosticStatusWrapper& st);
+
 private:
     // 参数
     double wheel_track_;      // 轮距 b (m)
@@ -209,6 +223,20 @@ private:
     rclcpp::Time imu_detect_start_{0, 0, RCL_ROS_TIME};  // 宽限期起点
     uint32_t last_shm_imu_stamp_ = 0;                    // 上一次看到的 shm IMU 时间戳
     double imu_source_detect_grace_ = 5.0;               // 判定宽限期 (s)
+
+    // —— IMU 健康状态机（失效五类：非有限值 / 冻结 / 超时 / 噪声 / 未初始化；恢复带迟滞）——
+    ImuHealthMonitor imu_health_;
+    std::mutex       imu_health_mutex_;    // OnSample（回调线程）与 Evaluate（定时器线程）互斥
+    ImuHealth        imu_health_state_ = ImuHealth::Uninitialized;
+    int    imu_invalid_frames_ = 3;
+    int    imu_frozen_frames_  = 20;
+    double imu_gyro_noise_max_ = 0.02;     // 陀螺 z 帧间差分标准差上限 (rad/s)
+    int    imu_recover_frames_ = 20;
+    double imu_init_timeout_   = 30.0;     // 未初始化超过此时长升为 ERROR (s)
+
+    // —— diagnostics ——
+    std::unique_ptr<diagnostic_updater::Updater> diag_;
+    double diag_period_ = 0.5;             // /diagnostics 周期 (s)；健康状态变化时立即补发
 
     // —— 底盘反馈失效（fail-fast）——
     double odom_stale_timeout_ = 0.5;  // s，持续无效超过即判失效

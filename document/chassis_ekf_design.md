@@ -322,3 +322,22 @@ imu0_config: [false, false, false,
 | `ekf_p0_theta` | `0.01` | 初始航向协方差对角 |
 | `ekf_p0_v` | `1.0` | 初始线速度协方差对角 |
 | `ekf_p0_omega` | `1.0` | 初始角速度协方差对角 |
+
+## 9. IMU 健康状态机与诊断外发
+
+IMU 可用性（`IsImuAvailable()`）由 `imu_health.h` 的 `ImuHealthMonitor` 判定，取代原先单一的超时判据：
+
+| 状态 | 判据 | 参数 |
+|---|---|---|
+| invalid | 六轴 / stamp 非有限值连续 ≥ N 帧（入口丢弃）；或 stamp 与节点时钟差 < −1 s / > 1e6 s | `imu_invalid_frames` |
+| frozen | 六轴原始值连续 N 帧完全相同 | `imu_frozen_frames` |
+| timeout | 最近一帧 stamp 距当前 > T | `imu_timeout` |
+| noisy | 陀螺 z 帧间差分 1 s 滑窗 std > σ | `imu_gyro_noise_max` |
+| uninitialized | 静止初始化未完成（> `imu_init_timeout` 升 ERROR；从未收到样本同此宽限） | `imu_init_timeout` |
+
+- 多条同时满足取最严重；非 ok 即不可用 → EKF 走无 IMU 分支（§4 量测只用轮速）。
+- 数据类失效解除后连续 `imu_recover_frames` 帧正常才回 ok（迟滞）。
+- 噪声用**帧间差分**而非原始值 std：真实转动的差分 ≈ ω̇·dt 且平滑，噪声的差分随机跳变，两者可分。
+- 评估在 `onTimer()` 最前独立执行（`UpdateImuHealth()`），不依赖底盘反馈有效。
+- 外发：`diagnostic_updater` → `/diagnostics`，status `chassis_node: IMU`（含 `effective_mode` / `init_*` 进度与拒绝原因 / `gyro_diff_std_rad_s`）与 `chassis_node: odom feedback`（fail-fast 状态）。
+- 单测：`test/test_imu_health.cpp`。

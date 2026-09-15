@@ -73,6 +73,15 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : rclcpp::Node("cha
     imu_timeout_ = this->declare_parameter<double>("imu_timeout", 0.1);                // IMU超时时间 (s)
     odom_stale_timeout_ = this->declare_parameter<double>("odom_stale_timeout", 0.5);  // 底盘反馈失效判定 (s)
 
+    // IMU 健康判定（失效五类 + 恢复迟滞），阈值含义见 imu_health.h
+    imu_invalid_frames_ = this->declare_parameter<int>("imu_invalid_frames", 3);
+    imu_frozen_frames_  = this->declare_parameter<int>("imu_frozen_frames", 20);
+    imu_gyro_noise_max_ = this->declare_parameter<double>("imu_gyro_noise_max", 0.02);
+    imu_recover_frames_ = this->declare_parameter<int>("imu_recover_frames", 20);
+    imu_init_timeout_   = this->declare_parameter<double>("imu_init_timeout", 30.0);
+    diag_period_        = this->declare_parameter<double>("diag_period", 0.5);
+    ApplyImuHealthParams();
+
     // EKF 参数（Q 为「每秒」量纲，内部乘 dt；勿按每步理解）
     ekf_params_.q_xy = this->declare_parameter<double>("ekf_q_xy", 1e-4);
     ekf_params_.q_theta = this->declare_parameter<double>("ekf_q_theta", 1e-6);
@@ -129,6 +138,13 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : rclcpp::Node("cha
     const auto period = std::chrono::duration<double>(1.0 / std::max(1.0, odom_rate_hz_));
     timer_ = this->create_wall_timer(std::chrono::duration_cast<std::chrono::nanoseconds>(period),
                                      std::bind(&ChassisNode::onTimer, this));
+
+    // diagnostics：IMU 健康与底盘反馈状态外发。用标准 diagnostic_msgs 而非自定义消息——
+    // rqt_robot_monitor 直接可看，上层状态监控按 /diagnostics 收，接口层不必再动。
+    diag_ = std::make_unique<diagnostic_updater::Updater>(this, diag_period_);
+    diag_->setHardwareID("w1_chassis");
+    diag_->add("IMU", this, &ChassisNode::DiagImu);
+    diag_->add("odom feedback", this, &ChassisNode::DiagOdom);
 
     callback_handle_ =
         this->add_on_set_parameters_callback(std::bind(&ChassisNode::parametersCallback, this, std::placeholders::_1));
@@ -205,6 +221,83 @@ void ChassisNode::LoadChassisConfig(const std::filesystem::path& cfg_path) {
         RCLCPP_FATAL(this->get_logger(), "Unknown chassis_type: %s (expect omni / diff_drive)", chassis_type.c_str());
         throw std::runtime_error("unknown chassis_type");
     }
+}
+
+void ChassisNode::ApplyImuHealthParams() {
+    ImuHealthParams p;
+    p.timeout_sec      = imu_timeout_;
+    p.invalid_frames   = imu_invalid_frames_;
+    p.frozen_frames    = imu_frozen_frames_;
+    p.gyro_noise_max   = imu_gyro_noise_max_;
+    p.recover_frames   = imu_recover_frames_;
+    p.init_timeout_sec = imu_init_timeout_;
+    std::lock_guard<std::mutex> lk(imu_health_mutex_);
+    imu_health_.SetParams(p);
+}
+
+void ChassisNode::DiagImu(diagnostic_updater::DiagnosticStatusWrapper& st) {
+    using DS = diagnostic_msgs::msg::DiagnosticStatus;
+    ImuHealthReport rep;
+    {
+        std::lock_guard<std::mutex> lk(imu_health_mutex_);
+        rep = imu_health_.report();
+    }
+    const auto init = imu_processor_->GetInitStatus();
+    const bool imu_ok = (rep.state == ImuHealth::Ok);
+
+    // 汇总级别：Ok → OK；未初始化（未超时）/ 噪声 → WARN；其余 → ERROR
+    unsigned char level = DS::ERROR;
+    if (imu_ok) level = DS::OK;
+    else if (rep.state == ImuHealth::Uninitialized) level = rep.init_overdue ? DS::ERROR : DS::WARN;
+    else if (rep.state == ImuHealth::Noisy) level = DS::WARN;
+    if (!use_imu_yaw_ && level == DS::ERROR) {
+        // 当前模式不用 IMU：硬件类故障（冻结 / 非有限值）仍提示 WARN，其余不算故障
+        level = (rep.state == ImuHealth::Frozen || rep.state == ImuHealth::Invalid) ? DS::WARN : DS::OK;
+    }
+
+    // 当前实际生效的里程计形态：ekf 在 IMU 不可用时退化为 ekf_no_imu，非 EKF 模式退化为编码器 ω
+    const char* effective = use_ekf_fusion_ ? (imu_ok ? "ekf" : "ekf_no_imu")
+                                            : (use_imu_yaw_ && imu_ok ? "imu_yaw" : "encoder_only");
+    st.summary(level, std::string("odom ") + effective + " | imu " + ImuHealthName(rep.state) +
+                          (rep.reason.empty() ? "" : " (" + rep.reason + ")"));
+
+    st.add("odom_mode", OdomModeName(odom_mode_));
+    st.add("effective_mode", effective);
+    st.add("imu_source", imu_source_ == ImuSource::Shm ? "shm" : (imu_source_ == ImuSource::Topic ? "topic" : "unknown"));
+    st.add("imu_state", ImuHealthName(rep.state));
+    st.add("reason", rep.reason);
+    st.addf("imu_age_s", "%.3f", rep.age_sec);
+    st.addf("gyro_diff_std_rad_s", "%.4f", rep.gyro_diff_std);
+    st.add("init_done", init.done ? "true" : "false");
+    st.addf("init_progress", "%d/%d", init.collected, init.required);
+    st.add("init_blocked_by_motion", init.blocked_by_motion ? "true" : "false");
+    st.add("init_settling", init.settling ? "true" : "false");
+    st.add("init_last_reject", init.last_reject);
+    st.add("init_on_slope", init.on_slope ? "true" : "false");
+    st.addf("init_tilt_deg", "%.2f", init.tilt_deg);
+    const double now = this->get_clock()->now().seconds();
+    st.addf("degraded_since_s", "%.1f", std::isnan(rep.degraded_since_sec) ? 0.0 : now - rep.degraded_since_sec);
+    st.addf("degraded_count", "%u", rep.degraded_count);
+    st.addf("degraded_total_s", "%.1f", rep.degraded_total_sec);
+    st.add("ekf_aerial", is_aerial_ ? "true" : "false");
+}
+
+void ChassisNode::DiagOdom(diagnostic_updater::DiagnosticStatusWrapper& st) {
+    using DS = diagnostic_msgs::msg::DiagnosticStatus;
+    const double now = this->get_clock()->now().seconds();
+    if (!has_feedback_ever_) {
+        st.summary(DS::WARN, "no chassis feedback received yet");
+    } else if (odom_stale_) {
+        st.summaryf(DS::ERROR, "chassis feedback stale for %.1f s, odometry output suspended",
+                    now - odom_stale_since_.seconds());
+    } else {
+        st.summary(DS::OK, "chassis feedback ok");
+    }
+    st.add("stale", odom_stale_ ? "true" : "false");
+    st.addf("stale_count", "%u", odom_stale_count_);
+    st.addf("stale_total_s", "%.1f", odom_stale_total_sec_);
+    st.addf("odom_stale_timeout_s", "%.2f", odom_stale_timeout_);
+    st.add("chassis_type", chassis_model_ == 1 ? "omni" : "diff_drive");
 }
 
 void ChassisNode::ApplyImuProcessorParams() {
@@ -296,6 +389,21 @@ void ChassisNode::ImuMsgCallback(const sensor_msgs::msg::Imu::SharedPtr msg) {
 
 void ChassisNode::ProcessImu(const sensor_msgs::msg::Imu& imu_in) {
     const sensor_msgs::msg::Imu* msg = &imu_in;
+
+    // 健康状态机先看**原始值**（去零偏前）：非有限值直接丢帧，不进初始化缓冲、不进 EKF；
+    // 冻结 / 噪声的逐帧统计也在这里累积，判定在 IsImuAvailable() 的 Evaluate 中给出。
+    {
+        std::lock_guard<std::mutex> lk(imu_health_mutex_);
+        const bool finite_ok = imu_health_.OnSample(
+            rclcpp::Time(imu_in.header.stamp).seconds(), imu_in.linear_acceleration.x, imu_in.linear_acceleration.y,
+            imu_in.linear_acceleration.z, imu_in.angular_velocity.x, imu_in.angular_velocity.y,
+            imu_in.angular_velocity.z);
+        if (!finite_ok) {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                                 "IMU sample contains non-finite values, dropped");
+            return;
+        }
+    }
     // 超时判据的基准：记录**消息时间戳**（衡量「数据有多旧」，可检出队列积压）。
     // 两条来源路径都经过这里，故判据统一。shm 路径的 stamp 由 ConvertShmImu 用
     // 节点时钟现打，话题路径的由发布方打——两者同为 RCL_ROS_TIME，可直接相减。
@@ -312,8 +420,8 @@ void ChassisNode::ProcessImu(const sensor_msgs::msg::Imu& imu_in) {
 
     const auto refined_imu = imu_processor_->GetRefinedImuData(*msg);
     if (!refined_imu.has_value()) {
+        // 未初始化的告警由 IsImuAvailable() 的健康状态机统一给出（含进度与拒绝原因），这里不再重复
         is_imu_inited_ = false;
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "IMU is not initialized ...");
         return;
     }
 
@@ -426,61 +534,59 @@ void ChassisNode::UpdateWheelStoppedFlag(const ChassisFeedback& chassis_data) {
 }
 
 /**
- * 检查 IMU 是否可用（超时判据）。
+ * 每周期评估 IMU 健康——由 ImuHealthMonitor 统一判定五类失效并带恢复迟滞；
+ * IsImuAvailable() 只读评估结果。
  *
- * ⚠️ 原实现拿 `chassis_data.timestamp`（共享内存，CLOCK_MONOTONIC）减 `imu.header.stamp`
- *    （ROS 时钟，CLOCK_REALTIME），两者相差「开机时刻的 Unix 时间」约 1.788e9 秒，
- *    差值恒为大负数 ⇒ `> imu_timeout_` **恒假** ⇒ IMU 永不判超时、永不降级。
- *    原注释「用 nanoseconds 避免不同时间源的问题」说反了：`nanoseconds()` 只是绕过了
- *    rclcpp 对 clock type 的断言，把崩溃变成了静默错误。（实测见 2026-09-01 记录）
+ * 判据基准仍是**消息 stamp**（两条 IMU 来源均以节点时钟打戳，可与 now 相减）；
+ * 跨时钟源 sanity 已并入状态机（|age| > 1e6 s 判 Invalid）。历史教训见 imu_health.h 头注释与
+ * 本文件早期版本：超时判据曾因跨源相减恒假而永不降级。
  *
- * 现行做法：用节点时钟减**消息 stamp**（两条 IMU 来源均以节点时钟打戳：w1_server 同进程；
- * dexe_sensors/imu 已改用节点时钟）。选 stamp 而非接收时刻，是为了一并检出消息在订阅
- * 队列里积压的情形——拿 200 ms 前的角速度去积分比降级更糟。跨源前提由下方 sanity 检查兜底。
+ * 日志策略：状态**迁移**打一条（级别按严重度），持续失效低频提醒；不再逐帧 throttle 刷屏。
  */
-bool ChassisNode::IsImuAvailable() {
-    if (!use_imu_yaw_ || curr_imu_ == nullptr) {
-        return false;
+void ChassisNode::UpdateImuHealth() {
+    ImuHealthReport rep;
+    {
+        std::lock_guard<std::mutex> lk(imu_health_mutex_);
+        rep = imu_health_.Evaluate(this->get_clock()->now().seconds(), is_imu_inited_);
     }
+    const ImuHealth prev = imu_health_state_;
+    imu_health_state_ = rep.state;
 
-    // 两侧同为 RCL_ROS_TIME，可直接相减
-    const double imu_age = (this->get_clock()->now() - last_imu_stamp_).seconds();
-
-    // ── sanity 检查：不把「跨时钟源」误当成「数据新鲜」──
-    // R08 的教训：跨源相减得到 −1.788e9 s，判据 `> timeout` 恒假 ⇒ 永不降级，
-    // 且毫无症状。这里显式识别荒谬值并**保守判为不可用**，同时报错指明原因。
-    // 阈值取 1 小时：真实停摆再久也该降级，而跨源偏差是 10^9 秒量级，两者不会混淆。
-    // 阈值分两级，避免把「长时间无数据」误报成「跨时钟源」：
-    //   跨源偏差是 10^9 s 量级（REALTIME 与 MONOTONIC 相差开机时刻的 Unix 时间）；
-    //   而真实的「IMU 停了很久」通常在 10^3~10^5 s。用 1e6 s 分界，两者不会混淆。
-    // 2026-09-02 实机教训：原先只用 3600 s 一档，IMU 停了 16 小时被报成「疑似不同源」，
-    // 指向了错误的排查方向。
-    constexpr double kCrossClockSuspectSec = 1.0e6;  // 超过它才可能是跨时钟源
-    if (imu_age < -1.0 || imu_age > kCrossClockSuspectSec) {
-        RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                              "IMU stamp and node clock appear to be different sources (age=%.3g s), "
-                              "treating IMU as unavailable. Check whether the publisher uses "
-                              "rclcpp::Clock() (defaults to RCL_SYSTEM_TIME, ignores use_sim_time)",
-                              imu_age);
-        return false;
-    }
-
-    const bool imu_timeout = (imu_age > imu_timeout_);
-    if (imu_timeout) {
-        // 长时间无数据与瞬时超时分开表述：前者多半是 IMU 链路断了（查 driver 日志），
-        // 后者是抖动或短暂丢帧。
-        if (imu_age > 60.0) {
-            RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                                  "No IMU data for %.0f s, falling back to encoder-only. "
-                                  "Check whether the IMU driver is disconnected",
-                                  imu_age);
+    if (rep.changed) {
+        const char* from = ImuHealthName(prev);
+        const char* to = ImuHealthName(rep.state);
+        if (!use_imu_yaw_) {
+            // 当前 odom_mode 不用 IMU：仍跟踪状态（diagnostics 可见），但不按失效级别报警
+            RCLCPP_INFO(this->get_logger(), "IMU health: %s -> %s | %s (IMU not used by odom_mode %s)", from, to,
+                        rep.reason.c_str(), OdomModeName(odom_mode_));
+        } else if (rep.state == ImuHealth::Ok) {
+            RCLCPP_INFO(this->get_logger(), "IMU health: %s -> ok, %s", from,
+                        prev == ImuHealth::Uninitialized ? "IMU initialized and now in use" : "IMU back in use");
+        } else if (rep.state == ImuHealth::Uninitialized && !rep.init_overdue) {
+            RCLCPP_INFO(this->get_logger(), "IMU health: %s -> %s | %s | odometry runs encoder-only meanwhile",
+                        from, to, rep.reason.c_str());
+        } else if (rep.state == ImuHealth::Noisy) {
+            RCLCPP_WARN(this->get_logger(), "IMU health: %s -> %s | %s | falling back to encoder", from, to,
+                        rep.reason.c_str());
         } else {
-            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                                 "IMU timeout (%.3f s > %.3f s), falling back to encoder", imu_age, imu_timeout_);
+            RCLCPP_ERROR(this->get_logger(), "IMU health: %s -> %s | %s | falling back to encoder", from, to,
+                         rep.reason.c_str());
+        }
+        if (diag_) diag_->force_update();
+    } else if (rep.state != ImuHealth::Ok && use_imu_yaw_) {
+        if (rep.init_overdue || ImuHealthMonitor::IsDataFault(rep.state)) {
+            RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "IMU health: %s | %s",
+                                  ImuHealthName(rep.state), rep.reason.c_str());
+        } else {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "IMU health: %s | %s",
+                                 ImuHealthName(rep.state), rep.reason.c_str());
         }
     }
 
-    return !imu_timeout;
+}
+
+bool ChassisNode::IsImuAvailable() {
+    return use_imu_yaw_ && imu_health_state_ == ImuHealth::Ok && curr_imu_ != nullptr;
 }
 
 // 底盘反馈失效判定（fail-fast）。
@@ -532,6 +638,9 @@ void ChassisNode::UpdateOdomHealth(bool feedback_valid) {
 
 // 主循环：消费反馈（如果有），按时间积分后发布
 void ChassisNode::onTimer() {
+    // IMU 健康评估放在最前：无论底盘反馈有没有，IMU 状态与 diagnostics 都要活着
+    UpdateImuHealth();
+
     auto& feedback_shm_instance = FeedbackSharedMemory::GetInstance();
     RobotFeedback feedback_data{};
     const bool feedback_valid = feedback_shm_instance.PeekLatest(&feedback_data);
@@ -1164,6 +1273,27 @@ rcl_interfaces::msg::SetParametersResult ChassisNode::parametersCallback(
         } else if (changed_parameter.get_name() == "imu_timeout") {
             imu_timeout_ = changed_parameter.as_double();
             RCLCPP_INFO(this->get_logger(), "Updated imu_timeout: %.3f s", imu_timeout_);
+            ApplyImuHealthParams();
+        } else if (changed_parameter.get_name() == "imu_invalid_frames") {
+            imu_invalid_frames_ = changed_parameter.as_int();
+            RCLCPP_INFO(this->get_logger(), "Updated imu_invalid_frames: %d", imu_invalid_frames_);
+            ApplyImuHealthParams();
+        } else if (changed_parameter.get_name() == "imu_frozen_frames") {
+            imu_frozen_frames_ = changed_parameter.as_int();
+            RCLCPP_INFO(this->get_logger(), "Updated imu_frozen_frames: %d", imu_frozen_frames_);
+            ApplyImuHealthParams();
+        } else if (changed_parameter.get_name() == "imu_gyro_noise_max") {
+            imu_gyro_noise_max_ = changed_parameter.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated imu_gyro_noise_max: %.4f rad/s", imu_gyro_noise_max_);
+            ApplyImuHealthParams();
+        } else if (changed_parameter.get_name() == "imu_recover_frames") {
+            imu_recover_frames_ = changed_parameter.as_int();
+            RCLCPP_INFO(this->get_logger(), "Updated imu_recover_frames: %d", imu_recover_frames_);
+            ApplyImuHealthParams();
+        } else if (changed_parameter.get_name() == "imu_init_timeout") {
+            imu_init_timeout_ = changed_parameter.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated imu_init_timeout: %.1f s", imu_init_timeout_);
+            ApplyImuHealthParams();
         } else if (changed_parameter.get_name() == "odom_stale_timeout") {
             odom_stale_timeout_ = changed_parameter.as_double();
             RCLCPP_INFO(this->get_logger(), "Updated odom_stale_timeout: %.3f s", odom_stale_timeout_);
