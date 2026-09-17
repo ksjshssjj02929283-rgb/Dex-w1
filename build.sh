@@ -13,6 +13,7 @@ pip3 install -U build setuptools wheel
 
 echo "building python package ..."
 cd "$CURDIR"
+rm -rf "$CURDIR/dist"
 python3 -m build --wheel --outdir "$CURDIR/dist"
 
 echo "finish build"
