@@ -1,8 +1,11 @@
 # CHANGELOG
 
 ## [Unrelease]
+
+## [V0.8.1]
 ### Refactor
 - 优化ros2 client的初始化，避免超时等待
+- 优化碰撞检测结果返回，无碰撞返回StatusCode.SUCCESS，碰撞则返回StatusCode.COLLISION_FAIL
 
 ### Improve
 - logger增加日志节流机制
