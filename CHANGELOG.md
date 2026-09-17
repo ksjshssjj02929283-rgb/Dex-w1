@@ -2,6 +2,19 @@
 
 ## [Unrelease]
 
+## [V0.8.1]
+### Refactor
+- 优化ros2 client的初始化，避免超时等待
+- 优化碰撞检测结果返回，无碰撞返回StatusCode.SUCCESS，碰撞则返回StatusCode.COLLISION_FAIL
+
+### Improve
+- logger增加日志节流机制
+
+### Fix
+- 修复toppra轨迹规划采样漏掉最后到位点的问题
+- 修复end_effector_client未处理UNKNOWN状态、关节状态长度不匹配及位置越界反馈导致的异常问题
+
+
 ## [V0.8.0]
 ### Feat
 - 新增coal collision checker

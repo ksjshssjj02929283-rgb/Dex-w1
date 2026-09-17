@@ -51,13 +51,25 @@ class EndEffectorParamsRegistry:
 
 
 # yapf: disable
+@EndEffectorParamsRegistry.register(EndEffectorType.Dual_DH_PGC_50_35)
+def _():
+    return EndEffectorParams(
+        dof=2,
+        joint_names=("FINGER1", "FINGER2"),
+        supported_modes=(EEJointControlMode.POSITION,),
+        position=Limit((0,)*2, (100,)*2),
+        velocity=Limit((-100,)*2, (100,)*2),
+        current=Limit((-100,)*2, (100,)*2),
+        force=Limit((-100,)*2, (100,)*2),
+    )
+
 @EndEffectorParamsRegistry.register(EndEffectorType.Lansi_DualSuction)
 def _():
     return EndEffectorParams(
         dof=4,
         joint_names=("MOTOR_1", "MOTOR_2", "SUCTION_1", "SUCTION_2",),
         supported_modes=(EEJointControlMode.POSITION,),
-        position=Limit((0,)*4, (360, 360, 100, 100, )),
+        position=Limit((0,)*4, (360, 360, 100, 100,)),
         velocity=Limit((-100,)*4, (100,)*4),
         current=Limit((-100,)*4, (100,)*4),
         force=Limit((-100,)*4, (100,)*4),

@@ -117,20 +117,7 @@ class W1Manager:
 
         self.w1_params = W1Params(self._robot_version, self._left_ee_type,
                                   self._right_ee_type)
-
-        # 在主线程中正常退出时自动调用
-        atexit.register(self._destroy_clients)
-
-        self._init_clients()
-
         self._init_kine_solver()
-
-        if self.set_sim_mode(is_sim) != StatusCode.SUCCESS:
-            if is_sim:
-                self.logger.error(f"Set sim mode failed")
-                raise RuntimeError("Set sim mode failed")
-            self.logger.error(f"Set real mode failed")
-            raise RuntimeError("Set real mode failed")
 
         self.real_torso_idx, self.real_head_idx, self.real_arml_idx, self.real_armr_idx = \
             self.w1_params.torso_index, self.w1_params.head_index, self.w1_params.left_arm_index, self.w1_params.right_arm_index
@@ -140,7 +127,20 @@ class W1Manager:
             left_end_effector_type=None,
             right_end_effector_type=None,
             verbose=False)
+
         self._init_cartesian_planner(self._robot_version)
+
+        # 在主线程中正常退出时自动调用
+        atexit.register(self._destroy_clients)
+
+        self._init_clients()
+
+        if self.set_sim_mode(is_sim) != StatusCode.SUCCESS:
+            if is_sim:
+                self.logger.error(f"Set sim mode failed")
+                raise RuntimeError("Set sim mode failed")
+            self.logger.error(f"Set real mode failed")
+            raise RuntimeError("Set real mode failed")
 
         self._stop_move_event = threading.Event()
         self._stop_move_event.clear()
@@ -293,6 +293,16 @@ class W1Manager:
             self.logger.error(
                 f"[{StatusCode.CHASSIS_NOT_CONNECT.value}]:{self.chassis_client.node_name} is not connected!"
             )
+            return False
+        return True
+
+    def _has_chassis_client_initialized(self) -> bool:
+        """检查底盘客户端是否已初始化，不依赖底盘位姿连接状态。"""
+        if not self._use_nav:
+            self.logger.error("导航功能未启用。")
+            return False
+        if self.chassis_client is None:
+            self.logger.error("底盘客户端未初始化。")
             return False
         return True
 
@@ -834,48 +844,82 @@ class W1Manager:
         return StatusCode.SUCCESS, self._get_chassis_client(
         ).get_control_status()
 
-    def set_auto_charging(self) -> StatusCode:
-        """发送回充 action"""
-        status = self._check_chassis()
-        if status != StatusCode.SUCCESS:
-            return status
-        res = self._get_chassis_client().set_chassis_auto_charging()
+    def set_auto_charging(self,
+                          force: bool = True,
+                          timeout_sec: float = 10.0) -> StatusCode:
+        """异步发送回充 Action Goal，返回值仅表示发送流程是否启动。
+
+        Args:
+            force: 是否强制执行回充。
+            timeout_sec: 等待回充 Action Server 可用的超时时间，单位为秒；
+                不表示整个回充任务的完成超时时间。
+        """
+        if not self._has_chassis_client_initialized():
+            if not self._use_nav:
+                return StatusCode.CHASSIS_NOT_USE
+            return StatusCode.CHASSIS_NOT_CONNECT
+
+        res = self.chassis_client.set_chassis_auto_charging(
+            force=force, timeout_sec=timeout_sec)
         if not res:
             status = StatusCode.CHASSIS_SET_AUTO_CHARGING_FAIL
-            self.logger.error(f"[{status.value}]:Set auto charging failed")
+            self.logger.error(f"[{status.value}]:回充 Action Goal 发送失败。")
             return status
+
+        self.logger.info(f"回充 Action Goal 发送流程已启动：force={force}，"
+                         "最终结果需通过结果接口获取。")
         return StatusCode.SUCCESS
 
+    def get_auto_charging_status(self) -> tuple[StatusCode, str]:
+        """获取最近一次回充 Action 的当前状态。"""
+        if not self._has_chassis_client_initialized():
+            if not self._use_nav:
+                return StatusCode.CHASSIS_NOT_USE, "DISABLED"
+            return StatusCode.CHASSIS_NOT_CONNECT, "NOT_INITIALIZED"
+        return (StatusCode.SUCCESS,
+                self.chassis_client.get_auto_charging_status())
+
+    def get_auto_charging_result(self) -> tuple[StatusCode, bool, str]:
+        """获取最近一次回充 Action 的结果，应在任务进入终态后调用。"""
+        if not self._has_chassis_client_initialized():
+            if not self._use_nav:
+                return StatusCode.CHASSIS_NOT_USE, False, "DISABLED"
+            return (StatusCode.CHASSIS_NOT_CONNECT, False, "NOT_INITIALIZED")
+        success, message = self.chassis_client.get_auto_charging_result()
+        return StatusCode.SUCCESS, success, message
+
     def cancel_auto_charging(self) -> StatusCode:
-        """取消当前回充 action"""
-        status = self._check_chassis()
-        if status != StatusCode.SUCCESS:
-            return status
-        res = self._get_chassis_client().cancel_auto_charging()
+        """异步取消当前回充 Action，不依赖底盘位姿连接状态。"""
+        if not self._has_chassis_client_initialized():
+            if not self._use_nav:
+                return StatusCode.CHASSIS_NOT_USE
+            return StatusCode.CHASSIS_NOT_CONNECT
+        res = self.chassis_client.cancel_auto_charging()
         if not res:
             status = StatusCode.CHASSIS_CANCEL_AUTO_CHARGING_FAIL
-            self.logger.error(f"[{status.value}]:Cancel auto charging failed")
+            self.logger.warning(f"[{status.value}]:回充 Action 取消请求未发送，"
+                                "当前可能没有可取消的 Goal。")
             return status
         return StatusCode.SUCCESS
 
     def cancel_chassis_motion(self) -> StatusCode:
-        """统一取消底盘运动，同时调用取消导航和取消控制。"""
-        status = self._check_chassis()
-        if status != StatusCode.SUCCESS:
-            return status
+        """统一取消底盘导航、控制和回充 Action。"""
+        if not self._has_chassis_client_initialized():
+            if not self._use_nav:
+                return StatusCode.CHASSIS_NOT_USE
+            return StatusCode.CHASSIS_NOT_CONNECT
 
-        self.logger.info(
-            "Sending request to cancel navigation, control and auto charging..."
-        )
-        nav_cancel_ok = self._get_chassis_client().cancel_chassis_nav2()
-        road_nav_cancel_ok = self._get_chassis_client().cancel_road_navigation()
+        # 取消依赖已保存的 Action GoalHandle，
+        # 不应因位姿反馈暂时断流而被阻止。
+        self.logger.info("正在取消导航、底盘控制和回充 Action。")
+        nav_cancel_ok = self.chassis_client.cancel_chassis_nav2()
+        road_nav_cancel_ok = self.chassis_client.cancel_road_navigation()
         graph_points_nav_cancel_ok = (
-            self._get_chassis_client().cancel_graph_points_navigation())
-        control_cancel_ok = self._get_chassis_client().cancel_chassis_control()
-        auto_charging_cancel_ok = (
-            self._get_chassis_client().cancel_auto_charging())
+            self.chassis_client.cancel_graph_points_navigation())
+        control_cancel_ok = self.chassis_client.cancel_chassis_control()
+        auto_charging_cancel_ok = self.chassis_client.cancel_auto_charging()
 
-        # 只要有一个成功，就认为取消指令已尽力发送
+        # 只要有一个成功，就认为取消指令已尽力发送。
         if (nav_cancel_ok or road_nav_cancel_ok or graph_points_nav_cancel_ok or
                 control_cancel_ok or auto_charging_cancel_ok):
             return StatusCode.SUCCESS

@@ -27,7 +27,7 @@ from .robot_client import RobotClient
 class RobotClientRos2(Node, RobotClient):
     """ros2 client universal interfaces"""
 
-    def __init__(self, is_sim: bool = False, timeout_sec: float = 1.0):
+    def __init__(self, is_sim: bool = False):
         if is_sim:
             self.node_name = "robot_client_sim"
         else:
@@ -41,7 +41,6 @@ class RobotClientRos2(Node, RobotClient):
         self._srv_cb_group = ReentrantCallbackGroup()
 
         self._init_subscriber()
-        rclpy.spin_once(self, timeout_sec=timeout_sec)
         self._init_publisher()
         self._init_service_client()
         self._init_action_client()
@@ -63,6 +62,8 @@ class RobotClientRos2(Node, RobotClient):
                 self.latest_queued_id = None
                 self.latest_finished_id = None
                 self.latest_errordrop_id = None
+                self.logger.error(f"{self.node_name} not connected!",
+                                  throttle_interval=2.0)
 
     def is_connected(self, timeout_sec: float = 0.5):
         start_time = time.time()
