@@ -1,4 +1,0 @@
-nav_interfaces/RouteEdge edge
----
-bool   success
-string message

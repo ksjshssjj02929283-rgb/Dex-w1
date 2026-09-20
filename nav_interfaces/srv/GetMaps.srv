@@ -1,0 +1,10 @@
+# 地图目录查询（合并原 get_map_list / get_current_map_info / get_map_folder / get_map_name）。
+# 只读；map_folder 来自配置，未加载地图也返回；current_map_name 未加载为空。
+# 当前地图的栅格元数据经 map_info 话题、栅格本体经 map 话题获取，不在此重复。
+---
+bool   success
+int32  error_code
+string message
+string map_folder
+string current_map_name
+nav_interfaces/MapInfo[] maps

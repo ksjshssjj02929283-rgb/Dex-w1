@@ -1,0 +1,8 @@
+# 软急停解除（/command_board/emergency_stop_release，DEC-007）。本期只定契约，服务端实现另派。
+# 必须 confirm=true（PRD：恢复需二次确认）；硬急停仍生效时解除失败。
+bool   confirm
+string source
+---
+bool   success
+int32  error_code      # 0 = OK；硬急停未解除 / confirm=false 等由监控域错误码定
+string message

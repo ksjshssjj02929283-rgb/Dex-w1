@@ -1,0 +1,22 @@
+# 统一导航入口（/navigation/navigate）：一个 action 覆盖点位 / 位姿 / 路线三种目标。
+# 旧 NavigateToPoint / NavigateRoute 过渡期保留（同一门面、同一状态机），后续退役。
+# Goal
+uint8 TARGET_POINT = 1
+uint8 TARGET_POSE  = 2
+uint8 TARGET_ROUTE = 3
+uint8  target_type
+string point_name                  # TARGET_POINT：资产点名（map_asset_manager/assets.points）
+string route_name                  # TARGET_ROUTE：资产路线名（assets.routes）
+geometry_msgs/PoseStamped pose     # TARGET_POSE：map 系位姿
+---
+# Result（终态一句话；任务全貌看 /navigation/state）
+bool   success
+string task_id                     # 与 /navigation/state.task_id 一致；忙拒绝时为空
+int32  error_code                  # 0 / 22-01 段状态码（见 NavigationState.msg）
+string message
+---
+# Feedback（与 /navigation/state 同源）
+uint8   state                      # NavigationState.state
+uint32  current_index
+uint32  poses_remaining
+float32 distance_remaining         # m

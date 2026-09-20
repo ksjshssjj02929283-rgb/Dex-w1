@@ -1,0 +1,14 @@
+# 导航任务控制（/navigation/nav_command）。服务只返回是否受理，结果看 /navigation/state。
+uint8 OP_PAUSE  = 1    # RUNNING / BLOCKED → PAUSED（取消 nav2 goal，保留目标）
+uint8 OP_RESUME = 2    # PAUSED → PENDING → RUNNING（重发 goal）
+uint8 OP_CANCEL = 3    # PENDING / RUNNING / PAUSED / BLOCKED → CANCELLED
+uint8 OP_SET_SPEED_LIMIT = 4   # 任意状态可用，跨任务保持；透传 nav2 controller 的 speed_limit；speed_limit=0 解除
+uint8 OP_CHECK_REACHABLE = 5   # 预留：可达性预校验（未实现，返回 2201110）
+uint8   op
+string  task_id        # PAUSE / RESUME / CANCEL：空 = 当前任务；非空且不匹配当前任务 → 2201100
+float32 speed_limit    # OP_SET_SPEED_LIMIT：percentage=false 为 m/s，true 为最大速度百分比 0~100；0 = 解除限速
+bool    percentage
+---
+bool   success
+int32  error_code      # 0 = OK；2201100 = op 非法 / 参数非法 / 当前状态不允许；2201110 = 预留 op 未实现；2201123 = 急停中拒绝 RESUME
+string message

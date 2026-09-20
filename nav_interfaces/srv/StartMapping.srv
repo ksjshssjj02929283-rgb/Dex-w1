@@ -1,0 +1,7 @@
+# 开始建图（合并原 set_map_name + start_mapping）。
+string map_name     # 地图名，单层目录名；校验规则同 ValidateMapName
+bool   overwrite    # false：<map_folder>/<map_name> 已存在则拒绝（E_MAP_NAME_EXISTS）；true：删除重建
+---
+bool   success
+int32  error_code   # 0 = OK；非 0 见 MappingState 内的错误码常量（号段待与 supervisor ErrorInfo 对齐）
+string message      # 人可读描述（英文）

@@ -7,3 +7,15 @@ std_msgs/Header header
 string map_folder
 string map_name
 uint64 epoch
+
+# 地图管理域状态码（整机状态码体系）：模块 22 dexe_mobile_nav + 子模块 02 map_manager + 状态序号 2 位 + 等级末位，共 7 位。
+# 等级：0 状态反馈 / 1 一级故障 / 2 二级故障 / 3 三级故障，可由 level = code % 10 取出，无需额外字段。
+int32 E_NONE = 0
+int32 E_MAP_OP_INVALID     = 2202010   # MapManagerCommand.op 未填或非法（等级 0）
+int32 E_MAP_NAME_INVALID   = 2202020   # 地图名为空（等级 0）
+int32 E_MAP_NOT_FOUND      = 2202030   # 地图不存在（等级 0）
+int32 E_MAP_IN_USE         = 2202040   # 试图删除当前已加载的地图（等级 0）
+int32 E_MAP_NAME_EXISTS    = 2202050   # rename 目标名已存在（等级 0）
+int32 E_MAP_FOLDER_MISSING = 2202062   # map_folder 未配置（等级 2）
+int32 E_MAP_LOAD_FAILED    = 2202072   # yaml/png 读取或旧布局迁移失败（等级 2）
+int32 E_MAP_IO_FAILED      = 2202082   # 删除/重命名时文件系统错误（等级 2）
