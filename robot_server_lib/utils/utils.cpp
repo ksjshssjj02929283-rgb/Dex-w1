@@ -7,6 +7,16 @@
 namespace robot_server_lib {
 namespace utils {
 
+ChassisType GetChassisTypeFromConfig(const std::filesystem::path& robot_cfg_path) {
+    const YAML::Node config = YAML::LoadFile(robot_cfg_path.string());
+    const auto node = config["chassis_config"]["chassis_type"];
+    if (!node) throw std::runtime_error("robot_config.yaml missing chassis_config.chassis_type");
+    const auto value = node.as<std::string>();
+    if (value == "diff_drive") return ChassisType::DiffDrive;
+    if (value == "omni") return ChassisType::Omni;
+    throw std::runtime_error("unknown chassis_type: " + value);
+}
+
 namespace {
 // 递归合并用户节点与默认节点: 将默认配置中存在而用户配置中缺失的字段补充进去
 YAML::Node MergeYamlNode(const YAML::Node& user_node,

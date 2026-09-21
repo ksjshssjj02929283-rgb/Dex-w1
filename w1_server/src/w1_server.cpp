@@ -10,6 +10,11 @@ namespace robot_server_lib {
 
 RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     : RobotServerBase(robot_cfg_path, is_sim), line_interpolator_(manager_dt_micro / torque_ctrl_dt_micro) {
+    chassis_type_ = utils::GetChassisTypeFromConfig(robot_cfg_path);
+    // 在创建订阅器和启动控制线程前设置有效的底层输出模式。
+    RCLCPP_INFO(this->get_logger(), "Chassis type loaded from %s: %s",
+                robot_cfg_path.c_str(),
+                chassis_type_ == utils::ChassisType::Omni ? "omni" : "diff_drive");
     LOG_INFO << "w1_server version: " << W1_SERVER_VERSION;
 
     // 先初始化ndof_config_, 后续再自动识别模式
@@ -33,18 +38,11 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     position_control_subscriber_ = this->create_subscription<JointPositionControlMsg>(
         "/control/joint_position", 10, std::bind(&RobotServer::PositionControlCallback, this, std::placeholders::_1));
 
-    // 创建 /control/omni_chassis 订阅器
-    omni_chassis_control_subscriber_ = this->create_subscription<ChassisWholeControlMsg>(
-        "/control/omni_chassis", 10, std::bind(&RobotServer::OmniChassisControlCallback, this, std::placeholders::_1));
-
-    // 创建 /control/omni_chassis_motors 订阅器
-    omni_chassis_motor_control_subscriber_ = this->create_subscription<ChassisMotorControlMsg>(
-        "/control/omni_chassis_motors", 10,
-        std::bind(&RobotServer::OmniChassisMotorControlCallback, this, std::placeholders::_1));
-
-    // 创建 /control/cmd_vel 订阅器
-    diff_chassis_control_subscriber_ = this->create_subscription<geometry_msgs::msg::Twist>(
-        "/control/cmd_vel", 10, std::bind(&RobotServer::DiffChassisControlCallback, this, std::placeholders::_1));
+    // 底盘的订阅、解算与参数全部归 chassis_node；本节点只在 1 kHz 线程消费目标并写共享内存。
+    // 目标经进程内无锁缓冲递送（见 chassis_command.h），配置随目标一起过来，实时侧零同步。
+    if (!chassis_target_buffer_) {
+        chassis_target_buffer_ = std::make_shared<ChassisTargetBuffer>();
+    }
     chassis_shaper_ = std::make_shared<EIInputShaper>(chassis_shaper_type_, DiffChassisNatureFreq, torque_ctrl_dt,
                                                       DiffChassisMaxRampRpm);
 
@@ -140,17 +138,38 @@ void RobotServer::TorqueControlThreadFunc() {
 
         // 使用临时变量接收共享内存数据
         RobotFeedback feedback_temp{};
-        bool feedback_valid = feedback_shm_instance.PeekLatest(&feedback_temp) && feedback_temp.cnt > 0;
+        // 🔧 FEEDBACK_SPLIT: 共享内存帧有效、上半身关节反馈有效、底盘反馈有效是三件事。
+        // 关节名排序失败不能阻断底盘轮速反馈，否则全向解算会只转舵、不输出驱动轮速。
+        const bool feedback_available =
+            feedback_shm_instance.PeekLatest(&feedback_temp) && feedback_temp.cnt > 0;
 
-        // 根据模式排序反馈数据到ndof_robot个关节标准顺序
-        if (feedback_valid) {
-            if (!robot_mode_auto_detected_ && RobotMode::Unknown != DetectRobotModeFromFeedback(feedback_temp)) {
-                robot_mode_auto_detected_ = true;
+        int feedback_joint_count = 0;
+        if (feedback_available) {
+            for (int i = 0; i < ndof_robot; ++i) {
+                if (feedback_temp.joint_feedback[i].joint_name[0] != '\0') {
+                    ++feedback_joint_count;
+                }
             }
-            feedback_valid = SortFeedbackByJointName(feedback_temp);
         }
 
-        if (feedback_valid) {
+        // 🔧 FEEDBACK_SPLIT: 首帧可能暂时没有关节名并被识别为 Chassis；后续出现真实关节反馈时重新探测，
+        // 避免 ndof_config_=0 永久锁死并持续产生 “Expected 0, got 20”。
+        const bool should_reprobe_mode =
+            feedback_available &&
+            (!robot_mode_auto_detected_ ||
+             (robot_mode_ == RobotMode::Chassis && feedback_joint_count > 0));
+        if (should_reprobe_mode) {
+            if (RobotMode::Unknown != DetectRobotModeFromFeedback(feedback_temp)) {
+                robot_mode_auto_detected_ = true;
+            }
+        }
+
+        bool joint_feedback_valid = false;
+        if (feedback_available && robot_mode_ != RobotMode::Chassis) {
+            joint_feedback_valid = SortFeedbackByJointName(feedback_temp);
+        }
+
+        if (joint_feedback_valid) {
             robot_feedback_ = feedback_temp;
         } else {
             // 共享内存无效或关节排序失败时清理状态，避免发布上一个周期遗留的 OP/错误数据。
@@ -160,13 +179,19 @@ void RobotServer::TorqueControlThreadFunc() {
                 robot_feedback_.joint_feedback[i].joint_temperature = 0;
             }
         }
-        // 底盘反馈独立于上半身关节数据，直接透传，不受上半身反馈有效性和关节排序结果影响。
+        // 🔧 FEEDBACK_SPLIT: 底盘反馈独立于上半身关节数据，且要求底盘反馈时间戳有效。
         robot_feedback_.chassis_feedback = feedback_temp.chassis_feedback;
+        const bool chassis_feedback_valid =
+            feedback_available && feedback_temp.chassis_feedback.timestamp > 0;
 
         // 根据状态写入机器人控制字
         this->is_robot_ready_ = false;
         robot_control_.robot_control_word = CTRLWORD_MOTOR_SWITCH_ON;
-        if (feedback_valid) {
+        // Chassis 模式没有关节电机：跳过关节状态机切换，控制字保持在 SWITCH_ON，
+        // 永远不会带上 CTRLWORD_MOTOR_ENABLE 位，避免对不存在的从站做使能。
+        // 随之 is_robot_ready_ 恒为 false，关节测量不会写入 planner——这正是期望行为；
+        // 底盘控制的下发不经过该标志，照常工作。
+        if (joint_feedback_valid && robot_mode_ != RobotMode::Chassis) {
             this->SwitchControlWord();
         }
 
@@ -239,11 +264,15 @@ void RobotServer::TorqueControlThreadFunc() {
             this->robot_buffers_.joint_raw_measurement->AppendNewElement(raw_measurement);
         } else {
             this->robot_buffers_.joint_raw_measurement->Reset();
-            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                                 "Robot is not ready, shm status: %d, statusword: %s", feedback_valid,
-                                 utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
-            LOG_CRIT_THROTTLE(5000) << "Robot is not ready, shm status: " << feedback_valid
-                                    << ", statusword: " << robot_feedback_.robot_status_word;
+            // 🔧 FEEDBACK_SPLIT: 纯底盘模式没有上身关节就绪状态，不再输出误导性的 NOT_READY 告警。
+            if (robot_mode_ != RobotMode::Chassis) {
+                RCLCPP_WARN_THROTTLE(
+                    this->get_logger(), *this->get_clock(), 5000,
+                    "Robot is not ready, shm status: %d, statusword: %s", joint_feedback_valid,
+                    utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
+                LOG_CRIT_THROTTLE(5000) << "Robot is not ready, shm status: " << joint_feedback_valid
+                                        << ", statusword: " << robot_feedback_.robot_status_word;
+            }
         }
         auto t_log = std::chrono::steady_clock::now();
 
@@ -409,34 +438,58 @@ void RobotServer::TorqueControlThreadFunc() {
             last_control_word_ = robot_control_.robot_control_word;
         }
 
-        // 底盘控制：应用输入整形并写入共享内存 (与上半身关节模式解耦, 始终透传)
-        robot_control_.chassis_control.chassis_mode = chassis_control_target_.chassis_mode;
-        robot_control_.chassis_control.cnt++;
+        // 底盘：从进程内缓冲取目标（含配置快照），用本周期的共享内存反馈直接生成指令。
+        // 生成函数是纯函数、无锁无分配，可在本实时线程内调用；反馈取自 shm 而非话题，
+        // 比切分前的 /feedback/chassis_motor 路径新约 10 ms。
+        chassis_node::ChassisTarget chassis_target{};
+        const bool has_target = chassis_target_buffer_->PeekLatest(&chassis_target);
+        const int64_t now_ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+                .count();
+        if (!has_target) {
+            // 还没收到过目标（开机瞬间）：按本机底盘类型兜底，行为等同 idle
+            chassis_target.config.chassis_type = chassis_type_;
+        }
 
-        if (chassis_control_target_.chassis_mode == 1) {
-            // 差速模式：对左右轮速度应用输入整形
-            if (this->manager_info_.robot_property.enable_chassis_shaper) {
-                auto [shaper_left, shaper_right] = chassis_shaper_->Apply(
-                    chassis_control_target_.chassis_left_velocity, chassis_control_target_.chassis_right_velocity);
+        chassis_node::WheelFeedback wheel_fb{};
+        // 纯底盘只要求底盘反馈；整机模式要求底盘和关节反馈同时有效。
+        const bool control_feedback_valid =
+            chassis_feedback_valid &&
+            (robot_mode_ == RobotMode::Chassis || joint_feedback_valid);
+        wheel_fb.valid = control_feedback_valid;
+        const bool chassis_idle =
+            !has_target || !control_feedback_valid || chassis_node::IsTargetExpired(chassis_target, now_ns);
+        for (size_t i = 0; i < OMNI_MOTOR_NUM; ++i) {
+            wheel_fb.angle_rad[i] = robot_feedback_.chassis_feedback.chassis_motor_direction[i];
+            wheel_fb.speed_rpm[i] = robot_feedback_.chassis_feedback.chassis_motor_velocity[i];
+        }
+        wheel_fb.left_rpm = robot_feedback_.chassis_feedback.left_velocity;
+        wheel_fb.right_rpm = robot_feedback_.chassis_feedback.right_velocity;
+
+        ChassisControl chassis_cmd{};
+        chassis_node::GenerateChassisCommand(chassis_target, wheel_fb, chassis_idle, &chassis_cmd);
+
+        robot_control_.chassis_control.chassis_mode = chassis_cmd.chassis_mode;
+        robot_control_.chassis_control.cnt++;
+        if (chassis_target.config.chassis_type == utils::ChassisType::DiffDrive) {
+            // 差速：左右轮速度过 EI 输入整形（按 1 ms 设计的离散滤波器，只能在本线程跑）
+            if (!chassis_idle && this->manager_info_.robot_property.enable_chassis_shaper) {
+                auto [shaper_left, shaper_right] =
+                    chassis_shaper_->Apply(chassis_cmd.chassis_left_velocity, chassis_cmd.chassis_right_velocity);
                 robot_control_.chassis_control.chassis_left_velocity = shaper_left;
                 robot_control_.chassis_control.chassis_right_velocity = shaper_right;
             } else {
                 chassis_shaper_->Reset();
-                robot_control_.chassis_control.chassis_left_velocity = chassis_control_target_.chassis_left_velocity;
-                robot_control_.chassis_control.chassis_right_velocity = chassis_control_target_.chassis_right_velocity;
+                robot_control_.chassis_control.chassis_left_velocity = chassis_cmd.chassis_left_velocity;
+                robot_control_.chassis_control.chassis_right_velocity = chassis_cmd.chassis_right_velocity;
             }
-        } else if (chassis_control_target_.chassis_mode == 2) {
-            // 全向电机控制模式：直接复制
-            for (size_t i = 0; i < OMNI_MOTOR_NUM; i++) {
-                robot_control_.chassis_control.chassis_motor_velocity[i] =
-                    chassis_control_target_.chassis_motor_velocity[i];
-                robot_control_.chassis_control.chassis_motor_direction[i] =
-                    chassis_control_target_.chassis_motor_direction[i];
+        } else {
+            for (size_t i = 0; i < OMNI_MOTOR_NUM; ++i) {
+                robot_control_.chassis_control.chassis_motor_velocity[i] = chassis_cmd.chassis_motor_velocity[i];
+                robot_control_.chassis_control.chassis_motor_direction[i] = chassis_cmd.chassis_motor_direction[i];
             }
-            robot_control_.chassis_control.chassis_estop = chassis_control_target_.chassis_estop;
-            robot_control_.chassis_control.chassis_neutral = chassis_control_target_.chassis_neutral;
-        } else if (chassis_control_target_.chassis_mode == 0) {
-            RCLCPP_WARN_ONCE(this->get_logger(), "Whole chassis mode is not supported");
+            robot_control_.chassis_control.chassis_estop = chassis_cmd.chassis_estop;
+            robot_control_.chassis_control.chassis_neutral = chassis_cmd.chassis_neutral;
         }
         RobotControl robot_control_temp = robot_control_;
         SortControlByJointName(robot_control_temp);
@@ -905,40 +958,6 @@ void RobotServer::DebugCallback(const std_msgs::msg::String::SharedPtr msg) {
     }
 }
 
-void RobotServer::OmniChassisControlCallback(const ChassisWholeControlMsg::SharedPtr msg) {
-    chassis_control_target_.chassis_mode = 0;  // 设置为全向整车模式
-    chassis_control_target_.chassis_whole_mode = msg->mode;
-    chassis_control_target_.chassis_velocity = msg->speed;
-    chassis_control_target_.chassis_direction = msg->direction;
-    RCLCPP_DEBUG(this->get_logger(), "Omni chassis control: mode=%ld, speed=%.2f, direction=%.2f", msg->mode,
-                 msg->speed, msg->direction);
-}
-
-// 全向底盘电机控制回调
-void RobotServer::OmniChassisMotorControlCallback(const ChassisMotorControlMsg::SharedPtr msg) {
-    chassis_control_target_.chassis_mode = 2;  // 设置为电机控制模式
-    for (size_t i = 0; i < msg->speed.size() && i < OMNI_MOTOR_NUM; i++) {
-        chassis_control_target_.chassis_motor_velocity[i] = msg->speed[i];
-        chassis_control_target_.chassis_motor_direction[i] = msg->position[i];
-    }
-    chassis_control_target_.chassis_estop = msg->estop;
-    chassis_control_target_.chassis_neutral = msg->neutral;
-    RCLCPP_DEBUG(this->get_logger(), "Omni chassis motor control: estop=%ld, neutral=%ld", msg->estop, msg->neutral);
-}
-
-void RobotServer::DiffChassisControlCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
-    chassis_control_target_.chassis_mode = 1;  // 设置为差速模式
-    double chassis_right_velocity = msg->linear.x + msg->angular.z * DiffChassisWidth * 0.5;
-    double chassis_left_velocity = msg->linear.x - msg->angular.z * DiffChassisWidth * 0.5;
-
-    chassis_control_target_.chassis_right_velocity = chassis_right_velocity * 60 / (M_PI * DiffChassisWheelD);
-    chassis_control_target_.chassis_left_velocity = chassis_left_velocity * 60 / (M_PI * DiffChassisWheelD);
-
-    RCLCPP_DEBUG(this->get_logger(), "Diff chassis control: linear.x=%.2f, angular.z=%.2f => left=%.2f, right=%.2f",
-                 msg->linear.x, msg->angular.z, chassis_control_target_.chassis_left_velocity,
-                 chassis_control_target_.chassis_right_velocity);
-}
-
 bool RobotServer::SortFeedbackByJointName(RobotFeedback& feedback) {
     // 检测反馈数据中的有效关节数量
     int valid_count = 0;
@@ -1042,6 +1061,17 @@ RobotMode RobotServer::DetectRobotModeFromFeedback(const RobotFeedback& feedback
         }
         return true;
     };
+
+    // 关节名集合为空 ⇒ 总线上没有任何关节电机，只有底盘。
+    // 本函数仅在 feedback_available（PeekLatest 成功且 cnt>0）时被调用，因此这里的「空」
+    // 确实代表「没有关节从站」，而不会与「共享内存尚无数据」混淆。
+    if (feedback_joint_names.empty()) {
+        robot_mode_ = RobotMode::Chassis;
+        ndof_config_ = 0;
+        LOG_INFO << "自动检测到 Chassis 模式（仅底盘，无关节电机）";
+        RCLCPP_INFO(this->get_logger(), "自动检测到 Chassis 模式（仅底盘，无关节电机）");
+        return RobotMode::Chassis;
+    }
 
     if (is_exact_match(robot_model_.params_ptr->joint_names)) {
         robot_mode_ = RobotMode::W1;

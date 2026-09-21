@@ -230,8 +230,7 @@ TorqueControlThread 的力矩计算以逆动力学前馈为基础，并组合三
 |---|---|---|
 | 输入 | `/control/joint` | 关节流式控制 |
 | 输入 | `/control/joint_position` | 关节位置控制 |
-| 输入 | `/control/cmd_vel` | 差速底盘速度 |
-| 输入 | `/control/omni_chassis` | 全向底盘整车控制 |
+| 输入 | `/control/cmd_vel` | 统一整车速度，由 `chassis_config.chassis_type` 选择差速/全向解算 |
 | 输入 | `/control/omni_chassis_motors` | 全向底盘电机控制 |
 | 输入 | `/control/debug` | JSON 调试指令 |
 | 输出 | `/feedback/joint` | 关节位置、速度和力矩 |

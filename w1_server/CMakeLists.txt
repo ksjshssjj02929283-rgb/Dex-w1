@@ -55,12 +55,16 @@ find_package(pinocchio REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(diagnostic_updater REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 # Other ROS 2 packages
 find_package(chassis_interfaces REQUIRED)
 find_package(joint_interfaces REQUIRED)
 find_package(robot_server_interfaces REQUIRED)
+# 🔧 STEERING_ACTION_DIRECT: SteeringAngleControl Action Server now lives in ChassisNode.
+find_package(nav_interfaces REQUIRED)
 find_package(robot_server_lib REQUIRED)
 
 if(NOT TARGET DexeRP)
@@ -119,12 +123,15 @@ ament_target_dependencies(${PROJECT_NAME}
   nav_msgs
   tf2_ros
   tf2_geometry_msgs
+  diagnostic_updater
+  diagnostic_msgs
   ament_index_cpp
   Eigen3
   eigen3_cmake_module
   chassis_interfaces
   joint_interfaces
   robot_server_interfaces
+  nav_interfaces
   robot_server_lib
   yaml-cpp
 )
@@ -148,6 +155,10 @@ install(
   FILES robot_config.yaml
   DESTINATION share/${PROJECT_NAME}
 )
+install(
+  DIRECTORY config/
+  DESTINATION share/${PROJECT_NAME}/config
+)
 
 # feedback 可执行文件
 add_executable(feedback tools/feedback.cpp)
@@ -164,5 +175,57 @@ target_link_libraries(feedback PUBLIC
 )
 install(TARGETS feedback DESTINATION lib/${PROJECT_NAME})
 
+# ==================== 单元测试 ====================
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+
+  # chassis_ekf 是纯计算模块，只依赖 Eigen，不牵扯 ROS 运行时与共享内存，
+  # 因此可以脱离节点单独测。测试直接编译 src/chassis_ekf.cpp，不链接主目标。
+  ament_add_gtest(test_chassis_ekf
+    test/test_chassis_ekf.cpp
+    src/chassis_ekf.cpp
+  )
+  if(TARGET test_chassis_ekf)
+    target_include_directories(test_chassis_ekf PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_chassis_ekf Eigen3::Eigen)
+  endif()
+
+  # 底盘运动学与命令生成：纯计算 header-only，含与切分前实现的等价性比对
+  ament_add_gtest(test_chassis_command
+    test/test_chassis_command.cpp
+  )
+  if(TARGET test_chassis_command)
+    target_include_directories(test_chassis_command PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${CMAKE_CURRENT_SOURCE_DIR}/utils
+      ${robot_server_lib_INCLUDE_DIRS}   # 只为取零依赖的 chassis_type.h，不链接
+    )
+  endif()
+
+  # 全向 6 维 EKF：与差速共用 Params，测试同时编译两个滤波器以做退化性对比
+  ament_add_gtest(test_omni_chassis_ekf
+    test/test_omni_chassis_ekf.cpp
+    src/omni_chassis_ekf.cpp
+    src/chassis_ekf.cpp
+  )
+  if(TARGET test_omni_chassis_ekf)
+    target_include_directories(test_omni_chassis_ekf PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_omni_chassis_ekf Eigen3::Eigen)
+  endif()
+
+  # imu_health 是无依赖的 header-only 状态机，同样脱离节点单测
+  ament_add_gtest(test_imu_health
+    test/test_imu_health.cpp
+  )
+  if(TARGET test_imu_health)
+    target_include_directories(test_imu_health PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+  endif()
+endif()
 
 ament_package()

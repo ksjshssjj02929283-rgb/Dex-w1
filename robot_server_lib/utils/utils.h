@@ -25,11 +25,13 @@
 #include <vector>
 
 #include "NanoLog.hpp"
+#include "chassis_type.h"
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "data_structure.h"
 
 namespace robot_server_lib {
 namespace utils {
+ChassisType GetChassisTypeFromConfig(const std::filesystem::path& robot_cfg_path);
 RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path);
 
 // 配置文件管理: 以默认配置为基准同步/补齐用户配置, 合并外部硬件配置

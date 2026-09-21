@@ -62,7 +62,9 @@ struct ImuData {
 struct ChassisControl {
     uint64_t cnt = 0;
 
-    int chassis_mode = 0;  // 底盘控制模式. 1：差速，2：全向电机控制
+    // 底盘控制模式。与 EtherCAT 主站共享的 ABI，故保持 int；
+    // 本进程侧的真值源是 robot_server_lib::utils::ChassisType 枚举（取值与此处一一对应）。
+    int chassis_mode = 0;  // 1：差速，2：全向电机控制
     // 差速底盘控制
     double chassis_left_velocity = 0.0;
     double chassis_right_velocity = 0.0;
