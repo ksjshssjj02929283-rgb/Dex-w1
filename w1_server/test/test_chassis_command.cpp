@@ -6,10 +6,10 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <iostream>
 #include <limits>
 #include <random>
 #include <type_traits>
-#include <iostream>
 
 #include "chassis_command.h"
 #include "chassis_kinematics.h"
@@ -48,7 +48,7 @@ WheelFeedback MakeFeedback(const std::array<double, N>& ang, const std::array<do
 
 TEST(ChassisKinematics, WheelPositionsMatchTheDocumentedConvention) {
     ChassisKinematics k{ChassisGeometry{}};
-    EXPECT_DOUBLE_EQ(k.OmniWheelPosition(0).x, kL / 2);   // 前左
+    EXPECT_DOUBLE_EQ(k.OmniWheelPosition(0).x, kL / 2);  // 前左
     EXPECT_DOUBLE_EQ(k.OmniWheelPosition(0).y, kW / 2);
     EXPECT_DOUBLE_EQ(k.OmniWheelPosition(1).y, -kW / 2);  // 前右
     EXPECT_DOUBLE_EQ(k.OmniWheelPosition(2).x, -kL / 2);  // 后左
@@ -196,14 +196,14 @@ TEST(ChassisKinematics, SteerZeroRestoresTrueOmegaOnStraightDrive) {
     //
     // 不补偿时 sin(0)=0 让 vy 全为 0 ⇒ w_base 支路整条失效 ⇒ 合成 ω 恰好只剩真值的**一半**，
     // 单看轮式里程计就看不出问题有多严重。补偿后两条基线都还原出 Δω。
-    const double d = 0.01;   // rad ≈ 0.57°
-    const double v = 0.5;    // m/s
+    const double d = 0.01;  // rad ≈ 0.57°
+    const double v = 0.5;   // m/s
     const ChassisGeometry g{};
-    const double domega = 2.0 * d * v / g.omni_wheelbase;   // 物理上真实发生的角速度
+    const double domega = 2.0 * d * v / g.omni_wheelbase;  // 物理上真实发生的角速度
 
     // 轮 i 的接地点速度沿其实际朝向的分量（一阶）：s_i = v − Δω·y_i
     std::array<double, N> speed{};
-    std::array<double, N> enc_angle{};   // 编码器读数：直行指令下恒为 0
+    std::array<double, N> enc_angle{};  // 编码器读数：直行指令下恒为 0
     for (int i = 0; i < N; ++i) {
         const Vec2 r = ChassisKinematics{g}.OmniWheelPosition(i);
         speed[i] = v - domega * r.y;
@@ -379,7 +379,7 @@ TEST(ChassisCommand, SteerZeroShiftsTargetIntoEncoderFrame) {
     const std::array<double, N> fb_ang{0.0, 0.0, 0.0, 0.0};
     const std::array<double, N> fb_rpm{0.0, 0.0, 0.0, 0.0};
 
-    ChassisTarget t = MakeTarget(0.4, 0.0, 0.0);   // 纯直行 ⇒ 理想朝向全为 0
+    ChassisTarget t = MakeTarget(0.4, 0.0, 0.0);  // 纯直行 ⇒ 理想朝向全为 0
     t.config.calibration.omni_steer_zero_rad = zero;
 
     ChassisControl out{};
@@ -425,8 +425,7 @@ TEST(ChassisCommand, ChassisTypeEnumMatchesSharedMemoryWireValues) {
     EXPECT_STREQ(ChassisTypeName(ChassisType::DiffDrive), "diff_drive");
     EXPECT_STREQ(ChassisTypeName(ChassisType::Omni), "omni");
     // 全工程只有一个底盘形态枚举：配置层与命令层是同一个类型
-    static_assert(std::is_same<ChassisType, robot_server_lib::utils::ChassisType>::value,
-                  "命令层不应再造一个同义枚举");
+    static_assert(std::is_same<ChassisType, robot_server_lib::utils::ChassisType>::value, "命令层不应再造一个同义枚举");
     ChassisTarget t = MakeTarget(0.3, 0, 0);
     t.config.chassis_type = ChassisType::Omni;
     ChassisControl out{};
@@ -457,8 +456,13 @@ double Wrap(double a) {
 double Diff(double a, double b) { return Wrap(a - b); }
 
 /// 切分前 ChassisVelocityControlCallback 的 omni 分支，原样复刻
-void Compute(double vx, double vy, double wz, const std::array<double, N>& prev_angle,
-             const std::array<double, N>& prev_rpm, bool feedback_fresh, std::array<double, N>* out_angle,
+void Compute(double vx,
+             double vy,
+             double wz,
+             const std::array<double, N>& prev_angle,
+             const std::array<double, N>& prev_rpm,
+             bool feedback_fresh,
+             std::array<double, N>* out_angle,
              std::array<double, N>* out_rpm) {
     std::array<double, N> target_angle{};
     std::array<double, N> target_rpm{};
@@ -473,8 +477,10 @@ void Compute(double vx, double vy, double wz, const std::array<double, N>& prev_
         const double angle_b = Wrap(angle_a + M_PI);
         const bool valid_a = std::abs(angle_a) <= kSteerLimit;
         const bool valid_b = std::abs(angle_b) <= kSteerLimit;
-        const double cost_a = valid_a ? std::abs(Diff(angle_a, prev_angle[i])) : std::numeric_limits<double>::infinity();
-        const double cost_b = valid_b ? std::abs(Diff(angle_b, prev_angle[i])) : std::numeric_limits<double>::infinity();
+        const double cost_a =
+            valid_a ? std::abs(Diff(angle_a, prev_angle[i])) : std::numeric_limits<double>::infinity();
+        const double cost_b =
+            valid_b ? std::abs(Diff(angle_b, prev_angle[i])) : std::numeric_limits<double>::infinity();
         const bool choose_a = cost_a <= cost_b;
         target_angle[i] = choose_a ? angle_a : angle_b;
         target_rpm[i] = (choose_a ? speed : -speed) * 60.0 / (M_PI * kD);

@@ -60,7 +60,12 @@ public:
      * @param is_stopped    整车静止 → ZUPT：预测不积零偏残差，更新以 [0,0,0] 为强量测
      * @return true 若检测到悬空/打滑（静止期不做该判定）
      */
-    bool Step(double dt, double vx_enc, double vy_enc, double omega_enc, double omega_z_imu, bool imu_available,
+    bool Step(double dt,
+              double vx_enc,
+              double vy_enc,
+              double omega_enc,
+              double omega_z_imu,
+              bool imu_available,
               bool is_stopped = false);
 
     double GetX() const { return x_(0); }
@@ -80,7 +85,8 @@ private:
     Mat6 BuildQ(double dt, bool is_stopped, bool use_imu) const;
 
     template <int M>
-    void ApplyUpdate(const Eigen::Matrix<double, M, N>& H, const Eigen::Matrix<double, M, 1>& y,
+    void ApplyUpdate(const Eigen::Matrix<double, M, N>& H,
+                     const Eigen::Matrix<double, M, 1>& y,
                      const Eigen::Matrix<double, M, M>& R) {
         const Eigen::Matrix<double, M, M> S = H * P_ * H.transpose() + R;
         const Eigen::Matrix<double, N, M> K = P_ * H.transpose() * S.inverse();

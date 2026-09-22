@@ -1,9 +1,9 @@
 #pragma once
 
-#include <atomic>
 #include <array>
-#include <mutex>
+#include <atomic>
 #include <geometry_msgs/msg/twist.hpp>
+#include <mutex>
 #include <sensor_msgs/msg/imu.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 
@@ -88,7 +88,7 @@ private:
     VectorDof joint_position_after_filter_ = VectorDof::Zero();
 
     // 机器人模式支持
-    RobotMode robot_mode_ = RobotMode::W1;   // 当前机器人模式
+    RobotMode robot_mode_ = RobotMode::W1;  // 当前机器人模式
     utils::ChassisType chassis_type_ = utils::ChassisType::DiffDrive;
     int ndof_config_;                        // 从配置读取的实际关节数 (W1=20, A1=14, Arm=7)
     bool robot_mode_auto_detected_ = false;  // 模式是否已自动检测
@@ -130,7 +130,7 @@ private:
     // 输入整形器
     std::shared_ptr<EIInputShaper> chassis_shaper_;
     EIInputShaper::Type chassis_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
-    const double DiffChassisNatureFreq = 1.67;  // 底盘输入整形器自然频率，单位Hz
+    const double DiffChassisNatureFreq = 1.67;                     // 底盘输入整形器自然频率，单位Hz
     // 整形器的 ramp 上限：0.5 m/s 每周期。轮径是执行层整形自己的标定量，
     // 与 chassis_node 的 ChassisGeometry 无关（那边管运动学，这边管滤波器时间常数）。
     static constexpr double kShaperWheelDiameter = 0.1730;  // m

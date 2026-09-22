@@ -41,8 +41,7 @@ int main(int argc, char* argv[]) {
     const auto legacy_cfg_path = home_path / "dexe_robot_server_data" / cfg_file;
     if (!std::filesystem::exists(user_cfg_path) && std::filesystem::exists(legacy_cfg_path)) {
         std::filesystem::copy_file(legacy_cfg_path, user_cfg_path);
-        std::cout << "[INFO] Copied existing config from " << legacy_cfg_path
-                  << " to " << user_cfg_path << std::endl;
+        std::cout << "[INFO] Copied existing config from " << legacy_cfg_path << " to " << user_cfg_path << std::endl;
     }
     robot_server_lib::utils::CheckConfig(robot_cfg_path, user_cfg_path);
     std::cout << "[INFO] Using runtime config file: " << user_cfg_path << std::endl;

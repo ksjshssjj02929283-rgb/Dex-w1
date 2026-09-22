@@ -42,8 +42,7 @@ ChassisNode::ChassisNode(std::filesystem::path robot_cfg_path, std::shared_ptr<C
     }
 }
 
-ChassisNode::ChassisNode(const rclcpp::NodeOptions& options)
-    : ChassisNode(options, DefaultRobotConfigPath()) {}
+ChassisNode::ChassisNode(const rclcpp::NodeOptions& options) : ChassisNode(options, DefaultRobotConfigPath()) {}
 
 ChassisNode::ChassisNode(const rclcpp::NodeOptions& options, std::filesystem::path robot_cfg_path)
     : rclcpp::Node("chassis_node", options), robot_cfg_path_(std::move(robot_cfg_path)) {
@@ -106,11 +105,11 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options, std::filesystem::pa
 
     // IMU 健康判定（失效五类 + 恢复迟滞），阈值含义见 imu_health.h
     imu_invalid_frames_ = this->declare_parameter<int>("imu_invalid_frames", 3);
-    imu_frozen_frames_  = this->declare_parameter<int>("imu_frozen_frames", 20);
+    imu_frozen_frames_ = this->declare_parameter<int>("imu_frozen_frames", 20);
     imu_gyro_noise_max_ = this->declare_parameter<double>("imu_gyro_noise_max", 0.02);
     imu_recover_frames_ = this->declare_parameter<int>("imu_recover_frames", 20);
-    imu_init_timeout_   = this->declare_parameter<double>("imu_init_timeout", 30.0);
-    diag_period_        = this->declare_parameter<double>("diag_period", 0.5);
+    imu_init_timeout_ = this->declare_parameter<double>("imu_init_timeout", 30.0);
+    diag_period_ = this->declare_parameter<double>("diag_period", 0.5);
     ApplyImuHealthParams();
 
     // EKF 参数（Q 为「每秒」量纲，内部乘 dt；勿按每步理解）
@@ -150,8 +149,7 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options, std::filesystem::pa
     omni_cmd_params_.align_crawl_rad = this->declare_parameter<double>("omni_align_crawl", 0.90);
     omni_cmd_params_.align_min_scale = this->declare_parameter<double>("omni_align_min_scale", 0.08);
     omni_cmd_params_.max_wheel_speed_mps = this->declare_parameter<double>("omni_max_wheel_speed", 1.5);
-    omni_cmd_params_.wheel_vector_deadband_mps =
-        this->declare_parameter<double>("omni_wheel_vector_deadband", 0.03);
+    omni_cmd_params_.wheel_vector_deadband_mps = this->declare_parameter<double>("omni_wheel_vector_deadband", 0.03);
     arbiter_params_.velocity_timeout_sec = this->declare_parameter<double>("cmd_vel_timeout", 0.5);
     arbiter_params_.parking_timeout_sec = this->declare_parameter<double>("parking_cmd_timeout", 0.30);
     arbiter_.SetParams(arbiter_params_);
@@ -187,8 +185,8 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options, std::filesystem::pa
         std::bind(&ChassisNode::HandleSteeringGoal, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&ChassisNode::HandleSteeringCancel, this, std::placeholders::_1),
         std::bind(&ChassisNode::HandleSteeringAccepted, this, std::placeholders::_1));
-    steering_action_timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(10), std::bind(&ChassisNode::TickSteeringAction, this), command_cbg_);
+    steering_action_timer_ = this->create_wall_timer(std::chrono::milliseconds(10),
+                                                     std::bind(&ChassisNode::TickSteeringAction, this), command_cbg_);
 
     // 订阅 IMU
     imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
@@ -224,9 +222,8 @@ ChassisNode::ChassisNode(const rclcpp::NodeOptions& options, std::filesystem::pa
                 "ChassisNode started. config=%s, chassis_type=%s, diff_track=%.4f m, rate=%.1f Hz, frames: %s -> %s, "
                 "odom_mode=%s",
                 robot_cfg_path_.c_str(),
-                chassis_type_ == robot_server_lib::utils::ChassisType::Omni ? "omni" : "diff_drive",
-                diff_track_, odom_rate_hz_, odom_frame_.c_str(), base_frame_.c_str(),
-                OdomModeName(odom_mode_));
+                chassis_type_ == robot_server_lib::utils::ChassisType::Omni ? "omni" : "diff_drive", diff_track_,
+                odom_rate_hz_, odom_frame_.c_str(), base_frame_.c_str(), OdomModeName(odom_mode_));
 }
 
 void ChassisNode::ApplyOdomMode(OdomMode new_mode) {
@@ -267,7 +264,7 @@ void ChassisNode::ApplyOdomMode(OdomMode new_mode) {
     RCLCPP_INFO(this->get_logger(), "Updated odom_mode: %s -> %s (imu=%s, ekf=%s)%s", OdomModeName(old_mode),
                 OdomModeName(new_mode), new_imu ? "on" : "off", new_ekf ? "on" : "off",
                 (new_ekf != old_ekf) ? (new_ekf ? " | EKF state seeded from current pose"
-                                               : " | dead-reckoning covariance seeded from EKF")
+                                                : " | dead-reckoning covariance seeded from EKF")
                                      : "");
 }
 
@@ -317,13 +314,13 @@ void ChassisNode::ApplyKinematicsParams() {
 
     ChassisCalibration calib;
     calib.odom_factor = odom_factor_;
-    calib.omni_steer_zero_rad = {omni_steer_zero_fl_, omni_steer_zero_fr_, omni_steer_zero_rl_,
-                                 omni_steer_zero_rr_};
+    calib.omni_steer_zero_rad = {omni_steer_zero_fl_, omni_steer_zero_fr_, omni_steer_zero_rl_, omni_steer_zero_rr_};
     kinematics_.SetCalibration(calib);
 }
 
 // 新名优先；新名没给而旧名给了时用旧值并告警。这样改名不会让已部署的 yaml 静默回落默认值。
-double ChassisNode::DeclareGeometryParam(const std::string& name, double default_value,
+double ChassisNode::DeclareGeometryParam(const std::string& name,
+                                         double default_value,
                                          const std::vector<std::string>& legacy_names) {
     const double kUnset = std::numeric_limits<double>::quiet_NaN();
     const double primary = this->declare_parameter<double>(name, kUnset);
@@ -377,8 +374,7 @@ void ChassisNode::CmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
             .count();
     if (!arbiter_.OfferVelocity(now_ns)) {
         // 驻车 / 对轮持有控制权，丢弃本条速度指令
-        RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                              "cmd_vel ignored: chassis owned by %s",
+        RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "cmd_vel ignored: chassis owned by %s",
                               ChassisCommandSourceName(arbiter_.source()));
         return;
     }
@@ -391,11 +387,10 @@ void ChassisNode::CmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     chassis_target_buffer_->AppendNewElement(target);
 }
 
-rclcpp_action::GoalResponse ChassisNode::HandleSteeringGoal(
-    const rclcpp_action::GoalUUID&, std::shared_ptr<const SteeringAngleControl::Goal> goal) {
-    if (chassis_type_ != robot_server_lib::utils::ChassisType::Omni || !goal ||
-        !std::isfinite(goal->timeout_sec) || !std::isfinite(goal->settle_tolerance_rad) ||
-        goal->timeout_sec <= 0.0f || goal->settle_tolerance_rad <= 0.0f) {
+rclcpp_action::GoalResponse ChassisNode::HandleSteeringGoal(const rclcpp_action::GoalUUID&,
+                                                            std::shared_ptr<const SteeringAngleControl::Goal> goal) {
+    if (chassis_type_ != robot_server_lib::utils::ChassisType::Omni || !goal || !std::isfinite(goal->timeout_sec) ||
+        !std::isfinite(goal->settle_tolerance_rad) || goal->timeout_sec <= 0.0f || goal->settle_tolerance_rad <= 0.0f) {
         return rclcpp_action::GoalResponse::REJECT;
     }
     for (const float angle : goal->target_steer_angles_rad) {
@@ -411,8 +406,7 @@ rclcpp_action::GoalResponse ChassisNode::HandleSteeringGoal(
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
-rclcpp_action::CancelResponse ChassisNode::HandleSteeringCancel(
-    const std::shared_ptr<SteeringGoalHandle>) {
+rclcpp_action::CancelResponse ChassisNode::HandleSteeringCancel(const std::shared_ptr<SteeringGoalHandle>) {
     return rclcpp_action::CancelResponse::ACCEPT;
 }
 
@@ -463,8 +457,8 @@ void ChassisNode::TickSteeringAction() {
     const int64_t now_ns =
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
             .count();
-    const bool fresh_feedback = feedback_valid && feedback_timestamp > feedback_baseline &&
-                                (now_ros - feedback_time).seconds() <= 0.2;
+    const bool fresh_feedback =
+        feedback_valid && feedback_timestamp > feedback_baseline && (now_ros - feedback_time).seconds() <= 0.2;
     const bool canceled = goal_handle->is_canceling();
     const bool timed_out = (now_ros - start_time).seconds() >= timeout_s;
     double max_error = std::numeric_limits<double>::infinity();
@@ -494,8 +488,8 @@ void ChassisNode::TickSteeringAction() {
     if (!terminal) {
         auto feedback_msg = std::make_shared<SteeringAngleControl::Feedback>();
         feedback_msg->max_steer_error = static_cast<float>(max_error);
-        feedback_msg->time_left = rclcpp::Duration::from_seconds(
-            std::max(0.0, timeout_s - (now_ros - start_time).seconds()));
+        feedback_msg->time_left =
+            rclcpp::Duration::from_seconds(std::max(0.0, timeout_s - (now_ros - start_time).seconds()));
         goal_handle->publish_feedback(feedback_msg);
         return;
     }
@@ -522,11 +516,11 @@ void ChassisNode::TickSteeringAction() {
 
 void ChassisNode::ApplyImuHealthParams() {
     ImuHealthParams p;
-    p.timeout_sec      = imu_timeout_;
-    p.invalid_frames   = imu_invalid_frames_;
-    p.frozen_frames    = imu_frozen_frames_;
-    p.gyro_noise_max   = imu_gyro_noise_max_;
-    p.recover_frames   = imu_recover_frames_;
+    p.timeout_sec = imu_timeout_;
+    p.invalid_frames = imu_invalid_frames_;
+    p.frozen_frames = imu_frozen_frames_;
+    p.gyro_noise_max = imu_gyro_noise_max_;
+    p.recover_frames = imu_recover_frames_;
     p.init_timeout_sec = imu_init_timeout_;
     std::lock_guard<std::mutex> lk(imu_health_mutex_);
     imu_health_.SetParams(p);
@@ -544,9 +538,12 @@ void ChassisNode::DiagImu(diagnostic_updater::DiagnosticStatusWrapper& st) {
 
     // 汇总级别：Ok → OK；未初始化（未超时）/ 噪声 → WARN；其余 → ERROR
     unsigned char level = DS::ERROR;
-    if (imu_ok) level = DS::OK;
-    else if (rep.state == ImuHealth::Uninitialized) level = rep.init_overdue ? DS::ERROR : DS::WARN;
-    else if (rep.state == ImuHealth::Noisy) level = DS::WARN;
+    if (imu_ok)
+        level = DS::OK;
+    else if (rep.state == ImuHealth::Uninitialized)
+        level = rep.init_overdue ? DS::ERROR : DS::WARN;
+    else if (rep.state == ImuHealth::Noisy)
+        level = DS::WARN;
     if (!use_imu_yaw_ && level == DS::ERROR) {
         // 当前模式不用 IMU：硬件类故障（冻结 / 非有限值）仍提示 WARN，其余不算故障
         level = (rep.state == ImuHealth::Frozen || rep.state == ImuHealth::Invalid) ? DS::WARN : DS::OK;
@@ -554,14 +551,15 @@ void ChassisNode::DiagImu(diagnostic_updater::DiagnosticStatusWrapper& st) {
 
     // 当前实际生效的里程计形态：ekf 在 IMU 不可用时退化为 ekf_no_imu，非 EKF 模式退化为编码器 ω
     // 生效形态 = 按底盘解析后的模式，再叠加 IMU 是否可用的自动退化
-    const char* effective = use_ekf_fusion_ ? (imu_ok ? "ekf" : "ekf_no_imu")
-                                            : (use_imu_yaw_ && imu_ok ? "imu_yaw" : "encoder_only");
+    const char* effective =
+        use_ekf_fusion_ ? (imu_ok ? "ekf" : "ekf_no_imu") : (use_imu_yaw_ && imu_ok ? "imu_yaw" : "encoder_only");
     st.summary(level, std::string("odom ") + effective + " | imu " + ImuHealthName(rep.state) +
                           (rep.reason.empty() ? "" : " (" + rep.reason + ")"));
 
     st.add("odom_mode", OdomModeName(odom_mode_));
     st.add("effective_mode", effective);
-    st.add("imu_source", imu_source_ == ImuSource::Shm ? "shm" : (imu_source_ == ImuSource::Topic ? "topic" : "unknown"));
+    st.add("imu_source",
+           imu_source_ == ImuSource::Shm ? "shm" : (imu_source_ == ImuSource::Topic ? "topic" : "unknown"));
     st.add("imu_state", ImuHealthName(rep.state));
     st.add("reason", rep.reason);
     st.addf("imu_age_s", "%.3f", rep.age_sec);
@@ -695,10 +693,10 @@ void ChassisNode::ProcessImu(const sensor_msgs::msg::Imu& imu_in) {
     // 冻结 / 噪声的逐帧统计也在这里累积，判定在 IsImuAvailable() 的 Evaluate 中给出。
     {
         std::lock_guard<std::mutex> lk(imu_health_mutex_);
-        const bool finite_ok = imu_health_.OnSample(
-            rclcpp::Time(imu_in.header.stamp).seconds(), imu_in.linear_acceleration.x, imu_in.linear_acceleration.y,
-            imu_in.linear_acceleration.z, imu_in.angular_velocity.x, imu_in.angular_velocity.y,
-            imu_in.angular_velocity.z);
+        const bool finite_ok =
+            imu_health_.OnSample(rclcpp::Time(imu_in.header.stamp).seconds(), imu_in.linear_acceleration.x,
+                                 imu_in.linear_acceleration.y, imu_in.linear_acceleration.z, imu_in.angular_velocity.x,
+                                 imu_in.angular_velocity.y, imu_in.angular_velocity.z);
         if (!finite_ok) {
             RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
                                  "IMU sample contains non-finite values, dropped");
@@ -863,8 +861,8 @@ void ChassisNode::UpdateImuHealth() {
             RCLCPP_INFO(this->get_logger(), "IMU health: %s -> ok, %s", from,
                         prev == ImuHealth::Uninitialized ? "IMU initialized and now in use" : "IMU back in use");
         } else if (rep.state == ImuHealth::Uninitialized && !rep.init_overdue) {
-            RCLCPP_INFO(this->get_logger(), "IMU health: %s -> %s | %s | odometry runs encoder-only meanwhile",
-                        from, to, rep.reason.c_str());
+            RCLCPP_INFO(this->get_logger(), "IMU health: %s -> %s | %s | odometry runs encoder-only meanwhile", from,
+                        to, rep.reason.c_str());
         } else if (rep.state == ImuHealth::Noisy) {
             RCLCPP_WARN(this->get_logger(), "IMU health: %s -> %s | %s | falling back to encoder", from, to,
                         rep.reason.c_str());
@@ -882,7 +880,6 @@ void ChassisNode::UpdateImuHealth() {
                                  ImuHealthName(rep.state), rep.reason.c_str());
         }
     }
-
 }
 
 bool ChassisNode::IsImuAvailable() {
@@ -950,8 +947,7 @@ void ChassisNode::onTimer() {
         // 不再重复读取 FeedbackSharedMemory。
         std::lock_guard<std::mutex> lock(steering_action_mutex_);
         latest_steering_feedback_valid_ =
-            feedback_valid && chassis_type_ == robot_server_lib::utils::ChassisType::Omni &&
-            chassis_data.timestamp > 0;
+            feedback_valid && chassis_type_ == robot_server_lib::utils::ChassisType::Omni && chassis_data.timestamp > 0;
         if (latest_steering_feedback_valid_) {
             for (std::size_t i = 0; i < ChassisKinematics::kOmniWheels; ++i) {
                 latest_steering_feedback_[i] = chassis_data.chassis_motor_direction[i];
@@ -1518,23 +1514,23 @@ rcl_interfaces::msg::SetParametersResult ChassisNode::parametersCallback(
         } else if (changed_parameter.get_name() == "omni_steer_zero_fl") {
             omni_steer_zero_fl_ = changed_parameter.as_double();
             ApplyKinematicsParams();  // 标定量对正解与逆解同时生效
-            RCLCPP_INFO(this->get_logger(), "Updated omni_steer_zero_fl: %.5f rad (%.3f deg)",
-                        omni_steer_zero_fl_, omni_steer_zero_fl_ * 180.0 / M_PI);
+            RCLCPP_INFO(this->get_logger(), "Updated omni_steer_zero_fl: %.5f rad (%.3f deg)", omni_steer_zero_fl_,
+                        omni_steer_zero_fl_ * 180.0 / M_PI);
         } else if (changed_parameter.get_name() == "omni_steer_zero_fr") {
             omni_steer_zero_fr_ = changed_parameter.as_double();
             ApplyKinematicsParams();
-            RCLCPP_INFO(this->get_logger(), "Updated omni_steer_zero_fr: %.5f rad (%.3f deg)",
-                        omni_steer_zero_fr_, omni_steer_zero_fr_ * 180.0 / M_PI);
+            RCLCPP_INFO(this->get_logger(), "Updated omni_steer_zero_fr: %.5f rad (%.3f deg)", omni_steer_zero_fr_,
+                        omni_steer_zero_fr_ * 180.0 / M_PI);
         } else if (changed_parameter.get_name() == "omni_steer_zero_rl") {
             omni_steer_zero_rl_ = changed_parameter.as_double();
             ApplyKinematicsParams();
-            RCLCPP_INFO(this->get_logger(), "Updated omni_steer_zero_rl: %.5f rad (%.3f deg)",
-                        omni_steer_zero_rl_, omni_steer_zero_rl_ * 180.0 / M_PI);
+            RCLCPP_INFO(this->get_logger(), "Updated omni_steer_zero_rl: %.5f rad (%.3f deg)", omni_steer_zero_rl_,
+                        omni_steer_zero_rl_ * 180.0 / M_PI);
         } else if (changed_parameter.get_name() == "omni_steer_zero_rr") {
             omni_steer_zero_rr_ = changed_parameter.as_double();
             ApplyKinematicsParams();
-            RCLCPP_INFO(this->get_logger(), "Updated omni_steer_zero_rr: %.5f rad (%.3f deg)",
-                        omni_steer_zero_rr_, omni_steer_zero_rr_ * 180.0 / M_PI);
+            RCLCPP_INFO(this->get_logger(), "Updated omni_steer_zero_rr: %.5f rad (%.3f deg)", omni_steer_zero_rr_,
+                        omni_steer_zero_rr_ * 180.0 / M_PI);
         } else if (changed_parameter.get_name() == "imu_factor") {
             imu_factor_ = changed_parameter.as_double();
             RCLCPP_INFO(this->get_logger(), "Updated imu_factor: %.3f", imu_factor_);
@@ -1722,8 +1718,7 @@ rcl_interfaces::msg::SetParametersResult ChassisNode::parametersCallback(
         } else if (changed_parameter.get_name() == "parking_cmd_timeout") {
             arbiter_params_.parking_timeout_sec = changed_parameter.as_double();
             arbiter_.SetParams(arbiter_params_);
-            RCLCPP_INFO(this->get_logger(), "Updated parking_cmd_timeout: %.3f s",
-                        arbiter_params_.parking_timeout_sec);
+            RCLCPP_INFO(this->get_logger(), "Updated parking_cmd_timeout: %.3f s", arbiter_params_.parking_timeout_sec);
         } else if (changed_parameter.get_name() == "odom_stale_timeout") {
             odom_stale_timeout_ = changed_parameter.as_double();
             RCLCPP_INFO(this->get_logger(), "Updated odom_stale_timeout: %.3f s", odom_stale_timeout_);

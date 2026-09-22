@@ -19,9 +19,9 @@ struct Vec2 {
 
 /// 机体系 twist（x 前 / y 左 / z 上，ROS REP-103）
 struct Twist2D {
-    double vx = 0.0;   // m/s
-    double vy = 0.0;   // m/s，差速底盘恒为 0
-    double wz = 0.0;   // rad/s
+    double vx = 0.0;  // m/s
+    double vy = 0.0;  // m/s，差速底盘恒为 0
+    double wz = 0.0;  // rad/s
 };
 
 /// 底盘几何——**名义值**：图纸或卷尺量出来的物理尺寸，不参与标定。
@@ -39,7 +39,8 @@ struct ChassisGeometry {
 
 /// 底盘标定量——由标定程序写入的**修正项**，与上面的名义几何刻意分开放。
 ///
-/// ⚠️ `odom_factor` 是当前标定方法用的**集总系数**（一个数吃掉所有线尺度误差），比较粗暴，
+/// ⚠️ `odom_factor`
+/// 是当前标定方法用的**集总系数**（一个数吃掉所有线尺度误差），比较粗暴，
 ///    后续可能被更具体的参数取代，候选方向：
 ///      · 逐轮轮径修正（全向 4 个 / 差速 2 个）——能分离左右轮径不等造成的弧线漂移；
 ///      · 舵角零位偏置（全向 4 个）—— **已落地**，见 ChassisCalibration::omni_steer_zero_rad；
@@ -119,19 +120,21 @@ public:
             sy += vy[i];
         }
         // 左右基线（用 x 分量）与前后基线（用 y 分量）各给一个独立的 ω 估计
-        const double w_track = (vx[kFrontRight] + vx[kRearRight] - vx[kFrontLeft] - vx[kRearLeft]) /
-                               (2.0 * g_.omni_track);
-        const double w_base = (vy[kFrontLeft] + vy[kFrontRight] - vy[kRearLeft] - vy[kRearRight]) /
-                              (2.0 * g_.omni_wheelbase);
+        const double w_track =
+            (vx[kFrontRight] + vx[kRearRight] - vx[kFrontLeft] - vx[kRearLeft]) / (2.0 * g_.omni_track);
+        const double w_base =
+            (vy[kFrontLeft] + vy[kFrontRight] - vy[kRearLeft] - vy[kRearRight]) / (2.0 * g_.omni_wheelbase);
         return {0.25 * sx, 0.25 * sy, 0.5 * (w_track + w_base)};
     }
 
     /// 舵角零位换算——与下面的 rpm 换算同属"标定量出现的地方"，调用方不自己加减。
     ///
-    /// ⚠️ 两个方向**不能只实现一个**：正解补偿让里程计看到真实朝向，逆解补偿让轮子真正
+    /// ⚠️
+    /// 两个方向**不能只实现一个**：正解补偿让里程计看到真实朝向，逆解补偿让轮子真正
     ///    摆到理想朝向；只做一侧时两边各自自洽却互相矛盾，是最难查的一类问题。
     ///
-    /// ⚠️ 逆解侧要在 atan2 出理想朝向后**立即**换到编码器坐标系，此后机械限位、择近解、
+    /// ⚠️ 逆解侧要在 atan2
+    /// 出理想朝向后**立即**换到编码器坐标系，此后机械限位、择近解、
     ///    对齐限速全部沿用原逻辑即可——因为目标角与反馈角此时同在编码器坐标系。
     ///    反过来把反馈换到真实朝向再比较，机械限位会用错坐标系（限位约束的是舵机行程）。
 

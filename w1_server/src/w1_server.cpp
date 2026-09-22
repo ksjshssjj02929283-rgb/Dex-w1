@@ -12,8 +12,7 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
     : RobotServerBase(robot_cfg_path, is_sim), line_interpolator_(manager_dt_micro / torque_ctrl_dt_micro) {
     chassis_type_ = utils::GetChassisTypeFromConfig(robot_cfg_path);
     // 在创建订阅器和启动控制线程前设置有效的底层输出模式。
-    RCLCPP_INFO(this->get_logger(), "Chassis type loaded from %s: %s",
-                robot_cfg_path.c_str(),
+    RCLCPP_INFO(this->get_logger(), "Chassis type loaded from %s: %s", robot_cfg_path.c_str(),
                 chassis_type_ == utils::ChassisType::Omni ? "omni" : "diff_drive");
     LOG_INFO << "w1_server version: " << W1_SERVER_VERSION;
 
@@ -140,8 +139,7 @@ void RobotServer::TorqueControlThreadFunc() {
         RobotFeedback feedback_temp{};
         // 🔧 FEEDBACK_SPLIT: 共享内存帧有效、上半身关节反馈有效、底盘反馈有效是三件事。
         // 关节名排序失败不能阻断底盘轮速反馈，否则全向解算会只转舵、不输出驱动轮速。
-        const bool feedback_available =
-            feedback_shm_instance.PeekLatest(&feedback_temp) && feedback_temp.cnt > 0;
+        const bool feedback_available = feedback_shm_instance.PeekLatest(&feedback_temp) && feedback_temp.cnt > 0;
 
         int feedback_joint_count = 0;
         if (feedback_available) {
@@ -156,8 +154,7 @@ void RobotServer::TorqueControlThreadFunc() {
         // 避免 ndof_config_=0 永久锁死并持续产生 “Expected 0, got 20”。
         const bool should_reprobe_mode =
             feedback_available &&
-            (!robot_mode_auto_detected_ ||
-             (robot_mode_ == RobotMode::Chassis && feedback_joint_count > 0));
+            (!robot_mode_auto_detected_ || (robot_mode_ == RobotMode::Chassis && feedback_joint_count > 0));
         if (should_reprobe_mode) {
             if (RobotMode::Unknown != DetectRobotModeFromFeedback(feedback_temp)) {
                 robot_mode_auto_detected_ = true;
@@ -181,8 +178,7 @@ void RobotServer::TorqueControlThreadFunc() {
         }
         // 🔧 FEEDBACK_SPLIT: 底盘反馈独立于上半身关节数据，且要求底盘反馈时间戳有效。
         robot_feedback_.chassis_feedback = feedback_temp.chassis_feedback;
-        const bool chassis_feedback_valid =
-            feedback_available && feedback_temp.chassis_feedback.timestamp > 0;
+        const bool chassis_feedback_valid = feedback_available && feedback_temp.chassis_feedback.timestamp > 0;
 
         // 根据状态写入机器人控制字
         this->is_robot_ready_ = false;
@@ -267,8 +263,8 @@ void RobotServer::TorqueControlThreadFunc() {
             // 🔧 FEEDBACK_SPLIT: 纯底盘模式没有上身关节就绪状态，不再输出误导性的 NOT_READY 告警。
             if (robot_mode_ != RobotMode::Chassis) {
                 RCLCPP_WARN_THROTTLE(
-                    this->get_logger(), *this->get_clock(), 5000,
-                    "Robot is not ready, shm status: %d, statusword: %s", joint_feedback_valid,
+                    this->get_logger(), *this->get_clock(), 5000, "Robot is not ready, shm status: %d, statusword: %s",
+                    joint_feedback_valid,
                     utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str().c_str());
                 LOG_CRIT_THROTTLE(5000) << "Robot is not ready, shm status: " << joint_feedback_valid
                                         << ", statusword: " << robot_feedback_.robot_status_word;
@@ -454,8 +450,7 @@ void RobotServer::TorqueControlThreadFunc() {
         chassis_node::WheelFeedback wheel_fb{};
         // 纯底盘只要求底盘反馈；整机模式要求底盘和关节反馈同时有效。
         const bool control_feedback_valid =
-            chassis_feedback_valid &&
-            (robot_mode_ == RobotMode::Chassis || joint_feedback_valid);
+            chassis_feedback_valid && (robot_mode_ == RobotMode::Chassis || joint_feedback_valid);
         wheel_fb.valid = control_feedback_valid;
         const bool chassis_idle =
             !has_target || !control_feedback_valid || chassis_node::IsTargetExpired(chassis_target, now_ns);

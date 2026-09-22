@@ -63,8 +63,8 @@ public:
         bool done = false;               // 首次初始化已完成
         bool blocked_by_motion = false;  // 编码器判轮子在动，静止段无法积累
         bool settling = false;           // 静止段起始 5 s 余振过滤中
-        int  collected = 0;              // 已积累帧数
-        int  required = 500;             // 需要帧数
+        int collected = 0;               // 已积累帧数
+        int required = 500;              // 需要帧数
         std::string last_reject;         // 上次拒绝原因（空 = 无）
         bool on_slope = false;
         double tilt_deg = 0.0;
@@ -93,8 +93,8 @@ private:
 
     bool is_first_initialized_ = false;
     bool is_need_initialize_ = false;
-    bool blocked_by_motion_ = false;   // AddImuData 因轮子在动而未积累（buf_mutex_ 保护）
-    std::string last_reject_;          // ComputeImuBias 上次拒绝原因（buf_mutex_ 保护）
+    bool blocked_by_motion_ = false;  // AddImuData 因轮子在动而未积累（buf_mutex_ 保护）
+    std::string last_reject_;         // ComputeImuBias 上次拒绝原因（buf_mutex_ 保护）
     bool is_last_init_on_slope_ = false;
     double last_init_tilt_deg_ = 0.0;
 

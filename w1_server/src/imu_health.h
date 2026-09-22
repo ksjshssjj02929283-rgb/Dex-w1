@@ -30,40 +30,46 @@ enum class ImuHealth { Ok, Uninitialized, Noisy, Timeout, Frozen, Invalid };
 
 inline const char* ImuHealthName(ImuHealth h) {
     switch (h) {
-        case ImuHealth::Ok:            return "ok";
-        case ImuHealth::Uninitialized: return "uninitialized";
-        case ImuHealth::Noisy:         return "noisy";
-        case ImuHealth::Timeout:       return "timeout";
-        case ImuHealth::Frozen:        return "frozen";
-        case ImuHealth::Invalid:       return "invalid";
+        case ImuHealth::Ok:
+            return "ok";
+        case ImuHealth::Uninitialized:
+            return "uninitialized";
+        case ImuHealth::Noisy:
+            return "noisy";
+        case ImuHealth::Timeout:
+            return "timeout";
+        case ImuHealth::Frozen:
+            return "frozen";
+        case ImuHealth::Invalid:
+            return "invalid";
     }
     return "unknown";
 }
 
 struct ImuHealthParams {
-    double timeout_sec        = 0.1;     // 超时（与 chassis_node 的 imu_timeout 同源）
-    int    invalid_frames     = 3;       // 连续非有限值帧数 → Invalid
-    int    frozen_frames      = 20;      // 连续完全相同帧数 → Frozen（0.2 s @100 Hz）
-    double gyro_noise_max     = 0.02;    // 陀螺 z 帧间差分标准差上限 (rad/s)
-    double noise_window_sec   = 1.0;     // 差分标准差滑窗长度
-    int    noise_min_samples  = 20;      // 滑窗内至少这么多差分才判噪声
-    int    recover_frames     = 20;      // 失效解除后需连续正常帧数才回 Ok
-    double init_timeout_sec   = 30.0;    // 未初始化超过此时长视为异常（init_overdue）
-    double cross_clock_sec    = 1.0e6;   // age 超过此值判跨时钟源（跨源偏差是 10^9 s 量级）
-    double long_outage_sec    = 60.0;    // 超过此时长的超时在 reason 里提示查驱动
+    double timeout_sec = 0.1;        // 超时（与 chassis_node 的 imu_timeout 同源）
+    int invalid_frames = 3;          // 连续非有限值帧数 → Invalid
+    int frozen_frames = 20;          // 连续完全相同帧数 → Frozen（0.2 s @100 Hz）
+    double gyro_noise_max = 0.02;    // 陀螺 z 帧间差分标准差上限 (rad/s)
+    double noise_window_sec = 1.0;   // 差分标准差滑窗长度
+    int noise_min_samples = 20;      // 滑窗内至少这么多差分才判噪声
+    int recover_frames = 20;         // 失效解除后需连续正常帧数才回 Ok
+    double init_timeout_sec = 30.0;  // 未初始化超过此时长视为异常（init_overdue）
+    double cross_clock_sec = 1.0e6;  // age 超过此值判跨时钟源（跨源偏差是 10^9 s 量级）
+    double long_outage_sec = 60.0;   // 超过此时长的超时在 reason 里提示查驱动
 };
 
 struct ImuHealthReport {
-    ImuHealth   state = ImuHealth::Uninitialized;
-    std::string reason;                    // 英文，直接进日志 / diagnostics
-    double      age_sec = NAN;             // now − 最近一帧 stamp
-    double      gyro_diff_std = NAN;       // 当前滑窗差分标准差
-    bool        init_overdue = false;      // 未初始化已超 init_timeout_sec
-    bool        changed = false;           // 本次 Evaluate 状态是否变化
-    double      degraded_since_sec = NAN;  // 进入非 Ok 的时刻（节点时钟秒）
-    uint32_t    degraded_count = 0;        // Ok → 非 Ok 的次数
-    double      degraded_total_sec = 0.0;  // 累计非 Ok 时长（含 Uninitialized）
-    int         recover_progress = 0;      // 恢复迟滞已累计的正常帧数
+    ImuHealth state = ImuHealth::Uninitialized;
+    std::string reason;               // 英文，直接进日志 / diagnostics
+    double age_sec = NAN;             // now − 最近一帧 stamp
+    double gyro_diff_std = NAN;       // 当前滑窗差分标准差
+    bool init_overdue = false;        // 未初始化已超 init_timeout_sec
+    bool changed = false;             // 本次 Evaluate 状态是否变化
+    double degraded_since_sec = NAN;  // 进入非 Ok 的时刻（节点时钟秒）
+    uint32_t degraded_count = 0;      // Ok → 非 Ok 的次数
+    double degraded_total_sec = 0.0;  // 累计非 Ok 时长（含 Uninitialized）
+    int recover_progress = 0;         // 恢复迟滞已累计的正常帧数
 };
 
 class ImuHealthMonitor {
@@ -75,8 +81,8 @@ public:
 
     /// 每帧原始数据到达时调用（去零偏前的原始值）。返回 false 表示该帧含非有限值，调用方应丢弃。
     bool OnSample(double stamp_sec, double ax, double ay, double az, double gx, double gy, double gz) {
-        const bool finite = std::isfinite(ax) && std::isfinite(ay) && std::isfinite(az) &&
-                            std::isfinite(gx) && std::isfinite(gy) && std::isfinite(gz) && std::isfinite(stamp_sec);
+        const bool finite = std::isfinite(ax) && std::isfinite(ay) && std::isfinite(az) && std::isfinite(gx) &&
+                            std::isfinite(gy) && std::isfinite(gz) && std::isfinite(stamp_sec);
         if (!finite) {
             ++invalid_streak_;
             healthy_streak_ = 0;
@@ -86,8 +92,8 @@ public:
 
         // 冻结：六轴与上一帧完全相同（浮点精确相等——真实传感器连续两帧六轴全同的概率为零）。
         // frozen_streak_ 计的是「当前这串相同帧的帧数」（含首帧），与参数 frozen_frames 同口径。
-        if (has_sample_ && ax == last_[0] && ay == last_[1] && az == last_[2] &&
-            gx == last_[3] && gy == last_[4] && gz == last_[5]) {
+        if (has_sample_ && ax == last_[0] && ay == last_[1] && az == last_[2] && gx == last_[3] && gy == last_[4] &&
+            gz == last_[5]) {
             ++frozen_streak_;
         } else {
             frozen_streak_ = 1;
@@ -98,7 +104,12 @@ public:
             const double d = gz - last_[5];
             PushDiff(stamp_sec, d);
         }
-        last_[0] = ax; last_[1] = ay; last_[2] = az; last_[3] = gx; last_[4] = gy; last_[5] = gz;
+        last_[0] = ax;
+        last_[1] = ay;
+        last_[2] = az;
+        last_[3] = gx;
+        last_[4] = gy;
+        last_[5] = gz;
         last_stamp_ = stamp_sec;
         if (!has_sample_) first_stamp_ = stamp_sec;
         has_sample_ = true;
@@ -145,27 +156,29 @@ public:
                             " consecutive samples (sensor stuck or driver repeating)";
             } else if (r_.age_sec > p_.timeout_sec) {
                 s = ImuHealth::Timeout;
-                r_.reason = (r_.age_sec > p_.long_outage_sec)
-                                ? "no IMU data for " + Fmt(r_.age_sec, 0) + " s, check whether the driver is disconnected"
-                                : "IMU timeout (" + Fmt(r_.age_sec, 3) + " s > " + Fmt(p_.timeout_sec, 3) + " s)";
+                r_.reason =
+                    (r_.age_sec > p_.long_outage_sec)
+                        ? "no IMU data for " + Fmt(r_.age_sec, 0) + " s, check whether the driver is disconnected"
+                        : "IMU timeout (" + Fmt(r_.age_sec, 3) + " s > " + Fmt(p_.timeout_sec, 3) + " s)";
             } else if (NoisyNow()) {
                 s = ImuHealth::Noisy;
-                r_.reason = "gyro z frame-to-frame std " + Fmt(r_.gyro_diff_std, 4) + " rad/s > " +
-                            Fmt(p_.gyro_noise_max, 4);
+                r_.reason =
+                    "gyro z frame-to-frame std " + Fmt(r_.gyro_diff_std, 4) + " rad/s > " + Fmt(p_.gyro_noise_max, 4);
             } else if (!inited) {
                 s = ImuHealth::Uninitialized;
                 const double waited = now_sec - first_stamp_;
                 r_.init_overdue = waited > p_.init_timeout_sec;
-                r_.reason = "static initialization pending for " + Fmt(waited, 1) + " s" +
-                            (r_.init_overdue ? " (overdue, check that the robot is still and thresholds fit the device)" : "");
+                r_.reason =
+                    "static initialization pending for " + Fmt(waited, 1) + " s" +
+                    (r_.init_overdue ? " (overdue, check that the robot is still and thresholds fit the device)" : "");
             }
         }
 
         // 恢复迟滞：从数据类失效（非 Uninitialized）解除后，连续正常帧数不够时维持原失效态
         if (s == ImuHealth::Ok && IsDataFault(prev) && healthy_streak_ < p_.recover_frames) {
             s = prev;
-            r_.reason = std::string("recovering from ") + ImuHealthName(prev) + " (" +
-                        std::to_string(healthy_streak_) + "/" + std::to_string(p_.recover_frames) + " good samples)";
+            r_.reason = std::string("recovering from ") + ImuHealthName(prev) + " (" + std::to_string(healthy_streak_) +
+                        "/" + std::to_string(p_.recover_frames) + " good samples)";
         }
 
         // 统计与迁移
@@ -188,16 +201,17 @@ public:
 
     const ImuHealthReport& report() const { return r_; }
 
-    void Reset() {
-        *this = ImuHealthMonitor(p_);
-    }
+    void Reset() { *this = ImuHealthMonitor(p_); }
 
     static bool IsDataFault(ImuHealth h) {
         return h == ImuHealth::Timeout || h == ImuHealth::Frozen || h == ImuHealth::Noisy || h == ImuHealth::Invalid;
     }
 
 private:
-    struct Diff { double t; double d; };
+    struct Diff {
+        double t;
+        double d;
+    };
 
     void PushDiff(double t, double d) {
         diffs_.push_back({t, d});
@@ -229,15 +243,15 @@ private:
 
     ImuHealthParams p_;
     ImuHealthReport r_;
-    bool   has_sample_ = false;
-    bool   seen_first_eval_ = false;
+    bool has_sample_ = false;
+    bool seen_first_eval_ = false;
     double last_[6] = {0, 0, 0, 0, 0, 0};
     double last_stamp_ = NAN;
     double first_stamp_ = NAN;
     double eval_start_ = NAN;
-    int    invalid_streak_ = 0;
-    int    frozen_streak_ = 0;
-    int    healthy_streak_ = 0;
+    int invalid_streak_ = 0;
+    int frozen_streak_ = 0;
+    int healthy_streak_ = 0;
     std::deque<Diff> diffs_;
     double sum_ = 0.0;
     double sumsq_ = 0.0;

@@ -27,8 +27,7 @@ void RunStatic(OmniChassisEkf& ekf, double seconds, double dt = kDt) {
 }
 
 /// 匀速运动：编码器与 IMU 一致（ω_enc = ω_imu = w）
-void RunMove(OmniChassisEkf& ekf, double seconds, double vx, double vy, double w, double dt = kDt,
-             bool imu = true) {
+void RunMove(OmniChassisEkf& ekf, double seconds, double vx, double vy, double w, double dt = kDt, bool imu = true) {
     const int n = static_cast<int>(seconds / dt);
     for (int i = 0; i < n; ++i) ekf.Step(dt, vx, vy, w, w, imu, false);
 }

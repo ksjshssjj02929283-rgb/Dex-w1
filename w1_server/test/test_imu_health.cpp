@@ -2,11 +2,11 @@
 //
 // 不依赖 ROS，直接喂 100 Hz 合成样本。
 
-#include "imu_health.h"
-
 #include <gtest/gtest.h>
 
 #include <cmath>
+
+#include "imu_health.h"
 
 namespace chassis_node {
 namespace {
@@ -21,7 +21,7 @@ double FeedStatic(ImuHealthMonitor& m, double t0, int n, double gz_noise = 0.001
     double t = t0;
     for (int i = 0; i < n; ++i) {
         t = t0 + i * kDt;
-        const double n1 = ((i * 7919) % 13 - 6) * 1e-4;           // 确定性伪随机 ±6e-4
+        const double n1 = ((i * 7919) % 13 - 6) * 1e-4;            // 确定性伪随机 ±6e-4
         const double n2 = ((i * 104729) % 11 - 5) * gz_noise / 5;  // gz 噪声幅度可控
         m.OnSample(t, 0.01 + n1, -0.02 - n1, kG + n1, 0.001 + n2, -0.0005, 0.0002 + n2);
     }
@@ -112,8 +112,8 @@ TEST(ImuHealth, TimeoutAndLongOutageReason) {
 TEST(ImuHealth, CrossClockSourceIsInvalid) {
     ImuHealthMonitor m(P());
     const double t = FeedStatic(m, 0.0, 50);
-    EXPECT_EQ(m.Evaluate(t - 5.0, true).state, ImuHealth::Invalid);     // 未来时间戳
-    EXPECT_EQ(m.Evaluate(t + 1.8e9, true).state, ImuHealth::Invalid);   // 1.8e9 s：MONOTONIC vs REALTIME
+    EXPECT_EQ(m.Evaluate(t - 5.0, true).state, ImuHealth::Invalid);    // 未来时间戳
+    EXPECT_EQ(m.Evaluate(t + 1.8e9, true).state, ImuHealth::Invalid);  // 1.8e9 s：MONOTONIC vs REALTIME
 }
 
 TEST(ImuHealth, NoisyGyroDetectedButSmoothRotationIsNot) {
@@ -150,7 +150,7 @@ TEST(ImuHealth, NoSampleEverBecomesTimeoutOnlyAfterInitTimeout) {
     ImuHealthMonitor m(P());
     EXPECT_EQ(m.Evaluate(100.0, false).state, ImuHealth::Uninitialized);  // 刚启动，等首帧
     EXPECT_EQ(m.Evaluate(110.0, false).state, ImuHealth::Uninitialized);  // 驱动晚起 10 s 仍属正常
-    const auto& r = m.Evaluate(131.0, false);                              // 超过 init_timeout 30 s
+    const auto& r = m.Evaluate(131.0, false);                             // 超过 init_timeout 30 s
     EXPECT_EQ(r.state, ImuHealth::Timeout);
     EXPECT_NE(r.reason.find("since start"), std::string::npos);
 }
@@ -165,7 +165,7 @@ TEST(ImuHealth, DegradedCountOnlyCountsOkToFaultTransitions) {
     m.Evaluate(t + 1.0, true);  // Timeout 持续，不重复计数
     EXPECT_EQ(m.report().degraded_count, 1u);
     t = FeedStatic(m, t + 1.0, 30);
-    m.Evaluate(t, true);        // 恢复
+    m.Evaluate(t, true);  // 恢复
     EXPECT_EQ(m.report().state, ImuHealth::Ok);
     m.Evaluate(t + 0.5, true);  // 再次超时
     EXPECT_EQ(m.report().degraded_count, 2u);

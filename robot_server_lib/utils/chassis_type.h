@@ -21,8 +21,10 @@ enum class ChassisType : int { DiffDrive = 1, Omni = 2 };
 
 inline const char* ChassisTypeName(ChassisType t) {
     switch (t) {
-        case ChassisType::DiffDrive: return "diff_drive";
-        case ChassisType::Omni:      return "omni";
+        case ChassisType::DiffDrive:
+            return "diff_drive";
+        case ChassisType::Omni:
+            return "omni";
     }
     return "unknown";
 }

@@ -69,11 +69,11 @@ public:
         double p0_omega = 1.0;
 
         // —— 全向（舵轮）底盘专用：OmniChassisEkf 多出的 vy 一维；差速 EKF 忽略 ——
-        double q_vy = 1.0;                         // 侧向速度扩散 ((m/s)²/s)
-        double r_vy = 0.05;                        // 侧向速度量测噪声 ((m/s)²)；舵轮侧移时轮胎侧向拖拽更常见，可比 r_v 大
-        double r_vy_aerial = 100.0;                // 悬空/打滑时侧向速度量测噪声
-        double p0_vy = 1.0;                        // 侧向速度初始方差 ((m/s)²)
-        double aerial_chi2_threshold_3d = 11.34;   // 3 维新息 [Δvx, Δvy, Δω] 阈值 χ²(3, 99%)
+        double q_vy = 1.0;  // 侧向速度扩散 ((m/s)²/s)
+        double r_vy = 0.05;  // 侧向速度量测噪声 ((m/s)²)；舵轮侧移时轮胎侧向拖拽更常见，可比 r_v 大
+        double r_vy_aerial = 100.0;               // 悬空/打滑时侧向速度量测噪声
+        double p0_vy = 1.0;                       // 侧向速度初始方差 ((m/s)²)
+        double aerial_chi2_threshold_3d = 11.34;  // 3 维新息 [Δvx, Δvy, Δω] 阈值 χ²(3, 99%)
     };
 
     explicit ChassisEkf(const Params& p);

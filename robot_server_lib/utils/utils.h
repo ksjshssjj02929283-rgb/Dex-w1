@@ -25,8 +25,8 @@
 #include <vector>
 
 #include "NanoLog.hpp"
-#include "chassis_type.h"
 #include "ament_index_cpp/get_package_share_directory.hpp"
+#include "chassis_type.h"
 #include "data_structure.h"
 
 namespace robot_server_lib {

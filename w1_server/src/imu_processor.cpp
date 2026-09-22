@@ -1,10 +1,9 @@
 #include "imu_processor.h"
 
-#include <cstdio>
-
 #include <Eigen/Dense>
 #include <builtin_interfaces/msg/time.hpp>
 #include <cmath>
+#include <cstdio>
 #include <rclcpp/rclcpp.hpp>
 
 namespace chassis_node {
@@ -205,7 +204,8 @@ bool ImuProcessor::ComputeImuBias() {
         is_need_initialize_ = true;
         {
             char why[256];
-            std::snprintf(why, sizeof(why), "acc_std %.4f (max %.3f) | gyr_std %.4f (max %.4f) | |acc|-g %.3f (max %.2f)",
+            std::snprintf(why, sizeof(why),
+                          "acc_std %.4f (max %.3f) | gyr_std %.4f (max %.4f) | |acc|-g %.3f (max %.2f)",
                           acc_std.maxCoeff(), acc_excite_threshold_, gyr_std.maxCoeff(), gyro_excite_threshold_,
                           acc_mag_bias, acc_magnitude_tolerance_);
             std::lock_guard<std::mutex> lk(buf_mutex_);

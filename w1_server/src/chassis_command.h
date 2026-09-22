@@ -32,9 +32,12 @@ enum class ChassisCommandSource : uint8_t { None = 0, VelocityCommand = 1, Parki
 
 inline const char* ChassisCommandSourceName(ChassisCommandSource s) {
     switch (s) {
-        case ChassisCommandSource::None:            return "none";
-        case ChassisCommandSource::VelocityCommand: return "velocity";
-        case ChassisCommandSource::ParkingAction:   return "parking";
+        case ChassisCommandSource::None:
+            return "none";
+        case ChassisCommandSource::VelocityCommand:
+            return "velocity";
+        case ChassisCommandSource::ParkingAction:
+            return "parking";
     }
     return "unknown";
 }
@@ -181,7 +184,7 @@ inline bool IsTargetExpired(const ChassisTarget& t, int64_t now_ns) {
     if (t.source == ChassisCommandSource::None) return true;
     const double age = static_cast<double>(now_ns - t.stamp_ns) * 1e-9;
     const double limit = (t.source == ChassisCommandSource::ParkingAction) ? t.config.arbiter.parking_timeout_sec
-                                                                          : t.config.arbiter.velocity_timeout_sec;
+                                                                           : t.config.arbiter.velocity_timeout_sec;
     return age >= limit;
 }
 
@@ -190,8 +193,7 @@ inline bool IsTargetExpired(const ChassisTarget& t, int64_t now_ns) {
 /// 双解择近的代价用的是**环绕角差**——舵角可行域被限位切成单区间时这个度量会低估行程
 /// （+140°→−140° 环绕给 80°、真实 280°）。这是已知缺陷，与对齐门限 1.0 rad 过松一起
 /// 列在优化清单里；本次只搬位置不改行为，改动请单独提交并配实机验证。
-inline void GenerateOmniCommand(const ChassisTarget& t, const WheelFeedback& fb, bool expired,
-                                ChassisControl* out) {
+inline void GenerateOmniCommand(const ChassisTarget& t, const WheelFeedback& fb, bool expired, ChassisControl* out) {
     const ChassisKinematics kin(t.config.geometry, t.config.calibration);
     const OmniCommandParams& p = t.config.omni;
     constexpr int N = ChassisKinematics::kOmniWheels;
@@ -219,8 +221,8 @@ inline void GenerateOmniCommand(const ChassisTarget& t, const WheelFeedback& fb,
     kin.OmniInverse(t.twist, wheel_vec);
 
     std::array<double, N> target_angle{};
-    std::array<double, N> wheel_speed{};   // 带符号，m/s
-    std::array<double, N> align_scale{};   // 对齐限速系数
+    std::array<double, N> wheel_speed{};  // 带符号，m/s
+    std::array<double, N> align_scale{};  // 对齐限速系数
     for (int i = 0; i < N; ++i) {
         const double speed = std::hypot(wheel_vec[i].x, wheel_vec[i].y);
 
@@ -239,7 +241,8 @@ inline void GenerateOmniCommand(const ChassisTarget& t, const WheelFeedback& fb,
         const double b = WrapPi(a + M_PI);
         // 两个等价表示：(s, a) 与 (−s, a±π)。先排除超出机械限位的候选，再取行程更短的。
         //
-        // ⚠️ 行程必须用**不环绕**的角差：限位把可行域切成单区间 [−lim, +lim]，其中两点间
+        // ⚠️ 行程必须用**不环绕**的角差：限位把可行域切成单区间 [−lim,
+        // +lim]，其中两点间
         //    只能直着转，不能绕过 ±180°。用环绕角差会把 +140°→−140° 的 280° 行程算成 80°，
         //    既可能选错解，也会让"到位"判据提前成立而放行速度（摩地的来源之一）。
         const bool valid_a = std::abs(a) <= p.steer_limit_rad;
@@ -262,8 +265,8 @@ inline void GenerateOmniCommand(const ChassisTarget& t, const WheelFeedback& fb,
         }
     }
 
-    const bool zero_cmd = std::hypot(t.twist.vx, t.twist.vy) <= p.zero_linear_mps &&
-                          std::abs(t.twist.wz) <= p.zero_angular_rps;
+    const bool zero_cmd =
+        std::hypot(t.twist.vx, t.twist.vy) <= p.zero_linear_mps && std::abs(t.twist.wz) <= p.zero_angular_rps;
     for (int i = 0; i < N; ++i) {
         if (expired || zero_cmd) {
             // idle / 零命令：保持当前舵角，驱动轮清零
@@ -285,8 +288,7 @@ inline void GenerateOmniCommand(const ChassisTarget& t, const WheelFeedback& fb,
 }
 
 /// 差速逆解。idle 时左右轮清零。
-inline void GenerateDiffCommand(const ChassisTarget& t, const WheelFeedback& fb, bool expired,
-                                ChassisControl* out) {
+inline void GenerateDiffCommand(const ChassisTarget& t, const WheelFeedback& fb, bool expired, ChassisControl* out) {
     if (expired || !fb.valid) {
         out->chassis_left_velocity = 0.0;
         out->chassis_right_velocity = 0.0;
@@ -297,8 +299,7 @@ inline void GenerateDiffCommand(const ChassisTarget& t, const WheelFeedback& fb,
 }
 
 /// 实时侧入口：根据底盘类型分发。**不分配、不加锁、不打日志**（D5）。
-inline void GenerateChassisCommand(const ChassisTarget& t, const WheelFeedback& fb, bool expired,
-                                   ChassisControl* out) {
+inline void GenerateChassisCommand(const ChassisTarget& t, const WheelFeedback& fb, bool expired, ChassisControl* out) {
     // 枚举值即线上取值，故直接转换；共享内存侧的 int 是与 EtherCAT 共享的 ABI
     out->chassis_mode = static_cast<int>(t.config.chassis_type);
     if (t.config.chassis_type == ChassisType::DiffDrive) {

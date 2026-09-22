@@ -4,32 +4,31 @@
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <array>
+#include <diagnostic_updater/diagnostic_updater.hpp>
 #include <filesystem>
 #include <fstream>
-#include <mutex>
-#include <vector>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <mutex>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nlohmann/json.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <vector>
 
+#include "chassis_command.h"
 #include "chassis_ekf.h"
 #include "chassis_interfaces/msg/chassis_motor_feedback.hpp"
-#include "nav_interfaces/action/steering_angle_control.hpp"
-#include "rclcpp_action/rclcpp_action.hpp"
-#include "chassis_command.h"
-#include "robot_server_lib/single_rw_latest_queue.h"
 #include "chassis_kinematics.h"
 #include "imu_health.h"
 #include "imu_processor.h"
+#include "nav_interfaces/action/steering_angle_control.hpp"
 #include "odom_mode.h"
 #include "omni_chassis_ekf.h"
-
-#include <diagnostic_updater/diagnostic_updater.hpp>
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
-#include "shared_memory_def.h"
+#include "rclcpp_action/rclcpp_action.hpp"
+#include "robot_server_lib/single_rw_latest_queue.h"
 #include "robot_server_lib/utils.h"
+#include "shared_memory_def.h"
 
 namespace chassis_node {
 
@@ -69,10 +68,9 @@ private:
 
     ChassisNode(const rclcpp::NodeOptions& options, std::filesystem::path robot_cfg_path);
 
-    rclcpp_action::GoalResponse HandleSteeringGoal(
-        const rclcpp_action::GoalUUID&, std::shared_ptr<const SteeringAngleControl::Goal> goal);
-    rclcpp_action::CancelResponse HandleSteeringCancel(
-        const std::shared_ptr<SteeringGoalHandle> goal_handle);
+    rclcpp_action::GoalResponse HandleSteeringGoal(const rclcpp_action::GoalUUID&,
+                                                   std::shared_ptr<const SteeringAngleControl::Goal> goal);
+    rclcpp_action::CancelResponse HandleSteeringCancel(const std::shared_ptr<SteeringGoalHandle> goal_handle);
     void HandleSteeringAccepted(const std::shared_ptr<SteeringGoalHandle> goal_handle);
     void TickSteeringAction();
 
@@ -158,7 +156,8 @@ private:
 
     /// 声明一个几何参数，并兼容已部署 yaml 里的旧参数名。
     /// 新名未显式给出而旧名给了时，采用旧值并打 WARN——否则改名会让老 yaml 静默回落默认值。
-    double DeclareGeometryParam(const std::string& name, double default_value,
+    double DeclareGeometryParam(const std::string& name,
+                                double default_value,
                                 const std::vector<std::string>& legacy_names);
 
     // 把当前参数打包成随目标穿过线程边界的配置快照（热更新即刻生效，实时侧零同步）
@@ -178,9 +177,9 @@ private:
     // 参数
     double diff_track_ = 0.4390;         // 差速轴距 b (m)，名义值
     double diff_wheel_radius_ = 0.0865;  // 差速轮半径 r (m)，名义值
-    std::string odom_frame_;  // "odom"
-    std::string base_frame_;  // "base_footprint"
-    double odom_rate_hz_;     // 发布频率
+    std::string odom_frame_;             // "odom"
+    std::string base_frame_;             // "base_footprint"
+    double odom_rate_hz_;                // 发布频率
 
     // 发布器与 TF
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr refined_imu_pub_;
@@ -306,17 +305,17 @@ private:
 
     // —— IMU 健康状态机（失效五类：非有限值 / 冻结 / 超时 / 噪声 / 未初始化；恢复带迟滞）——
     ImuHealthMonitor imu_health_;
-    std::mutex       imu_health_mutex_;    // OnSample（回调线程）与 Evaluate（定时器线程）互斥
-    ImuHealth        imu_health_state_ = ImuHealth::Uninitialized;
-    int    imu_invalid_frames_ = 3;
-    int    imu_frozen_frames_  = 20;
-    double imu_gyro_noise_max_ = 0.02;     // 陀螺 z 帧间差分标准差上限 (rad/s)
-    int    imu_recover_frames_ = 20;
-    double imu_init_timeout_   = 30.0;     // 未初始化超过此时长升为 ERROR (s)
+    std::mutex imu_health_mutex_;  // OnSample（回调线程）与 Evaluate（定时器线程）互斥
+    ImuHealth imu_health_state_ = ImuHealth::Uninitialized;
+    int imu_invalid_frames_ = 3;
+    int imu_frozen_frames_ = 20;
+    double imu_gyro_noise_max_ = 0.02;  // 陀螺 z 帧间差分标准差上限 (rad/s)
+    int imu_recover_frames_ = 20;
+    double imu_init_timeout_ = 30.0;  // 未初始化超过此时长升为 ERROR (s)
 
     // —— diagnostics ——
     std::unique_ptr<diagnostic_updater::Updater> diag_;
-    double diag_period_ = 0.5;             // /diagnostics 周期 (s)；健康状态变化时立即补发
+    double diag_period_ = 0.5;  // /diagnostics 周期 (s)；健康状态变化时立即补发
 
     // —— 底盘反馈失效（fail-fast）——
     double odom_stale_timeout_ = 0.5;  // s，持续无效超过即判失效

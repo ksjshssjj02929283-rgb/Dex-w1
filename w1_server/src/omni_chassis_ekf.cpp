@@ -44,8 +44,13 @@ OmniChassisEkf::Mat6 OmniChassisEkf::BuildQ(double dt, bool is_stopped, bool use
     return Q;
 }
 
-bool OmniChassisEkf::Step(double dt, double vx_enc, double vy_enc, double omega_enc, double omega_z_imu,
-                          bool imu_available, bool is_stopped) {
+bool OmniChassisEkf::Step(double dt,
+                          double vx_enc,
+                          double vy_enc,
+                          double omega_enc,
+                          double omega_z_imu,
+                          bool imu_available,
+                          bool is_stopped) {
     Predict(dt, omega_z_imu, imu_available, is_stopped);
     is_aerial_ = Update(vx_enc, vy_enc, omega_enc, is_stopped, imu_available);
     return is_aerial_;
@@ -126,8 +131,8 @@ bool OmniChassisEkf::Update(double vx_enc, double vy_enc, double omega_enc, bool
 
     const Mat3 S_test = H * P_ * H.transpose() + R_normal;
     const double det = S_test.determinant();
-    const bool aerial = (std::abs(det) > 1e-18) &&
-                        ((y.transpose() * S_test.inverse() * y)(0, 0) > params_.aerial_chi2_threshold_3d);
+    const bool aerial =
+        (std::abs(det) > 1e-18) && ((y.transpose() * S_test.inverse() * y)(0, 0) > params_.aerial_chi2_threshold_3d);
 
     // ---- 更新：IMU 模式只取 vx、vy 两行 ----
     if (imu_driven) {
