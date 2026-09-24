@@ -1,0 +1,38 @@
+# 批量写入资产（X-Wiz 编辑页「保存」入口）。全部校验通过才应用，任一失败整体拒绝、内存不变。
+uint8 MODE_REPLACE     = 0   # 整体替换：kinds 列出的类型以请求为准，缺席即删（X-Wiz 编辑页「保存」）
+uint8 MODE_MERGE       = 1   # 按 name/id upsert：存在覆盖、不存在新建、缺席项不动（单条编辑默认用这个）
+uint8 MODE_ADD_ONLY    = 2   # 只新增：任一项已存在 → E_ASSET_EXISTS(2203080)，整体不应用
+uint8 MODE_UPDATE_ONLY = 3   # 只更新：任一项不存在 → E_ASSET_NOT_FOUND(2203070)，整体不应用
+uint8 MODE_REMOVE      = 4   # 按主键删除（只读 name / id）：任一项不存在 → 2203070；级联与原单条接口一致（删点→路线剔点 + 清引用它的边 + 区域/房间关联剔除；删节点→清边）
+
+# 资产类型位掩码（可组合）。kinds = 0 或 KIND_ALL 表示全部。
+uint8 KIND_POINTS    = 1
+uint8 KIND_AREAS     = 2
+uint8 KIND_ROOMS     = 4
+uint8 KIND_ROUTES    = 8
+uint8 KIND_JUNCTIONS = 16
+uint8 KIND_EDGES     = 32
+uint8 KIND_ALL       = 63
+
+uint8  mode
+uint8  kinds             # REPLACE 时只替换列出的类型，未列出的类型保持不变；0 = 全部。MERGE 忽略此字段。
+                         # 与 GetAssets.kinds 对称：按类型读 → 编辑 → 按同类型 REPLACE 提交，不会误清其它类型
+uint64 expected_epoch    # 乐观锁：须等于 get_assets 返回的 map_epoch，否则 2203020；0 = 不校验（仅供本地编辑器如 RViz，X-Wiz 必须传实际值）
+bool   save              # true：成功后立即原子落盘并产生一份版本（等价 save_assets）；false：不产版本，是否落盘随节点 auto_save 参数（默认 true）
+nav_interfaces/NavPoint[]      points
+nav_interfaces/AreaInfo[]      areas
+nav_interfaces/RoomInfo[]      rooms
+nav_interfaces/Route[]         routes
+nav_interfaces/RouteJunction[] junctions
+nav_interfaces/RouteEdge[]     edges
+---
+bool   success
+int32  error_code
+string message
+uint32 points_count      # 应用后各类数量
+uint32 areas_count
+uint32 rooms_count
+uint32 routes_count
+uint32 junctions_count
+uint32 edges_count
+string[] rejected        # 校验失败项 "<kind>:<name|id>:<reason>"；非空则整体未应用

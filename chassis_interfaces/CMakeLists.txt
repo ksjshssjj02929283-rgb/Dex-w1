@@ -14,6 +14,7 @@ find_package(std_msgs REQUIRED)
 set(MSG_FILES
   "msg/ChassisWholeControl.msg"
   "msg/ChassisMotorControl.msg"
+  "msg/ChassisMotorFeedback.msg"
 )
 
 # set(SRV_FILES

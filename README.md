@@ -48,6 +48,7 @@ This repository contains the following interface packages at its root:
 
 - `chassis_interfaces`: Interfaces specific to the chassis, such as wheel encoders and steering.
 - `control_gateway_interfaces`: Command envelopes and semantic START/SWITCH/STOP services for main-joint source arbitration.
+- `dexe_application_interfaces`: Interfaces for application task execution, status, and diagnostics.
 - `common_interfaces`: Interfaces for tasks applicable to multiple hardware components, like rebooting or diagnostics.
 - `gripper_interfaces`: Interfaces for grippers, including control and feedback.
 - `hand_interfaces`: Interfaces for dexterous hands, including finger control and feedback.

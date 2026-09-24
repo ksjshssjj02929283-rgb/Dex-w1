@@ -1,0 +1,19 @@
+# Goal: application task request.
+string request_id
+string task_name
+string parameters_json
+---
+# Result: final task outcome.
+string request_id
+bool success
+string code
+string message
+string result_json
+---
+# Feedback: non-final task execution update.
+string state
+# -1.0 means that the task does not expose measurable progress; otherwise 0.0-1.0.
+float32 progress
+string message
+# Task-specific live data encoded as a JSON object.
+string feedback_json

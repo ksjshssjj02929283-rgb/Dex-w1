@@ -1,0 +1,13 @@
+# 重定位（合并原 ~/relocalization[SetPose] 与 ~/trigger_global_relocalization[Trigger]）。
+# mode 显式声明初始化方式；MODE_GLOBAL 为 0，故未填 mode 时退化为全局搜索（慢但不会定位到错误位置）。
+# 本服务只负责"触发"，收敛过程与结果经 ~/state（LocalizationState）观察：
+#   status: LOC_RELOCALIZING(3) → LOC_SUCCESS(4) / LOC_FAILED(-2)
+uint8 MODE_GLOBAL = 0   # 全局搜索，忽略 pose
+uint8 MODE_LOCAL  = 1   # 以 pose 为初值局部收敛
+
+uint8 mode
+geometry_msgs/PoseWithCovarianceStamped pose   # 仅 MODE_LOCAL 使用；header.frame_id 必须为 map，四元数须归一
+---
+bool   success
+int32  error_code   # 0 = OK；非 0 见 LocalizationState 内的错误码常量
+string message      # 人可读描述（英文）

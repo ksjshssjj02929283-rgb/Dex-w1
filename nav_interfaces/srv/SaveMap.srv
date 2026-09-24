@@ -1,5 +1,7 @@
-# 保存/更新底图（localization 与 mapping 共用）。只存底图（map.pgm/yaml/pbstream），不碰 map asset。
-string map_name      # 空 = 用当前已加载地图名；非空 = 指定地图名
+# 保存/更新底图。只存底图（map.pgm/yaml/pbstream），不碰 map asset。
+# ⚠️ 建图侧 save_map 已随建图接口收敛删除；当前唯一服务端是 localization_node，它保存的
+#    就是当前已加载的地图，不支持 save-as。给出与当前地图不同的 map_name 会被拒绝（非静默忽略）。
+string map_name      # 留空 = 当前已加载地图（推荐）；非空则必须等于当前地图名，否则返回失败
 ---
 bool   success
 string map_path      # 实际保存的地图目录绝对路径

@@ -1,0 +1,14 @@
+# 地图写操作（合并原 load_map / remove_map / rename_map）。
+# 三者在服务端同一 MutuallyExclusive 回调组内串行执行；op 显式声明，未填（0）即拒绝。
+# 护栏：REMOVE 当前地图 → E_MAP_IN_USE；RENAME 当前地图允许，但 epoch 递增触发下游重载。
+uint8 OP_LOAD   = 1
+uint8 OP_REMOVE = 2
+uint8 OP_RENAME = 3
+
+uint8  op
+string map_name
+string new_name     # 仅 OP_RENAME 使用
+---
+bool   success
+int32  error_code   # 0 = OK；非 0 见 MapState 内的错误码常量
+string message

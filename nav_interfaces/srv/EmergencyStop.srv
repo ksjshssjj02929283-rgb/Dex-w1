@@ -1,0 +1,9 @@
+# 软急停触发（/command_board/emergency_stop，DEC-007）。本期只定契约，服务端实现另派。
+# 语义：下发 0 速 + 请求切断电机动力 + 冻结当前导航任务状态；权威性低于物理急停回路。
+# 生效后导航域 /navigation/state 表现为 BLOCKED(error_code=2201123)；急停状态看监控域 nav_system_status.estop_active。
+string source          # 发起方标识（xwiz / rviz / ...）
+string reason          # 人读原因（可空）
+---
+bool   success
+int32  error_code      # 0 = OK；其余号段随监控域错误码定
+string message
