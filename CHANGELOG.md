@@ -4,6 +4,8 @@
 ### Refactor
 - ignored_collision_pairs.json不从内网下载，改为自动生成
 
+### Remove
+- 移除dexe_robot_client_data中的旧资产路径，仅保留配置文件
 
 ## [V0.8.1]
 ### Refactor
