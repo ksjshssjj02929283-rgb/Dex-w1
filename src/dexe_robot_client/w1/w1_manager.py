@@ -57,7 +57,7 @@ class W1Manager:
         config = read_config()
         robot_version = RobotVersion.from_robot_and_version_safe(
             config["robot_type"], config["version"])
-        
+
         left_ee_type = EndEffectorType.from_string_safe(
             config["left_hand_type"])
         if left_ee_type is None and config["left_hand_type"] is not None:
@@ -67,7 +67,7 @@ class W1Manager:
             config["right_hand_type"])
         if right_ee_type is None and config["right_hand_type"] is not None:
             raise ValueError(f'右末端执行器类型错配，请检查！！！{config["right_hand_type"]}')
-        
+
         chassis_type = ChassisType.from_string_safe(config.get("chassis_type"))
         if chassis_type is None or chassis_type == ChassisType.CORE:
             if use_nav:
