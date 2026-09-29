@@ -209,6 +209,7 @@ w1_v02:
       index: 6
       velocity_limit: 3.1416
       torque_limit: 46.5
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -232,6 +233,7 @@ w1_v02:
       index: 7
       velocity_limit: 3.1416
       torque_limit: 46.5
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -255,6 +257,7 @@ w1_v02:
       index: 8
       velocity_limit: 3.1416
       torque_limit: 46.5
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -278,6 +281,7 @@ w1_v02:
       index: 9
       velocity_limit: 3.1416
       torque_limit: 46.5
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -301,6 +305,7 @@ w1_v02:
       index: 10
       velocity_limit: 3.1416
       torque_limit: 15
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -324,6 +329,7 @@ w1_v02:
       index: 11
       velocity_limit: 3.1416
       torque_limit: 15
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -347,6 +353,7 @@ w1_v02:
       index: 12
       velocity_limit: 3.1416
       torque_limit: 15
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -370,6 +377,7 @@ w1_v02:
       index: 13
       velocity_limit: 3.1416
       torque_limit: 46.5
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -393,6 +401,7 @@ w1_v02:
       index: 14
       velocity_limit: 3.1416
       torque_limit: 46.5
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -416,6 +425,7 @@ w1_v02:
       index: 15
       velocity_limit: 3.1416
       torque_limit: 46.5
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -439,6 +449,7 @@ w1_v02:
       index: 16
       velocity_limit: 3.1416
       torque_limit: 46.5
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -462,6 +473,7 @@ w1_v02:
       index: 17
       velocity_limit: 3.1416
       torque_limit: 15
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -485,6 +497,7 @@ w1_v02:
       index: 18
       velocity_limit: 3.1416
       torque_limit: 15
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -508,6 +521,7 @@ w1_v02:
       index: 19
       velocity_limit: 3.1416
       torque_limit: 15
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -654,6 +668,7 @@ w1_v03:
       index: 6
       velocity_limit: 3.1416
       torque_limit: 91.5
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -676,6 +691,7 @@ w1_v03:
       index: 7
       velocity_limit: 3.1416
       torque_limit: 91.5
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -698,6 +714,7 @@ w1_v03:
       index: 8
       velocity_limit: 3.1416
       torque_limit: 72.0
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -720,6 +737,7 @@ w1_v03:
       index: 9
       velocity_limit: 3.1416
       torque_limit: 72.0
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -742,6 +760,7 @@ w1_v03:
       index: 10
       velocity_limit: 3.1416
       torque_limit: 14.25
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -764,6 +783,7 @@ w1_v03:
       index: 11
       velocity_limit: 3.1416
       torque_limit: 14.25
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -786,6 +806,7 @@ w1_v03:
       index: 12
       velocity_limit: 3.1416
       torque_limit: 14.25
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -808,6 +829,7 @@ w1_v03:
       index: 13
       velocity_limit: 3.1416
       torque_limit: 91.5
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -830,6 +852,7 @@ w1_v03:
       index: 14
       velocity_limit: 3.1416
       torque_limit: 91.5
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -852,6 +875,7 @@ w1_v03:
       index: 15
       velocity_limit: 3.1416
       torque_limit: 72.0
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -874,6 +898,7 @@ w1_v03:
       index: 16
       velocity_limit: 3.1416
       torque_limit: 72.0
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -896,6 +921,7 @@ w1_v03:
       index: 17
       velocity_limit: 3.1416
       torque_limit: 14.25
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -918,6 +944,7 @@ w1_v03:
       index: 18
       velocity_limit: 3.1416
       torque_limit: 14.25
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true
@@ -940,6 +967,7 @@ w1_v03:
       index: 19
       velocity_limit: 3.1416
       torque_limit: 14.25
+      torque_ext_deadzone: 0.5  # 外力矩死区 (N·m), 每个手臂关节独立调节
       position_limit_margin_deg: 0.0
       butterworth_filter:
         enabled: true

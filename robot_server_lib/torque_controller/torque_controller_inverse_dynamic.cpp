@@ -58,7 +58,8 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
             // 1. 导纳控制: 反馈力矩减去前馈得到外力估计, 经死区处理抑制模型残差噪声
             VectorDof torque_ext = output_cmd.torque_feedforward - raw_measurement.torque;
             for (int i = 0; i < ndof_robot; ++i) {
-                torque_ext[i] = utils::DeadZoneFilter(torque_ext[i], TorqueExtDeadzone);
+                torque_ext[i] =
+                    utils::DeadZoneFilter(torque_ext[i], robot_model_.params_ptr->joint_torque_ext_deadzone[i]);
             }
             joint_admittance_controller_->UpdateAdmittanceOffset(torque_ext, q_offset, dq_offset);
             // 2. 将导纳偏移叠加到轨迹指令, 得到实际参考位置/速度

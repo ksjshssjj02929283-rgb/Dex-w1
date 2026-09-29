@@ -28,6 +28,18 @@ YAML::Node MergeYamlNode(const YAML::Node& user_node,
         } else if (default_field.second.IsMap()) {
             // 字段存在且为字典类型，递归合并其内部的子字段
             result[field_key] = MergeYamlNode(result[field_key], default_field.second, full_path, modified);
+        } else if (field_key == "joints" && default_field.second.IsSequence()) {
+            // 版本配置下的 joints 列表也需补齐单关节属性, 保留已有参数。
+            for (size_t i = 0; i < default_field.second.size(); ++i) {
+                if (i >= result[field_key].size()) {
+                    result[field_key].push_back(default_field.second[i]);
+                    modified = true;
+                    std::cout << "[WARN] Added missing joint: " << full_path << "[" << i << "]" << std::endl;
+                } else {
+                    result[field_key][i] = MergeYamlNode(result[field_key][i], default_field.second[i],
+                                                        full_path + "[" + std::to_string(i) + "]", modified);
+                }
+            }
         }
     }
     return result;
@@ -91,15 +103,8 @@ void CheckConfig(const std::filesystem::path& default_cfg_path, const std::files
                 modified = true;
                 std::cout << "[WARN] Added missing field: " << key << std::endl;
             } else if (default_node.second.IsMap()) {
-                // 顶层字典类型字段存在，但内部二级字段可能缺失，遍历子字典处理
-                for (const auto& sub_node : default_node.second) {
-                    std::string sub_key = sub_node.first.as<std::string>();
-                    if (!user_config[key][sub_key]) {
-                        user_config[key][sub_key] = sub_node.second;
-                        modified = true;
-                        std::cout << "[WARN] Added missing field: " << key << "." << sub_key << std::endl;
-                    }
-                }
+                // 递归补齐版本配置及其中的关节属性。
+                user_config[key] = MergeYamlNode(user_config[key], default_node.second, key, modified);
             } else if (default_node.second.IsSequence() && key == "joints") {
                 // 特殊处理 joints 参数，joints 是一个数组，每个元素包含各个关节的具体配置
                 for (size_t i = 0; i < default_node.second.size(); ++i) {
@@ -503,6 +508,31 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
 
             params.joint_names.push_back(joint_name);
 
+            const bool is_arm_joint =
+                std::find(params.joints_primary_names.begin(), params.joints_primary_names.end(), joint_name) !=
+                    params.joints_primary_names.end() ||
+                std::find(params.joints_secondary_names.begin(), params.joints_secondary_names.end(), joint_name) !=
+                    params.joints_secondary_names.end();
+            // 仅手臂支持配置外力矩死区; 缺失或非法值保留原来的 0.5 N·m。
+            if (joint_config["torque_ext_deadzone"]) {
+                if (!is_arm_joint) {
+                    LOG_WARN << "torque_ext_deadzone ignored for non-arm joint: " << joint_name;
+                } else {
+                    try {
+                        const double value = joint_config["torque_ext_deadzone"].as<double>();
+                        if (std::isfinite(value) && value >= 0.0) {
+                            params.joint_torque_ext_deadzone[joint_idx] = value;
+                        } else {
+                            LOG_WARN << "Invalid torque_ext_deadzone for joint " << joint_name << ": " << value
+                                     << ", keep default " << TorqueExtDeadzone;
+                        }
+                    } catch (const YAML::Exception& e) {
+                        LOG_WARN << "Invalid torque_ext_deadzone for joint " << joint_name << ": " << e.what()
+                                 << ", keep default " << TorqueExtDeadzone;
+                    }
+                }
+            }
+
             if (joint_config["velocity_limit"]) {
                 params.joint_velocity_limit[joint_idx] = joint_config["velocity_limit"].as<double>();
             }
@@ -539,11 +569,6 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                 apply_joint_admittance_node(joint_config["joint_admittance"],
                                             robot_property.joint_admittance.joints[joint_idx]);
                 // 保险: 非手臂关节强制禁用导纳, 防止误配置
-                bool is_arm_joint =
-                    std::find(params.joints_primary_names.begin(), params.joints_primary_names.end(), joint_name) !=
-                        params.joints_primary_names.end() ||
-                    std::find(params.joints_secondary_names.begin(), params.joints_secondary_names.end(), joint_name) !=
-                        params.joints_secondary_names.end();
                 if (!is_arm_joint && robot_property.joint_admittance.joints[joint_idx].enabled) {
                     LOG_WARN << "joint_admittance disabled for non-arm joint: " << joint_name;
                     robot_property.joint_admittance.joints[joint_idx].enabled = false;

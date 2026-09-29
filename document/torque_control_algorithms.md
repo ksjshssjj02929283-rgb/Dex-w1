@@ -88,7 +88,13 @@ e_dq = dq_ref - dq_feedback
 τ_ext = τ_inverse_dynamics - τ_measured
 ```
 
-符号方向由当前实现定义。每个关节的 `τ_ext` 先经过 `TorqueExtDeadzone = 0.5 N·m` 的死区滤波，以减少动力学模型残差和测量噪声导致的偏移。
+符号方向由当前实现定义。每个关节的 `τ_ext` 先经过死区滤波，以减少动力学模型残差和测量噪声导致的偏移：`|τ_ext| <= d` 时输出 0，否则输出 `sign(τ_ext) × (|τ_ext| - d)`。
+
+两条手臂的 J1-J7 可在 `robot_config.yaml` 当前版本配置（如 `w1_v02.joints`）中，逐关节设置 `torque_ext_deadzone`，与 `torque_limit` 同级。它是直接以 N·m 为单位的非负有限数值，不是比率；默认全部为 `0.5`，`0` 表示不扣除死区。例如在 `LEFT_J5` 的配置中写 `torque_ext_deadzone: 0.2`，只改变左臂 J5 的外力矩死区。
+
+手臂范围由 `joints_primary_names` 和 `joints_secondary_names` 决定。缺少该字段或数值非法时使用原来的 `TorqueExtDeadzone = 0.5 N·m`；非手臂关节始终使用原来的固定值，忽略该字段。参数仅在启动时读取，修改运行配置后需重启服务，不支持热更新。正常启动时使用 `~/dexe_robot_server_data/robot_config.yaml`，应在该文件的当前版本关节列表中调节；旧配置缺少字段时仍按 0.5 N·m 工作。
+
+安装新版默认配置后，首次启动会在用户配置中创建这些字段；已有同版本配置会递归补齐 `w1_v02.joints` / `w1_v03.joints` 下缺少的 `torque_ext_deadzone: 0.5`，保留已经填写的值和其他已有参数。本次未提升 `config_version`（仍为 `v06`）；若真机用户配置版本低于默认版本，仍按原有规则整份替换。
 
 `Idle` 和 `Decelerating` 状态向导纳控制器输入零外力矩，使已有位置、速度偏移在虚拟刚度和阻尼作用下逐渐回零。
 

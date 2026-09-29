@@ -289,6 +289,7 @@ struct RobotParams {
     std::string right_hand_type;
     Eigen::VectorXd joint_velocity_limit;  // 关节最大速度限制（正负对称）
     Eigen::VectorXd joint_torque_limit;    // 关节最大力矩限制（正负对称）
+    VectorDof joint_torque_ext_deadzone = VectorDof::Constant(TorqueExtDeadzone);  // 外力矩死区 (N·m), 仅手臂可配置
     Eigen::VectorXd joint_limit_margin_deg;  // 关节位置限位安全阈值（度），用于在硬限位基础上缩小范围
     std::vector<std::string> joints_primary_names;
     std::vector<std::string> joints_secondary_names;
