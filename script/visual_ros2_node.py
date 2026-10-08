@@ -10,6 +10,11 @@ import signal
 from rclpy.node import Node
 from std_msgs.msg import String
 
+try:
+    from dyn_params_ident.urdf2dh import resolve_urdf_path
+except ImportError:
+    from urdf2dh import resolve_urdf_path
+
 
 
 
@@ -53,7 +58,7 @@ class VisualRos2Node(Node):
             cfg = yaml.safe_load(f)
         self.robot_name = cfg.get("robot_name")
         
-        extracted_urdf = cfg.get("file_path", {}).get("robot_urdf")
+        extracted_urdf = resolve_urdf_path(cfg.get("file_path", {}).get("robot_urdf"))
         if extracted_urdf:
             ee_urdf_path = Path(extracted_urdf).parent / "robot_with_ee.urdf"
             if ee_urdf_path.exists():

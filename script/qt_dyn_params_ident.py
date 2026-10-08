@@ -530,6 +530,20 @@ class DynParamIdentifier(Node):
         tau_cut = np.asarray(tau_raw[:min_len, :])
         tau_sensor_cut = np.asarray(tau_sensor_raw[:min_len, :]) if tau_sensor_raw.size > 0 else None
 
+        # 滤波后的力矩: 与辨识中 q/dq/ddq 用同一套 Butterworth 参数, 与原始力矩画在一起对比
+        tau_filt_cut = None
+        tau_filt_label = "Filtered τ"
+        try:
+            calc = self.calculator_left if self.is_left else self.calculator_right
+            wn = calc.get_filter_cutoff() * 2 * np.pi * calc.dt  # 与 butter_filtfilt 的传参一致
+            fc_eff = wn * 0.5 / calc.dt                          # 换算回实际 -3dB 频率(Hz)
+            tau_filt_cut = np.column_stack(
+                [calc.butter_filtfilt(3, wn, tau_cut[:, j]) for j in range(n_joints)]
+            )
+            tau_filt_label = f"Filtered τ ({fc_eff:.1f} Hz)"
+        except Exception as e:
+            self.log_msg("力矩滤波绘图失败(仅影响该曲线): " + str(e))
+
         for j in range(min(len(ax_handles), n_joints)):
             ax1 = ax_handles[j]
             ax1.clear()
@@ -561,6 +575,14 @@ class DynParamIdentifier(Node):
                 color="tab:red",
                 linewidth=1,
             )
+            if tau_filt_cut is not None:
+                ax2.plot(
+                    t_raw_cut,
+                    tau_filt_cut[:, j],
+                    label=tau_filt_label,
+                    color="tab:purple",
+                    linewidth=1,
+                )
             if tau_sensor_cut is not None and np.any(np.abs(tau_sensor_cut[:, j]) > 1e-9):
                 ax2.plot(
                     t_raw_cut,
@@ -655,6 +677,14 @@ from sympy import BlockMatrix, Matrix, eye, Identity
 from lmi_sdp import LMI
 from sympybotics.dynident.regression import mrepl
 from dyn_params_ident.urdf2dh import get_dh_params_for_arm, get_gravity_in_dh_base
+from dyn_params_ident.acceleration_free_regressor import (
+    build_filtered_regressor,
+    lowpass_filter,
+    resample_recordings,
+)
+
+IDENTIFICATION_STANDARD = "standard"
+IDENTIFICATION_AF_ARF = "af_arf"
 
 class DynParamCalculator:
     """
@@ -676,6 +706,26 @@ class DynParamCalculator:
         self.proc_data = {}
         self.solutions_beta_starextra = None
         self.rbt = None
+        self.identification_algorithm = IDENTIFICATION_STANDARD
+        self.af_alpha = 15.0
+        self.af_beta = 10.0
+
+    def reset_identification(self):
+        self.proc_data.clear()
+        self.solutions_beta_starextra = None
+
+    def set_identification_options(self, algorithm, alpha, beta):
+        if algorithm not in (IDENTIFICATION_STANDARD, IDENTIFICATION_AF_ARF):
+            raise ValueError(f"未知辨识算法: {algorithm}")
+        alpha, beta = float(alpha), float(beta)
+        if not np.isfinite(alpha) or alpha <= 0 or not np.isfinite(beta) or beta < 0:
+            raise ValueError("AF-ARF 滤波参数要求 alpha > 0, beta >= 0")
+        options = (algorithm, alpha, beta)
+        if options == (self.identification_algorithm, self.af_alpha, self.af_beta):
+            return False
+        self.identification_algorithm, self.af_alpha, self.af_beta = options
+        self.reset_identification()
+        return True
 
     # todo: 补充v03模型
     def create_robot_model(self, robot_type):
@@ -698,6 +748,7 @@ class DynParamCalculator:
         return rbt
 
     def calc_dyn_params(self):
+        self.reset_identification()
         # 创建机器人模型并计算基础参数集
         self.log_msg("正在进行机器人建模...")
         self.rbt = self.create_robot_model(self.robot_type)
@@ -804,15 +855,21 @@ class DynParamCalculator:
             for v in np.linalg.eigvals(m):
                 if v <= 0.0:
                     return False
-        self.solutions_beta_starextra = np.matrix(beta_starextra)
-        # 验证beta_starextra解
-        return self.test_mass_matrix_psd(self.solutions_beta_starextra)
+        candidate = np.matrix(beta_starextra)
+        if not self.test_mass_matrix_psd(candidate):
+            return False
+        self.solutions_beta_starextra = candidate
+        return True
 
     def process_and_cache_data(self):
         for traj in ["traj1", "traj2"]:
+            side = "left" if self.is_left else "right"
+            if traj == "traj2" and not (Path(self.rec_dir) / side / "rbtlog_traj2.dat").is_file():
+                self.log_msg("未找到 traj2 采集数据，跳过独立轨迹验证。")
+                continue
             (
                 t_raw, q_raw, tau_current_raw, tau_sensor_raw,
-                t, q, dq, ddq, tau, W, omega, Q1, R1, rho1,
+                t, q, dq, ddq, tau, W, omega, Q1, R1, rho1, tau_sensor_filtered,
             ) = self.process_regression_data(traj)
             self.proc_data[traj] = {
                 "t_raw": t_raw,
@@ -829,13 +886,24 @@ class DynParamCalculator:
                 "Q1": Q1,
                 "R1": R1,
                 "rho1": rho1,
+                "tau_sensor_filtered": tau_sensor_filtered,
+                "algorithm": self.identification_algorithm,
+                "af_alpha": self.af_alpha,
+                "af_beta": self.af_beta,
             }
         self.log_msg("所有轨迹数据处理完成并保存。")
 
+    def get_filter_cutoff(self):
+        """辨识数据滤波的截止频率(Hz)。
+
+        取轨迹最高谐波频率的 10 倍, 与 process_regression_data 中 q/dq/ddq 用的取值一致。
+        注意传入 scipy 的归一化频率是 fc * 2 * pi * dt, 换算回实际 -3dB 频率约为 pi * fc。
+        """
+        return 10 * (self.wf / (2 * np.pi) * self.L)
+
     def process_regression_data(self, traj):
         # 数据滤波, 差分和回归数据生成
-        fc_mult = 10
-        fc = fc_mult * (self.wf / (2 * np.pi) * self.L)
+        fc = self.get_filter_cutoff()
         si = int(3 / self.dt)
         sf = -int(1 / self.dt)
         # 使用 Path / 拼接，并在 read_data 时转成 str
@@ -849,6 +917,12 @@ class DynParamCalculator:
         # 辨识使用电流估算力矩 (joint_torque), sensor torque 仅用于显示对比
         tau_raw = tau_current_raw
         self.log_msg(f"[{traj}] 使用电流估算力矩 (current torque) 进行辨识")
+        if self.identification_algorithm == IDENTIFICATION_AF_ARF:
+            return self.process_acceleration_free_data(
+                traj, t_raw, q_raw, tau_current_raw, tau_sensor_raw, fc, si, sf
+            )
+        if len(t_raw) <= si - sf:
+            raise ValueError("采集数据不足，裁剪前 3 秒和后 1 秒后没有可用样本。")
         q, dq, ddq, tau = self.diff_and_filt_data(
             dof=self.ndof,
             h=self.dt,
@@ -857,7 +931,7 @@ class DynParamCalculator:
             fc_q=fc,
             fc_dq=fc,
             fc_ddq=fc,
-            fc_tau=float("Inf"),
+            fc_tau=fc,
         )
         t_raw = t_raw[si:sf]
         q_raw = q_raw[si:sf]
@@ -870,7 +944,50 @@ class DynParamCalculator:
         t_raw = t_raw - t_raw[0]
         t = np.array(range(q.shape[0])) * self.dt
         W, omega, Q1, R1, rho1 = self.gen_regr_matrices(self.rbt, q, dq, ddq, tau)
-        return t_raw, q_raw, tau_current_raw, tau_sensor_raw, t, q, dq, ddq, tau, W, omega, Q1, R1, rho1
+        return t_raw, q_raw, tau_current_raw, tau_sensor_raw, t, q, dq, ddq, tau, W, omega, Q1, R1, rho1, None
+
+    def process_acceleration_free_data(self, traj, t_raw, q_raw, tau_current, tau_sensor, fc, si, sf):
+        t, q_raw, tau_current, tau_sensor = resample_recordings(
+            t_raw, q_raw, tau_current, tau_sensor, dt=self.dt
+        )
+        if len(t) <= si - sf:
+            raise ValueError("采集数据不足，裁剪前 3 秒和后 1 秒后没有可用样本。")
+        q = np.column_stack([
+            self.butter_filtfilt(3, fc * 2 * np.pi * self.dt, q_raw[:, j])
+            for j in range(self.ndof)
+        ])
+        dq = np.column_stack([
+            self.central_diff(q[:, j], self.dt, 2) for j in range(self.ndof)
+        ])
+        friction_symbols = set(self.rbt.rbtdef.fc + self.rbt.rbtdef.fv + self.rbt.rbtdef.fo)
+        friction_indices = [
+            j for j, parameter in enumerate(self.rbt.dyn.dynparms)
+            if parameter in friction_symbols
+        ]
+        self.log_msg(
+            f"[{traj}] AF-ARF: alpha={self.af_alpha:g}, beta={self.af_beta:g} s^-1，"
+            "构造无加速度回归矩阵（不计算 ddq）..."
+        )
+        H, tau = build_filtered_regressor(
+            self.create_regressor_func(self.rbt), t, q, dq, tau_current,
+            self.rbt.dyn.n_dynparms, friction_indices,
+            alpha=self.af_alpha, beta=self.af_beta,
+        )
+        tau_sensor_filtered = lowpass_filter(t, tau_sensor, self.af_alpha)
+        if self.af_beta > 0:
+            tau_sensor_filtered = lowpass_filter(t, tau_sensor_filtered, self.af_beta)
+        # Filter the entire recording before discarding the start/stop transients.
+        keep = slice(si, sf)
+        t = t[keep] - t[si]
+        q, dq, tau = q[keep], dq[keep], tau[keep]
+        W, omega, Q1, R1, rho1 = self.decompose_regression(
+            self.rbt, H[keep].reshape(-1, self.rbt.dyn.n_dynparms), tau
+        )
+        return (
+            t, q_raw[keep], tau_current[keep], tau_sensor[keep],
+            t, q, dq, None, tau, W, omega, Q1, R1, rho1,
+            tau_sensor_filtered[keep],
+        )
 
     # 惯性矩阵M(q)正定性测试: M(q)理论上应为对称正定矩阵，否则对应的动能不满足正定性，模型物理不可行, 因此需要验证辨识结果对应的质量矩阵是否为正定矩阵）
     def test_mass_matrix_psd(self, beta_solution):
@@ -944,24 +1061,28 @@ class DynParamCalculator:
         sol = [float(v) for v in first_line.split()]
         return np.matrix(sol).T
 
-    def gen_regr_matrices(self, rbt, q, dq, ddq, tau):
-        local_dict = {}
+    @staticmethod
+    def create_regressor_func(rbt):
+        namespace = {"math": math, "sin": np.sin, "cos": np.cos, "sign": np.sign}
         exec(
             sympybotics.robot_code_to_func(
                 "python", rbt.H_code, "H", "regressor_func", rbt.rbtdef
             ),
-            globals(),
-            local_dict,
+            namespace,
         )
-        regressor_func = local_dict["regressor_func"]
-        global sin, cos, sign
-        sin = np.sin
-        cos = np.cos
-        sign = np.sign
+        return namespace["regressor_func"]
+
+    def gen_regr_matrices(self, rbt, q, dq, ddq, tau):
+        regressor_func = self.create_regressor_func(rbt)
         H_S, omega = self.regr_matrices(
             rbt.dof, rbt.dyn.n_dynparms, q, dq, ddq, tau, regressor_func
         )
+        return self.decompose_regression(rbt, H_S, tau)
+
+    @staticmethod
+    def decompose_regression(rbt, H_S, tau):
         W = np.matrix(H_S[:, rbt.dyn.base_idxs])
+        omega = np.matrix(np.asarray(tau).reshape(-1, 1))
         Q1, R1 = np.linalg.qr(W)
         rho1 = Q1.T * omega
         return W, omega, Q1, R1, rho1
@@ -1057,12 +1178,15 @@ class DynParamCalculator:
         # 使用内存缓存的数据与解进行验证（默认 traj2 验证，参数来自 traj1）
         traj_proc = self.proc_data.get("traj2")
         if traj_proc is None:
-            raise RuntimeError("未找到处理数据，请先执行计算动力学参数。")
+            raise RuntimeError("未找到 traj2 验证数据，请采集或导入独立验证轨迹后重新计算。")
         W = np.matrix(traj_proc["W"])
         t = traj_proc["t"]
         tau_current = np.matrix(traj_proc["tau_current"])
         tau_sensor = np.matrix(traj_proc["tau_sensor"])
         tau_used = np.matrix(traj_proc["tau"])
+        if traj_proc["algorithm"] == IDENTIFICATION_AF_ARF:
+            tau_current = tau_used
+            tau_sensor = np.matrix(traj_proc["tau_sensor_filtered"])
         if self.solutions_beta_starextra is None:
             raise RuntimeError("未找到辨识结果，请先计算动力学参数。")
         omega_pred = W * np.matrix(self.solutions_beta_starextra)
@@ -1244,6 +1368,12 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_write_params_right = QtWidgets.QPushButton("写入右臂辨识参数")
         # 图示已采集轨迹放在真机采集所有轨迹下方
         bottom_vbox.addWidget(self.btn_show_plot)
+        # 离线/异地辨识：手动指定采集数据目录（默认使用 recdata）
+        self.btn_select_data_dir = QtWidgets.QPushButton("选择本地数据目录")
+        bottom_vbox.addWidget(self.btn_select_data_dir)
+        self.data_dir_label = QtWidgets.QLabel()
+        self.data_dir_label.setWordWrap(True)
+        bottom_vbox.addWidget(self.data_dir_label)
         ctrl_layout.addWidget(bottom_group)
         ctrl_layout.addStretch(1)
         # 第三部分：轨迹采集及计算结果
@@ -1251,6 +1381,27 @@ class DynParamGUI(QtWidgets.QMainWindow):
         result_vbox = QtWidgets.QVBoxLayout(result_group)
         result_vbox.setContentsMargins(8, 8, 8, 8)
         result_vbox.setSpacing(8)
+        identification_form = QtWidgets.QFormLayout()
+        self.identification_combo = QtWidgets.QComboBox()
+        self.identification_combo.addItem("传统回归（使用 ddq）", IDENTIFICATION_STANDARD)
+        self.identification_combo.addItem("AF-ARF（无需 ddq）", IDENTIFICATION_AF_ARF)
+        identification_form.addRow("辨识算法", self.identification_combo)
+        self.af_alpha_spin = QtWidgets.QDoubleSpinBox()
+        self.af_alpha_spin.setRange(0.1, 500.0)
+        self.af_alpha_spin.setDecimals(1)
+        self.af_alpha_spin.setValue(15.0)
+        self.af_alpha_spin.setSuffix(" s^-1")
+        self.af_alpha_spin.setToolTip("AF-ARF 第一级低通速率 alpha，截止频率为 alpha / (2*pi) Hz")
+        self.af_beta_spin = QtWidgets.QDoubleSpinBox()
+        self.af_beta_spin.setRange(0.0, 500.0)
+        self.af_beta_spin.setDecimals(1)
+        self.af_beta_spin.setValue(10.0)
+        self.af_beta_spin.setSuffix(" s^-1")
+        self.af_beta_spin.setSpecialValueText("关闭")
+        self.af_beta_spin.setToolTip("第二级低通速率 beta；设为 0 关闭第二级滤波")
+        identification_form.addRow("滤波 alpha", self.af_alpha_spin)
+        identification_form.addRow("滤波 beta", self.af_beta_spin)
+        result_vbox.addLayout(identification_form)
         result_vbox.addWidget(self.btn_calc_params)
         calc_arm_row = QtWidgets.QWidget()
         calc_arm_row_layout = QtWidgets.QHBoxLayout(calc_arm_row)
@@ -1297,7 +1448,21 @@ class DynParamGUI(QtWidgets.QMainWindow):
         plot_layout = QtWidgets.QVBoxLayout(plot_widget)
         # 使用水平分割器容纳左侧控制与右侧绘图
         hsplitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        hsplitter.addWidget(ctrl_widget)
+        ctrl_layout.removeWidget(stop_group)
+        ctrl_scroll = QtWidgets.QScrollArea()
+        ctrl_scroll.setWidgetResizable(True)
+        ctrl_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        ctrl_scroll.setWidget(ctrl_widget)
+        ctrl_scroll.setMinimumWidth(
+            ctrl_widget.minimumSizeHint().width()
+            + self.style().pixelMetric(QtWidgets.QStyle.PM_ScrollBarExtent)
+        )
+        ctrl_panel = QtWidgets.QWidget()
+        ctrl_panel_layout = QtWidgets.QVBoxLayout(ctrl_panel)
+        ctrl_panel_layout.setContentsMargins(0, 0, 0, 0)
+        ctrl_panel_layout.addWidget(ctrl_scroll, 1)
+        ctrl_panel_layout.addWidget(stop_group)
+        hsplitter.addWidget(ctrl_panel)
         hsplitter.addWidget(plot_widget)
         # 默认让左侧控制区域更宽一些，同时支持左右拖拽
         hsplitter.setSizes([350, 650])
@@ -1343,6 +1508,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_run_real_right.clicked.connect(self.on_run_real_right)
         self.btn_show_reference.clicked.connect(self.on_show_reference)
         self.btn_show_plot.clicked.connect(self.on_show_plot)
+        self.btn_select_data_dir.clicked.connect(self.on_select_data_dir)
         self.btn_calc_params.clicked.connect(self.on_calc_params)
         self.btn_calc_params_left.clicked.connect(self.on_calc_params_left)
         self.btn_calc_params_right.clicked.connect(self.on_calc_params_right)
@@ -1382,6 +1548,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
         # 初始状态与禁用策略
         self._params_calculated = False
+        self._calculation_running = False
         self._left_captured = False
         self._right_captured = False
         self._cancel_requested = False
@@ -1401,7 +1568,13 @@ class DynParamGUI(QtWidgets.QMainWindow):
         else:
             self.btn_show_plot.setDisabled(False)
 
+        self._update_data_dir_label()
         self._did_initial_ref_plot = False
+        self.identification_combo.currentIndexChanged.connect(self.on_identification_options_changed)
+        self.af_alpha_spin.valueChanged.connect(self.on_identification_options_changed)
+        self.af_beta_spin.valueChanged.connect(self.on_identification_options_changed)
+        self.af_alpha_spin.setDisabled(True)
+        self.af_beta_spin.setDisabled(True)
 
     def log_msg(self, msg):
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -1421,14 +1594,34 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.dyn.is_left = self.arm_combo.currentText() == "左臂"
         side = "left" if self.dyn.is_left else "right"
         self.dyn.traj_path = os.path.join(self.dyn.traj_dir, side, f"{self.dyn.traj}.dat")
+        for calculator in (self.dyn.calculator_left, self.dyn.calculator_right):
+            calculator.set_identification_options(
+                self.identification_combo.currentData(),
+                self.af_alpha_spin.value(), self.af_beta_spin.value(),
+            )
+
+    def on_identification_options_changed(self, *_args):
+        self.update_params_from_ui()
+        self._left_calculated = False
+        self._right_calculated = False
+        self._params_calculated = False
+        self.enable_buttons()
+        self.log_msg(f"辨识设置已更改: {self.identification_combo.currentText()}，请重新计算参数。")
 
     def disable_buttons(self, disabled=True):
         # 除停止按钮外均禁用/启用；部分按钮受状态标志控制
+        disabled = disabled or self._calculation_running
         try:
             self.btn_run_sim.setDisabled(disabled)
             self.btn_run_real.setDisabled(disabled)
             self.btn_run_real_left.setDisabled(disabled)
             self.btn_run_real_right.setDisabled(disabled)
+            # 采集/计算过程中不允许切换数据源
+            self.btn_select_data_dir.setDisabled(disabled)
+            self.identification_combo.setDisabled(disabled)
+            af_enabled = self.identification_combo.currentData() == IDENTIFICATION_AF_ARF
+            self.af_alpha_spin.setDisabled(disabled or not af_enabled)
+            self.af_beta_spin.setDisabled(disabled or not af_enabled)
             # 可视化始终可用
             self.btn_open_meshcat.setDisabled(False)
             # 待采集参考轨迹：仅随操作禁用，不受采集/计算状态限制
@@ -1532,6 +1725,103 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.log_msg(f"单臂真机采集速度系数设置为 {self._real_arm_speed_mult}x")
         except Exception:
             self._real_arm_speed_mult = 1.0
+
+    def _update_data_dir_label(self):
+        """刷新左侧面板显示的采集数据目录。"""
+        try:
+            path = str(getattr(self.dyn, "rec_dir", ""))
+            self.data_dir_label.setText(f"当前数据目录: {path}")
+            self.data_dir_label.setToolTip(path)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _probe_rec_file(path):
+        """快速探测记录文件: 返回 (行数, 列数)，不存在或不可读返回 None。"""
+        try:
+            rows = 0
+            cols = 0
+            with open(path, "r") as f:
+                for line in f:
+                    if line.strip():
+                        if rows == 0:
+                            cols = len(line.split())
+                        rows += 1
+            return (rows, cols) if rows > 0 else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _format_probe(path, item):
+        """把探测结果格式化成一行日志。"""
+        if item is None:
+            return f"{path} 缺失"
+        rows, cols = item
+        warn = "" if cols == 22 else f", 列数 {cols} (应为 22, 可能不是本工具采集的数据)"
+        return f"{path} {rows} 行{warn}"
+
+    def on_select_data_dir(self):
+        """选择本地采集数据目录，用于图示已采集轨迹与离线辨识计算。"""
+        try:
+            base = str(getattr(self.dyn, "rec_dir", ""))
+            if not os.path.isdir(base):
+                base = str(Path(__file__).resolve().parent / "dyn_params_ident")
+            selected = QtWidgets.QFileDialog.getExistingDirectory(
+                self, "选择采集数据目录（含 left / right 子目录）", base
+            )
+            if not selected:
+                return
+            self._apply_data_dir(selected)
+        except Exception as e:
+            self.log_msg("选择数据目录出错: " + str(e))
+
+    def _apply_data_dir(self, selected):
+        """校验选中的目录并切换为当前数据源；若直接选中 left/right 子目录则自动上溯一级。"""
+        base = Path(selected)
+        if not ((base / "left").is_dir() or (base / "right").is_dir()):
+            if base.name in ("left", "right"):
+                base = base.parent
+        # 逐臂探测: traj1 辨识必需, traj2 验证用
+        probes = {}
+        for side in ("left", "right"):
+            probes[side] = {
+                "traj1": self._probe_rec_file(base / side / "rbtlog_traj1.dat"),
+                "traj2": self._probe_rec_file(base / side / "rbtlog_traj2.dat"),
+            }
+        if not any(probes[s]["traj1"] for s in probes):
+            self.log_msg(f"目录 {base} 下未找到 left/right/rbtlog_traj1.dat, 未切换数据源。")
+            QtWidgets.QMessageBox.warning(
+                self,
+                "数据目录无效",
+                "未找到 rbtlog_traj1.dat。\n\n"
+                "请选择包含 left/ 与 right/ 子目录的采集数据目录"
+                "（子目录内应有 rbtlog_traj1.dat / rbtlog_traj2.dat）。",
+            )
+            return
+        # 切换数据源（Node 用于绘图, 两个 calculator 用于辨识）
+        self.dyn.rec_dir = base
+        self.dyn.calculator_left.rec_dir = base
+        self.dyn.calculator_right.rec_dir = base
+        self._left_captured = probes["left"]["traj1"] is not None
+        self._right_captured = probes["right"]["traj1"] is not None
+        # 数据源已更换, 之前算出的参数不再对应当前数据
+        if self._left_calculated or self._right_calculated:
+            self.log_msg("数据源已更换, 之前计算的辨识参数已失效, 请重新计算。")
+        self._left_calculated = False
+        self._right_calculated = False
+        self._params_calculated = False
+        self.dyn.calculator_left.reset_identification()
+        self.dyn.calculator_right.reset_identification()
+        self._update_data_dir_label()
+        self.enable_buttons()
+        self.log_msg(f"数据源已切换为: {base}")
+        for side, label in (("left", "左臂"), ("right", "右臂")):
+            for traj in ("traj1", "traj2"):
+                self.log_msg(
+                    f"  {label} {self._format_probe(f'{side}/rbtlog_{traj}.dat', probes[side][traj])}"
+                )
+        if not (probes["left"]["traj2"] and probes["right"]["traj2"]):
+            self.log_msg("提示: traj2 用于参数验证, 缺失时仍可辨识但无法看图示参数验证结果。")
 
     def _open_meshcat_url(self):
         try:
@@ -1809,6 +2099,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def on_calc_params(self):
         self.update_params_from_ui()
+        self._calculation_running = True
         self.disable_buttons(True)
         self._cancel_requested = False
         self._left_calculated = False
@@ -1853,6 +2144,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         except Exception as e:
             self.log_msg("动力学参数计算出错: " + str(e))
         finally:
+            self._calculation_running = False
             try:
                 QtCore.QMetaObject.invokeMethod(
                     self, "enable_buttons", QtCore.Qt.QueuedConnection
@@ -1862,6 +2154,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def on_calc_params_left(self):
         self.update_params_from_ui()
+        self._calculation_running = True
         self.disable_buttons(True)
         self._cancel_requested = False
         self._left_calculated = False
@@ -1890,6 +2183,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         except Exception as e:
             self.log_msg("左臂动力学参数计算出错: " + str(e))
         finally:
+            self._calculation_running = False
             try:
                 QtCore.QMetaObject.invokeMethod(
                     self, "enable_buttons", QtCore.Qt.QueuedConnection
@@ -1899,6 +2193,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
     def on_calc_params_right(self):
         self.update_params_from_ui()
+        self._calculation_running = True
         self.disable_buttons(True)
         self._cancel_requested = False
         self._left_calculated = False
@@ -1927,6 +2222,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         except Exception as e:
             self.log_msg("右臂动力学参数计算出错: " + str(e))
         finally:
+            self._calculation_running = False
             try:
                 QtCore.QMetaObject.invokeMethod(
                     self, "enable_buttons", QtCore.Qt.QueuedConnection
@@ -2301,6 +2597,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                     ]
                     calc_left = self.dyn.calculator_left
                     tL, tau_current_L, tau_sensor_L, tau_pred_L, tau_used_L = calc_left.get_regr_validatation()
+                    af_left = calc_left.proc_data["traj2"]["algorithm"] == IDENTIFICATION_AF_ARF
                     totalL = tau_used_L.shape[0]
                     for i in range(min(ndof, tau_used_L.shape[1])):
                         ax = axes_left[i]
@@ -2312,7 +2609,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                         ax.plot(
                             tL[:totalL],
                             current_i,
-                            label="Current torque",
+                            label="Filtered current torque" if af_left else "Current torque",
                             color="tab:red",
                             linewidth=1,
                         )
@@ -2320,7 +2617,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                             ax.plot(
                                 tL[:totalL],
                                 sensor_i,
-                                label="Sensor torque",
+                                label="Filtered sensor torque" if af_left else "Sensor torque",
                                 color="tab:orange",
                                 linewidth=1,
                                 linestyle="--",
@@ -2328,7 +2625,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                         ax.plot(
                             tL[:totalL],
                             estimated_i,
-                            label="Estimated torque",
+                            label="Estimated filtered torque" if af_left else "Estimated torque",
                             color="tab:blue",
                             linewidth=1,
                         )
@@ -2369,6 +2666,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                     ]
                     calc_right = self.dyn.calculator_right
                     tR, tau_current_R, tau_sensor_R, tau_pred_R, tau_used_R = calc_right.get_regr_validatation()
+                    af_right = calc_right.proc_data["traj2"]["algorithm"] == IDENTIFICATION_AF_ARF
                     totalR = tau_used_R.shape[0]
                     for i in range(min(ndof, tau_used_R.shape[1])):
                         ax = axes_right[i]
@@ -2380,7 +2678,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                         ax.plot(
                             tR[:totalR],
                             current_i,
-                            label="Current torque",
+                            label="Filtered current torque" if af_right else "Current torque",
                             color="tab:red",
                             linewidth=1,
                         )
@@ -2388,7 +2686,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                             ax.plot(
                                 tR[:totalR],
                                 sensor_i,
-                                label="Sensor torque",
+                                label="Filtered sensor torque" if af_right else "Sensor torque",
                                 color="tab:orange",
                                 linewidth=1,
                                 linestyle="--",
@@ -2396,7 +2694,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                         ax.plot(
                             tR[:totalR],
                             estimated_i,
-                            label="Estimated torque",
+                            label="Estimated filtered torque" if af_right else "Estimated torque",
                             color="tab:blue",
                             linewidth=1,
                         )

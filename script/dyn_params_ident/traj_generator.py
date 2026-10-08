@@ -19,6 +19,11 @@ from pathlib import Path
 from scipy.signal import butter, filtfilt
 from matplotlib import pyplot as plt
 
+try:
+    from dyn_params_ident.urdf2dh import resolve_urdf_path
+except ImportError:
+    from urdf2dh import resolve_urdf_path
+
 # -------------------------------
 # 1) Trajectory Generation Logic
 # -------------------------------
@@ -335,7 +340,7 @@ if __name__ == "__main__":
         try:
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
-                extracted_urdf = config.get('file_path', {}).get('robot_urdf')
+                extracted_urdf = resolve_urdf_path(config.get('file_path', {}).get('robot_urdf'))
                 if extracted_urdf:
                     ee_urdf_path = os.path.join(os.path.dirname(extracted_urdf), "robot_with_ee.urdf")
                     if os.path.exists(ee_urdf_path):

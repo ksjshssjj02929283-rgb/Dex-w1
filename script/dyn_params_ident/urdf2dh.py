@@ -6,6 +6,36 @@ import numpy as np
 import yourdfpy
 from typing import List, Tuple, Optional
 
+def resolve_urdf_path(urdf_path: Optional[str]) -> Optional[str]:
+    """把 robot_config.yaml 里的 robot_urdf 解析成实际存在的路径。
+
+    配置里写的是相对路径(如 ../install/robot_server_lib/share/robot_server_lib/
+    robot_models/w1/robot.urdf)，只有进程 cwd 恰好是仓库根目录下的一级目录(script/、
+    w1_server/ 等)时才能直接命中；Python 侧工具可能从任意 cwd 启动(set_w1.sh、
+    run_sim.sh、IDE、直接 python3)，因此除 cwd 外再尝试本文件所在目录与仓库根目录的
+    各一级子目录。解析不到时原样返回，由调用方按原有逻辑报错。
+    """
+    if not urdf_path or os.path.isabs(urdf_path) or os.path.exists(urdf_path):
+        return urdf_path
+    here = os.path.dirname(os.path.abspath(__file__))       # .../script/dyn_params_ident
+    repo_root = os.path.dirname(os.path.dirname(here))      # .../dexe_robot_server
+    bases = [os.getcwd(), here, os.path.dirname(here), repo_root]
+    try:
+        bases += [
+            os.path.join(repo_root, name)
+            for name in sorted(os.listdir(repo_root))
+            if os.path.isdir(os.path.join(repo_root, name))
+        ]
+    except OSError:
+        pass
+    for base in bases:
+        cand = os.path.normpath(os.path.join(base, urdf_path))
+        if os.path.exists(cand):
+            print(f"[urdf2dh] robot_urdf 按 cwd 取不到, 已解析为: {cand}")
+            return cand
+    return urdf_path
+
+
 def get_robot_info() -> Tuple[Optional[str], Optional[str], Optional[str]]:
     config_path = os.path.expanduser("~/dexe_robot_server_data/robot_config.yaml")
     robot_type = None
@@ -21,6 +51,8 @@ def get_robot_info() -> Tuple[Optional[str], Optional[str], Optional[str]]:
                 urdf_p = cfg.get('file_path', {}).get('robot_urdf')
         except Exception:
             pass
+
+    urdf_p = resolve_urdf_path(urdf_p)
 
     if not urdf_p:
         cwd = os.getcwd()
