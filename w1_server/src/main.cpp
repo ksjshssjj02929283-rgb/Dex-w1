@@ -11,6 +11,8 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <algorithm>
+#include <cctype>
 
 #include "chassis_node.h"
 #include "w1_server.h"
@@ -48,12 +50,23 @@ int main(int argc, char* argv[]) {
     rclcpp::init(argc, argv);
     rclcpp::executors::MultiThreadedExecutor executor;
     auto node_server = std::make_shared<robot_server_lib::RobotServer>(user_cfg_path, false);
+    const char* backend_env = std::getenv("DEXE_CHASSIS_BACKEND");
+    std::string backend = backend_env ? backend_env : "dexe";
+    std::transform(backend.begin(), backend.end(), backend.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     std::shared_ptr<chassis_node::ChassisNode> node_chassis;
-    // RobotServer 与 ChassisNode 必须使用同一份 install 配置；
-    // 否则一个节点可能判定为全向、另一个节点仍按差速发布反馈。
-    // 两个节点共用同一条底盘目标通道：chassis_node 写、RobotServer 的 1 kHz 线程读。
-    node_chassis = std::make_shared<chassis_node::ChassisNode>(user_cfg_path, node_server->chassis_target_buffer());
-    executor.add_node(node_chassis);
+    if (backend == "cloudia") {
+        // Cloudia 适配器独占底盘 WebSocket 和 /control/cmd_vel；不要同时
+        // 创建本地 ChassisNode，否则同一速度会被两个底盘后端消费。
+        std::cout << "[INFO] DEXE_CHASSIS_BACKEND=cloudia: local ChassisNode disabled; "
+                     "start cloudia_chassis_adapter separately." << std::endl;
+    } else {
+        // RobotServer 与 ChassisNode 必须使用同一份 install 配置；
+        // 两个节点共用同一条底盘目标通道：chassis_node 写、RobotServer 的 1 kHz 线程读。
+        node_chassis = std::make_shared<chassis_node::ChassisNode>(
+            user_cfg_path, node_server->chassis_target_buffer());
+        executor.add_node(node_chassis);
+    }
     executor.add_node(node_server);
     SetupRealtimeThread(70);
     executor.spin();
