@@ -78,6 +78,7 @@ $INSTALL_DIR/chassis_interfaces/lib
 $INSTALL_DIR/joint_interfaces/lib
 $INSTALL_DIR/robot_server_interfaces/lib
 $INSTALL_DIR/robot_server_lib/lib
+$INSTALL_DIR/nav_interfaces/lib
 LDCONF
 eval "$SUDO_PREFIX cp /tmp/w1_server.conf /etc/ld.so.conf.d/w1_server.conf"
 eval "$SUDO_PREFIX ldconfig"

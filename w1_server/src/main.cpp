@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
     // RobotServer 与 ChassisNode 必须使用同一份 install 配置；
     // 否则一个节点可能判定为全向、另一个节点仍按差速发布反馈。
     // 两个节点共用同一条底盘目标通道：chassis_node 写、RobotServer 的 1 kHz 线程读。
-    node_chassis = std::make_shared<chassis_node::ChassisNode>(robot_cfg_path, node_server->chassis_target_buffer());
+    node_chassis = std::make_shared<chassis_node::ChassisNode>(user_cfg_path, node_server->chassis_target_buffer());
     executor.add_node(node_chassis);
     executor.add_node(node_server);
     SetupRealtimeThread(70);
