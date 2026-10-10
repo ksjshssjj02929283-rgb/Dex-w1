@@ -11,6 +11,7 @@ enum for various states and command types
 #pragma once
 
 #include <Eigen/Dense>
+#include <array>
 #include <Eigen/Geometry>
 #include <array>
 #include <filesystem>
@@ -303,6 +304,10 @@ struct RobotParams {
     std::vector<std::string> joints_dual_arm;                       // 双臂模式关节名称
     std::optional<Eigen::VectorXd> dyn_base_params_primary;         // 动力学基参数矩阵(非方阵)
     std::optional<Eigen::VectorXd> dyn_base_params_secondary;       // 动力学基参数矩阵(非方阵)
+    std::array<double, 7> fv_ratio_primary{0.6, 0.6, 0.6, 0.6, 0.6, 0.5, 0.5};
+    std::array<double, 7> fv_ratio_secondary{0.6, 0.6, 0.6, 0.6, 0.6, 0.5, 0.5};
+    std::array<double, 7> fc_ratio_primary{0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2};
+    std::array<double, 7> fc_ratio_secondary{0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2};
     dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_primary;  // 主臂末端工具重力补偿参数
     dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_secondary;  // 从臂末端工具重力补偿参数
 };

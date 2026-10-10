@@ -78,6 +78,7 @@ add_library(${PROJECT_NAME} ${LIB_SRCS})
 target_include_directories(${PROJECT_NAME} PUBLIC
   ${EIGEN3_INCLUDE_DIR}
   $<INSTALL_INTERFACE:include>
+  $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/utils>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/kinematics>
@@ -169,4 +170,3 @@ if(BUILD_TESTING)
 endif()
 
 ament_package()
-

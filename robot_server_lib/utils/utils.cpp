@@ -42,6 +42,30 @@ YAML::Node MergeYamlNode(const YAML::Node& user_node,
             }
         }
     }
+    // Keep the four tuning arrays immediately after the identified parameters.
+    if (result["dyn_base_params_secondary"]) {
+        const std::vector<std::string> ratio_keys{
+            "fv_ratio_primary", "fv_ratio_secondary", "fc_ratio_primary", "fc_ratio_secondary"};
+        YAML::Node ordered(YAML::NodeType::Map);
+        std::vector<std::string> before, after;
+        for (const auto& field : result) {
+            const auto key = field.first.as<std::string>();
+            before.push_back(key);
+            if (std::find(ratio_keys.begin(), ratio_keys.end(), key) != ratio_keys.end()) continue;
+            ordered[key] = field.second;
+            if (key == "dyn_base_params_secondary") {
+                for (const auto& ratio_key : ratio_keys) {
+                    if (result[ratio_key]) {
+                        ordered[ratio_key] = result[ratio_key];
+                        ordered[ratio_key].SetStyle(YAML::EmitterStyle::Flow);
+                    }
+                }
+            }
+        }
+        for (const auto& field : ordered) after.push_back(field.first.as<std::string>());
+        if (before != after) modified = true;
+        return ordered;
+    }
     return result;
 }
 
@@ -394,6 +418,25 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         std::cout << "Use dafault dynamic model in urdf\n";
         LOG_INFO << "Use dafault dynamic model in urdf";
     }
+
+    auto parse_friction_ratio = [&](const char* key, std::array<double, 7>& dst) {
+        const auto node = version_cfg[key];
+        if (!node) return;  // Defaults also support callers that do not run CheckConfig.
+        if (!node.IsSequence() || node.size() != dst.size()) {
+            throw std::runtime_error(std::string(key) + " must contain exactly 7 ratios");
+        }
+        for (size_t i = 0; i < dst.size(); ++i) {
+            const double value = node[i].as<double>();
+            if (!std::isfinite(value) || value < 0.0) {
+                throw std::runtime_error(std::string(key) + " ratios must be finite and nonnegative");
+            }
+            dst[i] = value;
+        }
+    };
+    parse_friction_ratio("fv_ratio_primary", params.fv_ratio_primary);
+    parse_friction_ratio("fv_ratio_secondary", params.fv_ratio_secondary);
+    parse_friction_ratio("fc_ratio_primary", params.fc_ratio_primary);
+    parse_friction_ratio("fc_ratio_secondary", params.fc_ratio_secondary);
 
     robot_model.model_ptr = std::make_shared<pinocchio::Model>(model);
     robot_model.primary_arm_model_ptr = std::make_shared<pinocchio::Model>(left_arm_model);

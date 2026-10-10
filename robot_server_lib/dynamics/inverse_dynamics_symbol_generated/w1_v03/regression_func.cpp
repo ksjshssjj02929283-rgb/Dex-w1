@@ -4,7 +4,7 @@
 #ifndef DYN_SIGN_FUNC
 #define DYN_SIGN_FUNC
 static inline double sign(double x) {
-    double f_c_scale = 0.2;
+    double f_c_scale = 1.0;
     double vel_threshold = 0.000872664626;  // 0.05/180*PI, idle velocity threshold
     if (x > vel_threshold) return f_c_scale;
     else if (x < -vel_threshold) return -f_c_scale;

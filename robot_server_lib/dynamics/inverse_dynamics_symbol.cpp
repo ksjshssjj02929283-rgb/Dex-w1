@@ -104,14 +104,17 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDo
         dyn_base_params = robot_model.params_ptr->dyn_base_params_secondary.value();
     }
 
-    const double friction_ratio = 0.6;
-    dyn_base_params[3]  *= friction_ratio;
-    dyn_base_params[13] *= friction_ratio;
-    dyn_base_params[24] *= friction_ratio;
-    dyn_base_params[35] *= friction_ratio;
-    dyn_base_params[46] *= friction_ratio;
-    dyn_base_params[57] *= 0.5;
-    dyn_base_params[68] *= 0.5;
+    // fv/fc are pure base parameters in both supported generated models.
+    constexpr std::array<int, 7> fv_indices{3, 13, 24, 35, 46, 57, 68};
+    constexpr std::array<int, 7> fc_indices{4, 14, 25, 36, 47, 58, 69};
+    const auto& fv_ratio = is_left ? robot_model.params_ptr->fv_ratio_primary
+                                   : robot_model.params_ptr->fv_ratio_secondary;
+    const auto& fc_ratio = is_left ? robot_model.params_ptr->fc_ratio_primary
+                                   : robot_model.params_ptr->fc_ratio_secondary;
+    for (size_t joint = 0; joint < fv_indices.size(); ++joint) {
+        dyn_base_params[fv_indices[joint]] *= fv_ratio[joint];
+        dyn_base_params[fc_indices[joint]] *= fc_ratio[joint];
+    }
 
     Eigen::VectorXd tau_out = Eigen::VectorXd::Zero(7);
 

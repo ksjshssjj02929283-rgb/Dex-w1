@@ -31,6 +31,7 @@
 | 文件或目录 | 作用 |
 |---|---|
 | [`script/qt_dyn_params_ident.py`](../script/qt_dyn_params_ident.py) | 提供 GUI，完成 ROS 连接、仿真检查、真机采集、滤波与差分、参数求解、结果验证和配置写入 |
+| [`script/dyn_params_ident/acceleration_free_regressor.py`](../script/dyn_params_ident/acceleration_free_regressor.py) | 使用位置、速度和力矩构造 AF-ARF 无加速度回归数据 |
 | [`script/dyn_params_ident/urdf2dh.py`](../script/dyn_params_ident/urdf2dh.py) | 从 URDF 关节轴和坐标系计算左右臂标准 DH 参数、工具变换及 DH 基坐标系中的重力方向 |
 | [`script/dyn_params_ident/traj_generator.py`](../script/dyn_params_ident/traj_generator.py) | 在关节限制与碰撞约束内生成多谐波激励轨迹，并输出位置、速度和加速度检查图 |
 | [`script/dyn_params_ident/dyn_code_generator.py`](../script/dyn_params_ident/dyn_code_generator.py) | 使用 SymPyBotics 生成各机器人版本的回归力矩函数和质量矩阵函数 |
@@ -128,17 +129,21 @@ GUI 通过 ROS 2 与真机和仿真接口通信，主要使用关节位置控制
 
 ## 6. 数据预处理
 
-`process_regression_data()` 对 `traj1` 和 `traj2` 使用相同的处理链：
+GUI 可选择“传统回归（使用 ddq）”或“AF-ARF（无需 ddq）”。`traj1` 和 `traj2` 使用相同的算法与参数。
+
+传统回归的处理链：
 
 1. 对原始关节位置执行三阶 Butterworth 零相位滤波。
 2. 使用中心差分从位置计算速度。
 3. 再次差分得到加速度，并分别对速度和加速度滤波。
-4. 当前对电流估算力矩不额外低通滤波。
+4. 对电流估算力矩使用同样参数的 Butterworth 零相位滤波。
 5. 裁掉轨迹开始约 3 秒和结束约 1 秒的数据，减少起停过渡影响。
 6. 根据每个采样点的 `q`、`dq`、`ddq` 生成回归矩阵。
 7. 对回归矩阵执行 QR 分解，为后续约束优化构造数值问题。
 
 差分会放大位置噪声，因此滤波参数、采样周期和时间戳稳定性会直接影响辨识结果。改变轨迹基频或采样周期时，应同步复核截止频率与裁剪区间。
+
+AF-ARF 先共同重采样位置与力矩，对位置滤波后只差分一次得到速度，再通过动量形式和分部积分构造无加速度回归。`alpha` 用于消去加速度，`beta` 对矩阵和力矩再低通，可设为 `0` 关闭。算法组成及 Qt 实现见 [AF-ARF 无加速度动力学参数辨识](af_arf_identification.md)。
 
 ## 7. 带物理约束的参数求解
 
@@ -182,6 +187,8 @@ subject to  惯性参数物理可行
 - 预处理后用于辨识的力矩。
 
 应重点检查各关节的系统性偏差、相位差、速度换向处摩擦误差以及峰值力矩误差。仅凭 `traj1` 拟合曲线不能判断参数可用，必须查看 `traj2` 的独立验证结果。
+
+AF-ARF 中 `W_traj2` 已经过回归滤波，因此 `τ_pred` 是滤波后的预测力矩，应与使用相同 `alpha`、`beta` 滤波的测量力矩比较。滤波残差变小不能直接说明原始力矩预测更准确。
 
 ## 9. 写入配置与代码生成
 
