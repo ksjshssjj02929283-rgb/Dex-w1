@@ -1,0 +1,192 @@
+# 整机共享的状态码码表：每个模块在 modules: 下追加自己的 module 条目。
+# Format: module -> submodule -> status code metadata.
+modules:
+  - module: "Supervisor"
+    module_id: 103
+    submodules:
+      - submodule: "Supervisor Core"
+        submodule_id: 0
+        status_codes:
+          - status_code: 10300000
+            description: "所有预期子模块在线，且无活动错误码。"
+            solution: "无需处理；若业务仍异常，继续检查各模块诊断项和业务日志。"
+
+          - status_code: 10300011
+            description: "3 秒未收到 Controller 状态快照，其错误快照已暂时移除。"
+            solution: "确认 controller_node 存在且执行器未阻塞；检查 /supervisor/module_error_status 发布频率和 Controller 日志。"
+
+          - status_code: 10300012
+            description: "10 秒未收到 Controller 状态快照，判定 Controller 离线。"
+            solution: "检查 controller_node 进程、dexe-system.service 和 ROS 通信；排除启动失败或回调阻塞后重启相关服务。"
+
+          - status_code: 10300021
+            description: "3 秒未收到 Collector 状态快照，其错误快照已暂时移除。"
+            solution: "确认 collector_node 存在且状态定时器正常；检查 /supervisor/module_error_status 发布频率及 Collector 日志。"
+
+          - status_code: 10300022
+            description: "10 秒未收到 Collector 状态快照，判定 Collector 离线。"
+            solution: "检查 collector_node 是否退出、死锁或被驱动回调阻塞；查看 dexe-system.service 日志，修复后重启相关服务。"
+
+          - status_code: 10300031
+            description: "3 秒未收到 Bridge 状态快照，其错误快照已暂时移除。"
+            solution: "确认 bridge_node 已启用且状态定时器正常；检查 /supervisor/module_error_status 发布频率和 Bridge 日志。"
+
+          - status_code: 10300032
+            description: "10 秒未收到 Bridge 状态快照，判定 Bridge 离线。"
+            solution: "若启用了 Bridge，检查 bridge_node、插件初始化和 dexe-system.service；若未启用，确认 expected_submodules 未包含子模块 3。"
+
+          - status_code: 10300041
+            description: "3 秒未收到 Troubleshoot 状态快照，其错误快照已暂时移除。"
+            solution: "先确认 controller_node 正常发布状态，再检查 TroubleshootManager 初始化、处理程序加载和 Controller 回调是否阻塞。"
+
+          - status_code: 10300042
+            description: "10 秒未收到 Troubleshoot 状态快照，判定 Troubleshoot 离线。"
+            solution: "检查 controller_node 是否运行及其状态发布定时器，查看处理程序插件加载异常；修复后重启 dexe-system.service。"
+
+      - submodule: "Controller"
+        submodule_id: 1
+        status_codes:
+          - status_code: 10301000
+            description: "Controller 无活动错误码，健康心跳正常。"
+            solution: "无需处理；若业务仍异常，继续检查 Controller 日志和诊断项。"
+
+          - status_code: 10301012
+            description: "Controller 初始化进程监控器异常，进程监控不可用。"
+            solution: "查看日志 detail 中的异常；核对 controller_policy.yaml 的 process_monitor、service_name、required_processes 和 check_interval 类型后重启。"
+
+          - status_code: 10301021
+            description: "收到 WARN 级诊断，Watchdog 进入 WARNING。"
+            solution: "查看 /diagnostics_agg 中 level=1 的 status.name、message 和 values，定位首个异常设备或模块并处理其告警原因。"
+
+          - status_code: 10301022
+            description: "诊断上报 ERROR/STALE 或 WARN 持续超时，Watchdog 进入 ERROR。"
+            solution: "检查 /diagnostics_agg 和 /diagnostics_toplevel_state 的 ERROR/STALE 来源；处理数据超时、设备离线或节点异常，确认诊断恢复为 OK。"
+
+          - status_code: 10301023
+            description: "Watchdog ERROR 持续超时，进入 FATAL 并切换 SAFE_STOP，故障已锁存。"
+            solution: "先排除 /diagnostics_agg 中的根因并等待 Watchdog 退出 FATAL，再调用 /supervisor/reset_faults；仍无法恢复时重启异常模块。"
+
+          - status_code: 10301033
+            description: "电源板 SN 与本机 SN 缺失或不一致，已尝试停止 dexe-system.service。"
+            solution: "根据日志 detail 对比 sn_code、pc_sn_code 和 reason；检查 /home/dexforce/ota/can_device_tool read_sn 与 /etc/dexe_robot/sncode.yaml，修正一致后重启。"
+
+          - status_code: 10301042
+            description: "模式切换缺少目标模式配置或关键步骤失败，切换已中止。"
+            solution: "查看 detail 中的 target_mode、service/timer 和 exit_code；核对模式服务配置并用 systemctl 检查失败单元，修复后重新切换。"
+
+          - status_code: 10301052
+            description: "本机执行关机、复位重启或停服命令返回非零。"
+            solution: "查看 detail 中的 command 和 exit_code；手动执行对应 /usr/local/sbin/dexe-* 命令，检查权限、脚本及目标 systemd 单元日志。"
+
+          - status_code: 10301062
+            description: "远程主机未配置，或远程关机等 sudo 命令执行失败。"
+            solution: "查看 detail 中的 command 和 exit_code；核对 controller_policy.yaml 的 ssh.remote_ip、remote_username、密钥连接及远端 sudo 权限。"
+
+          - status_code: 10301072
+            description: "CLEAR_ERROR 流程失败：电机未全部进入 OP 或清错服务不可用。"
+            solution: "查看 detail 确认失败阶段；检查 /feedback/robot_server_state 的 motor_status、/control/set_property 服务及控制节点日志，恢复后重新发送 CLEAR_ERROR。"
+
+          - status_code: 10301082
+            description: "必要进程连续 3 次未在服务 cgroup 中找到，已尝试重启服务。"
+            solution: "查看 detail 中的 service 和 missing_process；检查 systemctl status、journalctl 及进程启动参数，确认进程名称与 controller_policy.yaml 匹配。"
+
+          - status_code: 10301091
+            description: "进程监控参数异常或 cgroup.procs 不可读，检查结果不可信。"
+            solution: "优先查看 detail 中的 cgroup 文件路径；核对 service_name/required_processes，确认 /sys/fs/cgroup/system.slice/<service>/cgroup.procs 存在且可读。"
+
+          - status_code: 10301101
+            description: "process_monitor 配置缺失或类型错误，该监控项已跳过。"
+            solution: "查看 detail 中的 process_monitor ID 和异常；修正 controller_policy.yaml 对应项，确保 service_name 为字符串、required_processes 为字符串数组、check_interval 为正数。"
+
+      - submodule: "Collector"
+        submodule_id: 2
+        status_codes:
+          - status_code: 10302000
+            description: "Collector 无活动错误码，健康心跳正常。"
+            solution: "无需处理；若业务仍异常，继续检查 Collector 日志和诊断项。"
+
+          - status_code: 10302012
+            description: "Collector 初始化阶段抛出异常，部分采集驱动可能未启动。"
+            solution: "查看 detail 中的异常和 Collector 启动日志；检查 collector_policy.yaml 参数、SSH/TTS 配置及依赖服务，修复后重启 dexe-system.service。"
+
+          - status_code: 10302022
+            description: "一个或多个 Collector 插件加载失败，其余驱动仍继续运行。"
+            solution: "根据 detail 的 library、driver 或异常定位插件；核对 collector_policy.yaml 的 driver_plugins、install/dexe_supervisor/lib 文件和共享库依赖。"
+
+          - status_code: 10302032
+            description: "驱动 tick() 抛出异常，本周期采集未完成。"
+            solution: "查看 detail 中的 driver 和异常文本；检查该驱动订阅数据、设备连接和专属配置，修复持续异常后确认状态码自动清除。"
+
+          - status_code: 10302041
+            description: "驱动 tick 卡顿：超过 2×heartbeat_timeout 且连续 2 个周期未恢复。"
+            solution: "查看 detail 中的 driver 和 missed_periods；检查驱动回调耗时、锁竞争、CPU/IO 负载及输入数据阻塞，确认 tick 恢复。"
+
+          - status_code: 10302042
+            description: "驱动连续漏跳达到阈值（默认 5），可能长时间阻塞或失去数据源。"
+            solution: "根据 detail 定位 driver 和 missed_periods；抓取线程栈并检查设备/ROS 数据源，解除阻塞；无法恢复时重启 dexe-system.service。"
+
+      - submodule: "Bridge"
+        submodule_id: 3
+        status_codes:
+          - status_code: 10303000
+            description: "Bridge 无活动错误码，健康心跳正常。"
+            solution: "无需处理；若业务仍异常，继续检查 Bridge 日志和诊断项。"
+
+          - status_code: 10303012
+            description: "平台驱动加载或初始化抛出异常，部分平台驱动可能未启动。"
+            solution: "查看 detail 中的初始化异常；检查 bridge_policy.yaml、插件依赖和运行环境，修复后重启 bridge_node 或 dexe-system.service。"
+
+          - status_code: 10303022
+            description: "平台插件加载失败，或 ThingsBoard telemetry_map 无法加载。"
+            solution: "根据 detail 的 library、driver、路径和异常定位；核对 bridge_policy.yaml、install/dexe_supervisor/lib 及 config/thingsboard/telemetry_map.yaml。"
+
+          - status_code: 10303031
+            description: "ThingsBoard 配置降级：上报周期回退为 300 秒，或无效遥测字段被跳过。"
+            solution: "查看 detail 中的参数名、实际值或 field 编号；修正 bridge_policy.yaml 的 thingsboard.period_sec 或 telemetry_map.yaml 对应字段。"
+
+          - status_code: 10303041
+            description: "ThingsBoard 连接配置无效或 MQTT 握手超时，本周期未上报。"
+            solution: "检查 /etc/dexe_robot/thingsboard.yaml 的 host、port、token、tls 和 ca_cert；验证 DNS/网络、端口、证书及 ThingsBoard 设备令牌。"
+
+          - status_code: 10303042
+            description: "创建 MQTT 客户端抛出异常，下次上报将重新读取配置并创建。"
+            solution: "查看 detail 的 MQTT 异常；核对 server URI、client_id/token 字符，检查 Paho MQTT 运行库、TLS 证书路径和系统资源。"
+
+          - status_code: 10303051
+            description: "MQTT 异步发布抛出异常，本次 payload 已丢弃。"
+            solution: "查看 detail 中的 topic；检查 MQTT 连接、设备令牌权限和 ThingsBoard 服务状态，必要时缩短周期验证恢复后的上报。"
+
+          - status_code: 10303061
+            description: "遥测字段解析结果全为空，本周期跳过上报。"
+            solution: "检查上述文件是否存在且路径字段有效，确认 /diagnostics_agg 含映射的 status/diag_key，并核对 telemetry_map.yaml 的 source 与 path。"
+
+      - submodule: "Troubleshoot"
+        submodule_id: 4
+        status_codes:
+          - status_code: 10304000
+            description: "Troubleshoot 无活动错误码，健康心跳正常。"
+            solution: "无需处理；若业务仍异常，继续检查 Troubleshoot 日志和诊断项。"
+            
+          - status_code: 10304011
+            description: "扫描 handler 插件目录异常，自动发现结果可能不完整。"
+            solution: "查看 detail 的目录访问异常；检查 dexe_supervisor 安装前缀/lib 的权限和插件文件，或在 controller_policy.yaml 中显式配置 handler_plugins。"
+
+          - status_code: 10304022
+            description: "一个或多个故障处理插件加载或注册失败。"
+            solution: "根据 detail 中的 plugin 和异常定位；核对 handler_plugins 名称、动态库及依赖，确认类注册、get_error_type 和 on_start 实现正确。"
+
+          - status_code: 10304031
+            description: "诊断请求的 error_type 无已注册处理程序，未执行诊断。"
+            solution: "根据 detail 核对 error_type；确认对应插件已加载、get_error_type 返回值正确且已完成 register_handler，或改用 ALL/有效类型。"
+
+          - status_code: 10304032
+            description: "诊断处理程序返回失败，未汇总检测结果。"
+            solution: "查看 detail 中处理程序返回的失败原因；检查插件依赖的 ROS 服务、话题、设备数据和权限，恢复条件后重新调用诊断。"
+
+          - status_code: 10304041
+            description: "恢复请求的 status_code 未注册或无 recovery_fn，未执行恢复。"
+            solution: "根据 detail 核对 status_code；确认处理插件已加载并在 register_into() 中注册该状态码及 recovery_fn，不支持恢复的状态码不要发起恢复。"
+
+          - status_code: 10304042
+            description: "恢复函数返回失败，目标故障未完成自动恢复。"
+            solution: "查看 detail 中 recovery_fn 返回的信息；检查恢复前置条件、依赖服务和设备状态，修复插件逻辑或现场问题后重新调用恢复。"

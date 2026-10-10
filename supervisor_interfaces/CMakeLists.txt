@@ -21,4 +21,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES builtin_interfaces
 )
 
+# Shared status-code catalog: each robot module appends its own entry under `modules:`.
+install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+
 ament_package()
