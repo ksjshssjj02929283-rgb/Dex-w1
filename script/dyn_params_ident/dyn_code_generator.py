@@ -8,6 +8,7 @@ from typing import List, Tuple
 from sympybotics.symcode import code_to_func, Subexprs
 import re
 from urdf2dh import get_dh_params_for_arm, get_robot_info
+from friction_model import FRICTION_VELOCITY_SCALE
 
 # ============================================================================
 # Robot Dynamics Generator Class
@@ -158,11 +159,8 @@ class RobotUnifiedDynamicsGenerator:
             '#ifndef DYN_SIGN_FUNC\n'
             '#define DYN_SIGN_FUNC\n'
             'static inline double sign(double x) {\n'
-            '    double f_c_scale = 1.0;\n'
-            '    double vel_threshold = 0.000872664626;  // 0.05/180*PI, idle velocity threshold\n'
-            '    if (x > vel_threshold) return f_c_scale;\n'
-            '    else if (x < -vel_threshold) return -f_c_scale;\n'
-            '    else return 0.0;\n'
+            f'    const double velocity_scale = {FRICTION_VELOCITY_SCALE};\n'
+            '    return tanh(x / velocity_scale);\n'
             '}\n'
             '#endif\n\n'
         )
@@ -251,11 +249,8 @@ class RobotUnifiedDynamicsGenerator:
             '#ifndef DYN_SIGN_FUNC\n'
             '#define DYN_SIGN_FUNC\n'
             'static inline double sign(double x) {\n'
-            '    double f_c_scale = 1.0;\n'
-            '    double vel_threshold = 0.000872664626;  // 0.05/180*PI, idle velocity threshold\n'
-            '    if (x > vel_threshold) return f_c_scale;\n'
-            '    else if (x < -vel_threshold) return -f_c_scale;\n'
-            '    else return 0.0;\n'
+            f'    const double velocity_scale = {FRICTION_VELOCITY_SCALE};\n'
+            '    return tanh(x / velocity_scale);\n'
             '}\n'
             '#endif\n\n'
         )

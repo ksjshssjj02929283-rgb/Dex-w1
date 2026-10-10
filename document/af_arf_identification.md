@@ -84,8 +84,10 @@ T[j, :] = dqᵀ · B_j
 Qt 使用库仑、黏性和偏置摩擦模型：
 
 ```text
-f_i = fv_i · dq_i + fc_i · sign(dq_i) + fo_i
+f_i = fv_i · dq_i + fc_i · tanh(dq_i / v_s) + fo_i
 ```
+
+其中当前 `v_s = 0.1 rad/s`，用于将库仑摩擦在零速附近平滑化。
 
 摩擦项本身不含加速度。令 `H_F` 只保留原矩阵的摩擦列，其余列置零，直接低通后合并：
 
