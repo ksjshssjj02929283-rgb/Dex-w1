@@ -26,9 +26,9 @@ def read_version(path, content):
             versions = re.findall(
                 r"^[ \t]*version[ \t]*=[ \t]*"
                 r"(?:\"([0-9]+\.[0-9]+\.[0-9]+)\"|'([0-9]+\.[0-9]+\.[0-9]+)')"
-                r"[ \t]*(?:#[^\n]*)?\r?$",
-                project[1] if project else "", re.M)
-            version = next(filter(None, versions[0])) if len(versions) == 1 else None
+                r"[ \t]*(?:#[^\n]*)?\r?$", project[1] if project else "", re.M)
+            version = next(filter(None,
+                                  versions[0])) if len(versions) == 1 else None
         if not isinstance(version, str) or not re.fullmatch(
                 r"[0-9]+\.[0-9]+\.[0-9]+", version.strip()):
             raise ValueError("需要明确的 major.minor.patch 版本号")
