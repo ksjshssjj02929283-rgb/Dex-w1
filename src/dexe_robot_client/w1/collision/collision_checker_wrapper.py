@@ -123,7 +123,6 @@ class CollisionCheckerWrapper:
             right_end_effector_type=right_end_effector_type,
             mesh_type=mesh_type,
             verbose=verbose)
-
         if ignored_collision_pairs_json_path.exists():
             self.coal_collision.load_ignored_collision_pairs_from_json(
                 str(ignored_collision_pairs_json_path))

@@ -1,6 +1,8 @@
 # CHANGELOG
 
 ## [Unrelease]
+
+## [V0.8.2]
 ### Refactor
 - ignored_collision_pairs.json不从内网下载，改为自动生成
 
