@@ -10,8 +10,7 @@
 
 #include <spdlog/spdlog.h>
 
-// The maximum size of a logging file. (default: 100MB)
-#define DEFAULT_LOGGER_BUFFER_SIZE 100
+#include "dexe_rp/common/TypesFmt.h"
 
 #define DEXERP_TRACE(...) SPDLOG_LOGGER_CALL(DexeRP::GetLogger(), spdlog::level::trace, __VA_ARGS__)
 
@@ -26,6 +25,9 @@
 #define DEXERP_CRITICAL(...) SPDLOG_LOGGER_CALL(DexeRP::GetLogger(), spdlog::level::critical, __VA_ARGS__)
 
 namespace DexeRP {
+
+// The maximum size of a logging file. (default: 100MB)
+inline constexpr size_t kMaxLogFileSize = 100;
 
 std::shared_ptr<spdlog::logger> GetLogger();
 void SetConsoleSinkLevel(spdlog::level::level_enum level);

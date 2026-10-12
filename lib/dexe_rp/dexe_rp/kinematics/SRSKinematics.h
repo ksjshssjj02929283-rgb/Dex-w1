@@ -15,47 +15,112 @@
 namespace DexeRP {
 namespace Kinematics {
 
-// TODO: Should support basic type of SRS, not only for DexforceW1
-class SRSKinematics : public ArmKinematicsBase {
+/*
+Reference papers:
+1. Analytical Inverse Kinematic Computation for 7-DOF Redundant Manipulators
+    With Joint Limits and Its Application to Redundancy Resolution
+
+2. Position-based kinematics for 7-DoF serial manipulators with
+    global configuration control, joint limit and singularity avoidance
+*/
+class SRSKinematicsBase : public ArmKinematics<7, SRSConfig> {
 public:
-    SRSKinematics(std::shared_ptr<SRSKineParams> kine_params);
+    using Params = SRSKineParams;
+    using Config = SRSConfig;
 
-    virtual ~SRSKinematics() { DEXERP_DEBUG("Deconstructing SRSKinematics..."); };
+    virtual ~SRSKinematicsBase() = default;
 
-    virtual bool GetFK(const CVecXd &qpos, Mat4d &pose) const override;
+    virtual bool SetQposLimits(const JointVec& lower_bound, const JointVec& upper_bound) override;
 
-    virtual bool GetAllIK(const Mat4d &pose, const CVecXd &qpos_seed, std::vector<CVecXd> &qpos_list) const override {
-        (void)pose;
-        (void)qpos_seed;
-        (void)qpos_list;
-        DEXERP_WARN("Not Implemented.");
-        return false;
-    }
+    virtual Config GetConfig(const JointVec& qpos) const override;
+    virtual Mat4d GetFK(const JointVec& qpos) const override;
+    virtual StatusType GetAllIK(const Mat4d& pose,
+                                const JointVec& qpos_seed,
+                                std::vector<JointVec>& qpos_list) const override;
+    virtual StatusType GetNearestIK(const Mat4d& pose, const JointVec& qpos_seed, JointVec& qpos) const override;
+    // cfg should be get from GetConfig()
+    virtual StatusType GetIK(const Mat4d& pose,
+                             const Config& cfg,
+                             const JointVec& qpos_seed,
+                             JointVec& qpos) const override;
 
-    virtual bool GetIK(const Mat4d &pose,
-                       const std::shared_ptr<ArmConfig> &cfg,
-                       const CVecXd &qpos_seed,
-                       CVecXd &qpos) const override;
-
-    virtual bool GetNearestIK(const Mat4d &pose, const CVecXd &qpos_seed, CVecXd &qpos) const override;
-
-    std::pair<bool, double> CalcArmAngle(const CVec7d &qpos) const;
+    virtual Config GetConfig(const JointVec& qpos, double redundancy_parameter) const;
+    virtual double GetArmAngle(const JointVec& qpos) const;
+    // cfg should be get from GetConfig()
+    virtual Intervals GetFeasibleArmAngles(const Mat4d& pose, const Config& cfg) const;
+    // Intervals GetFeasibleArmAngles(const Mat4d& pose, const Config& cfg) const;
 
 protected:
-    SRSKinematics() = delete;
+    SRSKinematicsBase(Params kine_params);
 
-    CVec3d _CalcRefAngles(const Mat4d &pose, double elbow_cfg) const;
+    struct _IKProcessVariables {
+        double q4;
+        Mat3d R_0_07;
+        Mat3d As, Bs, Cs, Aw, Bw, Cw;
+    };
 
-    double _CalcDistCost(const CVec7d &qpos, const CVec7d &ref_qpos) const;
+    std::pair<StatusType, _IKProcessVariables> PreprocessIK(const Mat4d& T_user_tcp, const Config& cfg) const;
 
-    double _CalcLimitCost(const CVec7d &qpos, double penalty_bound = 0.95) const;
+    std::pair<StatusType, double> CalcQ4(double d_26, double elbow_cfg) const;
 
-    double _CalcSingularityCost(const CVec7d &qpos, double penalty_bound = Deg2Rad(5.)) const;
+    CVec3d CalcRefQ123(const Mat4d& T_ob_oe, double elbow_cfg) const;
 
-    double _CalcCollisionCost(const CVec7d &qpos) const;
+    CVec3d CalcQ123(const Mat3d& R_03, double shoulder_cfg, double q1_seed) const;
 
-    std::shared_ptr<SRSKineParams> kine_params_;
-    CVec3d v_0_bs_, v_6_wt_;
+    CVec3d CalcQ567(const Mat3d& R_47, double wrist_cfg, double q5_seed) const;
+
+    double CalcCosJoint(double a, double b, double c, double arm_angle, double cfg) const;
+
+    Intervals CalcCosFeasibleArmAngle(double a, double b, double c, double lb, double ub, double cfg) const;
+
+    double CalcTanJoint(
+        double an, double bn, double cn, double ad, double bd, double cd, double arm_angle, double cfg) const;
+
+    Intervals CalcTanFeasibleArmAngle(
+        double an, double bn, double cn, double ad, double bd, double cd, double lb, double ub, double cfg) const;
+
+    Intervals CalcFeasibleArmAngles(const Mat3d& As,
+                                    const Mat3d& Bs,
+                                    const Mat3d& Cs,
+                                    const Mat3d& Aw,
+                                    const Mat3d& Bw,
+                                    const Mat3d& Cw,
+                                    const Config& cfg) const;
+    /// Dirty implementation!
+    double CalcCollisionCost(const JointVec& qpos) const;
+
+protected:
+    Params params_;
+    JointVec model_qpos_lb_, model_qpos_ub_;
+    JointVec weights_;
+
+private:
+    // precomputed parameters for IK
+    CVec3d v_0_02_, v_6_67_;
+};
+
+class SRSKinematics : public SRSKinematicsBase {
+public:
+    SRSKinematics(Params kine_params);
+
+    virtual ~SRSKinematics() = default;
+
+    virtual Config GetConfig(const JointVec& qpos) const override;
+    virtual Config GetConfig(const JointVec& qpos, double redundancy_parameter) const override;
+    virtual Mat4d GetFK(const JointVec& qpos) const override;
+    virtual StatusType GetAllIK(const Mat4d& pose,
+                                const JointVec& qpos_seed,
+                                std::vector<JointVec>& qpos_list) const override;
+    virtual StatusType GetNearestIK(const Mat4d& pose, const JointVec& qpos_seed, JointVec& qpos) const override;
+    // cfg should be get from GetConfig()
+    virtual StatusType GetIK(const Mat4d& pose,
+                             const Config& cfg,
+                             const JointVec& qpos_seed,
+                             JointVec& qpos) const override;
+
+    virtual double GetArmAngle(const JointVec& qpos) const override;
+    // cfg should be get from GetConfig()
+    virtual Intervals GetFeasibleArmAngles(const Mat4d& pose, const Config& cfg) const override;
 };
 
 }  // namespace Kinematics

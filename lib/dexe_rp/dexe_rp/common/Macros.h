@@ -8,7 +8,12 @@
 
 #pragma once
 
+#include <fmt/format.h>
+
 #include <memory>
+#include <stdexcept>
+
+#include "dexe_rp/common/Logger.h"
 
 /**
  * @brief Throw a runtime exception with a formatted error message
@@ -23,5 +28,7 @@
 /**
  * @brief Ensure that a condition is true, otherwise throw an exception.
  */
-#define DEXERP_ENSURE(cond, ...) \
-    if (!(cond)) DEXERP_THROW(__VA_ARGS__)
+#define DEXERP_ENSURE(cond, ...)                \
+    do {                                        \
+        if (!(cond)) DEXERP_THROW(__VA_ARGS__); \
+    } while (0)

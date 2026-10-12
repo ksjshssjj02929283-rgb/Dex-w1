@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <spdlog/fmt/fmt.h>
+#include <fmt/format.h>
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
@@ -27,6 +27,9 @@ namespace DexeRP {
 template <typename T, int32_t Row, int32_t Col>
 using Mat = Eigen::Matrix<T, Row, Col, Eigen::RowMajor | Eigen::DontAlign>;
 
+template <typename T, int32_t Col>
+using Vec = Eigen::Matrix<T, 1, Col, Eigen::RowMajor | Eigen::DontAlign>;
+
 template <typename T, int32_t Row>
 using CVec = Eigen::Matrix<T, Row, 1, Eigen::ColMajor | Eigen::DontAlign>;
 
@@ -37,8 +40,16 @@ template <typename T>
 using AngleAxis = Eigen::AngleAxis<T>;
 
 // alias for double type
+using Vec2d = Vec<double, 2>;
+using Vec3d = Vec<double, 3>;
+using Vec4d = Vec<double, 4>;
+using Vec6d = Vec<double, 6>;
+using Vec7d = Vec<double, 7>;
+using VecXd = Vec<double, Eigen::Dynamic>;
+
 using CVec2d = CVec<double, 2>;
 using CVec3d = CVec<double, 3>;
+using CVec4d = CVec<double, 4>;
 using CVec6d = CVec<double, 6>;
 using CVec7d = CVec<double, 7>;
 using CVecXd = CVec<double, Eigen::Dynamic>;
@@ -53,8 +64,16 @@ using Quatd = Quat<double>;
 using AngleAxisd = AngleAxis<double>;
 
 // alias for float type
+using Vec2f = Vec<float, 2>;
+using Vec3f = Vec<float, 3>;
+using Vec4f = Vec<float, 4>;
+using Vec6f = Vec<float, 6>;
+using Vec7f = Vec<float, 7>;
+using VecXf = Vec<float, Eigen::Dynamic>;
+
 using CVec2f = CVec<float, 2>;
 using CVec3f = CVec<float, 3>;
+using CVec4f = CVec<float, 4>;
 using CVec6f = CVec<float, 6>;
 using CVec7f = CVec<float, 7>;
 using CVecXf = CVec<float, Eigen::Dynamic>;
@@ -72,49 +91,3 @@ using AngleAxisf = AngleAxis<float>;
 
 EIGEN_DEFINE_STL_VECTOR_SPECIALIZATION(DexeRP::Mat4d)
 EIGEN_DEFINE_STL_VECTOR_SPECIALIZATION(DexeRP::Mat4f)
-
-template <typename T, int32_t Row, int32_t Col>
-struct fmt::formatter<DexeRP::Mat<T, Row, Col>> {
-    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.begin(); }
-
-    template <typename FormatContext>
-    auto format(const DexeRP::Mat<T, Row, Col>& m, FormatContext& ctx) {
-        fmt::memory_buffer buf;
-        for (int i = 0; i < Row; ++i) {
-            buf.push_back('[');
-            for (int j = 0; j < Col; ++j) {
-                std::string val_str = fmt::format("{}", m(i, j));
-                buf.append(val_str.data(), val_str.data() + val_str.size());
-                if (j != Col - 1) {
-                    buf.push_back(',');
-                    buf.push_back(' ');
-                }
-            }
-            buf.push_back(']');
-            if (i != Row - 1) {
-                buf.push_back(',');
-                buf.push_back('\n');
-            }
-        }
-        return fmt::format_to(ctx.out(), "\n[{}]", fmt::to_string(buf));
-    }
-};
-
-template <typename T, int32_t Row>
-struct fmt::formatter<DexeRP::CVec<T, Row>> {
-    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.begin(); }
-
-    template <typename FormatContext>
-    auto format(const DexeRP::CVec<T, Row>& v, FormatContext& ctx) {
-        fmt::memory_buffer buf;
-        for (int i = 0; i < Row; ++i) {
-            std::string val_str = fmt::format("{}", v(i));
-            buf.append(val_str.data(), val_str.data() + val_str.size());
-            if (i != Row - 1) {
-                buf.push_back(',');
-                buf.push_back(' ');
-            }
-        }
-        return fmt::format_to(ctx.out(), "[{}].T", fmt::to_string(buf));
-    }
-};

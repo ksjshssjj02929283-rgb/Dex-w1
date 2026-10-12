@@ -10,7 +10,7 @@
 
 #include <string>
 
-#define DEXERP_VERSION "0.2.0"
+#define DEXERP_VERSION "0.4.3"
 
 namespace DexeRP {
 

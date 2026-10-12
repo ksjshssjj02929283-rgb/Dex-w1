@@ -15,39 +15,57 @@
 namespace DexeRP {
 namespace Kinematics {
 
-class OPWKinematics : public ArmKinematicsBase {
+/*
+Reference papers:
+1. An Analytical Solution of the Inverse Kinematics Problem of
+    Industrial Serial Manipulators with an Ortho-parallel Basis
+    and a Spherical Wrist" as reference model
+*/
+class OPWKinematicsBase : public ArmKinematics<6, OPWConfig> {
 public:
-    OPWKinematics(std::shared_ptr<OPWKineParams> kine_params);
+    using Params = OPWKineParams;
+    using Config = OPWConfig;
 
-    virtual ~OPWKinematics() { DEXERP_DEBUG("Deconstructing OPWKinematics..."); };
-    virtual bool GetFK(const CVecXd &qpos, Mat4d &pose) const override;
+    virtual ~OPWKinematicsBase() = default;
 
-    virtual bool GetAllIK(const Mat4d &pose, const CVecXd &qpos_seed, std::vector<CVecXd> &qpos_list) const override;
+    virtual bool SetQposLimits(const JointVec& lower_bound, const JointVec& upper_bound) override;
 
-    virtual bool GetIK(const Mat4d &pose,
-                       const std::shared_ptr<ArmConfig> &cfg,
-                       const CVecXd &qpos_seed,
-                       CVecXd &qpos) const override {
-        (void)pose;
-        (void)cfg;
-        (void)qpos_seed;
-        (void)qpos;
-        DEXERP_WARN("Not Implemented.");
-        return false;
-    }
-
-    virtual bool GetNearestIK(const Mat4d &pose, const CVecXd &qpos_seed, CVecXd &qpos) const override;
+    virtual Config GetConfig(const JointVec& qpos) const override;
+    virtual Mat4d GetFK(const JointVec& qpos) const override;
+    virtual StatusType GetAllIK(const Mat4d& pose,
+                                const JointVec& qpos_seed,
+                                std::vector<JointVec>& qpos_list) const override;
+    virtual StatusType GetNearestIK(const Mat4d& pose, const JointVec& qpos_seed, JointVec& qpos) const override;
+    virtual StatusType GetIK(const Mat4d& pose,
+                             const Config& cfg,
+                             const JointVec& qpos_seed,
+                             JointVec& qpos) const override;
 
 protected:
-    double _CalcDistCost(const CVec7d &qpos, const CVec7d &ref_qpos) const;
-
-    double _CalcLimitCost(const CVec7d &qpos, double penalty_bound = 0.95) const;
+    OPWKinematicsBase(Params kine_params);
 
 protected:
-    OPWKinematics() = delete;
+    Params params_;
+    JointVec model_qpos_lb_, model_qpos_ub_;
+    JointVec weights_;
+};
 
-    std::shared_ptr<OPWKineParams> kine_params_;
-    CVec3d v_0_bs_, v_6_wt_;
+class OPWKinematics : public OPWKinematicsBase {
+public:
+    OPWKinematics(Params kine_params);
+
+    virtual ~OPWKinematics() = default;
+
+    virtual Config GetConfig(const JointVec& qpos) const override;
+    virtual Mat4d GetFK(const JointVec& qpos) const override;
+    virtual StatusType GetAllIK(const Mat4d& pose,
+                                const JointVec& qpos_seed,
+                                std::vector<JointVec>& qpos_list) const override;
+    virtual StatusType GetNearestIK(const Mat4d& pose, const JointVec& qpos_seed, JointVec& qpos) const override;
+    virtual StatusType GetIK(const Mat4d& pose,
+                             const Config& cfg,
+                             const JointVec& qpos_seed,
+                             JointVec& qpos) const override;
 };
 
 }  // namespace Kinematics

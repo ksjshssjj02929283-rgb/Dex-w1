@@ -8,101 +8,364 @@
 
 #pragma once
 
-#include <fstream>
-#include <optional>
-#include <string>
-#include <unordered_map>
-#include <vector>
+#include <fmt/format.h>
 
+#include <nlohmann/json.hpp>
+
+#include "dexe_rp/common/CommonHeader.h"
 #include "dexe_rp/kinematics/Types.h"
 
 namespace DexeRP {
 namespace Kinematics {
 
-struct SRSConfig : public ArmConfig {
-public:
-    SRSConfig(Direction s, Direction e, Direction w, double arm_angle) : ArmConfig{s, e, w}, arm_angle{arm_angle} {}
+struct SRSConfig {
+    ArmConfig cfg{ArmConfig::Direction::Pos, ArmConfig::Direction::Pos, ArmConfig::Direction::Pos};
+    // support: arm_angle
+    double redundancy_parameter{0.0};
+};
 
-    SRSConfig(const CVec7d& qpos, double arm_angle = 0.) {
-        shoulder_ = qpos(1) > 0 ? Pos : Neg;
-        elbow_ = qpos(3) > 0 ? Pos : Neg;
-        wrist_ = qpos(5) > 0 ? Pos : Neg;
-        this->arm_angle = arm_angle;
+// clang-format off
+
+// KUKA iiwa14 robot as reference model
+struct SRSGeometryParams {
+public:
+    double d_01, d_24, d_46, d_67;
+
+private:
+    Mat<double, 7, 4> mdh_;           // MDH parameters
+    Mat<double, 3, 7> Jw_home_;       // angular velocity Jacobian at home configuration
+
+public:
+    SRSGeometryParams(double d_01, double d_24, double d_46, double d_67) :
+        d_01(d_01), d_24(d_24), d_46(d_46), d_67(d_67) {
+        //      a    alpha   d   theta
+        mdh_ << 0.0,    0.0, d_01, 0.0,
+               0.0, -kPi/2,  0.0, 0.0,
+               0.0,  kPi/2, d_24, 0.0,
+               0.0,  kPi/2,  0.0, 0.0,
+               0.0, -kPi/2, d_46, 0.0,
+               0.0, -kPi/2,  0.0, 0.0,
+               0.0,  kPi/2, d_67, 0.0;
+        // base frame -> x -> front, z -> up
+        // Jw = [w1, w2, w3, w4, w5, w6, w7]
+        Jw_home_ << 0.0,  0.0, 0.0, 0.0, 0.0,  0.0, 0.0,
+                   0.0, -1.0, 0.0, 1.0, 0.0, -1.0, 0.0,
+                   1.0,  0.0, 1.0, 0.0, 1.0,  0.0, 1.0;
     }
 
-    virtual ~SRSConfig() = default;
+    static SRSGeometryParams FromJson(const nlohmann::json& j) {
+        return SRSGeometryParams(j.value("d_01", 0.0),
+                                 j.value("d_24", 0.0),
+                                 j.value("d_46", 0.0),
+                                 j.value("d_67", 0.0));
+    }
 
-public:
-    double arm_angle;
+    nlohmann::json ToJson() const {
+        return {{"d_01", d_01}, {"d_24", d_24}, {"d_46", d_46}, {"d_67", d_67}};
+    }
+
+    const auto& mdh() const { return mdh_; }
+    const auto& Jw_home() const { return Jw_home_; }
 };
 
-inline std::ostream& operator<<(std::ostream& os, const SRSConfig& cfg) {
-    os << "SRSConfig(" << cfg.Shoulder() << ", " << cfg.Elbow() << ", " << cfg.Wrist() << ", " << cfg.arm_angle << ")";
-    return os;
-}
+using SRSKineParams = ArmKineParams<7, SRSGeometryParams>;
+using SRSKineParamsRegistry = KineParamsRegistry<SRSKineParams>;
 
-struct SRSKineParams {
-    // SRS available through papers:
-    // https://www.sciencedirect.com/science/article/abs/pii/S0094114X17306559
+struct SRSKineParamsAutoInit {
+    SRSKineParamsAutoInit() {
+        SRSKineParamsRegistry::Register(SRSKineParams("KUKA", "IIWA14", 
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -120.0, -170.0, -120.0, -170.0, -120.0, -175.0}),
+                Deg2Rad(CVec7d{170.0, 120.0, 170.0, 120.0, 170.0, 120.0, 175.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}),
+                std::array<int, 7>{1, 1, 1, 1, 1, 1, 1},
+                Mat4d::Identity(),
+                (Mat4d() << 1,0,0,0,
+                            0,1,0,0,
+                            0,0,1,0.045,
+                            0,0,0,1).finished()
+            ),
+            SRSGeometryParams(0.36, 0.42, 0.4, 0.081)));
 
-    double bs, se, ew, wt;    // link lengths
-    CVec7d qpos_lb, qpos_ub;  // joint position limits
+        // -------------- W1 V026 --------------
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V026Left",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -120.0, -170.0, -135.0, -170.0, -45.0, -90.0}),
+                Deg2Rad(CVec7d{170.0, 90.0, 170.0, 90.0, 170.0, 45.0, 60.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, -90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{1, -1, 1, 1, 1, -1, 1},
+                (Mat4d() << -1, 0, 0, 0,
+                             0,-1, 0, 0,
+                             0, 0, 1, 0,
+                             0, 0, 0, 1).finished(),
+                (Mat4d() << 0, 0, -1, -0.066,
+                            0, 1, 0, 0,
+                            1, 0, 0, 0,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)));
 
-    std::array<double, 7> offsets;  // joint offsets of SRS-model
-    std::array<int, 7> axis_dirs;   // TODO: axis directions of SRS-model(unused)
-    Mat4d T_b_ob;                   // base frame to srs_base frame
-    Mat4d T_oe_e;                   // srs_ee frame to ee frame
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V026Right",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -90.0, -170.0, -90.0, -170.0, -45.0, -60.0}),
+                Deg2Rad(CVec7d{170.0, 120.0, 170.0, 135.0, 170.0, 45.0, 90.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, 90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{1, 1, 1, -1, 1, 1, 1},
+                Mat4d::Identity(),
+                (Mat4d() << 0, 0,-1, -0.066,
+                            0, 1, 0, 0,
+                            1, 0, 0, 0,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)
+        ));
 
-    Mat<double, 7, 4> mdh;  // MDH parameters of SRS-model
+        // Notes: V021-V025 the same kine params
+        // -------------- W1 V025 --------------
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V025Left",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -120.0, -170.0, -135.0, -170.0, -45.0, -90.0}),
+                Deg2Rad(CVec7d{170.0, 90.0, 170.0, 90.0, 170.0, 45.0, 60.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, -90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{1, -1, 1, 1, 1, -1, 1},
+                (Mat4d() << -1, 0, 0, 0,
+                             0,-1, 0, 0,
+                             0, 0, 1, 0,
+                             0, 0, 0, 1).finished(),
+                (Mat4d() << 0, 0, -1, -0.066,
+                            0, 1, 0, 0,
+                            1, 0, 0, 0,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)));
 
-    SRSKineParams()
-        : bs{0.},
-          se{0.},
-          ew{0.},
-          wt{0.},
-          qpos_lb{CVec7d::Zero()},
-          qpos_ub{CVec7d::Zero()},
-          offsets{0., 0., 0., 0., 0., 0., 0.},
-          axis_dirs{1, 1, 1, 1, 1, 1, 1},
-          T_b_ob{Mat4d::Identity()},
-          T_oe_e{Mat4d::Identity()},
-          mdh(MatXd::Zero(7, 4)) {}
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V025Right",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -90.0, -170.0, -90.0, -170.0, -45.0, -60.0}),
+                Deg2Rad(CVec7d{170.0, 120.0, 170.0, 135.0, 170.0, 45.0, 90.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, 90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{1, 1, 1, -1, 1, 1, 1},
+                Mat4d::Identity(),
+                (Mat4d() << 0, 0,-1, -0.066,
+                            0, 1, 0, 0,
+                            1, 0, 0, 0,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)
+        ));
 
-    SRSKineParams(double bs,
-                  double se,
-                  double ew,
-                  double wt,
-                  const CVec7d& qpos_lb,
-                  const CVec7d& qpos_ub,
-                  const std::array<double, 7>& offsets = {0., 0., 0., 0., 0., 0., 0.},
-                  const std::array<int, 7>& axis_dirs = {1, 1, 1, 1, 1, 1, 1},
-                  const Mat4d& T_b_ob = Mat4d::Identity(),
-                  const Mat4d& T_oe_e = Mat4d::Identity());
+        // -------------- W1 V024 --------------
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V024Left",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -120.0, -170.0, -135.0, -170.0, -45.0, -90.0}),
+                Deg2Rad(CVec7d{170.0, 90.0, 170.0, 90.0, 170.0, 45.0, 60.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, -90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{1, -1, 1, 1, 1, -1, 1},
+                (Mat4d() << -1, 0, 0, 0,
+                             0,-1, 0, 0,
+                             0, 0, 1, 0,
+                             0, 0, 0, 1).finished(),
+                (Mat4d() << 0, 0, -1, -0.066,
+                            0, 1, 0, 0,
+                            1, 0, 0, 0,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)));
 
-    virtual ~SRSKineParams() = default;
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V024Right",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -90.0, -170.0, -90.0, -170.0, -45.0, -60.0}),
+                Deg2Rad(CVec7d{170.0, 120.0, 170.0, 135.0, 170.0, 45.0, 90.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, 90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{1, 1, 1, -1, 1, 1, 1},
+                Mat4d::Identity(),
+                (Mat4d() << 0, 0,-1, -0.066,
+                            0, 1, 0, 0,
+                            1, 0, 0, 0,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)
+        ));
+
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V024ILeft",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -120.0, -170.0, -135.0, -170.0, -90.0, -170.0}),
+                Deg2Rad(CVec7d{170.0, 90.0, 170.0, 90.0, 170.0, 90.0, 170.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, -90.0, 0.0, 0.0, 0.0, 0.0}),
+                std::array<int, 7>{1, -1, 1, 1, 1, -1, 1},
+                (Mat4d() << -1, 0, 0, 0,
+                             0,-1, 0, 0,
+                             0, 0, 1, 0,
+                             0, 0, 0, 1).finished(),
+                (Mat4d() << -1, 0, 0, 0,
+                            0, -1, 0, 0,
+                            0, 0, 1, 0.066,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)
+        ));
+
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V024IRight",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -90.0, -170.0, -90.0, -170.0, -90.0, -170.0}),
+                Deg2Rad(CVec7d{170.0, 120.0, 170.0, 135.0, 170.0, 90.0, 170.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, 90.0, 0.0, 0.0, 0.0, 0.0}),
+                std::array<int, 7>{1, 1, 1, -1, 1, 1, 1},
+                Mat4d::Identity(),
+                (Mat4d() << -1, 0, 0, 0,
+                            0, -1, 0, 0,
+                            0, 0, 1, 0.066,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)
+        ));
+
+        // -------------- W1 V023 --------------
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V023Left",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -120.0, -170.0, -135.0, -170.0, -45.0, -90.0}),
+                Deg2Rad(CVec7d{170.0, 90.0, 170.0, 90.0, 170.0, 45.0, 60.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, -90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{1, -1, 1, 1, 1, -1, 1},
+                (Mat4d() << -1, 0, 0, 0,
+                             0,-1, 0, 0,
+                             0, 0, 1, 0,
+                             0, 0, 0, 1).finished(),
+                (Mat4d() << 0, 0, -1, -0.066,
+                            0, 1, 0, 0,
+                            1, 0, 0, 0,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)));
+
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V023Right",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -90.0, -170.0, -90.0, -170.0, -45.0, -60.0}),
+                Deg2Rad(CVec7d{170.0, 120.0, 170.0, 135.0, 170.0, 45.0, 90.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, 90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{1, 1, 1, -1, 1, 1, 1},
+                Mat4d::Identity(),
+                (Mat4d() << 0, 0,-1, -0.066,
+                            0, 1, 0, 0,
+                            1, 0, 0, 0,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)
+        ));
+
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V023ILeft",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -120.0, -170.0, -135.0, -170.0, -90.0, -170.0}),
+                Deg2Rad(CVec7d{170.0, 90.0, 170.0, 90.0, 170.0, 90.0, 170.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, -90.0, 0.0, 0.0, 0.0, 0.0}),
+                std::array<int, 7>{1, -1, 1, 1, 1, -1, 1},
+                (Mat4d() << -1, 0, 0, 0,
+                             0,-1, 0, 0,
+                             0, 0, 1, 0,
+                             0, 0, 0, 1).finished(),
+                (Mat4d() << -1, 0, 0, 0,
+                            0, -1, 0, 0,
+                            0, 0, 1, 0.066,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)
+        ));
+
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V023IRight",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -90.0, -170.0, -90.0, -170.0, -90.0, -170.0}),
+                Deg2Rad(CVec7d{170.0, 120.0, 170.0, 135.0, 170.0, 90.0, 170.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, 90.0, 0.0, 0.0, 0.0, 0.0}),
+                std::array<int, 7>{1, 1, 1, -1, 1, 1, 1},
+                Mat4d::Identity(),
+                (Mat4d() << -1, 0, 0, 0,
+                            0, -1, 0, 0,
+                            0, 0, 1, 0.066,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)
+        ));
+
+        // -------------- W1 V022 --------------
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V022Left",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -120.0, -170.0, -135.0, -170.0, -45.0, -90.0}),
+                Deg2Rad(CVec7d{170.0, 90.0, 170.0, 90.0, 170.0, 45.0, 60.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, -90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{1, -1, 1, 1, 1, -1, 1},
+                (Mat4d() << -1, 0, 0, 0,
+                             0,-1, 0, 0,
+                             0, 0, 1, 0,
+                             0, 0, 0, 1).finished(),
+                (Mat4d() << 0, 0, -1, -0.066,
+                            0, 1, 0, 0,
+                            1, 0, 0, 0,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)));
+
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V022Right",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -90.0, -170.0, -90.0, -170.0, -45.0, -60.0}),
+                Deg2Rad(CVec7d{170.0, 120.0, 170.0, 135.0, 170.0, 45.0, 90.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, 90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{1, 1, 1, -1, 1, 1, 1},
+                Mat4d::Identity(),
+                (Mat4d() << 0, 0,-1, -0.066,
+                            0, 1, 0, 0,
+                            1, 0, 0, 0,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)
+        ));
+
+        // -------------- W1 V021 --------------
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V021Left",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -120.0, -170.0, -135.0, -170.0, -45.0, -90.0}),
+                Deg2Rad(CVec7d{170.0, 90.0, 170.0, 90.0, 170.0, 45.0, 60.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, -90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{1, -1, 1, 1, 1, -1, 1},
+                (Mat4d() << -1, 0, 0, 0,
+                             0,-1, 0, 0,
+                             0, 0, 1, 0,
+                             0, 0, 0, 1).finished(),
+                (Mat4d() << 0, 0, -1, -0.066,
+                            0, 1, 0, 0,
+                            1, 0, 0, 0,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)));
+
+        SRSKineParamsRegistry::Register(SRSKineParams("DexForce", "W1V021Right",
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -90.0, -170.0, -90.0, -170.0, -45.0, -60.0}),
+                Deg2Rad(CVec7d{170.0, 120.0, 170.0, 135.0, 170.0, 45.0, 90.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, 90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{1, 1, 1, -1, 1, 1, 1},
+                Mat4d::Identity(),
+                (Mat4d() << 0, 0,-1, -0.066,
+                            0, 1, 0, 0,
+                            1, 0, 0, 0,
+                            0, 0, 0, 1).finished()
+            ),
+            SRSGeometryParams(0.1025, 0.26, 0.264, 0.0)
+        ));
+    }
 };
+inline SRSKineParamsAutoInit g_auto_init_srs_kine_params;
 
-struct W1V02KineParams : public SRSKineParams {
-    bool is_left;
-    bool is_anthropomorphic;
-
-    W1V02KineParams(bool is_left, bool is_anthropomorphic);
-
-    W1V02KineParams(bool is_left, bool is_anthropomorphic, double bs, double se, double ew, double wt);
-    virtual ~W1V02KineParams() = default;
-};
+// clang-format on
 
 }  // namespace Kinematics
 }  // namespace DexeRP
 
 template <>
 struct fmt::formatter<DexeRP::Kinematics::SRSConfig> {
-    // Parse format specifications
     constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.begin(); }
 
     template <typename FormatContext>
     auto format(const DexeRP::Kinematics::SRSConfig& cfg, FormatContext& ctx) {
-        return fmt::format_to(ctx.out(), "SRSConfig({}, {}, {}, {})", cfg.Shoulder(), cfg.Elbow(), cfg.Wrist(),
-                              cfg.arm_angle);
+        return fmt::format_to(ctx.out(), "SRSConfig({}, {})", cfg.cfg, cfg.redundancy_parameter);
     }
 };

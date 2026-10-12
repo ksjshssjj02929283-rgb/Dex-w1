@@ -9,7 +9,9 @@ namespace kinematics {
 
 class SRSKinematics : public KinematicsBase {
 public:
-    SRSKinematics(bool is_left, bool is_anthropmorphic);
+    // SRSKinematics(bool is_left, bool is_anthropmorphic);
+    explicit SRSKinematics(const std::string& model_name);
+
     ~SRSKinematics() override;
     PoseQuaternion GetFK(const Eigen::VectorXd& q_in,
                          const pinocchio::SE3& tcp_frame = pinocchio::SE3::Identity()) override;
