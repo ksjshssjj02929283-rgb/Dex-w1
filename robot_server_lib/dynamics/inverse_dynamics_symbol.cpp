@@ -107,6 +107,7 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDo
     // fv/fc are pure base parameters in both supported generated models.
     constexpr std::array<int, 7> fv_indices{3, 13, 24, 35, 46, 57, 68};
     constexpr std::array<int, 7> fc_indices{4, 14, 25, 36, 47, 58, 69};
+    constexpr std::array<int, 7> fo_indices{5, 15, 26, 37, 48, 59, 70};
     const auto& fv_ratio = is_left ? robot_model.params_ptr->fv_ratio_primary
                                    : robot_model.params_ptr->fv_ratio_secondary;
     const auto& fc_ratio = is_left ? robot_model.params_ptr->fc_ratio_primary
@@ -115,11 +116,32 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDo
         dyn_base_params[fv_indices[joint]] *= fv_ratio[joint];
         dyn_base_params[fc_indices[joint]] *= fc_ratio[joint];
     }
+    const Eigen::VectorXd friction_params = dyn_base_params;
+    for (size_t joint = 0; joint < fc_indices.size(); ++joint) {
+        dyn_base_params[fc_indices[joint]] = 0.0;
+        dyn_base_params[fo_indices[joint]] = 0.0;
+    }
 
     Eigen::VectorXd tau_out = Eigen::VectorXd::Zero(7);
 
     auto func = DynDispatcher::GetRegressionFunc(robot_model.params_ptr->robot_key, is_left);
     func(tau_out.data(), q_arm.data(), dq_arm.data(), ddq_arm.data(), dyn_base_params.data(), gravity_acc_armbase.data());
+    const auto& params = *robot_model.params_ptr;
+    for (size_t joint = 0; joint < fc_indices.size(); ++joint) {
+        const double velocity = dq_arm[joint];
+        const double direction = (velocity > 0.0) - (velocity < 0.0);
+        const double coulomb = friction_params[fc_indices[joint]];
+        const double offset = friction_params[fo_indices[joint]];
+        if (params.friction_model == "stribeck") {
+            const double decay = exp(-pow(fabs(velocity) / params.stribeck_velocity, params.stribeck_alpha));
+            const double stribeck_direction = tanh(velocity / params.stribeck_velocity);
+            tau_out[joint] += ((1.0 - decay) * coulomb + decay * offset * fc_ratio[joint]) * stribeck_direction;
+        } else if (params.friction_model == "classic") {
+            tau_out[joint] += coulomb * direction + offset;
+        } else {
+            tau_out[joint] += coulomb * tanh(velocity / params.friction_velocity_scale) + offset;
+        }
+    }
 
     return tau_out;
 }

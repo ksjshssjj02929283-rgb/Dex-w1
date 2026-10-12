@@ -437,6 +437,22 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     parse_friction_ratio("fv_ratio_secondary", params.fv_ratio_secondary);
     parse_friction_ratio("fc_ratio_primary", params.fc_ratio_primary);
     parse_friction_ratio("fc_ratio_secondary", params.fc_ratio_secondary);
+    if (version_cfg["friction_model"]) {
+        params.friction_model = version_cfg["friction_model"].as<std::string>();
+    }
+    if (params.friction_model != "classic" && params.friction_model != "smooth" &&
+        params.friction_model != "stribeck") {
+        throw std::runtime_error("friction_model must be classic, smooth or stribeck");
+    }
+    auto parse_friction_value = [&](const char* key, double& value) {
+        if (version_cfg[key]) value = version_cfg[key].as<double>();
+        if (!std::isfinite(value) || value <= 0.0) {
+            throw std::runtime_error(std::string(key) + " must be finite and positive");
+        }
+    };
+    parse_friction_value("friction_velocity_scale", params.friction_velocity_scale);
+    parse_friction_value("stribeck_velocity", params.stribeck_velocity);
+    parse_friction_value("stribeck_alpha", params.stribeck_alpha);
 
     robot_model.model_ptr = std::make_shared<pinocchio::Model>(model);
     robot_model.primary_arm_model_ptr = std::make_shared<pinocchio::Model>(left_arm_model);

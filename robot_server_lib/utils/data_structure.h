@@ -308,6 +308,10 @@ struct RobotParams {
     std::array<double, 7> fv_ratio_secondary{0.6, 0.6, 0.6, 0.6, 0.6, 0.5, 0.5};
     std::array<double, 7> fc_ratio_primary{0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2};
     std::array<double, 7> fc_ratio_secondary{0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2};
+    std::string friction_model = "smooth";
+    double friction_velocity_scale = 0.1;
+    double stribeck_velocity = 0.1;
+    double stribeck_alpha = 2.0;
     dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_primary;  // 主臂末端工具重力补偿参数
     dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_secondary;  // 从臂末端工具重力补偿参数
 };

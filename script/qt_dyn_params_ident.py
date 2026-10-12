@@ -1,6 +1,8 @@
 import os
 import sys
 import math
+import re
+from dataclasses import replace
 import time
 from datetime import datetime
 import json
@@ -27,6 +29,12 @@ DEFAULT_DT = 0.01
 DEFAULT_NDOF = 7
 DEFAULT_WF = 0.12 * np.pi  # 轨迹基频
 DEFAULT_L = 3  # 轨迹谐波数
+RUNTIME_INVERSE_DYNAMICS_SOURCE = (
+    Path(__file__).resolve().parents[1]
+    / "robot_server_lib"
+    / "dynamics"
+    / "inverse_dynamics_symbol.cpp"
+)
 
 
 def read_data(dof, h, rbtlogfile, trajreffile):
@@ -38,7 +46,7 @@ def read_data(dof, h, rbtlogfile, trajreffile):
         tau_sensor = np.array(rbtlog[:, dof * 2 + 1 : dof * 2 + 1 + dof])
     else:
         tau_sensor = np.zeros_like(tau)
-    trajref = np.loadtxt(trajreffile)
+    trajref = np.loadtxt(trajreffile) if trajreffile is not None else q.copy()
     reft = np.array([h * i for i in range(trajref.shape[0])])
     return t, q, tau, tau_sensor, reft, trajref
 
@@ -126,6 +134,8 @@ class DynParamIdentifier(Node):
         self.calculator_right = DynParamCalculator(
             robot_type=robot_version_key, is_left=False, logger=self.log_msg
         )
+        for calculator in (self.calculator_left, self.calculator_right):
+            calculator.set_friction_options(cfg.get(robot_version_key, {}))
 
     def _sleep_until(self, target_time):
         """精确睡眠到指定单调时钟时间，避免累计漂移。"""
@@ -509,11 +519,12 @@ class DynParamIdentifier(Node):
         """
         rec_filename = f"rbtlog_{self.traj}.dat"
         side_dir = "left" if self.is_left else "right"
-        rec_path = os.path.join(self.rec_dir, side_dir, rec_filename)
+        calculator = self.calculator_left if self.is_left else self.calculator_right
+        rec_path = calculator.recording_path(self.traj)
         traj_path = os.path.join(self.traj_dir, side_dir, f"{self.traj}.dat")
 
         t_raw, q_raw, tau_raw, tau_sensor_raw, t_ref, q_ref = read_data(
-            self.ndof, self.dt, rec_path, traj_path
+            self.ndof, self.dt, rec_path, None if self.traj in calculator.data_files else traj_path
         )
         n_joints = q_raw.shape[1]
 
@@ -548,13 +559,14 @@ class DynParamIdentifier(Node):
             ax1 = ax_handles[j]
             ax1.clear()
             ref_series = q_ref_cut[:, j]
-            ax1.plot(
-                t_ref_cut,
-                ref_series,
-                label="Reference q",
-                color="tab:blue",
-                linewidth=1,
-            )
+            if self.traj not in calculator.data_files:
+                ax1.plot(
+                    t_ref_cut,
+                    ref_series,
+                    label="Reference q",
+                    color="tab:blue",
+                    linewidth=1,
+                )
             ax1.plot(
                 t_raw_cut,
                 q_raw_cut[:, j],
@@ -680,8 +692,39 @@ from dyn_params_ident.urdf2dh import get_dh_params_for_arm, get_gravity_in_dh_ba
 from dyn_params_ident.acceleration_free_regressor import (
     build_filtered_regressor,
     lowpass_filter,
-    resample_recordings,
 )
+from dyn_params_ident.runtime_friction import read_runtime_friction, predict_runtime_friction
+from dyn_params_ident.friction_model import (
+    smooth_sign, friction_bases, friction_settings,
+    FRICTION_MODEL_CLASSIC, FRICTION_MODEL_SMOOTH, FRICTION_MODEL_STRIBECK,
+)
+
+
+def update_robot_config_section(content, version_key, updates, remove_keys=()):
+    config = yaml.safe_load(content)
+    if not isinstance(config, dict) or not isinstance(config.get(version_key), dict):
+        raise ValueError(f"配置中未找到版本段: {version_key}")
+    section = re.search(
+        rf"^{re.escape(version_key)}:[ \t]*(?:#[^\n]*)?\n(?:(?!^[^\s#][^\n]*:).*(?:\n|$))*",
+        content, re.MULTILINE,
+    )
+    if section is None:
+        raise ValueError(f"不支持的版本段格式: {version_key}")
+    block = section.group(0)
+    for key in remove_keys:
+        block = re.sub(rf"^  {re.escape(key)}:[^\n]*(?:\n|$)", "", block, flags=re.MULTILINE)
+    for key, value in updates.items():
+        encoded = json.dumps(value, ensure_ascii=False, allow_nan=False)
+        if isinstance(value, str):
+            encoded = value
+        pattern = rf"^(  {re.escape(key)}:[ \t]*)(?:\[[\s\S]*?\]|[^\n#]*)([ \t]*(?:#[^\n]*)?)$"
+        if re.search(pattern, block, re.MULTILINE):
+            block = re.sub(pattern, lambda match: match[1] + encoded + match[2], block, flags=re.MULTILINE)
+        else:
+            block = block.rstrip("\n") + f"\n  {key}: {encoded}\n"
+    result = content[:section.start()] + block + content[section.end():]
+    yaml.safe_load(result)
+    return result
 
 IDENTIFICATION_STANDARD = "standard"
 IDENTIFICATION_AF_ARF = "af_arf"
@@ -704,15 +747,74 @@ class DynParamCalculator:
         self.wf = DEFAULT_WF
         self.L = DEFAULT_L
         self.proc_data = {}
+        self.data_files = {}
+        self._feedforward_functions = None
         self.solutions_beta_starextra = None
         self.rbt = None
         self.identification_algorithm = IDENTIFICATION_STANDARD
         self.af_alpha = 15.0
         self.af_beta = 10.0
+        self.friction_options = friction_settings({})
+
+    def set_friction_options(self, config):
+        options = friction_settings(config)
+        if options == self.friction_options:
+            return False
+        self.friction_options = options
+        self.reset_identification()
+        return True
 
     def reset_identification(self):
         self.proc_data.clear()
         self.solutions_beta_starextra = None
+
+    def recording_path(self, traj):
+        side = "left" if self.is_left else "right"
+        return self.data_files.get(traj, Path(self.rec_dir) / side / f"rbtlog_{traj}.dat")
+
+    def set_recording_file(self, traj, filename):
+        self.data_files[traj] = Path(filename)
+        if traj == "traj1":
+            self.reset_identification()
+        else:
+            self.proc_data.pop("traj2", None)
+
+    def cache_validation_data(self):
+        self._cache_trajectory("traj2")
+
+    def _cache_zero_acceleration_validation_data(self):
+        """Prepare q/dq and measured torque for ddq=0 plotting without W."""
+        traj = "traj2"
+        rec_path = self.recording_path(traj)
+        if not rec_path.is_file():
+            raise RuntimeError("未找到验证数据，请选择验证文件。")
+        fc = self.get_filter_cutoff()
+        si = int(3 / self.dt)
+        sf = -int(1 / self.dt)
+        t_raw, q_raw, tau_current_raw, tau_sensor_raw, _, _ = read_data(
+            self.ndof, self.dt, rec_path, None
+        )
+        if len(t_raw) <= si - sf:
+            raise ValueError("采集数据不足，裁剪前 3 秒和后 1 秒后没有可用样本。")
+        q_filtered, dq_filtered, _, tau_current = self.diff_and_filt_data(
+            dof=self.ndof, h=self.dt, q_raw=q_raw, tau_raw=tau_current_raw,
+            fc_q=fc, fc_dq=fc, fc_ddq=fc, fc_tau=None,
+        )
+        keep = slice(si, sf)
+        t = np.arange(len(q_filtered[keep])) * self.dt
+        self.proc_data[traj] = {
+            "t": t,
+            "q": q_filtered[keep],
+            "dq": dq_filtered[keep],
+            "tau_current": tau_current_raw[keep],
+            "tau_sensor": tau_sensor_raw[keep],
+            "tau": tau_current[keep],
+            "tau_sensor_filtered": None,
+            "friction_context": None,
+            "algorithm": self.identification_algorithm,
+            "evaluation_domain": "instantaneous",
+            "zero_acceleration_only": True,
+        }
 
     def set_identification_options(self, algorithm, alpha, beta):
         if algorithm not in (IDENTIFICATION_STANDARD, IDENTIFICATION_AF_ARF):
@@ -752,6 +854,7 @@ class DynParamCalculator:
         # 创建机器人模型并计算基础参数集
         self.log_msg("正在进行机器人建模...")
         self.rbt = self.create_robot_model(self.robot_type)
+        self._feedforward_functions = None
         self.log_msg(f"机器人建模完毕, 最小参数辨识集: {self.rbt.dyn.baseparms}")
         # 输出包含fo_的参数的序号
         fc_indices = [i for i, param in enumerate(self.rbt.dyn.baseparms) if "fc_" in str(param)]
@@ -787,6 +890,8 @@ class DynParamCalculator:
                 D_other_blocks.append(Matrix([self.rbt.rbtdef.fv[i]]))
             if "Coulomb" in self.rbt.rbtdef.frictionmodel:
                 D_other_blocks.append(Matrix([self.rbt.rbtdef.fc[i]]))
+            if self.friction_options["friction_model"] == FRICTION_MODEL_STRIBECK:
+                D_other_blocks.append(Matrix([self.rbt.rbtdef.fo[i]]))
         D_blocks = D_inertia_blocks + D_other_blocks
         varchange_dict = dict(zip(Pb.T * delta, beta_symbs - (beta - Pb.T * delta)))
         DB_blocks = [mrepl(Di, varchange_dict) for Di in D_blocks]
@@ -863,35 +968,40 @@ class DynParamCalculator:
 
     def process_and_cache_data(self):
         for traj in ["traj1", "traj2"]:
-            side = "left" if self.is_left else "right"
-            if traj == "traj2" and not (Path(self.rec_dir) / side / "rbtlog_traj2.dat").is_file():
+            if traj == "traj2" and not self.recording_path(traj).is_file():
                 self.log_msg("未找到 traj2 采集数据，跳过独立轨迹验证。")
                 continue
-            (
-                t_raw, q_raw, tau_current_raw, tau_sensor_raw,
-                t, q, dq, ddq, tau, W, omega, Q1, R1, rho1, tau_sensor_filtered,
-            ) = self.process_regression_data(traj)
-            self.proc_data[traj] = {
-                "t_raw": t_raw,
-                "q_raw": q_raw,
-                "tau_current": tau_current_raw,
-                "tau_sensor": tau_sensor_raw,
-                "t": t,
-                "q": q,
-                "dq": dq,
-                "ddq": ddq,
-                "tau": tau,
-                "W": W,
-                "omega": omega,
-                "Q1": Q1,
-                "R1": R1,
-                "rho1": rho1,
-                "tau_sensor_filtered": tau_sensor_filtered,
-                "algorithm": self.identification_algorithm,
-                "af_alpha": self.af_alpha,
-                "af_beta": self.af_beta,
-            }
+            self._cache_trajectory(traj)
         self.log_msg("所有轨迹数据处理完成并保存。")
+
+    def _cache_trajectory(self, traj):
+        (
+            t_raw, q_raw, tau_current_raw, tau_sensor_raw,
+            t, q, dq, ddq, tau, W, omega, Q1, R1, rho1, tau_sensor_filtered,
+            friction_context,
+        ) = self.process_regression_data(traj)
+        self.proc_data[traj] = {
+            "t_raw": t_raw,
+            "q_raw": q_raw,
+            "tau_current": tau_current_raw,
+            "tau_sensor": tau_sensor_raw,
+            "t": t,
+            "q": q,
+            "dq": dq,
+            "ddq": ddq,
+            "tau": tau,
+            "W": W,
+            "omega": omega,
+            "Q1": Q1,
+            "R1": R1,
+            "rho1": rho1,
+            "tau_sensor_filtered": tau_sensor_filtered,
+            "algorithm": self.identification_algorithm,
+            "evaluation_domain": "instantaneous" if traj == "traj2" else None,
+            "af_alpha": self.af_alpha,
+            "af_beta": self.af_beta,
+            "friction_context": friction_context,
+        }
 
     def get_filter_cutoff(self):
         """辨识数据滤波的截止频率(Hz)。
@@ -907,22 +1017,22 @@ class DynParamCalculator:
         si = int(3 / self.dt)
         sf = -int(1 / self.dt)
         # 使用 Path / 拼接，并在 read_data 时转成 str
-        rec_filename = f"rbtlog_{traj}.dat"
-        sub_dir = "left" if self.is_left else "right"
-        rec_path = os.path.join(self.rec_dir, sub_dir, rec_filename)
-        traj_path = os.path.join(self.traj_dir, sub_dir, f"{traj}.dat")
+        rec_path = self.recording_path(traj)
+        self.log_msg(f"[{traj}] {'辨识' if traj == 'traj1' else '验证'}数据: {rec_path}")
         t_raw, q_raw, tau_current_raw, tau_sensor_raw, t_ref, q_ref = read_data(
-            self.ndof, self.dt, rec_path, traj_path
+            self.ndof, self.dt, rec_path, None
         )
         # 辨识使用电流估算力矩 (joint_torque), sensor torque 仅用于显示对比
         tau_raw = tau_current_raw
         self.log_msg(f"[{traj}] 使用电流估算力矩 (current torque) 进行辨识")
-        if self.identification_algorithm == IDENTIFICATION_AF_ARF:
+        if traj == "traj1" and self.identification_algorithm == IDENTIFICATION_AF_ARF:
             return self.process_acceleration_free_data(
                 traj, t_raw, q_raw, tau_current_raw, tau_sensor_raw, fc, si, sf
             )
         if len(t_raw) <= si - sf:
             raise ValueError("采集数据不足，裁剪前 3 秒和后 1 秒后没有可用样本。")
+        purpose = "统一验证" if traj == "traj2" else "传统回归辨识"
+        self.log_msg(f"[{traj}] {purpose}：q/dq/ddq 滤波，电流力矩保持原始值（仅裁剪）。")
         q, dq, ddq, tau = self.diff_and_filt_data(
             dof=self.ndof,
             h=self.dt,
@@ -931,7 +1041,7 @@ class DynParamCalculator:
             fc_q=fc,
             fc_dq=fc,
             fc_ddq=fc,
-            fc_tau=fc,
+            fc_tau=None,
         )
         t_raw = t_raw[si:sf]
         q_raw = q_raw[si:sf]
@@ -944,20 +1054,25 @@ class DynParamCalculator:
         t_raw = t_raw - t_raw[0]
         t = np.array(range(q.shape[0])) * self.dt
         W, omega, Q1, R1, rho1 = self.gen_regr_matrices(self.rbt, q, dq, ddq, tau)
-        return t_raw, q_raw, tau_current_raw, tau_sensor_raw, t, q, dq, ddq, tau, W, omega, Q1, R1, rho1, None
+        return t_raw, q_raw, tau_current_raw, tau_sensor_raw, t, q, dq, ddq, tau, W, omega, Q1, R1, rho1, None, None
 
     def process_acceleration_free_data(self, traj, t_raw, q_raw, tau_current, tau_sensor, fc, si, sf):
-        t, q_raw, tau_current, tau_sensor = resample_recordings(
-            t_raw, q_raw, tau_current, tau_sensor, dt=self.dt
-        )
-        if len(t) <= si - sf:
+        if len(t_raw) <= si - sf:
             raise ValueError("采集数据不足，裁剪前 3 秒和后 1 秒后没有可用样本。")
+        self.log_msg(
+            f"[{traj}] AF-ARF：不重采样，按固定 dt={self.dt:g}s 处理；"
+            "q 原始位置滤波，dq 按传统回归先差分后滤波。"
+        )
+        t = np.arange(len(q_raw), dtype=float) * self.dt
         q = np.column_stack([
             self.butter_filtfilt(3, fc * 2 * np.pi * self.dt, q_raw[:, j])
             for j in range(self.ndof)
         ])
         dq = np.column_stack([
-            self.central_diff(q[:, j], self.dt, 2) for j in range(self.ndof)
+            self.butter_filtfilt(
+                3, fc * 2 * np.pi * self.dt,
+                self.central_diff(q_raw[:, j], self.dt, 2),
+            ) for j in range(self.ndof)
         ])
         friction_symbols = set(self.rbt.rbtdef.fc + self.rbt.rbtdef.fv + self.rbt.rbtdef.fo)
         friction_indices = [
@@ -969,24 +1084,28 @@ class DynParamCalculator:
             "构造无加速度回归矩阵（不计算 ddq）..."
         )
         H, tau = build_filtered_regressor(
-            self.create_regressor_func(self.rbt), t, q, dq, tau_current,
+            self.create_regressor_func(self.rbt, self.friction_options), t, q, dq, tau_current,
             self.rbt.dyn.n_dynparms, friction_indices,
             alpha=self.af_alpha, beta=self.af_beta,
         )
         tau_sensor_filtered = lowpass_filter(t, tau_sensor, self.af_alpha)
         if self.af_beta > 0:
             tau_sensor_filtered = lowpass_filter(t, tau_sensor_filtered, self.af_beta)
-        # Filter the entire recording before discarding the start/stop transients.
         keep = slice(si, sf)
+        friction_context = {
+            "t": t, "q": q, "dq": dq, "keep": keep,
+            "alpha": self.af_alpha, "beta": self.af_beta,
+        }
         t = t[keep] - t[si]
         q, dq, tau = q[keep], dq[keep], tau[keep]
         W, omega, Q1, R1, rho1 = self.decompose_regression(
             self.rbt, H[keep].reshape(-1, self.rbt.dyn.n_dynparms), tau
         )
         return (
-            t, q_raw[keep], tau_current[keep], tau_sensor[keep],
+            t_raw[keep] - t_raw[si], q_raw[keep], tau_current[keep], tau_sensor[keep],
             t, q, dq, None, tau, W, omega, Q1, R1, rho1,
             tau_sensor_filtered[keep],
+            friction_context,
         )
 
     # 惯性矩阵M(q)正定性测试: M(q)理论上应为对称正定矩阵，否则对应的动能不满足正定性，模型物理不可行, 因此需要验证辨识结果对应的质量矩阵是否为正定矩阵）
@@ -1062,18 +1181,39 @@ class DynParamCalculator:
         return np.matrix(sol).T
 
     @staticmethod
-    def create_regressor_func(rbt):
-        namespace = {"math": math, "sin": np.sin, "cos": np.cos, "sign": np.sign}
-        exec(
-            sympybotics.robot_code_to_func(
-                "python", rbt.H_code, "H", "regressor_func", rbt.rbtdef
-            ),
-            namespace,
+    def create_regressor_func(rbt, friction_options=None):
+        namespace = {"math": math, "sin": np.sin, "cos": np.cos, "sign": smooth_sign}
+        code = sympybotics.robot_code_to_func(
+            "python", rbt.H_code, "H", "regressor_func", rbt.rbtdef
         )
-        return namespace["regressor_func"]
+        code = re.sub(
+            r"\(0\.0 if (dq\[\d+\]) == 0 else math\.copysign\(1, \1\)\)",
+            r"sign(\1)", code,
+        )
+        if "copysign" in code:
+            raise ValueError("Unsupported Coulomb expression in generated Python regressor")
+        exec(code, namespace)
+        generated = namespace["regressor_func"]
+        options = friction_settings(friction_options or {})
+        names = list(map(str, rbt.dyn.dynparms))
+        fc_indices = [names.index(str(symbol)) for symbol in rbt.rbtdef.fc]
+        fo_indices = [names.index(str(symbol)) for symbol in rbt.rbtdef.fo]
+
+        def regressor(q, dq, ddq):
+            matrix = np.asarray(generated(q, dq, ddq), dtype=float).reshape(rbt.dof, rbt.dyn.n_dynparms)
+            fc_basis, fo_basis = friction_bases(
+                dq, options["friction_model"], options["friction_velocity_scale"],
+                options["stribeck_velocity"], options["stribeck_alpha"],
+            )
+            for joint, (fc_index, fo_index) in enumerate(zip(fc_indices, fo_indices)):
+                matrix[joint, fc_index] = fc_basis[joint]
+                matrix[joint, fo_index] = fo_basis[joint]
+            return matrix.reshape(-1).tolist()
+
+        return regressor
 
     def gen_regr_matrices(self, rbt, q, dq, ddq, tau):
-        regressor_func = self.create_regressor_func(rbt)
+        regressor_func = self.create_regressor_func(rbt, self.friction_options)
         H_S, omega = self.regr_matrices(
             rbt.dof, rbt.dyn.n_dynparms, q, dq, ddq, tau, regressor_func
         )
@@ -1106,7 +1246,7 @@ class DynParamCalculator:
         wc_q = fc_q * 2 * math.pi * h
         wc_dq = fc_dq * 2 * math.pi * h
         wc_ddq = fc_ddq * 2 * math.pi * h
-        wc_tau = fc_tau * 2 * math.pi * h
+        wc_tau = None if fc_tau is None else fc_tau * 2 * math.pi * h
 
         for i in range(dof):
             q_i = q_raw[:, i]
@@ -1175,7 +1315,11 @@ class DynParamCalculator:
         return diff
 
     def get_regr_validatation(self):
+        """Evaluate full instantaneous dynamics on filtered states against raw torque."""
         # 使用内存缓存的数据与解进行验证（默认 traj2 验证，参数来自 traj1）
+        if ("traj2" not in self.proc_data or self.proc_data["traj2"].get("zero_acceleration_only")) and self.rbt is not None and self.solutions_beta_starextra is not None:
+            if self.recording_path("traj2").is_file():
+                self.cache_validation_data()
         traj_proc = self.proc_data.get("traj2")
         if traj_proc is None:
             raise RuntimeError("未找到 traj2 验证数据，请采集或导入独立验证轨迹后重新计算。")
@@ -1184,9 +1328,6 @@ class DynParamCalculator:
         tau_current = np.matrix(traj_proc["tau_current"])
         tau_sensor = np.matrix(traj_proc["tau_sensor"])
         tau_used = np.matrix(traj_proc["tau"])
-        if traj_proc["algorithm"] == IDENTIFICATION_AF_ARF:
-            tau_current = tau_used
-            tau_sensor = np.matrix(traj_proc["tau_sensor_filtered"])
         if self.solutions_beta_starextra is None:
             raise RuntimeError("未找到辨识结果，请先计算动力学参数。")
         omega_pred = W * np.matrix(self.solutions_beta_starextra)
@@ -1201,6 +1342,109 @@ class DynParamCalculator:
             tau_pred[:total, :],
             tau_used[:total, :],
         )
+
+    def get_validation_friction_rules(self, scales=None):
+        rules = read_runtime_friction(
+            RUNTIME_INVERSE_DYNAMICS_SOURCE, self.robot_type, self.rbt.dyn.baseparms,
+            config_path=Path.home() / "dexe_robot_server_data/robot_config.yaml", is_left=self.is_left,
+        )
+        if rules.model is not None:
+            options = self.friction_options
+            rules = replace(
+                rules, model=options["friction_model"], velocity_scale=options["friction_velocity_scale"],
+                stribeck_velocity=options["stribeck_velocity"], stribeck_alpha=options["stribeck_alpha"],
+            )
+        if scales is None:
+            return rules
+        scales = np.asarray(scales, dtype=float)
+        if scales.shape != (3,) or not np.all(np.isfinite(scales)) or np.any(scales < 0):
+            raise ValueError("摩擦比例要求三个有限非负数：J1–J5 fv、J6–J7 fv、fc。")
+        names = list(map(str, self.rbt.dyn.baseparms))
+        viscous = {
+            index: float(scales[0 if int(names[index].split('_')[-1]) <= 5 else 1])
+            for index in rules.viscous
+        }
+        return replace(rules, viscous=viscous, coulomb_scale=float(scales[2]))
+
+    def get_friction_ratio_validation(self, rules=None):
+        """Compare normal and runtime-friction-scaled predictions on traj2."""
+        t, tau_current, tau_sensor, tau_pred, tau_used = self.get_regr_validatation()
+        if rules is None:
+            rules = self.get_validation_friction_rules()
+        proc = self.proc_data["traj2"]
+        scaled_pred = predict_runtime_friction(
+            proc["W"], self.solutions_beta_starextra, proc["dq"], rules,
+            proc["friction_context"],
+        )
+        return t, tau_current, tau_sensor, tau_pred, scaled_pred, tau_used, rules
+
+    def get_zero_acceleration_validation(self, rules=None):
+        """Evaluate instantaneous g + c + friction against the same raw validation torque."""
+        if self.solutions_beta_starextra is None or self.rbt is None:
+            raise RuntimeError("未找到辨识结果，请先计算动力学参数。")
+        if "traj2" not in self.proc_data:
+            self._cache_zero_acceleration_validation_data()
+        proc = self.proc_data["traj2"]
+        if rules is None:
+            rules = self.get_validation_friction_rules()
+        # Pb embeds a representative full parameter vector with the same dynamics.
+        full_parameters = np.asarray(self.rbt.dyn.Pb, dtype=float) @ np.asarray(
+            self.solutions_beta_starextra, dtype=float
+        ).reshape(-1)
+        if self._feedforward_functions is None:
+            functions = []
+            for name, code in (("gravity", self.rbt.g_code), ("coriolis", self.rbt.c_code)):
+                namespace = {"math": math, "sin": np.sin, "cos": np.cos}
+                exec(sympybotics.robot_code_to_func(
+                    "python", code, "torque", name, self.rbt.rbtdef
+                ), namespace)
+                functions.append(namespace[name])
+            self._feedforward_functions = functions
+        gravity, coriolis = self._feedforward_functions
+        q, dq = np.asarray(proc["q"]), np.asarray(proc["dq"])
+        rigid = np.array([
+            np.asarray(gravity(full_parameters, position)) +
+            np.asarray(coriolis(full_parameters, position, velocity))
+            for position, velocity in zip(q, dq)
+        ])
+        full_names = list(self.rbt.dyn.dynparms)
+        fv, fc, fo = [
+            full_parameters[[full_names.index(symbol) for symbol in symbols]]
+            for symbols in (self.rbt.rbtdef.fv, self.rbt.rbtdef.fc, self.rbt.rbtdef.fo)
+        ]
+        ratios = np.array([
+            rules.viscous[list(map(str, self.rbt.dyn.baseparms)).index(str(symbol))]
+            for symbol in self.rbt.rbtdef.fv
+        ])
+        options = self.friction_options
+        fc_basis, fo_basis = friction_bases(
+            dq, options["friction_model"], options["friction_velocity_scale"],
+            options["stribeck_velocity"], options["stribeck_alpha"],
+        )
+        baseline = rigid + dq * fv + fc_basis * fc + fo_basis * fo
+        runtime_sign, runtime_offset = rules.bases(dq)
+        offset_scale = rules.coulomb_scale if rules.model == FRICTION_MODEL_STRIBECK else 1.0
+        runtime = rigid + dq * fv * ratios + runtime_sign * fc * rules.coulomb_scale + runtime_offset * fo * offset_scale
+        return proc["t"], proc["tau_current"], proc["tau_sensor"], baseline, runtime, proc["tau"], rules
+
+    def get_all_validation_predictions(self, friction_scales=None):
+        """Return the four torque conditions used by the Qt comparison button."""
+        if self.rbt is None or self.solutions_beta_starextra is None:
+            raise RuntimeError("请先完成动力学参数辨识。")
+        rules = self.get_validation_friction_rules(friction_scales)
+        full = self.get_friction_ratio_validation(rules)
+        zero = self.get_zero_acceleration_validation(rules)
+        return {
+            "t_full": np.asarray(full[0]),
+            "measured_full": np.asarray(full[5]),
+            "full_unscaled": np.asarray(full[3]),
+            "full_scaled": np.asarray(full[4]),
+            "t_zero": np.asarray(zero[0]),
+            "measured_zero": np.asarray(zero[5]),
+            "zero_unscaled": np.asarray(zero[3]),
+            "zero_scaled": np.asarray(zero[4]),
+            "rules": full[6],
+        }
 
 
 class DynParamGUI(QtWidgets.QMainWindow):
@@ -1374,6 +1618,29 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.data_dir_label = QtWidgets.QLabel()
         self.data_dir_label.setWordWrap(True)
         bottom_vbox.addWidget(self.data_dir_label)
+        file_grid = QtWidgets.QGridLayout()
+        self.recording_file_buttons = []
+        self.recording_file_labels = {}
+        file_grid.addWidget(QtWidgets.QLabel("离线数据"), 0, 0)
+        file_grid.addWidget(QtWidgets.QLabel("辨识"), 0, 1)
+        file_grid.addWidget(QtWidgets.QLabel("验证"), 0, 2)
+        for row, (side, title) in enumerate((("left", "左臂"), ("right", "右臂")), 1):
+            file_grid.addWidget(QtWidgets.QLabel(title), row, 0)
+            for column, traj in enumerate(("traj1", "traj2"), 1):
+                button = QtWidgets.QPushButton("选择文件")
+                button.clicked.connect(
+                    lambda _checked=False, arm=side, role=traj: self.on_select_recording_file(arm, role)
+                )
+                file_grid.addWidget(button, row, column)
+                self.recording_file_buttons.append(button)
+        bottom_vbox.addLayout(file_grid)
+        for side, title in (("left", "左臂"), ("right", "右臂")):
+            for traj, role in (("traj1", "辨识"), ("traj2", "验证")):
+                label = QtWidgets.QLabel()
+                label.setWordWrap(True)
+                label.setMinimumWidth(0)
+                self.recording_file_labels[side, traj] = label
+                bottom_vbox.addWidget(label)
         ctrl_layout.addWidget(bottom_group)
         ctrl_layout.addStretch(1)
         # 第三部分：轨迹采集及计算结果
@@ -1382,6 +1649,43 @@ class DynParamGUI(QtWidgets.QMainWindow):
         result_vbox.setContentsMargins(8, 8, 8, 8)
         result_vbox.setSpacing(8)
         identification_form = QtWidgets.QFormLayout()
+        self.friction_model_combo = QtWidgets.QComboBox()
+        self.friction_model_combo.addItem("经典库仑 + 黏性 + 静摩擦（偏置）", FRICTION_MODEL_CLASSIC)
+        self.friction_model_combo.addItem("平滑库仑 + 黏性 + 静摩擦（偏置）", FRICTION_MODEL_SMOOTH)
+        self.friction_model_combo.addItem("Stribeck + 黏性", FRICTION_MODEL_STRIBECK)
+        options = friction_settings({})
+        self.friction_model_combo.setCurrentIndex(self.friction_model_combo.findData(options["friction_model"]))
+        self.friction_model_combo.setToolTip(
+            "经典/平滑模型: Fc·sign(v) 或 Fc·tanh(v/v0) + Bv·v + 偏置。\n"
+            "Stribeck: [Fc+(Fs-Fc)·exp(-(|v|/vs)^alpha)]·tanh(v/vs)+Bv·v。\n"
+            "速度可在 Qt 或 YAML 修改；Stribeck 特征速度和方向平滑速度共用 vs。\n"
+            "模型参数改变后须重新辨识。"
+        )
+        identification_form.addRow("摩擦模型", self.friction_model_combo)
+        self.stribeck_alpha_spin = QtWidgets.QDoubleSpinBox()
+        self.stribeck_alpha_spin.setRange(0.1, 10.0)
+        self.stribeck_alpha_spin.setDecimals(2)
+        self.stribeck_alpha_spin.setValue(options["stribeck_alpha"])
+        self.stribeck_alpha_spin.setEnabled(options["friction_model"] == FRICTION_MODEL_STRIBECK)
+        identification_form.addRow("Stribeck 指数 α", self.stribeck_alpha_spin)
+        self.friction_velocity_spins = {}
+        for key, label, tooltip in (
+            ("friction_velocity_scale", "tanh 平滑速度", "平滑库仑使用 v0；Stribeck 使用共用的 vs，与 Stribeck 特征速度同步，必须大于 0。"),
+            ("stribeck_velocity", "Stribeck 特征速度", "指数衰减 exp(-(|v|/vs)^alpha) 和方向项 tanh(v/vs) 共用 vs，必须大于 0。"),
+        ):
+            spin = QtWidgets.QDoubleSpinBox()
+            spin.setDecimals(6)
+            spin.setRange(0.000001, 1000.0)
+            spin.setSingleStep(0.01)
+            spin.setSuffix(" rad/s")
+            spin.setValue(options[key])
+            spin.setToolTip(tooltip + " 修改后须重新辨识双臂；写入参数时同时保存到 YAML。")
+            spin.setEnabled(options["friction_model"] in (
+                (FRICTION_MODEL_SMOOTH, FRICTION_MODEL_STRIBECK) if key == "friction_velocity_scale"
+                else (FRICTION_MODEL_STRIBECK,)
+            ))
+            self.friction_velocity_spins[key] = spin
+            identification_form.addRow(label, spin)
         self.identification_combo = QtWidgets.QComboBox()
         self.identification_combo.addItem("传统回归（使用 ddq）", IDENTIFICATION_STANDARD)
         self.identification_combo.addItem("AF-ARF（无需 ddq）", IDENTIFICATION_AF_ARF)
@@ -1411,6 +1715,38 @@ class DynParamGUI(QtWidgets.QMainWindow):
         calc_arm_row_layout.addWidget(self.btn_calc_params_right)
         result_vbox.addWidget(calc_arm_row)
         result_vbox.addWidget(self.btn_show_regression)
+        self.use_source_friction = QtWidgets.QCheckBox("使用 YAML 摩擦比例（取消勾选可离线调节）")
+        self.use_source_friction.setChecked(True)
+        result_vbox.addWidget(self.use_source_friction)
+        friction_form = QtWidgets.QFormLayout()
+        self.friction_scale_spins = []
+        for label, default in (("J1–J5 黏性 fv 比例", 0.6),
+                               ("J6–J7 黏性 fv 比例", 0.5),
+                               ("全部关节库仑 fc 比例", 0.2)):
+            spin = QtWidgets.QDoubleSpinBox()
+            spin.setRange(0.0, 10.0)
+            spin.setDecimals(3)
+            spin.setSingleStep(0.05)
+            spin.setValue(default)
+            spin.setEnabled(False)
+            spin.setToolTip("左右臂共用；相对于原辨识摩擦系数的倍率。调整后点击对比，无需重新辨识。")
+            self.friction_scale_spins.append(spin)
+            friction_form.addRow(label, spin)
+        result_vbox.addLayout(friction_form)
+        self.use_source_friction.toggled.connect(
+            lambda checked: [spin.setEnabled(not checked) for spin in self.friction_scale_spins]
+        )
+        self.btn_feedforward_validation = QtWidgets.QPushButton(
+            "四种动力学工况 RMSE 对比"
+        )
+        self.btn_feedforward_validation.setToolTip(
+            "一次输出完整动力学、ddq=0 前馈及两种摩擦缩放工况的逐关节 RMSE"
+        )
+        result_vbox.addWidget(self.btn_feedforward_validation)
+        # 保留旧属性名作为兼容别名，但界面只有一个按钮。
+        self.btn_friction_ratio_validation = self.btn_feedforward_validation
+        self.btn_zero_acceleration_validation = self.btn_feedforward_validation
+        self.btn_zero_acceleration_runtime_validation = self.btn_feedforward_validation
         result_vbox.addWidget(self.btn_write_params)
         write_arm_row = QtWidgets.QWidget()
         write_arm_row_layout = QtWidgets.QHBoxLayout(write_arm_row)
@@ -1493,6 +1829,11 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.left_canvas.mpl_connect("resize_event", self._on_resize)
         self.right_canvas.mpl_connect("resize_event", self._on_resize)
         self.dyn = DynParamIdentifier(logger_callable=self.log_msg)
+        options = self.dyn.calculator_left.friction_options
+        self.friction_model_combo.setCurrentIndex(self.friction_model_combo.findData(options["friction_model"]))
+        self.stribeck_alpha_spin.setValue(options["stribeck_alpha"])
+        self.stribeck_alpha_spin.setEnabled(options["friction_model"] == FRICTION_MODEL_STRIBECK)
+        self._load_friction_velocity_controls(options)
         self.executor = MultiThreadedExecutor()
         self.executor.add_node(self.dyn)
         self.ros_thread = threading.Thread(target=self.executor.spin, daemon=True)
@@ -1524,6 +1865,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.btn_clear.clicked.connect(self.on_clear_clicked)
         # 新增：图示辨识结果按钮
         self.btn_show_regression.clicked.connect(self.on_show_regression)
+        self.btn_feedforward_validation.clicked.connect(self.on_feedforward_validation)
         # 可视化子进程句柄
         self._visual_proc = None
         # 外部浏览器打开防抖标志（避免多次打开同一地址）
@@ -1556,6 +1898,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self._right_calculated = False
         self.btn_show_plot.setDisabled(True)
         self.btn_show_regression.setDisabled(True)
+        self.btn_feedforward_validation.setDisabled(True)
         self.btn_write_params.setDisabled(True)
         self.btn_write_params_left.setDisabled(True)
         self.btn_write_params_right.setDisabled(True)
@@ -1571,6 +1914,10 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self._update_data_dir_label()
         self._did_initial_ref_plot = False
         self.identification_combo.currentIndexChanged.connect(self.on_identification_options_changed)
+        self.friction_model_combo.currentIndexChanged.connect(self.on_friction_model_changed)
+        self.stribeck_alpha_spin.valueChanged.connect(self.on_identification_options_changed)
+        for key, spin in self.friction_velocity_spins.items():
+            spin.valueChanged.connect(lambda value, key=key: self.on_friction_velocity_changed(key, value))
         self.af_alpha_spin.valueChanged.connect(self.on_identification_options_changed)
         self.af_beta_spin.valueChanged.connect(self.on_identification_options_changed)
         self.af_alpha_spin.setDisabled(True)
@@ -1595,10 +1942,48 @@ class DynParamGUI(QtWidgets.QMainWindow):
         side = "left" if self.dyn.is_left else "right"
         self.dyn.traj_path = os.path.join(self.dyn.traj_dir, side, f"{self.dyn.traj}.dat")
         for calculator in (self.dyn.calculator_left, self.dyn.calculator_right):
+            options = dict(calculator.friction_options)
+            options["friction_model"] = self.friction_model_combo.currentData()
+            options["stribeck_alpha"] = self.stribeck_alpha_spin.value()
+            options["stribeck_velocity"] = self.friction_velocity_spins["stribeck_velocity"].value()
+            if options["friction_model"] != FRICTION_MODEL_STRIBECK:
+                options["friction_velocity_scale"] = self.friction_velocity_spins["friction_velocity_scale"].value()
+            calculator.set_friction_options(options)
             calculator.set_identification_options(
                 self.identification_combo.currentData(),
                 self.af_alpha_spin.value(), self.af_beta_spin.value(),
             )
+
+    def _load_friction_velocity_controls(self, options):
+        model = options["friction_model"]
+        for key, spin in self.friction_velocity_spins.items():
+            value = options["stribeck_velocity"] if model == FRICTION_MODEL_STRIBECK else options[key]
+            was_blocked = spin.blockSignals(True)
+            try:
+                spin.setRange(min(spin.minimum(), value), max(spin.maximum(), value))
+                spin.setValue(value)
+            finally:
+                spin.blockSignals(was_blocked)
+            spin.setEnabled(model != FRICTION_MODEL_CLASSIC if key == "friction_velocity_scale"
+                            else model == FRICTION_MODEL_STRIBECK)
+
+    def on_friction_model_changed(self, *_args):
+        options = dict(self.dyn.calculator_left.friction_options)
+        options["friction_model"] = self.friction_model_combo.currentData()
+        self._load_friction_velocity_controls(options)
+        self.on_identification_options_changed()
+
+    def on_friction_velocity_changed(self, key, value):
+        if self.friction_model_combo.currentData() == FRICTION_MODEL_STRIBECK:
+            target_key = "stribeck_velocity" if key == "friction_velocity_scale" else "friction_velocity_scale"
+            spin = self.friction_velocity_spins[target_key]
+            was_blocked = spin.blockSignals(True)
+            try:
+                spin.setRange(min(spin.minimum(), value), max(spin.maximum(), value))
+                spin.setValue(value)
+            finally:
+                spin.blockSignals(was_blocked)
+        self.on_identification_options_changed()
 
     def on_identification_options_changed(self, *_args):
         self.update_params_from_ui()
@@ -1606,7 +1991,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self._right_calculated = False
         self._params_calculated = False
         self.enable_buttons()
-        self.log_msg(f"辨识设置已更改: {self.identification_combo.currentText()}，请重新计算参数。")
+        self.log_msg(f"辨识设置已更改: {self.identification_combo.currentText()} / {self.friction_model_combo.currentText()}，请重新计算参数。")
 
     def disable_buttons(self, disabled=True):
         # 除停止按钮外均禁用/启用；部分按钮受状态标志控制
@@ -1618,7 +2003,17 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.btn_run_real_right.setDisabled(disabled)
             # 采集/计算过程中不允许切换数据源
             self.btn_select_data_dir.setDisabled(disabled)
+            for button in self.recording_file_buttons:
+                button.setDisabled(disabled)
             self.identification_combo.setDisabled(disabled)
+            self.friction_model_combo.setDisabled(disabled)
+            self.stribeck_alpha_spin.setDisabled(
+                disabled or self.friction_model_combo.currentData() != FRICTION_MODEL_STRIBECK
+            )
+            for key, spin in self.friction_velocity_spins.items():
+                model = self.friction_model_combo.currentData()
+                enabled = model != FRICTION_MODEL_CLASSIC if key == "friction_velocity_scale" else model == FRICTION_MODEL_STRIBECK
+                spin.setDisabled(disabled or not enabled)
             af_enabled = self.identification_combo.currentData() == IDENTIFICATION_AF_ARF
             self.af_alpha_spin.setDisabled(disabled or not af_enabled)
             self.af_beta_spin.setDisabled(disabled or not af_enabled)
@@ -1652,6 +2047,12 @@ class DynParamGUI(QtWidgets.QMainWindow):
             self.btn_show_regression.setDisabled(
                 True if disabled else (not self._params_calculated)
             )
+            self.btn_feedforward_validation.setDisabled(
+                disabled or not (self._left_calculated or self._right_calculated)
+            )
+            self.use_source_friction.setDisabled(disabled)
+            for spin in self.friction_scale_spins:
+                spin.setDisabled(disabled or self.use_source_friction.isChecked())
             self.btn_write_params.setDisabled(
                 True if disabled else (not self._params_calculated)
             )
@@ -1732,8 +2133,44 @@ class DynParamGUI(QtWidgets.QMainWindow):
             path = str(getattr(self.dyn, "rec_dir", ""))
             self.data_dir_label.setText(f"当前数据目录: {path}")
             self.data_dir_label.setToolTip(path)
+            for side, title in (("left", "左臂"), ("right", "右臂")):
+                calculator = self.dyn.calculator_left if side == "left" else self.dyn.calculator_right
+                for traj, role in (("traj1", "辨识"), ("traj2", "验证")):
+                    filename = calculator.recording_path(traj)
+                    label = self.recording_file_labels[side, traj]
+                    label.setText(f"{title}{role}: {filename.name}")
+                    label.setToolTip(str(filename))
         except Exception:
             pass
+
+    def on_select_recording_file(self, side, traj):
+        calculator = self.dyn.calculator_left if side == "left" else self.dyn.calculator_right
+        title = ("左臂" if side == "left" else "右臂") + ("辨识" if traj == "traj1" else "验证")
+        filename, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, f"选择{title}数据", str(calculator.recording_path(traj).parent),
+            "数据文件 (*.dat *.txt);;所有文件 (*)",
+        )
+        if not filename:
+            return
+        try:
+            data = np.loadtxt(filename)
+            if data.ndim != 2 or data.shape[1] not in (15, 22) or not np.all(np.isfinite(data)):
+                raise ValueError("需要 15 或 22 列数据：时间、7 关节位置、7 电流力矩、可选的 7 传感器力矩。")
+            if len(data) <= int(4 / calculator.dt):
+                raise ValueError("数据不足，裁剪前 3 秒和后 1 秒后无可用样本。")
+            calculator.set_recording_file(traj, filename)
+            if traj == "traj1":
+                if side == "left":
+                    self._left_calculated, self._left_captured = False, True
+                else:
+                    self._right_calculated, self._right_captured = False, True
+                self._params_calculated = False
+            self._update_data_dir_label()
+            self.enable_buttons()
+            self.log_msg(f"{title}文件: {filename}" +
+                         ("；请重新辨识该臂。" if traj == "traj1" else "；保留当前辨识参数。"))
+        except Exception as exc:
+            self.log_msg(f"选择{title}数据失败: {exc}")
 
     @staticmethod
     def _probe_rec_file(path):
@@ -1802,6 +2239,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.dyn.rec_dir = base
         self.dyn.calculator_left.rec_dir = base
         self.dyn.calculator_right.rec_dir = base
+        self.dyn.calculator_left.data_files.clear()
+        self.dyn.calculator_right.data_files.clear()
         self._left_captured = probes["left"]["traj1"] is not None
         self._right_captured = probes["right"]["traj1"] is not None
         # 数据源已更换, 之前算出的参数不再对应当前数据
@@ -2083,6 +2522,85 @@ class DynParamGUI(QtWidgets.QMainWindow):
         t = threading.Thread(target=self._thread_show_regression, daemon=True)
         t.start()
 
+    def on_feedforward_validation(self):
+        friction_scales = (None if self.use_source_friction.isChecked() else
+                           tuple(spin.value() for spin in self.friction_scale_spins))
+        self.disable_buttons(True)
+        try:
+            for side, calculated, calculator, figure, canvas in (
+                ("左臂", self._left_calculated, self.dyn.calculator_left, self.left_fig, self.left_canvas),
+                ("右臂", self._right_calculated, self.dyn.calculator_right, self.right_fig, self.right_canvas),
+            ):
+                figure.clear()
+                if not calculated:
+                    canvas.draw()
+                    continue
+                try:
+                    predictions = calculator.get_all_validation_predictions(friction_scales)
+                    t_full = predictions["t_full"]
+                    t_zero = predictions["t_zero"]
+                    measured_full = predictions["measured_full"]
+                    measured_zero = predictions["measured_zero"]
+                    full_unscaled = predictions["full_unscaled"]
+                    full_scaled = predictions["full_scaled"]
+                    zero_unscaled = predictions["zero_unscaled"]
+                    zero_scaled = predictions["zero_scaled"]
+                    rules = predictions["rules"]
+                    self.log_msg(f"[{side}] 比例来源: " +
+                                 ("robot_config.yaml" if friction_scales is None else "Qt 自定义（离线）"))
+                    self.log_msg(f"[{side}] 摩擦映射及速度模型来源: " + "; ".join(map(str, rules.sources)))
+                    self.log_msg(f"[{side}] fv 下标/比例: {rules.viscous}; fc 下标: {rules.coulomb_indices}; "
+                                 f"fc 比例={np.asarray(rules.coulomb_scale).tolist()}, "
+                                 f"模型={rules.model}, tanh 平滑速度={rules.velocity_scale} rad/s, "
+                                 f"Stribeck 特征/平滑速度={rules.stribeck_velocity:g} rad/s, "
+                                 f"alpha={rules.stribeck_alpha:g}")
+                    self.log_msg(f"[{side}] 辨识算法：{calculator.identification_algorithm}；"
+                                 "验证口径：滤波 q/dq/ddq，原始电流力矩，预测力矩不额外滤波。")
+                    figure.suptitle(f"{'Left' if calculator.is_left else 'Right'} validation - four conditions")
+                    for joint in range(calculator.ndof):
+                        ax = figure.add_subplot(3, 3, joint + 1)
+                        rmse_full = np.sqrt(np.mean((full_unscaled[:, joint] - measured_full[:, joint]) ** 2))
+                        rmse_zero = np.sqrt(np.mean((zero_unscaled[:, joint] - measured_zero[:, joint]) ** 2))
+                        rmse_zero_scaled = np.sqrt(np.mean((zero_scaled[:, joint] - measured_zero[:, joint]) ** 2))
+                        rmse_full_scaled = np.sqrt(np.mean((full_scaled[:, joint] - measured_full[:, joint]) ** 2))
+                        ax.plot(t_full, measured_full[:, joint], label="Raw current / target", color="tab:red", linewidth=1)
+                        ax.plot(t_full, full_unscaled[:, joint], label="Full no scale", color="tab:blue", linewidth=1)
+                        ax.plot(t_zero, zero_unscaled[:, joint], label="ddq=0", color="tab:orange", linewidth=1)
+                        ax.plot(t_zero, zero_scaled[:, joint], label="ddq=0 + scale", color="tab:green", linewidth=1)
+                        ax.plot(t_full, full_scaled[:, joint], label="Full + scale", color="tab:purple", linewidth=1)
+                        ax.set_title(
+                            f"J{joint + 1} RMSE full={rmse_full:.3f}, ddq0={rmse_zero:.3f}, "
+                            f"ddq0+={rmse_zero_scaled:.3f}, full+={rmse_full_scaled:.3f}",
+                            fontsize=8,
+                        )
+                        ax.set_xlabel("Time (s)")
+                        ax.set_ylabel("Torque (Nm)")
+                        ax.grid(True, linestyle="--", alpha=0.4)
+                        ax.legend(fontsize="xx-small")
+                        self.log_msg(
+                            f"[{side}] J{joint + 1} RMSE (Nm): "
+                            f"完整未缩放={rmse_full:.6f}, ddq=0={rmse_zero:.6f}, "
+                            f"ddq=0+摩擦缩放={rmse_zero_scaled:.6f}, "
+                            f"完整+摩擦缩放={rmse_full_scaled:.6f}"
+                        )
+                    self.log_msg(
+                        f"[{side}] 总体 RMSE (Nm): "
+                        f"完整未缩放={np.sqrt(np.mean((full_unscaled - measured_full) ** 2)):.6f}, "
+                        f"ddq=0={np.sqrt(np.mean((zero_unscaled - measured_zero) ** 2)):.6f}, "
+                        f"ddq=0+摩擦缩放={np.sqrt(np.mean((zero_scaled - measured_zero) ** 2)):.6f}, "
+                        f"完整+摩擦缩放={np.sqrt(np.mean((full_scaled - measured_full) ** 2)):.6f}"
+                    )
+                    canvas.draw()
+                except Exception as exc:
+                    self.log_msg(f"[{side}] 四种工况对比失败: {exc}")
+                    canvas.draw()
+            self.log_msg(
+                "四种工况已输出：完整动力学未缩放、ddq=0 未缩放、ddq=0+摩擦缩放、"
+                "完整动力学+摩擦缩放。结果未写入真机。"
+            )
+        finally:
+            self.enable_buttons()
+
     def _thread_show_regression(self):
         try:
             QtCore.QMetaObject.invokeMethod(
@@ -2241,6 +2759,15 @@ class DynParamGUI(QtWidgets.QMainWindow):
         except Exception as e:
             raise RuntimeError(f"未找到辨识参数，请先计算动力学参数。错误: {e}")
 
+    def _updated_identification_config(self, content, version_key, parameters):
+        options = self.dyn.calculator_left.friction_options
+        current = friction_settings(yaml.safe_load(content).get(version_key, {}))
+        if len(parameters) == 1 and current != options:
+            raise ValueError("摩擦设置已改变，必须重新辨识并写入双臂，避免另一臂的旧参数与新模型不匹配。")
+        return update_robot_config_section(
+            content, version_key, {**options, **parameters}, remove_keys=("stribeck_smoothing_velocity",),
+        )
+
     def on_write_params(self):
         try:
             if not (self._left_calculated and self._right_calculated):
@@ -2256,7 +2783,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
 
             # 构造确认弹窗（中文纯文字，无图标，置顶模态）
             msg = (
-                "将写入左右臂辨识参数到机器人配置文件 robot.yaml：\n\n"
+                "将写入左右臂辨识参数和摩擦模型到 robot_config.yaml：\n\n"
+                f"- 摩擦模型：{self.friction_model_combo.currentText()}\n"
                 f"- 版本段：{robot_version_key}\n"
                 f"- 左臂字段：dyn_base_params_primary（{len(beta_left)}维）\n"
                 f"- 右臂字段：dyn_base_params_secondary（{len(beta_right)}维）\n\n"
@@ -2281,29 +2809,10 @@ class DynParamGUI(QtWidgets.QMainWindow):
             with open(cfg_path, "r", encoding="utf-8") as f:
                 content = f.read()
             
-            beta_left_list = [float(x) for x in beta_left]
-            beta_right_list = [float(x) for x in beta_right]
-            
-            def format_float_list(flist):
-                return "[" + ", ".join(map(str, flist)) + "]"
-
-            import re
-
-            primary_pattern = rf"({robot_version_key}:.*?dyn_base_params_primary:\s*)\[.*?\]"
-            secondary_pattern = rf"({robot_version_key}:.*?dyn_base_params_secondary:\s*)\[.*?\]"
-            
-            new_content = content
-            if re.search(primary_pattern, content, re.DOTALL):
-                new_content = re.sub(primary_pattern, 
-                                   f"\\1{format_float_list(beta_left_list)}", 
-                                   new_content, flags=re.DOTALL)
-                self.log_msg(f"已更新 {robot_version_key} -> dyn_base_params_primary")
-            
-            if re.search(secondary_pattern, new_content, re.DOTALL):
-                new_content = re.sub(secondary_pattern, 
-                                   f"\\1{format_float_list(beta_right_list)}", 
-                                   new_content, flags=re.DOTALL)
-                self.log_msg(f"已更新 {robot_version_key} -> dyn_base_params_secondary")
+            new_content = self._updated_identification_config(content, robot_version_key, {
+                "dyn_base_params_primary": [float(value) for value in beta_left],
+                "dyn_base_params_secondary": [float(value) for value in beta_right],
+            })
 
             with open(cfg_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
@@ -2323,7 +2832,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
             version_prefix = self.dyn.version[:3]
             robot_version_key = f"{self.dyn.robot_name}_{version_prefix}"
             msg = (
-                "将写入左臂辨识参数到机器人配置文件 robot.yaml：\n\n"
+                "将写入左臂辨识参数和摩擦模型到 robot_config.yaml：\n\n"
+                f"- 摩擦模型：{self.friction_model_combo.currentText()}\n"
                 f"- 版本段：{robot_version_key}\n"
                 f"- 左臂字段：dyn_base_params_primary（{len(beta_left)}维）\n\n"
                 "是否确认写入？"
@@ -2344,17 +2854,9 @@ class DynParamGUI(QtWidgets.QMainWindow):
             cfg_path = str(self.dyn.robot_cfg_path)
             with open(cfg_path, "r", encoding="utf-8") as f:
                 content = f.read()
-            beta_left_list = [float(x) for x in beta_left]
-            def format_float_list(flist):
-                return "[" + ", ".join(map(str, flist)) + "]"
-            import re
-            primary_pattern = rf"({robot_version_key}:.*?dyn_base_params_primary:\s*)\[.*?\]"
-            new_content = content
-            if re.search(primary_pattern, content, re.DOTALL):
-                new_content = re.sub(primary_pattern,
-                                   f"\\1{format_float_list(beta_left_list)}",
-                                   new_content, flags=re.DOTALL)
-                self.log_msg(f"已更新 {robot_version_key} -> dyn_base_params_primary")
+            new_content = self._updated_identification_config(content, robot_version_key, {
+                "dyn_base_params_primary": [float(value) for value in beta_left],
+            })
             with open(cfg_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
             self.log_msg(
@@ -2372,7 +2874,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
             version_prefix = self.dyn.version[:3]
             robot_version_key = f"{self.dyn.robot_name}_{version_prefix}"
             msg = (
-                "将写入右臂辨识参数到机器人配置文件 robot.yaml：\n\n"
+                "将写入右臂辨识参数和摩擦模型到 robot_config.yaml：\n\n"
+                f"- 摩擦模型：{self.friction_model_combo.currentText()}\n"
                 f"- 版本段：{robot_version_key}\n"
                 f"- 右臂字段：dyn_base_params_secondary（{len(beta_right)}维）\n\n"
                 "是否确认写入？"
@@ -2393,17 +2896,9 @@ class DynParamGUI(QtWidgets.QMainWindow):
             cfg_path = str(self.dyn.robot_cfg_path)
             with open(cfg_path, "r", encoding="utf-8") as f:
                 content = f.read()
-            beta_right_list = [float(x) for x in beta_right]
-            def format_float_list(flist):
-                return "[" + ", ".join(map(str, flist)) + "]"
-            import re
-            secondary_pattern = rf"({robot_version_key}:.*?dyn_base_params_secondary:\s*)\[.*?\]"
-            new_content = content
-            if re.search(secondary_pattern, content, re.DOTALL):
-                new_content = re.sub(secondary_pattern,
-                                   f"\\1{format_float_list(beta_right_list)}",
-                                   new_content, flags=re.DOTALL)
-                self.log_msg(f"已更新 {robot_version_key} -> dyn_base_params_secondary")
+            new_content = self._updated_identification_config(content, robot_version_key, {
+                "dyn_base_params_secondary": [float(value) for value in beta_right],
+            })
             with open(cfg_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
             self.log_msg(
@@ -2597,19 +3092,17 @@ class DynParamGUI(QtWidgets.QMainWindow):
                     ]
                     calc_left = self.dyn.calculator_left
                     tL, tau_current_L, tau_sensor_L, tau_pred_L, tau_used_L = calc_left.get_regr_validatation()
-                    af_left = calc_left.proc_data["traj2"]["algorithm"] == IDENTIFICATION_AF_ARF
                     totalL = tau_used_L.shape[0]
                     for i in range(min(ndof, tau_used_L.shape[1])):
                         ax = axes_left[i]
                         ax.clear()
-                        current_i = np.asarray(tau_current_L[:, i]).flatten()[:totalL]
                         sensor_i = np.asarray(tau_sensor_L[:, i]).flatten()[:totalL]
                         estimated_i = np.asarray(tau_pred_L[:, i]).flatten()[:totalL]
                         used_i = np.asarray(tau_used_L[:, i]).flatten()[:totalL]
                         ax.plot(
                             tL[:totalL],
-                            current_i,
-                            label="Filtered current torque" if af_left else "Current torque",
+                            used_i,
+                            label="Raw current torque / target",
                             color="tab:red",
                             linewidth=1,
                         )
@@ -2617,7 +3110,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                             ax.plot(
                                 tL[:totalL],
                                 sensor_i,
-                                label="Filtered sensor torque" if af_left else "Sensor torque",
+                                label="Sensor torque (display only)",
                                 color="tab:orange",
                                 linewidth=1,
                                 linestyle="--",
@@ -2625,7 +3118,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                         ax.plot(
                             tL[:totalL],
                             estimated_i,
-                            label="Estimated filtered torque" if af_left else "Estimated torque",
+                            label="Full dynamics torque",
                             color="tab:blue",
                             linewidth=1,
                         )
@@ -2666,19 +3159,17 @@ class DynParamGUI(QtWidgets.QMainWindow):
                     ]
                     calc_right = self.dyn.calculator_right
                     tR, tau_current_R, tau_sensor_R, tau_pred_R, tau_used_R = calc_right.get_regr_validatation()
-                    af_right = calc_right.proc_data["traj2"]["algorithm"] == IDENTIFICATION_AF_ARF
                     totalR = tau_used_R.shape[0]
                     for i in range(min(ndof, tau_used_R.shape[1])):
                         ax = axes_right[i]
                         ax.clear()
-                        current_i = np.asarray(tau_current_R[:, i]).flatten()[:totalR]
                         sensor_i = np.asarray(tau_sensor_R[:, i]).flatten()[:totalR]
                         estimated_i = np.asarray(tau_pred_R[:, i]).flatten()[:totalR]
                         used_i = np.asarray(tau_used_R[:, i]).flatten()[:totalR]
                         ax.plot(
                             tR[:totalR],
-                            current_i,
-                            label="Filtered current torque" if af_right else "Current torque",
+                            used_i,
+                            label="Raw current torque / target",
                             color="tab:red",
                             linewidth=1,
                         )
@@ -2686,7 +3177,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                             ax.plot(
                                 tR[:totalR],
                                 sensor_i,
-                                label="Filtered sensor torque" if af_right else "Sensor torque",
+                                label="Sensor torque (display only)",
                                 color="tab:orange",
                                 linewidth=1,
                                 linestyle="--",
@@ -2694,7 +3185,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                         ax.plot(
                             tR[:totalR],
                             estimated_i,
-                            label="Estimated filtered torque" if af_right else "Estimated torque",
+                            label="Full dynamics torque",
                             color="tab:blue",
                             linewidth=1,
                         )

@@ -77,6 +77,11 @@ chassis_config:
   enable_chassis_shaper: false
 
 w1_v02:
+  # 摩擦模型: classic / smooth / stribeck；切换后须重新辨识双臂参数
+  friction_model: smooth
+  friction_velocity_scale: 0.1
+  stribeck_velocity: 0.1  # 特征速度与 tanh 方向平滑速度共用，单位 rad/s，必须大于 0
+  stribeck_alpha: 2.0
   # === streaming运动参数 ===
   enable_streaming_ruckig: true
   joint_streaming_bounds:
@@ -546,6 +551,11 @@ w1_v02:
         acceleration_limit: 5.0  # 加速度偏移限幅 (rad/s²)
 
 w1_v03:
+  # 摩擦模型: classic / smooth / stribeck；切换后须重新辨识双臂参数
+  friction_model: smooth
+  friction_velocity_scale: 0.1
+  stribeck_velocity: 0.1  # 特征速度与 tanh 方向平滑速度共用，单位 rad/s，必须大于 0
+  stribeck_alpha: 2.0
   # === streaming运动参数 ===
   enable_streaming_ruckig: true
   joint_streaming_bounds:

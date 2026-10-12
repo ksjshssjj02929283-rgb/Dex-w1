@@ -8,7 +8,7 @@ import numpy as np
 import yaml
 
 from .acceleration_free_regressor import lowpass_filter
-from .friction_model import smooth_sign
+from .friction_model import smooth_sign, friction_bases, friction_settings
 
 
 @dataclass(frozen=True)
@@ -19,11 +19,23 @@ class RuntimeFriction:
     velocity_threshold: float
     sources: tuple
     velocity_scale: float = None
+    model: str = None
+    offset_indices: tuple = ()
+    stribeck_velocity: float = 0.1
+    stribeck_alpha: float = 2.0
 
     def coulomb_basis(self, velocity):
+        if self.model is not None:
+            return self.bases(velocity)[0]
         if self.velocity_scale is not None:
             return smooth_sign(velocity, self.velocity_scale)
         return np.where(np.abs(velocity) > self.velocity_threshold, np.sign(velocity), 0.0)
+
+    def bases(self, velocity):
+        if self.model is None:
+            return self.coulomb_basis(velocity), np.ones_like(velocity)
+        return friction_bases(velocity, self.model, self.velocity_scale,
+                              self.stribeck_velocity, self.stribeck_alpha)
 
 
 def _function_body(text, name):
@@ -122,8 +134,13 @@ def read_runtime_friction(source, robot_type, base_parameters, config_path=None,
         fc_indices.append(fc_index)
     if len(viscous) != dof or dof == 0:
         raise ValueError("Incomplete runtime friction mapping")
-    return RuntimeFriction(viscous, tuple(fc_indices), fc_ratios, threshold,
-                           (config_path, source, generated), velocity_scale)
+    options = friction_settings(config)
+    return RuntimeFriction(
+        viscous, tuple(fc_indices), fc_ratios, threshold,
+        (config_path, source, generated), options["friction_velocity_scale"],
+        options["friction_model"], tuple(names.index(f"fo_{joint + 1}") for joint in range(dof)),
+        options["stribeck_velocity"], options["stribeck_alpha"],
+    )
 
 
 def predict_runtime_friction(W, parameters, dq, rules, filter_context=None):
@@ -132,18 +149,29 @@ def predict_runtime_friction(W, parameters, dq, rules, filter_context=None):
     parameters = np.asarray(parameters, dtype=float).reshape(-1)
     dq = np.asarray(dq, dtype=float)
     velocity = dq if filter_context is None else filter_context["dq"]
-    basis = rules.coulomb_scale * rules.coulomb_basis(velocity)
-    if filter_context is not None:
-        basis = lowpass_filter(filter_context["t"], basis, filter_context["alpha"])
+    fc_basis, fo_basis = rules.bases(velocity)
+    basis = rules.coulomb_scale * fc_basis
+    if rules.model == "stribeck":
+        fo_basis = fo_basis * rules.coulomb_scale
+
+    def filtered(values):
+        if filter_context is None:
+            return values
+        values = lowpass_filter(filter_context["t"], values, filter_context["alpha"])
         if filter_context["beta"] > 0:
-            basis = lowpass_filter(filter_context["t"], basis, filter_context["beta"])
-        basis = basis[filter_context["keep"]]
+            values = lowpass_filter(filter_context["t"], values, filter_context["beta"])
+        return values[filter_context["keep"]]
+
+    basis, fo_basis = filtered(basis), filtered(fo_basis)
     if basis.shape != dq.shape or dq.shape[1] != len(rules.coulomb_indices):
         raise ValueError("Friction basis and validation trajectory have different shapes")
     scaled = parameters.copy()
     for index, factor in rules.viscous.items():
         scaled[index] *= factor
     scaled[list(rules.coulomb_indices)] = 0.0
+    scaled[list(rules.offset_indices)] = 0.0
     prediction = (W @ scaled).reshape(dq.shape)
     prediction += basis * parameters[list(rules.coulomb_indices)]
+    if rules.offset_indices:
+        prediction += fo_basis * parameters[list(rules.offset_indices)]
     return prediction
