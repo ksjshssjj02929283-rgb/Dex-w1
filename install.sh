@@ -88,6 +88,7 @@ $INSTALL_PATH/chassis_interfaces/lib
 $INSTALL_PATH/joint_interfaces/lib
 $INSTALL_PATH/robot_server_interfaces/lib
 $INSTALL_PATH/robot_server_lib/lib
+$INSTALL_PATH/nav_interfaces/lib
 LDCONF
 cp /tmp/w1_server.conf /etc/ld.so.conf.d/w1_server.conf
 ldconfig

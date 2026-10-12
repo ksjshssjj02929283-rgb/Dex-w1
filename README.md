@@ -12,7 +12,7 @@ curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo te
 
 # 安装依赖库
 sudo apt update
-sudo apt install nlohmann-json3-dev ros-humble-ruckig ros-humble-pinocchio
+sudo apt install nlohmann-json3-dev libgoogle-perftools-dev google-perftools
 
 # 底盘相关依赖库
 sudo apt install ros-humble-nav-msgs ros-humble-tf2-ros ros-humble-tf2-geometry-msgs

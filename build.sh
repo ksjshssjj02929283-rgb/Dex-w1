@@ -4,7 +4,7 @@ set -e
 WORKSPACE_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="$(cd "${WORKSPACE_DIR}/../install" && pwd 2>/dev/null || echo "${WORKSPACE_DIR}/../install")"
 source /opt/ros/humble/setup.bash
-apt update && apt install -y liburdfdom-dev
+apt update && apt install -y liburdfdom-dev libgoogle-perftools-dev google-perftools
 
 # 构建类型：Release（默认）或 RelWithDebInfo（开发模式，编译更快）
 BUILD_TYPE=${BUILD_TYPE:-Release}

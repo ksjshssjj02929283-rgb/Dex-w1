@@ -67,6 +67,19 @@ find_package(robot_server_interfaces REQUIRED)
 find_package(nav_interfaces REQUIRED)
 find_package(robot_server_lib REQUIRED)
 
+# tcmalloc
+find_library(TCMALLOC_LIBRARY
+  NAMES tcmalloc
+  PATHS
+    /usr/lib/aarch64-linux-gnu
+    /lib/aarch64-linux-gnu
+    /usr/local/lib
+)
+if(NOT TCMALLOC_LIBRARY)
+  message(FATAL_ERROR "tcmalloc library not found")
+endif()
+message(STATUS "Found tcmalloc: ${TCMALLOC_LIBRARY}")
+
 if(NOT TARGET DexeRP)
   # choose per-arch folder
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7|armv7l|armv8|arm)$")
@@ -139,6 +152,7 @@ ament_target_dependencies(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
   pinocchio::pinocchio
   ruckig::ruckig
+  ${TCMALLOC_LIBRARY}
 )
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC

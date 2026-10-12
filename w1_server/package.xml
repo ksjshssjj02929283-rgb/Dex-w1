@@ -26,6 +26,7 @@
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>robot_server_lib</depend>
+  <depend>gperftools</depend>
   <!-- 🔧 STEERING_ACTION_DIRECT: ChassisNode hosts SteeringAngleControl. -->
   <depend>nav_interfaces</depend>
 
