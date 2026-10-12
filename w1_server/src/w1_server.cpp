@@ -705,6 +705,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_integral_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_integral_ratio, index_offset, ndof_config_).str() +
         ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness, 0, this->robot_mode_ == RobotMode::SingleArm? 6 : 12).str() +
         ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio, 0, this->robot_mode_ == RobotMode::SingleArm? 6 : 12).str() +
+        ",\n  \"drag_button\":" + std::to_string(this->robot_feedback_.drag_mode) + 
         ",\n  \"chassis_status_word\":" + std::to_string(this->robot_feedback_.chassis_feedback.status_word) +
         ", \"chassis_error_code_left\":" + std::to_string(this->robot_feedback_.chassis_feedback.error_code_left) +
         ", \"chassis_error_code_right\":" + std::to_string(this->robot_feedback_.chassis_feedback.error_code_right) +
