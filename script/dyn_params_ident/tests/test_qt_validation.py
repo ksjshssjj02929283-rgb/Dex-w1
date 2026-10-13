@@ -21,7 +21,7 @@ from dyn_params_ident.friction_model import friction_bases, friction_settings
 
 
 class QtValidationTests(unittest.TestCase):
-    def test_existing_tanh_control_shares_stribeck_velocity_and_restores_smooth_value(self):
+    def test_existing_tanh_and_stribeck_controls_are_independent_and_saved(self):
         with patch.dict(os.environ, {"QT_QPA_PLATFORM": "offscreen"}):
             application = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
         characteristic_spin = QtWidgets.QDoubleSpinBox()
@@ -51,57 +51,60 @@ class QtValidationTests(unittest.TestCase):
         )
         gui.update_params_from_ui = lambda: DynParamGUI.update_params_from_ui(gui)
         gui._load_friction_velocity_controls = lambda options: DynParamGUI._load_friction_velocity_controls(gui, options)
-        gui.on_identification_options_changed = Mock(side_effect=lambda: DynParamGUI.on_identification_options_changed(gui))
+        gui.on_identification_options_changed = Mock(side_effect=lambda *args: DynParamGUI.on_identification_options_changed(gui, *args))
         gui._load_friction_velocity_controls(left.friction_options)
         self.assertEqual(tanh_spin.value(), 0.23)
         self.assertFalse(characteristic_spin.isEnabled())
         combo.currentIndexChanged.connect(lambda index: DynParamGUI.on_friction_model_changed(gui))
         for key, spin in gui.friction_velocity_spins.items():
-            spin.valueChanged.connect(lambda value, key=key: DynParamGUI.on_friction_velocity_changed(gui, key, value))
+            spin.valueChanged.connect(gui.on_identification_options_changed)
         combo.setCurrentIndex(combo.findData("stribeck"))
         self.assertTrue(tanh_spin.isEnabled())
         self.assertTrue(characteristic_spin.isEnabled())
-        self.assertEqual(tanh_spin.value(), 0.11)
+        self.assertEqual(tanh_spin.value(), 0.23)
+        self.assertEqual(characteristic_spin.value(), 0.11)
         gui.on_identification_options_changed.assert_called_once_with()
-        for source, value in ((characteristic_spin, 0.19), (tanh_spin, 0.07)):
+        for source, value, expected_characteristic, expected_tanh in (
+            (characteristic_spin, 0.19, 0.19, 0.23), (tanh_spin, 0.07, 0.19, 0.07),
+        ):
             with self.subTest(value=value):
                 for calculator in (left, right):
                     calculator.solutions_beta_starextra = np.array([1.0])
                     calculator.proc_data["traj1"] = {}
                 gui.on_identification_options_changed.reset_mock()
                 source.setValue(value)
-                self.assertEqual(characteristic_spin.value(), value)
-                self.assertEqual(tanh_spin.value(), value)
+                self.assertEqual(characteristic_spin.value(), expected_characteristic)
+                self.assertEqual(tanh_spin.value(), expected_tanh)
                 self.assertFalse(characteristic_spin.signalsBlocked())
                 self.assertFalse(tanh_spin.signalsBlocked())
-                gui.on_identification_options_changed.assert_called_once_with()
+                gui.on_identification_options_changed.assert_called_once_with(value)
                 for calculator in (left, right):
-                    self.assertEqual(calculator.friction_options["stribeck_velocity"], value)
-                    self.assertEqual(calculator.friction_options["friction_velocity_scale"], 0.23)
+                    self.assertEqual(calculator.friction_options["stribeck_velocity"], expected_characteristic)
+                    self.assertEqual(calculator.friction_options["friction_velocity_scale"], expected_tanh)
                     self.assertIsNone(calculator.solutions_beta_starextra)
                     self.assertEqual(calculator.proc_data, {})
                 result = DynParamGUI._updated_identification_config(gui, "w1_v02:\n  friction_model: smooth\n", "w1_v02", {
                     "dyn_base_params_primary": [1.0], "dyn_base_params_secondary": [2.0],
                 })
                 section = yaml.safe_load(result)["w1_v02"]
-                self.assertEqual(section["stribeck_velocity"], value)
-                self.assertEqual(section["friction_velocity_scale"], 0.23)
+                self.assertEqual(section["stribeck_velocity"], expected_characteristic)
+                self.assertEqual(section["friction_velocity_scale"], expected_tanh)
                 self.assertNotIn("stribeck_tanh_velocity", section)
                 self.assertNotIn("stribeck_smoothing_velocity", section)
         combo.setCurrentIndex(combo.findData("smooth"))
-        self.assertEqual(tanh_spin.value(), 0.23)
+        self.assertEqual(tanh_spin.value(), 0.07)
         self.assertTrue(tanh_spin.isEnabled())
         self.assertFalse(characteristic_spin.isEnabled())
         tanh_spin.setValue(0.31)
         for calculator in (left, right):
             self.assertEqual(calculator.friction_options["friction_velocity_scale"], 0.31)
-            self.assertEqual(calculator.friction_options["stribeck_velocity"], 0.07)
+            self.assertEqual(calculator.friction_options["stribeck_velocity"], 0.19)
         combo.setCurrentIndex(combo.findData("classic"))
         self.assertFalse(tanh_spin.isEnabled())
         self.assertFalse(characteristic_spin.isEnabled())
         combo.setCurrentIndex(combo.findData("stribeck"))
-        self.assertEqual(tanh_spin.value(), 0.07)
-        self.assertEqual(characteristic_spin.value(), 0.07)
+        self.assertEqual(tanh_spin.value(), 0.31)
+        self.assertEqual(characteristic_spin.value(), 0.19)
         combo.setCurrentIndex(combo.findData("smooth"))
         self.assertEqual(tanh_spin.value(), 0.31)
 
@@ -136,22 +139,25 @@ class QtValidationTests(unittest.TestCase):
         fv, fc, fo = [full_parameters[[names.index(symbol) for symbol in symbols]]
                       for symbols in (definition.fv, definition.fc, definition.fo)]
         base_names = list(map(str, robot.dyn.baseparms))
-        for model, shared_velocity in (("classic", 0.19), ("smooth", 0.19), ("stribeck", 0.19), ("stribeck", 0.07)):
-            options = {"friction_model": model, "friction_velocity_scale": 0.23,
-                       "stribeck_velocity": shared_velocity, "stribeck_alpha": 1.5}
+        for model, characteristic_velocity, tanh_velocity in (
+            ("classic", 0.19, 0.23), ("smooth", 0.19, 0.23),
+            ("stribeck", 0.19, 0.23), ("stribeck", 0.07, 0.23), ("stribeck", 0.19, 0.07),
+        ):
+            options = {"friction_model": model, "friction_velocity_scale": tanh_velocity,
+                       "stribeck_velocity": characteristic_velocity, "stribeck_alpha": 1.5}
             if model == "stribeck":
-                decay = np.exp(-(np.abs(dq) / shared_velocity) ** 1.5)
-                fc_basis = (1 - decay) * np.tanh(dq / shared_velocity)
-                fo_basis = decay * np.tanh(dq / shared_velocity)
+                decay = np.exp(-(np.abs(dq) / characteristic_velocity) ** 1.5)
+                fc_basis = (1 - decay) * np.tanh(dq / tanh_velocity)
+                fo_basis = decay * np.tanh(dq / tanh_velocity)
             else:
-                fc_basis, fo_basis = friction_bases(dq, model, 0.23)
+                fc_basis, fo_basis = friction_bases(dq, model, tanh_velocity)
             zero_expected = rigid_zero + dq * fv + fc_basis * fc + fo_basis * fo
             full_expected = inertial + zero_expected
             rules = RuntimeFriction(
                 {base_names.index(str(symbol)): 1.0 for symbol in definition.fv},
-                tuple(base_names.index(str(symbol)) for symbol in definition.fc), 1.0, 0.0, (), 0.23,
+                tuple(base_names.index(str(symbol)) for symbol in definition.fc), 1.0, 0.0, (), tanh_velocity,
                 model, tuple(base_names.index(str(symbol)) for symbol in definition.fo),
-                shared_velocity, 1.5,
+                characteristic_velocity, 1.5,
             )
             for algorithm in ("standard", "af_arf"):
                 calculator = DynParamCalculator("w1_v02", True, lambda message: None)
@@ -255,7 +261,7 @@ class QtValidationTests(unittest.TestCase):
             arm_combo=SimpleNamespace(currentText=lambda: "左臂"),
             friction_model_combo=SimpleNamespace(currentData=lambda: "stribeck", currentText=lambda: "Stribeck"),
             stribeck_alpha_spin=SimpleNamespace(value=lambda: 1.5),
-            friction_velocity_spins={key: SimpleNamespace(value=lambda: 0.19) for key in values},
+            friction_velocity_spins={key: SimpleNamespace(value=lambda value=value: value) for key, value in values.items()},
             identification_combo=SimpleNamespace(currentData=lambda: "standard", currentText=lambda: "传统回归"),
             af_alpha_spin=SimpleNamespace(value=lambda: 15.0), af_beta_spin=SimpleNamespace(value=lambda: 10.0),
             enable_buttons=lambda: None, log_msg=lambda message: None,

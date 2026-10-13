@@ -134,7 +134,7 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDo
         const double offset = friction_params[fo_indices[joint]];
         if (params.friction_model == "stribeck") {
             const double decay = exp(-pow(fabs(velocity) / params.stribeck_velocity, params.stribeck_alpha));
-            const double stribeck_direction = tanh(velocity / params.stribeck_velocity);
+            const double stribeck_direction = tanh(velocity / params.friction_velocity_scale);
             tau_out[joint] += ((1.0 - decay) * coulomb + decay * offset * fc_ratio[joint]) * stribeck_direction;
         } else if (params.friction_model == "classic") {
             tau_out[joint] += coulomb * direction + offset;

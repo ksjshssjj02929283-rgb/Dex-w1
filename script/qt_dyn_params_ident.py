@@ -1657,8 +1657,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.friction_model_combo.setCurrentIndex(self.friction_model_combo.findData(options["friction_model"]))
         self.friction_model_combo.setToolTip(
             "经典/平滑模型: Fc·sign(v) 或 Fc·tanh(v/v0) + Bv·v + 偏置。\n"
-            "Stribeck: [Fc+(Fs-Fc)·exp(-(|v|/vs)^alpha)]·tanh(v/vs)+Bv·v。\n"
-            "速度可在 Qt 或 YAML 修改；Stribeck 特征速度和方向平滑速度共用 vs。\n"
+            "Stribeck: [Fc+(Fs-Fc)·exp(-(|v|/vs)^alpha)]·tanh(v/v0)+Bv·v。\n"
+            "特征速度 vs 控制指数衰减，tanh 平滑速度 v0 控制方向过渡，可分别在 Qt 或 YAML 修改。\n"
             "模型参数改变后须重新辨识。"
         )
         identification_form.addRow("摩擦模型", self.friction_model_combo)
@@ -1670,8 +1670,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         identification_form.addRow("Stribeck 指数 α", self.stribeck_alpha_spin)
         self.friction_velocity_spins = {}
         for key, label, tooltip in (
-            ("friction_velocity_scale", "tanh 平滑速度", "平滑库仑使用 v0；Stribeck 使用共用的 vs，与 Stribeck 特征速度同步，必须大于 0。"),
-            ("stribeck_velocity", "Stribeck 特征速度", "指数衰减 exp(-(|v|/vs)^alpha) 和方向项 tanh(v/vs) 共用 vs，必须大于 0。"),
+            ("friction_velocity_scale", "tanh 平滑速度", "平滑库仑及 Stribeck 方向项 tanh(v/v0) 的 v0，与 Stribeck 特征速度独立，必须大于 0。"),
+            ("stribeck_velocity", "Stribeck 特征速度", "指数衰减 exp(-(|v|/vs)^alpha) 的 vs，与 tanh 平滑速度独立，必须大于 0。"),
         ):
             spin = QtWidgets.QDoubleSpinBox()
             spin.setDecimals(6)
@@ -1917,7 +1917,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.friction_model_combo.currentIndexChanged.connect(self.on_friction_model_changed)
         self.stribeck_alpha_spin.valueChanged.connect(self.on_identification_options_changed)
         for key, spin in self.friction_velocity_spins.items():
-            spin.valueChanged.connect(lambda value, key=key: self.on_friction_velocity_changed(key, value))
+            spin.valueChanged.connect(self.on_identification_options_changed)
         self.af_alpha_spin.valueChanged.connect(self.on_identification_options_changed)
         self.af_beta_spin.valueChanged.connect(self.on_identification_options_changed)
         self.af_alpha_spin.setDisabled(True)
@@ -1945,9 +1945,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
             options = dict(calculator.friction_options)
             options["friction_model"] = self.friction_model_combo.currentData()
             options["stribeck_alpha"] = self.stribeck_alpha_spin.value()
-            options["stribeck_velocity"] = self.friction_velocity_spins["stribeck_velocity"].value()
-            if options["friction_model"] != FRICTION_MODEL_STRIBECK:
-                options["friction_velocity_scale"] = self.friction_velocity_spins["friction_velocity_scale"].value()
+            options.update({key: spin.value() for key, spin in self.friction_velocity_spins.items()})
             calculator.set_friction_options(options)
             calculator.set_identification_options(
                 self.identification_combo.currentData(),
@@ -1957,7 +1955,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
     def _load_friction_velocity_controls(self, options):
         model = options["friction_model"]
         for key, spin in self.friction_velocity_spins.items():
-            value = options["stribeck_velocity"] if model == FRICTION_MODEL_STRIBECK else options[key]
+            value = options[key]
             was_blocked = spin.blockSignals(True)
             try:
                 spin.setRange(min(spin.minimum(), value), max(spin.maximum(), value))
@@ -1971,18 +1969,6 @@ class DynParamGUI(QtWidgets.QMainWindow):
         options = dict(self.dyn.calculator_left.friction_options)
         options["friction_model"] = self.friction_model_combo.currentData()
         self._load_friction_velocity_controls(options)
-        self.on_identification_options_changed()
-
-    def on_friction_velocity_changed(self, key, value):
-        if self.friction_model_combo.currentData() == FRICTION_MODEL_STRIBECK:
-            target_key = "stribeck_velocity" if key == "friction_velocity_scale" else "friction_velocity_scale"
-            spin = self.friction_velocity_spins[target_key]
-            was_blocked = spin.blockSignals(True)
-            try:
-                spin.setRange(min(spin.minimum(), value), max(spin.maximum(), value))
-                spin.setValue(value)
-            finally:
-                spin.blockSignals(was_blocked)
         self.on_identification_options_changed()
 
     def on_identification_options_changed(self, *_args):
@@ -2552,7 +2538,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
                     self.log_msg(f"[{side}] fv 下标/比例: {rules.viscous}; fc 下标: {rules.coulomb_indices}; "
                                  f"fc 比例={np.asarray(rules.coulomb_scale).tolist()}, "
                                  f"模型={rules.model}, tanh 平滑速度={rules.velocity_scale} rad/s, "
-                                 f"Stribeck 特征/平滑速度={rules.stribeck_velocity:g} rad/s, "
+                                 f"Stribeck 特征速度={rules.stribeck_velocity:g} rad/s, "
                                  f"alpha={rules.stribeck_alpha:g}")
                     self.log_msg(f"[{side}] 辨识算法：{calculator.identification_algorithm}；"
                                  "验证口径：滤波 q/dq/ddq，原始电流力矩，预测力矩不额外滤波。")

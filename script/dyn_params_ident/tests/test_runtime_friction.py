@@ -28,7 +28,7 @@ def parameter_names():
 
 
 class RuntimeFrictionTests(unittest.TestCase):
-    def test_yaml_shared_stribeck_velocity_and_default(self):
+    def test_yaml_independent_stribeck_velocities_and_default(self):
         velocity = np.tile(np.array([[-0.1], [0.0], [0.1]]), (1, 7))
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "robot_config.yaml"
@@ -38,14 +38,15 @@ class RuntimeFrictionTests(unittest.TestCase):
                 path.write_text(yaml.safe_dump({"w1_v02": config}))
                 rules = read_runtime_friction(SOURCE, "w1_v02", parameter_names(), path)
                 self.assertEqual(rules.stribeck_velocity, 0.3)
+                self.assertEqual(rules.velocity_scale, 0.2)
                 fc, fs = rules.bases(velocity)
                 if model == "smooth":
                     np.testing.assert_allclose(fc, np.tanh(velocity / 0.2))
                     np.testing.assert_array_equal(fs, np.ones_like(velocity))
                 else:
                     decay = np.exp(-np.abs(velocity) / 0.3)
-                    np.testing.assert_allclose(fc, (1 - decay) * np.tanh(velocity / 0.3))
-                    np.testing.assert_allclose(fs, decay * np.tanh(velocity / 0.3))
+                    np.testing.assert_allclose(fc, (1 - decay) * np.tanh(velocity / 0.2))
+                    np.testing.assert_allclose(fs, decay * np.tanh(velocity / 0.2))
                 path.write_text(yaml.safe_dump({"w1_v02": {"friction_model": "stribeck"}}))
                 legacy = read_runtime_friction(SOURCE, "w1_v02", parameter_names(), path)
                 self.assertEqual(legacy.stribeck_velocity, 0.1)
@@ -61,7 +62,18 @@ class RuntimeFrictionTests(unittest.TestCase):
             self.assertNotIn("stribeck_smoothing_velocity", settings)
             fc, fs = friction_bases(velocity, settings["friction_model"],
                                     stribeck_velocity=settings["stribeck_velocity"])
-            np.testing.assert_allclose(fc + fs, np.tanh(velocity / 0.3))
+            np.testing.assert_allclose(fc + fs, np.tanh(velocity / 0.1))
+
+    def test_stribeck_characteristic_and_tanh_velocities_control_separate_terms(self):
+        velocity = np.array([-0.1, 0.0, 0.1])
+        for characteristic_velocity, tanh_velocity in ((0.3, 0.2), (0.6, 0.2), (0.3, 0.05)):
+            with self.subTest(characteristic=characteristic_velocity, tanh=tanh_velocity):
+                fc, fs = friction_bases(velocity, "stribeck", tanh_velocity, characteristic_velocity, 1.0)
+                direction = np.tanh(velocity / tanh_velocity)
+                decay = np.exp(-np.abs(velocity) / characteristic_velocity)
+                np.testing.assert_allclose(fc + fs, direction)
+                np.testing.assert_allclose(fs, decay * direction)
+                np.testing.assert_allclose(fc, (1 - decay) * direction)
 
     def test_invalid_friction_velocities_are_rejected(self):
         for key in ("friction_velocity_scale", "stribeck_velocity", "stribeck_alpha"):
@@ -71,15 +83,17 @@ class RuntimeFrictionTests(unittest.TestCase):
         for value in (0.0, -0.1, float("nan"), float("inf")):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 friction_bases([0], "stribeck", stribeck_velocity=value)
+            with self.subTest(tanh=value), self.assertRaises(ValueError):
+                friction_bases([0], "stribeck", smooth_velocity=value)
         np.testing.assert_array_equal(friction_bases([0], "stribeck")[0], [0])
 
     def test_stribeck_replaces_both_friction_columns_before_filtering(self):
         velocity = np.array([[-0.1], [0.0], [0.1], [0.2]])
-        rules = RuntimeFriction({}, (0,), 0.5, 0.0, (), 0.1, "stribeck", (1,))
+        rules = RuntimeFriction({}, (0,), 0.5, 0.0, (), 0.2, "stribeck", (1,), 0.1)
         parameters = np.array([2.0, 4.0])
         matrix = np.ones((4, 2))
         decay = np.exp(-(np.abs(velocity) / 0.1) ** 2)
-        expected = 0.5 * (2.0 + 2.0 * decay) * np.tanh(velocity / 0.1)
+        expected = 0.5 * (2.0 + 2.0 * decay) * np.tanh(velocity / 0.2)
         np.testing.assert_allclose(predict_runtime_friction(matrix, parameters, velocity, rules), expected)
         context = {"t": np.arange(4) * 0.01, "dq": velocity, "alpha": 2.0, "beta": 0.0, "keep": slice(1, None)}
         np.testing.assert_allclose(

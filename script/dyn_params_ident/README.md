@@ -2,9 +2,9 @@
 
 ## Qt 摩擦模型选择
 
-“计算参数与写入”区域可选择经典库仑、平滑库仑或 Stribeck，传统回归及 AF-ARF 都使用所选模型。支持编辑平滑库仑的 tanh 平滑速度、Stribeck 共用的特征/平滑速度和指数。控件按当前模型启用，计算/采集期间禁止修改；参数改变后清除双臂旧辨识结果，需要重新计算。
+“计算参数与写入”区域可选择经典库仑、平滑库仑或 Stribeck，传统回归及 AF-ARF 都使用所选模型。支持独立编辑 tanh 平滑速度、Stribeck 特征速度和指数。控件按当前模型启用，计算/采集期间禁止修改；参数改变后清除双臂旧辨识结果，需要重新计算。
 
-选择 Stribeck 后，直接使用原有的“tanh 平滑速度”控件，与“Stribeck 特征速度”双向同步，不新增独立速度框；后端及 YAML 仅使用一个 `stribeck_velocity` 参数。切回平滑库仑时，“tanh 平滑速度”恢复该模型独立的 `friction_velocity_scale`，Stribeck 调节不会覆盖它。经典库仑模式禁用速度控件。
+选择 Stribeck 后，原有的“tanh 平滑速度”和“Stribeck 特征速度”都可调，互不联动，不新增速度框。前者对应 YAML 的 `friction_velocity_scale`，后者对应 `stribeck_velocity`。切换模型时保留这两个参数；平滑库仑仅使用 tanh 平滑速度，经典库仑模式禁用速度控件。
 
 Qt 默认读取 `~/dexe_robot_server_data/robot_config.yaml`，而不是其他目录中同名文件。在当前版本段（`w1_v02` / `w1_v03`）可手动设置：
 
@@ -17,11 +17,11 @@ Qt 默认读取 `~/dexe_robot_server_data/robot_config.yaml`，而不是其他�
 
 - `classic`：`Fc*sign(v) + Bv*v + Fo`。
 - `smooth`（默认）：`Fc*tanh(v/friction_velocity_scale) + Bv*v + Fo`。
-- `stribeck`：`[Fc+(Fs-Fc)*exp(-(|v|/stribeck_velocity)^stribeck_alpha)]*tanh(v/stribeck_velocity) + Bv*v`。
+- `stribeck`：`[Fc+(Fs-Fc)*exp(-(|v|/stribeck_velocity)^stribeck_alpha)]*tanh(v/friction_velocity_scale) + Bv*v`。
 
 经典/平滑模型的 `Fo` 是恒定偏置，并非真正的静止粘滞摩擦。Stribeck 复用原 `fo` 参数位置表示 `Fs`，不再包含独立偏置；`sign(0)=0`。
 
-Stribeck 始终使用 tanh，指数衰减和零速附近方向过渡共用 `stribeck_velocity`，默认 `0.1`。`friction_velocity_scale` 只用于平滑库仑模型，默认也为 `0.1`。速度单位均为 rad/s，必须是有限正数，不支持用 0 切换 sign。旧 YAML 中的 `stribeck_smoothing_velocity` 不再生效，Qt 写入当前版本参数时会移除该字段。旧版 sign Stribeck 参数需要重新辨识双臂，不能直接复用。
+Stribeck 始终使用 tanh。`stribeck_velocity` 控制静摩擦水平向库仑摩擦水平的指数衰减，`friction_velocity_scale` 独立控制零速附近 tanh 的方向过渡，并用于平滑库仑模型。两个速度默认均为 `0.1 rad/s`，默认数值相同不代表绑定；均必须是有限正数，不支持用 0 切换 sign。旧 YAML 中的 `stribeck_smoothing_velocity` 不再生效，Qt 写入当前版本参数时会移除该字段。旧版 sign Stribeck 参数，或原共用速度与当前两个速度不匹配的辨识结果，需要重新辨识双臂。
 
 点击写入同时保存所选模型、速度、指数及对应动力学参数，保留其他版本段与注释。模型配置由双臂共用；配置改变时必须辨识并写入双臂，单臂写入仅允许摩擦设置不变。服务端在 Stribeck 模式中对 `Fc` 和 `Fs` 同时应用 `fc_ratio`。
 
