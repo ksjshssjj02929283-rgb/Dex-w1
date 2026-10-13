@@ -11,7 +11,6 @@ enum for various states and command types
 #pragma once
 
 #include <Eigen/Dense>
-#include <array>
 #include <Eigen/Geometry>
 #include <array>
 #include <filesystem>
@@ -314,6 +313,8 @@ struct RobotParams {
     double stribeck_alpha = 2.0;
     VectorDof drag_damping_d1 = VectorDof::Zero();
     VectorDof drag_damping_d2 = VectorDof::Zero();
+    VectorDof drag_dead_compensation = VectorDof::Zero();
+    double drag_dq_deadzone = 0.1;
     dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_primary;  // 主臂末端工具重力补偿参数
     dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_secondary;  // 从臂末端工具重力补偿参数
 };

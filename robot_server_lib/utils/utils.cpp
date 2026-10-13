@@ -37,15 +37,15 @@ YAML::Node MergeYamlNode(const YAML::Node& user_node,
                     std::cout << "[WARN] Added missing joint: " << full_path << "[" << i << "]" << std::endl;
                 } else {
                     result[field_key][i] = MergeYamlNode(result[field_key][i], default_field.second[i],
-                                                        full_path + "[" + std::to_string(i) + "]", modified);
+                                                         full_path + "[" + std::to_string(i) + "]", modified);
                 }
             }
         }
     }
     // Keep the four tuning arrays immediately after the identified parameters.
     if (result["dyn_base_params_secondary"]) {
-        const std::vector<std::string> ratio_keys{
-            "fv_ratio_primary", "fv_ratio_secondary", "fc_ratio_primary", "fc_ratio_secondary"};
+        const std::vector<std::string> ratio_keys{"fv_ratio_primary", "fv_ratio_secondary", "fc_ratio_primary",
+                                                  "fc_ratio_secondary"};
         YAML::Node ordered(YAML::NodeType::Map);
         std::vector<std::string> before, after;
         for (const auto& field : result) {
@@ -457,6 +457,15 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     parse_drag_damping("drag_damping_d2_primary", drag_damping_d2_primary);
     parse_drag_damping("drag_damping_d1_secondary", drag_damping_d1_secondary);
     parse_drag_damping("drag_damping_d2_secondary", drag_damping_d2_secondary);
+    std::array<double, 7> drag_dead_compensation_primary{}, drag_dead_compensation_secondary{};
+    parse_drag_damping("drag_dead_compensation_primary", drag_dead_compensation_primary);
+    parse_drag_damping("drag_dead_compensation_secondary", drag_dead_compensation_secondary);
+    if (version_cfg["drag_dq_deadzone"]) {
+        params.drag_dq_deadzone = version_cfg["drag_dq_deadzone"].as<double>();
+        if (!std::isfinite(params.drag_dq_deadzone) || params.drag_dq_deadzone < 0.0) {
+            throw std::runtime_error("drag_dq_deadzone must be finite and nonnegative");
+        }
+    }
     if (version_cfg["friction_model"]) {
         params.friction_model = version_cfg["friction_model"].as<std::string>();
     }
@@ -595,10 +604,12 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                 const auto arm_joint = std::distance(params.joints_primary_names.begin(), primary_joint);
                 params.drag_damping_d1[joint_idx] = drag_damping_d1_primary.at(arm_joint);
                 params.drag_damping_d2[joint_idx] = drag_damping_d2_primary.at(arm_joint);
+                params.drag_dead_compensation[joint_idx] = drag_dead_compensation_primary.at(arm_joint);
             } else if (secondary_joint != params.joints_secondary_names.end()) {
                 const auto arm_joint = std::distance(params.joints_secondary_names.begin(), secondary_joint);
                 params.drag_damping_d1[joint_idx] = drag_damping_d1_secondary.at(arm_joint);
                 params.drag_damping_d2[joint_idx] = drag_damping_d2_secondary.at(arm_joint);
+                params.drag_dead_compensation[joint_idx] = drag_dead_compensation_secondary.at(arm_joint);
             }
 
             const bool is_arm_joint =

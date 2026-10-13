@@ -116,7 +116,7 @@ w1_v02:
 
 ### Drag 模式附加阻尼
 
-Drag 的输出力矩为 `tau = tau_ff - D1*dq - D2*abs(dq)*dq`，各关节逐元素计算，`dq` 使用反馈速度（rad/s）。`tau_ff` 仍为原逆动力学前馈，包含原有的重力、科氏力、摩擦和已启用的工具补偿；这里的阻尼是额外减去的项，不替换辨识出的黏性摩擦。仅 Drag 使用，其他控制模式不变。
+Drag 的输出力矩为 `tau_drag = tau_ff - D1*dq - D2*abs(dq)*dq + tau_dead`，其中当 `abs(dq) < dq_deadzone` 时 `tau_dead = F_dead*sgn(dq)`，否则为零；等于零速度时 `sgn(0)=0`。`dq` 使用反馈速度（rad/s），阈值由所有关节共用。`tau_ff` 仍为原逆动力学前馈，包含原有的重力、科氏力、摩擦和已启用的工具补偿；附加阻尼和死区补偿不替换辨识摩擦。仅 Drag 使用，其他控制模式不变。
 
 在实际使用的 `w1_v02` / `w1_v03` 配置段分别设置左右臂的 1×7 系数，按各臂 J1～J7 排列：
 
@@ -125,9 +125,12 @@ Drag 的输出力矩为 `tau = tau_ff - D1*dq - D2*abs(dq)*dq`，各关节逐元
   drag_damping_d2_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   drag_damping_d1_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   drag_damping_d2_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  drag_dq_deadzone: 0.1
+  drag_dead_compensation_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  drag_dead_compensation_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 ```
 
-`primary` 是左臂，`secondary` 是右臂。D1 单位为 N·m·s/rad，D2 单位为 N·m·s²/rad²；每组必须恰好 7 个有限非负数。默认或字段缺失时为零，保持原 Drag 行为；非手臂关节不加阻尼。升级需要重新编译安装库和服务端；之后修改 YAML 系数只需重启服务，不需要重新辨识动力学参数。建议从零开始小幅调节，尤其二次阻尼随速度平方增大。
+`primary` 是左臂，`secondary` 是右臂，数组按 J1～J7 排列。D1 单位为 N·m·s/rad，D2 单位为 N·m·s²/rad²，`F_dead` 单位为 N·m；数组必须恰好含 7 个有限非负数。死区阈值 `drag_dq_deadzone` 默认 0.1 rad/s，需为有限非负数，整机所有关节共用。`F_dead` 默认全零，保持原 Drag 行为；非手臂关节不使用死区补偿。升级需要重新编译安装库和服务端；之后修改 YAML 系数只需重启服务，不需要重新辨识动力学参数。建议从零开始小幅调节，尤其二次阻尼随速度平方增大。
 
 可通过以下入口修改配置：
 

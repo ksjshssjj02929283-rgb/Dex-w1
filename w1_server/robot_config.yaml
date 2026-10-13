@@ -88,6 +88,9 @@ w1_v02:
   drag_damping_d2_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   drag_damping_d1_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   drag_damping_d2_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  drag_dq_deadzone: 0.1  # 全关节共用速度死区阈值，rad/s
+  drag_dead_compensation_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 左臂 J1-J7, N·m
+  drag_dead_compensation_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 右臂 J1-J7, N·m
   # === streaming运动参数 ===
   enable_streaming_ruckig: true
   joint_streaming_bounds:
@@ -568,6 +571,9 @@ w1_v03:
   drag_damping_d2_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   drag_damping_d1_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   drag_damping_d2_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  drag_dq_deadzone: 0.1  # 全关节共用速度死区阈值，rad/s
+  drag_dead_compensation_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 左臂 J1-J7, N·m
+  drag_dead_compensation_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 右臂 J1-J7, N·m
   # === streaming运动参数 ===
   enable_streaming_ruckig: true
   joint_streaming_bounds:
