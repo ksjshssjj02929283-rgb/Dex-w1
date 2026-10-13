@@ -82,6 +82,12 @@ w1_v02:
   friction_velocity_scale: 0.1  # tanh 方向平滑速度，单位 rad/s，必须大于 0
   stribeck_velocity: 0.1  # Stribeck 指数衰减特征速度，单位 rad/s，必须大于 0
   stribeck_alpha: 2.0
+  # Drag 附加阻尼，左右臂各按 J1-J7 排列；系数须为有限非负数
+  # D1 单位 N·m·s/rad，D2 单位 N·m·s²/rad²；全零保持原 Drag 行为
+  drag_damping_d1_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  drag_damping_d2_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  drag_damping_d1_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  drag_damping_d2_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   # === streaming运动参数 ===
   enable_streaming_ruckig: true
   joint_streaming_bounds:
@@ -556,6 +562,12 @@ w1_v03:
   friction_velocity_scale: 0.1  # tanh 方向平滑速度，单位 rad/s，必须大于 0
   stribeck_velocity: 0.1  # Stribeck 指数衰减特征速度，单位 rad/s，必须大于 0
   stribeck_alpha: 2.0
+  # Drag 附加阻尼，左右臂各按 J1-J7 排列；系数须为有限非负数
+  # D1 单位 N·m·s/rad，D2 单位 N·m·s²/rad²；全零保持原 Drag 行为
+  drag_damping_d1_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  drag_damping_d2_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  drag_damping_d1_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  drag_damping_d2_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   # === streaming运动参数 ===
   enable_streaming_ruckig: true
   joint_streaming_bounds:

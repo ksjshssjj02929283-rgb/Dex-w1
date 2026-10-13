@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <unistd.h>
+#include "drag_damping.h"
 #include "inverse_dynamics.h"
 #include "utils.h"
 
@@ -110,4 +111,87 @@ TEST_F(FrictionConfigTest, RejectsInvalidRatiosAndSupportsOldConfigDefaults) {
     }
     config["w1_v02"].remove("fc_ratio_secondary");
     EXPECT_DOUBLE_EQ(Load().params_ptr->fc_ratio_secondary[6], 0.2);
+}
+
+TEST(DragDampingTest, OpposesVelocityAndPreservesFeedforwardAtZero) {
+    for (double velocity : {-2.0, -0.1, 0.0, 0.1, 2.0}) {
+        const double feedforward = 3.7;
+        const double torque = dynamics::ComputeDragTorque(feedforward, velocity, 0.4, 0.6);
+        EXPECT_DOUBLE_EQ(torque, feedforward - 0.4 * velocity - 0.6 * std::abs(velocity) * velocity);
+        EXPECT_LE((torque - feedforward) * velocity, 0.0);
+        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, velocity, 0.0, 0.0), feedforward);
+        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, velocity, 0.4, 0.0),
+                         feedforward - 0.4 * velocity);
+        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, velocity, 0.0, 0.6),
+                         feedforward - 0.6 * std::abs(velocity) * velocity);
+    }
+}
+
+TEST_F(FrictionConfigTest, DragDampingMapsEachArmJointAndLeavesOtherJointsUnchanged) {
+    for (const auto* version : {"v024", "v031"}) {
+        config["version"] = version;
+        const std::string key = std::string("w1_") + std::string(version).substr(0, 3);
+        for (size_t joint = 0; joint < 7; ++joint) {
+            config[key]["drag_damping_d1_primary"][joint] = 0.1 * (joint + 1);
+            config[key]["drag_damping_d2_primary"][joint] = 0.2 * (joint + 1);
+            config[key]["drag_damping_d1_secondary"][joint] = 0.3 * (joint + 1);
+            config[key]["drag_damping_d2_secondary"][joint] = 0.4 * (joint + 1);
+        }
+        const auto model = Load();
+        const auto& params = *model.params_ptr;
+        for (size_t joint = 0; joint < params.joint_names.size(); ++joint) {
+            const auto primary = std::find(params.joints_primary_names.begin(), params.joints_primary_names.end(),
+                                           params.joint_names[joint]);
+            const auto secondary = std::find(params.joints_secondary_names.begin(), params.joints_secondary_names.end(),
+                                             params.joint_names[joint]);
+            if (primary != params.joints_primary_names.end()) {
+                const double number = std::distance(params.joints_primary_names.begin(), primary) + 1;
+                EXPECT_DOUBLE_EQ(params.drag_damping_d1[joint], 0.1 * number);
+                EXPECT_DOUBLE_EQ(params.drag_damping_d2[joint], 0.2 * number);
+            } else if (secondary != params.joints_secondary_names.end()) {
+                const double number = std::distance(params.joints_secondary_names.begin(), secondary) + 1;
+                EXPECT_DOUBLE_EQ(params.drag_damping_d1[joint], 0.3 * number);
+                EXPECT_DOUBLE_EQ(params.drag_damping_d2[joint], 0.4 * number);
+            } else {
+                EXPECT_DOUBLE_EQ(params.drag_damping_d1[joint], 0.0);
+                EXPECT_DOUBLE_EQ(params.drag_damping_d2[joint], 0.0);
+            }
+        }
+    }
+}
+
+TEST_F(FrictionConfigTest, DragDampingRejectsInvalidCoefficientsAndDefaultsToZero) {
+    for (const auto* version : {"v024", "v031"}) {
+        config["version"] = version;
+        const std::string key = std::string("w1_") + std::string(version).substr(0, 3);
+        for (const auto* field : {"drag_damping_d1_primary", "drag_damping_d2_primary",
+                                 "drag_damping_d1_secondary", "drag_damping_d2_secondary"}) {
+            for (const auto* value : {"1", "[1, 2]", "[0, 0, 0, 0, 0, 0, 0, 0]", "[0, 0, 0, -1, 0, 0, 0]",
+                                     "[0, 0, .nan, 0, 0, 0, 0]", "[0, 0, .inf, 0, 0, 0, 0]", "[0, 0, bad, 0, 0, 0, 0]"}) {
+                config[key][field] = YAML::Load(value);
+                EXPECT_ANY_THROW(Load()) << field << ": " << value;
+            }
+            config[key].remove(field);
+        }
+        const auto model = Load();
+        EXPECT_TRUE(model.params_ptr->drag_damping_d1.isZero());
+        EXPECT_TRUE(model.params_ptr->drag_damping_d2.isZero());
+    }
+}
+
+TEST_F(FrictionConfigTest, DragDampingStartupRepairsMissingFieldsAndPreservesTuning) {
+    Write(default_path, config);
+    for (const auto* version : {"w1_v02", "w1_v03"}) {
+        config[version].remove("drag_damping_d2_primary");
+        config[version].remove("drag_damping_d1_secondary");
+        config[version]["drag_damping_d1_primary"][2] = 0.73;
+    }
+    Write(user_path, config);
+    utils::CheckConfig(default_path, user_path);
+    const auto repaired = YAML::LoadFile(user_path.string());
+    for (const auto* version : {"w1_v02", "w1_v03"}) {
+        EXPECT_DOUBLE_EQ(repaired[version]["drag_damping_d1_primary"][2].as<double>(), 0.73);
+        EXPECT_EQ(repaired[version]["drag_damping_d2_primary"].size(), 7u);
+        EXPECT_EQ(repaired[version]["drag_damping_d1_secondary"].size(), 7u);
+    }
 }

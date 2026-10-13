@@ -437,6 +437,26 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     parse_friction_ratio("fv_ratio_secondary", params.fv_ratio_secondary);
     parse_friction_ratio("fc_ratio_primary", params.fc_ratio_primary);
     parse_friction_ratio("fc_ratio_secondary", params.fc_ratio_secondary);
+    std::array<double, 7> drag_damping_d1_primary{}, drag_damping_d2_primary{};
+    std::array<double, 7> drag_damping_d1_secondary{}, drag_damping_d2_secondary{};
+    auto parse_drag_damping = [&](const char* key, std::array<double, 7>& coefficients) {
+        const auto node = version_cfg[key];
+        if (!node) return;
+        if (!node.IsSequence() || node.size() != coefficients.size()) {
+            throw std::runtime_error(std::string(key) + " must contain exactly 7 coefficients");
+        }
+        for (size_t joint = 0; joint < coefficients.size(); ++joint) {
+            const double value = node[joint].as<double>();
+            if (!std::isfinite(value) || value < 0.0) {
+                throw std::runtime_error(std::string(key) + " coefficients must be finite and nonnegative");
+            }
+            coefficients[joint] = value;
+        }
+    };
+    parse_drag_damping("drag_damping_d1_primary", drag_damping_d1_primary);
+    parse_drag_damping("drag_damping_d2_primary", drag_damping_d2_primary);
+    parse_drag_damping("drag_damping_d1_secondary", drag_damping_d1_secondary);
+    parse_drag_damping("drag_damping_d2_secondary", drag_damping_d2_secondary);
     if (version_cfg["friction_model"]) {
         params.friction_model = version_cfg["friction_model"].as<std::string>();
     }
@@ -566,6 +586,20 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
             }
 
             params.joint_names.push_back(joint_name);
+
+            const auto primary_joint =
+                std::find(params.joints_primary_names.begin(), params.joints_primary_names.end(), joint_name);
+            const auto secondary_joint =
+                std::find(params.joints_secondary_names.begin(), params.joints_secondary_names.end(), joint_name);
+            if (primary_joint != params.joints_primary_names.end()) {
+                const auto arm_joint = std::distance(params.joints_primary_names.begin(), primary_joint);
+                params.drag_damping_d1[joint_idx] = drag_damping_d1_primary.at(arm_joint);
+                params.drag_damping_d2[joint_idx] = drag_damping_d2_primary.at(arm_joint);
+            } else if (secondary_joint != params.joints_secondary_names.end()) {
+                const auto arm_joint = std::distance(params.joints_secondary_names.begin(), secondary_joint);
+                params.drag_damping_d1[joint_idx] = drag_damping_d1_secondary.at(arm_joint);
+                params.drag_damping_d2[joint_idx] = drag_damping_d2_secondary.at(arm_joint);
+            }
 
             const bool is_arm_joint =
                 std::find(params.joints_primary_names.begin(), params.joints_primary_names.end(), joint_name) !=

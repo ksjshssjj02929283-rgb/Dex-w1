@@ -312,6 +312,8 @@ struct RobotParams {
     double friction_velocity_scale = 0.1;
     double stribeck_velocity = 0.1;
     double stribeck_alpha = 2.0;
+    VectorDof drag_damping_d1 = VectorDof::Zero();
+    VectorDof drag_damping_d2 = VectorDof::Zero();
     dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_primary;  // 主臂末端工具重力补偿参数
     dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_secondary;  // 从臂末端工具重力补偿参数
 };

@@ -1,4 +1,5 @@
 #include "w1_server.h"
+#include "drag_damping.h"
 
 #include <cstdlib>
 #include <ctime>
@@ -315,10 +316,13 @@ void RobotServer::TorqueControlThreadFunc() {
                         this->robot_control_.joint_control[i].joint_torque_feedforward = torque_cmd.torque[i];
                         this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_CST_MODE;
                         break;
-                    case RunMode::Drag:
+                    case RunMode::Drag: {
                         previous_mode_ = this->manager_info_.robot_property.run_mode;
+                        const double drag_torque = dynamics::ComputeDragTorque(
+                            torque_cmd.torque_feedforward[i], robot_feedback_.joint_feedback[i].joint_velocity,
+                            robot_model_.params_ptr->drag_damping_d1[i], robot_model_.params_ptr->drag_damping_d2[i]);
                         this->robot_control_.joint_control[i].joint_torque_feedforward =
-                            torque_cmd.torque_feedforward[i];
+                            drag_torque;
                         if (this->robot_model_.IsDynamicParamsAvailable()) {
                             // 位置等于反馈位置
                             if (manager_buffers_.joint_measurement->PeekLatest(&manager_measurement)) {
@@ -339,19 +343,20 @@ void RobotServer::TorqueControlThreadFunc() {
                                 manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
                             }
                             // 更新关节力矩限制
-                            if (torque_cmd.torque_feedforward[i] >= 0) {
+                            if (drag_torque >= 0) {
                                 robot_control_.joint_control[i].joint_positive_torque_limit =
-                                    std::clamp(torque_cmd.torque_feedforward[i], 0.0,
+                                    std::clamp(drag_torque, 0.0,
                                                robot_model_.params_ptr->joint_torque_limit[i]);
                                 robot_control_.joint_control[i].joint_negative_torque_limit = 0.0;
                             } else {
                                 robot_control_.joint_control[i].joint_positive_torque_limit = 0.0;
                                 robot_control_.joint_control[i].joint_negative_torque_limit =
-                                    std::clamp(-torque_cmd.torque_feedforward[i], 0.0,
+                                    std::clamp(-drag_torque, 0.0,
                                                robot_model_.params_ptr->joint_torque_limit[i]);
                             }
                         }
                         break;
+                    }
                     case RunMode::CartesianImpedance:
                         previous_mode_ = this->manager_info_.robot_property.run_mode;
                         this->robot_control_.joint_control[i].joint_torque_feedforward = torque_cmd.torque_impedance[i];
