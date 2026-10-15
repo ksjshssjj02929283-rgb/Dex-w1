@@ -21,6 +21,30 @@ from dyn_params_ident.friction_model import friction_bases, friction_settings
 
 
 class QtValidationTests(unittest.TestCase):
+    def test_gui_initializes_torque_checkbox_after_calculator_creation(self):
+        with patch.dict(os.environ, {"QT_QPA_PLATFORM": "offscreen"}):
+            application = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled):
+                left = DynParamCalculator("w1_v02", True, lambda message: None)
+                right = DynParamCalculator("w1_v02", False, lambda message: None)
+                left.filter_identification_torque = enabled
+                right.filter_identification_torque = enabled
+                identifier = SimpleNamespace(
+                    calculator_left=left, calculator_right=right,
+                    robot_name="w1", version="v024", rec_dir=left.rec_dir, traj_dir=left.traj_dir,
+                )
+                with patch("qt_dyn_params_ident.DynParamIdentifier", return_value=identifier), patch("qt_dyn_params_ident.MultiThreadedExecutor"), patch("qt_dyn_params_ident.threading.Thread"), patch("qt_dyn_params_ident.rclpy.shutdown"):
+                    window = DynParamGUI()
+                    try:
+                        self.assertEqual(window.filter_torque_checkbox.isChecked(), enabled)
+                        self.assertTrue(window.filter_torque_checkbox.isEnabled())
+                        window.filter_torque_checkbox.setChecked(not enabled)
+                        for calculator in (left, right):
+                            self.assertEqual(calculator.filter_identification_torque, not enabled)
+                    finally:
+                        window.close()
+
     def test_existing_tanh_and_stribeck_controls_are_independent_and_saved(self):
         with patch.dict(os.environ, {"QT_QPA_PLATFORM": "offscreen"}):
             application = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
@@ -47,12 +71,25 @@ class QtValidationTests(unittest.TestCase):
             stribeck_alpha_spin=SimpleNamespace(value=lambda: 2.0),
             identification_combo=SimpleNamespace(currentData=lambda: "standard", currentText=lambda: "传统回归"),
             af_alpha_spin=SimpleNamespace(value=lambda: 15.0), af_beta_spin=SimpleNamespace(value=lambda: 10.0),
+            filter_torque_checkbox=QtWidgets.QCheckBox(),
             enable_buttons=lambda: None, log_msg=lambda message: None,
         )
         gui.update_params_from_ui = lambda: DynParamGUI.update_params_from_ui(gui)
         gui._load_friction_velocity_controls = lambda options: DynParamGUI._load_friction_velocity_controls(gui, options)
         gui.on_identification_options_changed = Mock(side_effect=lambda *args: DynParamGUI.on_identification_options_changed(gui, *args))
         gui._load_friction_velocity_controls(left.friction_options)
+        gui.filter_torque_checkbox.toggled.connect(gui.on_identification_options_changed)
+        self.assertFalse(gui.filter_torque_checkbox.isChecked())
+        for enabled in (True, False):
+            for calculator in (left, right):
+                calculator.solutions_beta_starextra = np.array([1.0])
+                calculator.proc_data["traj1"] = {}
+            gui.filter_torque_checkbox.setChecked(enabled)
+            for calculator in (left, right):
+                self.assertEqual(calculator.filter_identification_torque, enabled)
+                self.assertIsNone(calculator.solutions_beta_starextra)
+                self.assertEqual(calculator.proc_data, {})
+        gui.on_identification_options_changed.reset_mock()
         self.assertEqual(tanh_spin.value(), 0.23)
         self.assertFalse(characteristic_spin.isEnabled())
         combo.currentIndexChanged.connect(lambda index: DynParamGUI.on_friction_model_changed(gui))
@@ -264,6 +301,7 @@ class QtValidationTests(unittest.TestCase):
             friction_velocity_spins={key: SimpleNamespace(value=lambda value=value: value) for key, value in values.items()},
             identification_combo=SimpleNamespace(currentData=lambda: "standard", currentText=lambda: "传统回归"),
             af_alpha_spin=SimpleNamespace(value=lambda: 15.0), af_beta_spin=SimpleNamespace(value=lambda: 10.0),
+            filter_torque_checkbox=SimpleNamespace(isChecked=lambda: False),
             enable_buttons=lambda: None, log_msg=lambda message: None,
         )
         gui.update_params_from_ui = lambda: DynParamGUI.update_params_from_ui(gui)
@@ -518,6 +556,46 @@ class QtValidationTests(unittest.TestCase):
         np.testing.assert_allclose(proc["tau"], expected[300:-100])
         np.testing.assert_allclose(proc["tau_current"], raw_torque[300:-100])
         self.assertGreater(np.max(np.abs(proc["tau"] - proc["tau_current"])), 0.1)
+
+    def test_optional_training_torque_filter_matches_q_and_preserves_validation(self):
+        calculator = DynParamCalculator("w1_v02", True, lambda message: None)
+        calculator.ndof = 1
+        fv, fc, fo = sympy.symbols("fv_1 fc_1 fo_1")
+        calculator.rbt = SimpleNamespace(
+            dof=1, dyn=SimpleNamespace(n_dynparms=3, base_idxs=[0, 1, 2], dynparms=[fv, fc, fo]),
+            rbtdef=SimpleNamespace(fv=[fv], fc=[fc], fo=[fo]),
+        )
+        time = np.arange(700) * calculator.dt
+        position = np.sin(time).reshape(-1, 1)
+        raw_torque = (np.cos(time) + 0.5 * np.sin(2 * np.pi * 20 * time)).reshape(-1, 1)
+        recording = (time, position, raw_torque, raw_torque * 2, time, position)
+        cutoff = calculator.get_filter_cutoff()
+        expected_torque = calculator.butter_filtfilt(3, cutoff * 2 * np.pi * calculator.dt, raw_torque[:, 0]).reshape(-1, 1)
+        regressor = lambda q, dq, ddq: [dq[0], np.tanh(dq[0] / 0.1), 1.0]
+        keep = slice(300, -100)
+        self.assertGreater(np.max(np.abs(expected_torque[keep] - raw_torque[keep])), 0.1)
+        for algorithm in ("standard", "af_arf"):
+            for enabled in (True, False):
+                with self.subTest(algorithm=algorithm, enabled=enabled):
+                    calculator.set_identification_options(algorithm, 15.0, 10.0, filter_torque=enabled)
+                    with patch("qt_dyn_params_ident.read_data", return_value=recording), patch.object(calculator, "create_regressor_func", return_value=regressor):
+                        calculator._cache_trajectory("traj1")
+                        calculator._cache_trajectory("traj2")
+                    expected = expected_torque if enabled else raw_torque
+                    if algorithm == "af_arf":
+                        expected = lowpass_filter(time, expected, calculator.af_alpha)
+                        expected = lowpass_filter(time, expected, calculator.af_beta)
+                    training = calculator.proc_data["traj1"]
+                    np.testing.assert_allclose(training["tau"], expected[keep])
+                    np.testing.assert_allclose(np.asarray(training["omega"]).reshape(-1, 1), expected[keep])
+                    np.testing.assert_array_equal(training["tau_current"], raw_torque[keep])
+                    np.testing.assert_array_equal(training["tau_sensor"], raw_torque[keep] * 2)
+                    self.assertEqual(training["filter_identification_torque"], enabled)
+                    validation = calculator.proc_data["traj2"]
+                    np.testing.assert_array_equal(validation["tau"], raw_torque[keep])
+                    self.assertFalse(validation["filter_identification_torque"])
+                    expected_q = calculator.butter_filtfilt(3, cutoff * 2 * np.pi * calculator.dt, position[:, 0])
+                    np.testing.assert_allclose(training["q"][:, 0], expected_q[keep])
 
     def test_full_validation_rebuilds_zero_only_cache(self):
         calculator = DynParamCalculator("w1_v02", True, lambda message: None)

@@ -754,6 +754,7 @@ class DynParamCalculator:
         self.identification_algorithm = IDENTIFICATION_STANDARD
         self.af_alpha = 15.0
         self.af_beta = 10.0
+        self.filter_identification_torque = False
         self.friction_options = friction_settings({})
 
     def set_friction_options(self, config):
@@ -816,16 +817,18 @@ class DynParamCalculator:
             "zero_acceleration_only": True,
         }
 
-    def set_identification_options(self, algorithm, alpha, beta):
+    def set_identification_options(self, algorithm, alpha, beta, filter_torque=False):
         if algorithm not in (IDENTIFICATION_STANDARD, IDENTIFICATION_AF_ARF):
             raise ValueError(f"未知辨识算法: {algorithm}")
         alpha, beta = float(alpha), float(beta)
         if not np.isfinite(alpha) or alpha <= 0 or not np.isfinite(beta) or beta < 0:
             raise ValueError("AF-ARF 滤波参数要求 alpha > 0, beta >= 0")
-        options = (algorithm, alpha, beta)
-        if options == (self.identification_algorithm, self.af_alpha, self.af_beta):
+        options = (algorithm, alpha, beta, bool(filter_torque))
+        if options == (self.identification_algorithm, self.af_alpha, self.af_beta,
+                       self.filter_identification_torque):
             return False
-        self.identification_algorithm, self.af_alpha, self.af_beta = options
+        (self.identification_algorithm, self.af_alpha, self.af_beta,
+         self.filter_identification_torque) = options
         self.reset_identification()
         return True
 
@@ -1000,6 +1003,7 @@ class DynParamCalculator:
             "evaluation_domain": "instantaneous" if traj == "traj2" else None,
             "af_alpha": self.af_alpha,
             "af_beta": self.af_beta,
+            "filter_identification_torque": self.filter_identification_torque if traj == "traj1" else False,
             "friction_context": friction_context,
         }
 
@@ -1032,7 +1036,9 @@ class DynParamCalculator:
         if len(t_raw) <= si - sf:
             raise ValueError("采集数据不足，裁剪前 3 秒和后 1 秒后没有可用样本。")
         purpose = "统一验证" if traj == "traj2" else "传统回归辨识"
-        self.log_msg(f"[{traj}] {purpose}：q/dq/ddq 滤波，电流力矩保持原始值（仅裁剪）。")
+        filter_torque = traj == "traj1" and self.filter_identification_torque
+        torque_description = "电流力矩使用与 q 相同的三阶 Butterworth 零相位滤波" if filter_torque else "电流力矩保持原始值（仅裁剪）"
+        self.log_msg(f"[{traj}] {purpose}：q/dq/ddq 滤波，{torque_description}。")
         q, dq, ddq, tau = self.diff_and_filt_data(
             dof=self.ndof,
             h=self.dt,
@@ -1041,7 +1047,7 @@ class DynParamCalculator:
             fc_q=fc,
             fc_dq=fc,
             fc_ddq=fc,
-            fc_tau=None,
+            fc_tau=fc if filter_torque else None,
         )
         t_raw = t_raw[si:sf]
         q_raw = q_raw[si:sf]
@@ -1083,8 +1089,17 @@ class DynParamCalculator:
             f"[{traj}] AF-ARF: alpha={self.af_alpha:g}, beta={self.af_beta:g} s^-1，"
             "构造无加速度回归矩阵（不计算 ddq）..."
         )
+        tau_input = tau_current
+        if self.filter_identification_torque:
+            tau_input = np.column_stack([
+                self.butter_filtfilt(3, fc * 2 * np.pi * self.dt, tau_current[:, joint])
+                for joint in range(self.ndof)
+            ])
+            self.log_msg(f"[{traj}] 电流力矩先使用与 q 相同的三阶 Butterworth 零相位滤波，再进行 AF-ARF 方程滤波。")
+        else:
+            self.log_msg(f"[{traj}] 原始电流力矩直接进入 AF-ARF 方程滤波，不额外进行 Butterworth 滤波。")
         H, tau = build_filtered_regressor(
-            self.create_regressor_func(self.rbt, self.friction_options), t, q, dq, tau_current,
+            self.create_regressor_func(self.rbt, self.friction_options), t, q, dq, tau_input,
             self.rbt.dyn.n_dynparms, friction_indices,
             alpha=self.af_alpha, beta=self.af_beta,
         )
@@ -1690,6 +1705,13 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.identification_combo.addItem("传统回归（使用 ddq）", IDENTIFICATION_STANDARD)
         self.identification_combo.addItem("AF-ARF（无需 ddq）", IDENTIFICATION_AF_ARF)
         identification_form.addRow("辨识算法", self.identification_combo)
+        self.filter_torque_checkbox = QtWidgets.QCheckBox("辨识力矩滤波（与 q 相同）")
+        self.filter_torque_checkbox.setChecked(False)
+        self.filter_torque_checkbox.setToolTip(
+            "仅对辨识集电流估算力矩使用与 q 相同的三阶 Butterworth 零相位滤波及截止频率。"
+            "默认关闭，验证集始终使用原始力矩。AF-ARF 自身的 alpha/beta 方程滤波不受此开关影响。"
+        )
+        identification_form.addRow(self.filter_torque_checkbox)
         self.af_alpha_spin = QtWidgets.QDoubleSpinBox()
         self.af_alpha_spin.setRange(0.1, 500.0)
         self.af_alpha_spin.setDecimals(1)
@@ -1829,6 +1851,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self.left_canvas.mpl_connect("resize_event", self._on_resize)
         self.right_canvas.mpl_connect("resize_event", self._on_resize)
         self.dyn = DynParamIdentifier(logger_callable=self.log_msg)
+        self.filter_torque_checkbox.setChecked(self.dyn.calculator_left.filter_identification_torque)
         options = self.dyn.calculator_left.friction_options
         self.friction_model_combo.setCurrentIndex(self.friction_model_combo.findData(options["friction_model"]))
         self.stribeck_alpha_spin.setValue(options["stribeck_alpha"])
@@ -1914,6 +1937,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self._update_data_dir_label()
         self._did_initial_ref_plot = False
         self.identification_combo.currentIndexChanged.connect(self.on_identification_options_changed)
+        self.filter_torque_checkbox.toggled.connect(self.on_identification_options_changed)
         self.friction_model_combo.currentIndexChanged.connect(self.on_friction_model_changed)
         self.stribeck_alpha_spin.valueChanged.connect(self.on_identification_options_changed)
         for key, spin in self.friction_velocity_spins.items():
@@ -1950,6 +1974,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
             calculator.set_identification_options(
                 self.identification_combo.currentData(),
                 self.af_alpha_spin.value(), self.af_beta_spin.value(),
+                filter_torque=self.filter_torque_checkbox.isChecked(),
             )
 
     def _load_friction_velocity_controls(self, options):
@@ -1977,7 +2002,8 @@ class DynParamGUI(QtWidgets.QMainWindow):
         self._right_calculated = False
         self._params_calculated = False
         self.enable_buttons()
-        self.log_msg(f"辨识设置已更改: {self.identification_combo.currentText()} / {self.friction_model_combo.currentText()}，请重新计算参数。")
+        torque_description = "力矩滤波（与 q 相同）" if self.filter_torque_checkbox.isChecked() else "原始力矩"
+        self.log_msg(f"辨识设置已更改: {self.identification_combo.currentText()} / {self.friction_model_combo.currentText()} / {torque_description}，请重新计算参数。")
 
     def disable_buttons(self, disabled=True):
         # 除停止按钮外均禁用/启用；部分按钮受状态标志控制
@@ -1992,6 +2018,7 @@ class DynParamGUI(QtWidgets.QMainWindow):
             for button in self.recording_file_buttons:
                 button.setDisabled(disabled)
             self.identification_combo.setDisabled(disabled)
+            self.filter_torque_checkbox.setDisabled(disabled)
             self.friction_model_combo.setDisabled(disabled)
             self.stribeck_alpha_spin.setDisabled(
                 disabled or self.friction_model_combo.currentData() != FRICTION_MODEL_STRIBECK
