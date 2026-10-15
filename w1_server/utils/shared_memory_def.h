@@ -72,7 +72,7 @@ struct ChassisControl {
     double chassis_motor_velocity[OMNI_MOTOR_NUM] = {0};   // 底盘电机控制速度
     double chassis_motor_direction[OMNI_MOTOR_NUM] = {0};  // 底盘电机控制方向
     int chassis_estop = 0;
-    int chassis_neutral = 0;
+    int chassis_neutral = 0;  // 0：上使能，1：下使能（差速和全向共用）
 };
 
 struct JointFeedback {

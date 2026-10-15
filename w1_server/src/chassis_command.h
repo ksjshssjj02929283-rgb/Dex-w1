@@ -103,6 +103,27 @@ struct ChassisTarget {
     ChassisCommandConfig config{};
 };
 
+/// 仅由实时消费线程使用：异常恢复后，使恢复时刻及之前的目标失效。
+/// 不 Reset 共享目标缓冲，避免与生产者并发写入冲突。所有时间均为 steady_clock。
+class ChassisTargetRecoveryGate {
+public:
+    bool AllowsMotion(const ChassisTarget& target, bool motion_allowed, int64_t now_ns) {
+        if (!motion_allowed) {
+            was_blocked_ = true;
+            return false;
+        }
+        if (was_blocked_) {
+            accept_after_ns_ = now_ns;
+            was_blocked_ = false;
+        }
+        return target.stamp_ns > accept_after_ns_;
+    }
+
+private:
+    bool was_blocked_ = false;
+    int64_t accept_after_ns_ = -1;
+};
+
 /// 实时侧读到的轮反馈（直接来自共享内存，1 kHz，比走话题新 ~10 ms）
 struct WheelFeedback {
     bool valid = false;
@@ -111,6 +132,15 @@ struct WheelFeedback {
     double left_rpm = 0.0;
     double right_rpm = 0.0;
 };
+
+// 使用底盘自身反馈有效性，不依赖上半身 ready；四轮全部通过才可用于位置指令。
+inline bool IsSteeringFeedbackValid(const WheelFeedback& fb, bool chassis_feedback_valid, double steer_limit_rad) {
+    if (!chassis_feedback_valid || !std::isfinite(steer_limit_rad) || steer_limit_rad <= 0.0) return false;
+    for (double angle : fb.angle_rad) {
+        if (!std::isfinite(angle) || std::abs(angle) > steer_limit_rad) return false;
+    }
+    return true;
+}
 
 // ============================================================ 角度工具
 
