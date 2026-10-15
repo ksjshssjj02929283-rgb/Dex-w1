@@ -136,8 +136,10 @@ struct WheelFeedback {
 // 使用底盘自身反馈有效性，不依赖上半身 ready；四轮全部通过才可用于位置指令。
 inline bool IsSteeringFeedbackValid(const WheelFeedback& fb, bool chassis_feedback_valid, double steer_limit_rad) {
     if (!chassis_feedback_valid || !std::isfinite(steer_limit_rad) || steer_limit_rad <= 0.0) return false;
+    // 反馈允许超出目标软限位 2%，容纳轻微超调及数值误差；不放宽目标舵角限制。
+    const double feedback_limit_rad = steer_limit_rad * 1.02;
     for (double angle : fb.angle_rad) {
-        if (!std::isfinite(angle) || std::abs(angle) > steer_limit_rad) return false;
+        if (!std::isfinite(angle) || std::abs(angle) > feedback_limit_rad) return false;
     }
     return true;
 }
