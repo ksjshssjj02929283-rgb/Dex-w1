@@ -18,11 +18,71 @@ def _finite(value, default=None):
     return value if math.isfinite(value) else default
 
 
+def _integer(value, default=0):
+    number = _finite(value)
+    if number is None or not number.is_integer():
+        return default
+    return int(number)
+
+
+def _parse_battery_state(raw, location):
+    if not isinstance(raw, dict):
+        return None
+
+    voltage = _finite(raw.get("voltage"))
+    temperature = _finite(raw.get("temperature"))
+    current = _finite(raw.get("current"))
+    charge = _finite(raw.get("charge"))
+    capacity = _finite(raw.get("capacity"))
+    design_capacity = _finite(raw.get("designCapacity"))
+    percentage = _finite(raw.get("percentage"))
+    if percentage is not None:
+        if 0.0 <= percentage <= 1.0:
+            pass
+        elif 0.0 <= percentage <= 100.0:
+            percentage /= 100.0
+        else:
+            percentage = None
+
+    cell_voltages_raw = raw.get("cellVoltages")
+    cell_voltages = []
+    if isinstance(cell_voltages_raw, list):
+        cell_voltages = [value for value in
+                         (_finite(item) for item in cell_voltages_raw)
+                         if value is not None]
+
+    known_values = (voltage, temperature, current, charge, capacity,
+                    design_capacity, percentage)
+    present_value = raw.get("present")
+    has_known_value = any(value is not None for value in known_values)
+    if not has_known_value and present_value is None and not cell_voltages:
+        return None
+
+    return {
+        "voltage": voltage if voltage is not None else math.nan,
+        "temperature": temperature if temperature is not None else math.nan,
+        "current": current if current is not None else math.nan,
+        "charge": charge if charge is not None else math.nan,
+        "capacity": capacity if capacity is not None else math.nan,
+        "design_capacity": (design_capacity if design_capacity is not None
+                            else math.nan),
+        "percentage": percentage if percentage is not None else math.nan,
+        "power_supply_status": _integer(raw.get("powerSupplyStatus")),
+        "power_supply_health": _integer(raw.get("powerSupplyHealth")),
+        "power_supply_technology": _integer(
+            raw.get("powerSupplyTechnology")),
+        "present": (bool(present_value) if present_value is not None else
+                    has_known_value),
+        "cell_voltage": cell_voltages,
+        "location": location,
+    }
+
+
 def parse_upstream_state(payload):
     """解析一帧 upstream_state，字段不完整时返回 None 或缺失字段。
 
-    返回值只包含已验证的标准化字段：pose、velocity、battery_percentage、
-    obstacle_stop。theta 使用弧度，battery_percentage 使用 0-100。
+    返回值只包含已验证的标准化字段：pose、velocity、batteries、
+    obstacle_stop。theta 使用弧度，BatteryState.percentage 使用 0-1。
     """
     if not isinstance(payload, dict):
         return None
@@ -46,19 +106,18 @@ def parse_upstream_state(payload):
         "omega": _finite(velocity_raw.get("omega"), 0.0),
     }
 
-    battery_raw = state.get("batteryState") or {}
-    battery_fraction = _finite(battery_raw.get("percentage"))
-    battery_percentage = None
-    if battery_fraction is not None:
-        battery_percentage = (battery_fraction * 100.0
-                              if 0.0 <= battery_fraction <= 1.0 else
-                              battery_fraction)
+    batteries = []
+    for field, location in (("batteryState", "battery1"),
+                            ("battery2State", "battery2")):
+        battery = _parse_battery_state(state.get(field), location)
+        if battery is not None:
+            batteries.append(battery)
 
     information = payload.get("information") or {}
     return {
         "pose": pose,
         "velocity": velocity,
-        "battery_percentage": battery_percentage,
+        "batteries": batteries,
         "obstacle_stop": bool(information.get("obstacleStop", False)),
         "emergency": bool(information.get("emergency", False)),
         "raw_header": payload.get("header") or {},

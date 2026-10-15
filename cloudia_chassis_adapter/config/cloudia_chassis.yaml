@@ -5,7 +5,8 @@ cloudia_chassis_adapter:
     state_port: 8852
     frame_id: map
     pose_topic: /feedback/chassis_pose
-    battery_topic: /diagnostics_agg
+    battery_topic: /feedback/battery_status
+    diagnostics_topic: /diagnostics_agg
     obstacle_topic: obstacle_detector/has_obstacle
     velocity_topic: /cloudia/chassis_velocity
     cmd_vel_topic: /control/cmd_vel

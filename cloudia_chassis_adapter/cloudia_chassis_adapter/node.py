@@ -17,6 +17,7 @@ import rclpy
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import PoseStamped, Twist, TwistStamped
 from rclpy.node import Node
+from sensor_msgs.msg import BatteryState
 from std_msgs.msg import Bool
 
 from .protocol import build_speed_command, parse_upstream_state
@@ -29,7 +30,6 @@ except ImportError:  # pragma: no cover - deployment dependency
 
 class CloudiaChassisAdapter(Node):
 
-    POWER_STATUS_NAME = "/Devices/System/PowerBoard/collector_node: PowerBoard"
     CONNECTION_STATUS_NAME = "Cloudia WebSocket"
 
     def __init__(self):
@@ -41,7 +41,8 @@ class CloudiaChassisAdapter(Node):
         self.declare_parameter("state_port", 8852)
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("pose_topic", "/feedback/chassis_pose")
-        self.declare_parameter("battery_topic", "/diagnostics_agg")
+        self.declare_parameter("battery_topic", "/feedback/battery_status")
+        self.declare_parameter("diagnostics_topic", "/diagnostics_agg")
         self.declare_parameter("obstacle_topic", "obstacle_detector/has_obstacle")
         self.declare_parameter("velocity_topic", "/cloudia/chassis_velocity")
         self.declare_parameter("cmd_vel_topic", "/control/cmd_vel")
@@ -76,7 +77,10 @@ class CloudiaChassisAdapter(Node):
         self._pose_pub = self.create_publisher(
             PoseStamped, str(self.get_parameter("pose_topic").value), 10)
         self._battery_pub = self.create_publisher(
-            DiagnosticArray, str(self.get_parameter("battery_topic").value), 10)
+            BatteryState, str(self.get_parameter("battery_topic").value), 10)
+        self._diagnostics_pub = self.create_publisher(
+            DiagnosticArray,
+            str(self.get_parameter("diagnostics_topic").value), 10)
         self._obstacle_pub = self.create_publisher(
             Bool, str(self.get_parameter("obstacle_topic").value), 10)
         velocity_topic = str(self.get_parameter("velocity_topic").value)
@@ -214,20 +218,27 @@ class CloudiaChassisAdapter(Node):
         obstacle.data = bool(state.get("obstacle_stop", False))
         self._obstacle_pub.publish(obstacle)
 
-        battery = state.get("battery_percentage")
-        if battery is not None:
-            self._publish_battery_diagnostic(battery)
+        for battery in state.get("batteries", []):
+            self._publish_battery_state(battery, now)
 
-    def _publish_battery_diagnostic(self, percentage):
-        array = DiagnosticArray()
-        array.header.stamp = self.get_clock().now().to_msg()
-        status = DiagnosticStatus()
-        status.level = DiagnosticStatus.OK
-        status.name = self.POWER_STATUS_NAME
-        status.message = "Cloudia state connected"
-        status.values = [KeyValue(key="battery_percentage", value=f"{percentage:.3f}")]
-        array.status = [status]
-        self._battery_pub.publish(array)
+    def _publish_battery_state(self, battery, stamp):
+        msg = BatteryState()
+        msg.header.stamp = stamp
+        msg.header.frame_id = battery["location"]
+        msg.voltage = battery["voltage"]
+        msg.temperature = battery["temperature"]
+        msg.current = battery["current"]
+        msg.charge = battery["charge"]
+        msg.capacity = battery["capacity"]
+        msg.design_capacity = battery["design_capacity"]
+        msg.percentage = battery["percentage"]
+        msg.power_supply_status = battery["power_supply_status"]
+        msg.power_supply_health = battery["power_supply_health"]
+        msg.power_supply_technology = battery["power_supply_technology"]
+        msg.present = battery["present"]
+        msg.cell_voltage = battery["cell_voltage"]
+        msg.location = battery["location"]
+        self._battery_pub.publish(msg)
 
     def _publish_connection_diagnostic(self, connected, message):
         now = time.monotonic()
@@ -241,7 +252,7 @@ class CloudiaChassisAdapter(Node):
         status.name = self.CONNECTION_STATUS_NAME
         status.message = message
         array.status = [status]
-        self._battery_pub.publish(array)
+        self._diagnostics_pub.publish(array)
 
     def _watchdog(self):
         if not self._enabled:

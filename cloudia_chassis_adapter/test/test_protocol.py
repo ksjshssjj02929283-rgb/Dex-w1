@@ -21,11 +21,30 @@ class ProtocolTest(unittest.TestCase):
             "state": {
                 "agvPosition": {"x": 1.0, "y": -2.0, "theta": 0.5},
                 "velocity": {"vx": 0.2, "vy": 0.1, "omega": -0.3},
-                "batteryState": {"percentage": 0.42},
+                "batteryState": {
+                    "percentage": 0.42,
+                    "voltage": 48.5,
+                    "current": -1.2,
+                    "charge": 32.0,
+                    "capacity": 44.0,
+                    "designCapacity": 50.0,
+                    "temperature": 24.0,
+                    "powerSupplyStatus": 2,
+                    "powerSupplyHealth": 1,
+                    "powerSupplyTechnology": 3,
+                    "present": True,
+                    "cellVoltages": [3.8, 3.9],
+                },
+                "battery2State": {"percentage": 73.0, "present": True},
             },
         })
         self.assertEqual(parsed["pose"]["x"], 1.0)
-        self.assertTrue(math.isclose(parsed["battery_percentage"], 42.0))
+        self.assertEqual(len(parsed["batteries"]), 2)
+        self.assertEqual(parsed["batteries"][0]["location"], "battery1")
+        self.assertTrue(math.isclose(parsed["batteries"][0]["percentage"], 0.42))
+        self.assertEqual(parsed["batteries"][0]["cell_voltage"], [3.8, 3.9])
+        self.assertEqual(parsed["batteries"][1]["location"], "battery2")
+        self.assertTrue(math.isclose(parsed["batteries"][1]["percentage"], 0.73))
         self.assertTrue(parsed["obstacle_stop"])
 
     def test_speed_envelope(self):
