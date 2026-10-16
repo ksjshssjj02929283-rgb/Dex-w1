@@ -29,3 +29,16 @@ geometry_msgs/Twist velocity   # 机体速度
 # ── 急停丢位恢复状态（来自 SafetyReactor）──
 string recover_state    # NORMAL / SAFE_STOP / RELOCATING / GLOBAL_RELOC / ALARM
 string safety_alarm     # 告警信息（ALARM 时非空，否则空）
+
+# ── 导航故障（command_board 判定，如传感器失效；无故障时为 E_CB_NONE）──
+int32  nav_fault_code    # 当前导航故障码，取值见下方 E_CB_*
+string nav_fault_detail  # 故障说明（如失效的传感器名），无故障时为空
+
+# ── 传感器监测状态（command_board 上报，见 SensorState.msg）──
+nav_interfaces/SensorState[] sensors
+
+# ── 编排域状态码：模块 22 dexe_mobile_nav + 子模块 04 command_board + 序号 2 位 + 等级 1 位，共 7 位。
+#    等级：0 状态反馈 / 1 一级故障 / 2 二级故障 / 3 三级故障，level = code % 10。
+#    测试用 后期需要统一规划
+int32 E_CB_NONE             = 0
+int32 E_CB_NAV_SENSOR_FAULT = 2204182   # 导航必要传感器失效：已取消导航，传感器恢复并稳定后自动解除（等级 2）

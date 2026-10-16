@@ -65,6 +65,7 @@ set(MSG_FILES
   "msg/PathSegment.msg"
   "msg/TrackingPath.msg"
   "msg/ObstacleMonitorStatus.msg"
+  "msg/SensorState.msg"
 )
 
 # 4) 声明要生成的服务
