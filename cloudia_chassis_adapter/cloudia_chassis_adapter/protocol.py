@@ -47,9 +47,10 @@ def _parse_battery_state(raw, location):
     cell_voltages_raw = raw.get("cellVoltages")
     cell_voltages = []
     if isinstance(cell_voltages_raw, list):
-        cell_voltages = [value for value in
-                         (_finite(item) for item in cell_voltages_raw)
-                         if value is not None]
+        cell_voltages = [
+            value for value in (_finite(item) for item in cell_voltages_raw)
+            if value is not None
+        ]
 
     known_values = (voltage, temperature, current, charge, capacity,
                     design_capacity, percentage)
@@ -64,15 +65,14 @@ def _parse_battery_state(raw, location):
         "current": current if current is not None else math.nan,
         "charge": charge if charge is not None else math.nan,
         "capacity": capacity if capacity is not None else math.nan,
-        "design_capacity": (design_capacity if design_capacity is not None
-                            else math.nan),
+        "design_capacity":
+            (design_capacity if design_capacity is not None else math.nan),
         "percentage": percentage if percentage is not None else math.nan,
         "power_supply_status": _integer(raw.get("powerSupplyStatus")),
         "power_supply_health": _integer(raw.get("powerSupplyHealth")),
-        "power_supply_technology": _integer(
-            raw.get("powerSupplyTechnology")),
-        "present": (bool(present_value) if present_value is not None else
-                    has_known_value),
+        "power_supply_technology": _integer(raw.get("powerSupplyTechnology")),
+        "present": (bool(present_value)
+                    if present_value is not None else has_known_value),
         "cell_voltage": cell_voltages,
         "location": location,
     }
@@ -107,8 +107,8 @@ def parse_upstream_state(payload):
     }
 
     batteries = []
-    for field, location in (("batteryState", "battery1"),
-                            ("battery2State", "battery2")):
+    for field, location in (("batteryState", "battery1"), ("battery2State",
+                                                           "battery2")):
         battery = _parse_battery_state(state.get(field), location)
         if battery is not None:
             batteries.append(battery)
@@ -133,8 +133,8 @@ def build_speed_command(vx,
                         serial_number="",
                         version="2.1.0"):
     """构造完整的 downstream_command/speedCommand 消息。"""
-    timestamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace(
-        "+00:00", "Z")
+    timestamp = datetime.now(
+        timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     return {
         "communicationType": "downstream_command",
         "header": {

@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <yaml-cpp/yaml.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -11,8 +13,6 @@
 #include <fstream>
 #include <iostream>
 #include <string>
-#include <algorithm>
-#include <cctype>
 
 #include "chassis_node.h"
 #include "w1_server.h"
@@ -59,12 +59,12 @@ int main(int argc, char* argv[]) {
         // Cloudia 适配器独占底盘 WebSocket 和 /control/cmd_vel；不要同时
         // 创建本地 ChassisNode，否则同一速度会被两个底盘后端消费。
         std::cout << "[INFO] DEXE_CHASSIS_BACKEND=cloudia: local ChassisNode disabled; "
-                     "start cloudia_chassis_adapter separately." << std::endl;
+                     "start cloudia_chassis_adapter separately."
+                  << std::endl;
     } else {
         // RobotServer 与 ChassisNode 必须使用同一份 install 配置；
         // 两个节点共用同一条底盘目标通道：chassis_node 写、RobotServer 的 1 kHz 线程读。
-        node_chassis = std::make_shared<chassis_node::ChassisNode>(
-            user_cfg_path, node_server->chassis_target_buffer());
+        node_chassis = std::make_shared<chassis_node::ChassisNode>(user_cfg_path, node_server->chassis_target_buffer());
         executor.add_node(node_chassis);
     }
     executor.add_node(node_server);

@@ -12,19 +12,17 @@ def generate_launch_description():
             "backend",
             default_value=os.environ.get("DEXE_CHASSIS_BACKEND", "cloudia"),
             description="dexe 或 cloudia；dexe 时适配器不建立 WebSocket"),
-        DeclareLaunchArgument(
-            "robot_host",
-            default_value=os.environ.get("CLOUDIA_HOST", ""),
-            description="迦智底盘工控机地址"),
+        DeclareLaunchArgument("robot_host",
+                              default_value=os.environ.get("CLOUDIA_HOST", ""),
+                              description="迦智底盘工控机地址"),
         Node(
             package="cloudia_chassis_adapter",
             executable="cloudia_chassis_adapter",
             name="cloudia_chassis_adapter",
             output="screen",
             parameters=[
-                os.path.join(
-                    os.path.dirname(__file__), "..", "config",
-                    "cloudia_chassis.yaml"),
+                os.path.join(os.path.dirname(__file__), "..", "config",
+                             "cloudia_chassis.yaml"),
                 {
                     "backend": LaunchConfiguration("backend"),
                     "robot_host": LaunchConfiguration("robot_host"),

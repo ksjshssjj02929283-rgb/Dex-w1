@@ -43,7 +43,8 @@ class CloudiaChassisAdapter(Node):
         self.declare_parameter("pose_topic", "/feedback/chassis_pose")
         self.declare_parameter("battery_topic", "/feedback/battery_status")
         self.declare_parameter("diagnostics_topic", "/diagnostics_agg")
-        self.declare_parameter("obstacle_topic", "obstacle_detector/has_obstacle")
+        self.declare_parameter("obstacle_topic",
+                               "obstacle_detector/has_obstacle")
         self.declare_parameter("velocity_topic", "/cloudia/chassis_velocity")
         self.declare_parameter("cmd_vel_topic", "/control/cmd_vel")
         self.declare_parameter("stale_timeout_s", 0.5)
@@ -79,13 +80,13 @@ class CloudiaChassisAdapter(Node):
         self._battery_pub = self.create_publisher(
             BatteryState, str(self.get_parameter("battery_topic").value), 10)
         self._diagnostics_pub = self.create_publisher(
-            DiagnosticArray,
-            str(self.get_parameter("diagnostics_topic").value), 10)
+            DiagnosticArray, str(self.get_parameter("diagnostics_topic").value),
+            10)
         self._obstacle_pub = self.create_publisher(
             Bool, str(self.get_parameter("obstacle_topic").value), 10)
         velocity_topic = str(self.get_parameter("velocity_topic").value)
-        self._velocity_pub = (self.create_publisher(TwistStamped, velocity_topic, 10)
-                              if velocity_topic else None)
+        self._velocity_pub = (self.create_publisher(
+            TwistStamped, velocity_topic, 10) if velocity_topic else None)
         self._cmd_sub = self.create_subscription(
             Twist, str(self.get_parameter("cmd_vel_topic").value),
             self._on_cmd_vel, 10)
@@ -102,8 +103,8 @@ class CloudiaChassisAdapter(Node):
         self._thread = None
 
         self._watchdog_timer = self.create_timer(0.1, self._watchdog)
-        self._command_timer = self.create_timer(
-            1.0 / self._command_rate, self._send_current_command)
+        self._command_timer = self.create_timer(1.0 / self._command_rate,
+                                                self._send_current_command)
 
         if not self._enabled:
             self.get_logger().info(
@@ -116,8 +117,9 @@ class CloudiaChassisAdapter(Node):
             raise RuntimeError("Cloudia WebSocket 地址未配置")
         self.get_logger().info(
             f"Cloudia WebSocket adapter connecting to {self._url}")
-        self._thread = threading.Thread(
-            target=self._websocket_loop, name="cloudia-websocket", daemon=True)
+        self._thread = threading.Thread(target=self._websocket_loop,
+                                        name="cloudia-websocket",
+                                        daemon=True)
         self._thread.start()
 
     def _resolve_url(self):
@@ -176,11 +178,13 @@ class CloudiaChassisAdapter(Node):
                         pass
             if not self._stop.is_set():
                 self._stop.wait(reconnect_delay)
-                reconnect_delay = min(self._reconnect_max, reconnect_delay * 2.0)
+                reconnect_delay = min(self._reconnect_max,
+                                      reconnect_delay * 2.0)
 
     def _handle_frame(self, raw):
         try:
-            payload = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
+            payload = json.loads(
+                raw.decode("utf-8") if isinstance(raw, bytes) else raw)
         except (TypeError, ValueError) as exc:
             self.get_logger().warning(f"忽略非 JSON WebSocket 帧: {exc}")
             return
@@ -258,7 +262,8 @@ class CloudiaChassisAdapter(Node):
         if not self._enabled:
             return
         last_state = self._last_state_time
-        if last_state is not None and time.monotonic() - last_state > self._stale_timeout:
+        if last_state is not None and time.monotonic(
+        ) - last_state > self._stale_timeout:
             if not self._stale_reported:
                 self._stale_reported = True
                 self.get_logger().warning(
@@ -275,8 +280,8 @@ class CloudiaChassisAdapter(Node):
             connected = self._connected
             state_time = self._last_state_time
         state_fresh = state_time is not None and now - state_time <= self._stale_timeout
-        if (not state_fresh or command_time is None
-                or now - command_time > self._command_timeout):
+        if (not state_fresh or command_time is None or
+                now - command_time > self._command_timeout):
             command = (0.0, 0.0, 0.0)
         if connected:
             self._send_command(*command)
