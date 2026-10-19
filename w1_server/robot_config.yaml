@@ -83,9 +83,12 @@ w1_v02:
   stribeck_velocity: 0.1  # Stribeck 指数衰减特征速度，单位 rad/s，必须大于 0
   stribeck_alpha: 2.0
   # Drag 附加阻尼，左右臂各按 J1-J7 排列；系数须为有限非负数
-  # D2 单位 N·m·s²/rad²；全零保持原 Drag 行为
+  # D2 单位 N·m，为 |dq| = drag_dq_lowspeed 时的阻尼幅值；全零关闭附加阻尼
   drag_damping_d2_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   drag_damping_d2_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  # 各关节二次阻尼除以对应速度的平方；单位 rad/s，每项须为有限正数
+  drag_dq_lowspeed_primary: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  # 左臂 J1-J7
+  drag_dq_lowspeed_secondary: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  # 右臂 J1-J7
   drag_dq_deadzone: 0.1  # 全关节共用速度死区阈值，rad/s
   drag_dead_compensation_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 左臂 J1-J7, N·m
   drag_dead_compensation_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 右臂 J1-J7, N·m
@@ -564,9 +567,12 @@ w1_v03:
   stribeck_velocity: 0.1  # Stribeck 指数衰减特征速度，单位 rad/s，必须大于 0
   stribeck_alpha: 2.0
   # Drag 附加阻尼，左右臂各按 J1-J7 排列；系数须为有限非负数
-  # D2 单位 N·m·s²/rad²；全零保持原 Drag 行为
+  # D2 单位 N·m，为 |dq| = drag_dq_lowspeed 时的阻尼幅值；全零关闭附加阻尼
   drag_damping_d2_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   drag_damping_d2_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  # 各关节二次阻尼除以对应速度的平方；单位 rad/s，每项须为有限正数
+  drag_dq_lowspeed_primary: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  # 左臂 J1-J7
+  drag_dq_lowspeed_secondary: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  # 右臂 J1-J7
   drag_dq_deadzone: 0.1  # 全关节共用速度死区阈值，rad/s
   drag_dead_compensation_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 左臂 J1-J7, N·m
   drag_dead_compensation_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 右臂 J1-J7, N·m

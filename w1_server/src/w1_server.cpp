@@ -322,7 +322,7 @@ void RobotServer::TorqueControlThreadFunc() {
                         const double drag_torque = dynamics::ComputeDragTorque(
                             torque_cmd.torque_feedforward[i], robot_feedback_.joint_feedback[i].joint_velocity,
                             robot_model_.params_ptr->drag_damping_d2[i], robot_model_.params_ptr->drag_dead_compensation[i],
-                            robot_model_.params_ptr->drag_dq_deadzone);
+                            robot_model_.params_ptr->drag_dq_deadzone, robot_model_.params_ptr->drag_dq_lowspeed[i]);
                         this->robot_control_.joint_control[i].joint_torque_feedforward = drag_torque;
                         if (this->robot_model_.IsDynamicParamsAvailable()) {
                             // 位置等于反馈位置
