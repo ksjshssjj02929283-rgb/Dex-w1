@@ -13,3 +13,16 @@ CLAUDE.md
 AGENT.md
 dexe_robot_client/
 .claude/
+/script/pos_err_test
+script/compare_pd_tuning.py
+script/compare_trajectory_positions.py
+script/pd_tuning_common.py
+script/replay_trajectory_points.md
+script/replay_trajectory_points.py
+script/sample_trajectory_points.py
+script/test_repeat_positioning.md
+script/test_repeat_positioning.py
+script/tests/test_repeat_positioning_runner.py
+script/tests/test_sine_capture.py
+script/tests/test_tune_sine_pd.py
+script/tests/test_tune_static_pd.py

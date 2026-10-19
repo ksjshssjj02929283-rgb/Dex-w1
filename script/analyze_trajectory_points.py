@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""分析实测 FK DAT，保存图表、逐点误差 DAT 和统计 JSON；不连接 ROS。
+"""分析实测 DAT，统一使用服务器反馈减目标，保存图表、误差 DAT 和统计 JSON；不连接 ROS。
 
 python3 script/analyze_trajectory_points.py script/pos_err_test/fk_measured_left_*.dat
 python3 script/analyze_trajectory_points.py left.dat right.dat --show
 
 默认输出 script/pos_err_test/analysis/<原文件名>_<分析时间>/，不覆盖历史结果。
 图中关节/姿态单位 deg，位置误差 mm；位姿四元数按 wxyz 归一化，q 与 -q 等价。
-三种对照：server-desired（总到位误差）、FK-desired（关节到位对 FK 的影响）、
-server-FK（服务器与保存的 Pinocchio FK 一致性）。FK 使用采集时保存值，不重新运行。
+关节角误差为 q_reached - q_command（反馈减目标）。
+末端只分析 pose_reached - pose_desired，不读取或分析反馈角 FK。
+姿态误差为服务器姿态相对目标姿态的最短旋转角。
 服务器末端反馈不是独立外部测量，不能据此认定真机几何精度。
 """
 
@@ -22,11 +23,9 @@ import numpy as np
 
 MAGIC = "# trajectory_fk_measurements_v1 "
 OUTPUT_DIR = Path(__file__).resolve().parent / "pos_err_test/analysis"
-FIELDS = ("q_command", "q_reached", "pose_desired", "pose_reached", "pose_reached_fk")
+FIELDS = ("q_command", "q_reached", "pose_desired", "pose_reached")
 PAIRS = (
-    ("server_minus_desired", "Server - desired", "pose_reached", "pose_desired"),
-    ("fk_minus_desired", "FK - desired", "pose_reached_fk", "pose_desired"),
-    ("server_minus_fk", "Server - FK", "pose_reached", "pose_reached_fk"),
+    ("server_minus_desired", "Server - Target", "pose_reached", "pose_desired"),
 )
 
 
@@ -47,7 +46,7 @@ def load_measurements(path):
     if not set(required).issubset(columns):
         raise ValueError("缺少关节角或末端位姿字段")
     table = np.loadtxt(body, ndmin=2)
-    if table.shape[1] != len(columns) or not np.isfinite(table).all():
+    if table.shape[1] != len(columns) or not np.isfinite(table[:, [columns.index(c) for c in required]]).all():
         raise ValueError("数据列数不匹配或存在非有限数值")
     if (meta.get("joint_unit"), meta.get("position_unit"), meta.get("pose_order")) != ("rad", "m", "x,y,z,qw,qx,qy,qz"):
         raise ValueError("单位或四元数顺序不匹配")
@@ -95,8 +94,12 @@ def analyze(data):
               "real": data["meta"]["real"], "status": data["meta"].get("status"),
               "count": len(joint), "fk_frame": data["meta"].get("fk_frame"), "tcp": data["meta"].get("tcp"),
               "joint_names": [f"{data['meta']['arm'].upper()}_J{i}" for i in range(1, 8)],
+              "analysis_basis": "server_minus_desired",
+              "position_error_definition": "(pose_reached.xyz - pose_desired.xyz) * 1000",
+              "orientation_error_definition": "Shortest rotation angle of R_server @ R_target.T, in degrees",
+              "joint_error_definition": "rad2deg(q_reached - q_command)",
               "joint_error_deg": statistics(joint), "pose_errors": {},
-              "note": "FK values were recorded during acquisition. Server pose is not external metrology; simulation results do not measure physical accuracy."}
+              "note": "Analysis uses server feedback minus target only. Server pose is not external metrology; simulation results do not measure physical accuracy."}
     for key, label, actual, reference in PAIRS:
         position = (values[actual][:, :3] - values[reference][:, :3]) * 1000
         norm = np.linalg.norm(position, axis=1)
@@ -128,7 +131,7 @@ def plot(data, residuals, folder, show=False):
             axes[j, 0].set_ylabel(f"J{j + 1} (deg)")
             axes[j, 1].plot(x, residuals["joint_error_deg"][:, j], color="tab:red", marker=".", ms=3)
             axes[j, 1].axhline(0, color="gray", lw=0.7)
-            axes[j, 1].set_ylabel("Reached - command (deg)")
+            axes[j, 1].set_ylabel("Server - Target (deg)")
             axes[j, 1].ticklabel_format(axis="y", style="sci", scilimits=(-3, 3), useOffset=False)
         axes[0, 0].legend()
         axes[-1, 0].set_xlabel("Sample index")
@@ -136,7 +139,7 @@ def plot(data, residuals, folder, show=False):
         fig.savefig(folder / "joint_errors.png", dpi=160)
         figures.append(fig)
 
-        fig, axes = plt.subplots(3, 2, figsize=(14, 11), sharex=True, layout="constrained")
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharex=True, squeeze=False, layout="constrained")
         fig.suptitle("End-effector differences — " + title + "\nServer pose is not external metrology")
         for i, (key, label, _, _) in enumerate(PAIRS):
             delta = residuals[key]
@@ -160,7 +163,7 @@ def plot(data, residuals, folder, show=False):
         ax = fig.add_subplot(111, projection="3d")
         fig.suptitle("Sampled end-effector positions — " + title)
         positions = []
-        for field, label, marker in (("pose_desired", "Desired", "o"), ("pose_reached", "Server reached", "x"), ("pose_reached_fk", "FK reached", "+")):
+        for field, label, marker in (("pose_desired", "Target", "o"), ("pose_reached", "Server feedback", "x")):
             xyz = values[field][:, :3] * 1000
             positions.append(xyz)
             ax.scatter(*xyz.T, label=label, marker=marker, s=25, alpha=0.75)

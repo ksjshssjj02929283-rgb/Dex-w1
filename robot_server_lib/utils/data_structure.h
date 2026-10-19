@@ -311,7 +311,6 @@ struct RobotParams {
     double friction_velocity_scale = 0.1;
     double stribeck_velocity = 0.1;
     double stribeck_alpha = 2.0;
-    VectorDof drag_damping_d1 = VectorDof::Zero();
     VectorDof drag_damping_d2 = VectorDof::Zero();
     VectorDof drag_dead_compensation = VectorDof::Zero();
     double drag_dq_deadzone = 0.1;

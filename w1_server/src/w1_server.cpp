@@ -321,8 +321,7 @@ void RobotServer::TorqueControlThreadFunc() {
                         previous_mode_ = this->manager_info_.robot_property.run_mode;
                         const double drag_torque = dynamics::ComputeDragTorque(
                             torque_cmd.torque_feedforward[i], robot_feedback_.joint_feedback[i].joint_velocity,
-                            robot_model_.params_ptr->drag_damping_d1[i], robot_model_.params_ptr->drag_damping_d2[i],
-                            robot_model_.params_ptr->drag_dead_compensation[i],
+                            robot_model_.params_ptr->drag_damping_d2[i], robot_model_.params_ptr->drag_dead_compensation[i],
                             robot_model_.params_ptr->drag_dq_deadzone);
                         this->robot_control_.joint_control[i].joint_torque_feedforward = drag_torque;
                         if (this->robot_model_.IsDynamicParamsAvailable()) {

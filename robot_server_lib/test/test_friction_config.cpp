@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <unistd.h>
 
+#include <cmath>
+
 #include "drag_damping.h"
 #include "inverse_dynamics.h"
 #include "utils.h"
@@ -67,9 +69,13 @@ TEST_F(FrictionConfigTest, StartupCreatesRepairsAndPreservesOrderedArrays) {
 
 TEST_F(FrictionConfigTest, EveryJointAndArmScalesExactlyOnce) {
     const std::array<int, 7> fv{3, 13, 24, 35, 46, 57, 68};
+    constexpr double velocity_scale = 0.1;
     for (const auto* version : {"v024", "v031"}) {
         config["version"] = version;
         const std::string key = std::string("w1_") + std::string(version).substr(0, 3);
+        // Pin the model so this scaling test does not depend on deployment defaults.
+        config[key]["friction_model"] = "smooth";
+        config[key]["friction_velocity_scale"] = velocity_scale;
         for (int j = 0; j < 7; ++j) {
             config[key]["fv_ratio_primary"][j] = 0.1 * j;
             config[key]["fv_ratio_secondary"][j] = 0.2 * j;
@@ -90,12 +96,12 @@ TEST_F(FrictionConfigTest, EveryJointAndArmScalesExactlyOnce) {
         for (auto group : {MotionGroup::Primary, MotionGroup::Secondary}) {
             const double k = group == MotionGroup::Primary ? 1.0 : 2.0;
             const double c = group == MotionGroup::Primary ? 0.3 : 0.4;
-            for (double speed : {-2.0, -0.000872664626, 0.0, 0.000872664626, 2.0}) {
+            for (double speed : {-2.0, -0.1, -0.000872664626, 0.0, 0.000872664626, 0.1, 2.0}) {
                 const auto tau = dynamics::InvDynamikBySymbol(model, VectorDof::Zero(), VectorDof::Constant(speed),
                                                               VectorDof::Zero(), Vector3d::Zero(), group);
                 for (int j = 0; j < 7; ++j) {
-                    const double sign = speed > 0.000872664626 ? 1.0 : (speed < -0.000872664626 ? -1.0 : 0.0);
-                    EXPECT_NEAR(tau[j], 2.0 * speed * 0.1 * j * k + 3.0 * sign * c * j + 0.4, 1e-12);
+                    const double direction = std::tanh(speed / velocity_scale);
+                    EXPECT_NEAR(tau[j], 2.0 * speed * 0.1 * j * k + 3.0 * direction * c * j + 0.4, 1e-12);
                 }
             }
         }
@@ -119,19 +125,17 @@ TEST(DragDampingTest, OpposesVelocityAndPreservesFeedforwardAtZero) {
         const double feedforward = 3.7;
         const double deadzone = 0.2;
         const double expected_dead = std::abs(velocity) < deadzone ? 0.3 * ((velocity > 0.0) - (velocity < 0.0)) : 0.0;
-        const double torque = dynamics::ComputeDragTorque(feedforward, velocity, 0.4, 0.6, 0.3, deadzone);
-        EXPECT_DOUBLE_EQ(torque, feedforward - 0.4 * velocity - 0.6 * std::abs(velocity) * velocity + expected_dead);
-        const double damped_torque = dynamics::ComputeDragTorque(feedforward, velocity, 0.4, 0.6, 0.0, deadzone);
+        const double torque = dynamics::ComputeDragTorque(feedforward, velocity, 0.6, 0.3, deadzone);
+        EXPECT_DOUBLE_EQ(torque, feedforward - 0.6 * std::abs(velocity) * velocity + expected_dead);
+        const double damped_torque = dynamics::ComputeDragTorque(feedforward, velocity, 0.6, 0.0, deadzone);
         EXPECT_LE((damped_torque - feedforward) * velocity, 0.0);
-        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, velocity, 0.0, 0.0, 0.0, deadzone), feedforward);
-        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, velocity, 0.4, 0.0, 0.0, deadzone),
-                         feedforward - 0.4 * velocity);
-        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, velocity, 0.0, 0.6, 0.0, deadzone),
+        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, velocity, 0.0, 0.0, deadzone), feedforward);
+        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, velocity, 0.6, 0.0, deadzone),
                          feedforward - 0.6 * std::abs(velocity) * velocity);
-        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, 0.1, 0.0, 0.0, 0.3, 0.2), feedforward + 0.3);
-        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, -0.1, 0.0, 0.0, 0.3, 0.2), feedforward - 0.3);
-        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, 0.0, 0.0, 0.0, 0.3, 0.2), feedforward);
-        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, 0.2, 0.0, 0.0, 0.3, 0.2), feedforward);
+        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, 0.1, 0.0, 0.3, 0.2), feedforward + 0.3);
+        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, -0.1, 0.0, 0.3, 0.2), feedforward - 0.3);
+        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, 0.0, 0.0, 0.3, 0.2), feedforward);
+        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, 0.2, 0.0, 0.3, 0.2), feedforward);
     }
 }
 
@@ -140,9 +144,7 @@ TEST_F(FrictionConfigTest, DragDampingMapsEachArmJointAndLeavesOtherJointsUnchan
         config["version"] = version;
         const std::string key = std::string("w1_") + std::string(version).substr(0, 3);
         for (size_t joint = 0; joint < 7; ++joint) {
-            config[key]["drag_damping_d1_primary"][joint] = 0.1 * (joint + 1);
             config[key]["drag_damping_d2_primary"][joint] = 0.2 * (joint + 1);
-            config[key]["drag_damping_d1_secondary"][joint] = 0.3 * (joint + 1);
             config[key]["drag_damping_d2_secondary"][joint] = 0.4 * (joint + 1);
             config[key]["drag_dead_compensation_primary"][joint] = 0.5 * (joint + 1);
             config[key]["drag_dead_compensation_secondary"][joint] = 0.6 * (joint + 1);
@@ -156,16 +158,13 @@ TEST_F(FrictionConfigTest, DragDampingMapsEachArmJointAndLeavesOtherJointsUnchan
                                              params.joint_names[joint]);
             if (primary != params.joints_primary_names.end()) {
                 const double number = std::distance(params.joints_primary_names.begin(), primary) + 1;
-                EXPECT_DOUBLE_EQ(params.drag_damping_d1[joint], 0.1 * number);
                 EXPECT_DOUBLE_EQ(params.drag_damping_d2[joint], 0.2 * number);
                 EXPECT_DOUBLE_EQ(params.drag_dead_compensation[joint], 0.5 * number);
             } else if (secondary != params.joints_secondary_names.end()) {
                 const double number = std::distance(params.joints_secondary_names.begin(), secondary) + 1;
-                EXPECT_DOUBLE_EQ(params.drag_damping_d1[joint], 0.3 * number);
                 EXPECT_DOUBLE_EQ(params.drag_damping_d2[joint], 0.4 * number);
                 EXPECT_DOUBLE_EQ(params.drag_dead_compensation[joint], 0.6 * number);
             } else {
-                EXPECT_DOUBLE_EQ(params.drag_damping_d1[joint], 0.0);
                 EXPECT_DOUBLE_EQ(params.drag_damping_d2[joint], 0.0);
                 EXPECT_DOUBLE_EQ(params.drag_dead_compensation[joint], 0.0);
             }
@@ -178,8 +177,8 @@ TEST_F(FrictionConfigTest, DragDampingRejectsInvalidCoefficientsAndDefaultsToZer
         config["version"] = version;
         const std::string key = std::string("w1_") + std::string(version).substr(0, 3);
         for (const auto* field :
-             {"drag_damping_d1_primary", "drag_damping_d2_primary", "drag_damping_d1_secondary",
-              "drag_damping_d2_secondary", "drag_dead_compensation_primary", "drag_dead_compensation_secondary"}) {
+             {"drag_damping_d2_primary", "drag_damping_d2_secondary", "drag_dead_compensation_primary",
+              "drag_dead_compensation_secondary"}) {
             for (const auto* value :
                  {"1", "[1, 2]", "[0, 0, 0, 0, 0, 0, 0, 0]", "[0, 0, 0, -1, 0, 0, 0]", "[0, 0, .nan, 0, 0, 0, 0]",
                   "[0, 0, .inf, 0, 0, 0, 0]", "[0, 0, bad, 0, 0, 0, 0]"}) {
@@ -189,7 +188,6 @@ TEST_F(FrictionConfigTest, DragDampingRejectsInvalidCoefficientsAndDefaultsToZer
             config[key].remove(field);
         }
         const auto model = Load();
-        EXPECT_TRUE(model.params_ptr->drag_damping_d1.isZero());
         EXPECT_TRUE(model.params_ptr->drag_damping_d2.isZero());
         EXPECT_TRUE(model.params_ptr->drag_dead_compensation.isZero());
         EXPECT_DOUBLE_EQ(model.params_ptr->drag_dq_deadzone, 0.1);
@@ -204,18 +202,17 @@ TEST_F(FrictionConfigTest, DragDampingRejectsInvalidCoefficientsAndDefaultsToZer
 TEST_F(FrictionConfigTest, DragDampingStartupRepairsMissingFieldsAndPreservesTuning) {
     Write(default_path, config);
     for (const auto* version : {"w1_v02", "w1_v03"}) {
-        config[version].remove("drag_damping_d2_primary");
-        config[version].remove("drag_damping_d1_secondary");
+        config[version].remove("drag_damping_d2_secondary");
         config[version].remove("drag_dead_compensation_primary");
-        config[version]["drag_damping_d1_primary"][2] = 0.73;
+        config[version]["drag_damping_d2_primary"][2] = 0.73;
     }
     Write(user_path, config);
     utils::CheckConfig(default_path, user_path);
     const auto repaired = YAML::LoadFile(user_path.string());
     for (const auto* version : {"w1_v02", "w1_v03"}) {
-        EXPECT_DOUBLE_EQ(repaired[version]["drag_damping_d1_primary"][2].as<double>(), 0.73);
+        EXPECT_DOUBLE_EQ(repaired[version]["drag_damping_d2_primary"][2].as<double>(), 0.73);
         EXPECT_EQ(repaired[version]["drag_damping_d2_primary"].size(), 7u);
-        EXPECT_EQ(repaired[version]["drag_damping_d1_secondary"].size(), 7u);
+        EXPECT_EQ(repaired[version]["drag_damping_d2_secondary"].size(), 7u);
         EXPECT_EQ(repaired[version]["drag_dead_compensation_primary"].size(), 7u);
     }
 }

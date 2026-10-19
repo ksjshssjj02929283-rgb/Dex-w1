@@ -36,6 +36,49 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def relative_to_repo(path):
+    try:
+        return str(Path(path).resolve().relative_to(ROOT))
+    except ValueError:
+        return None
+
+
+def resolve_asset(recorded, sha256, *, override=None, relative=None, kind="urdf"):
+    """Relocate files by repository layout, but never bypass content hashes."""
+    hint = "--urdf /真机路径/robot.urdf" if kind == "urdf" else "--trajectory-root /真机路径/w1_v02"
+    if override is not None:
+        candidates = [Path(override).expanduser()]
+    else:
+        candidates = []
+        if relative is not None:
+            rel = Path(relative)
+            if rel.is_absolute() or ".." in rel.parts:
+                raise ValueError("DAT 中的仓库相对路径无效")
+            candidates.append(ROOT / rel)
+        # Legacy DATs only stored an absolute path on the sampling machine.
+        parts = Path(recorded).parts
+        anchor = ("robot_models",) if kind == "urdf" else ("script", "dyn_params_ident", "trajectories")
+        for i in range(len(parts) - len(anchor) + 1):
+            if tuple(parts[i:i + len(anchor)]) == anchor and ".." not in parts[i:]:
+                prefix = ROOT / "robot_server_lib" if kind == "urdf" else ROOT
+                candidates.append(prefix.joinpath(*parts[i:]))
+        candidates.append(Path(recorded).expanduser())
+    checked, mismatched = [], []
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        if candidate in checked:
+            continue
+        checked.append(candidate)
+        if candidate.is_file():
+            if digest(candidate) == sha256:
+                return candidate
+            mismatched.append(str(candidate))
+    if mismatched:
+        raise ValueError(f"{kind} 文件内容与采样时不一致，拒绝使用旧目标: {mismatched}。"
+                         "请使用同一份文件；模型或轨迹确实改变时需重新采样。")
+    raise FileNotFoundError(f"找不到 {kind} 文件，已尝试: {[str(p) for p in checked]}。可指定 {hint}")
+
+
 def vector(values, length):
     result = np.asarray(values, dtype=float)
     if result.shape != (length,) or not np.isfinite(result).all():
@@ -123,7 +166,7 @@ def write_dat(path, magic, meta, columns, rows, replace=False):
             temp.unlink(missing_ok=True)
 
 
-def load_targets(path, expected_arm=None):
+def load_targets(path, expected_arm=None, urdf=None, trajectory_root=None):
     with Path(path).open(encoding="utf-8") as stream:
         first = stream.readline()
         if not first.startswith(MAGIC):
@@ -146,15 +189,22 @@ def load_targets(path, expected_arm=None):
     if (meta["rest"] != REST or meta["joint_unit"] != "rad" or meta["position_unit"] != "m" or
             meta["pose_order"] != "x,y,z,qw,qx,qy,qz"):
         raise ValueError("目标 DAT 单位/待机姿态不匹配")
-    if digest(meta["urdf"]) != meta["urdf_sha256"]:
-        raise ValueError("URDF 已改变，拒绝使用旧目标")
-    robot = Kinematics(meta["urdf"])
+    urdf_path = resolve_asset(meta["urdf"], meta["urdf_sha256"], override=urdf,
+                              relative=meta.get("urdf_relative"), kind="urdf")
+    if str(urdf_path) != meta["urdf"]:
+        print(f"使用本机 URDF: {urdf_path}")
+    robot = Kinematics(urdf_path)
+    meta["urdf"] = str(urdf_path)
     trajectories = {}
     for i, side in enumerate(arms):
         source = meta["sources"][side]
-        if digest(source["path"]) != source["sha256"]:
-            raise ValueError(f"{side} 原轨迹已改变")
-        rows = read_trajectory(source["path"])
+        override = Path(trajectory_root).expanduser() / side / Path(source["path"]).name if trajectory_root is not None else None
+        source_path = resolve_asset(source["path"], source["sha256"], override=override,
+                                    relative=source.get("path_relative"), kind="trajectory")
+        if str(source_path) != source["path"]:
+            print(f"使用本机 {side} 轨迹: {source_path}")
+        source["path"] = str(source_path)
+        rows = read_trajectory(source_path)
         selected = np.asarray(meta["sample_indices"][side])
         if (len(rows) != source["rows"] or selected.shape != (count,) or selected.dtype.kind not in "iu" or
                 selected[0] != 0 or selected[-1] != len(rows) - 1 or np.any(np.diff(selected) <= 0)):
@@ -186,9 +236,10 @@ def sample(args):
             robot.validate(full_target(side, row))
         indices[side] = np.linspace(0, len(rows) - 1, args.count, dtype=int).tolist()
         trajectories[side] = rows
-        sources[side] = {"path": str(path), "sha256": digest(path), "rows": len(rows)}
+        sources[side] = {"path": str(path), "path_relative": relative_to_repo(path),
+                         "sha256": digest(path), "rows": len(rows)}
     meta = {"sources": sources, "sample_indices": indices, "count_per_arm": args.count,
-            "urdf": str(robot.urdf), "urdf_sha256": digest(robot.urdf),
+            "urdf": str(robot.urdf), "urdf_relative": relative_to_repo(robot.urdf), "urdf_sha256": digest(robot.urdf),
             "joint_unit": "rad", "position_unit": "m", "pose_order": "x,y,z,qw,qx,qy,qz",
             "tcp": {s: getattr(args, "tcp_" + s) for s in arms}, "rest": REST,
             "execution": "separate_arms_sampled_points_movejoint",

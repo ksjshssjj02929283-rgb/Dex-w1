@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""仅对选出的采样点逐点 MoveJoint，到位静止后保存实测 DAT。
+"""仅对选出的采样点逐点 MoveJoint，执行完成且保持 Idle 5 秒后保存实测 DAT。
 
 python3 script/replay_trajectory_points.py script/pos_err_test/targets.dat --arm left
 python3 script/replay_trajectory_points.py script/pos_err_test/targets.dat --arm left --real --execute
@@ -9,6 +9,12 @@ python3 script/replay_trajectory_points.py script/pos_err_test/targets.dat --arm
 不向躯干或另一臂下发位置目标，不要求它们移动到预设待机姿态。
 只使用 MoveRobot action；不发布 joint_position，不执行原轨迹中间行。
 采样点之间直接 MoveJoint 插值，不修改服务器滤波、Ruckig、保护或使能设置。
+跨机器时自动按本机仓库位置寻找同版本文件；自定义安装可用 --urdf 和 --trajectory-root。
+文件 SHA256 必须与采样时一致，不能用路径覆盖参数跳过模型/轨迹校验。
+不按反馈接收间隔或服务器与本机的时钟差中止；仍要求更新的反馈，并保留等待超时。
+不以关节速度或目标与实测关节角误差作为采集门槛；每个采样点都下发目标，如实保存偏差。
+不限制服务器 run_mode，也不自动切换模式；测试前由操作者确认所需控制模式。
+运动前确认反馈正常、服务器空闲且无待完成队列；运动后以 Idle 状态保持 5 秒作为记录条件。
 """
 
 import argparse
@@ -24,11 +30,6 @@ from sample_trajectory_points import OUTPUT_DIR, NAMES, load_targets, vector, wr
 
 
 RESULT_MAGIC = "# trajectory_fk_measurements_v1 "
-
-
-def check_start(current, expected, tolerance=0.0025):
-    if np.max(np.abs(current - expected)) > tolerance:
-        raise RuntimeError("MoveJoint 后所选手臂未到达采样目标，拒绝记录")
 
 
 class Client:
@@ -47,7 +48,7 @@ class Client:
         suffix = "" if real else "_sim"
         self.stop_client = ActionClient(self.node, MoveRobot, "/control/move_robot" + suffix)
         self.subscription = self.node.create_subscription(String, "/feedback/robot_server_state" + suffix, self.on_state, 1)
-        self.state, self.received, self.seq, self.error = None, 0., 0, None
+        self.state, self.seq, self.error = None, 0, None
         self.sent = False
 
     def on_state(self, message):
@@ -61,7 +62,7 @@ class Client:
                     return
                 if stamp < self.state["timestamp"]:
                     raise ValueError("反馈 timestamp 倒退")
-            self.state, self.received = state, time.monotonic()
+            self.state = state
             self.seq += 1
         except (ValueError, KeyError, TypeError) as exc:
             self.error = str(exc)
@@ -73,10 +74,6 @@ class Client:
         if self.error:
             raise RuntimeError(self.error)
 
-    def fresh(self):
-        return (self.state is not None and time.monotonic() - self.received <= 0.5 and
-                abs(self.node.get_clock().now().nanoseconds - self.state["timestamp"]) <= 500_000_000)
-
     def ordered(self, field):
         names = self.state["joint_name"]
         values = vector(self.state[field], len(names))
@@ -86,13 +83,13 @@ class Client:
         return np.array([mapping[n] for n in NAMES])
 
     def healthy(self):
-        if not self.fresh():
-            raise RuntimeError("反馈超时或服务器时钟不同步")
+        if self.state is None:
+            raise RuntimeError("尚未收到服务器反馈")
         state = self.state
         if state.get("robot_type") != "w1" or not str(state.get("robot_version", "")).startswith("v02"):
             raise RuntimeError("服务器必须为 w1 v02 系列")
-        if state.get("run_mode") != "Position" or state.get("status") not in ("Idle", "Running"):
-            raise RuntimeError("需要 Position 模式且状态正常")
+        if state.get("status") not in ("Idle", "Running"):
+            raise RuntimeError("服务器状态必须为 Idle 或 Running")
         for key in ("server_error_code", "motor_error_code"):
             codes = state.get(key, [])
             if not isinstance(codes, list):
@@ -105,31 +102,30 @@ class Client:
         vector(state["ee_pose"], 14)
         return self.robot.validate(self.ordered("joint_position"))
 
-    def wait_idle(self, expected=None, timeout=10.):
+    def wait_idle(self, timeout=10., reject_busy=True, hold_seconds=0.):
         deadline, since, last_seq = time.monotonic() + timeout, None, self.seq
         while time.monotonic() < deadline:
             self.tick()
             if self.state is None:
                 continue
             q = self.healthy()
-            if self.state["status"] != "Idle" or self.state.get("latest_queued_id", -1) > max(
-                    self.state.get("latest_finished_id", -1), self.state.get("latest_errordrop_id", -1)):
-                if expected is None:
+            if self.state["status"] != "Idle" or (reject_busy and self.state.get("latest_queued_id", -1) > max(
+                    self.state.get("latest_finished_id", -1), self.state.get("latest_errordrop_id", -1))):
+                if reject_busy:
                     raise RuntimeError("服务器不空闲，拒绝与其他运动指令同时执行")
                 since = None
                 continue
             if self.seq == last_seq:
                 continue
             last_seq = self.seq
-            good = np.max(np.abs(self.ordered("joint_velocity"))) <= 0.005
-            if expected is not None:
-                good = good and np.max(np.abs(q[self.active] - expected)) <= 0.0025
-                if "joint_position_cmd" in self.state:
-                    good = good and np.max(np.abs(self.ordered("joint_position_cmd")[self.active] - expected)) <= 0.0025
-            since = (since or time.monotonic()) if good else None
-            if since is not None and time.monotonic() - since >= 0.5:
+            now = time.monotonic()
+            if since is None:
+                since = now
+            if now - since >= hold_seconds:
                 return q.copy()
-        raise RuntimeError("等待到位/静止超时")
+        if hold_seconds > 0:
+            raise RuntimeError(f"等待服务器保持 Idle {hold_seconds:g} 秒超时")
+        raise RuntimeError("等待服务器空闲反馈超时")
 
     def wait_action(self, future, deadline):
         while not future.done():
@@ -149,10 +145,6 @@ class Client:
         target = current.copy()
         target[self.active] = expected
         self.robot.validate(target)
-        command = self.ordered("joint_position_cmd") if "joint_position_cmd" in self.state else current
-        if max(np.max(np.abs(current[self.active] - expected)), np.max(np.abs(command[self.active] - expected))) <= 0.0025:
-            print("已在采样目标且静止，无需重复运动。", flush=True)
-            return
         deadline = time.monotonic() + 5.
         while not self.stop_client.wait_for_server(timeout_sec=0.1):
             self.tick()
@@ -175,9 +167,8 @@ class Client:
         result = self.wait_action(handle.get_result_async(), deadline)
         if result.status != 4 or not result.result.success:
             raise RuntimeError("采样点 MoveJoint 执行失败")
-        arrived = self.wait_idle(expected, timeout=30.)
-        check_start(arrived[self.active], expected)
-        print("MoveJoint 已到位并静止。", flush=True)
+        self.wait_idle(timeout=30., reject_busy=False, hold_seconds=5.)
+        print("MoveJoint 已执行完成且保持 Idle 5 秒，记录实际位置（不检查速度或到位误差）。", flush=True)
 
     def stop(self):
         if not self.sent:
@@ -213,6 +204,7 @@ def execute(args, meta, trajectories, robot):
             "real": args.real, "collected_points": 0, "joint_unit": "rad",
             "position_unit": "m", "pose_order": "x,y,z,qw,qx,qy,qz", "fk_frame": side + "_arm_base",
             "tcp": meta["tcp"][side], "collision_checked": False,
+            "urdf": str(robot.urdf), "urdf_sha256": meta["urdf_sha256"], "trajectory_source": meta["sources"][side],
             "motion": {"type": "MoveJoint", "motion_group": group, "joint_names": NAMES[active], "speed": args.speed,
                        "acceleration": args.acceleration, "sampled_points_only": True}}
     columns = ["index", "source_row", "timestamp_ns"]
@@ -229,7 +221,6 @@ def execute(args, meta, trajectories, robot):
             arm_target = rows[i]
             client.move_to(arm_target, args.speed, args.acceleration)
             measured = client.healthy()
-            check_start(measured[active], arm_target)
             # Non-commanded joints come from feedback, never preset rest angles.
             target = measured.copy()
             target[active] = arm_target
@@ -241,7 +232,7 @@ def execute(args, meta, trajectories, robot):
                 robot.fk(measured, side, meta["tcp"][side]))
             info["collected_points"] = len(records)
             write_dat(output, RESULT_MAGIC, info, columns, records, replace=True)
-            print(f"{side} 已停稳采集 {len(records)}/{len(selected)}，原轨迹行 {i + 1}", flush=True)
+            print(f"{side} 已保持 Idle 5 秒并采集 {len(records)}/{len(selected)}，原轨迹行 {i + 1}", flush=True)
         client.stop()
         info["status"] = "complete"
         print(f"采集完成: {output}")
@@ -270,16 +261,19 @@ def main(argv=None):
     parser.add_argument("--arm", choices=("left", "right"), required=True)
     parser.add_argument("--real", action="store_true")
     parser.add_argument("--execute", action="store_true")
-    parser.add_argument("--speed", type=float, default=0.05, help="MoveJoint speed，默认 0.05，最大 0.2")
-    parser.add_argument("--acceleration", type=float, default=0.05, help="MoveJoint acceleration，默认 0.05，最大 0.2")
+    parser.add_argument("--urdf", type=Path, help="本机 URDF 路径，内容须与采样时一致；默认自动定位")
+    parser.add_argument("--trajectory-root", type=Path, help="本机轨迹根目录，包含 left/right 子目录；默认自动定位")
+    parser.add_argument("--speed", type=float, default=0.05, help="MoveJoint speed，默认 0.05；仅检查有限数值，不限制范围")
+    parser.add_argument("--acceleration", type=float, default=0.05, help="MoveJoint acceleration，默认 0.05；仅检查有限数值，不限制范围")
     parser.add_argument("--output", type=Path, help="本次单臂实测 DAT，不覆盖已有文件")
     args = parser.parse_args(argv)
     try:
         for name in ("speed", "acceleration"):
             value = getattr(args, name)
-            if not np.isfinite(value) or not 0 < value <= 0.2:
-                raise ValueError(f"{name} 必须大于 0 且不超过 0.2")
-        return execute(args, *load_targets(args.dat, expected_arm=args.arm))
+            if not np.isfinite(value):
+                raise ValueError(f"{name} 必须为有限数值")
+        return execute(args, *load_targets(args.dat, expected_arm=args.arm,
+                                          urdf=args.urdf, trajectory_root=args.trajectory_root))
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"错误: {exc}", file=sys.stderr)
         return 1
