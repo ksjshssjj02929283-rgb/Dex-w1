@@ -54,60 +54,36 @@ find "$DEBIAN_ROOT$INSTALL_PATH" -type d -path '*/include' -prune -exec rm -rf {
 find "$DEBIAN_ROOT$INSTALL_PATH" -type d -path '*/share/*/cmake' -prune -exec rm -rf {} +
 find "$DEBIAN_ROOT$INSTALL_PATH" -type d \( -path '*/lib/pkgconfig' -o -path '*/share/pkgconfig' \) -prune -exec rm -rf {} +
 
-DEBIAN_DIR="$DEBIAN_ROOT/DEBIAN"
+# --- 生成 postinst ---
+# 直接 dpkg-deb --build 时使用 debian/<package>/DEBIAN/postinst。
+DEB_ROOT="$CURDIR/debian/$PACKAGE_NAME"
+DEBIAN_DIR="$DEB_ROOT/DEBIAN"
 mkdir -p "$DEBIAN_DIR"
-cat > "$DEBIAN_DIR/postinst" <<EOF
-#!/bin/bash
-set -e
 
-if [ -d "$SCRIPTS_PATH" ]; then
-    chown -R dexforce:dexforce "$SCRIPTS_PATH"
-    chmod +x "$SCRIPTS_PATH"/*.sh
+if [ -f "$CURDIR/postinst.sh" ]; then
+    cp "$CURDIR/postinst.sh" "$DEBIAN_DIR/postinst"
+    chmod 0755 "$DEBIAN_DIR/postinst"
+else
+    echo "未找到 postinst.sh，跳过 postinst 安装"
 fi
 
-# 设置实时任务权限 (Set capabilities for real-time tasks)
-BINS=(
-    "$INSTALL_PATH/w1_server/lib/w1_server/w1_server"
-    "$INSTALL_PATH/w1_server/lib/w1_server/feedback"
-)
-for BIN in "\${BINS[@]}"; do
-    if [ -f "\$BIN" ]; then
-        if setcap 'cap_sys_nice,cap_ipc_lock=+ep' "\$BIN"; then
-            echo "Successfully set capabilities for \$BIN"
-        else
-            echo "Failed to set capabilities for \$BIN"
-        fi
-    fi
-done
-
-cat > /tmp/w1_server.conf << LDCONF
-/opt/ros/humble/lib
-/opt/ros/humble/lib/aarch64-linux-gnu
-/opt/ros/humble/lib/x86_64-linux-gnu
-$INSTALL_PATH/chassis_interfaces/lib
-$INSTALL_PATH/joint_interfaces/lib
-$INSTALL_PATH/robot_server_interfaces/lib
-$INSTALL_PATH/robot_server_lib/lib
-$INSTALL_PATH/nav_interfaces/lib
-LDCONF
-cp /tmp/w1_server.conf /etc/ld.so.conf.d/w1_server.conf
-ldconfig
-
-exit 0
-EOF
-chmod 0755 "$DEBIAN_DIR/postinst"
-
-# --- 自动从 CMakeLists.txt 读取版本号 ---
-VERSION=$(grep "set(W1_SERVER_VERSION" w1_server/CMakeLists.txt | sed -e 's/set(W1_SERVER_VERSION "\(.*\)")/\1/')
-if [ -z "$VERSION" ]; then
-    VERSION="0.5.0"
+if [ -f "$CURDIR/preinst.sh" ]; then
+    cp "$CURDIR/preinst.sh" "$DEBIAN_DIR/preinst"
+    chmod 0755 "$DEBIAN_DIR/preinst"
+else
+    echo "未找到 preinst.sh，跳过 preinst 安装"
 fi
 
-# --- 自动生成 control ---
-cat > "$DEBIAN_DIR/control" <<EOF
+# --- 生成本地 dpkg-deb 所需的 control ---
+if [ ! -f "$CURDIR/debian/control" ]; then
+    cat > "$DEBIAN_DIR/control" <<EOF
 Package: $PACKAGE_NAME
-Version: $VERSION
+Version: 0.5.1
 Architecture: arm64
 Maintainer: Dexforce <dexforce@dexforce.com>
 Description: $PACKAGE_NAME
 EOF
+    echo "已生成本地 dpkg-deb control: $DEBIAN_DIR/control"
+else
+    echo "CI 由.gitlab-ci.yml进行配置"
+fi

@@ -81,6 +81,7 @@ ${LIB_INSTALL_PREFIX}/chassis_interfaces/lib
 ${LIB_INSTALL_PREFIX}/joint_interfaces/lib
 ${LIB_INSTALL_PREFIX}/robot_server_interfaces/lib
 ${LIB_INSTALL_PREFIX}/robot_server_lib/lib
+${LIB_INSTALL_PREFIX}/nav_interfaces/lib
 LD
 ldconfig
 exit 0

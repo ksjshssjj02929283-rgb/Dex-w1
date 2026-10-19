@@ -2,3 +2,62 @@ include:
   project: 'commonpub/gitlab_ci_script'
   ref: main
   file: 'loader.yml'
+
+variables:
+  # 可在 Run pipeline 时覆盖；为空时依次使用 CI_COMMIT_TAG 和 CI_PIPELINE_IID
+  PACKAGE_VERSION: "0.5.1"
+  PACKAGE_ARCH: "arm64"
+
+  # 用于生成 Debian 包中的 Maintainer 字段
+  DEBFULLNAME: "Dexforce"
+  DEBEMAIL: "dev@dexforce.com"
+
+# 覆盖公共模板中的同名 job，只修改 Runner 工作目录中的临时文件。
+build-linux:
+  before_script:
+    - |
+      set -eu
+
+      VERSION="${PACKAGE_VERSION:-}"
+
+      if [ -z "$VERSION" ] && [ -n "${CI_COMMIT_TAG:-}" ]; then
+        VERSION="${CI_COMMIT_TAG#v}"
+      fi
+
+      # MR 或普通分支流水线通常没有 Git Tag，使用1.0.0默认版本。
+      if [ -z "$VERSION" ]; then
+        VERSION="1.0.0"
+      fi
+
+      VERSION="${VERSION#v}"
+
+      if [ -z "$VERSION" ]; then
+        echo "错误: 无法确定 PACKAGE_VERSION" >&2
+        exit 1
+      fi
+
+      if [ -z "${PACKAGE_ARCH:-}" ]; then
+        echo "错误: PACKAGE_ARCH 未设置" >&2
+        exit 1
+      fi
+
+      export PACKAGE_VERSION="$VERSION"
+      echo "打包版本: $VERSION"
+      echo "打包架构: $PACKAGE_ARCH"
+      echo "Debian Maintainer: $DEBFULLNAME <$DEBEMAIL>"
+
+  script:
+    - echo "build $target in $runner_tag"
+    - wget --header "Private-Token:$CI_SCRIPT_API_KEY" "$CI_BUILD_SCRIPT_URL" -O ci_build.sh
+    - |
+      # ci_build.sh 默认从 package.xml 读取版本；这里改为使用 CI 变量。
+      sed -i \
+        's#package_version=$(get_package_version "${CI_PROJECT_DIR}")#package_version="${PACKAGE_VERSION}"#' \
+        ci_build.sh
+
+      # ci_build.sh 默认不向 gen_deb.sh 传递架构参数；修改临时下载文件即可。
+      sed -i \
+        's#./gen_deb.sh -build ./build.sh -install ./install.sh -version "$package_version"#./gen_deb.sh -build ./build.sh -install ./install.sh -version "$package_version" -arch "${PACKAGE_ARCH:-arm64}"#' \
+        ci_build.sh
+    - chmod +x ci_build.sh
+    - ./ci_build.sh -p "$target"

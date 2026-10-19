@@ -1,7 +1,7 @@
 <?xml version="3.0"?>
 <package format="3">
   <name>w1_server</name>
-  <version>0.5.0</version>
+  <version>0.5.1</version>
   <description>W1 robot control messages</description>
   <maintainer email="zhangyinan@dexforce.com">Zhang Yinan</maintainer>
   <license>MIT</license>

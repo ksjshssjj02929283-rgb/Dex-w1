@@ -12,3 +12,5 @@ script/dyn_params_ident/recdata/
 CLAUDE.md
 AGENT.md
 dexe_robot_client/
+.agents/
+openspec/

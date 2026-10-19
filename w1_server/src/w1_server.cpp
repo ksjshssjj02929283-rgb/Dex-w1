@@ -203,12 +203,14 @@ void RobotServer::TorqueControlThreadFunc() {
             std::array<double, MAX_JOINT_NUM> position_log_arr_{};
             std::array<double, MAX_JOINT_NUM> velocity_log_arr_{};
             std::array<double, MAX_JOINT_NUM> torque_log_arr_{};
+            std::array<double, MAX_JOINT_NUM> temperature_log_arr_{};
             std::array<double, MAX_JOINT_NUM> position_cmd_log_arr_{};
             std::array<double, MAX_JOINT_NUM> torque_ff_log_arr_{};
             for (int i = 0; i < ndof_robot; ++i) {
                 position_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_position;
                 velocity_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_velocity;
                 torque_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_torque;
+                temperature_log_arr_[i] = robot_feedback_.joint_feedback[i].joint_temperature;
                 position_cmd_log_arr_[i] = robot_control_.joint_control[i].joint_position;
                 torque_ff_log_arr_[i] = robot_control_.joint_control[i].joint_torque_feedforward;
             }
@@ -221,6 +223,8 @@ void RobotServer::TorqueControlThreadFunc() {
                     << utils::VectorToJsonArrayString(velocity_log_arr_, index_offset, ndof_config_).str()
                     << ", \"joint_torque\":"
                     << utils::VectorToJsonArrayString(torque_log_arr_, index_offset, ndof_config_).str()
+                    << ", \"joint_temperature\": "
+                    << utils::VectorToJsonArrayString(temperature_log_arr_, index_offset, ndof_config_).str()
                     << ", \"joint_position_input\": "
                     << utils::VectorToJsonArrayString(joint_position_input_, index_offset, ndof_config_).str()
                     << ", \"joint_position_after_ruckig\": "
