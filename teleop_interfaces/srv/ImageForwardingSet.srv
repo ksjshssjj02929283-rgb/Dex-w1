@@ -1,5 +1,8 @@
 bool enabled
+bool record
 ---
 bool success
 bool enabled
+bool record
+string record_session_id
 string message
