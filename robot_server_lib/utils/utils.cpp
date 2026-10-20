@@ -461,13 +461,19 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     drag_dq_lowspeed_secondary.fill(1.0);
     parse_drag_damping("drag_dq_lowspeed_primary", drag_dq_lowspeed_primary, true);
     parse_drag_damping("drag_dq_lowspeed_secondary", drag_dq_lowspeed_secondary, true);
-    std::array<double, 7> drag_dead_compensation_primary{}, drag_dead_compensation_secondary{};
-    parse_drag_damping("drag_dead_compensation_primary", drag_dead_compensation_primary);
-    parse_drag_damping("drag_dead_compensation_secondary", drag_dead_compensation_secondary);
-    if (version_cfg["drag_dq_deadzone"]) {
-        params.drag_dq_deadzone = version_cfg["drag_dq_deadzone"].as<double>();
-        if (!std::isfinite(params.drag_dq_deadzone) || params.drag_dq_deadzone < 0.0) {
-            throw std::runtime_error("drag_dq_deadzone must be finite and nonnegative");
+    std::array<double, 7> drag_f_dead_primary{}, drag_f_dead_secondary{};
+    parse_drag_damping("f_dead_primary", drag_f_dead_primary);
+    parse_drag_damping("f_dead_secondary", drag_f_dead_secondary);
+    if (version_cfg["v_dead"]) {
+        params.drag_v_dead = version_cfg["v_dead"].as<double>();
+        if (!std::isfinite(params.drag_v_dead) || params.drag_v_dead < 0.0) {
+            throw std::runtime_error("v_dead must be finite and nonnegative");
+        }
+    }
+    if (version_cfg["omega"]) {
+        params.drag_omega = version_cfg["omega"].as<double>();
+        if (!std::isfinite(params.drag_omega) || params.drag_omega < 0.0) {
+            throw std::runtime_error("omega must be finite and nonnegative");
         }
     }
     if (version_cfg["friction_model"]) {
@@ -608,12 +614,12 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                 const auto arm_joint = std::distance(params.joints_primary_names.begin(), primary_joint);
                 params.drag_damping_d2[joint_idx] = drag_damping_d2_primary.at(arm_joint);
                 params.drag_dq_lowspeed[joint_idx] = drag_dq_lowspeed_primary.at(arm_joint);
-                params.drag_dead_compensation[joint_idx] = drag_dead_compensation_primary.at(arm_joint);
+                params.drag_f_dead[joint_idx] = drag_f_dead_primary.at(arm_joint);
             } else if (secondary_joint != params.joints_secondary_names.end()) {
                 const auto arm_joint = std::distance(params.joints_secondary_names.begin(), secondary_joint);
                 params.drag_damping_d2[joint_idx] = drag_damping_d2_secondary.at(arm_joint);
                 params.drag_dq_lowspeed[joint_idx] = drag_dq_lowspeed_secondary.at(arm_joint);
-                params.drag_dead_compensation[joint_idx] = drag_dead_compensation_secondary.at(arm_joint);
+                params.drag_f_dead[joint_idx] = drag_f_dead_secondary.at(arm_joint);
             }
 
             const bool is_arm_joint =

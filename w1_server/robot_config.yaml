@@ -89,9 +89,11 @@ w1_v02:
   # 各关节二次阻尼除以对应速度的平方；单位 rad/s，每项须为有限正数
   drag_dq_lowspeed_primary: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  # 左臂 J1-J7
   drag_dq_lowspeed_secondary: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  # 右臂 J1-J7
-  drag_dq_deadzone: 0.1  # 全关节共用速度死区阈值，rad/s
-  drag_dead_compensation_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 左臂 J1-J7, N·m
-  drag_dead_compensation_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 右臂 J1-J7, N·m
+  # |dq| < v_dead 时仅输出 f_dead*sin(omega*t)，不叠加前馈或阻尼；f_dead=0 时输出零
+  v_dead: 0.1  # 手臂共用速度死区阈值，rad/s；设为 0 禁用正弦分支
+  omega: 6.283185307179586  # 手臂共用角频率，rad/s；默认 1 Hz，t 为进入 DRAG 后的秒数
+  f_dead_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 左臂 J1-J7, N·m
+  f_dead_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 右臂 J1-J7, N·m
   # === streaming运动参数 ===
   enable_streaming_ruckig: true
   joint_streaming_bounds:
@@ -573,9 +575,11 @@ w1_v03:
   # 各关节二次阻尼除以对应速度的平方；单位 rad/s，每项须为有限正数
   drag_dq_lowspeed_primary: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  # 左臂 J1-J7
   drag_dq_lowspeed_secondary: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  # 右臂 J1-J7
-  drag_dq_deadzone: 0.1  # 全关节共用速度死区阈值，rad/s
-  drag_dead_compensation_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 左臂 J1-J7, N·m
-  drag_dead_compensation_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 右臂 J1-J7, N·m
+  # |dq| < v_dead 时仅输出 f_dead*sin(omega*t)，不叠加前馈或阻尼；f_dead=0 时输出零
+  v_dead: 0.1  # 手臂共用速度死区阈值，rad/s；设为 0 禁用正弦分支
+  omega: 6.283185307179586  # 手臂共用角频率，rad/s；默认 1 Hz，t 为进入 DRAG 后的秒数
+  f_dead_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 左臂 J1-J7, N·m
+  f_dead_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 右臂 J1-J7, N·m
   # === streaming运动参数 ===
   enable_streaming_ruckig: true
   joint_streaming_bounds:

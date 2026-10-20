@@ -111,6 +111,8 @@ void RobotServer::TorqueControlThreadFunc() {
     Int64 loop_counter = 0;
     this->is_robot_ready_ = false;
     auto next_cycle_time_point = std::chrono::steady_clock::now();
+    auto drag_start_time = next_cycle_time_point;
+    bool drag_active = false;
     double usage_sum = 0.0;
     double peak_usage = 0.0;
     int usage_count = 0;
@@ -259,6 +261,14 @@ void RobotServer::TorqueControlThreadFunc() {
         this->planner_cmd_ = PlannerManagerCommand{};  // 默认值，避免未写入时使用了旧数据
         this->is_cmd_valid_ = false;
         this->manager_buffers_.planner_manager_info->PeekLatest(&this->manager_info_);
+        const bool in_drag_mode = this->manager_info_.robot_property.run_mode == RunMode::Drag;
+        const auto drag_now = std::chrono::steady_clock::now();
+        if (in_drag_mode && !drag_active) {
+            drag_start_time = drag_now;
+        }
+        drag_active = in_drag_mode;
+        // One monotonic time shared by all joints; crossing the deadzone does not reset phase.
+        const double drag_elapsed_seconds = std::chrono::duration<double>(drag_now - drag_start_time).count();
         if (this->manager_buffers_.planner_manager_command->PeekLatest(&this->planner_cmd_) &&
             this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd)) {
             this->is_cmd_valid_ = true;
@@ -319,10 +329,16 @@ void RobotServer::TorqueControlThreadFunc() {
                         break;
                     case RunMode::Drag: {
                         previous_mode_ = this->manager_info_.robot_property.run_mode;
-                        const double drag_torque = dynamics::ComputeDragTorque(
-                            torque_cmd.torque_feedforward[i], robot_feedback_.joint_feedback[i].joint_velocity,
-                            robot_model_.params_ptr->drag_damping_d2[i], robot_model_.params_ptr->drag_dead_compensation[i],
-                            robot_model_.params_ptr->drag_dq_deadzone, robot_model_.params_ptr->drag_dq_lowspeed[i]);
+                        const double drag_torque =
+                            IsArmJoint(i)
+                                ? dynamics::ComputeDragTorque(torque_cmd.torque_feedforward[i],
+                                                              robot_feedback_.joint_feedback[i].joint_velocity,
+                                                              robot_model_.params_ptr->drag_damping_d2[i],
+                                                              robot_model_.params_ptr->drag_f_dead[i],
+                                                              robot_model_.params_ptr->drag_v_dead,
+                                                              robot_model_.params_ptr->drag_dq_lowspeed[i],
+                                                              robot_model_.params_ptr->drag_omega, drag_elapsed_seconds)
+                                : torque_cmd.torque_feedforward[i];
                         this->robot_control_.joint_control[i].joint_torque_feedforward = drag_torque;
                         if (this->robot_model_.IsDynamicParamsAvailable()) {
                             // 位置等于反馈位置

@@ -114,25 +114,35 @@ w1_v02:
 
 主要配置内容包括机器人型号与 URDF、关节映射和运动分组、安全限制、PD 与柔顺控制、轨迹滤波与抑振、Streaming 限制、动力学参数、工具补偿以及底盘和 IMU 参数。
 
-### Drag 模式附加阻尼
+### Drag 模式死区正弦力矩与附加阻尼
 
-Drag 的输出力矩为 `tau_drag = tau_ff - D2*abs(dq)*dq/(dq_lowspeed*dq_lowspeed) + tau_dead`，其中当 `abs(dq) < dq_deadzone` 时 `tau_dead = F_dead*sgn(dq)`，否则为零；等于零速度时 `sgn(0)=0`。`dq` 使用反馈速度（rad/s），阈值由所有关节共用。`tau_ff` 仍为原逆动力学前馈，包含原有的重力、科氏力、摩擦和已启用的工具补偿；附加阻尼和死区补偿不替换辨识摩擦。仅 Drag 使用，其他控制模式不变。
+手臂在 Drag 模式下使用以下分段输出，`dq` 为实际反馈速度（rad/s）：
 
-在实际使用的 `w1_v02` / `w1_v03` 配置段分别设置左右臂的 1×7 系数，按各臂 J1～J7 排列：
+- `abs(dq) < v_dead`：`tau_drag = f_dead * sin(omega * t)`。
+- `abs(dq) >= v_dead`：`tau_drag = tau_ff - D2 * abs(dq) * dq / (v_ref * v_ref)`。原来的 `tau_dead` 在此区间为零。
+
+低速分支替换整个前馈力矩，不叠加重力、摩擦或二次阻尼；静止时同样输出正弦力矩。`f_dead = 0` 时低速输出为零。`v_dead = 0` 可禁用低速分支，所有速度下使用前馈减二次阻尼。分支在阈值处直接切换，没有平滑过渡。非手臂关节保留原有前馈输出。
+
+`t` 是每次进入 Drag 模式后经过的秒数，使用单调时钟，所有关节共用同一时间；退出再进入 Drag 时从零开始，进出速度死区不会重置相位。`omega` 单位为 rad/s，频率为 `omega / (2*pi)` Hz，默认 `2*pi`（1 Hz）。
+
+在实际使用的 `w1_v02` / `w1_v03` 配置段设置：
 
 ```yaml
+  f_dead_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]    # 左臂 J1-J7，N·m
+  f_dead_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 右臂 J1-J7，N·m
+  v_dead: 0.1                   # 双臂共用阈值，rad/s
+  omega: 6.283185307179586       # 双臂共用角频率，rad/s
   drag_damping_d2_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   drag_damping_d2_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   drag_dq_lowspeed_primary: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
   drag_dq_lowspeed_secondary: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-  drag_dq_deadzone: 0.1
-  drag_dead_compensation_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  drag_dead_compensation_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 ```
 
-`primary` 是左臂，`secondary` 是右臂，数组按 J1～J7 排列。归一化后的 D2 单位为 N·m，表示 `abs(dq) = dq_lowspeed` 时的阻尼幅值，`F_dead` 单位为 N·m；D2 和 `F_dead` 数组必须恰好含 7 个有限非负数。死区阈值 `drag_dq_deadzone` 默认 0.1 rad/s，需为有限非负数，整机所有关节共用。`F_dead` 默认全零，保持原 Drag 行为；非手臂关节不使用死区补偿。升级需要重新编译安装库和服务端；之后修改 YAML 系数只需重启服务，不需要重新辨识动力学参数。建议从零开始小幅调节，二次阻尼仍随速度平方增大。
+`f_dead` 和 D2 数组必须恰好含 7 个有限非负数；`v_dead` 和 `omega` 必须为有限非负数。幅值默认全零，阈值默认 0.1 rad/s。配置键 `f_dead_primary/secondary` 替代原来的 `drag_dead_compensation_primary/secondary`，`v_dead` 替代 `drag_dq_deadzone`；原有自定义数值需迁移到新键，旧键不再读取。
 
-`dq_lowspeed` 对应 YAML 的 `drag_dq_lowspeed_primary` / `drag_dq_lowspeed_secondary`，左右臂分别按 J1～J7 独立配置。两个数组都必须恰好含 7 个有限正数，单位 rad/s；每个关节的默认值及旧配置缺省值均为 `1.0`，保持修改前的阻尼输出数值。它只归一化二次阻尼，不改变前馈和死区补偿；分母是配置速度的平方，不是实时反馈速度的平方，也不提供饱和限幅。相同 D2 和反馈速度下，速度尺度减半会使阻尼增大 4 倍，加倍会使阻尼减小到 1/4。
+`v_ref` 对应 `drag_dq_lowspeed_primary/secondary`，每项须为有限正数，默认 1.0 rad/s。D2 单位为 N·m，表示 `abs(dq) = v_ref` 时二次阻尼的幅值，仅在死区外生效；全零关闭二次阻尼。相同 D2 和反馈速度下，`v_ref` 减半会使阻尼增大 4 倍，加倍会使阻尼减小到 1/4。
+
+升级需要重新编译安装库和服务端；之后修改 YAML 只需重启服务，不需要重新辨识动力学参数。
 
 可通过以下入口修改配置：
 

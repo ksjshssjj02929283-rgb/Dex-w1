@@ -313,8 +313,9 @@ struct RobotParams {
     double stribeck_alpha = 2.0;
     VectorDof drag_damping_d2 = VectorDof::Zero();
     VectorDof drag_dq_lowspeed = VectorDof::Ones();  // 逐关节二次阻尼归一化速度，rad/s，须为有限正数
-    VectorDof drag_dead_compensation = VectorDof::Zero();
-    double drag_dq_deadzone = 0.1;
+    VectorDof drag_f_dead = VectorDof::Zero();
+    double drag_v_dead = 0.1;
+    double drag_omega = 6.283185307179586;  // rad/s (1 Hz), shared by both arms
     dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_primary;  // 主臂末端工具重力补偿参数
     dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_secondary;  // 从臂末端工具重力补偿参数
 };
