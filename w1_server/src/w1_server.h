@@ -59,7 +59,7 @@ private:
     void DebugCallback(const std_msgs::msg::String::SharedPtr msg);
     void PublishFeedback();
     void PublishImu();
-    std_msgs::msg::String GetRobotServerStateMsg();
+    std_msgs::msg::String GetRobotServerStateMsg(uint16_t drag_mode);
 
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr feedback_publisher_;
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
@@ -75,6 +75,10 @@ private:
     bool is_cmd_valid_{false};
     RobotControl robot_control_;
     RobotFeedback robot_feedback_;
+    // 高 48 位是共享内存 drag_mode 变化编号，低 16 位是已接纳的反馈值。
+    // 发布线程一次原子读取，保证 T1/T2 的编号和值与 JSON 中 drag_button 一致。
+    static_assert(std::atomic<uint64_t>::is_always_lock_free);
+    std::atomic<uint64_t> drag_feedback_snapshot_{0};
     PlannerManagerInfo manager_info_{};
     PlannerManagerCommand planner_cmd_{};
     bool is_torque_limit_reached_[ndof_robot] = {false};  // 达到力矩限制标志位

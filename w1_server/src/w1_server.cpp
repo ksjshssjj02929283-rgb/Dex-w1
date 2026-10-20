@@ -6,6 +6,8 @@
 #include <nlohmann/json.hpp>
 #include <set>
 
+#include "robot_server_lib/latency_trace.h"
+
 namespace robot_server_lib {
 
 RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
@@ -109,6 +111,9 @@ void RobotServer::TorqueControlThreadFunc() {
     double usage_sum = 0.0;
     double peak_usage = 0.0;
     int usage_count = 0;
+    bool drag_feedback_initialized = false;
+    uint16_t last_drag_mode = 0;
+    uint64_t drag_edge_seq = 0;
     auto thread_cpu_time_us = []() {
         timespec ts{};
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
@@ -140,6 +145,18 @@ void RobotServer::TorqueControlThreadFunc() {
         // 🔧 FEEDBACK_SPLIT: 共享内存帧有效、上半身关节反馈有效、底盘反馈有效是三件事。
         // 关节名排序失败不能阻断底盘轮速反馈，否则全向解算会只转舵、不输出驱动轮速。
         const bool feedback_available = feedback_shm_instance.PeekLatest(&feedback_temp) && feedback_temp.cnt > 0;
+        if (feedback_available) {
+            // 首个有效值仅建立基线，之后只在变化时打印，避免 1 kHz 日志。
+            if (drag_feedback_initialized && feedback_temp.drag_mode != last_drag_mode) {
+                const auto stamp = utils::LatencyTraceTime::Now();
+                ++drag_edge_seq;
+                LOG_INFO << "[DragLatency] T0 shm_changed edge=" << drag_edge_seq
+                         << " drag=" << static_cast<uint32_t>(feedback_temp.drag_mode) << " mono_ns=" << stamp.mono_ns
+                         << " wall=" << stamp.WallTime();
+            }
+            last_drag_mode = feedback_temp.drag_mode;
+            drag_feedback_initialized = true;
+        }
 
         int feedback_joint_count = 0;
         if (feedback_available) {
@@ -168,6 +185,7 @@ void RobotServer::TorqueControlThreadFunc() {
 
         if (joint_feedback_valid) {
             robot_feedback_ = feedback_temp;
+            drag_feedback_snapshot_.store((drag_edge_seq << 16) | feedback_temp.drag_mode, std::memory_order_release);
         } else {
             // 共享内存无效或关节排序失败时清理状态，避免发布上一个周期遗留的 OP/错误数据。
             robot_feedback_.robot_status_word = 0;
@@ -433,7 +451,10 @@ void RobotServer::TorqueControlThreadFunc() {
                      << utils::RobotStatuswordToJsonString(robot_feedback_.robot_status_word).str()
                      << ", control word changed to "
                      << utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str()
-                     << ", robot_server_state:" << GetRobotServerStateMsg().data.c_str();
+                     << ", robot_server_state:"
+                     << GetRobotServerStateMsg(
+                            static_cast<uint16_t>(drag_feedback_snapshot_.load(std::memory_order_acquire)))
+                            .data.c_str();
             last_status_word_ = robot_feedback_.robot_status_word;
             last_control_word_ = robot_control_.robot_control_word;
         }
@@ -621,9 +642,27 @@ void RobotServer::PublishThreadFunc() {
         Setup_Realtime(60);
     }
     auto next_cycle_time_point = std::chrono::steady_clock::now();
+    uint64_t last_drag_snapshot = 0;
     while (rclcpp::ok()) {
         next_cycle_time_point += std::chrono::microseconds(publish_dt_micro);
-        this->robot_server_state_publisher_->publish(GetRobotServerStateMsg());
+        const uint64_t drag_snapshot = drag_feedback_snapshot_.load(std::memory_order_acquire);
+        const uint64_t edge_seq = drag_snapshot >> 16;
+        const auto drag_mode = static_cast<uint16_t>(drag_snapshot);
+        const bool trace_drag = edge_seq != 0 && drag_snapshot != last_drag_snapshot;
+        const auto t1 = trace_drag ? utils::LatencyTraceTime::Now() : utils::LatencyTraceTime{};
+        auto state_msg = GetRobotServerStateMsg(drag_mode);
+        const auto t2 = trace_drag ? utils::LatencyTraceTime::Now() : utils::LatencyTraceTime{};
+        this->robot_server_state_publisher_->publish(state_msg);
+        // 两个测量点都先采集再输出，避免格式化和日志入队计入 JSON 构造/发送前耗时。
+        if (trace_drag) {
+            LOG_INFO << "[DragLatency] T1 publish_snapshot edge=" << edge_seq
+                     << " drag=" << static_cast<uint32_t>(drag_mode) << " mono_ns=" << t1.mono_ns
+                     << " wall=" << t1.WallTime();
+            LOG_INFO << "[DragLatency] T2 before_publish edge=" << edge_seq
+                     << " drag=" << static_cast<uint32_t>(drag_mode) << " mono_ns=" << t2.mono_ns
+                     << " wall=" << t2.WallTime();
+        }
+        last_drag_snapshot = drag_snapshot;
         auto now_time = std::chrono::steady_clock::now();
         if (now_time > next_cycle_time_point) {
             next_cycle_time_point = now_time;
@@ -633,7 +672,7 @@ void RobotServer::PublishThreadFunc() {
 }
 
 // clang-format off
-std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
+std_msgs::msg::String RobotServer::GetRobotServerStateMsg(uint16_t drag_mode)
 {
     auto robot_server_state_msg = std_msgs::msg::String();
     uint64_t timestamp_ns = this->now().nanoseconds();
@@ -709,7 +748,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"joint_integral_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.joint_integral_ratio, index_offset, ndof_config_).str() +
         ",\n  \"cart_stiffness\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_stiffness, 0, this->robot_mode_ == RobotMode::SingleArm? 6 : 12).str() +
         ",\n  \"cart_damping_ratio\":" + utils::VectorToJsonArrayString(this->manager_info_.robot_property.cart_damping_ratio, 0, this->robot_mode_ == RobotMode::SingleArm? 6 : 12).str() +
-        ",\n  \"drag_button\":" + std::to_string(this->robot_feedback_.drag_mode) + 
+        ",\n  \"drag_button\":" + std::to_string(drag_mode) +
         ",\n  \"chassis_status_word\":" + std::to_string(this->robot_feedback_.chassis_feedback.status_word) +
         ", \"chassis_error_code_left\":" + std::to_string(this->robot_feedback_.chassis_feedback.error_code_left) +
         ", \"chassis_error_code_right\":" + std::to_string(this->robot_feedback_.chassis_feedback.error_code_right) +

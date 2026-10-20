@@ -2,6 +2,8 @@
 
 #include <cstdlib>
 
+#include "latency_trace.h"
+
 namespace robot_server_lib {
 
 RobotServerBase::RobotServerBase(std::filesystem::path robot_cfg_path, bool is_sim)
@@ -335,8 +337,14 @@ void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::Shared
 
 void RobotServerBase::SetPropertyCallback(const std::shared_ptr<SetProperty::Request> request,
                                           std::shared_ptr<SetProperty::Response> response) {
+    const auto t6 = utils::LatencyTraceTime::Now();
+    const bool trace_drag = request->property_type == "EnableDrag" || request->property_type == "SwitchRunMode";
     PlannerRequest planner_request = utils::ParseSetPropertyRequest(request);
     if (planner_request.type == RequestType::Empty) {
+        if (trace_drag) {
+            LOG_INFO << "[DragLatency] T6 service_entry property=" << request->property_type
+                     << " value=" << request->value << " mono_ns=" << t6.mono_ns << " wall=" << t6.WallTime();
+        }
         RCLCPP_WARN(this->get_logger(), "Failed to parse set property request, type: %s, value: %s",
                     request->property_type.c_str(), request->value.c_str());
         LOG_CRIT << "Failed to parse set property request, type: " << request->property_type
@@ -345,10 +353,21 @@ void RobotServerBase::SetPropertyCallback(const std::shared_ptr<SetProperty::Req
         return;
     }
     planner_request.request_id = MakeNewRequestID(planner_request);
-    planner_request.type >= RequestType::StopMove
-        ? this->manager_buffers_.emergency_request_queue->EnQueue(planner_request)
-        : this->manager_buffers_.request_queue->EnQueue(planner_request);
+    const bool queued = planner_request.type >= RequestType::StopMove
+                            ? this->manager_buffers_.emergency_request_queue->EnQueue(planner_request)
+                            : this->manager_buffers_.request_queue->EnQueue(planner_request);
+    const auto t7 = trace_drag ? utils::LatencyTraceTime::Now() : utils::LatencyTraceTime{};
     response->request_id = planner_request.request_id;
+
+    // 延后输出入口时间，避免新增日志开销计入 T7-T6。
+    if (trace_drag) {
+        LOG_INFO << "[DragLatency] T6 service_entry request_id=" << planner_request.request_id
+                 << " property=" << request->property_type << " value=" << request->value << " mono_ns=" << t6.mono_ns
+                 << " wall=" << t6.WallTime();
+        LOG_INFO << "[DragLatency] T7 enqueue_done request_id=" << planner_request.request_id
+                 << " queued=" << static_cast<uint32_t>(queued) << " mono_ns=" << t7.mono_ns
+                 << " wall=" << t7.WallTime();
+    }
 
     RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, value: %s", planner_request.request_id,
                 request->property_type.c_str(), request->value.c_str());
