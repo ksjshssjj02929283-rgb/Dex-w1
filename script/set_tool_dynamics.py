@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+import math
 import os
 import sys
 import yaml
@@ -28,84 +29,93 @@ def print_restart_hint():
     input("按 Enter 继续...")
 
 
-def get_td(cfg):
-    if "tool_dynamics" not in cfg:
-        cfg["tool_dynamics"] = {
-            "tool_primary_enabled": True,
-            "tool_secondary_enabled": True,
-        }
-    return cfg["tool_dynamics"]
+def get_td(config, arm):
+    key = f"tool_dynamics_{arm}"
+    if not isinstance(config.get(key), dict):
+        config[key] = {"enabled": True,
+                       "Default": {"mass_kg": 0.0, "com_m": [0.0, 0.0, 0.0]}}
+    return config[key]
+
+
+def valid_tool_params(params):
+    if not isinstance(params, dict):
+        return False
+    com = params.get("com_m")
+    if not isinstance(com, list) or len(com) != 3:
+        return False
+    try:
+        if any(isinstance(v, bool) for v in [params["mass_kg"], *com]):
+            return False
+        mass = float(params["mass_kg"])
+        return math.isfinite(mass) and mass >= 0.0 and all(math.isfinite(float(v)) for v in com)
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return False
 
 
 def resolve_tool_name(td, hand_type):
-    if not hand_type or hand_type == "null":
-        return None
-    if hand_type in td and isinstance(td[hand_type], dict):
+    if hand_type and hand_type != "null" and valid_tool_params(td.get(hand_type)):
         return hand_type
-    if "Default" in td and isinstance(td["Default"], dict):
+    if valid_tool_params(td.get("Default")):
         return "Default"
     return None
 
 
-def describe_effective_tool(td, config_key, enabled_key):
-    if not td.get(enabled_key, False):
+def tool_enabled(td):
+    value = td.get("enabled", False)
+    if isinstance(value, bool):
+        return value
+    return isinstance(value, str) and value.lower() in ("true", "yes", "on", "y")
+
+
+def describe_effective_tool(td, hand_type):
+    if not tool_enabled(td):
         return "已禁用"
-    hand_type = cfg.get(config_key)
     tool_name = resolve_tool_name(td, hand_type)
+    if not tool_name:
+        return "无有效配置，使用零质量"
+    params = td[tool_name]
+    detail = f"mass_kg={params['mass_kg']}, com_m={params['com_m']}"
+    if float(params["mass_kg"]) == 0.0:
+        detail += "，零质量不产生补偿"
     if tool_name == "Default":
-        return f"Default（{hand_type} 未匹配，使用默认配置）"
-    if tool_name:
-        return tool_name
-    if not hand_type or hand_type == "null":
-        return "未配置手型"
-    return f"无有效配置（{hand_type} 未匹配且无 Default）"
+        return f"Default（手型为空/null、未匹配或参数无效；{detail}）"
+    return f"{tool_name}（{detail}）"
 
 
 def print_header():
     print("\n========= 末端工具配置 =========")
-    print("")
-    td = get_td(cfg)
-    print(f"  tool_primary_enabled   : {'true' if td.get('tool_primary_enabled', False) else 'false'}")
-    print(f"  tool_secondary_enabled : {'true' if td.get('tool_secondary_enabled', False) else 'false'}")
-    print("")
-    print("  当前生效工具:")
-    print(f"    primary（左手）  : {describe_effective_tool(td, 'left_hand_type', 'tool_primary_enabled')}")
-    print(f"    secondary（右手）: {describe_effective_tool(td, 'right_hand_type', 'tool_secondary_enabled')}")
-    print("")
-    tools = [(k, v) for k, v in td.items() if k not in ("tool_primary_enabled", "tool_secondary_enabled")]
-    if tools:
-        print("  所有末端工具:")
-        for name, params in tools:
-            mass = params.get("mass_kg", "?")
-            com = params.get("com_m", "?")
-            print(f"    {name}: mass_kg={mass}, com_m={com}")
-    else:
-        print("  (无末端工具)")
+    for arm, config_key in (("primary", "left_hand_type"), ("secondary", "right_hand_type")):
+        td = get_td(cfg, arm)
+        print(f"\n  tool_dynamics_{arm}.enabled: {tool_enabled(td)}")
+        print(f"  当前生效工具: {describe_effective_tool(td, cfg.get(config_key))}")
+        print("  本侧工具参数:")
+        for name, params in td.items():
+            if name != "enabled":
+                print(f"    {name}: {params}")
     print("")
 
 
 def edit_enable(which):
-    td = get_td(cfg)
-    key = f"tool_{which}_enabled"
-    cur = td.get(key, False)
-    print(f"\n当前: {key} = {'true' if cur else 'false'}")
+    td = get_td(cfg, which)
+    cur = tool_enabled(td)
+    print(f"\n当前: tool_dynamics_{which}.enabled = {cur}")
     raw = input("新值 (true/false): ").strip().lower()
     if raw in ("true", "1", "yes", "on"):
-        td[key] = True
+        td["enabled"] = True
     elif raw in ("false", "0", "no", "off"):
-        td[key] = False
+        td["enabled"] = False
     else:
         print("无效输入，取消操作")
         return
     save_config(cfg)
-    print(f"[OK] {key} = {'true' if td[key] else 'false'}")
+    print(f"[OK] tool_dynamics_{which}.enabled = {td['enabled']}")
     print_restart_hint()
 
 
-def edit_tool_params(td, name, params, allow_delete=True):
+def edit_tool_params(td, name, params, arm, allow_delete=True):
     while True:
         clear_screen()
-        print(f"\n========= 编辑末端工具: {name} =========")
+        print(f"\n========= 编辑末端工具: {arm}/{name} =========")
         print(f"  1: mass_kg = {params.get('mass_kg', '?')}")
         print(f"  2: com_m   = {params.get('com_m', '?')}")
         if allow_delete:
@@ -124,7 +134,11 @@ def edit_tool_params(td, name, params, allow_delete=True):
         elif cmd == "1":
             v = input(f"新 mass_kg (当前={params.get('mass_kg')}): ").strip()
             try:
-                params["mass_kg"] = float(v)
+                mass = float(v)
+                if not math.isfinite(mass) or mass < 0.0:
+                    print("质量必须是有限的非负数")
+                    continue
+                params["mass_kg"] = mass
                 save_config(cfg)
                 print(f"[OK] mass_kg = {params['mass_kg']}")
                 print_restart_hint()
@@ -135,8 +149,8 @@ def edit_tool_params(td, name, params, allow_delete=True):
             raw = input("新 com_m (x y z): ").strip()
             try:
                 parts = [float(x) for x in raw.split()]
-                if len(parts) != 3:
-                    print("需要 3 个值")
+                if len(parts) != 3 or not all(math.isfinite(v) for v in parts):
+                    print("需要 3 个有限数值")
                     continue
                 params["com_m"] = parts
                 save_config(cfg)
@@ -157,7 +171,6 @@ def edit_tool_params(td, name, params, allow_delete=True):
 
 
 def edit_current_tool():
-    td = get_td(cfg)
     current_tools = [
         ("primary", "left_hand_type"),
         ("secondary", "right_hand_type"),
@@ -182,10 +195,11 @@ def edit_current_tool():
         return
 
     arm, config_key = current_tools[idx]
+    td = get_td(cfg, arm)
     hand_type = cfg.get(config_key)
     tool_name = resolve_tool_name(td, hand_type)
     if tool_name == "Default":
-        print(f"[INFO] {config_key}={hand_type or '未配置'} 未匹配，{arm} 当前使用 Default")
+        print(f"[INFO] {config_key}={hand_type or '未配置'} 为空/null、未匹配或参数无效，{arm} 当前使用本侧 Default")
     elif not tool_name:
         print(f"{config_key}={hand_type or '未配置'} 未匹配，且没有 Default 配置")
         return
@@ -194,20 +208,22 @@ def edit_current_tool():
     if not isinstance(params, dict):
         print(f"工具配置 '{tool_name}' 无效")
         return
-    edit_tool_params(td, tool_name, params, allow_delete=False)
+    edit_tool_params(td, tool_name, params, arm, allow_delete=False)
 
 
 def edit_tool():
-    td = get_td(cfg)
-    tools = [(k, v) for k, v in td.items() if k not in ("tool_primary_enabled", "tool_secondary_enabled")]
+    tools = []
+    for arm in ("primary", "secondary"):
+        td = get_td(cfg, arm)
+        tools.extend((arm, name, params) for name, params in td.items() if name != "enabled")
 
     if not tools:
         print("\n无已配置的末端工具，请先添加。")
         return
 
     print("\n选择要编辑的末端工具:")
-    for i, (name, params) in enumerate(tools):
-        print(f"  {i+1}: {name}")
+    for i, (arm, name, params) in enumerate(tools):
+        print(f"  {i+1}: {arm}/{name}")
     print("  b: 返回")
 
     raw = input("请输入选项: ").strip()
@@ -223,8 +239,12 @@ def edit_tool():
         print("无效输入")
         return
 
-    name, params = tools[idx]
-    edit_tool_params(td, name, params)
+    arm, name, params = tools[idx]
+    td = get_td(cfg, arm)
+    if not isinstance(params, dict):
+        print(f"工具配置 '{arm}/{name}' 无效")
+        return
+    edit_tool_params(td, name, params, arm, allow_delete=name != "Default")
 
 
 def run_interactive():
@@ -263,6 +283,12 @@ def main():
 
     global cfg
     cfg = load_config()
+    # 编辑器只依赖左右独立的工具参数表, 不依赖具体配置版本号。
+    if not isinstance(cfg, dict) or not all(
+        isinstance(cfg.get(f"tool_dynamics_{arm}"), dict) for arm in ("primary", "secondary")
+    ):
+        print("配置缺少左右独立的工具参数表，请重启 w1 服务更新配置或检查配置内容后再编辑。")
+        sys.exit(1)
 
     if args.list:
         print_header()
