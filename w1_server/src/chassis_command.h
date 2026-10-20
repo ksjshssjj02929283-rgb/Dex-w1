@@ -6,7 +6,7 @@
 //     所以参数热更新在实时侧零同步开销，也不会出现"参数改了一半"的撕裂读。
 //   · 指令生成是**纯函数**：只依赖 (目标, 反馈)，无成员状态、无分配、无锁、无日志，
 //     可以直接在 1 kHz SCHED_FIFO 线程里调用（D5）。
-//   · 仲裁状态只在写入侧（ROS 回调，由互斥回调组串行化）维护，实时侧只做超时判定。
+//   · 仲裁状态只在写入侧（ROS 回调，由互斥回调组串行化）维护；实时侧管理启动/异常保持与目标时效。
 //
 // 不依赖 ROS，可脱离节点单测。
 
@@ -218,6 +218,79 @@ inline bool IsTargetExpired(const ChassisTarget& t, int64_t now_ns) {
     const double limit = (t.source == ChassisCommandSource::ParkingAction) ? t.config.arbiter.parking_timeout_sec
                                                                            : t.config.arbiter.velocity_timeout_sec;
     return age >= limit;
+}
+
+struct ChassisControlDecision {
+    bool feedback_valid = false;
+    bool idle = true;
+    bool hold_steering = true;
+    int neutral = 1;
+    std::array<double, OMNI_MOTOR_NUM> hold_angle_rad{};
+};
+
+/// 仅由实时线程持有，不改变共享内存协议。
+/// 启动阶段禁止使能；放行后异常时保持使能，以零速和锁存的反馈舵角停车。
+class ChassisControlGuard {
+public:
+    // robot_ready 由调用方合并整机的关节反馈/ready；纯底盘不依赖上半身状态。
+    ChassisControlDecision Update(const ChassisTarget& target, bool has_target, const WheelFeedback& fb,
+                                  bool chassis_feedback_valid, bool robot_ready, int64_t now_ns) {
+        const bool is_omni = target.config.chassis_type == ChassisType::Omni;
+        const bool steering_feedback_valid =
+            IsSteeringFeedbackValid(fb, chassis_feedback_valid, target.config.omni.steer_limit_rad);
+        if (is_omni && steering_feedback_valid) last_feedback_angle_ = fb.angle_rad;
+
+        ChassisControlDecision decision;
+        decision.feedback_valid = chassis_feedback_valid && (!is_omni || steering_feedback_valid);
+        const bool motion_allowed = decision.feedback_valid && robot_ready;
+        const int requested_neutral = has_target ? target.neutral : 0;
+
+        if (!startup_released_) {
+            // 下使能等待期间位置可能变化，首次使能必须使用最新可信反馈，而非首次收到的角度。
+            if (is_omni && steering_feedback_valid) hold_angle_ = last_feedback_angle_;
+            // 启动也视作恢复点：首次使能帧只保持位置，放行前收到的目标全部失效。
+            recovery_gate_.AllowsMotion(target, false, now_ns);
+            if (motion_allowed && requested_neutral == 0) startup_released_ = true;
+        } else if (!motion_allowed && was_motion_allowed_) {
+            // 异常入口只捕获一次；本周期反馈无效时 last_feedback_angle_ 仍是最后可信值。
+            hold_angle_ = last_feedback_angle_;
+        }
+
+        if (!motion_allowed) hold_steering_ = true;
+        const bool target_after_recovery =
+            recovery_gate_.AllowsMotion(target, startup_released_ && motion_allowed, now_ns);
+        decision.idle =
+            !has_target || !target_after_recovery || requested_neutral != 0 || IsTargetExpired(target, now_ns);
+        if (!decision.idle) hold_steering_ = false;
+
+        decision.hold_steering = hold_steering_;
+        decision.hold_angle_rad = hold_angle_;
+        // 等待新目标不影响闭环使能；显式下使能仍优先。
+        decision.neutral = startup_released_ ? requested_neutral : 1;
+        was_motion_allowed_ = motion_allowed;
+        return decision;
+    }
+
+private:
+    bool startup_released_ = false;
+    bool was_motion_allowed_ = false;
+    bool hold_steering_ = true;
+    std::array<double, OMNI_MOTOR_NUM> last_feedback_angle_{};
+    std::array<double, OMNI_MOTOR_NUM> hold_angle_{};
+    ChassisTargetRecoveryGate recovery_gate_;
+};
+
+/// 写共享内存前统一应用，确保速度整形或普通指令生成不能覆盖停车结果。
+inline void ApplyChassisControlDecision(const ChassisControlDecision& decision, ChassisControl* out) {
+    out->chassis_neutral = decision.neutral;
+    if (decision.idle) {
+        out->chassis_left_velocity = 0.0;
+        out->chassis_right_velocity = 0.0;
+        for (double& speed : out->chassis_motor_velocity) speed = 0.0;
+    }
+    if (out->chassis_mode == static_cast<int>(ChassisType::Omni) && decision.hold_steering) {
+        std::copy(decision.hold_angle_rad.begin(), decision.hold_angle_rad.end(), out->chassis_motor_direction);
+    }
 }
 
 /// 全向逆解 + 双解择近 + 对齐门控 + 速度趋近。与切分前 `ChassisVelocityControlCallback` 逐行等价。

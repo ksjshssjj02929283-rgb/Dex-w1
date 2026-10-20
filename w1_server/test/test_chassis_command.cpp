@@ -437,7 +437,9 @@ TEST(ChassisCommand, DiffModeDispatchesToDifferentialInverse) {
     ChassisTarget t = MakeTarget(0.6, 0.0, 0.4);
     t.config.chassis_type = ChassisType::DiffDrive;
     ChassisControl out{};
-    GenerateChassisCommand(t, WheelFeedback{}, false, &out);
+    WheelFeedback fb{};
+    fb.valid = true;  // 测试正常逆解，需满足反馈有效的前提。
+    GenerateChassisCommand(t, fb, false, &out);
     EXPECT_EQ(out.chassis_mode, static_cast<int>(ChassisType::DiffDrive));
     EXPECT_GT(out.chassis_right_velocity, out.chassis_left_velocity);
 }

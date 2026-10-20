@@ -104,8 +104,7 @@ void RobotServer::TorqueControlThreadFunc() {
     auto& control_shm_instance = ControlSharedMemory::GetInstance();
 
     Int64 loop_counter = 0;
-    chassis_node::ChassisTargetRecoveryGate chassis_target_recovery_gate;
-    bool steering_command_initialized = false;
+    chassis_node::ChassisControlGuard chassis_control_guard;
     this->is_robot_ready_ = false;
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     double usage_sum = 0.0;
@@ -460,30 +459,13 @@ void RobotServer::TorqueControlThreadFunc() {
         }
         wheel_fb.left_rpm = robot_feedback_.chassis_feedback.left_velocity;
         wheel_fb.right_rpm = robot_feedback_.chassis_feedback.right_velocity;
-        const bool is_omni = chassis_target.config.chassis_type == utils::ChassisType::Omni;
-        const bool steering_feedback_valid = chassis_node::IsSteeringFeedbackValid(
-            wheel_fb, chassis_feedback_valid, chassis_target.config.omni.steer_limit_rad);
-        // 首次可信反馈建立保持位置；不要求上半身 ready，异常恢复时也不重复初始化。
-        if (is_omni && !steering_command_initialized && steering_feedback_valid) {
-            for (size_t i = 0; i < OMNI_MOTOR_NUM; ++i) {
-                robot_control_.chassis_control.chassis_motor_direction[i] = wheel_fb.angle_rad[i];
-            }
-            steering_command_initialized = true;
-        }
-        // 纯底盘只要求底盘反馈；整机模式要求底盘和关节反馈同时有效。
-        const bool control_feedback_valid =
-            chassis_feedback_valid && (!is_omni || steering_feedback_valid) &&
-            (robot_mode_ == RobotMode::Chassis || joint_feedback_valid);
-        wheel_fb.valid = control_feedback_valid;
-        // 整机未就绪时持续下发零轮速；纯底盘没有上半身 ready 状态，仍按反馈和目标有效性控制。
-        const bool chassis_motion_allowed =
-            control_feedback_valid && (robot_mode_ == RobotMode::Chassis || is_robot_ready_);
-        // 每周期更新恢复门控（无目标时也更新），恢复后不续跑停止前或异常期间收到的目标。
-        const bool target_after_recovery =
-            chassis_target_recovery_gate.AllowsMotion(chassis_target, chassis_motion_allowed, now_ns);
-        const bool chassis_idle =
-            !has_target || !target_after_recovery ||
-            chassis_node::IsTargetExpired(chassis_target, now_ns);
+        // 纯底盘豁免上半身状态；整机要求关节反馈有效且 ready。
+        const bool chassis_robot_ready =
+            robot_mode_ == RobotMode::Chassis || (joint_feedback_valid && is_robot_ready_);
+        const auto chassis_decision = chassis_control_guard.Update(
+            chassis_target, has_target, wheel_fb, chassis_feedback_valid, chassis_robot_ready, now_ns);
+        wheel_fb.valid = chassis_decision.feedback_valid;
+        const bool chassis_idle = chassis_decision.idle;
         ChassisControl chassis_cmd{};
         chassis_node::GenerateChassisCommand(chassis_target, wheel_fb, chassis_idle, &chassis_cmd);
 
@@ -504,18 +486,12 @@ void RobotServer::TorqueControlThreadFunc() {
         } else {
             for (size_t i = 0; i < OMNI_MOTOR_NUM; ++i) {
                 robot_control_.chassis_control.chassis_motor_velocity[i] = chassis_cmd.chassis_motor_velocity[i];
-                // 异常及恢复后等待新目标期间保留上一帧舵角指令，不用反馈或旧目标覆盖。
-                if (target_after_recovery) {
-                    robot_control_.chassis_control.chassis_motor_direction[i] = chassis_cmd.chassis_motor_direction[i];
-                }
+                robot_control_.chassis_control.chassis_motor_direction[i] = chassis_cmd.chassis_motor_direction[i];
             }
             robot_control_.chassis_control.chassis_estop = chassis_cmd.chassis_estop;
         }
-        // 差速/全向统一处理使能：异常、等待恢复后的新目标或舵角尚未初始化时下使能。
-        // 普通目标超时只清零驱动速度，不触发下使能；保留目标主动要求的 neutral。
-        const bool chassis_enable_allowed =
-            has_target && target_after_recovery && (!is_omni || steering_command_initialized);
-        robot_control_.chassis_control.chassis_neutral = chassis_enable_allowed ? chassis_target.neutral : 1;
+        // 最终保护：启动前下使能；运行异常零速并锁存反馈舵角，保持闭环使能。
+        chassis_node::ApplyChassisControlDecision(chassis_decision, &robot_control_.chassis_control);
         RobotControl robot_control_temp = robot_control_;
         SortControlByJointName(robot_control_temp);
         robot_control_temp.timestamp = this->now().nanoseconds();
