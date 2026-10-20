@@ -2,6 +2,8 @@
 
 #include <unistd.h>
 
+#include <charconv>
+#include <cstdint>
 #include <cstdlib>
 
 namespace robot_server_lib {
@@ -18,6 +20,20 @@ ChassisType GetChassisTypeFromConfig(const std::filesystem::path& robot_cfg_path
 }
 
 namespace {
+// 接受 v06/v6 或纯数字 6, 按整数比较; 缺失/空版本视为 0。
+// 完整校验数字部分, 避免 v7abc 或溢出值被截断后参与升级判断。
+std::uint64_t ConfigVersionNumber(const std::string& version) {
+    if (version.empty()) return 0;
+    const char* begin = version.data() + (version.front() == 'v' ? 1 : 0);
+    const char* end = version.data() + version.size();
+    std::uint64_t number = 0;
+    const auto parsed = std::from_chars(begin, end, number);
+    if (parsed.ec != std::errc{} || parsed.ptr != end) {
+        throw std::runtime_error("Invalid config_version: " + version + "; expected v followed by digits or digits");
+    }
+    return number;
+}
+
 // 递归合并用户节点与默认节点: 将默认配置中存在而用户配置中缺失的字段补充进去
 YAML::Node MergeYamlNode(const YAML::Node& user_node,
                          const YAML::Node& default_node,
@@ -61,6 +77,7 @@ void AtomicWriteYaml(const std::filesystem::path& target_path, const YAML::Node&
     }
     std::filesystem::rename(tmp_path, target_path);
 }
+
 }  // namespace
 
 void CheckConfig(const std::filesystem::path& default_cfg_path, const std::filesystem::path& user_cfg_path) {
@@ -74,13 +91,18 @@ void CheckConfig(const std::filesystem::path& default_cfg_path, const std::files
         YAML::Node default_config = YAML::LoadFile(default_cfg_path.string());
         YAML::Node user_config = YAML::LoadFile(user_cfg_path.string());
 
-        // 检查配置版本，如果默认配置版本领先，则直接覆盖历史用户配置
-        std::string default_version =
-            default_config["config_version"] ? default_config["config_version"].as<std::string>() : "";
-        std::string user_version = user_config["config_version"] ? user_config["config_version"].as<std::string>() : "";
+        // 默认配置版本更高时, 按原有升级策略整份重新生成用户配置。
+        std::string default_version = default_config["config_version"] && !default_config["config_version"].IsNull()
+                                          ? default_config["config_version"].as<std::string>()
+                                          : "";
+        std::string user_version = user_config["config_version"] && !user_config["config_version"].IsNull()
+                                       ? user_config["config_version"].as<std::string>()
+                                       : "";
+        const auto default_version_number = ConfigVersionNumber(default_version);
+        const auto user_version_number = ConfigVersionNumber(user_version);
 
-        // 字符串比较版本号，假设版本格式为 "vXX"，直接比较字符串即可判断版本先后, 如果用户版本不存在则视为过旧需要覆盖
-        if (default_version > user_version) {
+        // 按数字比较: v9 < v10, v06 == v6; 用户版本缺失时按 0 处理。
+        if (default_version_number > user_version_number) {
             std::cout << "[INFO] Default config version (" << default_version << ") is newer than user config version ("
                       << (user_version.empty() ? "none" : user_version) << "). Replacing user config." << std::endl;
             // 先删除旧文件, 再用默认配置原子写入, 避免非原子 copy_file 导致并发撕裂
@@ -91,7 +113,6 @@ void CheckConfig(const std::filesystem::path& default_cfg_path, const std::files
         }
 
         bool modified = false;
-
         for (const auto& default_node : default_config) {
             std::string key = default_node.first.as<std::string>();
 
@@ -163,6 +184,66 @@ void SyncHardwareConfig(const std::filesystem::path& robot_cfg_path) {
     }
 }
 
+dynamics::tool_compensation::ToolGravityCompensationConfig ParseToolGravityCompensationConfig(
+    const YAML::Node& tool_node, const std::string& hand_type, const char* arm_name) {
+    dynamics::tool_compensation::ToolGravityCompensationConfig result;
+    if (!tool_node || !tool_node.IsMap()) {
+        LOG_WARN << "Tool gravity compensation (" << arm_name << "): missing/invalid tool table, using zero mass";
+        return result;
+    }
+    bool enabled = false;
+    try {
+        enabled = tool_node["enabled"] && tool_node["enabled"].as<bool>();
+    } catch (const YAML::Exception&) {
+        LOG_WARN << "Tool gravity compensation (" << arm_name << "): invalid enabled switch, disabled";
+        return result;
+    }
+    if (!enabled) {
+        LOG_INFO << "Tool gravity compensation disabled by switch (" << arm_name << ")";
+        return result;
+    }
+
+    // 先完整校验数值, 再决定是否回退; 零质量是合法配置。
+    auto read_params = [](const YAML::Node& node, dynamics::tool_compensation::ToolGravityCompensationConfig& dst) {
+        if (!node || !node.IsMap() || !node["mass_kg"] || !node["com_m"] || !node["com_m"].IsSequence() ||
+            node["com_m"].size() != 3) {
+            return false;
+        }
+        try {
+            const double mass = node["mass_kg"].as<double>();
+            Vector3d com;
+            for (int i = 0; i < 3; ++i) com[i] = node["com_m"][i].as<double>();
+            if (!std::isfinite(mass) || mass < 0.0 || !com.allFinite()) return false;
+            dst.mass_kg = mass;
+            dst.com_m = com;
+            dst.gravity_enabled = mass > FloatZeroTol;
+            return true;
+        } catch (const YAML::Exception&) {
+            return false;
+        }
+    };
+
+    std::string selected_type = hand_type;
+    const bool has_hand_type = !hand_type.empty() && hand_type != "null";
+    if (!has_hand_type || !read_params(tool_node[hand_type], result)) {
+        selected_type = "Default";
+        if (!read_params(tool_node["Default"], result)) {
+            LOG_WARN << "Tool gravity compensation (" << arm_name << "): hand_type=" << hand_type
+                     << " missing/invalid and no valid Default, using zero mass";
+            return result;
+        }
+        LOG_INFO << "Tool gravity compensation (" << arm_name << "): hand_type=" << hand_type
+                 << " empty/null/unmatched/invalid, using Default";
+    }
+    std::cout << "[INFO] Tool gravity compensation (" << arm_name << ", type=" << selected_type
+              << "): mass_kg=" << result.mass_kg << ", com_m=" << result.com_m.transpose()
+              << (result.gravity_enabled ? ", enabled" : ", zero mass: skipped") << "\n";
+    LOG_INFO << "Tool gravity compensation (" << arm_name << ", type=" << selected_type
+             << "): mass_kg=" << result.mass_kg << ", com_m=" << result.com_m.transpose()
+             << ", gravity_enabled=" << result.gravity_enabled;
+    return result;
+}
+
 RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
     YAML::Node config;
     RobotParams params;
@@ -217,10 +298,10 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         exit(EXIT_FAILURE);
     }
 
-    if (config["left_hand_type"]) {
+    if (config["left_hand_type"] && !config["left_hand_type"].IsNull()) {
         params.left_hand_type = config["left_hand_type"].as<std::string>();
     }
-    if (config["right_hand_type"]) {
+    if (config["right_hand_type"] && !config["right_hand_type"].IsNull()) {
         params.right_hand_type = config["right_hand_type"].as<std::string>();
     }
 
@@ -258,77 +339,11 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
         params.ee_secondary_name = config["ee_secondary_name"].as<std::string>();
     }
 
-    // 解析末端工具重力补偿参数 (tool_dynamics 块, 按手类型索引 + 独立开关)
-    // left_hand_type / right_hand_type 已在上方解析, 在此作为 tool_dynamics 下的工具名 key
-    {
-        const auto tool_dyn_node = config["tool_dynamics"];
-        auto parse_tool = [&tool_dyn_node](const std::string& hand_type, bool enabled,
-                                           dynamics::tool_compensation::ToolGravityCompensationConfig& tool_cfg,
-                                           const char* arm_name) {
-            if (!tool_dyn_node) {
-                return;
-            }
-            if (!enabled) {
-                std::cout << "[INFO] Tool gravity compensation disabled by switch (" << arm_name << ")\n";
-                LOG_INFO << "Tool gravity compensation disabled by switch (" << arm_name << ")";
-                return;
-            }
-            if (hand_type.empty() || hand_type == "null") {
-                std::cout << "[INFO] Tool gravity compensation disabled (" << arm_name << "): no hand_type specified\n";
-                LOG_INFO << "Tool gravity compensation disabled (" << arm_name << "): no hand_type specified";
-                return;
-            }
-            // 优先按手类型匹配, 匹配失败则回退到 Default 默认值
-            auto is_valid_tool_node = [](const YAML::Node& n) {
-                return n && n["com_m"] && n["com_m"].IsSequence() && n["com_m"].size() == 3 && n["mass_kg"];
-            };
-            const auto tool_node = tool_dyn_node[hand_type];
-            const auto default_node = tool_dyn_node["Default"];
-            YAML::Node selected_node;
-            std::string selected_type;
-            if (is_valid_tool_node(tool_node)) {
-                selected_node = tool_node;
-                selected_type = hand_type;
-            } else if (is_valid_tool_node(default_node)) {
-                selected_node = default_node;
-                selected_type = "Default";
-                std::cout << "[INFO] Tool gravity compensation: tool_dynamics[" << hand_type
-                          << "] not matched, falling back to Default (" << arm_name << ")\n";
-                LOG_INFO << "Tool gravity compensation: tool_dynamics[" << hand_type
-                         << "] not matched, falling back to Default (" << arm_name << ")";
-            } else {
-                std::cout << "[WARN] Tool gravity compensation: tool_dynamics[" << hand_type
-                          << "] missing or invalid and no valid Default, disabled (" << arm_name << ")\n";
-                LOG_WARN << "Tool gravity compensation: tool_dynamics[" << hand_type
-                         << "] missing or invalid and no valid Default, disabled (" << arm_name << ")";
-                return;
-            }
-            Vector3d com_m = Vector3d::Zero();
-            for (int i = 0; i < 3; ++i) {
-                com_m[i] = selected_node["com_m"][i].as<double>();
-            }
-            tool_cfg.mass_kg = selected_node["mass_kg"].as<double>();
-            tool_cfg.com_m = com_m;  // 直接使用米为单位的值
-            if (std::isfinite(tool_cfg.mass_kg) && tool_cfg.mass_kg > FloatZeroTol && tool_cfg.com_m.allFinite()) {
-                tool_cfg.gravity_enabled = true;
-                std::cout << "[INFO] Tool gravity compensation enabled (" << arm_name << ", type=" << selected_type
-                          << "): mass_kg=" << tool_cfg.mass_kg << ", com_m=" << tool_cfg.com_m.transpose() << "\n";
-                LOG_INFO << "Tool gravity compensation enabled (" << arm_name << ", type=" << selected_type
-                         << "): mass_kg=" << tool_cfg.mass_kg << ", com_m=" << tool_cfg.com_m.transpose();
-            } else {
-                std::cout << "[WARN] Tool gravity compensation (" << arm_name << ", type=" << selected_type
-                          << ") mass_kg/com_m invalid, disabled\n";
-                LOG_WARN << "Tool gravity compensation (" << arm_name << ", type=" << selected_type
-                         << ") mass_kg/com_m invalid, disabled";
-            }
-        };
-        const bool primary_enabled =
-            tool_dyn_node && tool_dyn_node["tool_primary_enabled"] && tool_dyn_node["tool_primary_enabled"].as<bool>();
-        const bool secondary_enabled = tool_dyn_node && tool_dyn_node["tool_secondary_enabled"] &&
-                                       tool_dyn_node["tool_secondary_enabled"].as<bool>();
-        parse_tool(params.left_hand_type, primary_enabled, params.tool_dynamic_primary, "primary");
-        parse_tool(params.right_hand_type, secondary_enabled, params.tool_dynamic_secondary, "secondary");
-    }
+    // 左右手仅检索各自参数表, null 手型也读取本侧 Default。
+    params.tool_dynamic_primary =
+        ParseToolGravityCompensationConfig(config["tool_dynamics_primary"], params.left_hand_type, "primary");
+    params.tool_dynamic_secondary =
+        ParseToolGravityCompensationConfig(config["tool_dynamics_secondary"], params.right_hand_type, "secondary");
 
     std::filesystem::path robot_urdf_path;
     std::filesystem::path primary_arm_urdf_path;

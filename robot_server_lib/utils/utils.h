@@ -34,6 +34,10 @@ namespace utils {
 ChassisType GetChassisTypeFromConfig(const std::filesystem::path& robot_cfg_path);
 RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path);
 
+// 从本侧工具参数表匹配手型; 空/null/未匹配/非法参数回退到本侧 Default。
+dynamics::tool_compensation::ToolGravityCompensationConfig ParseToolGravityCompensationConfig(
+    const YAML::Node& tool_node, const std::string& hand_type, const char* arm_name);
+
 // 配置文件管理: 以默认配置为基准同步/补齐用户配置, 合并外部硬件配置
 void CheckConfig(const std::filesystem::path& default_cfg_path, const std::filesystem::path& user_cfg_path);
 void SyncHardwareConfig(const std::filesystem::path& robot_cfg_path);

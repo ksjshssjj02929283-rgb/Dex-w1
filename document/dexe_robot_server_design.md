@@ -270,11 +270,17 @@ TorqueControlThread 的力矩计算以逆动力学前馈为基础，并组合三
 
 1. 从已安装的 `w1_server` package share 目录定位默认 [`robot_config.yaml`](../w1_server/robot_config.yaml)。
 2. 创建 `~/dexe_robot_server_data/`；用户配置不存在时，以默认配置生成用户配置。
-3. 比较 `config_version`：默认版本更新时使用新默认配置替换旧用户配置；版本一致时递归补齐用户配置中缺失的字段和关节属性，保留已有参数。
+3. 提取 `config_version` 的数字部分进行比较（例如 `v9 < v10`、`v06 == v6`，也接受纯数字版本；缺失或空版本按 `0` 处理，非法格式或整数溢出会报错）。默认版本更高时，删除旧用户配置并按默认配置整份重新生成，`v06 → v07` 也遵循此规则；默认版本相同或更低时，保留已有用户参数，补齐缺失字段和关节属性。
 4. 将 `~/.cache/dexe_data/config.yaml` 中的硬件字段同步到默认配置和用户配置。
 5. `RobotServer` 加载用户配置，根据 `robot_type` 和 `version` 选择对应的型号配置块，并解析关节映射、限制、规划、控制和动力学参数。
 
 配置自动创建、补齐和硬件同步采用“临时文件写入后 `rename`”的方式原子替换，避免进程读到只写入了一部分的 YAML 文件。
+
+工具补偿从 `tool_dynamics_primary`（左臂）和 `tool_dynamics_secondary`（右臂）分别读取。每个参数块包含 `enabled`、`Default` 和按手型命名的参数节点。左右手型为 YAML `null`、字符串 `"null"`、空值、未匹配或参数非法时，读取本侧 `Default`；质量 `0.0` 是合法值，跳过工具补偿。`com_m` 为本侧 EE 坐标系下的质心偏移，单位米。`./set_w1.sh tool` 按侧编辑，修改后重启服务生效。
+
+工具编辑脚本通过检查左右工具参数表是否均为字典来判断配置是否兼容，不依赖具体的 `config_version` 数值。缺失或结构错误时提示更新或检查配置，并退出。
+
+默认 YAML 由 CMake 安装到 `install/w1_server/share/w1_server/robot_config.yaml`。`install.sh` 打包时再次用仓库中的源 YAML 更新包内默认配置，避免旧 install 副本被打包；旧版运行配置在服务启动时按默认配置重新生成。
 
 ### 5.2 主要参数
 
