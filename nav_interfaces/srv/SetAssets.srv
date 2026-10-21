@@ -1,4 +1,7 @@
 # 批量写入资产（X-Wiz 编辑页「保存」入口）。全部校验通过才应用，任一失败整体拒绝、内存不变。
+# map_name 空 = 当前已加载地图（行为与以前相同）；非空 = 指定任意一张图，此时直接读改写该图的资产文件
+# 并产生一份资产版本，必须给 expected_revision（来自 get_assets 的 revision）。
+# 编辑页「按单个资产保存」用 MODE_MERGE（新增 / 修改一条）与 MODE_REMOVE（删除一条）。
 uint8 MODE_REPLACE     = 0   # 整体替换：kinds 列出的类型以请求为准，缺席即删（X-Wiz 编辑页「保存」）
 uint8 MODE_MERGE       = 1   # 按 name/id upsert：存在覆盖、不存在新建、缺席项不动（单条编辑默认用这个）
 uint8 MODE_ADD_ONLY    = 2   # 只新增：任一项已存在 → E_ASSET_EXISTS(2203080)，整体不应用
@@ -18,6 +21,9 @@ uint8  mode
 uint8  kinds             # REPLACE 时只替换列出的类型，未列出的类型保持不变；0 = 全部。MERGE 忽略此字段。
                          # 与 GetAssets.kinds 对称：按类型读 → 编辑 → 按同类型 REPLACE 提交，不会误清其它类型
 uint64 expected_epoch    # 乐观锁：须等于 get_assets 返回的 map_epoch，否则 2203020；0 = 不校验（仅供本地编辑器如 RViz，X-Wiz 必须传实际值）
+string map_name          # 空 = 当前已加载地图；非空 = 指定地图
+string expected_revision # 乐观锁：须等于 get_assets 返回的 revision，否则 E_ASSET_REVISION_MISMATCH；
+                         # 非当前图必填，空 = 不校验（仅本机工具）；当前图给了也校验
 bool   save              # true：成功后立即原子落盘并产生一份版本（等价 save_assets）；false：不产版本，是否落盘随节点 auto_save 参数（默认 true）
 nav_interfaces/NavPoint[]      points
 nav_interfaces/AreaInfo[]      areas
@@ -36,3 +42,5 @@ uint32 routes_count
 uint32 junctions_count
 uint32 edges_count
 string[] rejected        # 校验失败项 "<kind>:<name|id>:<reason>"；非空则整体未应用
+string revision          # 写入后的新指纹，连续编辑免重读
+nav_interfaces/AssetIssue[] issues   # 写入后的存量失效清单

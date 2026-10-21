@@ -1,0 +1,23 @@
+# 地图对齐（结构化环境）。由 command_board 编排：
+#   ① align_map_tool --dry_run 估角（不改文件）→ ② 角度阈值校验 → ③ 停导航/停定位（当前地图）
+#   → ④ 备份 assets → ⑤ align_map_tool 正式执行 → ⑥ transform_assets_tool(0, 0, yaw)
+#   → ⑦ 失败回滚 → ⑧ 重载地图 + 启定位
+# 与 ResetMapOriginByXYYaw 的区别：那个由调用方给定角度，本服务的角度由工具自动估出并返回。
+# 底图旋转与资产旋转在同一次调用内串行完成，任一失败回滚，保证两者坐标始终一致。
+
+string  map_name          # 空 = 当前已加载地图
+bool    dry_run           # true = 只估角并返回，不修改任何文件
+float64 min_yaw_deg       # 小于此角度视为已对齐，跳过；<=0 表示用服务端默认（1.0，与 ALIGN-01 容差同源）
+bool    skip_assets       # true = 只转底图不转资产（危险，仅调试用；默认 false）
+---
+bool    success
+int32   error_code              # 0 = OK；非 0 见 NavSystemStatus 内的 2204xxx 常量
+float64 estimated_yaw_deg       # 估出的对齐角（折叠到 [0, 45]，带符号）
+float64 orthogonality_error_deg # δ = 两族墙的正交误差；用于判断残余角是否已达算法最优
+float64 rms_axis_residual_deg   # 加权 RMS 轴残差（诊断量）
+bool    applied                 # 是否真的执行了（dry_run / 低于阈值 / 失败时为 false）
+float64 residual_yaw_deg        # 执行后自检残余角；未执行时等于 estimated_yaw_deg
+int32   transformed_points      # 资产坐标变换（transform_assets_tool）换算的导航点数
+int32   transformed_areas       # 区域数
+int32   transformed_junctions   # 路网节点数
+string  message                 # 人可读描述（英文）

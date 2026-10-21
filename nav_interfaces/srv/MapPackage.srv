@@ -1,0 +1,44 @@
+# 地图导入导出：一个 zip 包只装一张图。op 必填，未填（0）或非法 → E_MAP_OP_INVALID。
+# 包内结构：manifest.json（清单：来源、元数据、每个文件的 sha256）+ <map_name>/slam/… + <map_name>/assets/…
+#
+# OP_EXPORT：把 map_name 这张图打包到本机 <map_folder>/.exports/<map_name>_<YYYYMMDD_HHMMSS>.zip。
+#   - 只读，不修改地图的任何文件；与底图编辑 / 回滚 / 对齐 / 替换 / 重设原点互斥，
+#     被占用或定位侧正在保存这张图 → E_MAP_IO_FAILED（稍后重试）
+#   - 地图不存在 → E_MAP_NOT_FOUND；磁盘空间不足 → E_MAP_NO_SPACE
+#   - 生成的文件保留 package_retention_min 分钟后自动清理，调用方应在此之前取走
+#
+# OP_IMPORT：把 file_path 指向的包导入为一张地图。file_path 必须在 <map_folder>/.imports/ 下。
+#   - 先解压到暂存目录逐项校验，全部通过才放进地图目录；任何一步失败都不会留下地图
+#   - 文件不可用 → E_MAP_IMPORT_FILE_INVALID；包不兼容（缺清单 / 版本不支持 / 路径不安全 /
+#     校验和不符 / 缺必需文件）→ E_MAP_IMPORT_INCOMPATIBLE；名字非法 → E_MAP_NAME_INVALID
+#   - 重名按 on_conflict 处理；落盘时目标名已存在就失败，绝不覆盖现有目录
+#   - 不加载地图，也不改变 map_state；调用方需重新 get_maps
+#   - 成功后删除上传的文件；失败时保留（保留期内可取回分析）
+#
+# 不依赖本节点的应急方式：命令行工具 map_package_tool（list / export / import），输出与本响应同名字段的 JSON。
+uint8 OP_EXPORT = 1
+uint8 OP_IMPORT = 2
+
+uint8 CONTENT_STANDARD = 0        # 底图三件 + .complete + 资产：备份、迁移
+uint8 CONTENT_FULL     = 1        # 标准 + 附带文件 + 底图 / 资产历史版本：排障
+
+uint8 ON_CONFLICT_RENAME    = 0   # 默认：自动改名 <name>_copy1、_copy2 …
+uint8 ON_CONFLICT_REJECT    = 1   # 重名 → E_MAP_NAME_EXISTS
+uint8 ON_CONFLICT_OVERWRITE = 2   # 旧图整个目录移入回收站后再导入；当前已加载的地图 → E_MAP_IN_USE；
+                                  # 回收站未启用 → E_MAP_TRASH_DISABLED
+
+uint8  op
+string map_name      # EXPORT 使用：要导出的图
+uint8  content       # EXPORT 使用
+string file_path     # IMPORT 使用：上传文件的本机绝对路径
+string new_name      # IMPORT 使用：导入后的名字，留空 = 包里的原名
+uint8  on_conflict   # IMPORT 使用
+---
+bool   success
+int32  error_code     # 0 = OK；非 0 见 MapState 内的错误码常量
+string message
+string map_name       # 本次涉及的地图：EXPORT = 被导出的图；IMPORT = 实际落盘的名字（可能带 _copyN）
+string file_path      # EXPORT：生成的包的本机绝对路径；IMPORT：空
+uint64 size_bytes     # EXPORT：包的大小（字节）
+string sha256         # EXPORT：整个 zip 文件的 sha256（小写十六进制），传输后可用于校验
+string trashed_entry  # IMPORT + OVERWRITE：旧图进回收站的条目名，可用 map_command OP_RESTORE 取回

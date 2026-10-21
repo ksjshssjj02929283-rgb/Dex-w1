@@ -1,10 +1,18 @@
-# 回退地图到指定版本（command_board 唯一回退入口，DEC-009）。
-# 底图/资产版本号各自独立指定 = 任意组合；皆空 = 各取对应 ring 最新一次。
-# command_board 直接从 slam/backups + assets/backups 原子恢复文件，再触发 map_manager 重下发。
-string map_version_ts      # 空 = 底图 ring 最新（slam/backups/backup.<ts>）
-string assets_version_ts   # 空 = 资产 ring 最新（assets/backups/map_assets.<ts>.json）
+# 回退任意一张地图的底图 + 资产，一次请求完成（command_board 编排，供 X-Wiz 等调用方使用）。
+# 本服务只做组合，文件层回滚都委托给各自的节点：
+#   - 底图：map_manager map_command OP_ROLLBACK（回滚前自动存版本，来源 rollback，可再回滚一次撤销）
+#   - 资产：map_asset_manager ~/rollback_assets（同样先存回滚前版本；是当前地图时由资产节点自行重载并重发资产与掩膜）
+# 执行顺序：先确认资产版本存在 → 回滚底图 → 回滚资产 → 目标是当前地图且底图有回滚时，触发 map_manager 重新加载
+#   （OP_LOAD，map_state.epoch +1，运行中的定位 / 导航按 epoch 重载，需要重新定位）；非当前地图只恢复文件。
+# 底图 / 资产版本号各自独立指定 = 任意组合；空 = 各取对应版本序列里最新一份；"none" = 该部分不回退；两者都不回退时拒绝。
+# 只回滚底图时资产务必传 "none"，否则会被恢复成资产版本序列里最新的一份。
+# 失败：success=false，看 message（本服务没有 error_code）；底图已回滚、资产回滚失败时会留下半截状态，需再次回滚。
+# 只想回滚其中一部分时，也可以直接用 map_command OP_ROLLBACK（当前地图再 OP_LOAD）或 rollback_assets，效果相同。
+string map_name            # 空 = 当前已加载地图；非空 = 任意一张地图（非当前地图只恢复文件，不重新下发）
+string map_version_ts      # 空 = 底图最新版本（slam/backups/backup.<ts>）；"none" = 不回退底图
+string assets_version_ts   # 空 = 资产最新版本（assets/backups/map_assets.<ts>.json）；"none" = 不回退资产
 ---
 bool   success
 string message
-string map_version_ts      # 实际回退到的底图版本
-string assets_version_ts   # 实际回退到的资产版本
+string map_version_ts      # 实际回退到的底图版本（未回退为空）
+string assets_version_ts   # 实际回退到的资产版本（未回退为空）

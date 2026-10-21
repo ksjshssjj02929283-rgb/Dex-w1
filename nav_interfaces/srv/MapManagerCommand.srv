@@ -1,14 +1,63 @@
 # 地图写操作（合并原 load_map / remove_map / rename_map）。
 # 三者在服务端同一 MutuallyExclusive 回调组内串行执行；op 显式声明，未填（0）即拒绝。
 # 护栏：REMOVE 当前地图 → E_MAP_IN_USE；RENAME 当前地图允许，但 epoch 递增触发下游重载。
-uint8 OP_LOAD   = 1
-uint8 OP_REMOVE = 2
-uint8 OP_RENAME = 3
+#
+# OP_RESTORE：把回收站条目取回为正常地图（整目录 rename，与归档时反向）。
+#   - 目标名已存在        → E_MAP_NAME_EXISTS（**绝不覆盖**；用 new_name 换个名字恢复）
+#   - 目标名 = 当前地图    → E_MAP_IN_USE（不在定位运行时换图）
+#   - 条目不存在          → E_MAP_NOT_FOUND
+#   - 回收站未启用        → E_MAP_TRASH_DISABLED
+#   语义是 move 不是 copy：它本就是 move 进去的，同挂载点原子；copy 会双倍占盘
+#   且留下「恢复完还剩一份」的歧义。
+#
+# OP_TRASH：把一张地图整目录移入回收站 <map_folder>/.map_trash/<name>_<YYYYMMDD_HHMMSS>/
+#   （与建图 overwrite 时的归档同一约定，可用 OP_RESTORE 取回）。
+#   - 当前地图            → E_MAP_IN_USE
+#   - 地图不存在          → E_MAP_NOT_FOUND
+#   - 回收站未启用        → E_MAP_TRASH_DISABLED（不会退化为硬删）
+#   成功时 message 形如 "map trashed: <name> -> <entry_name>"。
+#   与 OP_REMOVE（硬删）的区别：可恢复，且会参与回收站轮换清理。
+#
+# OP_EDIT_GRID：对指定地图的底图（slam/map.png）应用一组笔画，可以是任意一张图（不要求已加载）。
+#   - 先把 map.pbstream / map.png / map.yaml 三件备份成一个版本（backup_ts），可经 rollback_map 回退
+#   - 按 strokes 顺序栅格化写入；图像宽高与 origin 不变，map.pbstream 不动（不影响定位）
+#   - 重算 map.yaml 的面积，其余键原样保留
+#   - expected_revision 与当前底图指纹不符 → E_MAP_GRID_REVISION_MISMATCH（被别人改过，需重新读取）
+#   - 笔画非法（工具 / 形状 / 点数 / 宽度 / 坐标非有限值）→ E_MAP_EDIT_INVALID，底图不动
+#   - 编辑的是当前已加载地图 → requires_reload = true：导航仍在用旧底图，重新加载后生效
+#
+# OP_SET_DISPLAY_YAW：设置指定地图的显示朝向（写 map.yaml 的 display_yaw，弧度，服务端归一化到 (-π, π]）。
+#   只是显示元数据：坐标值、底图像素、定位、导航都不变，不需要重新加载。
+#   - display_yaw 非有限值 → E_MAP_EDIT_INVALID
+#
+# OP_ROLLBACK：把指定地图（任意一张，不要求已加载）的底图三件套恢复到某个版本（get_maps 的 MapInfo.versions）。
+#   - 恢复前先把当前三件套存成一个新版本（source = rollback），backup_ts 返回它——用它再回滚一次即可撤销
+#   - version_ts 空 = 最新一份；版本不存在或三件不齐 → E_MAP_VERSION_NOT_FOUND
+#   - 回滚的是当前已加载地图 → 只恢复文件、requires_reload = true，不自动重新下发；
+#     当前地图要「恢复并生效」请走 command_board rollback_map（底图 + 资产 + 重新下发）
+#
+# 响应语义按 op 区分：OP_LOAD 的 success 表示「已受理」，是否生效看 map_state.epoch 递增；
+# OP_EDIT_GRID / OP_SET_DISPLAY_YAW / OP_ROLLBACK 的 success 表示「已写盘完成」。
+uint8 OP_LOAD    = 1
+uint8 OP_REMOVE  = 2
+uint8 OP_RENAME  = 3
+uint8 OP_RESTORE = 4
+uint8 OP_TRASH   = 5
+uint8 OP_EDIT_GRID       = 6
+uint8 OP_SET_DISPLAY_YAW = 7
+uint8 OP_ROLLBACK        = 8
 
 uint8  op
-string map_name
-string new_name     # 仅 OP_RENAME 使用
+string map_name     # OP_RESTORE 时填回收站条目名（get_trashed_maps 的 entry_name）
+string new_name     # OP_RENAME 使用；OP_RESTORE 复用为「恢复成什么名字」，留空 = original_name
+nav_interfaces/GridStroke[] strokes   # OP_EDIT_GRID：本次保存的全部笔画，按顺序应用
+float32 display_yaw                   # OP_SET_DISPLAY_YAW：显示朝向（弧度）
+string  expected_revision             # OP_EDIT_GRID：读取时 get_maps 给出的 grid_revision；空 = 不校验（仅本机工具）
+string  version_ts                    # OP_ROLLBACK：要恢复到的版本（MapInfo.versions 的 version_ts）；空 = 最新一份
 ---
 bool   success
 int32  error_code   # 0 = OK；非 0 见 MapState 内的错误码常量
 string message
+string revision         # OP_EDIT_GRID / OP_ROLLBACK：写入后的新底图指纹，连续编辑免重读
+string backup_ts        # OP_EDIT_GRID / OP_ROLLBACK：本次改动前自动存下的版本（可回滚到它以撤销本次改动）
+bool   requires_reload  # OP_EDIT_GRID / OP_ROLLBACK：改的是当前已加载地图，需重新加载才对导航生效

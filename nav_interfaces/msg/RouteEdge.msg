@@ -20,8 +20,10 @@ float32  hold_direction
 float32  padding
 float32  max_speed
 
+# 路网宽度 m：机器人允许通行的范围，规划路径不得超出；0 = 不限定（沿线按机器人外接半径校验）。
+# 非 0 时不得小于机器人外接直径，保存时沿线按半宽校验可通行（E_ASSET_GEOMETRY_INVALID / width_too_small）
+float32  lane_width
 # 暂时不用
 float32  xy_tolerance
 float32  th_tolerance
-float32  lane_width
 string   obs_policy      # "STOP" | "DETOUR"

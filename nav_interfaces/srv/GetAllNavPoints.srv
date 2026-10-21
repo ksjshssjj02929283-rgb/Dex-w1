@@ -1,3 +1,5 @@
+# 兼容保留：dexe_robot_client 的导航客户端（navigation_client/features/nav_points.py）仍按此读取点位。
+# 新调用方一律用 GetAssets{kinds: KIND_POINTS}；robot_client 迁移后删除本接口。
 ---
 bool success
 nav_interfaces/NavPoint[] points

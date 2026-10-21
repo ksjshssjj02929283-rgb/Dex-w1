@@ -12,6 +12,7 @@ nav_interfaces/RoomInfo[]      rooms
 nav_interfaces/Route[]         routes       # 命名路线（点位序列）
 nav_interfaces/RouteJunction[] junctions    # 路网拓扑
 nav_interfaces/RouteEdge[]     edges
+nav_interfaces/AssetIssue[]    issues       # 当前图的存量失效清单（话题只表达当前图）
 
 # 地图资产域状态码（整机状态码体系）：模块 22 dexe_mobile_nav + 子模块 03 map_asset_manager + 状态序号 2 位 + 等级末位，共 7 位。
 # 等级：0 状态反馈 / 1 一级故障 / 2 二级故障 / 3 三级故障，可由 level = code % 10 取出，无需额外字段。
@@ -24,3 +25,7 @@ int32 E_ASSET_REF_UNRESOLVED = 2203050   # 引用的点位/节点在应用后的
 int32 E_ASSET_SAVE_FAILED    = 2203062   # 内存已应用，落盘失败（可重试 save）（等级 2）
 int32 E_ASSET_NOT_FOUND      = 2203070   # 单条接口：目标不存在（UPDATE_ONLY / REMOVE）（等级 0）
 int32 E_ASSET_EXISTS         = 2203080   # 单条接口：ADD_ONLY 时目标已存在（等级 0）
+int32 E_ASSET_MAP_NOT_FOUND  = 2203090   # 指定的地图不存在（含编辑期间被删除 / 改名）（等级 0）
+int32 E_ASSET_REVISION_MISMATCH = 2203100   # 资产已被其它写入方改过，需重新读取（等级 0）
+int32 E_ASSET_GEOMETRY_INVALID  = 2203110   # 几何校验不通过（落在障碍 / 未知 / 禁行区内或过近），原因见 rejected[]（等级 0）
+int32 E_ASSET_VERSION_NOT_FOUND = 2203120   # 资产版本不存在（rollback_assets）（等级 0）
