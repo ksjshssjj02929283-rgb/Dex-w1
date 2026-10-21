@@ -6,5 +6,6 @@ uint8 POWER_OFF = 2     # 关机 弃用
 uint8 CLEAR_ERROR = 3   # 清错
 uint8 RESET = 4         # 复位
 uint8 QUICKSTOP = 5     # 快速停止
+uint8 EMERGENCY_STOP = 6 # 硬件急停
 # 请求的系统指令
 uint8 command
