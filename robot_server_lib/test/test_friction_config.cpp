@@ -122,52 +122,92 @@ TEST_F(FrictionConfigTest, RejectsInvalidRatiosAndSupportsOldConfigDefaults) {
 }
 
 TEST(DragDampingTest, DeadzonePreservesNonFrictionFeedforwardIncludingAtRest) {
-    const double omega = 2.0 * std::acos(-1.0);
-    for (double velocity : {-0.199, -0.1, 0.0, 0.1, 0.199}) {
-        for (double friction : {-0.7, 0.0, 0.7}) {
-            for (double reference_speed : {0.1, 1.0, 2.0}) {
-                const double remaining_feedforward = 3.7 - friction;
-                EXPECT_DOUBLE_EQ(
-                    dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, omega, 0.0, friction),
-                    remaining_feedforward);
-                EXPECT_NEAR(
-                    dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, omega, 0.25, friction),
-                    remaining_feedforward + 0.3, 1e-12);
-                EXPECT_NEAR(
-                    dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, omega, 0.75, friction),
-                    remaining_feedforward - 0.3, 1e-12);
-                EXPECT_DOUBLE_EQ(
-                    dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.0, 0.2, reference_speed, omega, 0.25, friction),
-                    remaining_feedforward);
-                EXPECT_DOUBLE_EQ(
-                    dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, 0.0, 0.25, friction),
-                    remaining_feedforward);
+    for (const auto* friction_model : {"classic"}) {
+        const double omega = 2.0 * std::acos(-1.0);
+        for (double velocity : {-0.199, -0.1, 0.0, 0.1, 0.199}) {
+            for (double friction : {-0.7, 0.0, 0.7}) {
+                for (double reference_speed : {0.1, 1.0, 2.0}) {
+                    const double remaining_feedforward = 3.7 - friction;
+                    EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, omega,
+                                                                 0.0, friction, friction_model),
+                                     remaining_feedforward);
+                    EXPECT_NEAR(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, omega, 0.25,
+                                                            friction, friction_model),
+                                remaining_feedforward + 0.3, 1e-12);
+                    EXPECT_NEAR(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, omega, 0.75,
+                                                            friction, friction_model),
+                                remaining_feedforward - 0.3, 1e-12);
+                    EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.0, 0.2, reference_speed, omega,
+                                                                 0.25, friction, friction_model),
+                                     remaining_feedforward);
+                    EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, 0.0,
+                                                                 0.25, friction, friction_model),
+                                     remaining_feedforward);
+                }
             }
         }
+        EXPECT_NEAR(dynamics::ComputeDragTorque(3.7, 0.0, 0.6, 0.3, 0.2, 1.0, 2.0 * omega, 0.125, 0.7, friction_model),
+                    3.3, 1e-12);
     }
-    EXPECT_NEAR(dynamics::ComputeDragTorque(3.7, 0.0, 0.6, 0.3, 0.2, 1.0, 2.0 * omega, 0.125, 0.7), 3.3, 1e-12);
 }
 
 TEST(DragDampingTest, AtAndAboveThresholdKeepsFrictionAndQuadraticDamping) {
-    const double feedforward = 3.7;
-    const double d2 = 0.6;
-    for (double reference_speed : {0.1, 0.5, 1.0, 2.0}) {
-        for (double velocity : {-2.0, -0.2, 0.2, 2.0}) {
-            for (double time : {0.0, 0.25, 0.75}) {
-                const double torque = dynamics::ComputeDragTorque(feedforward, velocity, d2, 0.3, 0.2, reference_speed,
-                                                                  2.0 * std::acos(-1.0), time, 0.7);
-                EXPECT_NEAR(torque,
-                            feedforward - d2 * std::abs(velocity) * velocity / (reference_speed * reference_speed),
-                            1e-12);
-                EXPECT_LE((torque - feedforward) * velocity, 0.0);
+    for (const auto* friction_model : {"classic", "smooth", "stribeck"}) {
+        const double feedforward = 3.7;
+        const double d2 = 0.6;
+        for (double reference_speed : {0.1, 0.5, 1.0, 2.0}) {
+            for (double velocity : {-2.0, -0.2, 0.2, 2.0}) {
+                for (double time : {0.0, 0.25, 0.75}) {
+                    const double torque =
+                        dynamics::ComputeDragTorque(feedforward, velocity, d2, 0.3, 0.2, reference_speed,
+                                                    2.0 * std::acos(-1.0), time, 0.7, friction_model);
+                    EXPECT_NEAR(torque,
+                                feedforward - d2 * std::abs(velocity) * velocity / (reference_speed * reference_speed),
+                                1e-12);
+                    EXPECT_LE((torque - feedforward) * velocity, 0.0);
+                }
+            }
+            EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, 0.0, d2, 0.3, 0.0, reference_speed, 1.0, 0.25,
+                                                         0.7, friction_model),
+                             feedforward);
+            EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(0.0, reference_speed, d2, 0.3, 0.0, reference_speed, 1.0, 0.25,
+                                                         0.7, friction_model),
+                             -d2);
+            EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(0.0, -reference_speed, d2, 0.3, 0.0, reference_speed, 1.0,
+                                                         0.25, 0.7, friction_model),
+                             d2);
+        }
+    }
+}
+
+TEST(DragDampingTest, SmoothModelsApplyExcitationOnlyInsideDeadzone) {
+    const double omega = 2.0 * std::acos(-1.0);
+    for (const auto* friction_model : {"smooth", "stribeck"}) {
+        for (double velocity : {-2.0, -0.2, -0.05, 0.0, 0.05, 0.2, 2.0}) {
+            for (double reference_speed : {0.5, 1.0, 2.0}) {
+                const double damping = 0.6 * std::abs(velocity) * velocity / (reference_speed * reference_speed);
+                for (double deadzone : {0.0, 0.2, 3.0}) {
+                    const double excitation = std::abs(velocity) < deadzone ? 0.3 : 0.0;
+                    for (double friction : {-0.7, 0.0, 0.7}) {
+                        EXPECT_NEAR(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, deadzone, reference_speed,
+                                                                omega, 0.25, friction, friction_model),
+                                    3.7 + excitation - damping, 1e-12);
+                        EXPECT_NEAR(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, deadzone, reference_speed,
+                                                                omega, 0.75, friction, friction_model),
+                                    3.7 - excitation - damping, 1e-12);
+                        EXPECT_NEAR(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.0, deadzone, reference_speed,
+                                                                omega, 0.25, friction, friction_model),
+                                    3.7 - damping, 1e-12);
+                        EXPECT_NEAR(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, deadzone, reference_speed, 0.0,
+                                                                0.25, friction, friction_model),
+                                    3.7 - damping, 1e-12);
+                        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(3.7, velocity, 0.0, 0.0, deadzone, reference_speed,
+                                                                     omega, 0.25, friction, friction_model),
+                                         3.7);
+                    }
+                }
             }
         }
-        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, 0.0, d2, 0.3, 0.0, reference_speed, 1.0, 0.25, 0.7),
-                         feedforward);
-        EXPECT_DOUBLE_EQ(
-            dynamics::ComputeDragTorque(0.0, reference_speed, d2, 0.3, 0.0, reference_speed, 1.0, 0.25, 0.7), -d2);
-        EXPECT_DOUBLE_EQ(
-            dynamics::ComputeDragTorque(0.0, -reference_speed, d2, 0.3, 0.0, reference_speed, 1.0, 0.25, 0.7), d2);
     }
 }
 
@@ -256,9 +296,11 @@ TEST_F(FrictionConfigTest, RemovingFrictionPreservesFullBodyDynamicsAndToolCompe
                 EXPECT_TRUE(friction.head<6>().isZero());
                 EXPECT_GT(expected.tail<14>().norm(), 0.1);
                 for (int j = 6; j < ndof_robot; ++j) {
+                    const double expected_drag =
+                        params->friction_model == "classic" ? expected[j] : tau[j] - 0.6 * std::abs(speed) * speed;
                     EXPECT_NEAR(dynamics::ComputeDragTorque(tau[j], speed, 0.6, 0.0, 0.1, 1.0, 6.283185307179586, 0.25,
-                                                            friction[j]),
-                                expected[j], 1e-9);
+                                                            friction[j], friction_model),
+                                expected_drag, 1e-9);
                 }
             }
         }

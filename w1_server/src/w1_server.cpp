@@ -338,7 +338,8 @@ void RobotServer::TorqueControlThreadFunc() {
                                                               robot_model_.params_ptr->drag_v_dead,
                                                               robot_model_.params_ptr->drag_dq_lowspeed[i],
                                                               robot_model_.params_ptr->drag_omega, drag_elapsed_seconds,
-                                                              torque_cmd.torque_friction[i])
+                                                              torque_cmd.torque_friction[i],
+                                                              robot_model_.params_ptr->friction_model)
                                 : torque_cmd.torque_feedforward[i];
                         this->robot_control_.joint_control[i].joint_torque_feedforward = drag_torque;
                         if (this->robot_model_.IsDynamicParamsAvailable()) {

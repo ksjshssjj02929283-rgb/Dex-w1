@@ -116,12 +116,14 @@ w1_v02:
 
 ### Drag 模式死区正弦力矩与附加阻尼
 
-手臂在 Drag 模式下使用以下分段输出，`dq` 为实际反馈速度（rad/s）：
+手臂在 Drag 模式下按 `friction_model` 选择输出，`dq` 为实际反馈速度（rad/s），`damping = D2 * abs(dq) * dq / (v_ref * v_ref)`：
 
-- `abs(dq) < v_dead`：`tau_drag = tau_ff - tau_friction + f_dead * sin(omega * t)`。
-- `abs(dq) >= v_dead`：`tau_drag = tau_ff - D2 * abs(dq) * dq / (v_ref * v_ref)`。原来的 `tau_dead` 在此区间为零。
+- `smooth` 和平滑 `stribeck`：死区内输出 `tau_ff + f_dead * sin(omega * t) - damping`；死区外输出 `tau_ff - damping`。始终保留完整摩擦前馈并施加二次阻尼，正弦激励仅在 `abs(dq) < v_dead` 时生效。
+- `classic`（sgn）：`abs(dq) < v_dead` 时输出 `tau_ff - tau_friction + f_dead * sin(omega * t)`；`abs(dq) >= v_dead` 时输出 `tau_ff - damping`。
 
-低速分支保留重力、科氏力及工具补偿，仅扣除同次逆动力学计算中实际加入的摩擦前馈，再叠加正弦力矩，不加二次阻尼。`tau_friction` 包括缩放后的粘性项，以及当前 classic / smooth / stribeck 模型的库仑、偏置或 Stribeck 项；未使用辨识参数的关节此项为零。静止时也保留非摩擦前馈，`f_dead = 0` 仅关闭正弦激励。`v_dead = 0` 可禁用低速分支，所有速度下使用前馈减二次阻尼。分支在阈值处直接切换，没有平滑过渡。非手臂关节保留原有前馈输出。
+`classic` 的低速分支保留重力、科氏力及工具补偿，仅扣除同次逆动力学计算中实际加入的摩擦前馈，再叠加正弦力矩，不加二次阻尼。`tau_friction` 包括缩放后的粘性项、库仑项和偏置项；未使用辨识参数的关节此项为零。所有模型在 `abs(dq) >= v_dead` 时正弦补偿均为零，`v_dead = 0` 时所有速度下仅输出 `tau_ff - damping`。阈值处直接切换，没有平滑过渡。
+
+所有模型下 `f_dead = 0` 都仅关闭正弦激励。非手臂关节保留原有前馈输出。
 
 `t` 是每次进入 Drag 模式后经过的秒数，使用单调时钟，所有关节共用同一时间；退出再进入 Drag 时从零开始，进出速度死区不会重置相位。`omega` 单位为 rad/s，频率为 `omega / (2*pi)` Hz，默认 `2*pi`（1 Hz）。
 
@@ -130,7 +132,7 @@ w1_v02:
 ```yaml
   f_dead_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]    # 左臂 J1-J7，N·m
   f_dead_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 右臂 J1-J7，N·m
-  v_dead: 0.1                   # 双臂共用阈值，rad/s
+  v_dead: 0.1                   # 所有模型双臂共用阈值，rad/s；0 禁用低速分支
   omega: 6.283185307179586       # 双臂共用角频率，rad/s
   drag_damping_d2_primary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   drag_damping_d2_secondary: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -140,7 +142,7 @@ w1_v02:
 
 `f_dead` 和 D2 数组必须恰好含 7 个有限非负数；`v_dead` 和 `omega` 必须为有限非负数。幅值默认全零，阈值默认 0.1 rad/s。配置键 `f_dead_primary/secondary` 替代原来的 `drag_dead_compensation_primary/secondary`，`v_dead` 替代 `drag_dq_deadzone`；原有自定义数值需迁移到新键，旧键不再读取。
 
-`v_ref` 对应 `drag_dq_lowspeed_primary/secondary`，每项须为有限正数，默认 1.0 rad/s。D2 单位为 N·m，表示 `abs(dq) = v_ref` 时二次阻尼的幅值，仅在死区外生效；全零关闭二次阻尼。相同 D2 和反馈速度下，`v_ref` 减半会使阻尼增大 4 倍，加倍会使阻尼减小到 1/4。
+`v_ref` 对应 `drag_dq_lowspeed_primary/secondary`，每项须为有限正数，默认 1.0 rad/s。D2 单位为 N·m，表示 `abs(dq) = v_ref` 时二次阻尼的幅值，smooth/stribeck 下全速度范围生效，classic 下仅在死区外生效；全零关闭二次阻尼。相同 D2 和反馈速度下，`v_ref` 减半会使阻尼增大 4 倍，加倍会使阻尼减小到 1/4。
 
 升级需要重新编译安装库和服务端；之后修改 YAML 只需重启服务，不需要重新辨识动力学参数。
 
