@@ -5,6 +5,7 @@
 
 #include "drag_damping.h"
 #include "inverse_dynamics.h"
+#include "torque_controller_inverse_dynamic.h"
 #include "utils.h"
 
 using namespace robot_server_lib;
@@ -120,48 +121,183 @@ TEST_F(FrictionConfigTest, RejectsInvalidRatiosAndSupportsOldConfigDefaults) {
     EXPECT_DOUBLE_EQ(Load().params_ptr->fc_ratio_secondary[6], 0.2);
 }
 
-TEST(DragDampingTest, DeadzoneUsesSinusoidIncludingAtRest) {
-    const double pi = std::acos(-1.0);
-    const double omega = 2.0 * pi;
+TEST(DragDampingTest, DeadzonePreservesNonFrictionFeedforwardIncludingAtRest) {
+    const double omega = 2.0 * std::acos(-1.0);
     for (double velocity : {-0.199, -0.1, 0.0, 0.1, 0.199}) {
-        for (double reference_speed : {0.1, 1.0, 2.0}) {
-            // Nonzero feedforward and damping must both be replaced inside the deadzone.
-            EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, omega, 0.0),
-                             0.0);
-            EXPECT_NEAR(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, omega, 0.25), 0.3,
-                        1e-12);
-            EXPECT_NEAR(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, omega, 0.75), -0.3,
-                        1e-12);
-            EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.0, 0.2, reference_speed, omega, 0.25),
-                             0.0);
-            EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, 0.0, 0.25),
-                             0.0);
+        for (double friction : {-0.7, 0.0, 0.7}) {
+            for (double reference_speed : {0.1, 1.0, 2.0}) {
+                const double remaining_feedforward = 3.7 - friction;
+                EXPECT_DOUBLE_EQ(
+                    dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, omega, 0.0, friction),
+                    remaining_feedforward);
+                EXPECT_NEAR(
+                    dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, omega, 0.25, friction),
+                    remaining_feedforward + 0.3, 1e-12);
+                EXPECT_NEAR(
+                    dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, omega, 0.75, friction),
+                    remaining_feedforward - 0.3, 1e-12);
+                EXPECT_DOUBLE_EQ(
+                    dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.0, 0.2, reference_speed, omega, 0.25, friction),
+                    remaining_feedforward);
+                EXPECT_DOUBLE_EQ(
+                    dynamics::ComputeDragTorque(3.7, velocity, 0.6, 0.3, 0.2, reference_speed, 0.0, 0.25, friction),
+                    remaining_feedforward);
+            }
         }
     }
-    EXPECT_NEAR(dynamics::ComputeDragTorque(3.7, 0.0, 0.6, 0.3, 0.2, 1.0, 4.0 * pi, 0.125), 0.3, 1e-12);
+    EXPECT_NEAR(dynamics::ComputeDragTorque(3.7, 0.0, 0.6, 0.3, 0.2, 1.0, 2.0 * omega, 0.125, 0.7), 3.3, 1e-12);
 }
 
-TEST(DragDampingTest, AtAndAboveThresholdUsesFeedforwardAndQuadraticDamping) {
+TEST(DragDampingTest, AtAndAboveThresholdKeepsFrictionAndQuadraticDamping) {
     const double feedforward = 3.7;
     const double d2 = 0.6;
     for (double reference_speed : {0.1, 0.5, 1.0, 2.0}) {
         for (double velocity : {-2.0, -0.2, 0.2, 2.0}) {
             for (double time : {0.0, 0.25, 0.75}) {
                 const double torque = dynamics::ComputeDragTorque(feedforward, velocity, d2, 0.3, 0.2, reference_speed,
-                                                                  2.0 * std::acos(-1.0), time);
+                                                                  2.0 * std::acos(-1.0), time, 0.7);
                 EXPECT_NEAR(torque,
                             feedforward - d2 * std::abs(velocity) * velocity / (reference_speed * reference_speed),
                             1e-12);
                 EXPECT_LE((torque - feedforward) * velocity, 0.0);
             }
         }
-        // A zero threshold disables the sinusoidal branch, including at zero velocity.
-        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, 0.0, d2, 0.3, 0.0, reference_speed, 1.0, 0.25),
+        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(feedforward, 0.0, d2, 0.3, 0.0, reference_speed, 1.0, 0.25, 0.7),
                          feedforward);
-        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(0.0, reference_speed, d2, 0.3, 0.0, reference_speed, 1.0, 0.25),
-                         -d2);
-        EXPECT_DOUBLE_EQ(dynamics::ComputeDragTorque(0.0, -reference_speed, d2, 0.3, 0.0, reference_speed, 1.0, 0.25),
-                         d2);
+        EXPECT_DOUBLE_EQ(
+            dynamics::ComputeDragTorque(0.0, reference_speed, d2, 0.3, 0.0, reference_speed, 1.0, 0.25, 0.7), -d2);
+        EXPECT_DOUBLE_EQ(
+            dynamics::ComputeDragTorque(0.0, -reference_speed, d2, 0.3, 0.0, reference_speed, 1.0, 0.25, 0.7), d2);
+    }
+}
+
+TEST_F(FrictionConfigTest, FrictionOutputMatchesEachModelAndArmWithRatios) {
+    const std::array<int, 7> fv{3, 13, 24, 35, 46, 57, 68};
+    for (const auto* version : {"v024", "v031"}) {
+        config["version"] = version;
+        auto model = Load();
+        auto params = std::make_shared<RobotParams>(*model.params_ptr);
+        Eigen::VectorXd base = Eigen::VectorXd::Zero(71);
+        for (int j = 0; j < 7; ++j) {
+            base[fv[j]] = 2.0;
+            base[fv[j] + 1] = 3.0;
+            base[fv[j] + 2] = 0.4;
+            params->fv_ratio_primary[j] = 0.1 * j;
+            params->fv_ratio_secondary[j] = 0.2 * j;
+            params->fc_ratio_primary[j] = 0.3 * j;
+            params->fc_ratio_secondary[j] = 0.4 * j;
+        }
+        params->dyn_base_params_primary = base;
+        params->dyn_base_params_secondary = base;
+        model.params_ptr = params;
+        for (const auto* friction_model : {"classic", "smooth", "stribeck"}) {
+            params->friction_model = friction_model;
+            for (auto group : {MotionGroup::Primary, MotionGroup::Secondary}) {
+                const auto& fv_ratio =
+                    group == MotionGroup::Primary ? params->fv_ratio_primary : params->fv_ratio_secondary;
+                const auto& fc_ratio =
+                    group == MotionGroup::Primary ? params->fc_ratio_primary : params->fc_ratio_secondary;
+                for (double speed : {-2.0, -0.05, 0.0, 0.05, 2.0}) {
+                    Eigen::VectorXd friction;
+                    const auto tau =
+                        dynamics::InvDynamikBySymbol(model, VectorDof::Zero(), VectorDof::Constant(speed),
+                                                     VectorDof::Zero(), Vector3d::Zero(), group, &friction);
+                    ASSERT_EQ(friction.size(), 7);
+                    for (int j = 0; j < 7; ++j) {
+                        double expected = 2.0 * speed * fv_ratio[j];
+                        if (params->friction_model == "classic") {
+                            expected += 3.0 * fc_ratio[j] * ((speed > 0.0) - (speed < 0.0)) + 0.4;
+                        } else if (params->friction_model == "smooth") {
+                            expected += 3.0 * fc_ratio[j] * std::tanh(speed / params->friction_velocity_scale) + 0.4;
+                        } else {
+                            const double decay = std::exp(
+                                -std::pow(std::abs(speed) / params->stribeck_velocity, params->stribeck_alpha));
+                            expected += ((1.0 - decay) * 3.0 + decay * 0.4) * fc_ratio[j] *
+                                        std::tanh(speed / params->friction_velocity_scale);
+                        }
+                        EXPECT_NEAR(friction[j], expected, 1e-12);
+                        EXPECT_NEAR(tau[j], expected, 1e-12);
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST_F(FrictionConfigTest, RemovingFrictionPreservesFullBodyDynamicsAndToolCompensation) {
+    const std::array<int, 7> fv{3, 13, 24, 35, 46, 57, 68};
+    for (const auto* version : {"v024", "v031"}) {
+        config["version"] = version;
+        auto model = Load();
+        for (const auto* friction_model : {"classic", "smooth", "stribeck"}) {
+            auto params = std::make_shared<RobotParams>(*model.params_ptr);
+            params->friction_model = friction_model;
+            params->tool_dynamic_primary.gravity_enabled = true;
+            params->tool_dynamic_secondary.gravity_enabled = true;
+            model.params_ptr = params;
+            auto frictionless = model;
+            auto no_friction_params = std::make_shared<RobotParams>(*params);
+            for (int index : fv) {
+                for (int offset = 0; offset < 3; ++offset) {
+                    (*no_friction_params->dyn_base_params_primary)[index + offset] = 0.0;
+                    (*no_friction_params->dyn_base_params_secondary)[index + offset] = 0.0;
+                }
+            }
+            frictionless.params_ptr = no_friction_params;
+            const VectorDof q = VectorDof::Constant(0.2);
+            const VectorDof ddq = VectorDof::Constant(0.03);
+            for (double speed : {-0.05, 0.0, 0.05}) {
+                const VectorDof dq = VectorDof::Constant(speed);
+                VectorDof friction = VectorDof::Constant(999.0);
+                const auto tau = dynamics::InverseDynamics(model, q, dq, ddq, &friction);
+                const auto expected = dynamics::InverseDynamics(frictionless, q, dq, ddq);
+                EXPECT_TRUE((tau - friction).isApprox(expected, 1e-10));
+                EXPECT_TRUE(tau.isApprox(dynamics::InverseDynamics(model, q, dq, ddq), 1e-12));
+                EXPECT_TRUE(friction.head<6>().isZero());
+                EXPECT_GT(expected.tail<14>().norm(), 0.1);
+                for (int j = 6; j < ndof_robot; ++j) {
+                    EXPECT_NEAR(dynamics::ComputeDragTorque(tau[j], speed, 0.6, 0.0, 0.1, 1.0, 6.283185307179586, 0.25,
+                                                            friction[j]),
+                                expected[j], 1e-9);
+                }
+            }
+        }
+        // No identified friction is added by the RNEA fallback; clear a reused output vector.
+        auto fallback_params = std::make_shared<RobotParams>(*model.params_ptr);
+        fallback_params->dyn_base_params_primary.reset();
+        fallback_params->dyn_base_params_secondary.reset();
+        model.params_ptr = fallback_params;
+        VectorDof friction = VectorDof::Constant(999.0);
+        dynamics::InverseDynamics(model, VectorDof::Zero(), VectorDof::Constant(0.05), VectorDof::Zero(), &friction);
+        EXPECT_TRUE(friction.isZero());
+    }
+}
+
+TEST_F(FrictionConfigTest, ControllerCarriesMatchingFrictionThroughAllActiveStates) {
+    auto model = Load();
+    TorqueControllerInvDynamic controller(model);
+    JointRawMeasurement feedback{};
+    feedback.position.setConstant(0.2);
+    feedback.velocity.setConstant(-0.05);
+    feedback.torque.setZero();
+    PlannerManagerCommand command{};
+    command.cmd.position = feedback.position;
+    command.cmd.velocity.setZero();
+    command.cmd.torque_feedforward.setZero();
+    command.cmd.joint_stiffness.setZero();
+    command.cmd.joint_damping.setZero();
+    command.cmd.joint_integral_ratio.setZero();
+    VectorDof friction;
+    const auto expected =
+        dynamics::InverseDynamics(model, feedback.position, feedback.velocity, VectorDof::Zero(), &friction);
+    TorqueCtrlCommand output{};
+    for (auto state :
+         {TorqueControllerState::Idle, TorqueControllerState::Decelerating, TorqueControllerState::Operating}) {
+        output.torque_friction.setConstant(999.0);
+        ASSERT_TRUE(controller.ResetForNewEpisode(feedback, state));
+        ASSERT_TRUE(controller.ComputeCommand(feedback, command, output));
+        EXPECT_TRUE(output.torque_feedforward.isApprox(expected, 1e-12));
+        EXPECT_TRUE(output.torque_friction.isApprox(friction, 1e-12));
     }
 }
 

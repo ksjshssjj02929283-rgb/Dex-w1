@@ -76,7 +76,8 @@ struct DynDispatcher {
 };
 
 Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq,
-                                    const VectorDof& ddq, const Vector3d& gravity_acc_armbase, MotionGroup motion_group)
+                                    const VectorDof& ddq, const Vector3d& gravity_acc_armbase, MotionGroup motion_group,
+                                    Eigen::VectorXd* friction_feedforward)
 {
     Eigen::VectorXd dyn_base_params(71), q_arm(7), dq_arm(7), ddq_arm(7);
     utils::GetJointFromWholeBody(robot_model, q, q_arm, motion_group);
@@ -127,19 +128,26 @@ Eigen::VectorXd InvDynamikBySymbol(const RobotModel& robot_model, const VectorDo
     auto func = DynDispatcher::GetRegressionFunc(robot_model.params_ptr->robot_key, is_left);
     func(tau_out.data(), q_arm.data(), dq_arm.data(), ddq_arm.data(), dyn_base_params.data(), gravity_acc_armbase.data());
     const auto& params = *robot_model.params_ptr;
+    if (friction_feedforward) friction_feedforward->setZero(7);
     for (size_t joint = 0; joint < fc_indices.size(); ++joint) {
         const double velocity = dq_arm[joint];
         const double direction = (velocity > 0.0) - (velocity < 0.0);
         const double coulomb = friction_params[fc_indices[joint]];
         const double offset = friction_params[fo_indices[joint]];
+        double nonlinear_friction = 0.0;
         if (params.friction_model == "stribeck") {
             const double decay = exp(-pow(fabs(velocity) / params.stribeck_velocity, params.stribeck_alpha));
             const double stribeck_direction = tanh(velocity / params.friction_velocity_scale);
-            tau_out[joint] += ((1.0 - decay) * coulomb + decay * offset * fc_ratio[joint]) * stribeck_direction;
+            nonlinear_friction = ((1.0 - decay) * coulomb + decay * offset * fc_ratio[joint]) * stribeck_direction;
         } else if (params.friction_model == "classic") {
-            tau_out[joint] += coulomb * direction + offset;
+            nonlinear_friction = coulomb * direction + offset;
         } else {
-            tau_out[joint] += coulomb * tanh(velocity / params.friction_velocity_scale) + offset;
+            nonlinear_friction = coulomb * tanh(velocity / params.friction_velocity_scale) + offset;
+        }
+        tau_out[joint] += nonlinear_friction;
+        if (friction_feedforward) {
+            // The generated regressor already includes scaled viscous friction.
+            (*friction_feedforward)[joint] = friction_params[fv_indices[joint]] * velocity + nonlinear_friction;
         }
     }
 

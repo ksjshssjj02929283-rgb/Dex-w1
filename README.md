@@ -118,10 +118,10 @@ w1_v02:
 
 手臂在 Drag 模式下使用以下分段输出，`dq` 为实际反馈速度（rad/s）：
 
-- `abs(dq) < v_dead`：`tau_drag = f_dead * sin(omega * t)`。
+- `abs(dq) < v_dead`：`tau_drag = tau_ff - tau_friction + f_dead * sin(omega * t)`。
 - `abs(dq) >= v_dead`：`tau_drag = tau_ff - D2 * abs(dq) * dq / (v_ref * v_ref)`。原来的 `tau_dead` 在此区间为零。
 
-低速分支替换整个前馈力矩，不叠加重力、摩擦或二次阻尼；静止时同样输出正弦力矩。`f_dead = 0` 时低速输出为零。`v_dead = 0` 可禁用低速分支，所有速度下使用前馈减二次阻尼。分支在阈值处直接切换，没有平滑过渡。非手臂关节保留原有前馈输出。
+低速分支保留重力、科氏力及工具补偿，仅扣除同次逆动力学计算中实际加入的摩擦前馈，再叠加正弦力矩，不加二次阻尼。`tau_friction` 包括缩放后的粘性项，以及当前 classic / smooth / stribeck 模型的库仑、偏置或 Stribeck 项；未使用辨识参数的关节此项为零。静止时也保留非摩擦前馈，`f_dead = 0` 仅关闭正弦激励。`v_dead = 0` 可禁用低速分支，所有速度下使用前馈减二次阻尼。分支在阈值处直接切换，没有平滑过渡。非手臂关节保留原有前馈输出。
 
 `t` 是每次进入 Drag 模式后经过的秒数，使用单调时钟，所有关节共用同一时间；退出再进入 Drag 时从零开始，进出速度死区不会重置相位。`omega` 单位为 rad/s，频率为 `omega / (2*pi)` Hz，默认 `2*pi`（1 Hz）。
 

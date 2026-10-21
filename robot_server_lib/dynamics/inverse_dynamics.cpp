@@ -9,8 +9,9 @@ namespace dynamics
 {
 
 Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& q, const VectorDof& dq,
-                                const VectorDof& ddq)
+                                const VectorDof& ddq, VectorDof* friction_feedforward)
 {
+    if (friction_feedforward) friction_feedforward->setZero();
     auto t_start = std::chrono::steady_clock::now();
     auto t_seg = t_start;
 
@@ -53,7 +54,12 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
                 std::chrono::steady_clock::now() - t_seg).count();
 
             t_seg = std::chrono::steady_clock::now();
-            Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Primary);
+            Eigen::VectorXd arm_friction;
+            Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Primary,
+                                                       friction_feedforward ? &arm_friction : nullptr);
+            if (friction_feedforward) {
+                utils::MapJointToWholeBody(robot_model, arm_friction, *friction_feedforward, MotionGroup::Primary);
+            }
             us_sym_pri = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - t_seg).count();
             utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Primary);
@@ -99,7 +105,12 @@ Eigen::VectorXd InverseDynamics(const RobotModel& robot_model, const VectorDof& 
                 std::chrono::steady_clock::now() - t_seg).count();
 
             t_seg = std::chrono::steady_clock::now();
-            Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Secondary);
+            Eigen::VectorXd arm_friction;
+            Eigen::VectorXd arm_tau = InvDynamikBySymbol(robot_model, q, dq, ddq, gravity_acc_armbase, MotionGroup::Secondary,
+                                                       friction_feedforward ? &arm_friction : nullptr);
+            if (friction_feedforward) {
+                utils::MapJointToWholeBody(robot_model, arm_friction, *friction_feedforward, MotionGroup::Secondary);
+            }
             us_sym_sec = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - t_seg).count();
             utils::MapJointToWholeBody(robot_model, arm_tau, tau, MotionGroup::Secondary);

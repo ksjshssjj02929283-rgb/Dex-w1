@@ -200,6 +200,7 @@ struct PlannerManagerCommand {
 struct TorqueCtrlCommand {
     VectorDof torque;              // 关节tracking力控模式下的力矩指令
     VectorDof torque_feedforward;  // 力矩前馈(抵消重力, 科氏力, 摩擦力)
+    VectorDof torque_friction = VectorDof::Zero();  // 同次逆动力学计算中包含的摩擦前馈
     VectorDof torque_impedance;    // 笛卡尔阻抗控制模式下的力矩
     VectorDof q_desired;
 };

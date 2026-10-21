@@ -32,7 +32,8 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
             const VectorDof dq_error = dq_offset - feedback_dq;
             joint_pd_controller_->UpdateTorqueCommand(q_error, dq_error, K_p, K_v, K_i_ratio, torque_joint_impedance);
             output_cmd.torque_feedforward =
-                dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
+                dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero(),
+                                          &output_cmd.torque_friction);
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
             output_cmd.q_desired = idle_q_;
             break;
@@ -45,7 +46,8 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
             const VectorDof dq_error = dq_offset - feedback_dq;
             joint_pd_controller_->UpdateTorqueCommand(q_error, dq_error, K_p, K_v, K_i_ratio, torque_joint_impedance);
             output_cmd.torque_feedforward =
-                dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
+                dynamics::InverseDynamics(this->robot_model_, feedback_q, feedback_dq, VectorDof::Zero(),
+                                          &output_cmd.torque_friction);
             output_cmd.torque = output_cmd.torque_feedforward + torque_joint_impedance;
             output_cmd.q_desired = feedback_q;
             break;
@@ -54,7 +56,8 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
             // === 级联导纳-阻抗控制核心流程 ===
             // 0. 逆动力学前馈: 补偿重力/科氏力/摩擦力(含工具重力补偿)
             output_cmd.torque_feedforward =
-                dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero());
+                dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero(),
+                                          &output_cmd.torque_friction);
             // 1. 导纳控制: 反馈力矩减去前馈得到外力估计, 经死区处理抑制模型残差噪声
             VectorDof torque_ext = output_cmd.torque_feedforward - raw_measurement.torque;
             for (int i = 0; i < ndof_robot; ++i) {
