@@ -105,19 +105,17 @@ class W1Params:
         # yapf: disable
         self.default_qvel = np.array([0.3] * self.full_body_dofs)
         self.min_qvel = np.array([0.05] * self.full_body_dofs)
-        self.max_qvel = np.array([1., 1., 1., 1., 6.28, 6.28,
-                                  6.28, 6.28, 6.28, 6.28, 6.28, 6.28, 6.28,
-                                  6.28, 6.28, 6.28, 6.28, 6.28, 6.28, 6.28])
-        self.max_qacc = np.array([1., 1., 1., 1., 40., 40.,
-                                  10., 10., 10., 20., 40., 40., 40.,
-                                  10., 10., 10., 20., 40., 40., 40.])
-        self.max_qjerk = 10.0 * self.max_qacc
+        self.max_qvel = np.array([1., 1., 1., 1.] + [3.14]*16)
+        self.max_qacc = np.array([1., 1., 1., 1., 10., 10.,
+                                  10., 10., 10., 15., 15., 15., 15.,
+                                  10., 10., 10., 15., 15., 15., 15.])
+        self.max_qjerk = 3.0 * self.max_qacc
 
         self.default_vel = np.array([0.1, 0.1, 0.1, np.pi/4, np.pi/4, np.pi/4])
         self.min_vel = np.array([0.01, 0.01, 0.01, np.pi/80, np.pi/80, np.pi/80])
         self.max_vel = 5.0 * self.default_vel
-        self.max_acc = 5.0 * self.max_vel
-        self.max_jerk = 10.0 * self.max_acc
+        self.max_acc = 3.0 * self.max_vel
+        self.max_jerk = 3.0 * self.max_acc
 
         self.home_qpos = np.deg2rad([45, -90, 45, 0, 0, 0,
                                      5, -45, -5, -90, 0, -15, 0,
@@ -128,7 +126,7 @@ class W1Params:
     def update_params(self, file_path=DATA_DIR / "config.json") -> bool:
         if not file_path.exists() or file_path.stat().st_size == 0:
             self.logger.warning(
-                f"{str(file_path)} does not exist, would be created automatically."
+                f"{str(file_path)} does not exist, would be created automatically with default values."
             )
             template_json_data = self._parse_to_dict()
             file_path.write_text(json.dumps(template_json_data,
@@ -141,7 +139,8 @@ class W1Params:
             json_data = json.load(f)
             self._update_from_dict(json_data)
 
-        self.max_qjerk = 10.0 * self.max_qacc
+        if json_data.get("max_qjerk") is None:
+            self.max_qjerk = 3.0 * self.max_qacc
 
     def _update_from_dict(self, data: dict) -> bool:
         home_qpos = data.get("home_qpos")
@@ -181,13 +180,22 @@ class W1Params:
                     self.right_arm_ub, self.qpos_ub[self.right_arm_index])
                 self.logger.debug(f"Update qpos_limits from json.")
 
+        min_qvel = data.get("min_qvel")
+        if min_qvel is not None:
+            if len(min_qvel) != self.full_body_dofs:
+                self.logger.error(f"min_qvel dimension mismatch!")
+                return False
+            else:
+                self.min_qvel = np.clip(min_qvel, 0., 5)
+                self.logger.debug(f"Update min_qvel from json.")
+
         max_qvel = data.get("max_qvel")
         if max_qvel is not None:
             if len(max_qvel) != self.full_body_dofs:
                 self.logger.error(f"max_qvel dimension mismatch!")
                 return False
             else:
-                self.max_qvel = np.clip(max_qvel, 0., 1.5)
+                self.max_qvel = np.clip(max_qvel, 0., 5)
                 self.logger.debug(f"Update max_qvel from json.")
 
         max_qacc = data.get("max_qacc")
@@ -196,8 +204,17 @@ class W1Params:
                 self.logger.error(f"max_qacc dimension mismatch!")
                 return False
             else:
-                self.max_qacc = np.clip(max_qacc, 0., 15.)
+                self.max_qacc = np.clip(max_qacc, 0., 50)
                 self.logger.debug(f"Update max_qacc from json.")
+
+        max_qjerk = data.get("max_qjerk")
+        if max_qjerk is not None:
+            if len(max_qjerk) != self.full_body_dofs:
+                self.logger.error(f"max_qjerk dimension mismatch!")
+                return False
+            else:
+                self.max_qjerk = np.clip(max_qjerk, 0., 500)
+                self.logger.debug(f"Update max_qjerk from json.")
 
         default_qvel = data.get("default_qvel")
         if default_qvel is not None:
@@ -210,12 +227,65 @@ class W1Params:
                     self.max_qvel)
                 self.logger.debug(f"Update default_qvel from json.")
 
+        min_vel = data.get("min_vel")
+        if min_vel is not None:
+            if len(min_vel) != 6:
+                self.logger.error(f"min_vel dimension mismatch!")
+                return False
+            else:
+                self.min_vel = np.clip(min_vel, 0., 2)
+                self.logger.debug(f"Update min_vel from json.")
+
+        max_vel = data.get("max_vel")
+        if max_vel is not None:
+            if len(max_vel) != 6:
+                self.logger.error(f"max_vel dimension mismatch!")
+                return False
+            else:
+                self.max_vel = np.clip(max_vel, 0., 2)
+                self.logger.debug(f"Update max_vel from json.")
+
+        max_acc = data.get("max_acc")
+        if max_acc is not None:
+            if len(max_acc) != 6:
+                self.logger.error(f"max_acc dimension mismatch!")
+                return False
+            else:
+                self.max_acc = np.clip(max_acc, 0., 20)
+                self.logger.debug(f"Update max_acc from json.")
+
+        max_jerk = data.get("max_jerk")
+        if max_jerk is not None:
+            if len(max_jerk) != 6:
+                self.logger.error(f"max_jerk dimension mismatch!")
+                return False
+            else:
+                self.max_jerk = np.clip(max_jerk, 0., 200)
+                self.logger.debug(f"Update max_jerk from json.")
+
+        default_vel = data.get("default_vel")
+        if default_vel is not None:
+            if len(default_vel) != 6:
+                self.logger.error(f"default_vel dimension mismatch!")
+                return False
+            else:
+                self.default_vel = np.clip(default_vel, np.array([0.] * 6),
+                                           self.max_vel)
+                self.logger.debug(f"Update default_vel from json.")
+
     def _parse_to_dict(self) -> dict:
         data = {
             "home_qpos": self.home_qpos.tolist(),
             "qpos_limits": np.vstack((self.qpos_lb, self.qpos_ub)).T.tolist(),
+            "min_qvel": self.min_qvel.tolist(),
             "max_qvel": self.max_qvel.tolist(),
             "max_qacc": self.max_qacc.tolist(),
-            "default_qvel": self.default_qvel.tolist()
+            "max_qjerk": self.max_qjerk.tolist(),
+            "default_qvel": self.default_qvel.tolist(),
+            "min_vel": self.min_vel.tolist(),
+            "max_vel": self.max_vel.tolist(),
+            "max_acc": self.max_acc.tolist(),
+            "max_jerk": self.max_jerk.tolist(),
+            "default_vel": self.default_vel.tolist(),
         }
         return data
