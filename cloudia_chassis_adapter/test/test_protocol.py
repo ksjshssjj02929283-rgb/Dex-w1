@@ -1,5 +1,4 @@
 import json
-import math
 import sys
 import unittest
 from pathlib import Path
@@ -50,16 +49,30 @@ class ProtocolTest(unittest.TestCase):
                 },
             },
         })
-        self.assertEqual(parsed["pose"]["x"], 1.0)
-        self.assertEqual(len(parsed["batteries"]), 2)
-        self.assertEqual(parsed["batteries"][0]["location"], "battery1")
-        self.assertTrue(math.isclose(parsed["batteries"][0]["percentage"],
-                                     0.42))
-        self.assertEqual(parsed["batteries"][0]["cell_voltage"], [3.8, 3.9])
-        self.assertEqual(parsed["batteries"][1]["location"], "battery2")
-        self.assertTrue(math.isclose(parsed["batteries"][1]["percentage"],
-                                     0.73))
-        self.assertTrue(parsed["obstacle_stop"])
+        self.assertEqual(parsed, {
+            "pose": {"x": 1.0, "y": -2.0, "theta": 0.5}
+        })
+
+    def test_invalid_state_is_not_heartbeat(self):
+        for state in (None, {}, [], False, "invalid", 42):
+            with self.subTest(state=state):
+                self.assertIsNone(parse_upstream_state({
+                    "communicationType": "upstream_state", "state": state
+                }))
+        for payload in (None, [], {}, {"communicationType": "reply"}):
+            with self.subTest(payload=payload):
+                self.assertIsNone(parse_upstream_state(payload))
+
+    def test_invalid_pose_does_not_reject_other_state(self):
+        for position in (None, {}, [], "bad", {"x": 1},
+                         {"x": float("nan"), "y": 0, "theta": 0},
+                         {"x": 0, "y": 0, "theta": "inf"},
+                         {"x": 10**1000, "y": 0, "theta": 0}):
+            with self.subTest(position=position):
+                self.assertEqual(parse_upstream_state({
+                    "communicationType": "upstream_state",
+                    "state": {"agvPosition": position, "batteryState": {}}
+                }), {"pose": None})
 
     def test_speed_envelope(self):
         payload = build_speed_command(0.1, -0.2, 0.3, use_safe=True)

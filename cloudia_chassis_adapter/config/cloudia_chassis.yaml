@@ -5,10 +5,7 @@ cloudia_chassis_adapter:
     state_port: 8852
     frame_id: map
     pose_topic: /feedback/chassis_pose
-    battery_topic: /feedback/battery_status
-    diagnostics_topic: /diagnostics_agg
-    obstacle_topic: obstacle_detector/has_obstacle
-    velocity_topic: /cloudia/chassis_velocity
+    raw_state_topic: /feedback/cloudia_state_raw
     cmd_vel_topic: /control/cmd_vel
     stale_timeout_s: 0.5
     command_timeout_s: 0.5
@@ -17,4 +14,4 @@ cloudia_chassis_adapter:
     reconnect_max_s: 10.0
     connect_timeout_s: 5.0
     use_safe: false
-    serial_number: ""
+    serial_number: "EXTERNAL-001"
