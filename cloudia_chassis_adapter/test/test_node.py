@@ -21,19 +21,30 @@ class FrameTest(unittest.TestCase):
 
     def setUp(self):
         self.adapter = SimpleNamespace(
-            _enabled=True, _raw_state_pub=Mock(), _pose_pub=Mock(),
-            _frame_id="map", _last_state_time=None, _stale_reported=True,
-            _lock=threading.RLock(), _connected=True,
-            _stop=threading.Event(), _stop_frames_remaining=3,
-            _last_cmd=(0.1, -0.2, 0.3), _last_cmd_time=9.9,
-            _command_timeout=0.5, _stale_timeout=0.5,
-            _send_command=Mock(return_value=True), get_logger=Mock(return_value=Mock()),
-            get_clock=lambda: SimpleNamespace(
-                now=lambda: SimpleNamespace(to_msg=lambda: Time(sec=123))))
-        self.adapter._publish_pose = lambda pose: CloudiaChassisAdapter._publish_pose(self.adapter, pose)
+            _enabled=True,
+            _raw_state_pub=Mock(),
+            _pose_pub=Mock(),
+            _frame_id="map",
+            _last_state_time=None,
+            _stale_reported=True,
+            _lock=threading.RLock(),
+            _connected=True,
+            _stop=threading.Event(),
+            _stop_frames_remaining=3,
+            _last_cmd=(0.1, -0.2, 0.3),
+            _last_cmd_time=9.9,
+            _command_timeout=0.5,
+            _stale_timeout=0.5,
+            _send_command=Mock(return_value=True),
+            get_logger=Mock(return_value=Mock()),
+            get_clock=lambda: SimpleNamespace(now=lambda: SimpleNamespace(
+                to_msg=lambda: Time(sec=123))))
+        self.adapter._publish_pose = lambda pose: CloudiaChassisAdapter._publish_pose(
+            self.adapter, pose)
 
     def handle(self, raw):
-        with patch("cloudia_chassis_adapter.node.time.monotonic", return_value=10.0):
+        with patch("cloudia_chassis_adapter.node.time.monotonic",
+                   return_value=10.0):
             CloudiaChassisAdapter._handle_frame(self.adapter, raw)
 
     def test_raw_text_and_bytes_preserve_all_fields(self):
@@ -45,7 +56,9 @@ class FrameTest(unittest.TestCase):
         for frame in (raw, raw.encode("utf-8")):
             with self.subTest(binary=isinstance(frame, bytes)):
                 self.handle(frame)
-                self.assertEqual(self.adapter._raw_state_pub.publish.call_args.args[0].data, raw)
+                self.assertEqual(
+                    self.adapter._raw_state_pub.publish.call_args.args[0].data,
+                    raw)
                 self.assertEqual(self.adapter._last_state_time, 10.0)
                 self.assertFalse(self.adapter._stale_reported)
                 pose = self.adapter._pose_pub.publish.call_args.args[0]
@@ -57,19 +70,37 @@ class FrameTest(unittest.TestCase):
                 self.assertAlmostEqual(pose.pose.orientation.w, math.cos(0.25))
 
     def test_other_state_forwarded_without_pose(self):
-        for state in ({"batteryState": {"percentage": 0.5}},
-                      {"agvPosition": [1, 2]},
-                      {"agvPosition": {"x": "NaN", "y": 0, "theta": 0}}):
-            self.handle(json.dumps({"communicationType": "upstream_state", "state": state}))
+        for state in ({
+                "batteryState": {
+                    "percentage": 0.5
+                }
+        }, {
+                "agvPosition": [1, 2]
+        }, {
+                "agvPosition": {
+                    "x": "NaN",
+                    "y": 0,
+                    "theta": 0
+                }
+        }):
+            self.handle(
+                json.dumps({
+                    "communicationType": "upstream_state",
+                    "state": state
+                }))
         self.assertEqual(self.adapter._raw_state_pub.publish.call_count, 3)
         self.adapter._pose_pub.publish.assert_not_called()
         self.assertEqual(self.adapter._last_state_time, 10.0)
 
     def test_invalid_state_forwarded_but_not_fresh(self):
         for state in (None, {}, [], "invalid"):
-            raw = json.dumps({"communicationType": "upstream_state", "state": state})
+            raw = json.dumps({
+                "communicationType": "upstream_state",
+                "state": state
+            })
             self.handle(raw)
-            self.assertEqual(self.adapter._raw_state_pub.publish.call_args.args[0].data, raw)
+            self.assertEqual(
+                self.adapter._raw_state_pub.publish.call_args.args[0].data, raw)
         self.assertIsNone(self.adapter._last_state_time)
         self.adapter._pose_pub.publish.assert_not_called()
 
@@ -83,14 +114,17 @@ class FrameTest(unittest.TestCase):
 
     def test_disabled_backend_does_not_publish(self):
         self.adapter._enabled = False
-        self.handle('{"communicationType":"upstream_state","state":{"batteryState":{}}}')
+        self.handle(
+            '{"communicationType":"upstream_state","state":{"batteryState":{}}}'
+        )
         self.adapter._raw_state_pub.publish.assert_not_called()
         self.assertIsNone(self.adapter._last_state_time)
 
     def test_command_and_state_timeouts_keep_zero_protection(self):
         msg = Twist()
         msg.linear.x, msg.linear.y, msg.angular.z = 0.1, -0.2, 0.3
-        with patch("cloudia_chassis_adapter.node.time.monotonic", return_value=10.0):
+        with patch("cloudia_chassis_adapter.node.time.monotonic",
+                   return_value=10.0):
             CloudiaChassisAdapter._on_cmd_vel(self.adapter, msg)
             self.adapter._last_state_time = 9.9
             CloudiaChassisAdapter._send_current_command(self.adapter)
@@ -110,7 +144,8 @@ class FrameTest(unittest.TestCase):
     def test_watchdog_does_not_republish_cached_state(self):
         self.adapter._last_state_time = 9.0
         self.adapter._stale_reported = False
-        with patch("cloudia_chassis_adapter.node.time.monotonic", return_value=10.0):
+        with patch("cloudia_chassis_adapter.node.time.monotonic",
+                   return_value=10.0):
             CloudiaChassisAdapter._watchdog(self.adapter)
         self.assertTrue(self.adapter._stale_reported)
         self.adapter._raw_state_pub.publish.assert_not_called()

@@ -237,7 +237,9 @@ class CloudiaChassisAdapter(Node):
                 return
             state_fresh = (self._last_state_time is not None and
                            now - self._last_state_time <= self._stale_timeout)
-            command = self._last_cmd if command_fresh and state_fresh else (0.0, 0.0, 0.0)
+            command = self._last_cmd if command_fresh and state_fresh else (0.0,
+                                                                            0.0,
+                                                                            0.0)
             if self._send_command(*command) and not command_fresh:
                 # 仅成功写入 socket 才计数；这是发送完成，不是底盘停车 ACK。
                 self._stop_frames_remaining -= 1
@@ -271,7 +273,9 @@ class CloudiaChassisAdapter(Node):
             if target is None:
                 return
             payload = build_speed_command(
-                0.0, 0.0, 0.0,
+                0.0,
+                0.0,
+                0.0,
                 use_safe=self._use_safe,
                 serial_number=self._serial_number,
             )
