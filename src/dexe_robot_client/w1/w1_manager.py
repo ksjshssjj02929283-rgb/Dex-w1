@@ -1396,7 +1396,6 @@ class W1Manager:
         blend_type = BlendType.Bezier5th
         blend_tolerance = 0.005
         if USE_TOPPRA and is_sparse:
-            self.logger.debug("Use Toppra for joint traj")
             res1, path = create_blend_path(waypoints, blend_type,
                                            blend_tolerance)
             if res1 != StatusType.Success:
@@ -1439,6 +1438,9 @@ class W1Manager:
                     TrajectoryConstraint(RnTangent(vel_limits.tolist()),
                                          RnTangent(acc_limits.tolist()),
                                          RnTangent(jerk_limits.tolist())))
+            self.logger.info(
+                f"Joint trajectory [{name}]: calling Double-S (double_s), "
+                f"is_sparse={is_sparse}, USE_TOPPRA={USE_TOPPRA}")
             res, path, traj = create_double_s_traj_along_blend_path(
                 waypoints, blend_type, blend_tolerance, path_vel_start,
                 path_acc_start, path_vel_end, path_acc_end, traj_constraints)
@@ -1447,7 +1449,6 @@ class W1Manager:
             traj_point_list = traj.sample_by_step(self.TIME_STEP)
             pos_array = np.array([tp.pos.coeffs() for tp in traj_point_list])
             return StatusCode.SUCCESS, pos_array
-        self.logger.debug("Use Toppra for joint traj")
         dofs = self.w1_params.index_infos[name]["dofs"]
         index = self.w1_params.index_infos[name]["index"]
         pos_limits = np.vstack(
@@ -1456,6 +1457,9 @@ class W1Manager:
         acc_limits = self.w1_params.max_qacc[index]
         traj_planner = ToppraTrajectoryPlanner(dofs, pos_limits, vel_limits,
                                                acc_limits)
+        self.logger.info(
+            f"Joint trajectory [{name}]: calling TOPPRA (toppra), "
+            f"is_sparse={is_sparse}, USE_TOPPRA={USE_TOPPRA}")
         res, pos_array, _, _, _ = traj_planner.plan(qpos_array,
                                                     qvel_limits_array,
                                                     self.TIME_STEP)
@@ -1505,7 +1509,8 @@ class W1Manager:
         blend_tolerance = 0.005
 
         if USE_TOPPRA:
-            self.logger.debug("Use Toppra for cartesian traj")
+            self.logger.debug(
+                f"Cartesian trajectory [{name}]: preparing joint path for TOPPRA")
             # cartesian interpolation
             res1, path = create_blend_path(waypoints, blend_type,
                                            blend_tolerance)
@@ -1545,7 +1550,6 @@ class W1Manager:
             return self.plan_joint_traj(name, np.array(qpos_list), False,
                                         qvel_limits_array_)
         else:
-            self.logger.debug("Use Double-S for cartesian traj")
             path_vel_start = 0.0
             path_acc_start = 0.0
             path_vel_end = 0.0
@@ -1559,6 +1563,9 @@ class W1Manager:
                         R3xSO3Tangent(speed_ratio * self.w1_params.default_vel),
                         R3xSO3Tangent(self.w1_params.max_acc),
                         R3xSO3Tangent(self.w1_params.max_jerk)))
+            self.logger.info(
+                f"Cartesian trajectory [{name}]: calling Double-S (double_s), "
+                f"USE_TOPPRA={USE_TOPPRA}")
             res1, path, traj = create_double_s_traj_along_blend_path(
                 waypoints, blend_type, blend_tolerance, path_vel_start,
                 path_acc_start, path_vel_end, path_acc_end, traj_constraints)
@@ -2514,6 +2521,7 @@ class W1Manager:
         acc_limits = np.concatenate([left_acc_limits, right_acc_limits])
         traj_planner = ToppraTrajectoryPlanner(dofs, pos_limits, vel_limits,
                                                acc_limits)
+        self.logger.info("Dual-arm Cartesian trajectory: calling TOPPRA (toppra)")
         res, qpos_array, _, _, _ = traj_planner.plan(qpos_array,
                                                      qvel_limits_array_,
                                                      self.TIME_STEP)
