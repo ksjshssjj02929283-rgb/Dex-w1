@@ -155,7 +155,7 @@ class JointIndexResolver:
         self.model = model
 
     def q_index(self, joint_name: str) -> int | None:
-        if not self.model.existJointName(joint_name):
+        if joint_name is None or not self.model.existJointName(joint_name):
             return None
         joint_id = self.model.getJointId(joint_name)
         joint = self.model.joints[joint_id]
@@ -204,10 +204,17 @@ class IpoptOptions(SolverOptions):
 
 @dataclass
 class SqpMethodOptions(SolverOptions):
+    """QRQP-based SQP; standard leg reduction and Gauss-Newton are opt-in."""
     name: str = "sqpmethod"
     max_iter: int = 100
     tol_pr: float = 1e-6
     tol_du: float = 1e-6
+    use_gauss_newton: bool = False
+    eliminate_leg_equality: bool = False
+    gn_damping: float = 1e-6
+    min_lam: float = 1e-12
+    max_iter_ls: int = 10
+    elastic_mode: bool = True
 
     def to_casadi_options(self):
         return {
@@ -215,14 +222,21 @@ class SqpMethodOptions(SolverOptions):
             "max_iter": self.max_iter,
             "tol_pr": self.tol_pr,
             "tol_du": self.tol_du,
+            "max_iter_ls": self.max_iter_ls,
+            "elastic_mode": self.elastic_mode,
             "print_header": False,
             "print_iteration": False,
             "print_status": False,
-            "print_time": False,
+            "print_time": self.print_time,
+            "calc_lam_p": self.calc_lam_p,
             "qpsol_options": {
                 "print_header": False,
                 "print_iter": False,
                 "print_info": False,
+                "min_lam": self.min_lam,
+                "constr_viol_tol": 1e-9,
+                "dual_inf_tol": 1e-9,
+                "error_on_fail": not self.elastic_mode,
             },
         }
 
@@ -290,6 +304,14 @@ class IKCostTerm:
     name: str
     expression: CostBuilder
     weight: float = 1.0
+    residual: CostBuilder | None = None
+
+    @classmethod
+    def from_residual(cls, name: str, residual: CostBuilder, weight: float = 1.0):
+        """Define a squared residual cost with its Gauss-Newton representation."""
+        return cls(name=name,
+                   expression=lambda context: casadi.sumsqr(residual(context)),
+                   weight=weight, residual=residual)
 
 @dataclass
 class IKConstraint:
@@ -494,22 +516,24 @@ class WholeBodyIK:
         return True
 
     def _build_standard_problem(self, context: IKBuildContext) -> IKProblemSpec:
-        translation_cost = self._translational_tracking_cost(context)
-        rotation_cost = self._rotational_tracking_cost(context)
+        translation_residual = self._translational_tracking_residual(context)
+        rotation_residual = self._rotational_tracking_residual(context)
+        translation_cost = casadi.sumsqr(translation_residual)
+        rotation_cost = casadi.sumsqr(rotation_residual)
         ik_problem_spec = IKProblemSpec(
             name="standard",
             costs=[
                 IKCostTerm(
                     name="translational_tracking_cost",
-                    # expression=self._translational_tracking_cost,
                     expression=lambda context: translation_cost,
-                    weight=self.weight_config.translation
+                    weight=self.weight_config.translation,
+                    residual=lambda context: translation_residual
                 ),
                 IKCostTerm(
                     name="rotational_tracking_cost",
-                    # expression=self._rotational_tracking_cost,
                     expression=lambda context: rotation_cost,
-                    weight=self.weight_config.rotation
+                    weight=self.weight_config.rotation,
+                    residual=lambda context: rotation_residual
                 ),
                 self._regularization_cost(context),
                 self._smooth_cost(context),
@@ -573,6 +597,9 @@ class WholeBodyIK:
         return WholeBodyIK._upper_side_barrier(q, upper_bound, gain) * WholeBodyIK._lower_side_barrier(q, lower_bound, gain)
 
     def _translational_tracking_cost(self, context: IKBuildContext) -> CasadiExpr:
+        return casadi.sumsqr(self._translational_tracking_residual(context))
+
+    def _translational_tracking_residual(self, context: IKBuildContext) -> CasadiExpr:
         parts = []
         if self.left_arm_tracking_id is not None:
             parts.append(
@@ -585,11 +612,14 @@ class WholeBodyIK:
 
         if not parts:
             self.logger.warning("No tracking frames available for translational tracking cost.")
-            return casadi.MX(0)
+            return casadi.MX.zeros(0, 1)
 
-        return casadi.sumsqr(casadi.vertcat(*parts))
+        return casadi.vertcat(*parts)
 
     def _rotational_tracking_cost(self, context: IKBuildContext) -> CasadiExpr:
+        return casadi.sumsqr(self._rotational_tracking_residual(context))
+
+    def _rotational_tracking_residual(self, context: IKBuildContext) -> CasadiExpr:
         parts = []
         if self.left_arm_tracking_id is not None:
             left_arm_current = self.cdata.oMf[self.left_arm_tracking_id].rotation
@@ -613,41 +643,42 @@ class WholeBodyIK:
             parts.extend(right_arm_rotation_error)
         if not parts:
             self.logger.warning("No tracking frames available for rotational tracking cost.")
-            return casadi.MX(0)
-        return casadi.sumsqr(casadi.vertcat(*parts))
+            return casadi.MX.zeros(0, 1)
+        return casadi.vertcat(*parts)
 
-    def _regularization_cost(self, context: IKBuildContext) -> CasadiExpr:
-        def cost_builder(context: IKBuildContext) -> CasadiExpr:
+    def _regularization_cost(self, context: IKBuildContext) -> IKCostTerm:
+        def waist_angle(context: IKBuildContext) -> CasadiExpr:
             waist_type, waist_q = self.joint_q_or_locked_value(context, self.joint_name_config.waist_joint)
             if waist_q is None:
                 self.logger.warning("Waist joint is not available, skipping regularization cost.")
                 return 0.0
-            return 10 * casadi.sumsqr(waist_q)
+            return waist_q
 
         return IKCostTerm(
             name=f"regularization_cost",
-            expression=cost_builder,
+            expression=lambda context: 10 * casadi.sumsqr(waist_angle(context)),
+            residual=lambda context: np.sqrt(10.0) * waist_angle(context),
             weight=self.weight_config.regularization
         )
 
     def _smooth_cost(self, context: IKBuildContext) -> IKCostTerm:
-        def cost_builder(context: IKBuildContext) -> CasadiExpr:
-            return casadi.sumsqr(context.q - context.q_last)
+        def residual_builder(context: IKBuildContext) -> CasadiExpr:
+            return context.q - context.q_last
 
-        return IKCostTerm(
+        return IKCostTerm.from_residual(
             name=f"smooth_cost",
-            expression=cost_builder,
+            residual=residual_builder,
             weight=self.weight_config.smoothness
         )
 
     def _upper_body_leaning_cost(self, context: IKBuildContext) -> IKCostTerm:
-        def cost_builder(context: IKBuildContext) -> CasadiExpr:
+        def cost_components(context: IKBuildContext):
             ankle_type, ankle_q = self.joint_q_or_locked_value(context, self.joint_name_config.ankle_joint)
             knee_type, knee_q = self.joint_q_or_locked_value(context, self.joint_name_config.knee_joint)
             buttock_type, buttock_q = self.joint_q_or_locked_value(context, self.joint_name_config.buttock_joint)
             if any(q is None for q in [ankle_q, knee_q, buttock_q]):
                 self.logger.warning("One of the leg joints is not available, skipping upper body leaning cost.")
-                return 0.0
+                return 0.0, 0.0
             upper_body_leaning = ankle_q + knee_q + buttock_q
             if self.left_arm_tracking_id is not None:
                 left_target_x = context.left_arm_target[0, 3]
@@ -660,16 +691,25 @@ class WholeBodyIK:
             # upper_body_leaning_weight = WholeBodyIK._lower_side_barrier((context.left_arm_target[0, 3] + context.right_arm_target[0, 3])/2, lower_bound=self.posture_config.dual_ee_flange_centerX_threshold, gain=50)
             upper_body_leaning_weight = WholeBodyIK._lower_side_barrier((left_target_x + right_target_x)/2, lower_bound=self.posture_config.dual_ee_flange_centerX_threshold, gain=50)
 
-            return upper_body_leaning_weight * casadi.sumsqr(upper_body_leaning - context.upper_body_leaning_threshold)
+            return upper_body_leaning_weight, upper_body_leaning - context.upper_body_leaning_threshold
+
+        def cost_builder(context: IKBuildContext):
+            weight, error = cost_components(context)
+            return weight * casadi.sumsqr(error)
+
+        def residual_builder(context: IKBuildContext):
+            weight, error = cost_components(context)
+            return casadi.sqrt(weight) * error
 
         return IKCostTerm(
             name=f"upper_body_leaning_cost",
             expression=cost_builder,
+            residual=residual_builder,
             weight=self.weight_config.upper_body_straightness
         )
 
     def _leg_heaviness_cost(self, context: IKBuildContext) -> IKCostTerm:
-        def cost_builder(context: IKBuildContext) -> CasadiExpr:
+        def residual_builder(context: IKBuildContext) -> CasadiExpr:
             ankle_type, ankle_q = self.joint_q_or_locked_value(context, self.joint_name_config.ankle_joint)
             knee_type, knee_q = self.joint_q_or_locked_value(context, self.joint_name_config.knee_joint)
             buttock_type, buttock_q = self.joint_q_or_locked_value(context, self.joint_name_config.buttock_joint)
@@ -679,12 +719,17 @@ class WholeBodyIK:
             if any(q is None for q in [ankle_q, knee_q, buttock_q, ankle_q_last, knee_q_last, buttock_q_last]):
                 self.logger.warning("One of the leg joints is not available, skipping leg heaviness cost.")
                 return 0.0
-            leg_heaviness = casadi.sumsqr(ankle_q - ankle_q_last) + casadi.sumsqr(knee_q - knee_q_last) + casadi.sumsqr(buttock_q - buttock_q_last)
+            leg_heaviness = casadi.vertcat(ankle_q - ankle_q_last, knee_q - knee_q_last, buttock_q - buttock_q_last)
             return leg_heaviness
+
+        def cost_builder(context: IKBuildContext):
+            residual = casadi.vec(residual_builder(context))
+            return sum(casadi.sumsqr(residual[i]) for i in range(residual.numel()))
 
         return IKCostTerm(
             name=f"leg_heaviness_cost",
             expression=cost_builder,
+            residual=residual_builder,
             weight=self.weight_config.leg_heaviness
         )
 
@@ -694,7 +739,7 @@ class WholeBodyIK:
         return j2_low + ratio * (j2_high - j2_low)
 
     def _shoulder_angle_barrier_cost(self, context: IKBuildContext) -> IKCostTerm:
-        def cost_builder(context: IKBuildContext) -> CasadiExpr:
+        def residual_builder(context: IKBuildContext) -> CasadiExpr:
             left_shoulder_j1_type, left_shoulder_j1 = self.joint_q_or_locked_value(context, self.joint_name_config.left_arm_joints[0])
             left_shoulder_j2_type, left_shoulder_j2 = self.joint_q_or_locked_value(context, self.joint_name_config.left_arm_joints[1])
             right_shoulder_j1_type, right_shoulder_j1 = self.joint_q_or_locked_value(context, self.joint_name_config.right_arm_joints[0])
@@ -716,18 +761,18 @@ class WholeBodyIK:
                                                                        self.posture_config.right_arm_j2_dynamic_knots[1])
                 costs.append(self._upper_side_barrier(right_shoulder_j2, upper_bound=right_j2_lower_bound, gain=25))
             if costs:
-                return casadi.sumsqr(casadi.vertcat(*costs))
+                return casadi.vertcat(*costs)
             else:
                 return 0.0
 
-        return IKCostTerm(
+        return IKCostTerm.from_residual(
             name=f"shoulder_angle_barrier_cost",
-            expression=cost_builder,
+            residual=residual_builder,
             weight=self.weight_config.shoulder_angle_barrier
         )
 
     def _eye_focus_point_cost(self, context: IKBuildContext) -> IKCostTerm:
-        def cost_builder(context: IKBuildContext) -> CasadiExpr:
+        def residual_builder(context: IKBuildContext) -> CasadiExpr:
             if self.head_tracking_id is None:
                 self.logger.warning("Head tracking frame is not available, skipping eye focus point cost.")
                 return 0.0
@@ -736,22 +781,39 @@ class WholeBodyIK:
             focus_direction = focus_direction / (casadi.norm_2(focus_direction) + 1e-6)
             eye_forward = self._bind_q("eye_forward_func", -self.cdata.oMf[self.head_tracking_id].rotation[:, 2], context.q)
             eye_focus_cost = 10 * context.eye_focus_weight * (1 - casadi.dot(focus_direction, eye_forward))
-            return casadi.sumsqr(eye_focus_cost)
+            return eye_focus_cost
 
-        return IKCostTerm(
+        return IKCostTerm.from_residual(
             name=f"eye_focus_point_cost",
-            expression=cost_builder,
+            residual=residual_builder,
             weight=self.weight_config.eye_focus_point
         )
 
     def _joint_limit_constraint(self, context: IKBuildContext, margin_ratio: float) -> IKConstraint:
         def constraint_builder(context: IKBuildContext) -> Iterable[CasadiExpr]:
             constraints = []
-            lower = context.model.lowerPositionLimit
-            uppper = context.model.upperPositionLimit
-            margin = (uppper - lower) * margin_ratio
+            lower = context.model.lowerPositionLimit.copy()
+            upper = context.model.upperPositionLimit.copy()
+            margin = (upper - lower) * margin_ratio
+            lower, upper = lower + margin, upper - margin
+            q = context.q
+            if self._leg_equality_eliminated:
+                ankle, knee = self._ankle_q_index, self._knee_q_index
+                knee_lower, knee_upper = lower[knee], upper[knee]
+                lower = lower[self._independent_q_indices].copy()
+                upper = upper[self._independent_q_indices].copy()
+                ankle_column = int(np.flatnonzero(self._independent_q_indices == ankle)[0])
+                lower[ankle_column] = max(lower[ankle_column], -0.5 * knee_upper)
+                upper[ankle_column] = min(upper[ankle_column], -0.5 * knee_lower)
+                if self.posture_config.leg_leaning_forward:
+                    lower[ankle_column] = max(lower[ankle_column], 0.0)
+                else:
+                    upper[ankle_column] = min(upper[ankle_column], 0.0)
+                if np.any(lower > upper):
+                    raise ValueError("Joint bounds are incompatible with the ankle/knee equality.")
+                q = self.var_q_independent
             constraints.append(
-                context.opti.bounded(lower + margin, context.q, uppper - margin)
+                context.opti.bounded(lower, q, upper)
             )
             return constraints
 
@@ -787,6 +849,8 @@ class WholeBodyIK:
 
     def _buttock_upright_constraint(self, context: IKBuildContext) -> IKConstraint:
         def constraint_build(context: IKBuildContext) -> Iterable[CasadiExpr]:
+            if self._leg_equality_eliminated:
+                return []
             constraints = []
             ankle_type, ankle_q = self.joint_q_or_locked_value(context, self.joint_name_config.ankle_joint)
             knee_type, knee_q = self.joint_q_or_locked_value(context, self.joint_name_config.knee_joint)
@@ -806,6 +870,9 @@ class WholeBodyIK:
 
     def _leg_leaning_constraint(self, context: IKBuildContext, is_leaning_forward: bool) -> IKConstraint:
         def constraint_build(context: IKBuildContext) -> Iterable[CasadiExpr]:
+            if (self._leg_equality_eliminated and
+                    is_leaning_forward == self.posture_config.leg_leaning_forward):
+                return []
             constraints = []
             ankle_type, ankle_q = self.joint_q_or_locked_value(context, self.joint_name_config.ankle_joint)
             knee_type, knee_q = self.joint_q_or_locked_value(context, self.joint_name_config.knee_joint)
@@ -880,13 +947,71 @@ class WholeBodyIK:
             expressions=constraint_build
         )
 
+    def _create_joint_variables(self, problem_name: str):
+        """Keep q in model order while optimizing only independent coordinates."""
+        nq = self.robot_.model.nq
+        self._independent_q_indices = np.arange(nq)
+        self._leg_equality_eliminated = False
+        self._ankle_q_index = self.joint_index_resolver.q_index(self.joint_name_config.ankle_joint)
+        self._knee_q_index = self.joint_index_resolver.q_index(self.joint_name_config.knee_joint)
+        if (problem_name == "standard" and
+                isinstance(self.solver_options, SqpMethodOptions) and
+                self.solver_options.eliminate_leg_equality and
+                self._ankle_q_index is not None and self._knee_q_index is not None):
+            self._independent_q_indices = np.delete(self._independent_q_indices, self._knee_q_index)
+            self._leg_equality_eliminated = True
+
+        # A partially or fully locked pair retains the existing constraint path.
+        # Custom problems may omit this equality, so they retain their variables.
+        mapping = np.eye(nq)[:, self._independent_q_indices]
+        if self._leg_equality_eliminated:
+            ankle_column = int(np.flatnonzero(self._independent_q_indices == self._ankle_q_index)[0])
+            mapping[self._knee_q_index, :] = 0.0
+            mapping[self._knee_q_index, ankle_column] = -2.0
+        self.var_q_independent = self.opti.variable(len(self._independent_q_indices))
+        # Structural zeros must stay sparse in the QP Jacobian and Hessian.
+        self.var_q = (casadi.mtimes(casadi.sparsify(casadi.DM(mapping)), self.var_q_independent)
+                      if self._leg_equality_eliminated else self.var_q_independent)
+
+    def _configure_solver(self, context: IKBuildContext):
+        options = self.solver_options.to_casadi_options()
+        if isinstance(self.solver_options, SqpMethodOptions) and self.solver_options.use_gauss_newton:
+            damping = self.solver_options.gn_damping
+            if not np.isfinite(damping) or damping < 0:
+                raise ValueError("gn_damping must be finite and nonnegative.")
+            residuals = []
+            for term in self.current_problem_spec.costs:
+                if term.weight == 0:
+                    continue
+                if term.weight < 0 or not np.isfinite(term.weight):
+                    raise ValueError(f"Gauss-Newton requires a finite nonnegative weight for {term.name}.")
+                if term.residual is None:
+                    raise ValueError(
+                        f"Cost {term.name} needs a residual for Gauss-Newton. "
+                        "Use IKCostTerm.from_residual(...) or use_gauss_newton=False."
+                    )
+                residuals.append(np.sqrt(term.weight) * casadi.vec(term.residual(context)))
+            self.gauss_newton_residual = (casadi.vertcat(*residuals)
+                                         if residuals else casadi.MX.zeros(0, 1))
+            x = self.opti.x
+            jacobian = casadi.jacobian(self.gauss_newton_residual, x)
+            mapping = casadi.jacobian(self.var_q, x)
+            hessian = 2 * jacobian.T @ jacobian + damping * mapping.T @ mapping
+            lam_f = casadi.MX.sym("lam_f")
+            lam_g = casadi.MX.sym("lam_g", self.opti.ng)
+            options["hess_lag"] = casadi.Function(
+                "ik_gauss_newton_hessian", [x, self.opti.p, lam_f, lam_g], [lam_f * hessian]
+            )
+        self.opti.solver(self.solver_options.name, options)
+
     def set_problem(self, problem_name: str = "standard", extra_parameter_shapes: Dict[str, tuple[int, ...]] = None):
         if problem_name not in self.problem_builders:
             self.logger.error(f"Problem {problem_name} is not registered. Supported problems are: {self.supported_problems}")
             raise ValueError(f"Problem {problem_name} is not registered. Supported problems are: {self.supported_problems}")
 
         self.opti = casadi.Opti()
-        self.var_q = self.opti.variable(self.robot_.model.nq)
+        self.gauss_newton_residual = None
+        self._create_joint_variables(problem_name)
         self.var_q_last = self.opti.parameter(self.robot_.model.nq)
         if self.left_arm_tracking_id is not None:
             self.param_left_arm_tf = self.opti.parameter(4, 4)
@@ -920,11 +1045,6 @@ class WholeBodyIK:
                 else:
                     self.extra_parameter_specs[name] = self.opti.parameter(*shape)
 
-        self.opti.solver(
-            self.solver_options.name,
-            self.solver_options.to_casadi_options()
-        )
-
         context = self._context()
 
         self.current_problem_spec = self.problem_builders[problem_name](context)
@@ -943,6 +1063,7 @@ class WholeBodyIK:
                 self.opti.subject_to(expr)
 
         self.opti.minimize(total_cost)
+        self._configure_solver(context)
 
     def _context(self) -> IKBuildContext:
         return IKBuildContext(
@@ -1030,8 +1151,9 @@ class WholeBodyIK:
             if np.atleast_2d(ref_qpos).shape != (1, self.robot_.model.nq) and np.atleast_2d(ref_qpos).shape != (self.robot_.model.nq, 1):
                 self.logger.error(f"Reference qpos has incorrect shape. Expected {self.robot_.model.nq}, got {np.atleast_2d(ref_qpos).shape[0]}.")
                 return False, None
-        init_data = deepcopy(ref_qpos) if ref_qpos is not None else np.zeros(self.robot_.model.nq)
-        self.opti.set_initial(self.var_q, init_data)
+        init_data = (np.asarray(ref_qpos, dtype=float).reshape(-1).copy()
+                     if ref_qpos is not None else np.zeros(self.robot_.model.nq))
+        self.opti.set_initial(self.var_q_independent, init_data[self._independent_q_indices])
         self.opti.set_value(self.var_q_last, init_data)
 
         if self.left_arm_tracking_id is not None:

@@ -88,7 +88,10 @@ class WholeBodyIKSolverManager:
                     f"Unsupported robot version value: {self.robot_verison_value}"
                 )
                 return False
-            solver_options = SqpMethodOptions()
+            solver_options = SqpMethodOptions(
+                use_gauss_newton=True,
+                eliminate_leg_equality=True,
+                min_lam=1e-12)
             weight_config = WeightConfig()
             posture_config = PostureConfig()
             freezed_joint_dict = None

@@ -4,8 +4,8 @@ import numpy as np
 
 if __name__ == "__main__":
     robot_version = RobotVersion.W1V024
-    left_ee_type = EndEffectorType.DH_AG_160_95
-    right_ee_type = EndEffectorType.DH_AG_160_95
+    left_ee_type = EndEffectorType.BrainCo_Revo1_R
+    right_ee_type = EndEffectorType.BrainCo_Revo1_R
     collision_checker = CollisionCheckerWrapper(robot_version,
                                                 left_ee_type,
                                                 right_ee_type,
@@ -14,8 +14,8 @@ if __name__ == "__main__":
         0.785, -1.57, 0.9, 0.0, 0.0, -0.4, -1.55, -0.87, 1.57, -0.785, -1.51,
         0.0, -0.86, 1.57, 1.75, -1.37, 0.57, 0.0, 0.0, 0.0
     ])
-    left_ee_pulse = np.array([0.0] * 1)
-    right_ee_pulse = np.array([100.0] * 1)
+    left_ee_pulse = np.array([0.0] * 6)
+    right_ee_pulse = np.array([100.0] * 6)
 
     res = collision_checker.check_collision(robot_real_q,
                                             left_ee_pulse,

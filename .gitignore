@@ -14,6 +14,7 @@ __pycache__/
 *.pyc
 *.egg-info/
 .idea/
+benchmark*/
 
 *_dependencies/
 CLAUDE.md

@@ -73,6 +73,11 @@ if __name__ == "__main__":
         -1.57, -0.785, 1.57, -0.785, 0.0, 0.0, 0.0,
         1.57, 0.785, -1.57, 0.785, 0.0, 0.0, 0.0
     ])
+#     home_qpos = np.array([
+#         0.8732, -1.7463,  0.8997, -0.0075, -0.3502, -0.7732,  0.8414, -1.0884, -0.9083,
+#  -1.8834, -0.1327, -0.3132, -0.1457, -0.6169,  1.16,    0.6753,  1.9064,  0.0376,
+#   0.3101,  0.2158
+#     ])
     # yapf: enable
 
     left_ee_home_qpos = np.array([0.0] * 6)
@@ -91,7 +96,11 @@ if __name__ == "__main__":
     ik_solver = WholeBodyIK(urdf_path=urdf_path,
                             tracking_frame_config=tracking_frame_config,
                             joint_name_config=joint_name_config,
-                            solver_options=IpoptOptions(),
+                            solver_options=SqpMethodOptions(
+                                use_gauss_newton=True,
+                                eliminate_leg_equality=True,
+                                min_lam=1e-12),
+                            # solver_options=IpoptOptions(),
                             weight_config=WeightConfig(),
                             posture_config=PostureConfig(),
                             freezed_joint_dict=freezed_joint_dict)
@@ -122,7 +131,7 @@ if __name__ == "__main__":
     T_target_rarm = np.linalg.inv(T_world_target2) @ T_chassis_rarm
 
     eye_focus_point = np.array([0.6, 0.0, 0.8])
-
+    # eye_focus_point = np.array([0.5245, -0.2329,  0.6857])
     rate = RateLimiter(frequency=100, warn=True)
 
     input("Press Enter to start the IK control loop...")
@@ -142,13 +151,25 @@ if __name__ == "__main__":
             ref_qpos = cur_qpos
 
         start_time = time.time()
+#         T_world_larm = np.array(
+#             [[ 0.1051,  0.2025,  0.9736,  0.1284],
+#  [-0.7116, -0.6686,  0.2158,  0.4722],
+#  [ 0.6947, -0.7155,  0.0738,  0.9666],
+#  [ 0.,      0.,      0.,      1.    ]]
+#         )
+#         T_world_rarm = np.array(
+#             [[-0.033,  -0.1186,  0.9924,  0.1707],
+#  [ 0.6382, -0.7667, -0.0704, -0.4184],
+#  [ 0.7692,  0.631,   0.101,   0.9344],
+#  [ 0.,      0.,      0.,      1.    ]]
+#         )
         res, result_qpos = ik_solver.solve_ik(left_arm_target=T_world_larm,
                                               right_arm_target=T_world_rarm,
                                               ref_qpos=ref_qpos,
                                               upper_body_leaning_threshold=0.0,
                                               eye_focus_point=eye_focus_point,
                                               is_strict_solution=False)
-        print(f"IK solve time: {time.time() - start_time:.4f} seconds")
+        # print(f"IK solve time: {time.time() - start_time:.4f} seconds")
 
         # world_T_armltcp = T_world_larm @ armlee_T_armltcp
         # world_T_armrtcp = T_world_rarm @ armree_T_armrtcp
