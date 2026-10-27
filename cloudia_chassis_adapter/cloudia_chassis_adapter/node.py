@@ -179,7 +179,8 @@ class CloudiaChassisAdapter(Node):
                     reason = self._link_lost_reason(now)
                     if reason:
                         self.get_logger().warning(
-                            f"Cloudia WebSocket link lost: {reason}; reconnecting")
+                            f"Cloudia WebSocket link lost: {reason}; reconnecting"
+                        )
                         break
                     self._send_heartbeat_if_due(ws, now)
                     try:
@@ -282,8 +283,8 @@ class CloudiaChassisAdapter(Node):
                 return
             if self._ws is not ws:
                 return
-            payload = build_heartbeat_command(
-                self._client_id, serial_number=self._serial_number)
+            payload = build_heartbeat_command(self._client_id,
+                                              serial_number=self._serial_number)
             ws.send(json.dumps(payload, separators=(",", ":")))
             self._last_heartbeat_sent = now
 

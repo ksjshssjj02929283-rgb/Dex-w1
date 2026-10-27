@@ -100,4 +100,5 @@ def build_heartbeat_command(client_id,
 
 
 def is_heartbeat_response(payload):
-    return isinstance(payload, dict) and payload.get("type") == "heartbeatResponse"
+    return isinstance(payload,
+                      dict) and payload.get("type") == "heartbeatResponse"

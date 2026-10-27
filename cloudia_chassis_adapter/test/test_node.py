@@ -157,24 +157,23 @@ class LinkHealthTest(unittest.TestCase):
 
     def setUp(self):
         self.ws = Mock()
-        self.adapter = SimpleNamespace(
-            _enabled=True,
-            _lock=threading.RLock(),
-            _ws=self.ws,
-            _raw_state_pub=Mock(),
-            _pose_pub=Mock(),
-            _last_state_time=None,
-            _connected_at=10.0,
-            _last_heartbeat_sent=None,
-            _last_heartbeat_ack=None,
-            _heartbeat_seen=False,
-            _heartbeat_missing_reported=False,
-            _link_timeout=1.0,
-            _heartbeat_period=1.0,
-            _heartbeat_timeout=3.0,
-            _client_id="test-client",
-            _serial_number="",
-            get_logger=Mock(return_value=Mock()))
+        self.adapter = SimpleNamespace(_enabled=True,
+                                       _lock=threading.RLock(),
+                                       _ws=self.ws,
+                                       _raw_state_pub=Mock(),
+                                       _pose_pub=Mock(),
+                                       _last_state_time=None,
+                                       _connected_at=10.0,
+                                       _last_heartbeat_sent=None,
+                                       _last_heartbeat_ack=None,
+                                       _heartbeat_seen=False,
+                                       _heartbeat_missing_reported=False,
+                                       _link_timeout=1.0,
+                                       _heartbeat_period=1.0,
+                                       _heartbeat_timeout=3.0,
+                                       _client_id="test-client",
+                                       _serial_number="",
+                                       get_logger=Mock(return_value=Mock()))
 
     def reason(self, now):
         return CloudiaChassisAdapter._link_lost_reason(self.adapter, now)
@@ -201,14 +200,18 @@ class LinkHealthTest(unittest.TestCase):
         self.assertIn("no heartbeatResponse", self.reason(20.5))
 
     def test_heartbeat_sent_when_due(self):
-        CloudiaChassisAdapter._send_heartbeat_if_due(self.adapter, self.ws, 10.0)
+        CloudiaChassisAdapter._send_heartbeat_if_due(self.adapter, self.ws,
+                                                     10.0)
         payload = json.loads(self.ws.send.call_args.args[0])
-        self.assertEqual(payload["heartbeatCommand"], {"clientId": "test-client"})
+        self.assertEqual(payload["heartbeatCommand"],
+                         {"clientId": "test-client"})
         self.assertEqual(payload["communicationType"], "downstream_command")
         self.assertEqual(self.adapter._last_heartbeat_sent, 10.0)
-        CloudiaChassisAdapter._send_heartbeat_if_due(self.adapter, self.ws, 10.5)
+        CloudiaChassisAdapter._send_heartbeat_if_due(self.adapter, self.ws,
+                                                     10.5)
         self.assertEqual(self.ws.send.call_count, 1)
-        CloudiaChassisAdapter._send_heartbeat_if_due(self.adapter, self.ws, 11.0)
+        CloudiaChassisAdapter._send_heartbeat_if_due(self.adapter, self.ws,
+                                                     11.0)
         self.assertEqual(self.ws.send.call_count, 2)
 
     def test_heartbeat_not_sent_on_replaced_socket(self):
@@ -217,8 +220,12 @@ class LinkHealthTest(unittest.TestCase):
         self.assertIsNone(self.adapter._last_heartbeat_sent)
 
     def test_heartbeat_response_recorded_not_forwarded(self):
-        raw = json.dumps({"type": "heartbeatResponse",
-                          "heartbeat": {"connectionCount": 1}})
+        raw = json.dumps({
+            "type": "heartbeatResponse",
+            "heartbeat": {
+                "connectionCount": 1
+            }
+        })
         with patch("cloudia_chassis_adapter.node.time.monotonic",
                    return_value=12.0):
             CloudiaChassisAdapter._handle_frame(self.adapter, raw)

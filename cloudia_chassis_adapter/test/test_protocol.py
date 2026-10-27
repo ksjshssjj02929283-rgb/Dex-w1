@@ -111,8 +111,11 @@ class HeartbeatProtocolTest(unittest.TestCase):
 
     def test_heartbeat_response_detection(self):
         self.assertTrue(is_heartbeat_response({"type": "heartbeatResponse"}))
-        for payload in ({"communicationType": "upstream_state"}, {}, [], None,
-                        {"type": "other"}):
+        for payload in ({
+                "communicationType": "upstream_state"
+        }, {}, [], None, {
+                "type": "other"
+        }):
             self.assertFalse(is_heartbeat_response(payload))
 
 
