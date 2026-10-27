@@ -7,6 +7,8 @@ float32 progress         # 0~100：MAPPING 恒 0；SAVING 期间按 node 处理�
 string  stage            # SAVING 期间的阶段名（FINISHING_TRAJECTORIES/OPTIMIZING/SERIALIZING/WRITING_GRID/DONE），其余为空
 int32   error_code       # 0 = 无错误；上次操作失败时携带，下次 start_mapping 清零
 
+string error_message    # 当前 error_code 对应的说明，无错误时为空
+
 int8 ERROR = -1    # 建图异常
 int8 IDLE = 0      # 空闲（未建图）
 int8 MAPPING = 1   # 建图中
@@ -23,7 +25,7 @@ int32 E_MAP_FOLDER_MISSING   = 2101052   # map_folder 未配置或不可创建�
 int32 E_MAP_DIR_RESET_FAILED = 2101062   # 地图目录重建失败（等级 2）
 int32 E_MAP_SAVE_FAILED      = 2101072   # 保存任一产物失败（可重试）（等级 2）
 int32 E_MAP_ROBOT_MOVING     = 2101080   # 由门面层前置自检产生：机器人非静止（等级 0）
-int32 E_MAP_SENSOR_ABNORMAL  = 2101092   # 由门面层前置自检产生：传感器异常（等级 2）
+int32 E_MAP_SENSOR_ABNORMAL  = 2101092   # 传感器异常：启动自检、输入超时或雷达遮挡（等级 2）
 int32 E_MAP_BATTERY_LOW      = 2101101   # 电量不足，运行中可伴随 MAPPING/SAVING（等级 1）
 int32 E_MAP_SAVING           = 2101110   # 收尾保存进行中，拒绝 start/cancel（等级 0）
 int32 W_MAP_AREA_LIMIT       = 2101501   # 有效面积达上限（warning，不中断）（等级 1）
