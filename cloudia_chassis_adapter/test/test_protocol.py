@@ -6,7 +6,9 @@ from pathlib import Path
 PACKAGE_ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from cloudia_chassis_adapter.protocol import (build_speed_command,
+from cloudia_chassis_adapter.protocol import (build_heartbeat_command,
+                                              build_speed_command,
+                                              is_heartbeat_response,
                                               parse_upstream_state)
 
 
@@ -95,6 +97,23 @@ class ProtocolTest(unittest.TestCase):
         self.assertEqual(payload["speedCommand"]["targetVelocity"]["vy"], -0.2)
         self.assertTrue(payload["speedCommand"]["useSafe"])
         json.dumps(payload)
+
+
+class HeartbeatProtocolTest(unittest.TestCase):
+
+    def test_heartbeat_command_shape(self):
+        payload = build_heartbeat_command("robot-a", serial_number="SN1")
+        self.assertEqual(payload["communicationType"], "downstream_command")
+        self.assertEqual(payload["heartbeatCommand"], {"clientId": "robot-a"})
+        self.assertEqual(payload["header"]["serialNumber"], "SN1")
+        self.assertNotIn("speedCommand", payload)
+        json.dumps(payload)
+
+    def test_heartbeat_response_detection(self):
+        self.assertTrue(is_heartbeat_response({"type": "heartbeatResponse"}))
+        for payload in ({"communicationType": "upstream_state"}, {}, [], None,
+                        {"type": "other"}):
+            self.assertFalse(is_heartbeat_response(payload))
 
 
 if __name__ == "__main__":

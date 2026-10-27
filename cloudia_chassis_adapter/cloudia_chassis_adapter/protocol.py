@@ -1,6 +1,6 @@
 """迦智 WebSocket 消息编码与解析。
 
-服务端只提取位姿和构造速度命令，其余状态随完整原始 JSON 转发。
+服务端只提取位姿、构造速度命令和心跳，其余状态随完整原始 JSON 转发。
 """
 
 from __future__ import annotations
@@ -46,15 +46,8 @@ def parse_upstream_state(payload):
     return {"pose": pose}
 
 
-def build_speed_command(vx,
-                        vy,
-                        omega,
-                        *,
-                        use_safe=False,
-                        manufacturer="DexForce Cloudia Adapter",
-                        serial_number="",
-                        version="2.1.0"):
-    """构造完整的 downstream_command/speedCommand 消息。"""
+def _downstream(manufacturer, serial_number, version):
+    """下行消息公共部分：通信类型与头部（每条消息新的 headerId）。"""
     timestamp = datetime.now(
         timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     payload = {
@@ -65,6 +58,24 @@ def build_speed_command(vx,
             "version": version,
             "manufacturer": manufacturer,
         },
+    }
+    # 协议允许省略头字段，但显式填写的字符串不能为空。
+    if serial_number.strip():
+        payload["header"]["serialNumber"] = serial_number
+    return payload
+
+
+def build_speed_command(vx,
+                        vy,
+                        omega,
+                        *,
+                        use_safe=False,
+                        manufacturer="DexForce Cloudia Adapter",
+                        serial_number="",
+                        version="2.1.0"):
+    """构造完整的 downstream_command/speedCommand 消息。"""
+    payload = _downstream(manufacturer, serial_number, version)
+    payload.update({
         "speedCommand": {
             "targetVelocity": {
                 "vx": float(vx),
@@ -73,8 +84,20 @@ def build_speed_command(vx,
             },
             "useSafe": bool(use_safe),
         },
-    }
-    # 协议允许省略头字段，但显式填写的字符串不能为空。
-    if serial_number.strip():
-        payload["header"]["serialNumber"] = serial_number
+    })
     return payload
+
+
+def build_heartbeat_command(client_id,
+                            *,
+                            manufacturer="DexForce Cloudia Adapter",
+                            serial_number="",
+                            version="2.1.0"):
+    """构造 heartbeatCommand；网关只对心跳回包（heartbeatResponse）。"""
+    payload = _downstream(manufacturer, serial_number, version)
+    payload["heartbeatCommand"] = {"clientId": str(client_id)}
+    return payload
+
+
+def is_heartbeat_response(payload):
+    return isinstance(payload, dict) and payload.get("type") == "heartbeatResponse"

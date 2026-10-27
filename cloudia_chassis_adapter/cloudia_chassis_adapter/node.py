@@ -3,6 +3,8 @@
 Cloudia 模式下本节点是底盘 WebSocket 的唯一所有者：接收 upstream_state，
 发布位姿与完整原始状态 JSON，并把 /control/cmd_vel 以固定周期转换成
 downstream_command/speedCommand；无输入时保持静默，超时停车后释放速度通道。
+链路检测：状态帧中断超过 link_timeout_s 即断开重连；按周期发协议心跳，
+网关回过心跳后，心跳回包超时同样断开重连。
 默认后端为 dexe 时不建立连接、不发布状态。
 """
 
@@ -19,7 +21,8 @@ from geometry_msgs.msg import PoseStamped, Twist
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from .protocol import build_speed_command, parse_upstream_state
+from .protocol import (build_heartbeat_command, build_speed_command,
+                       is_heartbeat_response, parse_upstream_state)
 
 try:
     import websocket
@@ -48,6 +51,10 @@ class CloudiaChassisAdapter(Node):
         self.declare_parameter("connect_timeout_s", 5.0)
         self.declare_parameter("use_safe", False)
         self.declare_parameter("serial_number", "")
+        self.declare_parameter("link_timeout_s", 1.0)
+        self.declare_parameter("heartbeat_period_s", 1.0)
+        self.declare_parameter("heartbeat_timeout_s", 3.0)
+        self.declare_parameter("client_id", "dexe-robot-server")
 
         self._backend = str(self.get_parameter("backend").value).lower()
         self._enabled = self._backend == "cloudia"
@@ -67,6 +74,14 @@ class CloudiaChassisAdapter(Node):
             self.get_parameter("connect_timeout_s").value)
         self._use_safe = bool(self.get_parameter("use_safe").value)
         self._serial_number = str(self.get_parameter("serial_number").value)
+        self._link_timeout = max(
+            0.2, float(self.get_parameter("link_timeout_s").value))
+        self._heartbeat_period = max(
+            0.1, float(self.get_parameter("heartbeat_period_s").value))
+        self._heartbeat_timeout = max(
+            self._heartbeat_period,
+            float(self.get_parameter("heartbeat_timeout_s").value))
+        self._client_id = str(self.get_parameter("client_id").value)
 
         self._pose_pub = self.create_publisher(
             PoseStamped, str(self.get_parameter("pose_topic").value), 10)
@@ -87,6 +102,11 @@ class CloudiaChassisAdapter(Node):
         self._connected = False
         self._stale_reported = False
         self._thread = None
+        self._connected_at = None
+        self._last_heartbeat_sent = None
+        self._last_heartbeat_ack = None
+        self._heartbeat_seen = False
+        self._heartbeat_missing_reported = False
 
         self._watchdog_timer = self.create_timer(0.1, self._watchdog)
         self._command_timer = self.create_timer(1.0 / self._command_rate,
@@ -137,7 +157,8 @@ class CloudiaChassisAdapter(Node):
             try:
                 ws = websocket.WebSocket()
                 ws.connect(self._url, timeout=self._connect_timeout)
-                ws.settimeout(1.0)
+                # 短接收超时：没有帧时也能及时做链路检测和心跳。
+                ws.settimeout(0.2)
                 with self._lock:
                     self._ws = ws
                     # 上次断开时停车发送失败，先补一次停车尝试再恢复发送。
@@ -146,9 +167,21 @@ class CloudiaChassisAdapter(Node):
                     # 连接恢复后只接受新的 ROS 指令与状态，不重放断线前缓存。
                     self._last_cmd_time = None
                     self._last_state_time = None
+                    self._connected_at = time.monotonic()
+                    self._last_heartbeat_sent = None
+                    self._last_heartbeat_ack = None
+                    self._heartbeat_seen = False
+                    self._heartbeat_missing_reported = False
                 reconnect_delay = self._reconnect_min
                 self.get_logger().info("Cloudia WebSocket connected")
                 while not self._stop.is_set():
+                    now = time.monotonic()
+                    reason = self._link_lost_reason(now)
+                    if reason:
+                        self.get_logger().warning(
+                            f"Cloudia WebSocket link lost: {reason}; reconnecting")
+                        break
+                    self._send_heartbeat_if_due(ws, now)
                     try:
                         raw = ws.recv()
                     except websocket.WebSocketTimeoutException:
@@ -185,6 +218,11 @@ class CloudiaChassisAdapter(Node):
         except (TypeError, ValueError) as exc:
             self.get_logger().warning(f"忽略非 JSON WebSocket 帧: {exc}")
             return
+        if is_heartbeat_response(payload):
+            with self._lock:
+                self._last_heartbeat_ack = time.monotonic()
+                self._heartbeat_seen = True
+            return
         if (not isinstance(payload, dict) or
                 payload.get("communicationType") != "upstream_state"):
             return
@@ -211,6 +249,43 @@ class CloudiaChassisAdapter(Node):
             msg.pose.orientation.z = math.sin(pose["theta"] / 2.0)
             msg.pose.orientation.w = math.cos(pose["theta"] / 2.0)
             self._pose_pub.publish(msg)
+
+    def _link_lost_reason(self, now):
+        """链路判死条件；返回原因字符串，链路正常返回 None。"""
+        with self._lock:
+            last_state = self._last_state_time
+            connected_at = self._connected_at
+            heartbeat_seen = self._heartbeat_seen
+            last_ack = self._last_heartbeat_ack
+            last_sent = self._last_heartbeat_sent
+        reference = last_state if last_state is not None else connected_at
+        if reference is not None and now - reference > self._link_timeout:
+            return f"no upstream_state for {now - reference:.2f}s"
+        if heartbeat_seen:
+            if now - last_ack > self._heartbeat_timeout:
+                return f"no heartbeatResponse for {now - last_ack:.2f}s"
+        elif (last_sent is not None and connected_at is not None and
+              now - connected_at > self._heartbeat_timeout and
+              not self._heartbeat_missing_reported):
+            # 网关从未回过心跳：只告警一次，链路仍按状态帧判断，避免反复重连。
+            self._heartbeat_missing_reported = True
+            self.get_logger().warning(
+                "Cloudia gateway has not answered heartbeatCommand; "
+                "link check falls back to upstream_state only")
+        return None
+
+    def _send_heartbeat_if_due(self, ws, now):
+        """到期发一次心跳；发送失败抛异常，由外层断开重连。"""
+        with self._lock:
+            last_sent = self._last_heartbeat_sent
+            if last_sent is not None and now - last_sent < self._heartbeat_period:
+                return
+            if self._ws is not ws:
+                return
+            payload = build_heartbeat_command(
+                self._client_id, serial_number=self._serial_number)
+            ws.send(json.dumps(payload, separators=(",", ":")))
+            self._last_heartbeat_sent = now
 
     def _watchdog(self):
         if not self._enabled:
