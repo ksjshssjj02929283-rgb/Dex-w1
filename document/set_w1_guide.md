@@ -64,6 +64,51 @@ cd ~/w1/dexe_robot_server
 | `hardware` | 查看 hardware.yaml | `./set_w1.sh hardware` |
 | `tool` | 末端工具重力补偿参数(修改后需./set_w1.sh restart重启服务) | `./set_w1.sh tool` |
 
+#### 前端启动前修改工具配置
+
+推荐前端直接调用 Python 脚本，不经过 `set_w1.sh` 的服务环境和 sudo 初始化。
+依赖 Python 3 和 PyYAML（`yaml` 模块），默认文件为当前用户的
+`~/dexe_robot_server_data/robot_config.yaml`，可用 `--config /absolute/path/robot_config.yaml` 指定。
+
+```bash
+# 左手：按名称修改质量和质心，即使 enabled=false 也可以修改
+python3 script/set_tool_dynamics.py --arm primary --tool BrainCo_Revo1_R --mass-kg 0.65 --com-m 0.01 0 0.08
+
+# 右手：修改 Default，并同时开启该侧补偿
+python3 script/set_tool_dynamics.py --arm secondary --tool Default --mass-kg 0.2 --com-m 0 0 0.03 --enabled true
+
+# 仅关闭左手补偿，不改质量、质心
+python3 script/set_tool_dynamics.py --arm primary --enabled false
+
+# 仅修改某个已有工具的质量；也可以只传 --com-m X Y Z
+python3 script/set_tool_dynamics.py --arm secondary --tool Linker_L6 --mass-kg 0.5
+
+# 查看文件配置
+python3 script/set_tool_dynamics.py --list
+```
+
+参数模式规则：
+
+- `--arm` 必填，`primary` 为左手，`secondary` 为右手；每次调用修改一侧的一个工具。
+- `--enabled` 接受 `true` / `false`。未传入时保留原值；编辑质量、质心不要求已开启补偿。
+- 修改质量或质心必须提供 `--tool`，按本侧已有名称精确匹配，区分大小写，默认项名称为 `Default`。
+  未找到时报错，不新增工具，也不回退到 Default；不修改 `left_hand_type` / `right_hand_type`。
+- 质量必须是有限非负数（kg）；质心必须是三个有限数值（m，EE/法兰坐标系），可以为负。
+  零质量合法。修改后该工具的完整质量、质心必须都合法，否则整次不保存。
+- 目标字段须已存在，质量/开关须是单行标量，质心须是三标量序列。支持行内列表和多行列表。
+  目标路径重复键、YAML 合并键、文档中的锚点/别名会报错，需要先整理为独立、明确的配置。
+- 单次调用全部校验通过后才保存；只替换指定字段的数值，保留其他配置、注释和排版。
+  使用同目录临时文件原子替换，并通过锁文件串行处理本脚本的参数模式及交互模式写入。
+  外部编辑器不参与该锁，避免同时修改同一文件。
+- 成功退出码为 `0`，stdout 输出一行 JSON，包含 `ok/config/arm/tool/updated`；
+  参数或配置校验失败返回 `2`，文件访问/写入失败返回 `1`，错误信息写到 stderr。
+  参数模式无交互提示、不自动启动或重启服务。前端收到成功后再启动 w1_server；已运行的服务需重启。
+- 不带修改参数时进入终端交互模式，`--list` 仅显示配置。交互模式同样只替换目标数值，
+  保留其他配置、注释、缩进和列表排版；删除工具只移除该工具条目及其内部注释。
+  每次保存都会重新读取文件，不会用启动时的整份旧配置覆盖外部已经保存的其他修改。
+  保存失败会显示错误，保留原文件及菜单中的原值。
+
+
 ### 2.5 GUI 工具
 
 | 命令 | 说明 | 示例 |
