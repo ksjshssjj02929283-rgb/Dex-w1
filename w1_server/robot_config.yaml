@@ -64,6 +64,33 @@ tool_dynamics_primary:
   Linker_L6:
     mass_kg: 0.5
     com_m: [0.0, 0.0, 0.0]
+  DH_PGC_140_50:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  DH_AG_160_95:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  BrainCo_Revo1_E:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  PaXini_Dex_H13:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  AGILEX_PiPER_L100:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  AGILEX_Pika:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  HITBOT_Z_ESC_70:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  Lansi_DualSuction:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  Dual_DH_PGC_50_35:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
 
 # 右臂按 right_hand_type 检索本表, 与左臂参数独立
 tool_dynamics_secondary:
@@ -78,6 +105,33 @@ tool_dynamics_secondary:
     mass_kg: 0.5
     com_m: [0.0, 0.0, 0.0]
   Linker_L6:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  DH_PGC_140_50:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  DH_AG_160_95:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  BrainCo_Revo1_E:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  PaXini_Dex_H13:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  AGILEX_PiPER_L100:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  AGILEX_Pika:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  HITBOT_Z_ESC_70:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  Lansi_DualSuction:
+    mass_kg: 0.5
+    com_m: [0.0, 0.0, 0.0]
+  Dual_DH_PGC_50_35:
     mass_kg: 0.5
     com_m: [0.0, 0.0, 0.0]
 
