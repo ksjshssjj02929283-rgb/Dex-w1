@@ -1223,25 +1223,9 @@ class W1Manager:
                      armree_qpos: np.ndarray = None,
                      robot_name: str = "whole_body",
                      save_scene: bool = True) -> StatusCode:
-        """检查qpos状态是否碰撞"""
+        """检查机器人本体是否碰撞；EE 参数仅为兼容旧调用保留，不参与检查。"""
         if not self._check_qpos_dimension("full_body", qpos):
             return StatusCode.DIM_MISMATCH
-        if armlee_qpos is not None and not self._check_qpos_dimension(
-                "left_arm_ee", armlee_qpos):
-            return StatusCode.DIM_MISMATCH
-        if armree_qpos is not None and not self._check_qpos_dimension(
-                "right_arm_ee", armree_qpos):
-            return StatusCode.DIM_MISMATCH
-        
-        # if self._has_arm_ee_client("left_arm_ee",
-        #                            False) and self._has_arm_ee_client(
-        #                                "right_arm_ee", False):
-        #     torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(
-        #         qpos,
-        #         left_ee_qpos=armlee_qpos,
-        #         right_ee_qpos=armree_qpos,
-        #         compute_ee=True)
-        # else:
         torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(
             qpos, left_ee_qpos=None, right_ee_qpos=None, compute_ee=False)
         armlee_tf, armree_tf = None, None
@@ -1260,88 +1244,37 @@ class W1Manager:
 
     def _is_traj_collision(self,
                            qpos_array: np.ndarray,
-                           left_arm_start_ee_qpos: np.ndarray | list[float],
-                           right_arm_start_ee_qpos: np.ndarray | list[float],
+                           left_arm_start_ee_qpos: np.ndarray | list[float] = None,
+                           right_arm_start_ee_qpos: np.ndarray | list[float] = None,
                            left_arm_ee_trigger_list: list[tuple[int,
                                                                 list]] = None,
                            right_arm_ee_trigger_list: list[tuple[int,
                                                                  list]] = None,
                            step: int = 5,
                            save_scene: bool = True) -> StatusCode:
-        """检查轨迹是否碰撞
+        """检查机器人本体轨迹是否碰撞。
+
         Args:
-            qpos_array (np.ndarray): 10ms间隔的轨迹
-            left_arm_start_ee_qpos (np.ndarray|list[float]): 左臂末端执行器起始位置
-            right_arm_start_ee_qpos (np.ndarray|list[float]): 右臂末端执行器起始位置
-            left_arm_ee_trigger_list (list[tuple[int, list]], optional): 左臂末端执行器触发列表，格式[(idx, qpos), ...]. Defaults to None.
-            right_arm_ee_trigger_list (list[tuple[int, list]], optional): 右臂末端执行器触发列表，格式[(idx, qpos), ...]. Defaults to None.
-            step (int, optional): 检测步长，每步10ms. Defaults to 5.
+            qpos_array (np.ndarray): 10ms间隔的机器人本体轨迹。
+            left_arm_start_ee_qpos: 兼容旧调用保留，不参与碰撞检查。
+            right_arm_start_ee_qpos: 兼容旧调用保留，不参与碰撞检查。
+            left_arm_ee_trigger_list: 兼容旧调用保留，不参与碰撞检查。
+            right_arm_ee_trigger_list: 兼容旧调用保留，不参与碰撞检查。
+            step (int, optional): 检测步长，每步10ms。默认为5。
+            save_scene (bool, optional): 碰撞时是否更新可视化场景。默认为True。
+
         Returns:
-            StatusCode: 
-        
-        Notes:
-            - if there is no ee client, left_arm_start_ee_qpos and right_arm_start_ee_qpos should be None
+            StatusCode: 检测到碰撞或状态检查失败时返回SUCCESS，否则返回FAIL。
         """
         # NOTE: 最大速度 伸直构型下 仅基座关节运动导致的末端位移 5 * 0.01s * 1rad/s * 0.7m = 3.5cm
-
-        if self._has_arm_ee_client("left_arm_ee",
-                                   False) and self._has_arm_ee_client(
-                                       "right_arm_ee", False):
-            if left_arm_start_ee_qpos is None or not self._check_qpos_dimension(
-                    "left_arm_ee", left_arm_start_ee_qpos):
-                raise ValueError(
-                    "Left arm start ee qpos is required and should have correct dimension."
-                )
-            if right_arm_start_ee_qpos is None or not self._check_qpos_dimension(
-                    "right_arm_ee", right_arm_start_ee_qpos):
-                raise ValueError(
-                    "Right arm start ee qpos is required and should have correct dimension."
-                )
-            cur_left_ee_qpos = np.asarray(left_arm_start_ee_qpos)
-            cur_right_ee_qpos = np.asarray(right_arm_start_ee_qpos)
-
-            if left_arm_ee_trigger_list is None:
-                left_arm_ee_qpos_array = np.tile(cur_left_ee_qpos,
-                                                 (qpos_array.shape[0], 1))
-            else:
-                left_arm_ee_qpos_array = np.tile(cur_left_ee_qpos,
-                                                 (qpos_array.shape[0], 1))
-                for idx, target_qpos in left_arm_ee_trigger_list:
-                    left_arm_ee_qpos_array[idx:, :] = np.tile(
-                        np.asarray(target_qpos), (qpos_array.shape[0] - idx, 1))
-            if right_arm_ee_trigger_list is None:
-                right_arm_ee_qpos_array = np.tile(cur_right_ee_qpos,
-                                                  (qpos_array.shape[0], 1))
-            else:
-                right_arm_ee_qpos_array = np.tile(cur_right_ee_qpos,
-                                                  (qpos_array.shape[0], 1))
-                for idx, target_qpos in right_arm_ee_trigger_list:
-                    right_arm_ee_qpos_array[idx:, :] = np.tile(
-                        np.asarray(target_qpos), (qpos_array.shape[0] - idx, 1))
-            qpos_array_check = np.vstack((qpos_array[::step], qpos_array[-1]))
-            left_arm_ee_qpos_array_check = np.vstack(
-                (left_arm_ee_qpos_array[::step], left_arm_ee_qpos_array[-1]))
-            right_arm_ee_qpos_array_check = np.vstack(
-                (right_arm_ee_qpos_array[::step], right_arm_ee_qpos_array[-1]))
-            for idx in range(qpos_array_check.shape[0]):
-                if self.is_collision(qpos_array_check[idx],
-                                     left_arm_ee_qpos_array_check[idx],
-                                     right_arm_ee_qpos_array_check[idx],
-                                     save_scene=save_scene) != StatusCode.FAIL:
-                    self.logger.error(
-                        f"Traj is collision at idx {idx}, qpos {qpos_array_check[idx]}, do not executed!"
-                    )
-                    return StatusCode.SUCCESS
-            return StatusCode.FAIL
-        else:
-            qpos_array_check = np.vstack((qpos_array[::step], qpos_array[-1]))
-            for qpos in qpos_array_check:
-                if self.is_collision(qpos,
-                                     save_scene=save_scene) != StatusCode.FAIL:
-                    self.logger.error(
-                        f"Traj is collision at {qpos}, do not executed!")
-                    return StatusCode.SUCCESS
-            return StatusCode.FAIL
+        qpos_array_check = np.vstack((qpos_array[::step], qpos_array[-1]))
+        for qpos in qpos_array_check:
+            if self.is_collision(qpos,
+                                 save_scene=save_scene) != StatusCode.FAIL:
+                self.logger.error(
+                    f"Traj is collision at {qpos}, do not executed!")
+                return StatusCode.SUCCESS
+        return StatusCode.FAIL
 
     def plan_joint_traj(
             self,
