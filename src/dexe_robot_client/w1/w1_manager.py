@@ -102,8 +102,8 @@ class W1Manager:
         else:
             self.SRSConfig = SRSIKinematics.Config
 
-        res, file_path = download_w1_urdf(arm_type, w1_version,
-                                          end_effector_type)
+        # res, file_path = download_w1_urdf(arm_type, w1_version,
+        #                                   end_effector_type)
         res, file_path = download_w1_urdf(arm_type, w1_version, None)
 
         self.w1_params = W1Params(self._arm_type, self._w1_version,
@@ -126,19 +126,19 @@ class W1Manager:
         # initialize fcl checker and pinocchio model and planner
         self._init_fcl_checker(arm_type=arm_type,
                                w1_version=w1_version,
-                               end_effector_type=end_effector_type)
+                               end_effector_type=None)
         self._init_pinocchio(arm_type=arm_type,
                              w1_version=w1_version,
-                             end_effector_type=end_effector_type)
+                             end_effector_type=None)
         self.real_torso_idx, self.real_head_idx, self.real_arml_idx, self.real_armr_idx = get_real_idx(
         )
         self._init_planner(arm_type=arm_type,
                            w1_version=w1_version,
-                           end_effector_type=end_effector_type)
+                           end_effector_type=None)
 
         self._init_cartesian_planner(arm_type=arm_type,
                                      w1_version=w1_version,
-                                     end_effector_type=end_effector_type)
+                                     end_effector_type=None)
 
         self._stop_move_event = threading.Event()
         self._stop_move_event.clear()
@@ -1232,18 +1232,19 @@ class W1Manager:
         if armree_qpos is not None and not self._check_qpos_dimension(
                 "right_arm_ee", armree_qpos):
             return StatusCode.DIM_MISMATCH
-        if self._has_arm_ee_client("left_arm_ee",
-                                   False) and self._has_arm_ee_client(
-                                       "right_arm_ee", False):
-            torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(
-                qpos,
-                left_ee_qpos=armlee_qpos,
-                right_ee_qpos=armree_qpos,
-                compute_ee=True)
-        else:
-            torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(
-                qpos, left_ee_qpos=None, right_ee_qpos=None, compute_ee=False)
-            armlee_tf, armree_tf = None, None
+        
+        # if self._has_arm_ee_client("left_arm_ee",
+        #                            False) and self._has_arm_ee_client(
+        #                                "right_arm_ee", False):
+        #     torso_tf, head_tf, arml_tf, armr_tf, armlee_tf, armree_tf = self._pin_kine.get_Kinematics(
+        #         qpos,
+        #         left_ee_qpos=armlee_qpos,
+        #         right_ee_qpos=armree_qpos,
+        #         compute_ee=True)
+        # else:
+        torso_tf, head_tf, arml_tf, armr_tf = self._pin_kine.get_Kinematics(
+            qpos, left_ee_qpos=None, right_ee_qpos=None, compute_ee=False)
+        armlee_tf, armree_tf = None, None
 
         self.fcl_checker.set_head_body_transform(head_transforms=head_tf,
                                                  body_transforms=torso_tf)

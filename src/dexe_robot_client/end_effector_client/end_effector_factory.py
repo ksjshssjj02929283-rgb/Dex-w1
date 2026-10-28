@@ -27,5 +27,9 @@ def create_end_effector_client(end_effector_type: EndEffectorType,
         return EndEffectorClient(ee_type=DexeRP_EEType.DH_PGC_140_50,
                                  is_left=is_left,
                                  is_sim=is_sim)
+    elif end_effector_type == EndEffectorType.DUAL_PGC_GRIPPER:
+        return EndEffectorClient(ee_type=DexeRP_EEType.Dual_DH_PGC_50_35,
+                                 is_left=is_left,
+                                 is_sim=is_sim)
     else:
         raise ValueError(f"{end_effector_type.name} are not support.")

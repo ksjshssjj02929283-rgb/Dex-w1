@@ -39,6 +39,8 @@ class W1Params:
             self.arm_ee_dofs = 6
         elif self._end_effector_type == EndEffectorType.PGC_GRIPPER:
             self.arm_ee_dofs = 1
+        elif self._end_effector_type == EndEffectorType.DUAL_PGC_GRIPPER:
+            self.arm_ee_dofs = 2
         else:
             raise ValueError(
                 f"Unsupport end effector type: {self._end_effector_type.name}.")

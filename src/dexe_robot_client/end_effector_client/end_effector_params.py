@@ -49,6 +49,17 @@ class EndEffectorFactory:
             raise ValueError(f"Unsupport EndEffectorType: {ee_type}")
         return cls._registry[ee_type]()
 
+@EndEffectorFactory.register(DexeRP_EEType.Dual_DH_PGC_50_35)
+def _():
+    return EndEffectorParams(
+        dof=2,
+        joint_names=("FINGER1", "FINGER2"),
+        supported_modes=(EEJointControlMode.POSITION,),
+        position=Limit((0,)*2, (100,)*2),
+        velocity=Limit((-100,)*2, (100,)*2),
+        current=Limit((-100,)*2, (100,)*2),
+        force=Limit((-100,)*2, (100,)*2),
+    )
 
 @EndEffectorFactory.register(DexeRP_EEType.DH_PGC_140_50)
 def _():
