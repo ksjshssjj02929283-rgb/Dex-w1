@@ -1,5 +1,6 @@
 #include "w1_server.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -194,7 +195,7 @@ void RobotServer::TorqueControlThreadFunc() {
         auto t_feedback = std::chrono::steady_clock::now();
 
         // 如果开启了记录, 则在独立的记录日志中记录数据
-        if (this->manager_info_.robot_property.enable_record && manager_state_ == Status::Running &&
+        if (this->manager_info_.robot_property.enable_record && manager_state_.load() == Status::Running &&
             loop_counter % 1 == 0) {
             int index_offset = GetFirstJointIndex();
             double timestamp_s = this->now().nanoseconds() / 1e9;
@@ -667,7 +668,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ", \"robot_type\":\"" + this->robot_model_.params_ptr->robot_type + "\"" +
         ", \"robot_version\":\"" + this->robot_model_.params_ptr->robot_version + "\"" +
         ", \"robot_mode\":\"" + ToString(this->robot_mode_) + "\"" +
-        ",\n  \"status\":\"" + ToString(this->manager_state_) + "\"" +
+        ",\n  \"status\":\"" + ToString(this->manager_state_.load()) + "\"" +
         ", \"robot_statusword\":" + utils::RobotStatuswordToJsonString(this->robot_feedback_.robot_status_word).str() +
         ", \"robot_controlword\":" + utils::RobotControlwordToJsonString(robot_control_.robot_control_word).str() +
         ",\n  \"motor_status\":" + utils::MotorStatusToJsonArrayString(motor_status_arr_, index_offset, ndof_config_).str() +
@@ -693,6 +694,7 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"ee_pose\":" + utils::VectorToJsonArrayString(this->manager_info_.ee_pose_measurement, 0, this->robot_mode_ == RobotMode::SingleArm? 7 : 14).str() +
         ",\n  \"torso_pose_X_Z_RY\":" + utils::VectorToJsonArrayString(this->manager_info_.torso_pose_measurement).str() +
         ",\n  \"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+        ", \"latest_enqueued_id\":" + std::to_string(this->latest_enqueued_id_.load()) +
         ", \"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
         ", \"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
         ",\n  \"enable_streaming_ruckig\":" + std::to_string(this->manager_info_.robot_property.enable_streaming_ruckig) +
@@ -802,7 +804,9 @@ Int64 RobotServer::StartStreaming(PlannerRequest planner_request) {
         return request_id;
     }
     planner_request.request_id = request_id;
-    this->manager_buffers_.request_queue->EnQueue(planner_request);
+    if (!TryEnqueueRequest(planner_request)) {
+        return -1;
+    }
 
     RCLCPP_INFO(this->get_logger(), "Request_id = %ld, StartJointStreaming Received", planner_request.request_id);
     LOG_INFO << "Request_id = " << planner_request.request_id << ", Received, type = StartJointStreaming";
@@ -841,13 +845,25 @@ void RobotServer::ControlCallback(const JointControlMsg::SharedPtr msg) {
     }
     // 仅当所有位置命令均有效时才启动或发送流式命令
     if (position_valid) {
-        if (manager_state_ == Status::Idle) {
-            PlannerRequest planner_request;
-            planner_request.type = RequestType::StartJointStreaming;
-            MoveRequest move_request;
-            move_request.motion_group = MotionGroup::WholeBody;
-            planner_request.data = move_request;
-            streaming_request_id_ = StartStreaming(planner_request);
+        if (manager_state_.load() == Status::Idle) {
+            const auto reported_id = std::max(latest_report_id_.finished.load(), latest_report_id_.error_drop.load());
+            // 与 MakeNewRequestID 的 streaming 准入条件保持一致。
+            if (latest_enqueued_id_.load() <= reported_id) {
+                PlannerRequest planner_request;
+                planner_request.type = RequestType::StartJointStreaming;
+                MoveRequest move_request;
+                move_request.motion_group = MotionGroup::WholeBody;
+                planner_request.data = move_request;
+                const auto new_id = StartStreaming(planner_request);
+                if (new_id < 0) {
+                    return;
+                }
+                streaming_request_id_ = new_id;
+            } else if (streaming_request_id_ < 0 || streaming_request_id_ <= reported_id) {
+                // 其他请求待处理，不能透传已结束或无效的 streaming ID。
+                return;
+            }
+            // 本地 streaming 尚待启动时，继续使用原 ID 透传，不重复提交启动请求。
         }
         if (streaming_request_id_ > -1) {
             StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
@@ -896,16 +912,28 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
     }
     // 所有关节位置均有效才发送
     if (position_valid) {
-        if (manager_state_ == Status::Idle) {
-            PlannerRequest planner_request;
-            planner_request.type = RequestType::StartJointStreaming;
-            MoveRequest move_request;
-            move_request.motion_group = MotionGroup::WholeBody;
-            move_request.streaming_timeout = streaming_timeout_;
-            planner_request.data = move_request;
-            streaming_request_id_ = StartStreaming(planner_request);
+        if (manager_state_.load() == Status::Idle) {
+            const auto reported_id = std::max(latest_report_id_.finished.load(), latest_report_id_.error_drop.load());
+            // 与 MakeNewRequestID 的 streaming 准入条件保持一致。
+            if (latest_enqueued_id_.load() <= reported_id) {
+                PlannerRequest planner_request;
+                planner_request.type = RequestType::StartJointStreaming;
+                MoveRequest move_request;
+                move_request.motion_group = MotionGroup::WholeBody;
+                move_request.streaming_timeout = streaming_timeout_;
+                planner_request.data = move_request;
+                const auto new_id = StartStreaming(planner_request);
+                if (new_id < 0) {
+                    return;
+                }
+                streaming_request_id_ = new_id;
+            } else if (streaming_request_id_ < 0 || streaming_request_id_ <= reported_id) {
+                // 其他请求待处理，不能透传已结束或无效的 streaming ID。
+                return;
+            }
+            // 本地 streaming 尚待启动时，继续使用原 ID 透传，不重复提交启动请求。
         }
-        if (streaming_request_id_ != -1) {
+        if (streaming_request_id_ >= 0) {
             StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();
             streaming_msg->request_id = streaming_request_id_;
             streaming_msg->streaming_finished = false;
