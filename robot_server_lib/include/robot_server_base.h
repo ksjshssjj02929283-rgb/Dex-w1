@@ -36,6 +36,8 @@ protected:
 
     void Run();
     Int64 MakeNewRequestID(const PlannerRequest& planner_request);
+    // 提交入口由同一互斥 ROS 回调组串行调用；仅在入队成功后推进水位。
+    bool TryEnqueueRequest(const PlannerRequest& planner_request);
     void StreamingCommandCallback(const robot_server_interfaces::msg::StreamingCommand::SharedPtr msg);
 
     void MoveRobotCallback(
@@ -62,8 +64,9 @@ protected:
     RobotModel robot_model_;
     PlannerManagerBuffers manager_buffers_;
     TorqueControlBuffer robot_buffers_;
-    Status manager_state_{Status::Init};
-    Int64 latest_received_id_{-1};
+    std::atomic<Status> manager_state_{Status::Init};  // manager 线程写，ROS 回调及发布线程读
+    Int64 latest_received_id_{-1};                     // 已分配的最大请求 ID，入队失败也不回退
+    std::atomic_int64_t latest_enqueued_id_{-1};       // 成功入队的最大 ID，发布线程也会读取
     using RequestHandle = std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveRobot>>;
     SingleReaderMessageBufferMap<RequestHandle> request_handle_buffer_;
     std::filesystem::path server_data_dir_ = std::filesystem::path(std::getenv("HOME")) / "dexe_robot_server_data";

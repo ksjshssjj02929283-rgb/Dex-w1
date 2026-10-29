@@ -405,6 +405,14 @@ RequestResponse PlannerManager::OnRequestStateRunning() {
     }
     current_planner_->SetRobotProperty(robot_property_);
     current_planner_->ResetForNewTrajectory(request, measurement, time_meta);
+    if (request.type == RequestType::MoveTraj) {
+        const auto& move_request = std::get<MoveRequest>(request.data.value());
+        const Int64 phase_count = (move_request.endpoint_index.has_value() && !move_request.endpoint_index->empty())
+                                      ? static_cast<Int64>(move_request.endpoint_index->size())
+                                      : 1;
+        // 仅在接管新轨迹时重设阶段计数基准，跨过未入队的 ID；此处不回报完成水位。
+        runtime_data_.last_finished_request_id = request.request_id - phase_count;
+    }
     response.re_run = false;
     response.request_consumed = true;
     runtime_data_.latest_processing_request_id =

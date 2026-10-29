@@ -1,5 +1,7 @@
 #include "robot_server_sim.h"
 
+#include <algorithm>
+
 namespace robot_server_lib {
 
 RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim) : RobotServerBase(robot_cfg_path, is_sim) {
@@ -172,7 +174,9 @@ Int64 RobotServer::StartStreaming(PlannerRequest planner_request) {
         return request_id;
     }
     planner_request.request_id = request_id;
-    this->manager_buffers_.request_queue->EnQueue(planner_request);
+    if (!TryEnqueueRequest(planner_request)) {
+        return -1;
+    }
 
     RCLCPP_INFO(this->get_logger(), "Request_id = %ld, StartJointStreaming Received", planner_request.request_id);
     LOG_INFO << "Request_id = " << planner_request.request_id << ", Received, type = StartJointStreaming";
@@ -194,13 +198,22 @@ void RobotServer::PositionControlCallback(const JointPositionControlMsg::SharedP
             }
         }
     }
-    if (manager_state_ == Status::Idle) {
-        PlannerRequest planner_request;
-        planner_request.type = RequestType::StartJointStreaming;
-        MoveRequest move_request;
-        move_request.motion_group = MotionGroup::WholeBody;
-        planner_request.data = move_request;
-        streaming_request_id_ = StartStreaming(planner_request);
+    if (manager_state_.load() == Status::Idle) {
+        const auto reported_id = std::max(latest_report_id_.finished.load(), latest_report_id_.error_drop.load());
+        if (latest_enqueued_id_.load() <= reported_id) {
+            PlannerRequest planner_request;
+            planner_request.type = RequestType::StartJointStreaming;
+            MoveRequest move_request;
+            move_request.motion_group = MotionGroup::WholeBody;
+            planner_request.data = move_request;
+            const auto new_id = StartStreaming(planner_request);
+            if (new_id < 0) {
+                return;
+            }
+            streaming_request_id_ = new_id;
+        } else if (streaming_request_id_ < 0 || streaming_request_id_ <= reported_id) {
+            return;
+        }
     }
     if (streaming_request_id_ != -1) {
         StreamingCommandMsg::SharedPtr streaming_msg = std::make_shared<StreamingCommandMsg>();

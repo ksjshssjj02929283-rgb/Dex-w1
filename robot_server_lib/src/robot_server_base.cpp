@@ -180,7 +180,7 @@ std::string RobotServerBase::GetRobotServerStateJson(uint64_t timestamp_ns,
                                                      const std::optional<std::vector<double>>& ee_pose,
                                                      const std::optional<PlannerManagerInfo>& planner_info) {
     std::string json = "{\"timestamp\":" + std::to_string(timestamp_ns) + ",\"status\":\"" +
-                       ToString(this->manager_state_) + "\"" + ", \"robot_type\":\"" +
+                       ToString(this->manager_state_.load()) + "\"" + ", \"robot_type\":\"" +
                        this->robot_model_.params_ptr->robot_type + "\"" + ", \"robot_version\":\"" +
                        this->robot_model_.params_ptr->robot_version + "\"";
     PlannerManagerInfo manager_info;
@@ -198,6 +198,7 @@ std::string RobotServerBase::GetRobotServerStateJson(uint64_t timestamp_ns,
             ", \"safe_level\":\"" + std::to_string(manager_info.robot_property.safe_level) + "\"" +
             ", \"global_speed_ratio\":\"" + std::to_string(manager_info.robot_property.global_speed_ratio) + "\"" +
             "\n ,\"latest_queued_id\":" + std::to_string(this->latest_report_id_.queued) +
+            ",\"latest_enqueued_id\":" + std::to_string(this->latest_enqueued_id_.load()) +
             ",\"latest_finished_id\":" + std::to_string(this->latest_report_id_.finished) +
             ",\"latest_errordrop_id\":" + std::to_string(this->latest_report_id_.error_drop) +
             ",\n \"joint_name\":" + utils::VectorToJsonArrayString(this->robot_model_.params_ptr->joint_names).str() +
@@ -224,16 +225,17 @@ Int64 RobotServerBase::MakeNewRequestID(const PlannerRequest& planner_request) {
     const RequestType& type = planner_request.type;
     if (type == RequestType::StartJointStreaming || type == RequestType::StartEEPoseStreaming ||
         type == RequestType::StartEEVelocityStreaming) {
-        if (this->latest_received_id_ >
+        const auto enqueued_id = this->latest_enqueued_id_.load();
+        if (enqueued_id >
             (std::max(this->latest_report_id_.finished.load(), this->latest_report_id_.error_drop.load()))) {
             RCLCPP_WARN(this->get_logger(),
                         "Still existed previous move request, failed to queue start streaming request, "
-                        "latest_received_id_: %ld, "
+                        "latest_enqueued_id_: %ld, "
                         "latest_finished_id_: %ld, latest_errordrop_id_: %ld",
-                        this->latest_received_id_, this->latest_report_id_.finished.load(),
+                        enqueued_id, this->latest_report_id_.finished.load(),
                         this->latest_report_id_.error_drop.load());
             LOG_CRIT << "Still existed previous move request, failed to queue start streaming request"
-                     << ", latest_received_id_: " << this->latest_received_id_
+                     << ", latest_enqueued_id_: " << enqueued_id
                      << ", latest_finished_id_: " << this->latest_report_id_.finished.load()
                      << ", latest_errordrop_id_: " << this->latest_report_id_.error_drop.load();
             return -1;
@@ -247,10 +249,11 @@ Int64 RobotServerBase::MakeNewRequestID(const PlannerRequest& planner_request) {
         }
         auto move_request = std::get<MoveRequest>(planner_request.data.value());
         if (move_request.interval.has_value()) {
-            if (move_request.endpoint_index.has_value()) {
+            if (move_request.endpoint_index.has_value() && !move_request.endpoint_index->empty()) {
                 std::vector<int> endpoint_index = move_request.endpoint_index.value();
                 this->latest_received_id_ += endpoint_index.size();
             } else {
+                // 与 MoveTrajPlanner 一致：未提供或显式传入空列表时，按一个阶段分配 ID。
                 this->latest_received_id_++;
             }
             return this->latest_received_id_;
@@ -261,15 +264,32 @@ Int64 RobotServerBase::MakeNewRequestID(const PlannerRequest& planner_request) {
             return -1;
         }
     }
-    if (type == RequestType::EnableDrag && this->manager_state_ == Status::Running) {
+    if (type == RequestType::EnableDrag && this->manager_state_.load() == Status::Running) {
         RCLCPP_WARN(this->get_logger(),
                     "Cannot change to Drag mode during Running state, request type: %s, manager state: %s",
-                    ToString(type), ToString(this->manager_state_));
+                    ToString(type), ToString(this->manager_state_.load()));
         LOG_CRIT << "Cannot change to Drag mode during Running state, request type: " << ToString(type)
-                 << ", manager state: " << ToString(this->manager_state_);
+                 << ", manager state: " << ToString(this->manager_state_.load());
         return -1;
     }
     return ++this->latest_received_id_;
+}
+
+bool RobotServerBase::TryEnqueueRequest(const PlannerRequest& planner_request) {
+    if (planner_request.request_id < 0) {
+        return false;
+    }
+    const bool is_emergency = planner_request.type >= RequestType::StopMove;
+    const auto& queue = is_emergency ? manager_buffers_.emergency_request_queue : manager_buffers_.request_queue;
+    if (!queue->EnQueue(planner_request)) {
+        RCLCPP_WARN(this->get_logger(), "Request_id = %ld, %s rejected: %s request queue is full",
+                    planner_request.request_id, ToString(planner_request.type), is_emergency ? "emergency" : "normal");
+        LOG_CRIT << "Request_id = " << planner_request.request_id << ", " << ToString(planner_request.type)
+                 << " rejected: " << (is_emergency ? "emergency" : "normal") << " request queue is full";
+        return false;
+    }
+    utils::SetMax(latest_enqueued_id_, planner_request.request_id);
+    return true;
 }
 
 void RobotServerBase::MoveRobotCallback(
@@ -279,16 +299,36 @@ void RobotServerBase::MoveRobotCallback(
     PlannerRequest planner_request = utils::ParseMoveRequest(request_handle);
     auto request_id = MakeNewRequestID(planner_request);
 
+    const auto reject_submission = [&request_handle]() {
+        auto feedback = std::make_shared<MoveRobot::Feedback>();
+        feedback->request_id = -1;
+        request_handle->publish_feedback(feedback);
+        auto result = std::make_shared<MoveRobot::Result>();
+        result->request_id = -1;
+        result->success = false;
+        request_handle->abort(result);
+    };
+
     if (request_id < 0) {
         RCLCPP_WARN(this->get_logger(), "MakeNewRequestID < 0, failed to queue move robot request");
         LOG_CRIT << "MakeNewRequestID < 0, failed to queue move robot request";
+        reject_submission();
+        return;
     } else {
         planner_request.request_id = request_id;
-        planner_request.type >= RequestType::StopMove
-            ? this->manager_buffers_.emergency_request_queue->EnQueue(planner_request)
-            : this->manager_buffers_.request_queue->EnQueue(planner_request);
-
-        this->request_handle_buffer_.Put(request_id, request_handle);
+        // 请求对 manager 可见前先登记 handle，避免快速完成时找不到 action。
+        if (!this->request_handle_buffer_.Put(request_id, request_handle)) {
+            RCLCPP_WARN(this->get_logger(), "Request_id = %ld rejected: action handle already exists", request_id);
+            LOG_CRIT << "Request_id = " << request_id << " rejected: action handle already exists";
+            reject_submission();
+            return;
+        }
+        if (!TryEnqueueRequest(planner_request)) {
+            RequestHandle removed_handle;
+            this->request_handle_buffer_.TakeNonBlocking(request_id, &removed_handle);
+            reject_submission();
+            return;
+        }
         RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, arm = %s, is emergency request: %s, config: %s",
                     planner_request.request_id, request_handle->get_goal()->type.c_str(),
                     request_handle->get_goal()->motion_group.c_str(),
@@ -301,10 +341,7 @@ void RobotServerBase::MoveRobotCallback(
                  << ", is emergency request: " << (planner_request.type >= RequestType::StopMove ? "true" : "false")
                  << ", config: " << request_handle->get_goal()->config;
     }
-    // Publish feedback with request id
-    auto feedback = std::make_shared<MoveRobot::Feedback>();
-    feedback->request_id = request_id;
-    request_handle->publish_feedback(feedback);
+    // 成功请求的 ID 反馈由 manager 在接管/结束时发送，避免此处与终态回报竞争。
 }
 
 void RobotServerBase::StreamingCommandCallback(const StreamingCommandMsg::SharedPtr streaming_msg) {
@@ -345,9 +382,10 @@ void RobotServerBase::SetPropertyCallback(const std::shared_ptr<SetProperty::Req
         return;
     }
     planner_request.request_id = MakeNewRequestID(planner_request);
-    planner_request.type >= RequestType::StopMove
-        ? this->manager_buffers_.emergency_request_queue->EnQueue(planner_request)
-        : this->manager_buffers_.request_queue->EnQueue(planner_request);
+    if (!TryEnqueueRequest(planner_request)) {
+        response->request_id = -1;
+        return;
+    }
     response->request_id = planner_request.request_id;
 
     RCLCPP_INFO(this->get_logger(), "Request_id = %ld, %s Received, value: %s", planner_request.request_id,
@@ -360,28 +398,40 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id,
                                           RequestType request_type,
                                           RequestStatus request_status,
                                           Status manager_state) {
-    this->manager_state_ = manager_state;
+    this->manager_state_.store(manager_state);
 
     // Log the manager and request status
     if (request_id < 0) {
-        RCLCPP_INFO(this->get_logger(), "manager state changed to %s", ToString(this->manager_state_));
-        LOG_INFO << "Manager state changed to: " << ToString(this->manager_state_);
+        RCLCPP_INFO(this->get_logger(), "manager state changed to %s", ToString(manager_state));
+        LOG_INFO << "Manager state changed to: " << ToString(manager_state);
         return;
     }
     RCLCPP_INFO(this->get_logger(), "Request id = %ld, %s %s", request_id, ToString(request_type),
                 ToString(request_status));
     LOG_INFO << "Request id = " << request_id << " " << ToString(request_status)
              << ", type = " << ToString(request_type);
+    const auto publish_request_id = [request_id](const RequestHandle& handle) {
+        auto feedback = std::make_shared<MoveRobot::Feedback>();
+        feedback->request_id = request_id;
+        handle->publish_feedback(feedback);
+    };
     // Update the latest report id based on the request status
     switch (request_status) {
-        case RequestStatus::Queued:
+        case RequestStatus::Queued: {
             utils::SetMax(this->latest_report_id_.queued, request_id);
+            RequestHandle handle_temp;
+            if (this->request_handle_buffer_.Peek(request_id, &handle_temp)) {
+                publish_request_id(handle_temp);
+            }
             break;
+        }
         case RequestStatus::Executed:
             utils::SetMax(this->latest_report_id_.finished, request_id);
             {
                 RequestHandle handle_temp;
                 if (this->request_handle_buffer_.TakeNonBlocking(request_id, &handle_temp)) {
+                    // 立即完成/停止/失败的请求可能没有 Queued 回报，结束前也发送 ID。
+                    publish_request_id(handle_temp);
                     auto result_msg = std::make_shared<MoveRobot::Result>();
                     result_msg->request_id = request_id;
                     result_msg->success = true;
@@ -397,6 +447,7 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id,
             {
                 RequestHandle handle_temp;
                 if (this->request_handle_buffer_.TakeNonBlocking(request_id, &handle_temp)) {
+                    publish_request_id(handle_temp);
                     auto result_msg = std::make_shared<MoveRobot::Result>();
                     result_msg->request_id = request_id;
                     result_msg->success = true;
@@ -409,6 +460,7 @@ void RobotServerBase::ReportRequestStatus(Int64 request_id,
             {
                 RequestHandle handle_temp;
                 if (this->request_handle_buffer_.TakeNonBlocking(request_id, &handle_temp)) {
+                    publish_request_id(handle_temp);
                     auto result_msg = std::make_shared<MoveRobot::Result>();
                     result_msg->request_id = request_id;
                     result_msg->success = false;
