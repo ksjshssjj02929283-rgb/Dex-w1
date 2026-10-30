@@ -437,7 +437,9 @@ TEST(ChassisCommand, DiffModeDispatchesToDifferentialInverse) {
     ChassisTarget t = MakeTarget(0.6, 0.0, 0.4);
     t.config.chassis_type = ChassisType::DiffDrive;
     ChassisControl out{};
-    GenerateChassisCommand(t, WheelFeedback{}, false, &out);
+    WheelFeedback fb{};
+    fb.valid = true;  // 反馈无效时差速输出零速，这里要验证的是分发
+    GenerateChassisCommand(t, fb, false, &out);
     EXPECT_EQ(out.chassis_mode, static_cast<int>(ChassisType::DiffDrive));
     EXPECT_GT(out.chassis_right_velocity, out.chassis_left_velocity);
 }
@@ -609,6 +611,109 @@ TEST(ChassisCommand, TargetExpiryUsesPerSourceTimeout) {
     EXPECT_TRUE(IsTargetExpired(t, 400'000'000));
     t.source = ChassisCommandSource::None;
     EXPECT_TRUE(IsTargetExpired(t, 0)) << "无来源即 idle";
+}
+
+// ============================================================ 差速安全限幅
+
+ChassisTarget MakeDiffTarget(double vx, double wz) {
+    ChassisTarget t = MakeTarget(vx, 0.0, wz);
+    t.config.chassis_type = ChassisType::DiffDrive;
+    return t;
+}
+
+WheelFeedback ValidDiffFeedback() {
+    WheelFeedback fb{};
+    fb.valid = true;
+    return fb;
+}
+
+ChassisControl RunDiff(double vx, double wz) {
+    ChassisControl out{};
+    GenerateDiffCommand(MakeDiffTarget(vx, wz), ValidDiffFeedback(), false, &out);
+    return out;
+}
+
+// 与底盘类型无关的车体限幅：线速度取平面合速度，与角速度一起等比缩放（全向同样使用）
+void ExpectTwist(const Twist2D& t, double vx, double vy, double wz) {
+    EXPECT_NEAR(t.vx, vx, 1e-12);
+    EXPECT_NEAR(t.vy, vy, 1e-12);
+    EXPECT_NEAR(t.wz, wz, 1e-12);
+}
+
+TEST(SafeTwistLimit, TwistWithinLimitsIsUnchanged) {
+    ExpectTwist(ClampTwistToSafeLimits({0.5, 0.0, 0.5}), 0.5, 0.0, 0.5);
+}
+
+TEST(SafeTwistLimit, LinearOverLimitScalesWholeTwist) {
+    ExpectTwist(ClampTwistToSafeLimits({1.5, 0.0, 0.4}), 0.75, 0.0, 0.2);  // 系数 0.5
+}
+
+TEST(SafeTwistLimit, LinearLimitUsesPlanarSpeed) {
+    ExpectTwist(ClampTwistToSafeLimits({0.6, 0.8, 0.0}), 0.45, 0.6, 0.0);  // |v| = 1.0 → 系数 0.75
+}
+
+TEST(SafeTwistLimit, AngularOverLimitScalesWholeTwist) {
+    ExpectTwist(ClampTwistToSafeLimits({0.2, 0.0, 2.0}), 0.1, 0.0, 1.0);  // 系数 0.5
+}
+
+TEST(SafeTwistLimit, MostRestrictiveLimitWins) {
+    ExpectTwist(ClampTwistToSafeLimits({1.5, 0.0, 4.0}), 0.375, 0.0, 1.0);  // 线 0.5、角 0.25 → 0.25
+}
+
+TEST(DiffSpeedLimit, CommandWithinLimitsIsUnchanged) {
+    const ChassisKinematics kin;
+    double l = 0.0, r = 0.0;
+    kin.DiffInverse({0.5, 0.0, 0.5}, &l, &r);
+    const ChassisControl out = RunDiff(0.5, 0.5);
+    EXPECT_DOUBLE_EQ(out.chassis_left_velocity, l);
+    EXPECT_DOUBLE_EQ(out.chassis_right_velocity, r);
+}
+
+TEST(DiffSpeedLimit, StraightCommandIsCappedAtSafeWheelSpeed) {
+    const ChassisKinematics kin;
+    const double cap_rpm = kin.DiffSpeedToRpm(kChassisSafeWheelSpeedMps);
+    const ChassisControl out = RunDiff(1.2, 0.0);
+    EXPECT_NEAR(out.chassis_left_velocity, cap_rpm, 1e-9);
+    EXPECT_NEAR(out.chassis_right_velocity, cap_rpm, 1e-9);
+}
+
+TEST(DiffSpeedLimit, InPlaceRotationIsCappedAtSafeAngularSpeed) {
+    const ChassisKinematics kin;
+    double l = 0.0, r = 0.0;
+    kin.DiffInverse({0.0, 0.0, kChassisSafeAngularRps}, &l, &r);
+    const ChassisControl out = RunDiff(0.0, 3.0);
+    EXPECT_NEAR(out.chassis_left_velocity, l, 1e-9);
+    EXPECT_NEAR(out.chassis_right_velocity, r, 1e-9);
+}
+
+TEST(DiffSpeedLimit, AngularCapScalesLinearSpeedToKeepTurnRadius) {
+    // 2 rad/s 超限 → 系数 0.5：vx 0.3 → 0.15，转弯半径 vx/wz 不变
+    const ChassisKinematics kin;
+    const double k = kChassisSafeAngularRps / 2.0;
+    double l = 0.0, r = 0.0;
+    kin.DiffInverse({0.3 * k, 0.0, 2.0 * k}, &l, &r);
+    const ChassisControl out = RunDiff(0.3, 2.0);
+    EXPECT_NEAR(out.chassis_left_velocity, l, 1e-9);
+    EXPECT_NEAR(out.chassis_right_velocity, r, 1e-9);
+}
+
+TEST(DiffSpeedLimit, PeakWheelIsCappedAndWheelRatioKept) {
+    // 0.9 rad/s 不超角速度上限，但外侧轮 0.7 + 0.9·b/2 ≈ 0.90 m/s 超单轮上限
+    const ChassisKinematics kin;
+    double l = 0.0, r = 0.0;
+    kin.DiffInverse({0.7, 0.0, 0.9}, &l, &r);
+    const ChassisControl out = RunDiff(0.7, 0.9);
+    EXPECT_NEAR(out.chassis_right_velocity, kin.DiffSpeedToRpm(kChassisSafeWheelSpeedMps), 1e-9);
+    EXPECT_NEAR(out.chassis_left_velocity / out.chassis_right_velocity, l / r, 1e-12);
+}
+
+TEST(DiffSpeedLimit, NonFiniteCommandOutputsZero) {
+    const double inf = std::numeric_limits<double>::infinity();
+    for (const auto& [vx, wz] : {std::pair{std::nan(""), 0.1}, std::pair{0.1, inf}}) {
+        const ChassisControl out = RunDiff(vx, wz);
+        EXPECT_EQ(out.chassis_left_velocity, 0.0);
+        EXPECT_EQ(out.chassis_right_velocity, 0.0);
+    }
 }
 
 }  // namespace

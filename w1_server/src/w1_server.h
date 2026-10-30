@@ -8,6 +8,7 @@
 #include <std_msgs/msg/float64_multi_array.hpp>
 
 #include "chassis_command.h"
+#include "chassis_safety_monitor.h"
 #include "joint_interfaces/msg/joint_control.hpp"
 #include "joint_interfaces/msg/joint_position_control.hpp"
 #include "joint_interfaces/msg/joint_velocity_torque_limit_feedback.hpp"
@@ -112,6 +113,21 @@ private:
     // 单写者无锁缓冲（与 robot_buffers_ 同一范式），避免实时线程与普通优先级线程争互斥量。
     using ChassisTargetBuffer = SingleWriterLatestBuffer<chassis_node::ChassisTarget>;
     std::shared_ptr<ChassisTargetBuffer> chassis_target_buffer_;
+
+    // 底盘安全速度监测：监测器与清错沿检测只由 1 kHz 线程读写；上报状态经原子量给发布线程，实时侧不加锁。
+    // 人工复位与电机清错共用 SetProperty ClearError（XWiz「清错恢复」）。
+    chassis_node::ChassisSafetyMonitor chassis_safety_;
+    bool chassis_clear_error_prev_ = false;
+    bool chassis_restart_hold_warned_ = false;  // 复位后待零速的告警每次只打一条
+    std::atomic<bool> chassis_safety_latched_{false};
+    std::atomic<uint8_t> chassis_safety_fault_{0};
+    std::atomic<bool> chassis_safety_awaiting_zero_{false};
+
+    // 上下半身一体：上半身就绪过之后再出现故障或掉线，底盘一起进安全状态，ClearError 一起清。
+    // 解耦模式只用于底盘调试：上半身异常不停底盘、底盘不要求关节反馈；
+    // robot_config.yaml 的 chassis_config.decouple_upper_lower_body，默认关。
+    bool decouple_upper_lower_body_ = false;
+    bool upper_body_ready_seen_ = false;
 
     // 力传感器相关
     Vector3d sensor_force_;

@@ -91,6 +91,8 @@ global_speed_ratio: 1.0
 chassis_config:
   chassis_type: "diff_drive"
   enable_chassis_shaper: false
+  # 上下半身解耦，只用于底盘调试（默认 false）：true 时上半身异常不停底盘、底盘不要求关节反馈
+  # decouple_upper_lower_body: true
 
 w1_v02:
   # === streaming运动参数 ===

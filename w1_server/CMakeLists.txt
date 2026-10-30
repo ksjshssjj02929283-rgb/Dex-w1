@@ -218,6 +218,17 @@ if(BUILD_TESTING)
     )
   endif()
 
+  # 底盘安全速度监测：纯计算 header-only，判定 / 锁存 / 复位 / 复位后放行门
+  ament_add_gtest(test_chassis_safety_monitor
+    test/test_chassis_safety_monitor.cpp
+  )
+  if(TARGET test_chassis_safety_monitor)
+    target_include_directories(test_chassis_safety_monitor PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${CMAKE_CURRENT_SOURCE_DIR}/utils
+    )
+  endif()
+
   # 全向 6 维 EKF：与差速共用 Params，测试同时编译两个滤波器以做退化性对比
   ament_add_gtest(test_omni_chassis_ekf
     test/test_omni_chassis_ekf.cpp

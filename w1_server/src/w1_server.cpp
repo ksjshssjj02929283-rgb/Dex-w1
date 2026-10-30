@@ -16,6 +16,27 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
                 chassis_type_ == utils::ChassisType::Omni ? "omni" : "diff_drive");
     LOG_INFO << "w1_server version: " << W1_SERVER_VERSION;
 
+    // 上下半身解耦只用于底盘调试：robot_config.yaml 的 chassis_config.decouple_upper_lower_body，缺省为 false
+    const YAML::Node decouple_node =
+        YAML::LoadFile(robot_cfg_path.string())["chassis_config"]["decouple_upper_lower_body"];
+    if (decouple_node) {
+        try {
+            decouple_upper_lower_body_ = decouple_node.as<bool>();
+        } catch (const YAML::Exception&) {
+            decouple_upper_lower_body_ = false;  // 写错按缺省（联动）运行，不因调试开关拒绝启动
+            RCLCPP_WARN(this->get_logger(),
+                        "robot_config.yaml chassis_config.decouple_upper_lower_body is not true / false, "
+                        "using default false (coupled)");
+            LOG_WARN << "chassis_config.decouple_upper_lower_body invalid, using default false";
+        }
+    }
+    if (decouple_upper_lower_body_) {
+        RCLCPP_WARN(this->get_logger(),
+                    "Upper/lower body fault coupling DISABLED (chassis debugging only): upper body faults do not "
+                    "stop the chassis, chassis runs without joint feedback");
+        LOG_WARN << "Upper/lower body fault coupling disabled (chassis_config.decouple_upper_lower_body = true)";
+    }
+
     // 先初始化ndof_config_, 后续再自动识别模式
     ndof_config_ = ndof_robot;
 
@@ -452,12 +473,98 @@ void RobotServer::TorqueControlThreadFunc() {
         }
 
         chassis_node::WheelFeedback wheel_fb{};
-        // 纯底盘只要求底盘反馈；整机模式要求底盘和关节反馈同时有效。
+        // 纯底盘只要求底盘反馈；整机模式要求底盘和关节反馈同时有效（解耦调试模式下不要求关节反馈）。
         const bool control_feedback_valid =
-            chassis_feedback_valid && (robot_mode_ == RobotMode::Chassis || joint_feedback_valid);
+            chassis_feedback_valid &&
+            (robot_mode_ == RobotMode::Chassis || joint_feedback_valid || decouple_upper_lower_body_);
+
+        // 上半身异常：就绪过之后整机状态字变为故障、未就绪，或关节反馈失效（开机阶段还没就绪不算）。
+        // 快速停止 / 休眠是人为下发的停止，不算异常。
+        const uint16_t robot_status_word = robot_feedback_.robot_status_word;
+        if (joint_feedback_valid &&
+            (robot_status_word == STATUSWORD_MOTOR_READY || robot_status_word == STATUSWORD_MOTOR_ENABLED)) {
+            upper_body_ready_seen_ = true;
+        }
+        const bool upper_body_fault = robot_mode_ == RobotMode::W1 && !decouple_upper_lower_body_ &&
+                                      upper_body_ready_seen_ &&
+                                      (!joint_feedback_valid || robot_status_word == STATUSWORD_MOTOR_FAULT ||
+                                       robot_status_word == STATUSWORD_MOTOR_NOT_READY);
         wheel_fb.valid = control_feedback_valid;
-        const bool chassis_idle =
-            !has_target || !control_feedback_valid || chassis_node::IsTargetExpired(chassis_target, now_ns);
+
+        // 底盘安全监测：底盘自身反馈 + 上半身异常。进入安全状态后按 idle 下发零速并置 chassis_estop，
+        // 锁存到人工复位。目前只接差速；全向接入时补 MakeOmniSafetyInput 与全向分支的输出处理。
+        bool chassis_safety_latched = false;
+        bool chassis_restart_hold = false;
+        if (chassis_target.config.chassis_type == utils::ChassisType::DiffDrive) {
+            const auto& cfb = robot_feedback_.chassis_feedback;
+            const chassis_node::ChassisKinematics safety_kin(chassis_target.config.geometry,
+                                                             chassis_target.config.calibration);
+            auto safety_in = chassis_node::MakeDiffSafetyInput(chassis_feedback_valid, cfb, safety_kin);
+            safety_in.upper_body_fault = upper_body_fault;
+            const bool was_latched = chassis_safety_.latched();
+            // 人工复位与电机清错共用 ClearError：planner 每 4 ms 发一次 info，清错标志会连着出现几个周期，只认上升沿。
+            // 关节与驱动器清错都要时间，上升沿只开一个等待窗口，异常一消失就解除，按一次即可一起清
+            const bool clear_error = this->manager_info_.robot_property.clear_error_flag;
+            if (clear_error && !chassis_clear_error_prev_ && chassis_safety_.latched()) {
+                chassis_safety_.RequestReset(now_ns);
+                RCLCPP_WARN(this->get_logger(), "Chassis safety reset requested by ClearError, waiting up to %.1f s",
+                            chassis_node::kChassisResetWindowNs * 1e-9);
+                LOG_WARN << "Chassis safety reset requested by ClearError";
+            }
+            chassis_clear_error_prev_ = clear_error;
+            chassis_safety_.Update(safety_in, now_ns);
+            const auto reset_result = chassis_safety_.TakeResetResult();
+            if (reset_result == chassis_node::ChassisResetResult::Accepted) {
+                RCLCPP_WARN(this->get_logger(), "Chassis safety reset accepted");
+                LOG_WARN << "Chassis safety reset accepted";
+            } else if (reset_result == chassis_node::ChassisResetResult::Rejected) {
+                const char* present = chassis_node::ChassisSafetyFaultName(chassis_safety_.present_fault());
+                RCLCPP_WARN(this->get_logger(),
+                            "Chassis safety reset rejected: %s still present (error code L 0x%04x / R 0x%04x)", present,
+                            cfb.error_code_left, cfb.error_code_right);
+                LOG_WARN << "Chassis safety reset rejected: " << present << " still present";
+            }
+            chassis_safety_latched = chassis_safety_.latched();
+            if (chassis_safety_latched && !was_latched) {
+                const char* fault = chassis_node::ChassisSafetyFaultName(chassis_safety_.fault());
+                RCLCPP_ERROR(this->get_logger(),
+                             "Chassis safety state entered: %s (v %.3f m/s, wz %.3f rad/s, wheel rpm L %.1f / R %.1f, "
+                             "error code L 0x%04x / R 0x%04x, feedback valid %d)",
+                             fault, safety_in.linear_speed_mps, safety_in.wz_rps, cfb.left_velocity, cfb.right_velocity,
+                             cfb.error_code_left, cfb.error_code_right, chassis_feedback_valid);
+                LOG_CRIT << "Chassis safety state entered: " << fault << ", v " << safety_in.linear_speed_mps
+                         << " m/s, wz " << safety_in.wz_rps << " rad/s, wheel rpm L " << cfb.left_velocity << " / R "
+                         << cfb.right_velocity << ", error code L " << cfb.error_code_left << " / R "
+                         << cfb.error_code_right << ", feedback valid " << chassis_feedback_valid;
+            }
+            // 复位本身不引发运动：复位后先保持零速，收到零速指令或上层停发指令后才放行
+            const bool was_awaiting = chassis_safety_.awaiting_zero_command();
+            const bool command_active = has_target && !chassis_node::IsTargetExpired(chassis_target, now_ns);
+            chassis_restart_hold =
+                chassis_safety_.HoldAfterReset(command_active, chassis_target.twist.vx, chassis_target.twist.wz);
+            if (chassis_restart_hold && !chassis_restart_hold_warned_) {
+                chassis_restart_hold_warned_ = true;
+                RCLCPP_WARN(this->get_logger(),
+                            "Chassis safety reset: non-zero velocity command ignored (vx %.2f, wz %.2f); "
+                            "send zero velocity or stop the task first",
+                            chassis_target.twist.vx, chassis_target.twist.wz);
+                LOG_WARN << "Chassis safety reset: non-zero velocity command ignored, vx " << chassis_target.twist.vx
+                         << ", wz " << chassis_target.twist.wz;
+            }
+            if (was_awaiting && !chassis_safety_.awaiting_zero_command()) {
+                chassis_restart_hold_warned_ = false;
+                RCLCPP_INFO(this->get_logger(), "Chassis safety reset complete, velocity commands accepted");
+                LOG_INFO << "Chassis safety reset complete, velocity commands accepted";
+            }
+
+            chassis_safety_latched_.store(chassis_safety_latched);
+            chassis_safety_fault_.store(static_cast<uint8_t>(chassis_safety_.fault()));
+            chassis_safety_awaiting_zero_.store(chassis_safety_.awaiting_zero_command());
+        }
+
+        const bool chassis_idle = !has_target || !control_feedback_valid ||
+                                  chassis_node::IsTargetExpired(chassis_target, now_ns) || chassis_safety_latched ||
+                                  chassis_restart_hold;
         for (size_t i = 0; i < OMNI_MOTOR_NUM; ++i) {
             wheel_fb.angle_rad[i] = robot_feedback_.chassis_feedback.chassis_motor_direction[i];
             wheel_fb.speed_rpm[i] = robot_feedback_.chassis_feedback.chassis_motor_velocity[i];
@@ -482,6 +589,7 @@ void RobotServer::TorqueControlThreadFunc() {
                 robot_control_.chassis_control.chassis_left_velocity = chassis_cmd.chassis_left_velocity;
                 robot_control_.chassis_control.chassis_right_velocity = chassis_cmd.chassis_right_velocity;
             }
+            robot_control_.chassis_control.chassis_estop = chassis_safety_latched ? 1 : 0;
         } else {
             for (size_t i = 0; i < OMNI_MOTOR_NUM; ++i) {
                 robot_control_.chassis_control.chassis_motor_velocity[i] = chassis_cmd.chassis_motor_velocity[i];
@@ -713,6 +821,10 @@ std_msgs::msg::String RobotServer::GetRobotServerStateMsg()
         ",\n  \"chassis_status_word\":" + std::to_string(this->robot_feedback_.chassis_feedback.status_word) +
         ", \"chassis_error_code_left\":" + std::to_string(this->robot_feedback_.chassis_feedback.error_code_left) +
         ", \"chassis_error_code_right\":" + std::to_string(this->robot_feedback_.chassis_feedback.error_code_right) +
+        ", \"chassis_safety_latched\":" + std::to_string(this->chassis_safety_latched_.load()) +
+        ", \"chassis_safety_fault\":\"" + chassis_node::ChassisSafetyFaultName(static_cast<chassis_node::ChassisSafetyFault>(this->chassis_safety_fault_.load())) + "\"" +
+        ", \"chassis_safety_awaiting_zero_command\":" + std::to_string(this->chassis_safety_awaiting_zero_.load()) +
+        ", \"fault_coupling\":\"" + std::string(decouple_upper_lower_body_ ? "decoupled" : "coupled") + "\"" +
         ",\n \"chassis_left_velocity\":" + std::to_string(this->robot_feedback_.chassis_feedback.left_velocity) +
         ", \"chassis_right_velocity\":" + std::to_string(this->robot_feedback_.chassis_feedback.right_velocity) +
         ", \"chassis_left_current\":" + std::to_string(this->robot_feedback_.chassis_feedback.left_current) +

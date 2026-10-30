@@ -17,6 +17,7 @@
 #include <limits>
 
 #include "chassis_kinematics.h"
+#include "chassis_safety_limits.h"
 #include "robot_server_lib/chassis_type.h"
 #include "shared_memory_def.h"
 
@@ -287,15 +288,34 @@ inline void GenerateOmniCommand(const ChassisTarget& t, const WheelFeedback& fb,
     out->chassis_neutral = t.neutral;
 }
 
-/// 差速逆解。idle 时左右轮清零。
+/// 差速逆解 + 安全限幅。idle、反馈无效或指令非有限值时左右轮清零。
+///
+/// 先限车体线速度与角速度（ClampTwistToSafeLimits），再限单轮速度，都按比例同时缩放 vx 与 wz：
+/// 只降速、不改转弯半径，底盘不会因限幅偏离上层给的路径。只截 wz 会把弯道拉直，只截单轮会改变两轮比例。
 inline void GenerateDiffCommand(const ChassisTarget& t, const WheelFeedback& fb, bool expired, ChassisControl* out) {
-    if (expired || !fb.valid) {
-        out->chassis_left_velocity = 0.0;
-        out->chassis_right_velocity = 0.0;
-        return;
-    }
+    out->chassis_left_velocity = 0.0;
+    out->chassis_right_velocity = 0.0;
+    if (expired || !fb.valid || !std::isfinite(t.twist.vx) || !std::isfinite(t.twist.wz)) return;
+
+    Twist2D tw = t.twist;
+    tw.vy = 0.0;  // 差速没有横向自由度，vy 不参与限幅
+    tw = ClampTwistToSafeLimits(tw);
     const ChassisKinematics kin(t.config.geometry, t.config.calibration);
-    kin.DiffInverse(t.twist, &out->chassis_left_velocity, &out->chassis_right_velocity);
+    double left_rpm = 0.0;
+    double right_rpm = 0.0;
+    kin.DiffInverse(tw, &left_rpm, &right_rpm);
+
+    // 几何或标定量异常时上限换算不出有效值，宁可不动
+    const double max_rpm = kin.DiffSpeedToRpm(kChassisSafeWheelSpeedMps);
+    if (!(max_rpm > 0.0) || !std::isfinite(max_rpm) || !std::isfinite(left_rpm) || !std::isfinite(right_rpm)) return;
+    const double peak = std::max(std::abs(left_rpm), std::abs(right_rpm));
+    if (peak > max_rpm) {
+        const double k = max_rpm / peak;
+        left_rpm *= k;
+        right_rpm *= k;
+    }
+    out->chassis_left_velocity = left_rpm;
+    out->chassis_right_velocity = right_rpm;
 }
 
 /// 实时侧入口：根据底盘类型分发。**不分配、不加锁、不打日志**（D5）。
