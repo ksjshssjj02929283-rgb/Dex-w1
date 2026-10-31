@@ -1,5 +1,6 @@
-# 读取当前地图的全部资产（合并原 get_all_nav_points / get_all_areas / get_all_rooms / get_all_routes / get_route_graph）。
-# 只读；未加载地图时 success=false + E_ASSET_NO_MAP。
+# 读取地图的全部资产（合并原 get_all_nav_points / get_all_areas / get_all_rooms / get_all_routes / get_route_graph）。
+# 只读。map_name 空 = 当前已加载地图（未加载时 E_ASSET_NO_MAP）；非空 = 指定任意一张图（不要求已加载，
+# 不存在时 E_ASSET_MAP_NOT_FOUND）。
 # 资产类型位掩码（可组合）。kinds = 0 或 KIND_ALL 表示全部。
 uint8 KIND_POINTS    = 1
 uint8 KIND_AREAS     = 2
@@ -10,12 +11,21 @@ uint8 KIND_EDGES     = 32
 uint8 KIND_ALL       = 63
 
 uint8 kinds     # 要读取的类型位掩码；未请求的类型对应数组为空。0 = 全部（兼容旧调用 {}）
+string map_name # 空 = 当前已加载地图；非空 = 指定地图
 ---
 bool   success
 int32  error_code
 string message
 string map_name
-uint64 map_epoch                      # 与 map_state.epoch 同源，供 SetAssets.expected_epoch 乐观锁
+uint64 map_epoch                      # 与 map_state.epoch 同源，供 SetAssets.expected_epoch 乐观锁；非当前图为 0
+bool   is_current                     # 本次读的是否当前已加载的地图
+string revision                       # 资产内容指纹，供 SetAssets.expected_revision 乐观锁
+builtin_interfaces/Time last_edited_at  # 资产最后编辑时间：map_assets.json 顶层 last_edited_at，资产内容真正变化
+                                      # （保存 / 回滚 / 坐标变换）时写入，加载与读取不动它；只反映资产，与底图无关
+                                      # （底图见 MapInfo.last_edited_at）。旧文件无此键时为文件 mtime；无资产文件为 0
+nav_interfaces/AssetIssue[] issues    # 存量资产失效清单（底图 / 禁行区变化后不可用的点位与路网）
+nav_interfaces/MapVersion[] versions  # 该图的资产版本（新的在前），回滚时把 version_ts 传给 rollback_assets；
+                                      # source：save（显式保存）/ transform（坐标变换前）/ rollback（回滚前）/ unknown
 nav_interfaces/NavPoint[]      points
 nav_interfaces/AreaInfo[]      areas
 nav_interfaces/RoomInfo[]      rooms

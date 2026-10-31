@@ -1,0 +1,45 @@
+# 地图替换（整场重走后的全量覆盖）。由 command_board 编排：
+#   ① replace_map_tool --dry_run 求 source → target 的变换（不改文件）→ ② 匹配质量校验
+#   → ③ 停导航 / 停定位（target 为当前地图时）→ ④ replace_map_tool 正式执行
+#      （工具先把 target 底图备份到 <target>/slam/backups/backup_<ts>/）
+#   → ⑤ 失败回滚底图 → ⑥ 重载地图 + 启定位 → ⑦ source 地图移入回收站
+# 替换只换底图内容，坐标系沿用 target：资产（点位 / 路网 / 禁区）坐标不动，也不做变换。
+# 资产在新底图里是否仍然有效（是否落在障碍物上）不在本服务范围，由 map_asset_manager 校验。
+# 替换不触发对齐：产物继承 target 的朝向，只回报一次 ALIGN-01 残余角供参考。
+
+string  target_map_name       # 被替换的地图；空 = 当前已加载地图
+string  source_map_name       # 提供新内容的地图（整场重走新建的图）；必填，不能与 target 相同
+bool    dry_run               # true = 只求变换并返回，不修改任何文件
+bool    accept_degraded       # 自动匹配未收敛（degraded）时仍执行；默认 false = 拒绝
+bool    keep_source           # true = 替换后保留 source；默认 false = 移入回收站（可用 map_manager OP_RESTORE 取回）
+bool    use_manual_transform  # true = 不做自动匹配，直接使用下面给定的变换
+float64 manual_x              # [manual] source 原点在 target 坐标系中的 X（米）
+float64 manual_y              # [manual] source 原点在 target 坐标系中的 Y（米）
+float64 manual_yaw            # [manual] source 相对 target 的旋转角（弧度）
+---
+bool    success
+int32   error_code              # 0 = OK；非 0 见 NavSystemStatus 内的 2204xxx 常量
+bool    applied                 # 是否真的执行了替换（dry_run / 失败时为 false）
+# 变换 T_src_in_tgt 与匹配质量（manual 模式下只有变换有意义）
+float64 x
+float64 y
+float64 yaw_deg
+int32   inliers                 # 参与聚合的内点帧数
+bool    converged               # 增量迭代是否收敛
+bool    degraded                # 求出了变换但未收敛（质量存疑）
+string  stop_reason             # converged / max_iterations / budget / ...
+float64 inlier_rms_xy_m         # 内点平移残差 RMS
+float64 inlier_rms_yaw_deg      # 内点旋转残差 RMS
+# 覆盖范围（只告警不阻断）
+float64 src_known_area_m2
+float64 tgt_known_area_m2
+bool    coverage_warning        # source 已知面积 < target 的 80%：可能没有整场重走
+# 替换后的地图信息（applied=true 时有效）
+float64 total_area_m2
+float64 effective_area_m2
+string  data_version            # 替换后 pbstream 数据版本（沿用 source）："0.3.0" 等 / "legacy"
+bool    align_evaluated
+float64 align_residual_yaw_deg  # 替换后 ALIGN-01 残余角
+bool    align_warning           # 残余角 > 1°：target 坐标系本身未对齐，可单独调 ~/align_map
+string  source_trashed_to       # source 移入回收站后的条目名；保留 / 未移动时为空
+string  message                 # 人可读描述（英文）

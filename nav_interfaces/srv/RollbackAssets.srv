@@ -1,0 +1,15 @@
+# 回滚一张地图的资产到某个版本（map_asset_manager）。任意地图，不要求已加载。
+# 版本即 <map>/assets/backups/map_assets.<version_ts>.json，列表见 get_assets 的 versions。
+# 回滚前把当前资产存成一份版本（source = rollback），回滚本身可以再回滚撤销。
+# 目标是当前已加载地图时，节点同时重载内存并重新发布 assets 话题与禁行区掩膜，无需重新加载地图。
+string map_name           # 空 = 当前已加载地图
+string version_ts         # 空 = 最新一份版本
+string expected_revision  # 可选乐观锁：非空时须等于 get_assets 返回的 revision，否则 E_ASSET_REVISION_MISMATCH
+---
+bool   success
+int32  error_code         # AssetSnapshot.E_*：E_ASSET_MAP_NOT_FOUND / E_ASSET_VERSION_NOT_FOUND / E_ASSET_REVISION_MISMATCH / E_ASSET_SAVE_FAILED
+string message
+bool   is_current         # 回滚的是否当前已加载地图
+string version_ts         # 实际恢复的版本
+string backup_ts          # 回滚前自动存下的版本（撤销时回滚到它）；当前资产文件不存在时为空
+string revision           # 回滚后的资产指纹

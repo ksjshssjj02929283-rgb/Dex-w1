@@ -1,0 +1,16 @@
+# 地图回收站查询：列出 <map_folder>/<map_trash_dirname>/ 下的归档条目。只读。
+#
+# 回收站由建图 overwrite 重建地图目录时产生：旧目录整体 rename 进来而非删除，
+# 因为地图资产（点位 / 路网 / 禁区）往往是现场手工标注数小时的成果。
+# 本服务让这些归档「可见」——不可见的回收站等于慢一点的删除。
+# 取回用 MapManagerCommand 的 OP_RESTORE。
+#
+# 刻意独立成服务而不是给 GetMaps 加 include_trashed 字段：
+# 给既有 srv 加字段会改 ABI，强迫所有 GetMaps 消费方同步重编；
+# 而回收站查询是低频的管理/恢复操作，与正常地图列表是两种关注点。
+---
+bool   success
+int32  error_code                        # 0 = OK；非 0 见 MapState 内的 2202xxx 常量
+string message
+string trash_folder                      # <map_folder>/<map_trash_dirname>；回收站未启用时为空
+nav_interfaces/TrashedMapInfo[] entries  # 按归档时刻倒序（最新在前）
