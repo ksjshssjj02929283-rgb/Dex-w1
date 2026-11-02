@@ -84,6 +84,7 @@ navigation_client/
 - Feedback：`current_status`、`current_point_index`、`total_points`。
 - Result：`success`（要求 `status==SUCCEEDED` 且 `result.success` 为真）+ `message`。
 - 状态机与自动回充/路网导航共用同一套映射（`get_graph_points_navigation_status()` 取值集合同路网导航）。
+- 迦智后端（`DEXE_CHASSIS_BACKEND=cloudia`）：不走该 action，`nav_point_ids` / `nav_point_names` 按迦智点位编号解析（同一位置优先用编号：交管下发的是调度路网站点编号 `S<点号>`，如 `S015`；也接受数字和 `point_<编号>`，编号解析不了再用名称），校验点位存在后按交管点列原样下发迦智多点任务（首点即车当前点、相邻连通由交管保证）；坐标多点 `set_chassis_road_navigation` 仍由客户端补首点并校验连通；`pose` / `target_yaw` 不使用。实现在 `features/cloudia/navigation.py`。
 
 ## 导航点查询（`nav_points.py`）
 
