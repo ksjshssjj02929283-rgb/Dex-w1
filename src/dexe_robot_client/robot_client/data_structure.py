@@ -146,6 +146,10 @@ class MoveRequest:
 def value_to_string(value) -> str:
     if value is None:
         return ""
+    if isinstance(value, np.ndarray):
+        # Keep the wire format identical to list input and support NumPy
+        # scalar arrays as well as one-dimensional vectors.
+        value = value.tolist()
     if isinstance(value, bool):
         return "1" if value else "0"
     if isinstance(value, (int, float)):

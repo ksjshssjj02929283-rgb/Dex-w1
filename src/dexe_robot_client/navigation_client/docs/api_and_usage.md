@@ -113,6 +113,25 @@ client 不限制点位数量，也不阻止并发 goal，是否接受由服务�
 必须结合服务端结果判断。当前 `nav_point_ids`、`pose` 和 `target_yaw` 只是可选透传字段，
 服务端尚未消费。SIM 未配置该 action，会 fail-closed 返回 `False`。
 
+### 5.2 迦智调度导航（`CLOUDIA_SCHED_IP` 启用）
+
+连迦智**调度**服务（`http://<调度>:8858`，无鉴权），与 `DEXE_CHASSIS_BACKEND` 正交。目标是
+点位 id / 站点编码，**不是**世界坐标，所以不复用 `set_chassis_nav2_position`。
+
+| 方法 | 参数 | 返回 |
+|---|---|---|
+| `set_chassis_sched_target(id=None, name=None, position=None)` | `name`：`str`（优先），迦智底盘上即点位 id 的字符串，内部转 `int`；`id`：点位 id，`name` 为 `None` 时才用，原样下发；`position` 暂不使用。`id`/`name` 不能同时为 `None` | `bool`（任务创建成功） |
+| `get_sched_nav_state()` | 无 | `IDLE / NAVIGATING / SUCCEEDED / FAILED / CANCELLED` |
+| `get_sched_nav_result()` | 无 | `(bool, str)`，失败时为调度 `err_msg` |
+| `has_cancelable_sched_goal()` | 无 | `bool` |
+| `cancel_sched_nav()` | 无 | `bool` |
+
+环境变量：`CLOUDIA_SCHED_IP`（调度主机 IP，必填）、`CLOUDIA_SCHED_PORT`（缺省 8858，迦智调度 /api/v1 接口端口）、`CLOUDIA_SCHED_ROBOT`（调度车号，必填正整数，缺失/非法即报错拒绝启动）、
+`CLOUDIA_SCHED_MAP`（缺省取该车当前地图）。轮询间隔/失败阈值复用
+`CLOUDIA_POLL_INTERVAL_S` / `CLOUDIA_POLL_FAIL_LIMIT`。W1Manager 对应
+`move_chassis_sched` / `get_sched_nav_status`，`cancel_chassis_motion` 已并入调度取消。
+现场前提：车须处于调度模式且电量足够，否则任务一直排队（`NAVIGATING`）。
+
 ## 6. 导航点查询
 
 | 方法 | 参数 | 返回 |
@@ -183,6 +202,8 @@ W1Manager，再由 W1Manager 调用 client。
 |---|---|
 | `move_chassis_nav2` | `set_chassis_nav2_position` |
 | `move_chassis_road_navigation` | `set_chassis_road_navigation` |
+| `move_chassis_sched` | `set_chassis_sched_target` |
+| `get_sched_nav_status` | `get_sched_nav_state` |
 | `move_chassis_ctrl` | `set_chassis_control_position` |
 | `get_current_chassis_pose` | `get_chassis_position` |
 | `get_current_battery_percentage` | `get_battery_percentage` |

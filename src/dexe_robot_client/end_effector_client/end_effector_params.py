@@ -51,31 +51,7 @@ class EndEffectorParamsRegistry:
 
 
 # yapf: disable
-@EndEffectorParamsRegistry.register(EndEffectorType.Dual_DH_PGC_50_35)
-def _():
-    return EndEffectorParams(
-        dof=2,
-        joint_names=("FINGER1", "FINGER2"),
-        supported_modes=(EEJointControlMode.POSITION,),
-        position=Limit((0,)*2, (100,)*2),
-        velocity=Limit((-100,)*2, (100,)*2),
-        current=Limit((-100,)*2, (100,)*2),
-        force=Limit((-100,)*2, (100,)*2),
-    )
-
-@EndEffectorParamsRegistry.register(EndEffectorType.Lansi_DualSuction)
-def _():
-    return EndEffectorParams(
-        dof=4,
-        joint_names=("MOTOR_1", "MOTOR_2", "SUCTION_1", "SUCTION_2",),
-        supported_modes=(EEJointControlMode.POSITION,),
-        position=Limit((0,)*4, (360, 360, 100, 100,)),
-        velocity=Limit((-100,)*4, (100,)*4),
-        current=Limit((-100,)*4, (100,)*4),
-        force=Limit((-100,)*4, (100,)*4),
-    )
-
-@EndEffectorParamsRegistry.register(EndEffectorType.HITBOT_Z_ESC_70)
+@EndEffectorParamsRegistry.register(EndEffectorType.DH_PGC_50_35)
 def _():
     return EndEffectorParams(
         dof=1,
@@ -86,32 +62,6 @@ def _():
         current=Limit((-100,), (100,)),
         force=Limit((-100,), (100,)),
     )
-
-@EndEffectorParamsRegistry.register(EndEffectorType.AGILEX_PiPER_L100)
-def _():
-    return EndEffectorParams(
-        dof=1,
-        joint_names=("FINGER1",),
-        supported_modes=(EEJointControlMode.POSITION,),
-        position=Limit((0,), (100,)),
-        velocity=Limit((-100,), (100,)),
-        current=Limit((-100,), (100,)),
-        force=Limit((-100,), (100,)),
-    )
-
-
-@EndEffectorParamsRegistry.register(EndEffectorType.AGILEX_Pika)
-def _():
-    return EndEffectorParams(
-        dof=1,
-        joint_names=("FINGER1",),
-        supported_modes=(EEJointControlMode.POSITION,),
-        position=Limit((0,), (100,)),
-        velocity=Limit((-100,), (100,)),
-        current=Limit((-100,), (100,)),
-        force=Limit((-100,), (100,)),
-    )
-
 
 @EndEffectorParamsRegistry.register(EndEffectorType.DH_PGC_140_50)
 def _():
@@ -125,7 +75,6 @@ def _():
         force=Limit((-100,), (100,)),
     )
 
-
 @EndEffectorParamsRegistry.register(EndEffectorType.DH_AG_160_95)
 def _():
     return EndEffectorParams(
@@ -138,6 +87,17 @@ def _():
         force=Limit((-100,), (100,)),
     )
 
+@EndEffectorParamsRegistry.register(EndEffectorType.DH_PGIA_80_100)
+def _():
+    return EndEffectorParams(
+        dof=1,
+        joint_names=("FINGER1",),
+        supported_modes=(EEJointControlMode.POSITION,),
+        position=Limit((0,), (100,)),
+        velocity=Limit((-100,), (100,)),
+        current=Limit((-100,), (100,)),
+        force=Limit((-100,), (100,)),
+    )
 
 @EndEffectorParamsRegistry.register(EndEffectorType.BrainCo_Revo1_R)
 def _():
@@ -186,7 +146,6 @@ def _():
         force=Limit((-100,) * 6, (100,) * 6),
     )
 
-
 @EndEffectorParamsRegistry.register(EndEffectorType.Linker_L20)
 def _():
     return EndEffectorParams(
@@ -208,7 +167,6 @@ def _():
         force=Limit((-100,) * 16, (100,) * 16),
     )
 
-
 @EndEffectorParamsRegistry.register(EndEffectorType.PaXini_Dex_H13)
 def _():
     return EndEffectorParams(
@@ -227,4 +185,67 @@ def _():
         current=Limit((-100,) * 13, (100,) * 13),
         force=Limit((-100,) * 13, (100,) * 13),
     )
+
+@EndEffectorParamsRegistry.register(EndEffectorType.AGILEX_PiPER_L100)
+def _():
+    return EndEffectorParams(
+        dof=1,
+        joint_names=("FINGER1",),
+        supported_modes=(EEJointControlMode.POSITION,),
+        position=Limit((0,), (100,)),
+        velocity=Limit((-100,), (100,)),
+        current=Limit((-100,), (100,)),
+        force=Limit((-100,), (100,)),
+    )
+
+@EndEffectorParamsRegistry.register(EndEffectorType.AGILEX_Pika)
+def _():
+    return EndEffectorParams(
+        dof=1,
+        joint_names=("FINGER1",),
+        supported_modes=(EEJointControlMode.POSITION,),
+        position=Limit((0,), (100,)),
+        velocity=Limit((-100,), (100,)),
+        current=Limit((-100,), (100,)),
+        force=Limit((-100,), (100,)),
+    )
+
+@EndEffectorParamsRegistry.register(EndEffectorType.HITBOT_Z_ESC_70)
+def _():
+    return EndEffectorParams(
+        dof=1,
+        joint_names=("FINGER1",),
+        supported_modes=(EEJointControlMode.POSITION,),
+        position=Limit((0,), (100,)),
+        velocity=Limit((-100,), (100,)),
+        current=Limit((-100,), (100,)),
+        force=Limit((-100,), (100,)),
+    )
+
+
+# 以下为项目定制类型，未来以项目配置的形式
+@EndEffectorParamsRegistry.register(EndEffectorType.Lansi_DualSuction)
+def _():
+    return EndEffectorParams(
+        dof=4,
+        joint_names=("MOTOR_1", "MOTOR_2", "SUCTION_1", "SUCTION_2",),
+        supported_modes=(EEJointControlMode.POSITION,),
+        position=Limit((0,)*4, (360, 360, 100, 100,)),
+        velocity=Limit((-100,)*4, (100,)*4),
+        current=Limit((-100,)*4, (100,)*4),
+        force=Limit((-100,)*4, (100,)*4),
+    )
+
+@EndEffectorParamsRegistry.register(EndEffectorType.Dual_DH_PGC_50_35)
+def _():
+    return EndEffectorParams(
+        dof=2,
+        joint_names=("FINGER1", "FINGER2"),
+        supported_modes=(EEJointControlMode.POSITION,),
+        position=Limit((0,)*2, (100,)*2),
+        velocity=Limit((-100,)*2, (100,)*2),
+        current=Limit((-100,)*2, (100,)*2),
+        force=Limit((-100,)*2, (100,)*2),
+    )
+
 # yapf: enable

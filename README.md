@@ -114,3 +114,35 @@ Refer to [commit message guidelines](https://github.com/angular/angular/blob/mai
 - test: Adding missing tests or correcting existing tests
 - build: Changes that affect the build system or external dependencies (example scopes: gulp, broccoli, npm)
 - ci: Changes to our CI configuration files and scripts (examples: CircleCi, SauceLabs)
+
+
+#### Release
+
+release分支发布命名风格为 `release/v*`（如`release/v0.0.1`），提交遵循gitflow准则
+- gitlab提交PR从`release/v*`合并至`main_w1`
+- `release/v*`本地解决merge`main_w1`冲突
+- 测试通过后在gitlab上PR合并，并在`main_w1`打上tag
+- 遵循类似操作，将 `release/v*`合并至`dev_w1`
+
+每个本地 clone 执行一次，启用仓库内的 Git hooks（需要 Python 3.10+）：
+
+```bash
+git config --local core.hooksPath .githooks
+```
+
+推送本地或远端名称为 `release/*` 的分支时，`pre-push` 会从分支名
+`release/vX.Y.Z` 的 `v` 后提取版本号，并检查实际推送的 commit：
+
+- `pyproject.toml` 的 `version` 等于 `X.Y.Z`。
+- `package.xml` 的 `<version>` 等于 `X.Y.Z`。
+- `CHANGELOG.md` 包含对应的 `## [VX.Y.Z]` 或 `## [X.Y.Z]` 发布标题（也支持小写 `v`）。
+
+例如推送 `release/v0.4.5` 时，三个版本号都必须为 `0.4.5`。
+如果本地和远端都是 release 分支，则两个分支名都需要满足检查。
+分支名格式错误、版本号不匹配、缺少发布标题或文件被删除，都会阻止整个 push。
+未提交的修改不参与检查；普通分支推送和删除分支不受影响。
+不再比较分支创建时的 commit，也不要求文件相对于历史发生修改；旧的
+`branch.<分支名>.releaseBase` 配置不再使用。
+
+本地 hook 可以被 `git push --no-verify` 跳过；如需团队强制执行，
+还应配置服务端检查或 CI。已有其他 hooks 的 clone 应先整合，再设置 `core.hooksPath`。
