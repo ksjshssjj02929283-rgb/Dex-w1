@@ -44,7 +44,7 @@ if [ -n "$SKIP_INTERFACES" ]; then
   SKIP_ARGS="--packages-skip ${SKIP_INTERFACES# }"
 fi
 
-MAKEFLAGS="-j2" colcon build --parallel-workers "${COLCON_PARALLEL_WORKERS}" --cmake-args -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DENABLE_TORQUE_CONTROL_SIMULATION=OFF -DCMAKE_CXX_COMPILER_LAUNCHER= -DCMAKE_C_COMPILER_LAUNCHER= --base-paths dexe_robot_server --packages-up-to robot_server_lib sim_server w1_server $SKIP_ARGS
+MAKEFLAGS="-j2" colcon build --parallel-workers "${COLCON_PARALLEL_WORKERS}" --cmake-args -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DENABLE_TORQUE_CONTROL_SIMULATION=OFF -DCMAKE_CXX_COMPILER_LAUNCHER= -DCMAKE_C_COMPILER_LAUNCHER= --base-paths dexe_robot_server --packages-up-to robot_server_lib sim_server w1_server cloudia_chassis_adapter $SKIP_ARGS
 
 # === 2. 检查 Sudo 权限 ===
 # 尝试使用默认密码验证，如果失败则提示用户手动输入

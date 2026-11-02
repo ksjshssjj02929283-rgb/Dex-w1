@@ -1,0 +1,17 @@
+cloudia_chassis_adapter:
+  ros__parameters:
+    backend: cloudia
+    robot_host: ""
+    state_port: 8852
+    frame_id: map
+    pose_topic: /feedback/chassis_pose
+    raw_state_topic: /feedback/cloudia_state_raw
+    cmd_vel_topic: /control/cmd_vel
+    stale_timeout_s: 0.5
+    command_timeout_s: 0.5
+    command_rate_hz: 10.0
+    reconnect_min_s: 1.0
+    reconnect_max_s: 10.0
+    connect_timeout_s: 5.0
+    use_safe: false
+    serial_number: "EXTERNAL-001"
