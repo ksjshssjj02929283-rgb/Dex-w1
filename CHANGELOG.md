@@ -2,6 +2,20 @@
 
 ## [Unrelease]
 
+## [V0.8.2]
+### Feat
+- 增加EndEffectorType支持的类型AGILEX_Pika, DH_PGC_50_35, DH_PGIA_80_100
+
+### Improve
+- 迦智调度导航取消时先软急停让车立刻停（迦智取消是“安全取消”），下一次下发前先清除软急停
+
+### Refactor
+- ignored_collision_pairs.json不从内网下载，改为自动生成
+
+### Fix
+- 修复robot_client接口的输入参数，支持list和一维np.ndarray
+- 修复robot_client基类中多重载一份send_streaming_command()的笔误
+
 ## [V0.8.1]
 ### Refactor
 - 优化ros2 client的初始化，避免超时等待

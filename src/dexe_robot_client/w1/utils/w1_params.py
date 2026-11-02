@@ -11,7 +11,7 @@ import numpy as np
 import pinocchio as pin
 from pathlib import Path
 from ...end_effector_client import EndEffectorParamsRegistry
-from ...common import get_logger, DATA_DIR
+from ...common import get_logger, DATA_DIR, CACHE_DEXE_DATA
 from ..kinematics.pinocchio_kinematics import PinocchioMappingGenerator
 
 from dexe_rp import RobotVersion, EndEffectorType
@@ -126,7 +126,109 @@ class W1Params:
                                      5, -45, -5, -90, 0, -15, 0,
                                      -5, 45, 5, 90, 0, 15, 0])
         self.update_params()
+        self._generate_ignored_collision_pairs_file()
         # yapf: enable
+
+    def _generate_ignored_collision_pairs_file(self):
+        file_path = DATA_DIR / "ignored_collision_pairs.json"
+        if not file_path.exists() or file_path.stat().st_size == 0:
+            self.logger.info(
+                f"{str(file_path)} does not exist, would be created automatically with default values."
+            )
+            template_json_data = {
+                "ankle": ["base_link", "knee"],
+                "knee": ["ankle", "buttock"],
+                "buttock": ["knee", "waist"],
+                "waist": ["buttock", "left_j1", "right_j1", "neck1", "neck2"],
+                "neck1": ["waist", "neck2"],
+                "neck2": ["neck1", "waist"],
+                "left_j1": ["waist", "left_j2"],
+                "left_j2": ["left_j1", "left_j3"],
+                "left_j3": ["left_j2", "left_j4"],
+                "left_j4": ["left_j3", "left_j5"],
+                "left_j5": ["left_j4", "left_j6"],
+                "left_j6": ["left_j5", "left_j7"],
+                "left_j7": ["left_j6"],
+                "right_j1": ["waist", "right_j2"],
+                "right_j2": ["right_j1", "right_j3"],
+                "right_j3": ["right_j2", "right_j4"],
+                "right_j4": ["right_j3", "right_j5"],
+                "right_j5": ["right_j4", "right_j6"],
+                "right_j6": ["right_j5", "right_j7"],
+                "right_j7": ["right_j6"],
+                "torso1": ["base_link", "torso2"],
+                "torso2": ["torso1", "torso3"],
+                "torso3": ["torso2", "torso4"],
+                "torso4": ["torso3", "arml1", "armr1", "head1", "head2"],
+                "head1": ["torso4", "head2"],
+                "head2": ["head1", "torso4"],
+                "arml1": ["torso4", "arml2"],
+                "arml2": ["arml1", "arml3"],
+                "arml3": ["arml2", "arml4"],
+                "arml4": ["arml3", "arml5"],
+                "arml5": ["arml4", "arml6"],
+                "arml6": ["arml5", "arml7"],
+                "arml7": ["arml6"],
+                "armr1": ["torso4", "armr2"],
+                "armr2": ["armr1", "armr3"],
+                "armr3": ["armr2", "armr4"],
+                "armr4": ["armr3", "armr5"],
+                "armr5": ["armr4", "armr6"],
+                "armr6": ["armr5", "armr7"],
+                "armr7": ["armr6"],
+                "ankle_pitch_link": ["base_link", "knee_pitch_link"],
+                "knee_pitch_link": ["ankle_pitch_link", "buttock_pitch_link"],
+                "buttock_pitch_link": ["knee_pitch_link", "waist_yaw_link"],
+                "waist_yaw_link": [
+                    "knee_pitch_link", "shoulder_pitch_l_j1_link",
+                    "shoulder_pitch_r_j1_link", "head_yaw_j1_link",
+                    "head_pitch_j2_link"
+                ],
+                "head_yaw_j1_link": ["waist_yaw_link", "head_pitch_j2_link"],
+                "head_pitch_j2_link": ["head_yaw_j1_link", "waist_yaw_link"],
+                "shoulder_pitch_l_j1_link": [
+                    "waist_yaw_link", "shoulder_roll_l_j2_link"
+                ],
+                "shoulder_roll_l_j2_link": [
+                    "shoulder_pitch_l_j1_link", "elbow_pitch_l_j3_link"
+                ],
+                "elbow_pitch_l_j3_link": [
+                    "shoulder_roll_l_j2_link", "elbow_yaw_l_j4_link"
+                ],
+                "elbow_yaw_l_j4_link": [
+                    "elbow_pitch_l_j3_link", "wrist_pitch_l_j5_link"
+                ],
+                "wrist_pitch_l_j5_link": [
+                    "elbow_yaw_l_j4_link", "wrist_yaw_l_j6_link"
+                ],
+                "wrist_yaw_l_j6_link": [
+                    "wrist_pitch_l_j5_link", "wrist_roll_l_j7_link"
+                ],
+                "wrist_roll_l_j7_link": ["wrist_yaw_l_j6_link"],
+                "shoulder_pitch_r_j1_link": [
+                    "waist_yaw_link", "shoulder_roll_r_j2_link"
+                ],
+                "shoulder_roll_r_j2_link": [
+                    "shoulder_pitch_r_j1_link", "elbow_pitch_r_j3_link"
+                ],
+                "elbow_pitch_r_j3_link": [
+                    "shoulder_roll_r_j2_link", "elbow_yaw_r_j4_link"
+                ],
+                "elbow_yaw_r_j4_link": [
+                    "elbow_pitch_r_j3_link", "wrist_pitch_r_j5_link"
+                ],
+                "wrist_pitch_r_j5_link": [
+                    "elbow_yaw_r_j4_link", "wrist_yaw_r_j6_link"
+                ],
+                "wrist_yaw_r_j6_link": [
+                    "wrist_pitch_r_j5_link", "wrist_roll_r_j7_link"
+                ],
+                "wrist_roll_r_j7_link": ["wrist_yaw_r_j6_link"]
+            }
+            file_path.write_text(json.dumps(template_json_data,
+                                            indent=4,
+                                            ensure_ascii=False),
+                                 encoding="utf-8")
 
     def update_params(self, file_path=DATA_DIR / "config.json") -> bool:
         if not file_path.exists() or file_path.stat().st_size == 0:

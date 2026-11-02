@@ -77,7 +77,7 @@ EOF
 fi
 
 # 根目录钩子是 CI gen_deb.sh 和本地 dpkg-deb 共用的单一来源。
-for hook in preinst postinst; do
+for hook in preinst postinst postrm; do
     if [[ -f "$SCRIPT_DIR/$hook.sh" ]]; then
         if [[ -f "$SCRIPT_DIR/debian/control" ]]; then
             cp "$SCRIPT_DIR/$hook.sh" "$SCRIPT_DIR/debian/$hook"

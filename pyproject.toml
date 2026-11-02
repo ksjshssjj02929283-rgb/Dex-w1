@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=64.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
@@ -18,7 +18,7 @@ where = ["src"]
 
 [project]
 name = "dexe_robot_client"
-version = "0.8.1"
+version = "0.8.2"
 description = "DexEmbodied Robot Client"
 authors = [
     { name = "Dexforce", email = "dexforce@dexforce.com" }
@@ -32,7 +32,8 @@ dependencies = [
     "toppra==0.6.3",
     "trimesh>=4.2.4",
     "pathfinding",
-    "dexe_rp>=0.4.2"
+    "dexe_rp>=0.4.4",
+    "requests>=2.31"
 ]
 
 [project.scripts]

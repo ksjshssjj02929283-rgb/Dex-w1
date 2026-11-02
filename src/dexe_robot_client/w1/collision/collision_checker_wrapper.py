@@ -8,7 +8,7 @@ All rights reserved.
 from pathlib import Path
 import numpy as np
 import time
-from ...common import get_logger, StatusCode, CACHE_DEXE_DATA, time_consuming
+from ...common import get_logger, StatusCode, CACHE_DEXE_DATA, DATA_DIR, time_consuming
 from .coal_collision_wrapper import CoalCollisionWrapper
 from ..kinematics.pinocchio_kinematics import PinocchioKinematics, EndEffectorAttachManager, PinocchioMappingGenerator, get_end_effector_attach_xpos
 
@@ -16,7 +16,7 @@ from dexe_rp import RobotVersion, EndEffectorType
 from dexe_rp.toolkits.urdf_assembly.type import MeshType
 from dexe_rp.toolkits.data import get_data_path
 from dexe_rp.toolkits.urdf_assembly.ee_config import END_EFFECTORS_URDF_PATHS
-from dexe_rp.toolkits.data.config import BASE_ASSETS_MODEL_URL_PREFIX, DATA_DIR, _build_assets_url
+from dexe_rp.toolkits.data.config import BASE_ASSETS_MODEL_URL_PREFIX, _build_assets_url
 from dexe_rp.toolkits.data.utils import DataUtility
 
 END_EFFECTOR_PULSE_MIN_MAX = {
@@ -100,20 +100,22 @@ class CollisionCheckerWrapper:
                                                     robot_version.version_value)
 
         collision_pairs_json_name = "ignored_collision_pairs.json"
-        collision_pairs_json_url = _build_assets_url(str(self.robot_family),
-                                                     collision_pairs_json_name)
-        collision_pairs_json_destination = DATA_DIR / collision_pairs_json_name
-        if DataUtility.file_exists(collision_pairs_json_destination):
-            self.logger.info(
-                f"Collision pairs JSON file already exists at {collision_pairs_json_destination}."
-            )
-        else:
-            self.logger.info(
-                f"Downloading collision pairs JSON file from {collision_pairs_json_url} to {collision_pairs_json_destination}."
-            )
-            DataUtility.make_directory_hierarchy(str(DATA_DIR))
-            DataUtility.download_file(collision_pairs_json_url,
-                                      collision_pairs_json_destination)
+        ignored_collision_pairs_json_path = DATA_DIR / collision_pairs_json_name  # dexe_robot_client_data路径
+
+        # collision_pairs_json_url = _build_assets_url(str(self.robot_family),
+        #                                              collision_pairs_json_name)
+        # collision_pairs_json_destination = CACHE_DEXE_DATA / collision_pairs_json_name
+        # if DataUtility.file_exists(collision_pairs_json_destination):
+        #     self.logger.info(
+        #         f"Collision pairs JSON file already exists at {collision_pairs_json_destination}. Prioritize the use of this file."
+        #     )
+        # else:
+        #     self.logger.info(
+        #         f"Downloading collision pairs JSON file from {collision_pairs_json_url} to {collision_pairs_json_destination}."
+        #     )
+        #     DataUtility.make_directory_hierarchy(str(CACHE_DEXE_DATA))
+        #     DataUtility.download_file(collision_pairs_json_url,
+        #                               collision_pairs_json_destination)
 
         self.coal_collision = CoalCollisionWrapper(
             robot_version=robot_version,
@@ -121,8 +123,6 @@ class CollisionCheckerWrapper:
             right_end_effector_type=right_end_effector_type,
             mesh_type=mesh_type,
             verbose=verbose)
-        ignored_collision_pairs_json_path = Path(
-            CACHE_DEXE_DATA) / "ignored_collision_pairs.json"
         if ignored_collision_pairs_json_path.exists():
             self.coal_collision.load_ignored_collision_pairs_from_json(
                 str(ignored_collision_pairs_json_path))
