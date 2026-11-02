@@ -94,9 +94,16 @@ def test_scheduler_station_number_resolves(stack):
     assert stack.sent[-1] == ("navigation", {"pointIds": [1, 2]})
 
 
+def test_does_not_read_map_cache(stack):
+    # 不读迦智地图 / 路网缓存：地图里没有的点号也照样下发，由网关裁决。
+    stack.nav._points.nodes = None  # 一旦调用就会 TypeError
+    stack.nav._points.is_connected = None
+    assert stack.nav.send_graph_points(["99", "S100"])
+    assert stack.sent == [("navigation", {"pointIds": [99, 100]})]
+
+
 def test_rejects_without_sending(stack):
     assert not stack.nav.send_graph_points([])
-    assert not stack.nav.send_graph_points(["99"])
     assert not stack.nav.send_graph_points(["1", "2"], nav_point_ids=["S001"])
     # L / M 等其他类型的调度节点不对应迦智点位。
     assert not stack.nav.send_graph_points(["站点B"], nav_point_ids=["L002"])

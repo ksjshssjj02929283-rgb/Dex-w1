@@ -8,4 +8,5 @@ from .auto_charging import AutoChargingFeature
 from .nav2_params import Nav2ParamsFeature
 from .cloudia import (CloudiaApiError, CloudiaHttpClient,
                       CloudiaNavPointsFeature, CloudiaNavigationFeature,
-                      CloudiaPreciseControlFeature, CloudiaTaskClient)
+                      CloudiaPreciseControlFeature, CloudiaSchedHttpClient,
+                      CloudiaSchedNavigationFeature, CloudiaTaskClient)

@@ -30,10 +30,12 @@ from .common import runtime, timing
 from .features import (AutoChargingFeature, ChassisStateFeature,
                        CloudiaHttpClient, CloudiaNavPointsFeature,
                        CloudiaNavigationFeature, CloudiaPreciseControlFeature,
+                       CloudiaSchedHttpClient, CloudiaSchedNavigationFeature,
                        CloudiaTaskClient, GraphPointsNavigationFeature,
                        Nav2NavigationFeature, Nav2ParamsFeature,
                        NavPointsFeature, PreciseControlFeature,
                        RoadNavigationFeature)
+from .features.cloudia.scheduler import STOP_CHARGE_ACTION
 from .interfaces import get_interface_config
 
 
@@ -79,6 +81,11 @@ class ChassisClient(Node):
                 self._chassis_state.get_position, cfg)
             self._cloudia_control = CloudiaPreciseControlFeature(
                 self, self._cloudia_task)
+        self._sched_nav = (CloudiaSchedNavigationFeature(
+            self,
+            CloudiaSchedHttpClient(
+                f"http://{cfg.cloudia_sched_ip}:{cfg.cloudia_sched_port}"), cfg)
+                           if cfg.cloudia_sched_ip else None)
         self._nav = Nav2NavigationFeature(self, cfg)
         self._road_nav = RoadNavigationFeature(self, cfg)
         self._graph_points_nav = GraphPointsNavigationFeature(self, cfg)
@@ -97,6 +104,8 @@ class ChassisClient(Node):
             self._runner = None
         if self._cloudia_task is not None:
             self._cloudia_task.close()
+        if self._sched_nav is not None:
+            self._sched_nav.close()
         self.destroy_node()
 
     def spin_once(self, timeout_sec: float = 0.1):
@@ -172,6 +181,66 @@ class ChassisClient(Node):
         if self._cloudia_nav is not None:
             return self._cloudia_nav.cancel()
         return self._nav.cancel()
+
+    # ------------------------------------------------ 迦智调度导航
+    def set_chassis_sched_target(self,
+                                 id=None,
+                                 name=None,
+                                 position=None,
+                                 action="") -> bool:
+        """经迦智调度导航到目标点位。
+
+        Args:
+            id: 点位 id，仅在 name 为 None 时使用，原样下发。
+            name: 点位名称(str)，优先于 id。迦智底盘的名称就是点位 id 的
+                字符串形式，这里转成 int 下发。
+            position: 目标坐标，迦智调度按点位导航，暂不使用。
+            action: 到点后执行的车端动作，空表示无动作。充电：充电点 id +
+                action=CHARGE_ACTION。
+        id 和 name 不能同时为 None。
+        """
+        del position
+        if self._sched_nav is None:
+            self.get_logger().error("[迦智调度导航] 未配置 CLOUDIA_SCHED_IP。")
+            return False
+        if id is None and name is None:
+            self.get_logger().error("[迦智调度导航] id 和 name 不能同时为 None。")
+            return False
+        if name is not None:
+            try:
+                id = int(str(name).strip())
+            except ValueError:
+                self.get_logger().error(f"[迦智调度导航] name 应为整数点位 id，收到：{name!r}")
+                return False
+        trigger_ts = self._log_trigger("迦智调度导航")
+        return self._sched_nav.send(id, action=action, trigger_ts=trigger_ts)
+
+    def set_chassis_sched_stop_charge(self) -> bool:
+        """经迦智调度原地执行退桩动作；状态同样用 get_sched_nav_state 查。"""
+        if self._sched_nav is None:
+            self.get_logger().error("[迦智调度导航] 未配置 CLOUDIA_SCHED_IP。")
+            return False
+        trigger_ts = self._log_trigger("迦智调度退桩")
+        return self._sched_nav.send(0,
+                                    action=STOP_CHARGE_ACTION,
+                                    trigger_ts=trigger_ts)
+
+    def get_sched_nav_state(self) -> str:
+        if self._sched_nav is None:
+            return "IDLE"
+        return self._sched_nav.state()
+
+    def get_sched_nav_result(self):
+        if self._sched_nav is None:
+            return False, ""
+        return self._sched_nav.result()
+
+    def has_cancelable_sched_goal(self) -> bool:
+        return self._sched_nav is not None and self._sched_nav.has_cancelable_goal(
+        )
+
+    def cancel_sched_nav(self) -> bool:
+        return self._sched_nav is not None and self._sched_nav.cancel()
 
     # ------------------------------------------------ 路网 / 多路点导航
     def set_chassis_road_navigation(self,

@@ -318,8 +318,9 @@ class CloudiaNavigationFeature:
 
         交管下发的编号是调度路网的站点编号（S015），名称是迦智点位名，
         点位没有名字时才是点号本身。同一位置优先用编号，解析不了再用名称。
-        点列由交管规划，首点就是车当前所在点、相邻点连通，这里只校验点位
-        存在，按点列原样下发，不补首点、不做连通校验。
+        点列由交管规划，首点就是车当前所在点、相邻点连通，这里只把编号
+        解析成迦智点号，按点列原样下发：不读迦智地图 / 路网缓存，不校验点位
+        存在、不补首点、不做连通校验，点位不存在由迦智网关拒绝任务。
         """
         names = list(nav_point_names or [])
         ids = list(nav_point_ids or [])
@@ -331,21 +332,17 @@ class CloudiaNavigationFeature:
             self._node.get_logger().error(
                 "[迦智路径导航] nav_point_names 与 nav_point_ids 长度不一致。")
             return False
-        try:
-            known = {point["id"] for point in self._points.nodes()}
-            point_ids = []
-            for index, key in enumerate(keys):
-                candidates = [key]
-                if names and index < len(ids):
-                    candidates.insert(0, ids[index])
-                point_id = next((pid for pid in map(self._point_id, candidates)
-                                 if pid is not None and pid in known), None)
-                if point_id is None:
-                    raise ValueError(f"迦智地图中找不到点位：{key}")
-                point_ids.append(point_id)
-        except (CloudiaApiError, TypeError, ValueError) as exc:
-            self._node.get_logger().error(f"[迦智路径导航] {exc}")
-            return False
+        point_ids = []
+        for index, key in enumerate(keys):
+            candidates = [key]
+            if names and index < len(ids):
+                candidates.insert(0, ids[index])
+            point_id = next((pid for pid in map(self._point_id, candidates)
+                             if pid is not None), None)
+            if point_id is None:
+                self._node.get_logger().error(f"[迦智路径导航] 点位不是迦智点号：{key}")
+                return False
+            point_ids.append(point_id)
         if len(point_ids) == 1:
             return self._task.start("navigation",
                                     pointId=point_ids[0],

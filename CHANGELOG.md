@@ -1,6 +1,8 @@
 # CHANGELOG
 
 ## [Unrelease]
+### Improve
+- 迦智调度导航取消时先软急停让车立刻停（迦智取消是“安全取消”），下一次下发前先清除软急停
 ### Refactor
 - ignored_collision_pairs.json不从内网下载，改为自动生成
 
