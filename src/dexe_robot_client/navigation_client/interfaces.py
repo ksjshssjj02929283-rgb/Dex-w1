@@ -34,6 +34,10 @@ class InterfaceConfig:
     cloudia_snap_xy_tol_m: float = 0.3
     cloudia_snap_yaw_tol_deg: float = 15.0
     cloudia_edges_bidirectional: bool = True
+    cloudia_sched_ip: str = None
+    cloudia_sched_port: int = 8858
+    cloudia_sched_robot: int = 0
+    cloudia_sched_map: str = None
 
 
 REAL = InterfaceConfig(
@@ -81,10 +85,37 @@ SIM = InterfaceConfig(
 )
 
 
+def _with_sched(cfg: InterfaceConfig) -> InterfaceConfig:
+    """迦智调度导航与底盘后端正交：配了 CLOUDIA_SCHED_IP 才启用。"""
+    sched_ip = (os.environ.get("CLOUDIA_SCHED_IP") or "").strip()
+    robot_raw = os.environ.get("CLOUDIA_SCHED_ROBOT", "").strip()
+    if sched_ip and not robot_raw:
+        raise ValueError(
+            "已配置 CLOUDIA_SCHED_IP，必须同时指定 CLOUDIA_SCHED_ROBOT（调度车号）")
+    try:
+        robot = int(robot_raw) if robot_raw else 0
+    except ValueError:
+        raise ValueError(
+            f"CLOUDIA_SCHED_ROBOT 应为正整数，收到：{robot_raw!r}") from None
+    if sched_ip and robot <= 0:
+        raise ValueError(f"CLOUDIA_SCHED_ROBOT 应为正整数，收到：{robot_raw!r}")
+    return replace(
+        cfg,
+        cloudia_sched_ip=sched_ip or None,
+        cloudia_sched_port=int(os.environ.get("CLOUDIA_SCHED_PORT", "8858")),
+        cloudia_sched_robot=robot,
+        cloudia_sched_map=os.environ.get("CLOUDIA_SCHED_MAP"),
+    )
+
+
 def get_interface_config(is_sim: bool = False) -> InterfaceConfig:
     """按配置选择后端，默认保持原有自研底盘行为。"""
     if is_sim:
         return SIM
+    return _with_sched(_select_backend())
+
+
+def _select_backend() -> InterfaceConfig:
     backend = os.environ.get("DEXE_CHASSIS_BACKEND", "dexe").lower()
     if backend == "cloudia":
         # 不依赖模块导入时的环境变量快照，允许测试或进程启动逻辑在构造

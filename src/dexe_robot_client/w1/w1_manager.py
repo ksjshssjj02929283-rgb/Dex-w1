@@ -735,6 +735,36 @@ class W1Manager:
             return status
         return StatusCode.SUCCESS
 
+    def move_chassis_sched(self,
+                           id=None,
+                           name=None,
+                           position=None,
+                           action="") -> StatusCode:
+        """经迦智调度导航到目标点位，参数透传，含义与校验见
+        ChassisClient.set_chassis_sched_target。"""
+        status = self._check_chassis()
+        if status != StatusCode.SUCCESS:
+            return status
+        res = self._get_chassis_client().set_chassis_sched_target(
+            id=id, name=name, position=position, action=action)
+        if not res:
+            status = StatusCode.CHASSIS_MOVE_SCHED_FAIL
+            self.logger.error(f"[{status.value}]:Chassis sched move failed")
+            return status
+        return StatusCode.SUCCESS
+
+    def stop_chassis_charge_sched(self) -> StatusCode:
+        """经迦智调度退桩，见 ChassisClient.set_chassis_sched_stop_charge。"""
+        status = self._check_chassis()
+        if status != StatusCode.SUCCESS:
+            return status
+        if not self._get_chassis_client().set_chassis_sched_stop_charge():
+            status = StatusCode.CHASSIS_CANCEL_AUTO_CHARGING_FAIL
+            self.logger.error(
+                f"[{status.value}]:Chassis sched stop charge failed")
+            return status
+        return StatusCode.SUCCESS
+
     def move_chassis_ctrl(self, base_position: np.ndarray) -> StatusCode:
         """移动底盘至目标位置，使用底盘控制接口"""
         status = self._check_chassis()
@@ -797,6 +827,18 @@ class W1Manager:
         if not self._has_chassis_client():
             return StatusCode.CHASSIS_NOT_CONNECT, "NOT_INITIALIZED"
         return StatusCode.SUCCESS, self._get_chassis_client().get_nav_state()
+
+    def get_sched_nav_status(self) -> tuple[StatusCode, str]:
+        """获取迦智调度导航状态。"""
+        if not self._use_nav:
+            status = StatusCode.CHASSIS_NOT_USE
+            self.logger.error(
+                f"[{status.value}]:Navigation function is disabled.")
+            return status, "DISABLED"
+        if not self._has_chassis_client():
+            return StatusCode.CHASSIS_NOT_CONNECT, "NOT_INITIALIZED"
+        return StatusCode.SUCCESS, self._get_chassis_client(
+        ).get_sched_nav_state()
 
     def get_road_navigation_status(self) -> tuple[StatusCode, str]:
         """获取当前路网/多路点导航状态。"""
@@ -920,12 +962,14 @@ class W1Manager:
         road_nav_cancel_ok = self.chassis_client.cancel_road_navigation()
         graph_points_nav_cancel_ok = (
             self.chassis_client.cancel_graph_points_navigation())
+        sched_nav_cancel_ok = self.chassis_client.cancel_sched_nav()
         control_cancel_ok = self.chassis_client.cancel_chassis_control()
         auto_charging_cancel_ok = self.chassis_client.cancel_auto_charging()
 
         # 只要有一个成功，就认为取消指令已尽力发送。
         if (nav_cancel_ok or road_nav_cancel_ok or graph_points_nav_cancel_ok or
-                control_cancel_ok or auto_charging_cancel_ok):
+                sched_nav_cancel_ok or control_cancel_ok or
+                auto_charging_cancel_ok):
             return StatusCode.SUCCESS
         status = StatusCode.CHASSIS_CANCEL_MOTION_FAIL
         self.logger.error(f"[{status.value}]:Cancel chassis motion failed")

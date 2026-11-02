@@ -7,6 +7,7 @@ from .http import CloudiaApiError, CloudiaHttpClient
 from .nav_points import CloudiaNavPointsFeature
 from .navigation import CloudiaNavigationFeature, CloudiaTaskClient
 from .precise_control import CloudiaPreciseControlFeature
+from .scheduler import CloudiaSchedHttpClient, CloudiaSchedNavigationFeature
 
 __all__ = [
     "CloudiaApiError",
@@ -14,5 +15,7 @@ __all__ = [
     "CloudiaNavPointsFeature",
     "CloudiaNavigationFeature",
     "CloudiaPreciseControlFeature",
+    "CloudiaSchedHttpClient",
+    "CloudiaSchedNavigationFeature",
     "CloudiaTaskClient",
 ]

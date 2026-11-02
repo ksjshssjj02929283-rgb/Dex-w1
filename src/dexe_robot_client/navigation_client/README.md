@@ -84,7 +84,7 @@ navigation_client/
 - Feedback：`current_status`、`current_point_index`、`total_points`。
 - Result：`success`（要求 `status==SUCCEEDED` 且 `result.success` 为真）+ `message`。
 - 状态机与自动回充/路网导航共用同一套映射（`get_graph_points_navigation_status()` 取值集合同路网导航）。
-- 迦智后端（`DEXE_CHASSIS_BACKEND=cloudia`）：不走该 action，`nav_point_ids` / `nav_point_names` 按迦智点位编号解析（同一位置优先用编号：交管下发的是调度路网站点编号 `S<点号>`，如 `S015`；也接受数字和 `point_<编号>`，编号解析不了再用名称），校验点位存在后按交管点列原样下发迦智多点任务（首点即车当前点、相邻连通由交管保证）；坐标多点 `set_chassis_road_navigation` 仍由客户端补首点并校验连通；`pose` / `target_yaw` 不使用。实现在 `features/cloudia/navigation.py`。
+- 迦智后端（`DEXE_CHASSIS_BACKEND=cloudia`）：不走该 action，`nav_point_ids` / `nav_point_names` 按迦智点位编号解析（同一位置优先用编号：交管下发的是调度路网站点编号 `S<点号>`，如 `S015`；也接受数字和 `point_<编号>`，编号解析不了再用名称），不读迦智地图 / 路网缓存，按交管点列原样下发迦智多点任务（点位存在、首点即车当前点、相邻连通都由交管保证，点位不存在由迦智网关拒绝）；坐标多点 `set_chassis_road_navigation` 仍由客户端补首点并校验连通；`pose` / `target_yaw` 不使用。实现在 `features/cloudia/navigation.py`。
 
 ## 导航点查询（`nav_points.py`）
 
@@ -156,6 +156,7 @@ accepted）和**反馈链路**（进度→result）。
 
 - **导航** `get_nav_state()`：`IDLE / NAVIGATING / SUCCEEDED / FAILED / CANCELLED`
 - **路网导航** `get_road_navigation_status()`：`IDLE / WAITING_SERVER / SENDING / ACCEPTED / EXECUTING / CANCELING / SUCCEEDED / CANCELED / ABORTED / REJECTED / FAILED_TO_SEND / UNKNOWN`
+- **迦智调度导航** `get_sched_nav_state()`：同导航取值集合（见 docs/api_and_usage.md §5.1）
 - **路径导航** `get_graph_points_navigation_status()`：同路网导航取值集合
 - **回充** `get_auto_charging_status()`：同路网导航取值集合
 - **精控** `get_control_status()`：`IDLE / CONTROL / SUCCEEDED / CANCELLING / CANCELLED / FAILED`（`CONTROL`/`CANCELLING` 来自 server feedback 透传；终态来自 action result）
@@ -224,6 +225,28 @@ dexe-navigation-client-test mock --domain-id 188
 `src/examples/navigation_client_standalone_test.py --only graph` 覆盖发送成功、结果读取和取消。
 它尚未纳入正式 `RC-A-01～16` 及其 15 轮统计，不能用 standalone PASS 替代 PC2 或目标机
 正式结论；运行时仍须用独立 `ROS_DOMAIN_ID` 隔离其他 Nav2 进程。
+
+## 迦智路网同步到自研调度（`features/cloudia/sync_roadnet.py`）
+
+离线运维脚本，不属于 `ChassisClient` 运行时，也不从 `features/cloudia/__init__` 导出。
+它拉取迦智车端当前加载的路网（`/api/v1/map/info`）和工程库（`.db` 栅格图），导出调度用的三件套
+（png / yaml.json / graph.json），再 `POST /api/maps/import` 设为该区域的生效路网。
+在 pc2 上**按文件路径直接跑**，用系统 Python 即可（只依赖标准库 + yaml / numpy / Pillow），
+不需要 source ROS，也不用装任何包：
+
+```bash
+S=~/w1/dexe_robot_client/src/dexe_robot_client/navigation_client/features/cloudia/sync_roadnet.py
+python3 $S --dry-run       # 只导出 + 本地检查，不上传
+python3 $S                 # 完整交互流程，每步确认
+python3 $S --zone-id <id>  # 不按机器人查区域
+```
+
+- 底盘 IP / token 默认取环境变量 `CLOUDIA_HOST` / `CLOUDIA_TOKEN`（pc2 的 `~/.dex_env.sh`），`--car` 可覆盖。
+- 调度身份（workspace_id / entity_id）读本机 `traffic_control.yaml`；不在 pc2 上跑时会 ssh 到 `--pc2` 去读。
+- 产物默认放在 `~/dexe_robot_client_data/jiazhi_roadnet/`：工程库在 `car/` 下，三件套和 node_map.yaml 在 `<zone_id>/` 下。
+- 与 jiazhi_client 的 `jiazhi_client.tools.sync_roadnet` **独立维护、产物必须逐字节一致**。
+  改 graph.json / yaml.json / PNG 的口径时，两边要一起改，再用同一份 `.db` + map_info 各导一次比对。
+  测试见 `tests/test_jiazhi_sync_roadnet.py`。
 
 ## 已知限制 / TODO
 
