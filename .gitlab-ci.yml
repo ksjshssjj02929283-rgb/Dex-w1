@@ -2,3 +2,11 @@ include:
   project: 'commonpub/gitlab_ci_script'
   ref: main
   file: 'loader.yml'
+
+check_statuscodes:
+  stage: .pre
+  image: python:3.10-slim
+  before_script: []
+  script:
+    - python3 -m pip install -r utils/requirements-statuscodes.txt
+    - python3 utils/check_statuscodes.py

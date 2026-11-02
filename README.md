@@ -77,3 +77,27 @@ cp -r template_interfaces new_interface_package
 Make sure to update the `package.xml` and `CMakeLists.txt` files with your new package name and description.
 
 Then, add your `.msg`, `.srv`, or `.action` files in the `msg`, `srv`, or `action` directories respectively. Make sure to follow the naming conventions and structure used in this repository.
+
+## 状态码表校验
+
+运行以下命令递归检查 `supervisor_interfaces/config` 下所有 `.yaml` 和 `.yml` 文件，包含历史码表（也可在命令末尾指定其他文件或目录路径）：
+
+```bash
+python3 -m pip install -r utils/requirements-statuscodes.txt
+python3 utils/check_statuscodes.py
+```
+
+检查要求：
+
+- 根节点只包含非空列表 `modules`；每个模块包含 `module`、`module_name`、`module_id`、`submodules`。
+- `submodules` 是非空列表，每项包含 `submodule`、`submodule_name`、`submodule_id`、`status_codes`。
+- `status_codes` 是非空列表，每项包含 `status_code`、`description`、`solution`。
+- 所有叶子字段必须是非空字符串，禁止 null、空字符串和纯空白；描述文本内部允许空格。
+- `module_id` 必须是三位、`submodule_id` 必须是两位、`status_code` 必须是八位 ASCII 数字字符串，数字字段不能含空白，建议全部加引号。
+- `module_id` 在整张表中唯一，`submodule_id` 在所属模块内唯一（不同模块可复用），`status_code` 在整张表中唯一；重复时报告当前及首次出现的字段路径。
+- `status_code` 前三位必须等于所属模块的 `module_id`，第四至第五位必须等于所属子模块的 `submodule_id`。
+- 拒绝重复字段、未知字段、缺失字段和错误层级。只检查，不自动改写编号或补齐内容。
+
+每个文件独立校验，不跨文件判重。某个文件失败后仍继续检查其他文件，最后汇总结果；
+任何文件失败或目录内没有 YAML 文件时返回退出码 1，全部通过时返回 0。
+GitLab CI 的 `check_statuscodes` 作业会检查上述目录中的所有 YAML 文件。
