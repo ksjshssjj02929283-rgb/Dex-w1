@@ -329,16 +329,18 @@ void RobotServer::TorqueControlThreadFunc() {
                         break;
                     case RunMode::Drag: {
                         previous_mode_ = this->manager_info_.robot_property.run_mode;
+                        constexpr double drag_friction_ratio = 0.9;
                         const double drag_torque =
                             IsArmJoint(i)
-                                ? dynamics::ComputeDragTorque(torque_cmd.torque_feedforward[i],
+                                ? dynamics::ComputeDragTorque(torque_cmd.torque_feedforward[i] -
+                                                                  (1.0 - drag_friction_ratio) * torque_cmd.torque_friction[i],
                                                               robot_feedback_.joint_feedback[i].joint_velocity,
                                                               robot_model_.params_ptr->drag_damping_d2[i],
                                                               robot_model_.params_ptr->drag_f_dead[i],
                                                               robot_model_.params_ptr->drag_v_dead,
                                                               robot_model_.params_ptr->drag_dq_lowspeed[i],
                                                               robot_model_.params_ptr->drag_omega, drag_elapsed_seconds,
-                                                              torque_cmd.torque_friction[i],
+                                                              drag_friction_ratio * torque_cmd.torque_friction[i],
                                                               robot_model_.params_ptr->friction_model)
                                 : torque_cmd.torque_feedforward[i];
                         this->robot_control_.joint_control[i].joint_torque_feedforward = drag_torque;
