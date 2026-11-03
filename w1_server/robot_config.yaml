@@ -49,7 +49,8 @@ ee_secondary_name: RIGHT_GRIPPER
 # === 工具补偿参数 ===
 # URDF 根坐标系安装在 EE/法兰系，手指固定在默认姿态（包含 mimic 偏置）。
 # 工具载荷 RNEA 前馈独立叠加到未装手时辨识的手臂动力学结果。
-# 未配置 URDF 时，mass_kg/com_m 表示 EE 系下的点质量载荷。
+# use_urdf 按机器人 version 解析缓存目录（v02* -> v02x，v03* -> v03x）。
+# 未启用 URDF 时，mass_kg/com_m 表示 EE 系下的点质量载荷。
 tool_dynamics:
   tool_primary_enabled: true
   tool_secondary_enabled: true
@@ -57,8 +58,7 @@ tool_dynamics:
     mass_kg: 0.5
     com_m: [0.0, 0.0, 0.0]   # COM 相对 EE 原点的偏移, 单位 m, EE 系下; 默认值, 如果 left_hand_type/right_hand_type 没有匹配则使用此默认值
   BrainCo_Revo1_R:
-    left_urdf: ~/.cache/dexe_data/extracted/end_effectors/v02x/BrainCo_Revo1_R/left_hand/left_hand.urdf
-    right_urdf: ~/.cache/dexe_data/extracted/end_effectors/v02x/BrainCo_Revo1_R/right_hand/right_hand.urdf
+    use_urdf: true
   Linker_L20:
     mass_kg: 0.5
     com_m: [0.0, 0.0, 0.0]   # COM 相对 EE 原点的偏移, 单位 m, EE 系下

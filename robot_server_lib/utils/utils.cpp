@@ -279,15 +279,15 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
 
     {
         const auto tool_dyn_node = config["tool_dynamics"];
-        auto parse_tool = [&tool_dyn_node, &robot_cfg_path](const std::string& hand_type, bool enabled,
-                                           dynamics::tool_compensation::ToolDynamicsConfig& tool_cfg,
-                                           const char* arm_name, const char* urdf_key) {
+        auto parse_tool = [&tool_dyn_node, &params](const std::string& hand_type, bool enabled,
+                                                   dynamics::tool_compensation::ToolDynamicsConfig& tool_cfg,
+                                                   const char* arm_name, const char* side) {
             if (!tool_dyn_node || !enabled || hand_type.empty() || hand_type == "null") {
                 return;
             }
-            auto is_valid_tool_node = [urdf_key](const YAML::Node& n) {
-                return n && (n[urdf_key] || (n["com_m"] && n["com_m"].IsSequence() &&
-                                            n["com_m"].size() == 3 && n["mass_kg"]));
+            auto is_valid_tool_node = [](const YAML::Node& n) {
+                return n && ((n["use_urdf"] && n["use_urdf"].as<bool>()) ||
+                             (n["com_m"] && n["com_m"].IsSequence() && n["com_m"].size() == 3 && n["mass_kg"]));
             };
             const auto tool_node = tool_dyn_node[hand_type];
             const auto default_node = tool_dyn_node["Default"];
@@ -310,14 +310,9 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
                          << "] missing or invalid and no valid Default, disabled (" << arm_name << ")";
                 return;
             }
-            if (selected_node[urdf_key]) {
-                const auto path_text = selected_node[urdf_key].as<std::string>();
-                std::filesystem::path tool_urdf_path = path_text;
-                if (path_text.rfind("~/", 0) == 0) {
-                    tool_urdf_path = std::filesystem::path(std::getenv("HOME")) / path_text.substr(2);
-                } else if (tool_urdf_path.is_relative()) {
-                    tool_urdf_path = robot_cfg_path.parent_path() / tool_urdf_path;
-                }
+            if (selected_node["use_urdf"] && selected_node["use_urdf"].as<bool>()) {
+                const auto tool_urdf_path = dynamics::tool_compensation::ResolveToolUrdfPath(
+                    params.robot_version, hand_type, side);
                 tool_cfg.inertia = dynamics::tool_compensation::LoadToolInertia(tool_urdf_path);
                 tool_cfg.enabled = true;
                 LOG_INFO << "Tool load URDF (" << arm_name << "): " << tool_urdf_path.string();
@@ -346,8 +341,8 @@ RobotModel GetRobotModelFromConfig(std::filesystem::path robot_cfg_path) {
             tool_dyn_node && tool_dyn_node["tool_primary_enabled"] && tool_dyn_node["tool_primary_enabled"].as<bool>();
         const bool secondary_enabled = tool_dyn_node && tool_dyn_node["tool_secondary_enabled"] &&
                                        tool_dyn_node["tool_secondary_enabled"].as<bool>();
-        parse_tool(params.left_hand_type, primary_enabled, params.tool_dynamic_primary, "primary", "left_urdf");
-        parse_tool(params.right_hand_type, secondary_enabled, params.tool_dynamic_secondary, "secondary", "right_urdf");
+        parse_tool(params.left_hand_type, primary_enabled, params.tool_dynamic_primary, "primary", "left");
+        parse_tool(params.right_hand_type, secondary_enabled, params.tool_dynamic_secondary, "secondary", "right");
     }
 
     std::filesystem::path robot_urdf_path;

@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <unistd.h>
 
+#include <cstdlib>
+
 #include "utils.h"
 
 using namespace robot_server_lib;
@@ -44,29 +46,39 @@ protected:
     }
 };
 
-TEST_F(ToolConfigTest, SelectsSideSpecificUrdfBeforeLegacyMassAndResolvesRelativePaths) {
+TEST(ToolUrdfPathTest, ResolvesRobotVersionFamilyAndHandSide) {
+    const auto root = std::filesystem::path(std::getenv("HOME")) /
+                      ".cache/dexe_data/extracted/end_effectors";
+    for (const auto& entry : {std::pair{"v024", "v02x"}, std::pair{"v02x", "v02x"},
+                              std::pair{"v031", "v03x"}, std::pair{"v03x", "v03x"}}) {
+        EXPECT_EQ(dynamics::tool_compensation::ResolveToolUrdfPath(entry.first, "TestHand", "left"),
+                  root / entry.second / "TestHand/left_hand/left_hand.urdf");
+        EXPECT_EQ(dynamics::tool_compensation::ResolveToolUrdfPath(entry.first, "TestHand", "right"),
+                  root / entry.second / "TestHand/right_hand/right_hand.urdf");
+    }
+}
+
+TEST_F(ToolConfigTest, UrdfSelectionUsesRobotVersionAndIgnoresLegacyPathsAndMass) {
     WriteHand("left.urdf", 0.7);
     WriteHand("right.urdf", 0.9);
+    config["version"] = "v031";
     auto tool = config["tool_dynamics"]["TestHand"];
-    tool["left_urdf"] = "left.urdf";
-    tool["right_urdf"] = "right.urdf";
+    tool["use_urdf"] = true;
+    tool["left_urdf"] = (directory / "left.urdf").string();
+    tool["right_urdf"] = (directory / "right.urdf").string();
     tool["mass_kg"] = 99.0;
     tool["com_m"] = YAML::Load("[0, 0, 0]");
-    const auto model = Load();
-    const auto& left = model.params_ptr->tool_dynamic_primary;
-    const auto& right = model.params_ptr->tool_dynamic_secondary;
-    EXPECT_TRUE(left.enabled);
-    EXPECT_TRUE(right.enabled);
-    EXPECT_DOUBLE_EQ(left.inertia.mass(), 0.7);
-    EXPECT_DOUBLE_EQ(right.inertia.mass(), 0.9);
-    EXPECT_TRUE(left.inertia.lever().isApprox(Vector3d(0.01, -0.02, 0.03)));
-    EXPECT_GT(left.inertia.inertia().matrix().norm(), 0.0);
+    try {
+        Load();
+        FAIL() << "The v03x hand URDF is absent; legacy paths and point mass must not be used.";
+    } catch (const std::exception& error) {
+        EXPECT_NE(std::string(error.what()).find("v03x/TestHand/left_hand/left_hand.urdf"), std::string::npos);
+    }
 }
 
 TEST_F(ToolConfigTest, SwitchAndAbsentHandDisableUrdfLoading) {
     auto tool = config["tool_dynamics"]["TestHand"];
-    tool["left_urdf"] = "missing.urdf";
-    tool["right_urdf"] = "missing.urdf";
+    tool["use_urdf"] = true;
     config["tool_dynamics"]["tool_primary_enabled"] = false;
     config["right_hand_type"] = "null";
     const auto model = Load();

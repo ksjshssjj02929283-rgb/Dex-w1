@@ -1,6 +1,7 @@
 #include "tool_compensation.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <stdexcept>
 
 namespace robot_server_lib {
@@ -9,6 +10,13 @@ namespace tool_compensation {
 
 namespace {
 void CheckToolInertia(const pinocchio::Inertia& inertia, const std::filesystem::path& urdf_path);
+}
+
+std::filesystem::path ResolveToolUrdfPath(const std::string& robot_version,
+                                         const std::string& hand_type,
+                                         const std::string& side) {
+    return std::filesystem::path(std::getenv("HOME")) / ".cache/dexe_data/extracted/end_effectors" /
+           (robot_version.substr(0, 3) + "x") / hand_type / (side + "_hand") / (side + "_hand.urdf");
 }
 
 pinocchio::Inertia LoadToolInertia(const std::filesystem::path& urdf_path) {

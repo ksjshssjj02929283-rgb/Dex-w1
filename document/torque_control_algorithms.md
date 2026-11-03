@@ -265,9 +265,16 @@ N = I - Jᵀ · (Jᵀ)⁺
 
 `payload_model` 保留手臂七轴运动链，将手臂本体惯性置零，仅在末端加入工具惯性。工具重力、惯性和速度相关项由一次 RNEA 计算，原有雅可比转置工具重力补偿已由此路径替换。模型使用臂基座坐标系下的重力方向，计算范围为固定基座下工具对本臂七轴的附加力矩，不包含躯干运动造成的基座惯性或工具对躯干关节的负载传递。
 
-参数来自 `tool_dynamics`，左右臂由 `tool_primary_enabled` / `tool_secondary_enabled` 独立控制。根据 `left_hand_type` / `right_hand_type` 选择手型，对应的 `left_urdf` / `right_urdf` 路径优先于质量、质心字段。读取手 URDF 后，以默认关节姿态固定手指，包含 mimic 关节的偏移，并将各 link 的惯性合成到手的根坐标系后连接到 EE。当前这条补偿路径不随实时手指姿态更新。
+参数来自 `tool_dynamics`，左右臂由 `tool_primary_enabled` / `tool_secondary_enabled` 独立控制。根据 `left_hand_type` / `right_hand_type` 选择手型，`use_urdf: true` 启用 URDF 载荷。路径由机器人 `version` 的前三个字符加 `x`、手型和左右侧自动组成，例如 `v024` 使用 `v02x`，`v031` 使用 `v03x`：
 
-没有 URDF 路径的工具继续读取 `mass_kg`、`com_m`，在 EE 系下构造点质量载荷，不附加绕质心的旋转惯量。工具配置可通过 `./set_w1.sh tool` 编辑，`./set_w1.sh tool --list` 查看，修改后重启服务生效。
+```text
+~/.cache/dexe_data/extracted/end_effectors/{版本族}/{手型}/left_hand/left_hand.urdf
+~/.cache/dexe_data/extracted/end_effectors/{版本族}/{手型}/right_hand/right_hand.urdf
+```
+
+YAML 只保存选择开关，不保存左右 URDF 路径；旧配置中残留的 `left_urdf` / `right_urdf` 不参与路径选择。读取手 URDF 后，以默认关节姿态固定手指，包含 mimic 关节的偏移，并将各 link 的惯性合成到手的根坐标系后连接到 EE。当前这条补偿路径不随实时手指姿态更新。
+
+未启用 `use_urdf` 的工具继续读取 `mass_kg`、`com_m`，在 EE 系下构造点质量载荷，不附加绕质心的旋转惯量。工具配置可通过 `./set_w1.sh tool` 切换载荷来源或编辑质量、质心，`./set_w1.sh tool --list` 查看按当前版本解析的左右 URDF 路径，修改后重启服务生效。
 
 ## 6. 参数调整与验证
 

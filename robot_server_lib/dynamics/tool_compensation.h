@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 
 #include "pinocchio_api.h"
 #include "typedef.h"
@@ -14,6 +15,9 @@ struct ToolDynamicsConfig {
     pinocchio::Inertia inertia = pinocchio::Inertia::Zero();
 };
 
+std::filesystem::path ResolveToolUrdfPath(const std::string& robot_version,
+                                         const std::string& hand_type,
+                                         const std::string& side);
 pinocchio::Inertia LoadToolInertia(const std::filesystem::path& urdf_path);
 
 class ToolCompensation {
