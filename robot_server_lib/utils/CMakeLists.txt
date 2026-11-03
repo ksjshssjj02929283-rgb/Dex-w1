@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 
 project(robot_server_utils)
 
-aux_source_directory(. UTILS_SRCS)
+file(GLOB UTILS_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 add_library(${PROJECT_NAME} STATIC ${UTILS_SRCS})
 
 target_include_directories(${PROJECT_NAME} PUBLIC
