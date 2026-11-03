@@ -1,115 +1,137 @@
-// 工具重力补偿数学验证:
-// 对比 ComputeToolJointGravityTorque 的输出与 "把工具塞进 EE link 后 rnea 增量"
-// 两者应完全一致 (差异来自 EE link 原有 50g 占位质量, 已扣除)
 #include <gtest/gtest.h>
+#include <unistd.h>
 
 #include <Eigen/Dense>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
+#include <sstream>
 
 #include "pinocchio_api.h"
 #include "tool_compensation.h"
-#include "typedef.h"
 
 using namespace robot_server_lib;
 
 namespace {
-// 构造一个 7 自由度手臂 URDF, 末端 ee link 用占位质量
-// 便于对比 "加工具前后 rnea 差值" 与 "ComputeToolJointGravityTorque"
-std::string BuildArmUrdf(double ee_mass_kg, const std::string& ee_inertia = "") {
-    std::string inertia_str =
-        ee_inertia.empty() ? "ixx=\"1e-9\" ixy=\"0\" ixz=\"0\" iyy=\"1e-9\" iyz=\"0\" izz=\"1e-9\"" : ee_inertia;
-    return R"(
-<robot name="test_arm">
-  <link name="base"/>
-  <link name="link1"><inertial><mass value="1.0"/><inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/></inertial></link>
-  <link name="link2"><inertial><mass value="1.0"/><inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/></inertial></link>
-  <link name="link3"><inertial><mass value="1.0"/><inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/></inertial></link>
-  <link name="link4"><inertial><mass value="1.0"/><inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/></inertial></link>
-  <link name="link5"><inertial><mass value="1.0"/><inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/></inertial></link>
-  <link name="link6"><inertial><mass value="1.0"/><inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/></inertial></link>
-  <link name="link7"><inertial><mass value="1.0"/><inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/></inertial></link>
-  <link name="ee"><inertial><origin xyz="0 0 0.05" rpy="0 0 0"/><mass value=")" +
-           std::to_string(ee_mass_kg) + R"("/><inertia )" + inertia_str + R"(/></inertial></link>
-  <joint name="j1" type="revolute"><axis xyz="0 0 1"/><origin xyz="0 0 0.1"/><limit lower="-3.14" upper="3.14" effort="50" velocity="3.14"/><parent link="base"/><child link="link1"/></joint>
-  <joint name="j2" type="revolute"><axis xyz="0 1 0"/><origin xyz="0 0 0.1"/><limit lower="-3.14" upper="3.14" effort="50" velocity="3.14"/><parent link="link1"/><child link="link2"/></joint>
-  <joint name="j3" type="revolute"><axis xyz="0 1 0"/><origin xyz="0.1 0 0"/><limit lower="-3.14" upper="3.14" effort="50" velocity="3.14"/><parent link="link2"/><child link="link3"/></joint>
-  <joint name="j4" type="revolute"><axis xyz="0 0 1"/><origin xyz="0.1 0 0"/><limit lower="-3.14" upper="3.14" effort="50" velocity="3.14"/><parent link="link3"/><child link="link4"/></joint>
-  <joint name="j5" type="revolute"><axis xyz="0 1 0"/><origin xyz="0.1 0 0"/><limit lower="-3.14" upper="3.14" effort="50" velocity="3.14"/><parent link="link4"/><child link="link5"/></joint>
-  <joint name="j6" type="revolute"><axis xyz="0 0 1"/><origin xyz="0.1 0 0"/><limit lower="-3.14" upper="3.14" effort="50" velocity="3.14"/><parent link="link5"/><child link="link6"/></joint>
-  <joint name="j7" type="revolute"><axis xyz="0 1 0"/><origin xyz="0.05 0 0"/><limit lower="-3.14" upper="3.14" effort="50" velocity="3.14"/><parent link="link6"/><child link="link7"/></joint>
-  <joint name="ee_joint" type="fixed"><origin xyz="0.05 0 0" rpy="0 -1.5707963267948966 0"/><parent link="link7"/><child link="ee"/></joint>
-</robot>
-)";
+std::string BuildArmUrdf(bool with_payload, bool rotated_base) {
+    std::ostringstream urdf;
+    urdf << R"(<robot name="test_arm"><link name="root"/>)";
+    if (rotated_base) {
+        urdf << R"(<link name="test_arm_base"/>
+          <joint name="connector" type="fixed">
+            <origin xyz="0.1 0.2 0.3" rpy="1.5707963267948966 0 0"/>
+            <parent link="root"/><child link="test_arm_base"/>
+          </joint>)";
+    }
+    const std::array<const char*, 7> axes{"0 0 1", "0 1 0", "1 0 0", "0 0 1", "0 1 0", "1 0 0", "0 1 0"};
+    for (int joint = 1; joint <= 7; ++joint) {
+        const std::string parent = joint == 1 ? (rotated_base ? "test_arm_base" : "root")
+                                              : "link" + std::to_string(joint - 1);
+        urdf << "<link name=\"link" << joint << R"("><inertial>
+          <origin xyz="0.01 -0.02 0.03"/><mass value="1.0"/>
+          <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.02" iyz="0" izz="0.025"/>
+          </inertial></link>)";
+        urdf << "<joint name=\"j" << joint << "\" type=\"revolute\"><axis xyz=\"" << axes[joint - 1]
+             << R"("/><origin xyz="0.09 0.02 0.08" rpy="0.1 0.2 -0.1"/>
+          <limit lower="-3.14" upper="3.14" effort="50" velocity="3.14"/>)"
+             << "<parent link=\"" << parent << "\"/><child link=\"link" << joint << "\"/></joint>";
+    }
+    urdf << R"(<link name="ee"><inertial><mass value="0.05"/>
+      <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
+      </inertial></link>
+      <joint name="ee_joint" type="fixed"><origin xyz="0.06 0.02 -0.01" rpy="0.2 -0.3 0.4"/>
+        <parent link="link7"/><child link="ee"/></joint>)";
+    if (with_payload) {
+        urdf << R"(<link name="payload"><inertial>
+          <origin xyz="0.015 -0.02 0.05"/><mass value="1.061"/>
+          <inertia ixx="0.004" ixy="0.0001" ixz="0" iyy="0.006" iyz="0" izz="0.008"/>
+          </inertial></link>
+          <joint name="payload_joint" type="fixed"><parent link="ee"/><child link="payload"/></joint>)";
+    }
+    urdf << "</robot>";
+    return urdf.str();
 }
 
-// 写临时 URDF 文件
-std::string WriteTempUrdf(double ee_mass_kg) {
-    auto tmp_dir = std::filesystem::temp_directory_path();
-    auto urdf_path = tmp_dir / ("test_arm_" + std::to_string(ee_mass_kg) + ".urdf");
-    std::ofstream ofs(urdf_path);
-    ofs << BuildArmUrdf(ee_mass_kg);
-    ofs.close();
-    return urdf_path.string();
+void ExpectRneaDifference(bool rotated_base) {
+    pinocchio::Model arm, loaded_arm;
+    pinocchio::urdf::buildModelFromXML(BuildArmUrdf(false, rotated_base), arm);
+    pinocchio::urdf::buildModelFromXML(BuildArmUrdf(true, rotated_base), loaded_arm);
+    ASSERT_EQ(arm.nq, 7);
+    ASSERT_EQ(loaded_arm.nq, 7);
+    arm.armature.setConstant(0.2);
+    loaded_arm.armature = arm.armature;
+    Matrix3d inertia = Vector3d(0.004, 0.006, 0.008).asDiagonal();
+    inertia(0, 1) = inertia(1, 0) = 0.0001;
+    dynamics::tool_compensation::ToolCompensation compensation(
+        arm, pinocchio::Inertia(1.061, Vector3d(0.015, -0.02, 0.05), inertia));
+    pinocchio::Data arm_data(arm), loaded_data(loaded_arm);
+    const Eigen::VectorXd q = (Eigen::VectorXd(7) << 0.3, -0.5, 0.8, -0.4, 0.6, -0.3, 0.2).finished();
+    const Eigen::VectorXd dq = (Eigen::VectorXd(7) << -0.2, 0.4, 0.6, -0.5, 0.3, -0.1, 0.7).finished();
+    const Eigen::VectorXd ddq = (Eigen::VectorXd(7) << 0.5, -0.4, 0.2, 0.8, -0.3, 0.6, -0.7).finished();
+    const Eigen::VectorXd zero = Eigen::VectorXd::Zero(7);
+    const Matrix3d root_R_armbase = rotated_base
+                                       ? Eigen::AngleAxisd(0.5 * std::acos(-1.0), Vector3d::UnitX()).toRotationMatrix()
+                                       : Matrix3d::Identity();
+    for (int sample = 0; sample < 4; ++sample) {
+        const Vector3d gravity = sample < 2 ? Vector3d(1.1, -2.2, -9.1) : Vector3d::Zero();
+        const Eigen::VectorXd q_sample = sample == 0 ? zero : q;
+        const Eigen::VectorXd dq_sample = sample == 1 || sample == 3 ? dq : zero;
+        const Eigen::VectorXd ddq_sample = sample == 1 || sample == 2 ? ddq : zero;
+        arm.gravity.linear() = loaded_arm.gravity.linear() = root_R_armbase * gravity;
+        const Eigen::VectorXd tau_arm = pinocchio::rnea(arm, arm_data, q_sample, dq_sample, ddq_sample);
+        const Eigen::VectorXd tau_loaded =
+            pinocchio::rnea(loaded_arm, loaded_data, q_sample, dq_sample, ddq_sample);
+        const Eigen::VectorXd expected = tau_loaded - tau_arm;
+        const Eigen::VectorXd actual = compensation.ComputeTorque(q_sample, dq_sample, ddq_sample, gravity);
+        EXPECT_GT(expected.norm(), 1e-5) << "sample " << sample;
+        EXPECT_LT((actual - expected).norm(), 1e-10) << "sample " << sample;
+    }
 }
 }  // namespace
 
-TEST(ToolCompensationMathTest, MatchesRneaDelta) {
-    // 构造两个模型: base (ee=0kg) 和 with_tool (ee=1.061kg, com 在 ee 系 z=0.05m)
-    pinocchio::Model model_base;
-    pinocchio::Model model_with_tool;
-    pinocchio::urdf::buildModel(WriteTempUrdf(0.0), model_base);
-    pinocchio::urdf::buildModel(WriteTempUrdf(1.061), model_with_tool);
-    ASSERT_EQ(model_base.nq, 7);
-    ASSERT_EQ(model_with_tool.nq, 7);
+TEST(ToolCompensationMathTest, MatchesRneaDifferenceForGravityAccelerationAndVelocity) {
+    ExpectRneaDifference(false);
+}
 
-    // 工具配置: com 在 EE 系下 (0,0,0.05)m, 与 URDF ee inertial origin 一致
-    dynamics::tool_compensation::ToolGravityCompensationConfig cfg;
-    cfg.gravity_enabled = true;
-    cfg.mass_kg = 1.061;
-    cfg.com_m = Vector3d(0.0, 0.0, 0.05);
+TEST(ToolCompensationMathTest, RotatesArmBaseGravityThroughFixedConnector) {
+    ExpectRneaDifference(true);
+}
 
-    // arm base 系下重力 (本测试 arm-base = base link, 无旋转, 重力 = (0,0,-9.8))
-    const Vector3d gravity_armbase(0.0, 0.0, -9.8);
-
-    // 多个姿态测试
-    std::vector<Eigen::VectorXd> test_qs;
-    test_qs.push_back(Eigen::VectorXd::Zero(7));
-    test_qs.push_back((Eigen::VectorXd(7) << 0.3, -0.5, 0.8, -0.4, 0.6, -0.3, 0.2).finished());
-    test_qs.push_back((Eigen::VectorXd(7) << 1.0, 0.5, -1.0, 0.8, -0.5, 1.2, -0.7).finished());
-    test_qs.push_back((Eigen::VectorXd(7) << -0.8, 1.2, 0.3, -1.5, 0.9, -0.4, 1.1).finished());
-
-    const Eigen::VectorXd dq = Eigen::VectorXd::Zero(7);
-    const Eigen::VectorXd ddq = Eigen::VectorXd::Zero(7);
-
-    // rnea 的重力通过 model.gravity 设置
-    model_base.gravity.linear(gravity_armbase);
-    model_with_tool.gravity.linear(gravity_armbase);
-
-    for (size_t i = 0; i < test_qs.size(); ++i) {
-        const auto& q = test_qs[i];
-
-        // 基准: 不带工具的 rnea (带重力)
-        pinocchio::Data data_base(model_base);
-        Eigen::VectorXd tau_base = pinocchio::rnea(model_base, data_base, q, dq, ddq);
-
-        // 带工具: rnea (带重力)
-        pinocchio::Data data_tool(model_with_tool);
-        Eigen::VectorXd tau_with_tool = pinocchio::rnea(model_with_tool, data_tool, q, dq, ddq);
-
-        // 工具引入的力矩增量 (rnea 差值)
-        Eigen::VectorXd tau_delta = tau_with_tool - tau_base;
-
-        // 我们的工具补偿函数
-        Eigen::VectorXd tau_comp =
-            dynamics::tool_compensation::ComputeToolJointGravityTorque(model_base, q, cfg, gravity_armbase);
-
-        // 对比 (注意: pinocchio rnea 的重力模型, gravity 向量是"重力加速度", 与我们一致)
-        double error = (tau_delta - tau_comp).cwiseAbs().maxCoeff();
-        std::cout << "q[" << i << "]: tau_delta=" << tau_delta.transpose()
-                  << "\n      tau_comp =" << tau_comp.transpose() << "\n      max_err=" << error << "\n";
-        EXPECT_LT(error, 1e-9) << "q index " << i << ": tool comp mismatch";
+TEST(ToolCompensationMathTest, LoadsRootBodyAndMimicFingerInertiaAtNeutralPose) {
+    const auto path = std::filesystem::temp_directory_path() /
+                      ("test_tool_inertia_" + std::to_string(::getpid()) + ".urdf");
+    {
+        std::ofstream out(path);
+        out << R"(<robot name="test_hand">
+          <link name="root"><inertial><mass value="2"/>
+            <inertia ixx="0.1" ixy="0" ixz="0" iyy="0.1" iyz="0" izz="0.1"/>
+          </inertial></link>
+          <link name="palm"><inertial><mass value="1"/>
+            <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+          </inertial></link>
+          <joint name="mount" type="fixed"><origin xyz="1 0 0"/>
+            <parent link="root"/><child link="palm"/></joint>
+          <link name="driver"><inertial><origin xyz="1 0 0"/><mass value="0.5"/>
+            <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.005"/>
+          </inertial></link>
+          <joint name="driver_joint" type="revolute"><origin xyz="0 1 0"/><axis xyz="0 0 1"/>
+            <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+            <parent link="palm"/><child link="driver"/></joint>
+          <link name="finger"><inertial><origin xyz="1 0 0"/><mass value="0.5"/>
+            <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.005"/>
+          </inertial></link>
+          <joint name="finger_joint" type="revolute"><axis xyz="0 0 1"/>
+            <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+            <mimic joint="driver_joint" multiplier="1" offset="1.5707963267948966"/>
+            <parent link="driver"/><child link="finger"/></joint>
+        </robot>)";
     }
+    const pinocchio::Inertia inertia = dynamics::tool_compensation::LoadToolInertia(path);
+    std::filesystem::remove(path);
+    EXPECT_DOUBLE_EQ(inertia.mass(), 4.0);
+    EXPECT_TRUE(inertia.lever().isApprox(Vector3d(0.625, 0.375, 0.0), 1e-12));
+    Matrix3d expected;
+    expected << 2.0575, -1.0625, 0.0, -1.0625, 2.0575, 0.0, 0.0, 0.0, 3.995;
+    EXPECT_TRUE(inertia.inertia().matrix().isApprox(expected, 1e-12));
 }

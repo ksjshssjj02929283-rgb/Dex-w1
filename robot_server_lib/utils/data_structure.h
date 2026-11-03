@@ -317,8 +317,8 @@ struct RobotParams {
     VectorDof drag_f_dead = VectorDof::Zero();
     double drag_v_dead = 0.1;
     double drag_omega = 6.283185307179586;  // rad/s (1 Hz), shared by both arms
-    dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_primary;  // 主臂末端工具重力补偿参数
-    dynamics::tool_compensation::ToolGravityCompensationConfig tool_dynamic_secondary;  // 从臂末端工具重力补偿参数
+    dynamics::tool_compensation::ToolDynamicsConfig tool_dynamic_primary;
+    dynamics::tool_compensation::ToolDynamicsConfig tool_dynamic_secondary;
 };
 
 struct RobotModel {

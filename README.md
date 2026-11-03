@@ -114,6 +114,8 @@ w1_v02:
 
 主要配置内容包括机器人型号与 URDF、关节映射和运动分组、安全限制、PD 与柔顺控制、轨迹滤波与抑振、Streaming 限制、动力学参数、工具补偿以及底盘和 IMU 参数。
 
+末端工具通过 `tool_dynamics` 配置载荷 RNEA 前馈。按 `left_hand_type` / `right_hand_type` 选择手型后，优先读取对应的 `left_urdf` / `right_urdf`，从手 URDF 合成质量、质心和惯量；手指固定在默认姿态，包含 mimic 偏移。没有 URDF 路径的工具继续使用 `mass_kg`、`com_m` 作为点质量载荷。该补偿包含工具对单臂七轴的重力、惯性和速度相关项，修改后重启服务生效，详见[工具载荷前馈](document/torque_control_algorithms.md#51-工具载荷-rnea-前馈)。
+
 ### Drag 模式死区正弦力矩与附加阻尼
 
 手臂在 Drag 模式下按 `friction_model` 选择输出，`dq` 为实际反馈速度（rad/s），`damping = D2 * abs(dq) * dq / (v_ref * v_ref)`：

@@ -28,6 +28,8 @@ TorqueControlThread · 1 kHz
 | [`robot_server_lib/dynamics/joint_admittance_controller.cpp`](../robot_server_lib/dynamics/joint_admittance_controller.cpp) | 将外力矩转换为位置和速度偏移 |
 | [`robot_server_lib/dynamics/cartesian_impedance_controller.cpp`](../robot_server_lib/dynamics/cartesian_impedance_controller.cpp) | 计算任务空间阻抗、惯性整形和零空间力矩 |
 | [`robot_server_lib/dynamics/inverse_dynamics.cpp`](../robot_server_lib/dynamics/inverse_dynamics.cpp) | 组织整机 RNEA、双臂符号动力学和工具补偿 |
+| [`robot_server_lib/utils/tool_inertia_loader.cpp`](../robot_server_lib/utils/tool_inertia_loader.cpp) | 从手 URDF 合成默认手指姿态下的固定载荷惯性 |
+| [`robot_server_lib/dynamics/tool_compensation.cpp`](../robot_server_lib/dynamics/tool_compensation.cpp) | 通过 RNEA 计算工具附加力矩 |
 | [`robot_server_lib/src/planner_manager.cpp`](../robot_server_lib/src/planner_manager.cpp) | 在启用笛卡尔阻抗时计算双臂阻抗力矩并写入规划指令 |
 | [`robot_server_lib/src/torque_controller_manager.cpp`](../robot_server_lib/src/torque_controller_manager.cpp) | 管理力矩控制状态，读取规划指令并发布 `TorqueCtrlCommand` 与 `JointMeasurement` |
 
@@ -251,6 +253,21 @@ N = I - Jᵀ · (Jᵀ)⁺
 | `TorqueCtrlCommand::torque_feedforward` | 不参与 | 不参与 | 不参与 | 仅逆动力学前馈 |
 
 运行模式决定 [`w1_server.cpp`](../w1_server/src/w1_server.cpp) 最终选择哪个内部结果复制到共享内存的 `joint_torque_feedforward`。共享内存字段名虽然是 `joint_torque_feedforward`，但在 CST 模式下它承载的是最终生效的关节力矩命令。
+
+### 5.1 工具载荷 RNEA 前馈
+
+手臂辨识时未装手，双臂符号模型计算后再叠加工具载荷力矩：
+
+```text
+τ_arm = τ_identified + τ_tool
+τ_tool = RNEA(payload_model, q_arm, dq_arm, ddq_arm)
+```
+
+`payload_model` 保留手臂七轴运动链，将手臂本体惯性置零，仅在末端加入工具惯性。工具重力、惯性和速度相关项由一次 RNEA 计算，原有雅可比转置工具重力补偿已由此路径替换。模型使用臂基座坐标系下的重力方向，计算范围为固定基座下工具对本臂七轴的附加力矩，不包含躯干运动造成的基座惯性或工具对躯干关节的负载传递。
+
+参数来自 `tool_dynamics`，左右臂由 `tool_primary_enabled` / `tool_secondary_enabled` 独立控制。根据 `left_hand_type` / `right_hand_type` 选择手型，对应的 `left_urdf` / `right_urdf` 路径优先于质量、质心字段。读取手 URDF 后，以默认关节姿态固定手指，包含 mimic 关节的偏移，并将各 link 的惯性合成到手的根坐标系后连接到 EE。当前这条补偿路径不随实时手指姿态更新。
+
+没有 URDF 路径的工具继续读取 `mass_kg`、`com_m`，在 EE 系下构造点质量载荷，不附加绕质心的旋转惯量。工具配置可通过 `./set_w1.sh tool` 编辑，`./set_w1.sh tool --list` 查看，修改后重启服务生效。
 
 ## 6. 参数调整与验证
 

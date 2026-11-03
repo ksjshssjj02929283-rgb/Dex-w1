@@ -21,6 +21,8 @@ protected:
         auto root = std::filesystem::path(__FILE__).parent_path().parent_path();
         config = YAML::LoadFile((root.parent_path() / "w1_server/robot_config.yaml").string());
         config["file_path"]["robot_urdf"] = (root / "robot_models/w1/robot.urdf").string();
+        config["left_hand_type"] = "Default";
+        config["right_hand_type"] = "Default";
         user_path = "/tmp/test_friction_" + std::to_string(::getpid()) + ".yaml";
         default_path = user_path.string() + ".default";
     }
@@ -272,8 +274,11 @@ TEST_F(FrictionConfigTest, RemovingFrictionPreservesFullBodyDynamicsAndToolCompe
         for (const auto* friction_model : {"classic", "smooth", "stribeck"}) {
             auto params = std::make_shared<RobotParams>(*model.params_ptr);
             params->friction_model = friction_model;
-            params->tool_dynamic_primary.gravity_enabled = true;
-            params->tool_dynamic_secondary.gravity_enabled = true;
+            params->tool_dynamic_primary.enabled = true;
+            params->tool_dynamic_secondary.enabled = true;
+            params->tool_dynamic_primary.inertia =
+                pinocchio::Inertia(0.63, Vector3d(0.01, -0.02, 0.05), Matrix3d::Identity() * 0.003);
+            params->tool_dynamic_secondary.inertia = params->tool_dynamic_primary.inertia;
             model.params_ptr = params;
             auto frictionless = model;
             auto no_friction_params = std::make_shared<RobotParams>(*params);
@@ -312,6 +317,49 @@ TEST_F(FrictionConfigTest, RemovingFrictionPreservesFullBodyDynamicsAndToolCompe
         VectorDof friction = VectorDof::Constant(999.0);
         dynamics::InverseDynamics(model, VectorDof::Zero(), VectorDof::Constant(0.05), VectorDof::Zero(), &friction);
         EXPECT_TRUE(friction.isZero());
+    }
+}
+
+TEST_F(FrictionConfigTest, ToolLoadIsAddedAfterSymbolReplacementAndRespectsEachArmSwitch) {
+    auto model = Load();
+    auto params = std::make_shared<RobotParams>(*model.params_ptr);
+    params->dyn_base_params_primary = Eigen::VectorXd::Zero(71);
+    params->dyn_base_params_secondary = Eigen::VectorXd::Zero(71);
+    params->tool_dynamic_primary.inertia =
+        pinocchio::Inertia(0.63, Vector3d(0.01, -0.02, 0.05), Matrix3d::Identity() * 0.003);
+    params->tool_dynamic_secondary.inertia =
+        pinocchio::Inertia(0.81, Vector3d(-0.03, 0.01, 0.06), Matrix3d::Identity() * 0.005);
+    params->tool_dynamic_primary.enabled = false;
+    params->tool_dynamic_secondary.enabled = false;
+    model.params_ptr = params;
+    const VectorDof q = VectorDof::Constant(0.2);
+    const VectorDof dq = VectorDof::Constant(0.07);
+    const VectorDof ddq = VectorDof::Constant(0.13);
+    const VectorDof without_tools = dynamics::InverseDynamics(model, q, dq, ddq);
+
+    for (auto group : {MotionGroup::Primary, MotionGroup::Secondary}) {
+        params->tool_dynamic_primary.enabled = group == MotionGroup::Primary;
+        params->tool_dynamic_secondary.enabled = group == MotionGroup::Secondary;
+        const auto& arm_model = group == MotionGroup::Primary ? model.primary_arm_model_ptr
+                                                            : model.secondary_arm_model_ptr;
+        const auto& tool = group == MotionGroup::Primary ? params->tool_dynamic_primary
+                                                       : params->tool_dynamic_secondary;
+        const std::string arm_base_name = group == MotionGroup::Primary ? "left_arm_base" : "right_arm_base";
+        const auto arm_base = pinocchio::GetFkByFrameId(*model.model_ptr, q,
+                                                       model.model_ptr->getFrameId(arm_base_name));
+        const Vector3d gravity_armbase = arm_base.rotation().transpose() * Vector3d(0.0, 0.0, -9.8);
+        Eigen::VectorXd q_arm, dq_arm, ddq_arm;
+        utils::GetJointFromWholeBody(model, q, q_arm, group);
+        utils::GetJointFromWholeBody(model, dq, dq_arm, group);
+        utils::GetJointFromWholeBody(model, ddq, ddq_arm, group);
+        dynamics::tool_compensation::ToolCompensation reference(*arm_model, tool.inertia);
+        const Eigen::VectorXd tool_torque = reference.ComputeTorque(q_arm, dq_arm, ddq_arm, gravity_armbase);
+        VectorDof expected = VectorDof::Zero();
+        utils::MapJointToWholeBody(model, tool_torque, expected, group);
+        const VectorDof delta = dynamics::InverseDynamics(model, q, dq, ddq) - without_tools;
+        EXPECT_GT(tool_torque.norm(), 0.1);
+        EXPECT_TRUE(delta.isApprox(expected, 1e-10));
+        EXPECT_TRUE(delta.head<6>().isZero(1e-12));
     }
 }
 

@@ -45,7 +45,7 @@ print_usage() {
     echo "  codegen         - Generate dynamics code (python3 script/dyn_params_ident/dyn_code_generator.py)"
     echo "  dh [left|right] - Compute DH parameters from URDF (python3 script/dyn_params_ident/urdf2dh.py)"
     echo "  gui             - Robot Launcher GUI (python3 script/gui.py)"
-    echo "  tool            - Edit end-effector tool dynamics config (python3 script/set_tool_dynamics.py)"
+    echo "  tool            - Edit tool payload URDF or mass/COM (python3 script/set_tool_dynamics.py)"
     echo "  trajgen         - Trajectory generator (python3 script/traj_generator.py)"
     echo "  vis             - Visualization ROS2 node (python3 script/visual_ros2_node.py)"
     echo "  config          - Edit robot_config.yaml (gedit/vim ~/dexe_robot_server_data/robot_config.yaml)"
@@ -97,9 +97,6 @@ print_usage() {
     echo "  ./set_w1.sh gui"
     echo "  ./set_w1.sh tool"
     echo "  ./set_w1.sh tool --list"
-    echo "  ./set_w1.sh tool --set-enabled primary false"
-    echo "  ./set_w1.sh tool --set-tool 'BrainCo_Revo1_R' 0.5 0.0 0.0 0.0"
-    echo "  ./set_w1.sh tool --set-tool 'BrainCo_Revo1_R'"
     echo "  ./set_w1.sh trajgen"
     echo "  ./set_w1.sh vis"
     echo "  ./set_w1.sh config"
@@ -362,7 +359,7 @@ case $PROPERTY_KEY in
         exit 0
         ;;
     tool)
-        echo "Starting Tool Dynamics Config Editor..."
+        echo "Starting Tool Payload Config Editor..."
         python3 "${SCRIPT_DIR}/script/set_tool_dynamics.py" "${@:2}"
         exit 0
         ;;

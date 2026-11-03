@@ -44,6 +44,7 @@
 /home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/sri_force_sensor.cpp
 /home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/sri_force_sensor.h
 /home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/time_utility.h
+/home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/tool_inertia_loader.cpp
 /home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/typedef.h
 /home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/utils.cpp
 /home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/utils.h

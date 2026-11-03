@@ -47,15 +47,21 @@ def resolve_tool_name(td, hand_type):
     return None
 
 
+def is_urdf_tool(params):
+    return bool(params.get("left_urdf") or params.get("right_urdf"))
+
+
 def describe_effective_tool(td, config_key, enabled_key):
     if not td.get(enabled_key, False):
         return "已禁用"
     hand_type = cfg.get(config_key)
     tool_name = resolve_tool_name(td, hand_type)
-    if tool_name == "Default":
-        return f"Default（{hand_type} 未匹配，使用默认配置）"
     if tool_name:
-        return tool_name
+        params = td[tool_name]
+        urdf_key = "left_urdf" if config_key == "left_hand_type" else "right_urdf"
+        source = f"URDF: {params[urdf_key]}" if params.get(urdf_key) else "质量/质心点载荷"
+        name = f"Default（{hand_type} 未匹配）" if tool_name == "Default" else tool_name
+        return f"{name} · {source}"
     if not hand_type or hand_type == "null":
         return "未配置手型"
     return f"无有效配置（{hand_type} 未匹配且无 Default）"
@@ -76,9 +82,14 @@ def print_header():
     if tools:
         print("  所有末端工具:")
         for name, params in tools:
-            mass = params.get("mass_kg", "?")
-            com = params.get("com_m", "?")
-            print(f"    {name}: mass_kg={mass}, com_m={com}")
+            if is_urdf_tool(params):
+                print(f"    {name}: URDF 载荷")
+                print(f"      left_urdf : {params.get('left_urdf', '未配置')}")
+                print(f"      right_urdf: {params.get('right_urdf', '未配置')}")
+            else:
+                mass = params.get("mass_kg", "?")
+                com = params.get("com_m", "?")
+                print(f"    {name}: 质量/质心点载荷, mass_kg={mass}, com_m={com}")
     else:
         print("  (无末端工具)")
     print("")
@@ -106,8 +117,13 @@ def edit_tool_params(td, name, params, allow_delete=True):
     while True:
         clear_screen()
         print(f"\n========= 编辑末端工具: {name} =========")
-        print(f"  1: mass_kg = {params.get('mass_kg', '?')}")
-        print(f"  2: com_m   = {params.get('com_m', '?')}")
+        urdf_tool = is_urdf_tool(params)
+        if urdf_tool:
+            print(f"  1: left_urdf  = {params.get('left_urdf', '未配置')}")
+            print(f"  2: right_urdf = {params.get('right_urdf', '未配置')}")
+        else:
+            print(f"  1: mass_kg = {params.get('mass_kg', '?')}")
+            print(f"  2: com_m   = {params.get('com_m', '?')}")
         if allow_delete:
             print("  3: 删除此工具")
         print(f"  b: 返回上级")
@@ -121,6 +137,14 @@ def edit_tool_params(td, name, params, allow_delete=True):
         elif cmd.lower() == "q":
             print("退出")
             sys.exit(0)
+        elif urdf_tool and cmd in ("1", "2"):
+            key = "left_urdf" if cmd == "1" else "right_urdf"
+            path = input(f"新 {key} (当前={params.get(key, '未配置')}): ").strip()
+            if path:
+                params[key] = path
+                save_config(cfg)
+                print(f"[OK] {key} = {path}")
+                print_restart_hint()
         elif cmd == "1":
             v = input(f"新 mass_kg (当前={params.get('mass_kg')}): ").strip()
             try:

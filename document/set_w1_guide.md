@@ -62,7 +62,7 @@ cd ~/w1/dexe_robot_server
 | `zvd true/false` | 输入整形器开关 | `./set_w1.sh zvd true` |
 | `config` | 编辑 robot_config.yaml 文件 | `./set_w1.sh config` |
 | `hardware` | 查看 hardware.yaml | `./set_w1.sh hardware` |
-| `tool` | 末端工具重力补偿参数(修改后需./set_w1.sh restart重启服务) | `./set_w1.sh tool` |
+| `tool` | 编辑末端载荷 URDF 路径或质量、质心，修改后需 `./set_w1.sh restart` 重启服务 | `./set_w1.sh tool` |
 
 ### 2.5 GUI 工具
 
