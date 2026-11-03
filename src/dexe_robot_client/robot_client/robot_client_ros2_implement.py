@@ -236,7 +236,7 @@ class RobotClientRos2(Node, RobotClient):
 
     def send_streaming_command(
         self,
-        position: list,
+        position: Union[list[float], np.ndarray],
         streaming_finished: bool = False,
     ) -> bool:
         position_msg = StreamingCommand()
