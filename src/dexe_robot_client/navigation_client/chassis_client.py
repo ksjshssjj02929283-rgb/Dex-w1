@@ -86,6 +86,7 @@ class ChassisClient(Node):
             CloudiaSchedHttpClient(
                 f"http://{cfg.cloudia_sched_ip}:{cfg.cloudia_sched_port}"), cfg)
                            if cfg.cloudia_sched_ip else None)
+        self._sched_send_error = ""
         self._nav = Nav2NavigationFeature(self, cfg)
         self._road_nav = RoadNavigationFeature(self, cfg)
         self._graph_points_nav = GraphPointsNavigationFeature(self, cfg)
@@ -190,6 +191,9 @@ class ChassisClient(Node):
                                  action="") -> bool:
         """经迦智调度导航到目标点位。
 
+        返回 False 表示没下发成功，原因用 get_sched_send_error() 取；
+        下发成功后的执行结果用 get_sched_nav_state() / get_sched_nav_result() 查。
+
         Args:
             id: 点位 id，仅在 name 为 None 时使用，原样下发。
             name: 点位名称(str)，优先于 id。迦智底盘的名称就是点位 id 的
@@ -201,29 +205,45 @@ class ChassisClient(Node):
         """
         del position
         if self._sched_nav is None:
-            self.get_logger().error("[迦智调度导航] 未配置 CLOUDIA_SCHED_IP。")
-            return False
+            return self._sched_send_fail("未配置 CLOUDIA_SCHED_IP")
         if id is None and name is None:
-            self.get_logger().error("[迦智调度导航] id 和 name 不能同时为 None。")
-            return False
+            return self._sched_send_fail("id 和 name 不能同时为 None")
         if name is not None:
             try:
                 id = int(str(name).strip())
             except ValueError:
-                self.get_logger().error(f"[迦智调度导航] name 应为整数点位 id，收到：{name!r}")
-                return False
+                return self._sched_send_fail(f"name 应为整数点位 id，收到：{name!r}")
         trigger_ts = self._log_trigger("迦智调度导航")
-        return self._sched_nav.send(id, action=action, trigger_ts=trigger_ts)
+        return self._sched_send(id, action=action, trigger_ts=trigger_ts)
 
     def set_chassis_sched_stop_charge(self) -> bool:
-        """经迦智调度原地执行退桩动作；状态同样用 get_sched_nav_state 查。"""
+        """经迦智调度原地执行退桩动作；状态同样用 get_sched_nav_state 查。
+
+        返回 False 时原因用 get_sched_send_error() 取。
+        """
         if self._sched_nav is None:
-            self.get_logger().error("[迦智调度导航] 未配置 CLOUDIA_SCHED_IP。")
-            return False
+            return self._sched_send_fail("未配置 CLOUDIA_SCHED_IP")
         trigger_ts = self._log_trigger("迦智调度退桩")
-        return self._sched_nav.send(0,
-                                    action=STOP_CHARGE_ACTION,
-                                    trigger_ts=trigger_ts)
+        return self._sched_send(0,
+                                action=STOP_CHARGE_ACTION,
+                                trigger_ts=trigger_ts)
+
+    def _sched_send(self, target, **kwargs) -> bool:
+        ok = self._sched_nav.send(target, **kwargs)
+        self._sched_send_error = "" if ok else (
+            self._sched_nav.last_send_error() or "迦智调度下发失败（原因未知）")
+        return ok
+
+    def _sched_send_fail(self, reason: str) -> bool:
+        self._sched_send_error = reason
+        self.get_logger().error(f"[迦智调度导航] {reason}。")
+        return False
+
+    def get_sched_send_error(self) -> str:
+        """最近一次迦智调度下发（set_chassis_sched_target / set_chassis_sched_stop_charge）
+        返回 False 的原因，例如 CLOUDIA 的 400 响应原文、并发拒绝、连不上调度；
+        最近一次下发成功则为空串。"""
+        return self._sched_send_error
 
     def get_sched_nav_state(self) -> str:
         if self._sched_nav is None:

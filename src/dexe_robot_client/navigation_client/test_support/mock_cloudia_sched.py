@@ -23,6 +23,7 @@ class MockCloudiaSchedServer:
         self.missions = {}
         self.robcmds = []  # 收到的 POST /robcmd body
         self.robcmd_code = 0
+        self.create_error = None  # (HTTP 状态码, 响应体)：设置后建任务一律返回该错误
         self.calls = []  # POST 路径，按到达顺序
         self._polls = {}
         self._server = None
@@ -57,6 +58,9 @@ class MockCloudiaSchedServer:
                 body = self._body()
                 owner.calls.append(self.path)
                 if self.path == "/api/v1/missions":
+                    if owner.create_error is not None:
+                        self._json(*owner.create_error)
+                        return
                     owner.created.append(body)
                     mission_id = len(owner.created)
                     owner.missions[mission_id] = {"id": mission_id, "state": 0}

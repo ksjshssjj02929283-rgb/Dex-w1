@@ -749,7 +749,9 @@ class W1Manager:
             id=id, name=name, position=position, action=action)
         if not res:
             status = StatusCode.CHASSIS_MOVE_SCHED_FAIL
-            self.logger.error(f"[{status.value}]:Chassis sched move failed")
+            self.logger.error(
+                f"[{status.value}]:Chassis sched move failed: "
+                f"{self._get_chassis_client().get_sched_send_error()}")
             return status
         return StatusCode.SUCCESS
 
@@ -761,7 +763,8 @@ class W1Manager:
         if not self._get_chassis_client().set_chassis_sched_stop_charge():
             status = StatusCode.CHASSIS_CANCEL_AUTO_CHARGING_FAIL
             self.logger.error(
-                f"[{status.value}]:Chassis sched stop charge failed")
+                f"[{status.value}]:Chassis sched stop charge failed: "
+                f"{self._get_chassis_client().get_sched_send_error()}")
             return status
         return StatusCode.SUCCESS
 

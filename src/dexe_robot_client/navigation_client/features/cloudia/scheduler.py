@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 import uuid
 
@@ -44,6 +45,36 @@ _LEGACY = {
 }
 
 
+def _http_error_message(status: int, payload, text: str) -> str:
+    """非 2xx 的错误文案：带上响应体里的原因，不只剩一个状态码。
+
+    厂商约定的错误体是 {"code": 400, "msg": "..."}，mscmds 等接口用 err_msg。
+    """
+    detail = ""
+    if isinstance(payload, dict):
+        detail = payload.get("msg") or payload.get("err_msg") or ""
+    if not detail:
+        detail = (text or "").strip()[:200]
+    return f"HTTP {status}：{detail}" if detail else f"HTTP {status}"
+
+
+# 2026-10-28 / 11-02 实测：点位设成充电点、工程里也有 charge 动作，但点位的「允许动作」没勾上，
+# 调度建任务时报 GetNodeActionByPrefixSuffix no action with prefix 'charge' ... found at spot<N>。
+_NO_ACTION_AT_SPOT = re.compile(
+    r"no action with prefix '([^']*)'.*?spot<(\d+)>", re.S)
+
+
+def _hint_create_error(message: str) -> str:
+    """给已知的建任务错误补一句处理办法，未知错误原样返回。"""
+    # 调度先查 spot<0>（原地动作）再查目标点位，报错里可能两处都有，取非 0 的那个。
+    found = _NO_ACTION_AT_SPOT.findall(message)
+    if not found:
+        return message
+    action, spot = next(((a, s) for a, s in found if s != "0"), found[0])
+    return (f"{message}（点位 {spot} 上没挂动作 {action!r}：工程里有这个动作不够，"
+            f"要在 Carly 里给点位 {spot} 的「允许动作」勾上 {action}，保存后重新推送地图到调度）")
+
+
 class CloudiaSchedHttpClient:
     """调度 /api/v1 传输层；GET 允许有限重试，POST 不自动重试。"""
 
@@ -75,7 +106,8 @@ class CloudiaSchedHttpClient:
                 payload = None
             # 创建任务成功返回 201，其余 2xx 同样视为成功。
             if not 200 <= response.status_code < 300:
-                raise CloudiaApiError(f"HTTP {response.status_code}",
+                raise CloudiaApiError(_http_error_message(
+                    response.status_code, payload, response.text),
                                       code=response.status_code,
                                       payload=payload)
             if not isinstance(payload, dict):
@@ -159,6 +191,7 @@ class CloudiaSchedNavigationFeature:
         self._result = (False, "")
         self._poll_failures = 0
         self._soft_stopped = False
+        self._send_error = ""
 
     def _resolve_map_name(self):
         if self._map_name:
@@ -189,12 +222,19 @@ class CloudiaSchedNavigationFeature:
              *,
              action: str = "",
              trigger_ts: float = None) -> bool:
+        """下发单点任务。返回 False 时原因见 last_send_error()。"""
         del trigger_ts
         with self._lock:
             if self._state in self._ACTIVE:
-                self._node.get_logger().warning(
-                    f"[{self._label}] 已有活跃任务，拒绝并发下发。")
+                reason = (f"已有活跃任务 mission_id={self._mission_id}"
+                          f"（{self._state.name}），拒绝并发下发")
+                if self._state == TaskState.CANCELING:
+                    reason += "：刚取消的任务调度还没确认结束，稍后重试"
+                # 不动 _result：它属于在途任务。
+                self._send_error = reason
+                self._node.get_logger().warning(f"[{self._label}] {reason}。")
                 return False
+            self._send_error = ""
             self._generation += 1
             generation = self._generation
             self._state = TaskState.SENDING
@@ -202,9 +242,17 @@ class CloudiaSchedNavigationFeature:
             self._poll_failures = 0
             self._mission_id = None
 
+        stage = "目标非法"
         try:
-            step = self._build_step(target, self._resolve_map_name(), action)
+            map_name = self._map_name
+            if not map_name:
+                stage = "查询车所在地图失败"
+                map_name = self._resolve_map_name()
+            stage = "目标非法"
+            step = self._build_step(target, map_name, action)
+            stage = "清除软急停失败"
             self._clear_soft_stop()
+            stage = "创建任务失败"
             mission = self._api.create_mission([step],
                                                robot_id=self._robot_id,
                                                ref_uuid=str(uuid.uuid4()))
@@ -212,13 +260,17 @@ class CloudiaSchedNavigationFeature:
             if mission_id is None:
                 raise CloudiaApiError("任务创建响应缺少 id", payload=mission)
         except (CloudiaApiError, ValueError) as exc:
+            reason = f"{stage}：{exc}"
+            if stage == "创建任务失败":
+                reason = _hint_create_error(reason)
             with self._lock:
                 if generation == self._generation:
                     self._state = (
                         TaskState.REJECTED if isinstance(exc, ValueError) or
                         exc.code is not None else TaskState.FAILED_TO_SEND)
-                    self._result = (False, str(exc))
-            self._node.get_logger().error(f"[{self._label}] 下发失败：{exc}")
+                    self._result = (False, reason)
+                    self._send_error = reason
+            self._node.get_logger().error(f"[{self._label}] 下发失败：{reason}")
             return False
 
         with self._lock:
@@ -299,6 +351,11 @@ class CloudiaSchedNavigationFeature:
     def state(self) -> str:
         with self._lock:
             return _LEGACY[self._state]
+
+    def last_send_error(self) -> str:
+        """最近一次 send() 返回 False 的原因；最近一次下发成功则为空串。"""
+        with self._lock:
+            return self._send_error
 
     def result(self):
         with self._lock:

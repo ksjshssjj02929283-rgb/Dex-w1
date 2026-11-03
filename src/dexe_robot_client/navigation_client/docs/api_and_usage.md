@@ -120,7 +120,8 @@ client 不限制点位数量，也不阻止并发 goal，是否接受由服务�
 
 | 方法 | 参数 | 返回 |
 |---|---|---|
-| `set_chassis_sched_target(id=None, name=None, position=None)` | `name`：`str`（优先），迦智底盘上即点位 id 的字符串，内部转 `int`；`id`：点位 id，`name` 为 `None` 时才用，原样下发；`position` 暂不使用。`id`/`name` 不能同时为 `None` | `bool`（任务创建成功） |
+| `set_chassis_sched_target(id=None, name=None, position=None)` | `name`：`str`（优先），迦智底盘上即点位 id 的字符串，内部转 `int`；`id`：点位 id，`name` 为 `None` 时才用，原样下发；`position` 暂不使用。`id`/`name` 不能同时为 `None` | `bool`（任务创建成功；`False` 时原因见 `get_sched_send_error()`） |
+| `get_sched_send_error()` | 无 | `str`：最近一次下发返回 `False` 的原因（CLOUDIA 响应原文如 `创建任务失败：HTTP 400：create mission error: …`、并发拒绝、连不上调度、参数非法）；最近一次下发成功则为空串 |
 | `get_sched_nav_state()` | 无 | `IDLE / NAVIGATING / SUCCEEDED / FAILED / CANCELLED` |
 | `get_sched_nav_result()` | 无 | `(bool, str)`，失败时为调度 `err_msg` |
 | `has_cancelable_sched_goal()` | 无 | `bool` |

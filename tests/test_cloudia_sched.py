@@ -213,3 +213,85 @@ def test_clear_soft_stop_failure_blocks_send_and_retries(server):
     assert server.robcmds[-1] == {"robot_id": 1, "cmd": 2}
     assert len(server.created) == 2
     nav.close()
+
+
+# ---------------------------------------------------- 下发失败原因 last_send_error
+
+_NO_CHARGE_MSG = (
+    "create mission error: GetNodeActionByPrefixSuffix no action with prefix "
+    "'charge' and suffix '' found at spot<0> on map<m1>; "
+    "no action with prefix 'charge' and suffix '' found at spot<6> on map<m1>")
+
+
+def test_create_400_keeps_response_msg_and_hint(server):
+    server.create_error = (400, {"code": 400, "msg": _NO_CHARGE_MSG})
+    nav = _make(server)
+    assert not nav.send(6, action="charge")
+    reason = nav.last_send_error()
+    assert reason.startswith("创建任务失败：HTTP 400：create mission error")
+    assert "点位 6 上没挂动作 'charge'" in reason
+    assert nav.result() == (False, reason)
+    assert nav.state() == "FAILED"
+    nav.close()
+
+
+def test_create_error_without_json_body_uses_text(server):
+    server.create_error = (500, "boom")  # JSON 字符串，不是对象
+    nav = _make(server)
+    assert not nav.send(2)
+    assert nav.last_send_error() == '创建任务失败：HTTP 500："boom"'
+    nav.close()
+
+
+def test_concurrent_rejection_reason_keeps_active_result(server):
+    server.finish_after_polls = 1000
+    nav = _make(server)
+    assert nav.send(2)
+    before = nav.result()
+    assert not nav.send(3)
+    assert "已有活跃任务 mission_id=1" in nav.last_send_error()
+    assert "拒绝并发下发" in nav.last_send_error()
+    assert nav.result() == before
+    nav.close()
+
+
+def test_send_right_after_cancel_explains_canceling_window(server):
+    server.finish_after_polls = 1000
+    nav = _make(server, cloudia_poll_interval_s=10.0)
+    assert nav.send(2)
+    assert nav.cancel()
+    assert not nav.send(3)
+    assert "CANCELING" in nav.last_send_error()
+    assert "稍后重试" in nav.last_send_error()
+    nav.close()
+
+
+def test_unreachable_scheduler_reason():
+    cfg = SimpleNamespace(cloudia_sched_url="http://127.0.0.1:1",
+                          cloudia_sched_robot=1,
+                          cloudia_sched_map="m1",
+                          cloudia_poll_interval_s=0.02,
+                          cloudia_poll_fail_limit=3)
+    nav = CloudiaSchedNavigationFeature(
+        _Node(), CloudiaSchedHttpClient(cfg.cloudia_sched_url), cfg)
+    assert not nav.send(2)
+    assert nav.last_send_error().startswith("创建任务失败：迦智调度请求失败")
+    nav.close()
+
+
+def test_invalid_target_reason(server):
+    nav = _make(server, cloudia_sched_map="m1")
+    assert not nav.send(-1)
+    assert nav.last_send_error().startswith("目标非法：")
+    nav.close()
+
+
+def test_success_clears_previous_send_error(server):
+    server.create_error = (400, {"code": 400, "msg": "bad"})
+    nav = _make(server)
+    assert not nav.send(2)
+    assert nav.last_send_error()
+    server.create_error = None
+    assert nav.send(2)
+    assert nav.last_send_error() == ""
+    nav.close()
