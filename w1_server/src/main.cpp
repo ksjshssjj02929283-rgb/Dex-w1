@@ -12,9 +12,11 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 
 #include "chassis_node.h"
+#include "robot_server_lib/crash_diagnostics.h"
 #include "w1_server.h"
 
 static void SetupRealtimeThread(int priority) {
@@ -27,6 +29,17 @@ static void SetupRealtimeThread(int priority) {
 }
 
 int main(int argc, char* argv[]) {
+    // Independent of ROS/NanoLog: available even during node construction.
+    try {
+        const char* home = std::getenv("HOME");
+        if (!home) throw std::runtime_error("HOME is not set");
+        robot_server_lib::crash_diagnostics::Initialize(
+            (std::filesystem::path(home) / "log/crash").string(),
+            std::string(W1_SERVER_VERSION) + " built=" + __DATE__ + " " + __TIME__);
+    } catch (const std::exception& error) {
+        std::cerr << "Crash diagnostics initialization failed: " << error.what() << std::endl;
+        return EXIT_FAILURE;
+    }
     // 初始化配置文件
     const auto package_share_path = ament_index_cpp::get_package_share_directory("w1_server");
     std::string cfg_file = "robot_config.yaml";
@@ -68,6 +81,7 @@ int main(int argc, char* argv[]) {
         executor.add_node(node_chassis);
     }
     executor.add_node(node_server);
+    robot_server_lib::crash_diagnostics::RecordProcessMaps();
     SetupRealtimeThread(70);
     executor.spin();
     rclcpp::shutdown();

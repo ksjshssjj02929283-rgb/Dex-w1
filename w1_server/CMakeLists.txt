@@ -4,7 +4,9 @@ project(w1_server)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_BUILD_TYPE Release)
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
 set(W1_SERVER_VERSION "0.5.1")
 
 # 如果系统安装了 ccache 则启用，否则保持不启用
@@ -20,6 +22,8 @@ option(ENABLE_TORQUE_CONTROL_SIMULATION "Enable torque control" OFF)
 set(PYTHON_EXECUTABLE "/usr/bin/python3")
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(
+    -g
+    -fno-omit-frame-pointer
     -Wall
     -Wextra
     -Wpedantic

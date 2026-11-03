@@ -1,0 +1,13 @@
+cmake_minimum_required(VERSION 3.15)
+project(crash_diagnostics_validation LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+find_package(Threads REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_executable(crash_probe crash_probe.cpp ../../utils/crash_diagnostics.cpp)
+target_include_directories(crash_probe PRIVATE ../../utils)
+target_compile_options(crash_probe PRIVATE -O2 -g -fno-omit-frame-pointer -Wall -Wextra -Werror)
+target_link_libraries(crash_probe PRIVATE Threads::Threads)
+enable_testing()
+add_test(NAME fatal_signal_records
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/validate.py $<TARGET_FILE:crash_probe>)
+set_tests_properties(fatal_signal_records PROPERTIES TIMEOUT 120)

@@ -1,4 +1,5 @@
 #include "robot_server_base.h"
+#include "crash_diagnostics.h"
 
 #include <cstdlib>
 
@@ -74,12 +75,24 @@ RobotServerBase::~RobotServerBase() {
 }
 
 void RobotServerBase::Run() {
-    this->robot_thread_ = std::thread(&RobotServerBase::RobotThreadFunc, this);
+    this->robot_thread_ = std::thread([this]() {
+        crash_diagnostics::RegisterCurrentThread("w1_robot");
+        RobotThreadFunc();
+    });
     if (TORQUE_CONTROL || !is_sim_) {
-        this->torque_control_thread_ = std::thread(&RobotServerBase::TorqueControlThreadFunc, this);
+        this->torque_control_thread_ = std::thread([this]() {
+            crash_diagnostics::RegisterCurrentThread("w1_torque");
+            TorqueControlThreadFunc();
+        });
     }
-    this->manager_thread_ = std::thread(&RobotServerBase::ManagerThreadFunc, this);
-    this->publish_thread_ = std::thread(&RobotServerBase::PublishThreadFunc, this);
+    this->manager_thread_ = std::thread([this]() {
+        crash_diagnostics::RegisterCurrentThread("w1_planner");
+        ManagerThreadFunc();
+    });
+    this->publish_thread_ = std::thread([this]() {
+        crash_diagnostics::RegisterCurrentThread("w1_publish");
+        PublishThreadFunc();
+    });
     RCLCPP_INFO(this->get_logger(), "Initialized successfully.");
     LOG_INFO << "Robot Server Initialized Successfully";
 }

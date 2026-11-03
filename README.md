@@ -49,6 +49,8 @@ pip install meshcat
 ./dexe_robot_server/run_w1.sh
 ```
 
+W1 崩溃记录、core 分析与独立限额测试见 [CRASH_DIAGNOSTICS.md](w1_server/CRASH_DIAGNOSTICS.md)。
+
 运行测试
 ```bash
 ./dexe_robot_server/test.sh

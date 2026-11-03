@@ -24,6 +24,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 */
 
 #include "NanoLog.hpp"
+#include "crash_diagnostics.h"
 
 #include <inttypes.h>
 
@@ -608,6 +609,7 @@ public:
     void add(NanoLogLine&& logline) { m_buffer_base->push(std::move(logline)); }
 
     void pop() {
+        robot_server_lib::crash_diagnostics::RegisterCurrentThread("w1_log");
         // Wait for constructor to complete and pull all stores done there to this thread / core.
         while (m_state.load(std::memory_order_acquire) == State::INIT)
             std::this_thread::sleep_for(std::chrono::microseconds(50));
