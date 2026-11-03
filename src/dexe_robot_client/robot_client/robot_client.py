@@ -129,7 +129,7 @@ class RobotClient(ABC):
 
     def set_tcp(
         self,
-        tcp: list[float],
+        tcp: Union[list[float], np.ndarray],
         arm: MotionGroup = MotionGroup.Primary,
     ) -> int:
         """async interface - setting robot TCP
@@ -220,7 +220,8 @@ class RobotClient(ABC):
         return self.send_set_property_request(PropertyType.SwitchRunMode,
                                               run_mode.value)
 
-    def set_joint_stiffness(self, stiffness: Union[float, list[float]]) -> int:
+    def set_joint_stiffness(
+            self, stiffness: Union[float, list[float], np.ndarray]) -> int:
         """async interface - setting joint stiffness
         异步接口 - 设置力矩模式下的关节刚度
         Args:
@@ -229,6 +230,8 @@ class RobotClient(ABC):
             - int: request id 指令号, 可用于等待对应运动指令完成等
         """
         # 检测维度是否合法
+        if isinstance(stiffness, np.ndarray):
+            stiffness = stiffness.tolist()
         if isinstance(stiffness, list):
             if len(stiffness) not in [1, 14]:
                 self.logger.error(
@@ -237,7 +240,8 @@ class RobotClient(ABC):
         return self.send_set_property_request(PropertyType.JointStiffness,
                                               stiffness)
 
-    def set_joint_damping(self, damping: Union[float, list[float]]) -> int:
+    def set_joint_damping(
+            self, damping: Union[float, list[float], np.ndarray]) -> int:
         """async interface - setting joint damping
         异步接口 - 设置力矩模式下的关节阻尼
         Args:
@@ -246,6 +250,8 @@ class RobotClient(ABC):
             - int: request id 指令号, 可用于等待对应运动指令完成等
         """
         # 检测维度是否合法
+        if isinstance(damping, np.ndarray):
+            damping = damping.tolist()
         if isinstance(damping, list):
             if len(damping) not in [1, 14]:
                 self.logger.error(
@@ -269,8 +275,8 @@ class RobotClient(ABC):
         return self.send_set_property_request(PropertyType.JointIntegralRatio,
                                               ratio)
 
-    def set_cartesian_stiffness(self, stiffness: Union[float,
-                                                       list[float]]) -> int:
+    def set_cartesian_stiffness(
+            self, stiffness: Union[float, list[float], np.ndarray]) -> int:
         """async interface - setting cartesian stiffness
         异步接口 - 设置笛卡尔阻抗模式下的笛卡尔刚度
         Args:
@@ -279,6 +285,8 @@ class RobotClient(ABC):
             - int: request id 指令号, 可用于等待对应运动指令完成等
         """
         # 检测维度是否合法
+        if isinstance(stiffness, np.ndarray):
+            stiffness = stiffness.tolist()
         if isinstance(stiffness, list):
             if len(stiffness) not in [1, 12]:
                 self.logger.error(
@@ -288,7 +296,7 @@ class RobotClient(ABC):
                                               stiffness)
 
     def set_cartesian_damping_ratio(
-            self, damping_ratio: Union[float, list[float]]) -> int:
+            self, damping_ratio: Union[float, list[float], np.ndarray]) -> int:
         """async interface - setting cartesian damping ratio
         异步接口 - 设置笛卡尔阻抗模式下的笛卡尔阻尼比
         Args:
@@ -296,6 +304,11 @@ class RobotClient(ABC):
         Returns:
             - int: request id 指令号, 可用于等待对应运动指令完成等
         """
+        # Convert arrays before validation so comparisons produce scalar
+        # booleans rather than NumPy boolean arrays.
+        if isinstance(damping_ratio, np.ndarray):
+            damping_ratio = damping_ratio.tolist()
+
         # 检测输入是否合法
         if isinstance(damping_ratio, list):
             if any(dr < 0.7 or dr > 1.3 for dr in damping_ratio):
@@ -329,14 +342,16 @@ class RobotClient(ABC):
             PropertyType.JointStreamingBounds,
             [max_velocity, max_acceleration, max_jerk])
 
-    def set_butterworth_filter(self, enable: Union[bool, list[float]]) -> int:
+    def set_butterworth_filter(
+            self, enable: Union[bool, list[float], np.ndarray]) -> int:
         """async interface - setting butterworth filter
         异步接口 - 开关 Butterworth 滤波器, 支持单值或逐关节配置
         """
         return self.send_set_property_request(
             PropertyType.EnableButterworthFilter, enable)
 
-    def set_input_shaper(self, enable: Union[bool, list[float]]) -> int:
+    def set_input_shaper(self, enable: Union[bool, list[float],
+                                             np.ndarray]) -> int:
         """async interface - setting input shaper
         异步接口 - 开关输入整形器, 支持单值或逐关节配置
         """
@@ -366,7 +381,7 @@ class RobotClient(ABC):
 
     def move_joint_async(
         self,
-        motion_target: list[float],
+        motion_target: Union[list[float], np.ndarray],
         motion_group: MotionGroup = MotionGroup.Primary,
         **kwargs,
     ) -> int:
@@ -403,7 +418,7 @@ class RobotClient(ABC):
 
     def move_joint_sync(
         self,
-        motion_target: list[float],
+        motion_target: Union[list[float], np.ndarray],
         motion_group: MotionGroup = MotionGroup.Primary,
         **kwargs,
     ) -> int:
@@ -474,7 +489,7 @@ class RobotClient(ABC):
 
     def move_traj_async(
         self,
-        motion_target: list[float],
+        motion_target: Union[list[float], np.ndarray],
         motion_group: MotionGroup,
         interval: float,
         endpoint_index: list[int] = None,
@@ -605,22 +620,6 @@ class RobotClient(ABC):
                               kwargs=kwargs)
         return self.send_move_robot_request(request)
 
-    def send_streaming_command(
-        self,
-        position: list[float],
-        streaming_finished: bool = False,
-    ) -> bool:
-        """async interface - send joint streaming control point, need to switch to joint streaming mode first
-        异步接口 - 关节流控制, 最新下发的指令会覆盖之前的指令, 需先调用start_streaming_mode
-        Args:
-        - position:
-            JointPosition: [j1, j2, j3, ...], 长度与机器人关节数一致, 对应MotionType.StartJointStreaming
-        - streaming_finished: 是否结束streaming, true - 流控制结束, false - 流控制继续
-        Returns:
-            - bool: true if success, false if fail
-        """
-        return self.send_streaming_command(position, streaming_finished)
-
     """ ---------------------------------------------------------------------------
     User interfaces - make move requests functions
     用户接口 - 运动指令生成
@@ -630,7 +629,7 @@ class RobotClient(ABC):
         self,
         motion_type: MotionType,
         motion_group: MotionGroup = MotionGroup.Primary,
-        motion_target: Optional[list[float]] = None,
+        motion_target: Optional[Union[list[float], np.ndarray]] = None,
         **kwargs,
     ) -> MoveRequest:
         """create a move joint request
@@ -738,12 +737,12 @@ class RobotClient(ABC):
 
     @abstractmethod
     def send_streaming_command(self,
-                               position: np.ndarray,
+                               position: Union[list[float], np.ndarray],
                                streaming_finished: bool = False) -> bool:
         """async interface - send streaming control point, need to start streaming mode first
         异步接口 - 发送流控制点位, 需先调用start_streaming_request
         Args:
-            position: np.ndarray, 包含目标位置
+            position: list[float]或np.ndarray, 包含目标位置
             streaming_finished: 是否是本次流控制最后的点位, true - 停止流控制, false - 继续流控制
         Returns:
             bool: true - send success, false - send fail
