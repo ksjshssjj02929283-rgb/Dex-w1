@@ -50,6 +50,8 @@ except ImportError:
 FEEDBACK_SHM_KEY = 0x1006
 CONTROL_SHM_KEY = 0x2006
 MAX_JOINT_NUM = 32
+OMNI_MOTOR_NUM = 4
+FAULT_NUMBER = 32
 BUFFER_CAPACITY = 8
 
 # Load libc
@@ -58,7 +60,11 @@ shmget = libc.shmget
 shmat = libc.shmat
 shmdt = libc.shmdt
 shmget.restype = ctypes.c_int
+shmget.argtypes = [ctypes.c_int, ctypes.c_size_t, ctypes.c_int]
 shmat.restype = ctypes.c_void_p
+shmat.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
+shmdt.restype = ctypes.c_int
+shmdt.argtypes = [ctypes.c_void_p]
 
 class Vector3f(ctypes.Structure):
     _fields_ = [("x", ctypes.c_float), ("y", ctypes.c_float), ("z", ctypes.c_float)]
@@ -95,10 +101,14 @@ class JointControl(ctypes.Structure):
 class ChassisFeedback(ctypes.Structure):
     _fields_ = [
         ("timestamp", ctypes.c_int64), ("left_velocity", ctypes.c_double), ("right_velocity", ctypes.c_double),
-        ("chassis_motor_velocity", ctypes.c_double * 4), ("chassis_motor_direction", ctypes.c_double * 4),
+        ("chassis_motor_velocity", ctypes.c_double * OMNI_MOTOR_NUM),
+        ("chassis_motor_direction", ctypes.c_double * OMNI_MOTOR_NUM),
         ("status_word", ctypes.c_uint16), ("error_code_left", ctypes.c_uint16), ("error_code_right", ctypes.c_uint16),
         ("left_current", ctypes.c_double), ("right_current", ctypes.c_double), ("driver_temperature", ctypes.c_double),
         ("left_temperature", ctypes.c_double), ("right_temperature", ctypes.c_double),
+        ("wheel_motor_current", ctypes.c_double * OMNI_MOTOR_NUM),
+        ("steering_motor_current", ctypes.c_double * OMNI_MOTOR_NUM),
+        ("robot_overcurrent", ctypes.c_int32),
     ]
 
 class ChassisControl(ctypes.Structure):
@@ -114,6 +124,7 @@ class RobotFeedback(ctypes.Structure):
         ("cnt", ctypes.c_uint64), ("timestamp", ctypes.c_uint64), ("robot_status_word", ctypes.c_uint16),
         ("al_status", ctypes.c_uint8 * MAX_JOINT_NUM), ("joint_feedback", JointFeedback * MAX_JOINT_NUM),
         ("chassis_feedback", ChassisFeedback), ("imu_data", ImuData),
+        ("drag_mode", ctypes.c_uint16), ("fault_list", ctypes.c_uint32 * FAULT_NUMBER),
     ]
 
 class RobotControl(ctypes.Structure):
@@ -197,8 +208,9 @@ class DataService(QObject):
     def __init__(self, use_sim=False):
         super().__init__()
         self.use_sim = use_sim
-        self.fbk_ptr = get_shm_ptr(FEEDBACK_SHM_KEY, FeedbackShmStruct)
-        self.ctrl_ptr = get_shm_ptr(CONTROL_SHM_KEY, ControlShmStruct)
+        self.fbk_ptr = None
+        self.ctrl_ptr = None
+        self._connect_shm()
         
         self.joint_data = {} # name -> {'pos', 'vel', 'torque', 'temp', 'target_pos', 'target_vel', 'target_torque', 'status', 'err'}
         self.joint_names = []
@@ -227,6 +239,14 @@ class DataService(QObject):
     def _ros_spin(self):
         while rclpy.ok():
             rclpy.spin_once(self.node, timeout_sec=0.1)
+
+    def _connect_shm(self):
+        if self.use_sim:
+            return
+        if self.fbk_ptr is None:
+            self.fbk_ptr = get_shm_ptr(FEEDBACK_SHM_KEY, FeedbackShmStruct)
+        if self.ctrl_ptr is None:
+            self.ctrl_ptr = get_shm_ptr(CONTROL_SHM_KEY, ControlShmStruct)
 
     def _ros_joint_cb(self, msg):
         # Initialize joint names from ROS 2 topic exactly once
@@ -453,6 +473,7 @@ class DataService(QObject):
             self.is_recording = False
 
     def _process_data(self):
+        self._connect_shm()
         # 1. Try SHM First
         shm_success = False
         if self.fbk_ptr:
@@ -470,6 +491,9 @@ class DataService(QObject):
                         name = cstr_to_py(fbk.data.joint_feedback[i].joint_name)
                         if name:
                             shm_joints.append((i, name))
+
+                    if not self.joint_names:
+                        self.joint_names = [name for _, name in shm_joints]
 
                     for i, name in shm_joints:
                         if name not in self.joint_data: 
