@@ -166,6 +166,7 @@ TEST_F(TorqueExtDeadzoneTest, OperatingControllerUsesConfiguredDeadzone) {
     PlannerManagerCommand input{};
     input.cmd.position.setZero();
     input.cmd.velocity.setZero();
+    input.cmd.acceleration.setZero();
     input.cmd.torque_feedforward.setZero();
     input.cmd.joint_stiffness.setOnes();
     input.cmd.joint_damping.setZero();

@@ -172,7 +172,7 @@ TorqueControlThread 的力矩计算以逆动力学前馈为基础，并组合三
 笛卡尔阻抗：  τ = τ_inverse_dynamics + τ_cartesian_impedance
 ```
 
-逆动力学使用 Pinocchio RNEA 计算整机基础项，并在配置了辨识参数时，以双臂符号模型 `Y(q, dq, ddq, g)·β` 替换手臂部分，最后叠加工具重力补偿。当前在线计算令 `ddq = 0`，主要补偿重力、速度相关项和摩擦。
+逆动力学使用 Pinocchio RNEA 计算整机基础项，并在配置了辨识参数时，以双臂符号模型 `Y(q, dq, ddq, g)·β` 替换手臂部分，最后叠加工具重力补偿。Operating 状态使用规划指令中的关节加速度，补偿惯性、重力、速度相关项和摩擦；Idle 与 Decelerating 状态仍令 `ddq = 0`。通用停止流程根据本周期的指令速度变化更新加速度。
 
 三类控制算法的公式、代码流程、参数来源、限幅和运行状态差异详见：[力矩控制算法](torque_control_algorithms.md)。
 

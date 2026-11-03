@@ -54,9 +54,9 @@ bool TorqueControllerInvDynamic::ComputeCommand(const JointRawMeasurement& raw_m
         }
         case TorqueControllerState::Operating: {
             // === 级联导纳-阻抗控制核心流程 ===
-            // 0. 逆动力学前馈: 补偿重力/科氏力/摩擦力(含工具重力补偿)
+            // 0. 逆动力学前馈: 补偿惯性/重力/科氏力/摩擦力(含工具重力补偿)
             output_cmd.torque_feedforward =
-                dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, VectorDof::Zero(),
+                dynamics::InverseDynamics(robot_model_, feedback_q, feedback_dq, input_cmd.cmd.acceleration,
                                           &output_cmd.torque_friction);
             // 1. 导纳控制: 反馈力矩减去前馈得到外力估计, 经死区处理抑制模型残差噪声
             VectorDof torque_ext = output_cmd.torque_feedforward - raw_measurement.torque;

@@ -28,6 +28,7 @@ ComputeCommandStatus MotionPlannerBase::ComputeStopCommand(const JointMeasuremen
             output_velocity[i] = 0.0;
             stop_finished = stop_finished && true;
         }
+        joint_cmd.acceleration[i] = (output_velocity[i] - joint_cmd.velocity[i]) / controller_dt_;
         joint_cmd.velocity[i] = output_velocity[i];
         joint_cmd.position[i] += joint_cmd.velocity[i] * controller_dt_;
         robot_stopped = robot_stopped && measurement.velocity[i] < IdleVelocityThreshold;

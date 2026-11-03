@@ -325,20 +325,25 @@ TEST_F(FrictionConfigTest, ControllerCarriesMatchingFrictionThroughAllActiveStat
     PlannerManagerCommand command{};
     command.cmd.position = feedback.position;
     command.cmd.velocity.setZero();
+    command.cmd.acceleration.setConstant(0.1);
     command.cmd.torque_feedforward.setZero();
     command.cmd.joint_stiffness.setZero();
     command.cmd.joint_damping.setZero();
     command.cmd.joint_integral_ratio.setZero();
     VectorDof friction;
-    const auto expected =
+    const auto expected_at_rest =
         dynamics::InverseDynamics(model, feedback.position, feedback.velocity, VectorDof::Zero(), &friction);
+    const auto expected_operating =
+        dynamics::InverseDynamics(model, feedback.position, feedback.velocity, command.cmd.acceleration);
+    ASSERT_FALSE(expected_operating.isApprox(expected_at_rest, 1e-8));
     TorqueCtrlCommand output{};
     for (auto state :
          {TorqueControllerState::Idle, TorqueControllerState::Decelerating, TorqueControllerState::Operating}) {
         output.torque_friction.setConstant(999.0);
         ASSERT_TRUE(controller.ResetForNewEpisode(feedback, state));
         ASSERT_TRUE(controller.ComputeCommand(feedback, command, output));
-        EXPECT_TRUE(output.torque_feedforward.isApprox(expected, 1e-12));
+        EXPECT_TRUE(output.torque_feedforward.isApprox(
+            state == TorqueControllerState::Operating ? expected_operating : expected_at_rest, 1e-12));
         EXPECT_TRUE(output.torque_friction.isApprox(friction, 1e-12));
     }
 }
