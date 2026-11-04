@@ -160,6 +160,42 @@ struct FEPKineParamsAutoInit {
             ),
             FEPGeometryParams(0.015, 0.015, 0.075, 0.088, 0.26, 0.227)
         ));
+
+        FEPKineParamsRegistry::Register(FEPKineParams("DexForce", "W1V031IPLUSLeft", 
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -120.0, -170.0, -148.0, -170.0, -95.0, -100.0}),
+                Deg2Rad(CVec7d{170.0, 90.0, 170.0, 0.0, 170.0, 95.0, 100.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, -90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{1, -1, 1, 1, 1, 1, 1},
+                (Mat4d() << 0.0, -1.0, 0.0, 0.0,
+                            0.0,  0.0, 1.0, 0.113,
+                           -1.0,  0.0, 0.0, 0.0,
+                            0.0,  0.0, 0.0, 1.0).finished(),
+                (Mat4d() << 0.0,  0.0, 1.0, 0.049,
+                            0.0, -1.0, 0.0, 0.0,
+                            1.0,  0.0, 0.0, 0.0,
+                            0.0,  0.0, 0.0, 1.0).finished()
+            ),
+            FEPGeometryParams(0.015, 0.015, 0.075, 0.088, 0.26, 0.227)
+        ));
+
+        FEPKineParamsRegistry::Register(FEPKineParams("DexForce", "W1V031IPLUSRight", 
+            ArmCommonParams<7>(
+                Deg2Rad(CVec7d{-170.0, -90.0, -170.0, 0.0, -170.0, -95.0, -100.0}),
+                Deg2Rad(CVec7d{170.0, 120.0, 170.0, 148.0, 170.0, 95.0, 100.0}),
+                Deg2Rad(CVec7d{0.0, 0.0, 90.0, 0.0, 0.0, 90.0, 0.0}),
+                std::array<int, 7>{-1, 1, -1, -1, -1, -1, 1},
+                (Mat4d() << 0.0, 1.0,  0.0, 0.0,
+                            0.0, 0.0, -1.0, -0.113,
+                            -1.0, 0.0,  0.0, 0.0,
+                            0.0, 0.0,  0.0, 1.0).finished(),
+                (Mat4d() << 0.0,  0.0, 1.0, 0.049,
+                            0.0, -1.0, 0.0, 0.0,
+                            1.0,  0.0, 0.0, 0.0,
+                            0.0,  0.0, 0.0, 1.0).finished()
+            ),
+            FEPGeometryParams(0.015, 0.015, 0.075, 0.088, 0.26, 0.227)
+        ));
     }
 };
 inline FEPKineParamsAutoInit g_auto_init_fep_kine_params;
