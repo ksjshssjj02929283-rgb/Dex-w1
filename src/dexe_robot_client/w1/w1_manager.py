@@ -1063,8 +1063,10 @@ class W1Manager:
             if not self._has_arm_ee_client(name, False):
                 return StatusCode.FAIL, None
             res, info = self._get_arm_ee_client(name).get_info()
-            return (StatusCode.SUCCESS if res else StatusCode.FAIL), np.array(
-                info.joint_position)
+            if not res or info is None or info.joint_position is None:
+                self.logger.error(f"Get {name} info failed.")
+                return StatusCode.FAIL, None
+            return StatusCode.SUCCESS, np.array(info.joint_position)
 
         robot_info = self.robot_client.get_info()
         if robot_info.joint_position_cmd is None and robot_info.joint_position is None:

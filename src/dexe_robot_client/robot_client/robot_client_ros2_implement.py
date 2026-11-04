@@ -59,6 +59,7 @@ class RobotClientRos2(Node, RobotClient):
                 self.latest_queued_id = None
                 self.latest_finished_id = None
                 self.latest_errordrop_id = None
+                self.logger.error(f"{self.node_name} 断开连接...请排查！")
 
     def is_connected(self, timeout_sec: float = 0.5):
         start_time = time.time()
@@ -329,6 +330,10 @@ class RobotClientRos2(Node, RobotClient):
                 self.status = Status[state["status"]]
             else:
                 self.status = Status.Unknown
+        else:
+            self.status = Status.Unknown
+            self.logger.error("接收的robot state message 缺少 'status' 字段")
+            
         if "robot_type" in state:
             robot_type_str = state["robot_type"]
             # 使用正则表达式拆分机器人型号和臂型, 规则为首字母大写后跟数字为机器人型号, 后面跟大写字母开头的臂型字符串

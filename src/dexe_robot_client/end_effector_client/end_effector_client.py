@@ -97,6 +97,7 @@ class EndEffectorClient(Node):
             if cur_time - self._last_msg_time > self._connection_timeout:
                 self._cur_ee_info = None
                 self._last_msg_time = None
+                self.logger.error(f"{self.node_name} 断开连接...请排查！")
 
     def _init_subscriber(self):
         """初始化订阅"""
