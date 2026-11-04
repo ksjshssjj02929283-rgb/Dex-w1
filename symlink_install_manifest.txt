@@ -37,6 +37,8 @@
 /home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/encoding.h
 /home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/encoding.hpp
 /home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/force_sensor_reader.h
+/home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/joint_reference_processor.cpp
+/home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/joint_reference_processor.h
 /home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/message_buffer_map.h
 /home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/safety_check.cpp
 /home/dex/dexe_robot_server/install/robot_server_lib/include/robot_server_lib/safety_check.h

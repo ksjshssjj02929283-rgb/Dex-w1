@@ -11,8 +11,8 @@
 #include "joint_interfaces/msg/joint_position_control.hpp"
 #include "joint_interfaces/msg/joint_velocity_torque_limit_feedback.hpp"
 #include "robot_server_lib/NanoLog.hpp"
-#include "robot_server_lib/butterworth_filter.h"
 #include "robot_server_lib/ei_input_shaper.h"
+#include "robot_server_lib/joint_reference_processor.h"
 #include "robot_server_lib/robot_server_base.h"
 #include "robot_server_lib/sri_force_sensor.h"
 #include "robot_server_lib/utils.h"
@@ -39,6 +39,7 @@ private:
     void PublishThreadFunc() override;
     Int64 StartStreaming(const PlannerRequest planner_request);
     void SwitchControlWord();
+    JointCommand PrepareControlReference(bool holding_position);
 
     void ControlCallback(const JointControlMsg::SharedPtr msg);
     void PositionControlCallback(const JointPositionControlMsg::SharedPtr msg);
@@ -122,11 +123,7 @@ private:
     bool primary_sensor_ready_ = false;
     bool secondary_sensor_ready_ = false;
 
-    // 位置指令线性插值器 (1kHz)
-    utils::LinearInterpolator line_interpolator_;
-
-    // 巴特沃斯滤波器数组 (1kHz 线程中应用)
-    std::shared_ptr<ButterworthFilter> butterworth_filter_[ndof_robot];
+    JointReferenceProcessor reference_processor_;
 
     // 输入整形器
     std::shared_ptr<EIInputShaper> chassis_shaper_;
@@ -136,9 +133,6 @@ private:
     const double DiffChassisNatureFreq = 1.67;  // 底盘输入整形器自然频率，单位Hz
     // ramp率转换: 0.5m/s每周期
     const double DiffChassisMaxRampRpm = 0.5 / (M_PI * DiffChassisWheelD) * 60.0;
-    std::shared_ptr<EIInputShaper> input_shapers_[ndof_robot];
-    EIInputShaper::Type input_shaper_type_ = EIInputShaper::EI;  // 输入整形器类型
-    const double input_shaper_max_ramp_rad_per_sec = 10 * M_PI;
     uint32_t imu_timestamp_ = 0;
 };
 

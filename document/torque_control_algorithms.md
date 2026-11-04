@@ -8,21 +8,30 @@
 
 ```text
 Planner Manager · 250 Hz
-    ├── 生成关节位置、速度、刚度、阻尼和积分比例
+    ├── 生成关节轨迹、刚度、阻尼和积分比例
     └── 可选：计算笛卡尔阻抗关节力矩
                 ↓ PlannerManagerCommand Latest Buffer
 TorqueControlThread · 1 kHz
     ├── 读取 JointRawMeasurement
-    ├── 计算逆动力学前馈
+    ├── 规划位置 → 线性插值 → Butterworth → EI → q_cmd
+    ├── 由 q_cmd 后向差分生成 dq_cmd、ddq_cmd
+    ├── 结合反馈位置、速度和 ddq_cmd 计算逆动力学前馈
     ├── 估计外力矩并更新关节导纳偏移
     ├── 根据修正后的参考值计算关节 PD 力矩
     └── 生成 TorqueCtrlCommand
 ```
 
+`JointReferenceProcessor` 在力矩计算前处理参考轨迹，速度、加速度按固定 1 ms 周期连续后向差分得到，首帧和复位后的首帧置零。这样 CST 使用的参考包含位置滤波、EI 延迟及斜坡限制的实际效果；CSP 直接下发同一份处理后位置，只整形一次。关闭平滑滤波时，差分加速度会反映线性插值拐点。
+
+Drag 和切回 Position 的临时保持阶段沿用动力学补偿与反馈对齐，传给控制器的参考加速度置零，避免将反馈对齐的位置变化引入惯性前馈。规划指令或力矩结果缺失、机器人未 Ready、Sleep / QuickStop 时，复位参考处理的插值、滤波、整形与差分历史。
+
+`TorqueControllerManager` 显式接收原始规划命令和处理后的 `control_reference`：原命令提供序列号与有效性，处理后的轨迹用于力矩计算。`Operating` 状态发布给 Planner 的 `q_desired_pre` 保留原规划位置，供规划侧续接与速度积分；`Idle` 和 `Decelerating` 仍使用各自保持或减速的位置。
+
 核心文件：
 
 | 文件 | 作用 |
 |---|---|
+| [`robot_server_lib/utils/joint_reference_processor.cpp`](../robot_server_lib/utils/joint_reference_processor.cpp) | 在力矩计算前完成关节位置插值、滤波、整形，并生成参考速度和加速度 |
 | [`robot_server_lib/torque_controller/torque_controller_inverse_dynamic.cpp`](../robot_server_lib/torque_controller/torque_controller_inverse_dynamic.cpp) | 串联逆动力学、关节导纳和关节 PD，并组合笛卡尔阻抗结果 |
 | [`robot_server_lib/dynamics/joint_pd_controller.cpp`](../robot_server_lib/dynamics/joint_pd_controller.cpp) | 计算关节 PD 与积分力矩 |
 | [`robot_server_lib/dynamics/joint_admittance_controller.cpp`](../robot_server_lib/dynamics/joint_admittance_controller.cpp) | 将外力矩转换为位置和速度偏移 |
@@ -31,7 +40,7 @@ TorqueControlThread · 1 kHz
 | [`robot_server_lib/utils/tool_inertia_loader.cpp`](../robot_server_lib/utils/tool_inertia_loader.cpp) | 从手 URDF 合成默认手指姿态下的固定载荷惯性 |
 | [`robot_server_lib/dynamics/tool_compensation.cpp`](../robot_server_lib/dynamics/tool_compensation.cpp) | 通过 RNEA 计算工具附加力矩 |
 | [`robot_server_lib/src/planner_manager.cpp`](../robot_server_lib/src/planner_manager.cpp) | 在启用笛卡尔阻抗时计算双臂阻抗力矩并写入规划指令 |
-| [`robot_server_lib/src/torque_controller_manager.cpp`](../robot_server_lib/src/torque_controller_manager.cpp) | 管理力矩控制状态，读取规划指令并发布 `TorqueCtrlCommand` 与 `JointMeasurement` |
+| [`robot_server_lib/src/torque_controller_manager.cpp`](../robot_server_lib/src/torque_controller_manager.cpp) | 管理力矩控制状态，接收原规划命令及处理后参考，发布 `TorqueCtrlCommand` 与 `JointMeasurement` |
 
 ## 2. 关节 PD 控制
 
@@ -70,7 +79,7 @@ e_dq = dq_ref - dq_feedback
 |---|---|---|---|
 | `Idle` | 进入 Idle 时记录的 `idle_q_` 加导纳衰减偏移 | 导纳速度偏移 | 保持进入 Idle 时的位置 |
 | `Decelerating` | 当前反馈位置加导纳衰减偏移 | 导纳速度偏移 | 位置误差接近零，主要通过阻尼项减速 |
-| `Operating` | 规划位置加导纳偏移 | 规划速度加导纳速度偏移 | 跟踪规划目标并根据外力产生柔顺偏移 |
+| `Operating` | 处理后位置加导纳偏移 | 处理后速度加导纳速度偏移 | 跟踪整形后的参考并根据外力产生柔顺偏移 |
 
 关节控制最终输出为：
 
@@ -141,7 +150,7 @@ q_offset  ← q_offset  + dq_offset  · dt
 
 当位置偏移达到上下限时，继续向饱和方向发展的速度和加速度会被清零，避免积分状态持续向限位外累积。
 
-导纳输出不直接作为力矩下发，而是修正规划参考：
+导纳输出不直接作为力矩下发，而是在插值、滤波和 EI 整形之后修正关节参考：
 
 ```text
 q_ref  = q_cmd  + q_offset
@@ -160,7 +169,7 @@ dq_ref = dq_cmd + dq_offset
 - `enable_cartesian_impedance=true`；
 - 对应手臂存在已辨识的动力学参数。
 
-计算结果写入 `PlannerManagerCommand::torque_feedforward`。TorqueControlThread 将该字段视为笛卡尔阻抗力矩，并与 1 kHz 逆动力学前馈组合：
+计算结果写入 `PlannerManagerCommand::torque_feedforward`。该力矩在 Planner 内生成，不经过 1 kHz 的位置参考整形。TorqueControlThread 将该字段视为笛卡尔阻抗力矩，并与使用处理后参考加速度计算的逆动力学前馈组合：
 
 ```text
 τ_cart_output = τ_cartesian_impedance + τ_inverse_dynamics

@@ -33,7 +33,7 @@ public:
                             TorqueControlBuffer robot_buffers);
     ~TorqueControllerManager();
 
-    void LoopOnce();
+    void LoopOnce(const PlannerManagerCommand* planner_command, const JointCommand& control_reference);
 
 private:
     void Initialize();

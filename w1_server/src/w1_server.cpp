@@ -11,7 +11,7 @@
 namespace robot_server_lib {
 
 RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
-    : RobotServerBase(robot_cfg_path, is_sim), line_interpolator_(manager_dt_micro / torque_ctrl_dt_micro) {
+    : RobotServerBase(robot_cfg_path, is_sim), reference_processor_(robot_model_.robot_property_default) {
     LOG_INFO << "w1_server version: " << W1_SERVER_VERSION;
 
     // 先初始化ndof_config_, 后续再自动识别模式
@@ -62,15 +62,6 @@ RobotServer::RobotServer(std::filesystem::path robot_cfg_path, bool is_sim)
 
     // 创建定时器，定时发布 IMU 数据 (2ms = 500Hz，与原 imu node 一致)
     imu_timer_ = this->create_wall_timer(std::chrono::milliseconds(2), [this]() { PublishImu(); });
-
-    // 初始化巴特沃斯滤波器和滤波开关
-    for (int i = 0; i < ndof_robot; ++i) {
-        butterworth_filter_[i] = std::make_shared<ButterworthFilter>(
-            this->robot_model_.robot_property_default.butterworth_filter_frequency[i]);
-        input_shapers_[i] = std::make_shared<EIInputShaper>(
-            input_shaper_type_, this->robot_model_.robot_property_default.input_shaper_frequency[i], torque_ctrl_dt,
-            input_shaper_max_ramp_rad_per_sec);
-    }
 
     // 初始化力传感器
     // primary_sensor_ = std::make_shared<SriForceSensor>();
@@ -166,6 +157,7 @@ void RobotServer::TorqueControlThreadFunc() {
         }
         // 底盘反馈独立于上半身关节数据，直接透传，不受上半身反馈有效性和关节排序结果影响。
         robot_feedback_.chassis_feedback = feedback_temp.chassis_feedback;
+        this->manager_buffers_.planner_manager_info->PeekLatest(&this->manager_info_);
 
         // 根据状态写入机器人控制字
         this->is_robot_ready_ = false;
@@ -251,16 +243,25 @@ void RobotServer::TorqueControlThreadFunc() {
         }
         auto t_log = std::chrono::steady_clock::now();
 
-        // 力控计算处理
-        torque_controller_manager.LoopOnce();
+        this->planner_cmd_ = PlannerManagerCommand{};
+        const bool has_planner_command =
+            this->manager_buffers_.planner_manager_command->PeekLatest(&this->planner_cmd_);
+        const bool holding_position = this->manager_info_.robot_property.run_mode == RunMode::Position &&
+                                      previous_mode_ != RunMode::Position && switch_counter_ < max_switch_count_ &&
+                                      this->robot_model_.IsDynamicParamsAvailable();
+        JointCommand control_reference = this->planner_cmd_.cmd;
+        if (has_planner_command && this->is_robot_ready_) {
+            control_reference = PrepareControlReference(holding_position);
+        } else {
+            reference_processor_.Reset();
+        }
+        torque_controller_manager.LoopOnce(has_planner_command ? &this->planner_cmd_ : nullptr, control_reference);
 
         auto t_torque = std::chrono::steady_clock::now();
 
         // 获取并写入控制数据: 关节位置, 速度, 关节力矩限制, 外部力矩
         TorqueCtrlCommand torque_cmd{};
-        this->planner_cmd_ = PlannerManagerCommand{};  // 默认值，避免未写入时使用了旧数据
         this->is_cmd_valid_ = false;
-        this->manager_buffers_.planner_manager_info->PeekLatest(&this->manager_info_);
         const bool in_drag_mode = this->manager_info_.robot_property.run_mode == RunMode::Drag;
         const auto drag_now = std::chrono::steady_clock::now();
         if (in_drag_mode && !drag_active) {
@@ -269,23 +270,19 @@ void RobotServer::TorqueControlThreadFunc() {
         drag_active = in_drag_mode;
         // One monotonic time shared by all joints; crossing the deadzone does not reset phase.
         const double drag_elapsed_seconds = std::chrono::duration<double>(drag_now - drag_start_time).count();
-        if (this->manager_buffers_.planner_manager_command->PeekLatest(&this->planner_cmd_) &&
-            this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd)) {
+        if (has_planner_command && this->robot_buffers_.torque_controller_command->PeekLatest(&torque_cmd)) {
             this->is_cmd_valid_ = true;
-            // 位置指令线性插值
-            VectorDof interpolated_position = line_interpolator_.Interpolate(this->planner_cmd_.cmd.position);
             JointMeasurement manager_measurement{};
             for (int i = 0; i < ndof_robot; ++i) {
-                this->robot_control_.joint_control[i].joint_position = interpolated_position[i];
-                this->robot_control_.joint_control[i].joint_velocity = this->planner_cmd_.cmd.velocity[i];
+                this->robot_control_.joint_control[i].joint_position = control_reference.position[i];
+                this->robot_control_.joint_control[i].joint_velocity = control_reference.velocity[i];
                 this->robot_control_.joint_control[i].joint_positive_torque_limit =
                     robot_model_.params_ptr->joint_torque_limit[i];
                 this->robot_control_.joint_control[i].joint_negative_torque_limit =
                     robot_model_.params_ptr->joint_torque_limit[i];
                 switch (this->manager_info_.robot_property.run_mode) {
                     case RunMode::Position:
-                        if ((previous_mode_ != this->manager_info_.robot_property.run_mode) &&
-                            (switch_counter_ < max_switch_count_) && this->robot_model_.IsDynamicParamsAvailable()) {
+                        if (holding_position) {
                             // 切换之前执行位置保持
                             if (i == 0) {
                                 switch_counter_++;
@@ -295,9 +292,6 @@ void RobotServer::TorqueControlThreadFunc() {
                                 if (IsArmJoint(i)) {
                                     manager_measurement.q_desired_pre[i] =
                                         robot_feedback_.joint_feedback[i].joint_position;
-                                    this->robot_control_.joint_control[i].joint_position =
-                                        robot_feedback_.joint_feedback[i].joint_position;
-                                    line_interpolator_.Reset();
                                 }
                                 manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
                             }
@@ -389,31 +383,9 @@ void RobotServer::TorqueControlThreadFunc() {
                         assert(false && "Unknown RunMode");
                         break;
                 }
-                joint_position_before_filter_[i] = this->robot_control_.joint_control[i].joint_position;
-                // 对所有关节应用巴特沃斯滤波 (在 EI 输入整形之前)
-                if (this->manager_info_.robot_property.enable_butterworth_filter[i]) {
-                    robot_control_.joint_control[i].joint_position =
-                        butterworth_filter_[i]->Apply(robot_control_.joint_control[i].joint_position);
-                } else {
-                    butterworth_filter_[i]
-                        ->Reset();  // 如果当前关节不启用滤波器，则重置滤波器状态，避免下次启用时的突变
-                }
-                joint_position_after_filter_[i] = this->robot_control_.joint_control[i].joint_position;
-
-                // 对所有关节应用 EI 输入整形
-                if (this->manager_info_.robot_property.enable_input_shaper[i]) {
-                    robot_control_.joint_control[i].joint_position =
-                        input_shapers_[i]->Apply(robot_control_.joint_control[i].joint_position);
-                } else {
-                    input_shapers_[i]->Reset();  // 如果当前关节不启用输入整形，则重置状态
-                }
             }
         } else {
-            line_interpolator_.Reset();
-            for (int i = 0; i < ndof_robot; ++i) {
-                butterworth_filter_[i]->Reset();  // 重置滤波器状态
-                input_shapers_[i]->Reset();       // 重置输入整形器状态
-            }
+            reference_processor_.Reset();
         }
         // 如果状态字发生变化了则打印
         static int16_t last_status_word_ = -1;
@@ -513,13 +485,33 @@ void RobotServer::TorqueControlThreadFunc() {
     }
 }
 
+JointCommand RobotServer::PrepareControlReference(bool holding_position) {
+    JointCommand reference = this->planner_cmd_.cmd;
+    if (holding_position) {
+        for (int i = 0; i < ndof_robot; ++i) {
+            if (IsArmJoint(i)) {
+                reference.position[i] = robot_feedback_.joint_feedback[i].joint_position;
+            }
+        }
+        reference_processor_.ResetInterpolation();
+    }
+    reference = reference_processor_.Process(reference, this->manager_info_.robot_property);
+    joint_position_before_filter_ = reference_processor_.PositionBeforeFilter();
+    joint_position_after_filter_ = reference_processor_.PositionAfterFilter();
+    if (holding_position || this->manager_info_.robot_property.run_mode == RunMode::Drag) {
+        // 补偿模式不跟踪轨迹加速度，避免反馈对齐的位置变化进入惯性前馈。
+        reference.acceleration.setZero();
+    }
+    return reference;
+}
+
 void RobotServer::SwitchControlWord() {
     static bool inited = false;
     // 0. Sleep/QuickStop 模式下进入QUICK_STOP，阻止写入measurement
     if (this->manager_info_.robot_property.run_mode == RunMode::Sleep ||
         this->manager_info_.robot_property.run_mode == RunMode::QuickStop) {
         this->is_robot_ready_ = false;
-        line_interpolator_.Reset();
+        reference_processor_.Reset();
         robot_control_.robot_control_word = CTRLWORD_MOTOR_QUICK_STOP;
         for (int i = 0; i < ndof_robot; i++) {
             this->robot_control_.joint_control[i].joint_position =
@@ -540,7 +532,7 @@ void RobotServer::SwitchControlWord() {
             if (this->is_cmd_valid_) {
                 this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
             } else {
-                line_interpolator_.Reset();
+                reference_processor_.Reset();
                 for (int i = 0; i < ndof_robot; i++) {
                     this->robot_control_.joint_control[i].joint_position =
                         this->robot_feedback_.joint_feedback[i].joint_position;
@@ -556,7 +548,7 @@ void RobotServer::SwitchControlWord() {
             inited = true;
             this->robot_control_.robot_control_word |= CTRLWORD_MOTOR_ENABLE;
             if (!this->is_cmd_valid_) {
-                line_interpolator_.Reset();
+                reference_processor_.Reset();
                 for (int i = 0; i < ndof_robot; i++) {
                     this->robot_control_.joint_control[i].joint_position =
                         this->robot_feedback_.joint_feedback[i].joint_position;
@@ -571,7 +563,7 @@ void RobotServer::SwitchControlWord() {
         case STATUSWORD_MOTOR_FAULT:
         case STATUSWORD_MOTOR_QUICK_STOP:
         default:
-            line_interpolator_.Reset();
+            reference_processor_.Reset();
             for (int i = 0; i < ndof_robot; i++) {
                 this->robot_control_.joint_control[i].joint_position =
                     this->robot_feedback_.joint_feedback[i].joint_position;

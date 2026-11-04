@@ -26,7 +26,8 @@ void TorqueControllerManager::Initialize() {
     torque_controller_ = std::make_shared<TorqueControllerInvDynamic>(robot_model_);
 }
 
-void TorqueControllerManager::LoopOnce() {
+void TorqueControllerManager::LoopOnce(const PlannerManagerCommand* planner_command,
+                                       const JointCommand& control_reference) {
     const auto t_start = std::chrono::steady_clock::now();
     runtime_data_.loop_counter++;
 
@@ -38,10 +39,11 @@ void TorqueControllerManager::LoopOnce() {
     } else {
         runtime_data_.time_meta.measurement_time = TimePointSystem::Now();
     }
-    // 获取最新的位置控制下发的joint command
-    if (!manager_buffers_.planner_manager_command->PeekLatest(&runtime_data_.input_joint_cmd.cmd)) {
+    if (planner_command == nullptr) {
         runtime_data_.input_joint_cmd.time_point = TimePointSystem::Invalid();
     } else {
+        runtime_data_.input_joint_cmd.cmd = *planner_command;
+        runtime_data_.input_joint_cmd.cmd.cmd = control_reference;
         runtime_data_.input_joint_cmd.time_point = TimePointSystem::Now();
     }
     const auto t_input = std::chrono::steady_clock::now();
@@ -78,7 +80,11 @@ void TorqueControllerManager::LoopOnce() {
         manager_measurement.position = runtime_data_.raw_measurement.position;
         manager_measurement.velocity = runtime_data_.raw_measurement.velocity;
         manager_measurement.effort = runtime_data_.raw_measurement.torque;
-        manager_measurement.q_desired_pre = runtime_data_.output_cmd.q_desired;
+        // 规划续接使用原始目标，避免将整形延迟反馈给规划器。
+        manager_measurement.q_desired_pre =
+            controller_state_ == TorqueControllerState::Operating && planner_command != nullptr
+                ? planner_command->cmd.position
+                : runtime_data_.output_cmd.q_desired;
         manager_measurement.sensor_wrench = runtime_data_.raw_measurement.sensor_wrench;
         manager_buffers_.joint_measurement->AppendNewElement(manager_measurement);
         robot_buffers_.torque_controller_command->AppendNewElement(runtime_data_.output_cmd);

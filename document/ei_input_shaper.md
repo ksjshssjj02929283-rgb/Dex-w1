@@ -6,17 +6,30 @@
 
 ### 1.1 关节位置指令
 
-真机为每个关节创建一个独立的三脉冲 EI 整形器。位置指令处理顺序为：
+真机通过 `JointReferenceProcessor` 为每个关节维护一个独立的三脉冲 EI 整形器。参考轨迹的处理顺序为：
 
 ```text
-PlannerManagerCommand::position（250 Hz）
+PlannerManagerCommand::cmd.position（250 Hz）
     → LinearInterpolator（插值到 1 kHz）
     → ButterworthFilter
     → EIInputShaper
-    → ControlSharedMemory::joint_position
+    → 整形后位置 q_ref
+        ├── CSP：ControlSharedMemory::joint_position
+        └── 生成 dq_ref、ddq_ref → 力矩控制器 → CST 力矩下发
 ```
 
-EI 整形处理 Butterworth 滤波后的**关节位置指令**，通过延迟脉冲叠加降低指定固有频率附近的残余振动。它对 CSP 模式的位置闭环直接生效；CST 模式下位置字段不参与底层控制。
+EI 整形处理 Butterworth 滤波后的**关节位置参考**，通过延迟脉冲叠加降低指定固有频率附近的残余振动。CSP 直接下发这份位置；Torque 模式的 CST 控制器使用同一份位置及其派生速度、加速度，先完成参考处理再计算力矩。
+
+速度、加速度由最终位置按固定 `Ts = 0.001 s` 后向差分得到：
+
+```text
+dq_ref[k]  = (q_ref[k] - q_ref[k-1]) / Ts
+ddq_ref[k] = (dq_ref[k] - dq_ref[k-1]) / Ts
+```
+
+首帧和复位后的首帧速度、加速度置零。这样导数也包含位置斜坡限制和 EI 延迟的实际效果；关闭平滑滤波时，差分加速度会反映线性插值的拐点。导纳偏移在参考处理之后叠加，笛卡尔阻抗力矩仍由 Planner Manager 生成，不经过该位置整形链路。
+
+Drag 和切回 Position 的临时保持阶段只需要动力学补偿，传给逆动力学的参考加速度置零，避免把反馈位置对齐产生的变化作为目标惯性加速度。
 
 ### 1.2 差速底盘
 
@@ -32,7 +45,8 @@ EI 整形处理 Butterworth 滤波后的**关节位置指令**，通过延迟脉
 | 文件 | 作用 |
 |---|---|
 | [`robot_server_lib/utils/ei_input_shaper.cpp`](../robot_server_lib/utils/ei_input_shaper.cpp) | EI、Two-Hump EI、斜坡限制及历史缓冲实现 |
-| [`w1_server/src/w1_server.cpp`](../w1_server/src/w1_server.cpp) | 创建关节与底盘整形器，并接入 1 kHz 控制链路 |
+| [`robot_server_lib/utils/joint_reference_processor.cpp`](../robot_server_lib/utils/joint_reference_processor.cpp) | 关节参考插值、滤波、整形及速度和加速度差分 |
+| [`w1_server/src/w1_server.cpp`](../w1_server/src/w1_server.cpp) | 在力矩计算前处理关节参考，创建底盘整形器并接入 1 kHz 控制链路 |
 | [`robot_server_lib/utils/utils.cpp`](../robot_server_lib/utils/utils.cpp) | 读取逐关节开关和固有频率 |
 | [`w1_server/robot_config.yaml`](../w1_server/robot_config.yaml) | 保存关节 `input_shaper` 和底盘整形开关 |
 
@@ -107,7 +121,10 @@ Ts = 0.001 s
 以下情况会复位关节整形器：
 
 - 该关节 `input_shaper.enabled=false`；
-- 当前周期没有有效规划指令或力矩控制结果；
+- 规划指令或力矩控制结果缺失；
+- 机器人未 Ready，或进入 Sleep / QuickStop。
+
+后两类情况同时复位参考处理的插值与差分历史。切回 Position 的临时保持阶段将手臂参考位置对齐反馈，只重置插值器，保留滤波、整形和差分历史。
 
 差速底盘未启用整形或退出差速模式时，也会复位对应整形状态。
 

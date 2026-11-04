@@ -4,24 +4,29 @@
 
 ## 1. 使用位置
 
-每个关节在 `w1_server` 初始化时创建一个独立滤波器。有效规划指令到达 TorqueControlThread 后，位置指令的处理顺序为：
+`JointReferenceProcessor` 为每个关节维护一个独立滤波器。有效规划指令到达 TorqueControlThread 后，在力矩计算前按以下顺序处理参考轨迹：
 
 ```text
-PlannerManagerCommand::position（250 Hz）
+PlannerManagerCommand::cmd.position（250 Hz）
     → LinearInterpolator（插值到 1 kHz）
     → ButterworthFilter
     → EIInputShaper
-    → ControlSharedMemory::joint_position
+    → 位置参考 q_ref，并后向差分生成 dq_ref、ddq_ref
+        ├── CSP：下发同一份 q_ref
+        └── Torque CST：参考轨迹进入力矩控制器
 ```
 
-因此，该滤波器处理的是即将写入共享内存的**关节位置指令**，不是关节速度反馈。它对 CSP 位置闭环直接生效；CST 模式虽然仍会更新位置字段，但底层真正使用的是 `joint_torque_feedforward`，位置字段不参与闭环。
+该滤波器处理**关节位置参考**，不是关节速度反馈。CSP 直接使用处理后的位置；Torque CST 在 Server 内使用处理后的位置、速度计算 PD/积分力矩，并使用处理后的加速度计算逆动力学前馈，再通过 `joint_torque_feedforward` 下发。
+
+参考速度、加速度由最终位置按固定 1 ms 周期连续后向差分得到，首帧和复位后的首帧置零。它们随位置一起包含滤波和 EI 延迟；关闭平滑滤波时，加速度会反映线性插值拐点。
 
 关键文件：
 
 | 文件 | 作用 |
 |---|---|
 | [`robot_server_lib/utils/butterworth_filter.cpp`](../robot_server_lib/utils/butterworth_filter.cpp) | 二阶低通滤波器的系数计算、单步滤波和复位 |
-| [`w1_server/src/w1_server.cpp`](../w1_server/src/w1_server.cpp) | 创建逐关节滤波器，并在 1 kHz 控制链路中调用 |
+| [`robot_server_lib/utils/joint_reference_processor.cpp`](../robot_server_lib/utils/joint_reference_processor.cpp) | 组合关节插值、滤波、整形及参考速度和加速度计算 |
+| [`w1_server/src/w1_server.cpp`](../w1_server/src/w1_server.cpp) | 在 1 kHz 力矩计算前调用参考处理，并组装 CSP/CST 输出 |
 | [`robot_server_lib/utils/utils.cpp`](../robot_server_lib/utils/utils.cpp) | 从 YAML 读取逐关节开关和截止频率 |
 | [`w1_server/robot_config.yaml`](../w1_server/robot_config.yaml) | 保存各关节 `butterworth_filter` 配置 |
 
@@ -68,9 +73,10 @@ y[n] = b0x[n] + b1x[n-1] + b2x[n-2]
 以下情况会调用 `Reset()`：
 
 - 该关节的滤波开关关闭；
-- 当前周期没有同时取得有效的规划指令和力矩控制结果；
+- 规划指令或力矩控制结果缺失；
+- 机器人未 Ready，或进入 Sleep / QuickStop。
 
-复位后下一次启用会重新以当前输入初始化，不继续使用旧轨迹的滤波历史。
+后两类情况同时复位参考处理的插值与差分历史。复位后下一次启用会重新以当前输入初始化，不继续使用旧轨迹的滤波历史。切回 Position 的临时保持阶段保留滤波历史，并将逆动力学参考加速度置零；Drag 模式同样使用零参考加速度进行动力学补偿。
 
 ## 4. 配置与运行时开关
 

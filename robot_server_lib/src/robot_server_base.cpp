@@ -108,7 +108,9 @@ void RobotServerBase::TorqueControlThreadFunc() {
     auto next_cycle_time_point = std::chrono::steady_clock::now();
     while (rclcpp::ok()) {
         next_cycle_time_point += std::chrono::microseconds(torque_ctrl_dt_micro);
-        torque_controller_manager.LoopOnce();
+        PlannerManagerCommand planner_command{};
+        const bool has_planner_command = manager_buffers_.planner_manager_command->PeekLatest(&planner_command);
+        torque_controller_manager.LoopOnce(has_planner_command ? &planner_command : nullptr, planner_command.cmd);
         std::this_thread::sleep_until(next_cycle_time_point);
     }
 }

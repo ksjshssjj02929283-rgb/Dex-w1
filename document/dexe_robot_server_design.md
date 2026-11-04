@@ -140,16 +140,16 @@ Planner Manager Thread 以 250 Hz 将最新测量和请求转换为 `PlannerMana
 
 ### 3.3 TorqueControlThread
 
-TorqueControlThread 以 1 kHz 运行。每个周期先从 `FeedbackSharedMemory` 读取硬件反馈并生成 `JointRawMeasurement`，再由 `TorqueControllerManager` 结合最新的 `PlannerManagerCommand` 计算 `TorqueCtrlCommand`，最后由 [`w1_server.cpp`](../w1_server/src/w1_server.cpp) 根据运行模式选择位置、速度和力矩字段写入 `ControlSharedMemory`。有效的原始测量同时被转换为 `JointMeasurement`，供 Planner Manager 使用。
+TorqueControlThread 以 1 kHz 运行。每个周期先从 `FeedbackSharedMemory` 读取硬件反馈并生成 `JointRawMeasurement`，再读取最新的 `PlannerManagerCommand`，由 `JointReferenceProcessor` 对规划位置执行线性插值、Butterworth 滤波和 EI 整形，并按固定 1 ms 周期从最终位置后向差分得到参考速度、加速度。首帧和复位后的首帧速度、加速度置零。处理后的 `control_reference` 显式传入 `TorqueControllerManager` 计算 `TorqueCtrlCommand`，最后由 [`w1_server.cpp`](../w1_server/src/w1_server.cpp) 根据运行模式选择位置、速度和力矩字段写入 `ControlSharedMemory`。有效的原始测量同时被转换为 `JointMeasurement`，供 Planner Manager 使用。
 
 #### 3.3.1 控制模式与指令处理
 
 | 运行模式 | 位置与状态处理 |
 |---|---|
-| `Position` | 正常运行时使用 **CSP（同步位置模式）**。规划位置依次经过线性插值、[Butterworth 滤波](butterworth_filter.md)和 [EI 输入整形](ei_input_shaper.md)后写入共享内存；逆动力学结果写入 `joint_torque_feedforward` 作为前馈，并结合 `safe_level` 调整正负力矩限制。从其他模式切回 Position 时，若动力学参数可用，会先短暂保持 **CST（同步力矩模式）**、锁定反馈位置并仅输出逆动力学前馈，完成平滑切换后再恢复 CSP。 |
-| `Torque` | 使用 **CST**。Torque Controller 内部计算“逆动力学前馈 + 关节 PD/积分阻抗力矩”；Operating 状态下还会根据“模型前馈力矩 − 实测力矩”估计外力，经死区和导纳环节得到位置、速度偏移。内部结果为 `TorqueCtrlCommand::torque`，随后被复制到共享内存的 `joint_torque_feedforward` 下发。 |
-| `Drag` | 动力学参数可用时使用 **CST**，期望位置持续对齐反馈位置，`joint_torque_feedforward` 仅输出逆动力学补偿，使关节呈低刚度拖动效果。动力学参数不可用时不置 CST 位，走 **CSP 兼容逻辑**，并按前馈方向收紧正负力矩限制。 |
-| `CartesianImpedance` | 使用 **CST**。Planner Manager 生成笛卡尔阻抗力矩，Torque Controller 将其与逆动力学前馈相加得到 `TorqueCtrlCommand::torque_impedance`，再复制到共享内存的 `joint_torque_feedforward` 下发。 |
+| `Position` | 正常运行时使用 **CSP（同步位置模式）**。共享内存直接使用参考处理阶段得到的位置，只经过一次线性插值、[Butterworth 滤波](butterworth_filter.md)和 [EI 输入整形](ei_input_shaper.md)；逆动力学结果写入 `joint_torque_feedforward` 作为前馈，并结合 `safe_level` 调整正负力矩限制。从其他模式切回 Position 时，若动力学参数可用，会先短暂保持 **CST（同步力矩模式）**、锁定反馈位置并以零参考加速度仅输出逆动力学补偿，完成平滑切换后再恢复 CSP。 |
+| `Torque` | 使用 **CST**。Torque Controller 接收插值、滤波和 EI 整形后的参考位置及其派生速度、加速度，计算“逆动力学前馈 + 关节 PD/积分阻抗力矩”；Operating 状态下还会根据“模型前馈力矩 − 实测力矩”估计外力，经死区和导纳环节得到位置、速度偏移。内部结果为 `TorqueCtrlCommand::torque`，随后被复制到共享内存的 `joint_torque_feedforward` 下发。 |
+| `Drag` | 动力学参数可用时使用 **CST**，期望位置持续对齐反馈位置，逆动力学参考加速度置零，`joint_torque_feedforward` 仅输出动力学补偿，使关节呈低刚度拖动效果。动力学参数不可用时不置 CST 位，走 **CSP 兼容逻辑**，并按前馈方向收紧正负力矩限制。 |
+| `CartesianImpedance` | 使用 **CST**。Planner Manager 生成笛卡尔阻抗力矩，Torque Controller 将其与逆动力学前馈相加得到 `TorqueCtrlCommand::torque_impedance`，再复制到共享内存的 `joint_torque_feedforward` 下发。逆动力学使用处理后的参考加速度；Planner 内已生成的笛卡尔阻抗力矩不经过位置参考整形。 |
 | `Sleep` / `QuickStop` | 使用 **Quick Stop 控制字**，不处于正常 CSP/CST 闭环；保持当前位置、停止正常力矩下发并清除可供上层使用的有效测量，待退出该模式且硬件重新 Ready 后恢复控制链路。 |
 
 控制模式说明：
@@ -158,6 +158,8 @@ TorqueControlThread 以 1 kHz 运行。每个周期先从 `FeedbackSharedMemory`
 - **CST（同步力矩模式）**：真正参与底层闭环的是共享内存中的 `joint_torque_feedforward`；共享内存中的位置和速度字段不参与控制。`TorqueCtrlCommand::torque` 和 `TorqueCtrlCommand::torque_impedance` 只是 Server 内部计算结果，进入共享内存前都会统一复制到 `JointControl::joint_torque_feedforward`。
 
 `TorqueControllerManager` 内部还有 `Init`、`Idle`、`Operating` 和 `Decelerating` 四个控制状态：无有效原始测量时停留在 `Init`；空闲时以进入该 episode 的关节位置保持；收到新规划指令后进入 `Operating`；指令缺失或超时后先进入 `Decelerating`，速度降到阈值后回到 `Idle`。无论处于哪种内部状态，计算结果都通过 `torque_controller_command` Latest Buffer 交给 [`w1_server.cpp`](../w1_server/src/w1_server.cpp)。
+
+原始规划命令保留序列号和有效性信息。`Operating` 状态发布给 Planner 的 `q_desired_pre` 仍使用原规划位置，供轨迹续接和速度积分；控制器实际计算力矩使用处理后的参考。`Idle`、`Decelerating` 以及模式切换时的反馈对齐仍遵循各自的保持、减速逻辑。
 
 #### 3.3.2 控制算法与动力学计算
 
