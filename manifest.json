@@ -2,7 +2,7 @@
   "created_at": "2026-11-06T16:50:00.578529+08:00",
   "source_workspace": "/home/dex/1_Dex-work/w1",
   "destination": "https://github.com/ksjshssjj02929283-rgb/Dex-w1",
-  "scope": "All locally available refs and detached HEADs; original objects and hashes preserved.",
+  "scope": "All original versions retained; GitLab Deploy Token authentication removed from three historical .gitmodules blobs. See published_object fields and history-map.json for changed hashes.",
   "uncommitted_changes_included": false,
   "repositories": [
     {
@@ -15,433 +15,505 @@
           "source": "refs/heads/dev",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/dev",
           "object": "4198e5ba9cef0f55c19298594b171d7c1f51cb1b",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "4198e5ba9cef0f55c19298594b171d7c1f51cb1b"
         },
         {
           "source": "refs/heads/dev_l1",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/dev_l1",
           "object": "27ca7ce76c182c5c1c3ef8b4f20e9576223147ab",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "27ca7ce76c182c5c1c3ef8b4f20e9576223147ab"
         },
         {
           "source": "refs/heads/dyp/add_motor_statuscode",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/dyp/add_motor_statuscode",
           "object": "d5e9567a9fb0da68046d75eeac749afe8b490381",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "d5e9567a9fb0da68046d75eeac749afe8b490381"
         },
         {
           "source": "refs/heads/dyp/add_quickstop",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/dyp/add_quickstop",
           "object": "943aac666bbcbccbdd6444d42a09d22477bf9291",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "943aac666bbcbccbdd6444d42a09d22477bf9291"
         },
         {
           "source": "refs/heads/feature/jiahao.wang/add_mapping_error_reporting_and_auto_stop",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/feature/jiahao.wang/add_mapping_error_reporting_and_auto_stop",
           "object": "7e92a86fd9f03bd7def12dd23c6fd109f3e67767",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "7e92a86fd9f03bd7def12dd23c6fd109f3e67767"
         },
         {
           "source": "refs/heads/feature/yi.xing/add_obstacle_msg",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/feature/yi.xing/add_obstacle_msg",
           "object": "bdd4ed52e47036fb25cfd4d1fc5fd25365a66e52",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "bdd4ed52e47036fb25cfd4d1fc5fd25365a66e52"
         },
         {
           "source": "refs/heads/fsh/dev/refactor_ee_interfaces",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/fsh/dev/refactor_ee_interfaces",
           "object": "5a39d10abaf77ab27f9e25b1296a9af05c4065e4",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "5a39d10abaf77ab27f9e25b1296a9af05c4065e4"
         },
         {
           "source": "refs/heads/glf/add_nav_sematic",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/glf/add_nav_sematic",
           "object": "533699f678d48e34e351e8d492a55edaf18a1127",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "533699f678d48e34e351e8d492a55edaf18a1127"
         },
         {
           "source": "refs/heads/glf/nav_release_0.5.x",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/glf/nav_release_0.5.x",
           "object": "b026ad34871a3fa5ebe1e9245983818f46567691",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "b026ad34871a3fa5ebe1e9245983818f46567691"
         },
         {
           "source": "refs/heads/main",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/main",
           "object": "3792e5070edfadee015ee78689681d924348c540",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "3792e5070edfadee015ee78689681d924348c540"
         },
         {
           "source": "refs/heads/pzc/add_detection_srv",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/pzc/add_detection_srv",
           "object": "970bfd7f3fc7a046b5a05fa3ebe94a1b8c08ec08",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "970bfd7f3fc7a046b5a05fa3ebe94a1b8c08ec08"
         },
         {
           "source": "refs/heads/pzc/feature/control_action",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/pzc/feature/control_action",
           "object": "9df8b2609a66ac3785bb6a194d2570ef57c06997",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "9df8b2609a66ac3785bb6a194d2570ef57c06997"
         },
         {
           "source": "refs/heads/revert-9171a012",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/revert-9171a012",
           "object": "0eb4147cf0d5b0c67daf63b2548d18d4a5378bbb",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "0eb4147cf0d5b0c67daf63b2548d18d4a5378bbb"
         },
         {
           "source": "refs/heads/revert-e82d5a77",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/revert-e82d5a77",
           "object": "25620fd5f3823bdc7701d5359630672b836eab72",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "25620fd5f3823bdc7701d5359630672b836eab72"
         },
         {
           "source": "refs/heads/review/packaging-commit",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/review/packaging-commit",
           "object": "c6b5658f9069a61c347638bacfee38cf1f2bd7dc",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "c6b5658f9069a61c347638bacfee38cf1f2bd7dc"
         },
         {
           "source": "refs/heads/scheduler/xmk/path_navigation",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/scheduler/xmk/path_navigation",
           "object": "0d379c043ff011686f1a0b4619104c26de65aff2",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "0d379c043ff011686f1a0b4619104c26de65aff2"
         },
         {
           "source": "refs/heads/wp/add_errcode_interface",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/wp/add_errcode_interface",
           "object": "d54ecc20cd421d3e1243f83bf4107cb9308f5030",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "d54ecc20cd421d3e1243f83bf4107cb9308f5030"
         },
         {
           "source": "refs/heads/xmk/051",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/xmk/051",
           "object": "da62696d1dceeaf3a55a23432444aa4cd813b0c7",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "da62696d1dceeaf3a55a23432444aa4cd813b0c7"
         },
         {
           "source": "refs/heads/xxq/project_xingkong",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/xxq/project_xingkong",
           "object": "9a6b410f776ad800deceecdf312affcaf5b89625",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "9a6b410f776ad800deceecdf312affcaf5b89625"
         },
         {
           "source": "refs/heads/xxq/sipe",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/xxq/sipe",
           "object": "bb6468940bd5582379026354f2f7691ba057d37d",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "bb6468940bd5582379026354f2f7691ba057d37d"
         },
         {
           "source": "refs/heads/xxq/vla",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/xxq/vla",
           "object": "11992187d0522ed977eba461082c8775349adf0d",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "11992187d0522ed977eba461082c8775349adf0d"
         },
         {
           "source": "refs/heads/yanlei/add_manus_interface",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/yanlei/add_manus_interface",
           "object": "ba2ce6ed5cefb39cfece1fc82cf655364b3f9cfc",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "ba2ce6ed5cefb39cfece1fc82cf655364b3f9cfc"
         },
         {
           "source": "refs/heads/ybw/client_srv",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/ybw/client_srv",
           "object": "3cf19be7cbce041fe5044ab0c2548b3e387c40de",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "3cf19be7cbce041fe5044ab0c2548b3e387c40de"
         },
         {
           "source": "refs/heads/ybw/dev/update_chassis_msg",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/ybw/dev/update_chassis_msg",
           "object": "22e4194e2d249eef53dc9b8ef8fb8094f5e26d9f",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "22e4194e2d249eef53dc9b8ef8fb8094f5e26d9f"
         },
         {
           "source": "refs/heads/zkh/trigger_other_project",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/zkh/trigger_other_project",
           "object": "6455244ba1593d83d29d594bd66ea92c4079793f",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "6455244ba1593d83d29d594bd66ea92c4079793f"
         },
         {
           "source": "refs/heads/zyn/add_l1_interfaces",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/zyn/add_l1_interfaces",
           "object": "29545c0bc8de92e145afd304262a77c8487ea812",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "29545c0bc8de92e145afd304262a77c8487ea812"
         },
         {
           "source": "refs/heads/zyn/l1",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/zyn/l1",
           "object": "8a63ccc7920fd2c4702d5c4afe484610f4c0449e",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "8a63ccc7920fd2c4702d5c4afe484610f4c0449e"
         },
         {
           "source": "refs/heads/zzh/add_manager_interface",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/zzh/add_manager_interface",
           "object": "35659ccdd6cb403faad98ee40758e17d0ee58936",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "35659ccdd6cb403faad98ee40758e17d0ee58936"
         },
         {
           "source": "refs/remotes/robot-upstream/dev",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/dev",
           "object": "4198e5ba9cef0f55c19298594b171d7c1f51cb1b",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "4198e5ba9cef0f55c19298594b171d7c1f51cb1b"
         },
         {
           "source": "refs/remotes/robot-upstream/dev_l1",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/dev_l1",
           "object": "27ca7ce76c182c5c1c3ef8b4f20e9576223147ab",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "27ca7ce76c182c5c1c3ef8b4f20e9576223147ab"
         },
         {
           "source": "refs/remotes/robot-upstream/dyp/add_motor_statuscode",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/dyp/add_motor_statuscode",
           "object": "d5e9567a9fb0da68046d75eeac749afe8b490381",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "d5e9567a9fb0da68046d75eeac749afe8b490381"
         },
         {
           "source": "refs/remotes/robot-upstream/dyp/add_quickstop",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/dyp/add_quickstop",
           "object": "943aac666bbcbccbdd6444d42a09d22477bf9291",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "943aac666bbcbccbdd6444d42a09d22477bf9291"
         },
         {
           "source": "refs/remotes/robot-upstream/feature/jiahao.wang/add_mapping_error_reporting_and_auto_stop",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/feature/jiahao.wang/add_mapping_error_reporting_and_auto_stop",
           "object": "7e92a86fd9f03bd7def12dd23c6fd109f3e67767",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "7e92a86fd9f03bd7def12dd23c6fd109f3e67767"
         },
         {
           "source": "refs/remotes/robot-upstream/feature/yi.xing/add_obstacle_msg",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/feature/yi.xing/add_obstacle_msg",
           "object": "bdd4ed52e47036fb25cfd4d1fc5fd25365a66e52",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "bdd4ed52e47036fb25cfd4d1fc5fd25365a66e52"
         },
         {
           "source": "refs/remotes/robot-upstream/fsh/dev/refactor_ee_interfaces",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/fsh/dev/refactor_ee_interfaces",
           "object": "5a39d10abaf77ab27f9e25b1296a9af05c4065e4",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "5a39d10abaf77ab27f9e25b1296a9af05c4065e4"
         },
         {
           "source": "refs/remotes/robot-upstream/glf/add_nav_sematic",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/glf/add_nav_sematic",
           "object": "533699f678d48e34e351e8d492a55edaf18a1127",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "533699f678d48e34e351e8d492a55edaf18a1127"
         },
         {
           "source": "refs/remotes/robot-upstream/glf/nav_release_0.5.x",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/glf/nav_release_0.5.x",
           "object": "b026ad34871a3fa5ebe1e9245983818f46567691",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "b026ad34871a3fa5ebe1e9245983818f46567691"
         },
         {
           "source": "refs/remotes/robot-upstream/main",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/main",
           "object": "3792e5070edfadee015ee78689681d924348c540",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "3792e5070edfadee015ee78689681d924348c540"
         },
         {
           "source": "refs/remotes/robot-upstream/pzc/add_detection_srv",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/pzc/add_detection_srv",
           "object": "970bfd7f3fc7a046b5a05fa3ebe94a1b8c08ec08",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "970bfd7f3fc7a046b5a05fa3ebe94a1b8c08ec08"
         },
         {
           "source": "refs/remotes/robot-upstream/pzc/feature/control_action",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/pzc/feature/control_action",
           "object": "9df8b2609a66ac3785bb6a194d2570ef57c06997",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "9df8b2609a66ac3785bb6a194d2570ef57c06997"
         },
         {
           "source": "refs/remotes/robot-upstream/revert-9171a012",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/revert-9171a012",
           "object": "0eb4147cf0d5b0c67daf63b2548d18d4a5378bbb",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "0eb4147cf0d5b0c67daf63b2548d18d4a5378bbb"
         },
         {
           "source": "refs/remotes/robot-upstream/revert-e82d5a77",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/revert-e82d5a77",
           "object": "25620fd5f3823bdc7701d5359630672b836eab72",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "25620fd5f3823bdc7701d5359630672b836eab72"
         },
         {
           "source": "refs/remotes/robot-upstream/review/packaging-commit",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/review/packaging-commit",
           "object": "c6b5658f9069a61c347638bacfee38cf1f2bd7dc",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "c6b5658f9069a61c347638bacfee38cf1f2bd7dc"
         },
         {
           "source": "refs/remotes/robot-upstream/scheduler/xmk/path_navigation",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/scheduler/xmk/path_navigation",
           "object": "0d379c043ff011686f1a0b4619104c26de65aff2",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "0d379c043ff011686f1a0b4619104c26de65aff2"
         },
         {
           "source": "refs/remotes/robot-upstream/wp/add_errcode_interface",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/wp/add_errcode_interface",
           "object": "d54ecc20cd421d3e1243f83bf4107cb9308f5030",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "d54ecc20cd421d3e1243f83bf4107cb9308f5030"
         },
         {
           "source": "refs/remotes/robot-upstream/xmk/051",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/xmk/051",
           "object": "da62696d1dceeaf3a55a23432444aa4cd813b0c7",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "da62696d1dceeaf3a55a23432444aa4cd813b0c7"
         },
         {
           "source": "refs/remotes/robot-upstream/xxq/project_xingkong",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/xxq/project_xingkong",
           "object": "9a6b410f776ad800deceecdf312affcaf5b89625",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "9a6b410f776ad800deceecdf312affcaf5b89625"
         },
         {
           "source": "refs/remotes/robot-upstream/xxq/sipe",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/xxq/sipe",
           "object": "bb6468940bd5582379026354f2f7691ba057d37d",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "bb6468940bd5582379026354f2f7691ba057d37d"
         },
         {
           "source": "refs/remotes/robot-upstream/xxq/vla",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/xxq/vla",
           "object": "11992187d0522ed977eba461082c8775349adf0d",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "11992187d0522ed977eba461082c8775349adf0d"
         },
         {
           "source": "refs/remotes/robot-upstream/yanlei/add_manus_interface",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/yanlei/add_manus_interface",
           "object": "ba2ce6ed5cefb39cfece1fc82cf655364b3f9cfc",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "ba2ce6ed5cefb39cfece1fc82cf655364b3f9cfc"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/client_srv",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/ybw/client_srv",
           "object": "3cf19be7cbce041fe5044ab0c2548b3e387c40de",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "3cf19be7cbce041fe5044ab0c2548b3e387c40de"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/dev/update_chassis_msg",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/ybw/dev/update_chassis_msg",
           "object": "22e4194e2d249eef53dc9b8ef8fb8094f5e26d9f",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "22e4194e2d249eef53dc9b8ef8fb8094f5e26d9f"
         },
         {
           "source": "refs/remotes/robot-upstream/zkh/trigger_other_project",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/zkh/trigger_other_project",
           "object": "6455244ba1593d83d29d594bd66ea92c4079793f",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "6455244ba1593d83d29d594bd66ea92c4079793f"
         },
         {
           "source": "refs/remotes/robot-upstream/zyn/add_l1_interfaces",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/zyn/add_l1_interfaces",
           "object": "29545c0bc8de92e145afd304262a77c8487ea812",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "29545c0bc8de92e145afd304262a77c8487ea812"
         },
         {
           "source": "refs/remotes/robot-upstream/zyn/l1",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/zyn/l1",
           "object": "8a63ccc7920fd2c4702d5c4afe484610f4c0449e",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "8a63ccc7920fd2c4702d5c4afe484610f4c0449e"
         },
         {
           "source": "refs/remotes/robot-upstream/zzh/add_manager_interface",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/zzh/add_manager_interface",
           "object": "35659ccdd6cb403faad98ee40758e17d0ee58936",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "35659ccdd6cb403faad98ee40758e17d0ee58936"
         },
         {
           "source": "refs/robot-sync/historical/09260ea270e3243cca96d9aace4865da9793d233",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/__archive_refs__/robot-sync/historical/09260ea270e3243cca96d9aace4865da9793d233",
           "object": "09260ea270e3243cca96d9aace4865da9793d233",
-          "kind": "historical_ref"
+          "kind": "historical_ref",
+          "published_object": "09260ea270e3243cca96d9aace4865da9793d233"
         },
         {
           "source": "refs/robot-sync/historical/6e5507304f6df6b94e9b92a20be30903874de42a",
           "destination": "refs/heads/upstream_repos/dependencies/dexe_interfaces/__archive_refs__/robot-sync/historical/6e5507304f6df6b94e9b92a20be30903874de42a",
           "object": "6e5507304f6df6b94e9b92a20be30903874de42a",
-          "kind": "historical_ref"
+          "kind": "historical_ref",
+          "published_object": "6e5507304f6df6b94e9b92a20be30903874de42a"
         },
         {
           "source": "refs/tags/V0.1.0",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/V0.1.0",
           "object": "5a76dc9ab61622ed53f71dc6ddbdad6a05dd309b",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "5a76dc9ab61622ed53f71dc6ddbdad6a05dd309b"
         },
         {
           "source": "refs/tags/V0.1.1",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/V0.1.1",
           "object": "136408e4e385224579c6a49be2193c87d019d146",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "136408e4e385224579c6a49be2193c87d019d146"
         },
         {
           "source": "refs/tags/V0.2.0",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/V0.2.0",
           "object": "5b6d5a521e83407e6ca4dcbb2ec956ac53d16525",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "5b6d5a521e83407e6ca4dcbb2ec956ac53d16525"
         },
         {
           "source": "refs/tags/V0.2.1",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/V0.2.1",
           "object": "d67ebdd48fc881f9cfc5b7a191e3f272d99a3a64",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "d67ebdd48fc881f9cfc5b7a191e3f272d99a3a64"
         },
         {
           "source": "refs/tags/V0.2.2",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/V0.2.2",
           "object": "a78a82a7b11f86434ba61f71aa62ee4469f4f057",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "a78a82a7b11f86434ba61f71aa62ee4469f4f057"
         },
         {
           "source": "refs/tags/V0.3.0",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/V0.3.0",
           "object": "9df6068e969b5eb01eeaccd8faeaed90f7d0466f",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "9df6068e969b5eb01eeaccd8faeaed90f7d0466f"
         },
         {
           "source": "refs/tags/V0.3.1",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/V0.3.1",
           "object": "6dcc895965ff0eb5a69ef27699ac63669db84f0f",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "6dcc895965ff0eb5a69ef27699ac63669db84f0f"
         },
         {
           "source": "refs/tags/v0.4.0",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/v0.4.0",
           "object": "2d1c3bd3994b799bd335917fe6f890be24647aa8",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "2d1c3bd3994b799bd335917fe6f890be24647aa8"
         },
         {
           "source": "refs/tags/v0.4.1",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/v0.4.1",
           "object": "030d13c48bfd08857203037cd06011a1f31da6d2",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "030d13c48bfd08857203037cd06011a1f31da6d2"
         },
         {
           "source": "refs/tags/v0.4.2",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/v0.4.2",
           "object": "4efb5c16ebe1bab60e6666b5eabe81d326337671",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "4efb5c16ebe1bab60e6666b5eabe81d326337671"
         },
         {
           "source": "refs/tags/v0.4.5",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/v0.4.5",
           "object": "56779604dc5a9983a66933b7606150a352bdfce7",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "56779604dc5a9983a66933b7606150a352bdfce7"
         },
         {
           "source": "refs/tags/v0.4.6",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/v0.4.6",
           "object": "02223c49109722ff6fa92f1465fde0f3d25a10ed",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "02223c49109722ff6fa92f1465fde0f3d25a10ed"
         },
         {
           "source": "refs/tags/v0.5.0",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/v0.5.0",
           "object": "7e8ef879b80c36f15e23ddf8638ee325d8d3e50d",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "7e8ef879b80c36f15e23ddf8638ee325d8d3e50d"
         },
         {
           "source": "refs/tags/v0.5.1",
           "destination": "refs/tags/upstream_repos/dependencies/dexe_interfaces/v0.5.1",
           "object": "c87c7eec13fa9631936e68bdea6c5df588311c31",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "c87c7eec13fa9631936e68bdea6c5df588311c31"
         }
       ]
     },
@@ -455,157 +527,183 @@
           "source": "refs/heads/master",
           "destination": "refs/heads/upstream_repos/dependencies/magic_enum/master",
           "object": "7f7c70473857c47c6eb88261771c4ab3dc7616d4",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "7f7c70473857c47c6eb88261771c4ab3dc7616d4"
         },
         {
           "source": "refs/remotes/robot-upstream/master",
           "destination": "refs/heads/upstream_repos/dependencies/magic_enum/master",
           "object": "7f7c70473857c47c6eb88261771c4ab3dc7616d4",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "7f7c70473857c47c6eb88261771c4ab3dc7616d4"
         },
         {
           "source": "refs/tags/v0.5.0",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.5.0",
           "object": "b7f84490beb8643a79fe833e8ca769ade31036c7",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "b7f84490beb8643a79fe833e8ca769ade31036c7"
         },
         {
           "source": "refs/tags/v0.6.0",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.6.0",
           "object": "8187796f3dd9a3053403145797fd9da587873f1e",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "8187796f3dd9a3053403145797fd9da587873f1e"
         },
         {
           "source": "refs/tags/v0.6.1",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.6.1",
           "object": "8eb87a9a88a071175f20ec8d10628e2e9686dfa4",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "8eb87a9a88a071175f20ec8d10628e2e9686dfa4"
         },
         {
           "source": "refs/tags/v0.6.2",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.6.2",
           "object": "1f3ea64407d419e667454844898d2d9422c00386",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "1f3ea64407d419e667454844898d2d9422c00386"
         },
         {
           "source": "refs/tags/v0.6.3",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.6.3",
           "object": "64856beffb8ef45168735d24232b2e8678c0570a",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "64856beffb8ef45168735d24232b2e8678c0570a"
         },
         {
           "source": "refs/tags/v0.6.4",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.6.4",
           "object": "f900f4e01dfe0a72e3d920884523a7c669848bfa",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "f900f4e01dfe0a72e3d920884523a7c669848bfa"
         },
         {
           "source": "refs/tags/v0.6.5",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.6.5",
           "object": "2327f53634396ec7131e9d411d0e420c6ec361b1",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "2327f53634396ec7131e9d411d0e420c6ec361b1"
         },
         {
           "source": "refs/tags/v0.6.6",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.6.6",
           "object": "963ee65e95d878f49fb5622badc6c81b07c717a9",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "963ee65e95d878f49fb5622badc6c81b07c717a9"
         },
         {
           "source": "refs/tags/v0.7.0",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.7.0",
           "object": "701bff915916309b8880e3ecf12dad8330da93be",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "701bff915916309b8880e3ecf12dad8330da93be"
         },
         {
           "source": "refs/tags/v0.7.1",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.7.1",
           "object": "f4d98123d9173396cd92329a56633b51b3ae4101",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "f4d98123d9173396cd92329a56633b51b3ae4101"
         },
         {
           "source": "refs/tags/v0.7.2",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.7.2",
           "object": "dc8660e2bc07ab4bea211fbcdc2ab06fe01c1b36",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "dc8660e2bc07ab4bea211fbcdc2ab06fe01c1b36"
         },
         {
           "source": "refs/tags/v0.7.3",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.7.3",
           "object": "3d1f6a5a2a3fbcba077e00ad0ccc2dd9fefc2ca7",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "3d1f6a5a2a3fbcba077e00ad0ccc2dd9fefc2ca7"
         },
         {
           "source": "refs/tags/v0.8.0",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.8.0",
           "object": "87190b811c5d6bb90f970902bcda28740f6c07d3",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "87190b811c5d6bb90f970902bcda28740f6c07d3"
         },
         {
           "source": "refs/tags/v0.8.1",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.8.1",
           "object": "43a9272f450fd07e85868ed277ebd793e40806df",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "43a9272f450fd07e85868ed277ebd793e40806df"
         },
         {
           "source": "refs/tags/v0.8.2",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.8.2",
           "object": "e1a68e9dd3d2e9180b04c8aeacd4975db745e6b8",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "e1a68e9dd3d2e9180b04c8aeacd4975db745e6b8"
         },
         {
           "source": "refs/tags/v0.9.0",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.9.0",
           "object": "fba99305d2104a2846624feb61058fc77e54d4f0",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "fba99305d2104a2846624feb61058fc77e54d4f0"
         },
         {
           "source": "refs/tags/v0.9.1",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.9.1",
           "object": "67abcf483a4c5e5027aaf2976b338bd71e28c749",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "67abcf483a4c5e5027aaf2976b338bd71e28c749"
         },
         {
           "source": "refs/tags/v0.9.2",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.9.2",
           "object": "5018ef9677521983bfedb127901284432d1a05a2",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "5018ef9677521983bfedb127901284432d1a05a2"
         },
         {
           "source": "refs/tags/v0.9.3",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.9.3",
           "object": "e1ea11a93d0bdf6aae415124ded6126220fa4f28",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "e1ea11a93d0bdf6aae415124ded6126220fa4f28"
         },
         {
           "source": "refs/tags/v0.9.4",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.9.4",
           "object": "ea5b977b8db8f0eaf9c41540f1b7db99b8abe389",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "ea5b977b8db8f0eaf9c41540f1b7db99b8abe389"
         },
         {
           "source": "refs/tags/v0.9.5",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.9.5",
           "object": "e55b9b54d5cf61f8e117cafb17846d7d742dd3b4",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "e55b9b54d5cf61f8e117cafb17846d7d742dd3b4"
         },
         {
           "source": "refs/tags/v0.9.6",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.9.6",
           "object": "dd6a39d0ba1852cf06907e0f0573a2a10d23c2ad",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "dd6a39d0ba1852cf06907e0f0573a2a10d23c2ad"
         },
         {
           "source": "refs/tags/v0.9.7",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.9.7",
           "object": "e046b69a3736d314fad813e159b1c192eaef92cd",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "e046b69a3736d314fad813e159b1c192eaef92cd"
         },
         {
           "source": "refs/tags/v0.9.8",
           "destination": "refs/tags/upstream_repos/dependencies/magic_enum/v0.9.8",
           "object": "1384769c66bd16ec9bb1353f45fe8ec8ccc12dbd",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "1384769c66bd16ec9bb1353f45fe8ec8ccc12dbd"
         }
       ]
     },
@@ -619,655 +717,764 @@
           "source": "refs/heads/0.4.4",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/0.4.4",
           "object": "f9eb4588de2cf9948d2b3d789f61bfe6c4167309",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "e9a4972b0a9e1f74232247efea6204e4c5647cf8"
         },
         {
           "source": "refs/heads/0.4.4backup",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/0.4.4backup",
           "object": "94d0fb050bc9d9dd3d3ab24a2cdcc73c1db15c30",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "0646d68591c78c0407fc2001c057a6d15e77969b"
         },
         {
           "source": "refs/heads/ci_debug",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/ci_debug",
           "object": "329cd81a019d2adf58671d1b7384eaeff6d3b875",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "34302035b23bdc9105ac24b61a3ddc8d19fc8027"
         },
         {
           "source": "refs/heads/claude/practical-hodgkin-69327a",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/claude/practical-hodgkin-69327a",
           "object": "b27aff0f85a3fad985b5cf07c393c12c7eab9714",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "caf03b1fbba26a9a4350ff0787f92ed8d818946a"
         },
         {
           "source": "refs/heads/configyaml",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/configyaml",
           "object": "dc886540ff1eb20a6b21465e2f67586f9524f468",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "6b9b18a2589bffa1c32f25ac7c86e4e20cb71b53"
         },
         {
           "source": "refs/heads/dev",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dev",
           "object": "2a53d6bcc79bf2f6a3f3673077647e71daf47f42",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "2a53d6bcc79bf2f6a3f3673077647e71daf47f42"
         },
         {
           "source": "refs/heads/dev_l1",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dev_l1",
           "object": "103a112b693c6fbc775d17664f6d448b9a1b2aec",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "026f209b70b21f6f7719e878f4fce9a014bdd825"
         },
         {
           "source": "refs/heads/dev_w1",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dev_w1",
           "object": "140d57be1ab779bb1dd905ebc63f7c7f9c1bcade",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "6806f24f2eba7cafd93d83e8af9a4745a61e2a93"
         },
         {
           "source": "refs/heads/dyp/feat_add_omni_chassis_feedback",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dyp/feat_add_omni_chassis_feedback",
           "object": "4c1996d9dfd76c79a15209dd99bf86465a995456",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "4c1996d9dfd76c79a15209dd99bf86465a995456"
         },
         {
           "source": "refs/heads/glf/ce_speed_limit",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/glf/ce_speed_limit",
           "object": "ed6637c9201972cd94bce90f26b1ac0243207f6e",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "1e9a26b8bd4dd20b1ff5c028ee416c654b82dd94"
         },
         {
           "source": "refs/heads/glf/modify_odom",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/glf/modify_odom",
           "object": "23e4ef1aea8423a6f1a28670e5de7a5b35d34233",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "9a86979b4872d6ab1c24cfe930e7273776d6aa20"
         },
         {
           "source": "refs/heads/hdw/acc_compensate",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hdw/acc_compensate",
           "object": "5a5ddbe25fbe8e3dea6c5f4cb86db869de6f2c0a",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "1cf7b0062c2ecd8bca7de825f527715ce6973027"
         },
         {
           "source": "refs/heads/hdw/deadzone_adjust",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hdw/deadzone_adjust",
           "object": "64a26f626f185ff24e1d67efd6fa256c54a431cd",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "02a6e4e8a61800eb1523771eecde54c2ffa6898c"
         },
         {
           "source": "refs/heads/hjx/sim_fullbody",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hjx/sim_fullbody",
           "object": "d007e5088e4f8612c2a115335ffc036b4a1635a6",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "d9b85385884560adfa5ea7083c86c298f76df0fb"
         },
         {
           "source": "refs/heads/hw/add_evaluate_performance",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hw/add_evaluate_performance",
           "object": "29b51fa9718cca51e80457e620f6800fe3c85981",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "b8e7beda6953893d72d2e51d51ffb12946d01b46"
         },
         {
           "source": "refs/heads/hw/add_impedance",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hw/add_impedance",
           "object": "94f46ae5bfe7b20d1d5d5c9de2f4128e3baae4c8",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "ad9491877afe59ecf85b433b86e0409430b3757a"
         },
         {
           "source": "refs/heads/hw/add_impedance_backup",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hw/add_impedance_backup",
           "object": "a8cdb3e5445f9550c05110cc50b08a6819c09b92",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "4154ad4fa4c23291099e00ebc0df3a1ce502dee7"
         },
         {
           "source": "refs/heads/hw/add_joint_impedance_tracking",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hw/add_joint_impedance_tracking",
           "object": "0db366996106a9f889bd26a86d6dc62081a44ad3",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "6efc5b83480a004684467b2f886f17b380be338e"
         },
         {
           "source": "refs/heads/hw/add_tool_gravity_measurement",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hw/add_tool_gravity_measurement",
           "object": "6898f742fa292fa0a8e12f728b6818d9d233cc4f",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "0fb60e6b685524abcecc4bb525eb43e940bedf63"
         },
         {
           "source": "refs/heads/hw/intern",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hw/intern",
           "object": "59125a9ce45fdedc9f868f87df55ba4bf740a536",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "45e4a038be7fad791efe4af1d8e4593998f1db7d"
         },
         {
           "source": "refs/heads/imu0.4.4",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/imu0.4.4",
           "object": "bf89ba8567f4692c2bbdbd5a02f2e53c691ff7a4",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "1b154fd60db7199871b8ab3f38fac5a2de245510"
         },
         {
           "source": "refs/heads/l10.4.4",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/l10.4.4",
           "object": "8e8c0e3b4ac537fcd0874e6ef51b2db45ac0f590",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "ae30c5f9a845f4fb9728c81f81f16b092a1a09d8"
         },
         {
           "source": "refs/heads/main",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/main",
           "object": "3fa6c17cb896ae8ddeebebfc872226d361dd460b",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "3fa6c17cb896ae8ddeebebfc872226d361dd460b"
         },
         {
           "source": "refs/heads/main_w1",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/main_w1",
           "object": "8983a04626a49a863dd07f219ca10d631d6dc5c1",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "8983a04626a49a863dd07f219ca10d631d6dc5c1"
         },
         {
           "source": "refs/heads/openarm",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/openarm",
           "object": "49b1f5e325f5ec06173741066c43e2c872f55e55",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "11126b38e13ec05138adb53cffa034118e0acf2f"
         },
         {
           "source": "refs/heads/pzc/ZVD_test",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/pzc/ZVD_test",
           "object": "33ab40cf6e8491edcd60a9c6841d0c83106fe9e3",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "0c0b7e8ca4f082a17b62cb5e0886868918817c49"
         },
         {
           "source": "refs/heads/pzc/add_wheelvel_feedback_test",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/pzc/add_wheelvel_feedback_test",
           "object": "f3afbea0966d04a1f02200f57ebbbc08916812e5",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "f3afbea0966d04a1f02200f57ebbbc08916812e5"
         },
         {
           "source": "refs/heads/review/packaging-commit",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/review/packaging-commit",
           "object": "1e1f3f8adee09ef9631457c638798fc831be0fde",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "846805d9a1e311301af2c8259cb88c76a940907c"
         },
         {
           "source": "refs/heads/wt/test_deb",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/wt/test_deb",
           "object": "9c3f755cf687b708f64ba3c62043758cdb28593e",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "b0399479010c5ec5929a7d3f3be31af35604875d"
         },
         {
           "source": "refs/heads/wt/verify_core",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/wt/verify_core",
           "object": "6b3571a731e8451981f60696a82cd36a5304c75a",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "651171c743ad795d9471797336a4584b1faed8e1"
         },
         {
           "source": "refs/heads/wudi/DC_current_estimation",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/wudi/DC_current_estimation",
           "object": "8beb2a44bb63680632e355c7266595b05f924a8b",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "a93f8d64fdc678446df1dbbeee49b38b9cb4c66d"
         },
         {
           "source": "refs/heads/wudi/add_L1_walk",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/wudi/add_L1_walk",
           "object": "bca5921f94e059a4216910db9799aa3b9b001fee",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "eb8f57c910717504d97e5f02c5a245687e144cb6"
         },
         {
           "source": "refs/heads/xc/dev/movel",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/xc/dev/movel",
           "object": "03d8671d533797b110566fba53044b685122651c",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "03d8671d533797b110566fba53044b685122651c"
         },
         {
           "source": "refs/heads/ybw/dev_w1/drag_button_latency",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/ybw/dev_w1/drag_button_latency",
           "object": "5e2048fb24a5181d8789fe0374a267a45db91f8d",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "aa14f47be099d4facc39877d621383591dd82f09"
         },
         {
           "source": "refs/heads/ybw/dev_w1/intercept_chassis_control",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/ybw/dev_w1/intercept_chassis_control",
           "object": "45382761f38c2d28013250873cf32688c07b609d",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "b42c2ca1801db552466b7ce2fe3c569835f71294"
         },
         {
           "source": "refs/heads/ybw/dev_w1/test_core_dump",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/ybw/dev_w1/test_core_dump",
           "object": "d016013b8f6047e7692088fdc47d7751dc571669",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "a8a51ed744b05f53f948d1c164e1b2a425f82486"
         },
         {
           "source": "refs/heads/zkh/init_ci",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zkh/init_ci",
           "object": "65cabd9ea6bb0b79d9102c524d2ad0223c7efbf7",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "447b270d10ccaa2df915542b2349cc513bbaaadc"
         },
         {
           "source": "refs/heads/zkh/new_ci",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zkh/new_ci",
           "object": "746197f5d9f3aff000e0b2bb10750b0c9d5bf22a",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "c0fe478b0dd95cfda8d08b44bdede8f2b6f503fe"
         },
         {
           "source": "refs/heads/zyn/add_error_check_system",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/add_error_check_system",
           "object": "614d44e9335c55dc44ac98af402c01fea7b00d90",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "614d44e9335c55dc44ac98af402c01fea7b00d90"
         },
         {
           "source": "refs/heads/zyn/add_tdc",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/add_tdc",
           "object": "155abc1c53aa6e0b71e657a16b2b8427c6df0bb8",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "e11437b5d811ff3aacbbc0f39ccee711c16dfeb2"
         },
         {
           "source": "refs/heads/zyn/add_torque_param",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/add_torque_param",
           "object": "bdc4e1cea5200da4e03b2907e0077f14c5412ac4",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "bdc4e1cea5200da4e03b2907e0077f14c5412ac4"
         },
         {
           "source": "refs/heads/zyn/add_torso_zvd",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/add_torso_zvd",
           "object": "6372df2111711646e5b4bf9d297f972e3ff37f6c",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "bff58cd24d4672deaa2ed5da4920b40558e6d16f"
         },
         {
           "source": "refs/heads/zyn/add_zvd",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/add_zvd",
           "object": "665ede7f266e22068d684dd682398ccc2ce75cf7",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "05de311f24a7329f8b77ae0b0c2c5cd907f585bf"
         },
         {
           "source": "refs/heads/zyn/dev_backup",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/dev_backup",
           "object": "3a21c178f0087821c5dd8df483c31a3891f40a16",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "e40a567d665f77532b27077f90e6dd2a13c38264"
         },
         {
           "source": "refs/heads/zyn/feat_add_dynamik_param",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/feat_add_dynamik_param",
           "object": "c4f92252e530369a911a837b2765a9fc9a27015f",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "c4f92252e530369a911a837b2765a9fc9a27015f"
         },
         {
           "source": "refs/heads/zyn/tune_torque_control",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/tune_torque_control",
           "object": "88b3c77eb3e7963b146a8acac8c181bf4bb02185",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "88b3c77eb3e7963b146a8acac8c181bf4bb02185"
         },
         {
           "source": "refs/heads/zzh/high_torque",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zzh/high_torque",
           "object": "f67924cca87e6d4cbd6ef3716e6691a4af07408a",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "ebd87cbe4b62d2b38353fc182bb7e1825871a876"
         },
         {
           "source": "refs/remotes/robot-upstream/0.4.4",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/0.4.4",
           "object": "f9eb4588de2cf9948d2b3d789f61bfe6c4167309",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "e9a4972b0a9e1f74232247efea6204e4c5647cf8"
         },
         {
           "source": "refs/remotes/robot-upstream/0.4.4backup",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/0.4.4backup",
           "object": "94d0fb050bc9d9dd3d3ab24a2cdcc73c1db15c30",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "0646d68591c78c0407fc2001c057a6d15e77969b"
         },
         {
           "source": "refs/remotes/robot-upstream/ci_debug",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/ci_debug",
           "object": "329cd81a019d2adf58671d1b7384eaeff6d3b875",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "34302035b23bdc9105ac24b61a3ddc8d19fc8027"
         },
         {
           "source": "refs/remotes/robot-upstream/claude/practical-hodgkin-69327a",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/claude/practical-hodgkin-69327a",
           "object": "b27aff0f85a3fad985b5cf07c393c12c7eab9714",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "caf03b1fbba26a9a4350ff0787f92ed8d818946a"
         },
         {
           "source": "refs/remotes/robot-upstream/configyaml",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/configyaml",
           "object": "dc886540ff1eb20a6b21465e2f67586f9524f468",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "6b9b18a2589bffa1c32f25ac7c86e4e20cb71b53"
         },
         {
           "source": "refs/remotes/robot-upstream/dev",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dev",
           "object": "2a53d6bcc79bf2f6a3f3673077647e71daf47f42",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "2a53d6bcc79bf2f6a3f3673077647e71daf47f42"
         },
         {
           "source": "refs/remotes/robot-upstream/dev_l1",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dev_l1",
           "object": "103a112b693c6fbc775d17664f6d448b9a1b2aec",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "026f209b70b21f6f7719e878f4fce9a014bdd825"
         },
         {
           "source": "refs/remotes/robot-upstream/dev_w1",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dev_w1",
           "object": "140d57be1ab779bb1dd905ebc63f7c7f9c1bcade",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "6806f24f2eba7cafd93d83e8af9a4745a61e2a93"
         },
         {
           "source": "refs/remotes/robot-upstream/dyp/feat_add_omni_chassis_feedback",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dyp/feat_add_omni_chassis_feedback",
           "object": "4c1996d9dfd76c79a15209dd99bf86465a995456",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "4c1996d9dfd76c79a15209dd99bf86465a995456"
         },
         {
           "source": "refs/remotes/robot-upstream/glf/ce_speed_limit",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/glf/ce_speed_limit",
           "object": "ed6637c9201972cd94bce90f26b1ac0243207f6e",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "1e9a26b8bd4dd20b1ff5c028ee416c654b82dd94"
         },
         {
           "source": "refs/remotes/robot-upstream/glf/modify_odom",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/glf/modify_odom",
           "object": "23e4ef1aea8423a6f1a28670e5de7a5b35d34233",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "9a86979b4872d6ab1c24cfe930e7273776d6aa20"
         },
         {
           "source": "refs/remotes/robot-upstream/hdw/acc_compensate",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hdw/acc_compensate",
           "object": "5a5ddbe25fbe8e3dea6c5f4cb86db869de6f2c0a",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "1cf7b0062c2ecd8bca7de825f527715ce6973027"
         },
         {
           "source": "refs/remotes/robot-upstream/hdw/deadzone_adjust",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hdw/deadzone_adjust",
           "object": "64a26f626f185ff24e1d67efd6fa256c54a431cd",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "02a6e4e8a61800eb1523771eecde54c2ffa6898c"
         },
         {
           "source": "refs/remotes/robot-upstream/hjx/sim_fullbody",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hjx/sim_fullbody",
           "object": "d007e5088e4f8612c2a115335ffc036b4a1635a6",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "d9b85385884560adfa5ea7083c86c298f76df0fb"
         },
         {
           "source": "refs/remotes/robot-upstream/hw/add_evaluate_performance",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hw/add_evaluate_performance",
           "object": "29b51fa9718cca51e80457e620f6800fe3c85981",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "b8e7beda6953893d72d2e51d51ffb12946d01b46"
         },
         {
           "source": "refs/remotes/robot-upstream/hw/add_impedance",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hw/add_impedance",
           "object": "94f46ae5bfe7b20d1d5d5c9de2f4128e3baae4c8",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "ad9491877afe59ecf85b433b86e0409430b3757a"
         },
         {
           "source": "refs/remotes/robot-upstream/hw/add_impedance_backup",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hw/add_impedance_backup",
           "object": "a8cdb3e5445f9550c05110cc50b08a6819c09b92",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "4154ad4fa4c23291099e00ebc0df3a1ce502dee7"
         },
         {
           "source": "refs/remotes/robot-upstream/hw/add_joint_impedance_tracking",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hw/add_joint_impedance_tracking",
           "object": "0db366996106a9f889bd26a86d6dc62081a44ad3",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "6efc5b83480a004684467b2f886f17b380be338e"
         },
         {
           "source": "refs/remotes/robot-upstream/hw/add_tool_gravity_measurement",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hw/add_tool_gravity_measurement",
           "object": "6898f742fa292fa0a8e12f728b6818d9d233cc4f",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "0fb60e6b685524abcecc4bb525eb43e940bedf63"
         },
         {
           "source": "refs/remotes/robot-upstream/hw/intern",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/hw/intern",
           "object": "59125a9ce45fdedc9f868f87df55ba4bf740a536",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "45e4a038be7fad791efe4af1d8e4593998f1db7d"
         },
         {
           "source": "refs/remotes/robot-upstream/imu0.4.4",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/imu0.4.4",
           "object": "bf89ba8567f4692c2bbdbd5a02f2e53c691ff7a4",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "1b154fd60db7199871b8ab3f38fac5a2de245510"
         },
         {
           "source": "refs/remotes/robot-upstream/l10.4.4",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/l10.4.4",
           "object": "8e8c0e3b4ac537fcd0874e6ef51b2db45ac0f590",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "ae30c5f9a845f4fb9728c81f81f16b092a1a09d8"
         },
         {
           "source": "refs/remotes/robot-upstream/main",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/main",
           "object": "3fa6c17cb896ae8ddeebebfc872226d361dd460b",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "3fa6c17cb896ae8ddeebebfc872226d361dd460b"
         },
         {
           "source": "refs/remotes/robot-upstream/main_w1",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/main_w1",
           "object": "8983a04626a49a863dd07f219ca10d631d6dc5c1",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "8983a04626a49a863dd07f219ca10d631d6dc5c1"
         },
         {
           "source": "refs/remotes/robot-upstream/openarm",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/openarm",
           "object": "49b1f5e325f5ec06173741066c43e2c872f55e55",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "11126b38e13ec05138adb53cffa034118e0acf2f"
         },
         {
           "source": "refs/remotes/robot-upstream/pzc/ZVD_test",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/pzc/ZVD_test",
           "object": "33ab40cf6e8491edcd60a9c6841d0c83106fe9e3",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "0c0b7e8ca4f082a17b62cb5e0886868918817c49"
         },
         {
           "source": "refs/remotes/robot-upstream/pzc/add_wheelvel_feedback_test",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/pzc/add_wheelvel_feedback_test",
           "object": "f3afbea0966d04a1f02200f57ebbbc08916812e5",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "f3afbea0966d04a1f02200f57ebbbc08916812e5"
         },
         {
           "source": "refs/remotes/robot-upstream/review/packaging-commit",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/review/packaging-commit",
           "object": "1e1f3f8adee09ef9631457c638798fc831be0fde",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "846805d9a1e311301af2c8259cb88c76a940907c"
         },
         {
           "source": "refs/remotes/robot-upstream/wt/test_deb",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/wt/test_deb",
           "object": "9c3f755cf687b708f64ba3c62043758cdb28593e",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "b0399479010c5ec5929a7d3f3be31af35604875d"
         },
         {
           "source": "refs/remotes/robot-upstream/wt/verify_core",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/wt/verify_core",
           "object": "6b3571a731e8451981f60696a82cd36a5304c75a",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "651171c743ad795d9471797336a4584b1faed8e1"
         },
         {
           "source": "refs/remotes/robot-upstream/wudi/DC_current_estimation",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/wudi/DC_current_estimation",
           "object": "8beb2a44bb63680632e355c7266595b05f924a8b",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "a93f8d64fdc678446df1dbbeee49b38b9cb4c66d"
         },
         {
           "source": "refs/remotes/robot-upstream/wudi/add_L1_walk",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/wudi/add_L1_walk",
           "object": "bca5921f94e059a4216910db9799aa3b9b001fee",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "eb8f57c910717504d97e5f02c5a245687e144cb6"
         },
         {
           "source": "refs/remotes/robot-upstream/xc/dev/movel",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/xc/dev/movel",
           "object": "03d8671d533797b110566fba53044b685122651c",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "03d8671d533797b110566fba53044b685122651c"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/dev_w1/drag_button_latency",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/ybw/dev_w1/drag_button_latency",
           "object": "5e2048fb24a5181d8789fe0374a267a45db91f8d",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "aa14f47be099d4facc39877d621383591dd82f09"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/dev_w1/intercept_chassis_control",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/ybw/dev_w1/intercept_chassis_control",
           "object": "45382761f38c2d28013250873cf32688c07b609d",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "b42c2ca1801db552466b7ce2fe3c569835f71294"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/dev_w1/test_core_dump",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/ybw/dev_w1/test_core_dump",
           "object": "d016013b8f6047e7692088fdc47d7751dc571669",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "a8a51ed744b05f53f948d1c164e1b2a425f82486"
         },
         {
           "source": "refs/remotes/robot-upstream/zkh/init_ci",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zkh/init_ci",
           "object": "65cabd9ea6bb0b79d9102c524d2ad0223c7efbf7",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "447b270d10ccaa2df915542b2349cc513bbaaadc"
         },
         {
           "source": "refs/remotes/robot-upstream/zkh/new_ci",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zkh/new_ci",
           "object": "746197f5d9f3aff000e0b2bb10750b0c9d5bf22a",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "c0fe478b0dd95cfda8d08b44bdede8f2b6f503fe"
         },
         {
           "source": "refs/remotes/robot-upstream/zyn/add_error_check_system",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/add_error_check_system",
           "object": "614d44e9335c55dc44ac98af402c01fea7b00d90",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "614d44e9335c55dc44ac98af402c01fea7b00d90"
         },
         {
           "source": "refs/remotes/robot-upstream/zyn/add_tdc",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/add_tdc",
           "object": "155abc1c53aa6e0b71e657a16b2b8427c6df0bb8",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "e11437b5d811ff3aacbbc0f39ccee711c16dfeb2"
         },
         {
           "source": "refs/remotes/robot-upstream/zyn/add_torque_param",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/add_torque_param",
           "object": "bdc4e1cea5200da4e03b2907e0077f14c5412ac4",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "bdc4e1cea5200da4e03b2907e0077f14c5412ac4"
         },
         {
           "source": "refs/remotes/robot-upstream/zyn/add_torso_zvd",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/add_torso_zvd",
           "object": "6372df2111711646e5b4bf9d297f972e3ff37f6c",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "bff58cd24d4672deaa2ed5da4920b40558e6d16f"
         },
         {
           "source": "refs/remotes/robot-upstream/zyn/add_zvd",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/add_zvd",
           "object": "665ede7f266e22068d684dd682398ccc2ce75cf7",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "05de311f24a7329f8b77ae0b0c2c5cd907f585bf"
         },
         {
           "source": "refs/remotes/robot-upstream/zyn/dev_backup",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/dev_backup",
           "object": "3a21c178f0087821c5dd8df483c31a3891f40a16",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "e40a567d665f77532b27077f90e6dd2a13c38264"
         },
         {
           "source": "refs/remotes/robot-upstream/zyn/feat_add_dynamik_param",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/feat_add_dynamik_param",
           "object": "c4f92252e530369a911a837b2765a9fc9a27015f",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "c4f92252e530369a911a837b2765a9fc9a27015f"
         },
         {
           "source": "refs/remotes/robot-upstream/zyn/tune_torque_control",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zyn/tune_torque_control",
           "object": "88b3c77eb3e7963b146a8acac8c181bf4bb02185",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "88b3c77eb3e7963b146a8acac8c181bf4bb02185"
         },
         {
           "source": "refs/remotes/robot-upstream/zzh/high_torque",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/zzh/high_torque",
           "object": "f67924cca87e6d4cbd6ef3716e6691a4af07408a",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "ebd87cbe4b62d2b38353fc182bb7e1825871a876"
         },
         {
           "source": "refs/tags/V0.1.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.1.0",
           "object": "5efa53b662daa613cb08827efb45a4a37e23ea5b",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "626807809931f8a32658742428b8437e4fbb18d5"
         },
         {
           "source": "refs/tags/V0.1.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.1.1",
           "object": "a645c27fb7aa2bbacf4a6b701d0c1db9092ea4d1",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "43dd56c033c599a1de7d2d993648f800795b417f"
         },
         {
           "source": "refs/tags/V0.2.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.2.0",
           "object": "066b40ed1c6464a82efa9134cf6a95dde9ce7ce7",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "2fc9087e0fb5b3edde7928c3c18de38a64a91bd6"
         },
         {
           "source": "refs/tags/V0.2.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.2.1",
           "object": "ace91f0f148f945d44eb4d3d3217276ec61f0bdd",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "2a054d7187bd51fdc01e1ea1cc593dfe5e7e6406"
         },
         {
           "source": "refs/tags/V0.2.2",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.2.2",
           "object": "20295b7d12d4cf6993ba57a4cfb4fa2327fc52bc",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "3fb6f5a201ed83bf98d2dab6c045687ed1dabf1f"
         },
         {
           "source": "refs/tags/V0.3.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.3.0",
           "object": "618949dfc15e57816415d1ef2c86e178a89c963b",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "d134c68f239458c2a671142b58abd6ed724bbabc"
         },
         {
           "source": "refs/tags/V0.3.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.3.1",
           "object": "1a77c100a0089d3add8d8ab024b927fe0925502b",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "a92475b7f8578d41a945a2184eba4ee05771e6e3"
         },
         {
           "source": "refs/tags/V0.4.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.4.0",
           "object": "4f355866c92b3d8b4f13f3d7c3899808c56c5685",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "4c8d1d92007994b8a3f5eddc3b1046902b7d4ead"
         },
         {
           "source": "refs/tags/V0.4.2",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.4.2",
           "object": "7f64420cb4288ecab46a8e285d66aae770bf0af0",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "fadd9cdeb71ff2edaaaa9596688157a70ff00a1e"
         },
         {
           "source": "refs/tags/V0.4.3",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.4.3",
           "object": "3ac1086f27a967e06f61d7c46d73cb0805370e78",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "39cb0992746ed42cdc5c8a52927c7c37671dfb25"
         },
         {
           "source": "refs/tags/V0.4.4",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.4.4",
           "object": "a1cb6193f8c1690f7359fcba373b658f8338f613",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "c54ec067b2f2c2112be794aaa5bb4392c6b6c41e"
         },
         {
           "source": "refs/tags/V0.4.5",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.4.5",
           "object": "0918dfe1b319b8a526757282f3409256848060ec",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "a538c6551dd45300d0aa3eced79b074edbd23587"
         },
         {
           "source": "refs/tags/V0.4.6",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.4.6",
           "object": "feffa00a05501a54fd77c401968026769ca0e009",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "a1202d23e0ac7c4706326b01e2a0423b231bd410"
         },
         {
           "source": "refs/tags/V0.5.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.5.0",
           "object": "602496ef77ca75bba1d3ca9d9fc8c4d3911c821b",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "c74f8b35bbd77c9066c39e4762e5f7abe1b812b4"
         },
         {
           "source": "refs/tags/V0.5.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/V0.5.1",
           "object": "c463d5cfea0002b84984f601beace449be105b90",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "dea8952fb5c55b3f658e5f683d0cc995d11b6deb"
         }
       ]
     },
@@ -1281,265 +1488,309 @@
           "source": "refs/heads/main",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/main",
           "object": "3792e5070edfadee015ee78689681d924348c540",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "3792e5070edfadee015ee78689681d924348c540"
         },
         {
           "source": "refs/remotes/robot-upstream/dev",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/dev",
           "object": "4198e5ba9cef0f55c19298594b171d7c1f51cb1b",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "4198e5ba9cef0f55c19298594b171d7c1f51cb1b"
         },
         {
           "source": "refs/remotes/robot-upstream/dev_l1",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/dev_l1",
           "object": "27ca7ce76c182c5c1c3ef8b4f20e9576223147ab",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "27ca7ce76c182c5c1c3ef8b4f20e9576223147ab"
         },
         {
           "source": "refs/remotes/robot-upstream/dyp/add_motor_statuscode",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/dyp/add_motor_statuscode",
           "object": "d5e9567a9fb0da68046d75eeac749afe8b490381",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "d5e9567a9fb0da68046d75eeac749afe8b490381"
         },
         {
           "source": "refs/remotes/robot-upstream/dyp/add_quickstop",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/dyp/add_quickstop",
           "object": "943aac666bbcbccbdd6444d42a09d22477bf9291",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "943aac666bbcbccbdd6444d42a09d22477bf9291"
         },
         {
           "source": "refs/remotes/robot-upstream/feature/jiahao.wang/add_mapping_error_reporting_and_auto_stop",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/feature/jiahao.wang/add_mapping_error_reporting_and_auto_stop",
           "object": "7e92a86fd9f03bd7def12dd23c6fd109f3e67767",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "7e92a86fd9f03bd7def12dd23c6fd109f3e67767"
         },
         {
           "source": "refs/remotes/robot-upstream/feature/yi.xing/add_obstacle_msg",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/feature/yi.xing/add_obstacle_msg",
           "object": "bdd4ed52e47036fb25cfd4d1fc5fd25365a66e52",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "bdd4ed52e47036fb25cfd4d1fc5fd25365a66e52"
         },
         {
           "source": "refs/remotes/robot-upstream/fsh/dev/refactor_ee_interfaces",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/fsh/dev/refactor_ee_interfaces",
           "object": "5a39d10abaf77ab27f9e25b1296a9af05c4065e4",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "5a39d10abaf77ab27f9e25b1296a9af05c4065e4"
         },
         {
           "source": "refs/remotes/robot-upstream/glf/add_nav_sematic",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/glf/add_nav_sematic",
           "object": "533699f678d48e34e351e8d492a55edaf18a1127",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "533699f678d48e34e351e8d492a55edaf18a1127"
         },
         {
           "source": "refs/remotes/robot-upstream/glf/nav_release_0.5.x",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/glf/nav_release_0.5.x",
           "object": "b026ad34871a3fa5ebe1e9245983818f46567691",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "b026ad34871a3fa5ebe1e9245983818f46567691"
         },
         {
           "source": "refs/remotes/robot-upstream/main",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/main",
           "object": "3792e5070edfadee015ee78689681d924348c540",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "3792e5070edfadee015ee78689681d924348c540"
         },
         {
           "source": "refs/remotes/robot-upstream/pzc/add_detection_srv",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/pzc/add_detection_srv",
           "object": "970bfd7f3fc7a046b5a05fa3ebe94a1b8c08ec08",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "970bfd7f3fc7a046b5a05fa3ebe94a1b8c08ec08"
         },
         {
           "source": "refs/remotes/robot-upstream/pzc/feature/control_action",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/pzc/feature/control_action",
           "object": "9df8b2609a66ac3785bb6a194d2570ef57c06997",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "9df8b2609a66ac3785bb6a194d2570ef57c06997"
         },
         {
           "source": "refs/remotes/robot-upstream/revert-9171a012",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/revert-9171a012",
           "object": "0eb4147cf0d5b0c67daf63b2548d18d4a5378bbb",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "0eb4147cf0d5b0c67daf63b2548d18d4a5378bbb"
         },
         {
           "source": "refs/remotes/robot-upstream/revert-e82d5a77",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/revert-e82d5a77",
           "object": "25620fd5f3823bdc7701d5359630672b836eab72",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "25620fd5f3823bdc7701d5359630672b836eab72"
         },
         {
           "source": "refs/remotes/robot-upstream/review/packaging-commit",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/review/packaging-commit",
           "object": "c6b5658f9069a61c347638bacfee38cf1f2bd7dc",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "c6b5658f9069a61c347638bacfee38cf1f2bd7dc"
         },
         {
           "source": "refs/remotes/robot-upstream/scheduler/xmk/path_navigation",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/scheduler/xmk/path_navigation",
           "object": "0d379c043ff011686f1a0b4619104c26de65aff2",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "0d379c043ff011686f1a0b4619104c26de65aff2"
         },
         {
           "source": "refs/remotes/robot-upstream/wp/add_errcode_interface",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/wp/add_errcode_interface",
           "object": "d54ecc20cd421d3e1243f83bf4107cb9308f5030",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "d54ecc20cd421d3e1243f83bf4107cb9308f5030"
         },
         {
           "source": "refs/remotes/robot-upstream/xmk/051",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/xmk/051",
           "object": "da62696d1dceeaf3a55a23432444aa4cd813b0c7",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "da62696d1dceeaf3a55a23432444aa4cd813b0c7"
         },
         {
           "source": "refs/remotes/robot-upstream/xxq/project_xingkong",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/xxq/project_xingkong",
           "object": "9a6b410f776ad800deceecdf312affcaf5b89625",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "9a6b410f776ad800deceecdf312affcaf5b89625"
         },
         {
           "source": "refs/remotes/robot-upstream/xxq/sipe",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/xxq/sipe",
           "object": "bb6468940bd5582379026354f2f7691ba057d37d",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "bb6468940bd5582379026354f2f7691ba057d37d"
         },
         {
           "source": "refs/remotes/robot-upstream/xxq/vla",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/xxq/vla",
           "object": "11992187d0522ed977eba461082c8775349adf0d",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "11992187d0522ed977eba461082c8775349adf0d"
         },
         {
           "source": "refs/remotes/robot-upstream/yanlei/add_manus_interface",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/yanlei/add_manus_interface",
           "object": "ba2ce6ed5cefb39cfece1fc82cf655364b3f9cfc",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "ba2ce6ed5cefb39cfece1fc82cf655364b3f9cfc"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/client_srv",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/ybw/client_srv",
           "object": "3cf19be7cbce041fe5044ab0c2548b3e387c40de",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "3cf19be7cbce041fe5044ab0c2548b3e387c40de"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/dev/update_chassis_msg",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/ybw/dev/update_chassis_msg",
           "object": "22e4194e2d249eef53dc9b8ef8fb8094f5e26d9f",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "22e4194e2d249eef53dc9b8ef8fb8094f5e26d9f"
         },
         {
           "source": "refs/remotes/robot-upstream/zkh/trigger_other_project",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/zkh/trigger_other_project",
           "object": "6455244ba1593d83d29d594bd66ea92c4079793f",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "6455244ba1593d83d29d594bd66ea92c4079793f"
         },
         {
           "source": "refs/remotes/robot-upstream/zyn/add_l1_interfaces",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/zyn/add_l1_interfaces",
           "object": "29545c0bc8de92e145afd304262a77c8487ea812",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "29545c0bc8de92e145afd304262a77c8487ea812"
         },
         {
           "source": "refs/remotes/robot-upstream/zyn/l1",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/zyn/l1",
           "object": "8a63ccc7920fd2c4702d5c4afe484610f4c0449e",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "8a63ccc7920fd2c4702d5c4afe484610f4c0449e"
         },
         {
           "source": "refs/remotes/robot-upstream/zzh/add_manager_interface",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/zzh/add_manager_interface",
           "object": "35659ccdd6cb403faad98ee40758e17d0ee58936",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "35659ccdd6cb403faad98ee40758e17d0ee58936"
         },
         {
           "source": "refs/tags/V0.1.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/V0.1.0",
           "object": "5a76dc9ab61622ed53f71dc6ddbdad6a05dd309b",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "5a76dc9ab61622ed53f71dc6ddbdad6a05dd309b"
         },
         {
           "source": "refs/tags/V0.1.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/V0.1.1",
           "object": "136408e4e385224579c6a49be2193c87d019d146",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "136408e4e385224579c6a49be2193c87d019d146"
         },
         {
           "source": "refs/tags/V0.2.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/V0.2.0",
           "object": "5b6d5a521e83407e6ca4dcbb2ec956ac53d16525",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "5b6d5a521e83407e6ca4dcbb2ec956ac53d16525"
         },
         {
           "source": "refs/tags/V0.2.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/V0.2.1",
           "object": "d67ebdd48fc881f9cfc5b7a191e3f272d99a3a64",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "d67ebdd48fc881f9cfc5b7a191e3f272d99a3a64"
         },
         {
           "source": "refs/tags/V0.2.2",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/V0.2.2",
           "object": "a78a82a7b11f86434ba61f71aa62ee4469f4f057",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "a78a82a7b11f86434ba61f71aa62ee4469f4f057"
         },
         {
           "source": "refs/tags/V0.3.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/V0.3.0",
           "object": "9df6068e969b5eb01eeaccd8faeaed90f7d0466f",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "9df6068e969b5eb01eeaccd8faeaed90f7d0466f"
         },
         {
           "source": "refs/tags/V0.3.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/V0.3.1",
           "object": "6dcc895965ff0eb5a69ef27699ac63669db84f0f",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "6dcc895965ff0eb5a69ef27699ac63669db84f0f"
         },
         {
           "source": "refs/tags/v0.4.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/v0.4.0",
           "object": "2d1c3bd3994b799bd335917fe6f890be24647aa8",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "2d1c3bd3994b799bd335917fe6f890be24647aa8"
         },
         {
           "source": "refs/tags/v0.4.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/v0.4.1",
           "object": "030d13c48bfd08857203037cd06011a1f31da6d2",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "030d13c48bfd08857203037cd06011a1f31da6d2"
         },
         {
           "source": "refs/tags/v0.4.2",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/v0.4.2",
           "object": "4efb5c16ebe1bab60e6666b5eabe81d326337671",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "4efb5c16ebe1bab60e6666b5eabe81d326337671"
         },
         {
           "source": "refs/tags/v0.4.5",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/v0.4.5",
           "object": "56779604dc5a9983a66933b7606150a352bdfce7",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "56779604dc5a9983a66933b7606150a352bdfce7"
         },
         {
           "source": "refs/tags/v0.4.6",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/v0.4.6",
           "object": "02223c49109722ff6fa92f1465fde0f3d25a10ed",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "02223c49109722ff6fa92f1465fde0f3d25a10ed"
         },
         {
           "source": "refs/tags/v0.5.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/v0.5.0",
           "object": "7e8ef879b80c36f15e23ddf8638ee325d8d3e50d",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "7e8ef879b80c36f15e23ddf8638ee325d8d3e50d"
         },
         {
           "source": "refs/tags/v0.5.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_server/dexe_interfaces/v0.5.1",
           "object": "c87c7eec13fa9631936e68bdea6c5df588311c31",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "c87c7eec13fa9631936e68bdea6c5df588311c31"
         },
         {
           "source": "HEAD",
           "destination": "refs/heads/upstream_repos/dexe_robot_server/dexe_interfaces/__worktree_HEAD__",
           "object": "c65ca0f8d2b65551815ed88aaea565ce4f037820",
-          "kind": "detached_head"
+          "kind": "detached_head",
+          "published_object": "c65ca0f8d2b65551815ed88aaea565ce4f037820"
         }
       ]
     },
@@ -1553,517 +1804,603 @@
           "source": "refs/heads/Fix/V0.6.1",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/Fix/V0.6.1",
           "object": "b6401e99e0914ed2a1175a5ae7a5f2231cedbc77",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "b6401e99e0914ed2a1175a5ae7a5f2231cedbc77"
         },
         {
           "source": "refs/heads/V0.6.0/suction_cup",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/V0.6.0/suction_cup",
           "object": "c0f648fa97a041392fd6e8944c80c79cd99fb65e",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "c0f648fa97a041392fd6e8944c80c79cd99fb65e"
         },
         {
           "source": "refs/heads/V0.7.0/tongchuan",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/V0.7.0/tongchuan",
           "object": "fe79e487f3fc4702f4b78113bdab90d00768ca2d",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "fe79e487f3fc4702f4b78113bdab90d00768ca2d"
         },
         {
           "source": "refs/heads/cjt/dev_w1/refactor_manager",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/cjt/dev_w1/refactor_manager",
           "object": "e051cb2b6f2bd5a97fd005a8a817d013db5b3dee",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "e051cb2b6f2bd5a97fd005a8a817d013db5b3dee"
         },
         {
           "source": "refs/heads/dev",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/dev",
           "object": "17ea4a62e52131374218eef0d497a33385338fa5",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "17ea4a62e52131374218eef0d497a33385338fa5"
         },
         {
           "source": "refs/heads/dev2_w1",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/dev2_w1",
           "object": "9f4a5f3f0141369e24500a67a309befe950d2d49",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "9f4a5f3f0141369e24500a67a309befe950d2d49"
         },
         {
           "source": "refs/heads/dev_w1",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/dev_w1",
           "object": "84a3ddef7a9fb5cb52151f94116787327ab064e8",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "84a3ddef7a9fb5cb52151f94116787327ab064e8"
         },
         {
           "source": "refs/heads/dji/v0.6.0",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/dji/v0.6.0",
           "object": "e7a326a02b6c87d701b8dd124de19e7d9b9cc4ca",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "e7a326a02b6c87d701b8dd124de19e7d9b9cc4ca"
         },
         {
           "source": "refs/heads/feature/mingkang.xu/jiazhi_sched",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/feature/mingkang.xu/jiazhi_sched",
           "object": "83d2c2b676183d61a8e004be558c6957bce27b65",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "83d2c2b676183d61a8e004be558c6957bce27b65"
         },
         {
           "source": "refs/heads/fsh/dev_w1/remove_old_config",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/fsh/dev_w1/remove_old_config",
           "object": "31ec89609cc68c67e95b7f7aff563e03d6dcc461",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "31ec89609cc68c67e95b7f7aff563e03d6dcc461"
         },
         {
           "source": "refs/heads/fsh/dev_w1/traj_stitching",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/fsh/dev_w1/traj_stitching",
           "object": "e9e31d9fe62a37a6c8907cc879555a03006ca87a",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "e9e31d9fe62a37a6c8907cc879555a03006ca87a"
         },
         {
           "source": "refs/heads/fsh/release/fix_uninstall",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/fsh/release/fix_uninstall",
           "object": "d58631415535e3a6a078d85e07a78452c1d1eebc",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "d58631415535e3a6a078d85e07a78452c1d1eebc"
         },
         {
           "source": "refs/heads/glf/modify_navigation",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/glf/modify_navigation",
           "object": "483298450cda119ba8f56a1df88aafe9a19bc588",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "483298450cda119ba8f56a1df88aafe9a19bc588"
         },
         {
           "source": "refs/heads/main",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/main",
           "object": "aa33d2ce7606392d7830512f033b0953a867acd8",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "aa33d2ce7606392d7830512f033b0953a867acd8"
         },
         {
           "source": "refs/heads/main_w1",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/main_w1",
           "object": "bc2168ee3259f2ce3f4e373a1012f3b2b8a53d48",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "bc2168ee3259f2ce3f4e373a1012f3b2b8a53d48"
         },
         {
           "source": "refs/heads/pzc/add_obstacle",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/pzc/add_obstacle",
           "object": "9ef167e1ef2b63620016a82da6f3ea98d230fdc3",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "9ef167e1ef2b63620016a82da6f3ea98d230fdc3"
         },
         {
           "source": "refs/heads/pzc/feature/charging",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/pzc/feature/charging",
           "object": "4aabb6827a182e79bb6544cbbd7a803cc8b86af4",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "4aabb6827a182e79bb6544cbbd7a803cc8b86af4"
         },
         {
           "source": "refs/heads/review/packaging-commit",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/review/packaging-commit",
           "object": "6c9b5a33833c261716ddadd9f5891bf99cf55e3f",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "6c9b5a33833c261716ddadd9f5891bf99cf55e3f"
         },
         {
           "source": "refs/heads/scheduler/xmk/path_navigation",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/scheduler/xmk/path_navigation",
           "object": "2f865c80394663fd65dfc2b33503c04c79d5217c",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "2f865c80394663fd65dfc2b33503c04c79d5217c"
         },
         {
           "source": "refs/heads/w1",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/w1",
           "object": "8038ceb9cd95194cf3f46f1a17577ce8ee064a1b",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "8038ceb9cd95194cf3f46f1a17577ce8ee064a1b"
         },
         {
           "source": "refs/heads/wei/dev_w1/stop_signal",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/wei/dev_w1/stop_signal",
           "object": "3af03f5f76c60cc5435d96c27509406a59edb6fa",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "3af03f5f76c60cc5435d96c27509406a59edb6fa"
         },
         {
           "source": "refs/heads/ybw/dev2_w1/fix_compatibility",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/dev2_w1/fix_compatibility",
           "object": "94d6a317f573a40fc13b3f79e0316c986f03545a",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "94d6a317f573a40fc13b3f79e0316c986f03545a"
         },
         {
           "source": "refs/heads/ybw/dev_w1/add_sdf_collision",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/dev_w1/add_sdf_collision",
           "object": "03657d418e41f9b75c5d23377cb2c58ee33945aa",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "03657d418e41f9b75c5d23377cb2c58ee33945aa"
         },
         {
           "source": "refs/heads/ybw/dev_w1/add_workobject_transform",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/dev_w1/add_workobject_transform",
           "object": "964d8b0d71f7dfd1c838a78cf5c75a28e431a59f",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "964d8b0d71f7dfd1c838a78cf5c75a28e431a59f"
         },
         {
           "source": "refs/heads/ybw/dev_w1/get_rough_eye_point",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/dev_w1/get_rough_eye_point",
           "object": "fdcbd4dc86abecd7a3da3750cc594bb61af3ba06",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "fdcbd4dc86abecd7a3da3750cc594bb61af3ba06"
         },
         {
           "source": "refs/heads/ybw/dev_w1/modify_whole_body_ik",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/dev_w1/modify_whole_body_ik",
           "object": "f24b95dfd016a5b27f014f202f8ad80f8af4917c",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "f24b95dfd016a5b27f014f202f8ad80f8af4917c"
         },
         {
           "source": "refs/heads/ybw/dynamic_plan",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/dynamic_plan",
           "object": "b02b9108c12cab0feec97a987ac2ec16c5c710ab",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "b02b9108c12cab0feec97a987ac2ec16c5c710ab"
         },
         {
           "source": "refs/heads/ybw/fix_eye_focus_point",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/fix_eye_focus_point",
           "object": "89b5829148160f6cd8751b6d0f6445013beb97d5",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "89b5829148160f6cd8751b6d0f6445013beb97d5"
         },
         {
           "source": "refs/heads/ybw/test_pybind",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/test_pybind",
           "object": "04a7294700685e663fbf928a3615cbf971a9d65c",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "04a7294700685e663fbf928a3615cbf971a9d65c"
         },
         {
           "source": "refs/heads/yjy/xwiz_calibration_020",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/yjy/xwiz_calibration_020",
           "object": "1fb9f8670afc4df21fc399d65b881c0b43c49078",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "1fb9f8670afc4df21fc399d65b881c0b43c49078"
         },
         {
           "source": "refs/heads/zzh/supermarket",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/zzh/supermarket",
           "object": "5818fe7a62e1a63eeec4cf91d28b62e7a75fc1bc",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "5818fe7a62e1a63eeec4cf91d28b62e7a75fc1bc"
         },
         {
           "source": "refs/heads/zzh/tray",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/zzh/tray",
           "object": "816d6577aebcb96be8e42d378e9e4b91509c614e",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "816d6577aebcb96be8e42d378e9e4b91509c614e"
         },
         {
           "source": "refs/remotes/robot-upstream/Fix/V0.6.1",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/Fix/V0.6.1",
           "object": "b6401e99e0914ed2a1175a5ae7a5f2231cedbc77",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "b6401e99e0914ed2a1175a5ae7a5f2231cedbc77"
         },
         {
           "source": "refs/remotes/robot-upstream/V0.6.0/suction_cup",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/V0.6.0/suction_cup",
           "object": "c0f648fa97a041392fd6e8944c80c79cd99fb65e",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "c0f648fa97a041392fd6e8944c80c79cd99fb65e"
         },
         {
           "source": "refs/remotes/robot-upstream/V0.7.0/tongchuan",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/V0.7.0/tongchuan",
           "object": "fe79e487f3fc4702f4b78113bdab90d00768ca2d",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "fe79e487f3fc4702f4b78113bdab90d00768ca2d"
         },
         {
           "source": "refs/remotes/robot-upstream/cjt/dev_w1/refactor_manager",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/cjt/dev_w1/refactor_manager",
           "object": "e051cb2b6f2bd5a97fd005a8a817d013db5b3dee",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "e051cb2b6f2bd5a97fd005a8a817d013db5b3dee"
         },
         {
           "source": "refs/remotes/robot-upstream/dev",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/dev",
           "object": "17ea4a62e52131374218eef0d497a33385338fa5",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "17ea4a62e52131374218eef0d497a33385338fa5"
         },
         {
           "source": "refs/remotes/robot-upstream/dev2_w1",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/dev2_w1",
           "object": "9f4a5f3f0141369e24500a67a309befe950d2d49",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "9f4a5f3f0141369e24500a67a309befe950d2d49"
         },
         {
           "source": "refs/remotes/robot-upstream/dev_w1",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/dev_w1",
           "object": "84a3ddef7a9fb5cb52151f94116787327ab064e8",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "84a3ddef7a9fb5cb52151f94116787327ab064e8"
         },
         {
           "source": "refs/remotes/robot-upstream/dji/v0.6.0",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/dji/v0.6.0",
           "object": "e7a326a02b6c87d701b8dd124de19e7d9b9cc4ca",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "e7a326a02b6c87d701b8dd124de19e7d9b9cc4ca"
         },
         {
           "source": "refs/remotes/robot-upstream/feature/mingkang.xu/jiazhi_sched",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/feature/mingkang.xu/jiazhi_sched",
           "object": "83d2c2b676183d61a8e004be558c6957bce27b65",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "83d2c2b676183d61a8e004be558c6957bce27b65"
         },
         {
           "source": "refs/remotes/robot-upstream/fsh/dev_w1/remove_old_config",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/fsh/dev_w1/remove_old_config",
           "object": "31ec89609cc68c67e95b7f7aff563e03d6dcc461",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "31ec89609cc68c67e95b7f7aff563e03d6dcc461"
         },
         {
           "source": "refs/remotes/robot-upstream/fsh/dev_w1/traj_stitching",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/fsh/dev_w1/traj_stitching",
           "object": "e9e31d9fe62a37a6c8907cc879555a03006ca87a",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "e9e31d9fe62a37a6c8907cc879555a03006ca87a"
         },
         {
           "source": "refs/remotes/robot-upstream/fsh/release/fix_uninstall",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/fsh/release/fix_uninstall",
           "object": "d58631415535e3a6a078d85e07a78452c1d1eebc",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "d58631415535e3a6a078d85e07a78452c1d1eebc"
         },
         {
           "source": "refs/remotes/robot-upstream/glf/modify_navigation",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/glf/modify_navigation",
           "object": "483298450cda119ba8f56a1df88aafe9a19bc588",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "483298450cda119ba8f56a1df88aafe9a19bc588"
         },
         {
           "source": "refs/remotes/robot-upstream/main",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/main",
           "object": "aa33d2ce7606392d7830512f033b0953a867acd8",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "aa33d2ce7606392d7830512f033b0953a867acd8"
         },
         {
           "source": "refs/remotes/robot-upstream/main_w1",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/main_w1",
           "object": "bc2168ee3259f2ce3f4e373a1012f3b2b8a53d48",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "bc2168ee3259f2ce3f4e373a1012f3b2b8a53d48"
         },
         {
           "source": "refs/remotes/robot-upstream/pzc/add_obstacle",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/pzc/add_obstacle",
           "object": "9ef167e1ef2b63620016a82da6f3ea98d230fdc3",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "9ef167e1ef2b63620016a82da6f3ea98d230fdc3"
         },
         {
           "source": "refs/remotes/robot-upstream/pzc/feature/charging",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/pzc/feature/charging",
           "object": "4aabb6827a182e79bb6544cbbd7a803cc8b86af4",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "4aabb6827a182e79bb6544cbbd7a803cc8b86af4"
         },
         {
           "source": "refs/remotes/robot-upstream/review/packaging-commit",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/review/packaging-commit",
           "object": "6c9b5a33833c261716ddadd9f5891bf99cf55e3f",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "6c9b5a33833c261716ddadd9f5891bf99cf55e3f"
         },
         {
           "source": "refs/remotes/robot-upstream/scheduler/xmk/path_navigation",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/scheduler/xmk/path_navigation",
           "object": "2f865c80394663fd65dfc2b33503c04c79d5217c",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "2f865c80394663fd65dfc2b33503c04c79d5217c"
         },
         {
           "source": "refs/remotes/robot-upstream/w1",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/w1",
           "object": "8038ceb9cd95194cf3f46f1a17577ce8ee064a1b",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "8038ceb9cd95194cf3f46f1a17577ce8ee064a1b"
         },
         {
           "source": "refs/remotes/robot-upstream/wei/dev_w1/stop_signal",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/wei/dev_w1/stop_signal",
           "object": "3af03f5f76c60cc5435d96c27509406a59edb6fa",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "3af03f5f76c60cc5435d96c27509406a59edb6fa"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/dev2_w1/fix_compatibility",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/dev2_w1/fix_compatibility",
           "object": "94d6a317f573a40fc13b3f79e0316c986f03545a",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "94d6a317f573a40fc13b3f79e0316c986f03545a"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/dev_w1/add_sdf_collision",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/dev_w1/add_sdf_collision",
           "object": "03657d418e41f9b75c5d23377cb2c58ee33945aa",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "03657d418e41f9b75c5d23377cb2c58ee33945aa"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/dev_w1/add_workobject_transform",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/dev_w1/add_workobject_transform",
           "object": "964d8b0d71f7dfd1c838a78cf5c75a28e431a59f",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "964d8b0d71f7dfd1c838a78cf5c75a28e431a59f"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/dev_w1/get_rough_eye_point",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/dev_w1/get_rough_eye_point",
           "object": "fdcbd4dc86abecd7a3da3750cc594bb61af3ba06",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "fdcbd4dc86abecd7a3da3750cc594bb61af3ba06"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/dev_w1/modify_whole_body_ik",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/dev_w1/modify_whole_body_ik",
           "object": "f24b95dfd016a5b27f014f202f8ad80f8af4917c",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "f24b95dfd016a5b27f014f202f8ad80f8af4917c"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/dynamic_plan",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/dynamic_plan",
           "object": "b02b9108c12cab0feec97a987ac2ec16c5c710ab",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "b02b9108c12cab0feec97a987ac2ec16c5c710ab"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/fix_eye_focus_point",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/fix_eye_focus_point",
           "object": "89b5829148160f6cd8751b6d0f6445013beb97d5",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "89b5829148160f6cd8751b6d0f6445013beb97d5"
         },
         {
           "source": "refs/remotes/robot-upstream/ybw/test_pybind",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/ybw/test_pybind",
           "object": "04a7294700685e663fbf928a3615cbf971a9d65c",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "04a7294700685e663fbf928a3615cbf971a9d65c"
         },
         {
           "source": "refs/remotes/robot-upstream/yjy/xwiz_calibration_020",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/yjy/xwiz_calibration_020",
           "object": "1fb9f8670afc4df21fc399d65b881c0b43c49078",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "1fb9f8670afc4df21fc399d65b881c0b43c49078"
         },
         {
           "source": "refs/remotes/robot-upstream/zzh/supermarket",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/zzh/supermarket",
           "object": "5818fe7a62e1a63eeec4cf91d28b62e7a75fc1bc",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "5818fe7a62e1a63eeec4cf91d28b62e7a75fc1bc"
         },
         {
           "source": "refs/remotes/robot-upstream/zzh/tray",
           "destination": "refs/heads/upstream_repos/dexe_robot_client/zzh/tray",
           "object": "816d6577aebcb96be8e42d378e9e4b91509c614e",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "816d6577aebcb96be8e42d378e9e4b91509c614e"
         },
         {
           "source": "refs/tags/V0.1.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.1.0",
           "object": "0a860207d72fd328c162bcd16999f89333744529",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "0a860207d72fd328c162bcd16999f89333744529"
         },
         {
           "source": "refs/tags/V0.1.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.1.1",
           "object": "c27fc172b37cff8fe3ab8678aa5d6bf24daa2b4f",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "c27fc172b37cff8fe3ab8678aa5d6bf24daa2b4f"
         },
         {
           "source": "refs/tags/V0.1.2",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.1.2",
           "object": "30f05f1b5b1155707074b0d33fbee41727fde1da",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "30f05f1b5b1155707074b0d33fbee41727fde1da"
         },
         {
           "source": "refs/tags/V0.1.3",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.1.3",
           "object": "44ce58e83d7a6556bb995b05178e22955fe25c12",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "44ce58e83d7a6556bb995b05178e22955fe25c12"
         },
         {
           "source": "refs/tags/V0.2.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.2.0",
           "object": "be225cbf902746793d75278dcd5a74742b8a0722",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "be225cbf902746793d75278dcd5a74742b8a0722"
         },
         {
           "source": "refs/tags/V0.2.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.2.1",
           "object": "c45a1779074abcfe4941dde629923c1fc8661fcc",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "c45a1779074abcfe4941dde629923c1fc8661fcc"
         },
         {
           "source": "refs/tags/V0.2.2",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.2.2",
           "object": "db639416d5d3567c6fd2f436440d713c55374c96",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "db639416d5d3567c6fd2f436440d713c55374c96"
         },
         {
           "source": "refs/tags/V0.2.3",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.2.3",
           "object": "baef755ca17e4a77112383b8466b447eaa7d057b",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "baef755ca17e4a77112383b8466b447eaa7d057b"
         },
         {
           "source": "refs/tags/V0.2.4",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.2.4",
           "object": "9b12ec80df96cb7678f66b0d4506e5cc17d93699",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "9b12ec80df96cb7678f66b0d4506e5cc17d93699"
         },
         {
           "source": "refs/tags/V0.3.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.3.0",
           "object": "e1fec4c0027e916bd60d87b15e0bfadcf9292163",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "e1fec4c0027e916bd60d87b15e0bfadcf9292163"
         },
         {
           "source": "refs/tags/V0.3.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.3.1",
           "object": "63550d4521fdc2fab54b1179791c591f2bd3e762",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "63550d4521fdc2fab54b1179791c591f2bd3e762"
         },
         {
           "source": "refs/tags/V0.4.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.4.0",
           "object": "eb742edd0656fd55f2f596f7e8e3d1bbed71e8ac",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "eb742edd0656fd55f2f596f7e8e3d1bbed71e8ac"
         },
         {
           "source": "refs/tags/V0.4.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.4.1",
           "object": "8d39944aa611aef2ef5f73f7d5965e7f6cc40240",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "8d39944aa611aef2ef5f73f7d5965e7f6cc40240"
         },
         {
           "source": "refs/tags/V0.4.2",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.4.2",
           "object": "5e6e3991b0102bd1d42a5bbf4bc374d0703319d9",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "5e6e3991b0102bd1d42a5bbf4bc374d0703319d9"
         },
         {
           "source": "refs/tags/V0.4.3",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.4.3",
           "object": "071922c065ab539e741c41806a37b8b67f709843",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "071922c065ab539e741c41806a37b8b67f709843"
         },
         {
           "source": "refs/tags/V0.5.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.5.0",
           "object": "c89cfb28fd7c2de01cc54e05c307e330858e8d8d",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "c89cfb28fd7c2de01cc54e05c307e330858e8d8d"
         },
         {
           "source": "refs/tags/V0.6.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.6.0",
           "object": "c03eaf0adced5b647481f1f609c16c8447b135f9",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "c03eaf0adced5b647481f1f609c16c8447b135f9"
         },
         {
           "source": "refs/tags/V0.6.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.6.1",
           "object": "53c433701d9c10f95a547494ae9af1fd3105f957",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "53c433701d9c10f95a547494ae9af1fd3105f957"
         },
         {
           "source": "refs/tags/V0.7.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.7.0",
           "object": "88c72dcf7a54dd5f2e443807282b078cce9ba28e",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "88c72dcf7a54dd5f2e443807282b078cce9ba28e"
         },
         {
           "source": "refs/tags/V0.8.0",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.8.0",
           "object": "854adfb07e7d75add1f7b627ee81c43e1646fea3",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "854adfb07e7d75add1f7b627ee81c43e1646fea3"
         },
         {
           "source": "refs/tags/V0.8.1",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.8.1",
           "object": "8bc5971336c7c06fd95ea0198d165cce0f564514",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "8bc5971336c7c06fd95ea0198d165cce0f564514"
         },
         {
           "source": "refs/tags/V0.8.2",
           "destination": "refs/tags/upstream_repos/dexe_robot_client/V0.8.2",
           "object": "326369f4edeb6d3c68810b2b22ab38b96a71474e",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "326369f4edeb6d3c68810b2b22ab38b96a71474e"
         }
       ]
     },
@@ -2077,301 +2414,351 @@
           "source": "refs/heads/dev_w1",
           "destination": "refs/heads/dexe_robot_server/dev_w1",
           "object": "b5b273766149ac208b4736d346afc9f45e5340fe",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "9d26fa0c2335c969c6919855fa7bd11afe8f5e2c"
         },
         {
           "source": "refs/remotes/origin/0.4.4",
           "destination": "refs/heads/dexe_robot_server/0.4.4",
           "object": "f9eb4588de2cf9948d2b3d789f61bfe6c4167309",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "e9a4972b0a9e1f74232247efea6204e4c5647cf8"
         },
         {
           "source": "refs/remotes/origin/0.4.4backup",
           "destination": "refs/heads/dexe_robot_server/0.4.4backup",
           "object": "94d0fb050bc9d9dd3d3ab24a2cdcc73c1db15c30",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "0646d68591c78c0407fc2001c057a6d15e77969b"
         },
         {
           "source": "refs/remotes/origin/claude/practical-hodgkin-69327a",
           "destination": "refs/heads/dexe_robot_server/claude/practical-hodgkin-69327a",
           "object": "b27aff0f85a3fad985b5cf07c393c12c7eab9714",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "caf03b1fbba26a9a4350ff0787f92ed8d818946a"
         },
         {
           "source": "refs/remotes/origin/configyaml",
           "destination": "refs/heads/dexe_robot_server/configyaml",
           "object": "dc886540ff1eb20a6b21465e2f67586f9524f468",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "6b9b18a2589bffa1c32f25ac7c86e4e20cb71b53"
         },
         {
           "source": "refs/remotes/origin/dev",
           "destination": "refs/heads/dexe_robot_server/dev",
           "object": "2a53d6bcc79bf2f6a3f3673077647e71daf47f42",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "2a53d6bcc79bf2f6a3f3673077647e71daf47f42"
         },
         {
           "source": "refs/remotes/origin/dev_l1",
           "destination": "refs/heads/dexe_robot_server/dev_l1",
           "object": "adb423e86b26127fb8e696286ebd2c6c70fb8766",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "fc3b191177e2f5292816ef2db8137b0b0ad5cc8f"
         },
         {
           "source": "refs/remotes/origin/dev_w1",
           "destination": "refs/heads/dexe_robot_server/dev_w1",
           "object": "b5b273766149ac208b4736d346afc9f45e5340fe",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "9d26fa0c2335c969c6919855fa7bd11afe8f5e2c"
         },
         {
           "source": "refs/remotes/origin/dyp/feat_add_omni_chassis_feedback",
           "destination": "refs/heads/dexe_robot_server/dyp/feat_add_omni_chassis_feedback",
           "object": "4c1996d9dfd76c79a15209dd99bf86465a995456",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "4c1996d9dfd76c79a15209dd99bf86465a995456"
         },
         {
           "source": "refs/remotes/origin/glf/modify_odom",
           "destination": "refs/heads/dexe_robot_server/glf/modify_odom",
           "object": "dce9341b9d788e643d645efdd116eaf8dfc39367",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "dbbb32301b2915daa8e5f7febd355325e857fd19"
         },
         {
           "source": "refs/remotes/origin/hjx/sim_fullbody",
           "destination": "refs/heads/dexe_robot_server/hjx/sim_fullbody",
           "object": "d007e5088e4f8612c2a115335ffc036b4a1635a6",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "d9b85385884560adfa5ea7083c86c298f76df0fb"
         },
         {
           "source": "refs/remotes/origin/hw/add_evaluate_performance",
           "destination": "refs/heads/dexe_robot_server/hw/add_evaluate_performance",
           "object": "29b51fa9718cca51e80457e620f6800fe3c85981",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "b8e7beda6953893d72d2e51d51ffb12946d01b46"
         },
         {
           "source": "refs/remotes/origin/hw/add_impedance",
           "destination": "refs/heads/dexe_robot_server/hw/add_impedance",
           "object": "94f46ae5bfe7b20d1d5d5c9de2f4128e3baae4c8",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "ad9491877afe59ecf85b433b86e0409430b3757a"
         },
         {
           "source": "refs/remotes/origin/hw/add_impedance_backup",
           "destination": "refs/heads/dexe_robot_server/hw/add_impedance_backup",
           "object": "a8cdb3e5445f9550c05110cc50b08a6819c09b92",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "4154ad4fa4c23291099e00ebc0df3a1ce502dee7"
         },
         {
           "source": "refs/remotes/origin/hw/add_joint_impedance_tracking",
           "destination": "refs/heads/dexe_robot_server/hw/add_joint_impedance_tracking",
           "object": "0db366996106a9f889bd26a86d6dc62081a44ad3",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "6efc5b83480a004684467b2f886f17b380be338e"
         },
         {
           "source": "refs/remotes/origin/hw/add_tool_gravity_measurement",
           "destination": "refs/heads/dexe_robot_server/hw/add_tool_gravity_measurement",
           "object": "6898f742fa292fa0a8e12f728b6818d9d233cc4f",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "0fb60e6b685524abcecc4bb525eb43e940bedf63"
         },
         {
           "source": "refs/remotes/origin/hw/intern",
           "destination": "refs/heads/dexe_robot_server/hw/intern",
           "object": "59125a9ce45fdedc9f868f87df55ba4bf740a536",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "45e4a038be7fad791efe4af1d8e4593998f1db7d"
         },
         {
           "source": "refs/remotes/origin/imu0.4.4",
           "destination": "refs/heads/dexe_robot_server/imu0.4.4",
           "object": "bf89ba8567f4692c2bbdbd5a02f2e53c691ff7a4",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "1b154fd60db7199871b8ab3f38fac5a2de245510"
         },
         {
           "source": "refs/remotes/origin/l10.4.4",
           "destination": "refs/heads/dexe_robot_server/l10.4.4",
           "object": "8e8c0e3b4ac537fcd0874e6ef51b2db45ac0f590",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "ae30c5f9a845f4fb9728c81f81f16b092a1a09d8"
         },
         {
           "source": "refs/remotes/origin/main",
           "destination": "refs/heads/dexe_robot_server/main",
           "object": "3fa6c17cb896ae8ddeebebfc872226d361dd460b",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "3fa6c17cb896ae8ddeebebfc872226d361dd460b"
         },
         {
           "source": "refs/remotes/origin/main_w1",
           "destination": "refs/heads/dexe_robot_server/main_w1",
           "object": "8983a04626a49a863dd07f219ca10d631d6dc5c1",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "8983a04626a49a863dd07f219ca10d631d6dc5c1"
         },
         {
           "source": "refs/remotes/origin/openarm",
           "destination": "refs/heads/dexe_robot_server/openarm",
           "object": "49b1f5e325f5ec06173741066c43e2c872f55e55",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "11126b38e13ec05138adb53cffa034118e0acf2f"
         },
         {
           "source": "refs/remotes/origin/pzc/ZVD_test",
           "destination": "refs/heads/dexe_robot_server/pzc/ZVD_test",
           "object": "33ab40cf6e8491edcd60a9c6841d0c83106fe9e3",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "0c0b7e8ca4f082a17b62cb5e0886868918817c49"
         },
         {
           "source": "refs/remotes/origin/pzc/add_wheelvel_feedback_test",
           "destination": "refs/heads/dexe_robot_server/pzc/add_wheelvel_feedback_test",
           "object": "f3afbea0966d04a1f02200f57ebbbc08916812e5",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "f3afbea0966d04a1f02200f57ebbbc08916812e5"
         },
         {
           "source": "refs/remotes/origin/review/packaging-commit",
           "destination": "refs/heads/dexe_robot_server/review/packaging-commit",
           "object": "1e1f3f8adee09ef9631457c638798fc831be0fde",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "846805d9a1e311301af2c8259cb88c76a940907c"
         },
         {
           "source": "refs/remotes/origin/wt/test_deb",
           "destination": "refs/heads/dexe_robot_server/wt/test_deb",
           "object": "9c3f755cf687b708f64ba3c62043758cdb28593e",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "b0399479010c5ec5929a7d3f3be31af35604875d"
         },
         {
           "source": "refs/remotes/origin/wt/verify_core",
           "destination": "refs/heads/dexe_robot_server/wt/verify_core",
           "object": "6b3571a731e8451981f60696a82cd36a5304c75a",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "651171c743ad795d9471797336a4584b1faed8e1"
         },
         {
           "source": "refs/remotes/origin/wudi/add_L1_walk",
           "destination": "refs/heads/dexe_robot_server/wudi/add_L1_walk",
           "object": "bca5921f94e059a4216910db9799aa3b9b001fee",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "eb8f57c910717504d97e5f02c5a245687e144cb6"
         },
         {
           "source": "refs/remotes/origin/xc/dev/movel",
           "destination": "refs/heads/dexe_robot_server/xc/dev/movel",
           "object": "03d8671d533797b110566fba53044b685122651c",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "03d8671d533797b110566fba53044b685122651c"
         },
         {
           "source": "refs/remotes/origin/zkh/init_ci",
           "destination": "refs/heads/dexe_robot_server/zkh/init_ci",
           "object": "65cabd9ea6bb0b79d9102c524d2ad0223c7efbf7",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "447b270d10ccaa2df915542b2349cc513bbaaadc"
         },
         {
           "source": "refs/remotes/origin/zkh/new_ci",
           "destination": "refs/heads/dexe_robot_server/zkh/new_ci",
           "object": "746197f5d9f3aff000e0b2bb10750b0c9d5bf22a",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "c0fe478b0dd95cfda8d08b44bdede8f2b6f503fe"
         },
         {
           "source": "refs/remotes/origin/zyn/add_error_check_system",
           "destination": "refs/heads/dexe_robot_server/zyn/add_error_check_system",
           "object": "614d44e9335c55dc44ac98af402c01fea7b00d90",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "614d44e9335c55dc44ac98af402c01fea7b00d90"
         },
         {
           "source": "refs/remotes/origin/zyn/add_torque_param",
           "destination": "refs/heads/dexe_robot_server/zyn/add_torque_param",
           "object": "bdc4e1cea5200da4e03b2907e0077f14c5412ac4",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "bdc4e1cea5200da4e03b2907e0077f14c5412ac4"
         },
         {
           "source": "refs/remotes/origin/zyn/add_torso_zvd",
           "destination": "refs/heads/dexe_robot_server/zyn/add_torso_zvd",
           "object": "6372df2111711646e5b4bf9d297f972e3ff37f6c",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "bff58cd24d4672deaa2ed5da4920b40558e6d16f"
         },
         {
           "source": "refs/remotes/origin/zyn/add_zvd",
           "destination": "refs/heads/dexe_robot_server/zyn/add_zvd",
           "object": "665ede7f266e22068d684dd682398ccc2ce75cf7",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "05de311f24a7329f8b77ae0b0c2c5cd907f585bf"
         },
         {
           "source": "refs/remotes/origin/zyn/feat_add_dynamik_param",
           "destination": "refs/heads/dexe_robot_server/zyn/feat_add_dynamik_param",
           "object": "c4f92252e530369a911a837b2765a9fc9a27015f",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "c4f92252e530369a911a837b2765a9fc9a27015f"
         },
         {
           "source": "refs/remotes/origin/zyn/tool_dynamic",
           "destination": "refs/heads/dexe_robot_server/zyn/tool_dynamic",
           "object": "e2e61528191b93480ea292e12e761bb1227fee07",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "40c18f1816fcfa903a00b47bc2b31485ac87ca88"
         },
         {
           "source": "refs/remotes/origin/zyn/tune_torque_control",
           "destination": "refs/heads/dexe_robot_server/zyn/tune_torque_control",
           "object": "88b3c77eb3e7963b146a8acac8c181bf4bb02185",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "88b3c77eb3e7963b146a8acac8c181bf4bb02185"
         },
         {
           "source": "refs/tags/V0.1.0",
           "destination": "refs/tags/dexe_robot_server/V0.1.0",
           "object": "5efa53b662daa613cb08827efb45a4a37e23ea5b",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "de966fb8b82d4d65a2a2505efb8744ec0e60e82a"
         },
         {
           "source": "refs/tags/V0.1.1",
           "destination": "refs/tags/dexe_robot_server/V0.1.1",
           "object": "a645c27fb7aa2bbacf4a6b701d0c1db9092ea4d1",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "8033cd2a304a01c0c576a6c0f78dfc72e59c0228"
         },
         {
           "source": "refs/tags/V0.2.0",
           "destination": "refs/tags/dexe_robot_server/V0.2.0",
           "object": "066b40ed1c6464a82efa9134cf6a95dde9ce7ce7",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "56c26a4d1a70ed6689afd6372d23bb5e42c78a48"
         },
         {
           "source": "refs/tags/V0.2.1",
           "destination": "refs/tags/dexe_robot_server/V0.2.1",
           "object": "ace91f0f148f945d44eb4d3d3217276ec61f0bdd",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "39a76a2822b3d934178315a5707c0ea00a2ebaea"
         },
         {
           "source": "refs/tags/V0.2.2",
           "destination": "refs/tags/dexe_robot_server/V0.2.2",
           "object": "20295b7d12d4cf6993ba57a4cfb4fa2327fc52bc",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "3b0f13a261ff7faeac5b88da7c8f6fe560ec1b5d"
         },
         {
           "source": "refs/tags/V0.3.0",
           "destination": "refs/tags/dexe_robot_server/V0.3.0",
           "object": "618949dfc15e57816415d1ef2c86e178a89c963b",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "d134c68f239458c2a671142b58abd6ed724bbabc"
         },
         {
           "source": "refs/tags/V0.3.1",
           "destination": "refs/tags/dexe_robot_server/V0.3.1",
           "object": "1a77c100a0089d3add8d8ab024b927fe0925502b",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "0f2e8dc76fc40d67e31540f494fb80cda393b137"
         },
         {
           "source": "refs/tags/V0.4.0",
           "destination": "refs/tags/dexe_robot_server/V0.4.0",
           "object": "4f355866c92b3d8b4f13f3d7c3899808c56c5685",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "4c8d1d92007994b8a3f5eddc3b1046902b7d4ead"
         },
         {
           "source": "refs/tags/V0.4.2",
           "destination": "refs/tags/dexe_robot_server/V0.4.2",
           "object": "7f64420cb4288ecab46a8e285d66aae770bf0af0",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "fadd9cdeb71ff2edaaaa9596688157a70ff00a1e"
         },
         {
           "source": "refs/tags/V0.4.3",
           "destination": "refs/tags/dexe_robot_server/V0.4.3",
           "object": "3ac1086f27a967e06f61d7c46d73cb0805370e78",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "39cb0992746ed42cdc5c8a52927c7c37671dfb25"
         },
         {
           "source": "refs/tags/V0.4.4",
           "destination": "refs/tags/dexe_robot_server/V0.4.4",
           "object": "a1cb6193f8c1690f7359fcba373b658f8338f613",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "c54ec067b2f2c2112be794aaa5bb4392c6b6c41e"
         },
         {
           "source": "be6e32e53227f39770dd6e386e4174adacbddf63",
           "destination": "refs/heads/dexe_robot_server/__archive_refs__/reflog/be6e32e53227f39770dd6e386e4174adacbddf63",
           "object": "be6e32e53227f39770dd6e386e4174adacbddf63",
-          "kind": "reflog_commit"
+          "kind": "reflog_commit",
+          "published_object": "77868821112ef90d476ea0c431ebdccfd62f7c5a"
         }
       ]
     },
@@ -2385,169 +2772,197 @@
           "source": "refs/heads/main",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/main",
           "object": "3792e5070edfadee015ee78689681d924348c540",
-          "kind": "local_branch"
+          "kind": "local_branch",
+          "published_object": "3792e5070edfadee015ee78689681d924348c540"
         },
         {
           "source": "refs/remotes/origin/dev",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/dev",
           "object": "70dc7c9c7dc34a914d790548bc88dc82b53b3794",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "70dc7c9c7dc34a914d790548bc88dc82b53b3794"
         },
         {
           "source": "refs/remotes/origin/dev_l1",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/dev_l1",
           "object": "8a63ccc7920fd2c4702d5c4afe484610f4c0449e",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "8a63ccc7920fd2c4702d5c4afe484610f4c0449e"
         },
         {
           "source": "refs/remotes/origin/fsh/dev/refactor_ee_interfaces",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/fsh/dev/refactor_ee_interfaces",
           "object": "5a39d10abaf77ab27f9e25b1296a9af05c4065e4",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "5a39d10abaf77ab27f9e25b1296a9af05c4065e4"
         },
         {
           "source": "refs/remotes/origin/glf/add_nav_sematic",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/glf/add_nav_sematic",
           "object": "533699f678d48e34e351e8d492a55edaf18a1127",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "533699f678d48e34e351e8d492a55edaf18a1127"
         },
         {
           "source": "refs/remotes/origin/glf/nav_release_0.5.x",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/glf/nav_release_0.5.x",
           "object": "a957716c9f83f511865e3b35fa6deee1a7ac9f57",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "a957716c9f83f511865e3b35fa6deee1a7ac9f57"
         },
         {
           "source": "refs/remotes/origin/main",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/main",
           "object": "3792e5070edfadee015ee78689681d924348c540",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "3792e5070edfadee015ee78689681d924348c540"
         },
         {
           "source": "refs/remotes/origin/pzc/add_detection_srv",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/pzc/add_detection_srv",
           "object": "970bfd7f3fc7a046b5a05fa3ebe94a1b8c08ec08",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "970bfd7f3fc7a046b5a05fa3ebe94a1b8c08ec08"
         },
         {
           "source": "refs/remotes/origin/pzc/feature/control_action",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/pzc/feature/control_action",
           "object": "9df8b2609a66ac3785bb6a194d2570ef57c06997",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "9df8b2609a66ac3785bb6a194d2570ef57c06997"
         },
         {
           "source": "refs/remotes/origin/revert-9171a012",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/revert-9171a012",
           "object": "0eb4147cf0d5b0c67daf63b2548d18d4a5378bbb",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "0eb4147cf0d5b0c67daf63b2548d18d4a5378bbb"
         },
         {
           "source": "refs/remotes/origin/revert-e82d5a77",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/revert-e82d5a77",
           "object": "25620fd5f3823bdc7701d5359630672b836eab72",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "25620fd5f3823bdc7701d5359630672b836eab72"
         },
         {
           "source": "refs/remotes/origin/review/packaging-commit",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/review/packaging-commit",
           "object": "c6b5658f9069a61c347638bacfee38cf1f2bd7dc",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "c6b5658f9069a61c347638bacfee38cf1f2bd7dc"
         },
         {
           "source": "refs/remotes/origin/xxq/project_xingkong",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/xxq/project_xingkong",
           "object": "9a6b410f776ad800deceecdf312affcaf5b89625",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "9a6b410f776ad800deceecdf312affcaf5b89625"
         },
         {
           "source": "refs/remotes/origin/yanlei/add_manus_interface",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/yanlei/add_manus_interface",
           "object": "ba2ce6ed5cefb39cfece1fc82cf655364b3f9cfc",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "ba2ce6ed5cefb39cfece1fc82cf655364b3f9cfc"
         },
         {
           "source": "refs/remotes/origin/ybw/client_srv",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/ybw/client_srv",
           "object": "3cf19be7cbce041fe5044ab0c2548b3e387c40de",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "3cf19be7cbce041fe5044ab0c2548b3e387c40de"
         },
         {
           "source": "refs/remotes/origin/zyn/l1",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/zyn/l1",
           "object": "8a63ccc7920fd2c4702d5c4afe484610f4c0449e",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "8a63ccc7920fd2c4702d5c4afe484610f4c0449e"
         },
         {
           "source": "refs/remotes/origin/zzh/add_manager_interface",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/zzh/add_manager_interface",
           "object": "35659ccdd6cb403faad98ee40758e17d0ee58936",
-          "kind": "remote_tracking_branch"
+          "kind": "remote_tracking_branch",
+          "published_object": "35659ccdd6cb403faad98ee40758e17d0ee58936"
         },
         {
           "source": "refs/tags/V0.1.0",
           "destination": "refs/tags/dexe_robot_server/dexe_interfaces/V0.1.0",
           "object": "5a76dc9ab61622ed53f71dc6ddbdad6a05dd309b",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "5a76dc9ab61622ed53f71dc6ddbdad6a05dd309b"
         },
         {
           "source": "refs/tags/V0.1.1",
           "destination": "refs/tags/dexe_robot_server/dexe_interfaces/V0.1.1",
           "object": "136408e4e385224579c6a49be2193c87d019d146",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "136408e4e385224579c6a49be2193c87d019d146"
         },
         {
           "source": "refs/tags/V0.2.0",
           "destination": "refs/tags/dexe_robot_server/dexe_interfaces/V0.2.0",
           "object": "5b6d5a521e83407e6ca4dcbb2ec956ac53d16525",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "5b6d5a521e83407e6ca4dcbb2ec956ac53d16525"
         },
         {
           "source": "refs/tags/V0.2.1",
           "destination": "refs/tags/dexe_robot_server/dexe_interfaces/V0.2.1",
           "object": "d67ebdd48fc881f9cfc5b7a191e3f272d99a3a64",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "d67ebdd48fc881f9cfc5b7a191e3f272d99a3a64"
         },
         {
           "source": "refs/tags/V0.2.2",
           "destination": "refs/tags/dexe_robot_server/dexe_interfaces/V0.2.2",
           "object": "a78a82a7b11f86434ba61f71aa62ee4469f4f057",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "a78a82a7b11f86434ba61f71aa62ee4469f4f057"
         },
         {
           "source": "refs/tags/V0.3.0",
           "destination": "refs/tags/dexe_robot_server/dexe_interfaces/V0.3.0",
           "object": "9df6068e969b5eb01eeaccd8faeaed90f7d0466f",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "9df6068e969b5eb01eeaccd8faeaed90f7d0466f"
         },
         {
           "source": "refs/tags/V0.3.1",
           "destination": "refs/tags/dexe_robot_server/dexe_interfaces/V0.3.1",
           "object": "6dcc895965ff0eb5a69ef27699ac63669db84f0f",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "6dcc895965ff0eb5a69ef27699ac63669db84f0f"
         },
         {
           "source": "refs/tags/v0.4.0",
           "destination": "refs/tags/dexe_robot_server/dexe_interfaces/v0.4.0",
           "object": "2d1c3bd3994b799bd335917fe6f890be24647aa8",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "2d1c3bd3994b799bd335917fe6f890be24647aa8"
         },
         {
           "source": "refs/tags/v0.4.1",
           "destination": "refs/tags/dexe_robot_server/dexe_interfaces/v0.4.1",
           "object": "030d13c48bfd08857203037cd06011a1f31da6d2",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "030d13c48bfd08857203037cd06011a1f31da6d2"
         },
         {
           "source": "refs/tags/v0.4.2",
           "destination": "refs/tags/dexe_robot_server/dexe_interfaces/v0.4.2",
           "object": "4efb5c16ebe1bab60e6666b5eabe81d326337671",
-          "kind": "tag"
+          "kind": "tag",
+          "published_object": "4efb5c16ebe1bab60e6666b5eabe81d326337671"
         },
         {
           "source": "HEAD",
           "destination": "refs/heads/dexe_robot_server/dexe_interfaces/__worktree_HEAD__",
           "object": "f71029440940f4757d6a40265562361989dc21ee",
-          "kind": "detached_head"
+          "kind": "detached_head",
+          "published_object": "f71029440940f4757d6a40265562361989dc21ee"
         }
       ]
     }
@@ -2559,5 +2974,12 @@
     "archived_branches": 194,
     "tags": 110,
     "index_branches": 1
+  },
+  "history_sanitized": true,
+  "sanitization": {
+    "modified_blob_versions": 3,
+    "changed_commits": 735,
+    "changed_refs": 91,
+    "method": "Remove HTTP(S) URL userinfo from the three known credential-bearing blobs; no commits pruned."
   }
 }
